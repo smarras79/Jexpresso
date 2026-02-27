@@ -6,18 +6,21 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
+using QuadGK
 using MPI
 using KernelAbstractions
 using Revise
 using BenchmarkTools
 using Dates
 using DelimitedFiles
+using CSV, DataFrames
 using DataStructures
 using LoopVectorization
 using ElasticArrays
 using Geodesy
 using InternedStrings
 using LinearAlgebra
+using LinearOperators
 using SpecialFunctions
 using StaticArrays
 using StaticArrays: SVector, MVector
@@ -31,6 +34,7 @@ using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem
+using HDF5
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
@@ -38,6 +42,7 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
+
 
 import ClimaComms
 @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
@@ -55,12 +60,25 @@ using RRTMGP.RTE
 using RRTMGP.RTESolver
 import RRTMGP.Parameters.RRTMGPParameters
 using RRTMGP.ArtifactPaths
+using Serialization
 
 using UnicodePlots
 using Printf
-using NetCDF
 using NCDatasets
-using MPI
+
+using Gridap
+using Gridap.Arrays
+using Gridap.Arrays: Table
+using Gridap.Geometry
+using Gridap.Fields
+using Gridap.ReferenceFEs
+using Gridap.CellData
+using Gridap.Adaptivity
+using Gridap.Geometry: GridMock
+using GridapDistributed
+using PartitionedArrays
+using GridapGmsh
+using GridapP4est
 
 TInt   = Int64
 TFloat = Float64
@@ -68,9 +86,11 @@ cpu    = true
 
 using DocStringExtensions
 
-include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
+include(joinpath( "..", "problems", "AbstractEquations.jl"))
 
 include(joinpath( "macros", "je_macros.jl"))
+
+include(joinpath( "auxiliary", "timing.jl"))
 
 include(joinpath( "kernel", "abstractTypes.jl"))
 
@@ -78,7 +98,9 @@ include(joinpath( "kernel", "elementLearningStructs.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
 
-include(joinpath( "kernel", "physics", "incompressible.jl"))
+include(joinpath( "kernel", "ArtificialViscosity","viscousStructs.jl"))
+
+include(joinpath( "kernel", "ArtificialViscosity","Wall_model.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
@@ -95,6 +117,14 @@ include(joinpath( "kernel", "physics", "constitutiveLaw.jl"))
 include(joinpath( "kernel", "physics", "large_scale.jl"))
 
 include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
+
+include(joinpath( "kernel", "physics", "turbul.jl"))
+
+include(joinpath( "kernel", "physics", "SGS.jl"))
+
+include(joinpath( "kernel", "physics", "CM_MOST.jl"))
+
+include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
 
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
@@ -124,9 +154,19 @@ include(joinpath( "kernel", "operators", "operators.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
+include(joinpath( "kernel", "operators", "rhs_2point.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
+
+include(joinpath( "kernel", "operators", "imex2d.jl"))
+
+include(joinpath( "kernel", "operators", "imex.jl"))
+
+include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
+
+include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
@@ -134,9 +174,25 @@ include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
 
 include(joinpath("kernel", "operators", "filter.jl"))
 
+include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
+
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
+include(joinpath("kernel", "operators", "build_rad_2d.jl"))
+
+include(joinpath("kernel", "operators", "build_rad_3d.jl"))
+
+include(joinpath( "kernel", "operators", "angular_comms.jl"))
+
+include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
+
+include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
+
+include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
+
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
+
+include(joinpath( "kernel", "mpi", "mpi_communications.jl"))
 
 include(joinpath( "io", "mod_inputs.jl"))
 
@@ -152,11 +208,15 @@ include(joinpath( "io", "print_matrix.jl"))
 
 include(joinpath( "io", "soundings.jl"))
 
+include(joinpath( "io", "read_dp_scream.jl"))
+
 include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 
 include("./run.jl")
+
+export @timers
 
 # Run the test
 # test_create_2d_projection_matrices_numa2d()

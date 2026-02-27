@@ -1,12 +1,12 @@
 using Quadmath
 
-function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1))   
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1), ladapt = false)   
 
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     ## Subtract background velocity
     #qv = copy(q)
-    uaux[:,2:3] .= uaux[:,2:3] .- params.qp.qe[:,2:3]
+    @views uaux[:,2:3] .= uaux[:,2:3] .- params.qp.qe[:,2:3]
     ## store Dimension of MxM object
 
     ## Loop through the elements
@@ -65,20 +65,29 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
         end
     end
     
+    if ladapt == true
+        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
+                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ngl-1, params.neqs, params.interp)
+    end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
 
-    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+    DSS_global_RHS!(@view(params.B[:,:]), params.g_dss_cache, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end
     
-    uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
-    uaux[:,2:3] .+= params.qp.qe[:,2:3]
+    @views uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
+    @views uaux[:,2:3] .+= params.qp.qe[:,2:3]
 
     uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
 
-function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1))
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1), ladapt = false)
     
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -197,6 +206,9 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
             end
         end
 
+        if ladapt == true
+            @mystop("not yet implemented for 2D Laguerre with AMR!")
+        end
         DSS_rhs_laguerre!(params.B_lag, params.b_lag, connijk_lag, params.mesh.nelem_semi_inf, params.mesh.ngl, params.mesh.ngr, params.neqs, SD, params.AD)
         #for ip=1:params.mesh.npoin
         #if !(ip in params.mesh.poin_in_bdy_edge)
@@ -210,12 +222,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
         #end
     end
 
-    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+    DSS_global_RHS!(@view(params.B[:,:]), params.g_dss_cache, params.neqs)
 
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end
-    uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
+    @views uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
 
 #=if (params.laguerre)
 
@@ -227,7 +239,7 @@ end=#
 uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
-function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1))
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1), ladapt = false)
 
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -238,12 +250,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
     ## store Dimension of MxM object
 
     ## Loop through the elements
-    
+    ngl = params.mesh.ngl
 
     for e=1:params.mesh.nelem
-        for k=1:params.mesh.ngl
-            for j=1:params.mesh.ngl
-                for i=1:params.mesh.ngl
+        for k=1:ngl
+            for j=1:ngl
+                for i=1:ngl
                     ip = connijk[e,i,j,k]
                     for m =1:params.neqs
                         params.q_t[m,i,j,k] = uaux[ip,m]
@@ -257,21 +269,21 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
         ##(159.84 k allocations: 22.544 MiB) current function total, killed 1/3 of allocations thanks to loop unroll
         for m=1:params.neqs
             #this loop unroll works well for both matmuls allocations now: (108.00 k allocations: 9.888 MiB)
-            #=for i=1:params.mesh.ngl
-            for j=1:params.mesh.ngl
-            for k=1:params.mesh.ngl
+            #=for i=1:ngl
+            for j=1:ngl
+            for k=1:ngl
             params.q_ti[i,j,k] = 0.0
-            for l=1:params.mesh.ngl
+            for l=1:ngl
             params.q_ti[i,j,k] += params.fx[i,l] * params.q_t[m,l,j,k]
             end
             end
             end
             end=#
             params.q_ti .= 0.0
-            for j=1:params.mesh.ngl
-                for k=1:params.mesh.ngl
-                    for i=1:params.mesh.ngl
-                        for l = 1:params.mesh.ngl
+            for j=1:ngl
+                for k=1:ngl
+                    for i=1:ngl
+                        for l = 1:ngl
                             params.q_ti[i,j,k] += params.fx[i,l] * params.q_t[m,l,j,k]
                         end
                     end
@@ -280,42 +292,42 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
             ## ETA Derivative
             ## this is very likely wrong, work out on paper
             #params.fqf[m,:,:] .= params.q_ti * params.fy_t
-            #=for i=1:params.mesh.ngl
-            for j=1:params.mesh.ngl
-            for k=1:params.mesh.ngl
+            #=for i=1:ngl
+            for j=1:ngl
+            for k=1:ngl
             params.q_tij[i,j,k] = 0.0
-            for l=1:params.mesh.ngl
+            for l=1:ngl
             params.q_tij[i,j,k] += params.q_ti[i,l,k] * params.fy_t[l,j]
             end
             end
             end
             end=#
             params.q_tij .= 0.0
-            for k=1:params.mesh.ngl
-                for j=1:params.mesh.ngl
-                    for i=1:params.mesh.ngl
-                        for l=1:params.mesh.ngl
+            for k=1:ngl
+                for j=1:ngl
+                    for i=1:ngl
+                        for l=1:ngl
                             params.q_tij[i,j,k] += params.q_ti[i,l,k] * params.fy_t[l,j]
                         end
                     end
                 end
             end
             #params.q_tij .= params.q_ti
-            #=for i=1:params.mesh.ngl
-            for j=1:params.mesh.ngl
-            for k =1:params.mesh.ngl
+            #=for i=1:ngl
+            for j=1:ngl
+            for k =1:ngl
             params.fqf[m,i,j,k] = 0.0
-            for l=1:params.mesh.ngl
+            for l=1:ngl
             params.fqf[m,i,j,k] += params.q_tij[i,j,l] * params.fz_t[l,k]
             end
             end
             end
             end=#
             params.fqf[m,:,:,:] .= 0.0
-            for k =1:params.mesh.ngl
-                for i=1:params.mesh.ngl
-                    for j=1:params.mesh.ngl
-                        for l=1:params.mesh.ngl
+            for k =1:ngl
+                for i=1:ngl
+                    for j=1:ngl
+                        for l=1:ngl
                             params.fqf[m,i,j,k] += params.q_tij[i,j,l] * params.fz_t[l,k]
                         end
                     end
@@ -324,9 +336,9 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
         end
 
         ## Do Numerical Integration
-        for j=1:params.mesh.ngl
-            for i=1:params.mesh.ngl
-                for k=1:params.mesh.ngl
+        for j=1:ngl
+            for i=1:ngl
+                for k=1:ngl
                     for m=1:params.neqs
                         params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[e,i,j,k]
                     end
@@ -335,13 +347,32 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
         end
     end
 
-    DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
+    if ladapt == true
+        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
+                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ngl-1, params.neqs, params.interp)
+    end
+    DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, ngl, params.neqs, SD, params.AD)
 
-    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+    DSS_global_RHS!(@view(params.B[:,:]), params.g_dss_cache, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+        if ladapt == true
+            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT, selectdim(params.b, ndims(params.b), ieq), 
+                                connijk, params.mesh.poin_in_edge, 
+                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
+                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+                                params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                params.mesh.ngl-1, params.interp)
+        end
     end
-    uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
+    uaux[:,1:params.neqs] .= @view params.B[:,1:params.neqs]
 
     #=if (params.laguerre)
 
@@ -353,7 +384,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
     uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
-function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1))
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1), ladapt = false)
 
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -364,7 +395,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     ## store Dimension of MxM object
     
     ## Loop through the elements
-    uaux[:,2:4] .= uaux[:,2:4] .- params.qp.qe[:,2:4]
+    @views uaux[:,2:4] .= uaux[:,2:4] .- params.qp.qe[:,2:4]
 
     for e=1:params.mesh.nelem
         for k=1:params.mesh.ngl
@@ -434,14 +465,33 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
         end
     end
 
+    if ladapt == true
+        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
+                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ngl-1, params.neqs, params.interp)
+    end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
-
+    DSS_global_RHS!(@view(params.B[:,:]), params.g_dss_cache, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+        if ladapt == true
+            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT, selectdim(params.b, ndims(params.b), ieq), 
+                                connijk, params.mesh.poin_in_edge, 
+                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
+                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+                                params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                params.mesh.ngl-1, params.interp)
+        end
     end
 
-    uaux[:,params.neqs] .= params.B[:,params.neqs]
-    uaux[:,2:4] .= uaux[:,2:4] .+ params.qp.qe[:,2:4]
+    uaux[:,1:params.neqs] .= @view params.B[:,1:params.neqs]
+    @views uaux[:,2:4] .= uaux[:,2:4] .+ params.qp.qe[:,2:4]
     #=if (params.laguerre)
 
     @time uaux .= params.B
@@ -534,8 +584,12 @@ end
 end
 
 
-function init_filter(nop,xgl,mu_x,mesh,inputs)
-
+function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
+    
+    if rank == 0
+        @info "Legendre filter"
+    end
+    
     f = zeros(TFloat,nop+1,nop+1)
     weight = ones(Float64,nop+1)
     exp_alpha = 36
@@ -548,7 +602,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
     leg = zeros(Float128,nop+1,nop+1)
     ## Legendre Polynomial matrix
     if (nop+1 == mesh.ngl)
-        @info "Legendre filter"
+        
         for i = 1:nop+1
             ξ = xgl[i]
             for j = 1:nop+1
@@ -572,7 +626,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
             end
         end
     elseif (nop+1 == mesh.ngr)
-        @info "Laguerre filter"
+        
         Laguerre = St_Laguerre(Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)))
         for i=1:nop+1
             ξ = xgl[i]
@@ -611,13 +665,18 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
     ## Compute Boyd-Vandeven (ERF-LOG) Transfer function
     filter_type = inputs[:filter_type]
     if (filter_type == "erf")   
-        @info "erf filtering on"
+        if rank == 0
+            @info "erf filtering on"
+        end
+        
         for k=1:nop+1
             # Boyd filter
             weight[k] = vandeven_modal(k,nop+1,erf_order)
         end
     elseif (filter_type == "quad")
-        @info "quadratic filtering on"
+        if rank == 0
+            @info "quadratic filtering on"
+        end
         mode_filter = floor(quad_order)   
         k0 = Int64(nop+1 - mode_filter)
         xmode2 = mode_filter*mode_filter
@@ -627,7 +686,9 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
             weight[k] = 1.0 - amp
         end
     elseif (filter_type == "exp")
-        @info "exponential filtering on"
+        if rank == 0
+            @info "exponential filtering on"
+        end
         for k=1:nop+1
             weight[k] = exp(-exp_alpha*(Float64(k-1)/nop)^exp_order)
         end

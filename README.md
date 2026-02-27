@@ -1,14 +1,3 @@
-# ANNOUNCEMENT:
-
-Dear all, 
-
-as we have noticed an increased interest in Jexpresso (this is amazing, thank you for this!), we added a script to [automate the installation](INSTALLATION.md) of Jexpresso.
-
-Moreover, we have added **ERA5** reading capabilities and the branch for that will be merged soon into master, as well as an improved handling of boundary conditions from the user's perspective.
-
-Thank you your interest in the Jexpresso!
-
-
 # <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
@@ -26,44 +15,13 @@ Thank you your interest in the Jexpresso!
 # JEXPRESSO
 A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
 
-Suggested Julia version: 1.11.2 or higher.
-
-# Installation:
-Use the installer as described in [INSTALLATION.md](INSTALLATION.md)
-
-The installer will install all the necessary packages with the correct versions.
-
-Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
-
-```
-MPI 0.20.22
-MPIPreferences 0.1.11
-PackageCompiler 2.2.1
-Thermodynamics 0.12.7
-PrettyTables 2.4.0
-Crayons 4.1.1
-UnicodePlots 3.7.2
-Gridap v0.18.12
-GridapDistributed v0.4.7
-GridapGmsh v0.7.2
-GridapP4est v0.3.11
-```
+Suggested Julia version: 1.11.2
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
 Please cite Jexpresso using:
 
 ```
-@inproceedings{marrasJexpresso,
-  author    = {S. Marras and Y. Tissaoui and H. Wang and S. Stechmann}
-  title     = {JEXPRESSO V0. 1: A JULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON CPUs AND GPUs.},
-  booktitle = {Proceedings of the 36th Parallel CFD international conference 2025},
-  year      = {2025},
-  address   = {Merida, Yucatan, Mexico},
-  month     = {November},
-  organization = {UNAM},
-}
-
 @article{tissaoui2024,
   author = {Y. Tissaoui and J. F. Kelly and S. Marras}
   title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
@@ -73,6 +31,10 @@ Please cite Jexpresso using:
   journal = {App. Math. Comput.},
 }
 ```
+
+<img src="assets/jexpresso-examples.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
 
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
@@ -141,7 +103,7 @@ $${\bf q}=\begin{bmatrix}
 \rho c1\\
 ...\\
 \rho cN
-\end{bmatrix}\quad {\bf F1}=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
 \rho u\\
 \rho u^2 + p\\
 \rho u v\\
@@ -149,7 +111,7 @@ $${\bf q}=\begin{bmatrix}
 \rho u c1\\
 ...\\
 \rho u cN
-\end{bmatrix}\quad {\bf F2}=\begin{bmatrix}
+\end{bmatrix}\quad {\bf G}=\begin{bmatrix}
 \rho v\\
 \rho v u\\
 \rho v^2 + p\\
@@ -195,7 +157,7 @@ $${\bf q}=\begin{bmatrix}
 \rho v^2 + p\\
 \rho v w\\
 \rho v \theta\\
-\end{bmatrix}\quad {\bf F3}=\begin{bmatrix}
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
 \rho w\\
 \rho w u\\
 \rho w v\\
@@ -264,19 +226,11 @@ include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
-## Shallow cumuli:
 Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
 
 <img src="assets/barbados.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
-
-## Turbulent ABL
-Example of coarse simulation of the turbulent atmospheric boundary layer. Domain size: 10240m X 10240m X 3000m using 64x64x24 spectral elements of order 4.
-Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smagorinsky.
-<img src="assets/ABLfullDomain.gif"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
 
 Examples available in this branch:
 
@@ -379,10 +333,10 @@ include("./src/Jexpresso.jl")
 
 Test 4: 2D Helmholtz equation
 
-The problem is defined in [`problems/equations/Helmholtz/case1_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1_laguerre) and by default output will be written to `output/Helmholtz/case1_laguerre`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/Helmholtz/case1`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1) and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
-push!(empty!(ARGS), "Helmholtz", "case1_laguerre");
+push!(empty!(ARGS), "Helmholtz", "case1");
 include("./src/Jexpresso.jl")
 ```
 
@@ -425,3 +379,113 @@ include("./src/Jexpresso.jl")
 <img src="assets/bomex.png"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
+
+## Setup and Run with MPI
+
+JEXPRESSO supports parallel execution using either OpenMPI or MPICH. Follow these steps to configure and run with your preferred MPI implementation.
+
+### 1. Install MPI Implementation
+
+Choose either OpenMPI or MPICH:
+
+#### OpenMPI Installation
+```bash
+# Ubuntu/Debian
+sudo apt install libopenmpi-dev openmpi-bin
+
+# macOS (Homebrew)
+brew install open-mpi
+
+# Verify installation
+mpiexec --version
+```
+
+#### MPICH Installation
+```bash
+# Ubuntu/Debian
+sudo apt install mpich libmpich-dev
+
+# macOS (Homebrew) 
+brew install mpich
+
+# Verify installation
+mpiexec --version
+```
+
+### 2. Configure MPI Preferences
+
+#### Automatic Configuration (Default Path)
+Use this command when MPI (OpenMPI/MPICH) is installed in standard system paths (`/usr/bin`, `/usr/local/bin`, etc.):
+```bash
+julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary()'
+```
+
+#### Manual Configuration (For Multiple MPI Installations or MPI not in Default Path)
+For MPI installations in non-standard locations (e.g., /opt/openmpi, or custom paths):
+```bash
+julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary(;extra_paths = ["/where/your/mpi/lib"])'
+```
+If MPI is installed via homebrew on macOS, the MPI lib path is:
+```bash
+/opt/homebrew/lib
+```
+
+### 3. Running with MPI
+
+#### Basic Execution
+```bash
+mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
+```
+
+#### Implementation-Specific Examples
+```bash
+mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
+```
+#### Script
+You can simplify the run steps with a `runjexpresso` script like this:
+```bash
+#!/bin/bash
+
+MPIRUN=/YOUR/PATH/TO/mpirun
+JULIA=/YOUR/PATH/TO/julia
+
+$MPIRUN -np $1 $JULIA --project=. -e 'push!(empty!(ARGS), "'"$2"'", "'"$3"'"); include("./src/Jexpresso.jl")' "$@"
+```
+and run it like this:
+```bash
+./runjexpresso 4 CompEuler theta
+```
+
+### Troubleshooting
+
+- **Library conflicts:** Clear existing preferences:
+  ```bash
+  rm -f LocalPreferences.toml
+  ```
+- **Path issues:** Verify paths with:
+  ```bash
+  which mpiexec
+  which mpirun
+  ```
+  You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary:
+  ```
+  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
+  ```
+
+
+- **Version mismatches:** Ensure consistent versions:
+  ```bash
+  mpicc --version
+  mpif90 --version
+  ```
+
+
+
+<!-- <img src="assets/mpi_performance_comparison.png" width="700" alt="MPI Performance Comparison"> -->
+
+## Plotting
+Files can be written to VTK (recommended) or png (png is now only used for 1D results). For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
+modify ./src/io/plotting/jplots.jl accordinly.
+
+## Contacts
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)

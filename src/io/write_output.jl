@@ -37,10 +37,8 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol, uaux, t, iout,
-                      mesh::St_mesh, mp, F_data,
-                      connijk_original, poin_in_bdy_face_original,
-                      x_original, y_original, z_original,
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
                       outformat::PNG;
@@ -123,10 +121,8 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
 end
 
 
-function write_output(SD, sol, uaux, t, iout,
-                      mesh::St_mesh, mp, F_data,
-                      connijk_original, poin_in_bdy_face_original,
-                      x_original, y_original, z_original,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
                       outformat::VTK;
@@ -504,10 +500,8 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD, sol, uaux, t, iout,
-                      mesh::St_mesh, mp, F_data,
-                      connijk_original, poin_in_bdy_face_original,
-                      x_original, y_original, z_original,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
                       outformat::HDF5;
