@@ -609,17 +609,15 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     q  = zeros(Float64, npoin, nvar+1)
     qe = zeros(Float64, npoin, nvar+1)
     
-
     #read one HDF5 file time
-    
     fout_name = string(INPUT_DIR, "/t.h5")
     time = rank == 0 ? convert(Float64, h5read(fout_name, "time")) : 0.0
     time = MPI.bcast(time, 0, comm)
     inputs[:tinit] = time
     #Write one HDF5 file per variable
     for ivar = 1:nvar
-        fout_name = string(INPUT_DIR, "/var_", ivar,"_",rank, ".h5")
-        idx = (ivar - 1)*npoin
+        fout_name   = string(INPUT_DIR, "/var_", ivar,"_",rank, ".h5")
+        idx         = (ivar - 1)*npoin
         q[:, ivar]  = convert(Array{Float64, 1}, h5read(fout_name, "q"))
         qe[:, ivar] = convert(Array{Float64, 1}, h5read(fout_name, "qe"))
     end
@@ -795,21 +793,17 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     nvar    = size(varnames, 1)
     noutvar = max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
+    nelem   = mesh.nelem
+    ngl     = mesh.ngl
     
-    xx = zeros(size(mesh.x,1))
-    yy = zeros(size(mesh.x,1))
-    zz = zeros(size(mesh.x,1))
-    xx .= mesh.x 
-    yy .= mesh.y
-    zz .= mesh.z
     nsubelem = mesh.nelem*(mesh.ngl-1)^3
     subelem  = Array{Int64}(undef, nsubelem, 8)
     
     isel = 1
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
-                for k = 1:mesh.ngl-1
+    for iel = 1:nelem
+        for i = 1:ngl-1
+            for j = 1:ngl-1
+                for k = 1:ngl-1
                     ip1 = mesh.connijk[iel,i,j,k]
                     ip2 = mesh.connijk[iel,i+1,j,k]
                     ip3 = mesh.connijk[iel,i+1,j+1,k]
@@ -904,9 +898,9 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
         volume_type = zeros(Int32, nsubelem)
         fill!(volume_type, 2)
         vol_types[:] = volume_type
-        nx[:]        = xx
-        ny[:]        = yy
-        nz[:]        = zz
+        nx[:]        = @view(mesh.coords[:,1])
+        ny[:]        = @view(mesh.coords[:,2])
+        nz[:]        = @view(mesh.coords[:,3])
         v2n[:]       = subelem
             
     end
