@@ -50,6 +50,44 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lRT_from_data))
        inputs[:lRT_from_data] = false
     end
+    if (inputs[:lRT_from_data])
+       if (!(haskey(inputs, :RT_shortwave)))
+            inputs[:RT_longwave] = true
+            inputs[:RT_shortwave] = false
+       elseif inputs[:RT_shortwave]
+            inputs[:RT_longwave] = false
+       else
+            inputs[:RT_longwave] = true
+       end
+
+    end
+
+    if (!(haskey(inputs, :RT_shortwave)))
+        inputs[:RT_shortwave] = false
+    end
+    
+    if (!(haskey(inputs, :RT_longwave)))
+        inputs[:RT_longwave] = false
+    end
+
+    if(!haskey(inputs, :RT_S0_flux))
+        inputs[:RT_S0_flux] = 1361.0
+    end
+    if(!haskey(inputs, :RT_μ0))
+        inputs[:RT_μ0] = 0.6
+    end
+    if(!haskey(inputs, :RT_ϕ0))
+        inputs[:RT_ϕ0] = 0.0
+    end
+    if(!haskey(inputs, :RT_δ_beam))
+        inputs[:RT_δ_beam] = 0.05
+    end
+    if(!haskey(inputs, :RT_ϵ_surface))
+        inputs[:RT_ϵ_surface] = 0.97
+    end
+    if(!haskey(inputs, :RT_T_space))
+        inputs[:RT_T_space] = 0.0
+    end
 
     if(!haskey(inputs, :RT_data_file))
        inputs[:RT_data_file] = ""

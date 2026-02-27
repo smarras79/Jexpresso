@@ -48,12 +48,22 @@ function driver(nparts,
         else
             κ = zeros(sem.mesh.npoin)
             σ = zeros(sem.mesh.npoin)
+            data_interp = []
             if (inputs[:lRT_from_data])
                 @info "reading atmospheric data to build extinction and scattering coefficients"
                 filename = inputs[:RT_data_file]
                 data = read_atmospheric_data(filename)
                 data_interp = interpolate_atmosphere_to_mesh(data,sem.mesh)
-                κ, σ = atmos_to_rad(data_interp,sem.mesh.npoin)
+                if (inputs[:RT_shortwave])
+                    κ, σ = atmos_to_rad_shortwave(data_interp,sem.mesh.npoin)
+                else
+                    κ, σ = atmos_to_rad_longwave(data_interp,sem.mesh.npoin)
+                end
+                #=pts = [(sem.mesh.x[10], sem.mesh.y[10]),
+                        (sem.mesh.x[70], sem.mesh.y[70]),
+                        (sem.mesh.x[250], sem.mesh.y[250])]
+                @info pts
+                result = verify_optical_depth(sem.mesh, κ, σ, sem.ω, sem.metrics.dzdζ, sem.mesh.ngl; sample_xy=pts)=#
             end
 
             build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
@@ -61,7 +71,7 @@ function driver(nparts,
                                      sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
                                      sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
                                      sem.metrics.nx, sem.metrics.ny, sem.metrics.nz, 
-                                     sem.mesh.elem_to_face, sem.mesh.extra_mesh, κ, σ, sem.QT, NSD_3D(), sem.AD)
+                                     sem.mesh.elem_to_face, sem.mesh.extra_mesh, κ, σ, data_interp, sem.QT, NSD_3D(), sem.AD)
         end
     else
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)

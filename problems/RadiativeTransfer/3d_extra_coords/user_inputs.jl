@@ -46,6 +46,7 @@ function user_inputs()
         :lcubed_sphere_angular_mesh => false,
         :extra_dimensions_xmax => π,
         :extra_dimensions_ymax => 2*π,
+        :extra_dimensions_xmin => 0,
         #:extra_dimensions_nelemy => 4,
         #---------------------------------------------------------------------------
         # Filter parameters

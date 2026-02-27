@@ -304,7 +304,11 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
 end
 
 function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, basis, backend, inputs, lper)
-  
+    if (inputs[:lRT_problem])
+        θmin, θmax = pole_shifted_theta_range(nelemθ, nop+1; pole_fraction=0.01)
+    end
+    @info "adjusted poles", θmin, θmax
+
    if (inputs[:lcubed_sphere_angular_mesh])
         ####### PERIODICITY STILL MISSING FOR CUBED SPHERE MESH
         #build quadrant 1
@@ -1102,8 +1106,12 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                     dydξ_val = metrics.dydξ[iel, k, l]
                     dxdη_val = metrics.dxdη[iel, k, l]
                     ip = extra_mesh.extra_connijk[iel, k, l]
+                    θ = extra_mesh.extra_coords[1,ip]
                     # Compute Je once and reuse its value
-                    metrics.Je[iel, k, l] = dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    metrics.Je[iel, k, l] = (dxdξ_val * dydη_val - dydξ_val * dxdη_val)
+                    if (inputs[:lRT_problem])
+                        metrics.Je[iel, k, l] = metrics.Je[iel, k, l] * sin(θ)
+                    end
                     # Use the precomputed Je value for the other calculations
                     Jinv = 1.0/metrics.Je[iel, k, l]
 
@@ -3022,10 +3030,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     mesh.extra_mesh[iel] = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
                                                                           inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin], 
                                                                           inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
+                    
                 else
                     println("Extra meshes of dimensions 1 or 2 only are currently supported")
                 end
             end
+
+            
 
         else
             if (inputs[:extra_dimensions] == 1)
@@ -3037,6 +3048,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 mesh.extra_mesh = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
                                                                           inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin],
                                                                           inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
+
+                verify_pole_exclusion(mesh.extra_mesh)
+                θ_min = minimum(mesh.extra_mesh.extra_coords[1,:])
+                θ_max = maximum(mesh.extra_mesh.extra_coords[1,:])
+                check_solid_angle_with_pole_exclusion(mesh.extra_mesh, θ_min, θ_max)
             end
         end
 

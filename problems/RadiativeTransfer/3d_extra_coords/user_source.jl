@@ -105,23 +105,65 @@ function user_scattering_functions(θ,θ1,ϕ,ϕ1,HG)
 
 end
 
-function user_rhs(x,y,z,θ,ϕ)
-    κip = 10*exp(-((x-3/2)/3)^2)*exp(-y/2)
-    σip = 0.1*κip
-    gip = exp(-((1. / 3) * (x - (3 / 3.)))^2)#exp(-((x-3/3)/3)^2)
-    dgip = -(2. / 3^2) * (x - (3 / 3.)) * gip
-    hip = exp(-4. * (2 - y) / 2)#exp(-4*(2-y)/2)
-    dhip = (4. / 2) * hip
-    fip = 1.0
+function user_rhs(x, y, z, θ, ϕ)
+
+    # ── Manufactured solution u(x,y,z,θ,ϕ) = g(x) h(y) f(z) s(θ) b(ϕ) ──────
+    κip  = 10*exp(-((x - 3/2)/3)^2) * exp(-y/2)
+    σip  = 0.1*κip
+
+    gip  = exp(-((1/3)*(x - 1.0))^2)
+    dgip = -(2/9)*(x - 1.0)*gip
+
+    hip  = exp(-4*(2 - y)/2)
+    dhip = (4/2)*hip
+
+    fip  = 1.0
     dfip = 0.0
-    sip = exp(-((6 / (2. * π)) * (θ - (3. * π / 5.)))^2)#exp(-((96/(2*π))*(θ-7*π/5))^2)
-    bip = exp(-((6 / (2. * π)) * (ϕ - (2. * π / 3.)))^2)
-    uip = gip*hip*fip*sip*bip
-    propip = (sin(θ)*cos(ϕ)*dgip*hip*fip+sin(θ)*sin(ϕ)*gip*dhip*fip+cos(θ)*gip*hip*dfip)*sip*bip
-    scatterθ, error = quadgk(θ1 -> (1/(3*π))*(1 + (cos(θ - θ1))^2)*sip, 0, π, rtol=1e-13, atol = 1e-13) 
-    scatter, error = quadgk(ϕ1 -> scatterθ*(1 + (cos(ϕ - ϕ1))^2)*bip, 0, 2*π, rtol=1e-13, atol = 1e-13)  
-    #@info scatter
-    return (-fip*gip*hip*scatter*σip + κip*uip +  propip)
+
+    sip  = exp(-((6/(2π))*(θ - 3π/5))^2)
+    bip  = exp(-((6/(2π))*(ϕ - 2π/3))^2)
+
+    uip  = gip * hip * fip * sip * bip
+
+    # ── Streaming term (Ω·∇u): unchanged from before ─────────────────────────
+    propip = (sin(θ)*cos(ϕ)*dgip*hip*fip +
+              sin(θ)*sin(ϕ)*gip*dhip*fip +
+              cos(θ)*gip*hip*dfip) * sip * bip
+
+    # ── intΦ(θ,ϕ) = ∫ Φ(Ω,Ω') dΩ' with dΩ' = sin(θ') dθ' dϕ' ──────────────
+    #
+    # This must exactly mirror what sparse_lhs_assembly computes for intΦ,
+    # now that Je_ang includes sin(θ'). The discrete intΦ is:
+    #
+    #   intΦ[ip] = ∑_{e',mθ,nθ} ωθ[mθ] ωϕ[nθ] Je_ang[e',mθ,nθ] Φ(Ω,Ω')
+    #
+    # where Je_ang now = (Δθ/2)(Δϕ/2) sin(θ'), so this is exactly
+    #   ∫_{θ_min}^{θ_max} ∫_0^{ϕ_max} Φ(Ω,Ω') sin(θ') dθ' dϕ'
+    #
+    # For the analytical RHS we evaluate the same integral via quadgk.
+    # The phase function used in the solver is user_scattering_functions;
+    # reproduce the same form here.  With the Henyey-Greenstein g=0 default
+    # used in the manufactured solution test:
+    #   Φ(Ω,Ω') = (1/3π)(1 + cos²(θ-θ'))(1 + cos²(ϕ-ϕ'))
+    # which is separable, so the double integral splits into two 1D integrals.
+
+    intΦ_θ, _ = quadgk(
+        θ1 -> (1/(3π)) * (1 + cos(θ - θ1)^2) * sin(θ1),
+        0.01, π-0.01, rtol=1e-13, atol=1e-13)
+
+    intΦ_ϕ, _ = quadgk(
+        ϕ1 -> (1 + cos(ϕ - ϕ1)^2),
+        0, 2π, rtol=1e-13, atol=1e-13)
+
+    intΦ = intΦ_θ * intΦ_ϕ
+
+    # ── Strong-form RTE residual ──────────────────────────────────────────────
+    # The discrete operator solves:
+    #   (Ω·∇I) + (κ - σ intΦ) I = Q
+    # so Q must equal this evaluated at u:
+    #   Q = propip + κ uip - σ intΦ × uip
+    #     = propip + (κ - σ intΦ) × uip
+    return propip + (κip - σip * intΦ) * uip
 end
 
 function user_rhs_sphere(x,y,z,θ,ϕ)
@@ -138,7 +180,7 @@ function user_rhs_sphere(x,y,z,θ,ϕ)
     bip = 1.0#sin(ϕ)
     uip = gip*hip*fip*sip*bip
     propip = (sin(θ)*cos(ϕ)*dgip*hip*fip+sin(θ)*sin(ϕ)*gip*dhip*fip+cos(θ)*gip*hip*dfip)*sip*bip
-    int1, err = quadgk(θ1 -> abs(sin(θ1)cos(θ1))*sip, 0, π, rtol=1e-13, atol = 1e-13)
+    int1, err = quadgk(θ1 -> abs(sin(θ1)cos(θ1))*sip, 0.01047198, 3.13112068, rtol=1e-13, atol = 1e-13)
     int2, err = quadgk(ϕ1 -> int1*bip, 0, 2*π, rtol=1e-13, atol = 1e-13)
     scatter, err = quadgk(θ1 -> abs(-sin(θ1))*int2, 0, π, rtol=1e-13, atol = 1e-13)
     #@info scatter

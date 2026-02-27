@@ -140,8 +140,25 @@ Writes a VTK file of the angle-integrated solution and reference field to
 """
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
         nx, ny, nz, elem_to_face,
-        extra_mesh, κ, σ, QT::Inexact, SD::NSD_3D, AD::ContGal)
+        extra_mesh, κ, σ, atmos_data, QT::Inexact, SD::NSD_3D, AD::ContGal)
 
+    bdy = make_boundary_predicates(mesh)
+    sw = []
+    lw = []
+    
+    #=sw_base = SWParams(1361.0, 0.6, 0.0, 0.0)
+    for δ in [0.1, 0.2, 0.3, 0.4, 0.5]
+        sw_test = SWParams(sw_base.S₀_flux, sw_base.μ₀, sw_base.φ₀, δ)
+        result  = check_beam_flux(extra_mesh, sw_test, extra_mesh.extra_nop[1])
+        
+    end=#
+    
+    if(inputs[:lRT_from_data])
+
+        sw  = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.25)#inputs[:RT_δ_beam])
+        lw  = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
+    end
+    
     nc_mat = zeros(Float64,1)
     P = zeros(Float64,1)
     rest = zeros(Float64,1)
@@ -558,10 +575,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     end
 
     boundary_dict = Dict{Int, Float64}()
-    bdy_normals   = Dict{Int, NTuple{3,Float64}}()
-
+    bdy_normals   = Dict{Int, Vector{NTuple{3,Float64}}}()
+    bdy_normals_for_ghosts = Dict{Int, NTuple{3,Float64}}()
     # ── RHS and boundary condition assembly ──────────────────────────────────
     @rankinfo rank "Assembling RHS and boundary conditions..."
+   
     for iel = 1:nelem
         for i = 1:ngl, j = 1:ngl, k = 1:ngl
             ip  = mesh.connijk[iel, i, j, k]
@@ -578,9 +596,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 matchz = (z == mesh.zmax || z == mesh.zmin)
                 nmatches = matchx + matchy + matchz
 
-                nx_acc = nx[iface, face_i, face_j]
-                ny_acc = ny[iface, face_i, face_j]
-                nz_acc = nz[iface, face_i, face_j]
+                # Collect all distinct face normals for this node
+                # (one per face the node belongs to)
+                collected = NTuple{3,Float64}[]
+                push!(collected, (nx[iface, face_i, face_j],
+                                  ny[iface, face_i, face_j],
+                                  nz[iface, face_i, face_j]))
 
                 if nmatches >= 2
                     added  = 0
@@ -588,29 +609,27 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     for (iface2, fi2, fj2) in get(node_to_bdy_faces, ip, [])
                         iface2 == iface && continue
                         if nmatches == 2
-                            if abs(nx_acc - nx[iface2,fi2,fj2]) > 1e-12 ||
-                               abs(ny_acc - ny[iface2,fi2,fj2]) > 1e-12 ||
-                               abs(nz_acc - nz[iface2,fi2,fj2]) > 1e-12
-                                nx_acc += nx[iface2, fi2, fj2]
-                                ny_acc += ny[iface2, fi2, fj2]
-                                nz_acc += nz[iface2, fi2, fj2]
-                                added  += 1
+                            if abs(collected[1][1] - nx[iface2,fi2,fj2]) > 1e-12 ||
+                               abs(collected[1][2] - ny[iface2,fi2,fj2]) > 1e-12 ||
+                               abs(collected[1][3] - nz[iface2,fi2,fj2]) > 1e-12
+                                push!(collected, (nx[iface2,fi2,fj2],
+                                                  ny[iface2,fi2,fj2],
+                                                  nz[iface2,fi2,fj2]))
+                                added += 1
                             end
                         else
-                            nx_acc += nx[iface2, fi2, fj2]
-                            ny_acc += ny[iface2, fi2, fj2]
-                            nz_acc += nz[iface2, fi2, fj2]
-                            added  += 1
+                            push!(collected, (nx[iface2,fi2,fj2],
+                                              ny[iface2,fi2,fj2],
+                                              nz[iface2,fi2,fj2]))
+                            added += 1
                         end
                         added >= needed && break
                     end
                 end
-                bdy_normals[ip] = (nx_acc, ny_acc, nz_acc)
+                bdy_normals[ip] = collected
             end
 
-            nx_new = is_boundary ? bdy_normals[ip][1] : 0.0
-            ny_new = is_boundary ? bdy_normals[ip][2] : 0.0
-            nz_new = is_boundary ? bdy_normals[ip][3] : 0.0
+            face_normals = is_boundary ? bdy_normals[ip] : NTuple{3,Float64}[]
 
             if inputs[:adaptive_extra_meshes]
                 for e_ext = 1:extra_meshes_extra_nelems[iel]
@@ -626,14 +645,36 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         bip = exp(-((6/(2π)) * (ϕ - 2π/3))^2)
                         ref[ip_g] = sf * sip * bip
 
-                        if is_boundary
-                            prodx = nx_new * sin(θ) * cos(ϕ)
-                            prody = ny_new * sin(θ) * sin(ϕ)
-                            prodz = nz_new * cos(θ)
+                        Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
 
-                            if prodx + prody + prodz < -1e-13
+                        if is_boundary
+                            # Find the most-inflow face normal for this direction:
+                            # the one giving the most negative Ω·n.
+                            # If the minimum dot product is < -1e-13 the direction
+                            # is inflow through at least one face → apply BC.
+                            best_dot = 0.0
+                            best_nx  = face_normals[1][1]
+                            best_ny  = face_normals[1][2]
+                            best_nz  = face_normals[1][3]
+                            for (fnx, fny, fnz) in face_normals
+                                d = fnx*Ωx + fny*Ωy + fnz*Ωz
+                                if d < best_dot
+                                    best_dot = d
+                                    best_nx  = fnx; best_ny = fny; best_nz = fnz
+                                end
+                            end
+                            bdy_normals_for_ghosts[ip] = (best_nx, best_ny, best_nz)
+
+                            if best_dot < -1e-13
                                 if ip_g <= n_free && !(ip_g in all_hanging_nodes)
-                                    val = user_rad_bc(x, y, z, θ, ϕ)
+                                    val = 0.0
+                                    if inputs[:RT_shortwave]
+                                        val = user_rad_bc_shortwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, bdy, sw)
+                                    elseif inputs[:RT_longwave]
+                                        val = user_rad_bc_longwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, ip, atmos_data, bdy, lw)
+                                    else
+                                        val = user_rad_bc(x, y, z, θ, ϕ)
+                                    end
                                     BDY[ip_g] = val
                                     if !haskey(boundary_dict, ip_g)
                                         boundary_dict[ip_g] = is_owned ? val : 0.0
@@ -641,12 +682,24 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                 end
                             else
                                 if is_owned
-                                    RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                    RHS[ip_g] = if inputs[:RT_shortwave]
+                                        user_rhs_shortwave(x, y, z, θ, ϕ)
+                                    elseif inputs[:RT_longwave]
+                                        user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                    else
+                                        user_rhs(x, y, z, θ, ϕ)
+                                    end
                                 end
                             end
                         else
                             if is_owned
-                                RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                RHS[ip_g] = if inputs[:RT_shortwave]
+                                    user_rhs_shortwave(x, y, z, θ, ϕ)
+                                elseif inputs[:RT_longwave]
+                                    user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                else
+                                    user_rhs(x, y, z, θ, ϕ)
+                                end
                             end
                         end
                     end
@@ -665,24 +718,54 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         bip = exp(-((6/(2π)) * (ϕ - 2π/3))^2)
                         ref[ip_g] = sf * sip * bip
 
+                        Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
+
                         if is_boundary
-                            prodx = nx_new * sin(θ) * cos(ϕ)
-                            prody = ny_new * sin(θ) * sin(ϕ)
-                            prodz = nz_new * cos(θ)
-                            if prodx + prody + prodz < -1e-13
-                                val = user_rad_bc(x, y, z, θ, ϕ)
+                            best_dot = 0.0
+                            best_nx  = face_normals[1][1]
+                            best_ny  = face_normals[1][2]
+                            best_nz  = face_normals[1][3]
+                            for (fnx, fny, fnz) in face_normals
+                                d = fnx*Ωx + fny*Ωy + fnz*Ωz
+                                if d < best_dot
+                                    best_dot = d
+                                    best_nx  = fnx; best_ny = fny; best_nz = fnz
+                                end
+                            end
+                            bdy_normals_for_ghosts[ip] = (best_nx, best_ny, best_nz)
+                            if best_dot < -1e-13
+                                val = 0.0
+                                if inputs[:RT_shortwave]
+                                    val = user_rad_bc_shortwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, bdy, sw)
+                                elseif inputs[:RT_longwave]
+                                    val = user_rad_bc_longwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, ip, atmos_data, bdy, lw)
+                                else
+                                    val = user_rad_bc(x, y, z, θ, ϕ)
+                                end
                                 BDY[ip_g] = val
                                 if !haskey(boundary_dict, ip_g)
                                     boundary_dict[ip_g] = is_owned ? val : 0.0
                                 end
                             else
                                 if is_owned
-                                    RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                    RHS[ip_g] = if inputs[:RT_shortwave]
+                                        user_rhs_shortwave(x, y, z, θ, ϕ)
+                                    elseif inputs[:RT_longwave]
+                                        user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                    else
+                                        user_rhs(x, y, z, θ, ϕ)
+                                    end
                                 end
                             end
                         else
                             if is_owned
-                                RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                RHS[ip_g] = if inputs[:RT_shortwave]
+                                    user_rhs_shortwave(x, y, z, θ, ϕ)
+                                elseif inputs[:RT_longwave]
+                                    user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                else
+                                    user_rhs(x, y, z, θ, ϕ)
+                                end
                             end
                         end
                     end
@@ -701,9 +784,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             ip_g = n_spa + i
 
             if ip in mesh.poin_in_bdy_face
-                nx_new = bdy_normals[ip][1]
-                ny_new = bdy_normals[ip][2]
-                nz_new = bdy_normals[ip][3]
+                nx_new = bdy_normals_for_ghosts[ip][1]
+                ny_new = bdy_normals_for_ghosts[ip][2]
+                nz_new = bdy_normals_for_ghosts[ip][3]
                 if nx_new*sin(θ)*cos(ϕ) + ny_new*sin(θ)*sin(ϕ) + nz_new*cos(θ) < -1e-13
                     val = user_rad_bc(x, y, z, θ, ϕ)
                     BDY[ip_g] = val
@@ -893,7 +976,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] *
                                 ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
-                                L2_err += (ref[ip_g])^2 *
+                                L2_err += (ref[ip_g] - solution[ip_g])^2 *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] *
                                 ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
@@ -1496,9 +1579,11 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
                     @inbounds for l = 1:nop_ang_new[e_ext1]+1, k = 1:nop_ang_new[e_ext1]+1
                         dxdξ_v = metrics.dxdξ[e_ext1,k,l]; dydη_v = metrics.dydη[e_ext1,k,l]
                         dydξ_v = metrics.dydξ[e_ext1,k,l]; dxdη_v = metrics.dxdη[e_ext1,k,l]
+                        ip  = connijk_ang_new[e_ext1,k,l]
+                        θ = coords_new[1,ip]
                         Je_v   = dxdξ_v*dydη_v - dydξ_v*dxdη_v
                         Jinv   = 1.0 / Je_v
-                        metrics.Je[e_ext1,k,l]   = Je_v
+                        metrics.Je[e_ext1,k,l]   = sin(θ) * Je_v
                         metrics.dξdx[e_ext1,k,l] =  dydη_v*Jinv
                         metrics.dξdy[e_ext1,k,l] = -dxdη_v*Jinv
                         metrics.dηdx[e_ext1,k,l] = -dydξ_v*Jinv

@@ -115,8 +115,8 @@ function user_rhs_sphere(x,y,z,θ,ϕ)
 end
 
 function user_rad_bc(x,y,z,θ,ϕ)
-    if ((abs(z-20000))<1e-5) #&& abs(x-2500)>1 && abs(x-47500)>1 && abs(y-2500)>1 && abs(y-47500)>1)
-        return exp(-((92/(2*π))*(θ-π))^2)
+    if ((abs(z-20000))<1e-5) #|| abs(x-2500)<1 || abs(x-47500)<1 || abs(y-2500)<1 || abs(y-47500)<1)
+        return exp(-((24/(2*π))*(θ-3*π/4))^2)* exp(-((48/(2*π))*(ϕ-π))^2)
     else
         return 0.0
     end

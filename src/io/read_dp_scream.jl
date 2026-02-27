@@ -28,9 +28,9 @@ function read_atmospheric_data(filename::String)
         t_lay = Array(ds["t_lay"])
         p_lay = Array(ds["p_lay"])
         vmr_h2o = Array(ds["vmr_h2o"])
+        vmr_o3 = Array(ds["vmr_o3"])
         lwp = Array(ds["lwp"])  # liquid water path (kg/m²)
         iwp = Array(ds["iwp"])  # ice water path (kg/m²)
-        
         # Calculate moist air density
         rho = calculate_moist_density(p_lay, t_lay, vmr_h2o)
         
@@ -48,6 +48,7 @@ function read_atmospheric_data(filename::String)
             t_lay = t_lay,
             p_lay = p_lay,
             vmr_h2o = vmr_h2o,
+            vmr_o3 = vmr_o3,
             q_liq = q_liq,
             q_ice = q_ice,
             rho = rho
@@ -204,6 +205,7 @@ function interpolate_atmosphere_to_mesh(data, mesh)
     q_liq_interp = zeros(Float64, npoin)
     q_ice_interp = zeros(Float64, npoin)
     rho_interp = zeros(Float64, npoin)
+    vmr_o3_interp = zeros(Float64, npoin)
     
     # Interpolate each point independently (no assumptions about ordering)
     for i in 1:npoin
@@ -219,6 +221,11 @@ function interpolate_atmosphere_to_mesh(data, mesh)
         
         vmr_h2o_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.vmr_h2o,
+            mesh.x[i], mesh.y[i], mesh.z[i]
+        )
+
+        vmr_o3_interp[i] = trilinear_interpolate(
+            data.x, data.y, data.z, data.vmr_o3,
             mesh.x[i], mesh.y[i], mesh.z[i]
         )
         
@@ -242,6 +249,7 @@ function interpolate_atmosphere_to_mesh(data, mesh)
         t_lay = t_lay_interp,
         p_lay = p_lay_interp,
         vmr_h2o = vmr_h2o_interp,
+        vmr_o3 = vmr_o3_interp,
         q_liq = q_liq_interp,
         q_ice = q_ice_interp,
         rho = rho_interp
