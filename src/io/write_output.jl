@@ -227,21 +227,25 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     nvar     = size(varnames, 1)
     noutvar  = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     new_size = size(mesh.x,1)
-    if (mesh.nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
-    else
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
-    end
-    isel = 1
-    npoin = mesh.npoin
-    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl)
-    conn .= mesh.connijk
+
+    npoin          = mesh.npoin
+    nelem          = mesh.nelem
+    nelem_semi_inf = mesh.nelem_semi_inf
+    ngl            = mesh.ngl
+    ngr            = mesh.ngr
     
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
+    if (nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1)]
+    else
+        subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(ngl-1)^2]
+    end
+    
+    isel = 1
+    for iel = 1:nelem
+        for i = 1:ngl-1
+            for j = 1:ngl-1
                 ip1 = mesh.connijk[iel,i,j]
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
@@ -257,10 +261,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
             end
         end
     end
-    
-    for iel = 1:mesh.nelem_semi_inf
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngr-1
+
+    for iel = 1:nelem_semi_inf
+        for i = 1:ngl-1
+            for j = 1:ngr-1
                 ip1 = mesh.connijk_lag[iel,i,j]
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
@@ -291,15 +295,14 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.x[1:mesh.npoin],
-                         mesh.y[1:mesh.npoin],
-                         mesh.y[1:mesh.npoin]*TFloat(0.0),
+                         mesh.coords[1:mesh.npoin,1],
+                         mesh.coords[1:mesh.npoin,2],
+                         mesh.coords[1:mesh.npoin,2]*TFloat(0.0),
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        # vtkf["gid", VTKCellData()] = mesh.ip2gip[:]
-
+        
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
@@ -313,8 +316,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
 end
 
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
-                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   connijk_original, poin_in_bdy_face_original,
+                   x_original, y_original, z_original,
+                   t, title::String, OUTPUT_DIR::String, inputs::Dict,
+                   varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
@@ -324,21 +329,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     noutvar = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
     
-    xx = zeros(size(mesh.x,1))
-    yy = zeros(size(mesh.x,1))
-    zz = zeros(size(mesh.x,1))
-    xx .= mesh.x 
-    yy .= mesh.y
-    zz .= mesh.z
-    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
-    conn .= mesh.connijk
-    x_spare = zeros(Bool,size(mesh.x,1),1)
-    y_spare = zeros(Bool,size(mesh.y,1),1)
-    z_spare = zeros(Bool,size(mesh.z,1),1)
-    connijk_spare = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
-    poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
-    poin_bdy .= mesh.poin_in_bdy_face
-   
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
     
@@ -388,9 +378,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.x[1:mesh.npoin],
-                         mesh.y[1:mesh.npoin],
-                         mesh.z[1:mesh.npoin],
+                         mesh.coords[1:mesh.npoin,1],
+                         mesh.coords[1:mesh.npoin,2],
+                         mesh.coords[1:mesh.npoin,3],
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
@@ -644,27 +634,28 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
-    
-    xx = zeros(size(mesh.x,1))
-    yy = zeros(size(mesh.x,1))
-    xx .= mesh.x 
-    yy .= mesh.y
-    nvar     = size(varnames, 1)
-    noutvar  = max(nvar, size(outvarnames,1))
-    if (mesh.nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
+
+    xx      = mesh.x
+    yy      = mesh.y
+    nvar    = size(varnames, 1)
+    noutvar = max(nvar, size(outvarnames,1))
+
+    ngr            = mesh.ngr
+    ngl            = mesh.ngl
+    npoin          = mesh.npoin
+    nelem          = mesh.nelem
+    nelem_semi_inf = mesh.nelem_semi_inf
+    if (nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
     else
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+        subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
     end
+
     nsubelem = size(subelem, 1)
     isel = 1
-    npoin = mesh.npoin
-    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl)
-    conn .= mesh.connijk
-    
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
+    for iel = 1:nelem
+        for i = 1:ngl-1
+            for j = 1:ngl-1
                 ip1 = mesh.connijk[iel,i,j]
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
@@ -680,9 +671,9 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
         end
     end
     
-    for iel = 1:mesh.nelem_semi_inf
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngr-1
+    for iel = 1:nelem_semi_inf
+        for i = 1:ngl-1
+            for j = 1:ngr-1
                 ip1 = mesh.connijk_lag[iel,i,j]
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
@@ -691,7 +682,6 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 subelem[isel, 2] = mesh.ip2gip[ip2]
                 subelem[isel, 3] = mesh.ip2gip[ip3]
                 subelem[isel, 4] = mesh.ip2gip[ip4]
-                
                 
                 isel = isel + 1
             end
@@ -704,10 +694,9 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
-
-
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
+    
+    comm   = MPI.COMM_WORLD
+    rank   = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
     
     local_list = findall(x->x == rank, mesh.gip2owner)
@@ -840,7 +829,6 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     subelem[isel, 7] = ip7
                     subelem[isel, 8] = ip8
                     
-                    
                     isel = isel + 1
                 end
             end
@@ -851,7 +839,6 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     # Fetch user-defined diagnostic vars or take them from the solution vars:
     #
     qout = zeros(Float64, npoin, noutvar)
-    @show noutvar
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 
