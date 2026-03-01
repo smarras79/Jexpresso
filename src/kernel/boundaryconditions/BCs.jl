@@ -456,7 +456,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
                                      xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
                                      connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                      neqs, dirichlet!, neumann, inputs)
-    
+
     for iedge = 1:nedges_bdy
 
         if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
@@ -699,7 +699,6 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5])
         #@info minimum(S_flux[:,2]), minimum(S_flux[:,5])
         for ieq = 1:neqs
-            # RHS[:, ieq] .+= S_flux[:,ieq] ./ M_inv[:]
             RHS[:, ieq] .+= S_flux[:,ieq]
         end
     end

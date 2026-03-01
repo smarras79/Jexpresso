@@ -157,10 +157,6 @@ function scatter_gather_projection!(plane, nglx, ngly, nglz)
     return Psg
 end
 
-
-using Test
-
-
 function build_interpolation(ra, rb, wa)
     Nra = length(ra)
     Nrb = length(rb)

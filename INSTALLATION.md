@@ -2,13 +2,26 @@
 
 This guide provides detailed instructions for installing Jexpresso and its dependencies with the correct package versions.
 
+## Installation Status
+
+**Note**: Jexpresso is currently in the process of being registered with the Julia General Registry. Once registration is complete, you will be able to install it directly with:
+
+```julia
+using Pkg
+Pkg.add("Jexpresso")
+```
+
+**Until registration is complete**, please use the manual installation method described below.
+
+For information about the registration process, see [REGISTRATION.md](REGISTRATION.md).
+
 ## Prerequisites
 
 - **Julia 1.11.2 or higher** (required)
-- **Git** (for cloning the repository)
+- **Git** (for cloning the repository - required until package is registered)
 - **MPI** (for parallel computing support)
 
-## Quick Start
+## Quick Start (Current Method - Manual Installation)
 
 ### 1. Clone the Repository
 
@@ -335,6 +348,34 @@ modify ./src/io/plotting/jplots.jl accordinly.
 ## License
 
 Jexpresso is open-source software. Please see the LICENSE file for details.
+
+## Future Installation Method (After Registry Approval)
+
+Once Jexpresso is registered in the Julia General Registry, installation will be much simpler:
+
+### Quick Install (Future)
+
+```julia
+using Pkg
+Pkg.add("Jexpresso")
+```
+
+### Development Install (Future)
+
+If you want to contribute to development:
+
+```julia
+using Pkg
+Pkg.develop("Jexpresso")
+```
+
+Or clone and develop:
+
+```bash
+git clone https://github.com/smarras79/Jexpresso.git
+cd Jexpresso
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
 
 ## Citation
 

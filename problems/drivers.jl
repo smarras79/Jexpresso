@@ -12,7 +12,7 @@ function driver(nparts,
     if inputs[:lwarmup] == true
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
-	end
+	    end
         input_mesh = inputs[:gmsh_filename]
         inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
         sem_dummy = sem_setup(inputs, nparts, distribute)
@@ -42,80 +42,103 @@ function driver(nparts,
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
-    
-    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-    
-    #check_memory(" After initialize.")
-    # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
-    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
-    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
+    if (inputs[:lRT_problem])
+        if (sem.mesh.SD == NSD_2D())
+            build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je, 
+                                     sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy, 
+                                     sem.metrics.nx, sem.metrics.ny, sem.mesh.elem_to_edge, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
+        else
+            κ = zeros(sem.mesh.npoin)
+            σ = zeros(sem.mesh.npoin)
+            if (inputs[:lRT_from_data])
+                @info "reading atmospheric data to build extinction and scattering coefficients"
+                filename = inputs[:RT_data_file]
+                data = read_atmospheric_data(filename)
+                data_interp = interpolate_atmosphere_to_mesh(data,sem.mesh)
+                κ, σ = atmos_to_rad(data_interp,sem.mesh.npoin)
+            end
 
-    if (inputs[:lamr] == true)
-        amr_freq = inputs[:amr_freq]
-        Δt_amr   = amr_freq * inputs[:Δt]
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
+            build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
+                                     sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dξdz, 
+                                     sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
+                                     sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
+                                     sem.metrics.nx, sem.metrics.ny, sem.metrics.nz, 
+                                     sem.mesh.elem_to_face, sem.mesh.extra_mesh, κ, σ, sem.QT, NSD_3D(), sem.AD)
+        end
     else
-        tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
-    end
+        qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
-    if rank == 0
-        @info " Params_setup .................................."
-    end
-    params, u =  params_setup(sem,
+        #check_memory(" After initialize.")
+        # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
+        # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
+        # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
+
+        if (inputs[:lamr] == true)
+            amr_freq = inputs[:amr_freq]
+            Δt_amr   = amr_freq * inputs[:Δt]
+            tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
+        else
+            tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+        end
+
+        if rank == 0
+            @info " Params_setup .................................."
+        end
+        params, u =  params_setup(sem,
                               qp,
                               inputs,
                               OUTPUT_DIR,
                               TFloat,
                               tspan)
     
-    if rank == 0
-        @info " Params_setup .................................. END"
-    end
+        if rank == 0
+            @info " Params_setup .................................. END"
+        end
     
-    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
-    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
+        # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
+        # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
     
-    if !inputs[:llinsolve]
-        #
-        # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
-        #
-        @time solution = time_loop!(inputs, params, u, partitioned_model)
-        # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
+        if !inputs[:llinsolve]
+            #
+            # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
+            #
+            @time solution = time_loop!(inputs, params, u, partitioned_model)
+            # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
         
-    else
-        #
-        # Problems that lead to Lx = RHS
-        #
-        RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
-        Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
+        else
+            #
+            # Problems that lead to Lx = RHS
+            #
+            RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
+            Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
 
-        EL = allocate_elemLearning(sem.mesh.nelem, sem.mesh.ngl,
+            EL = allocate_elemLearning(sem.mesh.nelem, sem.mesh.ngl,
                                    sem.mesh.length∂O,
                                    sem.mesh.length∂τ,
                                    sem.mesh.lengthΓ,
                                    TFloat, inputs[:backend];
                                    Nsamp=inputs[:Nsamp])
         
-        if (inputs[:backend] == CPU())
-            
-            bufferin  = Vector{Vector{Float64}}()
-            bufferout = Vector{Vector{Float64}}()
-            total_cols_writtenin  = 0  # Track how many columns we've written
-            total_cols_writtenout = 0  # Track how many columns we've written
+            if (inputs[:backend] == CPU())
+                
+                bufferin  = Vector{Vector{Float64}}()
+                bufferout = Vector{Vector{Float64}}()
+                total_cols_writtenin  = 0  # Track how many columns we've written
+                total_cols_writtenout = 0  # Track how many columns we've written
 
-            # Clear/initialize file at start
-            if isfile("input_tensor.csv")
-                rm("input_tensor.csv")
-            end
-            if isfile("output_tensor.csv")
-                rm("output_tensor.csv")
-            end
-            for isamp=1:inputs[:Nsamp]
-                #
-                # L*q = M*RHS   See algo 12.18 of Giraldo's book
-                #
-                #Minv          = diagm(sem.matrix.Minv)
-                #sem.matrix.L .= Minv * sem.matrix.L
+                # Clear/initialize file at start
+                if isfile("input_tensor.csv")
+                    rm("input_tensor.csv")
+                end
+                if isfile("output_tensor.csv")
+                    rm("output_tensor.csv")
+                end
+                for isamp=1:inputs[:Nsamp]
+                    #
+                    # L*q = M*RHS   See algo 12.18 of Giraldo's book
+                    #
+                    #Minv          = diagm(sem.matrix.Minv)
+                    #sem.matrix.L .= Minv * sem.matrix.L
                 
                 # 2.a/b
                 μ             = 1
@@ -128,8 +151,8 @@ function driver(nparts,
                 @mystop
                 #sem.matrix.L .= ranvisc*sem.matrix.L
                 
-                for ip =1:sem.mesh.npoin
-                    RHS[ip] = user_source!(RHS[ip],
+                    for ip =1:sem.mesh.npoin
+                        RHS[ip] = user_source!(RHS[ip],
                                            params.qp.qn[ip],
                                            params.qp.qe[ip],
                                            sem.mesh.npoin,
@@ -137,16 +160,16 @@ function driver(nparts,
                                            neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
                                            xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
                                            ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
-                end
-                RHS = sem.matrix.M.*RHS
-                
-                if inputs[:lsparse] ==  false
-                    for ip = 1:sem.mesh.npoin
-                        sem.matrix.L[ip,ip] += inputs[:rconst][1]
                     end
-                end
+                    RHS = sem.matrix.M.*RHS
                 
-                apply_boundary_conditions_lin_solve!(sem.matrix.L,
+                    if inputs[:lsparse] ==  false
+                        for ip = 1:sem.mesh.npoin
+                            sem.matrix.L[ip,ip] += inputs[:rconst][1]
+                        end
+                    end
+                
+                    apply_boundary_conditions_lin_solve!(sem.matrix.L,
                                                      0.0, params.qp.qe,
                                                      params.mesh.coords,
                                                      params.metrics.nx,
@@ -168,16 +191,16 @@ function driver(nparts,
                                                      params.mesh.bdy_edge_type,
                                                      params.ω, qp.neqs,
                                                      params.inputs, params.AD, sem.mesh.SD)
-                #-----------------------------------------------------
-                # Element-learning infrastructure
-                #-----------------------------------------------------
-                if inputs[:lelementLearning] == false && inputs[:lsparse] ==  false
-                    println(" # Solve x=inv(A)*b: full storage")
-                    @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
-                else
-                    if inputs[:lelementLearning]
+                    #-----------------------------------------------------
+                    # Element-learning infrastructure
+                    #-----------------------------------------------------
+                    if inputs[:lelementLearning] == false && inputs[:lsparse] ==  false
+                        println(" # Solve x=inv(A)*b: full storage")
+                        @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
+                    else
+                        if inputs[:lelementLearning]
                         
-                        @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
+                            @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
                                                    sem.matrix.L, RHS, EL,
                                                    avisc,
                                                    bufferin, bufferout;
@@ -185,17 +208,17 @@ function driver(nparts,
                                                    total_cols_writtenin=total_cols_writtenin,
                                                    total_cols_writtenout=total_cols_writtenout)
                         
-                    elseif inputs[:lsparse]
-                        println(" # Solve x=inv(A)*b: sparse storage")
-                        @time params.qp.qn = sem.matrix.L\RHS
+                        elseif inputs[:lsparse]
+                            println(" # Solve x=inv(A)*b: sparse storage")
+                            @time params.qp.qn = sem.matrix.L\RHS
+                        end
                     end
-                end
 
                 
-                #usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
-                usol = params.qp.qn
+                    #usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
+                    usol = params.qp.qn
                 
-                args = (params.SD, usol, params.uaux, 1, isamp,
+                    args = (params.SD, usol, params.uaux, 1, isamp,
                         sem.mesh, nothing,
                         nothing, nothing,
                         0.0, 0.0, 0.0,
@@ -204,44 +227,45 @@ function driver(nparts,
                         params.qp.qoutvars,
                         inputs[:outformat])
                 
-                write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
+                    write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
                 
-@info "isamp" isamp
+                    @info "isamp" isamp
                 
-            end #isamp loop
+                end #isamp loop
             
-            #-----------------------------------------------------
-            # END Element-learning infrastructure
-            #-----------------------------------------------------
+                #-----------------------------------------------------
+                # END Element-learning infrastructure
+                #-----------------------------------------------------
             
-        else
-            println( " ")
-            println( " WARNING!!! drivers.jl:L114")
-            println( " WARNING: CHECK IF THIS GPU IMPLEMENTATION OF Ax=b still works")
-            println( " ")
-            nothing
-            #=k = lin_solve_rhs_gpu_2d!(inputs[:backend])
-            k(RHS, qp.qn, qp.qe, sem.mesh.x, sem.mesh.y, qp.neqs; ndrange = sem.mesh.npoin)
-            KernelAbstractions.synchronize(inputs[:backend])
-            
-            Minv = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), Int64(sem.mesh.npoin))
-            k =  diagm_gpu!(inputs[:backend])
-            k(Minv , sem.matrix.Minv; ndrange = sem.mesh.npoin)
-            L_temp = Minv * sem.matrix.L
-            sem.matrix.L .= L_temp
-
-            k = apply_boundary_conditions_gpu_lin_solve!(inputs[:backend])
-            k(RHS, sem.matrix.L, sem.mesh.poin_in_bdy_edge, sem.mesh.npoin; ndrange = (sem.mesh.nedges_bdy*sem.mesh.ngl), workgroupsize = (sem.mesh.ngl))
-            KernelAbstractions.synchronize(inputs[:backend])
-            if ("Laguerre" in sem.mesh.bdy_edge_type)
-                k = apply_boundary_conditions_lag_gpu_lin_solve!(inputs[:backend])
-                k(RHS, sem.matrix.L, sem.mesh.connijk_lag, sem.mesh.ngl, sem.mesh.ngr, sem.mesh.npoin, sem.mesh.nelem_semi_inf, inputs[:lperiodic_laguerre];
-                  ndrange = (sem.mesh.nelem_semi_inf*sem.mesh.ngl,sem.mesh.ngr), workgroupsize = (sem.mesh.ngl,sem.mesh.ngr))
+            else
+                println( " ")
+                println( " WARNING!!! drivers.jl:L114")
+                println( " WARNING: CHECK IF THIS GPU IMPLEMENTATION OF Ax=b still works")
+                println( " ")
+                nothing
+                #=k = lin_solve_rhs_gpu_2d!(inputs[:backend])
+                k(RHS, qp.qn, qp.qe, sem.mesh.x, sem.mesh.y, qp.neqs; ndrange = sem.mesh.npoin)
                 KernelAbstractions.synchronize(inputs[:backend])
+            
+                Minv = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), Int64(sem.mesh.npoin))
+                k =  diagm_gpu!(inputs[:backend])
+                k(Minv , sem.matrix.Minv; ndrange = sem.mesh.npoin)
+                L_temp = Minv * sem.matrix.L
+                sem.matrix.L .= L_temp
+
+                k = apply_boundary_conditions_gpu_lin_solve!(inputs[:backend])
+                k(RHS, sem.matrix.L, sem.mesh.poin_in_bdy_edge, sem.mesh.npoin; ndrange = (sem.mesh.nedges_bdy*sem.mesh.ngl), workgroupsize = (sem.mesh.ngl))
+                KernelAbstractions.synchronize(inputs[:backend])
+                if ("Laguerre" in sem.mesh.bdy_edge_type)
+                    k = apply_boundary_conditions_lag_gpu_lin_solve!(inputs[:backend])
+                    k(RHS, sem.matrix.L, sem.mesh.connijk_lag, sem.mesh.ngl, sem.mesh.ngr, sem.mesh.npoin, sem.mesh.nelem_semi_inf, inputs[:lperiodic_laguerre];
+                        ndrange = (sem.mesh.nelem_semi_inf*sem.mesh.ngl,sem.mesh.ngr), workgroupsize = (sem.mesh.ngl,sem.mesh.ngr))
+                    KernelAbstractions.synchronize(inputs[:backend])
+                end
+                k = add_to_diag!(inputs[:backend])
+                k(sem.matrix.L, TFloat(10.0); ndrange = sem.mesh.npoin)
+                KernelAbstractions.synchronize(inputs[:backend])=#
             end
-            k = add_to_diag!(inputs[:backend])
-            k(sem.matrix.L, TFloat(10.0); ndrange = sem.mesh.npoin)
-            KernelAbstractions.synchronize(inputs[:backend])=#
         end
         
         #usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
