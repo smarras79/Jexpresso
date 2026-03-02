@@ -169,7 +169,7 @@ function driver(nparts,
                             sem.matrix.L[ip,ip] += inputs[:rconst][1]
                         end
                     end
-                    @info  "AAAAAAAAAAAAA"
+
                     apply_boundary_conditions_lin_solve!(sem.matrix.L,
                                                          0.0, params.qp.qe,
                                                          params.mesh.coords,
@@ -193,7 +193,6 @@ function driver(nparts,
                                                          params.ω, qp.neqs,
                                                          params.inputs, params.AD, sem.mesh.SD)
                     
-                    @info  "BBBBBBBBBBBBBB"
                     #-----------------------------------------------------
                     # Element-learning infrastructure
                     #-----------------------------------------------------
@@ -202,39 +201,33 @@ function driver(nparts,
                         @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
                     else
                         if inputs[:lelementLearning]
-                        @info "CCCCCCCCCCCCCCCCC"
                             @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
-                                                   sem.matrix.L, RHS, EL,
-                                                   avisc,
-                                                   bufferin, bufferout;
-                                                   isamp=isamp,
-                                                   total_cols_writtenin=total_cols_writtenin,
-                                                   total_cols_writtenout=total_cols_writtenout)
+                                                       sem.matrix.L, RHS, EL,
+                                                       avisc,
+                                                       bufferin, bufferout;
+                                                       isamp=isamp,
+                                                       total_cols_writtenin=total_cols_writtenin,
+                                                       total_cols_writtenout=total_cols_writtenout)
                         
-                        @info "DDDDDDDDDDDDDDD"
                         elseif inputs[:lsparse]
                             println(" # Solve x=inv(A)*b: sparse storage")
                             @time params.qp.qn = sem.matrix.L\RHS
                         end
                     end
-
-                
                     #usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
                     usol = params.qp.qn
-                
+                    
                     args = (params.SD, usol, params.uaux, 1, isamp,
-                        sem.mesh, nothing,
-                        nothing, nothing,
-                        0.0, 0.0, 0.0,
-                        OUTPUT_DIR, inputs,
-                        params.qp.qvars,
-                        params.qp.qoutvars,
-                        inputs[:outformat])
-                
+                            sem.mesh, nothing,
+                            nothing, nothing,
+                            0.0, 0.0, 0.0,
+                            OUTPUT_DIR, inputs,
+                            params.qp.qvars,
+                            params.qp.qoutvars,
+                            inputs[:outformat])
+                    
                     write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
-                
-                    #@info "isamp" isamp
-                
+                    
                 end #isamp loop
             
                 #-----------------------------------------------------
@@ -303,14 +296,6 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               total_cols_writtenout=0)
     
     mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
-    
-    #=EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
-                               mesh.length∂O,
-                               mesh.length∂τ,
-                               mesh.lengthΓ,
-                               TFloat, inputs[:backend];
-                               Nsamp=inputs[:Nsamp])
-    =#
     
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
     nelpoints    = size(mesh.conn)[2]
@@ -570,13 +555,12 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     u∂τ = zeros(Float64, length(mesh.∂τ))
     for iskel = 1:length(mesh.∂τ)
         is = skeletonAndbdy[iskel]
-#        @info iskel, is
+        #        @info iskel, is
         u∂τ[iskel] = u[is]
-     #x   @info iskel, is, u∂τ[iskel]
+        #x   @info iskel, is, u∂τ[iskel]
     end
-
     
-     for iel=1:mesh.nelem
+    for iel=1:mesh.nelem
          #
          # 
          #

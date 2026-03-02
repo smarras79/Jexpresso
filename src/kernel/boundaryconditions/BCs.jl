@@ -107,9 +107,8 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                               RHS, rhs_el, ubdy,
                                               connijk_lag, bdy_edge_in_elem, bdy_edge_type,
                                               ω, neqs, inputs, AD, SD)
-@info " HHHHHHHHHH"
     if inputs[:lsparse]
-            @info " 11111111111111111"
+        
         # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
         build_custom_bcs_lin_solve_sparse!(SD, t, coords, nx, ny, nz, npoin, npoin_linear,
                                            poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
@@ -117,9 +116,8 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                            xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
                                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                            neqs, dirichlet!, neumann, inputs)
-        @info " FFFFFFFFFFFFFFFF"
     else
-        @info " GGGGGGGGGGGGGGGGGGG"
+
         # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
         build_custom_bcs_lin_solve!(SD, t, coords, nx, ny, nz, npoin, npoin_linear,
                                     poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
@@ -127,7 +125,6 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                     xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
                                     connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                     neqs, dirichlet!, neumann, inputs)
-        @info " IIIIIIIIIIIIIII"
     end
     
 end
