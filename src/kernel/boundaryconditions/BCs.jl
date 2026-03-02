@@ -107,8 +107,9 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                               RHS, rhs_el, ubdy,
                                               connijk_lag, bdy_edge_in_elem, bdy_edge_type,
                                               ω, neqs, inputs, AD, SD)
-
+@info " HHHHHHHHHH"
     if inputs[:lsparse]
+            @info " 11111111111111111"
         # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
         build_custom_bcs_lin_solve_sparse!(SD, t, coords, nx, ny, nz, npoin, npoin_linear,
                                            poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
@@ -116,7 +117,9 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                            xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
                                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                            neqs, dirichlet!, neumann, inputs)
+        @info " FFFFFFFFFFFFFFFF"
     else
+        @info " GGGGGGGGGGGGGGGGGGG"
         # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
         build_custom_bcs_lin_solve!(SD, t, coords, nx, ny, nz, npoin, npoin_linear,
                                     poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
@@ -124,6 +127,7 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                     xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
                                     connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                     neqs, dirichlet!, neumann, inputs)
+        @info " IIIIIIIIIIIIIII"
     end
     
 end
@@ -340,7 +344,8 @@ end
 
 
 function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, coords, nx, ny, nz,
-                                            npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                            npoin, npoin_linear,
+                                            poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
                                             ngl, ngr, nelem_semi_inf, ω,
                                             xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
                                             connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
@@ -448,6 +453,35 @@ function apply_dirichlet_bc_inplace!(L::SparseMatrixCSC, poin_in_bdy_edge, ngl)
     return L
 end
 
+function apply_dirichlet_bc_inplace!(L::Matrix{Float64}, poin_in_bdy_edge, ngl)
+    """
+    Apply Dirichlet boundary conditions by modifying dense matrix in-place.
+    Sets boundary rows to: L[ip, :] = 0, L[ip, ip] = 1
+    """
+
+    # Get boundary node indices
+    boundary_nodes = Int[]
+    for iedge = 1:size(poin_in_bdy_edge, 1)
+        for k = 1:ngl
+            ip = poin_in_bdy_edge[iedge, k]
+            if ip > 0
+                push!(boundary_nodes, ip)
+            end
+        end
+    end
+
+    # Remove duplicates and sort
+    boundary_nodes = unique!(sort!(boundary_nodes))
+
+    for ip in boundary_nodes
+        # Zero out entire row — for dense Matrix, a view-based fill! is optimal
+        @views fill!(L[ip, :], 0.0)
+        # Set diagonal to 1
+        L[ip, ip] = 1.0
+    end
+
+    return L
+end
 
 function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
                                      nx, ny, nz,

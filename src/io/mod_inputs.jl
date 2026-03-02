@@ -186,7 +186,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :lsparse))
-      inputs[:lsparse] = true
+        inputs[:lsparse] = true
+
+        if(haskey(inputs, :lelementLearning) &&
+            inputs[:lelementLearning] == true)
+            inputs[:lsparse] = false
+        end
+    else
+        if(inputs[:lsparse] == true &&
+            haskey(inputs, :lelementLearning) &&
+            inputs[:lelementLearning] == true)
+            inputs[:lsparse] = false
+        end
     end
 
     if(!haskey(inputs, :plot_vlines))

@@ -139,17 +139,18 @@ function driver(nparts,
                     #
                     #Minv          = diagm(sem.matrix.Minv)
                     #sem.matrix.L .= Minv * sem.matrix.L
-                
-                # 2.a/b
-                μ             = 1
-                â             = zeros(TFloat, sem.mesh.ngl, sem.mesh.ngl)
-                avisc         = zeros(TFloat, sem.mesh.ngl^2)
-                avisc[:]     .= 0.5 + rand() #Uniform distribution between 0.5 and 1.5
-                avisc[:]     .= ranvisc
-                
-                expansion_2d(â, ψ)
-                @mystop
-                #sem.matrix.L .= ranvisc*sem.matrix.L
+                    
+                    # 2.a/b
+                    μ             = 1
+                    â             = zeros(TFloat, sem.mesh.ngl, sem.mesh.ngl)
+                    avisc         = zeros(TFloat, sem.mesh.ngl^2)
+                    ranvisc       = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
+                    avisc[:]     .= ranvisc
+                    ψ = sem.basis.ψ
+                    expansion_2d!(â, ψ)
+                    #@info â
+                    #@mystop
+                    #sem.matrix.L .= ranvisc*sem.matrix.L
                 
                     for ip =1:sem.mesh.npoin
                         RHS[ip] = user_source!(RHS[ip],
@@ -168,29 +169,31 @@ function driver(nparts,
                             sem.matrix.L[ip,ip] += inputs[:rconst][1]
                         end
                     end
-                
+                    @info  "AAAAAAAAAAAAA"
                     apply_boundary_conditions_lin_solve!(sem.matrix.L,
-                                                     0.0, params.qp.qe,
-                                                     params.mesh.coords,
-                                                     params.metrics.nx,
-                                                     params.metrics.ny,
-                                                     params.metrics.nz,
-                                                     sem.mesh.npoin,
-                                                     params.mesh.npoin_linear, 
-                                                     params.mesh.poin_in_bdy_edge,
-                                                     params.mesh.poin_in_bdy_face,
-                                                     params.mesh.nedges_bdy,
-                                                     params.mesh.nfaces_bdy,
-                                                     params.mesh.ngl, params.mesh.ngr,
-                                                     params.mesh.nelem_semi_inf,
-                                                     params.basis.ψ, params.basis.dψ,
-                                                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                                     RHS, 0.0, params.ubdy,
-                                                     params.mesh.connijk_lag,
-                                                     params.mesh.bdy_edge_in_elem,
-                                                     params.mesh.bdy_edge_type,
-                                                     params.ω, qp.neqs,
-                                                     params.inputs, params.AD, sem.mesh.SD)
+                                                         0.0, params.qp.qe,
+                                                         params.mesh.coords,
+                                                         params.metrics.nx,
+                                                         params.metrics.ny,
+                                                         params.metrics.nz,
+                                                         sem.mesh.npoin,
+                                                         params.mesh.npoin_linear, 
+                                                         params.mesh.poin_in_bdy_edge,
+                                                         params.mesh.poin_in_bdy_face,
+                                                         params.mesh.nedges_bdy,
+                                                         params.mesh.nfaces_bdy,
+                                                         params.mesh.ngl, params.mesh.ngr,
+                                                         params.mesh.nelem_semi_inf,
+                                                         params.basis.ψ, params.basis.dψ,
+                                                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                         RHS, 0.0, params.ubdy,
+                                                         params.mesh.connijk_lag,
+                                                         params.mesh.bdy_edge_in_elem,
+                                                         params.mesh.bdy_edge_type,
+                                                         params.ω, qp.neqs,
+                                                         params.inputs, params.AD, sem.mesh.SD)
+                    
+                    @info  "BBBBBBBBBBBBBB"
                     #-----------------------------------------------------
                     # Element-learning infrastructure
                     #-----------------------------------------------------
@@ -199,7 +202,7 @@ function driver(nparts,
                         @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
                     else
                         if inputs[:lelementLearning]
-                        
+                        @info "CCCCCCCCCCCCCCCCC"
                             @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
                                                    sem.matrix.L, RHS, EL,
                                                    avisc,
@@ -208,6 +211,7 @@ function driver(nparts,
                                                    total_cols_writtenin=total_cols_writtenin,
                                                    total_cols_writtenout=total_cols_writtenout)
                         
+                        @info "DDDDDDDDDDDDDDD"
                         elseif inputs[:lsparse]
                             println(" # Solve x=inv(A)*b: sparse storage")
                             @time params.qp.qn = sem.matrix.L\RHS
@@ -229,7 +233,7 @@ function driver(nparts,
                 
                     write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
                 
-                    @info "isamp" isamp
+                    #@info "isamp" isamp
                 
                 end #isamp loop
             
@@ -647,7 +651,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
 end
 
 # Point evaluation: interpolate at a single point (ξ, η)
-function expansion_2d(a::Matrix, ψ::Vector)
+function expansion_2d!(a::Matrix, ψ::Matrix)
     
     # Tensor product form: ψᵀ * A * ψ
     return dot(ψ, a * ψ)
