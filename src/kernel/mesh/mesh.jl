@@ -2019,7 +2019,7 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                         # j is the slave, i is the master
                         changes_ip[gip_j] = gip_i
                         if gip_i< 100
-                            @info gip_j, gip_i
+                            #@info gip_j, gip_i
                         end
                         if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
                             changes_owner[gip_j] = un_updated_global_owner[idx_i]
@@ -2029,7 +2029,7 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                         # i is the slave, j is the master
                         changes_ip[gip_i] = gip_j
                         if gip_i< 100
-                            @info gip_i, gip_j
+                            #@info gip_i, gip_j
                         end
                         if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
                             changes_owner[gip_i] = un_updated_global_owner[idx_j]
@@ -2038,8 +2038,8 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                     end
                         # break
                 else
-                    @info length(changes_ip)
-                    @info "vec", vec, norm
+                    #@info length(changes_ip)
+                    #@info "vec", vec, norm
                     @mystop("!determine_colinearity(vec, norm), check periodic boundary setup: mesh.jl:1890")
                 end
             end
