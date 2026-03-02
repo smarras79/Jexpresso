@@ -523,6 +523,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lelementLearning] = false
     end
     
+    if !haskey(inputs, :lEL_Train)
+        inputs[:lEL_Train] = false
+    end
+        
     #
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
     # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/

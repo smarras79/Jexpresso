@@ -5,7 +5,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
                                            dims0,  dims1,  dims2,  dims3, dims4,
                                            dims5,  dims6,  dims7,  dims8, dims9,
                                            dims10, dims11, dims12, dims13,
-                                           dimsML1, dimsML2,
+                                           dimsML1, dimsML2, lELTraining,
                                            backend}
     
     Avovo = KernelAbstractions.zeros(backend, T, dims1)
@@ -24,6 +24,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
     AIo∂τ = KernelAbstractions.zeros(backend, T, dims11)
     A∂OIo = KernelAbstractions.zeros(backend, T, dims12)
     AIo∂O = KernelAbstractions.zeros(backend, T, dims13)
+    lEL_Train = lELTraining
 
     # ML:
     input_tensor  = KernelAbstractions.zeros(backend, T, dimsML1)
@@ -31,7 +32,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
     
 end
 
-function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ, T, backend; Nsamp=1)
+function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ, T, backend; Nsamp=1, lEL_Train=false)
 
     elnbdypoints = 4*Int64(ngl-2) + 4
     
@@ -49,7 +50,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ, T,
     dims11= (Int64(ngl-2)^2*Int64(nelem), Int64(length∂τ))
     dims12= (Int64(length∂O), Int64(ngl-2)^2*Int64(nelem))
     dims13= (Int64(ngl-2)^2*Int64(nelem), Int64(length∂O))
-
+    
     # Tensors:
     k = ngl-1
     dimsML1 = ((k+1)^2, Nsamp)     #input  tensor
@@ -59,7 +60,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ, T,
                                    dims0, dims1, dims2, dims3, dims4, dims5,
                                    dims6, dims7, dims8, dims9, dims10,
                                    dims11, dims12, dims13,
-                                   dimsML1, dimsML2,
+                                   dimsML1, dimsML2, lEL_Train,
                                    backend}()
     
     return elemLearning

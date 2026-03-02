@@ -67,12 +67,7 @@ function driver(nparts,
         end
     else
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-
-        #check_memory(" After initialize.")
-        # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
-        # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
-        # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
-
+        
         if (inputs[:lamr] == true)
             amr_freq = inputs[:amr_freq]
             Δt_amr   = amr_freq * inputs[:Δt]
@@ -85,12 +80,12 @@ function driver(nparts,
             @info " Params_setup .................................."
         end
         params, u =  params_setup(sem,
-                              qp,
-                              inputs,
-                              OUTPUT_DIR,
-                              TFloat,
-                              tspan)
-    
+                                  qp,
+                                  inputs,
+                                  OUTPUT_DIR,
+                                  TFloat,
+                                  tspan)
+        
         if rank == 0
             @info " Params_setup .................................. END"
         end
@@ -99,71 +94,148 @@ function driver(nparts,
         # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
     
         if !inputs[:llinsolve]
-            #
+            #-----------------------------------------------------------------------------------
             # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
-            #
+            #-----------------------------------------------------------------------------------
             @time solution = time_loop!(inputs, params, u, partitioned_model)
             # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
-        
+            
         else
-            #
+            #-----------------------------------------------------------------------------------
             # Problems that lead to Lx = RHS
-            #
+            #-----------------------------------------------------------------------------------
             RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
             Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
-
-            EL = allocate_elemLearning(sem.mesh.nelem, sem.mesh.ngl,
-                                   sem.mesh.length∂O,
-                                   sem.mesh.length∂τ,
-                                   sem.mesh.lengthΓ,
-                                   TFloat, inputs[:backend];
-                                   Nsamp=inputs[:Nsamp])
-        
+            
             if (inputs[:backend] == CPU())
-                
-                bufferin  = Vector{Vector{Float64}}()
-                bufferout = Vector{Vector{Float64}}()
-                total_cols_writtenin  = 0  # Track how many columns we've written
-                total_cols_writtenout = 0  # Track how many columns we've written
 
-                # Clear/initialize file at start
-                if isfile("input_tensor.csv")
-                    rm("input_tensor.csv")
-                end
-                if isfile("output_tensor.csv")
-                    rm("output_tensor.csv")
-                end
-                for isamp=1:inputs[:Nsamp]
-                    #
-                    # L*q = M*RHS   See algo 12.18 of Giraldo's book
-                    #
-                    #Minv          = diagm(sem.matrix.Minv)
-                    #sem.matrix.L .= Minv * sem.matrix.L
+                if inputs[:lelementLearning]
+                    EL = allocate_elemLearning(sem.mesh.nelem, sem.mesh.ngl,
+                                               sem.mesh.length∂O,
+                                               sem.mesh.length∂τ,
+                                               sem.mesh.lengthΓ,
+                                               TFloat, inputs[:backend];
+                                               Nsamp=inputs[:Nsamp],
+                                               lEL_Train=inputs[:lEL_Train])
+
+
+                    #-----------------------------------------------------
+                    # 1. Train:
+                    #-----------------------------------------------------
+                    bufferin  = Vector{Vector{Float64}}()
+                    bufferout = Vector{Vector{Float64}}()
+                    total_cols_writtenin  = 0
+                    total_cols_writtenout = 0
                     
-                    # 2.a/b
-                    μ             = 1
-                    â             = zeros(TFloat, sem.mesh.ngl, sem.mesh.ngl)
-                    avisc         = zeros(TFloat, sem.mesh.ngl^2)
-                    ranvisc       = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
-                    avisc[:]     .= ranvisc
-                    ψ = sem.basis.ψ
-                    expansion_2d!(â, ψ)
-                    #@info â
-                    #@mystop
-                    #sem.matrix.L .= ranvisc*sem.matrix.L
-                
+                    # Clear/initialize file at start
+                    if isfile("input_tensor.csv")
+                        rm("input_tensor.csv")
+                    end
+                    if isfile("output_tensor.csv")
+                        rm("output_tensor.csv")
+                    end
+                    
+                    for isamp=1:inputs[:Nsamp]
+                        #
+                        # L*q = M*RHS   See algo 12.18 of Giraldo's book
+                        #
+                        #Minv          = diagm(sem.matrix.Minv)
+                        #sem.matrix.L .= Minv * sem.matrix.L
+                        
+                        # 2.a/b
+                        μ        = 1
+                        â        = zeros(TFloat, sem.mesh.ngl, sem.mesh.ngl)
+                        avisc    = zeros(TFloat, sem.mesh.ngl^2)
+                        ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
+                        avisc[:].= ranvisc
+                        ψ        = sem.basis.ψ
+                        expansion_2d!(â, ψ)
+                        
+                        for ip =1:sem.mesh.npoin
+                            RHS[ip] = user_source!(RHS[ip],
+                                                   params.qp.qn[ip],
+                                                   params.qp.qe[ip],
+                                                   sem.mesh.npoin,
+                                                   inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                                   neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                                                   xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
+                                                   ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
+                        end
+                        RHS = sem.matrix.M.*RHS
+                        
+                        apply_boundary_conditions_lin_solve!(sem.matrix.L,
+                                                             0.0, params.qp.qe,
+                                                             params.mesh.coords,
+                                                             params.metrics.nx,
+                                                             params.metrics.ny,
+                                                             params.metrics.nz,
+                                                             sem.mesh.npoin,
+                                                             params.mesh.npoin_linear, 
+                                                             params.mesh.poin_in_bdy_edge,
+                                                             params.mesh.poin_in_bdy_face,
+                                                             params.mesh.nedges_bdy,
+                                                             params.mesh.nfaces_bdy,
+                                                             params.mesh.ngl, params.mesh.ngr,
+                                                             params.mesh.nelem_semi_inf,
+                                                             params.basis.ψ, params.basis.dψ,
+                                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                             RHS, 0.0, params.ubdy,
+                                                             params.mesh.connijk_lag,
+                                                             params.mesh.bdy_edge_in_elem,
+                                                             params.mesh.bdy_edge_type,
+                                                             params.ω, qp.neqs,
+                                                             params.inputs, params.AD, sem.mesh.SD)
+                        
+                        #-----------------------------------------------------
+                        # Element-learning infrastructure
+                        #-----------------------------------------------------
+                        @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
+                                                   sem.matrix.L, RHS, EL,
+                                                   avisc,
+                                                   bufferin, bufferout;
+                                                   isamp=isamp,
+                                                   total_cols_writtenin=total_cols_writtenin,
+                                                   total_cols_writtenout=total_cols_writtenout)
+                        
+                        usol = params.qp.qn
+                        args = (params.SD, usol, params.uaux, 1, isamp,
+                                sem.mesh, nothing,
+                                nothing, nothing,
+                                0.0, 0.0, 0.0,
+                                OUTPUT_DIR, inputs,
+                                params.qp.qvars,
+                                params.qp.qoutvars,
+                                inputs[:outformat])
+                        
+                        write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
+                        
+                    end #isamp loop
+
+                    #-----------------------------------------------------
+                    # 2. Inference:
+                    #-----------------------------------------------------
+                    
+
+                    
+                    #-----------------------------------------------------
+                    # END Element-learning infrastructure
+                    #-----------------------------------------------------
+                else
+                    #-----------------------------------------------------
+                    # L*q = M*RHS   See algo 12.18 of Giraldo's book
+                    #-----------------------------------------------------
                     for ip =1:sem.mesh.npoin
                         RHS[ip] = user_source!(RHS[ip],
-                                           params.qp.qn[ip],
-                                           params.qp.qe[ip],
-                                           sem.mesh.npoin,
-                                           inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                           neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
-                                           xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
-                                           ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
+                                               params.qp.qn[ip],
+                                               params.qp.qe[ip],
+                                               sem.mesh.npoin,
+                                               inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                               neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                                               xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
+                                               ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
                     end
                     RHS = sem.matrix.M.*RHS
-                
+                    
                     if inputs[:lsparse] ==  false
                         for ip = 1:sem.mesh.npoin
                             sem.matrix.L[ip,ip] += inputs[:rconst][1]
@@ -193,31 +265,16 @@ function driver(nparts,
                                                          params.ω, qp.neqs,
                                                          params.inputs, params.AD, sem.mesh.SD)
                     
-                    #-----------------------------------------------------
-                    # Element-learning infrastructure
-                    #-----------------------------------------------------
-                    if inputs[:lelementLearning] == false && inputs[:lsparse] ==  false
+                    if inputs[:lsparse] ==  false
                         println(" # Solve x=inv(A)*b: full storage")
                         @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
                     else
-                        if inputs[:lelementLearning]
-                            @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
-                                                       sem.matrix.L, RHS, EL,
-                                                       avisc,
-                                                       bufferin, bufferout;
-                                                       isamp=isamp,
-                                                       total_cols_writtenin=total_cols_writtenin,
-                                                       total_cols_writtenout=total_cols_writtenout)
-                        
-                        elseif inputs[:lsparse]
-                            println(" # Solve x=inv(A)*b: sparse storage")
-                            @time params.qp.qn = sem.matrix.L\RHS
-                        end
+                        println(" # Solve x=inv(A)*b: sparse storage")
+                        @time params.qp.qn = sem.matrix.L\RHS
                     end
-                    #usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
-                    usol = params.qp.qn
                     
-                    args = (params.SD, usol, params.uaux, 1, isamp,
+                    usol = params.qp.qn
+                    args = (params.SD, usol, params.uaux, 1, 1,
                             sem.mesh, nothing,
                             nothing, nothing,
                             0.0, 0.0, 0.0,
@@ -227,49 +284,19 @@ function driver(nparts,
                             inputs[:outformat])
                     
                     write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
-                    
-                end #isamp loop
-            
-                #-----------------------------------------------------
-                # END Element-learning infrastructure
-                #-----------------------------------------------------
-            
+                end
             else
                 println( " ")
                 println( " WARNING!!! drivers.jl:L114")
                 println( " WARNING: CHECK IF THIS GPU IMPLEMENTATION OF Ax=b still works")
                 println( " ")
                 nothing
-                #=k = lin_solve_rhs_gpu_2d!(inputs[:backend])
-                k(RHS, qp.qn, qp.qe, sem.mesh.x, sem.mesh.y, qp.neqs; ndrange = sem.mesh.npoin)
-                KernelAbstractions.synchronize(inputs[:backend])
-            
-                Minv = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), Int64(sem.mesh.npoin))
-                k =  diagm_gpu!(inputs[:backend])
-                k(Minv , sem.matrix.Minv; ndrange = sem.mesh.npoin)
-                L_temp = Minv * sem.matrix.L
-                sem.matrix.L .= L_temp
-
-                k = apply_boundary_conditions_gpu_lin_solve!(inputs[:backend])
-                k(RHS, sem.matrix.L, sem.mesh.poin_in_bdy_edge, sem.mesh.npoin; ndrange = (sem.mesh.nedges_bdy*sem.mesh.ngl), workgroupsize = (sem.mesh.ngl))
-                KernelAbstractions.synchronize(inputs[:backend])
-                if ("Laguerre" in sem.mesh.bdy_edge_type)
-                    k = apply_boundary_conditions_lag_gpu_lin_solve!(inputs[:backend])
-                    k(RHS, sem.matrix.L, sem.mesh.connijk_lag, sem.mesh.ngl, sem.mesh.ngr, sem.mesh.npoin, sem.mesh.nelem_semi_inf, inputs[:lperiodic_laguerre];
-                        ndrange = (sem.mesh.nelem_semi_inf*sem.mesh.ngl,sem.mesh.ngr), workgroupsize = (sem.mesh.ngl,sem.mesh.ngr))
-                    KernelAbstractions.synchronize(inputs[:backend])
-                end
-                k = add_to_diag!(inputs[:backend])
-                k(sem.matrix.L, TFloat(10.0); ndrange = sem.mesh.npoin)
-                KernelAbstractions.synchronize(inputs[:backend])=#
             end
         end
         
-        #usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
-        if inputs[:lelementLearning] || inputs[:lsparse]
+        #=if inputs[:lelementLearning] || inputs[:lsparse]
             usol = params.qp.qn
         else
-            #usol = params.qp.qn
             usol = solution.u
         end
         args = (params.SD, usol, params.uaux, 0.0, 1,
@@ -282,7 +309,7 @@ function driver(nparts,
                      inputs[:outformat])
 
         write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
-        
+        =#
     end
 
 end
@@ -294,9 +321,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               isamp=1,
                               total_cols_writtenin=0,
                               total_cols_writtenout=0)
-    
+
     mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
-    
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
     nelpoints    = size(mesh.conn)[2]
     elnbdypoints = nelpoints - nelintpoints
@@ -516,41 +542,12 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         io1 = mesh.Γ[io]
         u[io1] = gΓ[io]
     end
-    #@info u
-    #@mystop
+    
     # ∂O U Γ
     skeletonAndbdy                                              = zeros(Int64, length(mesh.∂τ))
     skeletonAndbdy[1:mesh.length∂O]                            .= mesh.∂O[:]
     skeletonAndbdy[mesh.length∂O+1:mesh.length∂O+mesh.lengthΓ] .= mesh.Γ[:]
 
-    
-#    #for iel=1:mesh.nelem
-#        for iedge = 1:4
-#            @info iel, mesh.edge2pedge[iedge]
-#        end
-#    end
-#    @mystop
-#    bdy_edge_in_elem
-#    edge2pedge
-
-    #
-    # uvb ⊂ u∂τ  SHUKAI meeting
-    #
-#=
-    @info "mesh.cell_face_ids "
-    @info mesh.cell_face_ids, size(mesh.cell_face_ids)
-    @info "mesh.facet_cell_ids"
-    @info mesh.facet_cell_ids, size(mesh.facet_cell_ids)
-
-    for iedge=1:mesh.nedges
-        @info " iedge ", iedge, "belongs to element ",  mesh.facet_cell_ids[iedge]
-    end
-    for iedge=1:mesh.nedges
-        @info " edge ", iedge, " belong to elem ", mesh.edge_in_elem[iedge]
-    end
-
-    @info "-----"
-    =#
     uvb = zeros(Float64, mesh.nelem, elnbdypoints)
     u∂τ = zeros(Float64, length(mesh.∂τ))
     for iskel = 1:length(mesh.∂τ)
@@ -580,18 +577,6 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
          end
      end
 
-    
-    #=for iel = 1:mesh.nelem
-        for ibdyel = 1:
-        for j1=1:length(mesh.∂τ)
-            jτ1 = skeletonAndbdy[j1]
-            
-            uvb[iel, ibdyel] = u∂τ[jτ1]
-        end
-    end=#
-
-    
-    
     #
     # ML: input/outpute tensors to use in training (?):
     #
@@ -601,37 +586,42 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     T1  = zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
     Bie = similar(T2)
     
-    # 2.c
-    EL.input_tensor[:, isamp] .= avisc[:]
+    if EL.lEL_Train
+        
+        # 2.c
+        EL.input_tensor[:, isamp] .= avisc[:]
 
-    # 2.d        
-    for iel = 1:1 #mesh.nelem
+        # 2.d        
+        for iel = 1:1 #mesh.nelem
+            
+            Avbvo = transpose(EL.Avovb[:,:,iel])
+            
+            # T2 = -A⁻¹ᵥₒᵥₒ[:,:,iel]⋅Avovb[:,:,iel]
+            LinearAlgebra.mul!(T2, -inv(EL.Avovo[:,:,iel]), EL.Avovb[:,:,iel])
+            Bie .= -T2
+            
+            # T1 = Avbvo[:,:,iel]⋅T2 = - Avbvo⋅A⁻¹ᵥₒᵥₒ⋅Avovb
+            LinearAlgebra.mul!(@view(T1[:,:]), @view(Avbvo[:,:]), @view(T2[:,:]))
+            
+            # 2.e
+            # Output tensor:
+            EL.output_tensor[:, isamp] .= vec(Bie)  # Bie = -T2ie
+        end
+
+        #------------------------------------------------------------------------
+        # Write input/output_bufferin.csv
+        #------------------------------------------------------------------------
+        write_MLtensor(@view(EL.input_tensor[:, isamp]), bufferin, total_cols_writtenin, "input_tensor.csv")
+        write_MLtensor(@view(EL.output_tensor[:, isamp]), bufferout, total_cols_writtenout, "output_tensor.csv")
+        #------------------------------------------------------------------------
+        # END write input/output_buffer.csv
+        #------------------------------------------------------------------------
+
+    else
         
-        Avbvo = transpose(EL.Avovb[:,:,iel])
-        
-        # T2 = -A⁻¹ᵥₒᵥₒ[:,:,iel]⋅Avovb[:,:,iel]
-        LinearAlgebra.mul!(T2, -inv(EL.Avovo[:,:,iel]), EL.Avovb[:,:,iel])
-        Bie .= -T2
-        
-        # T1 = Avbvo[:,:,iel]⋅T2 = - Avbvo⋅A⁻¹ᵥₒᵥₒ⋅Avovb
-        LinearAlgebra.mul!(@view(T1[:,:]), @view(Avbvo[:,:]), @view(T2[:,:]))
-        
-        # 2.e
-        # Output tensor:
-        EL.output_tensor[:, isamp] .= vec(Bie)  # Bie = -T2ie
+        @mystop(" RUN INFERENCE NOW")
     end
-
-    #------------------------------------------------------------------------
-    # Write input/output_bufferin.csv
-    #------------------------------------------------------------------------
-    write_MLtensor(@view(EL.input_tensor[:, isamp]), bufferin, total_cols_writtenin, "input_tensor.csv")
-    write_MLtensor(@view(EL.output_tensor[:, isamp]), bufferout, total_cols_writtenout, "output_tensor.csv")
-    #------------------------------------------------------------------------
-    # END write input/output_buffer.csv
-    #------------------------------------------------------------------------
-    
-    #!!!!!  ML code GOES HERE !!!!!
-    
+        
 end
 
 # Point evaluation: interpolate at a single point (ξ, η)

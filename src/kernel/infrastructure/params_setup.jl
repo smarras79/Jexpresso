@@ -131,6 +131,7 @@ function params_setup(sem,
     source_micro   = gpuMoist.source_micro
     adjusted       = gpuMoist.adjusted
     Pm             = gpuMoist.Pm
+    
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
@@ -228,6 +229,12 @@ function params_setup(sem,
         b_lag            = filter_lag.b_lag
         B_lag            = filter_lag.B_lag
     end
+
+    
+    #------------------------------------------------------------------------------------
+    # Element learning
+    #------------------------------------------------------------------------------------
+    lEL_Train = inputs[:lEL_Train]
     
     #------------------------------------------------------------------------------------
     # Allocate micophysics arrays
@@ -319,7 +326,9 @@ function params_setup(sem,
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
-        inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
+        inputs[:llaguerre_1d_right] ||
+        inputs[:llaguerre_1d_left])
+        
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux, utmp, fluxaux,
@@ -375,6 +384,7 @@ function params_setup(sem,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD, 
                   sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
+                  lEL_Train, 
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff,
