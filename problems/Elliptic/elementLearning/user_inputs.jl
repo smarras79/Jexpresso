@@ -10,7 +10,7 @@ function user_inputs()
         :llinsolve            => true,
         :ldss_laplace         => true,
         :lelementLearning     => true,
-        :lEL_Train            => true,
+#        :lEL_Train            => true,
         :Nsamp                => 10,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

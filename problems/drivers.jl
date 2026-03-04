@@ -1,4 +1,5 @@
 using Distributions
+using ONNXRunTime
 
 function driver(nparts,
                 distribute,
@@ -125,7 +126,7 @@ function driver(nparts,
                                                TFloat, inputs[:backend];
                                                Nsamp=inputs[:Nsamp],
                                                lEL_Train=inputs[:lEL_Train])
-
+                    
                     if EL.lEL_Train
                         #-----------------------------------------------------
                         # 1. Train:
@@ -152,9 +153,9 @@ function driver(nparts,
                             # 2.a/b
                             μ        = 1
                             â        = zeros(TFloat, ngl, ngl)
-                            avisc    = zeros(TFloat, ngl^2)
+                            avisc    = zeros(TFloat, 1, ngl^2)
                             ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
-                            avisc[:].= ranvisc
+                            avisc[1,:].= ranvisc
                             ψ        = sem.basis.ψ
                             expansion_2d!(â, ψ)
                             
@@ -218,84 +219,86 @@ function driver(nparts,
                             
                         end #isamp loop
                         
-                    end #end lEL_Train
-                    
-                    #-----------------------------------------------------
-                    # 2. Inference:
-                    #-----------------------------------------------------
-                    #
-                    # L*q = M*RHS   See algo 12.18 of Giraldo's book
-                    #
-                    # 2.a/b
-                    μ        = 1
-                    â        = zeros(TFloat, ngl, ngl)
-                    avisc    = zeros(TFloat, ngl^2)
-                    ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
-                    avisc[:].= ranvisc
-                    ψ        = sem.basis.ψ
-                    expansion_2d!(â, ψ)
-                    
-                    for ip =1:npoin
-                        RHS[ip] = user_source!(RHS[ip],
-                                               params.qp.qn[ip],
-                                               params.qp.qe[ip],
-                                               npoin,
-                                               inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                               neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
-                                               xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
-                                               ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
+                    #end #end lEL_Train
+                    else
+                        #-----------------------------------------------------
+                        # 2. Inference:
+                        #-----------------------------------------------------
+                        #
+                        # L*q = M*RHS   See algo 12.18 of Giraldo's book
+                        #
+                        # 2.a/b
+                        μ        = 1
+                        â        = zeros(TFloat, ngl, ngl)
+                        avisc    = zeros(TFloat, 1, ngl^2)
+                        ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
+                        avisc[1,:].= ranvisc
+                        ψ        = sem.basis.ψ
+                        expansion_2d!(â, ψ)
+                        
+                        for ip =1:npoin
+                            RHS[ip] = user_source!(RHS[ip],
+                                                   params.qp.qn[ip],
+                                                   params.qp.qe[ip],
+                                                   npoin,
+                                                   inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                                   neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                                                   xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
+                                                   ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
+                        end
+                        RHS = sem.matrix.M.*RHS
+                        
+                        apply_boundary_conditions_lin_solve!(sem.matrix.L,
+                                                             0.0, params.qp.qe,
+                                                             params.mesh.coords,
+                                                             params.metrics.nx,
+                                                             params.metrics.ny,
+                                                             params.metrics.nz,
+                                                             npoin,
+                                                             params.mesh.npoin_linear, 
+                                                             params.mesh.poin_in_bdy_edge,
+                                                             params.mesh.poin_in_bdy_face,
+                                                             params.mesh.nedges_bdy,
+                                                             params.mesh.nfaces_bdy,
+                                                             ngl, ngr,
+                                                             nelem_semi_inf,
+                                                             params.basis.ψ, params.basis.dψ,
+                                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                             RHS, 0.0, params.ubdy,
+                                                             params.mesh.connijk_lag,
+                                                             params.mesh.bdy_edge_in_elem,
+                                                             params.mesh.bdy_edge_type,
+                                                             params.ω, qp.neqs,
+                                                             params.inputs, params.AD, sem.mesh.SD)
+                        
+                        #-----------------------------------------------------
+                        # Element-learning infrastructure
+                        #-----------------------------------------------------
+                        @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
+                                                   sem.matrix.L, RHS, EL,
+                                                   avisc,
+                                                   [0.0], [0.0];
+                                                   isamp=1,
+                                                   total_cols_writtenin=0,
+                                                   total_cols_writtenout=0)
+                        
+                        usol = params.qp.qn
+                        neqs = params.qp.neqs
+                        args = (params.SD, usol, params.uaux, 1, 1,
+                                sem.mesh, nothing,
+                                nothing, nothing,
+                                0.0, 0.0, 0.0,
+                                OUTPUT_DIR, inputs,
+                                params.qp.qvars,
+                                params.qp.qoutvars,
+                                inputs[:outformat])
+                        
+                        write_output(args...; nvar=neqs, qexact=params.qp.qe)
+                        #-----------------------------------------------------
+                        # END Element-learning infrastructure
+                        #-----------------------------------------------------
+
                     end
-                    RHS = sem.matrix.M.*RHS
-                    
-                    apply_boundary_conditions_lin_solve!(sem.matrix.L,
-                                                         0.0, params.qp.qe,
-                                                         params.mesh.coords,
-                                                         params.metrics.nx,
-                                                         params.metrics.ny,
-                                                         params.metrics.nz,
-                                                         npoin,
-                                                         params.mesh.npoin_linear, 
-                                                         params.mesh.poin_in_bdy_edge,
-                                                         params.mesh.poin_in_bdy_face,
-                                                         params.mesh.nedges_bdy,
-                                                         params.mesh.nfaces_bdy,
-                                                         ngl, ngr,
-                                                         nelem_semi_inf,
-                                                         params.basis.ψ, params.basis.dψ,
-                                                         0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                                         RHS, 0.0, params.ubdy,
-                                                         params.mesh.connijk_lag,
-                                                         params.mesh.bdy_edge_in_elem,
-                                                         params.mesh.bdy_edge_type,
-                                                         params.ω, qp.neqs,
-                                                         params.inputs, params.AD, sem.mesh.SD)
-                    
-                    #-----------------------------------------------------
-                    # Element-learning infrastructure
-                    #-----------------------------------------------------
-                    @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
-                                               sem.matrix.L, RHS, EL,
-                                               avisc,
-                                               bufferin, bufferout;
-                                               isamp=isamp,
-                                               total_cols_writtenin=total_cols_writtenin,
-                                               total_cols_writtenout=total_cols_writtenout)
-                    
-                    usol = params.qp.qn
-                    neqs = params.qp.neqs
-                    args = (params.SD, usol, params.uaux, 1, isamp,
-                            sem.mesh, nothing,
-                            nothing, nothing,
-                            0.0, 0.0, 0.0,
-                            OUTPUT_DIR, inputs,
-                            params.qp.qvars,
-                            params.qp.qoutvars,
-                            inputs[:outformat])
-                    
-                    write_output(args...; nvar=neqs, qexact=params.qp.qe)
-                    #-----------------------------------------------------
-                    # END Element-learning infrastructure
-                    #-----------------------------------------------------
                     
                 else
                     
@@ -424,7 +427,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             #
             for j = 1:elnbdypoints
                 jpb = mesh.conn[iel, j]
-                EL.Avovb[ii, j, iel] = A[ipo, jpb]
+                EL.Avovb[ii, j, iel] = A[ipo, jpb] #I HAVE THIS SM
             end
             ii += 1
         end
@@ -659,18 +662,18 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             
             # T2 = -A⁻¹ᵥₒᵥₒ[:,:,iel]⋅Avovb[:,:,iel]
             LinearAlgebra.mul!(T2, -inv(EL.Avovo[:,:,iel]), EL.Avovb[:,:,iel]) 
-            Tie .= -T2
+            Tie .= -T2 #OK
+            
             # Eq. (6): uᵥ[ie,o] = -Tie*uᵥ[ie,b]
-            @info size(Tie)
-            @mystop
+        
             # T1 = Avbvo[:,:,iel]⋅T2 = - Avbvo⋅A⁻¹ᵥₒᵥₒ⋅Avovb
             LinearAlgebra.mul!(@view(T1[:,:]), @view(Avbvo[:,:]), @view(T2[:,:]))
             
             # 2.e
             # Output tensor:
-            EL.output_tensor[:, isamp] .= vec(Bie)  # Bie = -T2ie
+            EL.output_tensor[:, isamp] .= vec(Tie)
         end
-
+        
         #------------------------------------------------------------------------
         # Write input/output_bufferin.csv
         #------------------------------------------------------------------------
@@ -681,6 +684,40 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         #------------------------------------------------------------------------
 
     else
+        @info " "
+        @info " RUN INFERENCE "
+        # Load ONNX model
+        sess = ONNXRunTime.load_inference("./JX_NN_model.onnx")
+
+        # Inspect input/output names (use function calls, not field access)
+        println("Inputs: ", sess.input_names)
+        println("Outputs: ", sess.output_names)
+
+        # Get input/output names
+        input_name  = first(sess.input_names)
+        output_name = first(sess.output_names)
+
+        # Create a single sample input
+        N_in = 169  # input dimension of your FC network
+        
+        # Run inference
+        # Convert avisc to Float32 to match the model's expectations
+        #y = sess(Dict(input_name => x))
+        y = sess(Dict(input_name => Float32.(avisc)))
+        
+        # Extract output
+        ŷ = y[output_name]
+
+        println(ŷ)
+        println(" ------")
+        println("Output size = ", size(ŷ))
+
+
+        #B∂τ∂τ = similar(EL.A∂τ∂τ)
+
+        #B∂τ∂τ .= B∂τ∂τ .- 
+        @info size(EL.Avovb)
+        
         
         @mystop(" RUN INFERENCE NOW")
     end
