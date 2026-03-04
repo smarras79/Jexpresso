@@ -859,8 +859,8 @@ function je_receive_alya_data(world, nparts)
     ndime = Int(ndime_buf[1])
 
     # 2. rem_min, rem_max, rem_nx  (Fortran STEP 2, loop)
-    rem_min = Vector{Float32}(undef, 3)
-    rem_max = Vector{Float32}(undef, 3)
+    rem_min = Vector{Float64}(undef, 3)
+    rem_max = Vector{Float64}(undef, 3)
     rem_nx  = Vector{Int32}(undef, 3)
     for idime in 1:3
         MPI.Bcast!(@view(rem_min[idime:idime]), 0, world)
@@ -870,12 +870,12 @@ function je_receive_alya_data(world, nparts)
 
     # 3. neqs  (Fortran: after rem_nx loop)
     neqs_buf = Vector{Int32}(undef, 1)
-    MPI.Bcast!(neqs_buf, 0, world)
+    # MPI.Bcast!(neqs_buf, 0, world)
     neqs = Int(neqs_buf[1])
 
     # 4. nsteps  (Fortran: after neqs)
     nsteps_buf = Vector{Int32}(undef, 1)
-    MPI.Bcast!(nsteps_buf, 0, world)
+    # MPI.Bcast!(nsteps_buf, 0, world)
     nsteps = Int(nsteps_buf[1])
 
     # 5. Alya->world rank map  (Fortran: MPI_AllReduce)

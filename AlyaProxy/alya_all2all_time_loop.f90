@@ -18,7 +18,7 @@ program unitt_alya_with_another_code
   integer(4)                         :: neqs
   character(len=128)                 :: s
 
-  real,    dimension(1:3)            :: rem_min, rem_max
+  real(8), dimension(1:3)            :: rem_min, rem_max
   integer, dimension(1:3)            :: rem_nx
   
   integer(4),    contiguous, pointer :: alya_to_world(:)
@@ -128,11 +128,14 @@ program unitt_alya_with_another_code
      call MPI_Bcast(rem_max(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
      call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
   end do
+  !
+  ! Thsi can be useful
+  !
   ! 2c. neqs
-  neqs = 4
-  call MPI_Bcast(neqs, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-  ! 2d. nsteps
-  call MPI_Bcast(nsteps, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  !neqs = 4
+  !call MPI_Bcast(neqs, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  !! 2d. nsteps
+  !call MPI_Bcast(nsteps, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
   !--------------------------------------------------------------------------
   ! Alya -> World rank map
