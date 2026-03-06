@@ -60,8 +60,13 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
     nranks_alya = length(alya2world)
     
     # Distribution of points among Alya ranks
-    r     = mod(nmax, nranks_alya)
-    npoin = div(nmax, nranks_alya)
+    r     = mod(nmax, nranks_alya - 1)
+    npoin = div(nmax, nranks_alya - 1)
+
+    @info " AQUI ESTAMOS VIERNES 6 Marzo"
+    @info r
+    @info npoin
+    @info " ---------------------------"
     
     # Local coordinate bounds for this Jexpresso rank
     xmin_local = minimum(mesh.x)
@@ -346,6 +351,41 @@ Exchange data AND coordinates with Alya using non-blocking communication.
 - Data receive from R:   tag = TAG_DATA  + MY_RANK
 """
 function coupling_exchange_data!(cpg::CouplingData)
+
+    wsize = length(cpg.npoin_send)
+
+    println("\n[CHECK 1] Julia is just before the call to the isend to alya")
+
+    # Get my world rank
+    lcomm = get_mpi_comm()
+    wrank = MPI.Comm_rank(cpg.comm_world)
+
+    # Allocate arrays for MPI requests
+    send_requests = MPI.Request[]
+
+    # Tags (must match Alya Fortran code)
+    TAG_DATA  = 0
+    
+    # Post all non-blocking sends (data + coordinates, Julia → Alya)
+    for dest_rank in cpg.send_to_ranks
+        if cpg.npoin_send[dest_rank + 1] > 0
+            # Send interpolated variable data
+            buf = cpg.send_bufs[dest_rank + 1]
+            tag = TAG_DATA 
+            req = MPI.Isend(buf, dest_rank, tag, cpg.comm_world)
+            push!(send_requests, req)
+        end
+    end
+
+    # Wait for all sends to complete
+    if !isempty(send_requests)
+        MPI.Waitall(send_requests)
+    end
+
+    return nothing
+end
+
+function coupling_exchange_data_old!(cpg::CouplingData)
     wsize = length(cpg.npoin_send)
 
     # Get my world rank
@@ -399,54 +439,6 @@ function coupling_exchange_data!(cpg::CouplingData)
 
     return nothing
 end
-
-function coupling_exchange_data_old!(cpg::CouplingData)
-    wsize = length(cpg.npoin_send)
-    
-    # Allocate arrays for MPI requests
-    send_requests = MPI.Request[]
-    recv_requests = MPI.Request[]
-    
-    # Post all non-blocking receives first (good practice)
-    for (idx, src_rank) in enumerate(cpg.recv_from_ranks)
-        if cpg.npoin_recv[src_rank + 1] > 0
-            buf = cpg.recv_bufs[src_rank + 1]
-            tag = 2000 + src_rank  # Unique tag per sender
-            req = MPI.Irecv!(buf, src_rank, tag, cpg.comm_world)
-            push!(recv_requests, req)
-        end
-    end
-    
-    # Post all non-blocking sends
-    for (idx, dest_rank) in enumerate(cpg.send_to_ranks)
-        if cpg.npoin_send[dest_rank + 1] > 0
-            buf = cpg.send_bufs[dest_rank + 1]
-            tag = 2000 + cpg.lrank  # Unique tag per sender (use local rank converted to world rank)
-            # Need to convert local rank to world rank
-            lcomm = get_mpi_comm()
-            lrank = MPI.Comm_rank(lcomm)
-            # Find my world rank (Jexpresso ranks start after Alya ranks)
-            nranks_alya = length(cpg.npoin_send) - MPI.Comm_size(lcomm)
-            my_world_rank = nranks_alya + lrank
-            tag = 2000 + my_world_rank
-            req = MPI.Isend(buf, dest_rank, tag, cpg.comm_world)
-            push!(send_requests, req)
-        end
-    end
-    
-    # Wait for all receives to complete
-    if !isempty(recv_requests)
-        MPI.Waitall(recv_requests)
-    end
-    
-    # Wait for all sends to complete
-    if !isempty(send_requests)
-        MPI.Waitall(send_requests)
-    end
-    
-    return nothing
-end
-
 
 #------------------------------------------------------------------------------------
 #=
