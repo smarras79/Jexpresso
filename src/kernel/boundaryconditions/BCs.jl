@@ -572,12 +572,18 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                    Tabs, qn,
                                    neqs, dirichlet!, neumann, inputs)
 
-    PhysConst = PhysicalConst{Float64}() 
-    micro = size(Tabs,1)
+    PhysConst          = PhysicalConst{Float64}()
+    micro              = size(Tabs,1)
+    lbdy_fluxes        = inputs[:bdy_fluxes]::Bool
+    lbulk_fluxes       = inputs[:bulk_fluxes]::Bool
+    SOL_VARS_TYPE      = inputs[:SOL_VARS_TYPE]
+    ifirst_wall_node   = inputs[:ifirst_wall_node_index]::Int
+    # lbdy_fluxes  = false
+    # lbulk_fluxes = true
     for iface = 1:nfaces_bdy
-        if (inputs[:bdy_fluxes])
+        if (lbdy_fluxes)
             F_surf .= 0.0
-            if (inputs[:bulk_fluxes])
+            if (lbulk_fluxes)
                 if (coords[poin_in_bdy_face[iface,3,3],3] == zmin)
                     for i = 1:ngl
                         for j = 1:ngl
@@ -591,7 +597,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
                                 θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                             end
-                            bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])                        
+                            bulk_surface_flux!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]), @view(qe[ip,:]), @view(qe[ip1,:]), θ, θ1, qn[ip], qn[ip1])                        
                             #@info F_surf[i,j,:]
                         end
                     end
@@ -607,8 +613,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             e   = bdy_face_in_elem[iface]
 
                             #Inside point
-                            iz  = inputs[:ifirst_wall_node_index]
-                            ip1 = connijk[e,i,j,iz]
+                            ip1 = connijk[e,i,j,ifirst_wall_node]
                             
                             θ = 0.0   
                             θ1 = 0.0 
@@ -626,6 +631,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 end
                             end
 
+                            # if (false)
                             if (bdy_face_type[iface] == "MOST")
                                 ipsfc    = connijk[e,i,j,1]
                                 ρ        = uaux[ip1, 1]
@@ -649,23 +655,24 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 T_sfc    = 299.88 #K
                                 p_sfc    = 101200.0
                                 θ_sfc    = T_sfc*(PhysConst.pref/p_sfc)^(1/PhysConst.cpoverR)
-                                qv_in    = nothing
-                                qv_sfc   = nothing
-                                if (micro > 1)
-                                    qv_in    = uaux[ip1,   6]/ρ
-                                    qv_sfc   = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
-                                end
                                 z_sfc    = coords[ipsfc, 3]
-                                                                
+
                                 Δx = coords[ip1, 1] - coords[ipsfc, 1]
                                 Δy = coords[ip1, 2] - coords[ipsfc, 2]
                                 Δz = coords[ip1, 3] - coords[ipsfc, 3]
-                                z_inside = abs(Δx*nx[iface,i,j] + Δy*ny[iface,i,j] + Δz*nz[iface,i,j]) 
-                                
-                                CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), @view(wqv[iface,i,j,1]),
-                                        ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst;
-                                        q_ref=qv_in, q_s=qv_sfc,
-                                        z0_m=2e-4, z0_h=2e-4)
+                                z_inside = abs(Δx*nx[iface,i,j] + Δy*ny[iface,i,j] + Δz*nz[iface,i,j])
+
+                                # if (micro > 1)
+                                #     qv_in  = uaux[ip1, 6]/ρ
+                                #     qv_sfc = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
+                                #     CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
+                                #             ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                #             qv_in, qv_sfc, 2e-4, 2e-4)
+                                # else
+                                #     CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
+                                #             ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                #             2e-4, 2e-4)
+                                # end
                                 # @info τ_f[iface,i,j,1], τ_f[iface,i,j,2], τ_f[iface,i,j,3]
                                 F_surf[i,j,2] = τ_f[iface,i,j,1]
                                 F_surf[i,j,3] = τ_f[iface,i,j,2]
@@ -681,11 +688,11 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 # @info "MOST debug" θ_inside θ_sfc (θ_inside - θ_sfc) u_inside v_inside w_inside z_inside Tabs[ip1] uaux[ip1,end]
                                 
                             else
-                                user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
-                                                 qe[ip,:], qe[ip1,:],
+                                user_bc_neumann!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
+                                                 @view(qe[ip,:]), @view(qe[ip1,:]),
                                                  bdy_face_type[iface],
                                                  @view(coords[ip,:]),
-                                                 @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE], PhysConst;
+                                                 @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), SOL_VARS_TYPE, PhysConst;
                                                  θ = θ,
                                                  θ1 = θ1,
                                                  qn0 = qn1,
@@ -695,20 +702,17 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                     end
                  #end
             end
-            compute_surface_integral!(S_face, F_surf, ω, Jef, iface, ngl)
+            compute_surface_integral!(@view(S_face[iface,:,:,:]), F_surf, ω, @view(Jef[iface,:,:]), ngl, neqs)
         end
         
     end
     #@info maximum(S_face[:,:,:,2]), maximum(S_face[:,:,:,5]), maximum(S_face[:,:,:,6])
     #@info minimum(S_face[:,:,:,2]), minimum(S_face[:,:,:,5]), minimum(S_face[:,:,:,6])
-    if (inputs[:bdy_fluxes])
+    if (lbdy_fluxes)
         DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl,
-                              coords[:,3], zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
+        @view(coords[:,3]), zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5])
         #@info minimum(S_flux[:,2]), minimum(S_flux[:,5])
-        for ieq = 1:neqs
-            # RHS[:, ieq] .+= S_flux[:,ieq] ./ M_inv[:]
-            RHS[:, ieq] .+= S_flux[:,ieq]
-        end
+        RHS[:,:] .= @view(RHS[:,:]) .+ @view(S_flux[:,:])
     end
 end

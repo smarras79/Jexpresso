@@ -1,13 +1,12 @@
-function compute_surface_integral!(S_face, F_surf, ω, Jac_face, iface, ngl)
+function compute_surface_integral!(S_face, F_surf, ω, Jac_face, ngl, neqs)
     for i = 1:ngl
         for j = 1:ngl
-
-            ωJac = ω[i]*ω[j]*Jac_face[iface,i,j]
-            #@info  ωJac*F_surf[i,j,:], ω[i], ω[j], Jac_face[iface,i,j], F_surf[i,j,:]
-            S_face[iface,i,j,:] .+= ωJac*F_surf[i,j,:]
+            ωJac = ω[i]*ω[j]*Jac_face[i,j]
+            for k = 1:neqs
+                S_face[i,j,k] += ωJac * F_surf[i,j,k]
+            end
         end
     end
-
 end
 
 function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)

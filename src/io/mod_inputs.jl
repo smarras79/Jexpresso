@@ -317,6 +317,27 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # END Plotting parameters:
     #
 
+
+    #---------------------------------------------------------------------------
+    #LES statistics
+    #---------------------------------------------------------------------------
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = 0.0
+    end
+
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
+
+    #---------------------------------------------------------------------------
+    #END LES statistics
+    #---------------------------------------------------------------------------
+
     #Restart:
     if (!haskey(inputs, :lrestart))
         inputs[:lrestart] = false
@@ -339,9 +360,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:restart_time] = 0.0
     end
 
-    if(!haskey(inputs, :statistics_time))
-        inputs[:statistics_time] = 0.0
-    end
 
     #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))

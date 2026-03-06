@@ -1,13 +1,13 @@
 #-------------------------------------------------------------------------------------------
 # Solution variables
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, backend}
+Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, backend, VT1, VT2}
 
-    u    = KernelAbstractions.zeros(backend, T, dims1)
-    uaux = KernelAbstractions.zeros(backend, T, dims2)
-    vaux = KernelAbstractions.zeros(backend, T, dims3) #generic auxiliary array for general use
-    utmp = KernelAbstractions.zeros(backend, T, dims2) #for conformity use
-    
+    u::VT1    = KernelAbstractions.zeros(backend, T, dims1)
+    uaux::VT2 = KernelAbstractions.zeros(backend, T, dims2)
+    vaux::VT1 = KernelAbstractions.zeros(backend, T, dims3) #generic auxiliary array for general use
+    utmp::VT2 = KernelAbstractions.zeros(backend, T, dims2) #for conformity use
+
 end
 function allocate_uODE(SD, npoin, T, backend; neqs=1)
 
@@ -15,36 +15,39 @@ function allocate_uODE(SD, npoin, T, backend; neqs=1)
     dims2 = (Int64(npoin), Int64(neqs+1))
     dims3 = (Int64(npoin))
 
-    uODE = St_uODE{T, dims1, dims2, dims3, backend}()
-    
+    VT1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    VT2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
+    uODE = St_uODE{T, dims1, dims2, dims3, backend, VT1, VT2}()
+
     return uODE
 end
 
-Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, backend}
+Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, backend, VT}
 
-    qnp1  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹
-    qn    = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ
-    qout  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ
-    qnm1  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻¹
-    qnm2  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻²
-    qnm3  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻³
-    qe    = KernelAbstractions.zeros(backend,  T, dims1) # qexact 
-    press = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹   
-    zb    = KernelAbstractions.zeros(backend,  T, dims1) # zb #shallow water moving bathymetry 
-    
+    qnp1::VT  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹
+    qn::VT    = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ
+    qout::VT  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ
+    qnm1::VT  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻¹
+    qnm2::VT  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻²
+    qnm3::VT  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻³
+    qe::VT    = KernelAbstractions.zeros(backend,  T, dims1) # qexact
+    press::VT = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹
+    zb::VT    = KernelAbstractions.zeros(backend,  T, dims1) # zb #shallow water moving bathymetry
+
     qvars    = Array{Union{Nothing, String}}(nothing, nvars)
     qoutvars = Array{Union{Nothing, String}}(nothing, nvars)
     neqs  = nvars
-    
+
 end
 function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1, qoutvars=qvars)
-    
+
     dims1 = (Int64(npoin), Int64(neqs+1))
-    
-    q          = St_SolutionVars{T, dims1, neqs, backend}()
+
+    VT = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    q          = St_SolutionVars{T, dims1, neqs, backend, VT}()
     q.qvars    = qvars
     q.qoutvars = qoutvars
-    
+
     return q
 end
 
@@ -52,33 +55,35 @@ end
 #-------------------------------------------------------------------------------------------
 # rhs
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, dims1, dims2, backend}
-    
-    RHS          = KernelAbstractions.zeros(backend,  T, dims1)         
-    RHS_visc     = KernelAbstractions.zeros(backend,  T, dims1)
-    rhs_el       = KernelAbstractions.zeros(backend,  T, dims2)
-    rhs_diff_el  = KernelAbstractions.zeros(backend,  T, dims2)
-    rhs_diffξ_el = KernelAbstractions.zeros(backend,  T, dims2)
-    rhs_diffη_el = KernelAbstractions.zeros(backend,  T, dims2)
-    rhs_diffζ_el = KernelAbstractions.zeros(backend,  T, dims2)
-    rhs_el_tmp   = KernelAbstractions.zeros(backend,  T, dims2)
-    
+Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, dims1, dims2, backend, VT1, VT2}
+
+    RHS::VT1          = KernelAbstractions.zeros(backend,  T, dims1)
+    RHS_visc::VT1     = KernelAbstractions.zeros(backend,  T, dims1)
+    rhs_el::VT2       = KernelAbstractions.zeros(backend,  T, dims2)
+    rhs_diff_el::VT2  = KernelAbstractions.zeros(backend,  T, dims2)
+    rhs_diffξ_el::VT2 = KernelAbstractions.zeros(backend,  T, dims2)
+    rhs_diffη_el::VT2 = KernelAbstractions.zeros(backend,  T, dims2)
+    rhs_diffζ_el::VT2 = KernelAbstractions.zeros(backend,  T, dims2)
+    rhs_el_tmp::VT2   = KernelAbstractions.zeros(backend,  T, dims2)
+
 end
 function allocate_rhs(SD, nelem, npoin, ngl, T, backend; neqs=1)
 
     if SD == NSD_1D()
         dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
+        dims2 = (Int64(nelem), Int64(ngl), Int64(neqs))
     elseif SD == NSD_2D()
         dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
+        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs))
     elseif SD == NSD_3D()
         dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
+        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
     end
-    
-    rhs = St_rhs{T, dims1, dims2, backend}()
-    
+
+    VT1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    VT2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
+    rhs = St_rhs{T, dims1, dims2, backend, VT1, VT2}()
+
     return rhs
 end
 
@@ -113,11 +118,11 @@ end
 #-------------------------------------------------------------------------------------------
 # Boundary Fluxes
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_bdy_fluxes{T <: AbstractFloat, dims1, dims2, dims3, backend}
-    
-    F_surf = KernelAbstractions.zeros(backend,  T, dims1)
-    S_face = KernelAbstractions.zeros(backend,  T, dims2)
-    S_flux = KernelAbstractions.zeros(backend,  T, dims3)
+Base.@kwdef mutable struct St_bdy_fluxes{T <: AbstractFloat, dims1, dims2, dims3, backend, VT1, VT2, VT3}
+
+    F_surf::VT1 = KernelAbstractions.zeros(backend,  T, dims1)
+    S_face::VT2 = KernelAbstractions.zeros(backend,  T, dims2)
+    S_flux::VT3 = KernelAbstractions.zeros(backend,  T, dims3)
 
 end
 
@@ -137,7 +142,10 @@ function allocate_bdy_fluxes(SD, nfaces, nedges, npoin, ngl, T, backend; neqs=1)
         dims3 = (Int64(npoin), Int64(neqs))
     end
 
-    bdy_fluxes = St_bdy_fluxes{T, dims1, dims2, dims3, backend}()
+    VT1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    VT2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
+    VT3 = typeof(KernelAbstractions.zeros(backend, T, dims3))
+    bdy_fluxes = St_bdy_fluxes{T, dims1, dims2, dims3, backend, VT1, VT2, VT3}()
 
     return bdy_fluxes
 

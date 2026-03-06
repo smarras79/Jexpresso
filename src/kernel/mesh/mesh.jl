@@ -142,16 +142,16 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     bdy_face_type             = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id          = KernelAbstractions.zeros(backend, TInt, 0)
 
-    Δelem        = KernelAbstractions.zeros(backend, TInt, 0)
-    Δelem_s      = 0.0
-    Δelem_l      = 0.0
-    Δeffective_s = 0.0
-    Δeffective_l = 0.0
+    Δelem                = KernelAbstractions.zeros(backend, TInt, 0)
+    Δelem_s              = 0.0
+    Δelem_l              = 0.0
+    Δeffective_s         = 0.0
+    Δeffective_l::TFloat = 0.0
         
     SD::AbstractSpaceDimensions
 
     # for AMR
-    ad_lvl = KernelAbstractions.zeros(backend, TInt, 0)
+    ad_lvl::Vector{TInt}                     = KernelAbstractions.zeros(backend, TInt, 0)
     num_hanging_facets::Union{TInt, Missing} = 0
     non_conforming_facets                    = Vector{Vector{TInt}}(undef,num_hanging_facets)
     non_conforming_facets_parents_ghost      = Vector{Vector{TInt}}(undef,num_hanging_facets)
@@ -264,15 +264,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
             
-            ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
-                flags = zeros(Cint,length(indices))
-                flags.=nothing_flag
-                # @info flags
-                # flags[1] = refine_flag
-                # flags[1:4:end] .= refine_flag
-                # if rank == 2
-                    # flags[1] = refine_flag
-                # end
+            ref_coarse_flags = map(parts, partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank, indices
+                flags = zeros(Cint, length(indices))
+                flags .= nothing_flag
+                target_gid = 225
+                l2g = local_to_global(indices)
+                local_id = findfirst(==(target_gid), l2g)
+                if local_id !== nothing
+                    flags[local_id] = refine_flag
+                end
+          
                 flags
             end
             if rank != 0
@@ -3856,3 +3857,6 @@ function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_
 end
 
 
+@inline function calculate_effective_delta!(delta::TFloat, ad_lvl::TInt, effective_delta::TFloat)
+    effective_delta = ldexp(delta, -ad_lvl)
+end

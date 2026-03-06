@@ -315,7 +315,10 @@ function params_setup(sem,
     timers = Dict{String, MPIFunctionTimer}()
 
     # LES statistics z-level cache (computed once, shared across timesteps)
-    les_stat_cache = build_les_stat_cache(sem.mesh)
+    nprofiles        = length(inputs[:lesprofile_vars])
+    nstress          = length(inputs[:lesstress_vars])
+    les_stat_cache   = build_les_stat_cache(sem.mesh, nprofiles, nstress, TFloat, backend)
+    les_cross_section = build_les_cross_section(sem.mesh, sem.basis, nprofiles, nstress, TFloat)
 
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
@@ -355,8 +358,9 @@ function params_setup(sem,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
                   les_stat_cache,
+                  les_cross_section,
                   timers)
-        
+
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
@@ -387,6 +391,7 @@ function params_setup(sem,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   les_stat_cache,
+                  les_cross_section,
                   OUTPUT_DIR,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute)

@@ -71,77 +71,120 @@ const a_h = 16.0              # heat stability parameter (unstable)
 const b_m = 5.0               # momentum stability parameter (stable)
 const b_h = 5.0               # heat stability parameter (stable)
 
-function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst;
-                  q_ref=nothing, q_s=nothing, z0_m=0.1, z0_h=0.01)
+# Internal positional-only helpers — no keyword arguments to avoid NamedTuple heap allocation
+# per boundary-point call.  The kwargs version of _surface_scales below delegates here.
 
-    #println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
+function _surface_scales_dry(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho)
+    κ  = PhysConst.karman
+    cp = PhysConst.cp
+    u_star     = κ * u_ref / log(z_ref / z0_m)
+    theta_star = κ * (theta_ref - theta_s) / log(z_ref / z0_h)
+    Q_H = -rho * cp * u_star * theta_star
+    L   = obukhov_length(u_star, theta_ref, Q_H, PhysConst)
+    for _ in 1:20
+        zeta    = z_ref / L
+        zeta0_m = z0_m / L
+        zeta0_h = z0_h / L
+        u_star_new     = κ * u_ref / (log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m))
+        theta_star_new = κ * (theta_ref - theta_s) / (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h))
+        Q_H_new = -rho * cp * u_star_new * theta_star_new
+        L_new   = obukhov_length(u_star_new, theta_ref, Q_H_new, PhysConst)
+        err = abs(L_new - L) / max(abs(L), abs(L_new))
+        u_star     = u_star_new
+        theta_star = theta_star_new
+        Q_H        = Q_H_new
+        L          = L_new
+        err < 1e-4 && break
+    end
+    return u_star, theta_star
+end
 
-    # Example atmospheric conditions
-    #u_ref = 10.0      # wind speed at 10m [m/s]
-    #v_ref = 0.0
-    #theta_ref = 298.0 # 285.0  # potential temperature at 10m [K]
-    #theta_s = 302.0   # 288.0    # surface potential temperature [K]
-    #z_ref = 10.0      # reference height [m]
+function _surface_scales_moist(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho, q_ref, q_s)
+    κ  = PhysConst.karman
+    cp = PhysConst.cp
+    u_star     = κ * u_ref / log(z_ref / z0_m)
+    theta_star = κ * (theta_ref - theta_s) / log(z_ref / z0_h)
+    q_star     = κ * (q_ref - q_s) / log(z_ref / z0_h)
+    Q_H = -rho * cp * u_star * theta_star
+    L   = obukhov_length(u_star, theta_ref, Q_H, PhysConst)
+    for _ in 1:20
+        zeta    = z_ref / L
+        zeta0_m = z0_m / L
+        zeta0_h = z0_h / L
+        u_star_new     = κ * u_ref / (log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m))
+        theta_star_new = κ * (theta_ref - theta_s) / (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h))
+        q_star_new     = κ * (q_ref - q_s) / (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h))
+        Q_H_new = -rho * cp * u_star_new * theta_star_new
+        L_new   = obukhov_length(u_star_new, theta_ref, Q_H_new, PhysConst)
+        err = abs(L_new - L) / max(abs(L), abs(L_new))
+        u_star     = u_star_new
+        theta_star = theta_star_new
+        q_star     = q_star_new
+        Q_H        = Q_H_new
+        L          = L_new
+        err < 1e-4 && break
+    end
+    return u_star, theta_star, q_star
+end
 
+# Backward-compatible kwargs wrapper (not on the hot path — BCs.jl calls the positional overloads below).
+function _surface_scales(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst;
+                                  q_ref=nothing, q_s=nothing, rho=1.225, max_iter=20, tol=1e-4)
+    if !isnothing(q_ref) && !isnothing(q_s)
+        return _surface_scales_moist(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho, q_ref, q_s)
+    else
+        u_star, theta_star = _surface_scales_dry(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho)
+        return u_star, theta_star, zero(u_ref)
+    end
+end
+
+# --- Hot-path CM_MOST! overloads: all positional, no kwargs ---
+
+# Dry (no moisture): z0_m and z0_h are positional
+function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, z0_m, z0_h)
     u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
-
-    # Calculate surface conditions (with or without humidity)
-    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst;
-                                q_ref=q_ref, q_s=q_s, rho=ρ)
-
-    # Momentum flux
-    τ_magnitude = momentum_flux(result.u_star, ρ)
-
+    u_star, theta_star = _surface_scales_dry(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, ρ)
+    τ_magnitude = ρ * u_star^2
     τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
     τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
     τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
-
-    # Sensible heat flux (kinematic): w'θ' = -u* · θ*
-    # Q_H [W/m²] = ρ · cp · w'θ'
-    wθ[1] = -result.u_star * result.theta_star
-
-    # Latent heat flux (kinematic): w'q' = -u* · q*
-    # Q_E [W/m²] = ρ · Lv · w'q'
-    wq[1] = -result.u_star * result.q_star
-
-    #println("  x-Momentum flux τx = $(round(τ_f[iface_bdy, idx1, idx2, 1], digits=4)) N/m²")
-    #println("  y-Momentum flux τy = $(round(τ_f[iface_bdy, idx1, idx2, 2], digits=4)) N/m²")
-
-    #= Determine stability regime
-    if result_x.zeta < -0.1
-        stability = "Moderately Unstable (Convective)"
-    elseif result_x.zeta < 0
-        stability = "Weakly Unstable"
-    elseif result_x.zeta < 0.1
-        stability = "Near Neutral"
-    else
-        stability = "Stable"
-    end
-    println("  Atmospheric stability: $stability")
-    =#
-    #= println("\n=== GENERATING COMPREHENSIVE ANALYSIS ===")
-    # Create and save comprehensive analysis
-    try
-    p = save_analysis_to_pdf(result, z0_m, z0_h, theta_s, u_ref, theta_ref, z_ref,
-    filename="MOST_surface_flux_analysis.pdf")
-
-    println("\n=== ANALYSIS COMPLETE ===")
-    println("✓ Surface flux calculations completed")
-    println("✓ Comprehensive 6-panel visualization created")
-    println("✓ Results saved to PDF")
-    println("✓ Physical consistency verified")
-
-    catch e
-    println("Plotting failed: $e")
-    println("Install Plots.jl with: using Pkg; Pkg.add(\"Plots\")")
-    end=#
-    # return result
+    wθ[1] = -u_star * theta_star
+    wq[1] = zero(ρ)
 end
 
-# Backward compatible version without humidity
+# Moist: q_ref and q_s before z0_m, z0_h
+function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, q_ref, q_s, z0_m, z0_h)
+    u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
+    u_star, theta_star, q_star = _surface_scales_moist(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, ρ, q_ref, q_s)
+    τ_magnitude = ρ * u_star^2
+    τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
+    τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
+    τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
+    wθ[1] = -u_star * theta_star
+    wq[1] = -u_star * q_star
+end
+
+# Backward-compatible kwargs wrapper (kept for external callers; NOT the hot path).
+function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst;
+                  q_ref=nothing, q_s=nothing, z0_m=0.1, z0_h=0.01)
+    if !isnothing(q_ref) && !isnothing(q_s)
+        CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, q_ref, q_s, z0_m, z0_h)
+    else
+        CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, z0_m, z0_h)
+    end
+end
+
+# Backward compatible version without wq argument (dry, default roughness lengths).
+# Uses _surface_scales_dry directly to avoid allocating a dummy wq array.
 function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst)
-    wq = [0.0]  # dummy for LHF
-    return CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst)
+    u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
+    u_star, theta_star = _surface_scales_dry(u_magnitude, theta_ref, z_ref, theta_s,
+                                             0.1, 0.01, PhysConst, ρ)
+    τ_magnitude = ρ * u_star^2
+    τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
+    τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
+    τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
+    wθ[1] = -u_star * theta_star
 end
 
 

@@ -78,11 +78,18 @@ function time_loop!(inputs, params, u, args...)
     end
 
 
-    # LES statistics callback: write profiles every 10 s
+    # LES statistics callback:
     function les_stat_condition(u, t, integrator)
-        return les_stat_t ≠ 0.0 && rem(t, les_stat_t) < 1e-3
+        # return les_stat_t ≠ 0.0 && rem(t, les_stat_t) < 1e-3
+        idx  = findfirst(x -> AlmostEqual(x, t), les_stat_t)
+        if idx !== nothing
+            return true
+        else
+            return false
+        end
     end
     function do_les_statistics!(integrator)
+        println_rank(" # LES Statistics at t=", integrator.t; msg_rank = rank)
         les_statistics(integrator.u, integrator.p, integrator.t)
     end
 
@@ -112,13 +119,13 @@ function time_loop!(inputs, params, u, args...)
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-            if inputs[:ladapt] == false
+            # if inputs[:ladapt] == false
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
                         integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
                         integrator.p.mesh.Δeffective_s,
                         integrator,
                         integrator.p.SD; visc=inputs[:μ])
-            end
+            # end
             write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,

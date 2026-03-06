@@ -1,8 +1,8 @@
-Base.@kwdef mutable struct St_Wall_model{T <: AbstractFloat, dims1, dims2, dims3, backend}
+Base.@kwdef mutable struct St_Wall_model{T <: AbstractFloat, dims1, dims2, dims3, backend, VT}
 
-    τ_f = KernelAbstractions.zeros(backend,  T, dims1)
-    wθ  = KernelAbstractions.zeros(backend,  T, dims2)
-    wqv = KernelAbstractions.zeros(backend,  T, dims3)
+    τ_f::VT = KernelAbstractions.zeros(backend,  T, dims1)
+    wθ::VT  = KernelAbstractions.zeros(backend,  T, dims2)
+    wqv::VT = KernelAbstractions.zeros(backend,  T, dims3)
 
 end
 
@@ -22,7 +22,8 @@ function allocate_Wall_model(nface, ngl, T, backend; lwall_model=false, lmoist=f
         dims2 = (0, 0, 0, 0)
         dims3 = (0, 0, 0, 0)
     end
-    
-    wm = St_Wall_model{T, dims1, dims2, dims3, backend}()
+
+    VT = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    wm = St_Wall_model{T, dims1, dims2, dims3, backend, VT}()
     return wm
 end

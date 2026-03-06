@@ -800,13 +800,19 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
         # With ρ <= 0 the mixing ratios (qt, qp) flip sign and all downstream
         # microphysics is unphysical; skip the point and zero all outputs.
         if ρ <= 0.0
-            qr[ip]    = 0.0
-            qs[ip]    = 0.0
-            qg[ip]    = 0.0
-            qn[ip]    = 0.0
-            qc[ip]    = 0.0
-            qi[ip]    = 0.0
-            qsatt[ip] = 0.0
+            qr[ip]       = 0.0
+            qs[ip]       = 0.0
+            qg[ip]       = 0.0
+            qn[ip]       = 0.0
+            qc[ip]       = 0.0
+            qi[ip]       = 0.0
+            qsatt[ip]    = 0.0
+            if NSD == NSD_3D()          # background temperature from background moist static energy
+                Tabs[ip] = (qe[ip,5]/qe[ip,1] - g*z[ip])/cp
+            else
+                Tabs[ip] = (qe[ip,4]/qe[ip,1] - g*z[ip])/cp
+            end
+            uaux[ip,end] = qe[ip,end]  # use background pressure to avoid artificial pressure gradients
             continue
         end
 
