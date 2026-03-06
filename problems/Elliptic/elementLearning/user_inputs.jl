@@ -9,20 +9,24 @@ function user_inputs()
         :lsource              => true, 
         :llinsolve            => true,
         :ldss_laplace         => true,
+        #:lsparse              => true,
         :lelementLearning     => true,
-        :lEL_Train            => true,
-        :Nsamp                => 1,
+        #:lEL_Train            => true,
+        :Nsamp                => 150,
+        :rconst               => [0.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 12,      # Polynomial order
+        :nop                 => 6,      # Polynomial order
         #:nop_laguerre        => 14,
         #:xfac_laguerre       => 0.25,
         #:yfac_laguerre       => 0.0,

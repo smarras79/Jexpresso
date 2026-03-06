@@ -1,8 +1,6 @@
 using Distributions
 using ONNXRunTime
 
-#include("./el.jl")
-
 function driver(nparts,
                 distribute,
                 inputs::Dict,
@@ -162,14 +160,14 @@ function driver(nparts,
                             expansion_2d!(â, ψ)
                             
                             for ip =1:npoin
-                                RHS[ip] = user_source!(RHS[ip],
-                                                       params.qp.qn[ip],
-                                                       params.qp.qe[ip],
-                                                       npoin,
-                                                       inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                                       neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
-                                                       xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
-                                                       ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
+                                user_source!(RHS[ip],
+                                             params.qp.qn[ip],
+                                             params.qp.qe[ip],
+                                             npoin,
+                                             inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                             neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                                             xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
+                                             ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
                             end
                             RHS = sem.matrix.M.*RHS
                             
