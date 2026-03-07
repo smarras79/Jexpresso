@@ -106,7 +106,6 @@ function driver(nparts,
             #-----------------------------------------------------------------------------------
             # Problems that lead to Lx = RHS
             #-----------------------------------------------------------------------------------
-            
             npoin          = sem.mesh.npoin
             nelem          = sem.mesh.nelem
             nelem_semi_inf = params.mesh.nelem_semi_inf
@@ -119,6 +118,7 @@ function driver(nparts,
             if (inputs[:backend] == CPU())
 
                 if inputs[:lelementLearning]
+                    
                     EL = allocate_elemLearning(nelem, ngl,
                                                sem.mesh.length∂O,
                                                sem.mesh.length∂τ,
@@ -126,7 +126,13 @@ function driver(nparts,
                                                TFloat, inputs[:backend];
                                                Nsamp=inputs[:Nsamp],
                                                lEL_Train=inputs[:lEL_Train])
-                    
+
+
+                    ABC  = zeros(sem.mesh.length∂O, sem.mesh.length∂τ, sem.mesh.nelem)
+                    BC   = zeros(size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2])
+                    BOΓg = zeros(sem.mesh.length∂O)
+                    gΓ   = zeros(sem.mesh.lengthΓ)
+                                       
                     if EL.lEL_Train
                         #-----------------------------------------------------
                         # 1. Train:
@@ -200,7 +206,8 @@ function driver(nparts,
                             @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
                                                        sem.matrix.L, RHS, EL,
                                                        avisc,
-                                                       bufferin, bufferout;
+                                                       bufferin, bufferout,
+                                                       ABC, BC, BOΓg, gΓ;
                                                        isamp=isamp,
                                                        total_cols_writtenin=total_cols_writtenin,
                                                        total_cols_writtenout=total_cols_writtenout)
@@ -219,7 +226,13 @@ function driver(nparts,
                             
                         end #isamp loop
                         
-                    #end #end lEL_Train
+                        #
+                        # Write input/output tensors after collecting the data:
+                        #
+                        total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
+                        total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
+                        
+                        #end #end lEL_Train
                     else
                         #-----------------------------------------------------
                         # 2. Inference:
@@ -277,7 +290,8 @@ function driver(nparts,
                         @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
                                                    sem.matrix.L, RHS, EL,
                                                    avisc,
-                                                   [0.0], [0.0];
+                                                   [0.0], [0.0],
+                                                   ABC, BC, BOΓg, gΓ;
                                                    isamp=1,
                                                    total_cols_writtenin=0,
                                                    total_cols_writtenout=0)

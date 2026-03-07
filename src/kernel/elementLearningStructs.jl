@@ -75,6 +75,36 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ, T,
     return elemLearning
 end
 
+function write_MLtensor!(buffer::Vector{Vector{Float64}}, tensor_column::Vector{Float64})
+    push!(buffer, tensor_column)  # accumulate in caller-owned buffer
+end
+function flush_MLtensor!(buffer::Vector{Vector{Float64}}, total_cols_written, fname)
+    isempty(buffer) && return total_cols_written
+    
+    # Stack columns into a matrix without splatting
+    nrows = length(buffer[1])
+    ncols = length(buffer)
+    data  = Matrix{Float64}(undef, nrows, ncols)
+    for (j, col) in enumerate(buffer)
+        data[:, j] .= col
+    end
+
+    col_names = ["x$(total_cols_written + i)" for i in 1:ncols]
+    df = DataFrame(data, col_names)
+
+    if total_cols_written == 0
+        CSV.write(fname, df, transform=(col, val) -> round(val, digits=6))
+    else
+        existing = CSV.read(fname, DataFrame)
+        combined = hcat(existing, df)
+        CSV.write(fname, combined, transform=(col, val) -> round(val, digits=6))
+    end
+
+    total_cols_written += ncols
+    empty!(buffer)          # ← mutates in place; caller sees the cleared buffer
+    return total_cols_written
+end
+
 function write_MLtensor(tensor_column, buffer, total_cols_written, fname)
     
     push!(buffer, tensor_column)
@@ -97,10 +127,11 @@ end
 function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               A, ubdy, EL,
                               avisc, 
-                              bufferin, bufferout;
+                              bufferin, bufferout,
+                              ABC, BC, BOΓg, gΓ;
                               isamp=1,
                               total_cols_writtenin=0,
-                              total_cols_writtenout=0)
+                              total_cols_writtenout=0) 
 
     mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
@@ -119,7 +150,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                 io1 = mesh.∂O[io]
                 EL.A∂Ovo[io, ii, iel] = A[io1, ipo]
             end
-
+            
             #
             # Aᵥₒ∂τ
             #
@@ -145,10 +176,11 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                 jpb = mesh.conn[iel, j]
                 EL.Avovb[ii, j, iel] = A[ipo, jpb]
             end
+            
             ii += 1
         end
     end
-
+    
     #
     # A∂O∂τ ⊂ A∂τ∂τ
     #
@@ -224,24 +256,20 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     end
 
     # gΓ — needed by both branches
-    gΓ = zeros(mesh.lengthΓ)
+    #gΓ = zeros(mesh.lengthΓ)
     for iΓ = 1:mesh.lengthΓ
         g1 = mesh.Γ[iΓ]
         gΓ[iΓ] = ubdy[g1, 1]
     end
-
-    #T2  = EL.T2 #zeros(size(EL.Avovo)[1], size(EL.Avovb)[2])
-    #T1  = EL.T1 #zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
-    #Tie = similar(T2)
-
-    if EL.lEL_Train
+    
+   if EL.lEL_Train
 
         #--------------------------------------------------------------------
         # TRAINING BRANCH — exact static condensation
         #--------------------------------------------------------------------
         # Step 4: B∂O∂τ = A∂O∂τ - Σ_iel A∂Ovo * inv(Avovo) * Avo∂τ
-        ABC = zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
-        BC  = zeros(size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2])
+        #ABC = zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
+        #BC  = zeros(size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2])
         for iel = 1:mesh.nelem
             LinearAlgebra.mul!(BC, inv(EL.Avovo[:,:,iel]), EL.Avo∂τ[:,:,iel])
             LinearAlgebra.mul!(@view(ABC[:,:,iel]), @view(EL.A∂Ovo[:,:,iel]), @view(BC[:,:]))
@@ -260,14 +288,14 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             jτ = findall(x->x==mesh.Γ[iΓ], mesh.∂τ)[1]
             EL.B∂O∂Γ[:, iΓ] .= EL.B∂O∂τ[:, jτ]
         end
-
+    
         # Step 6: u∂O = -inv(B∂O∂O) * B∂O∂Γ * gΓ
-        BOΓg = zeros(mesh.length∂O)
+        #BOΓg = zeros(mesh.length∂O)
         LinearAlgebra.mul!(BOΓg, EL.B∂O∂Γ, gΓ)
         u∂O      = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(mesh.length∂O))
         invB∂O∂O = inv(EL.B∂O∂O)
         LinearAlgebra.mul!(u∂O, -invB∂O∂O, BOΓg)
-
+        
         # Step 7: uIo = -inv(AIoIo) * (AIo∂O * u∂O + AIoΓ * gΓ)
         AIoΓg  = similar(AIoΓ, (mesh.lengthIo,))
         AIou∂O = similar(AIoΓg)
@@ -292,6 +320,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         # Output = flattened T^{ie} = inv(Avovo)*Avovb for element 1
         #          (column-major, matching Julia's vec() convention)
         EL.input_tensor[:, isamp] .= avisc[:]
+    
         for iel = 1:1
             Avbvo = transpose(EL.Avovb[:,:,iel])
             LinearAlgebra.mul!(EL.Tie, -inv(EL.Avovo[:,:,iel]), EL.Avovb[:,:,iel])
@@ -300,10 +329,17 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             EL.output_tensor[:, isamp] .= -vec(EL.Tie)
         end
 
-        write_MLtensor(@view(EL.input_tensor[:, isamp]),  bufferin,  total_cols_writtenin,  "input_tensor.csv")
-        write_MLtensor(@view(EL.output_tensor[:, isamp]), bufferout, total_cols_writtenout, "output_tensor.csv")
+    buffer = Vector{Vector{Float64}}()
+    total_cols_written = 0
+    
+    write_MLtensor!(bufferin,  EL.input_tensor[:, isamp])
+    write_MLtensor!(bufferout, EL.output_tensor[:, isamp])
 
-    else
+    
+     #   write_MLtensor(@view(EL.input_tensor[:, isamp]),  bufferin,  total_cols_writtenin,  "input_tensor.csv")
+     #   write_MLtensor(@view(EL.output_tensor[:, isamp]), bufferout, total_cols_writtenout, "output_tensor.csv")
+      
+   else
 
         #--------------------------------------------------------------------
         # INFERENCE BRANCH — NN-predicted T^{ie,nn} replaces exact T^{ie}
@@ -424,5 +460,5 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         # u_∂τ (= u_∂O ∪ u_Γ) and u_Io are now both filled.
         # Since I = ∂τ ∪ Io, the full solution vector u is complete.
         @info "INFERENCE COMPLETE — solution stored in u"
-    end
+        end
 end
