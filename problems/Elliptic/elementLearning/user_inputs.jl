@@ -11,7 +11,7 @@ function user_inputs()
         :ldss_laplace         => true,
         #:lsparse              => true,
         :lelementLearning     => true,
- #       :lEL_Train            => true,
+        #:lEL_Train            => true,
         :Nsamp                => 1500,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
@@ -19,9 +19,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",        
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

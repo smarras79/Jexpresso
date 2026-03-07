@@ -262,17 +262,18 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         gΓ[iΓ] = ubdy[g1, 1]
     end
     
-   if EL.lEL_Train
+    if EL.lEL_Train
 
         #--------------------------------------------------------------------
         # TRAINING BRANCH — exact static condensation
         #--------------------------------------------------------------------
         # Step 4: B∂O∂τ = A∂O∂τ - Σ_iel A∂Ovo * inv(Avovo) * Avo∂τ
-        #ABC = zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
-        #BC  = zeros(size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2])
         for iel = 1:mesh.nelem
             LinearAlgebra.mul!(BC, inv(EL.Avovo[:,:,iel]), EL.Avo∂τ[:,:,iel])
             LinearAlgebra.mul!(@view(ABC[:,:,iel]), @view(EL.A∂Ovo[:,:,iel]), @view(BC[:,:]))
+
+            
+            
         end
         ∑el = sum(ABC, dims=3)
         EL.B∂O∂τ = EL.A∂O∂τ - ∑el
@@ -288,9 +289,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             jτ = findall(x->x==mesh.Γ[iΓ], mesh.∂τ)[1]
             EL.B∂O∂Γ[:, iΓ] .= EL.B∂O∂τ[:, jτ]
         end
-    
+        
         # Step 6: u∂O = -inv(B∂O∂O) * B∂O∂Γ * gΓ
-        #BOΓg = zeros(mesh.length∂O)
         LinearAlgebra.mul!(BOΓg, EL.B∂O∂Γ, gΓ)
         u∂O      = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(mesh.length∂O))
         invB∂O∂O = inv(EL.B∂O∂O)
@@ -320,7 +320,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         # Output = flattened T^{ie} = inv(Avovo)*Avovb for element 1
         #          (column-major, matching Julia's vec() convention)
         EL.input_tensor[:, isamp] .= avisc[:]
-    
+        
         for iel = 1:1
             Avbvo = transpose(EL.Avovb[:,:,iel])
             LinearAlgebra.mul!(EL.Tie, -inv(EL.Avovo[:,:,iel]), EL.Avovb[:,:,iel])
@@ -329,17 +329,13 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             EL.output_tensor[:, isamp] .= -vec(EL.Tie)
         end
 
-    buffer = Vector{Vector{Float64}}()
-    total_cols_written = 0
-    
-    write_MLtensor!(bufferin,  EL.input_tensor[:, isamp])
-    write_MLtensor!(bufferout, EL.output_tensor[:, isamp])
-
-    
-     #   write_MLtensor(@view(EL.input_tensor[:, isamp]),  bufferin,  total_cols_writtenin,  "input_tensor.csv")
-     #   write_MLtensor(@view(EL.output_tensor[:, isamp]), bufferout, total_cols_writtenout, "output_tensor.csv")
-      
-   else
+        buffer = Vector{Vector{Float64}}()
+        total_cols_written = 0
+        
+    #    write_MLtensor!(bufferin,  EL.input_tensor[:, isamp])
+    #    write_MLtensor!(bufferout, EL.output_tensor[:, isamp])
+        
+    else
 
         #--------------------------------------------------------------------
         # INFERENCE BRANCH — NN-predicted T^{ie,nn} replaces exact T^{ie}
@@ -349,7 +345,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         # well below 1/69 ≈ 1.4% to avoid corrupting the skeleton solve.
         # Use Nsamp >= 10000 and num_epochs >= 10000 in training.
         #--------------------------------------------------------------------
-        @info "RUN INFERENCE"
+        @info " # RUN INFERENCE ......................................."
 
         # Load ONNX model
         sess        = ONNXRunTime.load_inference("./JX_NN_model.onnx")
@@ -456,9 +452,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                 u[mesh.conn[iel, elnbdypoints + i]] = uvo_nn[i]
             end
         end
-
+        
         # u_∂τ (= u_∂O ∪ u_Γ) and u_Io are now both filled.
         # Since I = ∂τ ∪ Io, the full solution vector u is complete.
-        @info "INFERENCE COMPLETE — solution stored in u"
-        end
+        
+        @info " # RUN INFERENCE ....................................... END"
+    end
 end

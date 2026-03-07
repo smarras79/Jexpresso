@@ -126,8 +126,7 @@ function driver(nparts,
                                                TFloat, inputs[:backend];
                                                Nsamp=inputs[:Nsamp],
                                                lEL_Train=inputs[:lEL_Train])
-
-
+                    
                     ABC  = zeros(sem.mesh.length∂O, sem.mesh.length∂τ, sem.mesh.nelem)
                     BC   = zeros(size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2])
                     BOΓg = zeros(sem.mesh.length∂O)
@@ -158,12 +157,12 @@ function driver(nparts,
                             println(" # --- sample = $isamp")
                             # 2.a/b
                             μ        = 1
-                            â        = zeros(TFloat, ngl, ngl)
+                            #â        = zeros(TFloat, ngl, ngl)
                             avisc    = zeros(TFloat, 1, ngl^2)
                             ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
                             avisc[1,:].= ranvisc
-                            ψ        = sem.basis.ψ
-                            expansion_2d!(â, ψ)
+                            #ψ        = sem.basis.ψ
+                            #expansion_2d!(â, ψ)
                             
                             for ip =1:npoin
                                 user_source!(RHS[ip],
@@ -242,12 +241,11 @@ function driver(nparts,
                         #
                         # 2.a/b
                         μ        = 1
-                        â        = zeros(TFloat, ngl, ngl)
+                        #â        = zeros(TFloat, ngl, ngl)
                         avisc    = zeros(TFloat, 1, ngl^2)
-                        ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
-                        avisc[1,:].= ranvisc
-                        ψ        = sem.basis.ψ
-                        expansion_2d!(â, ψ)
+                        avisc[1,:].= 0.5 + rand() #Uniform distribution between 0.5 and 1.5
+                        #ψ        = sem.basis.ψ
+                        #expansion_2d!(â, ψ)
                         
                         for ip =1:npoin
                             RHS[ip] = user_source!(RHS[ip],
@@ -313,7 +311,7 @@ function driver(nparts,
                         #-----------------------------------------------------
 
                     end
-                    
+
                 else
                     
                     #-----------------------------------------------------
