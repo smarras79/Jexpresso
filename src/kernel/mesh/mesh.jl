@@ -194,6 +194,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     num_ncf_pg::Union{TInt, Missing} = 0
     num_ncf_cg::Union{TInt, Missing} = 0
 
+    num_ncf_peri::Union{TInt, Missing}    = 0
+    num_ncf_pg_peri::Union{TInt, Missing} = 0
+    num_ncf_cg_peri::Union{TInt, Missing} = 0
+
     lneed_redistribute::Bool = false
 
     msg_suppress::Bool = false
@@ -267,12 +271,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             ref_coarse_flags = map(parts, partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank, indices
                 flags = zeros(Cint, length(indices))
                 flags .= nothing_flag
-                target_gid = 225
-                l2g = local_to_global(indices)
-                local_id = findfirst(==(target_gid), l2g)
-                if local_id !== nothing
-                    flags[local_id] = refine_flag
-                end
+                # target_gid = 158
+                # # target_gid = 225
+                # l2g = local_to_global(indices)
+                # local_id = findfirst(==(target_gid), l2g)
+                # # local_ids = (2:2:200)
+                # # flags[local_ids] .= refine_flag
+                # if local_id !== nothing
+                #     flags[local_id] = refine_flag
+                # end
           
                 flags
             end
@@ -422,7 +429,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         elm2pelm     = Geometry.get_face_to_parent_face(model,ELEM_flg)
     end
     # @info rank, p2pp, point2ppoint
-    if lamr_mesh == true
+    if ladaptive == true
         hanging_vert_glue  = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
         hanging_facet_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[mesh.nsd]
         num_regular_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_regular_faces[mesh.nsd]
@@ -862,7 +869,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.half1_cg = KernelAbstractions.zeros(backend, TInt, 0)
     mesh.half2_cg = KernelAbstractions.zeros(backend, TInt, 0)
     # mesh.non_conforming_facets = [KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0) for _ in 1:num_hanging_facets]
-    if lamr_mesh == true
+    if ladaptive == true
      
         cell_fecet_pids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
         facet_cell_pids = get_faces(dtopology, mesh.nsd-1, mesh.nsd) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
@@ -1014,6 +1021,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
         elseif mesh.nsd == 3
             offset = 20
+            n_hf_skipped = 0
             for idx in 1: num_hanging_facets
                 half_1 = 0
                 half_2 = 0
@@ -1021,9 +1029,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 cfacet = idx+num_regular_facets
                 cid = facet_cell_pids[cfacet][1]
                 pid, lfacetid, half = hanging_facet_glue[idx]
-                if pid == -1
-                    continue
-                end
+                # if pid == -1
+                #     gel_c = elm2pelm[cid]
+                #     cx = sum(mesh.x[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                #     cy = sum(mesh.y[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                #     cz = sum(mesh.z[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                #     println("[NCF-DBG] Rank $rank | hanging face idx=$idx skipped (pid=-1): cid=$cid gel=$gel_c  lfacetid=$lfacetid  half=$half  elem_centroid=($(round(cx;digits=3)), $(round(cy;digits=3)), $(round(cz;digits=3)))")
+                #     n_hf_skipped += 1
+                #     continue
+                # end
                 
                 pfacet     = cell_fecet_pids[pid][lfacetid-offset]
                 gfacet_p   = local_to_global(fgids)[pfacet]
@@ -1108,9 +1122,53 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 # @info "comm_coord", mesh.x[comm_ip], mesh.y[comm_ip], mesh.z[comm_ip] 
                 
             end
+            # println("[NCF-DBG] Rank $rank | hanging faces: total=$num_hanging_facets  skipped(pid=-1)=$n_hf_skipped  accepted=$(num_hanging_facets - n_hf_skipped)")
+            # flush(stdout)
             mesh.num_ncf    = length(mesh.cip)
             mesh.num_ncf_pg = length(mesh.cip_pg)
             mesh.num_ncf_cg = length(mesh.pip_cg)
+
+            # let ngl_c = ngl, r3 = x -> round(x; digits=3)
+            #     face_name = ("front(j=ngl)","back(j=1)","bottom(k=ngl)","top(k=1)","right(i=1)","left(i=ngl)")
+            #     function face_nodes(iel, fid)
+            #         if     fid==1; return mesh.connijk[iel,1:ngl_c,ngl_c,1:ngl_c][:]
+            #         elseif fid==2; return mesh.connijk[iel,1:ngl_c,1,1:ngl_c][:]
+            #         elseif fid==3; return mesh.connijk[iel,1:ngl_c,1:ngl_c,ngl_c][:]
+            #         elseif fid==4; return mesh.connijk[iel,1:ngl_c,1:ngl_c,1][:]
+            #         elseif fid==5; return mesh.connijk[iel,1,1:ngl_c,1:ngl_c][:]
+            #         else;          return mesh.connijk[iel,ngl_c,1:ngl_c,1:ngl_c][:]
+            #         end
+            #     end
+            #     opp = (2,1,4,3,6,5)
+            #     for (idx, ncf) in enumerate(mesh.non_conforming_facets)
+            #         ciel, piel, cfid, h1, h2 = ncf
+            #         pfid = opp[cfid]
+            #         cips = face_nodes(ciel, cfid)
+            #         pips = face_nodes(piel, pfid)
+            #         # transverse coordinates depend on face direction
+            #         if cfid in (1,2)       # y-face: transverse = x,z
+            #             c1c, c2c = sum(mesh.x[ip] for ip in cips)/length(cips), sum(mesh.z[ip] for ip in cips)/length(cips)
+            #             x1mn, x1mx = extrema(mesh.x[ip] for ip in pips)
+            #             x2mn, x2mx = extrema(mesh.z[ip] for ip in pips)
+            #         elseif cfid in (3,4)   # z-face: transverse = x,y
+            #             c1c, c2c = sum(mesh.x[ip] for ip in cips)/length(cips), sum(mesh.y[ip] for ip in cips)/length(cips)
+            #             x1mn, x1mx = extrema(mesh.x[ip] for ip in pips)
+            #             x2mn, x2mx = extrema(mesh.y[ip] for ip in pips)
+            #         else                   # x-face: transverse = y,z
+            #             c1c, c2c = sum(mesh.y[ip] for ip in cips)/length(cips), sum(mesh.z[ip] for ip in cips)/length(cips)
+            #             x1mn, x1mx = extrema(mesh.y[ip] for ip in pips)
+            #             x2mn, x2mx = extrema(mesh.z[ip] for ip in pips)
+            #         end
+            #         mid1 = (x1mn + x1mx) / 2
+            #         mid2 = (x2mn + x2mx) / 2
+            #         h1_geo = c1c > mid1 ? 1 : 2
+            #         h2_geo = c2c > mid2 ? 1 : 2
+            #         ok = (h1 == h1_geo) && (h2 == h2_geo)
+            #         status = ok ? "OK" : "MISMATCH"
+            #         println("[NCF-HALF $status] Rank $rank idx=$idx ciel=$ciel piel=$piel face=$(face_name[cfid])  stored=(h1=$h1,h2=$h2)  geo=(h1=$h1_geo,h2=$h2_geo)  child_centroid=($(r3(c1c)),$(r3(c2c)))  parent_mid=($(r3(mid1)),$(r3(mid2)))")
+            #     end
+            #     flush(stdout)
+            # end
 
             # reorder mesh.non_conforming_facets_parents_ghost and mesh.non_conforming_facets_children_ghost in rank orders\
             sorted_idx = sortperm(gpfacets_owner)
@@ -1239,6 +1297,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     for (ip, gip) in enumerate(mesh.ip2gip)
         mesh.gip2ip[gip] = ip
     end
+
     #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
     #----------------------------------------------------------------------
@@ -1756,19 +1815,35 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         # directly into the existing non_conforming_facets / ghost lists so the
         # standard DSS_nc_gather_rhs! / DSS_nc_scatter_rhs! handle them automatically.
         # if lamr_mesh
-            collect_periodic_ncf_pairs_3D!(mesh, "periodicx", elm2pelm)
-            collect_periodic_ncf_pairs_3D!(mesh, "periodicy", elm2pelm)
-            collect_periodic_ncf_pairs_3D!(mesh, "periodicz", elm2pelm)
-            extend_ncf_ip_lists_3D!(mesh)
-            println_rank(" # Total NCF pairs (interior + periodic): $(mesh.num_ncf)"; msg_rank = rank, suppress = mesh.msg_suppress)
-        # end
-        MPI.Barrier(comm)
-        restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
-        restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
-        restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
-        restructure_el2gel_for_periodicity_3D!(mesh, norx, "periodicx")
-        restructure_el2gel_for_periodicity_3D!(mesh, nory, "periodicy")
-        restructure_el2gel_for_periodicity_3D!(mesh, norz, "periodicz")
+        #     collect_periodic_ncf_pairs_3D!(mesh, "periodicx", elm2pelm)
+        #     collect_periodic_ncf_pairs_3D!(mesh, "periodicy", elm2pelm)
+        #     collect_periodic_ncf_pairs_3D!(mesh, "periodicz", elm2pelm)
+        #     extend_ncf_ip_lists_3D!(mesh)
+        #     for i = 0:MPI.Comm_size(comm)-1
+        #         if i == rank
+        #             print_periodic_ncf_debug!(mesh)
+        #         end
+        #         MPI.Barrier(comm)
+        #     end
+        #     sum_num_ncf         = MPI.Allreduce(mesh.num_ncf,         MPI.SUM, comm)
+        #     sum_num_ncf_cg      = MPI.Allreduce(mesh.num_ncf_cg,      MPI.SUM, comm)
+        #     sum_num_ncf_pg      = MPI.Allreduce(mesh.num_ncf_pg,      MPI.SUM, comm)
+        #     sum_num_ncf_peri    = MPI.Allreduce(mesh.num_ncf_peri,    MPI.SUM, comm)
+        #     sum_num_ncf_cg_peri = MPI.Allreduce(mesh.num_ncf_cg_peri, MPI.SUM, comm)
+        #     sum_num_ncf_pg_peri = MPI.Allreduce(mesh.num_ncf_pg_peri, MPI.SUM, comm)
+
+        #     total_num_ncf      = sum_num_ncf + sum_num_ncf_cg + sum_num_ncf_pg
+        #     total_num_ncf_peri = sum_num_ncf_peri + sum_num_ncf_cg_peri + sum_num_ncf_pg_peri
+
+        #     println_rank(" # Total NCF pairs (interior + periodic): $(total_num_ncf-total_num_ncf_peri) + $(total_num_ncf_peri)"; msg_rank = rank, suppress = false)
+        # # end
+        # MPI.Barrier(comm)
+        # restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
+        # restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
+        # restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
+        # restructure_el2gel_for_periodicity_3D!(mesh, norx, "periodicx")
+        # restructure_el2gel_for_periodicity_3D!(mesh, nory, "periodicy")
+        # restructure_el2gel_for_periodicity_3D!(mesh, norz, "periodicz")
         mesh.gel2owner = find_gip_owner(mesh.el2gel)
         mesh.sib2owner = find_gip_owner(mesh.el2sib)
 
@@ -1781,6 +1856,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
 
     end
+
+    # for i = 0:MPI.Comm_size(comm)-1
+    #     if i == rank
+    #         print_ncf_ip_coords!(mesh)
+    #     end
+    #     MPI.Barrier(comm)
+    # end
     #----------------------------------------------------------------------
     # END periodicity_restructure for MPI
     #----------------------------------------------------------------------

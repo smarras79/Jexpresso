@@ -292,7 +292,9 @@ end
                                θ_ref, dθdz, 
                                PhysConst, Δ2,
                                inputs, 
-                               ::VREM, ::NSD_3D)
+                               ::VREM, ::NSD_3D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
 
     is_u_momentum  = (ieq == 2)
     is_v_momentum  = (ieq == 3)

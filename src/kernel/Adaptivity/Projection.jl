@@ -230,8 +230,8 @@ function build_projection_1d(ξa)
     interp = zeros(Float64, Np, Np, 2)
 
     # Build interpolation matrices
-    interp[:, :, 2] = build_interpolation(ξa, ξa_b, ωa)
     interp[:, :, 1] = build_interpolation(ξa, ξa_t, ωa)
+    interp[:, :, 2] = build_interpolation(ξa, ξa_b, ωa)
 
     # Build the mass matrix and its inverse
     lgb =  basis_structs_ξ_ω!(LG(),Np-1, CPU())
@@ -2478,157 +2478,6 @@ function DSS_nc_scatter_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, co
 
 end
 
-
-function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, conn_facets::AbstractArray,
-                            non_conforming_facets, cip, pip, lfid, half1, half2,
-                            non_conforming_facets_parents_ghost, cip_pg, lfid_pg, half1_pg, half2_pg,
-                            Mg, M_gatter_tmp, Lt_1, Lt_2, M_gather_ghost,IPc_list, IPp_list, IPc_list_pg,
-                            ip2gip, gip2ip, gip_gather_ghost, gip_gather_owner, gip_local, N, neqs, interp)
-    
-    ngl          = N+1
-    ngl2         = ngl * ngl
-
-    # half 1 top, half 2 bottom
-    for (idx, ncf) in enumerate(non_conforming_facets)
-
-        cell_ip_child         = cip[idx]
-        cell_ip_parent        = pip[idx] 
-        local_parent_facet_id = lfid[idx] 
-        half_1                = half1[idx]
-        half_2                = half2[idx]
-        # cell_ip_child, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
-        if (local_parent_facet_id == 1) # front
-            l = 1:ngl; m = ngl; n = 1:ngl
-        elseif (local_parent_facet_id == 2) # back
-            l = 1:ngl; m = 1; n = 1:ngl
-        elseif (local_parent_facet_id == 3) # bottom
-            l = 1:ngl; m = 1:ngl; n = ngl
-        elseif (local_parent_facet_id == 4) # top
-            l = 1:ngl; m = 1:ngl; n = 1
-        elseif (local_parent_facet_id == 5) # right
-            l = 1; m = 1:ngl; n = 1:ngl
-        elseif (local_parent_facet_id == 6) # left
-            l = ngl; m = 1:ngl; n = 1:ngl
-        end
-
-        IPc   = @view(IPc_list[:,idx])
-        IPp   = @view(IPp_list[:,idx])
-
-        Lt_1 .= @view(interp[:,:,half_1])'
-        Lt_2 .= @view(interp[:,:,half_2])'
-
-        for ieq = 1:neqs
-            fill!(Mg, zero(TFloat))
-            fill!(M_gatter_tmp, zero(TFloat))
-            cnt = 1
-            for k in n
-                for j in m
-                    for i in l
-                        Mg[cnt] = Mel[cell_ip_child,i,j,k,ieq]
-                        cnt    += 1
-                    end
-                end
-            end
-            
-            for i2 = 1:ngl
-                for i1 = 1:ngl
-                    i   = i1 + (i2 - 1) * ngl
-                    ipc = IPc[i]
-                    ipp = IPp[i]
-                    if ipc == ipp
-                        continue
-                    # M_gatter_tmp[i] -= Mg[i]
-                    end
-                    for j2 = 1:ngl
-                        for j1 = 1:ngl
-                            j                = j1 + (j2 - 1) * ngl
-                            M_gatter_tmp[j] += Lt_1[j1,i1] * Lt_2[j2,i2] * Mg[i]
-                        end
-                    end
-                end
-            end
-            for j2 = 1:ngl
-                for j1 = 1:ngl
-                    j           = j1 + (j2 - 1) * ngl
-                    ipp         = IPp[j]
-                    M[ipp,ieq] += M_gatter_tmp[j]
-                end
-            end
-        end
-    end
-
-
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    fill!(M_gather_ghost, zero(TFloat))
-    
-    for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
-        cell_ip_child, local_parent_facet_id, half_1, half_2 = ncf
-        if (local_parent_facet_id == 1) # front
-            l = 1:ngl; m = ngl; n = 1:ngl
-        elseif (local_parent_facet_id == 2) # back
-            l = 1:ngl; m = 1; n = 1:ngl
-        elseif (local_parent_facet_id == 3) # bottom
-            l = 1:ngl; m = 1:ngl; n = ngl
-        elseif (local_parent_facet_id == 4) # top
-            l = 1:ngl; m = 1:ngl; n = 1
-        elseif (local_parent_facet_id == 5) # right
-            l = 1; m = 1:ngl; n = 1:ngl
-        elseif (local_parent_facet_id == 6) # left
-            l = ngl; m = 1:ngl; n = 1:ngl
-        end
-        IPc   = @view(IPc_list_pg[:,idx])
-        Lt_1 .= @view(interp[:,:,half_1])'
-        Lt_2 .= @view(interp[:,:,half_2])'
-        for ieq = 1:neqs
-            fill!(Mg, zero(TFloat))
-            fill!(M_gatter_tmp, zero(TFloat))
-            cnt = 1
-            for k in n
-                for j in m
-                    for i in l
-                        Mg[cnt] = Mel[cell_ip_child,i,j,k,ieq]
-                        cnt    += 1
-                    end
-                end
-            end
-            
-            for i2 = 1:ngl
-                for i1 = 1:ngl
-                    i   = i1 + (i2 - 1) * ngl
-                    ipc = ip2gip[IPc[i]]
-                    ipp = gip_gather_ghost[(idx-1) * ngl2 + i]
-                    if ipc == ipp
-                        continue
-                    # M_gatter_tmp[i] -= Mg[i]
-                    end
-                    for j2 = 1:ngl
-                        for j1 = 1:ngl
-                            j                = j1 + (j2 - 1) * ngl
-                            M_gatter_tmp[j] += Lt_1[j1,i1] * Lt_2[j2,i2] * Mg[i]
-                        end
-                    end
-                end
-            end
-            for j2 = 1:ngl
-                for j1 = 1:ngl
-                    j                        = j1 + (j2 - 1) * ngl
-                    ipp                      = (idx-1) * ngl2 + j
-                    M_gather_ghost[ipp,ieq] += M_gatter_tmp[j]
-                end
-            end
-        end
-    end
-
-
-    for ieq in 1:neqs
-        M_local = send_and_receive(@view(M_gather_ghost[:,ieq]), gip_gather_owner, comm)[1]
-        for (gip, m_value) in zip(gip_local, M_local)
-            M[gip2ip[gip], ieq] += m_value
-        end
-    end
-end
-
 function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray,
                             non_conforming_facets,
                             non_conforming_facets_parents_ghost, cache_ghost_p,
@@ -3396,7 +3245,7 @@ function do_adapt!(adapt_flags, inputs, mesh, uaux, qp,
                           mesh.connijk, mesh.nelem, mesh.ngl,
                           mesh.coords,
                           inputs[:amr_max_level] )
-    adapt4periodicity!(adapt_flags, mesh, mesh.SD, inputs[:amr_max_level])
+    # adapt4periodicity!(adapt_flags, mesh, mesh.SD, inputs[:amr_max_level])
 end
 
 

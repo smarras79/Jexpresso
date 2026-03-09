@@ -42,7 +42,7 @@ function user_bc_dirichlet!(q,
 end
 
 
-function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, PhysConst; z_inside=1, kwargs...)
+@inline function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, PhysConst; θ=0.0, θ1=0.0, qn0=0.0, qn1=0.0)
 
     # NOT CALLED BY DEFAULT UNLESS lbdy_flux => true in input
     

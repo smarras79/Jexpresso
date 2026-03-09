@@ -1389,13 +1389,45 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
     rank_sz = MPI.Comm_size(comm)
     per_ip  = Int[]
     ngl     = mesh.ngl
-    for iface_bdy =1:size(mesh.bdy_face_type,1)
-        for k=1:ngl
-            for l=1:ngl
-                ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
-                if (mesh.bdy_face_type[iface_bdy] == periodic_direction)
-                    push!(per_ip, ip)
-                end
+    ngl2    = ngl * ngl
+
+    peri_fids = periodic_direction == "periodicx" ? (5, 6) :
+                periodic_direction == "periodicy" ? (1, 2) : (3, 4)
+
+
+    ncf_peri_ips = Set{Int}()
+    for idx = (mesh.num_ncf - mesh.num_ncf_peri + 1) : mesh.num_ncf
+        mesh.non_conforming_facets[idx][3] in peri_fids || continue
+        for j = 1:ngl2
+            push!(ncf_peri_ips, mesh.IPc_list[j, idx])
+        end
+    end
+    # parent-ghost: IPc_list_pg holds local child IPs → exclude
+    for idx = (mesh.num_ncf_pg - mesh.num_ncf_pg_peri + 1) : mesh.num_ncf_pg
+        mesh.non_conforming_facets_parents_ghost[idx][2] in peri_fids || continue
+        for j = 1:ngl2
+            push!(ncf_peri_ips, mesh.IPc_list_pg[j, idx])
+        end
+    end
+    # child-ghost: IPp_list_cg holds local parent IPs → do NOT exclude
+    # if !isempty(ncf_peri_ips)
+    #     r5(v) = round(v; digits=5)
+    #     println("── [NCF-PERI-IPS] Rank $rank | $periodic_direction | $(length(ncf_peri_ips)) non-corner NCF-periodic nodes excluded from standard merge ──")
+    #     sorted_ips = sort(collect(ncf_peri_ips))
+    #     for ip in sorted_ips
+    #         gip   = mesh.ip2gip[ip]
+    #         owner = mesh.gip2owner[ip]
+    #         println("  ip=$ip  gip=$gip  owner=$owner  xyz=($(r5(mesh.x[ip])), $(r5(mesh.y[ip])), $(r5(mesh.z[ip])))")
+    #     end
+    #     flush(stdout)
+    # end
+    for iface_bdy = 1:size(mesh.bdy_face_type, 1)
+        mesh.bdy_face_type[iface_bdy] == periodic_direction || continue
+        for k = 1:ngl
+            for l = 1:ngl
+                ip = mesh.poin_in_bdy_face[iface_bdy, k, l]
+                ip in ncf_peri_ips && continue
+                push!(per_ip, ip)
             end
         end
     end
@@ -2194,8 +2226,9 @@ function extend_ncf_ip_lists_3D!(mesh)
     opp = (2, 1, 4, 3, 6, 5)
 
     # --- Extend IPc_list / IPp_list for local-local pairs ---
-    new_num_ncf = length(mesh.non_conforming_facets)
-    old_num_ncf = mesh.num_ncf
+    new_num_ncf       = length(mesh.non_conforming_facets)
+    old_num_ncf       = mesh.num_ncf
+    mesh.num_ncf_peri = new_num_ncf - old_num_ncf
     if new_num_ncf > old_num_ncf
         new_IPc = zeros(Int, ngl2, new_num_ncf)
         new_IPp = zeros(Int, ngl2, new_num_ncf)
@@ -2216,6 +2249,7 @@ function extend_ncf_ip_lists_3D!(mesh)
     # --- Extend IPc_list_pg for parent-ghost pairs (child local, parent remote) ---
     new_num_pg = length(mesh.non_conforming_facets_parents_ghost)
     old_num_pg = mesh.num_ncf_pg
+    mesh.num_ncf_pg_peri = new_num_pg - old_num_pg
     # @info mesh.rank new_num_pg old_num_pg
     if new_num_pg > old_num_pg
         new_IPc_pg = zeros(Int, ngl2, new_num_pg)
@@ -2233,6 +2267,7 @@ function extend_ncf_ip_lists_3D!(mesh)
     # --- Extend IPp_list_cg for child-ghost pairs (parent local, child remote) ---
     new_num_cg = length(mesh.non_conforming_facets_children_ghost)
     old_num_cg = mesh.num_ncf_cg
+    mesh.num_ncf_cg_peri = new_num_cg - old_num_cg
     if new_num_cg > old_num_cg
         new_IPp_cg = zeros(Int, ngl2, new_num_cg)
         if old_num_cg > 0
@@ -2246,4 +2281,215 @@ function extend_ncf_ip_lists_3D!(mesh)
         mesh.IPp_list_cg = new_IPp_cg
         mesh.num_ncf_cg  = new_num_cg
     end
+end
+
+# ---------------------------------------------------------------------------
+# Debug helper: print a detailed table of all periodic NCF entries.
+# Call after extend_ncf_ip_lists_3D! so that num_ncf_peri etc. are set.
+#
+# For each entry prints:
+#   rank | type | child iel/gel | child face name | child face centroid |
+#   parent iel/gel (or GHOST) | parent face name | h1 h2
+#
+# Face-ID convention:
+#   1 front(j=ngl)  2 back(j=1)  3 bottom(k=ngl)  4 top(k=1)
+#   5 right(i=1)    6 left(i=ngl)
+# ---------------------------------------------------------------------------
+function print_periodic_ncf_debug!(mesh)
+    comm  = MPI.COMM_WORLD
+    rank  = MPI.Comm_rank(comm)
+    ngl   = mesh.ngl
+
+    face_name = ("front(j=ngl)", "back(j=1)", "bottom(k=ngl)", "top(k=1)", "right(i=1)", "left(i=ngl)")
+    opp_fid   = (2, 1, 4, 3, 6, 5)
+
+    function direction_from_fid(fid)
+        fid in (5, 6) && return "x"
+        fid in (1, 2) && return "y"
+        return "z"
+    end
+
+    function face_centroid(iel, fid)
+        if fid == 1
+            ips = reshape(mesh.connijk[iel, 1:ngl, ngl, 1:ngl], :)
+        elseif fid == 2
+            ips = reshape(mesh.connijk[iel, 1:ngl, 1,   1:ngl], :)
+        elseif fid == 3
+            ips = reshape(mesh.connijk[iel, 1:ngl, 1:ngl, ngl], :)
+        elseif fid == 4
+            ips = reshape(mesh.connijk[iel, 1:ngl, 1:ngl, 1  ], :)
+        elseif fid == 5
+            ips = reshape(mesh.connijk[iel, 1,   1:ngl, 1:ngl], :)
+        else
+            ips = reshape(mesh.connijk[iel, ngl, 1:ngl, 1:ngl], :)
+        end
+        n  = length(ips)
+        cx = sum(mesh.x[ip] for ip in ips) / n
+        cy = sum(mesh.y[ip] for ip in ips) / n
+        cz = sum(mesh.z[ip] for ip in ips) / n
+        return cx, cy, cz
+    end
+
+    r5(v) = round(v; digits=5)
+    sep = "─────────────────────────────────────────────────────────────────────────"
+
+    # Print a range of local-local NCF entries from non_conforming_facets.
+    function print_ll_range(label, i_start, i_end)
+        n = i_end - i_start + 1
+        println(sep)
+        println("[NCF] Rank $rank | $label local-local pairs ($n entries)")
+        n == 0 && return
+        println("  idx | dir       | child  iel(gel)       | child_face          | child_centroid (x,y,z)")
+        println("      |           | parent iel(gel)       | parent_face         | parent_centroid (x,y,z)       | h1 h2")
+        for i = i_start:i_end
+            ciel, piel, cfid, h1, h2 = mesh.non_conforming_facets[i]
+            cgel = mesh.el2gel[ciel]
+            pgel = mesh.el2gel[piel]
+            pfid = opp_fid[cfid]
+            dir  = direction_from_fid(cfid)
+            ccx, ccy, ccz = face_centroid(ciel, cfid)
+            pcx, pcy, pcz = face_centroid(piel, pfid)
+            idx  = i - i_start + 1
+            println("  $idx | $(rpad(dir,9)) | child  iel=$(lpad(ciel,5)) gel=$(lpad(cgel,6)) | $(rpad(face_name[cfid],20)) | ($(r5(ccx)), $(r5(ccy)), $(r5(ccz)))")
+            println("      |           | parent iel=$(lpad(piel,5)) gel=$(lpad(pgel,6)) | $(rpad(face_name[pfid],20)) | ($(r5(pcx)), $(r5(pcy)), $(r5(pcz))) | h1=$h1 h2=$h2")
+        end
+    end
+
+    # Print a range of parent-ghost NCF entries (child local, parent remote).
+    function print_pg_range(label, i_start, i_end)
+        n = i_end - i_start + 1
+        println(sep)
+        println("[NCF] Rank $rank | $label child-local/parent-ghost pairs ($n entries)")
+        n == 0 && return
+        println("  idx | dir       | child  iel(gel)       | child_face          | child_centroid (x,y,z)        | h1 h2")
+        for i = i_start:i_end
+            ciel, cfid, h1, h2 = mesh.non_conforming_facets_parents_ghost[i]
+            cgel = mesh.el2gel[ciel]
+            pfid = opp_fid[cfid]
+            dir  = direction_from_fid(cfid)
+            ccx, ccy, ccz = face_centroid(ciel, cfid)
+            idx  = i - i_start + 1
+            println("  $idx | $(rpad(dir,9)) | child  iel=$(lpad(ciel,5)) gel=$(lpad(cgel,6)) | $(rpad(face_name[cfid],20)) | ($(r5(ccx)), $(r5(ccy)), $(r5(ccz))) | h1=$h1 h2=$h2")
+            println("      |           | parent GHOST                    | parent_face=$(face_name[pfid])")
+        end
+    end
+
+    # Print a range of child-ghost NCF entries (parent local, child remote).
+    function print_cg_range(label, i_start, i_end)
+        n = i_end - i_start + 1
+        println(sep)
+        println("[NCF] Rank $rank | $label parent-local/child-ghost pairs ($n entries)")
+        n == 0 && return
+        println("  idx | dir       | parent iel(gel)       | parent_face         | parent_centroid (x,y,z)       | h1 h2")
+        for i = i_start:i_end
+            piel, cfid, h1, h2 = mesh.non_conforming_facets_children_ghost[i]
+            pgel = mesh.el2gel[piel]
+            pfid = opp_fid[cfid]
+            dir  = direction_from_fid(cfid)
+            pcx, pcy, pcz = face_centroid(piel, pfid)
+            idx  = i - i_start + 1
+            println("  $idx | $(rpad(dir,9)) | parent iel=$(lpad(piel,5)) gel=$(lpad(pgel,6)) | $(rpad(face_name[pfid],20)) | ($(r5(pcx)), $(r5(pcy)), $(r5(pcz))) | h1=$h1 h2=$h2")
+            println("      |           | child  GHOST                    | child_face=$(face_name[cfid])")
+        end
+    end
+
+    n_tot    = mesh.num_ncf;       n_ll_peri = mesh.num_ncf_peri
+    n_pg_tot = mesh.num_ncf_pg;    n_pg_peri = mesh.num_ncf_pg_peri
+    n_cg_tot = mesh.num_ncf_cg;    n_cg_peri = mesh.num_ncf_cg_peri
+
+    n_ll_int = n_tot    - n_ll_peri
+    n_pg_int = n_pg_tot - n_pg_peri
+    n_cg_int = n_cg_tot - n_cg_peri
+
+    print_ll_range("interior ", 1,             n_ll_int)
+    print_ll_range("periodic ", n_ll_int + 1,  n_tot)
+    print_pg_range("interior ", 1,             n_pg_int)
+    print_pg_range("periodic ", n_pg_int + 1,  n_pg_tot)
+    print_cg_range("interior ", 1,             n_cg_int)
+    print_cg_range("periodic ", n_cg_int + 1,  n_cg_tot)
+
+    println(sep)
+    flush(stdout)
+end
+
+# ---------------------------------------------------------------------------
+# For each NCF pair print the ngl² child IPs and the ngl² parent IPs with
+# their (x,y,z) coordinates, indexed so that IPc[j] and IPp[j] share the
+# same flat face position j = j1 + (j2-1)*ngl.
+#
+# Also groups all NCF pairs by parent element and, for each parent face node,
+# lists the contributing child nodes across the (up to 4) children — giving
+# the "1 parent ip → N child ips" view the DSS gather accumulates.
+# ---------------------------------------------------------------------------
+function print_ncf_ip_coords!(mesh)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    ngl  = mesh.ngl
+    ngl2 = ngl * ngl
+
+    face_name = ("front(j=ngl)", "back(j=1)", "bottom(k=ngl)", "top(k=1)", "right(i=1)", "left(i=ngl)")
+    opp_fid   = (2, 1, 4, 3, 6, 5)
+    r3(v)     = round(v; digits=3)
+    sep = "─────────────────────────────────────────────────────────────────────────"
+
+    n_tot    = mesh.num_ncf
+    n_ll_int = n_tot - mesh.num_ncf_peri
+
+    # ── per-pair view: IPc[:] and IPp[:] with coordinates ──────────────────
+    println(sep)
+    println("[NCF-IPS] Rank $rank | per-pair IPc/IPp coordinates ($n_tot pairs)")
+    for idx = 1:n_tot
+        ciel, piel, cfid, h1, h2 = mesh.non_conforming_facets[idx]
+        pfid  = opp_fid[cfid]
+        cgel  = mesh.el2gel[ciel]
+        pgel  = mesh.el2gel[piel]
+        label = idx <= n_ll_int ? "interior" : "periodic"
+        println(sep)
+        println("  NCF #$idx ($label)  child iel=$ciel gel=$cgel $(face_name[cfid])  h1=$h1 h2=$h2")
+        println("                     parent iel=$piel gel=$pgel $(face_name[pfid])")
+        println("    j  | child ip  gip  (x, y, z)                        | parent ip  gip  (x, y, z)")
+        for j = 1:ngl2
+            cip = mesh.IPc_list[j, idx]
+            pip = mesh.IPp_list[j, idx]
+            cgip = mesh.ip2gip[cip]; pgip = mesh.ip2gip[pip]
+            println("   $(lpad(j,2)) | ip=$(lpad(cip,6)) gip=$(lpad(cgip,6))  ($(r3(mesh.x[cip])),$(r3(mesh.y[cip])),$(r3(mesh.z[cip])))  | ip=$(lpad(pip,6)) gip=$(lpad(pgip,6))  ($(r3(mesh.x[pip])),$(r3(mesh.y[pip])),$(r3(mesh.z[pip])))")
+        end
+    end
+
+    # ── parent-centric view: for each unique parent element, list all
+    #    children and show which child IP maps to each parent IP ─────────────
+    println(sep)
+    println("[NCF-IPS] Rank $rank | parent-centric view (1 parent ip ← N child ips)")
+    # group pair indices by parent iel
+    parent_to_pairs = Dict{Int, Vector{Int}}()
+    for idx = 1:n_tot
+        piel = mesh.non_conforming_facets[idx][2]
+        push!(get!(parent_to_pairs, piel, Int[]), idx)
+    end
+    for (piel, pairs) in sort(collect(parent_to_pairs), by=first)
+        pgel = mesh.el2gel[piel]
+        println(sep)
+        println("  Parent iel=$piel gel=$pgel  ($(length(pairs)) children)")
+        # header: parent node | child1 | child2 | ...
+        hdr = "  j  | parent ip  gip  (x,y,z)  "
+        for idx in pairs
+            ciel = mesh.non_conforming_facets[idx][1]
+            cfid = mesh.non_conforming_facets[idx][3]
+            hdr *= "| child iel=$ciel $(face_name[cfid][1:5])  "
+        end
+        println(hdr)
+        for j = 1:ngl2
+            pip  = mesh.IPp_list[j, pairs[1]]
+            pgip = mesh.ip2gip[pip]
+            row  = "  $(lpad(j,2)) | ip=$(lpad(pip,6)) gip=$(lpad(pgip,6))  ($(r3(mesh.x[pip])),$(r3(mesh.y[pip])),$(r3(mesh.z[pip])))  "
+            for idx in pairs
+                cip  = mesh.IPc_list[j, idx]
+                cgip = mesh.ip2gip[cip]
+                row *= "| ip=$(lpad(cip,6)) gip=$(lpad(cgip,6))  ($(r3(mesh.x[cip])),$(r3(mesh.y[cip])),$(r3(mesh.z[cip])))  "
+            end
+            println(row)
+        end
+    end
+    println(sep)
+    flush(stdout)
 end

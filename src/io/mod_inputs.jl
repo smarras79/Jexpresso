@@ -764,6 +764,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ladapt] = true
     end
 
+    if(!haskey(inputs, :amr_start_time))
+        inputs[:amr_start_time] = Float32(0.0)
+    end
+
     if(!haskey(inputs, :linitial_refine))
         inputs[:linitial_refine] = false
     end

@@ -4,14 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.4,
+        :Δt                   => 0.5,
         :tinit                => 0,
         :tend                 => 10000.0,
         # :tend                 => 43200.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
-	:restart_time         => 500,
-	:statistics_time      => 100,
+	# :restart_time         => 500,
+	# :statistics_time      => 100,
 	# :diagnostics_at_times => (0:4:100),
 	:diagnostics_at_times => (100:100:10000),
 	# :diagnostics_at_times => (0:4:40..., 100:500:600..., 610:10:700...,  800:100:1000.0...),
@@ -49,7 +49,7 @@ function user_inputs()
         # :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_60kmx12kmx25km.msh",	
+        :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_30kmx12kmx25km.msh",	
 	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_128kmx128kmx25km_1600m.msh",
 	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les.msh",
 	
@@ -82,7 +82,7 @@ function user_inputs()
         :outformat           => "vtk",
         :output_dir          => "./output_gigales_energy_moist/",
         #:output_dir          => "./output",
-        :loverwrite_output   => false,  #this is only implemented for VTK for now
+        :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
@@ -98,7 +98,8 @@ function user_inputs()
         # AMR parameters
         #---------------------------------------------------------------------------
         :amr_freq            => 100,
-        :amr_max_level       => 2,
+        :amr_max_level       => 1,
+        :amr_start_time      => 3500.0
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

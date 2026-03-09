@@ -51,7 +51,7 @@ function driver(nparts,
     if (inputs[:lamr] == true)
         amr_freq = inputs[:amr_freq]
         Δt_amr   = amr_freq * inputs[:Δt]
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
+        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + inputs[:amr_start_time] + Δt_amr)]
     else
         tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
     end

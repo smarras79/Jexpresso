@@ -124,6 +124,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv, Press=pref) #kg/m³
                 hl     = PhysConst.cp*T + PhysConst.g*z
 
+                u     = 0.0
+                u_ref = 0.0
+                v     = 0.0
+                v_ref = 0.0
+
+
 
 
                 if inputs[:SOL_VARS_TYPE] == PERT()
@@ -153,6 +159,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qn[ip,4] = ρ*w
                     q.qn[ip,5] = ρ*hl
                     q.qn[ip,6] = 0.0
+                    # q.qn[ip,6] = 0.0
                     q.qn[ip,6] = ρ*qv#0.0
                     q.qn[ip,7] = 0.0
                     q.qn[ip,end] = pref_m #+ ρ*qv*PhysConst.Rvap*T
@@ -163,6 +170,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qe[ip,3] = ρref*v_ref
                     q.qe[ip,4] = ρref*w_ref
                     q.qe[ip,5] = ρref*hl_ref
+                    # q.qe[ip,6] = 0
                     q.qe[ip,6] = ρref*qv_ref
                     q.qe[ip,7] = 0.0
                     q.qe[ip,end] = pref_m #+ ρref*qv*PhysConst.Rvap*Tref
@@ -270,7 +278,7 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
                                coords,
                                max_level)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
-    tol         = 1e-7
+    tol         = 1e-6
     x           = coords[:,1]
     y           = coords[:,2]
     z           = coords[:,3]
@@ -287,7 +295,7 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
         # @info q[ips,4] - qe[ips,4]
         qi_el      = qi[ips]
         z_el       = z[ips]
-        if any(qi_el .> tol) && (old_ad_lvl[iel] < max_level) && all(z_el .< 18999.9)
+        if any(qi_el .> tol) && (old_ad_lvl[iel] < max_level) && all(z_el .< 13999.9)
             adapt_flags[iel] = refine_flag
         end
         if all(qi_el .< tol)

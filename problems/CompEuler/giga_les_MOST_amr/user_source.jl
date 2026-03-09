@@ -32,12 +32,13 @@ function user_source!(S,
     #--------------
     lcoriolis = true
     lgeostrophic = true
+    lsponge      = true
     
     #--------------
     # SPONGE
     #--------------
-    if inputs[:lsponge] == true
-        zs = inputs[:zsponge]
+    if lsponge == true
+        zs = 19000.0
     	xr = 0.0
     	xl = 0.0
     	α  = 1/60.0

@@ -8,7 +8,7 @@ module Jexpresso
 
 using MPI
 using KernelAbstractions
-using Revise
+# using Revise  # incompatible with sysimage builds
 using BenchmarkTools
 using Dates
 using DelimitedFiles
@@ -26,7 +26,7 @@ using DiffEqBase
 using DiffEqDevTools
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
-using SnoopCompile
+# using SnoopCompile  # incompatible with sysimage builds
 using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,

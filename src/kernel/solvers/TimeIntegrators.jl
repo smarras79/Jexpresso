@@ -120,8 +120,11 @@ function time_loop!(inputs, params, u, args...)
 
             #CFL
             # if inputs[:ladapt] == false
+
+                ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+                dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
-                        integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
+                        integrator.p.mp, integrator.p.uaux[:,end], Float32(dt),
                         integrator.p.mesh.Δeffective_s,
                         integrator,
                         integrator.p.SD; visc=inputs[:μ])
@@ -208,10 +211,10 @@ function time_loop!(inputs, params, u, args...)
         while solution.t[end] < inputs[:tend]
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
             ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
-            # dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
-            # println_rank(" #  dt=", dt; msg_rank = rank)
+            dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
+            println_rank(" #  dt=", dt; msg_rank = rank)
             @time solution = solve(prob,
-                                inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                                inputs[:ode_solver], dt=Float32(dt),
                                 callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
                                 save_everystep = false,
                                 adaptive=inputs[:ode_adaptive_solver],
