@@ -11,9 +11,9 @@ function driver(nparts,
     rank = MPI.Comm_rank(comm)
     
     if inputs[:lwarmup] == true
-        if rank == 0
-            println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
-	    end
+
+        if rank == 0 println(BLUE_FG(string(" # JIT pre-compilation of large problem ..."))) end
+        
         input_mesh = inputs[:gmsh_filename]
         inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
         sem_dummy = sem_setup(inputs, nparts, distribute)
@@ -30,15 +30,11 @@ function driver(nparts,
         
         #check_memory(" At GC() after sem_dummy setup.")
         
-        if rank == 0
-            println(BLUE_FG(string(" # JIT pre-compilation of large problem ... END")))
-        end
+        if rank == 0 println(BLUE_FG(string(" # JIT pre-compilation of large problem ... DONE"))) end
     end
     #check_memory(" Before sem_setup.")
                 
     sem, partitioned_model = sem_setup(inputs, nparts, distribute)
-
-    #check_memory(" After sem_setup.")
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
@@ -78,9 +74,8 @@ function driver(nparts,
             tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
         end
 
-        if rank == 0
-            @info " Params_setup .................................."
-        end
+        if rank == 0 println(" # Params_setup ..................................") end
+        
         params, u =  params_setup(sem,
                                   qp,
                                   inputs,
@@ -88,9 +83,7 @@ function driver(nparts,
                                   TFloat,
                                   tspan)
         
-        if rank == 0
-            @info " Params_setup .................................. END"
-        end
+        if rank == 0 println(" # Params_setup .................................. DONE") end
     
         # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
         # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
@@ -100,6 +93,7 @@ function driver(nparts,
             # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
             #-----------------------------------------------------------------------------------
             @time solution = time_loop!(inputs, params, u, partitioned_model)
+            
             # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
             
         else
@@ -118,22 +112,24 @@ function driver(nparts,
             if (inputs[:backend] == CPU())
 
                 if inputs[:lelementLearning]
-                    
+                    if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ......."))) end
                     EL = allocate_elemLearning(nelem, ngl,
                                                sem.mesh.length∂O,
                                                sem.mesh.length∂τ,
                                                sem.mesh.lengthΓ,
                                                TFloat, inputs[:backend];
                                                Nsamp=inputs[:Nsamp],
-                                               lEL_Train=inputs[:lEL_Train])
+                                               lEL_Sample=inputs[:lEL_Sample])
 
-
-                    ABC  = zeros(sem.mesh.length∂O, sem.mesh.length∂τ, sem.mesh.nelem)
-                    BC   = zeros(size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2])
+                    if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ....... DONE"))) end
+                    
                     BOΓg = zeros(sem.mesh.length∂O)
                     gΓ   = zeros(sem.mesh.lengthΓ)
                                        
-                    if EL.lEL_Train
+                    if EL.lEL_Sample
+
+                        if rank == 0 println(BLUE_FG(string(" # EL SAMPLING....... "))) end
+                        
                         #-----------------------------------------------------
                         # 1. Train:
                         #-----------------------------------------------------
@@ -199,7 +195,7 @@ function driver(nparts,
                                                                  params.mesh.bdy_edge_type,
                                                                  params.ω, qp.neqs,
                                                                  params.inputs, params.AD, sem.mesh.SD)
-                            
+
                             #-----------------------------------------------------
                             # Element-learning infrastructure
                             #-----------------------------------------------------
@@ -207,11 +203,11 @@ function driver(nparts,
                                                        sem.matrix.L, RHS, EL,
                                                        avisc,
                                                        bufferin, bufferout,
-                                                       ABC, BC, BOΓg, gΓ;
+                                                       BOΓg, gΓ;
                                                        isamp=isamp,
                                                        total_cols_writtenin=total_cols_writtenin,
                                                        total_cols_writtenout=total_cols_writtenout)
-                            
+                                                       
                             usol = params.qp.qn
                             args = (params.SD, usol, params.uaux, 1, isamp,
                                     sem.mesh, nothing,
@@ -231,8 +227,9 @@ function driver(nparts,
                         #
                         total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
                         total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
+
+                        if rank == 0 println(BLUE_FG(string(" # EL SAMPLING ....... DONE"))) end
                         
-                        #end #end lEL_Train
                     else
                         #-----------------------------------------------------
                         # 2. Inference:
@@ -246,8 +243,8 @@ function driver(nparts,
                         avisc    = zeros(TFloat, 1, ngl^2)
                         ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
                         avisc[1,:].= ranvisc
-                        ψ        = sem.basis.ψ
-                        expansion_2d!(â, ψ)
+                        #ψ        = sem.basis.ψ
+                        #expansion_2d!(â, ψ)
                         
                         for ip =1:npoin
                             RHS[ip] = user_source!(RHS[ip],
@@ -291,7 +288,7 @@ function driver(nparts,
                                                    sem.matrix.L, RHS, EL,
                                                    avisc,
                                                    [0.0], [0.0],
-                                                   ABC, BC, BOΓg, gΓ;
+                                                   BOΓg, gΓ;
                                                    isamp=1,
                                                    total_cols_writtenin=0,
                                                    total_cols_writtenout=0)

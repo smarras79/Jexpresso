@@ -190,13 +190,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
         if(haskey(inputs, :lelementLearning) &&
             inputs[:lelementLearning] == true)
-            inputs[:lsparse] = false
+           # inputs[:lsparse] = false
         end
     else
         if(inputs[:lsparse] == true &&
             haskey(inputs, :lelementLearning) &&
             inputs[:lelementLearning] == true)
-            inputs[:lsparse] = false
+            #inputs[:lsparse] = false
         end
     end
 
@@ -523,8 +523,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lelementLearning] = false
     end
     
-    if !haskey(inputs, :lEL_Train)
-        inputs[:lEL_Train] = false
+    if !haskey(inputs, :lEL_Sample)
+        inputs[:lEL_Sample] = false
     end
         
     #

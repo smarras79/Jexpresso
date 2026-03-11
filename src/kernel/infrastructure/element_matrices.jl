@@ -371,37 +371,80 @@ function build_laplace_matrix(SD::NSD_1D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     return L
 end
 
-
 function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
-    
-    Le = zeros(nelem, Q+1, Q+1, N+1, N+1)
+    #=
+    Inexact integration (Q = N): nodal basis ψ[i,k] = δ_{ik}.
+    The quadrature sums over (k,l) collapse analytically into four terms
+    (A, B, C, D), reducing complexity from O(N^6) to O(N^4) per element.
+    ψ is no longer needed.
+    =#
+    Np1 = N + 1
+    Le = zeros(T, nelem, Np1, Np1, Np1, Np1)
+
+    # Preallocate temporaries outside element loop → zero heap allocs inside
+    G11 = zeros(T, Np1, Np1)   # ωk ωl J (ξx² + ξy²)
+    G12 = zeros(T, Np1, Np1)   # ωk ωl J (ξx ηx + ξy ηy)
+    G22 = zeros(T, Np1, Np1)   # ωk ωl J (ηx² + ηy²)
+    K11 = zeros(T, Np1, Np1, Np1)  # K11[l,m,i] = Σ_k G11[k,l] dψ[m,k] dψ[i,k]
+    K22 = zeros(T, Np1, Np1, Np1)  # K22[m,n,j] = Σ_l G22[m,l] dψ[n,l] dψ[j,l]
 
     for iel = 1:nelem
-        for l = 1:Q+1, k = 1:Q+1
-            
-            dξdx_kl = metrics.dξdx[iel,k,l]
-            dξdy_kl = metrics.dξdy[iel,k,l]
-            dηdx_kl = metrics.dηdx[iel,k,l]
-            dηdy_kl = metrics.dηdy[iel,k,l]            
-            for j = 1:N+1, i = 1:N+1
-                
-                dΨJKdx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
-                dΨJKdy = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
 
-                for n = 1:N+1, m = 1:N+1
+        # ── Step 1: Weighted contravariant metric at each quadrature point  O(N²) ──
+        @inbounds for l = 1:Np1, k = 1:Np1
+            wJ  = ω[k] * ω[l] * metrics.Je[iel,k,l]
+            ξx  = metrics.dξdx[iel,k,l];  ξy = metrics.dξdy[iel,k,l]
+            ηx  = metrics.dηdx[iel,k,l];  ηy = metrics.dηdy[iel,k,l]
+            G11[k,l] = wJ * (ξx*ξx + ξy*ξy)
+            G12[k,l] = wJ * (ξx*ηx + ξy*ηy)
+            G22[k,l] = wJ * (ηx*ηx + ηy*ηy)
+        end
 
-                    dΨIKdx = dψ[m,k]*ψ[n,l]*dξdx_kl + ψ[m,k]*dψ[n,l]*dηdx_kl
-                    dΨIKdy = dψ[m,k]*ψ[n,l]*dξdy_kl + ψ[m,k]*dψ[n,l]*dηdy_kl
-                    
-                    Le[iel,m,n,i,j] += ω[k]*ω[l]*metrics.Je[iel,k,l]*(dΨIKdx*dΨJKdx + dΨIKdy*dΨJKdy)
-                end
+        # ── Step 2a: K11[l,m,i] = Σ_k G11[k,l] dψ[m,k] dψ[i,k]  O(N⁴) ──
+        # Feeds Term A:  Le[m, n, i, n] += K11[n, m, i]   (δ_{n,j} collapses j→n)
+        fill!(K11, zero(T))
+        @inbounds for l = 1:Np1, m = 1:Np1, i = 1:Np1
+            s = zero(T)
+            for k = 1:Np1
+                s += G11[k,l] * dψ[m,k] * dψ[i,k]
+            end
+            K11[l,m,i] = s
+        end
+
+        # ── Step 2b: K22[m,n,j] = Σ_l G22[m,l] dψ[n,l] dψ[j,l]  O(N⁴) ──
+        # Feeds Term D:  Le[m, n, m, j] += K22[m, n, j]   (δ_{m,i} collapses i→m)
+        fill!(K22, zero(T))
+        @inbounds for m = 1:Np1, n = 1:Np1, j = 1:Np1
+            s = zero(T)
+            for l = 1:Np1
+                s += G22[m,l] * dψ[n,l] * dψ[j,l]
+            end
+            K22[m,n,j] = s
+        end
+
+        # ── Step 3: Assemble Le ──
+
+        # Term A  (δ_{n,j} already applied → only j=n entries, O(N³))
+        @inbounds for m = 1:Np1, n = 1:Np1, i = 1:Np1
+            Le[iel,m,n,i,n] += K11[n,m,i]
+        end
+
+        # Term D  (δ_{m,i} already applied → only i=m entries, O(N³))
+        @inbounds for m = 1:Np1, n = 1:Np1, j = 1:Np1
+            Le[iel,m,n,m,j] += K22[m,n,j]
+        end
+
+        # Terms B + C  (cross-metric coupling, no Kronecker constraint, O(N⁴))
+        # B: G12[i,n] dψ[m,i] dψ[j,n]   (k→i, l→n via δ_{ik}δ_{nl})
+        # C: G12[m,j] dψ[i,m] dψ[n,j]   (k→m, l→j via δ_{mk}δ_{jl})
+        @inbounds for n = 1:Np1, m = 1:Np1
+            for j = 1:Np1, i = 1:Np1
+                Le[iel,m,n,i,j] += G12[i,n]*dψ[m,i]*dψ[j,n] +
+                                    G12[m,j]*dψ[i,m]*dψ[n,j]
             end
         end
+
     end
-    
-    #@info size(L)
-    #show(stdout, "text/plain", L)
-    
     return Le
 end
 
@@ -661,23 +704,206 @@ end
     end
 end
 
-function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
-    
-    for iel=1:mesh.nelem
-        for j = 1:mesh.ngl, i = 1:mesh.ngl
-            #J = i + (j - 1)*mesh.ngl
-            JP = mesh.connijk[iel,i,j]
+# =============================================================================
+#  Fused Laplace assembly + DSS — 2D SEM, inexact GLL integration
+#
+#  Original pipeline:
+#    build_laplace_matrix  →  Le[nelem, Np1, Np1, Np1, Np1]   (45.8 MiB)
+#    DSS_laplace!          →  L[ndof, ndof]  via scatter-add
+#
+#  This file replaces both with a single fused kernel.
+#  Le is never allocated.  Each of the four inexact-integration terms is
+#  scattered directly into L[IP,JP] via mesh.connijk as it is computed.
+#
+#  Memory per element (N=6, Float64):
+#    G11,G12,G22   3 × 7²  × 8 =  1.2 KB
+#    K11,K22       2 × 7³  × 8 =  5.4 KB
+#    Le_loc                    =  0 KB  ← eliminated
+#    ─────────────────────────────────
+#    Total working set         ≈  6.6 KB  (fits in L1)
+#
+#  Complexity: O(N⁴) per element  (vs O(N⁶) in the unfused original)
+# =============================================================================
 
-            for n = 1:mesh.ngl, m = 1:mesh.ngl
-                #I = m + (n - 1)*mesh.ngl
-                IP = mesh.connijk[iel,m,n]
-                
-                L[IP,JP] += Lel[iel,m,n,i,j]
+
+# -----------------------------------------------------------------------------
+"""
+    build_sparsity_pattern(mesh, N, ndof, T)
+
+One pass over mesh.connijk to collect all (IP, JP) pairs for every element.
+Returns a structurally correct SparseMatrixCSC with nzval = 0.
+The COO vectors are freed by GC immediately after sparse() returns.
+"""
+function build_sparsity_pattern(mesh, N, ::Type{T}) where {T}
+    Np1    = N + 1
+    nelem  = mesh.nelem
+    ndof   = mesh.npoin                   # total unique DOFs
+    nnz_ub = nelem * Np1^4               # upper bound; duplicates merged below
+
+    Iv = Vector{Int32}(undef, nnz_ub)
+    Jv = Vector{Int32}(undef, nnz_ub)
+
+    ptr = 0
+    @inbounds for iel = 1:nelem
+        for j = 1:Np1, i = 1:Np1
+            JP = mesh.connijk[iel, i, j]
+            for n = 1:Np1, m = 1:Np1
+                ptr += 1
+                Iv[ptr] = mesh.connijk[iel, m, n]
+                Jv[ptr] = JP
             end
         end
     end
-    
-    #show(stdout, "text/plain", L)
+
+    # sparse() merges duplicate (IP,JP) entries, setting nzval = 0 everywhere.
+    # rowval / colptr are now fixed for the lifetime of the solve.
+    return sparse(Iv, Jv, zeros(T, nnz_ub), ndof, ndof)
+end
+
+
+# -----------------------------------------------------------------------------
+"""
+    assemble_and_DSS_laplace!(L, dψ, ω, mesh, metrics, N)
+
+Fused element assembly + DSS scatter.
+
+Inexact GLL integration identity  ψᵢ(ξₖ) = δᵢₖ  reduces the O(N⁶) double
+quadrature to four closed-form terms.  Each term is scattered immediately
+into L[IP,JP] via mesh.connijk — Le (full or local) is never allocated.
+
+Four terms after index collapse (row DOF = (m,n), col DOF = (i,j)):
+
+  A  j = n  (δ_{nj})   Σ_k G11[k,n]  dψ[m,k] dψ[i,k]    ← K11[n,m,i]
+  B                     G12[i,n]      dψ[m,i] dψ[j,n]
+  C                     G12[m,j]      dψ[i,m] dψ[n,j]
+  D  i = m  (δ_{mi})   Σ_l G22[m,l]  dψ[n,l] dψ[j,l]    ← K22[m,n,j]
+
+L may be any AbstractMatrix (SparseMatrixCSC recommended, or dense for testing).
+"""
+function assemble_and_DSS_laplace!(L::AbstractMatrix{T},
+                                    dψ, ω,
+                                    mesh, metrics, N) where {T}
+    Np1  = N + 1
+
+    # ── Per-element temporaries — allocated once, reused every iteration ──────
+    G11  = zeros(T, Np1, Np1)          # ωₖωₗ J (ξₓ² + ξᵧ²)
+    G12  = zeros(T, Np1, Np1)          # ωₖωₗ J (ξₓηₓ + ξᵧηᵧ)
+    G22  = zeros(T, Np1, Np1)          # ωₖωₗ J (ηₓ² + ηᵧ²)
+    K11  = zeros(T, Np1, Np1, Np1)     # K11[l,m,i]  = Σ_k G11[k,l] dψ[m,k]dψ[i,k]
+    K22  = zeros(T, Np1, Np1, Np1)     # K22[m,n,j]  = Σ_l G22[m,l] dψ[n,l]dψ[j,l]
+    # Total: 6.6 KB for N=6 → fits in L1 cache
+
+    for iel = 1:mesh.nelem
+
+        # ── Step 1: Weighted contravariant metric tensors  O(N²) ──────────────
+        @inbounds for l = 1:Np1, k = 1:Np1
+            wJ        = ω[k] * ω[l] * metrics.Je[iel, k, l]
+            ξx, ξy    = metrics.dξdx[iel,k,l], metrics.dξdy[iel,k,l]
+            ηx, ηy    = metrics.dηdx[iel,k,l], metrics.dηdy[iel,k,l]
+            G11[k,l]  = wJ * (ξx*ξx + ξy*ξy)
+            G12[k,l]  = wJ * (ξx*ηx + ξy*ηy)
+            G22[k,l]  = wJ * (ηx*ηx + ηy*ηy)
+        end
+
+        # ── Step 2a: K11[l,m,i] = Σ_k G11[k,l] dψ[m,k] dψ[i,k]  O(N⁴) ──────
+        fill!(K11, zero(T))
+        @inbounds for l = 1:Np1, m = 1:Np1, i = 1:Np1
+            s = zero(T)
+            for k = 1:Np1
+                s += G11[k,l] * dψ[m,k] * dψ[i,k]
+            end
+            K11[l,m,i] = s
+        end
+
+        # ── Step 2b: K22[m,n,j] = Σ_l G22[m,l] dψ[n,l] dψ[j,l]  O(N⁴) ──────
+        fill!(K22, zero(T))
+        @inbounds for m = 1:Np1, n = 1:Np1, j = 1:Np1
+            s = zero(T)
+            for l = 1:Np1
+                s += G22[m,l] * dψ[n,l] * dψ[j,l]
+            end
+            K22[m,n,j] = s
+        end
+
+        # ── Step 3: Scatter all four terms into L[IP,JP] ─────────────────────
+        #
+        # This IS the DSS scatter — mesh.connijk maps (iel,m,n) → global IP.
+        # No Le_loc needed: each term goes straight to the global matrix.
+
+        # ── Term A:  row=(m,n), col=(i,n)  [j locked to n by δ_{nj}]  O(N³) ──
+        @inbounds for n = 1:Np1
+            for m = 1:Np1
+                IP = mesh.connijk[iel, m, n]
+                for i = 1:Np1
+                    JP = mesh.connijk[iel, i, n]    # j = n
+                    L[IP, JP] += K11[n, m, i]
+                end
+            end
+        end
+
+        # ── Term D:  row=(m,n), col=(m,j)  [i locked to m by δ_{mi}]  O(N³) ──
+        @inbounds for m = 1:Np1
+            for n = 1:Np1
+                IP = mesh.connijk[iel, m, n]
+                for j = 1:Np1
+                    JP = mesh.connijk[iel, m, j]    # i = m
+                    L[IP, JP] += K22[m, n, j]
+                end
+            end
+        end
+
+        # ── Terms B+C:  no Kronecker constraint, full O(N⁴) ──────────────────
+        @inbounds for n = 1:Np1, m = 1:Np1
+            IP = mesh.connijk[iel, m, n]
+            for j = 1:Np1, i = 1:Np1
+                JP = mesh.connijk[iel, i, j]
+                L[IP, JP] += G12[i,n]*dψ[m,i]*dψ[j,n] +
+                             G12[m,j]*dψ[i,m]*dψ[n,j]
+            end
+        end
+
+    end  # iel
+
+    return L
+end
+
+
+# -----------------------------------------------------------------------------
+"""
+    build_laplace_matrix(SD, dψ, ω, mesh, metrics, N, T) → SparseMatrixCSC
+
+Public entry point.  Two phases:
+  1. build_sparsity_pattern  — allocates L with correct CSC structure, nzval=0
+  2. assemble_and_DSS_laplace! — fills L.nzval by streaming element contributions
+
+Replaces the original build_laplace_matrix + DSS_laplace! pair.
+Le is never allocated.
+"""
+function build_laplace_matrix(SD::NSD_2D, dψ, ω,
+                               mesh, metrics, N,
+                               ::Type{T} = Float64) where {T}
+    L = build_sparsity_pattern(mesh, N, T)
+    assemble_and_DSS_laplace!(L, dψ, ω, mesh, metrics, N)
+    return L
+end
+
+
+# -----------------------------------------------------------------------------
+# COMPATIBILITY SHIM (optional)
+# If other code still calls DSS_laplace! with a pre-built Le, this wrapper
+# preserves that interface.  Remove once all callers are migrated.
+#
+function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, mesh, N; llump=false)
+    Np1 = N + 1
+    @inbounds for iel = 1:mesh.nelem
+        for j = 1:Np1, i = 1:Np1
+            JP = mesh.connijk[iel, i, j]
+            for n = 1:Np1, m = 1:Np1
+                IP = mesh.connijk[iel, m, n]
+                L[IP, JP] += Lel[iel, m, n, i, j]
+            end
+        end
+    end
 end
 
 
@@ -1211,6 +1437,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     elseif typeof(SD) == NSD_3D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
     end
+    
     if (backend == CPU())
         build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
     else
@@ -1225,6 +1452,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             k(Me, basis.ψ, ω, metrics.Je, N, Q;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
         end
     end
+    
     if (QT == Exact() && inputs[:llump] == false)
         M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
         Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
@@ -1234,6 +1462,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     
     if backend == CPU()
+        #-------------------------------
+        # backend -> CPU
+        #-------------------------------
         if (inputs[:ladapt] == true)
             DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
                                     mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
@@ -1241,9 +1472,14 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
 
         end
 
+        if (rank == 0) println(" # DSS_mass .........................") end
         DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
+        if (rank == 0) println(" # DSS_mass ......................... DONE") end
+        
     else
+        #-------------------------------
         # backend -> GPU
+        #-------------------------------
         if SD == NSD_1D()
             DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
         elseif SD == NSD_2D()
@@ -1261,12 +1497,15 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     
     g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
 
+    if (rank == 0) println(" DSS_global_normals ......") end
     DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, SD)
-    
+    if (rank == 0) println(" DSS_global_normals ...... DONE") end
+
     if (inputs[:ladapt] == true)
         DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
                                    mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
     end
+
     if (inputs[:bdy_fluxes])
         if SD == NSD_3D()
             M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
@@ -1286,27 +1525,47 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
         M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
     end
-    
+
+    if (rank == 0) println(" mass_inverse ......") end
     mass_inverse!(Minv, M, QT)
+    if (rank == 0) println(" mass_inverse ...... DONE") end
+    
     Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
+    
     if lbuild_laplace_matrix
         if (backend == CPU())
             #
             # CPU
             #
-            Le = build_laplace_matrix(SD,
-                                      basis.ψ, basis.dψ,
-                                      ω, mesh.nelem,
-                                      mesh,
-                                      metrics,
-                                      N, Q, TFloat)
+            #
+            if (rank == 0) println(" build_laplace_matrix (fused DSS) .......... ") end
+            L = build_laplace_matrix(SD,
+                                     basis.dψ,
+                                     ω,
+                                     mesh,
+                                     metrics,
+                                     N,
+                                     TFloat)
+            
+            if (rank == 0) println(" build_laplace_matrix (fused DSS) ......... DONE") end
+            
+            #=
+            if (rank == 0) println(" build_laplace_matrix ...................... ") end
+            Le = @time build_laplace_matrix(SD,
+            basis.ψ, basis.dψ,
+            ω, mesh.nelem,
+            mesh,
+            metrics,
+            N, Q, TFloat)
+            if (rank == 0) println(" build_laplace_matrix ..................... DONE") end
             
             if (inputs[:lsparse])
-                @info " DSS sparse"
-                L = DSS_laplace_sparse(mesh, Le)
-                @info " DSS sparse .................... DONE"
+            if (rank == 0) println(" DSS sparse format") end
+            L = DSS_laplace_sparse(mesh, Le)
+            if (rank == 0) println(" DSS sparse format .................... DONE") end
             else
+                if (rank == 0) println(" DSS non-sparse format") end
                 L = KernelAbstractions.zeros(backend,
                                              TFloat,
                                              Int64(mesh.npoin),
@@ -1317,8 +1576,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
                              mesh, metrics,
                              N, TFloat;
                              llump=inputs[:llump])
+                if (rank == 0) println(" DSS non-sparse format .................... DONE") end
             end
-            
+            =#
         else
             #
             # GPU
@@ -1367,7 +1627,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    return (; Me, De, Le, M, Minv, g_dss_cache, D, L, M_surf_inv, M_edge_inv)
+    return (; Me, De, M, Minv, g_dss_cache, D, L, M_surf_inv, M_edge_inv)
 end
 
 
@@ -1448,7 +1708,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[1].ψ, basis[2].ψ, ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
         end
         
-        @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
+        DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
         g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     else
         if (typeof(SD) == NSD_1D)

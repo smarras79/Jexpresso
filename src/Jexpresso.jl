@@ -22,6 +22,7 @@ using InternedStrings
 using LinearAlgebra
 using LinearOperators
 using SpecialFunctions
+using SparseArrays
 using StaticArrays
 using StaticArrays: SVector, MVector
 using DiffEqBase
@@ -93,6 +94,8 @@ include(joinpath( "auxiliary", "timing.jl"))
 
 include(joinpath( "kernel", "abstractTypes.jl"))
 
+#include(joinpath( "kernel", "elementLearningStructs_new.jl"))
+#include(joinpath( "kernel", "elementLearningStructs_sparse.jl"))
 include(joinpath( "kernel", "elementLearningStructs.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
