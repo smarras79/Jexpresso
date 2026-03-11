@@ -58,8 +58,9 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
     
     # Number of Alya ranks
     nranks_alya = length(alya2world)
+
     
-    # Distribution of points among Alya ranks
+    # Distribution of points among Alya ranks this to be changed
     r     = mod(nmax, nranks_alya - 1)
     npoin = div(nmax, nranks_alya - 1)
 
