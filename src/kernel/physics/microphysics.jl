@@ -482,10 +482,6 @@ function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt,
 
         end
         # Guard against negative density from AMR interpolation overshoots
-        if ρ <= 0.0
-            S_micro[ip] = 0.0
-            continue
-        end
         T = Tabs[ip]
         e_satw = esatw(T)*100
         e_sati = esati(T)*100

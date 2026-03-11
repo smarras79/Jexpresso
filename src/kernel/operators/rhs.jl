@@ -108,6 +108,68 @@ function rhs!(du, u, params, time)
     # for @timers, do not delete
     timers = params.timers
 
+    # -----------------------------------------------------------------------
+    # NaN/Inf diagnostic: find the first bad node before instability aborts
+    # Also check for negative density (precursor to NaN blow-up)
+    # -----------------------------------------------------------------------
+    comm_diag  = (params.SD == NSD_1D()) ? MPI.COMM_WORLD : params.mesh.parts.comm
+    rank_diag  = MPI.Comm_rank(comm_diag)
+    npoin_diag = params.mesh.npoin
+    neqs_diag  = params.neqs
+
+    function print_node_state(ip, label)
+        println("========== $label | rank=$(rank_diag) time=$(time) node=$(ip) ==========")
+        println("  coords : x=$(params.mesh.x[ip])  y=$(params.mesh.y[ip])  z=$(params.mesh.z[ip])")
+        println("  --- conserved (u) ---")
+        for ivar = 1:neqs_diag
+            println("    u[$ivar] = $(u[(ivar-1)*npoin_diag + ip])")
+        end
+        println("  --- primitives (uaux) ---")
+        for ivar = 1:neqs_diag
+            println("    uaux[$ivar] = $(params.uaux[ip, ivar])")
+        end
+        println("  --- reference state (qe) ---")
+        for ivar = 1:neqs_diag
+            println("    qe[$ivar] = $(params.qp.qe[ip, ivar])")
+        end
+        println("  --- microphysics (mp) ---")
+        println("    Tabs    = $(params.mp.Tabs[ip])")
+        println("    qn      = $(params.mp.qn[ip])")
+        println("    qc      = $(params.mp.qc[ip])")
+        println("    qi      = $(params.mp.qi[ip])")
+        println("    qr      = $(params.mp.qr[ip])")
+        println("    qs      = $(params.mp.qs[ip])")
+        println("    qg      = $(params.mp.qg[ip])")
+        println("    Pr      = $(params.mp.Pr[ip])")
+        println("    Ps      = $(params.mp.Ps[ip])")
+        println("    Pg      = $(params.mp.Pg[ip])")
+        println("    S_micro = $(params.mp.S_micro[ip])")
+        println("    qsatt   = $(params.mp.qsatt[ip])")
+        println("    flux_lw = $(params.mp.flux_lw[ip])")
+        println("    flux_sw = $(params.mp.flux_sw[ip])")
+        println("="^60)
+        flush(stdout)
+    end
+
+    # Check negative density (ivar=1) as early warning before NaN
+    for ip = 1:npoin_diag
+        if u[ip] < 0
+            print_node_state(ip, "NEGATIVE DENSITY")
+        end
+    end
+    if any(!isfinite, u)
+        for ip = 1:npoin_diag
+            for ivar = 1:neqs_diag
+                if !isfinite(u[(ivar-1)*npoin_diag + ip])
+                    print_node_state(ip, "NaN/Inf ivar=$ivar")
+                    break  # one print per node is enough
+                end
+            end
+        end
+        error("Instability: NaN/Inf found in u at time=$time (see output above)")
+    end
+    # -----------------------------------------------------------------------
+
     # les_statistics(u, params, time)
     if (backend == CPU())
         _build_rhs!(@view(params.RHS[:,:]), u, params, time)
@@ -539,18 +601,6 @@ function _build_rhs!(RHS, u, params, time)
                           params.cache_ghost_p, params.q_ghost_p,
                           params.cache_ghost_c, params.q_ghost_c,
                           params.interp)
-        # After AMR L2 projection, spectral methods can introduce Gibbs-like
-        # overshoots at refinement boundaries that make conserved variables negative.
-        # For TOTAL variables: col 1 = ρ (must be > 0), cols 6-7 = ρqt, ρqp (must be ≥ 0).
-        # For PERT variables: col 1 = ρ' which can legitimately be negative — do not clamp.
-        if params.SOL_VARS_TYPE != PERT()
-            T_uaux = eltype(params.uaux)
-            @. params.uaux[:,1] = max(params.uaux[:,1], zero(T_uaux))
-            if params.neqs >= 7
-                @. params.uaux[:,6] = max(params.uaux[:,6], zero(T_uaux))
-                @. params.uaux[:,7] = max(params.uaux[:,7], zero(T_uaux))
-            end
-        end
     end
     
     resetbdyfluxToZero!(params)
@@ -576,7 +626,24 @@ function _build_rhs!(RHS, u, params, time)
                           params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
                           params.uaux, @view(params.mesh.coords[:,end]),
                           params.qp.qe, SD, params.SOL_VARS_TYPE)
-        
+
+        if inputs[:ladapt] == true
+            conformity4ncf_mp!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+                            params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
+                            params.mp.S_micro, params.mp.qsatt,
+                            @view(params.uaux[:,end]), params.rhs_el_tmp, @view(params.utmp[:,1]), params.vaux,
+                            params.g_dss_cache,
+                            params.mesh.SD,
+                            params.QT, params.mesh.connijk,
+                            params.mesh, params.Minv,
+                            params.metrics.Je, params.ω, params.AD,
+                            params.neqs,
+                            params.q_el, params.q_el_pro,
+                            params.cache_ghost_p, params.q_ghost_p,
+                            params.cache_ghost_c, params.q_ghost_c,
+                            params.interp)
+        end
+            
         if (params.inputs[:lprecip])
             compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
                                                params.mp.Pg, params.mp.Tabs, params.mp.qi,

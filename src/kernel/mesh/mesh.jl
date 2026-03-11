@@ -1029,15 +1029,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 cfacet = idx+num_regular_facets
                 cid = facet_cell_pids[cfacet][1]
                 pid, lfacetid, half = hanging_facet_glue[idx]
-                # if pid == -1
-                #     gel_c = elm2pelm[cid]
-                #     cx = sum(mesh.x[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
-                #     cy = sum(mesh.y[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
-                #     cz = sum(mesh.z[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
-                #     println("[NCF-DBG] Rank $rank | hanging face idx=$idx skipped (pid=-1): cid=$cid gel=$gel_c  lfacetid=$lfacetid  half=$half  elem_centroid=($(round(cx;digits=3)), $(round(cy;digits=3)), $(round(cz;digits=3)))")
-                #     n_hf_skipped += 1
-                #     continue
-                # end
+                if pid == -1
+                    # gel_c = elm2pelm[cid]
+                    # cx = sum(mesh.x[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                    # cy = sum(mesh.y[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                    # cz = sum(mesh.z[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                    # println("[NCF-DBG] Rank $rank | hanging face idx=$idx skipped (pid=-1): cid=$cid gel=$gel_c  lfacetid=$lfacetid  half=$half  elem_centroid=($(round(cx;digits=3)), $(round(cy;digits=3)), $(round(cz;digits=3)))")
+                    n_hf_skipped += 1
+                    continue
+                end
                 
                 pfacet     = cell_fecet_pids[pid][lfacetid-offset]
                 gfacet_p   = local_to_global(fgids)[pfacet]

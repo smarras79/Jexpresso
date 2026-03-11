@@ -634,20 +634,28 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             # if (false)
                             if (bdy_face_type[iface] == "MOST")
                                 ipsfc    = connijk[e,i,j,1]
-                                ρ        = uaux[ip1, 1]
-                                
-                                u_inside = uaux[ip1,   2]/ρ
-                                v_inside = uaux[ip1,   3]/ρ                                
-                                w_inside = uaux[ip1,   4]/ρ
+                                if SOL_VARS_TYPE == TOTAL()
+                                    ρ        = uaux[ip1, 1]
+                                    u_inside = uaux[ip1, 2]/ρ
+                                    v_inside = uaux[ip1, 3]/ρ
+                                    w_inside = uaux[ip1, 4]/ρ
+                                    θ_inside = uaux[ip1,   5]/ρ
+                                    θ_sfc    = uaux[ipsfc, 5]/uaux[ipsfc, 1]
+                                else # PERT
+                                    ρ        = uaux[ip1, 1] + qe[ip1, 1]
+                                    u_inside = (uaux[ip1, 2] + qe[ip1, 2])/ρ
+                                    v_inside = (uaux[ip1, 3] + qe[ip1, 3])/ρ
+                                    w_inside = (uaux[ip1, 4] + qe[ip1, 4])/ρ
+                                    θ_inside = (uaux[ip1,   5] + qe[ip1,   5])/ρ
+                                    θ_sfc    = (uaux[ipsfc, 5] + qe[ipsfc, 5])/(uaux[ipsfc, 1] + qe[ipsfc, 1])
+                                end
 
                                 vprojectedaux = u_inside*nx[iface,i,j] + v_inside*ny[iface,i,j] + w_inside*nz[iface,i,j]
-                                
+
                                 u_inside = u_inside - vprojectedaux*nx[iface,i,j]
                                 v_inside = v_inside - vprojectedaux*ny[iface,i,j]
                                 w_inside = w_inside - vprojectedaux*nz[iface,i,j]
-                                
-                                θ_inside = uaux[ip1,   5]/ρ
-                                θ_sfc    = uaux[ipsfc, 5]/ρ
+
                                 if (micro > 1)
                                     θ_inside = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                                     θ_sfc    = Tabs[ipsfc]*(PhysConst.pref/uaux[ipsfc,end])^(1/PhysConst.cpoverR)
