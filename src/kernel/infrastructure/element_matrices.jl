@@ -1497,9 +1497,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     
     g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
 
-    if (rank == 0) println(" DSS_global_normals ......") end
+    if (rank == 0) println(" # DSS_global_normals ......") end
     DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, SD)
-    if (rank == 0) println(" DSS_global_normals ...... DONE") end
+    if (rank == 0) println(" # DSS_global_normals ...... DONE") end
 
     if (inputs[:ladapt] == true)
         DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
@@ -1526,9 +1526,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
     end
 
-    if (rank == 0) println(" mass_inverse ......") end
+    if (rank == 0) println(" # mass_inverse ......") end
     mass_inverse!(Minv, M, QT)
-    if (rank == 0) println(" mass_inverse ...... DONE") end
+    if (rank == 0) println(" # mass_inverse ...... DONE") end
     
     Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
@@ -1539,7 +1539,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             # CPU
             #
             #
-            if (rank == 0) println(" build_laplace_matrix (fused DSS) .......... ") end
+            if (rank == 0) println(" # build_laplace_matrix (fused DSS) .......... ") end
             L = build_laplace_matrix(SD,
                                      basis.dψ,
                                      ω,
@@ -1548,7 +1548,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
                                      N,
                                      TFloat)
             
-            if (rank == 0) println(" build_laplace_matrix (fused DSS) ......... DONE") end
+            if (rank == 0) println(" # build_laplace_matrix (fused DSS) ......... DONE") end
             
             #=
             if (rank == 0) println(" build_laplace_matrix ...................... ") end

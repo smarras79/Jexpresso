@@ -2896,12 +2896,12 @@ function measure_elements_per_rank(local_elements)
         max_elements = maximum(all_counts)
         min_elements = minimum(all_counts)
         
-        println("\nLoad Balance Analysis:")
-        println("Total elements: $total_elements")
-        println("Average per rank: $(round(avg_elements, digits=2))")
-        println("Max elements: $max_elements")
-        println("Min elements: $min_elements")
-        println("Load imbalance ratio: $(round(max_elements/avg_elements, digits=3))")
+        println("\n # Load Balance Analysis:")
+        println(" #   Total elements: $total_elements")
+        println(" #   Average per rank: $(round(avg_elements, digits=2))")
+        println(" #   Max elements: $max_elements")
+        println(" #   Min elements: $min_elements")
+        println(" #   Load imbalance ratio: $(round(max_elements/avg_elements, digits=3))")
         
         # Check if redistribution is needed
         imbalance_threshold = 1.2  # 20% imbalance threshold

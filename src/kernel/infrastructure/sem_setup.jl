@@ -154,15 +154,15 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             build_metric_terms!(metrics2, mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat, COVAR(), SD; backend = inputs[:backend])
             
             metrics = (metrics1, metrics2)
-            if (rank == 0) println(" Build metrics ...... DONE") end
+            if (rank == 0) println(" # Build metrics ...... DONE") end
             
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                              ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
             
         else
-            if (rank == 0) println(" Build interpolation bases ......") end
+            if (rank == 0) println(" # Build interpolation bases ......") end
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
-            if (rank == 0) println(" Build interpolation bases ...... END") end
+            if (rank == 0) println(" # Build interpolation bases ...... END") end
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
@@ -196,15 +196,14 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             #else
             #    if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
             #end
-            if (rank == 0) println(" Build metrics ......") end
+            if (rank == 0) println(" # Build metrics ......") end
             metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
-            if (rank == 0) println(" Build metrics ...... END") end
+            if (rank == 0) println(" # Build metrics ...... END") end
             
             if (inputs[:lphysics_grid])
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
             end 
-            if (rank == 0) println(" Build periodicity infrastructure ......") end
             
             #if (mesh.nsd > 2)
             #    if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
@@ -244,7 +243,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             build_metric_terms_1D_Laguerre!(metrics2, mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat, COVAR(), SD;backend = inputs[:backend])
             
             metrics = (metrics1, metrics2)
-            if (rank == 0) println(" Build metrics ...... DONE") end
+            if (rank == 0) println(" # Build metrics ...... DONE") end
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
