@@ -45,14 +45,20 @@ function user_uout!(ip, ET, uout, u, qe; mp = mp)
         uout[19] = u[5]/u[1]-qe[5]/qe[1]
         uout[20] = u[end]
     elseif ET == PERT()
-        uout[1] = u[1]+qe[1]
-        uout[2] = u[2]/(u[1]+qe[1])
-        uout[3] = u[3]/(u[1]+qe[1])
-        uout[4] = u[4]/(u[1]+qe[1])
-        uout[5] = (u[5]+qe[5])/(u[1]+qe[1])-qe[5]/qe[1]
-        uout[6] = (u[6]+qe[6])/(u[1]+qe[1])-qe[6]/qe[1]
-        uout[7] = (u[7]+qe[7])/(u[1]+qe[1])-qe[7]/qe[1]
-        
+        ρ_tot = u[1] + qe[1]
+        uout[1] = ρ_tot
+        uout[2] = (u[2]+qe[2])/ρ_tot
+        uout[3] = (u[3]+qe[3])/ρ_tot
+        uout[4] = (u[4]+qe[4])/ρ_tot
+        uout[5] = (u[5]+qe[5])/ρ_tot - qe[5]/qe[1]
+        uout[6] = (u[6]+qe[6])/ρ_tot - qe[6]/qe[1]
+        uout[7] = (u[7]+qe[7])/ρ_tot - qe[7]/qe[1]
+
+        uout[16] = (u[2]+qe[2])/ρ_tot - qe[2]/qe[1]
+        uout[17] = (u[3]+qe[3])/ρ_tot - qe[3]/qe[1]
+        uout[18] = (u[4]+qe[4])/ρ_tot - qe[4]/qe[1]
+        uout[19] = (u[5]+qe[5])/ρ_tot - qe[5]/qe[1]
+        uout[20] = u[end]
     end
     uout[8] = mp.Tabs[ip]
     uout[9] = mp.qn[ip]

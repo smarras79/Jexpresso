@@ -482,6 +482,11 @@ function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt,
 
         end
         # Guard against negative density from AMR interpolation overshoots
+        if ρ <= 0.0
+            @warn "microphysics: ρ=$(ρ) ≤ 0 at ip=$(ip)  uaux[ip,1]=$(uaux[ip,1]) uaux[ip,end]=$(uaux[ip,end]) uaux[ip,2]=$(uaux[ip,2]) uaux[ip,3]=$(uaux[ip,3])  uaux[ip,4]=$(uaux[ip,4]) uaux[ip,5]=$(uaux[ip,5])  qe[ip,1]=$(lpert ? qe[ip,1] : 0.0)  qt=$(isnan(qt) ? NaN : qt)  qp=$(isnan(qp) ? NaN : qp)"
+            S_micro[ip] = 0.0
+            continue
+        end
         T = Tabs[ip]
         e_satw = esatw(T)*100
         e_sati = esati(T)*100

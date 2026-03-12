@@ -2493,3 +2493,155 @@ function print_ncf_ip_coords!(mesh)
     println(sep)
     flush(stdout)
 end
+
+# ---------------------------------------------------------------------------
+# Lightweight periodic-NCF *detection* — no NCF interpolation infrastructure.
+#
+# Runs Phases 1–2 of collect_periodic_ncf_pairs_3D! (centroid-based pair
+# detection) and pushes the global element IDs of the coarser-side (parent)
+# elements at periodic NCF boundaries into mesh.periodic_ncf_parent_gels.
+#
+# Called once per periodic direction (periodicx/y/z) inside mod_mesh_read_gmsh!
+# when ladaptive == true, replacing the old collect_periodic_ncf_pairs_3D! +
+# extend_ncf_ip_lists_3D! calls.  amr_strategy! then iteratively refines the
+# detected parents until periodic boundaries are conforming.
+# ---------------------------------------------------------------------------
+function detect_periodic_ncf_parent_gels!(mesh, periodic_direction, elm2pelm)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    ngl  = mesh.ngl
+    ngl2 = ngl * ngl
+
+    # ---- Phase 1: each rank collects its periodic boundary faces ----
+    local_iel = Int[]
+    local_gel = eltype(elm2pelm)[]
+    local_rk  = Int[]
+    cx1_loc   = Float64[];  cx2_loc = Float64[];  cx3_loc = Float64[]
+    x1mn_loc  = Float64[];  x1mx_loc = Float64[]
+    x2mn_loc  = Float64[];  x2mx_loc = Float64[]
+
+    for iface_bdy = 1:size(mesh.bdy_face_type, 1)
+        mesh.bdy_face_type[iface_bdy] == periodic_direction || continue
+        iel = mesh.bdy_face_in_elem[iface_bdy]
+        gel = elm2pelm[iel]
+        cx = 0.0; cy = 0.0; cz = 0.0
+        x1mn = Inf; x1mx = -Inf; x2mn = Inf; x2mx = -Inf
+        for kk = 1:ngl, ll = 1:ngl
+            ip = mesh.poin_in_bdy_face[iface_bdy, kk, ll]
+            xx = mesh.x[ip]; yy = mesh.y[ip]; zz = mesh.z[ip]
+            cx += xx; cy += yy; cz += zz
+            if periodic_direction == "periodicx"
+                x1mn = min(x1mn, yy); x1mx = max(x1mx, yy)
+                x2mn = min(x2mn, zz); x2mx = max(x2mx, zz)
+            elseif periodic_direction == "periodicy"
+                x1mn = min(x1mn, xx); x1mx = max(x1mx, xx)
+                x2mn = min(x2mn, zz); x2mx = max(x2mx, zz)
+            else
+                x1mn = min(x1mn, xx); x1mx = max(x1mx, xx)
+                x2mn = min(x2mn, yy); x2mx = max(x2mx, yy)
+            end
+        end
+        npts = Float64(ngl2)
+        push!(local_iel, iel); push!(local_gel, gel); push!(local_rk, rank)
+        if periodic_direction == "periodicx"
+            push!(cx1_loc, cy/npts); push!(cx2_loc, cz/npts); push!(cx3_loc, cx/npts)
+        elseif periodic_direction == "periodicy"
+            push!(cx1_loc, cx/npts); push!(cx2_loc, cz/npts); push!(cx3_loc, cy/npts)
+        else
+            push!(cx1_loc, cx/npts); push!(cx2_loc, cy/npts); push!(cx3_loc, cz/npts)
+        end
+        push!(x1mn_loc, x1mn); push!(x1mx_loc, x1mx)
+        push!(x2mn_loc, x2mn); push!(x2mx_loc, x2mx)
+    end
+
+    gel_g  = MPI.gather(local_gel,  comm)
+    cx1_g  = MPI.gather(cx1_loc,    comm)
+    cx2_g  = MPI.gather(cx2_loc,    comm)
+    cx3_g  = MPI.gather(cx3_loc,    comm)
+    x1mn_g = MPI.gather(x1mn_loc,   comm)
+    x1mx_g = MPI.gather(x1mx_loc,   comm)
+    x2mn_g = MPI.gather(x2mn_loc,   comm)
+    x2mx_g = MPI.gather(x2mx_loc,   comm)
+    rk_g   = MPI.gather(local_rk,   comm)
+
+    # ---- Phase 2 (rank 0): detect coarser-side (parent) elements ----
+    parent_gels_r0 = eltype(elm2pelm)[]
+
+    if rank == 0
+        all_gel  = vcat(gel_g...)
+        all_cx1  = vcat(cx1_g...)
+        all_cx2  = vcat(cx2_g...)
+        all_cx3  = vcat(cx3_g...)
+        all_x1mn = vcat(x1mn_g...)
+        all_x1mx = vcat(x1mx_g...)
+        all_x2mn = vcat(x2mn_g...)
+        all_x2mx = vcat(x2mx_g...)
+
+        if length(all_gel) > 0
+            x3v_min, x3v_max = extrema(all_cx3)
+            idx_min = findall(v -> AlmostEqual(v, x3v_min), all_cx3)
+            idx_max = findall(v -> AlmostEqual(v, x3v_max), all_cx3)
+
+            max_cmap = Dict{NTuple{2,Float64},Int}()
+            for k in idx_max
+                max_cmap[(round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5))] = k
+            end
+            min_cmap = Dict{NTuple{2,Float64},Int}()
+            for k in idx_min
+                min_cmap[(round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5))] = k
+            end
+            conform_keys_min = Set(keys(filter(kv -> haskey(max_cmap, kv[1]), min_cmap)))
+            conform_keys_max = Set(keys(filter(kv -> haskey(min_cmap, kv[1]), max_cmap)))
+
+            nonconform_max = filter(k -> (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5)) ∉ conform_keys_max, idx_max)
+            nonconform_min = filter(k -> (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5)) ∉ conform_keys_min, idx_min)
+
+            tol = 1e-8
+            parent_gel_set = Set{eltype(elm2pelm)}()
+
+            # min-side children → max-side parents
+            for k in idx_min
+                (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5)) in conform_keys_min && continue
+                c1 = all_cx1[k]; c2 = all_cx2[k]
+                for p in nonconform_max
+                    c1 > all_x1mn[p]-tol && c1 < all_x1mx[p]+tol &&
+                    c2 > all_x2mn[p]-tol && c2 < all_x2mx[p]+tol || continue
+                    (all_x1mx[k]-all_x1mn[k])*(all_x2mx[k]-all_x2mn[k]) <
+                    (all_x1mx[p]-all_x1mn[p])*(all_x2mx[p]-all_x2mn[p]) - tol || continue
+                    push!(parent_gel_set, all_gel[p])
+                    break
+                end
+            end
+            # max-side children → min-side parents
+            for k in idx_max
+                (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5)) in conform_keys_max && continue
+                c1 = all_cx1[k]; c2 = all_cx2[k]
+                for p in nonconform_min
+                    c1 > all_x1mn[p]-tol && c1 < all_x1mx[p]+tol &&
+                    c2 > all_x2mn[p]-tol && c2 < all_x2mx[p]+tol || continue
+                    (all_x1mx[k]-all_x1mn[k])*(all_x2mx[k]-all_x2mn[k]) <
+                    (all_x1mx[p]-all_x1mn[p])*(all_x2mx[p]-all_x2mn[p]) - tol || continue
+                    push!(parent_gel_set, all_gel[p])
+                    break
+                end
+            end
+            parent_gels_r0 = collect(parent_gel_set)
+        end
+    end
+
+    # ---- Phase 3: broadcast parent gel IDs; each rank records locally-owned ones ----
+    nparents = (rank == 0) ? Int32(length(parent_gels_r0)) : Int32(0)
+    nparents = MPI.Bcast(nparents, 0, comm)
+    parent_gels_all = zeros(eltype(elm2pelm), nparents)
+    if rank == 0
+        parent_gels_all .= parent_gels_r0
+    end
+    MPI.Bcast!(parent_gels_all, 0, comm)
+
+    gel_to_iel = Dict{eltype(elm2pelm), Int}(local_gel[i] => local_iel[i] for i in eachindex(local_iel))
+    for gel in parent_gels_all
+        if haskey(gel_to_iel, gel)
+            push!(mesh.periodic_ncf_parent_gels, Int64(gel))
+        end
+    end
+end

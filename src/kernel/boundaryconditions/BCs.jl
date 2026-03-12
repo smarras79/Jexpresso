@@ -531,9 +531,9 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
     PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
 
-        # if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
-        #     bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
-        #     bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
+        if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
+            bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
+            bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
             
             for i=1:ngl
                 for j=1:ngl
@@ -555,7 +555,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
                     end
                 end
             end
-        # end
+        end
     end
 
     #Map back to u after applying b.c.

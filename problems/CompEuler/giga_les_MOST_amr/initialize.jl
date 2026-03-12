@@ -27,13 +27,19 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         
             for ip=1:mesh.npoin
                 z = mesh.z[ip]
-                ρ  = q.qn[ip,1]
-                hl = q.qn[ip,5] / ρ
-                qv = q.qn[ip,6] / ρ
+                if inputs[:SOL_VARS_TYPE] == PERT()
+                    ρ  = q.qn[ip,1] + q.qe[ip,1]
+                    hl = (q.qn[ip,5] + q.qe[ip,5]) / ρ
+                    qv = (q.qn[ip,6] + q.qe[ip,6]) / ρ
+                else
+                    ρ  = q.qn[ip,1]
+                    hl = q.qn[ip,5] / ρ
+                    qv = q.qn[ip,6] / ρ
+                end
                 T  = (hl - PhysConst.g*z) / PhysConst.cp
                 Tv = T*(1+0.61*qv)
                 q.qn[ip,end] = ρ*Tv*PhysConst.Rair
-            
+
                 ρe  = q.qe[ip,1]
                 hle = q.qe[ip,5] / ρe
                 qve = q.qe[ip,6] / ρe
@@ -124,10 +130,10 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv, Press=pref) #kg/m³
                 hl     = PhysConst.cp*T + PhysConst.g*z
 
-                u     = 0.0
-                u_ref = 0.0
-                v     = 0.0
-                v_ref = 0.0
+                # u     = 0.0
+                # u_ref = 0.0
+                # v     = 0.0
+                # v_ref = 0.0
 
 
 
@@ -158,7 +164,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qn[ip,3] = ρ*v
                     q.qn[ip,4] = ρ*w
                     q.qn[ip,5] = ρ*hl
-                    q.qn[ip,6] = 0.0
                     # q.qn[ip,6] = 0.0
                     q.qn[ip,6] = ρ*qv#0.0
                     q.qn[ip,7] = 0.0

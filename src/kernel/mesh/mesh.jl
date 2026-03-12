@@ -198,6 +198,12 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     num_ncf_pg_peri::Union{TInt, Missing} = 0
     num_ncf_cg_peri::Union{TInt, Missing} = 0
 
+    # Global element IDs of coarser-side (parent) elements at periodic boundaries
+    # that are non-conforming with their finer periodic partner.
+    # Populated by detect_periodic_ncf_parent_gels! during mesh build.
+    # Used by amr_strategy! to drive iterative refinement until conformity is achieved.
+    periodic_ncf_parent_gels::Vector{Int64} = Int64[]
+
     lneed_redistribute::Bool = false
 
     msg_suppress::Bool = false
@@ -267,19 +273,24 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
-            
+            function set_id_refined(flags, indices, target_id)
+                l2g = local_to_global(indices)
+                local_id = findfirst(==(target_gid), l2g)
+                # # local_ids = (2:2:200)
+                # # flags[local_ids] .= refine_flag
+                if local_id !== nothing
+                    flags[local_id] = refine_flag
+                end
+            end
             ref_coarse_flags = map(parts, partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank, indices
                 flags = zeros(Cint, length(indices))
                 flags .= nothing_flag
-                # target_gid = 158
-                # # target_gid = 225
-                # l2g = local_to_global(indices)
-                # local_id = findfirst(==(target_gid), l2g)
-                # # local_ids = (2:2:200)
-                # # flags[local_ids] .= refine_flag
-                # if local_id !== nothing
-                #     flags[local_id] = refine_flag
-                # end
+                # set_id_refined(flags, indices, 183)
+                # set_id_refined(flags, indices, 185)
+                # set_id_refined(flags, indices, 187)
+                # set_id_refined(flags, indices, 193)
+                # set_id_refined(flags, indices, 195)
+                # set_id_refined(flags, indices, 197)
           
                 flags
             end
@@ -1811,39 +1822,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
      
-        # Detect periodic-NCF pairs (AMR across periodic boundaries) and merge them
-        # directly into the existing non_conforming_facets / ghost lists so the
-        # standard DSS_nc_gather_rhs! / DSS_nc_scatter_rhs! handle them automatically.
-        # if lamr_mesh
-        #     collect_periodic_ncf_pairs_3D!(mesh, "periodicx", elm2pelm)
-        #     collect_periodic_ncf_pairs_3D!(mesh, "periodicy", elm2pelm)
-        #     collect_periodic_ncf_pairs_3D!(mesh, "periodicz", elm2pelm)
-        #     extend_ncf_ip_lists_3D!(mesh)
-        #     for i = 0:MPI.Comm_size(comm)-1
-        #         if i == rank
-        #             print_periodic_ncf_debug!(mesh)
-        #         end
-        #         MPI.Barrier(comm)
-        #     end
-        #     sum_num_ncf         = MPI.Allreduce(mesh.num_ncf,         MPI.SUM, comm)
-        #     sum_num_ncf_cg      = MPI.Allreduce(mesh.num_ncf_cg,      MPI.SUM, comm)
-        #     sum_num_ncf_pg      = MPI.Allreduce(mesh.num_ncf_pg,      MPI.SUM, comm)
-        #     sum_num_ncf_peri    = MPI.Allreduce(mesh.num_ncf_peri,    MPI.SUM, comm)
-        #     sum_num_ncf_cg_peri = MPI.Allreduce(mesh.num_ncf_cg_peri, MPI.SUM, comm)
-        #     sum_num_ncf_pg_peri = MPI.Allreduce(mesh.num_ncf_pg_peri, MPI.SUM, comm)
-
-        #     total_num_ncf      = sum_num_ncf + sum_num_ncf_cg + sum_num_ncf_pg
-        #     total_num_ncf_peri = sum_num_ncf_peri + sum_num_ncf_cg_peri + sum_num_ncf_pg_peri
-
-        #     println_rank(" # Total NCF pairs (interior + periodic): $(total_num_ncf-total_num_ncf_peri) + $(total_num_ncf_peri)"; msg_rank = rank, suppress = false)
-        # # end
-        # MPI.Barrier(comm)
-        # restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
-        # restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
-        # restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
-        # restructure_el2gel_for_periodicity_3D!(mesh, norx, "periodicx")
-        # restructure_el2gel_for_periodicity_3D!(mesh, nory, "periodicy")
-        # restructure_el2gel_for_periodicity_3D!(mesh, norz, "periodicz")
+        # Detect periodic-NCF pairs (AMR across periodic boundaries).
+        # Instead of building NCF interpolation infrastructure for periodic faces,
+        # record the coarser-side (parent) element global IDs in
+        # mesh.periodic_ncf_parent_gels.  amr_strategy! will iteratively refine
+        # those elements until the periodic boundaries are conforming.
+        if ladaptive
+            empty!(mesh.periodic_ncf_parent_gels)
+            detect_periodic_ncf_parent_gels!(mesh, "periodicx", elm2pelm)
+            detect_periodic_ncf_parent_gels!(mesh, "periodicy", elm2pelm)
+            detect_periodic_ncf_parent_gels!(mesh, "periodicz", elm2pelm)
+            total_peri_ncf = MPI.Allreduce(length(mesh.periodic_ncf_parent_gels), MPI.SUM, comm)
+            println_rank(" # Periodic NCF parent elements detected: $(total_peri_ncf) (will be refined by amr_strategy!)"; msg_rank = rank, suppress = false)
+        end
+        MPI.Barrier(comm)
+        restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
+        restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
+        restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
+        restructure_el2gel_for_periodicity_3D!(mesh, norx, "periodicx")
+        restructure_el2gel_for_periodicity_3D!(mesh, nory, "periodicy")
+        restructure_el2gel_for_periodicity_3D!(mesh, norz, "periodicz")
         mesh.gel2owner = find_gip_owner(mesh.el2gel)
         mesh.sib2owner = find_gip_owner(mesh.el2sib)
 
@@ -3682,6 +3680,37 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             interp  = args[end-2]
             uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
             p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+
+            # If any periodic boundaries are non-conforming, mark the coarser-side
+            # parent elements for refinement and rebuild until conforming.
+            total_peri_ncf = MPI.Allreduce(length(mesh_tmp.periodic_ncf_parent_gels), MPI.SUM, comm)
+            while total_peri_ncf > 0
+                rank == 0 && println(" # Periodic NCF detected: $(total_peri_ncf) parent elements — refining for conformity")
+                ncf_parent_set = Set{Int64}(mesh_tmp.periodic_ncf_parent_gels)
+                peri_conform_flags = zeros(TInt, Int64(mesh_tmp.nelem))
+                for iel = 1:mesh_tmp.nelem
+                    if Int64(mesh_tmp.el2gel[iel]) in ncf_parent_set
+                        peri_conform_flags[iel] = refine_flag
+                    end
+                end
+                mesh_tmp.lneed_redistribute = false  # force adapt (not redistribute) path
+                mesh_prev = mesh_tmp
+                uaux_prev = uaux_refined
+                mesh_tmp  = St_mesh{TInt,TFloat,CPU()}(nsd=TInt(inputs[:nsd]),
+                                                       nop=TInt(inputs[:nop]),
+                                                       ngr=TInt(inputs[:nop_laguerre]+1),
+                                                       SD=NSD_1D())
+                partitioned_model_tmp, n2o_ele_map_tmp = mod_mesh_read_gmsh!(
+                    mesh_tmp, inputs, nparts, distribute,
+                    peri_conform_flags, partitioned_model_tmp, mesh_prev, interp, project, uaux_prev)
+                uaux_refined = KernelAbstractions.zeros(CPU(), TFloat, (mesh_tmp.npoin, size(uaux_prev, 2)))
+                p8est_transfer_q!(uaux_refined, uaux_prev,
+                                  mesh_prev.ad_lvl, mesh_tmp.ad_lvl,
+                                  mesh_tmp, mesh_prev,
+                                  n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+                total_peri_ncf = MPI.Allreduce(length(mesh_tmp.periodic_ncf_parent_gels), MPI.SUM, comm)
+            end
+
             if (mesh_tmp.lneed_redistribute)
                 # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
                 mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
