@@ -696,10 +696,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     F_surf[i,j,6] = wqv[iface,i,j,1]
                                 else
                                     F_surf[i,j,5] = wθ[iface,i,j,1]*(δhf - 1.0) + user_heatflux*δhf
-                                    @info  F_surf[i,j,5]
-                                    @mystop
                                 end
-                                
                             else
                                 user_bc_neumann!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
                                                  @view(qe[ip,:]), @view(qe[ip1,:]),
