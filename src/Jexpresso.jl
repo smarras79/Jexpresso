@@ -130,6 +130,10 @@ include(joinpath( "kernel", "physics", "shortwave_rad.jl"))
 
 include(joinpath( "kernel", "physics", "longwave_rad.jl"))
 
+include(joinpath( "kernel", "physics", "radiative_heating.jl"))
+
+include(joinpath( "kernel", "physics", "optical_depth_integral.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))

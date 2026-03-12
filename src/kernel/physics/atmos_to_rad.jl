@@ -165,6 +165,7 @@ function atmos_to_rad_shortwave(atmos_data, npoin)
 
     κ = zeros(npoin)
     σ = zeros(npoin)
+    g_eff = zeros(npoin)
 
     # ── Molecular weight ratios ───────────────────────────────────────────
     M_h2o = 18.015e-3   # kg/mol
@@ -244,6 +245,15 @@ function atmos_to_rad_shortwave(atmos_data, npoin)
         # ── Total coefficients ────────────────────────────────────────────
         κ[ip] = κ_vap + κ_o3 + κ_liq_abs + κ_ice_abs
         σ[ip] = σ_ray + σ_liq_sca + σ_ice_sca
+
+        κ_abs_min = 1e-10
+        κ[ip]  = max(ρ * κ[ip], κ_abs_min)
+        g_eff[ip] = if σ[ip] > 1e-30
+            (0.0 * σ_ray + 0.85 * σ_liq_sca + 0.80 * σ_ice_sca) / σ[ip]
+        else
+            0.0
+        end
+
     end
 
     κ_ext = κ .+ σ
@@ -253,8 +263,9 @@ function atmos_to_rad_shortwave(atmos_data, npoin)
     @info "SW absorption   extrema: $(extrema(κ))"
     @info "SW scattering   extrema: $(extrema(σ))"
     @info "SW SSA          extrema: $(extrema(ω₀))"
+    @info "SW effective g  extrema: $(extrema(g_eff))"
 
-    return κ, σ
+    return κ, σ, g_eff
 end
 
 """
@@ -308,22 +319,39 @@ Named tuple with fields:
 function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
                                sample_xy = [(0.5, 0.5)])
 
-    rank   = MPI.Comm_rank(MPI.COMM_WORLD)
-    κ_ext  = κ .+ σ
-    tol_xy = 1e-1
+    rank  = MPI.Comm_rank(MPI.COMM_WORLD)
+    κ_ext = κ .+ σ
 
-    # ── Build column map: (x,y) key → node indices ───────────────────────────
-    # Round coordinates to tol_xy to group nodes that share the same (x,y)
-    # position across different vertical levels.
+    # ── Scale-aware column tolerance ─────────────────────────────────────────
+    # Use a fraction of the minimum element width rather than an absolute value.
+    # This correctly groups LGL nodes whose x,y coords differ only by floating
+    # point rounding from the reference-to-physical mapping.
+    x_range = mesh.xmax - mesh.xmin
+    y_range = mesh.ymax - mesh.ymin
+    tol_xy  = min(x_range, y_range) * 1e-6   # 1 ppm of domain width
+
+    # ── Build column map ──────────────────────────────────────────────────────
+    # Round to nearest tol_xy to group nodes at the same (x,y) position
     column_nodes = Dict{Tuple{Float64,Float64}, Vector{Int}}()
     for ip = 1:mesh.npoin
         key = (round(mesh.x[ip] / tol_xy) * tol_xy,
                round(mesh.y[ip] / tol_xy) * tol_xy)
         push!(get!(column_nodes, key, Int[]), ip)
     end
+
+    # ── Sanity check: all columns should have the same number of nodes ────────
+    col_sizes  = [length(v) for v in values(column_nodes)]
+    expected_n = maximum(col_sizes)   # most common column size
+    n_thin     = count(s -> s < expected_n * 0.9, col_sizes)
+    if n_thin > 0 && rank == 0
+        @warn "$(n_thin) columns have fewer nodes than expected ($expected_n). " *
+              "tol_xy = $(tol_xy) may be too tight — LGL coordinate rounding " *
+              "is splitting columns. Try increasing tol_xy by 10×."
+    end
+
     col_keys = collect(keys(column_nodes))
 
-    # ── Match each requested (x,y) to its nearest column centroid ────────────
+    # ── Match sample points ───────────────────────────────────────────────────
     n_samples    = length(sample_xy)
     matched_cols = Vector{Tuple{Float64,Float64}}(undef, n_samples)
 
@@ -338,25 +366,46 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
             end
         end
         matched_cols[s] = best_key
-
-        if rank == 0 && sqrt(best_dist) > 0.1 * (mesh.xmax - mesh.xmin)
-            @warn "Sample $s: requested ($x_req, $y_req) matched to " *
-                  "($(best_key[1]), $(best_key[2])); " *
-                  "distance $(round(sqrt(best_dist), digits=2)) m exceeds " *
-                  "10% of domain width."
+        if rank == 0 && sqrt(best_dist) > 0.1*(mesh.xmax - mesh.xmin)
+            @warn "Sample $s: requested ($x_req,$y_req) matched to " *
+                  "($(round(best_key[1],digits=4)), $(round(best_key[2],digits=4))); " *
+                  "distance $(round(sqrt(best_dist),sigdigits=3)) m"
         end
     end
 
-    # ── Build element–column lookup ───────────────────────────────────────────
-    # For each element record which (x,y) column it belongs to by checking the
-    # i=1, j=1 nodes (any fixed horizontal index works for a box mesh since x,y
-    # are constant along the vertical direction within a column).
+    # ── Build element-column lookup ───────────────────────────────────────────
+    # For each element find which column it belongs to by checking all
+    # horizontal nodes (i,j at fixed k=1), not just i=j=1, and taking
+    # a majority vote. This is more robust than checking a single node.
     elem_col = Dict{Int, Tuple{Float64,Float64}}()
     for iel = 1:mesh.nelem
-        ip_ref = mesh.connijk[iel, 1, 1, 1]
-        key    = (round(mesh.x[ip_ref] / tol_xy) * tol_xy,
-                  round(mesh.y[ip_ref] / tol_xy) * tol_xy)
-        elem_col[iel] = key
+        # Collect (x,y) keys for all horizontal nodes in this element
+        key_votes = Dict{Tuple{Float64,Float64}, Int}()
+        for i = 1:ngl, j = 1:ngl
+            ip_ref = mesh.connijk[iel, i, j, 1]
+            key    = (round(mesh.x[ip_ref] / tol_xy) * tol_xy,
+                      round(mesh.y[ip_ref] / tol_xy) * tol_xy)
+            key_votes[key] = get(key_votes, key, 0) + 1
+        end
+        # Pick the key with the most votes
+        best_key = argmax(key_votes)
+        elem_col[iel] = best_key
+    end
+
+    # ── Verify element-column assignment ─────────────────────────────────────
+    # Each column should have nelem / n_columns elements.
+    # If any column has zero elements the tol_xy is still too tight.
+    n_cols        = length(col_keys)
+    elems_per_col = mesh.nelem / n_cols
+    col_elem_count = Dict{Tuple{Float64,Float64}, Int}()
+    for iel = 1:mesh.nelem
+        k = elem_col[iel]
+        col_elem_count[k] = get(col_elem_count, k, 0) + 1
+    end
+    n_empty = count(k -> !haskey(col_elem_count, k), col_keys)
+    if n_empty > 0 && rank == 0
+        @warn "$n_empty columns have no elements assigned. " *
+              "Increase tol_xy by 10× (current: $tol_xy)."
     end
 
     # ── Integrate each matched column ─────────────────────────────────────────
@@ -366,44 +415,47 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
     for (s, col_key) in enumerate(matched_cols)
 
         # ── GL quadrature ─────────────────────────────────────────────────
-        # For each element in this column, integrate κ_ext along z using the
-        # 1D GL weights at fixed i=1, j=1.  The z-only quadrature weight is:
-        #
-        #   dz_weight = ω[k] × Je[iel,i,j,k] / (ω[i] × ω[j])
-        #
-        # which factors out the horizontal metric contributions from Je.
-        # For a box mesh with no horizontal stretching this is exact; for
-        # terrain-following coordinates the horizontal area factors cancel
-        # in the ratio and the z-integral is still recovered correctly.
-        τ_GL = 0.0
-        i_fix = 1; j_fix = 1
+        τ_GL  = 0.0
+        i_fix = ceil(Int, ngl/2)   # use middle i,j to avoid boundary nodes
+        j_fix = ceil(Int, ngl/2)   # which may have degenerate metrics
 
+        n_elem_in_col = 0
         for iel = 1:mesh.nelem
             elem_col[iel] == col_key || continue
+            n_elem_in_col += 1
             for k = 1:ngl
                 ip        = mesh.connijk[iel, i_fix, j_fix, k]
-                dz_weight = ω[k] * Je[iel, i_fix, j_fix, k]
-                @info "LGL", κ_ext[ip], dz_weight, mesh.x[ip], mesh.y[ip], mesh.z[ip]
-                τ_GL += κ_ext[ip] * dz_weight
+                dz_weight = ω[k] * Je[iel, i_fix, j_fix, k] /
+                            (ω[i_fix] * ω[j_fix])
+                τ_GL     += κ_ext[ip] * dz_weight
             end
         end
 
+        if n_elem_in_col == 0 && rank == 0
+            @warn "Column $s at $(col_key): no elements found. " *
+                  "tol_xy mismatch between column_nodes and elem_col."
+        end
+
         # ── Trapezoidal rule ──────────────────────────────────────────────
-        # Sort all nodes in the column by z, deduplicate shared interface
-        # nodes (averaging κ_ext at element boundaries), then integrate.
         nodes_in_col = column_nodes[col_key]
+
+        if isempty(nodes_in_col)
+            τ_trap_all[s] = 0.0
+            continue
+        end
+
         z_vals       = mesh.z[nodes_in_col]
         sort_idx     = sortperm(z_vals)
         nodes_sorted = nodes_in_col[sort_idx]
         z_sorted     = z_vals[sort_idx]
 
-        # Deduplicate: nodes shared between adjacent elements appear twice
-        # at the same z; average their κ_ext values.
+        # Deduplicate shared interface nodes
+        tol_z       = (mesh.zmax - mesh.zmin) * 1e-8
         z_unique    = Float64[]
         κext_unique = Float64[]
         for (ip, z_val) in zip(nodes_sorted, z_sorted)
-            if !isempty(z_unique) && abs(z_val - z_unique[end]) < tol_xy
-                κext_unique[end] = 0.5 * (κext_unique[end] + κ_ext[ip])
+            if !isempty(z_unique) && abs(z_val - z_unique[end]) < tol_z
+                κext_unique[end] = 0.5*(κext_unique[end] + κ_ext[ip])
             else
                 push!(z_unique,    z_val)
                 push!(κext_unique, κ_ext[ip])
@@ -411,79 +463,62 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
         end
 
         τ_trap = 0.0
-        for i = 1:length(z_unique) - 1
-            Δz      = z_unique[i+1] - z_unique[i]
-            @info "trap", Δz, κext_unique[i], κext_unique[i+1]
-            τ_trap += 0.5 * (κext_unique[i] + κext_unique[i+1]) * Δz
+        for i = 1:length(z_unique)-1
+            τ_trap += 0.5*(κext_unique[i] + κext_unique[i+1]) * (z_unique[i+1] - z_unique[i])
         end
 
         τ_GL_all[s]   = τ_GL
         τ_trap_all[s] = τ_trap
     end
 
-    # ── Print summary table on rank 0 ─────────────────────────────────────────
+    # ── Print summary ─────────────────────────────────────────────────────────
     if rank == 0
         w = 74
-        println()
         println("=" ^ w)
         println("  Optical Depth Verification")
         println("=" ^ w)
         @printf("  %-5s  %-12s  %-12s  %-14s  %-14s  %-9s\n",
                 "Col", "x (m)", "y (m)", "τ_GL", "τ_trap", "Δτ/τ (%)")
         println("-" ^ w)
-
         for s = 1:n_samples
             x_c, y_c = matched_cols[s]
-            τg       = τ_GL_all[s]
-            τt       = τ_trap_all[s]
-            rel_diff = abs(τg - τt) / max(τg, 1e-30) * 100.0
-            flag     = rel_diff > 5.0 ? " !" : ""
+            τg        = τ_GL_all[s]
+            τt        = τ_trap_all[s]
+            rel_diff  = abs(τg - τt) / max(τg, 1e-30) * 100.0
+            flag      = rel_diff > 5.0 ? " !" : ""
             @printf("  %-5d  %-12.4f  %-12.4f  %-14.6f  %-14.6f  %-9.2f%s\n",
                     s, x_c, y_c, τg, τt, rel_diff, flag)
         end
-
         println("=" ^ w)
         println()
         println("  Physical reference ranges:")
         println("  LW clear-sky:  τ ≈ 2 – 5")
         println("  LW cloudy:     τ ≈ 5 – 20")
-        println("  SW clear-sky:  τ ≈ 0.1 – 0.3  (Rayleigh dominated)")
+        println("  SW clear-sky:  τ ≈ 0.1 – 0.3")
         println("  SW cloudy:     τ ≈ 5 – 50")
         println()
-
-        # ── Per-column diagnostics ────────────────────────────────────────
         for s = 1:n_samples
             τg       = τ_GL_all[s]
             τt       = τ_trap_all[s]
             rel_diff = abs(τg - τt) / max(τg, 1e-30) * 100.0
-
             if rel_diff > 5.0
                 @warn "Column $s: GL and trapezoidal differ by " *
-                      "$(round(rel_diff, digits=1))%. Possible causes:\n" *
-                      "  - Sharp κ_ext discontinuity at an element interface " *
-                          "(cloud top/base)\n" *
-                      "  - Column-finding picked up nodes from an adjacent " *
-                          "column (reduce tol_xy)\n" *
-                      "  - Horizontal metric variation making the Je " *
-                          "factoring approximate"
+                      "$(round(rel_diff,digits=1))%."
             end
             if τg < 1e-6
-                @warn "Column $s: optical depth ≈ 0.  Check that " *
-                      "atmos_data is populated and atmos_to_rad_* was called."
+                @warn "Column $s: optical depth ≈ 0. Check tol_xy and " *
+                      "that atmos_to_rad_* was called."
             end
             if τg > 100.0
-                @warn "Column $s: very large optical depth (τ = " *
-                      "$(round(τg, digits=1))).  Check units of κ and σ " *
-                      "(should be m⁻¹, not km⁻¹)."
+                @warn "Column $s: very large optical depth τ=$(round(τg,digits=1)). " *
+                      "Check units of κ and σ (should be m⁻¹)."
             end
         end
     end
 
-    return (
-        τ_GL      = τ_GL_all,
-        τ_trap    = τ_trap_all,
-        column_xy = matched_cols,
-    )
+    return (τ_GL      = τ_GL_all,
+            τ_trap    = τ_trap_all,
+            column_xy = matched_cols)
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -499,8 +534,8 @@ Call once at setup and pass the result to the BC and RHS functions.
 function make_boundary_predicates(mesh)
     zmin = mesh.zmin; zmax = mesh.zmax
     return (
-        is_top    = z -> abs(z - zmax) < 1e-10,
-        is_bottom = z -> abs(z - zmin) < 1e-10,
+        is_top    = z -> abs(z - zmax) < 1e-5,
+        is_bottom = z -> abs(z - zmin) < 1e-5,
     )
 end
 
@@ -578,4 +613,136 @@ function check_beam_flux(extra_mesh, sw, ngl)
 
     return (flux = flux_integrated, expected = expected, rel_err = rel_err,
             solid_angle_full = solid_angle_full, solid_angle_in = solid_angle_in)
+end
+
+"""
+    build_sw_lateral_bc_profile(mesh, κ_ext, ω, Je, ngl)
+
+Precompute the cumulative vertical optical depth profile τ(z) from TOA
+downward, averaged horizontally across the domain. Used to set the
+attenuated direct beam lateral BC for the shortwave.
+
+Returns a linear interpolant: τ_from_TOA(z) giving the vertical optical
+depth between z and zmax. The slant-path optical depth at solar zenith
+angle θ_sun is τ(z)/μ₀.
+"""
+function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
+
+    # ── Find a vertical stack of elements through the domain centre ───────────
+    # In a structured hex mesh connijk[iel,i,j,k] gives the global node index.
+    # Nodes at the same (i,j) across elements stacked in z form an exact column.
+    # We find one such stack by:
+    # 1. Picking a reference node near the domain centre at z=zmin
+    # 2. Finding all nodes with the same (x,y) by exact connijk lookup
+
+    # Fix i,j at the middle of the reference element
+    i_fix = ceil(Int, ngl/2)
+    j_fix = ceil(Int, ngl/2)
+
+    # Find the element whose centre is closest to (x_mid, y_mid, zmin)
+    x_mid = 0.5*(mesh.xmin + mesh.xmax)
+    y_mid = 0.5*(mesh.ymin + mesh.ymax)
+
+    best_dist = Inf
+    ref_iel   = 1
+    for iel = 1:mesh.nelem
+        ip = mesh.connijk[iel, i_fix, j_fix, 1]
+        dx = mesh.x[ip] - x_mid
+        dy = mesh.y[ip] - y_mid
+        dz = mesh.z[ip] - mesh.zmin
+        d  = dx^2 + dy^2 + 100*dz^2   # weight z heavily to prefer bottom elements
+        if d < best_dist
+            best_dist = d
+            ref_iel   = iel
+        end
+    end
+
+    # ── Collect all nodes in this column via connectivity ─────────────────────
+    # The reference x,y coordinates come from connijk — exact by construction
+    ref_ip = mesh.connijk[ref_iel, i_fix, j_fix, 1]
+    x_col  = mesh.x[ref_ip]
+    y_col  = mesh.y[ref_ip]
+
+    # Collect every node ip where x[ip] ≈ x_col AND y[ip] ≈ y_col
+    # Use a tolerance relative to the element size, not the domain size
+    # Element size estimate: domain / number of elements per direction
+    n_elem_per_dir = round(Int, mesh.nelem^(1/3))
+    elem_size      = min(mesh.xmax-mesh.xmin,
+                         mesh.ymax-mesh.ymin) / max(n_elem_per_dir, 1)
+    tol_xy         = elem_size * 1e-4   # 0.01% of element size — tight but safe
+
+    nodes_in_col = Int[]
+    for ip = 1:mesh.npoin
+        if abs(mesh.x[ip] - x_col) < tol_xy &&
+           abs(mesh.y[ip] - y_col) < tol_xy
+            push!(nodes_in_col, ip)
+        end
+    end
+
+    # ── Validate ──────────────────────────────────────────────────────────────
+    if isempty(nodes_in_col)
+        @error "Column finder: no nodes found near " *
+               "($(round(x_col,digits=4)), $(round(y_col,digits=4))). " *
+               "This should not happen since ref_ip was found via connijk."
+        return [mesh.zmax, mesh.zmin], [0.0, 0.0]
+    end
+
+    z_span = maximum(mesh.z[nodes_in_col]) - minimum(mesh.z[nodes_in_col])
+    if z_span < 0.5*(mesh.zmax - mesh.zmin)
+        @warn "Column spans only $(round(z_span,digits=2)) m of " *
+              "$(round(mesh.zmax-mesh.zmin,digits=2)) m total. " *
+              "Column may be incomplete."
+    end
+
+    @info "SW lateral BC profile:"
+    @info "  Reference element: $ref_iel"
+    @info "  Column (x,y): ($(round(x_col,digits=4)), $(round(y_col,digits=4)))"
+    @info "  Nodes found: $(length(nodes_in_col))"
+    @info "  z range: [$(round(minimum(mesh.z[nodes_in_col]),digits=2)), " *
+                      "$(round(maximum(mesh.z[nodes_in_col]),digits=2))]"
+
+    # ── Sort by z descending (TOA first), deduplicate interfaces ─────────────
+    z_vals   = mesh.z[nodes_in_col]
+    sort_idx = sortperm(z_vals, rev=true)
+    nodes_s  = nodes_in_col[sort_idx]
+    z_s      = z_vals[sort_idx]
+
+    tol_z       = (mesh.zmax - mesh.zmin) * 1e-8
+    z_unique    = Float64[]
+    κext_unique = Float64[]
+    for (ip, zv) in zip(nodes_s, z_s)
+        if !isempty(z_unique) && abs(zv - z_unique[end]) < tol_z
+            κext_unique[end] = 0.5*(κext_unique[end] + κ_ext[ip])
+        else
+            push!(z_unique,    zv)
+            push!(κext_unique, κ_ext[ip])
+        end
+    end
+
+    # ── Cumulative τ from TOA downward (trapezoidal) ──────────────────────────
+    n          = length(z_unique)
+    τ_from_TOA = zeros(Float64, n)
+    for i = 2:n
+        dz             = z_unique[i-1] - z_unique[i]   # positive, descending z
+        τ_from_TOA[i]  = τ_from_TOA[i-1] +
+                         0.5*(κext_unique[i-1] + κext_unique[i]) * dz
+    end
+
+    @info "  Total optical depth τ(surface): $(round(τ_from_TOA[end], digits=4))"
+
+    return z_unique, τ_from_TOA
+end
+
+
+function interp_optical_depth(z, z_prof, τ_from_TOA)
+    # z_prof is sorted from zmax (TOA) down to zmin (surface)
+    # τ_from_TOA increases from 0 at TOA to τ_total at surface
+    z < z_prof[end] && return τ_from_TOA[end]   # below surface
+    z > z_prof[1]   && return 0.0               # above TOA
+
+    # z_prof is descending so use reverse search
+    idx = searchsortedfirst(z_prof, z, rev=true) - 1
+    idx = clamp(idx, 1, length(z_prof)-1)
+    frac = (z_prof[idx] - z) / (z_prof[idx] - z_prof[idx+1] + 1e-30)
+    return τ_from_TOA[idx] + frac * (τ_from_TOA[idx+1] - τ_from_TOA[idx])
 end

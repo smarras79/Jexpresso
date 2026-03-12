@@ -35,6 +35,20 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+
+    if(!haskey(inputs, :RT_atmos_coupling))
+       inputs[:RT_atmos_coupling] = false
+    end
+
+    if (inputs[:RT_atmos_coupling])
+        inputs[:RT_radiative_heating] = true
+    end
+
+
+    if(!haskey(inputs, :RT_radiative_heating))
+       inputs[:RT_radiative_heating] = false
+    end
+
     if(!haskey(inputs, :lmanufactured_solution))
        inputs[:lmanufactured_solution] = false
     end
@@ -74,10 +88,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:RT_S0_flux] = 1361.0
     end
     if(!haskey(inputs, :RT_μ0))
-        inputs[:RT_μ0] = 0.6
+        inputs[:RT_μ0] = 0.5
     end
     if(!haskey(inputs, :RT_ϕ0))
-        inputs[:RT_ϕ0] = 0.0
+        inputs[:RT_ϕ0] = 3*π/4
     end
     if(!haskey(inputs, :RT_δ_beam))
         inputs[:RT_δ_beam] = 0.05
@@ -98,7 +112,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :rad_HG_g))
-      inputs[:rad_HG_g] = 0
+      inputs[:rad_HG_g] = 0.0
     end
 
     if(!haskey(inputs, :extra_dimensions))

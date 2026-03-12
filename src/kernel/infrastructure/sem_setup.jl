@@ -6,14 +6,15 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     rank = MPI.Comm_rank(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
-    fx        = zeros(Float64,1,1)
-    fy        = zeros(Float64,1,1)
-    fz        = zeros(Float64,1,1)
-    fy_lag    = zeros(Float64,1,1)
-    phys_grid = zeros(Float64,1,1)
-    Nξ        = inputs[:nop]
-    AD        = inputs[:AD]
-    CL        = inputs[:CL]
+    fx         = zeros(Float64,1,1)
+    fy         = zeros(Float64,1,1)
+    fz         = zeros(Float64,1,1)
+    fy_lag     = zeros(Float64,1,1)
+    phys_grid  = zeros(Float64,1,1)
+    atmos_data = zeros(Float64,1,1)
+    Nξ         = inputs[:nop]
+    AD         = inputs[:AD]
+    CL         = inputs[:CL]
     
     lexact_integration = inputs[:lexact_integration]
     SOL_VARS_TYPE      = inputs[:SOL_VARS_TYPE]
@@ -201,6 +202,9 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             if (inputs[:lphysics_grid])
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
             end 
+            if (inputs[:RT_atmos_coupling])
+                atmos_data = Atmosphere_State{TFloat, mesh.npoin}()
+            end
             if (rank == 0) @info " Build periodicity infrastructure ......" end
             
             #if (mesh.nsd > 2)
@@ -288,10 +292,10 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+        return (; QT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, atmos_data,
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
-        return (; QT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+        return (; QT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, atmos_data,
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     

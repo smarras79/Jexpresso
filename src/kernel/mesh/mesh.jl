@@ -304,7 +304,7 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
 end
 
 function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, basis, backend, inputs, lper)
-    if (inputs[:lRT_problem])
+    if (inputs[:lRT_problem] || inputs[:RT_atmos_coupling])
         θmin, θmax = pole_shifted_theta_range(nelemθ, nop+1; pole_fraction=0.01)
     end
     @info "adjusted poles", θmin, θmax
@@ -1109,7 +1109,7 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                     θ = extra_mesh.extra_coords[1,ip]
                     # Compute Je once and reuse its value
                     metrics.Je[iel, k, l] = (dxdξ_val * dydη_val - dydξ_val * dxdη_val)
-                    if (inputs[:lRT_problem])
+                    if (inputs[:lRT_problem]) || (inputs[:RT_atmos_coupling])
                         metrics.Je[iel, k, l] = metrics.Je[iel, k, l] * sin(θ)
                     end
                     # Use the precomputed Je value for the other calculations

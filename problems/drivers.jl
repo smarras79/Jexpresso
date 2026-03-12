@@ -46,22 +46,40 @@ function driver(nparts,
                                      sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy, 
                                      sem.metrics.nx, sem.metrics.ny, sem.mesh.elem_to_edge, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
         else
-            κ = zeros(sem.mesh.npoin)
-            σ = zeros(sem.mesh.npoin)
+            κ = []
+            σ = []
+            z_prof = []
+            τ_from_TOA = []
             data_interp = []
             if (inputs[:lRT_from_data])
                 @info "reading atmospheric data to build extinction and scattering coefficients"
                 filename = inputs[:RT_data_file]
                 data = read_atmospheric_data(filename)
                 data_interp = interpolate_atmosphere_to_mesh(data,sem.mesh)
+                
                 if (inputs[:RT_shortwave])
-                    κ, σ = atmos_to_rad_shortwave(data_interp,sem.mesh.npoin)
+                    κ, σ, inputs[:rad_HG_g] = atmos_to_rad_shortwave(data_interp,sem.mesh.npoin)
+                    κ_ext_sw         = κ .+ σ
+                    z_prof, τ_from_TOA = build_sw_lateral_bc_profile(sem.mesh, κ_ext_sw, sem.mesh.ngl)
                 else
                     κ, σ = atmos_to_rad_longwave(data_interp,sem.mesh.npoin)
                 end
                 #=pts = [(sem.mesh.x[10], sem.mesh.y[10]),
+                        (sem.mesh.x[20], sem.mesh.y[20]),
+                        (sem.mesh.x[30], sem.mesh.y[30]),
+                        (sem.mesh.x[40], sem.mesh.y[40]),
+                        (sem.mesh.x[50], sem.mesh.y[50]),
+                        (sem.mesh.x[60], sem.mesh.y[60]),
                         (sem.mesh.x[70], sem.mesh.y[70]),
-                        (sem.mesh.x[250], sem.mesh.y[250])]
+                        (sem.mesh.x[80], sem.mesh.y[80]),
+                        (sem.mesh.x[90], sem.mesh.y[90]),
+                        (sem.mesh.x[100], sem.mesh.y[100]),
+                        (sem.mesh.x[120], sem.mesh.y[120]),
+                        (sem.mesh.x[140], sem.mesh.y[140]),
+                        (sem.mesh.x[160], sem.mesh.y[160]),
+                        (sem.mesh.x[180], sem.mesh.y[180]),
+                        (sem.mesh.x[200], sem.mesh.y[200])]
+                        
                 @info pts
                 result = verify_optical_depth(sem.mesh, κ, σ, sem.ω, sem.metrics.dzdζ, sem.mesh.ngl; sample_xy=pts)=#
             end
@@ -71,7 +89,7 @@ function driver(nparts,
                                      sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
                                      sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
                                      sem.metrics.nx, sem.metrics.ny, sem.metrics.nz, 
-                                     sem.mesh.elem_to_face, sem.mesh.extra_mesh, κ, σ, data_interp, sem.QT, NSD_3D(), sem.AD)
+                                     sem.mesh.elem_to_face, sem.mesh.extra_mesh, κ, σ, data_interp, z_prof, τ_from_TOA, sem.QT, NSD_3D(), sem.AD)
         end
     else
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)

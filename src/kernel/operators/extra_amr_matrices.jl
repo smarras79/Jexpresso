@@ -181,8 +181,9 @@ function build_restriction_matrices_local_and_ghost(
     interior_hanging = setdiff(hanging_node_set, ghost_layer.interface_hanging_nodes)
     
     @info "[Rank $rank] Processing interior hanging: $(length(interior_hanging))"
-    
+    n_processed = 0
     for ip_hanging in interior_hanging
+        
         constraint_entries = build_interior_hanging_constraint(
             ip_hanging, connijk_spa, extra_meshes_coords, extra_meshes_connijk,
             extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_Je,
@@ -202,6 +203,7 @@ function build_restriction_matrices_local_and_ghost(
                 push!(V_rhs, weight)
             end
         end
+        n_processed += 1
     end
     
     @info "[Rank $rank] Interior hanging constraint equations added to nc_mat"

@@ -140,25 +140,48 @@ Writes a VTK file of the angle-integrated solution and reference field to
 """
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
         nx, ny, nz, elem_to_face,
-        extra_mesh, κ, σ, atmos_data, QT::Inexact, SD::NSD_3D, AD::ContGal)
+        extra_mesh, κ, σ, atmos_data, z_prof, τ_from_TOA, QT::Inexact, SD::NSD_3D, AD::ContGal;
+        rt_sol_lw = Float64[], rt_sol_sw = Float64[], rt_sol_lw_available = false, rt_sol_sw_available = false)
 
     bdy = make_boundary_predicates(mesh)
     sw = []
     lw = []
-    
+    connijk_spa = []
     #=sw_base = SWParams(1361.0, 0.6, 0.0, 0.0)
-    for δ in [0.1, 0.2, 0.3, 0.4, 0.5]
+    for δ in [0.25, 0.3, 0.4, 0.5, 0.6]
         sw_test = SWParams(sw_base.S₀_flux, sw_base.μ₀, sw_base.φ₀, δ)
         result  = check_beam_flux(extra_mesh, sw_test, extra_mesh.extra_nop[1])
         
     end=#
-    
+    F_dir  :: Union{Vector{Float64}, Nothing} = nothing
+    G_dir  :: Union{Vector{Float64}, Nothing} = nothing
+    Q_dir  :: Union{Vector{Float64}, Nothing} = nothing
     if(inputs[:lRT_from_data])
 
-        sw  = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.25)#inputs[:RT_δ_beam])
+        sw  = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)#inputs[:RT_δ_beam])
         lw  = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
     end
-    
+
+
+    if (inputs[:RT_shortwave])
+        bounds = (xmin=mesh.xmin, xmax=mesh.xmax, ymin=mesh.ymin, ymax = mesh.ymax, zmin = mesh.zmin, zmax = mesh.zmax)
+        #=ray_grid = build_ray_grid(sw, bounds, 2*5, 2*5, 4*15)
+        # Compute τ and F_dir in parallel
+        κ_ext_sw      = κ .+ σ
+        F_dir, τ_nodes = compute_tau_ray_parallel(ray_grid, mesh, κ_ext_sw, sw, MPI.COMM_WORLD)=#
+        κ_ext_sw      = κ .+ σ
+        F_dir, τ_nodes = compute_tau_direct_3D(mesh, κ_ext_sw, sw, MPI.COMM_WORLD)
+        G_dir, Q_dir = compute_direct_radiation(F_dir, τ_nodes, κ, σ, sw, mesh)
+        ip_toa = argmax(mesh.z)
+        ip_sfc = argmin(mesh.z)
+        mfp = 1.0 / mean(κ_ext_sw)
+        sw_ω₀_lateral  = mean(σ ./ max.(κ_ext_sw, 1e-30))
+        @info "SW domain-mean ω₀: $(round(sw_ω₀_lateral, digits=4))"
+        @info "Mean free path: $(round(mfp/1000, digits=2)) km"
+        @info "Domain width:   $(round((mesh.xmax-mesh.xmin)/1000, digits=2)) km"
+        @info "τ at TOA (z=$(round(mesh.z[ip_toa],digits=0))m): $(round(τ_nodes[ip_toa],digits=4))"
+        @info "τ at sfc (z=$(round(mesh.z[ip_sfc],digits=0))m): $(round(τ_nodes[ip_sfc],digits=4))"
+    end
     nc_mat = zeros(Float64,1)
     P = zeros(Float64,1)
     rest = zeros(Float64,1)
@@ -282,7 +305,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
             extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
             dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-            extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ)
+            extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
 
         Md = assemble_mass_diagonal_3Dby2D_adaptive(
             ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
@@ -311,12 +334,28 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_coords, connijk_spa, extra_mesh[1].ψ, extra_mesh[1].dψ,
             extra_meshes_extra_dξdx, extra_meshes_extra_dηdx,
             extra_meshes_extra_dξdy, extra_meshes_extra_dηdy)
-
+        #Reduction to find maximum of criterion
+        crit_max = MPI.Allreduce(maximum(maximum.(criterion)), MPI.MAX, comm)
+        thresholds = [crit_max * inputs[:RT_amr_threshold][1]]
         # ── Angular grid refinement ───────────────────────────────────────────
         @rankinfo rank "Adapting angular grid..."
-        
+        #Force periodic angular elements on the same spatial element to conform after refinement
+        max_conformity_iters = 2
+        for _ = 1:max_conformity_iters
+            n_forced_before = count(c -> c > thresholds[1],
+                                    [criterion[iel][e] for iel=1:nelem
+                                    for e=1:extra_meshes_extra_nelems[iel]])
+            enforce_periodic_phi_conformity!(criterion, thresholds, extra_meshes_ref_level,
+                                            nelem, extra_meshes_extra_nelems, extra_meshes_extra_nops,
+                                            extra_meshes_connijk, extra_meshes_coords)
+            n_forced_after = count(c -> c > thresholds[1],
+                                [criterion[iel][e] for iel=1:nelem
+                                    for e=1:extra_meshes_extra_nelems[iel]])
+            n_forced_after == n_forced_before && break
+        end
+
         adapt_angular_grid_3Dby2D!(
-            criterion, inputs[:RT_amr_threshold], extra_meshes_ref_level, nelem, ngl,
+            criterion, thresholds, extra_meshes_ref_level, nelem, ngl,
             extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors,
             extra_meshes_extra_npoins, extra_meshes_connijk, extra_meshes_coords,
             extra_meshes_extra_Je,
@@ -422,7 +461,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
                 extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
                 dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ)
+                extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
 
             P    = nc_mat'
             rest = nc_mat
@@ -524,7 +563,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
             dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
             extra_mesh.extra_npoin, inputs[:rad_HG_g],
-            inputs[:lRT_from_data], κ, σ)
+            inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
 
         Md = assemble_mass_diagonal_3Dby2D(
             ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
@@ -591,41 +630,29 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 iface  = elem_to_face[iel, i, j, k, 1]
                 face_i = elem_to_face[iel, i, j, k, 2]
                 face_j = elem_to_face[iel, i, j, k, 3]
-                matchx = (x == mesh.xmax || x == mesh.xmin)
-                matchy = (y == mesh.ymax || y == mesh.ymin)
-                matchz = (z == mesh.zmax || z == mesh.zmin)
-                nmatches = matchx + matchy + matchz
 
-                # Collect all distinct face normals for this node
-                # (one per face the node belongs to)
+                # Collect all distinct face normals directly from node_to_bdy_faces.
+                # This avoids the coordinate-equality fragility of the nmatches approach
+                # entirely — we just gather every distinct normal from every face that
+                # owns this node.
                 collected = NTuple{3,Float64}[]
-                push!(collected, (nx[iface, face_i, face_j],
-                                  ny[iface, face_i, face_j],
-                                  nz[iface, face_i, face_j]))
-
-                if nmatches >= 2
-                    added  = 0
-                    needed = nmatches - 1
-                    for (iface2, fi2, fj2) in get(node_to_bdy_faces, ip, [])
-                        iface2 == iface && continue
-                        if nmatches == 2
-                            if abs(collected[1][1] - nx[iface2,fi2,fj2]) > 1e-12 ||
-                               abs(collected[1][2] - ny[iface2,fi2,fj2]) > 1e-12 ||
-                               abs(collected[1][3] - nz[iface2,fi2,fj2]) > 1e-12
-                                push!(collected, (nx[iface2,fi2,fj2],
-                                                  ny[iface2,fi2,fj2],
-                                                  nz[iface2,fi2,fj2]))
-                                added += 1
-                            end
-                        else
-                            push!(collected, (nx[iface2,fi2,fj2],
-                                              ny[iface2,fi2,fj2],
-                                              nz[iface2,fi2,fj2]))
-                            added += 1
-                        end
-                        added >= needed && break
-                    end
+                for (iface2, fi2, fj2) in get(node_to_bdy_faces, ip, [])
+                    nxyz = (nx[iface2, fi2, fj2],
+                            ny[iface2, fi2, fj2],
+                            nz[iface2, fi2, fj2])
+                    is_dup = any(abs(n[1]-nxyz[1]) < 1e-12 &&
+                                 abs(n[2]-nxyz[2]) < 1e-12 &&
+                                 abs(n[3]-nxyz[3]) < 1e-12 for n in collected)
+                    is_dup || push!(collected, nxyz)
                 end
+
+                # Fallback: if node_to_bdy_faces didn't cover this node's first face
+                if isempty(collected)
+                    push!(collected, (nx[iface, face_i, face_j],
+                                    ny[iface, face_i, face_j],
+                                    nz[iface, face_i, face_j]))
+                end
+
                 bdy_normals[ip] = collected
             end
 
@@ -656,20 +683,22 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             best_nx  = face_normals[1][1]
                             best_ny  = face_normals[1][2]
                             best_nz  = face_normals[1][3]
+                            
                             for (fnx, fny, fnz) in face_normals
+                                
                                 d = fnx*Ωx + fny*Ωy + fnz*Ωz
                                 if d < best_dot
                                     best_dot = d
                                     best_nx  = fnx; best_ny = fny; best_nz = fnz
                                 end
                             end
-                            bdy_normals_for_ghosts[ip] = (best_nx, best_ny, best_nz)
-
+                            
+                            
                             if best_dot < -1e-13
                                 if ip_g <= n_free && !(ip_g in all_hanging_nodes)
                                     val = 0.0
                                     if inputs[:RT_shortwave]
-                                        val = user_rad_bc_shortwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, bdy, sw)
+                                        val = user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ, bdy, sw, F_dir[ip], τ_nodes[ip], sw_ω₀_lateral, inputs[:rad_HG_g][ip])
                                     elseif inputs[:RT_longwave]
                                         val = user_rad_bc_longwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, ip, atmos_data, bdy, lw)
                                     else
@@ -683,7 +712,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             else
                                 if is_owned
                                     RHS[ip_g] = if inputs[:RT_shortwave]
-                                        user_rhs_shortwave(x, y, z, θ, ϕ)
+                                        user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
                                     elseif inputs[:RT_longwave]
                                         user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
                                     else
@@ -694,7 +723,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         else
                             if is_owned
                                 RHS[ip_g] = if inputs[:RT_shortwave]
-                                    user_rhs_shortwave(x, y, z, θ, ϕ)
+                                    user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
                                 elseif inputs[:RT_longwave]
                                     user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
                                 else
@@ -727,16 +756,17 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             best_nz  = face_normals[1][3]
                             for (fnx, fny, fnz) in face_normals
                                 d = fnx*Ωx + fny*Ωy + fnz*Ωz
+                                
                                 if d < best_dot
                                     best_dot = d
                                     best_nx  = fnx; best_ny = fny; best_nz = fnz
                                 end
                             end
-                            bdy_normals_for_ghosts[ip] = (best_nx, best_ny, best_nz)
+                            
                             if best_dot < -1e-13
                                 val = 0.0
                                 if inputs[:RT_shortwave]
-                                    val = user_rad_bc_shortwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, bdy, sw)
+                                    val = user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ, bdy, sw, F_dir[ip], τ_nodes[ip], sw_ω₀_lateral, inputs[:rad_HG_g][ip])
                                 elseif inputs[:RT_longwave]
                                     val = user_rad_bc_longwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, ip, atmos_data, bdy, lw)
                                 else
@@ -749,7 +779,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             else
                                 if is_owned
                                     RHS[ip_g] = if inputs[:RT_shortwave]
-                                        user_rhs_shortwave(x, y, z, θ, ϕ)
+                                        user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
                                     elseif inputs[:RT_longwave]
                                         user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
                                     else
@@ -760,7 +790,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         else
                             if is_owned
                                 RHS[ip_g] = if inputs[:RT_shortwave]
-                                    user_rhs_shortwave(x, y, z, θ, ϕ)
+                                    user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
                                 elseif inputs[:RT_longwave]
                                     user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
                                 else
@@ -784,10 +814,20 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             ip_g = n_spa + i
 
             if ip in mesh.poin_in_bdy_face
-                nx_new = bdy_normals_for_ghosts[ip][1]
-                ny_new = bdy_normals_for_ghosts[ip][2]
-                nz_new = bdy_normals_for_ghosts[ip][3]
-                if nx_new*sin(θ)*cos(ϕ) + ny_new*sin(θ)*sin(ϕ) + nz_new*cos(θ) < -1e-13
+                face_normals = bdy_normals[ip]
+                best_dot = 0.0
+                best_nx  = face_normals[1][1]
+                best_ny  = face_normals[1][2]
+                best_nz  = face_normals[1][3]
+                for (fnx, fny, fnz) in face_normals
+                    d = fnx*Ωx + fny*Ωy + fnz*Ωz
+                    
+                    if d < best_dot
+                        best_dot = d
+                        best_nx  = fnx; best_ny = fny; best_nz = fnz
+                    end
+                end
+                if best_dot < -1e-13
                     val = user_rad_bc(x, y, z, θ, ϕ)
                     BDY[ip_g] = val
                     boundary_dict[ip_g] = val
@@ -851,16 +891,73 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     @rankinfo rank "Solving system ($(size(A,1)) DOF)..."
     As  = sparse(A)
     A   = nothing; GC.gc()
+    diagnose_rt_matrix(As, ip2gip_spa, gnpoin, "Longwave")
 
     npoin_ang_total = size(B, 1)
     @info maximum(As), minimum(As), maximum(B), minimum(B)
-    solution = if inputs[:adaptive_extra_meshes]
-        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, pM;
-            npoin_g = n_spa_g,
+    solution = if (inputs[:adaptive_extra_meshes] && inputs[:RT_shortwave])
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa;
+            npoin_g       = n_spa_g,
+            g_ip2gip      = extended_parents_to_gid,
+            g_gip2ip      = gid_to_extended_parents,
+            precond       = :block_jacobi,
+            restart       = 50,
+            tol           = 1e-4,
+            connijk_spa   = connijk_spa,
+            extra_nelem   = extra_meshes_extra_nelems,
+            extra_nops    = extra_meshes_extra_nops,
+            extra_connijk = extra_meshes_connijk,
+            nelem         = nelem,
+            ngl           = ngl,
+            ladaptive     = true,
+            npoin_ang     = extra_meshes_extra_npoins)
+
+    elseif (inputs[:adaptive_extra_meshes] && inputs[:RT_longwave])
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa;
+            npoin_g  = n_spa_g,
+            g_ip2gip = extended_parents_to_gid,
+            g_gip2ip = gid_to_extended_parents,
+            precond  = :none,
+            restart  = 50,
+            tol      = 1e-5)
+
+    elseif inputs[:adaptive_extra_meshes]
+        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa;
+            npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents)
+
+    elseif (inputs[:RT_shortwave])
+        x_warm = Float64[]
+        if (rt_sol_sw_available)
+            x_warm = rt_sol_sw
+        end
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+            npoin_g       = npoin_ang_total, 
+            precond       = :none,
+            restart       = 30,
+            tol           = 1e-4,
+            extra_nelem   = extra_mesh.extra_nelem,
+            extra_nops    = extra_mesh.extra_nop,
+            extra_connijk = extra_mesh.extra_connijk,
+            nelem         = nelem,
+            ngl           = ngl,
+            ladaptive     = false,
+            npoin_ang     = extra_mesh.extra_npoin,
+            npoin_space   = npoin)
+
+    elseif (inputs[:RT_longwave])
+        x_warm = Float64[]
+        if (rt_sol_lw_available)
+            x_warm = rt_sol_lw
+        end
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+            npoin_g = npoin_ang_total,
+            precond = :none,
+            restart = 30,
+            tol     = 1e-4)
     else
-        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM;
+        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total;
         npoin_g = npoin_ang_total)
     end
 
@@ -1019,12 +1116,70 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         sqrt(L2_err_g), sqrt(L2_ref_g), sqrt(L2_err_g / L2_ref_g))
     end
 
-    # ── VTK output ────────────────────────────────────────────────────────────
-    @rankinfo rank "Writing output"
-    title = @sprintf "Solution-Radiation"
-    write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
+    if (inputs[:RT_radiative_heating]) && (inputs[:RT_longwave] || inputs[:RT_shortwave])
+        if (inputs[:adaptive_extra_meshes])
+            Q, dTdt, F_net, G = compute_rt_radiative_heating(
+            solution_new, atmos_data, mesh,
+            connijk_spa, extra_meshes_connijk, extra_meshes_coords,
+            extra_meshes_extra_Je, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_npoins,
+            nelem, ngl, κ, σ, extra_mesh[1].ωθ, extra_mesh[1].ωθ, node_div, true, inputs[:RT_longwave])
+        else
+
+            if (inputs[:RT_shortwave])
+                Q, dTdt, F_net, G = compute_rt_radiative_heating(
+                solution, atmos_data, mesh,
+                connijk_spa, extra_mesh.extra_connijk, extra_mesh.extra_coords,
+                extra_mesh.extra_metrics.Je, extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_npoin,
+                nelem, ngl, κ, σ, extra_mesh.ωθ, extra_mesh.ωθ, node_div, false, inputs[:RT_longwave];
+                G_dir = G_dir,
+                Q_dir = Q_dir,
+                sw_μ₀ = sw.μ₀,
+                sw_φ₀ = sw.φ₀)
+            else
+                Q, dTdt, F_net, G = compute_rt_radiative_heating(
+                solution, atmos_data, mesh,
+                connijk_spa, extra_mesh.extra_connijk, extra_mesh.extra_coords,
+                extra_mesh.extra_metrics.Je, extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_npoin,
+                nelem, ngl, κ, σ, extra_mesh.ωθ, extra_mesh.ωθ, node_div, false, inputs[:RT_longwave])
+        
+            end
+        end
+    end
+
+
+    if (inputs[:RT_atmos_coupling])
+        return Q, dTdt, solution
+    else
+        # ── VTK output ────────────────────────────────────────────────────────────
+        if (inputs[:RT_radiative_heating]) && (inputs[:RT_longwave] || inputs[:RT_shortwave])
+            out_vectors = zeros(mesh.npoin,7)
+            for i=1:mesh.npoin
+                out_vectors[i,1] = int_sol[i]
+                out_vectors[i,2] = Q[i]
+                out_vectors[i,3] = dTdt[i]
+                out_vectors[i,4] = F_net[i]
+                out_vectors[i,5] = G[i]
+                if (inputs[:RT_shortwave])
+                    out_vectors[i,6] = F_dir[i]
+                    out_vectors[i,7] = τ_nodes[i]
+                end
+            end
+            @rankinfo rank "Writing output"
+            title = @sprintf "Solution-Radiation"
+            write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+              0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+              ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
+              return
+        else
+            
+            @rankinfo rank "Writing output"
+            title = @sprintf "Solution-Radiation"
+            write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
               0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
               ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+              return
+        end
+    end
 
 end
 
@@ -1077,26 +1232,48 @@ function sparse_lhs_assembly_3Dby2D(ω, Je, connijk, ωθ, ωϕ, x, y, z,
                                     ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang,
                                     npoin_ang_total, nelem, ngl, nelem_ang,
                                     dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                                    npoin_ang, rad_HG_g, rad_data, κ_data, σ_data)
+                                    npoin_ang, g_eff, rad_data, κ_data, σ_data, lshortwave)
 
     intΦ = zeros(Float64, npoin_ang)
-    HG, _ = quadgk(v -> (1-rad_HG_g^2)/((1+rad_HG_g^2-2*rad_HG_g*cos(v))^(3/2)),
-                   0, 2π, rtol=1e-13, atol=1e-13)
-
-    # Precompute scattering integrals once per angular node
-    for e_ext = 1:nelem_ang
-        for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
-            ip_ext = connijk_ang[e_ext, iθ, jθ]
-            θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
-            val = 0.0
-            for e_ext_s = 1:nelem_ang
-                for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
-                    ipθ = connijk_ang[e_ext_s, mθ, nθ]
-                    Φ   = user_scattering_functions(θ, coords_ang[1,ipθ], ϕ, coords_ang[2,ipθ], HG)
-                    val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+    g_table    = [0.0, 0.85]
+    intΦ_table = zeros(Float64, npoin_ang, length(g_table))
+    
+    if (lshortwave)
+        for (ig, g_val) in enumerate(g_table)
+            for e_ext = 1:nelem_ang
+                for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                    ip_ext = connijk_ang[e_ext, iθ, jθ]
+                    θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                    val = 0.0
+                    for e_ext_s = 1:nelem_ang
+                        for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
+                            ipθ = connijk_ang[e_ext_s, mθ, nθ]
+                            Φ   = user_scattering_functions(θ, coords_ang[1,ipθ],
+                                                            ϕ, coords_ang[2,ipθ],
+                                                            g_val)
+                            val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+                        end
+                    end
+                    intΦ_table[ip_ext, ig] = val
                 end
             end
-            intΦ[ip_ext] = val
+        end
+    else
+        # Precompute scattering integrals once per angular node
+        for e_ext = 1:nelem_ang
+            for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                ip_ext = connijk_ang[e_ext, iθ, jθ]
+                θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                val = 0.0
+                for e_ext_s = 1:nelem_ang
+                    for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
+                        ipθ = connijk_ang[e_ext_s, mθ, nθ]
+                        Φ   = user_scattering_functions(θ, coords_ang[1,ipθ], ϕ, coords_ang[2,ipθ], g_eff)
+                        val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+                    end
+                end
+                intΦ[ip_ext] = val
+            end
         end
     end
 
@@ -1125,10 +1302,20 @@ function sparse_lhs_assembly_3Dby2D(ω, Je, connijk, ωθ, ωϕ, x, y, z,
                     θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
                     Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
                     idx_ip = (ip-1)*npoin_ang + ip_ext
-
+                    intϕ_eff = 0.0
+                    if (lshortwave)
+                        α = g_eff[ip] / 0.85
+                        intΦ_eff = (1 - α) * intΦ_table[ip_ext, 1] + α * intΦ_table[ip_ext, 2]
+                    else
+                        intΦ_eff = intΦ[ip_ext]
+                    end
                     _grow_if_needed!(I_vec, J_vec, V_vec, pos)
                     I_vec[pos] = idx_ip; J_vec[pos] = idx_ip
-                    V_vec[pos] = (κ - σ*intΦ[ip_ext]) * ωJac_full
+                    if (rad_data)
+                        V_vec[pos] = (κ + σ*(1 - intΦ_eff)) * ωJac_full
+                    else
+                        V_vec[pos] = (κ - σ * intΦ_eff) * ωJac_full
+                    end
                     pos += 1
 
                     prop_i = (dξdx_ij*Ωx + dξdy_ij*Ωy + dξdz_ij*Ωz) * ωJac_full
@@ -1193,7 +1380,7 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
                                     ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang,
                                     npoin_ang_total, nelem, ngl, nelem_ang,
                                     dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                                    npoin_ang, rad_HG_g, connijk_spa, rad_data, κ_data, σ_data)
+                                    npoin_ang, g_eff, connijk_spa, rad_data, κ_data, σ_data, lshortwave)
 
     ngl_stencil = 3 * (ngl - 1) + 1
     estimated   = round(Int, npoin_ang_total * ngl_stencil * 1.2)
@@ -1202,31 +1389,59 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
     V_vec = Vector{Float64}(undef, estimated)
     pos   = 1
 
-    HG, _ = quadgk(v -> (1-rad_HG_g^2)/((1+rad_HG_g^2-2*rad_HG_g*cos(v))^(3/2)),
-                   0, 2π, rtol=1e-13, atol=1e-13)
-
     # Precompute per-element scattering integrals
     intΦ_per_iel = Vector{Vector{Float64}}(undef, nelem)
-    for iel = 1:nelem
-        n_ang  = npoin_ang[iel]
-        intΦ   = zeros(Float64, n_ang)
-        for e_ext = 1:nelem_ang[iel]
-            for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
-                ip_ext = connijk_ang[iel][e_ext, iθ, jθ]
-                θ = coords_ang[iel][1, ip_ext]; ϕ = coords_ang[iel][2, ip_ext]
-                val = 0.0
-                for e_ext_s = 1:nelem_ang[iel]
-                    for nθ = 1:nop_ang[iel][e_ext_s]+1, mθ = 1:nop_ang[iel][e_ext_s]+1
-                        ipθ = connijk_ang[iel][e_ext_s, mθ, nθ]
-                        Φ   = user_scattering_functions(θ, coords_ang[iel][1,ipθ],
-                                                        ϕ, coords_ang[iel][2,ipθ], HG)
-                        val += ωθ[mθ] * ωϕ[nθ] * Je_ang[iel][e_ext_s, mθ, nθ] * Φ
+    g_table    = [0.0, 0.85]
+    intΦ_table_per_iel = Vector{Matrix{Float64}}(undef, nelem)
+    
+    if (lshortwave)
+        for iel = 1:nelem
+            n_ang  = npoin_ang[iel]
+            intΦ   = zeros(Float64, n_ang, length(g_table))
+            for (ig, g_val) in enumerate(g_table)
+                for e_ext = 1:nelem_ang[iel]
+                    for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
+                        ip_ext = connijk_ang[iel][e_ext, iθ, jθ]
+                        θ = coords_ang[iel][1, ip_ext]; ϕ = coords_ang[iel][2, ip_ext]
+                        val = 0.0
+                        for e_ext_s = 1:nelem_ang[iel]
+                            for nθ = 1:nop_ang[iel][e_ext_s]+1, mθ = 1:nop_ang[iel][e_ext_s]+1
+                                ipθ = connijk_ang[iel][e_ext_s, mθ, nθ]
+                                Φ   = user_scattering_functions(θ, coords_ang[iel][1,ipθ],
+                                                                ϕ, coords_ang[iel][2,ipθ],
+                                                                g_val)
+
+                                val += ωθ[mθ] * ωϕ[nθ] * Je_ang[iel][e_ext_s, mθ, nθ] * Φ
+                            end
+                        end
+                        intΦ[ip_ext, ig] = val
                     end
                 end
-                intΦ[ip_ext] = val
             end
+            intΦ_table_per_iel[iel] = intΦ
         end
-        intΦ_per_iel[iel] = intΦ
+    else
+        for iel = 1:nelem
+            n_ang  = npoin_ang[iel]
+            intΦ   = zeros(Float64, n_ang)
+            for e_ext = 1:nelem_ang[iel]
+                for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
+                    ip_ext = connijk_ang[iel][e_ext, iθ, jθ]
+                    θ = coords_ang[iel][1, ip_ext]; ϕ = coords_ang[iel][2, ip_ext]
+                    val = 0.0
+                    for e_ext_s = 1:nelem_ang[iel]
+                        for nθ = 1:nop_ang[iel][e_ext_s]+1, mθ = 1:nop_ang[iel][e_ext_s]+1
+                            ipθ = connijk_ang[iel][e_ext_s, mθ, nθ]
+                            Φ   = user_scattering_functions(θ, coords_ang[iel][1,ipθ],
+                                                            ϕ, coords_ang[iel][2,ipθ], g_eff)
+                            val += ωθ[mθ] * ωϕ[nθ] * Je_ang[iel][e_ext_s, mθ, nθ] * Φ
+                        end
+                    end
+                    intΦ[ip_ext] = val
+                end
+            end
+            intΦ_per_iel[iel] = intΦ
+        end
     end
 
     for iel = 1:nelem
@@ -1247,10 +1462,19 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
                     θ = coords_ang[iel][1, ip_ext]; ϕ = coords_ang[iel][2, ip_ext]
                     Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
                     idx_ip = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]
-
+                    if (lshortwave)
+                        α = g_eff[ip] / 0.85
+                        intΦ_eff = (1 - α) * intΦ_table_per_iel[iel][ip_ext, 1] + α * intΦ_table_per_iel[iel][ip_ext, 2]
+                    else
+                        intΦ_eff = intΦ_per_iel[iel][ip_ext]
+                    end
                     _grow_if_needed!(I_vec, J_vec, V_vec, pos)
                     I_vec[pos] = idx_ip; J_vec[pos] = idx_ip
-                    V_vec[pos] = (κ - σ*intΦ_per_iel[iel][ip_ext]) * ωJac_full
+                    if (rad_data)
+                        V_vec[pos] = (κ + σ * (1 - intΦ_eff)) * ωJac_full
+                    else
+                        V_vec[pos] = (κ - σ*intΦ_eff) * ωJac_full
+                    end
                     pos += 1
 
                     prop_i = (dξdx_ij*Ωx + dξdy_ij*Ωy + dξdz_ij*Ωz) * ωJac_full
@@ -1450,7 +1674,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
         e_ext = 1
         while e_ext <= nelem_ang[iel]
             if abs(criterion[iel][e_ext]) > thresholds[1]
-
+                @info criterion[iel][e_ext], thresholds[1]
                 adapted_ang[iel] = 1
                 ref_level[iel][e_ext] += 1
                 ang_adapted[iel] = 1
@@ -1593,15 +1817,15 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
 
                 # Enforce ϕ-periodicity: merge ϕ=2π nodes with ϕ=0 counterparts
                 zero_ϕ_dict = Dict{Float64, Int}()
-                for iper = 1:npoin_ang[iel]
-                    if coords_new[2, iper] <= eps(Float64)
-                        zero_ϕ_dict[coords_new[1,iper]] = iper
+                for iper = 1:iter-1   # use iter-1, not npoin_ang[iel] which isn't updated yet
+                    if coords_new[2, iper] < 1e-10   # ϕ ≈ 0
+                        zero_ϕ_dict[coords_new[1, iper]] = iper
                     end
                 end
                 merge_pairs = Dict{Int, Int}()
-                for iper = 1:npoin_ang[iel]
+                for iper = 1:iter-1
                     ϕ = coords_new[2, iper]
-                    if abs(ϕ/π - 2.0) <= eps(Float64)
+                    if abs(ϕ / π - 2.0) < 1e-10   # ϕ ≈ 2π
                         θ = coords_new[1, iper]
                         canonical = get(zero_ϕ_dict, θ, 0)
                         if canonical != 0 && canonical != iper
@@ -2089,4 +2313,53 @@ function build_interpolation_matrices!(iel, e_ext, iel1, e_ext1, coords_ang, con
 
     return view(Lθ, 1:nop_child+1, 1:nop_parent+1),
            view(Lϕ, 1:nop_child+1, 1:nop_parent+1)
+end
+
+function enforce_periodic_phi_conformity!(criterion, thresholds, ref_level,
+                                           nelem, nelem_ang, nop_ang,
+                                           connijk_ang, coords_ang)
+    for iel = 1:nelem
+        for e_ext = 1:nelem_ang[iel]
+            nop = nop_ang[iel][e_ext]
+            # Check if this element touches ϕ=2π (last ϕ column)
+            touches_2pi = any(
+                abs(coords_ang[iel][2, connijk_ang[iel][e_ext, i, nop+1]] / π - 2.0) < 1e-10
+                for i = 1:nop+1)
+            touches_0 = any(
+                coords_ang[iel][2, connijk_ang[iel][e_ext, i, 1]] < 1e-10
+                for i = 1:nop+1)
+
+            if touches_2pi || touches_0
+                # Find the θ range of this element
+                θ_lo = coords_ang[iel][1, connijk_ang[iel][e_ext, 1,   1]]
+                θ_hi = coords_ang[iel][1, connijk_ang[iel][e_ext, nop+1, 1]]
+
+                # Find the periodic counterpart: element at same θ range
+                # but on the opposite ϕ boundary
+                for e_pair = 1:nelem_ang[iel]
+                    e_pair == e_ext && continue
+                    nop_p    = nop_ang[iel][e_pair]
+                    θ_lo_p   = coords_ang[iel][1, connijk_ang[iel][e_pair, 1,     1]]
+                    θ_hi_p   = coords_ang[iel][1, connijk_ang[iel][e_pair, nop_p+1, 1]]
+                    pair_0   = any(
+                        coords_ang[iel][2, connijk_ang[iel][e_pair, i, 1]] < 1e-10
+                        for i = 1:nop_p+1)
+                    pair_2pi = any(
+                        abs(coords_ang[iel][2, connijk_ang[iel][e_pair, i, nop_p+1]] / π - 2.0) < 1e-10
+                        for i = 1:nop_p+1)
+
+                    # Counterpart is at same θ range but opposite ϕ boundary
+                    if abs(θ_lo_p - θ_lo) < 1e-10 && abs(θ_hi_p - θ_hi) < 1e-10 &&
+                       ((touches_2pi && pair_0) || (touches_0 && pair_2pi))
+
+                        # Force counterpart to same refinement level
+                        if ref_level[iel][e_ext] > ref_level[iel][e_pair]
+                            criterion[iel][e_pair] = thresholds[1] + 1.0
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
 end
