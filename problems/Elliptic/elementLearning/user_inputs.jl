@@ -12,7 +12,7 @@ function user_inputs()
         :lsparse              => true,
         :lelementLearning     => true,
         #:lEL_Sample           => true,
-        :Nsamp                => 25000,
+        :Nsamp                => 50000,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
@@ -20,9 +20,9 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_unit_square_10x10el.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_unit_square_10x10el.msh",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

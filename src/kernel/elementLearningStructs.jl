@@ -1,6 +1,5 @@
 include("./mesh/meshStructs.jl")
 using SparseArrays
-using LinearAlgebra
 
 # =============================================================================
 #  DIAGNOSTIC — call this before allocating to verify sizes
@@ -277,10 +276,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         gΓ[iΓ] = ubdy[mesh.Γ[iΓ], 1]
     end
 
-    # =========================================================================
-    # TRAINING BRANCH
-    # =========================================================================
     if EL.lEL_Sample
+        
         # Build B_∂O∂τ = A_∂O∂τ - Σ_iel A∂Ovo * inv(Avovo) * Avo∂τ  (sparse ← sparse - dense_scatter)
         # We accumulate the element corrections into a dense (length∂O × length∂τ) delta,
         # but only the nonzero ∂O×∂τ entries touched by mesh.conn — still sparse in practice.
@@ -371,12 +368,10 @@ print
         write_MLtensor!(bufferin,  EL.input_tensor[:,  isamp])
         write_MLtensor!(bufferout, EL.output_tensor[:, isamp])
         
-    # =========================================================================
-    # INFERENCE BRANCH
-    # =========================================================================
     else
+        
         println(GREEN_FG(string(" # INFERENCE — solution stored in u ..........")))
-                
+        
         sess        = ONNXRunTime.load_inference("./JX_NN_model.onnx")
         input_name  = first(sess.input_names)
         output_name = first(sess.output_names)
@@ -388,65 +383,65 @@ print
         # B∂τ∂τ starts as the sparse skeleton submatrix of A, then gets
         # element corrections subtracted in-place.  ~11 MB, not 6 GB.
         B_∂τ∂τ = copy(A_∂τ∂τ)   # SparseMatrixCSC — mutable working copy
-
-        for iel = 1:mesh.nelem
-            for j = 1:elnbdypoints
-                conn_∂τ_idx[j] = get(∂τ_pos, mesh.conn[iel, j], 0)
-            end
-
-            y      = sess(Dict(input_name => Float32.(avisc)))
-            ŷ      = y[output_name]
-            Tie_nn .= reshape(vec(Float64.(ŷ)), nelintpoints, elnbdypoints)
-            Tie_nn_all[:, :, iel] .= Tie_nn
-
-            LinearAlgebra.mul!(M, transpose(EL.Avovb[:, :, iel]), Tie_nn)
-
-            for i = 1:elnbdypoints
-                i_prime = conn_∂τ_idx[i];  i_prime == 0 && continue
+        
+        @time begin
+            for iel = 1:mesh.nelem
                 for j = 1:elnbdypoints
-                    j_prime = conn_∂τ_idx[j];  j_prime == 0 && continue
-                    B_∂τ∂τ[i_prime, j_prime] -= M[i, j]
+                    conn_∂τ_idx[j] = get(∂τ_pos, mesh.conn[iel, j], 0)
+                end
+
+                y      = sess(Dict(input_name => Float32.(avisc)))
+                ŷ      = y[output_name]
+                Tie_nn .= reshape(vec(Float64.(ŷ)), nelintpoints, elnbdypoints)
+                Tie_nn_all[:, :, iel] .= Tie_nn
+
+                LinearAlgebra.mul!(M, transpose(EL.Avovb[:, :, iel]), Tie_nn)
+
+                for i = 1:elnbdypoints
+                    i_prime = conn_∂τ_idx[i];  i_prime == 0 && continue
+                    for j = 1:elnbdypoints
+                        j_prime = conn_∂τ_idx[j];  j_prime == 0 && continue
+                        B_∂τ∂τ[i_prime, j_prime] -= M[i, j]
+                    end
                 end
             end
-        end
 
-        # Extract B∂O∂O and B∂O∂Γ as sparse submatrices
-        ∂O_in_∂τ = [∂τ_pos[mesh.∂O[i]]  for i in 1:mesh.length∂O]
-        Γ_in_∂τ  = [∂τ_pos[mesh.Γ[iΓ]]  for iΓ in 1:mesh.lengthΓ]
+            # Extract B∂O∂O and B∂O∂Γ as sparse submatrices
+            ∂O_in_∂τ = [∂τ_pos[mesh.∂O[i]]  for i in 1:mesh.length∂O]
+            Γ_in_∂τ  = [∂τ_pos[mesh.Γ[iΓ]]  for iΓ in 1:mesh.lengthΓ]
 
-        B_∂O∂O = B_∂τ∂τ[∂O_in_∂τ, ∂O_in_∂τ]   # SparseMatrixCSC
-        B_∂O∂Γ = B_∂τ∂τ[∂O_in_∂τ, Γ_in_∂τ]    # SparseMatrixCSC
+            B_∂O∂O = B_∂τ∂τ[∂O_in_∂τ, ∂O_in_∂τ]   # SparseMatrixCSC
+            B_∂O∂Γ = B_∂τ∂τ[∂O_in_∂τ, Γ_in_∂τ]    # SparseMatrixCSC
+            
+            # Step 6: u∂O = -inv(B∂O∂O) * B∂O∂Γ * gΓ
+            # NEVER call Matrix() on B_∂O∂O — that densifies 26901×26901 = 5.5 GB.
+            # sparse * dense vector → dense vector, sparse \ dense vector → dense vector.
+            BOΓg_nn = B_∂O∂Γ * gΓ           # SparseMatrixCSC × Vector → Vector  (cheap)
+            u∂O_nn  = -(B_∂O∂O \ BOΓg_nn)   # UMFPACK sparse direct solve
+            
+            # Step 7
+            for io = 1:mesh.length∂O;  u[mesh.∂O[io]] = u∂O_nn[io];  end
+            for io = 1:mesh.lengthΓ;   u[mesh.Γ[io]]  = gΓ[io];      end
 
-     
-        # Step 6: u∂O = -inv(B∂O∂O) * B∂O∂Γ * gΓ
-        # NEVER call Matrix() on B_∂O∂O — that densifies 26901×26901 = 5.5 GB.
-        # sparse * dense vector → dense vector, sparse \ dense vector → dense vector.
-        BOΓg_nn = B_∂O∂Γ * gΓ           # SparseMatrixCSC × Vector → Vector  (cheap)
-        u∂O_nn  = -(B_∂O∂O \ BOΓg_nn)   # UMFPACK sparse direct solve
-        
-        # Step 7
-        for io = 1:mesh.length∂O;  u[mesh.∂O[io]] = u∂O_nn[io];  end
-        for io = 1:mesh.lengthΓ;   u[mesh.Γ[io]]  = gΓ[io];      end
-
-        # Step 8a: gather boundary solution for each element
-        uvb_nn = zeros(Float64, mesh.nelem, elnbdypoints)
-        for iel = 1:mesh.nelem
-            for ibdy = 1:elnbdypoints
-                uvb_nn[iel, ibdy] = u[mesh.conn[iel, ibdy]]
+            # Step 8a: gather boundary solution for each element
+            uvb_nn = zeros(Float64, mesh.nelem, elnbdypoints)
+            for iel = 1:mesh.nelem
+                for ibdy = 1:elnbdypoints
+                    uvb_nn[iel, ibdy] = u[mesh.conn[iel, ibdy]]
+                end
             end
-        end
 
-        # Step 8b: local recovery  u_vo = -T^{ie,nn} * u_vb
-        uvo_nn = zeros(Float64, nelintpoints)
-        for iel = 1:mesh.nelem
-            LinearAlgebra.mul!(uvo_nn, -Tie_nn_all[:, :, iel], uvb_nn[iel, :])
-            for i = 1:nelintpoints
-                u[mesh.conn[iel, elnbdypoints+i]] = uvo_nn[i]
+            # Step 8b: local recovery  u_vo = -T^{ie,nn} * u_vb
+            uvo_nn = zeros(Float64, nelintpoints)
+            for iel = 1:mesh.nelem
+                LinearAlgebra.mul!(uvo_nn, -Tie_nn_all[:, :, iel], uvb_nn[iel, :])
+                for i = 1:nelintpoints
+                    u[mesh.conn[iel, elnbdypoints+i]] = uvo_nn[i]
+                end
             end
-        end
-
+            
+        end #@time
         println(GREEN_FG(string(" # INFERENCE — solution stored in u .......... DONE")))
-        
     end
     # A_∂τ∂τ, A_∂O∂τ, B_∂τ∂τ, B_∂O∂τ, B_∂O∂O, B_∂O∂Γ all freed here
 end

@@ -125,10 +125,12 @@ function driver(nparts,
                     
                     BOΓg = zeros(sem.mesh.length∂O)
                     gΓ   = zeros(sem.mesh.lengthΓ)
-                                       
-                    if EL.lEL_Sample
 
-                        if rank == 0 println(BLUE_FG(string(" # EL SAMPLING....... "))) end
+                    lvtk_sample = false
+                    
+                    if EL.lEL_Sample
+                        
+                        if rank == 0 println(BLUE_FG(string(" # EL SAMPLING .......... "))) end
                         
                         #-----------------------------------------------------
                         # 1. Train:
@@ -154,12 +156,12 @@ function driver(nparts,
                             println(" # --- sample = $isamp")
                             # 2.a/b
                             μ        = 1
-                            â        = zeros(TFloat, ngl, ngl)
+                            #â        = zeros(TFloat, ngl, ngl)
                             avisc    = zeros(TFloat, 1, ngl^2)
                             ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
                             avisc[1,:].= ranvisc
-                            ψ        = sem.basis.ψ
-                            expansion_2d!(â, ψ)
+                            #ψ        = sem.basis.ψ
+                            #expansion_2d!(â, ψ)
                             
                             for ip =1:npoin
                                 user_source!(RHS[ip],
@@ -207,19 +209,20 @@ function driver(nparts,
                                                        isamp=isamp,
                                                        total_cols_writtenin=total_cols_writtenin,
                                                        total_cols_writtenout=total_cols_writtenout)
-                                                       
-                            usol = params.qp.qn
-                            args = (params.SD, usol, params.uaux, 1, isamp,
-                                    sem.mesh, nothing,
-                                    nothing, nothing,
-                                    0.0, 0.0, 0.0,
-                                    OUTPUT_DIR, inputs,
-                                    params.qp.qvars,
-                                    params.qp.qoutvars,
-                                    inputs[:outformat])
-                            
-                            write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
-                            
+
+                            if lvtk_sample
+                                usol = params.qp.qn
+                                args = (params.SD, usol, params.uaux, 1, isamp,
+                                        sem.mesh, nothing,
+                                        nothing, nothing,
+                                        0.0, 0.0, 0.0,
+                                        OUTPUT_DIR, inputs,
+                                        params.qp.qvars,
+                                        params.qp.qoutvars,
+                                        inputs[:outformat])
+                                
+                                write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
+                            end
                         end #isamp loop
                         
                         #
@@ -228,8 +231,7 @@ function driver(nparts,
                         total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
                         total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
 
-                        if rank == 0 println(BLUE_FG(string(" # EL SAMPLING ....... DONE"))) end
-                        
+                        if rank == 0 println(BLUE_FG(string(" # EL SAMPLING .......... DONE"))) end
                     else
                         #-----------------------------------------------------
                         # 2. Inference:
@@ -239,10 +241,9 @@ function driver(nparts,
                         #
                         # 2.a/b
                         μ        = 1
-                        â        = zeros(TFloat, ngl, ngl)
+                        #â        = zeros(TFloat, ngl, ngl)
                         avisc    = zeros(TFloat, 1, ngl^2)
-                        ranvisc  = 0.5 + rand() #Uniform distribution between 0.5 and 1.5
-                        avisc[1,:].= ranvisc
+                        avisc[1,:].= 0.5 + rand() #Uniform distribution between 0.5 and 1.5
                         #ψ        = sem.basis.ψ
                         #expansion_2d!(â, ψ)
                         
@@ -310,7 +311,7 @@ function driver(nparts,
                         #-----------------------------------------------------
 
                     end
-                    
+
                 else
                     
                     #-----------------------------------------------------
@@ -358,11 +359,13 @@ function driver(nparts,
                                                          params.inputs, params.AD, sem.mesh.SD)
                     
                     if inputs[:lsparse] ==  false
-                        println(" # Solve x=inv(A)*b: full storage")
+                        println(" # Solve x=inv(A)*b: full storage ..............")
                         @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
+                        println(" # Solve x=inv(A)*b: full storage .............. DONE")
                     else
-                        println(" # Solve x=inv(A)*b: sparse storage")
+                        println(" # Solve x=inv(A)*b: sparse storage ..............")
                         @time params.qp.qn = sem.matrix.L\RHS
+                        println(" # Solve x=inv(A)*b: sparse storage .............. DONE")
                     end
                     
                     usol = params.qp.qn
