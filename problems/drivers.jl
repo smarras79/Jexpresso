@@ -348,20 +348,11 @@ function driver(nparts,
                                                          params.ω, qp.neqs,
                                                          params.inputs, params.AD, sem.mesh.SD)
                     
-                    if inputs[:lsparse] ==  false
-                        println(YELLOW_FG(string(" # Solve x=inv(A)*b: full storage ..............")))
-                        @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
-                        println(YELLOW_FG(string(" # Solve x=inv(A)*b: full storage .............. DONE")))
-                    else
-                        println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage ..............")))
-                        #@time params.qp.qn = sem.matrix.L\RHS
-                        solve_AXb!(params.qp.qn , sem.matrix.L, RHS)
-                        @btime solve_AXb!($params.qp.qn , $sem.matrix.L, $RHS)
-                        println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage .............. DONE")))
-                    end
+                    println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage ..............")))
+                    sol = @btime solveAx($sem.matrix.L, $RHS, inputs[:ode_solver])
+                    println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage .............. DONE")))
                     
-                    usol = params.qp.qn
-                    args = (params.SD, usol, params.uaux, 1, 1,
+                    args = (params.SD, sol.u, params.uaux, 1, 1,
                             sem.mesh, nothing,
                             nothing, nothing,
                             0.0, 0.0, 0.0,
@@ -381,10 +372,6 @@ function driver(nparts,
             end
         end
     end
-end
-
-function solve_AXb!(u, A, b)
-     u = A\b
 end
 
 # Point evaluation: interpolate at a single point (ξ, η)
