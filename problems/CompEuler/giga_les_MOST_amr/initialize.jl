@@ -303,8 +303,8 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
         if any(qi_el .> tol) && (old_ad_lvl[iel] < max_level) && all(z_el .< 13999.9)
             adapt_flags[iel] = refine_flag
         end
-        if all(qi_el .< tol)
-            adapt_flags[iel] = coarsen_flag
-        end
+        # if all(qi_el .< tol)
+        #     adapt_flags[iel] = coarsen_flag
+        # end
     end
 end

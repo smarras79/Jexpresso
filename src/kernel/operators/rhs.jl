@@ -627,22 +627,22 @@ function _build_rhs!(RHS, u, params, time)
                           params.uaux, @view(params.mesh.coords[:,end]),
                           params.qp.qe, SD, params.SOL_VARS_TYPE)
 
-        if inputs[:ladapt] == true
-            conformity4ncf_mp!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
-                            params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
-                            params.mp.S_micro, params.mp.qsatt,
-                            @view(params.uaux[:,end]), params.rhs_el_tmp, @view(params.utmp[:,1]), params.vaux,
-                            params.g_dss_cache,
-                            params.mesh.SD,
-                            params.QT, params.mesh.connijk,
-                            params.mesh, params.Minv,
-                            params.metrics.Je, params.ω, params.AD,
-                            params.neqs,
-                            params.q_el, params.q_el_pro,
-                            params.cache_ghost_p, params.q_ghost_p,
-                            params.cache_ghost_c, params.q_ghost_c,
-                            params.interp)
-        end
+        # if inputs[:ladapt] == true
+        #     conformity4ncf_mp!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+        #                     params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
+        #                     params.mp.S_micro, params.mp.qsatt,
+        #                     @view(params.uaux[:,end]), params.rhs_el_tmp, @view(params.utmp[:,1]), params.vaux,
+        #                     params.g_dss_cache,
+        #                     params.mesh.SD,
+        #                     params.QT, params.mesh.connijk,
+        #                     params.mesh, params.Minv,
+        #                     params.metrics.Je, params.ω, params.AD,
+        #                     params.neqs,
+        #                     params.q_el, params.q_el_pro,
+        #                     params.cache_ghost_p, params.q_ghost_p,
+        #                     params.cache_ghost_c, params.q_ghost_c,
+        #                     params.interp)
+        # end
             
         if (params.inputs[:lprecip])
             compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
