@@ -25,13 +25,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lwall_model          => true,
-        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
-        :bdy_fluxes           => true,
-        :lvisc                => true, #false by default
-        :visc_model           => SMAG(),
+#        :user_heatflux          => 0.12,
+        :lwall_model            => true,
+        :ifirst_wall_node_index => 5, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :bdy_fluxes             => true,
+        :lvisc                  => true, #false by default
+        :visc_model             => SMAG(),
         #:visc_model           => AV(),
-        :μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
+        :μ                      => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------

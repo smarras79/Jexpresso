@@ -25,16 +25,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if (inputs[:backend] != CPU())
         if (inputs[:backend] == CUDABackend())
-            global TInt = Int32
+            global TInt   = Int32
             global TFloat = Float32
-            global cpu = false
+            global cpu    = false
         else
-            global TInt = Int32
+            global TInt   = Int32
             global TFloat = Float32
-            global cpu = false
+            global cpu    = false
         end
     end
-
+    
+    if(!haskey(inputs, :user_heatflux))
+        inputs[:user_heatflux] = 0.0
+        inputs[:δhf] = 0.0
+    else
+        inputs[:δhf] = 1.0
+    end
+    
     if(!haskey(inputs, :lwall_model))
        inputs[:lwall_model] = false
     end

@@ -564,22 +564,27 @@ end
 
 
 function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin_linear,
-                                   poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
-                                   xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                                   connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                                   poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                   ngl, ngr, nelem_semi_inf, ω,
+                                   xmax, ymax, zmax, xmin, ymin, zmin,
+                                   qbdy, uaux, u, qe,
+                                   connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                   RHS, rhs_el,
                                    connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                                    τ_f, wθ, wqv,
                                    Tabs, qn,
-                                   neqs, dirichlet!, neumann, inputs)
+                                   neqs, dirichlet!,
+                                   neumann, inputs)
 
-    PhysConst          = PhysicalConst{Float64}()
-    micro              = size(Tabs,1)
-    lbdy_fluxes        = inputs[:bdy_fluxes]::Bool
-    lbulk_fluxes       = inputs[:bulk_fluxes]::Bool
-    SOL_VARS_TYPE      = inputs[:SOL_VARS_TYPE]
-    ifirst_wall_node   = inputs[:ifirst_wall_node_index]::Int
-    # lbdy_fluxes  = false
-    # lbulk_fluxes = true
+    PhysConst           = PhysicalConst{Float64}()
+    micro               = size(Tabs,1)
+    lbdy_fluxes         = inputs[:bdy_fluxes]::Bool
+    lbulk_fluxes        = inputs[:bulk_fluxes]::Bool
+    SOL_VARS_TYPE       = inputs[:SOL_VARS_TYPE]
+    ifirst_wall_node    = inputs[:ifirst_wall_node_index]::Int
+    δhf                 = inputs[:δhf]
+    user_heatflux       = inputs[:user_heatflux]
+    
     for iface = 1:nfaces_bdy
         if (lbdy_fluxes)
             F_surf .= 0.0
@@ -690,11 +695,8 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     F_surf[i,j,5] = ρ*PhysConst.cp*wθ[iface,i,j,1] + ρ*PhysConst.Lc*wqv[iface,i,j,1]
                                     F_surf[i,j,6] = wqv[iface,i,j,1]
                                 else
-                                    F_surf[i,j,5] = wθ[iface,i,j,1]
-
+                                    F_surf[i,j,5] = wθ[iface,i,j,1]*(δhf - 1.0) + user_heatflux*δhf
                                 end
-                                # @info "MOST debug" θ_inside θ_sfc (θ_inside - θ_sfc) u_inside v_inside w_inside z_inside Tabs[ip1] uaux[ip1,end]
-                                
                             else
                                 user_bc_neumann!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
                                                  @view(qe[ip,:]), @view(qe[ip1,:]),
