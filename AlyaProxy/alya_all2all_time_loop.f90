@@ -126,9 +126,12 @@ program unitt_alya_with_another_code
   ! 2a. ndime
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
   ! 2b. rem_min / rem_max / rem_nx  (full 3-element arrays, matching Julia)
-  call MPI_Bcast(rem_min, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-  call MPI_Bcast(rem_max, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-  call MPI_Bcast(rem_nx,  3, MPI_INTEGER,          0, MPI_COMM_WORLD, ierr)
+  do idime = 1, 3
+     call MPI_Bcast(rem_min(idime), 1, MPI_DOUBLE_PRECISION,    0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_max(idime), 1, MPI_DOUBLE_PRECISION,    0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  end do
+  
   !
   ! Thsi can be useful
   !

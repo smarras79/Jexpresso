@@ -127,7 +127,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # The return exchange uses the same points Julia sent, so counts are identical.
     npoin_send   = copy(npoin_recv)
     send_to_ranks = copy(recv_from_ranks)
-
+    
     # Alya world rank 0 is the driving rank: it coordinates but never posts
     # MPI receives for coupling data.  Unconditionally remove it from both
     # send and receive partner lists so Jexpresso never sends to it.
@@ -858,23 +858,24 @@ function je_perform_coupling_handshake(world, nparts)
     return true  # Coupled mode active
 end
 
-"""
-    je_send_node_list(mesh, send_to_ranks, ndime, world)
-
-Send the list of local Jexpresso SEM nodes to each Alya communication partner.
-Called once during coupling setup, immediately after the Alltoall that exchanges
-node counts, so that the count and the actual node list are sent at the same point
-in the handshake sequence.
-
-For each destination Alya rank two non-blocking messages are posted in order:
-  1. Int32[1]      : number of local SEM nodes on this rank
-  2. Float64[...]  : interleaved coordinates [x1,y1,(z1), x2,y2,(z2), ...],
-                     length npoin_local * ndime
-
-No MPI tags are used (tag=0 throughout). MPI message ordering between any fixed
-pair of ranks guarantees the count arrives before the coordinates.
-The Alya side must post matching receives in the same order.
-"""
+#------------------------------------------------------------------------------------
+#    je_send_node_list(mesh, send_to_ranks, ndime, world)
+#
+# Send the list of local Jexpresso SEM nodes to each Alya communication partner.
+# Called once during coupling setup, immediately after the Alltoall that exchanges
+# node counts, so that the count and the actual node list are sent at the same point
+# in the handshake sequence.
+#
+# For each destination Alya rank two non-blocking messages are posted in order:
+#  1. Int32[1]      : number of local SEM nodes on this rank
+#  2. Float64[...]  : interleaved coordinates [x1,y1,(z1), x2,y2,(z2), ...],
+#                     length npoin_local * ndime
+#
+# No MPI tags are used (tag=0 throughout). MPI message ordering between any fixed
+# pair of ranks guarantees the count arrives before the coordinates.
+#    The Alya side must post matching receives in the same order.
+#    
+#------------------------------------------------------------------------------------
 function je_send_node_list(mesh, send_to_ranks::Vector{Int32}, ndime::Int, world::MPI.Comm)
     npoin_local = mesh.npoin
 
@@ -924,12 +925,14 @@ function je_receive_alya_data(world, nparts)
     # 2. rem_min, rem_max, rem_nx  (Fortran STEP 2)
     # Broadcast the full 3-element arrays in one call each to avoid
     # SubArray aliasing issues that occur when using per-element views.
-    rem_min = zeros(Float64, 3)
-    rem_max = zeros(Float64, 3)
-    rem_nx  = zeros(Int32,   3)
-    MPI.Bcast!(rem_min, 0, world)
-    MPI.Bcast!(rem_max, 0, world)
-    MPI.Bcast!(rem_nx,  0, world)
+    rem_min = Vector{Float64}(undef, 3)
+    rem_max = Vector{Float64}(undef, 3)
+    rem_nx  = Vector{Int32}(undef, 3)
+    for idime in 1:3
+        MPI.Bcast!(@view(rem_min[idime:idime]), 0, world)
+        MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
+        MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
+    end
 
     # 3. neqs  (Fortran: after rem_nx loop)
     neqs_buf = Vector{Int32}(undef, 1)

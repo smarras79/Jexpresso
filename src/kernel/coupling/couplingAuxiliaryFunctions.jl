@@ -364,59 +364,18 @@ function coupling_exchange_data!(cpg::CouplingData)
     # Allocate arrays for MPI requests
     send_requests = MPI.Request[]
 
-    # Post all non-blocking sends (Julia → Alya), no tags used
+    # Tags (must match Alya Fortran code)
+    TAG_DATA  = 0
+    
+    # Post all non-blocking sends (data + coordinates, Julia → Alya)
     for dest_rank in cpg.send_to_ranks
         if cpg.npoin_send[dest_rank + 1] > 0
+            # Send interpolated variable data
             buf = cpg.send_bufs[dest_rank + 1]
-            req = MPI.Isend(buf, dest_rank, 0, cpg.comm_world)
+            tag = TAG_DATA 
+            req = MPI.Isend(buf, dest_rank, tag, cpg.comm_world)
             push!(send_requests, req)
         end
-    end
-
-    # Wait for all sends to complete
-    if !isempty(send_requests)
-        MPI.Waitall(send_requests)
-    end
-
-    return nothing
-end
-
-function coupling_exchange_data_old!(cpg::CouplingData)
-    wsize = length(cpg.npoin_send)
-
-    # Get my world rank
-    lcomm = get_mpi_comm()
-    wrank = MPI.Comm_rank(cpg.comm_world)
-
-    # Allocate arrays for MPI requests
-    send_requests = MPI.Request[]
-    recv_requests = MPI.Request[]
-
-    # Post all non-blocking receives (data from Alya → Julia), no tags used
-    for src_rank in cpg.recv_from_ranks
-        if cpg.npoin_recv[src_rank + 1] > 0
-            buf = cpg.recv_bufs[src_rank + 1]
-            req = MPI.Irecv!(buf, src_rank, 0, cpg.comm_world)
-            push!(recv_requests, req)
-        end
-    end
-
-    # Post all non-blocking sends (data + coordinates, Julia → Alya), no tags used
-    for dest_rank in cpg.send_to_ranks
-        if cpg.npoin_send[dest_rank + 1] > 0
-            buf = cpg.send_bufs[dest_rank + 1]
-            req = MPI.Isend(buf, dest_rank, 0, cpg.comm_world)
-            push!(send_requests, req)
-
-            cbuf = cpg.send_coord_bufs[dest_rank + 1]
-            creq = MPI.Isend(cbuf, dest_rank, 0, cpg.comm_world)
-            push!(send_requests, creq)
-        end
-    end
-
-    # Wait for all receives to complete
-    if !isempty(recv_requests)
-        MPI.Waitall(recv_requests)
     end
 
     # Wait for all sends to complete
