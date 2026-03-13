@@ -10,7 +10,7 @@ function user_inputs()
         :llinsolve            => true,
         :ldss_laplace         => true,
         :lsparse              => true,
-        #:lelementLearning     => true,
+        :lelementLearning     => true,
         #:lEL_Sample           => true,
         :Nsamp                => 50000,
         :rconst               => [0.0],
@@ -23,7 +23,10 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/jexpresso_domain_unique_bcs.msh",
+        :gmsh_filename        => "./meshes/gmsh_grids/jex-el_domain_unique_bcs.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/plate_word_unit.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_unit_square_10x10el.msh",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

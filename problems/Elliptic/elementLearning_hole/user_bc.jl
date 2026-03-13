@@ -37,8 +37,29 @@ function user_bc_dirichlet!(q::SubArray{Float64}, coords, t::AbstractFloat, tag:
         qbdy[1] = 105 + 30.0*cos(π*coords[1]/L)
     elseif (tag == "left") #left
         qbdy[1] = 105.0
-    elseif (tag == "circle_boundary")
+    #elseif (tag == "circle_boundary")
+    #elseif (tag == "word")
+    #    qbdy[1] = 50 + 30.0*sin(0.25*π*coords[1]/L)
+    elseif (tag == "J")
         qbdy[1] = 50 + 30.0*sin(0.25*π*coords[1]/L)
+    elseif (tag == "E_1")
+        qbdy[1] = 20
+    elseif (tag == "X")
+        qbdy[1] = 100
+    elseif (tag == "-")
+        qbdy[1] = 51
+    elseif (tag == "E_2")
+        qbdy[1] = 41
+    elseif (tag == "L")
+        qbdy[1] = 24
+    #=    elseif (tag == "A")
+        qbdy[1] = 10.0*sin(π*coords[1])
+    elseif (tag == "R")
+        qbdy[1] = 10
+    elseif (tag == "N")
+        qbdy[1] = 50
+        =#
     end
+    
     
 end
