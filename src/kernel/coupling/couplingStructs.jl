@@ -135,7 +135,13 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     npoin_send[1] = Int32(0)
     filter!(!=(Int32(0)), recv_from_ranks)
     filter!(!=(Int32(0)), send_to_ranks)
-    
+
+    # Send the node list immediately after the Alltoall that sent the counts,
+    # so that count and actual node list are exchanged at the same point in
+    # the handshake sequence.
+    ndime = coupling_data[:ndime]
+    je_send_node_list(sem.mesh, send_to_ranks, ndime, world)
+
     # Verification (should now pass!)
     verify_coupling_communication_pattern(
         npoin_recv, npoin_send,
@@ -191,10 +197,6 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # Assert they match
  #   @assert sort(recv_from_ranks) == sort(send_to_ranks) "Coupling partners asymmetric — check alya_owner_ranks vs Alltoall result"
  #   @assert all(npoin_recv .== npoin_send) "Point counts asymmetric between send and recv"
-
-    # Send this rank's SEM node list to each Alya communication partner so
-    # that Alya knows which Jexpresso nodes each rank holds before the time loop.
-    je_send_node_list(coupling, sem.mesh)
 
     if lrank == 0
         println("[setup_coupling] Coupling setup complete!")
@@ -857,10 +859,12 @@ function je_perform_coupling_handshake(world, nparts)
 end
 
 """
-    je_send_node_list(coupling::CouplingData, mesh)
+    je_send_node_list(mesh, send_to_ranks, ndime, world)
 
 Send the list of local Jexpresso SEM nodes to each Alya communication partner.
-Must be called once during coupling setup, after `send_to_ranks` has been determined.
+Called once during coupling setup, immediately after the Alltoall that exchanges
+node counts, so that the count and the actual node list are sent at the same point
+in the handshake sequence.
 
 For each destination Alya rank two non-blocking messages are posted in order:
   1. Int32[1]      : number of local SEM nodes on this rank
@@ -871,9 +875,7 @@ No MPI tags are used (tag=0 throughout). MPI message ordering between any fixed
 pair of ranks guarantees the count arrives before the coordinates.
 The Alya side must post matching receives in the same order.
 """
-function je_send_node_list(coupling::CouplingData, mesh)
-    world       = coupling.comm_world
-    ndime       = coupling.ndime
+function je_send_node_list(mesh, send_to_ranks::Vector{Int32}, ndime::Int, world::MPI.Comm)
     npoin_local = mesh.npoin
 
     # Pack coordinates: interleaved layout [x1, y1, (z1), x2, y2, (z2), ...]
@@ -888,7 +890,7 @@ function je_send_node_list(coupling::CouplingData, mesh)
     count_buf     = Int32[npoin_local]
     send_requests = MPI.Request[]
 
-    for dest_rank in coupling.send_to_ranks
+    for dest_rank in send_to_ranks
         req1 = MPI.Isend(count_buf,  dest_rank, 0, world)
         req2 = MPI.Isend(coords_buf, dest_rank, 0, world)
         push!(send_requests, req1, req2)
