@@ -1406,38 +1406,6 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
     end
     per_ip = collect(keys(ip_is_corner))
 
-    function sort_coords_by_x3_groups(x1, x2, x3)
-        # Find min and max x3 values
-        x3min, x3max = extrema(x3)
-        
-        # Function to sort a group by (x2, x1) and return original indices
-        sort_group = (x1_group, x2_group, original_indices) -> begin
-            sorted_order = sortperm(collect(zip(x1_group, x2_group)), by = x ->(x[1], x[2]))
-            x1_sorted = x1_group[sorted_order]
-            x2_sorted = x2_group[sorted_order]
-            original_sorted_indices = original_indices[sorted_order]
-            return x1_sorted, x2_sorted, original_sorted_indices
-        end
-        
-        # Get indices where x3 is x3min or x3max
-        x3min_indices = findall(x -> AlmostEqual(x,x3min), x3)
-        x3max_indices = findall(x -> AlmostEqual(x,x3max), x3)
-        # Sort x3min group and get original indices
-        x1_x3min, x2_x3min, idx_x3min = sort_group(
-            x1[x3min_indices], x2[x3min_indices], x3min_indices
-        )
-        
-        # Sort x3max group and get original indices
-        x1_x3max, x2_x3max, idx_x3max = sort_group(
-            x1[x3max_indices], x2[x3max_indices], x3max_indices
-        )
-        
-        return (;
-                x3min, x3max,
-                x1_x3min, x2_x3min, idx_x3min,  # Sorted x3min group + original indices
-                x1_x3max, x2_x3max, idx_x3max,  # Sorted x3max group + original indices
-                )
-    end
 
 
     x_local  = mesh.x[per_ip]
@@ -1478,69 +1446,72 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
         for (i, g) in enumerate(global_per_gip)
             gip_is_corner[g] = get(gip_is_corner, g, false) || (global_is_corner[i] == 1)
         end
-        coords = collect(zip(round.(x; digits=5), round.(y; digits=5), round.(z; digits=5)))
+        # ─────────────────────────────────────────────────────────────────────
+        # Deduplicate by (x, y, z, is_corner) so that at NCF periodic positions a
+        # child-corner node and a coarse-neighbor mid-edge node at the same coordinate
+        # are both kept and paired independently with their correct periodic partners.
+        coords = collect(zip(round.(x; digits=5), round.(y; digits=5), round.(z; digits=5), global_is_corner))
         uniq_idx = unique(i -> coords[i], eachindex(coords))
         un_gathered_x = collect(@view x[uniq_idx])
         un_gathered_y = collect(@view y[uniq_idx])
         un_gathered_z = collect(@view z[uniq_idx])
         un_updated_global_per_gip = collect(@view global_per_gip[uniq_idx])
         un_updated_global_owner   = collect(@view owner[uniq_idx])
+        un_is_corner              = collect(@view global_is_corner[uniq_idx])
 
 
         changes_ip    = Dict{Int, Int}()
         changes_owner = Dict{Int, Int}()
         sz = length(uniq_idx)
-        found_hanging = false
-        if sz > 0 
+        if sz > 0
+            # Choose periodic axis and transverse axes.
             if periodic_direction == "periodicx"
-                results = sort_coords_by_x3_groups(un_gathered_y,un_gathered_z,un_gathered_x)
+                ax_arr = un_gathered_x; t1_arr = un_gathered_y; t2_arr = un_gathered_z
             elseif periodic_direction == "periodicy"
-                results = sort_coords_by_x3_groups(un_gathered_x,un_gathered_z,un_gathered_y)
-            elseif periodic_direction == "periodicz"
-                results = sort_coords_by_x3_groups(un_gathered_x,un_gathered_y,un_gathered_z)
+                ax_arr = un_gathered_y; t1_arr = un_gathered_x; t2_arr = un_gathered_z
+            else
+                ax_arr = un_gathered_z; t1_arr = un_gathered_x; t2_arr = un_gathered_y
             end
+            axmin, axmax = extrema(ax_arr)
+
+            # Build lookup for max-side nodes: (t1_rounded, t2_rounded, is_corner) → (gip, owner, idx).
+            # Including is_corner in the key means child-corner nodes only pair with child-corner
+            # nodes and coarse mid-edge nodes only pair with coarse mid-edge nodes.
+            # Nodes with no matching counterpart of the same corner type (hanging nodes, NCF-periodic)
+            # are left unmerged via the haskey miss below.
+            max_node_lookup = Dict{NTuple{3,Float64}, NTuple{3,Int}}()
+            for idx in eachindex(ax_arr)
+                abs(ax_arr[idx] - axmax) < 1e-4 || continue
+                key = (round(t1_arr[idx]; digits=5), round(t2_arr[idx]; digits=5),
+                       Float64(un_is_corner[idx]))
+                max_node_lookup[key] = (un_updated_global_per_gip[idx],
+                                        un_updated_global_owner[idx], idx)
+            end
+
             vec = fill!(similar(norm), 0.0)
-            # Build lookup dict: rounded (x1,x2) transverse position → (gip, owner, idx)
-            # for nodes on the max side.  Nodes on the min side that have no entry in this
-            # dict belong to nonconforming periodic faces and are left unmerged; they will
-            # be handled by the periodic-NCF DSS machinery.
-            max_node_lookup = Dict{NTuple{2,Float64},NTuple{3,Int}}()
-            for k in eachindex(results.idx_x3max)
-                idx_j = results.idx_x3max[k]
-                key = (round(results.x1_x3max[k]; digits=5),
-                       round(results.x2_x3max[k]; digits=5))
-                max_node_lookup[key] = (un_updated_global_per_gip[idx_j],
-                                        un_updated_global_owner[idx_j],
-                                        idx_j)
-            end
-
-            for k in eachindex(results.idx_x3min)
-                idx_i = results.idx_x3min[k]
-                key   = (round(results.x1_x3min[k]; digits=5),
-                         round(results.x2_x3min[k]; digits=5))
-                # No matching max-side node → nonconforming periodic; skip node merge.
+            for idx_i in eachindex(ax_arr)
+                abs(ax_arr[idx_i] - axmin) < 1e-4 || continue
+                key = (round(t1_arr[idx_i]; digits=5), round(t2_arr[idx_i]; digits=5),
+                       Float64(un_is_corner[idx_i]))
+                # No max-side node at same position with same corner type →
+                # NCF-periodic or hanging node; leave unmerged.
                 haskey(max_node_lookup, key) || continue
-
-                gip_j_val, owner_j_val, idx_j = max_node_lookup[key]
+                gip_j_val, _, idx_j = max_node_lookup[key]
                 vec[1] = un_gathered_x[idx_i] - un_gathered_x[idx_j]
                 vec[2] = un_gathered_y[idx_i] - un_gathered_y[idx_j]
                 vec[3] = un_gathered_z[idx_i] - un_gathered_z[idx_j]
                 gip_i = un_updated_global_per_gip[idx_i]
-                gip_j = un_updated_global_per_gip[idx_j]
-                # Skip if corner-type differs: prevents a coarse parent mid-edge node
-                # (non-corner) from merging with a child's shared hanging endpoint
-                # (corner) that coincides with it at even nop.
-                get(gip_is_corner, gip_i, false) == get(gip_is_corner, gip_j, false) || continue
+                gip_j = gip_j_val
                 if (get(changes_ip, gip_i, gip_i) == gip_j) || get(changes_ip, gip_j, gip_j) == gip_i
                     continue
                 end
                 if (determine_colinearity(vec, norm))
-                    xt = x[idx_j]
-                    yt = y[idx_j]
-                    zt = z[idx_j]
-                    xi = x[idx_i]
-                    yi = y[idx_i]
-                    zi = z[idx_i]
+                    xt = un_gathered_x[idx_j]
+                    yt = un_gathered_y[idx_j]
+                    zt = un_gathered_z[idx_j]
+                    xi = un_gathered_x[idx_i]
+                    yi = un_gathered_y[idx_i]
+                    zi = un_gathered_z[idx_i]
                     if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
                         comp1 = xi < xt
                     elseif (yi == 0 && yt == 0)
