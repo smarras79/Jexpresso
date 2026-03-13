@@ -28,11 +28,6 @@ program unitt_alya_with_another_code
   integer(4),    allocatable         :: npoin_recv(:)
   integer(4)                         :: total_pts
 
-  integer, parameter                 :: TAG_DATA  = 2000
-  integer, parameter                 :: TAG_COORD = 3000
-  integer, parameter                 :: TAG_NODE_COUNT  = 10
-  integer, parameter                 :: TAG_NODE_COORDS = 11
-
   integer(4)                         :: nranks_julia
 
   ! Jexpresso SEM node list received once during setup
@@ -199,8 +194,8 @@ program unitt_alya_with_another_code
   ! STEP 3b: RECEIVE JEXPRESSO SEM NODE LIST (once, before time loop)
   !
   ! Each Julia rank that communicates with this Alya rank sends two messages:
-  !   TAG_NODE_COUNT  (10) : one MPI_INTEGER4 = number of local SEM nodes
-  !   TAG_NODE_COORDS (11) : npoin * ndime MPI_DOUBLE_PRECISION, interleaved
+  !   message 1 (tag=0) : one MPI_INTEGER4 = number of local SEM nodes
+  !   message 2 (tag=0) : npoin * ndime MPI_DOUBLE_PRECISION, interleaved
   !                          as [x1, y1, (z1), x2, y2, (z2), ...]
   !
   ! We receive only from ranks i >= asize (Julia world ranks) for which
@@ -214,7 +209,7 @@ program unitt_alya_with_another_code
   ! --- Receive SEM node counts from every Julia rank that sent us data ---
   do i = asize, size-1
      if (npoin_recv(i) > 0) then
-        call MPI_Recv(je_one_count, 1, MPI_INTEGER4, i, TAG_NODE_COUNT, &
+        call MPI_Recv(je_one_count, 1, MPI_INTEGER4, i, 0, &
                       MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
         je_npoin_local(i) = je_one_count
         write(*,'(A,I0,A,I0,A,I0,A)') &
@@ -235,7 +230,7 @@ program unitt_alya_with_another_code
   do i = asize, size-1
      if (je_npoin_local(i) > 0) then
         call MPI_Recv(je_coords_all(je_offset + 1), je_npoin_local(i) * ndime, &
-                      MPI_DOUBLE_PRECISION, i, TAG_NODE_COORDS, &
+                      MPI_DOUBLE_PRECISION, i, 0, &
                       MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
         write(*,'(A,I0,A,I0,A,I0,A)') &
              '[node_list] Alya world_rank=', rank, &
@@ -358,11 +353,11 @@ program unitt_alya_with_another_code
            ireq = ireq + 1
 #ifdef USEMPIF08
            call MPI_Irecv(recvbuf_all(recv_offset + 1), npoin_recv(i) * neqs, &
-                MPI_DOUBLE_PRECISION, i, TAG_DATA + rank, MPI_COMM_WORLD, &
+                MPI_DOUBLE_PRECISION, i, 0, MPI_COMM_WORLD, &
                 recv_requests(ireq), ierr)
 #else
            call MPI_IRECV(recvbuf_all(recv_offset + 1), npoin_recv(i) * neqs, &
-                MPI_DOUBLE_PRECISION, i, TAG_DATA + rank, MPI_COMM_WORLD, &
+                MPI_DOUBLE_PRECISION, i, 0, MPI_COMM_WORLD, &
                 recv_requests(ireq), ierr)
 #endif
            recv_offset = recv_offset + npoin_recv(i) * neqs
@@ -379,11 +374,11 @@ program unitt_alya_with_another_code
            creq = creq + 1
 #ifdef USEMPIF08
            call MPI_Irecv(recvcoord_all(coord_offset + 1), npoin_recv(i) * ndime, &
-                MPI_DOUBLE_PRECISION, i, TAG_COORD + rank, MPI_COMM_WORLD, &
+                MPI_DOUBLE_PRECISION, i, 0, MPI_COMM_WORLD, &
                 coord_requests(creq), ierr)
 #else
            call MPI_IRECV(recvcoord_all(coord_offset + 1), npoin_recv(i) * ndime, &
-                MPI_DOUBLE_PRECISION, i, TAG_COORD + rank, MPI_COMM_WORLD, &
+                MPI_DOUBLE_PRECISION, i, 0, MPI_COMM_WORLD, &
                 coord_requests(creq), ierr)
 #endif
            coord_offset = coord_offset + npoin_recv(i) * ndime
@@ -398,11 +393,11 @@ program unitt_alya_with_another_code
            ireq = ireq + 1
 #ifdef USEMPIF08
            call MPI_Isend(sendbuf_all(send_offset + 1), npoin_recv(i) * neqs, &
-                MPI_DOUBLE_PRECISION, i, TAG_DATA + i, MPI_COMM_WORLD, &
+                MPI_DOUBLE_PRECISION, i, 0, MPI_COMM_WORLD, &
                 send_requests(ireq), ierr)
 #else
            call MPI_ISEND(sendbuf_all(send_offset + 1), npoin_recv(i) * neqs, &
-                MPI_DOUBLE_PRECISION, i, TAG_DATA + i, MPI_COMM_WORLD, &
+                MPI_DOUBLE_PRECISION, i, 0, MPI_COMM_WORLD, &
                 send_requests(ireq), ierr)
 #endif
            send_offset = send_offset + npoin_recv(i) * neqs

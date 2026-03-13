@@ -127,6 +127,14 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # The return exchange uses the same points Julia sent, so counts are identical.
     npoin_send   = copy(npoin_recv)
     send_to_ranks = copy(recv_from_ranks)
+
+    # Alya world rank 0 is the driving rank: it coordinates but never posts
+    # MPI receives for coupling data.  Unconditionally remove it from both
+    # send and receive partner lists so Jexpresso never sends to it.
+    npoin_recv[1] = Int32(0)   # world rank 0, 1-based index
+    npoin_send[1] = Int32(0)
+    filter!(!=(Int32(0)), recv_from_ranks)
+    filter!(!=(Int32(0)), send_to_ranks)
     
     # Verification (should now pass!)
     verify_coupling_communication_pattern(
@@ -854,21 +862,19 @@ end
 Send the list of local Jexpresso SEM nodes to each Alya communication partner.
 Must be called once during coupling setup, after `send_to_ranks` has been determined.
 
-For each destination Alya rank two non-blocking messages are posted:
-  - tag TAG_NODE_COUNT  (Int32[1]):      number of local SEM nodes on this rank
-  - tag TAG_NODE_COORDS (Float64[...]):  interleaved coordinates [x1,y1,(z1), x2,y2,(z2), ...],
-                                          length npoin_local * ndime
+For each destination Alya rank two non-blocking messages are posted in order:
+  1. Int32[1]      : number of local SEM nodes on this rank
+  2. Float64[...]  : interleaved coordinates [x1,y1,(z1), x2,y2,(z2), ...],
+                     length npoin_local * ndime
 
-The Alya side must post matching MPI_Irecv calls using the same tags.
+No MPI tags are used (tag=0 throughout). MPI message ordering between any fixed
+pair of ranks guarantees the count arrives before the coordinates.
+The Alya side must post matching receives in the same order.
 """
 function je_send_node_list(coupling::CouplingData, mesh)
     world       = coupling.comm_world
     ndime       = coupling.ndime
     npoin_local = mesh.npoin
-
-    # Tags for the node-list exchange (must match Alya.f90)
-    TAG_NODE_COUNT  = Int32(10)
-    TAG_NODE_COORDS = Int32(11)
 
     # Pack coordinates: interleaved layout [x1, y1, (z1), x2, y2, (z2), ...]
     coords_buf = zeros(Float64, npoin_local * ndime)
@@ -883,8 +889,8 @@ function je_send_node_list(coupling::CouplingData, mesh)
     send_requests = MPI.Request[]
 
     for dest_rank in coupling.send_to_ranks
-        req1 = MPI.Isend(count_buf,  dest_rank, TAG_NODE_COUNT,  world)
-        req2 = MPI.Isend(coords_buf, dest_rank, TAG_NODE_COORDS, world)
+        req1 = MPI.Isend(count_buf,  dest_rank, 0, world)
+        req2 = MPI.Isend(coords_buf, dest_rank, 0, world)
         push!(send_requests, req1, req2)
     end
 

@@ -346,10 +346,10 @@ Uses the communication pattern established during setup:
 """
     coupling_exchange_data!(cpg::CouplingData)
 
-Exchange data AND coordinates with Alya using non-blocking communication.
-- Data   send to rank R: tag = TAG_DATA  + R
-- Coord  send to rank R: tag = TAG_COORD + R
-- Data receive from R:   tag = TAG_DATA  + MY_RANK
+Exchange data AND coordinates with Alya using non-blocking communication (tag=0).
+- Data  send to rank R: Isend(send_bufs[R],  R, 0, comm)
+- Coord send to rank R: Isend(send_coord_bufs[R], R, 0, comm)
+- Data recv from R:     Irecv!(recv_bufs[R], R, 0, comm)
 """
 function coupling_exchange_data!(cpg::CouplingData)
 
@@ -364,16 +364,11 @@ function coupling_exchange_data!(cpg::CouplingData)
     # Allocate arrays for MPI requests
     send_requests = MPI.Request[]
 
-    # Tags (must match Alya Fortran code)
-    TAG_DATA  = 0
-    
-    # Post all non-blocking sends (data + coordinates, Julia → Alya)
+    # Post all non-blocking sends (Julia → Alya), no tags used
     for dest_rank in cpg.send_to_ranks
         if cpg.npoin_send[dest_rank + 1] > 0
-            # Send interpolated variable data
             buf = cpg.send_bufs[dest_rank + 1]
-            tag = TAG_DATA 
-            req = MPI.Isend(buf, dest_rank, tag, cpg.comm_world)
+            req = MPI.Isend(buf, dest_rank, 0, cpg.comm_world)
             push!(send_requests, req)
         end
     end
@@ -397,33 +392,24 @@ function coupling_exchange_data_old!(cpg::CouplingData)
     send_requests = MPI.Request[]
     recv_requests = MPI.Request[]
 
-    # Tags (must match Alya Fortran code)
-    TAG_DATA  = 2000
-    TAG_COORD = 3000
-
-    # Post all non-blocking receives (data from Alya → Julia)
+    # Post all non-blocking receives (data from Alya → Julia), no tags used
     for src_rank in cpg.recv_from_ranks
         if cpg.npoin_recv[src_rank + 1] > 0
             buf = cpg.recv_bufs[src_rank + 1]
-            tag = TAG_DATA + wrank
-            req = MPI.Irecv!(buf, src_rank, tag, cpg.comm_world)
+            req = MPI.Irecv!(buf, src_rank, 0, cpg.comm_world)
             push!(recv_requests, req)
         end
     end
 
-    # Post all non-blocking sends (data + coordinates, Julia → Alya)
+    # Post all non-blocking sends (data + coordinates, Julia → Alya), no tags used
     for dest_rank in cpg.send_to_ranks
         if cpg.npoin_send[dest_rank + 1] > 0
-            # Send interpolated variable data
             buf = cpg.send_bufs[dest_rank + 1]
-            tag = TAG_DATA + dest_rank
-            req = MPI.Isend(buf, dest_rank, tag, cpg.comm_world)
+            req = MPI.Isend(buf, dest_rank, 0, cpg.comm_world)
             push!(send_requests, req)
 
-            # Send coordinates so Alya can map values to grid positions
             cbuf = cpg.send_coord_bufs[dest_rank + 1]
-            ctag = TAG_COORD + dest_rank
-            creq = MPI.Isend(cbuf, dest_rank, ctag, cpg.comm_world)
+            creq = MPI.Isend(cbuf, dest_rank, 0, cpg.comm_world)
             push!(send_requests, creq)
         end
     end
