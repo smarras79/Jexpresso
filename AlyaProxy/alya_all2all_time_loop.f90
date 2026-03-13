@@ -550,7 +550,7 @@ contains
     implicit none
     integer(4),   intent(in) :: arank, asize, ndime, itime
     MY_MPI_COMM,  intent(in) :: PAR_COMM
-    real,         intent(in) :: rem_min(3), rem_max(3)
+    real(8),      intent(in) :: rem_min(3), rem_max(3)
     integer,      intent(in) :: rem_nx(3)
     real(8),      intent(in) :: recvbuf(:)
     real(8),      intent(in) :: recvcoord(:)
