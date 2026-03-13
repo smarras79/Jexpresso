@@ -921,15 +921,15 @@ function je_receive_alya_data(world, nparts)
     MPI.Bcast!(ndime_buf, 0, world)
     ndime = Int(ndime_buf[1])
 
-    # 2. rem_min, rem_max, rem_nx  (Fortran STEP 2, loop)
-    rem_min = Vector{Float64}(undef, 3)
-    rem_max = Vector{Float64}(undef, 3)
-    rem_nx  = Vector{Int32}(undef, 3)
-    for idime in 1:3
-        MPI.Bcast!(@view(rem_min[idime:idime]), 0, world)
-        MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
-        MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
-    end
+    # 2. rem_min, rem_max, rem_nx  (Fortran STEP 2)
+    # Broadcast the full 3-element arrays in one call each to avoid
+    # SubArray aliasing issues that occur when using per-element views.
+    rem_min = zeros(Float64, 3)
+    rem_max = zeros(Float64, 3)
+    rem_nx  = zeros(Int32,   3)
+    MPI.Bcast!(rem_min, 0, world)
+    MPI.Bcast!(rem_max, 0, world)
+    MPI.Bcast!(rem_nx,  0, world)
 
     # 3. neqs  (Fortran: after rem_nx loop)
     neqs_buf = Vector{Int32}(undef, 1)
