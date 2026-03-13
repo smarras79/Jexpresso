@@ -30,8 +30,16 @@ program unitt_alya_with_another_code
 
   integer, parameter                 :: TAG_DATA  = 2000
   integer, parameter                 :: TAG_COORD = 3000
+  integer, parameter                 :: TAG_NODE_COUNT  = 10
+  integer, parameter                 :: TAG_NODE_COORDS = 11
 
   integer(4)                         :: nranks_julia
+
+  ! Jexpresso SEM node list received once during setup
+  integer(4), allocatable            :: je_npoin_local(:)  ! SEM node count per Julia world rank
+  real(8),    allocatable            :: je_coords_all(:)   ! packed coords [x1,y1,(z1), x2,...]
+  integer(4)                         :: je_total_nodes, je_offset
+  integer(4)                         :: je_one_count
 
   integer(4)                         :: step, nsteps
   real(kind=8)                       :: t0, dt, tend, t
@@ -186,6 +194,64 @@ program unitt_alya_with_another_code
   end do
   write(*,'(A)') repeat('=',60)
   flush(6)
+
+  !--------------------------------------------------------------------------
+  ! STEP 3b: RECEIVE JEXPRESSO SEM NODE LIST (once, before time loop)
+  !
+  ! Each Julia rank that communicates with this Alya rank sends two messages:
+  !   TAG_NODE_COUNT  (10) : one MPI_INTEGER4 = number of local SEM nodes
+  !   TAG_NODE_COORDS (11) : npoin * ndime MPI_DOUBLE_PRECISION, interleaved
+  !                          as [x1, y1, (z1), x2, y2, (z2), ...]
+  !
+  ! We receive only from ranks i >= asize (Julia world ranks) for which
+  ! npoin_recv(i) > 0, matching the send_to_ranks logic on the Julia side.
+  !--------------------------------------------------------------------------
+  nranks_julia = size - asize
+
+  allocate(je_npoin_local(0:size-1))
+  je_npoin_local = 0_4
+
+  ! --- Receive SEM node counts from every Julia rank that sent us data ---
+  do i = asize, size-1
+     if (npoin_recv(i) > 0) then
+        call MPI_Recv(je_one_count, 1, MPI_INTEGER4, i, TAG_NODE_COUNT, &
+                      MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
+        je_npoin_local(i) = je_one_count
+        write(*,'(A,I0,A,I0,A,I0,A)') &
+             '[node_list] Alya world_rank=', rank, &
+             ' received count from Julia world_rank=', i, &
+             ': ', je_one_count, ' SEM nodes'
+        flush(6)
+     end if
+  end do
+
+  je_total_nodes = sum(je_npoin_local)
+
+  ! --- Allocate flat coordinate buffer and receive coords per Julia rank ---
+  allocate(je_coords_all(max(1, je_total_nodes * ndime)))
+  je_coords_all = 0.0d0
+
+  je_offset = 0
+  do i = asize, size-1
+     if (je_npoin_local(i) > 0) then
+        call MPI_Recv(je_coords_all(je_offset + 1), je_npoin_local(i) * ndime, &
+                      MPI_DOUBLE_PRECISION, i, TAG_NODE_COORDS, &
+                      MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
+        write(*,'(A,I0,A,I0,A,I0,A)') &
+             '[node_list] Alya world_rank=', rank, &
+             ' received coords from Julia world_rank=', i, &
+             ' (', je_npoin_local(i) * ndime, ' doubles)'
+        flush(6)
+        je_offset = je_offset + je_npoin_local(i) * ndime
+     end if
+  end do
+
+  if (rank == 0) then
+     write(*,'(A,I0,A)') &
+          '[node_list] Total Jexpresso SEM nodes received by this Alya rank: ', &
+          je_total_nodes, ' (coords available for interpolation setup)'
+     flush(6)
+  end if
 
   !--------------------------------------------------------------------------
   ! Pre-compute this rank's point range (for screen printing)
@@ -435,6 +501,8 @@ program unitt_alya_with_another_code
   if (allocated(recv_status))    deallocate(recv_status)
   if (allocated(send_status))    deallocate(send_status)
   if (allocated(coord_status))   deallocate(coord_status)
+  if (allocated(je_npoin_local)) deallocate(je_npoin_local)
+  if (allocated(je_coords_all))  deallocate(je_coords_all)
   deallocate(npoin_send, npoin_recv)
   deallocate(alya_to_world, alya_to_world_snd)
   call MPI_Finalize(ierr)
