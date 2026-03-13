@@ -133,8 +133,8 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # send and receive partner lists so Jexpresso never sends to it.
     npoin_recv[1] = Int32(0)   # world rank 0, 1-based index
     npoin_send[1] = Int32(0)
-    filter!(!=(Int32(0)), recv_from_ranks)
-    filter!(!=(Int32(0)), send_to_ranks)
+    recv_from_ranks = recv_from_ranks[recv_from_ranks .!= Int32(0)]
+    send_to_ranks   = send_to_ranks[send_to_ranks   .!= Int32(0)]
 
     # Send the node list immediately after the Alltoall that sent the counts,
     # so that count and actual node list are exchanged at the same point in

@@ -127,8 +127,8 @@ program unitt_alya_with_another_code
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
   ! 2b. rem_min / rem_max / rem_nx  (one scalar per call, matching Julia)
   do idime = 1, 3
-     call MPI_Bcast(rem_min(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
-     call MPI_Bcast(rem_max(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_min(idime), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_max(idime), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
   end do
   !
