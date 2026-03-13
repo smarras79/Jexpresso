@@ -1387,50 +1387,24 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
     comm    = MPI.COMM_WORLD
     rank    = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
-    per_ip  = Int[]
     ngl     = mesh.ngl
     ngl2    = ngl * ngl
 
-    peri_fids = periodic_direction == "periodicx" ? (5, 6) :
-                periodic_direction == "periodicy" ? (1, 2) : (3, 4)
-
-
-    ncf_peri_ips = Set{Int}()
-    for idx = (mesh.num_ncf - mesh.num_ncf_peri + 1) : mesh.num_ncf
-        mesh.non_conforming_facets[idx][3] in peri_fids || continue
-        for j = 1:ngl2
-            push!(ncf_peri_ips, mesh.IPc_list[j, idx])
-        end
-    end
-    # parent-ghost: IPc_list_pg holds local child IPs → exclude
-    for idx = (mesh.num_ncf_pg - mesh.num_ncf_pg_peri + 1) : mesh.num_ncf_pg
-        mesh.non_conforming_facets_parents_ghost[idx][2] in peri_fids || continue
-        for j = 1:ngl2
-            push!(ncf_peri_ips, mesh.IPc_list_pg[j, idx])
-        end
-    end
-    # child-ghost: IPp_list_cg holds local parent IPs → do NOT exclude
-    # if !isempty(ncf_peri_ips)
-    #     r5(v) = round(v; digits=5)
-    #     println("── [NCF-PERI-IPS] Rank $rank | $periodic_direction | $(length(ncf_peri_ips)) non-corner NCF-periodic nodes excluded from standard merge ──")
-    #     sorted_ips = sort(collect(ncf_peri_ips))
-    #     for ip in sorted_ips
-    #         gip   = mesh.ip2gip[ip]
-    #         owner = mesh.gip2owner[ip]
-    #         println("  ip=$ip  gip=$gip  owner=$owner  xyz=($(r5(mesh.x[ip])), $(r5(mesh.y[ip])), $(r5(mesh.z[ip])))")
-    #     end
-    #     flush(stdout)
-    # end
+    # Collect periodic boundary nodes, tagging each as a face-corner node
+    # (both k and l at an extreme index) or not.
+    # Child element corners at AMR refinement midpoints are corner-type;
+    # the coarse parent's mid-edge GLL node at the same position is non-corner-type.
+    # Keeping them in separate groups prevents the wrong periodic merge.
+    ip_is_corner = Dict{Int, Bool}()
     for iface_bdy = 1:size(mesh.bdy_face_type, 1)
         mesh.bdy_face_type[iface_bdy] == periodic_direction || continue
-        for k = 1:ngl
-            for l = 1:ngl
-                ip = mesh.poin_in_bdy_face[iface_bdy, k, l]
-                ip in ncf_peri_ips && continue
-                push!(per_ip, ip)
-            end
+        for k = 1:ngl, l = 1:ngl
+            ip = mesh.poin_in_bdy_face[iface_bdy, k, l]
+            corner = (k == 1 || k == ngl) && (l == 1 || l == ngl)
+            ip_is_corner[ip] = get(ip_is_corner, ip, false) || corner
         end
     end
+    per_ip = collect(keys(ip_is_corner))
 
     function sort_coords_by_x3_groups(x1, x2, x3)
         # Find min and max x3 values
@@ -1466,27 +1440,25 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
     end
 
 
-    ### remove duplicates
-    unique!(per_ip)
     x_local  = mesh.x[per_ip]
     y_local  = mesh.y[per_ip]
     z_local  = mesh.z[per_ip]
     per_gip  = mesh.ip2gip[per_ip]
     ip_owner = mesh.gip2owner[per_ip]
-    # @info  mesh.x[per_ip]
+    is_corner_local = Int8[ip_is_corner[ip] ? 1 : 0 for ip in per_ip]
 
     # Gather arrays onto the root processor (rank 0)
     root = 0
 
-    # Gather per_gip
     buffer_sz::Int32    = size(per_ip, 1)
     recv_counts  = MPI.Gather(buffer_sz, 0, comm)
 
-    x_gather     = MPI.gather(x_local, comm)
-    y_gather     = MPI.gather(y_local, comm)
-    z_gather     = MPI.gather(z_local, comm)
-    gathered_per = MPI.gather(per_gip, comm)
-    owner_gather = MPI.gather(ip_owner, comm)
+    x_gather      = MPI.gather(x_local, comm)
+    y_gather      = MPI.gather(y_local, comm)
+    z_gather      = MPI.gather(z_local, comm)
+    gathered_per  = MPI.gather(per_gip, comm)
+    owner_gather  = MPI.gather(ip_owner, comm)
+    corner_gather = MPI.gather(is_corner_local, comm)
 
 
 
@@ -1497,8 +1469,15 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
         x              = vcat(x_gather...)
         y              = vcat(y_gather...)
         z              = vcat(z_gather...)
-        global_per_gip = vcat(gathered_per...)
-        owner          = vcat(owner_gather...)
+        global_per_gip  = vcat(gathered_per...)
+        owner           = vcat(owner_gather...)
+        global_is_corner = vcat(corner_gather...)
+        # Build per-gip corner flag: a gip is "corner" if any contributing rank
+        # saw it at a face-corner position (k and l both extreme).
+        gip_is_corner = Dict{Int, Bool}()
+        for (i, g) in enumerate(global_per_gip)
+            gip_is_corner[g] = get(gip_is_corner, g, false) || (global_is_corner[i] == 1)
+        end
         coords = collect(zip(round.(x; digits=5), round.(y; digits=5), round.(z; digits=5)))
         uniq_idx = unique(i -> coords[i], eachindex(coords))
         un_gathered_x = collect(@view x[uniq_idx])
@@ -1511,6 +1490,7 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
         changes_ip    = Dict{Int, Int}()
         changes_owner = Dict{Int, Int}()
         sz = length(uniq_idx)
+        found_hanging = false
         if sz > 0 
             if periodic_direction == "periodicx"
                 results = sort_coords_by_x3_groups(un_gathered_y,un_gathered_z,un_gathered_x)
@@ -1547,6 +1527,10 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                 vec[3] = un_gathered_z[idx_i] - un_gathered_z[idx_j]
                 gip_i = un_updated_global_per_gip[idx_i]
                 gip_j = un_updated_global_per_gip[idx_j]
+                # Skip if corner-type differs: prevents a coarse parent mid-edge node
+                # (non-corner) from merging with a child's shared hanging endpoint
+                # (corner) that coincides with it at even nop.
+                get(gip_is_corner, gip_i, false) == get(gip_is_corner, gip_j, false) || continue
                 if (get(changes_ip, gip_i, gip_i) == gip_j) || get(changes_ip, gip_j, gip_j) == gip_i
                     continue
                 end

@@ -152,11 +152,11 @@ function rhs!(du, u, params, time)
     end
 
     # Check negative density (ivar=1) as early warning before NaN
-    for ip = 1:npoin_diag
-        if u[ip] < 0
-            print_node_state(ip, "NEGATIVE DENSITY")
-        end
-    end
+    # for ip = 1:npoin_diag
+    #     if u[ip] < 0
+    #         print_node_state(ip, "NEGATIVE DENSITY")
+    #     end
+    # end
     if any(!isfinite, u)
         for ip = 1:npoin_diag
             for ivar = 1:neqs_diag
