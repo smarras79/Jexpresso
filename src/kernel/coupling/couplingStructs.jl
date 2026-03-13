@@ -183,7 +183,11 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # Assert they match
  #   @assert sort(recv_from_ranks) == sort(send_to_ranks) "Coupling partners asymmetric — check alya_owner_ranks vs Alltoall result"
  #   @assert all(npoin_recv .== npoin_send) "Point counts asymmetric between send and recv"
-    
+
+    # Send this rank's SEM node list to each Alya communication partner so
+    # that Alya knows which Jexpresso nodes each rank holds before the time loop.
+    je_send_node_list(coupling, sem.mesh)
+
     if lrank == 0
         println("[setup_coupling] Coupling setup complete!")
         flush(stdout)
@@ -842,6 +846,57 @@ function je_perform_coupling_handshake(world, nparts)
     end
     
     return true  # Coupled mode active
+end
+
+"""
+    je_send_node_list(coupling::CouplingData, mesh)
+
+Send the list of local Jexpresso SEM nodes to each Alya communication partner.
+Must be called once during coupling setup, after `send_to_ranks` has been determined.
+
+For each destination Alya rank two non-blocking messages are posted:
+  - tag TAG_NODE_COUNT  (Int32[1]):      number of local SEM nodes on this rank
+  - tag TAG_NODE_COORDS (Float64[...]):  interleaved coordinates [x1,y1,(z1), x2,y2,(z2), ...],
+                                          length npoin_local * ndime
+
+The Alya side must post matching MPI_Irecv calls using the same tags.
+"""
+function je_send_node_list(coupling::CouplingData, mesh)
+    world       = coupling.comm_world
+    ndime       = coupling.ndime
+    npoin_local = mesh.npoin
+
+    # Tags for the node-list exchange (must match Alya.f90)
+    TAG_NODE_COUNT  = Int32(10)
+    TAG_NODE_COORDS = Int32(11)
+
+    # Pack coordinates: interleaved layout [x1, y1, (z1), x2, y2, (z2), ...]
+    coords_buf = zeros(Float64, npoin_local * ndime)
+    @inbounds for i in 1:npoin_local
+        base = (i - 1) * ndime
+        coords_buf[base + 1] = mesh.x[i]
+        ndime >= 2 && (coords_buf[base + 2] = mesh.y[i])
+        ndime == 3 && (coords_buf[base + 3] = mesh.z[i])
+    end
+
+    count_buf     = Int32[npoin_local]
+    send_requests = MPI.Request[]
+
+    for dest_rank in coupling.send_to_ranks
+        req1 = MPI.Isend(count_buf,  dest_rank, TAG_NODE_COUNT,  world)
+        req2 = MPI.Isend(coords_buf, dest_rank, TAG_NODE_COORDS, world)
+        push!(send_requests, req1, req2)
+    end
+
+    isempty(send_requests) || MPI.Waitall(send_requests)
+
+    lcomm = get_mpi_comm()
+    lrank = MPI.Comm_rank(lcomm)
+    wrank = MPI.Comm_rank(world)
+    println("[je_send_node_list] lrank=$lrank (wrank=$wrank): sent $npoin_local local SEM nodes to $(length(coupling.send_to_ranks)) Alya rank(s).")
+    flush(stdout)
+
+    return nothing
 end
 
 function je_receive_alya_data(world, nparts)
