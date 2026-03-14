@@ -942,7 +942,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         coupling.elem_y    = ey_mat
 
         # 3. Reference nodes and barycentric weights (depend only on ngl)
-        ξ_nodes_v = Vector{Float64}(ξ)
+        ξ_nodes_v = Vector{Float64}(sem.ξ)
         coupling.ξ_nodes_ref = ξ_nodes_v
         coupling.ω_bary      = barycentric_weights(ξ_nodes_v)
 
