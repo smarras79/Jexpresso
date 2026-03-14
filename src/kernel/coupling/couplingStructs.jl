@@ -562,12 +562,19 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         rem_dx[d] = rem_nx[d] > 1 ? (rem_max[d] - rem_min[d]) / (rem_nx[d] - 1) : 0.0
     end
 
-    # Total points, Alya rank distribution.
-    # Alya local rank 0 (master) never owns points; distribute over the
-    # nranks_alya-1 worker ranks (local ranks 1..nranks_alya-1).
+    # Total points and Alya rank distribution.
+    # alya2world[k] (1-based) = world rank of Alya local rank k-1 (0-based).
+    # Alya local rank 0 is always the driving/master rank (world rank 0);
+    # it never participates in data exchange with Jexpresso.
+    # Points are distributed only over the worker ranks: those whose world
+    # rank is not the Alya driving rank (world rank 0).
     nmax = rem_nx[1] * rem_nx[2] * rem_nx[3]
     nranks_alya = length(alya2world)
-    nworkers_alya = max(1, nranks_alya - 1)
+    alya_driving_world_rank = Int32(0)   # Alya rank 0 is always the master
+    # Collect 1-based Julia indices of Alya ranks that are actual workers
+    alya_worker_indices = [k for k in 1:nranks_alya
+                           if alya2world[k] != alya_driving_world_rank]
+    nworkers_alya = length(alya_worker_indices)
     r_w   = mod(nmax, nworkers_alya)
     np_w  = div(nmax, nworkers_alya)
 
@@ -609,16 +616,16 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         end
     end
 
-    # Compute Alya local rank (1-based Julia index into alya2world) that owns
-    # ipoin (1-based).  Alya local rank 0 (master, alya2world[1]=0) never
-    # owns points; distribute over workers at local ranks 2..nranks_alya.
+    # Map ipoin (1-based) to the 1-based Julia index into alya2world of the
+    # worker that owns it.  The driving rank (world rank 0) is excluded;
+    # only alya_worker_indices are considered.
     @inline function owner_alya_rank(ipoin::Int)
         iworker = if ipoin <= r_w * (np_w + 1)
-            div(ipoin - 1, np_w + 1)       # 0-based worker index
+            div(ipoin - 1, np_w + 1)       # 0-based index into alya_worker_indices
         else
             r_w + div(ipoin - r_w * (np_w + 1) - 1, np_w)
         end
-        return iworker + 2   # 1-based Julia index: skip master at index 1
+        return alya_worker_indices[iworker + 1]  # 1-based Julia index into alya2world
     end
 
     # --- Exact cropping in index space (optional but very effective) ---

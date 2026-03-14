@@ -222,9 +222,10 @@ program unitt_alya_with_another_code
 
   !--------------------------------------------------------------------------
   ! Pre-compute this rank's point range.
-  ! Rank 0 is Alya's master coordinator: it owns NO mesh points.
-  ! Points are distributed only over the nworkers = asize-1 worker ranks
-  ! (Alya local ranks 1..asize-1).
+  ! Alya local rank 0 is the driving/master rank: it coordinates execution
+  ! but never participates in data exchange with Jexpresso, and therefore
+  ! owns no remote grid points.  Points are distributed only over the
+  ! nworkers = asize-1 worker ranks (Alya local ranks 1..asize-1).
   !--------------------------------------------------------------------------
   nmax        = rem_nx(1) * rem_nx(2) * rem_nx(3)
   nworkers    = max(1, asize - 1)
@@ -463,7 +464,8 @@ contains
     character(len=16) :: varname
 
     !--- Grid parameters ---
-    ! Rank 0 owns no points; distribute nmax over nworkers = asize-1 worker ranks.
+    ! Alya local rank 0 is the driving rank and owns no points.
+    ! Distribute nmax over nworkers = asize-1 worker ranks (ranks 1..asize-1).
     nmax          = rem_nx(1) * rem_nx(2) * rem_nx(3)
     nworkers_loc  = max(1, asize - 1)
     r_rem_loc     = mod(nmax, nworkers_loc)
