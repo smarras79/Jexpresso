@@ -870,14 +870,14 @@ function je_perform_coupling_handshake(world, nparts)
     return true  # Coupled mode active
 end
 
-"""
-    je_send_node_list(mesh, send_to_ranks, world)
-
-Send the global node ID list (from connijk) to each Alya communication partner.
-Called once during coupling setup, immediately after the Alltoall that exchanges
-node counts. Alya already knows the count from the Alltoall result, so only the
-sorted unique global node IDs are sent here (one message per partner).
-"""
+#----------------------------------------------------------------------------------------
+#    je_send_node_list(mesh, send_to_ranks, world)
+#
+# Send the global node ID list (from connijk) to each Alya communication partner.
+# Called once during coupling setup, immediately after the Alltoall that exchanges
+# node counts. Alya already knows the count from the Alltoall result, so only the
+# sorted unique global node IDs are sent here (one message per partner).
+#----------------------------------------------------------------------------------------
 function je_send_node_list(alya_local_ids::Vector{Int64},
                            alya_owner_ranks::Vector{Int32},
                            send_to_ranks::Vector{Int32},
