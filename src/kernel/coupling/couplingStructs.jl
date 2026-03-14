@@ -78,6 +78,23 @@ end
 # MPI HANDSHAKE  (Julia ← Alya)
 # ===========================================================================
 
+# Initial identity exchange with Alya. Returns true when running in coupled mode
+# (world size > nparts), false in standalone mode.
+function je_perform_coupling_handshake(world, nparts)
+    wsize = MPI.Comm_size(world)
+    wrank = MPI.Comm_rank(world)
+    if wsize <= nparts
+        return false
+    end
+    local_chars = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
+    MPI.Gather!(local_chars, nothing, 0, world)
+    if wrank == nparts
+        println("[Driver] Handshake complete - Jexpresso ready.")
+        flush(stdout)
+    end
+    return true
+end
+
 function je_receive_alya_data(world, nparts)
     wsize = MPI.Comm_size(world)
 
