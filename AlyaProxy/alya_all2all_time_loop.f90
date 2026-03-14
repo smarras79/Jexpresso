@@ -44,6 +44,8 @@ program unitt_alya_with_another_code
   integer                            :: bucket_start, bucket_end
   
   real(kind=8), allocatable          :: recvbuf_all(:)
+  real(kind=8), allocatable          :: ordered_buf(:)  ! recvbuf_all scattered to [i_start..i_end] order
+  integer                            :: jpt, local_pos
 
 #ifdef USEMPIF08
   type(MPI_Status),  allocatable     :: recv_status(:)
@@ -278,6 +280,11 @@ program unitt_alya_with_another_code
   allocate(recvbuf_all(max(1, total_pts * neqs)))
   recvbuf_all = 0.0d0
 
+  ! ordered_buf: values placed at the correct [i_start..i_end] position
+  ! using je_gids_all as the scatter index map.
+  allocate(ordered_buf(max(1, npoin_local * neqs)))
+  ordered_buf = 0.0d0
+
   nactive = count(npoin_recv > 0)
 
   if (nactive > 0) then
@@ -357,6 +364,21 @@ program unitt_alya_with_another_code
      end if
 
      !------------------------------------------------------------------------
+     ! REORDER: scatter recvbuf_all → ordered_buf using je_gids_all
+     ! je_gids_all(jpt) is the 1-based global Alya point ID for the jpt-th
+     ! received value.  local_pos = gid - 1 - i_start gives its 0-based
+     ! position within this rank's [i_start..i_end] range.
+     !------------------------------------------------------------------------
+     ordered_buf = 0.0d0
+     do jpt = 1, total_pts
+        local_pos = int(je_gids_all(jpt)) - 1 - i_start
+        if (local_pos >= 0 .and. local_pos < npoin_local) then
+           ordered_buf(local_pos * neqs + 1 : (local_pos + 1) * neqs) = &
+                recvbuf_all((jpt - 1) * neqs + 1 : jpt * neqs)
+        end if
+     end do
+
+     !------------------------------------------------------------------------
      ! PRINT: received interpolated data at coordinates
      !------------------------------------------------------------------------
 !!$     
@@ -388,7 +410,7 @@ program unitt_alya_with_another_code
      if (write_now) then
         call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
              rem_min, rem_max, rem_nx, &
-             recvbuf_all, total_pts, neqs, step, itime, t_plus)
+             ordered_buf, npoin_local, neqs, step, itime, t_plus)
         call MPI_Barrier(PAR_COMM_FINAL, ierr)
         itime = itime + 1
      end if
