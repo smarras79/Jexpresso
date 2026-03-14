@@ -162,8 +162,11 @@ function je_send_node_list(alya_local_ids::Vector{Int64},
         mask    = alya_owner_ranks .== dest_rank
         gid_buf = Int64.(alya_local_ids[mask])
         push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
-        println("[je_send_node_list] lrank=$lrank (wrank=$wrank): ",
-                "sending $(length(gid_buf)) Alya point IDs to world rank $dest_rank")
+        println("[je_send_node_list] Jexpresso lrank=$lrank (wrank=$wrank) → Alya world rank $dest_rank: ",
+                "$(length(gid_buf)) node IDs")
+        for (k, gid) in enumerate(gid_buf)
+            println("  [$k] gid = $gid")
+        end
     end
     isempty(send_requests) || MPI.Waitall(send_requests)
     flush(stdout)
@@ -827,8 +830,6 @@ function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float6
 end
 
 function coupling_exchange_data!(cpg::CouplingData)
-    println("\n[CHECK 1] Julia is just before the call to the isend to alya")
-
     send_requests = MPI.Request[]
     for dest_rank in cpg.send_to_ranks
         cpg.npoin_send[dest_rank+1] > 0 || continue

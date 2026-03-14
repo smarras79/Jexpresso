@@ -38,10 +38,9 @@ program unitt_alya_with_another_code
   real(kind=8)                       :: t0, dt, tend, t
   
   ! Output scheduling
-  real(kind=8)                       :: out_dt, out_tstart, out_tend
+  real(kind=8)                       :: out_dt, out_tend
   real(kind=8)                       :: next_t, tol, dt_step, t_plus
   logical                            :: write_now
-  integer                            :: bucket_start, bucket_end
   
   real(kind=8), allocatable          :: recvbuf_all(:)
   real(kind=8), allocatable          :: ordered_buf(:)  ! recvbuf_all scattered to [i_start..i_end] order
@@ -302,36 +301,30 @@ program unitt_alya_with_another_code
   !==========================================================================
   ! TIME LOOP
   !==========================================================================
-  ! --- VTS output schedule: write once every out_dt seconds in [out_tstart, out_tend]
-  out_tstart = t0           ! first time eligible for output (change if needed)
+  ! --- VTS output schedule: write once every out_dt seconds
   out_dt     = 10.0d0       ! <-- write every 10 seconds
   out_tend   = tend         ! last time eligible for output
-  
-  ! Time accumulators & tolerance
-  t      = t0               ! start the running time at t0
-  next_t = out_tstart       ! first target time to hit
-  tol = max(1.0d-12, 1000.0d0 * epsilon(1.0d0) * (abs(out_tstart) + abs(out_dt) + abs(t0)))
-  
+
+  ! Tolerance for floating-point comparisons
+  tol = max(1.0d-10, 1.0d-6 * out_dt)
+
+  ! next_t: the next simulation time at which a VTS file should be written.
+  ! Start at t0 + out_dt so the first write is at t = out_dt (not at t = 0).
+  t      = t0
+  next_t = t0 + out_dt
+
   ! Optional: disable writes if out_dt <= 0
   if (out_dt <= 0.0d0) next_t = huge(1.0d0)
 
   itime = 1
   do step = 1, nsteps
-     !t = t0 + step * dt
-     
+
      ! Use the dt of this step (constant or variable)
      dt_step = dt
      t_plus  = t + dt_step
 
-     ! Time-bucket gate: write exactly once when [t, t_plus] crosses a multiple of out_dt
-     write_now = .false.
-     if (out_dt > 0.0d0) then
-        if (t_plus >= out_tstart - tol .and. t <= out_tend + tol) then
-           bucket_start = int( floor( ((t      - out_tstart) + tol) / out_dt ) )
-           bucket_end   = int( floor( ((t_plus - out_tstart) + tol) / out_dt ) )
-           if (bucket_end > bucket_start) write_now = .true.
-        end if
-     end if
+     ! Write when t_plus reaches or passes the next scheduled output time.
+     write_now = (out_dt > 0.0d0 .and. t_plus >= next_t - tol .and. next_t <= out_tend + tol)
 
      !------------------------------------------------------------------------
      ! MPI RECEIVE: DATA (Julia -> Alya)
@@ -397,6 +390,9 @@ program unitt_alya_with_another_code
      !   - rank 0 writes a single .vts file per timestep
      !------------------------------------------------------------------------
      if (write_now) then
+        ! Advance the target time for the next write.
+        next_t = next_t + out_dt
+
         !------------------------------------------------------------------------
         ! REORDER: scatter recvbuf_all → ordered_buf using je_gids_all.
         ! Done only when writing output, not at every timestep.
