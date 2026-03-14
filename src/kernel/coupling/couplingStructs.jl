@@ -132,7 +132,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # so that count and actual node list are exchanged at the same point in
     # the handshake sequence.
     ndime = coupling_data[:ndime]
-    je_send_node_list(sem.mesh, send_to_ranks, world)
+    je_send_node_list(alya_local_ids, alya_owner_ranks, send_to_ranks, world)
 
     # Verification (should now pass!)
     verify_coupling_communication_pattern(
@@ -878,21 +878,23 @@ Called once during coupling setup, immediately after the Alltoall that exchanges
 node counts. Alya already knows the count from the Alltoall result, so only the
 sorted unique global node IDs are sent here (one message per partner).
 """
-function je_send_node_list(mesh, send_to_ranks::Vector{Int32}, world::MPI.Comm)
-    # Collect unique global node IDs from connijk (connijk[e,i,j,...] = global node ID)
-    connijk_arr = Array(mesh.connijk)
-    gid_buf = Int64.(sort!(unique(vec(connijk_arr))))
-
-    send_requests = MPI.Request[]
-    for dest_rank in send_to_ranks
-        push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
-    end
-    isempty(send_requests) || MPI.Waitall(send_requests)
-
+function je_send_node_list(alya_local_ids::Vector{Int64},
+                           alya_owner_ranks::Vector{Int32},
+                           send_to_ranks::Vector{Int32},
+                           world::MPI.Comm)
     lcomm = get_mpi_comm()
     lrank = MPI.Comm_rank(lcomm)
     wrank = MPI.Comm_rank(world)
-    println("[je_send_node_list] lrank=$lrank (wrank=$wrank): sent $(length(gid_buf)) global node IDs to $(length(send_to_ranks)) Alya rank(s).")
+
+    send_requests = MPI.Request[]
+    for dest_rank in send_to_ranks
+        # Send only the Alya grid-point IDs whose owner is dest_rank
+        mask   = alya_owner_ranks .== dest_rank
+        gid_buf = Int64.(alya_local_ids[mask])
+        push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
+        println("[je_send_node_list] lrank=$lrank (wrank=$wrank): sending $(length(gid_buf)) Alya point IDs to world rank $dest_rank")
+    end
+    isempty(send_requests) || MPI.Waitall(send_requests)
     flush(stdout)
 
     return nothing
