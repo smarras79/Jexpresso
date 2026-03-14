@@ -58,13 +58,38 @@ mutable struct CouplingData
     elem_bboxes::Union{Nothing, Vector{NTuple{4,Float64}}}
     interp_bins::Union{Nothing, Dict{Symbol,Any}}
 
+    # Precomputed element connectivity and physical coordinates (nelem × ngl²)
+    # Eliminates get_conn(e) + mesh.x[ns] / mesh.y[ns] allocations in the hot loop.
+    elem_conn::Union{Nothing, Matrix{Int}}
+    elem_x::Union{Nothing, Matrix{Float64}}
+    elem_y::Union{Nothing, Matrix{Float64}}
+
+    # Precomputed 1-D reference nodes and barycentric weights (length ngl)
+    ξ_nodes_ref::Union{Nothing, Vector{Float64}}
+    ω_bary::Union{Nothing, Vector{Float64}}
+
+    # Per-step reusable output buffers — allocated once, reused every timestep
+    qout::Union{Nothing, Matrix{Float64}}    # npoin × neqs
+    u_interp::Union{Nothing, Matrix{Float64}} # n_local_alya × neqs
+
+    # Scratch vectors for allocation-free Lagrange evaluation (length ngl)
+    ψξ_scratch::Union{Nothing, Vector{Float64}}
+    ψη_scratch::Union{Nothing, Vector{Float64}}
+    dψξ_scratch::Union{Nothing, Vector{Float64}}
+    dψη_scratch::Union{Nothing, Vector{Float64}}
+    α_scratch::Union{Nothing, Vector{Float64}}
+
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
                           comm_world, lrank, neqs, ndime)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
             comm_world, lrank, neqs, ndime,
             nothing, nothing, nothing,
             nothing, nothing, nothing,
-            nothing, nothing)
+            nothing, nothing,
+            nothing, nothing, nothing,
+            nothing, nothing,
+            nothing, nothing,
+            nothing, nothing, nothing, nothing, nothing)
     end
 end
 
@@ -260,6 +285,55 @@ function evaluate_lagrange_1d(ξ::Float64, ξ_nodes::Vector{Float64}, ω::Vector
     return ψ
 end
 
+# In-place 1-D Lagrange basis — no allocation, writes result into pre-allocated ψ
+function evaluate_lagrange_1d!(ψ::Vector{Float64}, ξ::Float64,
+                                ξ_nodes::Vector{Float64}, ω::Vector{Float64})
+    n = length(ξ_nodes)
+    @inbounds for i in 1:n
+        if abs(ξ - ξ_nodes[i]) < 1e-14
+            fill!(ψ, 0.0)
+            ψ[i] = 1.0
+            return
+        end
+    end
+    sum_val = 0.0
+    @inbounds for i in 1:n
+        ψ[i] = ω[i] / (ξ - ξ_nodes[i])
+        sum_val += ψ[i]
+    end
+    inv_s = 1.0 / sum_val
+    @inbounds for i in 1:n; ψ[i] *= inv_s; end
+end
+
+# In-place 1-D Lagrange derivative — no allocation; α is a length-n scratch vector
+function evaluate_lagrange_1d_derivative!(dψ::Vector{Float64}, ξ::Float64,
+                                          ξ_nodes::Vector{Float64}, ω::Vector{Float64},
+                                          α::Vector{Float64})
+    n = length(ξ_nodes)
+    @inbounds for j in 1:n
+        if abs(ξ - ξ_nodes[j]) < 1e-14
+            fill!(dψ, 0.0)
+            for k in 1:n
+                k == j && continue
+                dψ[k]  =  ω[k] / (ω[j] * (ξ_nodes[j] - ξ_nodes[k]))
+                dψ[j] -= 1.0 / (ξ_nodes[j] - ξ_nodes[k])
+            end
+            return
+        end
+    end
+    sum_α = 0.0
+    @inbounds for i in 1:n
+        α[i] = ω[i] / (ξ - ξ_nodes[i])
+        sum_α += α[i]
+    end
+    sum_dα = 0.0
+    @inbounds for i in 1:n; sum_dα -= α[i] / (ξ - ξ_nodes[i]); end
+    inv_sum2 = 1.0 / (sum_α * sum_α)
+    @inbounds for i in 1:n
+        dψ[i] = (-α[i]/(ξ - ξ_nodes[i]) * sum_α - α[i] * sum_dα) * inv_sum2
+    end
+end
+
 # 1D Lagrange derivative at ξ using barycentric formula
 function evaluate_lagrange_1d_derivative(ξ::Float64, ξ_nodes::Vector{Float64},
                                          ω::Vector{Float64})
@@ -290,16 +364,20 @@ function evaluate_lagrange_1d_derivative(ξ::Float64, ξ_nodes::Vector{Float64},
     return dψ
 end
 
-# Map physical (px, py) → reference (ξ, η) via Newton iteration
+# Map physical (px, py) → reference (ξ, η) via Newton iteration.
+# ψξ, ψη, dψξ, dψη, α are pre-allocated scratch vectors of length ngl.
 function physical_to_reference(px::Float64, py::Float64,
                                 x_elem::AbstractVector, y_elem::AbstractVector,
-                                ξ_nodes::Vector{Float64}, ω::Vector{Float64}, ngl::Int)
+                                ξ_nodes::Vector{Float64}, ω::Vector{Float64}, ngl::Int,
+                                ψξ::Vector{Float64}, ψη::Vector{Float64},
+                                dψξ::Vector{Float64}, dψη::Vector{Float64},
+                                α::Vector{Float64})
     ξ, η = 0.0, 0.0
     for _ in 1:20
-        ψξ  = evaluate_lagrange_1d(ξ, ξ_nodes, ω)
-        ψη  = evaluate_lagrange_1d(η, ξ_nodes, ω)
-        dψξ = evaluate_lagrange_1d_derivative(ξ, ξ_nodes, ω)
-        dψη = evaluate_lagrange_1d_derivative(η, ξ_nodes, ω)
+        evaluate_lagrange_1d!(ψξ, ξ, ξ_nodes, ω)
+        evaluate_lagrange_1d!(ψη, η, ξ_nodes, ω)
+        evaluate_lagrange_1d_derivative!(dψξ, ξ, ξ_nodes, ω, α)
+        evaluate_lagrange_1d_derivative!(dψη, η, ξ_nodes, ω, α)
 
         x_c = y_c = dxdξ = dxdη = dydξ = dydη = 0.0
         idx = 1
@@ -323,60 +401,107 @@ function physical_to_reference(px::Float64, py::Float64,
 end
 
 # Interpolate SEM solution to arbitrary coordinates.
-# Pass precomp_bboxes and precomp_bins (precomputed once at setup) to avoid
-# rebuilding them on every timestep call.
+# All heavy data (bboxes, bins, element coords, connectivity, scratch vectors, output
+# buffer) should be passed pre-allocated so this function makes zero heap allocations
+# in the steady-state time loop.
 function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
                                              u_mat::AbstractMatrix, basis, ξ, neqs, inputs;
                                              use_bins::Bool=true, bins_per_dim::Int=64,
-                                             precomp_bboxes=nothing, precomp_bins=nothing)
+                                             precomp_bboxes=nothing,
+                                             precomp_bins=nothing,
+                                             precomp_elem_x=nothing,
+                                             precomp_elem_y=nothing,
+                                             precomp_elem_conn=nothing,
+                                             precomp_ξ_nodes=nothing,
+                                             precomp_ω=nothing,
+                                             u_interp_buf=nothing,
+                                             ψξ_buf=nothing, ψη_buf=nothing,
+                                             dψξ_buf=nothing, dψη_buf=nothing,
+                                             α_buf=nothing)
     n_points = size(alya_coords, 1)
-    u_interp = zeros(Float64, n_points, neqs)
+    nelem    = _num_elems(mesh)
+    ngl      = mesh.ngl
+    ngl2     = ngl * ngl
 
-    get_conn = _make_conn_accessor(mesh)
-    nelem = _num_elems(mesh)
-    ngl = mesh.ngl
-    ξ_nodes = Vector{Float64}(ξ)
-    ω = barycentric_weights(ξ_nodes)
+    # Reference nodes and barycentric weights — use precomputed when available
+    ξ_nodes = precomp_ξ_nodes !== nothing ? precomp_ξ_nodes : Vector{Float64}(ξ)
+    ω       = precomp_ω       !== nothing ? precomp_ω       : barycentric_weights(ξ_nodes)
 
+    # Output buffer — reuse pre-allocated matrix to avoid per-call allocation
+    u_interp = u_interp_buf !== nothing ? u_interp_buf : zeros(Float64, n_points, neqs)
+
+    # Scratch vectors for allocation-free Lagrange evaluation
+    ψξ  = ψξ_buf  !== nothing ? ψξ_buf  : Vector{Float64}(undef, ngl)
+    ψη  = ψη_buf  !== nothing ? ψη_buf  : Vector{Float64}(undef, ngl)
+    dψξ = dψξ_buf !== nothing ? dψξ_buf : Vector{Float64}(undef, ngl)
+    dψη = dψη_buf !== nothing ? dψη_buf : Vector{Float64}(undef, ngl)
+    α   = α_buf   !== nothing ? α_buf   : Vector{Float64}(undef, ngl)
+
+    # Element bboxes and spatial bins
     elem_bboxes = if precomp_bboxes !== nothing
         precomp_bboxes
     else
+        get_conn_tmp = _make_conn_accessor(mesh)
         bb = Vector{NTuple{4,Float64}}(undef, nelem)
         @inbounds for e in 1:nelem
-            ns = get_conn(e)
+            ns = get_conn_tmp(e)
             bb[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
                      minimum(mesh.y[ns]), maximum(mesh.y[ns]))
         end
         bb
     end
+    bins = precomp_bins !== nothing ? precomp_bins :
+           (use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing)
 
-    bins = if precomp_bins !== nothing
-        precomp_bins
-    elseif use_bins
-        _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim)
-    else
-        nothing
-    end
+    # Whether precomputed per-element coordinate/connectivity arrays are available
+    have_precomp = (precomp_elem_x !== nothing &&
+                    precomp_elem_y !== nothing &&
+                    precomp_elem_conn !== nothing)
+    get_conn = have_precomp ? nothing : _make_conn_accessor(mesh)
 
     @inbounds for ipt in 1:n_points
         px, py = alya_coords[ipt,1], alya_coords[ipt,2]
         candidates = bins !== nothing ? _bin_candidates(bins, px, py, elem_bboxes) : (1:nelem)
         found = false
         for e in candidates
-            ns = get_conn(e)
-            x_e = mesh.x[ns]; y_e = mesh.y[ns]
-            (px < minimum(x_e)-1e-10 || px > maximum(x_e)+1e-10 ||
-             py < minimum(y_e)-1e-10 || py > maximum(y_e)+1e-10) && continue
-            ξr, ηr, conv = physical_to_reference(px, py, x_e, y_e, ξ_nodes, ω, ngl)
+            bb = elem_bboxes[e]
+            (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
+             py < bb[3]-1e-10 || py > bb[4]+1e-10) && continue
+
+            if have_precomp
+                x_e = @view precomp_elem_x[e, :]
+                y_e = @view precomp_elem_y[e, :]
+            else
+                ns_tmp = get_conn(e)
+                x_e = mesh.x[ns_tmp]
+                y_e = mesh.y[ns_tmp]
+            end
+
+            ξr, ηr, conv = physical_to_reference(px, py, x_e, y_e,
+                                                   ξ_nodes, ω, ngl,
+                                                   ψξ, ψη, dψξ, dψη, α)
             (conv && abs(ξr) <= 1+1e-10 && abs(ηr) <= 1+1e-10) || continue
-            ψξ = evaluate_lagrange_1d(ξr, ξ_nodes, ω)
-            ψη = evaluate_lagrange_1d(ηr, ξ_nodes, ω)
-            for q in 1:neqs
-                val = 0.0; idx = 1
-                for j in 1:ngl, i in 1:ngl
-                    val += ψξ[i]*ψη[j]*u_mat[ns[idx], q]; idx += 1
+
+            evaluate_lagrange_1d!(ψξ, ξr, ξ_nodes, ω)
+            evaluate_lagrange_1d!(ψη, ηr, ξ_nodes, ω)
+
+            if have_precomp
+                ns_e = @view precomp_elem_conn[e, :]
+                for q in 1:neqs
+                    val = 0.0; idx = 1
+                    for j in 1:ngl, i in 1:ngl
+                        val += ψξ[i]*ψη[j]*u_mat[ns_e[idx], q]; idx += 1
+                    end
+                    u_interp[ipt,q] = val
                 end
-                u_interp[ipt,q] = val
+            else
+                for q in 1:neqs
+                    val = 0.0; idx = 1
+                    for j in 1:ngl, i in 1:ngl
+                        val += ψξ[i]*ψη[j]*u_mat[x_e[idx], q]; idx += 1
+                    end
+                    u_interp[ipt,q] = val
+                end
             end
             found = true; break
         end
@@ -779,17 +904,58 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     coupling.alya_local_ids    = alya_local_ids
     coupling.alya_owner_ranks  = alya_owner_ranks
 
-    # Precompute element bounding boxes and spatial bins once — mesh never changes.
-    let get_conn = _make_conn_accessor(sem.mesh),
-        nelem    = _num_elems(sem.mesh)
+    # -----------------------------------------------------------------------
+    # Precompute everything that is constant across timesteps so the per-step
+    # coupling exchange path makes zero heap allocations.
+    # -----------------------------------------------------------------------
+    let mesh  = sem.mesh,
+        nelem = _num_elems(sem.mesh),
+        ngl   = sem.mesh.ngl,
+        ngl2  = sem.mesh.ngl * sem.mesh.ngl,
+        gc    = _make_conn_accessor(sem.mesh)
+
+        # 1. Element bounding boxes + spatial bins
         bb = Vector{NTuple{4,Float64}}(undef, nelem)
         @inbounds for e in 1:nelem
-            ns = get_conn(e)
-            bb[e] = (minimum(sem.mesh.x[ns]), maximum(sem.mesh.x[ns]),
-                     minimum(sem.mesh.y[ns]), maximum(sem.mesh.y[ns]))
+            ns = gc(e)
+            bb[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
+                     minimum(mesh.y[ns]), maximum(mesh.y[ns]))
         end
         coupling.elem_bboxes = bb
         coupling.interp_bins = _build_elem_bins(bb; bins_per_dim=64)
+
+        # 2. Flattened element connectivity and physical coordinates (nelem × ngl²)
+        #    Replaces get_conn(e) + mesh.x[ns] / mesh.y[ns] allocations.
+        conn_mat = Matrix{Int}(undef, nelem, ngl2)
+        ex_mat   = Matrix{Float64}(undef, nelem, ngl2)
+        ey_mat   = Matrix{Float64}(undef, nelem, ngl2)
+        @inbounds for e in 1:nelem
+            ns = gc(e)
+            for k in 1:ngl2
+                conn_mat[e, k] = ns[k]
+                ex_mat[e, k]   = mesh.x[ns[k]]
+                ey_mat[e, k]   = mesh.y[ns[k]]
+            end
+        end
+        coupling.elem_conn = conn_mat
+        coupling.elem_x    = ex_mat
+        coupling.elem_y    = ey_mat
+
+        # 3. Reference nodes and barycentric weights (depend only on ngl)
+        ξ_nodes_v = Vector{Float64}(ξ)
+        coupling.ξ_nodes_ref = ξ_nodes_v
+        coupling.ω_bary      = barycentric_weights(ξ_nodes_v)
+
+        # 4. Scratch vectors for allocation-free Lagrange evaluation
+        coupling.ψξ_scratch  = Vector{Float64}(undef, ngl)
+        coupling.ψη_scratch  = Vector{Float64}(undef, ngl)
+        coupling.dψξ_scratch = Vector{Float64}(undef, ngl)
+        coupling.dψη_scratch = Vector{Float64}(undef, ngl)
+        coupling.α_scratch   = Vector{Float64}(undef, ngl)
+
+        # 5. Per-step output buffers: reused at every timestep
+        coupling.qout    = zeros(Float64, mesh.npoin,          coupling.neqs)
+        coupling.u_interp = zeros(Float64, length(alya_local_ids), coupling.neqs)
     end
 
     return coupling, sem, partitioned_model, qp
@@ -847,14 +1013,31 @@ end
 function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       mesh, basis, inputs, ξ, neqs)
     npoin = mesh.npoin
-    qout  = zeros(Float64, npoin, neqs)
+
+    # Reuse pre-allocated output buffers — no per-step allocation
+    qout     = cpg.qout
+    u_interp = cpg.u_interp
+
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
 
-    u_interp = interpolate_solution_to_alya_coords(
+    interpolate_solution_to_alya_coords(
         cpg.alya_local_coords, mesh, qout, basis, ξ, neqs, inputs;
-        use_bins=true, bins_per_dim=64,
-        precomp_bboxes=cpg.elem_bboxes, precomp_bins=cpg.interp_bins)
+        use_bins         = true,
+        bins_per_dim     = 64,
+        precomp_bboxes   = cpg.elem_bboxes,
+        precomp_bins     = cpg.interp_bins,
+        precomp_elem_x   = cpg.elem_x,
+        precomp_elem_y   = cpg.elem_y,
+        precomp_elem_conn= cpg.elem_conn,
+        precomp_ξ_nodes  = cpg.ξ_nodes_ref,
+        precomp_ω        = cpg.ω_bary,
+        u_interp_buf     = u_interp,
+        ψξ_buf           = cpg.ψξ_scratch,
+        ψη_buf           = cpg.ψη_scratch,
+        dψξ_buf          = cpg.dψξ_scratch,
+        dψη_buf          = cpg.dψη_scratch,
+        α_buf            = cpg.α_scratch)
 
     pack_interpolated_data!(cpg, u_interp, cpg.alya_owner_ranks, cpg.alya_local_coords)
     coupling_exchange_data!(cpg)
