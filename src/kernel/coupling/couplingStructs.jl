@@ -56,7 +56,7 @@ mutable struct CouplingData
 
     # Precomputed interpolation data (mesh geometry never changes)
     elem_bboxes::Union{Nothing, Vector{NTuple{4,Float64}}}
-    interp_bins::Union{Nothing, Dict{Symbol,Any}}
+    interp_bins::Union{Nothing, ElemBins}
 
     # Precomputed element connectivity and physical coordinates (nelem × ngl²)
     # Eliminates get_conn(e) + mesh.x[ns] / mesh.y[ns] allocations in the hot loop.
@@ -229,6 +229,20 @@ function barycentric_weights(nodes::AbstractVector{<:Real})
     return w
 end
 
+# Concrete bin index — replaces Dict{Symbol,Any} so field accesses are
+# type-stable and allocation-free in the per-timestep hot path.
+struct ElemBins
+    xmin::Float64
+    xmax::Float64
+    ymin::Float64
+    ymax::Float64
+    nx::Int
+    ny::Int
+    dx::Float64
+    dy::Float64
+    bins::Vector{Vector{Int}}
+end
+
 # Uniform binning over element bounding boxes
 function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::Int=64)
     ne = length(elem_bboxes)
@@ -241,7 +255,7 @@ function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::
     dx = (xmax > xmin) ? (xmax - xmin) / nx : 1.0
     dy = (ymax > ymin) ? (ymax - ymin) / ny : 1.0
 
-    bins = [Int[] for _ in 1:(nx*ny)]
+    bin_lists = [Int[] for _ in 1:(nx*ny)]
     for e in 1:ne
         (x0,x1,y0,y1) = elem_bboxes[e]
         ix0 = clamp(Int(floor((x0 - xmin)/dx)), 0, nx-1)
@@ -249,19 +263,19 @@ function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::
         iy0 = clamp(Int(floor((y0 - ymin)/dy)), 0, ny-1)
         iy1 = clamp(Int(floor((y1 - ymin)/dy)), 0, ny-1)
         for iy in iy0:iy1, ix in ix0:ix1
-            push!(bins[iy*nx + ix + 1], e)
+            push!(bin_lists[iy*nx + ix + 1], e)
         end
     end
-    return Dict(:xmin=>xmin, :xmax=>xmax, :ymin=>ymin, :ymax=>ymax,
-                :nx=>nx, :ny=>ny, :dx=>dx, :dy=>dy, :bins=>bins)
+    return ElemBins(xmin, xmax, ymin, ymax, nx, ny, dx, dy, bin_lists)
 end
 
-function _bin_candidates(bins, x, y, elem_bboxes)
-    nx = bins[:nx]; dx = bins[:dx]; xmin = bins[:xmin]
-    ny = bins[:ny]; dy = bins[:dy]; ymin = bins[:ymin]
-    ix = clamp(Int(floor((x - xmin)/dx)), 0, nx-1)
-    iy = clamp(Int(floor((y - ymin)/dy)), 0, ny-1)
-    cand = bins[:bins][iy*nx + ix + 1]
+# Returns existing bin vector (no allocation) or full range as fallback.
+# All field accesses are type-stable because bins::ElemBins is concrete.
+@inline function _bin_candidates(bins::ElemBins, x::Float64, y::Float64,
+                                  elem_bboxes::Vector{NTuple{4,Float64}})
+    ix = clamp(Int(floor((x - bins.xmin) / bins.dx)), 0, bins.nx - 1)
+    iy = clamp(Int(floor((y - bins.ymin) / bins.dy)), 0, bins.ny - 1)
+    cand = bins.bins[iy * bins.nx + ix + 1]
     return isempty(cand) ? (1:length(elem_bboxes)) : cand
 end
 
@@ -505,9 +519,14 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
             end
             found = true; break
         end
-        if !found   # nearest-neighbour fallback
-            nearest = argmin((mesh.x .- px).^2 .+ (mesh.y .- py).^2)
-            for q in 1:neqs; u_interp[ipt,q] = u_mat[nearest,q]; end
+        if !found   # nearest-neighbour fallback (allocation-free scalar loop)
+            nearest = 1
+            min_d2  = (mesh.x[1] - px)^2 + (mesh.y[1] - py)^2
+            @inbounds for ip in 2:mesh.npoin
+                d2 = (mesh.x[ip] - px)^2 + (mesh.y[ip] - py)^2
+                if d2 < min_d2; min_d2 = d2; nearest = ip; end
+            end
+            @inbounds for q in 1:neqs; u_interp[ipt,q] = u_mat[nearest,q]; end
         end
     end
     return u_interp
