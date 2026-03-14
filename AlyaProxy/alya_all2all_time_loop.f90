@@ -96,7 +96,7 @@ program unitt_alya_with_another_code
   ! STEP 1: Time quantities
   !--------------------------------------------------------------------------
   t0     = 0.0d0
-  dt     = 0.25d0
+  dt     = 0.5d0
   tend   = 200.0d0
   nsteps = int((tend - t0) / dt)
 
