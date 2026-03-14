@@ -97,9 +97,9 @@ program unitt_alya_with_another_code
   !--------------------------------------------------------------------------
   t0     = 0.0d0
   dt     = 0.5d0
-  tend   = 100.0d0
+  tend   = 500.0d0
   nsteps = int((tend - t0) / dt)
-  out_dt = 10.0d0       ! <-- write every 10 seconds
+  out_dt = 20.0d0       ! <-- write every 10 seconds
   !--------------------------------------------------------------------------
   ! STEP 2: GRID METADATA  (broadcast order must match Julia exactly)
   !--------------------------------------------------------------------------
