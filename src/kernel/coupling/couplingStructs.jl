@@ -473,6 +473,18 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
     have_precomp = (precomp_elem_x !== nothing &&
                     precomp_elem_y !== nothing &&
                     precomp_elem_conn !== nothing)
+
+    # Narrow Union{Nothing,Matrix{…}} to concrete Matrix types so the hot loop
+    # sees no union dispatch on these variables.  When precomp arrays are absent
+    # the 0×0 sentinels are never indexed (have_precomp == false guards every use).
+    _ex   = have_precomp ? (precomp_elem_x::Matrix{Float64})   : Matrix{Float64}(undef, 0, 0)
+    _ey   = have_precomp ? (precomp_elem_y::Matrix{Float64})   : Matrix{Float64}(undef, 0, 0)
+    _conn = have_precomp ? (precomp_elem_conn::Matrix{Int})    : Matrix{Int}(undef, 0, 0)
+
+    # Scratch buffers for element physical coordinates — written in the !have_precomp
+    # path so we avoid allocating mesh.x[ns] / mesh.y[ns] on every element visit.
+    x_e_buf = Vector{Float64}(undef, ngl2)
+    y_e_buf = Vector{Float64}(undef, ngl2)
     get_conn = have_precomp ? nothing : _make_conn_accessor(mesh)
 
     @inbounds for ipt in 1:n_points
@@ -485,12 +497,16 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
              py < bb[3]-1e-10 || py > bb[4]+1e-10) && continue
 
             if have_precomp
-                x_e = @view precomp_elem_x[e, :]
-                y_e = @view precomp_elem_y[e, :]
+                x_e = @view _ex[e, :]
+                y_e = @view _ey[e, :]
             else
                 ns_tmp = get_conn(e)
-                x_e = mesh.x[ns_tmp]
-                y_e = mesh.y[ns_tmp]
+                @inbounds for k in 1:ngl2
+                    x_e_buf[k] = mesh.x[ns_tmp[k]]
+                    y_e_buf[k] = mesh.y[ns_tmp[k]]
+                end
+                x_e = x_e_buf
+                y_e = y_e_buf
             end
 
             ξr, ηr, conv = physical_to_reference(px, py, x_e, y_e,
@@ -502,7 +518,7 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
             evaluate_lagrange_1d!(ψη, ηr, ξ_nodes, ω)
 
             if have_precomp
-                ns_e = @view precomp_elem_conn[e, :]
+                ns_e = @view _conn[e, :]
                 for q in 1:neqs
                     val = 0.0; idx = 1
                     for j in 1:ngl, i in 1:ngl
@@ -514,7 +530,7 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
                 for q in 1:neqs
                     val = 0.0; idx = 1
                     for j in 1:ngl, i in 1:ngl
-                        val += ψξ[i]*ψη[j]*u_mat[x_e[idx], q]; idx += 1
+                        val += ψξ[i]*ψη[j]*u_mat[x_e_buf[idx], q]; idx += 1
                     end
                     u_interp[ipt,q] = val
                 end
