@@ -33,6 +33,22 @@ function get_coupling_data()
 end
 
 # ---------------------------------------------------------------------------
+# ElemBins — concrete spatial bin index for element lookup.
+# Must be defined before CouplingData which holds a field of this type.
+# ---------------------------------------------------------------------------
+struct ElemBins
+    xmin::Float64
+    xmax::Float64
+    ymin::Float64
+    ymax::Float64
+    nx::Int
+    ny::Int
+    dx::Float64
+    dy::Float64
+    bins::Vector{Vector{Int}}
+end
+
+# ---------------------------------------------------------------------------
 # CouplingData — all communication metadata for one Julia rank
 # ---------------------------------------------------------------------------
 mutable struct CouplingData
@@ -227,20 +243,6 @@ function barycentric_weights(nodes::AbstractVector{<:Real})
         w[j] = 1.0 / denom
     end
     return w
-end
-
-# Concrete bin index — replaces Dict{Symbol,Any} so field accesses are
-# type-stable and allocation-free in the per-timestep hot path.
-struct ElemBins
-    xmin::Float64
-    xmax::Float64
-    ymin::Float64
-    ymax::Float64
-    nx::Int
-    ny::Int
-    dx::Float64
-    dy::Float64
-    bins::Vector{Vector{Int}}
 end
 
 # Uniform binning over element bounding boxes
