@@ -718,18 +718,29 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     n_local = length(ids)
 
     # ------------------------------------------------------------------
-    # Deduplication: when multiple Julia ranks' bounding boxes overlap,
-    # both claim the same Alya point.  Use Allreduce(MAX) over the
-    # Julia-local communicator so each global Alya point ID is owned by
-    # exactly one Julia rank (the highest-numbered one wins, consistent
-    # with build_alya_point_ownership_map).
+    # Two-phase deduplication + rescue.
+    #
+    # Phase 1 (element containment dedup):
+    #   Build local_claim[gid] = lrank for every point this rank extracted.
+    #   Allreduce(MAX) → global_claim[gid] = winning rank (-1 = unclaimed).
+    #   Keep only points where this rank won.
+    #
+    # Phase 2 (bbox rescue):
+    #   Points with global_claim[gid] == -1 were not claimed by any rank.
+    #   This happens when Newton iteration drifts just outside |ξ|,|η| ≤ 1
+    #   for boundary / partition-edge Alya points.
+    #   Each rank proposes itself for unclaimed points inside its local bbox.
+    #   Allreduce(MIN) → lowest-lrank wins (fair, deterministic distribution).
     # ------------------------------------------------------------------
+
+    # Phase 1 ─────────────────────────────────────────────────────────
+    local_claim = fill(Int32(-1), nmax)
+    @inbounds for i in 1:n_local
+        local_claim[Int(ids[i])] = Int32(lrank)
+    end
+    global_claim = MPI.Allreduce(local_claim, MPI.MAX, local_comm)
+
     if n_local > 0
-        local_claim = fill(Int32(-1), nmax)
-        @inbounds for i in 1:n_local
-            local_claim[Int(ids[i])] = Int32(lrank)
-        end
-        global_claim = MPI.Allreduce(local_claim, MPI.MAX, local_comm)
         keep = [global_claim[Int(ids[i])] == Int32(lrank) for i in 1:n_local]
         if !all(keep)
             X      = X[keep]
@@ -738,9 +749,45 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
             ids    = ids[keep]
             owners = owners[keep]
             n_local = length(ids)
-            println("[extract_local_alya_coordinates] (lrank=$lrank) after dedup: $n_local points kept.")
+            println("[extract_local_alya_coordinates] (lrank=$lrank) after phase-1 dedup: $n_local points kept.")
             flush(stdout)
         end
+    end
+
+    # Phase 2 ─────────────────────────────────────────────────────────
+    # For unclaimed gids, propose this rank if the point is inside the
+    # local bounding box.  Allreduce(MIN) picks the lowest lrank.
+    rescue_claim = fill(Int32(typemax(Int32)), nmax)
+    for gid in 1:nmax
+        global_claim[gid] != -1 && continue        # already claimed
+        i1 = (gid - 1) % rem_nx[1]
+        i2 = div(gid - 1, rem_nx[1]) % rem_nx[2]
+        i3 = div(gid - 1, rem_nx[1] * rem_nx[2])
+        x, y, z = idx_to_xyz(i1, i2, i3)
+        inside_local(x, y, z) || continue
+        rescue_claim[gid] = Int32(lrank)
+    end
+    global_rescue = MPI.Allreduce(rescue_claim, MPI.MIN, local_comm)
+
+    n_rescued = 0
+    for gid in 1:nmax
+        global_claim[gid] != -1   && continue   # already owned (phase 1)
+        global_rescue[gid] == typemax(Int32) && continue  # still unclaimed — outside all bboxes
+        global_rescue[gid] != Int32(lrank)    && continue   # another rank won this one
+        i1 = (gid - 1) % rem_nx[1]
+        i2 = div(gid - 1, rem_nx[1]) % rem_nx[2]
+        i3 = div(gid - 1, rem_nx[1] * rem_nx[2])
+        x, y, z = idx_to_xyz(i1, i2, i3)
+        aw = alya2world[owner_alya_rank(gid)]
+        push!(X, x); push!(Y, y); ndime==3 && push!(Z, z)
+        push!(ids, Int32(gid)); push!(owners, Int32(aw))
+        n_rescued += 1
+    end
+    n_local = length(ids)
+
+    if n_rescued > 0
+        println("[extract_local_alya_coordinates] (lrank=$lrank) rescued $n_rescued unclaimed Alya points via bbox fallback.")
+        flush(stdout)
     end
 
     alya_local_coords = zeros(Float64, n_local, ndime)
