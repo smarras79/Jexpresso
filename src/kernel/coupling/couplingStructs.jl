@@ -132,7 +132,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # so that count and actual node list are exchanged at the same point in
     # the handshake sequence.
     ndime = coupling_data[:ndime]
-    je_send_node_list(alya_local_ids, alya_owner_ranks, send_to_ranks, world)
+    je_send_node_list(Int64.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
 
     # Verification (should now pass!)
     verify_coupling_communication_pattern(
