@@ -7,7 +7,7 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(), #SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(),
         :Δt                   => 0.25,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 200.0,
         :diagnostics_at_times => (0:10.0:1000),
         #:restart_time         => 500,
         :lrestart             => false,
@@ -40,7 +40,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_3x3.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
