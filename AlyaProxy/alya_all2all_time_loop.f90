@@ -262,6 +262,19 @@ program unitt_alya_with_another_code
      flush(6)
   end if
 
+  !--------------------------------------------------------------------------
+  ! Receive neqs from Julia via Allreduce(MAX).
+  ! Alya contributes 0; Julia contributes its qp.neqs.
+  ! The collective synchronises both sides before buffer allocation.
+  !--------------------------------------------------------------------------
+  neqs = 0
+  call MPI_Allreduce(MPI_IN_PLACE, neqs, 1, MPI_INTEGER4, MPI_MAX, &
+                     MPI_COMM_WORLD, ierr)
+  if (rank == 0) then
+     write(*,'(A,I0)') '  neqs received from Julia: ', neqs
+     flush(6)
+  end if
+
   allocate(recvbuf_all(max(1, total_pts * neqs)))
   recvbuf_all = 0.0d0
 

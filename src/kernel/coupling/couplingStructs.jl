@@ -163,7 +163,14 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     
     # Initialize solution arrays
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-    
+
+    # Broadcast neqs to Alya via Allreduce(MAX).
+    # Alya contributes 0; Julia contributes qp.neqs.  The collective
+    # acts as the synchronisation barrier that lets Alya learn neqs
+    # before it allocates its receive buffers.
+    neqs_buf = Ref(Int32(qp.neqs))
+    MPI.Allreduce!(neqs_buf, MPI.MAX, world)
+
     # Store coupling information
     ndime = coupling_data[:ndime]
     coupling = CouplingData(
