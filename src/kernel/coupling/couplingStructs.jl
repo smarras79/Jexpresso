@@ -140,7 +140,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # so that count and actual node list are exchanged at the same point in
     # the handshake sequence.
     ndime = coupling_data[:ndime]
-    je_send_node_list(sem.mesh, send_to_ranks, ndime, world)
+    je_send_node_list(sem.mesh, send_to_ranks, world)
 
     # Verification (should now pass!)
     verify_coupling_communication_pattern(
@@ -858,51 +858,29 @@ function je_perform_coupling_handshake(world, nparts)
     return true  # Coupled mode active
 end
 
-#------------------------------------------------------------------------------------
-#    je_send_node_list(mesh, send_to_ranks, ndime, world)
-#
-# Send the list of local Jexpresso SEM nodes to each Alya communication partner.
-# Called once during coupling setup, immediately after the Alltoall that exchanges
-# node counts, so that the count and the actual node list are sent at the same point
-# in the handshake sequence.
-#
-# For each destination Alya rank two non-blocking messages are posted in order:
-#  1. Int32[1]      : number of local SEM nodes on this rank
-#  2. Float64[...]  : interleaved coordinates [x1,y1,(z1), x2,y2,(z2), ...],
-#                     length npoin_local * ndime
-#
-# No MPI tags are used (tag=0 throughout). MPI message ordering between any fixed
-# pair of ranks guarantees the count arrives before the coordinates.
-#    The Alya side must post matching receives in the same order.
-#    
-#------------------------------------------------------------------------------------
-function je_send_node_list(mesh, send_to_ranks::Vector{Int32}, ndime::Int, world::MPI.Comm)
-    npoin_local = mesh.npoin
+"""
+    je_send_node_list(mesh, send_to_ranks, world)
 
-    # Pack coordinates: interleaved layout [x1, y1, (z1), x2, y2, (z2), ...]
-    coords_buf = zeros(Float64, npoin_local * ndime)
-    @inbounds for i in 1:npoin_local
-        base = (i - 1) * ndime
-        coords_buf[base + 1] = mesh.x[i]
-        ndime >= 2 && (coords_buf[base + 2] = mesh.y[i])
-        ndime == 3 && (coords_buf[base + 3] = mesh.z[i])
-    end
+Send the global node ID list (from connijk) to each Alya communication partner.
+Called once during coupling setup, immediately after the Alltoall that exchanges
+node counts. Alya already knows the count from the Alltoall result, so only the
+sorted unique global node IDs are sent here (one message per partner).
+"""
+function je_send_node_list(mesh, send_to_ranks::Vector{Int32}, world::MPI.Comm)
+    # Collect unique global node IDs from connijk (connijk[e,i,j,...] = global node ID)
+    connijk_arr = Array(mesh.connijk)
+    gid_buf = Int64.(sort!(unique(vec(connijk_arr))))
 
-    count_buf     = Int32[npoin_local]
     send_requests = MPI.Request[]
-
     for dest_rank in send_to_ranks
-        req1 = MPI.Isend(count_buf,  dest_rank, 0, world)
-        req2 = MPI.Isend(coords_buf, dest_rank, 0, world)
-        push!(send_requests, req1, req2)
+        push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
     end
-
     isempty(send_requests) || MPI.Waitall(send_requests)
 
     lcomm = get_mpi_comm()
     lrank = MPI.Comm_rank(lcomm)
     wrank = MPI.Comm_rank(world)
-    println("[je_send_node_list] lrank=$lrank (wrank=$wrank): sent $npoin_local local SEM nodes to $(length(coupling.send_to_ranks)) Alya rank(s).")
+    println("[je_send_node_list] lrank=$lrank (wrank=$wrank): sent $(length(gid_buf)) global node IDs to $(length(send_to_ranks)) Alya rank(s).")
     flush(stdout)
 
     return nothing
