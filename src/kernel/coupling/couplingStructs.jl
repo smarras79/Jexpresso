@@ -95,6 +95,12 @@ mutable struct CouplingData
     dψη_scratch::Union{Nothing, Vector{Float64}}
     α_scratch::Union{Nothing, Vector{Float64}}
 
+    # Per-point cached element + reference coords — computed ONCE at setup so
+    # the hot interpolation path is pure Lagrange evaluation, zero element search.
+    alya_host_elem::Union{Nothing, Vector{Int}}    # host element index (-1 = fallback)
+    alya_ξ_ref::Union{Nothing, Vector{Float64}}   # ξ reference coord
+    alya_η_ref::Union{Nothing, Vector{Float64}}   # η reference coord
+
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
                           comm_world, lrank, neqs, ndime)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
@@ -105,7 +111,8 @@ mutable struct CouplingData
             nothing, nothing, nothing,
             nothing, nothing,
             nothing, nothing,
-            nothing, nothing, nothing, nothing, nothing)
+            nothing, nothing, nothing, nothing, nothing,
+            nothing, nothing, nothing)
     end
 end
 
@@ -1115,7 +1122,116 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         coupling.u_interp = zeros(Float64, length(alya_local_ids), coupling.neqs)
     end
 
+    # 6. Precompute per-Alya-point host element + reference coordinates.
+    #    This moves the element search (Newton iteration, bin lookups) entirely
+    #    out of the timestep hot path.
+    precompute_alya_interpolation_data!(coupling, sem.mesh)
+
     return coupling, sem, partitioned_model, qp
+end
+
+# ===========================================================================
+# SETUP-TIME: precompute per-Alya-point host element + reference coordinates
+# ===========================================================================
+
+function precompute_alya_interpolation_data!(cpg::CouplingData, mesh)
+    n_alya   = size(cpg.alya_local_coords, 1)
+    ngl      = mesh.ngl
+    ξ_nodes  = cpg.ξ_nodes_ref
+    ω        = cpg.ω_bary
+    bins     = cpg.interp_bins
+    bboxes   = cpg.elem_bboxes
+
+    host_elem = Vector{Int}(undef, n_alya)
+    ξ_ref     = Vector{Float64}(undef, n_alya)
+    η_ref     = Vector{Float64}(undef, n_alya)
+
+    # Scratch — only used here at setup, not in the hot path
+    ψξ_s  = Vector{Float64}(undef, ngl)
+    ψη_s  = Vector{Float64}(undef, ngl)
+    dψξ_s = Vector{Float64}(undef, ngl)
+    dψη_s = Vector{Float64}(undef, ngl)
+    α_s   = Vector{Float64}(undef, ngl)
+
+    n_fallback = 0
+    @inbounds for ipt in 1:n_alya
+        px = cpg.alya_local_coords[ipt, 1]
+        py = cpg.alya_local_coords[ipt, 2]
+        found = false
+        cands = _bin_candidates(bins, px, py, bboxes)
+        for e in cands
+            bb = bboxes[e]
+            (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
+             py < bb[3]-1e-10 || py > bb[4]+1e-10) && continue
+            x_e = @view cpg.elem_x[e, :]
+            y_e = @view cpg.elem_y[e, :]
+            ξr, ηr, conv = physical_to_reference(px, py, x_e, y_e,
+                                                  ξ_nodes, ω, ngl,
+                                                  ψξ_s, ψη_s, dψξ_s, dψη_s, α_s)
+            (conv && abs(ξr) <= 1.0+1e-10 && abs(ηr) <= 1.0+1e-10) || continue
+            host_elem[ipt] = e
+            ξ_ref[ipt]     = ξr
+            η_ref[ipt]     = ηr
+            found = true; break
+        end
+        if !found
+            host_elem[ipt] = -1
+            ξ_ref[ipt]     = 0.0
+            η_ref[ipt]     = 0.0
+            n_fallback += 1
+        end
+    end
+    cpg.alya_host_elem = host_elem
+    cpg.alya_ξ_ref     = ξ_ref
+    cpg.alya_η_ref     = η_ref
+    if n_fallback > 0
+        @warn "precompute_alya_interpolation_data!: $n_fallback Alya points have no host element; nearest-node fallback will be used."
+    end
+end
+
+# ===========================================================================
+# HOT-PATH interpolation — zero allocation per call.
+# Uses host element + reference coords cached at setup; just evaluates
+# the Lagrange basis and accumulates the dot product over ngl² nodes.
+# ===========================================================================
+
+function interpolate_to_alya_precomputed!(u_interp::Matrix{Float64},
+                                          u_mat::AbstractMatrix,
+                                          cpg::CouplingData, mesh, neqs::Int)
+    n_alya  = size(u_interp, 1)
+    ngl     = mesh.ngl
+    ξ_nodes = cpg.ξ_nodes_ref
+    ω       = cpg.ω_bary
+    ψξ      = cpg.ψξ_scratch    # pre-allocated, reused
+    ψη      = cpg.ψη_scratch
+
+    @inbounds for ipt in 1:n_alya
+        e = cpg.alya_host_elem[ipt]
+        if e == -1
+            # Nearest-node fallback (allocation-free scalar loop)
+            px     = cpg.alya_local_coords[ipt, 1]
+            py     = cpg.alya_local_coords[ipt, 2]
+            near   = 1
+            min_d2 = (mesh.x[1] - px)^2 + (mesh.y[1] - py)^2
+            for ip in 2:mesh.npoin
+                d2 = (mesh.x[ip] - px)^2 + (mesh.y[ip] - py)^2
+                if d2 < min_d2; min_d2 = d2; near = ip; end
+            end
+            for q in 1:neqs; u_interp[ipt, q] = u_mat[near, q]; end
+        else
+            evaluate_lagrange_1d!(ψξ, cpg.alya_ξ_ref[ipt], ξ_nodes, ω)
+            evaluate_lagrange_1d!(ψη, cpg.alya_η_ref[ipt], ξ_nodes, ω)
+            for q in 1:neqs
+                val = 0.0
+                idx = 1
+                for j in 1:ngl, i in 1:ngl
+                    val += ψξ[i] * ψη[j] * u_mat[cpg.elem_conn[e, idx], q]
+                    idx += 1
+                end
+                u_interp[ipt, q] = val
+            end
+        end
+    end
 end
 
 # ===========================================================================
@@ -1177,25 +1293,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
 
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
-    print(GREEN_FG(string(" INTERPOLATE ............................")))
-                        @time interpolate_solution_to_alya_coords(
-                            cpg.alya_local_coords, mesh, qout, basis, ξ, neqs, inputs;
-                            use_bins         = true,
-                            bins_per_dim     = 64,
-                            precomp_bboxes   = cpg.elem_bboxes,
-                            precomp_bins     = cpg.interp_bins,
-                            precomp_elem_x   = cpg.elem_x,
-                            precomp_elem_y   = cpg.elem_y,
-                            precomp_elem_conn= cpg.elem_conn,
-                            precomp_ξ_nodes  = cpg.ξ_nodes_ref,
-                            precomp_ω        = cpg.ω_bary,
-                            u_interp_buf     = u_interp,
-                            ψξ_buf           = cpg.ψξ_scratch,
-                            ψη_buf           = cpg.ψη_scratch,
-                            dψξ_buf          = cpg.dψξ_scratch,
-                            dψη_buf          = cpg.dψη_scratch,
-                            α_buf            = cpg.α_scratch)
-    print(GREEN_FG(string(" INTERPOLATE ............................ EDONE")))
+    interpolate_to_alya_precomputed!(u_interp, qout, cpg, mesh, neqs)
     pack_interpolated_data!(cpg, u_interp, cpg.alya_owner_ranks, cpg.alya_local_coords)
     coupling_exchange_data!(cpg)
     unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
