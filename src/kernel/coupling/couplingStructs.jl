@@ -562,11 +562,14 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         rem_dx[d] = rem_nx[d] > 1 ? (rem_max[d] - rem_min[d]) / (rem_nx[d] - 1) : 0.0
     end
 
-    # Total points, Alya rank distribution
+    # Total points, Alya rank distribution.
+    # Alya local rank 0 (master) never owns points; distribute over the
+    # nranks_alya-1 worker ranks (local ranks 1..nranks_alya-1).
     nmax = rem_nx[1] * rem_nx[2] * rem_nx[3]
     nranks_alya = length(alya2world)
-    r     = mod(nmax, nranks_alya)
-    npoin = div(nmax, nranks_alya)
+    nworkers_alya = max(1, nranks_alya - 1)
+    r_w   = mod(nmax, nworkers_alya)
+    np_w  = div(nmax, nworkers_alya)
 
     # Local Jexpresso bounds
     xmin_local = minimum(mesh.x); xmax_local = maximum(mesh.x)
@@ -606,13 +609,16 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         end
     end
 
-    # Compute Alya rank (1-based) that owns ipoin (1-based)
+    # Compute Alya local rank (1-based Julia index into alya2world) that owns
+    # ipoin (1-based).  Alya local rank 0 (master, alya2world[1]=0) never
+    # owns points; distribute over workers at local ranks 2..nranks_alya.
     @inline function owner_alya_rank(ipoin::Int)
-        if ipoin <= r * (npoin + 1)
-            return div(ipoin - 1, npoin + 1) + 1
+        iworker = if ipoin <= r_w * (np_w + 1)
+            div(ipoin - 1, np_w + 1)       # 0-based worker index
         else
-            return r + div(ipoin - r * (npoin + 1) - 1, npoin) + 1
+            r_w + div(ipoin - r_w * (np_w + 1) - 1, np_w)
         end
+        return iworker + 2   # 1-based Julia index: skip master at index 1
     end
 
     # --- Exact cropping in index space (optional but very effective) ---

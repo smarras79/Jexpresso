@@ -57,6 +57,7 @@ program unitt_alya_with_another_code
 
   integer                            :: nmax, r_rem, npoin_per_rank
   integer                            :: i_start, i_end, npoin_local
+  integer                            :: nworkers, iworker
   integer                            :: ipoin, ix, iy, iz
   real(kind=8)                       :: xc, yc, dx, dy, dz
 
@@ -220,20 +221,30 @@ program unitt_alya_with_another_code
   end if
 
   !--------------------------------------------------------------------------
-  ! Pre-compute this rank's point range (for screen printing)
+  ! Pre-compute this rank's point range.
+  ! Rank 0 is Alya's master coordinator: it owns NO mesh points.
+  ! Points are distributed only over the nworkers = asize-1 worker ranks
+  ! (Alya local ranks 1..asize-1).
   !--------------------------------------------------------------------------
-  nmax           = rem_nx(1) * rem_nx(2) * rem_nx(3)
-  r_rem          = mod(nmax, asize)
-  npoin_per_rank = nmax / asize
+  nmax        = rem_nx(1) * rem_nx(2) * rem_nx(3)
+  nworkers    = max(1, asize - 1)
+  r_rem          = mod(nmax, nworkers)
+  npoin_per_rank = nmax / nworkers
 
-  if (arank < r_rem) then
-     i_start = arank * (npoin_per_rank + 1)
-     i_end   = i_start + npoin_per_rank
-  else
-     i_start = r_rem * (npoin_per_rank + 1) + (arank - r_rem) * npoin_per_rank
-     i_end   = i_start + npoin_per_rank - 1
+  i_start     = -1
+  i_end       = -2
+  npoin_local = 0
+  if (arank > 0) then
+     iworker = arank - 1   ! 0-based worker index
+     if (iworker < r_rem) then
+        i_start = iworker * (npoin_per_rank + 1)
+        i_end   = i_start + npoin_per_rank
+     else
+        i_start = r_rem * (npoin_per_rank + 1) + (iworker - r_rem) * npoin_per_rank
+        i_end   = i_start + npoin_per_rank - 1
+     end if
+     npoin_local = i_end - i_start + 1
   end if
-  npoin_local = i_end - i_start + 1
 
   dx = 0.0d0; dy = 0.0d0; dz = 0.0d0
   if (rem_nx(1) > 1) dx = dble(rem_max(1)-rem_min(1)) / dble(rem_nx(1)-1)
@@ -440,6 +451,7 @@ contains
     integer          :: nmax, r_rem_loc, np_base
     integer          :: i_start_r, count_r
     integer          :: irank, iunit, ierr_loc, ierr_mpi
+    integer          :: nworkers_loc, iworker_loc
     integer          :: ix, iy, iz, k, ieq
     real(8)          :: x, y, z, dx, dy, dz
     character(len=256)          :: filename
@@ -451,9 +463,11 @@ contains
     character(len=16) :: varname
 
     !--- Grid parameters ---
-    nmax     = rem_nx(1) * rem_nx(2) * rem_nx(3)
-    r_rem_loc = mod(nmax, asize)
-    np_base  = nmax / asize
+    ! Rank 0 owns no points; distribute nmax over nworkers = asize-1 worker ranks.
+    nmax          = rem_nx(1) * rem_nx(2) * rem_nx(3)
+    nworkers_loc  = max(1, asize - 1)
+    r_rem_loc     = mod(nmax, nworkers_loc)
+    np_base       = nmax / nworkers_loc
 
     dx = 0.0d0; dy = 0.0d0; dz = 0.0d0
     if (rem_nx(1) > 1) dx = dble(rem_max(1)-rem_min(1)) / dble(rem_nx(1)-1)
@@ -465,15 +479,22 @@ contains
     allocate(displs    (0:asize-1))
 
     do irank = 0, asize-1
-       if (irank < r_rem_loc) then
-          i_start_r = irank * (np_base + 1)
-          count_r   = np_base + 1
+       if (irank == 0) then
+          ! Master rank owns no points
+          sendcounts(irank) = 0
+          displs(irank)     = 0
        else
-          i_start_r = r_rem_loc * (np_base + 1) + (irank - r_rem_loc) * np_base
-          count_r   = np_base
+          iworker_loc = irank - 1   ! 0-based worker index
+          if (iworker_loc < r_rem_loc) then
+             i_start_r = iworker_loc * (np_base + 1)
+             count_r   = np_base + 1
+          else
+             i_start_r = r_rem_loc * (np_base + 1) + (iworker_loc - r_rem_loc) * np_base
+             count_r   = np_base
+          end if
+          sendcounts(irank) = count_r * neqs
+          displs(irank)     = i_start_r * neqs
        end if
-       sendcounts(irank) = count_r * neqs
-       displs(irank)     = i_start_r * neqs
     end do
 
     !--- This rank's local send count ---
