@@ -519,7 +519,8 @@ end
 
 function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_comm;
                                         block_size::NTuple{3,Int}=(64,64,64),
-                                        use_cropping::Bool=true)
+                                        use_cropping::Bool=true,
+                                        ξ_nodes::Union{Nothing,Vector{Float64}}=nothing)
     ndime      = coupling_data[:ndime]
     rem_min_f  = coupling_data[:rem_min]
     rem_max_f  = coupling_data[:rem_max]
@@ -552,6 +553,60 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
 
     lrank = MPI.Comm_rank(local_comm)
     wrank = MPI.Comm_rank(world_comm)
+
+    # -----------------------------------------------------------------------
+    # Element-level containment (2D only): build per-rank element geometry so
+    # we can test whether each Alya point actually lies inside a local element
+    # via Newton iteration rather than using the coarse mesh bounding box.
+    # -----------------------------------------------------------------------
+    use_elem_containment = (ξ_nodes !== nothing && ndime == 2)
+    if use_elem_containment
+        ω_bary       = barycentric_weights(ξ_nodes)
+        nelem_loc    = _num_elems(mesh)
+        ngl_loc      = mesh.ngl
+        ngl2_loc     = ngl_loc * ngl_loc
+        gc_loc       = _make_conn_accessor(mesh)
+
+        local_elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem_loc)
+        @inbounds for e in 1:nelem_loc
+            ns = gc_loc(e)
+            local_elem_bboxes[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
+                                    minimum(mesh.y[ns]), maximum(mesh.y[ns]))
+        end
+        local_elem_bins = _build_elem_bins(local_elem_bboxes; bins_per_dim=64)
+
+        local_ex = Matrix{Float64}(undef, nelem_loc, ngl2_loc)
+        local_ey = Matrix{Float64}(undef, nelem_loc, ngl2_loc)
+        @inbounds for e in 1:nelem_loc
+            ns = gc_loc(e)
+            for k in 1:ngl2_loc
+                local_ex[e, k] = mesh.x[ns[k]]
+                local_ey[e, k] = mesh.y[ns[k]]
+            end
+        end
+
+        ψξ_s  = Vector{Float64}(undef, ngl_loc)
+        ψη_s  = Vector{Float64}(undef, ngl_loc)
+        dψξ_s = Vector{Float64}(undef, ngl_loc)
+        dψη_s = Vector{Float64}(undef, ngl_loc)
+        α_s   = Vector{Float64}(undef, ngl_loc)
+
+        @inline function in_any_local_elem(px::Float64, py::Float64)
+            cands = _bin_candidates(local_elem_bins, px, py, local_elem_bboxes)
+            for e in cands
+                bb = local_elem_bboxes[e]
+                (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
+                 py < bb[3]-1e-10 || py > bb[4]+1e-10) && continue
+                x_e = @view local_ex[e, :]
+                y_e = @view local_ey[e, :]
+                ξr, ηr, conv = physical_to_reference(px, py, x_e, y_e,
+                                                      ξ_nodes, ω_bary, ngl_loc,
+                                                      ψξ_s, ψη_s, dψξ_s, dψη_s, α_s)
+                (conv && abs(ξr) <= 1.0+1e-10 && abs(ηr) <= 1.0+1e-10) && return true
+            end
+            return false
+        end
+    end
 
     @inline idx_to_xyz(i1,i2,i3) = (rem_min[1]+i1*rem_dx[1],
                                     rem_min[2]+i2*rem_dx[2],
@@ -631,7 +686,8 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
                 i1e = min(i1s+Bx-1, i1_hi)
                 bxmn,bxmx,bymn,bymx,bzmn,bzmx = bin_bbox(i1s,i1e,i2s,i2e,i3s,i3e)
                 outside_local(bxmn,bxmx,bymn,bymx,bzmn,bzmx) && continue
-                if inside_box(bxmn,bxmx,bymn,bymx,bzmn,bzmx)
+                if !use_elem_containment && inside_box(bxmn,bxmx,bymn,bymx,bzmn,bzmx)
+                    # Fast path (bounding-box mode only): entire block inside local bbox
                     @inbounds for i3 in i3s:i3e, i2 in i2s:i2e, i1 in i1s:i1e
                         x,y,z = idx_to_xyz(i1,i2,i3)
                         ipoin = idx_to_ipoin(i1,i2,i3)
@@ -642,12 +698,17 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
                 else
                     @inbounds for i3 in i3s:i3e, i2 in i2s:i2e, i1 in i1s:i1e
                         x,y,z = idx_to_xyz(i1,i2,i3)
-                        if inside_local(x,y,z)
-                            ipoin = idx_to_ipoin(i1,i2,i3)
-                            aw = alya2world[owner_alya_rank(ipoin)]
-                            push!(X,x); push!(Y,y); ndime==3 && push!(Z,z)
-                            push!(ids, Int32(ipoin)); push!(owners, Int32(aw))
-                        end
+                        # Element-containment path: only claim points that actually
+                        # lie inside a local SEM element (not just the bbox).
+                        # Fall back to simple bbox check for 3D or when ξ_nodes
+                        # was not supplied.
+                        accept = use_elem_containment ? in_any_local_elem(x, y) :
+                                                        inside_local(x,y,z)
+                        accept || continue
+                        ipoin = idx_to_ipoin(i1,i2,i3)
+                        aw = alya2world[owner_alya_rank(ipoin)]
+                        push!(X,x); push!(Y,y); ndime==3 && push!(Z,z)
+                        push!(ids, Int32(ipoin)); push!(owners, Int32(aw))
                     end
                 end
             end
@@ -867,7 +928,8 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
 
     alya_local_coords, alya_local_ids, alya_owner_ranks =
         extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
-                                       block_size=(64,64,64), use_cropping=true)
+                                       block_size=(64,64,64), use_cropping=true,
+                                       ξ_nodes=Vector{Float64}(sem.ξ))
 
     wsize = MPI.Comm_size(world)
     npoin_recv = zeros(Int32, wsize)
