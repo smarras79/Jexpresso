@@ -655,6 +655,33 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     end
 
     n_local = length(ids)
+
+    # ------------------------------------------------------------------
+    # Deduplication: when multiple Julia ranks' bounding boxes overlap,
+    # both claim the same Alya point.  Use Allreduce(MAX) over the
+    # Julia-local communicator so each global Alya point ID is owned by
+    # exactly one Julia rank (the highest-numbered one wins, consistent
+    # with build_alya_point_ownership_map).
+    # ------------------------------------------------------------------
+    if n_local > 0
+        local_claim = fill(Int32(-1), nmax)
+        @inbounds for i in 1:n_local
+            local_claim[Int(ids[i])] = Int32(lrank)
+        end
+        global_claim = MPI.Allreduce(local_claim, MPI.MAX, local_comm)
+        keep = [global_claim[Int(ids[i])] == Int32(lrank) for i in 1:n_local]
+        if !all(keep)
+            X      = X[keep]
+            Y      = Y[keep]
+            ndime == 3 && (Z = Z[keep])
+            ids    = ids[keep]
+            owners = owners[keep]
+            n_local = length(ids)
+            println("[extract_local_alya_coordinates] (lrank=$lrank) after dedup: $n_local points kept.")
+            flush(stdout)
+        end
+    end
+
     alya_local_coords = zeros(Float64, n_local, ndime)
     if ndime == 2
         @inbounds for i in 1:n_local
