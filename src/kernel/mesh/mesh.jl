@@ -273,7 +273,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
-            function set_id_refined(flags, indices, target_id)
+            function set_id_refined(flags, indices, target_gid)
                 l2g = local_to_global(indices)
                 local_id = findfirst(==(target_gid), l2g)
                 # # local_ids = (2:2:200)
@@ -285,8 +285,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             ref_coarse_flags = map(parts, partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank, indices
                 flags = zeros(Cint, length(indices))
                 flags .= nothing_flag
-                # set_id_refined(flags, indices, 183)
-                # set_id_refined(flags, indices, 185)
+                # set_id_refined(flags, indices, 157)
+                # set_id_refined(flags, indices, 158)
                 # set_id_refined(flags, indices, 187)
                 # set_id_refined(flags, indices, 193)
                 # set_id_refined(flags, indices, 195)
@@ -3848,8 +3848,8 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     for ie = 1:mesh.nelem
          compute_element_size!(SD, ie, mesh::St_mesh, T)
     end
-    mesh.Δelem_s      = minimum(mesh.Δelem)    
-    mesh.Δelem_l      = maximum(mesh.Δelem)
+    mesh.Δelem_s      = MPI.Allreduce(minimum(mesh.Δelem), MPI.MIN, comm) 
+    mesh.Δelem_l      = MPI.Allreduce(maximum(mesh.Δelem), MPI.MAX, comm)
     mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
     mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
 

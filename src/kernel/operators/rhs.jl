@@ -589,19 +589,19 @@ function _build_rhs!(RHS, u, params, time)
 
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    if inputs[:ladapt] == true
-        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
-                          params.g_dss_cache,
-                          params.mesh.SD,
-                          params.QT, params.mesh.connijk,
-                          params.mesh, params.Minv,
-                          params.metrics.Je, params.ω, params.AD,
-                          params.neqs,
-                          params.q_el, params.q_el_pro,
-                          params.cache_ghost_p, params.q_ghost_p,
-                          params.cache_ghost_c, params.q_ghost_c,
-                          params.interp)
-    end
+    # if inputs[:ladapt] == true
+    #     conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
+    #                       params.g_dss_cache,
+    #                       params.mesh.SD,
+    #                       params.QT, params.mesh.connijk,
+    #                       params.mesh, params.Minv,
+    #                       params.metrics.Je, params.ω, params.AD,
+    #                       params.neqs,
+    #                       params.q_el, params.q_el_pro,
+    #                       params.cache_ghost_p, params.q_ghost_p,
+    #                       params.cache_ghost_c, params.q_ghost_c,
+    #                       params.interp)
+    # end
     
     resetbdyfluxToZero!(params)
     apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
