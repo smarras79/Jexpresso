@@ -1110,6 +1110,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
 
+<<<<<<< HEAD
     interpolate_solution_to_alya_coords(
         cpg.alya_local_coords, mesh, qout, basis, ξ, neqs, inputs;
         use_bins         = true,
@@ -1128,6 +1129,14 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
         dψη_buf          = cpg.dψη_scratch,
         α_buf            = cpg.α_scratch)
 
+=======
+    println(GREEN_FG(string(" # INTERPOLATE .....................")
+    u_interp = @time interpolate_solution_to_alya_coords(
+        cpg.alya_local_coords, mesh, qout, basis, ξ, neqs, inputs;
+        use_bins=true, bins_per_dim=64,
+        precomp_bboxes=cpg.elem_bboxes, precomp_bins=cpg.interp_bins)
+                     println(GREEN_FG(string(" # INTERPOLATE ..................... DONE")
+>>>>>>> e711e4ad (@time interpolate)
     pack_interpolated_data!(cpg, u_interp, cpg.alya_owner_ranks, cpg.alya_local_coords)
     coupling_exchange_data!(cpg)
     unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
