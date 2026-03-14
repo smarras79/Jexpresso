@@ -382,7 +382,7 @@ end
 
 # Map physical (px, py) → reference (ξ, η) via Newton iteration.
 # ψξ, ψη, dψξ, dψη, α are pre-allocated scratch vectors of length ngl.
-function physical_to_reference(px::Float64, py::Float64,
+@inline function physical_to_reference(px::Float64, py::Float64,
                                 x_elem::AbstractVector, y_elem::AbstractVector,
                                 ξ_nodes::Vector{Float64}, ω::Vector{Float64}, ngl::Int,
                                 ψξ::Vector{Float64}, ψη::Vector{Float64},
@@ -518,11 +518,10 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
             evaluate_lagrange_1d!(ψη, ηr, ξ_nodes, ω)
 
             if have_precomp
-                ns_e = @view _conn[e, :]
                 for q in 1:neqs
                     val = 0.0; idx = 1
                     for j in 1:ngl, i in 1:ngl
-                        val += ψξ[i]*ψη[j]*u_mat[ns_e[idx], q]; idx += 1
+                        val += ψξ[i]*ψη[j]*u_mat[_conn[e, idx], q]; idx += 1
                     end
                     u_interp[ipt,q] = val
                 end
