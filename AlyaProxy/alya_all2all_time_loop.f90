@@ -215,12 +215,16 @@ program unitt_alya_with_another_code
      end if
   end do
 
-  if (rank == 0) then
-     write(*,'(A,I0)') &
-          '[node_list] Total Jexpresso SEM nodes received by this Alya rank: ', &
-          je_total_nodes
-     flush(6)
+  write(*,'(A,I0,A,I0)') &
+       '[node_list] Total Jexpresso SEM nodes received by Alya world_rank=', rank, &
+       ': ', je_total_nodes
+  if (je_total_nodes > 0) then
+     write(*,'(A)') '[node_list]   ID list:'
+     do i = 1, je_total_nodes
+        write(*,'(A,I0,A,I0)') '    [', i, '] gid = ', je_gids_all(i)
+     end do
   end if
+  flush(6)
 
   !--------------------------------------------------------------------------
   ! Pre-compute this rank's point range.
