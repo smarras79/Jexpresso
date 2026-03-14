@@ -368,21 +368,6 @@ program unitt_alya_with_another_code
      end if
 
      !------------------------------------------------------------------------
-     ! REORDER: scatter recvbuf_all → ordered_buf using je_gids_all
-     ! je_gids_all(jpt) is the 1-based global Alya point ID for the jpt-th
-     ! received value.  local_pos = gid - 1 - i_start gives its 0-based
-     ! position within this rank's [i_start..i_end] range.
-     !------------------------------------------------------------------------
-     ordered_buf = 0.0d0
-     do jpt = 1, total_pts
-        local_pos = int(je_gids_all(jpt)) - 1 - i_start
-        if (local_pos >= 0 .and. local_pos < npoin_local) then
-           ordered_buf(local_pos * neqs + 1 : (local_pos + 1) * neqs) = &
-                recvbuf_all((jpt - 1) * neqs + 1 : jpt * neqs)
-        end if
-     end do
-
-     !------------------------------------------------------------------------
      ! PRINT: received interpolated data at coordinates
      !------------------------------------------------------------------------
 !!$     
@@ -412,6 +397,22 @@ program unitt_alya_with_another_code
      !   - rank 0 writes a single .vts file per timestep
      !------------------------------------------------------------------------
      if (write_now) then
+        !------------------------------------------------------------------------
+        ! REORDER: scatter recvbuf_all → ordered_buf using je_gids_all.
+        ! Done only when writing output, not at every timestep.
+        ! je_gids_all(jpt) is the 1-based global Alya point ID for the jpt-th
+        ! received value.  local_pos = gid - 1 - i_start gives its 0-based
+        ! position within this rank's [i_start..i_end] range.
+        !------------------------------------------------------------------------
+        ordered_buf = 0.0d0
+        do jpt = 1, total_pts
+           local_pos = int(je_gids_all(jpt)) - 1 - i_start
+           if (local_pos >= 0 .and. local_pos < npoin_local) then
+              ordered_buf(local_pos * neqs + 1 : (local_pos + 1) * neqs) = &
+                   recvbuf_all((jpt - 1) * neqs + 1 : jpt * neqs)
+           end if
+        end do
+
         call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
              rem_min, rem_max, rem_nx, &
              ordered_buf, npoin_local, neqs, step, itime, t_plus)

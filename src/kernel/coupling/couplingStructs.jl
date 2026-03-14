@@ -54,12 +54,17 @@ mutable struct CouplingData
     alya_local_ids::Union{Nothing, Vector{Int32}}
     alya_owner_ranks::Union{Nothing, Vector{Int32}}
 
+    # Precomputed interpolation data (mesh geometry never changes)
+    elem_bboxes::Union{Nothing, Vector{NTuple{4,Float64}}}
+    interp_bins::Union{Nothing, Dict{Symbol,Any}}
+
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
                           comm_world, lrank, neqs, ndime)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
             comm_world, lrank, neqs, ndime,
             nothing, nothing, nothing,
-            nothing, nothing, nothing)
+            nothing, nothing, nothing,
+            nothing, nothing)
     end
 end
 
@@ -314,10 +319,13 @@ function physical_to_reference(px::Float64, py::Float64,
     return ξ, η, false
 end
 
-# Interpolate SEM solution to arbitrary coordinates
+# Interpolate SEM solution to arbitrary coordinates.
+# Pass precomp_bboxes and precomp_bins (precomputed once at setup) to avoid
+# rebuilding them on every timestep call.
 function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
                                              u_mat::AbstractMatrix, basis, ξ, neqs, inputs;
-                                             use_bins::Bool=true, bins_per_dim::Int=64)
+                                             use_bins::Bool=true, bins_per_dim::Int=64,
+                                             precomp_bboxes=nothing, precomp_bins=nothing)
     n_points = size(alya_coords, 1)
     u_interp = zeros(Float64, n_points, neqs)
 
@@ -327,14 +335,25 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
     ξ_nodes = Vector{Float64}(ξ)
     ω = barycentric_weights(ξ_nodes)
 
-    elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem)
-    @inbounds for e in 1:nelem
-        ns = get_conn(e)
-        elem_bboxes[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                          minimum(mesh.y[ns]), maximum(mesh.y[ns]))
+    elem_bboxes = if precomp_bboxes !== nothing
+        precomp_bboxes
+    else
+        bb = Vector{NTuple{4,Float64}}(undef, nelem)
+        @inbounds for e in 1:nelem
+            ns = get_conn(e)
+            bb[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
+                     minimum(mesh.y[ns]), maximum(mesh.y[ns]))
+        end
+        bb
     end
 
-    bins = use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing
+    bins = if precomp_bins !== nothing
+        precomp_bins
+    elseif use_bins
+        _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim)
+    else
+        nothing
+    end
 
     @inbounds for ipt in 1:n_points
         px, py = alya_coords[ipt,1], alya_coords[ipt,2]
@@ -757,6 +776,19 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     coupling.alya_local_ids    = alya_local_ids
     coupling.alya_owner_ranks  = alya_owner_ranks
 
+    # Precompute element bounding boxes and spatial bins once — mesh never changes.
+    let get_conn = _make_conn_accessor(sem.mesh),
+        nelem    = _num_elems(sem.mesh)
+        bb = Vector{NTuple{4,Float64}}(undef, nelem)
+        @inbounds for e in 1:nelem
+            ns = get_conn(e)
+            bb[e] = (minimum(sem.mesh.x[ns]), maximum(sem.mesh.x[ns]),
+                     minimum(sem.mesh.y[ns]), maximum(sem.mesh.y[ns]))
+        end
+        coupling.elem_bboxes = bb
+        coupling.interp_bins = _build_elem_bins(bb; bins_per_dim=64)
+    end
+
     return coupling, sem, partitioned_model, qp
 end
 
@@ -820,7 +852,8 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
 
     u_interp = interpolate_solution_to_alya_coords(
         cpg.alya_local_coords, mesh, qout, basis, ξ, neqs, inputs;
-        use_bins=true, bins_per_dim=64)
+        use_bins=true, bins_per_dim=64,
+        precomp_bboxes=cpg.elem_bboxes, precomp_bins=cpg.interp_bins)
 
     pack_interpolated_data!(cpg, u_interp, cpg.alya_owner_ranks, cpg.alya_local_coords)
     coupling_exchange_data!(cpg)
