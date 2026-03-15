@@ -275,17 +275,21 @@ function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::
             push!(bin_lists[iy*nx + ix + 1], e)
         end
     end
+    # Pre-fill empty bins with the fallback (all elements) so _bin_candidates
+    # always returns Vector{Int} — eliminates the union return type and the
+    # isempty branch, keeping the hot path type-stable and allocation-free.
+    fallback = collect(1:ne)
+    for i in eachindex(bin_lists)
+        isempty(bin_lists[i]) && (bin_lists[i] = fallback)
+    end
     return ElemBins(xmin, xmax, ymin, ymax, nx, ny, dx, dy, bin_lists)
 end
 
-# Returns existing bin vector (no allocation) or full range as fallback.
-# All field accesses are type-stable because bins::ElemBins is concrete.
-@inline function _bin_candidates(bins::ElemBins, x::Float64, y::Float64,
-                                  elem_bboxes::Vector{NTuple{4,Float64}})
+# Single array lookup — always returns Vector{Int}, fully type-stable.
+@inline function _bin_candidates(bins::ElemBins, x::Float64, y::Float64)
     ix = clamp(Int(floor((x - bins.xmin) / bins.dx)), 0, bins.nx - 1)
     iy = clamp(Int(floor((y - bins.ymin) / bins.dy)), 0, bins.ny - 1)
-    cand = bins.bins[iy * bins.nx + ix + 1]
-    return isempty(cand) ? (1:length(elem_bboxes)) : cand
+    return bins.bins[iy * bins.nx + ix + 1]
 end
 
 # 1D Lagrange basis at ξ using barycentric formula
@@ -484,7 +488,7 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
 
     @inbounds for ipt in 1:n_points
         px, py = alya_coords[ipt,1], alya_coords[ipt,2]
-        candidates = bins !== nothing ? _bin_candidates(bins, px, py, elem_bboxes) : (1:nelem)
+        candidates = bins !== nothing ? _bin_candidates(bins, px, py) : (1:nelem)
         found = false
         for e in candidates
             bb = elem_bboxes[e]
@@ -620,7 +624,7 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         α_s   = Vector{Float64}(undef, ngl_loc)
 
         @inline function in_any_local_elem(px::Float64, py::Float64)
-            cands = _bin_candidates(local_elem_bins, px, py, local_elem_bboxes)
+            cands = _bin_candidates(local_elem_bins, px, py)
             for e in cands
                 bb = local_elem_bboxes[e]
                 (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
@@ -1158,7 +1162,7 @@ function precompute_alya_interpolation_data!(cpg::CouplingData, mesh)
         px = cpg.alya_local_coords[ipt, 1]
         py = cpg.alya_local_coords[ipt, 2]
         found = false
-        cands = _bin_candidates(bins, px, py, bboxes)
+        cands = _bin_candidates(bins, px, py)
         for e in cands
             bb = bboxes[e]
             (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
