@@ -79,7 +79,7 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
-    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])   
+    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
     if length(args) > 3
         interp  = args[4]
         project = args[5]
@@ -110,6 +110,7 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
         ξωq = ξω
         ξq  = ξ
         ω   = ξω.ω
+        ωb  = barycentric_weights(ξ)
     end
     SD = mesh.SD
     
@@ -293,10 +294,10 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ω, ξ, matrix, fx, fy, fy_lag, fz, phys_grid, 
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ωb, ω, ξ, matrix, fx, fy, fy_lag, fz, phys_grid, 
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
-        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ω, ξ, matrix, fx, fy, fy_lag, fz, phys_grid, 
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ωb, ω, ξ, matrix, fx, fy, fy_lag, fz, phys_grid, 
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     @info " SEM _SETUP COMPLETE!!!"

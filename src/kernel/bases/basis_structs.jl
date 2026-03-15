@@ -875,3 +875,20 @@ function scaled_laguerre(x,n,beta,backend)
     y = exp(-(beta*x)/2)*Lkx#exp(-x)*Lkx
     return y
 end
+
+
+
+# Barycentric weights:  w_j = 1 / ∏_{k≠j} (x_j - x_k)
+function barycentric_weights(nodes::AbstractVector{<:Real})
+    n = length(nodes)
+    w = ones(Float64, n)
+    for j in 1:n
+        xj = nodes[j]
+        denom = 1.0
+        @inbounds for k in 1:n
+            k != j && (denom *= (xj - nodes[k]))
+        end
+        w[j] = 1.0 / denom
+    end
+    return w
+end

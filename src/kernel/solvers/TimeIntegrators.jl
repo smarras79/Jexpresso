@@ -1,3 +1,13 @@
+function _make_conn_accessor(mesh)
+    connijk = getfield(mesh, :connijk)
+    nsd = mesh.nsd
+    if nsd <= 2
+        return e -> vec(@view connijk[e, :, :, 1])
+    else
+        return e -> vec(@view connijk[e, :, :, :])
+    end
+end
+
 function time_loop!(inputs, params, u, args...)
     
     comm = get_mpi_comm()
@@ -137,12 +147,30 @@ function time_loop!(inputs, params, u, args...)
         
         basis = hasproperty(params, :basis) ? params.basis : params.SD.basis
         ξ     = params.ξ
+        ωb    = params.ωb
         neqs  = params.neqs
         mesh  = params.mesh
+        nelem = mesh.nelem
+       
+        elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem)
+
+        
+        # Build element bounding boxes
+        get_conn = _make_conn_accessor(mesh)
+        @inbounds for e in 1:nelem
+            nodes = get_conn(e)
+            xs = mesh.coords[nodes,1]
+            ys = mesh.coords[nodes,2]
+            elem_bboxes[e] = (minimum(xs), maximum(xs), minimum(ys), maximum(ys))
+        end
+        use_bins = true
+        bins_per_dim = 64
+        bins = use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing
         
         function do_coupling_exchange!(integrator)
+            
             je_perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
-                                         cpg, mesh, basis, inputs, ξ, neqs)
+                                         cpg, mesh, basis, inputs, ξ, ωb, neqs, elem_bboxes, bins)
         end
         
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)

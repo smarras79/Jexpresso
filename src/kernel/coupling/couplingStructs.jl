@@ -268,17 +268,22 @@ function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::
             push!(bin_lists[iy*nx + ix + 1], e)
         end
     end
+    # Pre-fill empty bins with the fallback (all elements) so _bin_candidates
+    # always returns Vector{Int} — eliminates the union return type and the
+    # isempty branch, keeping the hot path type-stable and allocation-free.
+    fallback = collect(1:ne)
+    for i in eachindex(bin_lists)
+        isempty(bin_lists[i]) && (bin_lists[i] = fallback)
+    end
     return ElemBins(xmin, xmax, ymin, ymax, nx, ny, dx, dy, bin_lists)
 end
 
 # Returns existing bin vector (no allocation) or full range as fallback.
 # All field accesses are type-stable because bins::ElemBins is concrete.
-@inline function _bin_candidates(bins::ElemBins, x::Float64, y::Float64,
-                                  elem_bboxes::Vector{NTuple{4,Float64}})
+@inline function _bin_candidates(bins::ElemBins, x::Float64, y::Float64)
     ix = clamp(Int(floor((x - bins.xmin) / bins.dx)), 0, bins.nx - 1)
     iy = clamp(Int(floor((y - bins.ymin) / bins.dy)), 0, bins.ny - 1)
-    cand = bins.bins[iy * bins.nx + ix + 1]
-    return isempty(cand) ? (1:length(elem_bboxes)) : cand
+    return bins.bins[iy * bins.nx + ix + 1]
 end
 
 # 1D Lagrange basis at ξ using barycentric formula
@@ -416,11 +421,221 @@ end
     return ξ, η, false
 end
 
+####
+function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh, 
+                                             u_mat::AbstractMatrix,
+                                             basis, ξ_nodes, ω,
+                                             neqs, inputs,
+                                             elem_bboxes, bins;
+                                             use_bins::Bool=true, bins_per_dim::Int=64)
+
+    
+    n_points = size(alya_coords, 1)
+    u_interp = zeros(Float64, n_points, neqs)
+    
+    # Extract mesh info
+    get_conn = _make_conn_accessor(mesh)
+    nelem    = mesh.nelem
+    ngl      = mesh.ngl
+    
+    # Interpolate each point
+    @inbounds for ipt in 1:n_points
+        px, py = alya_coords[ipt, 1], alya_coords[ipt, 2]
+        
+        candidates = bins !== nothing ? _bin_candidates(bins, px, py) : (1:nelem)
+        
+        found = false
+        for e in candidates
+            nodes = get_conn(e)
+            x_elem = mesh.coords[nodes,1]
+            y_elem = mesh.coords[nodes,2]
+           
+            # Quick bbox check
+            if px < minimum(x_elem) - 1e-10 || px > maximum(x_elem) + 1e-10 ||
+               py < minimum(y_elem) - 1e-10 || py > maximum(y_elem) + 1e-10
+                continue
+            end
+            
+            # Map to reference coordinates
+            ξ_ref, η_ref, converged = physical_to_reference(
+                px, py, x_elem, y_elem, ξ_nodes, ω, ngl
+            )
+            
+            if !converged || abs(ξ_ref) > 1.0 + 1e-10 || abs(η_ref) > 1.0 + 1e-10
+                continue
+            end
+            
+            # Evaluate basis at (ξ_ref, η_ref)
+            ψξ = evaluate_lagrange_1d(ξ_ref, ξ_nodes, ω)
+            ψη = evaluate_lagrange_1d(η_ref, ξ_nodes, ω)
+            
+            # Interpolate solution
+            for q in 1:neqs
+                val = 0.0
+                idx = 1
+                for j in 1:ngl, i in 1:ngl
+                    val += ψξ[i] * ψη[j] * u_mat[nodes[idx], q]
+                    idx += 1
+                end
+                u_interp[ipt, q] = val
+            end
+            
+            found = true
+            break
+            
+        end
+        
+        if !found
+            # Fallback: nearest neighbor
+            distances = (mesh.x .- px).^2 .+ (mesh.y .- py).^2
+            nearest = argmin(distances)
+            for q in 1:neqs
+                u_interp[ipt, q] = u_mat[nearest, q]
+            end
+        end
+    end
+    
+    return u_interp
+
+end
+
+
+
+# Evaluate 1D Lagrange basis at arbitrary point using barycentric formula
+function evaluate_lagrange_1d(ξ::Float64, ξ_nodes::Vector{Float64}, ω::Vector{Float64})
+    n = length(ξ_nodes)
+    ψ = zeros(Float64, n)
+    
+    # Check for exact node match
+    @inbounds for i in 1:n
+        if abs(ξ - ξ_nodes[i]) < 1e-14
+            ψ[i] = 1.0
+            return ψ
+        end
+    end
+    
+    # Barycentric formula
+    sum_val = 0.0
+    @inbounds for i in 1:n
+        ψ[i] = ω[i] / (ξ - ξ_nodes[i])
+        sum_val += ψ[i]
+    end
+    
+    inv_sum = 1.0 / sum_val
+    @inbounds for i in 1:n
+        ψ[i] *= inv_sum
+    end
+    
+    return ψ
+end
+# Map physical to reference coordinates using Newton iteration
+function physical_to_reference(px::Float64, py::Float64,
+                               x_elem::AbstractVector, y_elem::AbstractVector,
+                               ξ_nodes::Vector{Float64}, ω::Vector{Float64}, ngl::Int)
+    max_iter = 20
+    tol = 1e-12
+    ξ, η = 0.0, 0.0
+    
+    for iter in 1:max_iter
+        # Evaluate basis and derivatives
+        ψξ = evaluate_lagrange_1d(ξ, ξ_nodes, ω)
+        ψη = evaluate_lagrange_1d(η, ξ_nodes, ω)
+        dψξ = evaluate_lagrange_1d_derivative(ξ, ξ_nodes, ω)
+        dψη = evaluate_lagrange_1d_derivative(η, ξ_nodes, ω)
+        
+        # Compute current position and Jacobian
+        x_curr = y_curr = dxdξ = dxdη = dydξ = dydη = 0.0
+        
+        idx = 1
+        @inbounds for j in 1:ngl, i in 1:ngl
+            ψ_val = ψξ[i] * ψη[j]
+            dξ_val = dψξ[i] * ψη[j]
+            dη_val = ψξ[i] * dψη[j]
+            
+            x_curr += ψ_val * x_elem[idx]
+            y_curr += ψ_val * y_elem[idx]
+            dxdξ += dξ_val * x_elem[idx]
+            dxdη += dη_val * x_elem[idx]
+            dydξ += dξ_val * y_elem[idx]
+            dydη += dη_val * y_elem[idx]
+            idx += 1
+        end
+        
+        # Residual
+        rx = px - x_curr
+        ry = py - y_curr
+        
+        if sqrt(rx*rx + ry*ry) < tol
+            return ξ, η, true
+        end
+        
+        # Newton update
+        det_J = dxdξ * dydη - dxdη * dydξ
+        abs(det_J) < 1e-15 && return ξ, η, false
+        
+        inv_det = 1.0 / det_J
+        ξ += inv_det * ( dydη * rx - dxdη * ry)
+        η += inv_det * (-dydξ * rx + dxdξ * ry)
+        
+        (abs(ξ) > 10.0 || abs(η) > 10.0) && return ξ, η, false
+    end
+    
+    return ξ, η, false
+end
+
+
+# Evaluate 1D Lagrange derivative using barycentric formula
+function evaluate_lagrange_1d_derivative(ξ::Float64, ξ_nodes::Vector{Float64}, 
+                                        ω::Vector{Float64})
+    n = length(ξ_nodes)
+    dψ = zeros(Float64, n)
+    
+    # Check for exact node match
+    @inbounds for j in 1:n
+        if abs(ξ - ξ_nodes[j]) < 1e-14
+            # Derivative at node j
+            for k in 1:n
+                k == j && continue
+                dψ[k] = ω[k] / (ω[j] * (ξ_nodes[j] - ξ_nodes[k]))
+            end
+            for k in 1:n
+                k == j && continue
+                dψ[j] -= 1.0 / (ξ_nodes[j] - ξ_nodes[k])
+            end
+            return dψ
+        end
+    end
+    
+    # General case
+    α = zeros(Float64, n)
+    sum_α = 0.0
+    @inbounds for i in 1:n
+        α[i] = ω[i] / (ξ - ξ_nodes[i])
+        sum_α += α[i]
+    end
+    
+    sum_dα = 0.0
+    @inbounds for i in 1:n
+        sum_dα -= α[i] / (ξ - ξ_nodes[i])
+    end
+    
+    inv_sum2 = 1.0 / (sum_α * sum_α)
+    @inbounds for i in 1:n
+        dα_i = -α[i] / (ξ - ξ_nodes[i])
+        dψ[i] = (dα_i * sum_α - α[i] * sum_dα) * inv_sum2
+    end
+    
+    return dψ
+end
+
+#####
+#####END
+
 # Interpolate SEM solution to arbitrary coordinates.
 # All heavy data (bboxes, bins, element coords, connectivity, scratch vectors, output
 # buffer) should be passed pre-allocated so this function makes zero heap allocations
 # in the steady-state time loop.
-function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
+function interpolate_solution_to_alya_coords_old(alya_coords::Matrix{Float64}, mesh,
                                              u_mat::AbstractMatrix, basis, ξ, neqs, inputs;
                                              use_bins::Bool=true, bins_per_dim::Int=64,
                                              precomp_bboxes=nothing,
@@ -628,7 +843,7 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         α_s   = Vector{Float64}(undef, ngl_loc)
 
         @inline function in_any_local_elem(px::Float64, py::Float64)
-            cands = _bin_candidates(local_elem_bins, px, py, local_elem_bboxes)
+            cands = _bin_candidates(local_elem_bins, px, py)
             for e in cands
                 bb = local_elem_bboxes[e]
                 (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
@@ -1183,7 +1398,8 @@ function unpack_received_data!(cpg::CouplingData, u::AbstractVector, mesh,
 end
 
 function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
-                                      mesh, basis, inputs, ξ, neqs)
+                                      mesh, basis, inputs, ξ, ωb, neqs, elem_bboxes, bins)
+    
     npoin = mesh.npoin
 
     # Reuse pre-allocated output buffers — no per-step allocation
@@ -1192,7 +1408,31 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
 
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
-    print(GREEN_FG(string(" INTERPOLATE ............................")))
+
+    
+    # 2. Interpolate to local Alya coordinates
+    u_interp_local = @time interpolate_solution_to_alya_coords(
+        cpg.alya_local_coords, mesh, qout, basis, 
+        ξ, ωb, neqs, inputs, elem_bboxes, bins;
+        use_bins=true, bins_per_dim=64
+    )
+
+    pack_interpolated_data!(cpg, u_interp, cpg.alya_owner_ranks, cpg.alya_local_coords)
+    coupling_exchange_data!(cpg)
+    unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
+    
+    # 3. Pack interpolated data AND coordinates into send buffers
+    #= pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks, cpg.alya_local_coords)
+
+    # 4. Exchange data with Alya
+    coupling_exchange_data!(cpg)
+
+    # 5. Unpack and apply received data from Alya
+    unpack_received_data!(cpg, u, mesh,
+                          cpg.alya_local_coords, cpg.alya_local_ids)
+
+    =#
+    #=print(GREEN_FG(string(" INTERPOLATE ............................")))
                         @time interpolate_solution_to_alya_coords(
                             cpg.alya_local_coords, mesh, qout, basis, ξ, neqs, inputs;
                             use_bins         = true,
@@ -1213,7 +1453,10 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
     print(GREEN_FG(string(" INTERPOLATE ............................ EDONE")))
     pack_interpolated_data!(cpg, u_interp, cpg.alya_owner_ranks, cpg.alya_local_coords)
     coupling_exchange_data!(cpg)
-    unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
+    unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)=#
+
+    
+    
 end
 
 # ===========================================================================
