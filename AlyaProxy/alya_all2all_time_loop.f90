@@ -203,7 +203,7 @@ program unitt_alya_with_another_code
   do i = asize, size-1
      if (npoin_recv(i) > 0) then
         call MPI_Recv(je_gids_all(je_gid_offset + 1), npoin_recv(i), &
-                      MPI_INTEGER8, i, 0, &
+                      MPI_INTEGER4, i, 0, &
                       MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
         write(*,'(A,I0,A,I0,A,I0,A)') &
              '[node_list] Alya world_rank=', rank, &
