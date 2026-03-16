@@ -1839,9 +1839,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
         restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
         restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
-        restructure_el2gel_for_periodicity_3D!(mesh, norx, "periodicx")
-        restructure_el2gel_for_periodicity_3D!(mesh, nory, "periodicy")
-        restructure_el2gel_for_periodicity_3D!(mesh, norz, "periodicz")
+        # restructure_el2gel_for_periodicity_3D!(mesh, norx, "periodicx")
+        # restructure_el2gel_for_periodicity_3D!(mesh, nory, "periodicy")
+        # restructure_el2gel_for_periodicity_3D!(mesh, norz, "periodicz")
         mesh.gel2owner = find_gip_owner(mesh.el2gel)
         mesh.sib2owner = find_gip_owner(mesh.el2sib)
 
