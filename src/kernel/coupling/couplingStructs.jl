@@ -1401,6 +1401,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       mesh, basis, inputs, ξ, ωb, neqs, elem_bboxes, bins)
     
     npoin = mesh.npoin
+    ndime = mesh.ndime
 
     # Reuse pre-allocated output buffers — no per-step allocation
     qout     = cpg.qout
@@ -1417,7 +1418,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
         use_bins=true, bins_per_dim=64
     )
 
-    pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks, cpg.alya_local_coords)
+    pack_interpolated_data!(cpg, @view(u_interp_local[npoin+1:(ndime+1)*npoin]), cpg.alya_owner_ranks, cpg.alya_local_coords)
     coupling_exchange_data!(cpg)
     unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
 
