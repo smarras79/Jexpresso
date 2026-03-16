@@ -95,6 +95,11 @@ mutable struct CouplingData
     dψη_scratch::Union{Nothing, Vector{Float64}}
     α_scratch::Union{Nothing, Vector{Float64}}
 
+    # Scratch buffers for element physical coordinates (length ngl²).
+    # Avoids per-element fancy-indexing allocations in the interpolation hot loop.
+    x_e_scratch::Union{Nothing, Vector{Float64}}
+    y_e_scratch::Union{Nothing, Vector{Float64}}
+
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
                           comm_world, lrank, neqs, ndime)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
@@ -105,7 +110,8 @@ mutable struct CouplingData
             nothing, nothing, nothing,
             nothing, nothing,
             nothing, nothing,
-            nothing, nothing, nothing, nothing, nothing)
+            nothing, nothing, nothing, nothing, nothing,
+            nothing, nothing)
     end
 end
 
@@ -499,6 +505,97 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
 
 end
 
+# ---------------------------------------------------------------------------
+# Zero-allocation in-place interpolation — call this inside the time loop.
+#
+# All scratch storage must be pre-allocated by the caller (typically stored in
+# CouplingData and initialised once before the time loop):
+#   u_interp  — (n_points × neqs) output buffer; overwritten in place
+#   elem_conn — (nelem × ngl²) pre-built connectivity matrix (Int)
+#   ψξ, ψη, dψξ, dψη, α — length-ngl scratch vectors
+#   x_e, y_e  — length-ngl² scratch vectors for element coordinates
+#
+# Uses the in-place Lagrange helpers and the pre-scratch physical_to_reference,
+# so the steady-state time loop makes ZERO heap allocations.
+# ---------------------------------------------------------------------------
+function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
+                                              alya_coords::Matrix{Float64},
+                                              mesh,
+                                              u_mat::AbstractMatrix,
+                                              ξ_nodes::Vector{Float64},
+                                              ω::Vector{Float64},
+                                              neqs::Int,
+                                              elem_bboxes::Vector{NTuple{4,Float64}},
+                                              bins,
+                                              elem_conn::Matrix{Int},
+                                              ψξ::Vector{Float64}, ψη::Vector{Float64},
+                                              dψξ::Vector{Float64}, dψη::Vector{Float64},
+                                              α::Vector{Float64},
+                                              x_e::Vector{Float64}, y_e::Vector{Float64})
+    n_points = size(alya_coords, 1)
+    ngl      = mesh.ngl
+    ngl2     = ngl * ngl
+    nelem    = mesh.nelem
+
+    @inbounds for ipt in 1:n_points
+        px, py = alya_coords[ipt, 1], alya_coords[ipt, 2]
+
+        candidates = bins !== nothing ? _bin_candidates(bins, px, py) : (1:nelem)
+
+        found = false
+        for e in candidates
+            # Quick bbox check (no allocation — pre-built tuple)
+            bb = elem_bboxes[e]
+            (px < bb[1] - 1e-10 || px > bb[2] + 1e-10 ||
+             py < bb[3] - 1e-10 || py > bb[4] + 1e-10) && continue
+
+            # Copy element coords into scratch via scalar indexing (no fancy-index alloc)
+            @inbounds for k in 1:ngl2
+                nd     = elem_conn[e, k]
+                x_e[k] = mesh.coords[nd, 1]
+                y_e[k] = mesh.coords[nd, 2]
+            end
+
+            # Map to reference coordinates — in-place, zero allocation
+            ξ_ref, η_ref, converged = physical_to_reference(
+                px, py, x_e, y_e, ξ_nodes, ω, ngl,
+                ψξ, ψη, dψξ, dψη, α
+            )
+            (!converged || abs(ξ_ref) > 1.0 + 1e-10 || abs(η_ref) > 1.0 + 1e-10) && continue
+
+            # Evaluate basis at converged (ξ_ref, η_ref) — in-place, no allocation
+            evaluate_lagrange_1d!(ψξ, ξ_ref, ξ_nodes, ω)
+            evaluate_lagrange_1d!(ψη, η_ref, ξ_nodes, ω)
+
+            # Interpolate solution
+            for q in 1:neqs
+                val = 0.0
+                idx = 1
+                for j in 1:ngl, i in 1:ngl
+                    val += ψξ[i] * ψη[j] * u_mat[elem_conn[e, idx], q]
+                    idx += 1
+                end
+                u_interp[ipt, q] = val
+            end
+
+            found = true
+            break
+        end
+
+        if !found
+            # Nearest-neighbour fallback — scalar loop, zero allocation
+            nearest = 1
+            min_d2  = (mesh.x[1] - px)^2 + (mesh.y[1] - py)^2
+            @inbounds for ip in 2:mesh.npoin
+                d2 = (mesh.x[ip] - px)^2 + (mesh.y[ip] - py)^2
+                if d2 < min_d2; min_d2 = d2; nearest = ip; end
+            end
+            @inbounds for q in 1:neqs; u_interp[ipt, q] = u_mat[nearest, q]; end
+        end
+    end
+
+    return u_interp
+end
 
 
 # Evaluate 1D Lagrange basis at arbitrary point using barycentric formula
@@ -1398,25 +1495,74 @@ end
 
 function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       mesh, basis, inputs, ξ, ωb, neqs, elem_bboxes, bins)
-    
-    npoin = mesh.npoin
 
-    # Reuse pre-allocated output buffers — no per-step allocation
-    qout     = cpg.qout
-    u_interp = cpg.u_interp
+    npoin = mesh.npoin
+    ngl   = mesh.ngl
+    ngl2  = ngl * ngl
+
+    # -----------------------------------------------------------------------
+    # Lazy one-time initialisation of all scratch buffers.
+    # This block executes only on the very first coupling call; every
+    # subsequent call reuses the pre-allocated storage with zero allocations.
+    # -----------------------------------------------------------------------
+    if cpg.ψξ_scratch === nothing
+        cpg.ψξ_scratch  = Vector{Float64}(undef, ngl)
+        cpg.ψη_scratch  = Vector{Float64}(undef, ngl)
+        cpg.dψξ_scratch = Vector{Float64}(undef, ngl)
+        cpg.dψη_scratch = Vector{Float64}(undef, ngl)
+        cpg.α_scratch   = Vector{Float64}(undef, ngl)
+        cpg.x_e_scratch = Vector{Float64}(undef, ngl2)
+        cpg.y_e_scratch = Vector{Float64}(undef, ngl2)
+    end
+    if cpg.ξ_nodes_ref === nothing
+        # Store as concrete Vector{Float64} so in-place helpers are type-stable
+        cpg.ξ_nodes_ref = Vector{Float64}(ξ)
+        cpg.ω_bary      = Vector{Float64}(ωb)
+    end
+    if cpg.qout === nothing
+        cpg.qout = zeros(Float64, npoin, neqs)
+    end
+    if cpg.u_interp === nothing
+        n_pts        = size(cpg.alya_local_coords, 1)
+        cpg.u_interp = zeros(Float64, n_pts, neqs)
+    end
+    if cpg.elem_conn === nothing
+        # Flatten element connectivity into a (nelem × ngl²) Int matrix so the
+        # hot loop can use scalar indexing without allocating from get_conn(e).
+        get_conn_tmp  = _make_conn_accessor(mesh)
+        nelem         = mesh.nelem
+        cpg.elem_conn = Matrix{Int}(undef, nelem, ngl2)
+        @inbounds for e in 1:nelem
+            nodes = get_conn_tmp(e)
+            @inbounds for k in 1:ngl2
+                cpg.elem_conn[e, k] = nodes[k]
+            end
+        end
+    end
+
+    qout     = cpg.qout::Matrix{Float64}
+    u_interp = cpg.u_interp::Matrix{Float64}
+    ξ_nodes  = cpg.ξ_nodes_ref::Vector{Float64}
+    ω        = cpg.ω_bary::Vector{Float64}
+    e_conn   = cpg.elem_conn::Matrix{Int}
 
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
 
-    
-    # 2. Interpolate to local Alya coordinates
-    u_interp_local = interpolate_solution_to_alya_coords(
-        cpg.alya_local_coords, mesh, qout, basis, 
-        ξ, ωb, neqs, inputs, elem_bboxes, bins;
-        use_bins=true, bins_per_dim=64
+    # Interpolate to local Alya coordinates — zero heap allocations
+    interpolate_solution_to_alya_coords!(
+        u_interp,
+        cpg.alya_local_coords, mesh, qout,
+        ξ_nodes, ω, neqs,
+        elem_bboxes, bins,
+        e_conn,
+        cpg.ψξ_scratch::Vector{Float64}, cpg.ψη_scratch::Vector{Float64},
+        cpg.dψξ_scratch::Vector{Float64}, cpg.dψη_scratch::Vector{Float64},
+        cpg.α_scratch::Vector{Float64},
+        cpg.x_e_scratch::Vector{Float64}, cpg.y_e_scratch::Vector{Float64}
     )
-    
-    pack_interpolated_data!(cpg, u_interp_local[:,2:neqs-1], cpg.alya_owner_ranks, cpg.alya_local_coords)
+
+    pack_interpolated_data!(cpg, u_interp[:,2:neqs-1], cpg.alya_owner_ranks, cpg.alya_local_coords)
     coupling_exchange_data!(cpg)
     #unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
 
