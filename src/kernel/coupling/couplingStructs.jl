@@ -190,7 +190,7 @@ end
 
 # Send the Alya grid-point IDs for each partner: only those whose owner
 # equals dest_rank, preserving the same order used for data packing.
-function je_send_node_list(alya_local_ids::Vector{Int64},
+function je_send_node_list(alya_local_ids::Vector{Int32},
                            alya_owner_ranks::Vector{Int32},
                            send_to_ranks::Vector{Int32},
                            world::MPI.Comm)
@@ -201,7 +201,7 @@ function je_send_node_list(alya_local_ids::Vector{Int64},
     send_requests = MPI.Request[]
     for dest_rank in send_to_ranks
         mask    = alya_owner_ranks .== dest_rank
-        gid_buf = Int64.(alya_local_ids[mask])
+        gid_buf = Int32.(alya_local_ids[mask])
         push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
         println("[je_send_node_list] Jexpresso lrank=$lrank (wrank=$wrank) → Alya world rank $dest_rank: ",
                 "$(length(gid_buf)) node IDs")
@@ -1249,7 +1249,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     npoin_send    = copy(npoin_recv)
     send_to_ranks = copy(recv_from_ranks)
 
-    je_send_node_list(Int64.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
+    je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
 
     verify_coupling_communication_pattern(npoin_recv, npoin_send,
                                           alya_owner_ranks, alya_local_ids,
@@ -1411,7 +1411,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
 
     
     # 2. Interpolate to local Alya coordinates
-    u_interp_local = @time interpolate_solution_to_alya_coords(
+    u_interp_local = interpolate_solution_to_alya_coords(
         cpg.alya_local_coords, mesh, qout, basis, 
         ξ, ωb, neqs, inputs, elem_bboxes, bins;
         use_bins=true, bins_per_dim=64
