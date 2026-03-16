@@ -15,7 +15,7 @@ program unitt_alya_with_another_code
   character(len=128)                 :: app_name
   character(len=128), allocatable    :: app_dumm(:)
   integer                            :: i, idime, ndime, itime
-  integer(4)                         :: neqs
+  integer(4)                         :: nfields
   character(len=128)                 :: s
 
   real(8), dimension(1:3)            :: rem_min, rem_max
@@ -31,7 +31,7 @@ program unitt_alya_with_another_code
   integer(4)                         :: nranks_julia
 
   ! Jexpresso SEM node list received once during setup
-  integer(8), allocatable            :: je_gids_all(:)     ! global node IDs from connijk
+  integer(4), allocatable            :: je_gids_all(:)     ! global node IDs from connijk
   integer(4)                         :: je_total_nodes, je_gid_offset
 
   integer(4)                         :: step, nsteps
@@ -128,9 +128,9 @@ program unitt_alya_with_another_code
   !
   ! Thsi can be useful
   !
-  ! 2c. neqs
-  !neqs = 4
-  !call MPI_Bcast(neqs, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  ! 2c. nfields
+  !nfields = 4
+  !call MPI_Bcast(nfields, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
   !! 2d. nsteps
   !call MPI_Bcast(nsteps, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
@@ -268,24 +268,22 @@ program unitt_alya_with_another_code
   end if
 
   !--------------------------------------------------------------------------
-  ! Receive neqs from Julia via Allreduce(MAX).
-  ! Alya contributes 0; Julia contributes its qp.neqs.
+  ! Receive nfields from Julia via Allreduce(MAX).
+  ! Alya contributes 0; Julia contributes its qp.nfields.
   ! The collective synchronises both sides before buffer allocation.
   !--------------------------------------------------------------------------
-  neqs = 0
-  call MPI_Allreduce(MPI_IN_PLACE, neqs, 1, MPI_INTEGER4, MPI_MAX, &
-                     MPI_COMM_WORLD, ierr)
+  nfields = ndime
   if (rank == 0) then
-     write(*,'(A,I0)') '  neqs received from Julia: ', neqs
+     write(*,'(A,I0)') '  nfields (fields per point from Julia): ', nfields
      flush(6)
   end if
 
-  allocate(recvbuf_all(max(1, total_pts * neqs)))
+  allocate(recvbuf_all(max(1, total_pts * nfields)))
   recvbuf_all = 0.0d0
 
   ! ordered_buf: values placed at the correct [i_start..i_end] position
   ! using je_gids_all as the scatter index map.
-  allocate(ordered_buf(max(1, npoin_local * neqs)))
+  allocate(ordered_buf(max(1, npoin_local * nfields)))
   ordered_buf = 0.0d0
 
   nactive = count(npoin_recv > 0)
@@ -336,15 +334,15 @@ program unitt_alya_with_another_code
         if (npoin_recv(i) > 0) then
            ireq = ireq + 1
 #ifdef USEMPIF08
-           call MPI_Irecv(recvbuf_all(recv_offset + 1), npoin_recv(i) * neqs, &
+           call MPI_Irecv(recvbuf_all(recv_offset + 1), npoin_recv(i) * nfields, &
                 MPI_DOUBLE_PRECISION, i, 0, MPI_COMM_WORLD, &
                 recv_requests(ireq), ierr)
 #else
-           call MPI_IRECV(recvbuf_all(recv_offset + 1), npoin_recv(i) * neqs, &
+           call MPI_IRECV(recvbuf_all(recv_offset + 1), npoin_recv(i) * nfields, &
                 MPI_DOUBLE_PRECISION, i, 0, MPI_COMM_WORLD, &
                 recv_requests(ireq), ierr)
 #endif
-           recv_offset = recv_offset + npoin_recv(i) * neqs
+           recv_offset = recv_offset + npoin_recv(i) * nfields
         end if
      end do
 
@@ -358,31 +356,7 @@ program unitt_alya_with_another_code
         if (ierr /= 0) write(*,'(A,I0,A,I0)') &
              'ERROR MPI_Waitall recv rank ', rank, ' step ', step
      end if
-
-     !------------------------------------------------------------------------
-     ! PRINT: received interpolated data at coordinates
-     !------------------------------------------------------------------------
-!!$     
-!!$     if (total_pts > 0) then
-!!$        write(*,'(A,I0,A,F10.4,A,I0,A,I0)') &
-!!$             '--- Recv step=', step, '  t=', t, &
-!!$             '  Alya_rank=', arank, '  world_rank=', rank
-!!$        write(*,'(A8,A6,A6,A18,A18,A18)') 'GlobalID','ix','iy','x','y','rho'
-!!$        write(*,'(A)') repeat('-', 80)
-!!$        do ipoin = i_start, i_end
-!!$           iz = ipoin / (rem_nx(1)*rem_nx(2))
-!!$           iy = (ipoin - iz*rem_nx(1)*rem_nx(2)) / rem_nx(1)
-!!$           ix = mod(ipoin, rem_nx(1))
-!!$           xc = dble(rem_min(1)) + ix*dx
-!!$           yc = dble(rem_min(2)) + iy*dy
-!!$           i  = ipoin - i_start + 1
-!!$           write(*,'(I8,I6,I6,E18.8,E18.8,E18.8)') &
-!!$                ipoin, ix, iy, xc, yc, recvbuf_all((i-1)*neqs + 1)
-!!$        end do
-!!$        write(*,'(A)') repeat('=', 80)
-!!$        flush(6)
-!!$     end if
-
+     
      !------------------------------------------------------------------------
      ! VTS OUTPUT: structured grid with filled contours
      !   - all Alya ranks gather to rank 0 via MPI_Gatherv (PAR_COMM_FINAL)
@@ -403,14 +377,14 @@ program unitt_alya_with_another_code
         do jpt = 1, total_pts
            local_pos = int(je_gids_all(jpt)) - 1 - i_start
            if (local_pos >= 0 .and. local_pos < npoin_local) then
-              ordered_buf(local_pos * neqs + 1 : (local_pos + 1) * neqs) = &
-                   recvbuf_all((jpt - 1) * neqs + 1 : jpt * neqs)
+              ordered_buf(local_pos * nfields + 1 : (local_pos + 1) * nfields) = &
+                   recvbuf_all((jpt - 1) * nfields + 1 : jpt * nfields)
            end if
         end do
-
+        
         call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
              rem_min, rem_max, rem_nx, &
-             ordered_buf, npoin_local, neqs, step, itime, t_plus)
+             ordered_buf, npoin_local, nfields, step, itime, t_plus)
         call MPI_Barrier(PAR_COMM_FINAL, ierr)
         itime = itime + 1
      end if
@@ -435,7 +409,7 @@ program unitt_alya_with_another_code
   deallocate(npoin_send, npoin_recv)
   deallocate(alya_to_world, alya_to_world_snd)
   call MPI_Finalize(ierr)
-
+  
 contains
 
   !---------------------------------------------------------------------------
@@ -460,19 +434,19 @@ contains
   !    2. Alya rank 0 assembles the full field and writes one .vts file.
   !
   !  Data ordering:
-  !    After MPI_Gatherv, full_field(k*neqs + ieq) holds the value for
+  !    After MPI_Gatherv, full_field(k*nfields + ieq) holds the value for
   !    global point k (0-based). Grid indices (ix,iy,iz) are computed
   !    directly from k using the regular grid layout (ix fastest):
   !       iz = k / (rem_nx(1)*rem_nx(2))
   !       iy = (k - iz*rem_nx(1)*rem_nx(2)) / rem_nx(1)
   !       ix = mod(k, rem_nx(1))
   !
-  !  Each variable (rho, u, v, theta) is written as a separate DataArray
+  !  Each variable (u, v) is written as a separate DataArray
   !  so ParaView can visualise them independently.
   !===========================================================================
   subroutine write_alya_grid_vts(arank, asize, PAR_COMM, ndime, &
                                   rem_min, rem_max, rem_nx, &
-                                  recvbuf, total_pts, neqs, &
+                                  recvbuf, total_pts, nfields, &
                                   timestep, itime, time)
     implicit none
     integer(4),   intent(in) :: arank, asize, ndime, itime
@@ -480,7 +454,7 @@ contains
     real(8),      intent(in) :: rem_min(3), rem_max(3)
     integer,      intent(in) :: rem_nx(3)
     real(8),      intent(in) :: recvbuf(:)
-    integer(4),   intent(in) :: total_pts, neqs, timestep
+    integer(4),   intent(in) :: total_pts, nfields, timestep
     real(8),      intent(in) :: time
 
     ! Local variables
@@ -495,7 +469,7 @@ contains
     real(8),  allocatable       :: full_field(:)
     real(8),  allocatable       :: grid_var(:,:,:)
 
-    ! Variable names for the neqs fields
+    ! Variable names for the nfields fields
     character(len=16) :: varname
 
     !--- Grid parameters ---
@@ -529,8 +503,8 @@ contains
              i_start_r = r_rem_loc * (np_base + 1) + (iworker_loc - r_rem_loc) * np_base
              count_r   = np_base
           end if
-          sendcounts(irank) = count_r * neqs
-          displs(irank)     = i_start_r * neqs
+          sendcounts(irank) = count_r * nfields
+          displs(irank)     = i_start_r * nfields
        end if
     end do
 
@@ -539,7 +513,7 @@ contains
 
     !--- Allocate receive buffer only on root ---
     if (arank == 0) then
-       allocate(full_field(nmax * neqs))
+       allocate(full_field(nmax * nfields))
        full_field = 0.0d0
     else
        allocate(full_field(1))
@@ -619,14 +593,12 @@ contains
 
     allocate(grid_var(0:rem_nx(1)-1, 0:rem_nx(2)-1, 0:rem_nx(3)-1))
 
-    do ieq = 1, neqs
+    do ieq = 1, nfields
 
        ! Variable name
        select case(ieq)
-          case(1); varname = 'rho'
-          case(2); varname = 'u'
-          case(3); varname = 'v'
-          case(4); varname = 'theta'
+          case(1); varname = 'u'
+          case(2); varname = 'v'
           case default
              write(varname,'(A,I0)') 'var', ieq
        end select
@@ -641,7 +613,7 @@ contains
           iz = k / (rem_nx(1) * rem_nx(2))
           iy = (k - iz * rem_nx(1) * rem_nx(2)) / rem_nx(1)
           ix = mod(k, rem_nx(1))
-          grid_var(ix, iy, iz) = full_field(k * neqs + ieq)
+          grid_var(ix, iy, iz) = full_field(k * nfields + ieq)
        end do
 
        ! Write in VTS order (ix fastest, then iy, then iz)

@@ -1268,10 +1268,6 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
 
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
-    # Broadcast neqs to Alya via Allreduce(MAX): Alya contributes 0, Julia contributes qp.neqs
-    neqs_buf = Ref(Int32(qp.neqs))
-    # MPI.Allreduce!(neqs_buf, MPI.MAX, world)
-
     ndime = coupling_data[:ndime]
     coupling = CouplingData(
         npoin_recv    = npoin_recv,
@@ -1284,8 +1280,10 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         ndime         = ndime,
     )
 
+    nfields = qp.neqs - 2
     coupling.send_bufs, coupling.recv_bufs, coupling.send_coord_bufs =
-        allocate_coupling_buffers(npoin_recv, npoin_send, coupling.neqs, ndime)
+        allocate_coupling_buffers(npoin_recv, npoin_send, nfields, ndime)
+
 
     coupling.alya_local_coords = alya_local_coords
     coupling.alya_local_ids    = alya_local_ids
@@ -1355,11 +1353,12 @@ end
 function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float64},
                                  alya_owner_ranks::Vector{Int32},
                                  alya_local_coords::Matrix{Float64})
+
     n_local = size(interp_values, 1)
-    neqs    = cpg.neqs
+    nfields  = size(interp_values, 2)
     ndime   = cpg.ndime
     wsize   = length(cpg.npoin_send)
-
+    
     for i in 1:wsize
         fill!(cpg.send_bufs[i], 0.0)
         fill!(cpg.send_coord_bufs[i], 0.0)
@@ -1373,9 +1372,9 @@ function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float6
         cpg.npoin_send[bidx] > 0 || continue
 
         off = send_offsets[bidx]
-        for q in 1:neqs; cpg.send_bufs[bidx][off+q] = interp_values[i,q]; end
-        send_offsets[bidx] += neqs
-
+        for q in 1:nfields; cpg.send_bufs[bidx][off+q] = interp_values[i,q]; end        
+        send_offsets[bidx] += nfields 
+        
         coff = coord_offsets[bidx]
         for d in 1:ndime; cpg.send_coord_bufs[bidx][coff+d] = alya_local_coords[i,d]; end
         coord_offsets[bidx] += ndime
@@ -1416,8 +1415,8 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
         ξ, ωb, neqs, inputs, elem_bboxes, bins;
         use_bins=true, bins_per_dim=64
     )
-
-    pack_interpolated_data!(cpg, u_interp_local[:,2:neqs], cpg.alya_owner_ranks, cpg.alya_local_coords)
+    
+    pack_interpolated_data!(cpg, u_interp_local[:,2:neqs-1], cpg.alya_owner_ranks, cpg.alya_local_coords)
     coupling_exchange_data!(cpg)
     #unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
 
