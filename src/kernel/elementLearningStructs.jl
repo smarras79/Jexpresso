@@ -397,7 +397,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         B_∂O∂Γ = B_∂O∂τ[:, wbuf.Γ_in_∂τ]
 
         BOΓg_tmp          = B_∂O∂Γ * gΓ
-        wbuf.u∂O         .= -(B_∂O∂O \ BOΓg_tmp)
+        wbuf.u∂O         .= -(B_∂O∂O \ BOΓg_tmp) # REPlACE THIS WITH GMRES
 
         @inbounds for io = 1:mesh.length∂O;  u[mesh.∂O[io]] = wbuf.u∂O[io];  end
         @inbounds for io = 1:mesh.lengthΓ;   u[mesh.Γ[io]]  = gΓ[io];        end
