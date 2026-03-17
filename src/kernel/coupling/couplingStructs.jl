@@ -508,39 +508,47 @@ end
 # ---------------------------------------------------------------------------
 # Zero-allocation in-place interpolation — call this inside the time loop.
 #
-# All scratch storage must be pre-allocated by the caller (typically stored in
-# CouplingData and initialised once before the time loop):
-#   u_interp  — (n_points × neqs) output buffer; overwritten in place
-#   elem_conn — (nelem × ngl²) pre-built connectivity matrix (Int)
-#   ψξ, ψη, dψξ, dψη, α — length-ngl scratch vectors
-#   x_e, y_e  — length-ngl² scratch vectors for element coordinates
+# NO mesh field is accessed inside this function: St_mesh carries several
+# Union{TInt,Missing} fields (ngl, nelem, npoin) and un-annotated fields
+# (coords, x, y) whose inferred field type is Any.  Either kind poisons
+# type-inference and causes per-iteration scalar boxing.
 #
-# Uses the in-place Lagrange helpers and the pre-scratch physical_to_reference,
-# so the steady-state time loop makes ZERO heap allocations.
+# Instead every quantity is derived from the concrete-typed parameters:
+#   ngl   = length(ξ_nodes)
+#   ngl2  = length(x_e)
+#   nelem = size(elem_conn, 1)
+#   npoin = size(u_mat, 1)
+#   element coords — elem_x / elem_y  (Matrix{Float64}, built at setup)
+#   fallback coords — mesh_x / mesh_y (Vector{Float64}, extracted once)
 # ---------------------------------------------------------------------------
 function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
                                               alya_coords::Matrix{Float64},
-                                              mesh,
-                                              u_mat::AbstractMatrix,
+                                              u_mat::Matrix{Float64},
                                               ξ_nodes::Vector{Float64},
                                               ω::Vector{Float64},
                                               neqs::Int,
                                               elem_bboxes::Vector{NTuple{4,Float64}},
-                                              bins,
+                                              bins::ElemBins,
                                               elem_conn::Matrix{Int},
+                                              elem_x::Matrix{Float64},
+                                              elem_y::Matrix{Float64},
                                               ψξ::Vector{Float64}, ψη::Vector{Float64},
                                               dψξ::Vector{Float64}, dψη::Vector{Float64},
                                               α::Vector{Float64},
-                                              x_e::Vector{Float64}, y_e::Vector{Float64})
+                                              x_e::Vector{Float64}, y_e::Vector{Float64},
+                                              mesh_x::Vector{Float64},
+                                              mesh_y::Vector{Float64})
     n_points = size(alya_coords, 1)
-    ngl      = mesh.ngl
-    ngl2     = ngl * ngl
-    nelem    = mesh.nelem
+    ngl      = length(ξ_nodes)       # Int  — no Union{TInt,Missing} boxing
+    ngl2     = ngl * ngl             # Int
+    nelem    = size(elem_conn, 1)    # Int
+    npoin    = size(u_mat, 1)        # Int
 
     @inbounds for ipt in 1:n_points
         px, py = alya_coords[ipt, 1], alya_coords[ipt, 2]
 
-        candidates = bins !== nothing ? _bin_candidates(bins, px, py) : (1:nelem)
+        # bins::ElemBins is a concrete type — always returns Vector{Int}, no union
+        candidates = _bin_candidates(bins, px, py)
 
         found = false
         for e in candidates
@@ -549,11 +557,11 @@ function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
             (px < bb[1] - 1e-10 || px > bb[2] + 1e-10 ||
              py < bb[3] - 1e-10 || py > bb[4] + 1e-10) && continue
 
-            # Copy element coords into scratch via scalar indexing (no fancy-index alloc)
+            # Copy pre-computed element coords into contiguous scratch.
+            # elem_x / elem_y are Matrix{Float64} — all accesses type-stable.
             @inbounds for k in 1:ngl2
-                nd     = elem_conn[e, k]
-                x_e[k] = mesh.coords[nd, 1]
-                y_e[k] = mesh.coords[nd, 2]
+                x_e[k] = elem_x[e, k]
+                y_e[k] = elem_y[e, k]
             end
 
             # Map to reference coordinates — in-place, zero allocation
@@ -583,11 +591,12 @@ function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
         end
 
         if !found
-            # Nearest-neighbour fallback — scalar loop, zero allocation
+            # Nearest-neighbour fallback — scalar loop, zero allocation.
+            # mesh_x / mesh_y are Vector{Float64} captured once before the loop.
             nearest = 1
-            min_d2  = (mesh.x[1] - px)^2 + (mesh.y[1] - py)^2
-            @inbounds for ip in 2:mesh.npoin
-                d2 = (mesh.x[ip] - px)^2 + (mesh.y[ip] - py)^2
+            min_d2  = (mesh_x[1] - px)^2 + (mesh_y[1] - py)^2
+            @inbounds for ip in 2:npoin
+                d2 = (mesh_x[ip] - px)^2 + (mesh_y[ip] - py)^2
                 if d2 < min_d2; min_d2 = d2; nearest = ip; end
             end
             @inbounds for q in 1:neqs; u_interp[ipt, q] = u_mat[nearest, q]; end
@@ -1363,9 +1372,11 @@ end
 #
 # All pre-allocated buffers are passed as explicit, concrete-typed parameters.
 # The caller (TimeIntegrators.jl) extracts them from CouplingData ONCE before
-# the time loop so neither this function nor its callees ever touch a
-# Union{Nothing,T} struct field.  The result is a fully type-stable hot path
-# with zero heap allocations per timestep.
+# the time loop so no Union{Nothing,T} struct field is ever touched here.
+#
+# npoin is derived from size(qout,1) — avoids mesh.npoin::Union{TInt,Missing}.
+# ET (sol-vars type) is stored as a concrete-typed local before the loop in
+# TimeIntegrators so call_user_uout sees a concrete type and can specialise.
 # ---------------------------------------------------------------------------
 function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       qout::Matrix{Float64},
@@ -1373,25 +1384,32 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       ξ_nodes::Vector{Float64},
                                       ω::Vector{Float64},
                                       e_conn::Matrix{Int},
+                                      elem_x::Matrix{Float64},
+                                      elem_y::Matrix{Float64},
                                       ψξ::Vector{Float64},  ψη::Vector{Float64},
                                       dψξ::Vector{Float64}, dψη::Vector{Float64},
                                       α::Vector{Float64},
                                       x_e::Vector{Float64}, y_e::Vector{Float64},
                                       alya_coords::Matrix{Float64},
                                       owner_ranks::Vector{Int32},
-                                      mesh, inputs, neqs::Int,
+                                      mesh_x::Vector{Float64},
+                                      mesh_y::Vector{Float64},
+                                      inputs, neqs::Int,
                                       elem_bboxes::Vector{NTuple{4,Float64}},
                                       bins::ElemBins)
 
-    u2uaux!(u_mat, u, neqs, mesh.npoin)
-    call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], mesh.npoin, neqs, neqs)
+    npoin = size(qout, 1)   # Int — avoids mesh.npoin::Union{TInt,Missing}
 
-    @time interpolate_solution_to_alya_coords!(
-        u_interp, alya_coords, mesh, qout,
+    u2uaux!(u_mat, u, neqs, npoin)
+    call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
+
+    interpolate_solution_to_alya_coords!(
+        u_interp, alya_coords, qout,
         ξ_nodes, ω, neqs,
         elem_bboxes, bins,
-        e_conn,
-        ψξ, ψη, dψξ, dψη, α, x_e, y_e
+        e_conn, elem_x, elem_y,
+        ψξ, ψη, dψξ, dψη, α, x_e, y_e,
+        mesh_x, mesh_y
     )
 
     pack_interpolated_data!(cpg, u_interp[:,2:neqs-1], owner_ranks, alya_coords)

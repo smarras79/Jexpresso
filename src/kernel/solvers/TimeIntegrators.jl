@@ -172,14 +172,22 @@ function time_loop!(inputs, params, u, args...)
         _owner_ranks = cpg.alya_owner_ranks::Vector{Int32}
         _elem_bboxes = cpg.elem_bboxes::Vector{NTuple{4,Float64}}
         _bins        = cpg.interp_bins::ElemBins
+        _elem_x      = cpg.elem_x::Matrix{Float64}
+        _elem_y      = cpg.elem_y::Matrix{Float64}
+        # mesh.x / mesh.y have no type annotation in St_mesh (field type Any);
+        # extract once with a typeassert so the closure captures Vector{Float64}.
+        _mesh_x      = mesh.x::Vector{Float64}
+        _mesh_y      = mesh.y::Vector{Float64}
 
         function do_coupling_exchange!(integrator)
             je_perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
                                          cpg,
                                          _qout, _u_interp, _ξ_nodes, _ω, _e_conn,
+                                         _elem_x, _elem_y,
                                          _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
                                          _alya_coords, _owner_ranks,
-                                         mesh, inputs, neqs, _elem_bboxes, _bins)
+                                         _mesh_x, _mesh_y,
+                                         inputs, neqs, _elem_bboxes, _bins)
         end
         
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
