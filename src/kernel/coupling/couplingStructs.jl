@@ -725,146 +725,9 @@ function evaluate_lagrange_1d_derivative(ξ::Float64, ξ_nodes::Vector{Float64},
     return dψ
 end
 
-#####
-#####END
-
-# Interpolate SEM solution to arbitrary coordinates.
-# All heavy data (bboxes, bins, element coords, connectivity, scratch vectors, output
-# buffer) should be passed pre-allocated so this function makes zero heap allocations
-# in the steady-state time loop.
-function interpolate_solution_to_alya_coords_old(alya_coords::Matrix{Float64}, mesh,
-                                             u_mat::AbstractMatrix, basis, ξ, neqs, inputs;
-                                             use_bins::Bool=true, bins_per_dim::Int=64,
-                                             precomp_bboxes=nothing,
-                                             precomp_bins=nothing,
-                                             precomp_elem_x=nothing,
-                                             precomp_elem_y=nothing,
-                                             precomp_elem_conn=nothing,
-                                             precomp_ξ_nodes=nothing,
-                                             precomp_ω=nothing,
-                                             u_interp_buf=nothing,
-                                             ψξ_buf=nothing, ψη_buf=nothing,
-                                             dψξ_buf=nothing, dψη_buf=nothing,
-                                             α_buf=nothing)
-    n_points = size(alya_coords, 1)
-    nelem    = _num_elems(mesh)
-    ngl      = mesh.ngl
-    ngl2     = ngl * ngl
-
-    # Reference nodes and barycentric weights — use precomputed when available
-    ξ_nodes = precomp_ξ_nodes !== nothing ? precomp_ξ_nodes : Vector{Float64}(ξ)
-    ω       = precomp_ω       !== nothing ? precomp_ω       : barycentric_weights(ξ_nodes)
-
-    # Output buffer — reuse pre-allocated matrix to avoid per-call allocation
-    u_interp = u_interp_buf !== nothing ? u_interp_buf : zeros(Float64, n_points, neqs)
-
-    # Scratch vectors for allocation-free Lagrange evaluation
-    ψξ  = ψξ_buf  !== nothing ? ψξ_buf  : Vector{Float64}(undef, ngl)
-    ψη  = ψη_buf  !== nothing ? ψη_buf  : Vector{Float64}(undef, ngl)
-    dψξ = dψξ_buf !== nothing ? dψξ_buf : Vector{Float64}(undef, ngl)
-    dψη = dψη_buf !== nothing ? dψη_buf : Vector{Float64}(undef, ngl)
-    α   = α_buf   !== nothing ? α_buf   : Vector{Float64}(undef, ngl)
-
-    # Element bboxes and spatial bins
-    elem_bboxes = if precomp_bboxes !== nothing
-        precomp_bboxes
-    else
-        get_conn_tmp = _make_conn_accessor(mesh)
-        bb = Vector{NTuple{4,Float64}}(undef, nelem)
-        @inbounds for e in 1:nelem
-            ns = get_conn_tmp(e)
-            bb[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                     minimum(mesh.y[ns]), maximum(mesh.y[ns]))
-        end
-        bb
-    end
-    bins = precomp_bins !== nothing ? precomp_bins :
-           (use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing)
-
-    # Whether precomputed per-element coordinate/connectivity arrays are available
-    have_precomp = (precomp_elem_x !== nothing &&
-                    precomp_elem_y !== nothing &&
-                    precomp_elem_conn !== nothing)
-
-    # Narrow Union{Nothing,Matrix{…}} to concrete Matrix types so the hot loop
-    # sees no union dispatch on these variables.  When precomp arrays are absent
-    # the 0×0 sentinels are never indexed (have_precomp == false guards every use).
-    _ex   = have_precomp ? (precomp_elem_x::Matrix{Float64})   : Matrix{Float64}(undef, 0, 0)
-    _ey   = have_precomp ? (precomp_elem_y::Matrix{Float64})   : Matrix{Float64}(undef, 0, 0)
-    _conn = have_precomp ? (precomp_elem_conn::Matrix{Int})    : Matrix{Int}(undef, 0, 0)
-
-    # Scratch buffers for element physical coordinates — written in the !have_precomp
-    # path so we avoid allocating mesh.x[ns] / mesh.y[ns] on every element visit.
-    x_e_buf = Vector{Float64}(undef, ngl2)
-    y_e_buf = Vector{Float64}(undef, ngl2)
-    get_conn = have_precomp ? nothing : _make_conn_accessor(mesh)
-
-    @inbounds for ipt in 1:n_points
-        px, py = alya_coords[ipt,1], alya_coords[ipt,2]
-        candidates = bins !== nothing ? _bin_candidates(bins, px, py, elem_bboxes) : (1:nelem)
-        found = false
-        for e in candidates
-            bb = elem_bboxes[e]
-            (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
-             py < bb[3]-1e-10 || py > bb[4]+1e-10) && continue
-
-            if have_precomp
-                x_e = @view _ex[e, :]
-                y_e = @view _ey[e, :]
-            else
-                ns_tmp = get_conn(e)
-                @inbounds for k in 1:ngl2
-                    x_e_buf[k] = mesh.x[ns_tmp[k]]
-                    y_e_buf[k] = mesh.y[ns_tmp[k]]
-                end
-                x_e = x_e_buf
-                y_e = y_e_buf
-            end
-
-            ξr, ηr, conv = physical_to_reference(px, py, x_e, y_e,
-                                                   ξ_nodes, ω, ngl,
-                                                   ψξ, ψη, dψξ, dψη, α)
-            (conv && abs(ξr) <= 1+1e-10 && abs(ηr) <= 1+1e-10) || continue
-
-            evaluate_lagrange_1d!(ψξ, ξr, ξ_nodes, ω)
-            evaluate_lagrange_1d!(ψη, ηr, ξ_nodes, ω)
-
-            if have_precomp
-                for q in 1:neqs
-                    val = 0.0; idx = 1
-                    for j in 1:ngl, i in 1:ngl
-                        val += ψξ[i]*ψη[j]*u_mat[_conn[e, idx], q]; idx += 1
-                    end
-                    u_interp[ipt,q] = val
-                end
-            else
-                for q in 1:neqs
-                    val = 0.0; idx = 1
-                    for j in 1:ngl, i in 1:ngl
-                        val += ψξ[i]*ψη[j]*u_mat[x_e_buf[idx], q]; idx += 1
-                    end
-                    u_interp[ipt,q] = val
-                end
-            end
-            found = true; break
-        end
-        if !found   # nearest-neighbour fallback (allocation-free scalar loop)
-            nearest = 1
-            min_d2  = (mesh.x[1] - px)^2 + (mesh.y[1] - py)^2
-            @inbounds for ip in 2:mesh.npoin
-                d2 = (mesh.x[ip] - px)^2 + (mesh.y[ip] - py)^2
-                if d2 < min_d2; min_d2 = d2; nearest = ip; end
-            end
-            @inbounds for q in 1:neqs; u_interp[ipt,q] = u_mat[nearest,q]; end
-        end
-    end
-    return u_interp
-end
-
 # ===========================================================================
 # ALYA COORDINATE EXTRACTION
 # ===========================================================================
-
 function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_comm;
                                         block_size::NTuple{3,Int}=(64,64,64),
                                         use_cropping::Bool=true,
@@ -1523,7 +1386,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
     u2uaux!(u_mat, u, neqs, mesh.npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], mesh.npoin, neqs, neqs)
 
-    interpolate_solution_to_alya_coords!(
+    @time interpolate_solution_to_alya_coords!(
         u_interp, alya_coords, mesh, qout,
         ξ_nodes, ω, neqs,
         elem_bboxes, bins,
