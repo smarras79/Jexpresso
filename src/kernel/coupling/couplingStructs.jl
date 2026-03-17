@@ -1403,7 +1403,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
 
-    interpolate_solution_to_alya_coords!(
+   @time interpolate_solution_to_alya_coords!(
         u_interp, alya_coords, qout,
         ξ_nodes, ω, neqs,
         elem_bboxes, bins,
