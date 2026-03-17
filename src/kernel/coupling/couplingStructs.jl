@@ -1403,54 +1403,17 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
 
-   @time interpolate_solution_to_alya_coords!(
-        u_interp, alya_coords, qout,
-        ξ_nodes, ω, neqs,
-        elem_bboxes, bins,
-        e_conn, elem_x, elem_y,
-        ψξ, ψη, dψξ, dψη, α, x_e, y_e,
-        mesh_x, mesh_y
+   interpolate_solution_to_alya_coords!(
+       u_interp, alya_coords, qout,
+       ξ_nodes, ω, neqs,
+       elem_bboxes, bins,
+       e_conn, elem_x, elem_y,
+       ψξ, ψη, dψξ, dψη, α, x_e, y_e,
+       mesh_x, mesh_y
     )
 
     pack_interpolated_data!(cpg, u_interp[:,2:neqs-1], owner_ranks, alya_coords)
     coupling_exchange_data!(cpg)
-    #unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
-
-    # 3. Pack interpolated data AND coordinates into send buffers
-    #= pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks, cpg.alya_local_coords)
-
-    # 4. Exchange data with Alya
-    coupling_exchange_data!(cpg)
-
-    # 5. Unpack and apply received data from Alya
-    unpack_received_data!(cpg, u, mesh,
-                          cpg.alya_local_coords, cpg.alya_local_ids)
-
-    =#
-    #=print(GREEN_FG(string(" INTERPOLATE ............................")))
-                        @time interpolate_solution_to_alya_coords(
-                            cpg.alya_local_coords, mesh, qout, basis, ξ, neqs, inputs;
-                            use_bins         = true,
-                            bins_per_dim     = 64,
-                            precomp_bboxes   = cpg.elem_bboxes,
-                            precomp_bins     = cpg.interp_bins,
-                            precomp_elem_x   = cpg.elem_x,
-                            precomp_elem_y   = cpg.elem_y,
-                            precomp_elem_conn= cpg.elem_conn,
-                            precomp_ξ_nodes  = cpg.ξ_nodes_ref,
-                            precomp_ω        = cpg.ω_bary,
-                            u_interp_buf     = u_interp,
-                            ψξ_buf           = cpg.ψξ_scratch,
-                            ψη_buf           = cpg.ψη_scratch,
-                            dψξ_buf          = cpg.dψξ_scratch,
-                            dψη_buf          = cpg.dψη_scratch,
-                            α_buf            = cpg.α_scratch)
-    print(GREEN_FG(string(" INTERPOLATE ............................ EDONE")))
-    pack_interpolated_data!(cpg, u_interp, cpg.alya_owner_ranks, cpg.alya_local_coords)
-    coupling_exchange_data!(cpg)
-    unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)=#
-
-    
     
 end
 
