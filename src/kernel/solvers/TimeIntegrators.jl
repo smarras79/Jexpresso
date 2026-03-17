@@ -145,32 +145,41 @@ function time_loop!(inputs, params, u, args...)
         
         @inline function coupling_condition(u_state, t, integrator) t > t0 + tol0 end
         
-        basis = hasproperty(params, :basis) ? params.basis : params.SD.basis
-        ξ     = params.ξ
-        ωb    = params.ωb
-        neqs  = params.neqs
-        mesh  = params.mesh
-        nelem = mesh.nelem
-       
-        elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem)
+        neqs = params.neqs
+        mesh = params.mesh
 
-        
-        # Build element bounding boxes
-        get_conn = _make_conn_accessor(mesh)
-        @inbounds for e in 1:nelem
-            nodes = get_conn(e)
-            xs = mesh.coords[nodes,1]
-            ys = mesh.coords[nodes,2]
-            elem_bboxes[e] = (minimum(xs), maximum(xs), minimum(ys), maximum(ys))
-        end
-        use_bins = true
-        bins_per_dim = 64
-        bins = use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing
-        
+        # Extract concrete-typed handles from CouplingData once, before the
+        # time loop.  The closure captures these concrete-typed local variables
+        # instead of the Union{Nothing,T} struct fields, giving fully
+        # type-stable code in je_perform_coupling_exchange with zero
+        # per-step heap allocations.
+        #
+        # elem_bboxes and interp_bins are already built by the setup function;
+        # no need to recompute them here.
+        _qout        = cpg.qout::Matrix{Float64}
+        _u_interp    = cpg.u_interp::Matrix{Float64}
+        _ξ_nodes     = cpg.ξ_nodes_ref::Vector{Float64}
+        _ω           = cpg.ω_bary::Vector{Float64}
+        _e_conn      = cpg.elem_conn::Matrix{Int}
+        _ψξ          = cpg.ψξ_scratch::Vector{Float64}
+        _ψη          = cpg.ψη_scratch::Vector{Float64}
+        _dψξ         = cpg.dψξ_scratch::Vector{Float64}
+        _dψη         = cpg.dψη_scratch::Vector{Float64}
+        _α           = cpg.α_scratch::Vector{Float64}
+        _x_e         = cpg.x_e_scratch::Vector{Float64}
+        _y_e         = cpg.y_e_scratch::Vector{Float64}
+        _alya_coords = cpg.alya_local_coords::Matrix{Float64}
+        _owner_ranks = cpg.alya_owner_ranks::Vector{Int32}
+        _elem_bboxes = cpg.elem_bboxes::Vector{NTuple{4,Float64}}
+        _bins        = cpg.interp_bins::ElemBins
+
         function do_coupling_exchange!(integrator)
-            
             je_perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
-                                         cpg, mesh, basis, inputs, ξ, ωb, neqs, elem_bboxes, bins)
+                                         cpg,
+                                         _qout, _u_interp, _ξ_nodes, _ω, _e_conn,
+                                         _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
+                                         _alya_coords, _owner_ranks,
+                                         mesh, inputs, neqs, _elem_bboxes, _bins)
         end
         
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)

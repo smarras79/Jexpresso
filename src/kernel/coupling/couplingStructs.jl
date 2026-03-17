@@ -1495,76 +1495,43 @@ function unpack_received_data!(cpg::CouplingData, u::AbstractVector, mesh,
     # Placeholder: implement physics-specific coupling (forcing, BCs, etc.)
 end
 
+# ---------------------------------------------------------------------------
+# je_perform_coupling_exchange
+#
+# All pre-allocated buffers are passed as explicit, concrete-typed parameters.
+# The caller (TimeIntegrators.jl) extracts them from CouplingData ONCE before
+# the time loop so neither this function nor its callees ever touch a
+# Union{Nothing,T} struct field.  The result is a fully type-stable hot path
+# with zero heap allocations per timestep.
+# ---------------------------------------------------------------------------
 function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
-                                      mesh, basis, inputs, ξ, ωb, neqs, elem_bboxes, bins)
+                                      qout::Matrix{Float64},
+                                      u_interp::Matrix{Float64},
+                                      ξ_nodes::Vector{Float64},
+                                      ω::Vector{Float64},
+                                      e_conn::Matrix{Int},
+                                      ψξ::Vector{Float64},  ψη::Vector{Float64},
+                                      dψξ::Vector{Float64}, dψη::Vector{Float64},
+                                      α::Vector{Float64},
+                                      x_e::Vector{Float64}, y_e::Vector{Float64},
+                                      alya_coords::Matrix{Float64},
+                                      owner_ranks::Vector{Int32},
+                                      mesh, inputs, neqs::Int,
+                                      elem_bboxes::Vector{NTuple{4,Float64}},
+                                      bins::ElemBins)
 
-    npoin = mesh.npoin
-    ngl   = mesh.ngl
-    ngl2  = ngl * ngl
+    u2uaux!(u_mat, u, neqs, mesh.npoin)
+    call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], mesh.npoin, neqs, neqs)
 
-    # -----------------------------------------------------------------------
-    # Lazy one-time initialisation of all scratch buffers.
-    # This block executes only on the very first coupling call; every
-    # subsequent call reuses the pre-allocated storage with zero allocations.
-    # -----------------------------------------------------------------------
-    if cpg.ψξ_scratch === nothing
-        cpg.ψξ_scratch  = Vector{Float64}(undef, ngl)
-        cpg.ψη_scratch  = Vector{Float64}(undef, ngl)
-        cpg.dψξ_scratch = Vector{Float64}(undef, ngl)
-        cpg.dψη_scratch = Vector{Float64}(undef, ngl)
-        cpg.α_scratch   = Vector{Float64}(undef, ngl)
-        cpg.x_e_scratch = Vector{Float64}(undef, ngl2)
-        cpg.y_e_scratch = Vector{Float64}(undef, ngl2)
-    end
-    if cpg.ξ_nodes_ref === nothing
-        # Store as concrete Vector{Float64} so in-place helpers are type-stable
-        cpg.ξ_nodes_ref = Vector{Float64}(ξ)
-        cpg.ω_bary      = Vector{Float64}(ωb)
-    end
-    if cpg.qout === nothing
-        cpg.qout = zeros(Float64, npoin, neqs)
-    end
-    if cpg.u_interp === nothing
-        n_pts        = size(cpg.alya_local_coords, 1)
-        cpg.u_interp = zeros(Float64, n_pts, neqs)
-    end
-    if cpg.elem_conn === nothing
-        # Flatten element connectivity into a (nelem × ngl²) Int matrix so the
-        # hot loop can use scalar indexing without allocating from get_conn(e).
-        get_conn_tmp  = _make_conn_accessor(mesh)
-        nelem         = mesh.nelem
-        cpg.elem_conn = Matrix{Int}(undef, nelem, ngl2)
-        @inbounds for e in 1:nelem
-            nodes = get_conn_tmp(e)
-            @inbounds for k in 1:ngl2
-                cpg.elem_conn[e, k] = nodes[k]
-            end
-        end
-    end
-
-    qout     = cpg.qout::Matrix{Float64}
-    u_interp = cpg.u_interp::Matrix{Float64}
-    ξ_nodes  = cpg.ξ_nodes_ref::Vector{Float64}
-    ω        = cpg.ω_bary::Vector{Float64}
-    e_conn   = cpg.elem_conn::Matrix{Int}
-
-    u2uaux!(u_mat, u, neqs, npoin)
-    call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
-
-    # Interpolate to local Alya coordinates — zero heap allocations
     interpolate_solution_to_alya_coords!(
-        u_interp,
-        cpg.alya_local_coords, mesh, qout,
+        u_interp, alya_coords, mesh, qout,
         ξ_nodes, ω, neqs,
         elem_bboxes, bins,
         e_conn,
-        cpg.ψξ_scratch::Vector{Float64}, cpg.ψη_scratch::Vector{Float64},
-        cpg.dψξ_scratch::Vector{Float64}, cpg.dψη_scratch::Vector{Float64},
-        cpg.α_scratch::Vector{Float64},
-        cpg.x_e_scratch::Vector{Float64}, cpg.y_e_scratch::Vector{Float64}
+        ψξ, ψη, dψξ, dψη, α, x_e, y_e
     )
 
-    pack_interpolated_data!(cpg, u_interp[:,2:neqs-1], cpg.alya_owner_ranks, cpg.alya_local_coords)
+    pack_interpolated_data!(cpg, u_interp[:,2:neqs-1], owner_ranks, alya_coords)
     coupling_exchange_data!(cpg)
     #unpack_received_data!(cpg, u, mesh, cpg.alya_local_coords, cpg.alya_local_ids)
 
