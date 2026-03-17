@@ -1434,6 +1434,8 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         coupling.dψξ_scratch = Vector{Float64}(undef, ngl)
         coupling.dψη_scratch = Vector{Float64}(undef, ngl)
         coupling.α_scratch   = Vector{Float64}(undef, ngl)
+        coupling.x_e_scratch = Vector{Float64}(undef, ngl2)
+        coupling.y_e_scratch = Vector{Float64}(undef, ngl2)
 
         # 5. Per-step output buffers: reused at every timestep
         coupling.qout    = zeros(Float64, mesh.npoin,          coupling.neqs)
