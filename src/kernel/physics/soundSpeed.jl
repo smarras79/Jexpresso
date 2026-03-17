@@ -1,5 +1,6 @@
 function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::TOTAL)
     
+    comm = MPI.COMM_WORLD
     # Physical constants
     PhysConst = PhysicalConst{Float32}()
     pos::TInt = 2
@@ -25,13 +26,14 @@ function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::TOTAL)
     c = sqrt.(PhysConst.γ .* p ./ ρ)
     
     # Find the maximum speed of sound
-    max_c = maximum(c)
+    max_c = MPI.Allreduce(maximum(c), MPI.MAX, comm)
     
     return max_c
 end
 
 function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::PERT)
 
+    comm = MPI.COMM_WORLD
     # Physical constants
     PhysConst = PhysicalConst{Float32}()
     pos::TInt = 2
@@ -57,7 +59,7 @@ function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::PERT)
     c = sqrt.(PhysConst.γ .* p ./ ρ)
 
     # Find the maximum speed of sound
-    max_c = maximum(c)
+    max_c = MPI.Allreduce(maximum(c), MPI.MAX, comm)
 
     return max_c
 end
