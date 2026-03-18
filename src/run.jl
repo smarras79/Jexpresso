@@ -36,4 +36,16 @@ end
 
 if !haskey(ENV, "JEXPRESSO_COUPLING_MODE")
     jexpresso_main()
+else
+    # Coupled (MPMD) mode: jexpresso_main() is not auto-invoked above so
+    # that external scripts can control when it runs.  Call it here and then
+    # synchronize with the peer application (Alya/Fortran) before finalizing.
+    #
+    # Fortran calls MPI_Barrier(MPI_COMM_WORLD) after its time loop to
+    # coordinate shutdown.  Without the matching barrier on the Julia side,
+    # Fortran hangs indefinitely and Julia's subsequent MPI_Finalize races
+    # against in-flight Fortran MPI operations, causing a segfault.
+    jexpresso_main()
+    MPI.Barrier(MPI.COMM_WORLD)
+    MPI.Finalize()
 end
