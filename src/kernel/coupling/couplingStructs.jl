@@ -1403,7 +1403,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
 
-   interpolate_solution_to_alya_coords!(
+    @time interpolate_solution_to_alya_coords!(
        u_interp, alya_coords, qout,
        ξ_nodes, ω, neqs,
        elem_bboxes, bins,
@@ -1515,3 +1515,80 @@ function verify_coupling_communication_pattern(npoin_recv, npoin_send,
     println("="^80)
     return true
 end
+
+#-------------------------------------------------------------------------------------------------
+# Callback from TimeIntegrators.jl
+#-------------------------------------------------------------------------------------------------
+function setup_coupling_callback(is_coupled, params, inputs)
+
+    coupling_enabled = (is_coupled !== false)
+    
+    if !coupling_enabled
+        return nothing
+    end
+
+    # Pull coupling object prepared in setup_coupling_and_mesh
+    cpg = params.coupling
+    @assert cpg !== nothing "params.coupling must be set during setup."
+
+    # Condition: couple at every step after initial time
+    t0   = params.tspan[1]
+    tol0 = get(inputs, :couple_time_tol, 1e-12)
+
+    @inline function coupling_condition(u_state, t, integrator)
+
+        # Notice that u_state isn't even used here,
+        # but it's required to match the interface
+        # DifferentialEquations.jl expects.
+        
+        t > t0 + tol0
+    end
+
+    neqs = params.neqs
+    mesh = params.mesh
+
+    # Extract concrete-typed handles from CouplingData once, before the
+    # time loop. The closure captures these concrete-typed local variables
+    # instead of the Union{Nothing,T} struct fields, giving fully
+    # type-stable code in je_perform_coupling_exchange with zero
+    # per-step heap allocations.
+    #
+    # elem_bboxes and interp_bins are already built by the setup function;
+    # no need to recompute them here.
+    _qout        = cpg.qout::Matrix{Float64}
+    _u_interp    = cpg.u_interp::Matrix{Float64}
+    _ξ_nodes     = cpg.ξ_nodes_ref::Vector{Float64}
+    _ω           = cpg.ω_bary::Vector{Float64}
+    _e_conn      = cpg.elem_conn::Matrix{Int}
+    _ψξ          = cpg.ψξ_scratch::Vector{Float64}
+    _ψη          = cpg.ψη_scratch::Vector{Float64}
+    _dψξ         = cpg.dψξ_scratch::Vector{Float64}
+    _dψη         = cpg.dψη_scratch::Vector{Float64}
+    _α           = cpg.α_scratch::Vector{Float64}
+    _x_e         = cpg.x_e_scratch::Vector{Float64}
+    _y_e         = cpg.y_e_scratch::Vector{Float64}
+    _alya_coords = cpg.alya_local_coords::Matrix{Float64}
+    _owner_ranks = cpg.alya_owner_ranks::Vector{Int32}
+    _elem_bboxes = cpg.elem_bboxes::Vector{NTuple{4,Float64}}
+    _bins        = cpg.interp_bins::ElemBins
+    _elem_x      = cpg.elem_x::Matrix{Float64}
+    _elem_y      = cpg.elem_y::Matrix{Float64}
+    # mesh.x / mesh.y have no type annotation in St_mesh (field type Any);
+    # extract once with a typeassert so the closure captures Vector{Float64}.
+    _mesh_x      = mesh.x::Vector{Float64}
+    _mesh_y      = mesh.y::Vector{Float64}
+
+    function do_coupling_exchange!(integrator)
+        je_perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
+                                     cpg,
+                                     _qout, _u_interp, _ξ_nodes, _ω, _e_conn,
+                                     _elem_x, _elem_y,
+                                     _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
+                                     _alya_coords, _owner_ranks,
+                                     _mesh_x, _mesh_y,
+                                     inputs, neqs, _elem_bboxes, _bins)
+    end
+
+    return DiscreteCallback(coupling_condition, do_coupling_exchange!)
+end
+

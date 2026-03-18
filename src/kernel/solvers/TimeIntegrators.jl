@@ -126,14 +126,13 @@ function time_loop!(inputs, params, u, args...)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
 
     #------------------------------------------------------------------------
-    # Coupling callback: RECEIVE METADATA + EXCHANGE SOLUTION at every step
-    #------------------------------------------------------------------------
-    #------------------------------------------------------------------------
     # Coupling callback: EXCHANGE at every step (if enabled)
     #------------------------------------------------------------------------
-    coupling_enabled = (is_coupled !== false)
+    #coupling_enabled = (is_coupled !== false)
 
-    if coupling_enabled
+    cb_coupling = setup_coupling_callback(is_coupled, params, inputs)
+    
+    #=if coupling_enabled
 
         # Pull coupling object prepared in setup_coupling_and_mesh
         cpg = params.coupling
@@ -191,7 +190,7 @@ function time_loop!(inputs, params, u, args...)
         end
         
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
-    end
+    end=#
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
@@ -216,7 +215,7 @@ function time_loop!(inputs, params, u, args...)
     #
     # Build callbacks
     #
-    callbacks = coupling_enabled ? CallbackSet(cb, cb_restart, cb_coupling) : CallbackSet(cb, cb_restart)
+    callbacks = is_coupled ? CallbackSet(cb, cb_restart, cb_coupling) : CallbackSet(cb, cb_restart)
     #callbacks = coupling_enabled ? CallbackSet(cb, cb_restart) : CallbackSet(cb, cb_restart)
     tstops_all = dosetimes
     
