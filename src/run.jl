@@ -28,24 +28,26 @@ function jexpresso_main()
     OUTPUT_DIR = mod_io_mkoutdir!(inputs)
 
     # Launch Driver with both Local and World communicators
-    # We use Base.invokelatest to avoid world-age issues with included files    
+    # We use Base.invokelatest to avoid world-age issues with included files
     with_mpi(; comm=local_comm) do distribute
         Base.@invokelatest driver(lsize, distribute, inputs, OUTPUT_DIR, TFloat, world)
+
+        # In coupled (MPMD) mode Fortran calls MPI_Barrier(MPI_COMM_WORLD) after
+        # its time loop to coordinate clean shutdown.  Julia must call the matching
+        # barrier from inside the with_mpi block, where all Julia ranks are still
+        # executing in parallel and `world` is in scope.  Without this, Fortran
+        # blocks forever at its barrier while Julia races ahead to MPI.Finalize.
+        if is_coupled
+            println("[Jexpresso rank $lrank] time loop done — entering world barrier"); flush(stdout)
+            MPI.Barrier(world)
+            println("[Jexpresso rank $lrank] world barrier passed"); flush(stdout)
+        end
     end
 end
 
 if !haskey(ENV, "JEXPRESSO_COUPLING_MODE")
     jexpresso_main()
 else
-    # Coupled (MPMD) mode: jexpresso_main() is not auto-invoked above so
-    # that external scripts can control when it runs.  Call it here and then
-    # synchronize with the peer application (Alya/Fortran) before finalizing.
-    #
-    # Fortran calls MPI_Barrier(MPI_COMM_WORLD) after its time loop to
-    # coordinate shutdown.  Without the matching barrier on the Julia side,
-    # Fortran hangs indefinitely and Julia's subsequent MPI_Finalize races
-    # against in-flight Fortran MPI operations, causing a segfault.
     jexpresso_main()
-    MPI.Barrier(MPI.COMM_WORLD)
     MPI.Finalize()
 end
