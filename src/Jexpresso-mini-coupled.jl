@@ -106,4 +106,11 @@ println("[Jexpresso rank $wrank] Coupling data stored."); flush(stdout)
 # Now run Jexpresso with the configured communicator
 Jexpresso.jexpresso_main()
 
+# Synchronize with Alya before finalizing MPI.
+# Fortran does MPI_Barrier(MPI_COMM_WORLD) after its time loop; this is the
+# matching call from the Julia side.  Without it, Fortran hangs forever at
+# the barrier and Julia's premature MPI_Finalize causes a segfault.
+MPI.Barrier(world)
+println("[Jexpresso rank $wrank] Post-loop barrier passed. Finalizing MPI."); flush(stdout)
+
 MPI.Finalize()

@@ -403,6 +403,7 @@ program unitt_alya_with_another_code
 
   ! Cleanup
   if (allocated(recvbuf_all))   deallocate(recvbuf_all)
+  if (allocated(ordered_buf))   deallocate(ordered_buf)
   if (allocated(recv_requests)) deallocate(recv_requests)
   if (allocated(recv_status))   deallocate(recv_status)
   if (allocated(je_gids_all))    deallocate(je_gids_all)

@@ -256,7 +256,5 @@ function time_loop!(inputs, params, u, args...)
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
 
-    MPI.Finalize
-    
     return solution
 end
