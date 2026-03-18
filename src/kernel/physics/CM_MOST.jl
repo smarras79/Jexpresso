@@ -141,7 +141,7 @@ end
 # --- Hot-path CM_MOST! overloads: all positional, no kwargs ---
 
 # Dry (no moisture): z0_m and z0_h are positional
-function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, z0_m, z0_h)
+function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, z0_m, z0_h)
     u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
     u_star, theta_star = _surface_scales_dry(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, ρ)
     τ_magnitude = ρ * u_star^2
@@ -149,7 +149,6 @@ function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_
     τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
     τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
     wθ[1] = -u_star * theta_star
-    wq[1] = zero(ρ)
 end
 
 # Moist: q_ref and q_s before z0_m, z0_h
@@ -170,7 +169,7 @@ function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_
     if !isnothing(q_ref) && !isnothing(q_s)
         CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, q_ref, q_s, z0_m, z0_h)
     else
-        CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, z0_m, z0_h)
+        CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, z0_m, z0_h)
     end
 end
 
