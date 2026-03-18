@@ -342,7 +342,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
 
-    # gelm_id = zeros(mesh.nelem*(mesh.ngl-1)^3)
+    gelm_id = zeros(mesh.nelem*(mesh.ngl-1)^3)
     # ad_lvl  = zeros(mesh.nelem*(mesh.ngl-1)^3)
     
     isel = 1
@@ -371,7 +371,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     
                     cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
 
-                    # gelm_id[isel] = mesh.el2gel[iel]
+                    gelm_id[isel] = mesh.el2gel[iel]
                     # ad_lvl[isel]  = mesh.ad_lvl[iel]
                     
                     isel = isel + 1
@@ -401,7 +401,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        # vtkf["gel_id", VTKCellData()] = gelm_id
+        vtkf["gel_id", VTKCellData()] = gelm_id
         # vtkf["ad_lvl", VTKCellData()] = ad_lvl
 
         for ivar = 1:noutvar
