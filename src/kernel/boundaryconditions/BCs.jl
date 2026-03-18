@@ -675,17 +675,17 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 Δz = coords[ip1, 3] - coords[ipsfc, 3]
                                 z_inside = abs(Δx*nx[iface,i,j] + Δy*ny[iface,i,j] + Δz*nz[iface,i,j])
 
-                                # if (micro > 1)
-                                #     qv_in  = uaux[ip1, 6]/ρ
-                                #     qv_sfc = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
-                                #     CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
-                                #             ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
-                                #             qv_in, qv_sfc, 2e-4, 2e-4)
-                                # else
-                                #     CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
-                                #             ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
-                                #             2e-4, 2e-4)
-                                # end
+                                if (micro > 1)
+                                    qv_in  = uaux[ip1, 6]/ρ
+                                    qv_sfc = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
+                                    CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
+                                            ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                            qv_in, qv_sfc, 2e-4, 2e-4)
+                                else
+                                    CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
+                                            ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                            2e-4, 2e-4)
+                                end
                                 # @info τ_f[iface,i,j,1], τ_f[iface,i,j,2], τ_f[iface,i,j,3]
                                 F_surf[i,j,2] = τ_f[iface,i,j,1]
                                 F_surf[i,j,3] = τ_f[iface,i,j,2]
