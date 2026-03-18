@@ -427,84 +427,6 @@ end
     return ξ, η, false
 end
 
-####
-function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh, 
-                                             u_mat::AbstractMatrix,
-                                             basis, ξ_nodes, ω,
-                                             neqs, inputs,
-                                             elem_bboxes, bins;
-                                             use_bins::Bool=true, bins_per_dim::Int=64)
-
-    
-    n_points = size(alya_coords, 1)
-    u_interp = zeros(Float64, n_points, neqs)
-    
-    # Extract mesh info
-    get_conn = _make_conn_accessor(mesh)
-    nelem    = mesh.nelem
-    ngl      = mesh.ngl
-    
-    # Interpolate each point
-    @inbounds for ipt in 1:n_points
-        px, py = alya_coords[ipt, 1], alya_coords[ipt, 2]
-        
-        candidates = bins !== nothing ? _bin_candidates(bins, px, py) : (1:nelem)
-        
-        found = false
-        for e in candidates
-            nodes = get_conn(e)
-            x_elem = mesh.coords[nodes,1]
-            y_elem = mesh.coords[nodes,2]
-           
-            # Quick bbox check
-            if px < minimum(x_elem) - 1e-10 || px > maximum(x_elem) + 1e-10 ||
-               py < minimum(y_elem) - 1e-10 || py > maximum(y_elem) + 1e-10
-                continue
-            end
-            
-            # Map to reference coordinates
-            ξ_ref, η_ref, converged = physical_to_reference(
-                px, py, x_elem, y_elem, ξ_nodes, ω, ngl
-            )
-            
-            if !converged || abs(ξ_ref) > 1.0 + 1e-10 || abs(η_ref) > 1.0 + 1e-10
-                continue
-            end
-            
-            # Evaluate basis at (ξ_ref, η_ref)
-            ψξ = evaluate_lagrange_1d(ξ_ref, ξ_nodes, ω)
-            ψη = evaluate_lagrange_1d(η_ref, ξ_nodes, ω)
-            
-            # Interpolate solution
-            for q in 1:neqs
-                val = 0.0
-                idx = 1
-                for j in 1:ngl, i in 1:ngl
-                    val += ψξ[i] * ψη[j] * u_mat[nodes[idx], q]
-                    idx += 1
-                end
-                u_interp[ipt, q] = val
-            end
-            
-            found = true
-            break
-            
-        end
-        
-        if !found
-            # Fallback: nearest neighbor
-            distances = (mesh.x .- px).^2 .+ (mesh.y .- py).^2
-            nearest = argmin(distances)
-            for q in 1:neqs
-                u_interp[ipt, q] = u_mat[nearest, q]
-            end
-        end
-    end
-    
-    return u_interp
-
-end
-
 # ---------------------------------------------------------------------------
 # Zero-allocation in-place interpolation — call this inside the time loop.
 #
@@ -603,7 +525,6 @@ function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
         end
     end
 
-    return u_interp
 end
 
 
@@ -1326,7 +1247,7 @@ function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float6
                                  alya_local_coords::Matrix{Float64})
 
     n_local = size(interp_values, 1)
-    nfields  = size(interp_values, 2)
+    nfields = size(interp_values, 2)
     ndime   = cpg.ndime
     wsize   = length(cpg.npoin_send)
     
@@ -1344,7 +1265,7 @@ function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float6
 
         off = send_offsets[bidx]
         for q in 1:nfields; cpg.send_bufs[bidx][off+q] = interp_values[i,q]; end        
-        send_offsets[bidx] += nfields 
+        send_offsets[bidx] += nfields
         
         coff = coord_offsets[bidx]
         for d in 1:ndime; cpg.send_coord_bufs[bidx][coff+d] = alya_local_coords[i,d]; end
@@ -1403,7 +1324,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
     u2uaux!(u_mat, u, neqs, npoin)
     call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
 
-    @time interpolate_solution_to_alya_coords!(
+    interpolate_solution_to_alya_coords!(
        u_interp, alya_coords, qout,
        ξ_nodes, ω, neqs,
        elem_bboxes, bins,
