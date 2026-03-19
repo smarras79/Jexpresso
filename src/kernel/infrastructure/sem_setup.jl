@@ -119,8 +119,9 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
     
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
+    # (reuse the nodes already computed during mesh construction)
     #--------------------------------------------------------
-    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
+    ξω  = mesh.ξω
     if length(args) > 3
         interp  = args[4]
         project = args[5]

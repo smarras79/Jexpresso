@@ -137,6 +137,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     if isnothing(adapt_flags) && !ladaptive && !linitial_refine
         _mesh_cache = _mesh_cache_path(inputs, nparts)
         if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts)
+            mesh.ξω = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
             return nothing   # partitioned_model not needed for non-AMR cached runs
         end
     end
@@ -713,8 +714,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #
     # Add high-order points to edges, faces, and elements (volumes)
     #
-    # initialize LGL struct and buyild Gauss-Lobatto-xxx points
+    # initialize LGL struct and build Gauss-Lobatto-xxx points (stored on mesh to avoid recomputation)
     lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
+    mesh.ξω = lgl
 
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ "; msg_rank = rank, suppress = mesh.msg_suppress)
