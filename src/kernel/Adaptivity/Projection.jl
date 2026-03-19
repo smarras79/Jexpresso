@@ -217,7 +217,7 @@ function barycentric_weights(ra)
 end
 
 
-function build_projection_1d(ξa)
+function build_projection_1d(ξa, lgb = basis_structs_ξ_ω!(LG(), length(ξa)-1, CPU()))
     Np = length(ξa)
 
     # Create the barycentric weights (we assume a similar function exists in Julia)
@@ -234,8 +234,7 @@ function build_projection_1d(ξa)
     interp[:, :, 2] = build_interpolation(ξa, ξa_b, ωa)
     interp[:, :, 1] = build_interpolation(ξa, ξa_t, ωa)
 
-    # Build the mass matrix and its inverse
-    lgb =  basis_structs_ξ_ω!(LG(),Np-1, CPU())  # Similar to Fortran's legendre_gauss function
+    # Use pre-computed LG quadrature nodes (lgb) for the mass matrix
     ξb, ωb_gl = lgb.ξ, lgb.ω
     # Get barycentric weights for ξb
     ωb = barycentric_weights(ξb)

@@ -57,7 +57,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     npoin_el::Union{TInt, Missing} = 1         # Total number of points in the reference element
 
     # Quadrature/interpolation nodes and weights (computed once in mesh, reused in sem_setup)
-    ξω::Any = nothing
+    ξω::Any  = nothing  # interpolation nodes (LGL/LG/CG/CGL, order nop)
+    ξωQ::Any = nothing  # LG quadrature nodes (order nop), used in projection regardless of integration type
     
 
     NNODES_EL::Union{TInt, Missing}  =  2^nsd

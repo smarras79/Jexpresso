@@ -126,7 +126,7 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
         interp  = args[4]
         project = args[5]
     else
-        interp, project = build_projection_1d(ξω.ξ)
+        interp, project = build_projection_1d(ξω.ξ, mesh.ξωQ)
     end
     
     ξ,ω = ξω.ξ, ξω.ω
