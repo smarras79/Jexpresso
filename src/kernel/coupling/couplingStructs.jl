@@ -209,11 +209,11 @@ function je_send_node_list(alya_local_ids::Vector{Int32},
         mask    = alya_owner_ranks .== dest_rank
         gid_buf = Int32.(alya_local_ids[mask])
         push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
-        println("[je_send_node_list] Jexpresso lrank=$lrank (wrank=$wrank) → Alya world rank $dest_rank: ",
+        #=println("[je_send_node_list] Jexpresso lrank=$lrank (wrank=$wrank) → Alya world rank $dest_rank: ",
                 "$(length(gid_buf)) node IDs")
         for (k, gid) in enumerate(gid_buf)
             println("  [$k] gid = $gid")
-        end
+        end=#
     end
     isempty(send_requests) || MPI.Waitall(send_requests)
     flush(stdout)
