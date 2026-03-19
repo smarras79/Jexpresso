@@ -21,13 +21,15 @@ const get_glue_components = GridapDistributed.get_glue_components
 # mesh.parts (PartitionedArrays.MPIArray) is never saved and is rebuilt
 # immediately after loading via distribute(LinearIndices((nparts,))).
 # Not used for AMR runs (adapt_flags ≠ nothing) because the mesh changes.
-function _mesh_cache_path(inputs::Dict, nparts::Int, rank::Int)
-    dir = let d = dirname(inputs[:gmsh_filename]); isempty(d) ? "." : d end
+function _mesh_cache_path(inputs::Dict, nparts::Int)
+    rank  = MPI.Comm_rank(get_mpi_comm())
+    dir   = let d = dirname(inputs[:gmsh_filename]); isempty(d) ? "." : d end
     suffix = nparts > 1 ? "_rank$(rank)" : ""
     return joinpath(dir, "MESH_nop$(inputs[:nop])$(suffix).jld2")
 end
 
-function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int, rank::Int)
+function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int)
+    rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return false
     try
         d = JLD2.load(path)
@@ -45,9 +47,10 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
     end
 end
 
-function _save_mesh_cache(path::String, mesh, rank::Int)
+function _save_mesh_cache(path::String, mesh)
+    rank        = MPI.Comm_rank(get_mpi_comm())
     saved_parts = mesh.parts
-    mesh.parts = 1          # replace MPIArray with the struct default (Int)
+    mesh.parts  = 1          # replace MPIArray with the struct default (Int)
     try
         JLD2.jldsave(path; mesh)
         rank == 0 && @info "Saved mesh topology cache: $path"
@@ -205,8 +208,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # above (needed for VTK) — only the expensive connectivity/high-order-node
     # computation is skipped on cache hits.
     if isnothing(adapt_flags)
-        _mesh_cache = _mesh_cache_path(inputs, nparts, rank)
-        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts, rank)
+        _mesh_cache = _mesh_cache_path(inputs, nparts)
+        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts)
             return partitioned_model
         end
     end
@@ -1633,7 +1636,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #show(stdout, "text/plain", mesh.conn')
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     if isnothing(adapt_flags)
-        _save_mesh_cache(_mesh_cache_path(inputs, nparts, rank), mesh, rank)
+        _save_mesh_cache(_mesh_cache_path(inputs, nparts), mesh)
         return partitioned_model
     else
         if (omesh.lneed_redistribute)
