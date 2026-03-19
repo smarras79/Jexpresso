@@ -22,7 +22,12 @@ const get_glue_components = GridapDistributed.get_glue_components
 #   :parts                — PartitionedArrays.MPIArray, rebuilt via distribute()
 #   :cell_node_ids et al. — Gridap.Arrays.Table, only used during mesh build
 #   :non_conforming_facets* — Vector{Vector} initialised with undef elements
+#   :SD                   — AbstractSpaceDimensions singleton, saved as integer
 # Not used for AMR runs (adapt_flags ≠ nothing) because the mesh changes.
+#
+# JLD2 cannot directly serialise Array{Union{Nothing,String}} or abstract-typed
+# singleton structs (SD) stored in a Dict{String,Any}.  We handle these with
+# explicit encode/decode helpers below.
 
 const _MESH_CACHE_SKIP_FIELDS = Set{Symbol}([
     :parts,
@@ -32,7 +37,20 @@ const _MESH_CACHE_SKIP_FIELDS = Set{Symbol}([
     :non_conforming_facets,
     :non_conforming_facets_parents_ghost,
     :non_conforming_facets_children_ghost,
+    :SD,            # saved separately as __SD_nsd__ integer
 ])
+
+# Fields whose element type is Union{Nothing,String} — not directly JLD2-safe.
+const _MESH_CACHE_OPTSTRING_FIELDS = Set{Symbol}([
+    :edge_type, :face_type, :bdy_edge_type, :bdy_face_type,
+])
+const _MESH_CACHE_NOTHING_SENTINEL = "__nothing__"
+
+# Encode Array{Union{Nothing,String}} → Vector{String} for JLD2.
+_encode_optstrings(v) = String[isnothing(x) ? _MESH_CACHE_NOTHING_SENTINEL : x for x in v]
+# Decode Vector{String} → Array{Union{Nothing,String}} on load.
+_decode_optstrings(v) = Array{Union{Nothing,String}}(
+    [x == _MESH_CACHE_NOTHING_SENTINEL ? nothing : x for x in v])
 
 function _mesh_cache_path(inputs::Dict, nparts::Int)
     rank  = MPI.Comm_rank(get_mpi_comm())
@@ -56,7 +74,17 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
         for f in fieldnames(typeof(mesh))
             f ∈ _MESH_CACHE_SKIP_FIELDS && continue
             haskey(flds, string(f)) || continue
-            setfield!(mesh, f, flds[string(f)])
+            v = flds[string(f)]
+            if f ∈ _MESH_CACHE_OPTSTRING_FIELDS
+                setfield!(mesh, f, _decode_optstrings(v))
+            else
+                setfield!(mesh, f, v)
+            end
+        end
+        # Restore SD from the saved nsd integer.
+        if haskey(flds, "__SD_nsd__")
+            nsd_val = flds["__SD_nsd__"]
+            mesh.SD = nsd_val == 3 ? NSD_3D() : nsd_val == 2 ? NSD_2D() : NSD_1D()
         end
         mesh.parts = distribute(LinearIndices((nparts,)))
         rank == 0 && @info "Loaded mesh topology from cache: $path"
@@ -73,8 +101,11 @@ function _save_mesh_cache(path::String, mesh)
         flds = Dict{String,Any}()
         for f in fieldnames(typeof(mesh))
             f ∈ _MESH_CACHE_SKIP_FIELDS && continue
-            flds[string(f)] = getfield(mesh, f)
+            v = getfield(mesh, f)
+            flds[string(f)] = f ∈ _MESH_CACHE_OPTSTRING_FIELDS ? _encode_optstrings(v) : v
         end
+        # Persist SD as a plain integer (avoids abstract-type JLD2 issues).
+        flds["__SD_nsd__"] = mesh.nsd
         JLD2.jldsave(path; mesh_fields = flds)
         rank == 0 && @info "Saved mesh topology cache: $path"
     catch e
