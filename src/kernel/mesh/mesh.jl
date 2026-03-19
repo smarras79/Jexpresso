@@ -45,7 +45,14 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
     rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return false
     try
-        flds = JLD2.load(path)["mesh_fields"]
+        raw = JLD2.load(path)
+        if !haskey(raw, "mesh_fields")
+            # Legacy file written by older code (key "mesh" — whole struct).
+            # Discard it; the fresh build below will overwrite with new format.
+            rank == 0 && @info "Mesh cache $path has old format — discarding and rebuilding"
+            return false
+        end
+        flds = raw["mesh_fields"]
         for f in fieldnames(typeof(mesh))
             f ∈ _MESH_CACHE_SKIP_FIELDS && continue
             haskey(flds, string(f)) || continue
