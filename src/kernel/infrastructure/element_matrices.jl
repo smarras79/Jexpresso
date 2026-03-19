@@ -1204,11 +1204,12 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
-    if typeof(SD) == NSD_1D
+    if mesh.nsd == 1
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
-    elseif typeof(SD) == NSD_2D
+    elseif mesh.nsd == 2
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
-    elseif typeof(SD) == NSD_3D
+        #    elseif typeof(SD) == NSD_3D
+    elseif mesh.nsd == 3
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
     end
     if (backend == CPU())

@@ -219,7 +219,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                     yij = mesh.y[ip]
                     
                     # Unroll and optimize the inner loops
-                    @turbo for l=1:Q+1
+                    @tturbo for l=1:Q+1
                         dψ_j_l = dψ[j,l]
                         ψ_j_l = ψ[j,l]
                         for k=1:Q+1
@@ -241,7 +241,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             dηdx_iel = @view metrics.dηdx[iel, :, :]
             dηdy_iel = @view metrics.dηdy[iel, :, :]
             
-            @turbo for l = 1:Q+1
+            @tturbo for l = 1:Q+1
                 for k = 1:Q+1
                     # Compute Jacobian determinant
                     Je_val = dxdξ_iel[k, l] * dydη_iel[k, l] - dydξ_iel[k, l] * dxdη_iel[k, l]
@@ -387,7 +387,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 end
                 
                 # More cache-friendly nested loops
-                @turbo for n = 1:Q1
+                @tturbo for n = 1:Q1
                     ψ_k_n = ψ[k, n]
                     dψ_k_n = dψ[k, n]
                     for m = 1:Q1
@@ -431,7 +431,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             dζdy_iel = @view metrics.dζdy[iel, :, :, :]
             dζdz_iel = @view metrics.dζdz[iel, :, :, :]
             
-            @turbo for n = 1:Q1, m = 1:Q1, l = 1:Q1
+            @tturbo for n = 1:Q1, m = 1:Q1, l = 1:Q1
                 # Load derivatives once with better naming
                 dxdξ = dxdξ_iel[l, m, n]
                 dydη = dydη_iel[l, m, n]
@@ -499,7 +499,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 x1, y1, z1 = temp_face_coords[coord_idx]
                 coord_idx += 1
                 
-                @turbo for l = 1:ngl, k = 1:ngl
+                @tturbo for l = 1:ngl, k = 1:ngl
                     dψ_i_k = dψ[i, k]
                     ψ_i_k  = ψ[i, k]
                     ψ_j_l  = ψ[j, l]

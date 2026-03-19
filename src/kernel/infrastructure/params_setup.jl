@@ -200,9 +200,7 @@ function params_setup(sem,
                                          sem.mesh.ngr,
                                          T, backend;
                                          neqs=qp.neqs)
-
         
-
         RHS_lag          = rhs_lag.RHS_lag
         RHS_visc_lag     = rhs_lag.RHS_visc_lag
         rhs_el_lag       = rhs_lag.rhs_el_lag
@@ -250,7 +248,9 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
-    if (sem.mesh.SD != NSD_1D()) && !(sem.mesh.lLaguerre)
+    
+    nsd = sem.mesh.nsd
+    if (nsd > 1) && !(sem.mesh.lLaguerre)
         if rank == 0
             @info "start conformity4ncf_q!"
         end
@@ -282,23 +282,19 @@ function params_setup(sem,
             @info "end conformity4ncf_q!"
         end
     end
-    for i=1:qp.neqs
-        idx = (i-1)*sem.mesh.npoin
-        u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
-        qp.qnm1[:,i] = @view(qp.qn[:,i])
-        qp.qnm2[:,i] = @view(qp.qn[:,i])
-        
+
+    neqs  = qp.neqs
+    npoin = sem.mesh.npoin
+    for i=1:neqs
+        idx = (i-1)*npoin
+        copyto!(view(u, idx+1:i*npoin), view(qp.qn, :, i))
+        copyto!(view(qp.qnm1,:,i), view(qp.qn,:,i))
+        copyto!(view(qp.qnm2,:,i), view(qp.qn,:,i))
     end
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    #if (backend == CPU())
-    #    visc_coeff = zeros(TFloat, qp.neqs)
-    #    if inputs[:lvisc]
-    #        visc_coeff .= inputs[:μ]
-    #    end
-    #else
-   
+    
     if inputs[:lvisc]
         coeffs = zeros(TFloat, qp.neqs)
         if size(inputs[:μ]) > size(coeffs)

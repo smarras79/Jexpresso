@@ -22,12 +22,12 @@ function driver(nranks,
     if is_coupled
 
         # 2. Complete coupling setup
-        coupling, sem, partitioned_model, qp = setup_coupling_and_mesh(
+        coupling, sem, partitioned_model, qp = @time setup_coupling_and_mesh(
             world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat
         )
         
         # Now call params_setup with correct order: sem first, then coupling
-        params, u = params_setup(
+        params, u = @time params_setup(
             sem, 
             coupling,  # Pass coupling as second argument
             qp, 
