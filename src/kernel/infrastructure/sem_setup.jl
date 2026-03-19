@@ -25,7 +25,7 @@ function _try_load_sem_cache(path::String)
         d = JLD2.load(path)
         return (d["metrics"], d["matrix"])
     catch e
-        rank == 0 && @warn "Ignoring unreadable SEM cache $path: $e"
+        rank == 0 && @warn "Ignoring unreadable SEM cache $path" exception=(e, catch_backtrace())
         return (nothing, nothing)
     end
 end
@@ -36,7 +36,7 @@ function _save_sem_cache(path::String, metrics, matrix)
         JLD2.jldsave(path; metrics, matrix)
         rank == 0 && @info "Saved SEM preprocess cache: $path"
     catch e
-        rank == 0 && @warn "Failed to save SEM cache $path: $e"
+        rank == 0 && @warn "Failed to save SEM cache $path" exception=(e, catch_backtrace())
     end
 end
 # ──────────────────────────────────────────────────────────────────────────────

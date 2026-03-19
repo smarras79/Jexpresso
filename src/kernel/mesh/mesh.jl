@@ -17,10 +17,23 @@ const get_glue_components = GridapDistributed.get_glue_components
 
 # ─── Mesh topology cache helpers ──────────────────────────────────────────────
 # Cache the expensive result of mod_mesh_read_gmsh! (add_high_order_nodes_*,
-# connectivity loops, ip2gip).  Only the pure-array fields are serialised;
-# mesh.parts (PartitionedArrays.MPIArray) is never saved and is rebuilt
-# immediately after loading via distribute(LinearIndices((nparts,))).
+# connectivity loops, ip2gip).  Only pure-array / scalar fields are saved.
+# Skipped fields:
+#   :parts                — PartitionedArrays.MPIArray, rebuilt via distribute()
+#   :cell_node_ids et al. — Gridap.Arrays.Table, only used during mesh build
+#   :non_conforming_facets* — Vector{Vector} initialised with undef elements
 # Not used for AMR runs (adapt_flags ≠ nothing) because the mesh changes.
+
+const _MESH_CACHE_SKIP_FIELDS = Set{Symbol}([
+    :parts,
+    :cell_node_ids, :cell_node_ids_ho,
+    :cell_edge_ids, :cell_face_ids,
+    :face_edge_ids, :facet_cell_ids,
+    :non_conforming_facets,
+    :non_conforming_facets_parents_ghost,
+    :non_conforming_facets_children_ghost,
+])
+
 function _mesh_cache_path(inputs::Dict, nparts::Int)
     rank  = MPI.Comm_rank(get_mpi_comm())
     dir   = let d = dirname(inputs[:gmsh_filename]); isempty(d) ? "." : d end
@@ -32,32 +45,33 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
     rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return false
     try
-        d = JLD2.load(path)
-        loaded = d["mesh"]
+        flds = JLD2.load(path)["mesh_fields"]
         for f in fieldnames(typeof(mesh))
-            f === :parts && continue  # skip MPIArray — rebuilt below
-            setfield!(mesh, f, getfield(loaded, f))
+            f ∈ _MESH_CACHE_SKIP_FIELDS && continue
+            haskey(flds, string(f)) || continue
+            setfield!(mesh, f, flds[string(f)])
         end
         mesh.parts = distribute(LinearIndices((nparts,)))
         rank == 0 && @info "Loaded mesh topology from cache: $path"
         return true
     catch e
-        rank == 0 && @warn "Ignoring mesh cache $path: $e"
+        rank == 0 && @warn "Ignoring mesh cache $path" exception=(e, catch_backtrace())
         return false
     end
 end
 
 function _save_mesh_cache(path::String, mesh)
-    rank        = MPI.Comm_rank(get_mpi_comm())
-    saved_parts = mesh.parts
-    mesh.parts  = 1          # replace MPIArray with the struct default (Int)
+    rank = MPI.Comm_rank(get_mpi_comm())
     try
-        JLD2.jldsave(path; mesh)
+        flds = Dict{String,Any}()
+        for f in fieldnames(typeof(mesh))
+            f ∈ _MESH_CACHE_SKIP_FIELDS && continue
+            flds[string(f)] = getfield(mesh, f)
+        end
+        JLD2.jldsave(path; mesh_fields = flds)
         rank == 0 && @info "Saved mesh topology cache: $path"
     catch e
-        rank == 0 && @warn "Failed to save mesh cache $path: $e"
-    finally
-        mesh.parts = saved_parts   # always restore
+        rank == 0 && @warn "Failed to save mesh cache $path" exception=(e, catch_backtrace())
     end
 end
 # ──────────────────────────────────────────────────────────────────────────────
