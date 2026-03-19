@@ -15,6 +15,49 @@ const Finalize = GridapP4est.Finalize
 const pXest_copy = GridapP4est.pXest_copy
 const get_glue_components = GridapDistributed.get_glue_components
 
+# ─── Mesh topology cache helpers ──────────────────────────────────────────────
+# Cache the expensive result of mod_mesh_read_gmsh! (add_high_order_nodes_*,
+# connectivity loops, ip2gip).  Only the pure-array fields are serialised;
+# mesh.parts (PartitionedArrays.MPIArray) is never saved and is rebuilt
+# immediately after loading via distribute(LinearIndices((nparts,))).
+# Not used for AMR runs (adapt_flags ≠ nothing) because the mesh changes.
+function _mesh_cache_path(inputs::Dict, nparts::Int, rank::Int)
+    dir = let d = dirname(inputs[:gmsh_filename]); isempty(d) ? "." : d end
+    suffix = nparts > 1 ? "_rank$(rank)" : ""
+    return joinpath(dir, "MESH_nop$(inputs[:nop])$(suffix).jld2")
+end
+
+function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int, rank::Int)
+    isfile(path) || return false
+    try
+        d = JLD2.load(path)
+        loaded = d["mesh"]
+        for f in fieldnames(typeof(mesh))
+            f === :parts && continue  # skip MPIArray — rebuilt below
+            setfield!(mesh, f, getfield(loaded, f))
+        end
+        mesh.parts = distribute(LinearIndices((nparts,)))
+        rank == 0 && @info "Loaded mesh topology from cache: $path"
+        return true
+    catch e
+        rank == 0 && @warn "Ignoring mesh cache $path: $e"
+        return false
+    end
+end
+
+function _save_mesh_cache(path::String, mesh, rank::Int)
+    saved_parts = mesh.parts
+    mesh.parts = 1          # replace MPIArray with the struct default (Int)
+    try
+        JLD2.jldsave(path; mesh)
+        rank == 0 && @info "Saved mesh topology cache: $path"
+    catch e
+        rank == 0 && @warn "Failed to save mesh cache $path: $e"
+    finally
+        mesh.parts = saved_parts   # always restore
+    end
+end
+# ──────────────────────────────────────────────────────────────────────────────
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
@@ -155,7 +198,20 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         dtopology      = get_grid_topology(dmodel)
 
         mesh.msg_suppress = true
-    end 
+    end
+
+    # ── Mesh topology cache check ─────────────────────────────────────────────
+    # Only for standard (non-AMR) runs.  partitioned_model is already built
+    # above (needed for VTK) — only the expensive connectivity/high-order-node
+    # computation is skipped on cache hits.
+    if isnothing(adapt_flags)
+        _mesh_cache = _mesh_cache_path(inputs, nparts, rank)
+        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts, rank)
+            return partitioned_model
+        end
+    end
+    # ─────────────────────────────────────────────────────────────────────────
+
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     
@@ -1577,6 +1633,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #show(stdout, "text/plain", mesh.conn')
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     if isnothing(adapt_flags)
+        _save_mesh_cache(_mesh_cache_path(inputs, nparts, rank), mesh, rank)
         return partitioned_model
     else
         if (omesh.lneed_redistribute)
