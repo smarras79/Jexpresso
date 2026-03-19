@@ -1,5 +1,38 @@
 include("../mesh/restructure_for_periodicity.jl")
 
+# ─── SEM preprocess cache helpers ─────────────────────────────────────────────
+# Only `metrics` and `matrix` are cached — pure numerical arrays with no MPI
+# state.  `mesh`, `partitioned_model`, and `mesh.parts` are intentionally
+# excluded: they contain PartitionedArrays.MPIArray objects whose embedded MPI
+# communicator handles are process-local integers that become invalid after
+# JLD2 deserialisation, causing MPI_ERR_COMM on the next use.
+function _preprocess_cache_path(inputs::Dict, Nξ::Int, Qξ::Int, nparts::Int, rank::Int)
+    dir = let d = dirname(inputs[:gmsh_filename]); isempty(d) ? "." : d end
+    suffix = nparts > 1 ? "_rank$(rank)" : ""
+    return joinpath(dir, "PREPROCESS_nop$(Nξ)$(suffix).jld2")
+end
+
+function _try_load_sem_cache(path::String, rank::Int)
+    isfile(path) || return (nothing, nothing)
+    try
+        d = JLD2.load(path)
+        return (d["metrics"], d["matrix"])
+    catch e
+        rank == 0 && @warn "Ignoring unreadable SEM cache $path: $e"
+        return (nothing, nothing)
+    end
+end
+
+function _save_sem_cache(path::String, metrics, matrix, rank::Int)
+    try
+        JLD2.jldsave(path; metrics, matrix)
+        rank == 0 && @info "Saved SEM preprocess cache: $path"
+    catch e
+        rank == 0 && @warn "Failed to save SEM cache $path: $e"
+    end
+end
+# ──────────────────────────────────────────────────────────────────────────────
+
 function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
     
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
@@ -113,7 +146,19 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
         ωb  = barycentric_weights(ξ)
     end
     SD = mesh.SD
-    
+
+    # ── Preprocess cache setup ────────────────────────────────────────────────
+    preprocess_cache = _preprocess_cache_path(inputs, Nξ, Qξ, nparts, rank)
+    if rank == 0 @info preprocess_cache end
+    cached_metrics, cached_matrix = _try_load_sem_cache(preprocess_cache, rank)
+    loaded_from_cache = !isnothing(cached_metrics)
+    if loaded_from_cache
+        metrics = cached_metrics
+        matrix  = cached_matrix
+        if rank == 0 @info " Loaded SEM preprocess cache — skipping metric terms and matrix build" end
+    end
+    # ─────────────────────────────────────────────────────────────────────────
+
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
@@ -160,18 +205,21 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
             
             #if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
             
-            if (rank == 0) @info " Build metrics ......" end
-            metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])            
-            @time build_metric_terms!(metrics1, mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat, COVAR(), SD; backend = inputs[:backend])
-            
-            metrics2 = allocate_metrics_laguerre(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Qξ, mesh.ngr, TFloat, inputs[:backend])
-            build_metric_terms!(metrics2, mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat, COVAR(), SD; backend = inputs[:backend])
-            
-            metrics = (metrics1, metrics2)
-            if (rank == 0) @info " Build metrics ...... DONE" end
-            
-            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
-                                             ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+            if !loaded_from_cache
+                if (rank == 0) @info " Build metrics ......" end
+                metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
+                @time build_metric_terms!(metrics1, mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat, COVAR(), SD; backend = inputs[:backend])
+
+                metrics2 = allocate_metrics_laguerre(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Qξ, mesh.ngr, TFloat, inputs[:backend])
+                build_metric_terms!(metrics2, mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat, COVAR(), SD; backend = inputs[:backend])
+
+                metrics = (metrics1, metrics2)
+                if (rank == 0) @info " Build metrics ...... DONE" end
+
+                matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
+                                                 ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+                _save_sem_cache(preprocess_cache, metrics, matrix, rank)
+            end
             
         else
             if (rank == 0) @info " Build interpolation bases ......" end
@@ -202,23 +250,25 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
                     end
                 end
             end
-            #--------------------------------------------------------
-            # Build metric terms
-            #--------------------------------------------------------          
-            if (rank == 0) @info " Build metrics ......" end
-            metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
-            @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
-            if (rank == 0) @info " Build metrics ...... END" end
-            
             if (inputs[:lphysics_grid])
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
-            end 
-            if (rank == 0) @info " Build periodicity infrastructure ......" end
-            
-            if (rank == 0) @info " Matrix wrapper ......" end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
-                        ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-            if (rank == 0)  @info " Matrix wrapper ...... END" end
+            end
+
+            if !loaded_from_cache
+                #--------------------------------------------------------
+                # Build metric terms
+                #--------------------------------------------------------
+                if (rank == 0) @info " Build metrics ......" end
+                metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
+                @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
+                if (rank == 0) @info " Build metrics ...... END" end
+
+                if (rank == 0) @info " Matrix wrapper ......" end
+                matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
+                            ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+                if (rank == 0) @info " Matrix wrapper ...... END" end
+                _save_sem_cache(preprocess_cache, metrics, matrix, rank)
+            end
         end
     else
         #
@@ -233,29 +283,27 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
             basis  = (basis1, basis2)
             ω1     = ω
             ω      = (ω1,ω2)
-            #--------------------------------------------------------
-            # Build metric terms
-            #--------------------------------------------------------
-            if (rank == 0) @info " Build metrics ......" end
-            metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
-            build_metric_terms!(metrics1, mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
-            metrics2 = allocate_metrics(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, mesh.ngr, TFloat, inputs[:backend])
-            build_metric_terms_1D_Laguerre!(metrics2, mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat, COVAR(), SD;backend = inputs[:backend])
-            
-            metrics = (metrics1, metrics2)
-            if (rank == 0) @info " Build metrics ...... DONE" end
-            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+            if !loaded_from_cache
+                #--------------------------------------------------------
+                # Build metric terms
+                #--------------------------------------------------------
+                if (rank == 0) @info " Build metrics ......" end
+                metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
+                build_metric_terms!(metrics1, mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
+                metrics2 = allocate_metrics(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, mesh.ngr, TFloat, inputs[:backend])
+                build_metric_terms_1D_Laguerre!(metrics2, mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat, COVAR(), SD; backend = inputs[:backend])
+
+                metrics = (metrics1, metrics2)
+                if (rank == 0) @info " Build metrics ...... DONE" end
+                matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+                _save_sem_cache(preprocess_cache, metrics, matrix, rank)
+            end
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
 
             ω1 = ω
             ω = ω1
-            #--------------------------------------------------------
-            # Build metric terms
-            #--------------------------------------------------------
-            metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
-            @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
-            
+
             if (inputs[:lperiodic_1d])
                 @time restructure4periodicity_1D!(mesh, mesh.coords,
                                                   mesh.xmax, mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,
@@ -265,10 +313,20 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
                                                   mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,
                                                   inputs,inputs[:backend])
             end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
-                                    ldss_laplace=inputs[:ldss_laplace],
-                                    ldss_differentiation=inputs[:ldss_differentiation],
-                                    backend = inputs[:backend], interp)
+
+            if !loaded_from_cache
+                #--------------------------------------------------------
+                # Build metric terms
+                #--------------------------------------------------------
+                metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
+                @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
+
+                matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
+                                        ldss_laplace=inputs[:ldss_laplace],
+                                        ldss_differentiation=inputs[:ldss_differentiation],
+                                        backend = inputs[:backend], interp)
+                _save_sem_cache(preprocess_cache, metrics, matrix, rank)
+            end
         end
     end
 
