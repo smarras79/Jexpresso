@@ -121,17 +121,31 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
-    
-    #
-    # Read GMSH grid from file
-    #      
-    parts           = distribute(LinearIndices((nparts,)))
-    mesh.parts      = distribute(LinearIndices((nparts,)))
-    mesh.nparts     = nparts
-    mesh.rank       = rank
+
+    mesh.parts  = distribute(LinearIndices((nparts,)))
+    mesh.nparts = nparts
+    mesh.rank   = rank
     ladaptive       = inputs[:ladapt]
     linitial_refine = inputs[:linitial_refine]
-    lamr_mesh       = !isnothing(adapt_flags) 
+    lamr_mesh       = !isnothing(adapt_flags)
+
+    # ── Early-exit cache check ────────────────────────────────────────────────
+    # For plain non-adaptive runs the cache stores everything; GmshDiscreteModel
+    # and all connectivity / HO-node loops can be skipped entirely.
+    # partitioned_model is only accessed by time_loop! when inputs[:lamr]==true,
+    # so returning nothing here is safe for standard (non-AMR) runs.
+    if isnothing(adapt_flags) && !ladaptive && !linitial_refine
+        _mesh_cache = _mesh_cache_path(inputs, nparts)
+        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts)
+            return nothing   # partitioned_model not needed for non-AMR cached runs
+        end
+    end
+    # ─────────────────────────────────────────────────────────────────────────
+
+    #
+    # Read GMSH grid from file  (only reached on cache miss or AMR/refine path)
+    #
+    parts           = distribute(LinearIndices((nparts,)))
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
@@ -254,18 +268,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
         mesh.msg_suppress = true
     end
-
-    # ── Mesh topology cache check ─────────────────────────────────────────────
-    # Only for standard (non-AMR) runs.  partitioned_model is already built
-    # above (needed for VTK) — only the expensive connectivity/high-order-node
-    # computation is skipped on cache hits.
-    if isnothing(adapt_flags)
-        _mesh_cache = _mesh_cache_path(inputs, nparts)
-        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts)
-            return partitioned_model
-        end
-    end
-    # ─────────────────────────────────────────────────────────────────────────
 
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
