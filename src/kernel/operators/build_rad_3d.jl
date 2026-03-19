@@ -194,7 +194,23 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     nprocs = MPI.Comm_size(MPI.COMM_WORLD)
     rank   = MPI.Comm_rank(MPI.COMM_WORLD)
     comm   = MPI.COMM_WORLD
-    
+
+    # ── Stage 0: Check for spatial non-conformity ──────────────────────────────
+    # Spatial adaptive mesh support is under development. Currently only angular
+    # non-conformity is supported. This check provides graceful error handling.
+    has_spatial_hanging_nodes = !ismissing(mesh.num_hanging_facets) && mesh.num_hanging_facets > 0
+
+    if has_spatial_hanging_nodes
+        @rankinfo rank "[$rank] Spatial non-conformity detected:"
+        @rankinfo rank "  - Number of hanging facets: $(mesh.num_hanging_facets)"
+        @rankinfo rank "  - Status: Spatial constraint support NOT YET IMPLEMENTED"
+        @rankinfo rank "  - Workaround: Use conforming spatial mesh (no AMR)"
+        @rankinfo rank "  - Target: Full spatial-angular non-conformity support in development"
+        error("[Rank $rank] Radiative transfer solver does not yet support spatial mesh non-conformity. " *
+              "Please use a conforming spatial mesh (no spatial AMR). " *
+              "Spatial-angular constraint support planned for Stage 1+ of development.")
+    end
+
     if inputs[:adaptive_extra_meshes]
         gip2owner_extra = []
         local_parent_indices = Set{Int}()
@@ -259,20 +275,26 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
         # ── Pre-adaptivity connectivity and numbering ─────────────────────────
         @rankinfo rank "Building initial adaptive spatial-angular connectivity..."
+        flush(stdout)
         nc_mat, nc_non_global_nodes, n_non_global_nodes, n_spa =
             adaptive_spatial_angular_numbering_3D_2D!(
                 connijk_spa, nelem, ngl, mesh.connijk,
                 extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
                 extra_meshes_coords, mesh.x, mesh.y, mesh.z,
                 extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
+        @rankinfo rank "✓ Connectivity built: n_spa=$n_spa, n_non_global=$n_non_global_nodes"
+        flush(stdout)
 
         @rankinfo rank "Building pre-adaptivity global numbering..."
+        flush(stdout)
         ip2gip_spa, gip2ip, gip2owner_spa, gnpoin =
             setup_global_numbering_adaptive_angular_scalable(
                 mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
                 extra_meshes_coords, extra_meshes_connijk,
                 extra_meshes_extra_nops, extra_meshes_extra_nelems,
                 n_spa, n_non_global_nodes, nc_non_global_nodes)
+        @rankinfo rank "✓ Global numbering complete: gnpoin=$gnpoin"
+        flush(stdout)
 
         gip2owner_extra = zeros(Int, n_spa)
         for ip = 1:n_spa
@@ -287,7 +309,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
         @rankinfo rank "Global DOF count (pre-adapt): $gnpoin"
+        flush(stdout)
 
+        @rankinfo rank "Building non-conforming ghost layer..."
+        flush(stdout)
         ghost_layer = build_nonconforming_ghost_layer(
             mesh, connijk_spa, mesh.ip2gip, ip2gip_spa, gip2owner_spa,
             extra_meshes_coords, extra_meshes_connijk,
@@ -295,9 +320,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
             extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
             extra_meshes_ref_level, n_spa, neighbors)
+        @rankinfo rank "✓ Ghost layer built"
+        flush(stdout)
 
         # ── Pre-adaptivity matrices for adaptivity criterion ─────────────────
         @rankinfo rank "Assembling pre-adaptivity LHS and mass matrix..."
+        @info rank
         LHS = sparse_lhs_assembly_3Dby2D_adaptive(
             ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
             mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ,
@@ -311,7 +339,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
             extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
             ngl, extra_meshes_extra_nelems, connijk_spa)
-
+        
+        M_inv = spdiagm(0 => 1.0 ./ Md)
+        @info size(Md), size(LHS)
+        @info "Md range" minimum(Md), maximum(Md)
+        @info "Md mean" sum(Md) / length(Md)
+        @info "Large Md entries" count(Md .> 1e4)
+        @info "LHS diagonal range" minimum(diag(LHS)), maximum(diag(LHS))
+        @info "MLHS diagonal range" minimum(diag(M_inv*LHS)), maximum(diag(M_inv*LHS))
+        @info "norm(LHS, Inf)" norm(LHS, Inf)
+        @info "norm(MLHS, Inf)" norm(M_inv*LHS, Inf)
+        @info "norm(LHS, 1)" norm(LHS, 1)
+        @info "norm(MLHS, 1)" norm(M_inv*LHS, 1)
         # ── Adaptivity criterion ──────────────────────────────────────────────
         @rankinfo rank "Computing adaptivity criterion..."
         one_vec = ones(Float64, size(LHS, 1))
@@ -373,9 +412,13 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             nc_mat_rhs = sparse(I,n_spa,n_spa)
             P = nc_mat'
             P_vec = nc_mat_rhs'
-
-        if !(maximum(maximum.(extra_meshes_ref_level)) == 0)
-
+        
+        # CRITICAL: Must use global maximum across ALL ranks to avoid MPI divergence
+        # If one rank has adapted and another hasn't, they end up in different code blocks
+        # with different MPI calls that can't be satisfied collectively
+        local_max_ref = maximum(maximum.(extra_meshes_ref_level))
+        global_max_ref = MPI.Allreduce(local_max_ref, MPI.MAX, MPI.COMM_WORLD)
+        if !(global_max_ref == 0)
             # ── Post-adaptivity connectivity ──────────────────────────────────
             connijk_spa = [Array{Int}(undef, ngl, ngl, ngl,
                               extra_meshes_extra_nelems[iel],
@@ -465,11 +508,27 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
             P    = nc_mat'
             rest = nc_mat
-
+            @info "checking equality of nc_mat and nc_mat_rhs", maximum(nc_mat-nc_mat_rhs), minimum(nc_mat-nc_mat_rhs)
+            rows_mat, vals_mat = findnz(nc_mat[:, 199435])
+            rows_rhs, vals_rhs = findnz(nc_mat_rhs[:, 199435])
+            @info "nc_mat entries" collect(zip(rows_mat, vals_mat))
+            @info "nc_mat_rhs entries" collect(zip(rows_rhs, vals_rhs))
+            @info "Same rows?" sort(rows_mat) == sort(rows_rhs)
             Md = assemble_mass_diagonal_3Dby2D_adaptive(
                 ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
                 extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
                 ngl, extra_meshes_extra_nelems, connijk_spa)
+            M_inv = spdiagm(0 => 1.0 ./ Md)
+            @info size(Md), size(LHS)
+            @info "Md range" minimum(Md), maximum(Md)
+            @info "Md mean" sum(Md) / length(Md)
+            @info "Large Md entries" count(Md .> 1e4)
+            @info "LHS diagonal range" minimum(diag(LHS)), maximum(diag(LHS))
+            @info "MLHS diagonal range" minimum(diag(M_inv*LHS)), maximum(diag(M_inv*LHS))
+            @info "norm(LHS, Inf)" norm(LHS, Inf)
+            @info "norm(MLHS, Inf)" norm(M_inv*LHS, Inf)
+            @info "norm(LHS, 1)" norm(LHS, 1)
+            @info "norm(MLHS, 1)" norm(M_inv*LHS, 1)
         end  # if adapted
 
         # ── Mass matrix assembly and inversion ────────────────────────────────
@@ -550,6 +609,28 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         ref = zeros(TFloat, n_spa)
         BDY = zeros(TFloat, n_spa_g)
 
+        row_199435 = MLHS[199435, :]
+        @info "nnz in MLHS row 199435" nnz(row_199435)
+        @info "MLHS row 199435" findnz(row_199435)
+        row_202540 = MLHS[202540, :]
+        @info "nnz in MLHS row 202540" nnz(row_202540)
+        row_199435 = A_left_restricted[199435, :]
+        @info "nnz in MLHS row 199435" nnz(row_199435)
+        @info "MLHS row 199435" findnz(row_199435)
+        row_202540 = A_left_restricted[202540, :]
+        @info "nnz in MLHS row 202540" nnz(row_202540)
+        row_199435 = A_both_restricted[199435, :]
+        @info "nnz in MLHS row 199435" nnz(row_199435)
+        @info "MLHS row 199435" findnz(row_199435)
+        row_202540 = A_both_restricted[202540, :]
+        @info "nnz in MLHS row 202540" nnz(row_202540)
+        row_199435 = A[199435, :]
+        @info "nnz in MLHS row 199435" nnz(row_199435)
+        @info "MLHS row 199435" findnz(row_199435)
+        row_202540 = A[202540, :]
+        @info "nnz in MLHS row 202540" nnz(row_202540)
+        
+
     else  # ── Non-adaptive path ────────────────────────────────────────────────
 
         npoin_ang_total = npoin * extra_mesh.extra_npoin
@@ -623,6 +704,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         for i = 1:ngl, j = 1:ngl, k = 1:ngl
             ip  = mesh.connijk[iel, i, j, k]
             x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
+            if (abs(x-2.0)<1e-4 && abs(y-1.0)<1e-4 && abs(z-(2/3))<1e-4)
+                @info iel, i,j,k, ip
+            end
             sf  = spatial_factor[ip]
             is_boundary = ip in mesh.poin_in_bdy_face
 
@@ -812,7 +896,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             x    = extended_parents_x[i]; y = extended_parents_y[i]; z = extended_parents_z[i]
             θ    = extended_parents_θ[i]; ϕ = extended_parents_ϕ[i]
             ip_g = n_spa + i
-
+            Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
             if ip in mesh.poin_in_bdy_face
                 face_normals = bdy_normals[ip]
                 best_dot = 0.0
@@ -854,16 +938,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
         A = dropzeros!(A)
+        
     
-
     # ── RHS restriction ───────────────────────────────────────────────────────
     if inputs[:adaptive_extra_meshes]
+        #RHS_mass_weighted = Md .* RHS
         @rankinfo rank "Restricting RHS..."
         rhs_effects_to_send =
             compute_hanging_rhs_effects_before_restriction(
                 ghost_constraint_data_rhs, RHS, ip2gip_spa, gip2owner_spa, rank)
+                #ghost_constraint_data_rhs, RHS_mass_weighted, ip2gip_spa, gip2owner_spa, rank)
 
-        RHS_restricted = nc_mat_rhs * RHS
+        RHS_restricted = nc_mat_rhs * RHS#_mass_weighted
 
         received_rhs_effects =
             exchange_hanging_effects_vector(rhs_effects_to_send, rank, comm)
@@ -879,7 +965,15 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 RHS_red[node] = val
             end
         end
+        
         B = RHS_red
+
+    
+        #=for ip in all_hanging_nodes
+            A[ip,ip] = 1.0
+            B[ip] = 0.0
+        end=#
+        
     else
         for (node, val) in boundary_dict
             RHS[node] = val
@@ -887,20 +981,109 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         B = RHS
     end
 
+    #-Symmetrize boundary conditions:
+    As  = sparse(A)
+    rows_A = rowvals(As)
+    vals_A = nonzeros(As)
+
+    for col in boundary_set
+        val = BDY[col]
+        for ptr in nzrange(As, col)
+            row = rows_A[ptr]
+            row in boundary_set && continue  # skip BC-BC interactions
+            row > n_free && continue
+            if(gip2owner_extra[row] == rank)
+                B[row] -= vals_A[ptr] * val
+            end
+            vals_A[ptr] = 0.0
+        end
+    end
+    As = dropzeros!(As)
+    if inputs[:adaptive_extra_meshes]
+        for ip in all_hanging_nodes
+            As[ip,ip] = 1.0
+        end
+    end
+    # Check if the system is consistent
+    @info "norm(B_consistent)" norm(B)
+    @info "norm(LHS_restricted)" norm(As, Inf)
+    @info "Initial residual" norm(B - As * zeros(n_spa))
+
+    # Check diagonal
+    d = diag(As)
+    @info "Negative diagonal count" count(d .< 0)
+    @info "Zero diagonal count" count(abs.(d) .< 1e-10)
+    @info "Diagonal range" minimum(d), maximum(d)
+
+    # Check if matrix is badly scaled
+    @info "1-norm" norm(As, 1)
+    @info "Inf-norm" norm(As, Inf)
+
+    # Check RHS magnitude
+    @info "max B" maximum(abs.(B))
+    @info "min B" minimum(abs.(B))
+    
+    physics_diag = [d[ip] for ip = 1:length(d) 
+                if !(ip in boundary_set) && d[ip] > 1e-10]
+    neg_diag = [d[ip] for ip = 1:length(d) 
+            if !(ip in boundary_set) && d[ip] < 0]
+
+    @info "Physics diagonal range" minimum(physics_diag), maximum(physics_diag)
+    @info "Physics diagonal median" median(physics_diag)
+    @info "Negative diagonal range" minimum(neg_diag), maximum(neg_diag)
+    @info "Ratio neg/physics_min" minimum(neg_diag) / minimum(physics_diag)
+    n_fixed = 0
+    n_small = 0
+    n_big = 0
+
+    for ip = 1:n_spa
+        ip in boundary_set && continue
+        if d[ip] < 0
+            # Get original physics diagonal from MLHS
+            original_diag = MLHS[ip,ip]
+            if (original_diag > 1e-6)
+                n_big +=1
+            end
+            if (original_diag < 1e-6)
+                n_small +=1
+            end
+            if original_diag > 0
+                As[ip, ip] = original_diag
+                #@info "Fixed negative diagonal at node $ip: $(diag(As)[ip]) → $original_diag"
+                n_fixed +=1
+            end
+        end
+    end
+    @info "n_fixed=$n_fixed, number of large diag values used=$n_big, number of small diag values used=$n_small" 
     # ── Linear solve ──────────────────────────────────────────────────────────
     @rankinfo rank "Solving system ($(size(A,1)) DOF)..."
-    As  = sparse(A)
+    
     A   = nothing; GC.gc()
     diagnose_rt_matrix(As, ip2gip_spa, gnpoin, "Longwave")
+    d = diag(As)
+
+    
+    
 
     npoin_ang_total = size(B, 1)
     @info maximum(As), minimum(As), maximum(B), minimum(B)
     solution = if (inputs[:adaptive_extra_meshes] && inputs[:RT_shortwave])
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa;
+        x_warm = zeros(Float64,n_spa)
+        if (rt_sol_sw_available)
+            x_warm = rt_sol_sw
+        #=else
+            diag_vals = diag(As)
+            for ip = 1:n_free
+                dv = abs(diag_vals[ip])
+                x_warm[ip] = dv > 1e-14 ? B[ip] / dv : 0.0
+            end=#
+
+        end
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             npoin_g       = n_spa_g,
             g_ip2gip      = extended_parents_to_gid,
             g_gip2ip      = gid_to_extended_parents,
-            precond       = :block_jacobi,
+            precond       = :none,
             restart       = 50,
             tol           = 1e-4,
             connijk_spa   = connijk_spa,
@@ -913,19 +1096,39 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_ang     = extra_meshes_extra_npoins)
 
     elseif (inputs[:adaptive_extra_meshes] && inputs[:RT_longwave])
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa;
+        x_warm = zeros(Float64,n_spa)
+        if (rt_sol_lw_available)
+            x_warm = rt_sol_lw
+        #=else
+            diag_vals = diag(As)
+            for ip = 1:n_free
+                dv = abs(diag_vals[ip])
+                x_warm[ip] = dv > 1e-14 ? B[ip] / dv : 0.0
+            end=#
+        end
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents,
             precond  = :none,
             restart  = 50,
-            tol      = 1e-5)
+            tol      = 1e-4)
 
     elseif inputs[:adaptive_extra_meshes]
-        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa;
+        # Row scaling (left) — normalize by row norm
+        x_warm = Float64[]
+        if (inputs[:lmanufactured_solution])
+            x_warm = ref
+        end
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
-            g_gip2ip = gid_to_extended_parents)
+            g_gip2ip = gid_to_extended_parents,
+            precond  = :none,
+            restart  = 500,
+            tol      = 1e-7)
+
+       
 
     elseif (inputs[:RT_shortwave])
         x_warm = Float64[]
@@ -962,8 +1165,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     end
 
     @rankinfo rank "Solve complete."
-    A = nothing; RHS = nothing; GC.gc()
+    #A = nothing; RHS = nothing; GC.gc()
     @info maximum(solution), minimum(solution)
+    @info solution[199435]
     # ── Solution prolongation ─────────────────────────────────────────────────
     solution_new = zeros(Float64, n_spa)
     if inputs[:adaptive_extra_meshes]
@@ -981,6 +1185,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @view(solution_local[1:n_spa]), received_solution_contributions,
             ip2gip_spa, n_spa, rank, gip_to_local)
     end
+    
 
     # ── Angular integration and error computation ─────────────────────────────
     @rankinfo rank "Integrating solution in angle..."
@@ -1084,9 +1289,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
     
+        ip_k1 = mesh.connijk[14, 5, 3, 1]
+        ip_k2 = mesh.connijk[14, 5, 3, 2]
+        ip_k3 = mesh.connijk[14, 5, 3, 3]
+        ip_k4 = mesh.connijk[14, 5, 3, 4]
+        ip_k5 = mesh.connijk[14, 5, 3, 5]
+        @info "int_sol_accum k=1" int_sol_accum[ip_k1]
+        @info "int_sol_accum k=2" int_sol_accum[ip_k2]
+        @info "int_sol_accum k=1" int_sol_accum[ip_k3]
+        @info "int_sol_accum k=2" int_sol_accum[ip_k4]
+        @info "int_sol_accum k=2" int_sol_accum[ip_k5]
+        @info abs(int_sol_accum[ip_k1]-int_sol_accum[ip_k2])/maximum(int_sol_accum)
 
-    # ── Global reduction of integrals and norms ───────────────────────────────
-    
         gnpoin_spa  = mesh.gnpoin
         g_int_sol   = zeros(Float64, gnpoin_spa)
         g_int_ref   = zeros(Float64, gnpoin_spa)
@@ -1109,7 +1323,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             L2_ref_g = MPI.Allreduce(L2_ref, MPI.SUM, comm)
             L2_err_g = MPI.Allreduce(L2_err, MPI.SUM, comm)
         end
-    
 
     if (inputs[:lmanufactured_solution])
         @rankinfo rank @sprintf("L2 error: ‖e‖ = %.6e  ‖u‖ = %.6e  relative = %.6e",
@@ -1118,11 +1331,24 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     if (inputs[:RT_radiative_heating]) && (inputs[:RT_longwave] || inputs[:RT_shortwave])
         if (inputs[:adaptive_extra_meshes])
-            Q, dTdt, F_net, G = compute_rt_radiative_heating(
-            solution_new, atmos_data, mesh,
-            connijk_spa, extra_meshes_connijk, extra_meshes_coords,
-            extra_meshes_extra_Je, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_npoins,
-            nelem, ngl, κ, σ, extra_mesh[1].ωθ, extra_mesh[1].ωθ, node_div, true, inputs[:RT_longwave])
+            if (inputs[:RT_shortwave])
+                Q, dTdt, F_net, G = compute_rt_radiative_heating(
+                solution_new, atmos_data, mesh,
+                connijk_spa, extra_meshes_connijk, extra_meshes_coords,
+                extra_meshes_extra_Je, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_npoins,
+                nelem, ngl, κ, σ, extra_mesh[1].ωθ, extra_mesh[1].ωθ, node_div, true, inputs[:RT_shortwave];
+                G_dir = G_dir,
+                Q_dir = Q_dir,
+                sw_μ₀ = sw.μ₀,
+                sw_φ₀ = sw.φ₀)
+            else
+                Q, dTdt, F_net, G = compute_rt_radiative_heating(
+                solution_new, atmos_data, mesh,
+                connijk_spa, extra_meshes_connijk, extra_meshes_coords,
+                extra_meshes_extra_Je, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_npoins,
+                nelem, ngl, κ, σ, extra_mesh[1].ωθ, extra_mesh[1].ωθ, node_div, true, inputs[:RT_longwave])
+            end
+
         else
 
             if (inputs[:RT_shortwave])
@@ -1130,7 +1356,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 solution, atmos_data, mesh,
                 connijk_spa, extra_mesh.extra_connijk, extra_mesh.extra_coords,
                 extra_mesh.extra_metrics.Je, extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_npoin,
-                nelem, ngl, κ, σ, extra_mesh.ωθ, extra_mesh.ωθ, node_div, false, inputs[:RT_longwave];
+                nelem, ngl, κ, σ, extra_mesh.ωθ, extra_mesh.ωθ, node_div, false, inputs[:RT_shortwave];
                 G_dir = G_dir,
                 Q_dir = Q_dir,
                 sw_μ₀ = sw.μ₀,
@@ -1452,7 +1678,7 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
             dηdx_ij  = dηdx[iel,i,j,k]; dηdy_ij = dηdy[iel,i,j,k]; dηdz_ij = dηdz[iel,i,j,k]
             dζdx_ij  = dζdx[iel,i,j,k]; dζdy_ij = dζdy[iel,i,j,k]; dζdz_ij = dζdz[iel,i,j,k]
             κ = rad_data ? κ_data[ip] : user_extinction(x[ip], y[ip], z[ip])
-            σ = rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
+            σ = 0.0#rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
 
             for e_ext = 1:nelem_ang[iel]
                 for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
@@ -1672,9 +1898,12 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
 
     for iel = 1:nelem
         e_ext = 1
+       
         while e_ext <= nelem_ang[iel]
-            if abs(criterion[iel][e_ext]) > thresholds[1]
-                @info criterion[iel][e_ext], thresholds[1]
+          
+            if (iel == 14 && e_ext ==5) #abs(criterion[iel][e_ext]) > thresholds[1]
+               #@info iel, e_ext
+               #@info rank, criterion[iel][e_ext], thresholds[1], e_ext, iel
                 adapted_ang[iel] = 1
                 ref_level[iel][e_ext] += 1
                 ang_adapted[iel] = 1
@@ -1833,7 +2062,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
                         end
                     end
                 end
-
+    
                 if !isempty(merge_pairs)
                     for ip_old in sort(collect(keys(merge_pairs)), rev=true)
                         ip_new = merge_pairs[ip_old]
@@ -1847,9 +2076,13 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
                                 connijk_ang_new[e,i,j] > ip_old && (connijk_ang_new[e,i,j] -= 1)
                             end
                         end
-                        for k in keys(merge_pairs)
-                            merge_pairs[k] > ip_old && (merge_pairs[k] -= 1)
-                        end
+
+                        # Rebuild merge_pairs with updated keys AND values
+                        merge_pairs = Dict(
+                            (k > ip_old ? k - 1 : k) => (v > ip_old ? v - 1 : v)
+                                for (k, v) in merge_pairs if k != ip_old
+                            )
+
                         for i = ip_old+1:npoin_ang[iel]
                             coords_new[1,i-1] = coords_new[1,i]
                             coords_new[2,i-1] = coords_new[2,i]
@@ -1872,13 +2105,17 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
                 nop_ang[iel]     = nop_ang_new
                 criterion[iel]   = criterion_new
                 ref_level[iel]   = ref_level_new
+                
+            
             end
             e_ext += 1
+            
         end
     end
 
     # ── Neighbor detection ────────────────────────────────────────────────────
     for iel = 1:nelem
+        
         xmin = xmax = x[connijk[iel,1,1,1]]; ymin = ymax = y[connijk[iel,1,1,1]]
         zmin = zmax = z[connijk[iel,1,1,1]]
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
@@ -1921,6 +2158,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
             end
             iter += 1
         end
+        
     end
 end
 
@@ -2318,46 +2556,51 @@ end
 function enforce_periodic_phi_conformity!(criterion, thresholds, ref_level,
                                            nelem, nelem_ang, nop_ang,
                                            connijk_ang, coords_ang)
+    @info "periodic_phi_conformity entered"
     for iel = 1:nelem
         for e_ext = 1:nelem_ang[iel]
             nop = nop_ang[iel][e_ext]
-            # Check if this element touches ϕ=2π (last ϕ column)
-            touches_2pi = any(
-                abs(coords_ang[iel][2, connijk_ang[iel][e_ext, i, nop+1]] / π - 2.0) < 1e-10
-                for i = 1:nop+1)
-            touches_0 = any(
-                coords_ang[iel][2, connijk_ang[iel][e_ext, i, 1]] < 1e-10
-                for i = 1:nop+1)
 
-            if touches_2pi || touches_0
-                # Find the θ range of this element
-                θ_lo = coords_ang[iel][1, connijk_ang[iel][e_ext, 1,   1]]
-                θ_hi = coords_ang[iel][1, connijk_ang[iel][e_ext, nop+1, 1]]
+            # ϕ at first and last node columns of this element
+            ϕ_first = coords_ang[iel][2, connijk_ang[iel][e_ext, 1,     1]]
+            ϕ_last  = coords_ang[iel][2, connijk_ang[iel][e_ext, 1, nop+1]]
 
-                # Find the periodic counterpart: element at same θ range
-                # but on the opposite ϕ boundary
-                for e_pair = 1:nelem_ang[iel]
-                    e_pair == e_ext && continue
-                    nop_p    = nop_ang[iel][e_pair]
-                    θ_lo_p   = coords_ang[iel][1, connijk_ang[iel][e_pair, 1,     1]]
-                    θ_hi_p   = coords_ang[iel][1, connijk_ang[iel][e_pair, nop_p+1, 1]]
-                    pair_0   = any(
-                        coords_ang[iel][2, connijk_ang[iel][e_pair, i, 1]] < 1e-10
-                        for i = 1:nop_p+1)
-                    pair_2pi = any(
-                        abs(coords_ang[iel][2, connijk_ang[iel][e_pair, i, nop_p+1]] / π - 2.0) < 1e-10
-                        for i = 1:nop_p+1)
+            # An element wraps the periodic boundary if its ϕ sequence
+            # increases but the last column is less than the first —
+            # i.e. the sequence went e.g. 5.7 → 5.9 → 6.1 → 0.0
+            touches_2pi = ϕ_last < ϕ_first
 
-                    # Counterpart is at same θ range but opposite ϕ boundary
-                    if abs(θ_lo_p - θ_lo) < 1e-10 && abs(θ_hi_p - θ_hi) < 1e-10 &&
-                       ((touches_2pi && pair_0) || (touches_0 && pair_2pi))
+            # ϕ=0 side: first column is near 0 and last column is larger
+            # (the periodic partner of the above)
+            touches_0   = ϕ_first < 1e-10 && ϕ_last > ϕ_first
+            
+            (touches_2pi || touches_0) || continue
 
-                        # Force counterpart to same refinement level
-                        if ref_level[iel][e_ext] > ref_level[iel][e_pair]
-                            criterion[iel][e_pair] = thresholds[1] + 1.0
-                        end
-                        break
+            # θ range of this element — used to find the paired element
+            θ_lo = coords_ang[iel][1, connijk_ang[iel][e_ext, 1,     1]]
+            θ_hi = coords_ang[iel][1, connijk_ang[iel][e_ext, nop+1, 1]]
+
+            for e_pair = 1:nelem_ang[iel]
+                e_pair == e_ext && continue
+                nop_p = nop_ang[iel][e_pair]
+
+                ϕ_pair_first = coords_ang[iel][2, connijk_ang[iel][e_pair, 1,       1]]
+                ϕ_pair_last  = coords_ang[iel][2, connijk_ang[iel][e_pair, 1, nop_p+1]]
+
+                pair_2pi = ϕ_pair_last < ϕ_pair_first
+                pair_0   = ϕ_pair_first < 1e-10 && ϕ_pair_last > ϕ_pair_first
+
+                θ_lo_p = coords_ang[iel][1, connijk_ang[iel][e_pair, 1,       1]]
+                θ_hi_p = coords_ang[iel][1, connijk_ang[iel][e_pair, nop_p+1, 1]]
+
+                # Counterpart: same θ range, opposite ϕ boundary
+                if abs(θ_lo_p - θ_lo) < 1e-10 && abs(θ_hi_p - θ_hi) < 1e-10 &&
+                   ((touches_2pi && pair_0) || (touches_0 && pair_2pi))
+                    
+                    if abs(criterion[iel][e_ext]) > abs(criterion[iel][e_pair])
+                        criterion[iel][e_pair] = criterion[iel][e_ext]
                     end
+                    break
                 end
             end
         end

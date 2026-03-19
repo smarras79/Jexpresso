@@ -36,11 +36,11 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         
         :extra_dimensions    => 2,
-        :RT_amr_threshold   => [0.95],
+        :RT_amr_threshold   => [0.9999],
         :lRT_problem        => true,
         :lmanufactured_solution => true,
         :adaptive_extra_meshes => true,
-        :extra_dimensions_order => 4,
+        :extra_dimensions_order => 3,
         :extra_dimensions_nelemx => 3,
         :extra_dimensions_nelemy => 3,
         :lcubed_sphere_angular_mesh => false,

@@ -359,6 +359,7 @@ function build_restriction_matrices_local_and_ghost(
             end
         
             if abs(col_sum - 1.0) > 1e-13 && abs(col_sum) > 1e-14
+                @info "Column $j sum = $col_sum"
                 for idx in nzrange(nc_mat, i)
                     nonzeros(nc_mat)[idx] /= col_sum
                 end
@@ -374,6 +375,7 @@ function build_restriction_matrices_local_and_ghost(
             end
         
             if abs(col_sum - 1.0) > 1e-13 && abs(col_sum) > 1e-14
+                @info "Column $j sum = $col_sum"
                 for idx in nzrange(nc_mat_rhs, i)
                     nonzeros(nc_mat_rhs)[idx] /= col_sum
                 end
@@ -434,6 +436,9 @@ function build_interior_hanging_constraint(
         return Tuple{Int, Float64}[]
     end
     
+    #=if (iel_child == 14 && i_child == 5 && j_child == 3 && k_child == 1)
+        @info iel_child, i_child, j_child, k_child, e_ext_child, iθ_child, jθ_child, iel_parent, e_ext_parent
+    end=#
     # Build or retrieve interpolation matrices
     cache_key = (iel_child, e_ext_child, iel_parent, e_ext_parent)
     
@@ -461,7 +466,15 @@ function build_interior_hanging_constraint(
         iel_child, i_child, j_child, k_child,
         iel_parent, mesh, ngl
     )
-    
+    if (iel_child == 14 && i_child == 5 && j_child == 3 && k_child == 1 && e_ext_child == 3 
+        && iθ_child == 3 && jθ_child == 3)
+        @info "e_ext=3 hanging parent" iel_parent, e_ext_parent, i_parent, j_parent, k_parent
+    end
+    if (iel_child == 14 && i_child == 5 && j_child == 3 && k_child == 2 && e_ext_child == 3 
+        && iθ_child == 3 && jθ_child == 3)
+        @info "e_ext=3 hanging parent k=2" iel_parent, e_ext_parent, i_parent, j_parent, k_parent
+    end
+
     for jθ_parent = 1:(nop_parent+1)
         for iθ_parent = 1:(nop_parent+1)
             Lθ_val = Lθ[iθ_child, iθ_parent]
@@ -485,7 +498,7 @@ function build_interior_hanging_constraint(
             
             # Weight includes interpolation and Jacobian ratio
             
-            weight = Lθ_val * Lϕ_val * (Je_child / Je_parent)
+            weight = Lθ_val * Lϕ_val #* (Je_child / Je_parent)
             
             push!(constraint_entries, (ip_parent, weight))
         end
@@ -754,6 +767,9 @@ function build_interpolation_matrices_local!(
         ip = extra_meshes_connijk[iel_child][e_ext_child, i, i]
         θ_child[i] = extra_meshes_coords[iel_child][1, ip]
         ϕ_child[i] = extra_meshes_coords[iel_child][2, ip]
+        if i == nop_child+1 && ϕ_child[i] < 1e-10 && ϕ_child[i-1] > π
+            ϕ_child[i] = 2π
+        end
     end
     
     # Get parent grid points
@@ -764,6 +780,9 @@ function build_interpolation_matrices_local!(
         ip = extra_meshes_connijk[iel_parent][e_ext_parent, i, i]
         θ_parent[i] = extra_meshes_coords[iel_parent][1, ip]
         ϕ_parent[i] = extra_meshes_coords[iel_parent][2, ip]
+        if i == nop_parent+1 && ϕ_parent[i] < 1e-10 && ϕ_parent[i-1] > π
+            ϕ_parent[i] = 2π
+        end
     end
     
     # Build interpolation matrices
@@ -819,6 +838,9 @@ function build_ghost_interpolation_matrices(
         ip = extra_meshes_connijk[iel_child][e_ext_child, i, i]
         θ_child[i] = extra_meshes_coords[iel_child][1, ip]
         ϕ_child[i] = extra_meshes_coords[iel_child][2, ip]
+        if i == nop_child+1 && ϕ_child[i] < 1e-10 && ϕ_child[i-1] > π
+            ϕ_child[i] = 2π
+        end
     end
     
     # Get parent (ghost) grid points
@@ -829,6 +851,9 @@ function build_ghost_interpolation_matrices(
         ip = ghost_info.connijk_ang[e_ext_parent, i, i]
         θ_parent[i] = ghost_info.coords_ang[1, ip]
         ϕ_parent[i] = ghost_info.coords_ang[2, ip]
+        if i == nop_parent+1 && ϕ_parent[i] < 1e-10 && ϕ_parent[i-1] > π
+            ϕ_parent[i] = 2π
+        end
     end
     
     # Build interpolation matrices
@@ -876,7 +901,7 @@ function find_corresponding_spatial_location(
     """
     
     if iel_parent == iel_child
-        # Same spatial element - same location
+        @warn "parent and child are the same somehow"
         return i_child, j_child, k_child
     end
     
@@ -1541,7 +1566,7 @@ function extract_free_submatrix_remove_all_hanging(
     # Ensure O(1) lookup
     hanging_set = all_hanging_nodes isa Set ? all_hanging_nodes :
                   Set(all_hanging_nodes)
-
+    
     I_full, J_full, V_full = findnz(A_full)
     n = length(I_full)
 

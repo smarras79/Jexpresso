@@ -56,9 +56,11 @@ function build_nonconforming_ghost_layer(
     
     nelem = mesh.nelem  # Only locally owned elements
     ngl = mesh.ngl
+
     
+
     @info "[Rank $rank] Building non-conforming ghost layer (corrected)..."
-    
+
     # =========================================================================
     # PHASE 1: Identify partition boundary nodes
     # =========================================================================
@@ -82,9 +84,12 @@ function build_nonconforming_ghost_layer(
     
     # Also find nodes we own that appear on other processors
     # This requires communication
-    owned_boundary_nodes = find_owned_nodes_on_boundary(mesh, ip2gip, rank, comm)
-    union!(partition_boundary_nodes, owned_boundary_nodes)
     
+    owned_boundary_nodes = find_owned_nodes_on_boundary(mesh, ip2gip, rank, comm)
+    
+    union!(partition_boundary_nodes, owned_boundary_nodes)
+
+
     @info "[Rank $rank] Found $(length(partition_boundary_nodes)) nodes on partition boundary"
 
     # =========================================================================
@@ -127,12 +132,16 @@ function build_nonconforming_ghost_layer(
     # =========================================================================
     # PHASE 3.5: Exchange interface node requests (NEW)
     # =========================================================================
-    
+
+   
     interface_requests = exchange_interface_node_requests(
         ghost_neighbor_map, elem_boundary_nodes, ip2gip, rank, comm
     )
-    
+   
+
+   
     interface_to_send = exchange_interface_requests(interface_requests, rank, comm)
+  
     
     @info "[Rank $rank] Received interface requests from $(length(interface_to_send)) ranks"
     
@@ -208,8 +217,10 @@ function build_nonconforming_ghost_layer(
     # =========================================================================
     # PHASE 7: Receive angular element data
     # =========================================================================
+    
     @info "[Rank $rank] is exchanging buffers"
     recv_buffers = exchange_buffers(send_buffers, requests_by_rank, comm)
+   
     @info "[Rank $rank] finished exchanging buffers"
     # =========================================================================
     # PHASE 8: Unpack received data into ghost element structures
@@ -249,7 +260,8 @@ function build_nonconforming_ghost_layer(
     # =========================================================================
     # PHASE 10: Identify hanging nodes on interfaces
     # =========================================================================
-    
+
+  
     interface_hanging_nodes, parent_search_cache = identify_interface_hanging_nodes_final(
         owned_to_ghost_map, ghost_elements,
         mesh, connijk_spa,
@@ -257,11 +269,13 @@ function build_nonconforming_ghost_layer(
         extra_meshes_extra_nops, extra_meshes_extra_nelems,
         ip2gip_spa, ngl, rank
     )
-    
+   
+
     @info "[Rank $rank] Found $(length(interface_hanging_nodes)) hanging nodes on processor interfaces"
-    
+
+  
     ghost_layer = NonConformingGhostLayer(
-        ghost_elements, 
+        ghost_elements,
         owned_to_ghost_map,
         send_elem_data_to,
         requests_by_rank,
@@ -270,7 +284,8 @@ function build_nonconforming_ghost_layer(
         ghost_node_counter,
         n_spa
     )
-    
+
+  
     return ghost_layer
 end
 
@@ -283,15 +298,17 @@ function find_owned_nodes_on_boundary(mesh, ip2gip, rank, comm)
     Find nodes that:
     1. This processor owns (gip2owner[ip] == rank)
     2. Also appear on other processors (are in their mesh.connijk)
-    
+
     Strategy:
     - Gather all owned nodes from this processor
     - Gather all non-owned nodes from all other processors
     - Intersection gives us owned nodes on partition boundary
     """
-    
+
     nproc = MPI.Comm_size(comm)
-    
+
+  
+
     # Collect global IDs of nodes we own
     owned_nodes_global = Set{Int}()
     # Collect global IDs of nodes we have but don't own
@@ -299,7 +316,7 @@ function find_owned_nodes_on_boundary(mesh, ip2gip, rank, comm)
     for ip = 1:mesh.npoin
         gip = ip2gip[ip]
         owner = mesh.gip2owner[ip]
-        
+
         if owner == rank
             push!(owned_nodes_global, gip)
         else
@@ -307,16 +324,23 @@ function find_owned_nodes_on_boundary(mesh, ip2gip, rank, comm)
         end
     end
 
+  
+
     # Exchange lists
     local_owned_list = collect(owned_nodes_global)
     local_not_owned_list = collect(not_owned_nodes_global)
-    
+
     n_owned = Int32(length(local_owned_list))
     n_not_owned = Int32(length(local_not_owned_list))
-    
+
+  
     # Gather counts
     owned_counts = MPI.Allgather([n_owned], comm)
+  
+
+    
     not_owned_counts = MPI.Allgather([n_not_owned], comm)
+ 
     
     # Gather actual data
     if isempty(local_owned_list)
@@ -328,19 +352,26 @@ function find_owned_nodes_on_boundary(mesh, ip2gip, rank, comm)
     
     total_owned = sum(owned_counts)
     total_not_owned = sum(not_owned_counts)
-    
+
+   
+
+    # CRITICAL FIX: Always call Allgatherv on ALL ranks (no conditional guards)
+    # Conditional collective operations cause MPI deadlock when rank has no data
+  
     all_owned = if total_owned > 0
         MPI.Allgatherv(local_owned_list, owned_counts, comm)
     else
-        Int[]
+        MPI.Allgatherv(Int[], owned_counts, comm)  # Empty data, still synchronize
     end
-    
+   
+
+   
     all_not_owned = if total_not_owned > 0
         MPI.Allgatherv(local_not_owned_list, not_owned_counts, comm)
     else
-        Int[]
+        MPI.Allgatherv(Int[], not_owned_counts, comm)  # Empty data, still synchronize
     end
-    
+   
     # Build sets of not-owned nodes for each processor
     not_owned_by_proc = Dict{Int, Set{Int}}()
     offset = 0
@@ -958,59 +989,72 @@ end
 function exchange_buffers(send_buffers, requests_by_rank, comm)
     """
     Exchange variable-length data buffers between processors
-    
+
     Protocol:
     1. Exchange buffer sizes (so receivers know how much data to expect)
     2. Exchange actual buffer data
-    
+
     Uses non-blocking communication to avoid deadlocks
     """
-    
+
     nproc = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
-    
+
+   
+
     recv_buffers = Dict{Int, Vector{UInt8}}()
-    
+
     # =========================================================================
     # PHASE 1: Exchange buffer sizes
     # =========================================================================
-    
+
+
     # Prepare send size data
     send_sizes = Dict{Int, Int32}()
     for (dest_rank, buffer) in send_buffers
         send_sizes[dest_rank] = Int32(length(buffer))
     end
-    
+  
     # Post non-blocking receives for sizes
     size_requests = MPI.Request[]
     recv_sizes = Dict{Int, Ref{Int32}}()
-    
+
     for (src_rank, _) in requests_by_rank
         size_buf = Ref{Int32}(0)
         recv_sizes[src_rank] = size_buf
-        
+
         req = MPI.Irecv!(size_buf, comm, source=src_rank, tag=src_rank*1000)
         push!(size_requests, req)
     end
-    
+   
+
     # Post non-blocking sends for sizes to ALL ranks in requests_by_rank
-    # Calling functions must ensure send_buffers has entries for all ranks
+    # CRITICAL FIX: Handle missing entries in send_sizes gracefully
     send_size_requests = MPI.Request[]
+  
     for src_rank in keys(requests_by_rank)
-        size = send_sizes[src_rank]
+        # If rank has no data to send, still send 0-size
+        size = get(send_sizes, src_rank, Int32(0))
         req = MPI.Isend(Ref(size), comm, dest=src_rank, tag=rank*1000)
         push!(send_size_requests, req)
     end
+   
 
     # Wait for all size exchanges (both receives and sends) to complete
     all_size_requests = vcat(size_requests, send_size_requests)
+  
     MPI.Waitall(all_size_requests)
-    
+  
+    MPI.Barrier(comm)  # CRITICAL: Synchronize between phases
+  
+
     @debug "[Rank $rank] Phase 1 complete: exchanged sizes with $(length(recv_sizes)) ranks"
     
+
     # =========================================================================
     # PHASE 2: Allocate receive buffers based on received sizes
     # =========================================================================
+
     
     for (src_rank, size_ref) in recv_sizes
         size = size_ref[]
@@ -1019,42 +1063,72 @@ function exchange_buffers(send_buffers, requests_by_rank, comm)
         else
             recv_buffers[src_rank] = Vector{UInt8}()
         end
+       
     end
-    
+
     @debug "[Rank $rank] Phase 2 complete: allocated receive buffers"
+   
     
     # =========================================================================
     # PHASE 3: Exchange actual buffer data
     # =========================================================================
-    
+
     data_requests = MPI.Request[]
 
-    # Post non-blocking receives for data from ALL ranks (matching Phase 1)
-    # Even empty buffers need receives posted to maintain proper synchronization
+    # CRITICAL FIX: Post Irecv for ALL ranks unconditionally (even for empty buffers)
+    # Conditional post causes deadlock: if rank A has data for B but B has no receive posted,
+    # B's Isend blocks while A waits at Waitall for receive that wasn't posted.
+    
+    data_requests = MPI.Request[]
     for src_rank in keys(requests_by_rank)
         buffer = recv_buffers[src_rank]
         if !isempty(buffer)
+           
             req = MPI.Irecv!(buffer, comm, source=src_rank, tag=src_rank*2000)
-            push!(data_requests, req)
+        else
+            # Post receive for empty buffer anyway to maintain synchronization
+           
+            empty_buf = UInt8[]
+            req = MPI.Irecv!(empty_buf, comm, source=src_rank, tag=src_rank*2000)
         end
+        push!(data_requests, req)
     end
+   
 
-    # Post non-blocking sends for data to ALL ranks in requests_by_rank
+    # CRITICAL FIX: Post Isend for ALL ranks unconditionally (even for empty sends)
     send_data_requests = MPI.Request[]
+    
     for src_rank in keys(requests_by_rank)
-        buffer = send_buffers[src_rank]
-        if !isempty(buffer)
-            req = MPI.Isend(buffer, comm, dest=src_rank, tag=rank*2000)
-            push!(send_data_requests, req)
+        if haskey(send_buffers, src_rank)
+            buffer = send_buffers[src_rank]
+            if !isempty(buffer)
+                
+                req = MPI.Isend(buffer, comm, dest=src_rank, tag=rank*2000)
+            else
+                # Send empty array anyway to match receive
+                
+                req = MPI.Isend(UInt8[], comm, dest=src_rank, tag=rank*2000)
+            end
+        else
+            # Rank not in send_buffers, send empty
+           
+            req = MPI.Isend(UInt8[], comm, dest=src_rank, tag=rank*2000)
         end
+        push!(send_data_requests, req)
     end
+    
 
     # Wait for all data exchanges (both receives and sends) to complete
     all_data_requests = vcat(data_requests, send_data_requests)
+    
     MPI.Waitall(all_data_requests)
-    
+
+    MPI.Barrier(comm)  # CRITICAL: Synchronize after phase completion
+   
+
     @debug "[Rank $rank] Phase 3 complete: exchanged data buffers"
-    
+   
+
     return recv_buffers
 end
 
@@ -1314,42 +1388,47 @@ end
 function exchange_interface_requests(interface_requests, rank, comm)
     """
     Exchange interface node requests to determine what to send
-    
+
     Returns: Dict{Int, Dict{Int, Set{Int}}}
              src_rank -> elem_id -> Set(global_spatial_node_ids to send)
     """
-    
+
     nproc = MPI.Comm_size(comm)
-    
+
     # Serialize requests
+  
     local_buffer = IOBuffer()
     serialize(local_buffer, interface_requests)
     local_data = take!(local_buffer)
-    
+
     n_local = Int32(length(local_data))
+   
     counts = MPI.Allgather([n_local], comm)
+    
     total_count = sum(counts)
-    
+   
+
     all_requests = Dict{Int, Dict{Int, Dict{Int, Set{Int}}}}()
+
+    # CRITICAL FIX: Always call Allgatherv on ALL ranks (no conditional guards)
+    # Conditional collective operations cause MPI deadlock when rank has no data
     
-    if total_count > 0
-        all_data = MPI.Allgatherv(local_data, counts, comm)
-        
-        offset = 1
-        for src_rank = 0:(nproc-1)
-            count = counts[src_rank+1]
-            if count > 0
-                chunk = all_data[offset:offset+count-1]
-                all_requests[src_rank] = deserialize(IOBuffer(chunk))
-            else
-                all_requests[src_rank] = Dict{Int, Dict{Int, Set{Int}}}()
-            end
-            offset += count
-        end
+    all_data = if total_count > 0
+        MPI.Allgatherv(local_data, counts, comm)
     else
-        for src_rank = 0:(nproc-1)
+        MPI.Allgatherv(UInt8[], counts, comm)  # Empty data, still synchronize
+    end
+
+    offset = 1
+    for src_rank = 0:(nproc-1)
+        count = counts[src_rank+1]
+        if count > 0
+            chunk = all_data[offset:offset+count-1]
+            all_requests[src_rank] = deserialize(IOBuffer(chunk))
+        else
             all_requests[src_rank] = Dict{Int, Dict{Int, Set{Int}}}()
         end
+        offset += count
     end
     
     # Extract what other processors need from me

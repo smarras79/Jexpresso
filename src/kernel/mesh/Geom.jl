@@ -236,7 +236,10 @@ function setup_global_numbering_adaptive_angular_scalable(
     nelem = mesh.nelem
     ngl   = mesh.ngl
 
+    
+
     # ── Phase 1: Build local unique signatures separated by type ─────────────
+    
     hanging_node_set = Set{Int}(nc_non_global_nodes)
 
     local_free_sigs    = Dict{NTuple{3,Float64}, Int}()  # sig → local ip_spa
@@ -271,7 +274,9 @@ function setup_global_numbering_adaptive_angular_scalable(
     n_local_free    = length(free_sig_list)
     n_local_hanging = length(hanging_sig_list)
 
+    
     # ── Phase 2: Identify processor-boundary spatial nodes ───────────────────
+  
     # Build owned and non-owned sets from local mesh data only — no communication
     owned_spatial    = Set{Int}()
     nonowned_spatial = Set{Int}()
@@ -289,7 +294,9 @@ function setup_global_numbering_adaptive_angular_scalable(
     # After Allgatherv, find which of our owned nodes appear as non-owned elsewhere.
     local_nonowned     = collect(nonowned_spatial)
     n_local_no         = Int32(length(local_nonowned))
+
     no_counts          = MPI.Allgather([n_local_no], comm)
+
     all_nonowned       = MPI.Allgatherv(local_nonowned, no_counts, comm)
 
     processor_boundary_spatial = copy(nonowned_spatial)
@@ -301,6 +308,7 @@ function setup_global_numbering_adaptive_angular_scalable(
     end
 
     # ── Phase 3: Boundary free signatures — O(1) lookup via Dict ─────────────
+    
     # Replaced findfirst O(n) scan with direct Dict membership test
     boundary_free_sigs = Set{NTuple{3,Float64}}()
     for sig in free_sig_list
@@ -309,8 +317,10 @@ function setup_global_numbering_adaptive_angular_scalable(
             push!(boundary_free_sigs, sig)
         end
     end
+    
 
     # ── Phase 4: Exchange boundary signatures — flat Float64, no serialization
+    
     local_bsig_data = Vector{Float64}(undef, 3 * length(boundary_free_sigs))
     for (k, sig) in enumerate(boundary_free_sigs)
         local_bsig_data[3k-2] = sig[1]
@@ -318,8 +328,14 @@ function setup_global_numbering_adaptive_angular_scalable(
         local_bsig_data[3k]   = sig[3]
     end
     n_local_bsig  = Int32(length(boundary_free_sigs))
+
+   
     bsig_counts   = MPI.Allgather([n_local_bsig], comm)
+    
+
+   
     all_bsig_data = MPI.Allgatherv(local_bsig_data, Int32.(bsig_counts .* 3), comm)
+    
 
     # Count occurrences to find truly shared signatures
     sig_count = Dict{NTuple{3,Float64}, Int}()

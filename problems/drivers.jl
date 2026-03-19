@@ -3,10 +3,16 @@ function driver(nparts,
                 inputs::Dict,
                 OUTPUT_DIR::String,
                 TFloat)
-    
+
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
-    
+
+    # Debug: Check MPI library being used
+    if rank == 0
+        # @info "MPI Library: $(MPI.Get_library_version_string())"
+        @info "Using distribute with comm: $comm"
+    end
+
     if inputs[:lwarmup] == true
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
@@ -33,13 +39,55 @@ function driver(nparts,
     end
     #check_memory(" Before sem_setup.")
                 
-    sem, partitioned_model = sem_setup(inputs, nparts, distribute)
+    # Create initial coarse mesh (for potential refinement)
+    sem, partitioned_model_coarse = sem_setup(inputs, nparts, distribute)
+    partitioned_model = partitioned_model_coarse
 
     #check_memory(" After sem_setup.")
-    
+
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
+
+    # Stage 0 RT spatial AMR test: Apply selective refinement if requested
+    if (inputs[:lRT_problem]) && haskey(inputs, :lRT_spatial_amr) && inputs[:lRT_spatial_amr] == true
+        if rank == 0
+            @info "[Stage 0] Applying selective spatial refinement for RT spatial AMR test..."
+        end
+
+        # Create refinement flags for specific elements (center region)
+        adapt_flags = zeros(Int, sem.mesh.nelem)
+        for iel = 1:sem.mesh.nelem
+            x_elem = mean([sem.mesh.x[sem.mesh.connijk[iel,i,j,k]]
+                          for i=1:sem.mesh.ngl for j=1:sem.mesh.ngl for k=1:sem.mesh.ngl])
+            y_elem = mean([sem.mesh.y[sem.mesh.connijk[iel,i,j,k]]
+                          for i=1:sem.mesh.ngl for j=1:sem.mesh.ngl for k=1:sem.mesh.ngl])
+
+            # Refine if in central region
+            is_center_x = (x_elem > sem.mesh.xmin + 0.25*(sem.mesh.xmax - sem.mesh.xmin)) &&
+                         (x_elem < sem.mesh.xmin + 0.75*(sem.mesh.xmax - sem.mesh.xmin))
+            is_center_y = (y_elem > sem.mesh.ymin + 0.25*(sem.mesh.ymax - sem.mesh.ymin)) &&
+                         (y_elem < sem.mesh.ymin + 0.75*(sem.mesh.ymax - sem.mesh.ymin))
+
+            if is_center_x && is_center_y
+                adapt_flags[iel] = 1  # Mark for refinement
+            end
+        end
+
+        if rank == 0
+            @info "[Stage 0] Marked $(sum(adapt_flags)) elements for refinement"
+        end
+
+        # Apply refinement: rebuild mesh with AMR framework using adapt_flags
+        # (AMR is already enabled in inputs, just rebuild with custom refinement flags)
+        sem, partitioned_model = sem_setup(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, nothing)
+
+        if rank == 0
+            @info "[Stage 0] Spatial refinement complete"
+            @info "[Stage 0] Refined mesh: $(sem.mesh.nelem) elements, $(sem.mesh.num_hanging_facets) hanging facets"
+        end
+    end
+
     if (inputs[:lRT_problem])
         if (sem.mesh.SD == NSD_2D())
             build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je, 

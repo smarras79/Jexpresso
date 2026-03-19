@@ -8,6 +8,7 @@ module Jexpresso
 
 using QuadGK
 using MPI
+MPI.Init()
 using KernelAbstractions
 using Revise
 using BenchmarkTools

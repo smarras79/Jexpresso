@@ -56,8 +56,7 @@ function parse_commandline()
     return parse_args(s)
 end
 
-
-MPI.Init()
+#MPI.Init()
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
 nparts = MPI.Comm_size(comm)

@@ -498,7 +498,7 @@ function solve_parallel_gmres(ip2gip, gip2owner, A_local, b, gnpoin, npoin, x_pr
                                nelem         :: Int     = 0,
                                ngl           :: Int     = 0,
                                ladaptive     :: Bool    = false,
-                               npoin_ang     :: Union{Int,Nothing} = nothing,
+                               npoin_ang     = nothing,
                                npoin_space   :: Int     = 0,
                                comm      :: MPI.Comm = MPI.COMM_WORLD)
 

@@ -1516,7 +1516,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             dtopology      = get_grid_topology(dmodel)
         end
     else
-        if (omesh.lneed_redistribute)
+        if !isnothing(omesh) && (omesh.lneed_redistribute)
             if rank != 0
                 # Redirect stdout to /dev/null on non-zero ranks
                 redirect_stdout(open("/dev/null", "w")) do
