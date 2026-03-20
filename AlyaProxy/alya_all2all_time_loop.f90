@@ -31,7 +31,7 @@ program unitt_alya_with_another_code
   integer(4)                         :: nranks_julia
 
   ! Jexpresso SEM node list received once during setup
-  integer(4), allocatable            :: je_gids_all(:)     ! global node IDs from connijk
+  integer(4), allocatable            :: je_gids_all(:)
   integer(4)                         :: je_total_nodes, je_gid_offset
 
   integer(4)                         :: step, nsteps
@@ -62,7 +62,7 @@ program unitt_alya_with_another_code
   integer                            :: i_start, i_end, npoin_local
   integer                            :: nworkers, iworker
   integer                            :: ipoin, ix, iy, iz
-  real(kind=8)                       :: xc, yc, dx, dy, dz
+  real(kind=8)                       :: dx, dy, dz
 
   !==========================================================================
   call MPI_Init(ierr)
@@ -101,18 +101,18 @@ program unitt_alya_with_another_code
   dt     = 0.5d0
   tend   = 1000.0d0
   nsteps = int((tend - t0) / dt)
-  out_dt = 100.0d0       ! write every 100 seconds
+  out_dt = 100.0d0
 
   !--------------------------------------------------------------------------
   ! STEP 2: GRID METADATA  (broadcast order must match Julia exactly)
   !--------------------------------------------------------------------------
   rem_min = [-5000.0,     0.0, 0.0]
   rem_max = [ 5000.0, 10000.0, 0.0]
-  rem_nx  = [50,      50,      1]
+  rem_nx  = [50,      50,      1  ]
   ndime   = 2
 
   if (rank == 0) then
-     write(*,'(A,I0)')     ' ALYA-2-JEXP'
+     write(*,'(A)')        ' ALYA-2-JEXP'
      write(*,'(A,I0)')     'ndime   = ', ndime
      write(*,'(A,3F12.2)') 'rem_min = ', rem_min(1:ndime)
      write(*,'(A,3F12.2)') 'rem_max = ', rem_max(1:ndime)
@@ -122,7 +122,7 @@ program unitt_alya_with_another_code
 
   ! 2a. ndime
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-  ! 2b. rem_min / rem_max / rem_nx  (full 3-element arrays, matching Julia)
+  ! 2b. rem_min / rem_max / rem_nx (full 3-element arrays)
   do idime = 1, 3
      call MPI_Bcast(rem_min(idime), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
      call MPI_Bcast(rem_max(idime), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
@@ -164,7 +164,7 @@ program unitt_alya_with_another_code
 
   write(*,'(A)') repeat('=',60)
   write(*,'(A,I0,A,I0)') 'Alya local rank ', arank, '  world rank ', rank
-  write(*,'(A,I0)') '  Pts to RECV/SEND (Julia<->Alya): ', total_pts
+  write(*,'(A,I0)') '  Pts to RECV from Julia: ', total_pts
   do i = 0, size-1
      if (npoin_recv(i) > 0) then
         if (i < asize) then
@@ -181,20 +181,14 @@ program unitt_alya_with_another_code
 
   !--------------------------------------------------------------------------
   ! STEP 3b: RECEIVE JEXPRESSO SEM NODE LIST (once, before time loop)
-  !
-  ! The Alltoall in STEP 3 already told each Alya rank how many nodes to
-  ! expect from each Julia rank (npoin_recv(i) for i >= asize).
-  ! Julia now sends one message per partner: the sorted unique global node
-  ! IDs (integer(4)) taken from connijk.
   !--------------------------------------------------------------------------
-  nranks_julia = size - asize
-
+  nranks_julia   = size - asize
   je_total_nodes = sum(npoin_recv(asize:size-1))
 
   allocate(je_gids_all(max(1, je_total_nodes)))
-  je_gids_all = 0_4
-
+  je_gids_all   = 0_4
   je_gid_offset = 0
+
   do i = asize, size-1
      if (npoin_recv(i) > 0) then
         call MPI_Recv(je_gids_all(je_gid_offset + 1), npoin_recv(i), &
@@ -202,41 +196,27 @@ program unitt_alya_with_another_code
                       MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
         write(*,'(A,I0,A,I0,A,I0,A)') &
              '[node_list] Alya world_rank=', rank, &
-             ' received global node IDs from Julia world_rank=', i, &
+             ' received node IDs from Julia world_rank=', i, &
              ' (', npoin_recv(i), ' IDs)'
         flush(6)
         je_gid_offset = je_gid_offset + npoin_recv(i)
      end if
   end do
 
-  write(*,'(A,I0,A,I0)') &
-       '[node_list] Total Jexpresso SEM nodes received by Alya world_rank=', rank, &
-       ': ', je_total_nodes
-  if (je_total_nodes > 0) then
-     write(*,'(A)') '[node_list]   ID list:'
-     do i = 1, je_total_nodes
-        write(*,'(A,I0,A,I0)') '    [', i, '] gid = ', je_gids_all(i)
-     end do
-  end if
-  flush(6)
-
   !--------------------------------------------------------------------------
   ! Pre-compute this rank's point range.
-  ! Alya local rank 0 is the driving/master rank: it coordinates execution
-  ! but never participates in data exchange with Jexpresso, and therefore
-  ! owns no remote grid points.  Points are distributed only over the
-  ! nworkers = asize-1 worker ranks (Alya local ranks 1..asize-1).
+  ! Alya local rank 0 owns no points; work is split over ranks 1..asize-1.
   !--------------------------------------------------------------------------
-  nmax        = rem_nx(1) * rem_nx(2) * rem_nx(3)
-  nworkers    = max(1, asize - 1)
-  r_rem       = mod(nmax, nworkers)
+  nmax           = rem_nx(1) * rem_nx(2) * rem_nx(3)
+  nworkers       = max(1, asize - 1)
+  r_rem          = mod(nmax, nworkers)
   npoin_per_rank = nmax / nworkers
 
   i_start     = -1
   i_end       = -2
   npoin_local = 0
   if (arank > 0) then
-     iworker = arank - 1   ! 0-based worker index
+     iworker = arank - 1
      if (iworker < r_rem) then
         i_start = iworker * (npoin_per_rank + 1)
         i_end   = i_start + npoin_per_rank
@@ -264,28 +244,24 @@ program unitt_alya_with_another_code
 
   !--------------------------------------------------------------------------
   ! nfields: number of field components received per point from Julia.
-  ! Set to ndime (one velocity component per spatial dimension).
+  ! Set to ndime (one value per spatial dimension).
   ! Julia must send data in field-fastest order: [f1_p1, f2_p1, f1_p2, ...]
-  ! i.e. the same memory layout as advec_recv(irank)%a(1:ndime, ipoin) in
-  ! the original Alya (column-major 2-D array, field index fastest).
+  ! regardless of whether f is velocity or coordinates — the layout is the
+  ! same either way and Alya does not need to know the difference.
   !--------------------------------------------------------------------------
   nfields = ndime
   if (rank == 0) then
-     write(*,'(A,I0)') '  nfields (fields per point from Julia): ', nfields
+     write(*,'(A,I0)') '  nfields per point from Julia: ', nfields
      flush(6)
   end if
 
   allocate(recvbuf_all(max(1, total_pts * nfields)))
   recvbuf_all = 0.0d0
 
-  ! ordered_buf: scattered field values in [i_start..i_end] point order.
-  ! Allocated once; overwritten every timestep (equivalent to advec array
-  ! in original Alya — always current after the Waitall).
   allocate(ordered_buf(max(1, npoin_local * nfields)))
   ordered_buf = 0.0d0
 
   nactive = count(npoin_recv > 0)
-
   if (nactive > 0) then
 #ifdef USEMPIF08
      allocate(recv_requests(nactive), recv_status(nactive))
@@ -297,18 +273,11 @@ program unitt_alya_with_another_code
   !==========================================================================
   ! TIME LOOP
   !==========================================================================
-  ! --- VTS output schedule: write once every out_dt seconds
   out_tstart = t0
   out_tend   = tend
-
-  ! Tolerance for floating-point time comparisons
-  tol = max(1.0d-10, 1.0d-6 * out_dt)
-
-  ! next_t: first scheduled write time (skip t=0, start at t0 + out_dt)
-  t      = t0
-  next_t = t0 + out_dt
-
-  ! Disable writes if out_dt <= 0
+  tol        = max(1.0d-10, 1.0d-6 * out_dt)
+  t          = t0
+  next_t     = t0 + out_dt
   if (out_dt <= 0.0d0) next_t = huge(1.0d0)
 
   itime = 1
@@ -323,9 +292,9 @@ program unitt_alya_with_another_code
 
      !------------------------------------------------------------------------
      ! MPI RECEIVE: DATA (Julia -> Alya)
-     ! Post non-blocking receives first; pack each sender's data into a
-     ! distinct offset in recvbuf_all so senders do not overwrite each other.
-     ! This mirrors PAR_RECEIVE(..., wsynch='ASYNCHRONOUS') in the original.
+     ! nfields = ndime values per point, field-fastest.
+     ! Julia decides what those values represent (velocity or coordinates);
+     ! the MPI calls here are identical either way.
      !------------------------------------------------------------------------
      ireq        = 0
      recv_offset = 0
@@ -345,7 +314,6 @@ program unitt_alya_with_another_code
         end if
      end do
 
-     ! Wait for all receives — equivalent to PAR_END_NON_BLOCKING_COMM
      if (nactive > 0) then
 #ifdef USEMPIF08
         call MPI_Waitall(nactive, recv_requests, recv_status, ierr)
@@ -357,21 +325,7 @@ program unitt_alya_with_another_code
      end if
 
      !------------------------------------------------------------------------
-     ! SCATTER: recvbuf_all -> ordered_buf  (EVERY timestep, unconditionally)
-     !
-     ! This is the direct equivalent of the original Alya loop:
-     !
-     !   do irank = 0, PAR_UNIVERSE_SIZE-1
-     !     do ipoin = 1, npoin_recv(irank)
-     !       jpoin = perm(irank) % l(ipoin)
-     !       advec(1:ndime, jpoin, 1) = advec_recv(irank) % a(1:ndime, ipoin)
-     !     end do
-     !   end do
-     !
-     ! je_gids_all(jpt) plays the role of perm(irank)%l(ipoin): it gives the
-     ! 1-based global Alya point ID for the jpt-th received value (flattened
-     ! across all Julia sender ranks, in the same order as recvbuf_all).
-     ! local_pos = gid - 1 - i_start maps it to this rank's 0-based index.
+     ! SCATTER: recvbuf_all -> ordered_buf  (every timestep, unconditionally)
      !------------------------------------------------------------------------
      ordered_buf = 0.0d0
      do jpt = 1, total_pts
@@ -382,14 +336,8 @@ program unitt_alya_with_another_code
         end if
      end do
 
-     !------------------------------------------------------------------------
-     ! VTS OUTPUT: only when the output schedule fires.
-     ! ordered_buf is always up-to-date at this point regardless of whether
-     ! we write, because the scatter above runs every step.
-     !------------------------------------------------------------------------
      if (write_now) then
         next_t = next_t + out_dt
-
         call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
              rem_min, rem_max, rem_nx, &
              ordered_buf, npoin_local, nfields, step, itime, t_plus)
@@ -409,7 +357,6 @@ program unitt_alya_with_another_code
   end if
   call MPI_Barrier(MPI_COMM_WORLD, ierr)
 
-  ! Cleanup
   if (allocated(recvbuf_all))   deallocate(recvbuf_all)
   if (allocated(ordered_buf))   deallocate(ordered_buf)
   if (allocated(recv_requests)) deallocate(recv_requests)
@@ -421,7 +368,6 @@ program unitt_alya_with_another_code
 
 contains
 
-  !---------------------------------------------------------------------------
   pure function cstr_trim(str) result(out)
     character(len=*), intent(in) :: str
     character(len=len(str))      :: out
@@ -431,23 +377,6 @@ contains
     out = trim(adjustl(out))
   end function cstr_trim
 
-  !===========================================================================
-  !  write_alya_grid_vts
-  !
-  !  Writes a VTK StructuredGrid (.vts) file for ParaView filled-contour
-  !  rendering.
-  !
-  !  Strategy:
-  !    1. Each Alya rank contributes its ordered_buf values via MPI_Gatherv
-  !       within PAR_COMM_FINAL.
-  !    2. Alya rank 0 assembles the full field and writes one .vts file.
-  !
-  !  Data ordering (input):
-  !    ordered_buf is already in global point order [i_start..i_end], with
-  !    field index fastest: [f1_p0, f2_p0, f1_p1, f2_p1, ...].
-  !    After Gatherv, full_field(k*nfields + ieq) holds the value for global
-  !    point k (0-based), identical to advec(ieq, k+1, 1) in the original.
-  !===========================================================================
   subroutine write_alya_grid_vts(arank, asize, PAR_COMM, ndime, &
                                   rem_min, rem_max, rem_nx, &
                                   recvbuf, total_pts, nfields, &
@@ -473,7 +402,6 @@ contains
     real(8),  allocatable       :: grid_var(:,:,:)
     character(len=16)           :: varname
 
-    !--- Grid parameters ---
     nmax         = rem_nx(1) * rem_nx(2) * rem_nx(3)
     nworkers_loc = max(1, asize - 1)
     r_rem_loc    = mod(nmax, nworkers_loc)
@@ -484,13 +412,11 @@ contains
     if (rem_nx(2) > 1) dy = dble(rem_max(2)-rem_min(2)) / dble(rem_nx(2)-1)
     if (rem_nx(3) > 1) dz = dble(rem_max(3)-rem_min(3)) / dble(rem_nx(3)-1)
 
-    !--- Build Gatherv displacement/count arrays ---
     allocate(sendcounts(0:asize-1))
     allocate(displs    (0:asize-1))
 
     do irank = 0, asize-1
        if (irank == 0) then
-          ! Master rank owns no points
           sendcounts(irank) = 0
           displs(irank)     = 0
        else
@@ -509,7 +435,6 @@ contains
 
     count_r = sendcounts(arank)
 
-    ! Receive buffer: only root allocates the full array
     if (arank == 0) then
        allocate(full_field(nmax * nfields))
        full_field = 0.0d0
@@ -517,7 +442,6 @@ contains
        allocate(full_field(1))
     end if
 
-    !--- Gather ordered_buf from all worker ranks to Alya rank 0 ---
 #ifdef USEMPIF08
     call MPI_Gatherv(recvbuf(1), count_r, MPI_DOUBLE_PRECISION, &
                      full_field(1), sendcounts, displs, MPI_DOUBLE_PRECISION, &
@@ -528,17 +452,15 @@ contains
                      0, PAR_COMM, ierr_mpi)
 #endif
     if (ierr_mpi /= 0) then
-       write(*,'(A,I0,A,I0)') 'ERROR MPI_Gatherv data: arank=', arank, ' step=', timestep
+       write(*,'(A,I0,A,I0)') 'ERROR MPI_Gatherv: arank=', arank, ' step=', timestep
        flush(6)
     end if
 
-    ! Non-root ranks are done
     if (arank /= 0) then
        deallocate(sendcounts, displs, full_field)
        return
     end if
 
-    !--- Open .vts file ---
     write(filename,'(A,I6.6,A)') 'alya_grid_', itime, '.vts'
     iunit = 99
     open(unit=iunit, file=trim(filename), status='replace', action='write', iostat=ierr_loc)
@@ -548,26 +470,18 @@ contains
        return
     end if
 
-    !=========================================================================
-    ! VTK StructuredGrid XML
-    !=========================================================================
     write(iunit,'(A)') '<?xml version="1.0"?>'
     write(iunit,'(A)') '<VTKFile type="StructuredGrid" version="0.1" byte_order="LittleEndian">'
     write(iunit,'(A,E16.8,A)') '  <!-- Time = ', time, ' -->'
 
     write(iunit,'(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A)') &
          '  <StructuredGrid WholeExtent="', &
-         0, ' ', rem_nx(1)-1, ' ', &
-         0, ' ', rem_nx(2)-1, ' ', &
-         0, ' ', rem_nx(3)-1, '">'
+         0, ' ', rem_nx(1)-1, ' ', 0, ' ', rem_nx(2)-1, ' ', 0, ' ', rem_nx(3)-1, '">'
 
     write(iunit,'(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A)') &
          '    <Piece Extent="', &
-         0, ' ', rem_nx(1)-1, ' ', &
-         0, ' ', rem_nx(2)-1, ' ', &
-         0, ' ', rem_nx(3)-1, '">'
+         0, ' ', rem_nx(1)-1, ' ', 0, ' ', rem_nx(2)-1, ' ', 0, ' ', rem_nx(3)-1, '">'
 
-    !--- Points ---
     write(iunit,'(A)') '      <Points>'
     write(iunit,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="ascii">'
     do iz = 0, rem_nx(3)-1
@@ -583,24 +497,20 @@ contains
     write(iunit,'(A)') '        </DataArray>'
     write(iunit,'(A)') '      </Points>'
 
-    !--- Point data: one DataArray per field variable ---
     write(iunit,'(A)') '      <PointData>'
-
     allocate(grid_var(0:rem_nx(1)-1, 0:rem_nx(2)-1, 0:rem_nx(3)-1))
 
     do ieq = 1, nfields
-
        select case(ieq)
-          case(1); varname = 'u'
-          case(2); varname = 'v'
-          case default
-             write(varname,'(A,I0)') 'var', ieq
+          case(1); varname = 'var1'
+          case(2); varname = 'var2'
+          case(3); varname = 'var3'
+          case default; write(varname,'(A,I0)') 'var', ieq
        end select
 
        write(iunit,'(A,A,A)') &
             '        <DataArray type="Float64" Name="', trim(varname), '" format="ascii">'
 
-       ! Map flat global index k to (ix,iy,iz); ix is fastest (VTS order)
        grid_var = 0.0d0
        do k = 0, nmax - 1
           iz = k / (rem_nx(1) * rem_nx(2))
@@ -618,16 +528,13 @@ contains
        end do
 
        write(iunit,'(A)') '        </DataArray>'
-
-    end do  ! ieq
+    end do
 
     deallocate(grid_var)
-
     write(iunit,'(A)') '      </PointData>'
     write(iunit,'(A)') '    </Piece>'
     write(iunit,'(A)') '  </StructuredGrid>'
     write(iunit,'(A)') '</VTKFile>'
-
     close(iunit)
 
     write(*,'(A,A)') 'Written VTS file: ', trim(filename)

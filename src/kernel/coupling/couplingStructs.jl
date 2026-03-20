@@ -3,10 +3,22 @@ using GridapDistributed
 using PartitionedArrays
 using Base.Threads
 
-# ---------------------------------------------------------------------------
-# Global MPI communicator refs
-# Default is COMM_WORLD; in coupled mode these are set by the driver.
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# USER SETTING
+#
+# SEND_COORDS: controls what Julia sends to Alya at every timestep.
+#
+#   false  →  send velocity components [u, v, ...]   (normal coupled run)
+#   true   →  send coordinates         [x, y, ...]   (verification / debug)
+#
+# Both options produce a buffer of identical size [npoin × ndime].
+# Alya receives the same buffer either way and knows nothing about this flag.
+# ===========================================================================
+const SEND_COORDS = true
+
+# ===========================================================================
+# GLOBAL MPI COMMUNICATOR REFS
+# ===========================================================================
 const JEXPRESSO_MPI_COMM       = Ref{Union{MPI.Comm,Nothing}}(nothing)
 const JEXPRESSO_MPI_COMM_WORLD = Ref{Union{MPI.Comm,Nothing}}(nothing)
 const JEXPRESSO_COUPLING_DATA  = Ref{Union{Dict{Symbol,Any},Nothing}}(nothing)
@@ -32,10 +44,10 @@ function get_coupling_data()
     return JEXPRESSO_COUPLING_DATA[]
 end
 
-# ---------------------------------------------------------------------------
-# ElemBins — concrete spatial bin index for element lookup.
-# Must be defined before CouplingData which holds a field of this type.
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# DATA STRUCTURES
+# ===========================================================================
+
 struct ElemBins
     xmin::Float64
     xmax::Float64
@@ -48,9 +60,6 @@ struct ElemBins
     bins::Vector{Vector{Int}}
 end
 
-# ---------------------------------------------------------------------------
-# CouplingData — all communication metadata for one Julia rank
-# ---------------------------------------------------------------------------
 mutable struct CouplingData
     npoin_recv::Vector{Int32}
     npoin_send::Vector{Int32}
@@ -62,62 +71,53 @@ mutable struct CouplingData
     neqs::Int
     ndime::Int
 
+    # --------------------------------------------------------------------------
+    # send_coords: user-settable flag in setup_coupling_and_mesh.
+    #   false (default) → send ndime velocity components per point each step.
+    #   true            → send ndime coordinate values   per point each step.
+    # Both modes produce a buffer of size [npoin × ndime], so Alya's receive
+    # path is identical either way. Only the physical meaning differs.
+    # --------------------------------------------------------------------------
+    send_coords::Bool
+
     send_bufs::Union{Nothing, Vector{Vector{Float64}}}
-    recv_bufs::Union{Nothing, Vector{Vector{Float64}}}
-    send_coord_bufs::Union{Nothing, Vector{Vector{Float64}}}
 
     alya_local_coords::Union{Nothing, Matrix{Float64}}
     alya_local_ids::Union{Nothing, Vector{Int32}}
     alya_owner_ranks::Union{Nothing, Vector{Int32}}
 
-    # Precomputed interpolation data (mesh geometry never changes)
     elem_bboxes::Union{Nothing, Vector{NTuple{4,Float64}}}
     interp_bins::Union{Nothing, ElemBins}
-
-    # Precomputed element connectivity and physical coordinates (nelem × ngl²)
-    # Eliminates get_conn(e) + mesh.x[ns] / mesh.y[ns] allocations in the hot loop.
     elem_conn::Union{Nothing, Matrix{Int}}
     elem_x::Union{Nothing, Matrix{Float64}}
     elem_y::Union{Nothing, Matrix{Float64}}
-
-    # Precomputed 1-D reference nodes and barycentric weights (length ngl)
     ξ_nodes_ref::Union{Nothing, Vector{Float64}}
     ω_bary::Union{Nothing, Vector{Float64}}
 
-    # Per-step reusable output buffers — allocated once, reused every timestep
-    qout::Union{Nothing, Matrix{Float64}}    # npoin × neqs
-    u_interp::Union{Nothing, Matrix{Float64}} # n_local_alya × neqs
+    qout::Union{Nothing, Matrix{Float64}}
+    u_interp::Union{Nothing, Matrix{Float64}}
 
-    # Scratch vectors for allocation-free Lagrange evaluation (length ngl)
     ψξ_scratch::Union{Nothing, Vector{Float64}}
     ψη_scratch::Union{Nothing, Vector{Float64}}
     dψξ_scratch::Union{Nothing, Vector{Float64}}
     dψη_scratch::Union{Nothing, Vector{Float64}}
     α_scratch::Union{Nothing, Vector{Float64}}
-
-    # Scratch buffers for element physical coordinates (length ngl²).
-    # Avoids per-element fancy-indexing allocations in the interpolation hot loop.
     x_e_scratch::Union{Nothing, Vector{Float64}}
     y_e_scratch::Union{Nothing, Vector{Float64}}
 
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
-                          comm_world, lrank, neqs, ndime)
+                          comm_world, lrank, neqs, ndime, send_coords=false)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
-            comm_world, lrank, neqs, ndime,
+            comm_world, lrank, neqs, ndime, send_coords,
+            nothing,
             nothing, nothing, nothing,
-            nothing, nothing, nothing,
-            nothing, nothing,
-            nothing, nothing, nothing,
-            nothing, nothing,
+            nothing, nothing, nothing, nothing, nothing, nothing, nothing,
             nothing, nothing,
             nothing, nothing, nothing, nothing, nothing,
             nothing, nothing)
     end
 end
 
-# ---------------------------------------------------------------------------
-# Alya_Point_Ownership — which Jexpresso rank owns each Alya grid point
-# ---------------------------------------------------------------------------
 struct Alya_Point_Ownership
     alya_coords::Matrix{Float64}
     owner_jrank::Vector{Int32}
@@ -127,17 +127,13 @@ struct Alya_Point_Ownership
 end
 
 # ===========================================================================
-# MPI HANDSHAKE  (Julia ← Alya)
+# MPI HANDSHAKE
 # ===========================================================================
 
-# Initial identity exchange with Alya. Returns true when running in coupled mode
-# (world size > nparts), false in standalone mode.
 function je_perform_coupling_handshake(world, nparts)
     wsize = MPI.Comm_size(world)
     wrank = MPI.Comm_rank(world)
-    if wsize <= nparts
-        return false
-    end
+    wsize <= nparts && return false
     local_chars = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
     MPI.Gather!(local_chars, nothing, 0, world)
     if wrank == nparts
@@ -149,18 +145,12 @@ end
 
 function je_receive_alya_data(world, nparts)
     wsize = MPI.Comm_size(world)
+    wsize <= nparts && (@warn "je_receive_alya_data called but not in coupled mode"; return)
 
-    if wsize <= nparts
-        @warn "je_receive_alya_data called but not in coupled mode"
-        return
-    end
-
-    # 1. ndime
     ndime_buf = Vector{Int32}(undef, 1)
     MPI.Bcast!(ndime_buf, 0, world)
     ndime = Int(ndime_buf[1])
 
-    # 2. rem_min / rem_max / rem_nx (element-by-element to avoid SubArray issues)
     rem_min = Vector{Float64}(undef, 3)
     rem_max = Vector{Float64}(undef, 3)
     rem_nx  = Vector{Int32}(undef, 3)
@@ -170,50 +160,38 @@ function je_receive_alya_data(world, nparts)
         MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
     end
 
-    # 3. Alya→world rank map via Allreduce
     nranks_alya  = wsize - nparts
     alya2world_l = zeros(Int32, nranks_alya)
     alya2world   = MPI.Allreduce(alya2world_l, MPI.SUM, world)
 
     set_coupling_data(Dict{Symbol,Any}(
         :ndime      => ndime,
-        :neqs       => 0,       # filled later by neqs Allreduce
-        :nsteps     => 0,
         :rem_min    => rem_min,
         :rem_max    => rem_max,
         :rem_nx     => rem_nx,
         :alya2world => alya2world,
     ))
 
-    lcomm = get_mpi_comm()
-    lrank = MPI.Comm_rank(lcomm)
+    lrank = MPI.Comm_rank(get_mpi_comm())
     if lrank == 0
-        println("[je_receive_alya_data] ndime=$ndime")
-        println("  min=$rem_min, max=$rem_max, nx=$rem_nx")
+        println("[je_receive_alya_data] ndime=$ndime  min=$rem_min  max=$rem_max  nx=$rem_nx")
         flush(stdout)
     end
 end
 
-# Send the Alya grid-point IDs for each partner: only those whose owner
-# equals dest_rank, preserving the same order used for data packing.
 function je_send_node_list(alya_local_ids::Vector{Int32},
                            alya_owner_ranks::Vector{Int32},
                            send_to_ranks::Vector{Int32},
                            world::MPI.Comm)
-    lcomm = get_mpi_comm()
-    lrank = MPI.Comm_rank(lcomm)
+    lrank = MPI.Comm_rank(get_mpi_comm())
     wrank = MPI.Comm_rank(world)
-
     send_requests = MPI.Request[]
     for dest_rank in send_to_ranks
         mask    = alya_owner_ranks .== dest_rank
         gid_buf = Int32.(alya_local_ids[mask])
         push!(send_requests, MPI.Isend(gid_buf, dest_rank, 0, world))
-        #=println("[je_send_node_list] Jexpresso lrank=$lrank (wrank=$wrank) → Alya world rank $dest_rank: ",
+        println("[je_send_node_list] lrank=$lrank (wrank=$wrank) → Alya world rank $dest_rank: ",
                 "$(length(gid_buf)) node IDs")
-        for (k, gid) in enumerate(gid_buf)
-            println("  [$k] gid = $gid")
-        end=#
     end
     isempty(send_requests) || MPI.Waitall(send_requests)
     flush(stdout)
@@ -223,20 +201,15 @@ end
 # GEOMETRY / INTERPOLATION HELPERS
 # ===========================================================================
 
-# Connectivity accessor using connijk (tensor-product ordered, i fastest)
 function _make_conn_accessor(mesh)
     connijk = getfield(mesh, :connijk)
     nsd = mesh.nsd
-    if nsd <= 2
-        return e -> vec(@view connijk[e, :, :, 1])
-    else
-        return e -> vec(@view connijk[e, :, :, :])
-    end
+    return nsd <= 2 ? (e -> vec(@view connijk[e, :, :, 1])) :
+                      (e -> vec(@view connijk[e, :, :, :]))
 end
 
 _num_elems(mesh) = mesh.nelem
 
-# Barycentric weights:  w_j = 1 / ∏_{k≠j} (x_j - x_k)
 function barycentric_weights(nodes::AbstractVector{<:Real})
     n = length(nodes)
     w = ones(Float64, n)
@@ -251,7 +224,6 @@ function barycentric_weights(nodes::AbstractVector{<:Real})
     return w
 end
 
-# Uniform binning over element bounding boxes
 function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::Int=64)
     ne = length(elem_bboxes)
     xmin = +Inf; xmax = -Inf; ymin = +Inf; ymax = -Inf
@@ -262,7 +234,6 @@ function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::
     nx = max(1, bins_per_dim); ny = max(1, bins_per_dim)
     dx = (xmax > xmin) ? (xmax - xmin) / nx : 1.0
     dy = (ymax > ymin) ? (ymax - ymin) / ny : 1.0
-
     bin_lists = [Int[] for _ in 1:(nx*ny)]
     for e in 1:ne
         (x0,x1,y0,y1) = elem_bboxes[e]
@@ -274,9 +245,6 @@ function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::
             push!(bin_lists[iy*nx + ix + 1], e)
         end
     end
-    # Pre-fill empty bins with the fallback (all elements) so _bin_candidates
-    # always returns Vector{Int} — eliminates the union return type and the
-    # isempty branch, keeping the hot path type-stable and allocation-free.
     fallback = collect(1:ne)
     for i in eachindex(bin_lists)
         isempty(bin_lists[i]) && (bin_lists[i] = fallback)
@@ -284,43 +252,18 @@ function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::
     return ElemBins(xmin, xmax, ymin, ymax, nx, ny, dx, dy, bin_lists)
 end
 
-# Returns existing bin vector (no allocation) or full range as fallback.
-# All field accesses are type-stable because bins::ElemBins is concrete.
 @inline function _bin_candidates(bins::ElemBins, x::Float64, y::Float64)
     ix = clamp(Int(floor((x - bins.xmin) / bins.dx)), 0, bins.nx - 1)
     iy = clamp(Int(floor((y - bins.ymin) / bins.dy)), 0, bins.ny - 1)
     return bins.bins[iy * bins.nx + ix + 1]
 end
 
-# 1D Lagrange basis at ξ using barycentric formula
-function evaluate_lagrange_1d(ξ::Float64, ξ_nodes::Vector{Float64}, ω::Vector{Float64})
-    n = length(ξ_nodes)
-    ψ = zeros(Float64, n)
-    @inbounds for i in 1:n
-        if abs(ξ - ξ_nodes[i]) < 1e-14
-            ψ[i] = 1.0
-            return ψ
-        end
-    end
-    sum_val = 0.0
-    @inbounds for i in 1:n
-        ψ[i] = ω[i] / (ξ - ξ_nodes[i])
-        sum_val += ψ[i]
-    end
-    inv_s = 1.0 / sum_val
-    @inbounds for i in 1:n; ψ[i] *= inv_s; end
-    return ψ
-end
-
-# In-place 1-D Lagrange basis — no allocation, writes result into pre-allocated ψ
 function evaluate_lagrange_1d!(ψ::Vector{Float64}, ξ::Float64,
                                 ξ_nodes::Vector{Float64}, ω::Vector{Float64})
     n = length(ξ_nodes)
     @inbounds for i in 1:n
         if abs(ξ - ξ_nodes[i]) < 1e-14
-            fill!(ψ, 0.0)
-            ψ[i] = 1.0
-            return
+            fill!(ψ, 0.0); ψ[i] = 1.0; return
         end
     end
     sum_val = 0.0
@@ -332,7 +275,6 @@ function evaluate_lagrange_1d!(ψ::Vector{Float64}, ξ::Float64,
     @inbounds for i in 1:n; ψ[i] *= inv_s; end
 end
 
-# In-place 1-D Lagrange derivative — no allocation; α is a length-n scratch vector
 function evaluate_lagrange_1d_derivative!(dψ::Vector{Float64}, ξ::Float64,
                                           ξ_nodes::Vector{Float64}, ω::Vector{Float64},
                                           α::Vector{Float64})
@@ -361,56 +303,24 @@ function evaluate_lagrange_1d_derivative!(dψ::Vector{Float64}, ξ::Float64,
     end
 end
 
-# 1D Lagrange derivative at ξ using barycentric formula
-function evaluate_lagrange_1d_derivative(ξ::Float64, ξ_nodes::Vector{Float64},
-                                         ω::Vector{Float64})
-    n = length(ξ_nodes)
-    dψ = zeros(Float64, n)
-    @inbounds for j in 1:n
-        if abs(ξ - ξ_nodes[j]) < 1e-14
-            for k in 1:n
-                k == j && continue
-                dψ[k]  =  ω[k] / (ω[j] * (ξ_nodes[j] - ξ_nodes[k]))
-                dψ[j] -= 1.0 / (ξ_nodes[j] - ξ_nodes[k])
-            end
-            return dψ
-        end
-    end
-    α = zeros(Float64, n)
-    sum_α = 0.0
-    @inbounds for i in 1:n
-        α[i] = ω[i] / (ξ - ξ_nodes[i])
-        sum_α += α[i]
-    end
-    sum_dα = 0.0
-    @inbounds for i in 1:n; sum_dα -= α[i] / (ξ - ξ_nodes[i]); end
-    inv_sum2 = 1.0 / (sum_α * sum_α)
-    @inbounds for i in 1:n
-        dψ[i] = (-α[i]/(ξ - ξ_nodes[i]) * sum_α - α[i] * sum_dα) * inv_sum2
-    end
-    return dψ
-end
-
-# Map physical (px, py) → reference (ξ, η) via Newton iteration.
-# ψξ, ψη, dψξ, dψη, α are pre-allocated scratch vectors of length ngl.
 @inline function physical_to_reference(px::Float64, py::Float64,
-                                x_elem::AbstractVector, y_elem::AbstractVector,
-                                ξ_nodes::Vector{Float64}, ω::Vector{Float64}, ngl::Int,
-                                ψξ::Vector{Float64}, ψη::Vector{Float64},
-                                dψξ::Vector{Float64}, dψη::Vector{Float64},
-                                α::Vector{Float64})
+                                        x_elem::AbstractVector, y_elem::AbstractVector,
+                                        ξ_nodes::Vector{Float64}, ω::Vector{Float64},
+                                        ngl::Int,
+                                        ψξ::Vector{Float64}, ψη::Vector{Float64},
+                                        dψξ::Vector{Float64}, dψη::Vector{Float64},
+                                        α::Vector{Float64})
     ξ, η = 0.0, 0.0
     for _ in 1:20
         evaluate_lagrange_1d!(ψξ, ξ, ξ_nodes, ω)
         evaluate_lagrange_1d!(ψη, η, ξ_nodes, ω)
         evaluate_lagrange_1d_derivative!(dψξ, ξ, ξ_nodes, ω, α)
         evaluate_lagrange_1d_derivative!(dψη, η, ξ_nodes, ω, α)
-
         x_c = y_c = dxdξ = dxdη = dydξ = dydη = 0.0
         idx = 1
         @inbounds for j in 1:ngl, i in 1:ngl
-            ψv = ψξ[i]*ψη[j]; dξv = dψξ[i]*ψη[j]; dηv = ψξ[i]*dψη[j]
-            x_c += ψv*x_elem[idx];  y_c  += ψv*y_elem[idx]
+            ψv  = ψξ[i]*ψη[j]; dξv = dψξ[i]*ψη[j]; dηv = ψξ[i]*dψη[j]
+            x_c  += ψv *x_elem[idx]; y_c  += ψv *y_elem[idx]
             dxdξ += dξv*x_elem[idx]; dxdη += dηv*x_elem[idx]
             dydξ += dξv*y_elem[idx]; dydη += dηv*y_elem[idx]
             idx += 1
@@ -427,22 +337,6 @@ end
     return ξ, η, false
 end
 
-# ---------------------------------------------------------------------------
-# Zero-allocation in-place interpolation — call this inside the time loop.
-#
-# NO mesh field is accessed inside this function: St_mesh carries several
-# Union{TInt,Missing} fields (ngl, nelem, npoin) and un-annotated fields
-# (coords, x, y) whose inferred field type is Any.  Either kind poisons
-# type-inference and causes per-iteration scalar boxing.
-#
-# Instead every quantity is derived from the concrete-typed parameters:
-#   ngl   = length(ξ_nodes)
-#   ngl2  = length(x_e)
-#   nelem = size(elem_conn, 1)
-#   npoin = size(u_mat, 1)
-#   element coords — elem_x / elem_y  (Matrix{Float64}, built at setup)
-#   fallback coords — mesh_x / mesh_y (Vector{Float64}, extracted once)
-# ---------------------------------------------------------------------------
 function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
                                               alya_coords::Matrix{Float64},
                                               u_mat::Matrix{Float64},
@@ -461,227 +355,73 @@ function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
                                               mesh_x::Vector{Float64},
                                               mesh_y::Vector{Float64})
     n_points = size(alya_coords, 1)
-    ngl      = length(ξ_nodes)       # Int  — no Union{TInt,Missing} boxing
-    ngl2     = ngl * ngl             # Int
-    nelem    = size(elem_conn, 1)    # Int
-    npoin    = size(u_mat, 1)        # Int
+    ngl      = length(ξ_nodes)
+    ngl2     = ngl * ngl
+    npoin    = size(u_mat, 1)
 
     @inbounds for ipt in 1:n_points
         px, py = alya_coords[ipt, 1], alya_coords[ipt, 2]
-
-        # bins::ElemBins is a concrete type — always returns Vector{Int}, no union
         candidates = _bin_candidates(bins, px, py)
-
         found = false
         for e in candidates
-            # Quick bbox check (no allocation — pre-built tuple)
             bb = elem_bboxes[e]
-            (px < bb[1] - 1e-10 || px > bb[2] + 1e-10 ||
-             py < bb[3] - 1e-10 || py > bb[4] + 1e-10) && continue
-
-            # Copy pre-computed element coords into contiguous scratch.
-            # elem_x / elem_y are Matrix{Float64} — all accesses type-stable.
+            (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
+             py < bb[3]-1e-10 || py > bb[4]+1e-10) && continue
             @inbounds for k in 1:ngl2
-                x_e[k] = elem_x[e, k]
-                y_e[k] = elem_y[e, k]
+                x_e[k] = elem_x[e, k]; y_e[k] = elem_y[e, k]
             end
-
-            # Map to reference coordinates — in-place, zero allocation
             ξ_ref, η_ref, converged = physical_to_reference(
-                px, py, x_e, y_e, ξ_nodes, ω, ngl,
-                ψξ, ψη, dψξ, dψη, α
-            )
-            (!converged || abs(ξ_ref) > 1.0 + 1e-10 || abs(η_ref) > 1.0 + 1e-10) && continue
-
-            # Evaluate basis at converged (ξ_ref, η_ref) — in-place, no allocation
+                px, py, x_e, y_e, ξ_nodes, ω, ngl, ψξ, ψη, dψξ, dψη, α)
+            (!converged || abs(ξ_ref) > 1.0+1e-10 || abs(η_ref) > 1.0+1e-10) && continue
             evaluate_lagrange_1d!(ψξ, ξ_ref, ξ_nodes, ω)
             evaluate_lagrange_1d!(ψη, η_ref, ξ_nodes, ω)
-
-            # Interpolate solution
             for q in 1:neqs
-                val = 0.0
-                idx = 1
+                val = 0.0; idx = 1
                 for j in 1:ngl, i in 1:ngl
                     val += ψξ[i] * ψη[j] * u_mat[elem_conn[e, idx], q]
                     idx += 1
                 end
                 u_interp[ipt, q] = val
             end
-
-            found = true
-            break
+            found = true; break
         end
-
         if !found
-            # Nearest-neighbour fallback — scalar loop, zero allocation.
-            # mesh_x / mesh_y are Vector{Float64} captured once before the loop.
             nearest = 1
-            min_d2  = (mesh_x[1] - px)^2 + (mesh_y[1] - py)^2
+            min_d2  = (mesh_x[1]-px)^2 + (mesh_y[1]-py)^2
             @inbounds for ip in 2:npoin
-                d2 = (mesh_x[ip] - px)^2 + (mesh_y[ip] - py)^2
+                d2 = (mesh_x[ip]-px)^2 + (mesh_y[ip]-py)^2
                 if d2 < min_d2; min_d2 = d2; nearest = ip; end
             end
             @inbounds for q in 1:neqs; u_interp[ipt, q] = u_mat[nearest, q]; end
         end
     end
-
-end
-
-
-# Evaluate 1D Lagrange basis at arbitrary point using barycentric formula
-function evaluate_lagrange_1d(ξ::Float64, ξ_nodes::Vector{Float64}, ω::Vector{Float64})
-    n = length(ξ_nodes)
-    ψ = zeros(Float64, n)
-    
-    # Check for exact node match
-    @inbounds for i in 1:n
-        if abs(ξ - ξ_nodes[i]) < 1e-14
-            ψ[i] = 1.0
-            return ψ
-        end
-    end
-    
-    # Barycentric formula
-    sum_val = 0.0
-    @inbounds for i in 1:n
-        ψ[i] = ω[i] / (ξ - ξ_nodes[i])
-        sum_val += ψ[i]
-    end
-    
-    inv_sum = 1.0 / sum_val
-    @inbounds for i in 1:n
-        ψ[i] *= inv_sum
-    end
-    
-    return ψ
-end
-# Map physical to reference coordinates using Newton iteration
-function physical_to_reference(px::Float64, py::Float64,
-                               x_elem::AbstractVector, y_elem::AbstractVector,
-                               ξ_nodes::Vector{Float64}, ω::Vector{Float64}, ngl::Int)
-    max_iter = 20
-    tol = 1e-12
-    ξ, η = 0.0, 0.0
-    
-    for iter in 1:max_iter
-        # Evaluate basis and derivatives
-        ψξ = evaluate_lagrange_1d(ξ, ξ_nodes, ω)
-        ψη = evaluate_lagrange_1d(η, ξ_nodes, ω)
-        dψξ = evaluate_lagrange_1d_derivative(ξ, ξ_nodes, ω)
-        dψη = evaluate_lagrange_1d_derivative(η, ξ_nodes, ω)
-        
-        # Compute current position and Jacobian
-        x_curr = y_curr = dxdξ = dxdη = dydξ = dydη = 0.0
-        
-        idx = 1
-        @inbounds for j in 1:ngl, i in 1:ngl
-            ψ_val = ψξ[i] * ψη[j]
-            dξ_val = dψξ[i] * ψη[j]
-            dη_val = ψξ[i] * dψη[j]
-            
-            x_curr += ψ_val * x_elem[idx]
-            y_curr += ψ_val * y_elem[idx]
-            dxdξ += dξ_val * x_elem[idx]
-            dxdη += dη_val * x_elem[idx]
-            dydξ += dξ_val * y_elem[idx]
-            dydη += dη_val * y_elem[idx]
-            idx += 1
-        end
-        
-        # Residual
-        rx = px - x_curr
-        ry = py - y_curr
-        
-        if sqrt(rx*rx + ry*ry) < tol
-            return ξ, η, true
-        end
-        
-        # Newton update
-        det_J = dxdξ * dydη - dxdη * dydξ
-        abs(det_J) < 1e-15 && return ξ, η, false
-        
-        inv_det = 1.0 / det_J
-        ξ += inv_det * ( dydη * rx - dxdη * ry)
-        η += inv_det * (-dydξ * rx + dxdξ * ry)
-        
-        (abs(ξ) > 10.0 || abs(η) > 10.0) && return ξ, η, false
-    end
-    
-    return ξ, η, false
-end
-
-
-# Evaluate 1D Lagrange derivative using barycentric formula
-function evaluate_lagrange_1d_derivative(ξ::Float64, ξ_nodes::Vector{Float64}, 
-                                        ω::Vector{Float64})
-    n = length(ξ_nodes)
-    dψ = zeros(Float64, n)
-    
-    # Check for exact node match
-    @inbounds for j in 1:n
-        if abs(ξ - ξ_nodes[j]) < 1e-14
-            # Derivative at node j
-            for k in 1:n
-                k == j && continue
-                dψ[k] = ω[k] / (ω[j] * (ξ_nodes[j] - ξ_nodes[k]))
-            end
-            for k in 1:n
-                k == j && continue
-                dψ[j] -= 1.0 / (ξ_nodes[j] - ξ_nodes[k])
-            end
-            return dψ
-        end
-    end
-    
-    # General case
-    α = zeros(Float64, n)
-    sum_α = 0.0
-    @inbounds for i in 1:n
-        α[i] = ω[i] / (ξ - ξ_nodes[i])
-        sum_α += α[i]
-    end
-    
-    sum_dα = 0.0
-    @inbounds for i in 1:n
-        sum_dα -= α[i] / (ξ - ξ_nodes[i])
-    end
-    
-    inv_sum2 = 1.0 / (sum_α * sum_α)
-    @inbounds for i in 1:n
-        dα_i = -α[i] / (ξ - ξ_nodes[i])
-        dψ[i] = (dα_i * sum_α - α[i] * sum_dα) * inv_sum2
-    end
-    
-    return dψ
 end
 
 # ===========================================================================
 # ALYA COORDINATE EXTRACTION
 # ===========================================================================
+
 function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_comm;
                                         block_size::NTuple{3,Int}=(64,64,64),
                                         use_cropping::Bool=true,
                                         ξ_nodes::Union{Nothing,Vector{Float64}}=nothing)
     ndime      = coupling_data[:ndime]
-    rem_min_f  = coupling_data[:rem_min]
-    rem_max_f  = coupling_data[:rem_max]
-    rem_nx_i   = coupling_data[:rem_nx]
     alya2world = coupling_data[:alya2world]
     @assert ndime == 2 || ndime == 3 "Only ndime==2 or ndime==3 supported"
-    @assert length(alya2world) > 0 "alya2world must be non-empty"
+    @assert length(alya2world) > 0   "alya2world must be non-empty"
 
-    rem_min = Float64.(rem_min_f); rem_max = Float64.(rem_max_f)
-    rem_nx  = Int.(rem_nx_i)
+    rem_min = Float64.(coupling_data[:rem_min])
+    rem_max = Float64.(coupling_data[:rem_max])
+    rem_nx  = Int.(coupling_data[:rem_nx])
 
     rem_dx = zeros(Float64, 3)
     for d in 1:ndime
-        rem_dx[d] = rem_nx[d] > 1 ? (rem_max[d] - rem_min[d]) / (rem_nx[d] - 1) : 0.0
+        rem_dx[d] = rem_nx[d] > 1 ? (rem_max[d]-rem_min[d]) / (rem_nx[d]-1) : 0.0
     end
 
-    nmax = rem_nx[1] * rem_nx[2] * rem_nx[3]
+    nmax        = rem_nx[1] * rem_nx[2] * rem_nx[3]
     nranks_alya = length(alya2world)
-    alya_driving_world_rank = Int32(0)
-    alya_worker_indices = [k for k in 1:nranks_alya if alya2world[k] != alya_driving_world_rank]
+    alya_worker_indices = [k for k in 1:nranks_alya if alya2world[k] != Int32(0)]
     nworkers_alya = length(alya_worker_indices)
     r_w  = mod(nmax, nworkers_alya)
     np_w = div(nmax, nworkers_alya)
@@ -695,18 +435,13 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     lrank = MPI.Comm_rank(local_comm)
     wrank = MPI.Comm_rank(world_comm)
 
-    # -----------------------------------------------------------------------
-    # Element-level containment (2D only): build per-rank element geometry so
-    # we can test whether each Alya point actually lies inside a local element
-    # via Newton iteration rather than using the coarse mesh bounding box.
-    # -----------------------------------------------------------------------
     use_elem_containment = (ξ_nodes !== nothing && ndime == 2)
     if use_elem_containment
-        ω_bary       = barycentric_weights(ξ_nodes)
-        nelem_loc    = _num_elems(mesh)
-        ngl_loc      = mesh.ngl
-        ngl2_loc     = ngl_loc * ngl_loc
-        gc_loc       = _make_conn_accessor(mesh)
+        ω_bary    = barycentric_weights(ξ_nodes)
+        nelem_loc = _num_elems(mesh)
+        ngl_loc   = mesh.ngl
+        ngl2_loc  = ngl_loc * ngl_loc
+        gc_loc    = _make_conn_accessor(mesh)
 
         local_elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem_loc)
         @inbounds for e in 1:nelem_loc
@@ -733,16 +468,13 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         α_s   = Vector{Float64}(undef, ngl_loc)
 
         @inline function in_any_local_elem(px::Float64, py::Float64)
-            cands = _bin_candidates(local_elem_bins, px, py)
-            for e in cands
+            for e in _bin_candidates(local_elem_bins, px, py)
                 bb = local_elem_bboxes[e]
                 (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
                  py < bb[3]-1e-10 || py > bb[4]+1e-10) && continue
-                x_e = @view local_ex[e, :]
-                y_e = @view local_ey[e, :]
-                ξr, ηr, conv = physical_to_reference(px, py, x_e, y_e,
-                                                      ξ_nodes, ω_bary, ngl_loc,
-                                                      ψξ_s, ψη_s, dψξ_s, dψη_s, α_s)
+                ξr, ηr, conv = physical_to_reference(
+                    px, py, @view(local_ex[e,:]), @view(local_ey[e,:]),
+                    ξ_nodes, ω_bary, ngl_loc, ψξ_s, ψη_s, dψξ_s, dψη_s, α_s)
                 (conv && abs(ξr) <= 1.0+1e-10 && abs(ηr) <= 1.0+1e-10) && return true
             end
             return false
@@ -750,9 +482,9 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     end
 
     @inline idx_to_xyz(i1,i2,i3) = (rem_min[1]+i1*rem_dx[1],
-                                    rem_min[2]+i2*rem_dx[2],
-                                    rem_min[3]+i3*rem_dx[3])
-    @inline idx_to_ipoin(i1,i2,i3) = i1 + rem_nx[1]*(i2 + rem_nx[2]*i3) + 1  # 1-based
+                                     rem_min[2]+i2*rem_dx[2],
+                                     rem_min[3]+i3*rem_dx[3])
+    @inline idx_to_ipoin(i1,i2,i3) = i1 + rem_nx[1]*(i2 + rem_nx[2]*i3) + 1
 
     @inline function inside_local(x,y,z)
         ndime == 2 ? (x >= xmin_local-tol && x <= xmax_local+tol &&
@@ -770,8 +502,8 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
 
     @inline function crop_1d(minA, dx, nx, minB, maxB)
         nx <= 1 && return 0, 0
-        ilo = max(0,   Int(clamp(floor((minB - minA)/dx + 1e-12), 0, nx-1)) - 1)
-        ihi = min(nx-1, Int(clamp( ceil((maxB - minA)/dx - 1e-12), 0, nx-1)) + 1)
+        ilo = max(0,    Int(clamp(floor((minB-minA)/dx + 1e-12), 0, nx-1)) - 1)
+        ihi = min(nx-1, Int(clamp( ceil((maxB-minA)/dx - 1e-12), 0, nx-1)) + 1)
         return ilo, ihi
     end
 
@@ -782,9 +514,10 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     if use_cropping
         rem_nx[1] > 1 && ((i1_lo, i1_hi) = crop_1d(rem_min[1], rem_dx[1], rem_nx[1], xmin_local-tol, xmax_local+tol))
         rem_nx[2] > 1 && ((i2_lo, i2_hi) = crop_1d(rem_min[2], rem_dx[2], rem_nx[2], ymin_local-tol, ymax_local+tol))
-        ndime == 3 && rem_nx[3] > 1 && ((i3_lo, i3_hi) = crop_1d(rem_min[3], rem_dx[3], rem_nx[3], zmin_local-tol, zmax_local+tol))
+        ndime == 3 && rem_nx[3] > 1 &&
+            ((i3_lo, i3_hi) = crop_1d(rem_min[3], rem_dx[3], rem_nx[3], zmin_local-tol, zmax_local+tol))
         if i1_lo > i1_hi || i2_lo > i2_hi || i3_lo > i3_hi
-            println("[extract_local_alya_coordinates] (lrank=$lrank) no overlap with local domain.")
+            println("[extract] (lrank=$lrank) no overlap with local domain.")
             flush(stdout)
             return zeros(Float64, 0, ndime), Int32[], Int32[]
         end
@@ -793,17 +526,17 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     Bx, By, Bz = block_size
     Bx = max(1,Bx); By = max(1,By); Bz = max(1, ndime==3 ? Bz : 1)
     est = (i1_hi-i1_lo+1)*(i2_hi-i2_lo+1)*(i3_hi-i3_lo+1)
-    X = Float64[]; Y = Float64[]; Z = ndime==3 ? Float64[] : Float64[]
+    X = Float64[]; Y = Float64[]; Z = Float64[]
     ids = Int32[]; owners = Int32[]
     sizehint!(X, est); sizehint!(Y, est)
-    ndime==3 && sizehint!(Z, est)
+    ndime == 3 && sizehint!(Z, est)
     sizehint!(ids, est); sizehint!(owners, est)
 
-    @inline function bin_bbox(i1s,i1e,i2s,i2e,i3s,i3e)
+    @inline bin_bbox(i1s,i1e,i2s,i2e,i3s,i3e) =
         (rem_min[1]+i1s*rem_dx[1], rem_min[1]+i1e*rem_dx[1],
          rem_min[2]+i2s*rem_dx[2], rem_min[2]+i2e*rem_dx[2],
          rem_min[3]+i3s*rem_dx[3], rem_min[3]+i3e*rem_dx[3])
-    end
+
     @inline function outside_local(xmn,xmx,ymn,ymx,zmn,zmx)
         ndime==2 ? (xmx<xmin_local-tol || xmn>xmax_local+tol ||
                     ymx<ymin_local-tol || ymn>ymax_local+tol) :
@@ -811,6 +544,7 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
                     ymx<ymin_local-tol || ymn>ymax_local+tol ||
                     zmx<zmin_local-tol || zmn>zmax_local+tol)
     end
+
     @inline function inside_box(xmn,xmx,ymn,ymx,zmn,zmx)
         ndime==2 ? (xmn>=xmin_local-tol && xmx<=xmax_local+tol &&
                     ymn>=ymin_local-tol && ymx<=ymax_local+tol) :
@@ -828,28 +562,23 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
                 bxmn,bxmx,bymn,bymx,bzmn,bzmx = bin_bbox(i1s,i1e,i2s,i2e,i3s,i3e)
                 outside_local(bxmn,bxmx,bymn,bymx,bzmn,bzmx) && continue
                 if !use_elem_containment && inside_box(bxmn,bxmx,bymn,bymx,bzmn,bzmx)
-                    # Fast path (bounding-box mode only): entire block inside local bbox
                     @inbounds for i3 in i3s:i3e, i2 in i2s:i2e, i1 in i1s:i1e
                         x,y,z = idx_to_xyz(i1,i2,i3)
                         ipoin = idx_to_ipoin(i1,i2,i3)
-                        aw = alya2world[owner_alya_rank(ipoin)]
                         push!(X,x); push!(Y,y); ndime==3 && push!(Z,z)
-                        push!(ids, Int32(ipoin)); push!(owners, Int32(aw))
+                        push!(ids, Int32(ipoin))
+                        push!(owners, Int32(alya2world[owner_alya_rank(ipoin)]))
                     end
                 else
                     @inbounds for i3 in i3s:i3e, i2 in i2s:i2e, i1 in i1s:i1e
                         x,y,z = idx_to_xyz(i1,i2,i3)
-                        # Element-containment path: only claim points that actually
-                        # lie inside a local SEM element (not just the bbox).
-                        # Fall back to simple bbox check for 3D or when ξ_nodes
-                        # was not supplied.
                         accept = use_elem_containment ? in_any_local_elem(x, y) :
                                                         inside_local(x,y,z)
                         accept || continue
                         ipoin = idx_to_ipoin(i1,i2,i3)
-                        aw = alya2world[owner_alya_rank(ipoin)]
                         push!(X,x); push!(Y,y); ndime==3 && push!(Z,z)
-                        push!(ids, Int32(ipoin)); push!(owners, Int32(aw))
+                        push!(ids, Int32(ipoin))
+                        push!(owners, Int32(alya2world[owner_alya_rank(ipoin)]))
                     end
                 end
             end
@@ -858,119 +587,72 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
 
     n_local = length(ids)
 
-    # ------------------------------------------------------------------
-    # Two-phase deduplication + rescue.
-    #
-    # Phase 1 (element containment dedup):
-    #   Build local_claim[gid] = lrank for every point this rank extracted.
-    #   Allreduce(MAX) → global_claim[gid] = winning rank (-1 = unclaimed).
-    #   Keep only points where this rank won.
-    #
-    # Phase 2 (bbox rescue):
-    #   Points with global_claim[gid] == -1 were not claimed by any rank.
-    #   This happens when Newton iteration drifts just outside |ξ|,|η| ≤ 1
-    #   for boundary / partition-edge Alya points.
-    #   Each rank proposes itself for unclaimed points inside its local bbox.
-    #   Allreduce(MIN) → lowest-lrank wins (fair, deterministic distribution).
-    # ------------------------------------------------------------------
-
-    # Phase 1 ─────────────────────────────────────────────────────────
     local_claim = fill(Int32(-1), nmax)
-    @inbounds for i in 1:n_local
-        local_claim[Int(ids[i])] = Int32(lrank)
-    end
+    @inbounds for i in 1:n_local; local_claim[Int(ids[i])] = Int32(lrank); end
     global_claim = MPI.Allreduce(local_claim, MPI.MAX, local_comm)
 
     if n_local > 0
         keep = [global_claim[Int(ids[i])] == Int32(lrank) for i in 1:n_local]
         if !all(keep)
-            X      = X[keep]
-            Y      = Y[keep]
+            X = X[keep]; Y = Y[keep]
             ndime == 3 && (Z = Z[keep])
-            ids    = ids[keep]
-            owners = owners[keep]
+            ids = ids[keep]; owners = owners[keep]
             n_local = length(ids)
-            println("[extract_local_alya_coordinates] (lrank=$lrank) after phase-1 dedup: $n_local points kept.")
+            println("[extract] (lrank=$lrank) after phase-1 dedup: $n_local points kept.")
             flush(stdout)
         end
     end
 
-    # Phase 2 ─────────────────────────────────────────────────────────
-    # For unclaimed gids, propose this rank if the point is inside the
-    # local bounding box.  Allreduce(MIN) picks the lowest lrank.
     rescue_claim = fill(Int32(typemax(Int32)), nmax)
     for gid in 1:nmax
-        global_claim[gid] != -1 && continue        # already claimed
-        i1 = (gid - 1) % rem_nx[1]
-        i2 = div(gid - 1, rem_nx[1]) % rem_nx[2]
-        i3 = div(gid - 1, rem_nx[1] * rem_nx[2])
-        x, y, z = idx_to_xyz(i1, i2, i3)
-        inside_local(x, y, z) || continue
+        global_claim[gid] != -1 && continue
+        i1 = (gid-1) % rem_nx[1]
+        i2 = div(gid-1, rem_nx[1]) % rem_nx[2]
+        i3 = div(gid-1, rem_nx[1]*rem_nx[2])
+        x,y,z = idx_to_xyz(i1,i2,i3)
+        inside_local(x,y,z) || continue
         rescue_claim[gid] = Int32(lrank)
     end
     global_rescue = MPI.Allreduce(rescue_claim, MPI.MIN, local_comm)
 
     n_rescued = 0
     for gid in 1:nmax
-        global_claim[gid] != -1   && continue   # already owned (phase 1)
-        global_rescue[gid] == typemax(Int32) && continue  # still unclaimed — outside all bboxes
-        global_rescue[gid] != Int32(lrank)    && continue   # another rank won this one
-        i1 = (gid - 1) % rem_nx[1]
-        i2 = div(gid - 1, rem_nx[1]) % rem_nx[2]
-        i3 = div(gid - 1, rem_nx[1] * rem_nx[2])
-        x, y, z = idx_to_xyz(i1, i2, i3)
-        aw = alya2world[owner_alya_rank(gid)]
-        push!(X, x); push!(Y, y); ndime==3 && push!(Z, z)
-        push!(ids, Int32(gid)); push!(owners, Int32(aw))
+        global_claim[gid] != -1             && continue
+        global_rescue[gid] == typemax(Int32) && continue
+        global_rescue[gid] != Int32(lrank)   && continue
+        i1 = (gid-1) % rem_nx[1]
+        i2 = div(gid-1, rem_nx[1]) % rem_nx[2]
+        i3 = div(gid-1, rem_nx[1]*rem_nx[2])
+        x,y,z = idx_to_xyz(i1,i2,i3)
+        push!(X,x); push!(Y,y); ndime==3 && push!(Z,z)
+        push!(ids, Int32(gid))
+        push!(owners, Int32(alya2world[owner_alya_rank(gid)]))
         n_rescued += 1
     end
     n_local = length(ids)
-
-    if n_rescued > 0
-        println("[extract_local_alya_coordinates] (lrank=$lrank) rescued $n_rescued unclaimed Alya points via bbox fallback.")
-        flush(stdout)
-    end
+    n_rescued > 0 && println("[extract] (lrank=$lrank) rescued $n_rescued unclaimed points.")
 
     alya_local_coords = zeros(Float64, n_local, ndime)
-    if ndime == 2
-        @inbounds for i in 1:n_local
-            alya_local_coords[i,1] = X[i]; alya_local_coords[i,2] = Y[i]
-        end
-    else
-        @inbounds for i in 1:n_local
-            alya_local_coords[i,1] = X[i]; alya_local_coords[i,2] = Y[i]
-            alya_local_coords[i,3] = Z[i]
-        end
+    @inbounds for i in 1:n_local
+        alya_local_coords[i,1] = X[i]
+        alya_local_coords[i,2] = Y[i]
+        ndime == 3 && (alya_local_coords[i,3] = Z[i])
     end
 
-    # Sort by (owner_rank, global_id) so data arrives at Alya in ascending index order
     if n_local > 1
-        perm = sortperm(collect(zip(owners, ids)))
+        perm  = sortperm(collect(zip(owners, ids)))
         alya_local_coords = alya_local_coords[perm, :]
         ids    = ids[perm]
         owners = owners[perm]
     end
 
-    println("[extract_local_alya_coordinates] (lrank=$lrank, wrank=$wrank) ",
-            "collected $n_local Alya points (cropping=$(use_cropping)).")
+    println("[extract] (lrank=$lrank, wrank=$wrank) collected $n_local Alya points.")
     flush(stdout)
     return alya_local_coords, ids, owners
 end
 
 # ===========================================================================
-# BUFFER ALLOCATION
-# ===========================================================================
-
-function allocate_coupling_buffers(npoin_recv, npoin_send, neqs, ndime)
-    wsize = length(npoin_recv)
-    send_bufs       = [zeros(Float64, npoin_send[i] * neqs)  for i in 1:wsize]
-    recv_bufs       = [zeros(Float64, npoin_recv[i] * neqs)  for i in 1:wsize]
-    send_coord_bufs = [zeros(Float64, npoin_send[i] * ndime) for i in 1:wsize]
-    return send_bufs, recv_bufs, send_coord_bufs
-end
-
-# ===========================================================================
-# OWNERSHIP MAP  (diagnostics)
+# DIAGNOSTICS
 # ===========================================================================
 
 function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_comm)
@@ -979,34 +661,24 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
     rem_max    = coupling_data[:rem_max]
     rem_nx     = coupling_data[:rem_nx]
     alya2world = coupling_data[:alya2world]
-
     wrank = MPI.Comm_rank(world_comm)
     lrank = MPI.Comm_rank(local_comm)
-
     rem_dx = zeros(Float64, 3)
     for idim in 1:ndime
         rem_dx[idim] = rem_nx[idim] > 1 ?
             (rem_max[idim]-rem_min[idim])/(rem_nx[idim]-1) : 0.0
     end
-
-    nmax        = rem_nx[1]*rem_nx[2]*rem_nx[3]
-    nranks_alya = length(alya2world)
-    nworkers    = nranks_alya - 1          # rank 0 is the master
-    r     = mod(nmax, nworkers)
-    npoin = div(nmax, nworkers)
-
+    nmax   = rem_nx[1]*rem_nx[2]*rem_nx[3]
     xmin_l = minimum(mesh.x); xmax_l = maximum(mesh.x)
     ymin_l = minimum(mesh.y); ymax_l = maximum(mesh.y)
     zmin_l = ndime==3 ? minimum(mesh.z) : 0.0
     zmax_l = ndime==3 ? maximum(mesh.z) : 0.0
-    tol = 1e-10
-
+    tol    = 1e-10
     local_coords      = zeros(Float64, nmax, ndime)
     local_owner_jrank = fill(Int32(-1), nmax)
     local_owner_wrank = fill(Int32(-1), nmax)
-
     for ipoin in 1:nmax
-        i0 = ipoin - 1
+        i0  = ipoin - 1
         ri3 = div(i0, rem_nx[1]*rem_nx[2])
         ri2 = div(i0 - ri3*rem_nx[1]*rem_nx[2], rem_nx[1])
         ri1 = mod(i0 - ri3*rem_nx[1]*rem_nx[2] - ri2*rem_nx[1], rem_nx[1])
@@ -1022,31 +694,20 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
             local_owner_wrank[ipoin] = wrank
         end
     end
-
     global_owner_jrank = MPI.Allreduce(local_owner_jrank, MPI.MAX, local_comm)
     global_owner_wrank = MPI.Allreduce(local_owner_wrank, MPI.MAX, local_comm)
-
-    return Alya_Point_Ownership(local_coords,
-                                global_owner_jrank, global_owner_wrank,
+    return Alya_Point_Ownership(local_coords, global_owner_jrank, global_owner_wrank,
                                 collect(Int32(1):Int32(nmax)), Int32(ndime))
 end
 
-function print_alya_point_ownership(ownership, coupling_data;
-                                    max_points_to_print=20, only_owned=false)
-    lrank = MPI.Comm_rank(get_mpi_comm())
-    lrank != 0 && return
-
+function print_alya_point_ownership(ownership, coupling_data; max_points_to_print=20, only_owned=false)
+    MPI.Comm_rank(get_mpi_comm()) != 0 && return
     npoints = length(ownership.alya_point_id)
     ndime   = ownership.ndime
-    n_owned   = count(x -> x >= 0, ownership.owner_jrank)
-    n_unowned = npoints - n_owned
-
-    println("\n" * "="^70)
-    println("Alya Point Ownership Map")
-    println("="^70)
-    println("Total Alya points: $npoints  (owned: $n_owned, unowned: $n_unowned)")
+    n_owned = count(x -> x >= 0, ownership.owner_jrank)
+    println("\n" * "="^70); println("Alya Point Ownership Map"); println("="^70)
+    println("Total Alya points: $npoints  (owned: $n_owned, unowned: $(npoints-n_owned))")
     println("-"^70)
-
     n_to_print = max_points_to_print < 0 ? npoints : max_points_to_print
     printed = 0
     for i in 1:npoints
@@ -1057,7 +718,7 @@ function print_alya_point_ownership(ownership, coupling_data;
             break
         end
         coord_str = ndime==2 ?
-            @sprintf("(%10.2f, %10.2f)",   ownership.alya_coords[i,1], ownership.alya_coords[i,2]) :
+            @sprintf("(%10.2f, %10.2f)", ownership.alya_coords[i,1], ownership.alya_coords[i,2]) :
             @sprintf("(%10.2f, %10.2f, %10.2f)", ownership.alya_coords[i,1],
                      ownership.alya_coords[i,2], ownership.alya_coords[i,3])
         jr = ownership.owner_jrank[i]; wr = ownership.owner_wrank[i]
@@ -1069,16 +730,10 @@ function print_alya_point_ownership(ownership, coupling_data;
 end
 
 function verify_alya_point_distribution(ownership, coupling_data)
-    lrank = MPI.Comm_rank(get_mpi_comm())
-    lrank != 0 && return
-
+    MPI.Comm_rank(get_mpi_comm()) != 0 && return
     lsize   = MPI.Comm_size(get_mpi_comm())
     npoints = length(ownership.alya_point_id)
-
-    println("\n" * "="^70)
-    println("Alya Point Distribution Statistics")
-    println("="^70)
-
+    println("\n" * "="^70); println("Alya Point Distribution Statistics"); println("="^70)
     pts_per_rank = zeros(Int, lsize)
     for i in 1:npoints
         jr = ownership.owner_jrank[i]
@@ -1090,11 +745,8 @@ function verify_alya_point_distribution(ownership, coupling_data)
     end
     println("-"^70)
     n_unowned = count(x->x<0, ownership.owner_jrank)
-    if n_unowned > 0
-        println("WARNING: $n_unowned Alya points are not owned by any Jexpresso rank!")
-    else
-        println("✓ All Alya points are owned by Jexpresso ranks")
-    end
+    n_unowned > 0 ? println("WARNING: $n_unowned Alya points are not owned by any Jexpresso rank!") :
+                    println("✓ All Alya points are owned by Jexpresso ranks")
     println("="^70); println(); flush(stdout)
 end
 
@@ -1102,12 +754,30 @@ end
 # COUPLING SETUP ORCHESTRATOR
 # ===========================================================================
 
-function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat)
+"""
+    setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
+                            OUTPUT_DIR, TFloat; send_coords=false)
+
+Set up the coupled simulation.
+
+# Keyword argument
+- `send_coords=false` *(default)*: Julia sends **velocity** components
+  `[u, v, ...]` (columns `2:neqs-1` of the solution) to Alya each step.
+- `send_coords=true`: Julia sends the **coordinates** `[x, y, ...]`
+  of the Alya grid points it computed (useful for verifying point location).
+
+Both modes produce a buffer of shape `[npoin × ndime]` with the same
+field-fastest layout, so Alya's receive path is identical either way.
+"""
+function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
+                                 OUTPUT_DIR, TFloat;
+                                 send_coords::Bool = SEND_COORDS)
 
     je_receive_alya_data(world, lsize)
     coupling_data = get_coupling_data()
-    local_comm = get_mpi_comm()
-    lrank = MPI.Comm_rank(local_comm)
+    local_comm    = get_mpi_comm()
+    lrank         = MPI.Comm_rank(local_comm)
+    wsize         = MPI.Comm_size(world)
 
     sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
     if inputs[:backend] != CPU()
@@ -1119,36 +789,27 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
                                        block_size=(64,64,64), use_cropping=true,
                                        ξ_nodes=Vector{Float64}(sem.ξ))
 
-    wsize = MPI.Comm_size(world)
-    npoin_recv = zeros(Int32, wsize)
-    for owner_wrank in alya_owner_ranks
-        npoin_recv[owner_wrank + 1] += 1
-    end
+    npoin_send = zeros(Int32, wsize)
+    for wr in alya_owner_ranks; npoin_send[wr+1] += 1; end
+    send_to_ranks = Int32[i-1 for i in 1:wsize if npoin_send[i] > 0]
 
-    recv_from_ranks = Int32[i-1 for i in 1:wsize if npoin_recv[i] > 0]
+    lrank == 0 && (println("[setup_coupling] Alltoall to exchange point counts…"); flush(stdout))
 
-    if lrank == 0
-        println("[setup_coupling] Alltoall to exchange point counts…"); flush(stdout)
-    end
-
-    send_counts_to_alya  = Vector{Int32}(npoin_recv)
     recv_counts_from_alya = zeros(Int32, wsize)
     MPI.Barrier(world)
-    MPI.Alltoall!(send_counts_to_alya, recv_counts_from_alya, 1, world)
-
-    npoin_send    = copy(npoin_recv)
-    send_to_ranks = copy(recv_from_ranks)
+    MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_from_alya, 1, world)
 
     je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
 
-    verify_coupling_communication_pattern(npoin_recv, npoin_send,
-                                          alya_owner_ranks, alya_local_ids,
+    verify_coupling_communication_pattern(npoin_send, alya_owner_ranks, alya_local_ids,
                                           coupling_data, local_comm, world)
 
     if lrank == 0
-        println("[setup_coupling] Communication pattern:")
-        println("  npoin_recv: ", [(i-1, npoin_recv[i]) for i in 1:wsize if npoin_recv[i]>0])
-        println("  npoin_send: ", [(i-1, npoin_send[i]) for i in 1:wsize if npoin_send[i]>0])
+        println("[setup_coupling] Send pattern: ",
+                [(i-1, npoin_send[i]) for i in 1:wsize if npoin_send[i]>0])
+        println("[setup_coupling] send_coords=$send_coords  ",
+                send_coords ? "→ sending COORDINATES each step" :
+                              "→ sending VELOCITY each step")
         flush(stdout)
     end
 
@@ -1156,45 +817,42 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     print_alya_point_ownership(ownership, coupling_data; max_points_to_print=20, only_owned=true)
     verify_alya_point_distribution(ownership, coupling_data)
 
-    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-
+    qp    = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     ndime = coupling_data[:ndime]
+
+    # In velocity mode nfields = neqs-2 must equal ndime (Alya's assumption).
+    # In coords mode nfields is always ndime, so no additional check is needed.
+    if !send_coords
+        @assert qp.neqs - 2 == ndime """
+            nfields mismatch: Julia sends $(qp.neqs-2) velocity fields (neqs-2)
+            but Alya expects ndime=$ndime.
+        """
+    end
+
     coupling = CouplingData(
-        npoin_recv    = npoin_recv,
-        npoin_send    = npoin_send,
-        recv_from_ranks = recv_from_ranks,
+        npoin_recv      = zeros(Int32, wsize),
+        npoin_send      = npoin_send,
+        recv_from_ranks = Int32[],
         send_to_ranks   = send_to_ranks,
-        comm_world    = world,
-        lrank         = lrank,
-        neqs          = qp.neqs,
-        ndime         = ndime,
+        comm_world      = world,
+        lrank           = lrank,
+        neqs            = qp.neqs,
+        ndime           = ndime,
+        send_coords     = send_coords,
     )
 
-    nfields = qp.neqs - 2
-    @assert nfields == coupling_data[:ndime] """
-        nfields mismatch: Julia sends $(nfields) fields (neqs-2=$(qp.neqs-2))
-        but Alya expects ndime=$(coupling_data[:ndime]).
-        Alya must be recompiled with nfields = $(nfields).
-    """
-    coupling.send_bufs, coupling.recv_bufs, coupling.send_coord_bufs =
-        allocate_coupling_buffers(npoin_recv, npoin_send, nfields, ndime)
-
+    coupling.send_bufs = [zeros(Float64, npoin_send[i] * ndime) for i in 1:wsize]
 
     coupling.alya_local_coords = alya_local_coords
     coupling.alya_local_ids    = alya_local_ids
     coupling.alya_owner_ranks  = alya_owner_ranks
 
-    # -----------------------------------------------------------------------
-    # Precompute everything that is constant across timesteps so the per-step
-    # coupling exchange path makes zero heap allocations.
-    # -----------------------------------------------------------------------
     let mesh  = sem.mesh,
         nelem = _num_elems(sem.mesh),
         ngl   = sem.mesh.ngl,
         ngl2  = sem.mesh.ngl * sem.mesh.ngl,
         gc    = _make_conn_accessor(sem.mesh)
 
-        # 1. Element bounding boxes + spatial bins
         bb = Vector{NTuple{4,Float64}}(undef, nelem)
         @inbounds for e in 1:nelem
             ns = gc(e)
@@ -1204,29 +862,25 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         coupling.elem_bboxes = bb
         coupling.interp_bins = _build_elem_bins(bb; bins_per_dim=64)
 
-        # 2. Flattened element connectivity and physical coordinates (nelem × ngl²)
-        #    Replaces get_conn(e) + mesh.x[ns] / mesh.y[ns] allocations.
         conn_mat = Matrix{Int}(undef, nelem, ngl2)
         ex_mat   = Matrix{Float64}(undef, nelem, ngl2)
         ey_mat   = Matrix{Float64}(undef, nelem, ngl2)
         @inbounds for e in 1:nelem
             ns = gc(e)
             for k in 1:ngl2
-                conn_mat[e, k] = ns[k]
-                ex_mat[e, k]   = mesh.x[ns[k]]
-                ey_mat[e, k]   = mesh.y[ns[k]]
+                conn_mat[e,k] = ns[k]
+                ex_mat[e,k]   = mesh.x[ns[k]]
+                ey_mat[e,k]   = mesh.y[ns[k]]
             end
         end
         coupling.elem_conn = conn_mat
         coupling.elem_x    = ex_mat
         coupling.elem_y    = ey_mat
 
-        # 3. Reference nodes and barycentric weights (depend only on ngl)
-        ξ_nodes_v = Vector{Float64}(sem.ξ)
+        ξ_nodes_v        = Vector{Float64}(sem.ξ)
         coupling.ξ_nodes_ref = ξ_nodes_v
         coupling.ω_bary      = barycentric_weights(ξ_nodes_v)
 
-        # 4. Scratch vectors for allocation-free Lagrange evaluation
         coupling.ψξ_scratch  = Vector{Float64}(undef, ngl)
         coupling.ψη_scratch  = Vector{Float64}(undef, ngl)
         coupling.dψξ_scratch = Vector{Float64}(undef, ngl)
@@ -1235,8 +889,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         coupling.x_e_scratch = Vector{Float64}(undef, ngl2)
         coupling.y_e_scratch = Vector{Float64}(undef, ngl2)
 
-        # 5. Per-step output buffers: reused at every timestep
-        coupling.qout    = zeros(Float64, mesh.npoin,          coupling.neqs)
+        coupling.qout     = zeros(Float64, mesh.npoin,             coupling.neqs)
         coupling.u_interp = zeros(Float64, length(alya_local_ids), coupling.neqs)
     end
 
@@ -1246,10 +899,32 @@ end
 # ===========================================================================
 # TIME-LOOP DATA EXCHANGE
 # ===========================================================================
-function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float64},
-                                 alya_owner_ranks::Vector{Int32})
-    # Removed alya_local_coords and coord packing — coordinates are
-    # constant and were already sent once during setup (je_send_node_list).
+
+# Pack Alya coordinates [x, y, ...] into send buffers — coord-fastest layout,
+# identical to the field-fastest velocity layout Alya already expects.
+function pack_coord_data!(cpg::CouplingData,
+                          alya_coords::Matrix{Float64},
+                          alya_owner_ranks::Vector{Int32})
+    n_local = size(alya_coords, 1)
+    ndime   = cpg.ndime
+    wsize   = length(cpg.npoin_send)
+    for i in 1:wsize; fill!(cpg.send_bufs[i], 0.0); end
+    send_offsets = zeros(Int, wsize)
+    @inbounds for i in 1:n_local
+        bidx = alya_owner_ranks[i] + 1
+        cpg.npoin_send[bidx] > 0 || continue
+        off = send_offsets[bidx]
+        for d in 1:ndime
+            cpg.send_bufs[bidx][off+d] = alya_coords[i, d]
+        end
+        send_offsets[bidx] += ndime
+    end
+end
+
+# Pack interpolated velocity components [u, v, ...] into send buffers.
+function pack_velocity_data!(cpg::CouplingData,
+                              interp_values::Matrix{Float64},
+                              alya_owner_ranks::Vector{Int32})
     n_local = size(interp_values, 1)
     nfields = size(interp_values, 2)
     wsize   = length(cpg.npoin_send)
@@ -1275,23 +950,9 @@ function coupling_exchange_data!(cpg::CouplingData)
     isempty(send_requests) || MPI.Waitall(send_requests)
 end
 
-function unpack_received_data!(cpg::CouplingData, u::AbstractVector, mesh,
-                               alya_local_coords::Matrix{Float64},
-                               alya_local_ids::Vector{Int32})
-    # Placeholder: implement physics-specific coupling (forcing, BCs, etc.)
-end
-
-# ---------------------------------------------------------------------------
-# je_perform_coupling_exchange
-#
-# All pre-allocated buffers are passed as explicit, concrete-typed parameters.
-# The caller (TimeIntegrators.jl) extracts them from CouplingData ONCE before
-# the time loop so no Union{Nothing,T} struct field is ever touched here.
-#
-# npoin is derived from size(qout,1) — avoids mesh.npoin::Union{TInt,Missing}.
-# ET (sol-vars type) is stored as a concrete-typed local before the loop in
-# TimeIntegrators so call_user_uout sees a concrete type and can specialise.
-# ---------------------------------------------------------------------------
+# Full per-step exchange.  Branches on cpg.send_coords (set once at startup):
+#   false -> interpolate solution, pack velocity columns 2:neqs-1, send.
+#   true  -> pack Alya coordinates directly, send. No interpolation needed.
 function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       qout::Matrix{Float64},
                                       u_interp::Matrix{Float64},
@@ -1311,117 +972,83 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       inputs, neqs::Int,
                                       elem_bboxes::Vector{NTuple{4,Float64}},
                                       bins::ElemBins)
-
-    npoin = size(qout, 1)   # Int — avoids mesh.npoin::Union{TInt,Missing}
-
-    u2uaux!(u_mat, u, neqs, npoin)
-    call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
-
-    @time interpolate_solution_to_alya_coords!(
-       u_interp, alya_coords, qout,
-       ξ_nodes, ω, neqs,
-       elem_bboxes, bins,
-       e_conn, elem_x, elem_y,
-       ψξ, ψη, dψξ, dψη, α, x_e, y_e,
-       mesh_x, mesh_y
-    )
-
-    pack_interpolated_data!(cpg, u_interp[:,2:neqs-1], owner_ranks)  # coords removed
-    #pack_interpolated_data_old!(cpg, u_interp[:,2:neqs-1], owner_ranks, alya_coords)
+    if cpg.send_coords
+        pack_coord_data!(cpg, alya_coords, owner_ranks)
+    else
+        npoin = size(qout, 1)
+        u2uaux!(u_mat, u, neqs, npoin)
+        call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
+        interpolate_solution_to_alya_coords!(
+            u_interp, alya_coords, qout,
+            ξ_nodes, ω, neqs,
+            elem_bboxes, bins,
+            e_conn, elem_x, elem_y,
+            ψξ, ψη, dψξ, dψη, α, x_e, y_e,
+            mesh_x, mesh_y)
+        pack_velocity_data!(cpg, u_interp[:, 2:neqs-1], owner_ranks)
+    end
     coupling_exchange_data!(cpg)
-    
 end
 
 # ===========================================================================
-# VERIFICATION  (setup-time diagnostic — no Alya participation needed)
+# SETUP-TIME COMMUNICATION VERIFICATION
 # ===========================================================================
 
-function verify_coupling_communication_pattern(npoin_recv, npoin_send,
-                                               alya_owner_ranks, alya_local_ids,
+function verify_coupling_communication_pattern(npoin_send, alya_owner_ranks, alya_local_ids,
                                                coupling_data, local_comm, world_comm)
-    lrank = MPI.Comm_rank(local_comm)
-    wrank = MPI.Comm_rank(world_comm)
-    wsize = MPI.Comm_size(world_comm)
-    lsize = MPI.Comm_size(local_comm)
+    lrank       = MPI.Comm_rank(local_comm)
+    wrank       = MPI.Comm_rank(world_comm)
+    wsize       = MPI.Comm_size(world_comm)
     nranks_alya = length(coupling_data[:alya2world])
+    total_local = length(alya_owner_ranks)
 
     println("="^80)
     println("[VERIFY] Julia lrank=$lrank, wrank=$wrank")
     println("="^80)
 
-    # CHECK 1: npoin_recv matches alya_owner_ranks distribution
-    println("\n[CHECK 1] Verifying npoin_recv against alya_owner_ranks...")
+    println("\n[CHECK 1] Verifying npoin_send against alya_owner_ranks...")
     local_counts = zeros(Int32, wsize)
     for wr in alya_owner_ranks; local_counts[wr+1] += 1; end
     mismatch = false
     for i in 1:wsize
-        if local_counts[i] != npoin_recv[i]
-            println("  MISMATCH at world rank $(i-1): extracted=$(local_counts[i]) vs npoin_recv=$(npoin_recv[i])")
+        if local_counts[i] != npoin_send[i]
+            println("  MISMATCH at world rank $(i-1): extracted=$(local_counts[i]) vs npoin_send=$(npoin_send[i])")
             mismatch = true
         end
     end
-    mismatch ? (@warn "npoin_recv does NOT match alya_owner_ranks!") :
-               println("  ✓ npoin_recv matches alya_owner_ranks distribution")
+    mismatch ? (@warn "npoin_send does NOT match alya_owner_ranks!") :
+               println("  ✓ npoin_send matches alya_owner_ranks distribution")
 
-    # CHECK 2: local totals
-    println("\n[CHECK 2] Verifying total points to receive...")
-    total_local = length(alya_owner_ranks)
-    total_recv  = sum(npoin_recv)
-    println("  Local Alya points extracted: $total_local")
-    println("  Sum of npoin_recv: $total_recv")
-    total_local == total_recv ? println("  ✓ Total counts match") :
-                                (@warn "Total counts do NOT match!")
-
-    # CHECK 3: global conservation (Julia ranks only)
-    println("\n[CHECK 3] Checking global point conservation...")
-    rem_nx = coupling_data[:rem_nx]
-    total_alya = rem_nx[1]*rem_nx[2]*rem_nx[3]
+    println("\n[CHECK 2] Global point conservation...")
+    rem_nx       = coupling_data[:rem_nx]
+    total_alya   = rem_nx[1]*rem_nx[2]*rem_nx[3]
     global_owned = MPI.Allreduce(total_local, MPI.SUM, local_comm)
     println("  Total Alya grid points: $total_alya")
-    println("  Total points owned by all Julia ranks: $global_owned")
+    println("  Owned by all Julia ranks: $global_owned")
     global_owned == total_alya ? println("  ✓ All Alya points accounted for") :
                                  (@warn "Point conservation failed! Expected $total_alya, got $global_owned")
 
-    # CHECK 4: send/recv breakdown
-    println("\n[CHECK 4] Communication pattern:")
-    println("  RECEIVE (npoin_recv):")
-    for i in 1:wsize
-        npoin_recv[i] == 0 && continue
-        wr = i-1
-        tag = wr < nranks_alya ? "Alya rank $wr" : "Julia rank $(wr-nranks_alya)"
-        println("    $(npoin_recv[i]) pts FROM world rank $wr ($tag)")
-    end
-    println("  SEND (npoin_send):")
+    println("\n[CHECK 3] Send pattern (npoin_send):")
     for i in 1:wsize
         npoin_send[i] == 0 && continue
-        wr = i-1
+        wr  = i-1
         tag = wr < nranks_alya ? "Alya rank $wr" : "Julia rank $(wr-nranks_alya)"
         println("    $(npoin_send[i]) pts TO world rank $wr ($tag)")
     end
 
-    # CHECK 5: symmetry
-    println("\n[CHECK 5] Communication partners:")
-    println("  Recv from: $([i-1 for i in 1:wsize if npoin_recv[i]>0])")
-    println("  Send to:   $([i-1 for i in 1:wsize if npoin_send[i]>0])")
-
-    # CHECK 6: sample IDs
-    println("\n[CHECK 6] Sample Alya point ownership (first $(min(10,length(alya_local_ids)))):")
+    println("\n[CHECK 4] Sample point ownership (first $(min(10,length(alya_local_ids)))):")
     for i in 1:min(10, length(alya_local_ids))
-        wr = alya_owner_ranks[i]
+        wr  = alya_owner_ranks[i]
         tag = wr < nranks_alya ? "Alya rank $wr" : "Julia rank $(wr-nranks_alya)"
         println("    ID $(alya_local_ids[i]) → world rank $wr ($tag)")
     end
 
-    # CHECK 7: Julia-wide send/recv totals (Julia ranks only)
-    println("\n[CHECK 7] Julia-wide totals (via local_comm Allreduce)...")
-    send_to_alya  = Int32[npoin_send[i]  for i in 1:nranks_alya]
-    recv_fr_alya  = Int32[npoin_recv[i]  for i in 1:nranks_alya]
-    g_send = MPI.Allreduce(send_to_alya,  MPI.SUM, local_comm)
-    g_recv = MPI.Allreduce(recv_fr_alya,  MPI.SUM, local_comm)
+    println("\n[CHECK 5] Julia-wide send totals...")
+    send_to_alya = Int32[npoin_send[i] for i in 1:nranks_alya]
+    g_send       = MPI.Allreduce(send_to_alya, MPI.SUM, local_comm)
     if lrank == 0
         for i in 1:nranks_alya
-            (g_send[i]>0 || g_recv[i]>0) &&
-                println("  Alya rank $(i-1): Julia sends $(g_send[i]), receives $(g_recv[i])")
+            g_send[i] > 0 && println("  Alya rank $(i-1): total Julia→Alya = $(g_send[i]) pts")
         end
     end
 
@@ -1431,50 +1058,31 @@ function verify_coupling_communication_pattern(npoin_recv, npoin_send,
     return true
 end
 
-#-------------------------------------------------------------------------------------------------
-# Callback from TimeIntegrators.jl
-#-------------------------------------------------------------------------------------------------
+# ===========================================================================
+# DIFFERENTIALEQUATIONS.JL CALLBACK
+# ===========================================================================
+
 function setup_coupling_callback(is_coupled, params, inputs)
+    is_coupled === false && return nothing
 
-    coupling_enabled = (is_coupled !== false)
-    
-    if !coupling_enabled
-        return nothing
-    end
-
-    # Pull coupling object prepared in setup_coupling_and_mesh
     cpg = params.coupling
     @assert cpg !== nothing "params.coupling must be set during setup."
 
-    # Condition: couple at every step after initial time
     t0   = params.tspan[1]
     tol0 = get(inputs, :couple_time_tol, 1e-12)
 
-    @inline function coupling_condition(u_state, t, integrator)
-
-        # Notice that u_state isn't even used here,
-        # but it's required to match the interface
-        # DifferentialEquations.jl expects.
-        
-        t > t0 + tol0
-    end
+    @inline coupling_condition(u_state, t, integrator) = t > t0 + tol0
 
     neqs = params.neqs
     mesh = params.mesh
 
-    # Extract concrete-typed handles from CouplingData once, before the
-    # time loop. The closure captures these concrete-typed local variables
-    # instead of the Union{Nothing,T} struct fields, giving fully
-    # type-stable code in je_perform_coupling_exchange with zero
-    # per-step heap allocations.
-    #
-    # elem_bboxes and interp_bins are already built by the setup function;
-    # no need to recompute them here.
     _qout        = cpg.qout::Matrix{Float64}
     _u_interp    = cpg.u_interp::Matrix{Float64}
     _ξ_nodes     = cpg.ξ_nodes_ref::Vector{Float64}
     _ω           = cpg.ω_bary::Vector{Float64}
     _e_conn      = cpg.elem_conn::Matrix{Int}
+    _elem_x      = cpg.elem_x::Matrix{Float64}
+    _elem_y      = cpg.elem_y::Matrix{Float64}
     _ψξ          = cpg.ψξ_scratch::Vector{Float64}
     _ψη          = cpg.ψη_scratch::Vector{Float64}
     _dψξ         = cpg.dψξ_scratch::Vector{Float64}
@@ -1486,24 +1094,17 @@ function setup_coupling_callback(is_coupled, params, inputs)
     _owner_ranks = cpg.alya_owner_ranks::Vector{Int32}
     _elem_bboxes = cpg.elem_bboxes::Vector{NTuple{4,Float64}}
     _bins        = cpg.interp_bins::ElemBins
-    _elem_x      = cpg.elem_x::Matrix{Float64}
-    _elem_y      = cpg.elem_y::Matrix{Float64}
-    # mesh.x / mesh.y have no type annotation in St_mesh (field type Any);
-    # extract once with a typeassert so the closure captures Vector{Float64}.
     _mesh_x      = mesh.x::Vector{Float64}
     _mesh_y      = mesh.y::Vector{Float64}
 
     function do_coupling_exchange!(integrator)
-        je_perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
-                                     cpg,
-                                     _qout, _u_interp, _ξ_nodes, _ω, _e_conn,
-                                     _elem_x, _elem_y,
-                                     _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
-                                     _alya_coords, _owner_ranks,
-                                     _mesh_x, _mesh_y,
-                                     inputs, neqs, _elem_bboxes, _bins)
+        je_perform_coupling_exchange(
+            integrator.u, integrator.p.uaux, integrator.t, cpg,
+            _qout, _u_interp, _ξ_nodes, _ω, _e_conn, _elem_x, _elem_y,
+            _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
+            _alya_coords, _owner_ranks, _mesh_x, _mesh_y,
+            inputs, neqs, _elem_bboxes, _bins)
     end
 
     return DiscreteCallback(coupling_condition, do_coupling_exchange!)
 end
-
