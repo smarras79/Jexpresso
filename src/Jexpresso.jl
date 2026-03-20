@@ -24,6 +24,9 @@ using StaticArrays
 using StaticArrays: SVector, MVector
 
 # Core SciML Types and Functions
+using OrdinaryDiffEq: OrdinaryDiffEq, solve, Tsit5, CarpenterKennedy2N54
+using LinearSolve: LinearSolve, solve
+using SciMLBase
 using SciMLBase: CallbackSet, DiscreteCallback,
     ODEProblem, ODESolution, ODEFunction,
     SplitODEProblem, get_du, get_tmp_cache, 
