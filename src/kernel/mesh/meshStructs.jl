@@ -51,10 +51,14 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     
     nsd::Union{TInt, Missing} = 1              # number of space dim
     nop::Union{TInt, Missing} = 4              # poly order
-    ngl::Union{TInt, Missing} = nop + 1        # number of quad point 
+    ngl::Union{TInt, Missing} = nop + 1        # number of quad point
     ngr::Union{TInt, Missing} = 0              # nop_gr
     lLaguerre::Union{Bool, Missing} = false # whether or not Laguerre boundaries are in the mesh
     npoin_el::Union{TInt, Missing} = 1         # Total number of points in the reference element
+
+    # Quadrature/interpolation nodes and weights (computed once in mesh, reused in sem_setup)
+    ξω::Any  = nothing  # interpolation nodes (LGL/LG/CG/CGL, order nop)
+    ξωQ::Any = nothing  # LG quadrature nodes (order nop), used in projection regardless of integration type
     
 
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
