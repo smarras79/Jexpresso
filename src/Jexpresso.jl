@@ -22,21 +22,23 @@ using LinearAlgebra
 using SpecialFunctions
 using StaticArrays
 using StaticArrays: SVector, MVector
-using DiffEqBase
-using DiffEqDevTools
-using OrdinaryDiffEq
-using OrdinaryDiffEq: solve
-using SnoopCompile
-using LinearSolve
-using LinearSolve: solve
+
+# Core SciML Types and Functions
 using SciMLBase: CallbackSet, DiscreteCallback,
-                 ODEProblem, ODESolution, ODEFunction,
-                 SplitODEProblem
+    ODEProblem, ODESolution, ODEFunction,
+    SplitODEProblem, get_du, get_tmp_cache, 
+    u_modified!, AbstractODEIntegrator, init, 
+    step!, check_error, get_proposed_dt, 
+    set_proposed_dt!, terminate!, remake
+
+# Solvers and Linear Algebra
+using OrdinaryDiffEq: OrdinaryDiffEq, solve, Tsit5 # Specific solvers help
+using LinearSolve: LinearSolve, solve
+
+# Utilities
 using HDF5
-import SciMLBase: get_du, get_tmp_cache, u_modified!,
-                  AbstractODEIntegrator, init, step!, check_error,
-                  get_proposed_dt, set_proposed_dt!,
-                  terminate!, remake
+using SnoopCompile # Only keep if you are actively profiling latency
+
 import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP

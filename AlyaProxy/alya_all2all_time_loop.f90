@@ -20,7 +20,7 @@ program unitt_alya_with_another_code
 
   real(8), dimension(1:3)            :: rem_min, rem_max
   integer, dimension(1:3)            :: rem_nx
-  
+
   integer(4),    contiguous, pointer :: alya_to_world(:)
   integer(4),    contiguous, pointer :: alya_to_world_snd(:)
 
@@ -36,14 +36,16 @@ program unitt_alya_with_another_code
 
   integer(4)                         :: step, nsteps
   real(kind=8)                       :: t0, dt, tend, t
-  
+
   ! Output scheduling
-  real(kind=8)                       :: out_dt, out_tend
+  real(kind=8)                       :: out_dt, out_tstart, out_tend
   real(kind=8)                       :: next_t, tol, dt_step, t_plus
   logical                            :: write_now
-  
+
   real(kind=8), allocatable          :: recvbuf_all(:)
-  real(kind=8), allocatable          :: ordered_buf(:)  ! recvbuf_all scattered to [i_start..i_end] order
+  ! ordered_buf: field values scattered into [i_start..i_end] order
+  ! via je_gids_all.  Updated EVERY timestep (matches original Alya behaviour).
+  real(kind=8), allocatable          :: ordered_buf(:)
   integer                            :: jpt, local_pos
 
 #ifdef USEMPIF08
@@ -99,7 +101,8 @@ program unitt_alya_with_another_code
   dt     = 0.5d0
   tend   = 1000.0d0
   nsteps = int((tend - t0) / dt)
-  out_dt = 100.0d0       ! <-- write every 10 seconds
+  out_dt = 100.0d0       ! write every 100 seconds
+
   !--------------------------------------------------------------------------
   ! STEP 2: GRID METADATA  (broadcast order must match Julia exactly)
   !--------------------------------------------------------------------------
@@ -109,6 +112,7 @@ program unitt_alya_with_another_code
   ndime   = 2
 
   if (rank == 0) then
+     write(*,'(A,I0)')     ' ALYA-2-JEXP'
      write(*,'(A,I0)')     'ndime   = ', ndime
      write(*,'(A,3F12.2)') 'rem_min = ', rem_min(1:ndime)
      write(*,'(A,3F12.2)') 'rem_max = ', rem_max(1:ndime)
@@ -120,19 +124,10 @@ program unitt_alya_with_another_code
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
   ! 2b. rem_min / rem_max / rem_nx  (full 3-element arrays, matching Julia)
   do idime = 1, 3
-     call MPI_Bcast(rem_min(idime), 1, MPI_DOUBLE_PRECISION,    0, MPI_COMM_WORLD, ierr)
-     call MPI_Bcast(rem_max(idime), 1, MPI_DOUBLE_PRECISION,    0, MPI_COMM_WORLD, ierr)
-     call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_min(idime), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_max(idime), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER,          0, MPI_COMM_WORLD, ierr)
   end do
-  
-  !
-  ! Thsi can be useful
-  !
-  ! 2c. nfields
-  !nfields = 4
-  !call MPI_Bcast(nfields, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-  !! 2d. nsteps
-  !call MPI_Bcast(nsteps, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
   !--------------------------------------------------------------------------
   ! Alya -> World rank map
@@ -190,14 +185,14 @@ program unitt_alya_with_another_code
   ! The Alltoall in STEP 3 already told each Alya rank how many nodes to
   ! expect from each Julia rank (npoin_recv(i) for i >= asize).
   ! Julia now sends one message per partner: the sorted unique global node
-  ! IDs (integer(8)) taken from connijk.
+  ! IDs (integer(4)) taken from connijk.
   !--------------------------------------------------------------------------
   nranks_julia = size - asize
 
   je_total_nodes = sum(npoin_recv(asize:size-1))
 
   allocate(je_gids_all(max(1, je_total_nodes)))
-  je_gids_all = 0_8
+  je_gids_all = 0_4
 
   je_gid_offset = 0
   do i = asize, size-1
@@ -234,7 +229,7 @@ program unitt_alya_with_another_code
   !--------------------------------------------------------------------------
   nmax        = rem_nx(1) * rem_nx(2) * rem_nx(3)
   nworkers    = max(1, asize - 1)
-  r_rem          = mod(nmax, nworkers)
+  r_rem       = mod(nmax, nworkers)
   npoin_per_rank = nmax / nworkers
 
   i_start     = -1
@@ -268,9 +263,11 @@ program unitt_alya_with_another_code
   end if
 
   !--------------------------------------------------------------------------
-  ! Receive nfields from Julia via Allreduce(MAX).
-  ! Alya contributes 0; Julia contributes its qp.nfields.
-  ! The collective synchronises both sides before buffer allocation.
+  ! nfields: number of field components received per point from Julia.
+  ! Set to ndime (one velocity component per spatial dimension).
+  ! Julia must send data in field-fastest order: [f1_p1, f2_p1, f1_p2, ...]
+  ! i.e. the same memory layout as advec_recv(irank)%a(1:ndime, ipoin) in
+  ! the original Alya (column-major 2-D array, field index fastest).
   !--------------------------------------------------------------------------
   nfields = ndime
   if (rank == 0) then
@@ -281,8 +278,9 @@ program unitt_alya_with_another_code
   allocate(recvbuf_all(max(1, total_pts * nfields)))
   recvbuf_all = 0.0d0
 
-  ! ordered_buf: values placed at the correct [i_start..i_end] position
-  ! using je_gids_all as the scatter index map.
+  ! ordered_buf: scattered field values in [i_start..i_end] point order.
+  ! Allocated once; overwritten every timestep (equivalent to advec array
+  ! in original Alya — always current after the Waitall).
   allocate(ordered_buf(max(1, npoin_local * nfields)))
   ordered_buf = 0.0d0
 
@@ -300,35 +298,36 @@ program unitt_alya_with_another_code
   ! TIME LOOP
   !==========================================================================
   ! --- VTS output schedule: write once every out_dt seconds
-  out_tend   = tend         ! last time eligible for output
+  out_tstart = t0
+  out_tend   = tend
 
-  ! Tolerance for floating-point comparisons
+  ! Tolerance for floating-point time comparisons
   tol = max(1.0d-10, 1.0d-6 * out_dt)
 
-  ! next_t: the next simulation time at which a VTS file should be written.
-  ! Start at t0 + out_dt so the first write is at t = out_dt (not at t = 0).
+  ! next_t: first scheduled write time (skip t=0, start at t0 + out_dt)
   t      = t0
   next_t = t0 + out_dt
 
-  ! Optional: disable writes if out_dt <= 0
+  ! Disable writes if out_dt <= 0
   if (out_dt <= 0.0d0) next_t = huge(1.0d0)
 
   itime = 1
   do step = 1, nsteps
 
-     ! Use the dt of this step (constant or variable)
      dt_step = dt
      t_plus  = t + dt_step
 
-     ! Write when t_plus reaches or passes the next scheduled output time.
-     write_now = (out_dt > 0.0d0 .and. t_plus >= next_t - tol .and. next_t <= out_tend + tol)
+     write_now = (out_dt > 0.0d0 .and. &
+                  t_plus >= next_t - tol .and. &
+                  next_t <= out_tend + tol)
 
      !------------------------------------------------------------------------
      ! MPI RECEIVE: DATA (Julia -> Alya)
-     ! Each sender's data goes to a distinct offset in recvbuf_all so that
-     ! multiple senders do not overwrite each other.
+     ! Post non-blocking receives first; pack each sender's data into a
+     ! distinct offset in recvbuf_all so senders do not overwrite each other.
+     ! This mirrors PAR_RECEIVE(..., wsynch='ASYNCHRONOUS') in the original.
      !------------------------------------------------------------------------
-     ireq = 0
+     ireq        = 0
      recv_offset = 0
      do i = 0, size-1
         if (npoin_recv(i) > 0) then
@@ -346,7 +345,7 @@ program unitt_alya_with_another_code
         end if
      end do
 
-     ! --- Wait for data receives ---
+     ! Wait for all receives — equivalent to PAR_END_NON_BLOCKING_COMM
      if (nactive > 0) then
 #ifdef USEMPIF08
         call MPI_Waitall(nactive, recv_requests, recv_status, ierr)
@@ -356,32 +355,41 @@ program unitt_alya_with_another_code
         if (ierr /= 0) write(*,'(A,I0,A,I0)') &
              'ERROR MPI_Waitall recv rank ', rank, ' step ', step
      end if
-     
+
      !------------------------------------------------------------------------
-     ! VTS OUTPUT: structured grid with filled contours
-     !   - all Alya ranks gather to rank 0 via MPI_Gatherv (PAR_COMM_FINAL)
-     !   - rank 0 writes a single .vts file per timestep
+     ! SCATTER: recvbuf_all -> ordered_buf  (EVERY timestep, unconditionally)
+     !
+     ! This is the direct equivalent of the original Alya loop:
+     !
+     !   do irank = 0, PAR_UNIVERSE_SIZE-1
+     !     do ipoin = 1, npoin_recv(irank)
+     !       jpoin = perm(irank) % l(ipoin)
+     !       advec(1:ndime, jpoin, 1) = advec_recv(irank) % a(1:ndime, ipoin)
+     !     end do
+     !   end do
+     !
+     ! je_gids_all(jpt) plays the role of perm(irank)%l(ipoin): it gives the
+     ! 1-based global Alya point ID for the jpt-th received value (flattened
+     ! across all Julia sender ranks, in the same order as recvbuf_all).
+     ! local_pos = gid - 1 - i_start maps it to this rank's 0-based index.
+     !------------------------------------------------------------------------
+     ordered_buf = 0.0d0
+     do jpt = 1, total_pts
+        local_pos = int(je_gids_all(jpt)) - 1 - i_start
+        if (local_pos >= 0 .and. local_pos < npoin_local) then
+           ordered_buf(local_pos * nfields + 1 : (local_pos + 1) * nfields) = &
+                recvbuf_all((jpt - 1) * nfields + 1 : jpt * nfields)
+        end if
+     end do
+
+     !------------------------------------------------------------------------
+     ! VTS OUTPUT: only when the output schedule fires.
+     ! ordered_buf is always up-to-date at this point regardless of whether
+     ! we write, because the scatter above runs every step.
      !------------------------------------------------------------------------
      if (write_now) then
-        ! Advance the target time for the next write.
         next_t = next_t + out_dt
 
-        !------------------------------------------------------------------------
-        ! REORDER: scatter recvbuf_all → ordered_buf using je_gids_all.
-        ! Done only when writing output, not at every timestep.
-        ! je_gids_all(jpt) is the 1-based global Alya point ID for the jpt-th
-        ! received value.  local_pos = gid - 1 - i_start gives its 0-based
-        ! position within this rank's [i_start..i_end] range.
-        !------------------------------------------------------------------------
-        ordered_buf = 0.0d0
-        do jpt = 1, total_pts
-           local_pos = int(je_gids_all(jpt)) - 1 - i_start
-           if (local_pos >= 0 .and. local_pos < npoin_local) then
-              ordered_buf(local_pos * nfields + 1 : (local_pos + 1) * nfields) = &
-                   recvbuf_all((jpt - 1) * nfields + 1 : jpt * nfields)
-           end if
-        end do
-        
         call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
              rem_min, rem_max, rem_nx, &
              ordered_buf, npoin_local, nfields, step, itime, t_plus)
@@ -390,7 +398,7 @@ program unitt_alya_with_another_code
      end if
 
      t = t_plus
-     
+
   end do  ! End time loop
 
   if (rank == 0) then
@@ -406,11 +414,11 @@ program unitt_alya_with_another_code
   if (allocated(ordered_buf))   deallocate(ordered_buf)
   if (allocated(recv_requests)) deallocate(recv_requests)
   if (allocated(recv_status))   deallocate(recv_status)
-  if (allocated(je_gids_all))    deallocate(je_gids_all)
+  if (allocated(je_gids_all))   deallocate(je_gids_all)
   deallocate(npoin_send, npoin_recv)
   deallocate(alya_to_world, alya_to_world_snd)
   call MPI_Finalize(ierr)
-  
+
 contains
 
   !---------------------------------------------------------------------------
@@ -426,24 +434,19 @@ contains
   !===========================================================================
   !  write_alya_grid_vts
   !
-  !  Writes a VTK StructuredGrid (.vts) file so ParaView renders filled
-  !  contours instead of a point cloud.
+  !  Writes a VTK StructuredGrid (.vts) file for ParaView filled-contour
+  !  rendering.
   !
   !  Strategy:
-  !    1. Each Alya rank contributes its coupling points to a MPI_Gatherv
-  !       within PAR_COMM_FINAL (for both data values AND coordinates).
+  !    1. Each Alya rank contributes its ordered_buf values via MPI_Gatherv
+  !       within PAR_COMM_FINAL.
   !    2. Alya rank 0 assembles the full field and writes one .vts file.
   !
-  !  Data ordering:
-  !    After MPI_Gatherv, full_field(k*nfields + ieq) holds the value for
-  !    global point k (0-based). Grid indices (ix,iy,iz) are computed
-  !    directly from k using the regular grid layout (ix fastest):
-  !       iz = k / (rem_nx(1)*rem_nx(2))
-  !       iy = (k - iz*rem_nx(1)*rem_nx(2)) / rem_nx(1)
-  !       ix = mod(k, rem_nx(1))
-  !
-  !  Each variable (u, v) is written as a separate DataArray
-  !  so ParaView can visualise them independently.
+  !  Data ordering (input):
+  !    ordered_buf is already in global point order [i_start..i_end], with
+  !    field index fastest: [f1_p0, f2_p0, f1_p1, f2_p1, ...].
+  !    After Gatherv, full_field(k*nfields + ieq) holds the value for global
+  !    point k (0-based), identical to advec(ieq, k+1, 1) in the original.
   !===========================================================================
   subroutine write_alya_grid_vts(arank, asize, PAR_COMM, ndime, &
                                   rem_min, rem_max, rem_nx, &
@@ -458,7 +461,6 @@ contains
     integer(4),   intent(in) :: total_pts, nfields, timestep
     real(8),      intent(in) :: time
 
-    ! Local variables
     integer          :: nmax, r_rem_loc, np_base
     integer          :: i_start_r, count_r
     integer          :: irank, iunit, ierr_loc, ierr_mpi
@@ -469,24 +471,20 @@ contains
     integer,  allocatable       :: sendcounts(:), displs(:)
     real(8),  allocatable       :: full_field(:)
     real(8),  allocatable       :: grid_var(:,:,:)
-
-    ! Variable names for the nfields fields
-    character(len=16) :: varname
+    character(len=16)           :: varname
 
     !--- Grid parameters ---
-    ! Alya local rank 0 is the driving rank and owns no points.
-    ! Distribute nmax over nworkers = asize-1 worker ranks (ranks 1..asize-1).
-    nmax          = rem_nx(1) * rem_nx(2) * rem_nx(3)
-    nworkers_loc  = max(1, asize - 1)
-    r_rem_loc     = mod(nmax, nworkers_loc)
-    np_base       = nmax / nworkers_loc
+    nmax         = rem_nx(1) * rem_nx(2) * rem_nx(3)
+    nworkers_loc = max(1, asize - 1)
+    r_rem_loc    = mod(nmax, nworkers_loc)
+    np_base      = nmax / nworkers_loc
 
     dx = 0.0d0; dy = 0.0d0; dz = 0.0d0
     if (rem_nx(1) > 1) dx = dble(rem_max(1)-rem_min(1)) / dble(rem_nx(1)-1)
     if (rem_nx(2) > 1) dy = dble(rem_max(2)-rem_min(2)) / dble(rem_nx(2)-1)
     if (rem_nx(3) > 1) dz = dble(rem_max(3)-rem_min(3)) / dble(rem_nx(3)-1)
 
-    !--- Compute Gatherv arrays for data ---
+    !--- Build Gatherv displacement/count arrays ---
     allocate(sendcounts(0:asize-1))
     allocate(displs    (0:asize-1))
 
@@ -496,7 +494,7 @@ contains
           sendcounts(irank) = 0
           displs(irank)     = 0
        else
-          iworker_loc = irank - 1   ! 0-based worker index
+          iworker_loc = irank - 1
           if (iworker_loc < r_rem_loc) then
              i_start_r = iworker_loc * (np_base + 1)
              count_r   = np_base + 1
@@ -509,10 +507,9 @@ contains
        end if
     end do
 
-    !--- This rank's local send count ---
     count_r = sendcounts(arank)
 
-    !--- Allocate receive buffer only on root ---
+    ! Receive buffer: only root allocates the full array
     if (arank == 0) then
        allocate(full_field(nmax * nfields))
        full_field = 0.0d0
@@ -520,7 +517,7 @@ contains
        allocate(full_field(1))
     end if
 
-    !--- Gather DATA to Alya rank 0 ---
+    !--- Gather ordered_buf from all worker ranks to Alya rank 0 ---
 #ifdef USEMPIF08
     call MPI_Gatherv(recvbuf(1), count_r, MPI_DOUBLE_PRECISION, &
                      full_field(1), sendcounts, displs, MPI_DOUBLE_PRECISION, &
@@ -535,13 +532,13 @@ contains
        flush(6)
     end if
 
-    !--- Only Alya rank 0 writes the file ---
+    ! Non-root ranks are done
     if (arank /= 0) then
        deallocate(sendcounts, displs, full_field)
        return
     end if
 
-    !--- Open file ---
+    !--- Open .vts file ---
     write(filename,'(A,I6.6,A)') 'alya_grid_', itime, '.vts'
     iunit = 99
     open(unit=iunit, file=trim(filename), status='replace', action='write', iostat=ierr_loc)
@@ -550,6 +547,7 @@ contains
        deallocate(sendcounts, displs, full_field)
        return
     end if
+
     !=========================================================================
     ! VTK StructuredGrid XML
     !=========================================================================
@@ -569,10 +567,9 @@ contains
          0, ' ', rem_nx(2)-1, ' ', &
          0, ' ', rem_nx(3)-1, '">'
 
-    !--- Points: compute coordinates from grid indices in VTS order ---
+    !--- Points ---
     write(iunit,'(A)') '      <Points>'
     write(iunit,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="ascii">'
-
     do iz = 0, rem_nx(3)-1
        do iy = 0, rem_nx(2)-1
           do ix = 0, rem_nx(1)-1
@@ -583,20 +580,16 @@ contains
           end do
        end do
     end do
-
     write(iunit,'(A)') '        </DataArray>'
     write(iunit,'(A)') '      </Points>'
 
-    !--- Point data: one DataArray per equation variable ---
-    !
-    ! For each point k in the gathered arrays, read its coordinates from
+    !--- Point data: one DataArray per field variable ---
     write(iunit,'(A)') '      <PointData>'
 
     allocate(grid_var(0:rem_nx(1)-1, 0:rem_nx(2)-1, 0:rem_nx(3)-1))
 
     do ieq = 1, nfields
 
-       ! Variable name
        select case(ieq)
           case(1); varname = 'u'
           case(2); varname = 'v'
@@ -607,8 +600,7 @@ contains
        write(iunit,'(A,A,A)') &
             '        <DataArray type="Float64" Name="', trim(varname), '" format="ascii">'
 
-       ! Map each global point index k to its (ix,iy,iz) grid position directly.
-       ! Points are numbered with ix fastest, then iy, then iz (VTS order).
+       ! Map flat global index k to (ix,iy,iz); ix is fastest (VTS order)
        grid_var = 0.0d0
        do k = 0, nmax - 1
           iz = k / (rem_nx(1) * rem_nx(2))
@@ -617,7 +609,6 @@ contains
           grid_var(ix, iy, iz) = full_field(k * nfields + ieq)
        end do
 
-       ! Write in VTS order (ix fastest, then iy, then iz)
        do iz = 0, rem_nx(3)-1
           do iy = 0, rem_nx(2)-1
              do ix = 0, rem_nx(1)-1
