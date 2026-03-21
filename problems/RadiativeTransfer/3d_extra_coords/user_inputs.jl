@@ -40,7 +40,7 @@ function user_inputs()
         :lRT_problem        => true,
         :lmanufactured_solution => true,
         :adaptive_extra_meshes => true,
-        :extra_dimensions_order => 3,
+        :extra_dimensions_order => 4,
         :extra_dimensions_nelemx => 3,
         :extra_dimensions_nelemy => 3,
         :lcubed_sphere_angular_mesh => false,

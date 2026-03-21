@@ -508,12 +508,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
             P    = nc_mat'
             rest = nc_mat
-            @info "checking equality of nc_mat and nc_mat_rhs", maximum(nc_mat-nc_mat_rhs), minimum(nc_mat-nc_mat_rhs)
-            rows_mat, vals_mat = findnz(nc_mat[:, 199435])
-            rows_rhs, vals_rhs = findnz(nc_mat_rhs[:, 199435])
-            @info "nc_mat entries" collect(zip(rows_mat, vals_mat))
-            @info "nc_mat_rhs entries" collect(zip(rows_rhs, vals_rhs))
-            @info "Same rows?" sort(rows_mat) == sort(rows_rhs)
+            
             Md = assemble_mass_diagonal_3Dby2D_adaptive(
                 ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
                 extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
@@ -608,27 +603,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         RHS = zeros(TFloat, n_spa_g)
         ref = zeros(TFloat, n_spa)
         BDY = zeros(TFloat, n_spa_g)
-
-        row_199435 = MLHS[199435, :]
-        @info "nnz in MLHS row 199435" nnz(row_199435)
-        @info "MLHS row 199435" findnz(row_199435)
-        row_202540 = MLHS[202540, :]
-        @info "nnz in MLHS row 202540" nnz(row_202540)
-        row_199435 = A_left_restricted[199435, :]
-        @info "nnz in MLHS row 199435" nnz(row_199435)
-        @info "MLHS row 199435" findnz(row_199435)
-        row_202540 = A_left_restricted[202540, :]
-        @info "nnz in MLHS row 202540" nnz(row_202540)
-        row_199435 = A_both_restricted[199435, :]
-        @info "nnz in MLHS row 199435" nnz(row_199435)
-        @info "MLHS row 199435" findnz(row_199435)
-        row_202540 = A_both_restricted[202540, :]
-        @info "nnz in MLHS row 202540" nnz(row_202540)
-        row_199435 = A[199435, :]
-        @info "nnz in MLHS row 199435" nnz(row_199435)
-        @info "MLHS row 199435" findnz(row_199435)
-        row_202540 = A[202540, :]
-        @info "nnz in MLHS row 202540" nnz(row_202540)
         
 
     else  # ── Non-adaptive path ────────────────────────────────────────────────
@@ -986,7 +960,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     rows_A = rowvals(As)
     vals_A = nonzeros(As)
 
-    for col in boundary_set
+    #=for col in boundary_set
         val = BDY[col]
         for ptr in nzrange(As, col)
             row = rows_A[ptr]
@@ -997,7 +971,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
             vals_A[ptr] = 0.0
         end
-    end
+    end=#
     As = dropzeros!(As)
     if inputs[:adaptive_extra_meshes]
         for ip in all_hanging_nodes
@@ -1007,7 +981,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     # Check if the system is consistent
     @info "norm(B_consistent)" norm(B)
     @info "norm(LHS_restricted)" norm(As, Inf)
-    @info "Initial residual" norm(B - As * zeros(n_spa))
+   
 
     # Check diagonal
     d = diag(As)
@@ -1035,7 +1009,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     n_fixed = 0
     n_small = 0
     n_big = 0
-
+    if (inputs[:adaptive_extra_meshes] && (inputs[:RT_shortwave] || inputs[:RT_longwave]))
     for ip = 1:n_spa
         ip in boundary_set && continue
         if d[ip] < 0
@@ -1053,6 +1027,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 n_fixed +=1
             end
         end
+    end
     end
     @info "n_fixed=$n_fixed, number of large diag values used=$n_big, number of small diag values used=$n_small" 
     # ── Linear solve ──────────────────────────────────────────────────────────
@@ -1117,16 +1092,16 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     elseif inputs[:adaptive_extra_meshes]
         # Row scaling (left) — normalize by row norm
         x_warm = Float64[]
-        if (inputs[:lmanufactured_solution])
+        #=if (inputs[:lmanufactured_solution])
             x_warm = ref
-        end
+        end=#
         solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents,
             precond  = :none,
             restart  = 500,
-            tol      = 1e-7)
+            tol      = 1e-10)
 
        
 
@@ -1167,7 +1142,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     @rankinfo rank "Solve complete."
     #A = nothing; RHS = nothing; GC.gc()
     @info maximum(solution), minimum(solution)
-    @info solution[199435]
     # ── Solution prolongation ─────────────────────────────────────────────────
     solution_new = zeros(Float64, n_spa)
     if inputs[:adaptive_extra_meshes]
@@ -1289,17 +1263,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
     
-        ip_k1 = mesh.connijk[14, 5, 3, 1]
-        ip_k2 = mesh.connijk[14, 5, 3, 2]
-        ip_k3 = mesh.connijk[14, 5, 3, 3]
-        ip_k4 = mesh.connijk[14, 5, 3, 4]
-        ip_k5 = mesh.connijk[14, 5, 3, 5]
-        @info "int_sol_accum k=1" int_sol_accum[ip_k1]
-        @info "int_sol_accum k=2" int_sol_accum[ip_k2]
-        @info "int_sol_accum k=1" int_sol_accum[ip_k3]
-        @info "int_sol_accum k=2" int_sol_accum[ip_k4]
-        @info "int_sol_accum k=2" int_sol_accum[ip_k5]
-        @info abs(int_sol_accum[ip_k1]-int_sol_accum[ip_k2])/maximum(int_sol_accum)
+        
 
         gnpoin_spa  = mesh.gnpoin
         g_int_sol   = zeros(Float64, gnpoin_spa)
@@ -1678,7 +1642,7 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
             dηdx_ij  = dηdx[iel,i,j,k]; dηdy_ij = dηdy[iel,i,j,k]; dηdz_ij = dηdz[iel,i,j,k]
             dζdx_ij  = dζdx[iel,i,j,k]; dζdy_ij = dζdy[iel,i,j,k]; dζdz_ij = dζdz[iel,i,j,k]
             κ = rad_data ? κ_data[ip] : user_extinction(x[ip], y[ip], z[ip])
-            σ = 0.0#rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
+            σ = rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
 
             for e_ext = 1:nelem_ang[iel]
                 for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
