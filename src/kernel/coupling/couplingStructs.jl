@@ -753,22 +753,21 @@ end
 # ===========================================================================
 # COUPLING SETUP ORCHESTRATOR
 # ===========================================================================
-
-"""
-    setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
-                            OUTPUT_DIR, TFloat; send_coords=false)
-
-Set up the coupled simulation.
-
+#
+#    setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
+#                            OUTPUT_DIR, TFloat; send_coords=false)
+#
+# Set up the coupled simulation.
+#
 # Keyword argument
-- `send_coords=false` *(default)*: Julia sends **velocity** components
-  `[u, v, ...]` (columns `2:neqs-1` of the solution) to Alya each step.
-- `send_coords=true`: Julia sends the **coordinates** `[x, y, ...]`
-  of the Alya grid points it computed (useful for verifying point location).
-
-Both modes produce a buffer of shape `[npoin × ndime]` with the same
-field-fastest layout, so Alya's receive path is identical either way.
-"""
+# - `send_coords=false` *(default)*: Julia sends **velocity** components
+#  `[u, v, ...]` (columns `2:neqs-1` of the solution) to Alya each step.
+# - `send_coords=true`: Julia sends the **coordinates** `[x, y, ...]`
+#  of the Alya grid points it computed (useful for verifying point location).
+#
+# Both modes produce a buffer of shape `[npoin × ndime]` with the same
+# field-fastest layout, so Alya's receive path is identical either way.
+# ===========================================================================
 function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
                                  OUTPUT_DIR, TFloat;
                                  send_coords::Bool = SEND_COORDS)
