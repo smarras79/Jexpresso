@@ -960,7 +960,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     rows_A = rowvals(As)
     vals_A = nonzeros(As)
 
-    #=for col in boundary_set
+    for col in boundary_set
         val = BDY[col]
         for ptr in nzrange(As, col)
             row = rows_A[ptr]
@@ -971,7 +971,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
             vals_A[ptr] = 0.0
         end
-    end=#
+    end
     As = dropzeros!(As)
     if inputs[:adaptive_extra_meshes]
         for ip in all_hanging_nodes
@@ -1092,16 +1092,16 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     elseif inputs[:adaptive_extra_meshes]
         # Row scaling (left) — normalize by row norm
         x_warm = Float64[]
-        #=if (inputs[:lmanufactured_solution])
+        if (inputs[:lmanufactured_solution])
             x_warm = ref
-        end=#
+        end
         solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents,
             precond  = :none,
             restart  = 500,
-            tol      = 1e-10)
+            tol      = 1e-4)
 
        
 
