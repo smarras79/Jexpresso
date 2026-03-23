@@ -70,7 +70,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
             
-                r = sqrt( (x - xc)^2 + (z - zc)^2 + (y-yc)^2 )
+                r = sqrt( (x - xc)^2 + (z - zc)^2 ) #+ (y-yc)^2 )
             
                 Δθ = 0.0 #K
                 if r < r0
@@ -214,10 +214,15 @@ end
 
 end
 
-function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
+function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, 
+                               Tabs, qn, qc, qi, qr,
+                               qs, qg, Pr, Ps, Pg,
+                               S_micro, qsatt,
+                               connijk, nelem, ngl, 
+                               coords,
+                               max_level)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
     tol         = 301.2
-    max_level   = inputs[:amr_max_level] 
     
     for iel = 1:nelem
         m = 1

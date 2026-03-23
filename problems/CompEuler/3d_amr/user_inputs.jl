@@ -7,11 +7,10 @@ function user_inputs()
         :Δt                   => 0.2,
         :tinit                => 0.0,
         :tend                 => 1000.0,
-        #:tinit                => 100.0,
-        #:tend                 => 1000.0,
-        :diagnostics_at_times => (100:100:1000),
+        :diagnostics_at_times => (100:100:1000.0),
         # :diagnostics_at_times => (5, 100:100:1000...),        
         :lsource              => true,
+        :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
         # restart options
         #---------------------------------------------------------------------------
@@ -34,11 +33,11 @@ function user_inputs()
         :lvisc                => true, #false by default
         :visc_model           => AV(), #VREM(), #SMAG(),
         # :visc_model           => SMAG(),
-        #:visc_model           => VREM(),
+        # :visc_model           => VREM(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
         :μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
-        # :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        # :μ                    => [0.0, 20.0, 20.0, 20.0, 40.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -61,21 +60,22 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/2x2x2.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x2x10_periodicxy.msh",
+        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_periodic3D.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        #:lfilter             => true,
-        #:mu_x                => 0.01,
-        #:mu_y                => 0.01,
-        #:filter_type         => "erf",
+        :lfilter             => false,
+        :mu_x                => 0.5,
+        :mu_y                => 0.5,
+        :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output/",
+        :output_dir          => "./output_test/",
         :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
@@ -86,12 +86,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
-        :ladapt              => true,
+        # :ladapt              => false,
         :lamr                 => true,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
-        :amr_freq            => 100,
+        :amr_freq            => 250,
         :amr_max_level       => 1,
         #---------------------------------------------------------------------------
     ) #Dict
