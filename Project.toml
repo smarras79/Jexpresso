@@ -2,20 +2,6 @@ name = "Jexpresso"
 uuid = "b6c1962e-2b89-11f0-398d-4f31b209be71"
 version = "0.1.0"
 
-[compat]
-JACC = "1.0.0"
-JLD2 = "0.6.3"
-KrylovPreconditioners = "0.3.7"
-LinearOperators = "2.13.0"
-MPICH_jll = "4.3.2"
-MPIPreferences = "0.1.11"
-NearestNeighbors = "0.4.27"
-P4est = "0.4.11"
-Preferences = "1.5.2"
-PrettyTables = "2.4.0"
-QuadGK = "2.11.2"
-Serialization = "1.11.0"
-
 [deps]
 AMRVW = "233ec0c9-6b8d-4766-b9a2-a16e389fc38a"
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
@@ -43,10 +29,12 @@ GridapDistributed = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
 GridapGmsh = "3025c34a-b394-11e9-2a55-3fee550c04c8"
 GridapP4est = "c2c8e14b-f5fd-423d-9666-1dd9ad120af9"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+IncompleteLU = "40713840-3770-5561-ab4c-a76e7d0d7895"
 Infiltrator = "5903a43b-9cc3-4c30-8d17-598619ec4e9b"
 InternedStrings = "7d512f48-7fb1-5a58-b986-67e6dc259f01"
 JACC = "0979c8fe-16a4-4796-9b82-89a9f10403ea"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+KLU = "ef3ab10e-7fda-4108-b977-705223b18434"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
 KrylovPreconditioners = "45d422c2-293f-44ce-8315-2cb988662dec"
@@ -86,12 +74,20 @@ TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
-[preferences.MPIPreferences]
-__clear__ = ["preloads_env_switch"]
-_format = "1.0"
-abi = "MPICH"
-binary = "system"
-cclibs = []
-libmpi = "/opt/homebrew/Cellar/mpich/4.3.0/lib/libmpi.12.dylib"
-mpiexec = "/opt/homebrew/bin/mpiexec"
-preloads = []
+[compat]
+IncompleteLU = "0.2.1"
+JACC = "1.0.0"
+JLD2 = "0.6.3"
+KLU = "0.6.0"
+KrylovPreconditioners = "0.3.7"
+LinearOperators = "2.13.0"
+MPICH_jll = "4.3.2"
+MPIPreferences = "0.1.11"
+NearestNeighbors = "0.4.27"
+P4est = "0.4.11"
+Preferences = "1.5.2"
+PrettyTables = "2.4.0"
+QuadGK = "2.11.2"
+Serialization = "1.11.0"
+
+

@@ -540,10 +540,14 @@ function solve_parallel_gmres(ip2gip, gip2owner, A_local, b, gnpoin, npoin, x_pr
             return x_local
         end
     end
+    
+    # Test as preconditioner
+
 
     t_solve = @elapsed begin
         if isempty(x_prev)
             x, stats = Krylov.gmres(A_parallel, b_global;
+                                     
                                      memory  = restart,
                                      restart = true,
                                      atol    = tol,
@@ -552,6 +556,7 @@ function solve_parallel_gmres(ip2gip, gip2owner, A_local, b, gnpoin, npoin, x_pr
                                      verbose = (rank == 0) ? 1 : 0)
         else
             x, stats = Krylov.gmres(A_parallel, b_global, x0;
+                    
                                      memory  = restart,
                                      restart = true,
                                      atol    = tol,

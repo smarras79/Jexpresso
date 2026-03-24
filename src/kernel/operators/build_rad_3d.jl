@@ -1,5 +1,5 @@
 using SparseArrays
-
+using KLU
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -943,10 +943,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         B = RHS_red
 
     
-        #=for ip in all_hanging_nodes
+        for ip in all_hanging_nodes
             A[ip,ip] = 1.0
             B[ip] = 0.0
-        end=#
+        end
         
     else
         for (node, val) in boundary_dict
@@ -1042,6 +1042,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     npoin_ang_total = size(B, 1)
     @info maximum(As), minimum(As), maximum(B), minimum(B)
+    
     solution = if (inputs[:adaptive_extra_meshes] && inputs[:RT_shortwave])
         x_warm = zeros(Float64,n_spa)
         if (rt_sol_sw_available)
@@ -1865,7 +1866,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
        
         while e_ext <= nelem_ang[iel]
           
-            if (iel == 14 && e_ext ==5) #abs(criterion[iel][e_ext]) > thresholds[1]
+            if abs(criterion[iel][e_ext]) > thresholds[1]
                #@info iel, e_ext
                #@info rank, criterion[iel][e_ext], thresholds[1], e_ext, iel
                 adapted_ang[iel] = 1
