@@ -28,6 +28,12 @@ function _try_load_sem_cache(path::String)
     rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return (nothing, nothing)
     try
+        # Use pre-fetched data when available (populated by je_prefetch_caches!
+        # before with_mpi to eliminate JLD2 JIT cost + disk I/O from the
+        # Alya-blocking window).
+        if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing
+            return JEXPRESSO_PREFETCHED_SEM_CACHE[]
+        end
         d = JLD2.load(path)
         return (d["metrics"], d["matrix"])
     catch e
