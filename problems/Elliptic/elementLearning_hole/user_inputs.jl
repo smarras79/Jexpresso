@@ -29,6 +29,11 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/plate_word_unit.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_unit_square_10x10el.msh",
         #---------------------------------------------------------------------------
+        # static adaptivity
+        #---------------------------------------------------------------------------
+        :ladapt => true,
+        :lamr   => true,
+        #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",

@@ -214,7 +214,7 @@ end
 
 end
 
-function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
+function user_get_adapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, q, qe, connijk, nelem, ngl)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
     tol         = 301.2
     max_level   = inputs[:amr_max_level] 

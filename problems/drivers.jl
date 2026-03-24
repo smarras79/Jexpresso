@@ -134,8 +134,9 @@ function driver(nparts,
                     lvtk_sample = false
                     
                     if EL.lEL_Sample
-                        
-
+                        #-----------------------------------------------------
+                        # 1. Sampling
+                        #-----------------------------------------------------
                         bufferin  = Vector{Vector{Float64}}()
                         bufferout = Vector{Vector{Float64}}()
                         total_cols_writtenin  = 0

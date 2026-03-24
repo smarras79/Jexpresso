@@ -306,7 +306,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     # =========================================================================
     # SECTION 2: Fill per-element 3D blocks from A (no changes needed here)
     # =========================================================================
-    @inbounds for iel = 1:mesh.nelem
+    nelem = mesh.nelem
+    @inbounds for iel = 1:nelem
         for j = 1:elnbdypoints
             gnode                  = mesh.conn[iel, j]
             wbuf.conn_∂O_idx[j]   = get(∂O_pos, gnode, 0)
@@ -344,7 +345,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     # =========================================================================
     # SECTION 3: Gather Dirichlet data
     # =========================================================================
-    @inbounds for iΓ = 1:mesh.lengthΓ
+    lengthΓ = mesh.lengthΓ
+    @inbounds for iΓ = 1:lengthΓ
         gΓ[iΓ] = ubdy[mesh.Γ[iΓ], 1]
     end
 
@@ -354,7 +356,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         # spzeros every call was the hidden allocator here — reuse wbuf.ΔB
         fill!(nonzeros(wbuf.ΔB), zero(eltype(A)))
 
-        @inbounds for iel = 1:mesh.nelem
+        @inbounds for iel = 1:nelem
             for j = 1:elnbdypoints
                 gnode               = mesh.conn[iel, j]
                 wbuf.conn_∂τ_idx[j] = get(∂τ_pos, gnode, 0)
@@ -397,7 +399,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         B_∂O∂Γ = B_∂O∂τ[:, wbuf.Γ_in_∂τ]
 
         BOΓg_tmp          = B_∂O∂Γ * gΓ
-        wbuf.u∂O         .= -(B_∂O∂O \ BOΓg_tmp) # REPlACE THIS WITH GMRES
+        wbuf.u∂O         .= -(B_∂O∂O \ BOΓg_tmp)  # eq. (1.4)
 
         @inbounds for io = 1:mesh.length∂O;  u[mesh.∂O[io]] = wbuf.u∂O[io];  end
         @inbounds for io = 1:mesh.lengthΓ;   u[mesh.Γ[io]]  = gΓ[io];        end
@@ -609,7 +611,7 @@ function elementLearning_infer!(
     B_∂O∂Γ  = buf.B_∂τ∂τ[buf.∂O_in_∂τ, buf.Γ_in_∂τ]    # SparseMatrixCSC
 
     BOΓg_nn = B_∂O∂Γ * gΓ             # sparse × dense → dense  (one alloc)
-    u∂O_nn  = -(B_∂O∂O \ BOΓg_nn)     # UMFPACK sparse direct solve (one alloc)
+    u∂O_nn  = -(B_∂O∂O \ BOΓg_nn)     # UMFPACK sparse direct solve (one alloc) eq. (1.4)
 
     # ══════════════════════════════════════════════════════════════════════════
     # STEP 7 — Scatter solution into u

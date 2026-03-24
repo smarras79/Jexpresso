@@ -3313,7 +3313,7 @@ end
 
 function do_adapt!(adapt_flags, inputs, mesh, uaux, qp)
     
-    user_get_adapt_flags!(adapt_flags, inputs, mesh.ad_lvl, uaux, qp.qe, mesh.connijk, mesh.nelem, mesh.ngl)
+    user_get_adapt_flags!(adapt_flags, inputs, mesh, mesh.ad_lvl, uaux, qp.qe, mesh.connijk, mesh.nelem, mesh.ngl)
     adapt4periodicity!(adapt_flags, mesh, mesh.SD)
 end
 
