@@ -176,8 +176,15 @@ if use_full_mode
 import Pkg
 Pkg.activate("$(root)")
 
-ENV["JEXPRESSO_SYSIMAGE_BUILD"] = "1"  # prevents jexpresso_main() / MPI init
-ENV["JEXPRESSO_WARMUP"]         = "1"  # limits run to 1 timestep if main is called
+# JEXPRESSO_WARMUP=1 caps the run to 1 timestep and suppresses output.
+# Do NOT set JEXPRESSO_SYSIMAGE_BUILD here — that guard prevents
+# jexpresso_main() from running, which defeats the entire purpose of a
+# warmup: we need the full execution path (driver → sem_setup →
+# mod_mesh_mesh_driver → build_Interpolation_basis! → time_loop! → …)
+# to actually execute so PackageCompiler can bake those specialisations
+# into the sysimage.  Without this, the sysimage only covers package
+# loading and the first-timestep JIT still hits at runtime.
+ENV["JEXPRESSO_WARMUP"] = "1"  # 1 timestep, no output files
 push!(empty!(ARGS), "$(equations)", "$(case)")
 include(joinpath("$(root)", "src", "Jexpresso.jl"))
 """)
