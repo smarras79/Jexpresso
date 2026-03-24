@@ -56,6 +56,11 @@ function jexpresso_main()
     is_coupled = je_perform_coupling_handshake(world, lsize)
     if is_coupled
         je_receive_alya_data(world, lsize)
+        # Pre-load mesh and SEM JLD2 caches while still at top level (before the
+        # with_mpi closure begins).  This JIT-compiles the JLD2 machinery and
+        # pulls cache data into memory before Alya starts waiting at its
+        # Alltoall barrier, so setup_coupling_and_mesh runs faster.
+        je_prefetch_caches!(inputs, lsize)
     end
 
     # Launch Driver with both Local and World communicators.

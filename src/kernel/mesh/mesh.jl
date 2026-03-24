@@ -65,7 +65,11 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
     rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return false
     try
-        raw = JLD2.load(path)
+        # Use pre-fetched data when available (populated by je_prefetch_caches!
+        # before with_mpi to eliminate JLD2 JIT cost + disk I/O from the
+        # Alya-blocking window).
+        raw = JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing ?
+              JEXPRESSO_PREFETCHED_MESH_CACHE[] : JLD2.load(path)
         if !haskey(raw, "mesh_fields")
             # Legacy file written by older code (key "mesh" — whole struct).
             # Discard it; the fresh build below will overwrite with new format.

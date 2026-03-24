@@ -2,6 +2,7 @@ using Gridap
 using GridapDistributed
 using PartitionedArrays
 using Base.Threads
+using Printf
 
 # ===========================================================================
 # USER SETTING
@@ -22,6 +23,11 @@ const SEND_COORDS = false
 const JEXPRESSO_MPI_COMM       = Ref{Union{MPI.Comm,Nothing}}(nothing)
 const JEXPRESSO_MPI_COMM_WORLD = Ref{Union{MPI.Comm,Nothing}}(nothing)
 const JEXPRESSO_COUPLING_DATA  = Ref{Union{Dict{Symbol,Any},Nothing}}(nothing)
+
+# Pre-fetched JLD2 cache data — populated before with_mpi (see je_prefetch_caches!)
+# to move JLD2 JIT cost and disk I/O out of the Alya-blocking critical path.
+const JEXPRESSO_PREFETCHED_MESH_CACHE = Ref{Union{Nothing, Dict}}(nothing)
+const JEXPRESSO_PREFETCHED_SEM_CACHE  = Ref{Union{Nothing, Tuple}}(nothing)
 
 function set_mpi_comm(comm::MPI.Comm)
     JEXPRESSO_MPI_COMM[] = comm
@@ -124,6 +130,76 @@ struct Alya_Point_Ownership
     owner_wrank::Vector{Int32}
     alya_point_id::Vector{Int32}
     ndime::Int32
+end
+
+# ===========================================================================
+# CACHE PRE-FETCH (called before with_mpi to move JLD2 JIT + I/O off the
+# Alya-blocking critical path)
+# ===========================================================================
+#
+# Alya blocks at MPI_Barrier+Alltoall waiting for Julia to answer the matching
+# call inside setup_coupling_and_mesh.  Between je_receive_alya_data returning
+# and that Alltoall, Julia must:
+#   1. JIT-compile driver / setup_coupling_and_mesh / sem_setup (unavoidable)
+#   2. Load the mesh-topology JLD2 cache       ← moved here
+#   3. Load the SEM-preprocess JLD2 cache      ← moved here
+#   4. Run extract_local_alya_coordinates      (geometry, not movable)
+#
+# By pre-loading (2) and (3) as plain top-level calls right after
+# je_receive_alya_data, we:
+#   • JIT-compile the JLD2 machinery once, before the Alya wait begins
+#   • put the cache data in globals so _try_load_mesh_cache! and
+#     _try_load_sem_cache just copy from memory rather than re-reading disk
+#   • print timing diagnostics so any remaining delay is visible
+#
+# _mesh_cache_path / _preprocess_cache_path are defined later in mesh.jl /
+# sem_setup.jl but are looked up at call time (same module scope), so the
+# forward references are fine.
+# ===========================================================================
+function je_prefetch_caches!(inputs::Dict, nparts::Int)
+    rank = MPI.Comm_rank(get_mpi_comm())
+
+    # ── 1. Mesh topology cache ──────────────────────────────────────────────
+    if JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
+        mesh_path = _mesh_cache_path(inputs, nparts)
+        if isfile(mesh_path)
+            rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
+            t0 = time_ns()
+            try
+                raw = JLD2.load(mesh_path)
+                if haskey(raw, "mesh_fields")
+                    JEXPRESSO_PREFETCHED_MESH_CACHE[] = raw
+                    rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, mesh_path)
+                else
+                    rank == 0 && println("old-format cache ignored (will rebuild)")
+                end
+            catch e
+                rank == 0 && @warn "[prefetch] mesh cache load failed" exception=e
+            end
+            flush(stdout)
+        end
+    end
+
+    # ── 2. SEM preprocess cache ─────────────────────────────────────────────
+    if JEXPRESSO_PREFETCHED_SEM_CACHE[] === nothing
+        Nξ       = inputs[:nop]
+        Qξ       = get(inputs, :lexact_integration, false) ? Nξ + 1 : Nξ
+        sem_path = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
+        if isfile(sem_path)
+            rank == 0 && (print("[prefetch] SEM cache  … "); flush(stdout))
+            t0 = time_ns()
+            try
+                d = JLD2.load(sem_path)
+                if haskey(d, "metrics") && haskey(d, "matrix")
+                    JEXPRESSO_PREFETCHED_SEM_CACHE[] = (d["metrics"], d["matrix"])
+                    rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, sem_path)
+                end
+            catch e
+                rank == 0 && @warn "[prefetch] SEM cache load failed" exception=e
+            end
+            flush(stdout)
+        end
+    end
 end
 
 # ===========================================================================
@@ -804,17 +880,22 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     # je_receive_alya_data and the "Read gmsh grid" message from sem_setup.
     if lrank == 0
         println("[setup_coupling] JIT done — starting mesh setup")
+        flush(stdout)
     end
-    
-    sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
-    if inputs[:backend] != CPU()
-        convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
+
+    t_sem = @elapsed begin
+        sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
+        if inputs[:backend] != CPU()
+            convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
+        end
     end
-    
-    alya_local_coords, alya_local_ids, alya_owner_ranks =
+    lrank == 0 && (@printf("[setup_coupling] sem_setup done in %.2f s\n", t_sem); flush(stdout))
+
+    t_geom = @elapsed alya_local_coords, alya_local_ids, alya_owner_ranks =
         extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
                                        block_size=(64,64,64), use_cropping=true,
                                        ξ_nodes=Vector{Float64}(sem.ξ))
+    lrank == 0 && (@printf("[setup_coupling] extract_alya_coords done in %.2f s\n", t_geom); flush(stdout))
 
     npoin_send = zeros(Int32, wsize)
     for wr in alya_owner_ranks; npoin_send[wr+1] += 1; end
