@@ -36,9 +36,16 @@ echo "==> Project ready."
 
 # ── Step 2: Build sysimage once (or on demand) ────────────────────────────────
 # The warmup runs the standalone theta case for 1 timestep.  This precompiles
-# sem_setup, initialize, params_setup, and the ODE solver — the four heaviest
-# JIT targets.  Coupling-specific functions (je_receive_alya_data, etc.) add
-# only a small fraction of compilation time and are omitted from the warmup.
+# driver, sem_setup, mod_mesh_mesh_driver, build_Interpolation_basis!, time_loop!
+# and all their transitive callees — eliminating the "super slow" JIT window
+# between coupling handshake and the first timestep.
+#
+# Build mode is chosen automatically from available RAM:
+#   Full  (≥ 4 GiB free): warmup + -O2  →  fastest runtime, peak ~4-6 GiB LLVM
+#   Lean  (≥ 1.5 GiB free): warmup + -O1  →  same JIT elimination, ~2-3 GiB LLVM
+#   Skip  (< 1.5 GiB free): no sysimage built, Julia runs with cold JIT
+#
+# Override: JEXPRESSO_SYSIMAGE_FULL=1 or JEXPRESSO_SYSIMAGE_LEAN=1
 #
 # make_sysimage.jl exits 0 in two cases:
 #   a) sysimage built successfully  → jexpresso.so now exists
