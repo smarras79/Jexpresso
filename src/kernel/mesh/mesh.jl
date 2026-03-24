@@ -38,6 +38,8 @@ const _MESH_CACHE_SKIP_FIELDS = Set{Symbol}([
     :non_conforming_facets_parents_ghost,
     :non_conforming_facets_children_ghost,
     :SD,            # saved separately as __SD_nsd__ integer
+    :ξω,            # saved separately as raw arrays (type has backend param)
+    :ξωQ,           # saved separately as raw arrays
 ])
 
 # Fields whose element type is Union{Nothing,String} — not directly JLD2-safe.
@@ -86,6 +88,13 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
             nsd_val = flds["__SD_nsd__"]
             mesh.SD = nsd_val == 3 ? NSD_3D() : nsd_val == 2 ? NSD_2D() : NSD_1D()
         end
+        # Restore ξω/ξωQ from saved raw arrays (as NamedTuples for compatibility).
+        if haskey(flds, "__ξω_ξ__") && haskey(flds, "__ξω_ω__")
+            mesh.ξω  = (ξ = flds["__ξω_ξ__"], ω = flds["__ξω_ω__"])
+        end
+        if haskey(flds, "__ξωQ_ξ__") && haskey(flds, "__ξωQ_ω__")
+            mesh.ξωQ = (ξ = flds["__ξωQ_ξ__"], ω = flds["__ξωQ_ω__"])
+        end
         mesh.parts = distribute(LinearIndices((nparts,)))
         rank == 0 && @info "Loaded mesh topology from cache: $path"
         return true
@@ -106,6 +115,16 @@ function _save_mesh_cache(path::String, mesh)
         end
         # Persist SD as a plain integer (avoids abstract-type JLD2 issues).
         flds["__SD_nsd__"] = mesh.nsd
+        # Persist ξω/ξωQ as plain Float64 arrays (avoid serialising structs with
+        # KernelAbstractions backend type parameters).
+        if !isnothing(mesh.ξω)
+            flds["__ξω_ξ__"] = Array(mesh.ξω.ξ)
+            flds["__ξω_ω__"] = Array(mesh.ξω.ω)
+        end
+        if !isnothing(mesh.ξωQ)
+            flds["__ξωQ_ξ__"] = Array(mesh.ξωQ.ξ)
+            flds["__ξωQ_ω__"] = Array(mesh.ξωQ.ω)
+        end
         JLD2.jldsave(path; mesh_fields = flds)
         rank == 0 && @info "Saved mesh topology cache: $path"
     catch e
@@ -137,8 +156,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     if isnothing(adapt_flags) && !ladaptive && !linitial_refine
         _mesh_cache = _mesh_cache_path(inputs, nparts)
         if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts)
-            mesh.ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
-            mesh.ξωQ = basis_structs_ξ_ω!(LG(), mesh.nop, backend)
+            # Compute LGL/LG nodes only when not already loaded from cache
+            if isnothing(mesh.ξω)
+                rank == 0 && @info "Compute LGL/LG nodes (not in cache)"
+                mesh.ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
+                mesh.ξωQ = basis_structs_ξ_ω!(LG(), mesh.nop, backend)
+            end
             return nothing   # partitioned_model not needed for non-AMR cached runs
         end
     end

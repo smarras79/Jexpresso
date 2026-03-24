@@ -1,10 +1,32 @@
+# Function barrier: route through a concrete SD type so the compiler can
+# fully specialize all allocate_*() calls inside _params_setup_inner.
+# Without this, SD has abstract type AbstractSpaceDimensions at the
+# call site → dynamic dispatch → 45M+ allocations and GiB of compiler memory.
 function params_setup(sem,
-                      coupling, 
+                      coupling,
                       qp::St_SolutionVars,
                       inputs::Dict,
                       OUTPUT_DIR::String,
                       T,
                       tspan = [T(inputs[:tinit]), T(inputs[:tend])])
+    SD = sem.mesh.SD
+    if SD isa NSD_2D
+        return _params_setup_inner(NSD_2D(), sem, coupling, qp, inputs, OUTPUT_DIR, T, tspan)
+    elseif SD isa NSD_3D
+        return _params_setup_inner(NSD_3D(), sem, coupling, qp, inputs, OUTPUT_DIR, T, tspan)
+    else
+        return _params_setup_inner(NSD_1D(), sem, coupling, qp, inputs, OUTPUT_DIR, T, tspan)
+    end
+end
+
+function _params_setup_inner(SD::SD_TYPE,
+                              sem,
+                              coupling,
+                              qp::St_SolutionVars,
+                              inputs::Dict,
+                              OUTPUT_DIR::String,
+                              T,
+                              tspan) where {SD_TYPE <: AbstractSpaceDimensions}
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -18,36 +40,36 @@ function params_setup(sem,
 
     backend = inputs[:backend]
     
-    uODE = allocate_uODE(sem.mesh.SD,
+    uODE = allocate_uODE(SD,
                          sem.mesh.npoin,
                          T, backend;
                          neqs=qp.neqs)
     
-    rhs    = allocate_rhs(sem.mesh.SD,
+    rhs    = allocate_rhs(SD,
                           sem.mesh.nelem,
                           sem.mesh.npoin,
                           sem.mesh.ngl,
                           T, backend;
                           neqs=qp.neqs)
     
-    fluxes = allocate_fluxes(sem.mesh.SD,
+    fluxes = allocate_fluxes(SD,
                              sem.mesh.npoin,
                              sem.mesh.ngl,
                              T, backend;
                              neqs=qp.neqs)
 
-    fijk   = allocate_fijk(sem.mesh.SD,
+    fijk   = allocate_fijk(SD,
                            sem.mesh.ngl,
                            T, backend;
                            neqs=qp.neqs)
 
-    ∇f     = allocate_∇f(sem.mesh.SD,
+    ∇f     = allocate_∇f(SD,
                          sem.mesh.nelem,
                          sem.mesh.ngl,
                          T, backend;
                          neqs=qp.neqs)
     
-    gpuAux = allocate_gpuAux(sem.mesh.SD,
+    gpuAux = allocate_gpuAux(SD,
                              sem.mesh.nelem,
                              sem.mesh.nedges_bdy,
                              sem.mesh.nfaces_bdy,
@@ -55,14 +77,14 @@ function params_setup(sem,
                              T, backend;
                              neqs=qp.neqs)
 
-    gpuMoist = allocate_gpuMoist(sem.mesh.SD,
+    gpuMoist = allocate_gpuMoist(SD,
                              sem.mesh.npoin,
                              sem.mesh.nelem,
                              sem.mesh.ngl,
                              T, backend, inputs[:lmoist];
                              neqs=qp.neqs)
 
-    ncf_arrays = allocate_ncfArrays(sem.mesh.SD,
+    ncf_arrays = allocate_ncfArrays(SD,
                                     sem.mesh.num_ncf_pg,
                                     sem.mesh.num_ncf_cg,
                                     sem.mesh.ngl,
@@ -70,9 +92,9 @@ function params_setup(sem,
                                     neqs=qp.neqs)
 
     if inputs[:lvisc] == true && inputs[:visc_model] != AV()
-        viscsgs = allocate_visc(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs)
+        viscsgs = allocate_visc(SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs)
     else
-        viscsgs = allocate_visc(sem.mesh.SD, 1, 1, 1, T, backend; neqs=1)
+        viscsgs = allocate_visc(SD, 1, 1, 1, T, backend; neqs=1)
     end
     u            = uODE.u
     uaux         = uODE.uaux
@@ -109,7 +131,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # boundary flux arrays
     #------------------------------------------------------------------------------------
-    bdy_fluxes = allocate_bdy_fluxes(sem.mesh.SD,
+    bdy_fluxes = allocate_bdy_fluxes(SD,
                           sem.mesh.nfaces_bdy,
                           sem.mesh.nedges_bdy,
                           sem.mesh.npoin,
@@ -134,7 +156,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
-    filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter])
+    filter = allocate_filter(SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter])
     fy_t   = transpose(sem.fy)
     fz_t   = transpose(sem.fz)
     q_t    = filter.q_t
@@ -165,7 +187,7 @@ function params_setup(sem,
         inputs[:llaguerre_1d_right] == true   ||
         inputs[:llaguerre_1d_left]  == true )
         
-        rhs_lag = allocate_rhs_lag(sem.mesh.SD,
+        rhs_lag = allocate_rhs_lag(SD,
                                    sem.mesh.nelem_semi_inf,
                                    sem.mesh.npoin,
                                    sem.mesh.ngl,
@@ -175,14 +197,14 @@ function params_setup(sem,
                                    neqs = qp.neqs)
 
 
-        fluxes_lag = allocate_fluxes_lag(sem.mesh.SD,
+        fluxes_lag = allocate_fluxes_lag(SD,
                                          sem.mesh.ngl,
                                          sem.mesh.ngr,
                                          T,
                                          backend;
                                          neqs = qp.neqs)
 
-        filter_lag =  allocate_filter_lag(sem.mesh.SD,
+        filter_lag =  allocate_filter_lag(SD,
                                           sem.mesh.nelem_semi_inf,
                                           sem.mesh.npoin,
                                           sem.mesh.ngl,
@@ -192,7 +214,7 @@ function params_setup(sem,
                                           neqs = qp.neqs,
                                           lfilter = inputs[:lfilter])
 
-        gpuAux_lag = allocate_gpuAux_lag(sem.mesh.SD,
+        gpuAux_lag = allocate_gpuAux_lag(SD,
                                          sem.mesh.nelem_semi_inf,
                                          sem.mesh.nedges_bdy,
                                          sem.mesh.nfaces_bdy,
@@ -230,7 +252,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate micophysics arrays
     #------------------------------------------------------------------------------------
-    mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend, sem.mesh.SD; lmoist=inputs[:lmoist])
+    mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend, SD; lmoist=inputs[:lmoist])
     #------------------------------------------------------------------------------------
     # Allocate large scale tendencies arrays
     #------------------------------------------------------------------------------------
@@ -254,10 +276,10 @@ function params_setup(sem,
         if rank == 0
             @info "start conformity4ncf_q!"
         end
-        g_dss_cache_qp = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        g_dss_cache_qp = setup_assembler(SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
         conformity4ncf_q!(qp.qn, rhs_el_tmp, @view(utmp[:,:]), vaux, 
                           g_dss_cache_qp,
-                          sem.mesh.SD, 
+                          SD, 
                           sem.QT, sem.mesh.connijk,
                           sem.mesh, sem.matrix.Minv, 
                           sem.metrics.Je, sem.ω, sem.AD, 
@@ -268,7 +290,7 @@ function params_setup(sem,
                           sem.interp; ladapt = inputs[:ladapt])
         conformity4ncf_q!(qp.qe, rhs_el_tmp, @view(utmp[:,:]), vaux, 
                           g_dss_cache_qp,
-                          sem.mesh.SD, 
+                          SD, 
                           sem.QT, sem.mesh.connijk, 
                           sem.mesh, sem.matrix.Minv, 
                           sem.metrics.Je, sem.ω, sem.AD, 
@@ -316,7 +338,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
-        g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        g_dss_cache = setup_assembler(SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux, utmp, fluxaux,
                   ubdy, gradu, bdy_flux, #for B.C.
@@ -335,7 +357,7 @@ function params_setup(sem,
                   rhs_diff_el_lag,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
                   RHS_lag, RHS_visc_lag, uprimitive_lag, 
-                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD,
+                  SD=SD, sem.QT, sem.CL, sem.AD,
                   sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
                   sem.mesh, ξ=sem.ξ,
@@ -351,7 +373,7 @@ function params_setup(sem,
                   timers)
         
     else
-        g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        g_dss_cache = setup_assembler(SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
                   T, inputs,
                   uaux, vaux, utmp, fluxaux,
@@ -370,7 +392,7 @@ function params_setup(sem,
                   q_el, q_el_pro, q_ghost_p, q_ghost_c,
                   cache_ghost_p, cache_ghost_c,
                   q_t, q_ti, q_tij, fqf, b, B,
-                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD, 
+                  SD=SD, sem.QT, sem.CL, sem.AD, 
                   sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original,

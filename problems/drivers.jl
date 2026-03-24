@@ -3,7 +3,8 @@ function driver(nranks,
                 inputs::Dict,
                 OUTPUT_DIR::String,
                 TFloat,
-                world)
+                world,
+                is_coupled::Bool = je_perform_coupling_handshake(world, nranks))
 
     if rank == 0 @info " Params_setup .................................." end
 
@@ -13,11 +14,9 @@ function driver(nranks,
         Δt_amr   = amr_freq * inputs[:Δt]
         tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
     end
-    
-    # Step 1: Perform handshake
+
     coupling = nothing
-    lsize = nranks # Local n. of Jexpresso ranks
-    is_coupled = je_perform_coupling_handshake(world, lsize)
+    lsize = nranks
     if rank == 0 printnl(" is_coupled: ", is_coupled) end    
     if is_coupled
 

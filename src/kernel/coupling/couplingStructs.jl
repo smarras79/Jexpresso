@@ -14,7 +14,7 @@ using Base.Threads
 # Both options produce a buffer of identical size [npoin × ndime].
 # Alya receives the same buffer either way and knows nothing about this flag.
 # ===========================================================================
-const SEND_COORDS = true
+const SEND_COORDS = false
 
 # ===========================================================================
 # GLOBAL MPI COMMUNICATOR REFS
@@ -146,6 +146,10 @@ end
 function je_receive_alya_data(world, nparts)
     wsize = MPI.Comm_size(world)
     wsize <= nparts && (@warn "je_receive_alya_data called but not in coupled mode"; return)
+
+    # Idempotency guard: if coupling data was already received (e.g. from run.jl
+    # before driver() was called), skip the MPI operations entirely.
+    JEXPRESSO_COUPLING_DATA[] !== nothing && return
 
     ndime_buf = Vector{Int32}(undef, 1)
     MPI.Bcast!(ndime_buf, 0, world)
@@ -423,6 +427,21 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     nranks_alya = length(alya2world)
     alya_worker_indices = [k for k in 1:nranks_alya if alya2world[k] != Int32(0)]
     nworkers_alya = length(alya_worker_indices)
+
+    # Guard: if there are no Alya worker ranks (e.g. asize==1 so only the
+    # master rank exists, which has world rank 0 and is filtered out above),
+    # return empty arrays — no points can be assigned to Alya workers.
+    if nworkers_alya == 0
+        @warn "extract_local_alya_coordinates: no Alya worker ranks found " *
+              "(alya2world=$(alya2world)). " *
+              "This happens when ALYA_PROCS==1 (only the master rank exists). " *
+              "Returning empty coordinate arrays."
+        empty_coords  = zeros(Float64, 0, ndime)
+        empty_ids     = Int32[]
+        empty_owners  = Int32[]
+        return empty_coords, empty_ids, empty_owners
+    end
+
     r_w  = mod(nmax, nworkers_alya)
     np_w = div(nmax, nworkers_alya)
 
@@ -753,7 +772,6 @@ end
 # ===========================================================================
 # COUPLING SETUP ORCHESTRATOR
 # ===========================================================================
-#
 #    setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
 #                            OUTPUT_DIR, TFloat; send_coords=false)
 #
@@ -766,23 +784,33 @@ end
 #  of the Alya grid points it computed (useful for verifying point location).
 #
 # Both modes produce a buffer of shape `[npoin × ndime]` with the same
-# field-fastest layout, so Alya's receive path is identical either way.
+#field-fastest layout, so Alya's receive path is identical either way.
 # ===========================================================================
 function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
                                  OUTPUT_DIR, TFloat;
                                  send_coords::Bool = SEND_COORDS)
-
+    
+    if rank == 1
+        println("[setup_coupling] JIT ... — starting mesh setup")
+    end
     je_receive_alya_data(world, lsize)
     coupling_data = get_coupling_data()
     local_comm    = get_mpi_comm()
     lrank         = MPI.Comm_rank(local_comm)
     wsize         = MPI.Comm_size(world)
 
+    # Sign-of-life print: appears as soon as setup_coupling_and_mesh has been
+    # JIT-compiled.  This breaks up the otherwise-silent period between
+    # je_receive_alya_data and the "Read gmsh grid" message from sem_setup.
+    if lrank == 0
+        println("[setup_coupling] JIT done — starting mesh setup")
+    end
+    
     sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
     if inputs[:backend] != CPU()
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
-
+    
     alya_local_coords, alya_local_ids, alya_owner_ranks =
         extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
                                        block_size=(64,64,64), use_cropping=true,

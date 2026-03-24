@@ -13,9 +13,15 @@ include("../mesh/restructure_for_periodicity.jl")
 # and `using LinearAlgebra` exports a symbol of the same name.
 function _preprocess_cache_path(inputs::Dict, Nξ::Int, Qξ::Int, nparts::Int)
     rank = MPI.Comm_rank(get_mpi_comm())
-    dir  = let d = dirname(inputs[:gmsh_filename]); isempty(d) ? "." : d end
+    gmsh = inputs[:gmsh_filename]
+    dir  = let d = dirname(gmsh); isempty(d) ? "." : d end
+    # Include the mesh filename stem so that different mesh files in the same
+    # directory (e.g. a 2-D quad mesh and a 3-D hex mesh) never share a cache
+    # file.  Previously only the directory was used, which caused stale 3-D
+    # cache data to be loaded for 2-D problems and vice-versa.
+    stem   = splitext(basename(gmsh))[1]
     suffix = nparts > 1 ? "_rank$(rank)" : ""
-    return joinpath(dir, "PREPROCESS_nop$(Nξ)$(suffix).jld2")
+    return joinpath(dir, "PREPROCESS_$(stem)_nop$(Nξ)$(suffix).jld2")
 end
 
 function _try_load_sem_cache(path::String)

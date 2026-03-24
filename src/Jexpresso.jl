@@ -6,9 +6,29 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
+# Disable Julia's incremental precompilation for this module.
+#
+# Jexpresso loads several packages (GridapGmsh, GridapP4est, ClimaComms backends)
+# that initialise native C/C++ shared libraries.  On macOS, the dynamic linker
+# (dyld) crashes with a heap-corruption segfault (signal 11 in lsl::Allocator::free)
+# when these libraries are loaded inside Julia's precompilation subprocess.
+#
+# __precompile__(false) stops Julia from spawning that subprocess.  The module
+# is loaded directly instead, which is slightly slower on a cold start but has
+# no effect when running with the --sysimage flag (the normal production path).
+#
+# Exception: when make_sysimage.jl is building the sysimage it sets
+# JEXPRESSO_BUILDING_SYSIMAGE=1 and that env var is inherited by every child
+# process PackageCompiler spawns (including the --output-o compilation
+# subprocess).  We skip __precompile__(false) so PackageCompiler can include
+# Jexpresso in the sysimage.  The resulting sysimage is then used with
+# --sysimage, so the precompile path is never taken at runtime.
+if !haskey(ENV, "JEXPRESSO_BUILDING_SYSIMAGE")
+    __precompile__(false)
+end
+
 using MPI
 using KernelAbstractions
-using Revise
 using BenchmarkTools
 using Dates
 using DelimitedFiles
@@ -40,14 +60,13 @@ using LinearSolve: LinearSolve, solve
 
 # Utilities
 using HDF5
+using JLD2
 using SnoopCompile # Only keep if you are actively profiling latency
 using JLD2
 
 import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
-
-
 import ClimaComms
 @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
 
