@@ -168,34 +168,6 @@ function get_boundary_faces(model,nsd,dim)
   findall(x -> x>0, facet_to_tag)
 end
 
-
-
-mutable struct AssemblerCache
-    global_max_index::Int
-    index_a::Vector{Int}
-    owner_a::Vector{Int}
-
-    # Index communication buffers
-    recv_idx_buffers::Vector{Vector{Int}}
-    # combined_recv_idx::Vector{Int}
-
-    # Send-back buffers
-    recvback_idx_buffers::Vector{Vector{Int}}
-    # combined_recv_back_idx::Vector{Int}
-
-    sum_array_1D::Vector{Float64}
-    sum_array_2D::Matrix{Float64}
-
-    # auxiliary
-    send_i::Vector{Vector{Int}} 
-    send_data_buffers::Vector{Vector{Float64}}
-    recv_data_buffers::Vector{Vector{Float64}}
-    send_data_sizes::Vector{Int}
-    recv_data_sizes::Vector{Int}
-    # i_local::Dict{Int, Vector{Int}}
-
-end
-
 function setup_global_numbering_extra_dim(ip2gip, gip2owner, npoin, npoin_ang, npoin_total)
 
     comm = MPI.COMM_WORLD
