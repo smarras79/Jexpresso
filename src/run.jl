@@ -58,10 +58,12 @@ function jexpresso_main()
         je_receive_alya_data(world, lsize)
         # Pre-load JLD2 caches and run the Alya geometry search while still at
         # top level (before the with_mpi closure begins).  This JIT-compiles
-        # JLD2, St_mesh, and extract_local_alya_coordinates before Alya starts
-        # waiting at its Alltoall barrier, so setup_coupling_and_mesh only needs
-        # to do lightweight work before reaching the MPI synchronisation point.
+        # JLD2 and extract_local_alya_coordinates before Alya starts waiting.
         je_prefetch_caches!(inputs, lsize, local_comm, world)
+        # If geometry is available, complete the Barrier + Alltoall + node-list
+        # send immediately so Alya unblocks from MPI_Barrier right now rather
+        # than waiting for the full sem_setup JIT inside with_mpi.
+        je_early_coupling_sync!(local_comm, world)
     end
 
     # Launch Driver with both Local and World communicators.
