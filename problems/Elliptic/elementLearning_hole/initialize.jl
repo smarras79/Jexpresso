@@ -62,7 +62,7 @@ function user_get_adapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, q, qe, con
                 x = mesh.coords[ips, 1]
                 y = mesh.coords[ips, 2]
                 
-                if x >= -0.75 && x =< 0.25 && y >= -0.75 && y =< 0.25 && old_ad_lvl[iel] < max_level
+                if x >= -0.75 && x <= 0.25 && y >= -0.75 && y <= 0.25 && old_ad_lvl[iel] < max_level
                     adapt_flags[iel] = refine_flag
                 end
             end
