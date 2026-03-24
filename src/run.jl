@@ -153,7 +153,7 @@ with_mpi() do distribute
     
     driver(nparts,
            distribute, 
-           inputs, # input parameters from src/user_input.jl
+           inputs,
            OUTPUT_DIR,
            TFloat)
     

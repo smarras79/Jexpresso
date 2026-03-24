@@ -1246,9 +1246,8 @@ if inputs[:AD] != FD()
 end
 end
 mesh.npoin = npoin
-if mesh.rank == 0
-    @info " periodicity_restructure!"
-end
+if mesh.rank == 0 println(" # periodicity_restructure!") end
+
 end
 
 function restructure4periodicity_2D(mesh, norm, periodic_direction)

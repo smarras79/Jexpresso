@@ -5,3 +5,8 @@ function solveAx(L, RHS, linear_solver...)
     
     return sol
 end
+
+
+#function solveAx_sparse(A, b)
+#     return A\b
+#end

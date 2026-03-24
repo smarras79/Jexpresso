@@ -91,10 +91,9 @@ function params_setup(sem,
     rhs_diffξ_el = rhs.rhs_diffξ_el
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
+    rhs_el_tmp   = rhs.rhs_el_tmp
     μsgs         = viscsgs.μ
     μ_max        = viscsgs.μ_max
-    
-    rhs_el_tmp   = rhs.rhs_el_tmp
     
     #------------------------------------------------------------------------------------
     # non conforming faces arrays and mpi cache
@@ -131,6 +130,7 @@ function params_setup(sem,
     source_micro   = gpuMoist.source_micro
     adjusted       = gpuMoist.adjusted
     Pm             = gpuMoist.Pm
+    
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
@@ -228,6 +228,12 @@ function params_setup(sem,
         b_lag            = filter_lag.b_lag
         B_lag            = filter_lag.B_lag
     end
+
+    
+    #------------------------------------------------------------------------------------
+    # Element learning
+    #------------------------------------------------------------------------------------
+    lEL_Sample = inputs[:lEL_Sample]
     
     #------------------------------------------------------------------------------------
     # Allocate micophysics arrays
@@ -287,18 +293,11 @@ function params_setup(sem,
         u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
         qp.qnm1[:,i] = @view(qp.qn[:,i])
         qp.qnm2[:,i] = @view(qp.qn[:,i])
-        
     end
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    #if (backend == CPU())
-    #    visc_coeff = zeros(TFloat, qp.neqs)
-    #    if inputs[:lvisc]
-    #        visc_coeff .= inputs[:μ]
-    #    end
-    #else
-   
+    
     if inputs[:lvisc]
         coeffs = zeros(TFloat, qp.neqs)
         if size(inputs[:μ]) > size(coeffs)
@@ -319,7 +318,9 @@ function params_setup(sem,
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
-        inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
+        inputs[:llaguerre_1d_right] ||
+        inputs[:llaguerre_1d_left])
+        
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux, utmp, fluxaux,
@@ -375,6 +376,7 @@ function params_setup(sem,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD, 
                   sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
+                  lEL_Sample, 
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff,
