@@ -827,12 +827,19 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ldss_laplace] = false
     end
 
-    # AMR
-    
+    # AMR    
     if(!haskey(inputs, :lamr))
         inputs[:lamr] = false
     end
 
+    if(!haskey(inputs, :amr_freq))
+        inputs[:amr_freq] = 0
+    end
+
+    if(!haskey(inputs, :amr_max_level))
+        inputs[:amr_max_level] = 0
+    end
+     
     if(!haskey(inputs, :ladapt))
         inputs[:ladapt] = false
     end

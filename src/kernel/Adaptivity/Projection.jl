@@ -3319,8 +3319,6 @@ end
 
 
 function amr_strategy!(args...)
-    # @info size(params.uaux), size(u)
-    # @info u
     inputs = args[1]
     params = args[2]
     u = args[3]
@@ -3329,14 +3327,8 @@ function amr_strategy!(args...)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     ref_coarse_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(params.mesh.nelem))
     do_adapt!(ref_coarse_flags, inputs, params.mesh, params.uaux, params.qp)
-    # @info ref_coarse_flags
-    # re - sem, init, and params_setup
     sem, partitioned_model_new, uaux_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, params.uaux)
     
-    # if (inputs[:backend] != CPU())
-    #     convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
-    # end
-
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     amr_freq = inputs[:amr_freq]
@@ -3354,10 +3346,8 @@ function amr_strategy!(args...)
                     nu,
                     nparams.tspan,
                     nparams);
-    # @info "u3",  size(nu,1), prob.p.mesh.npoin
     
     return prob, partitioned_model_new
-    # GC.gc()
 end
 
 
