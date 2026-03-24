@@ -26,8 +26,11 @@ const JEXPRESSO_COUPLING_DATA  = Ref{Union{Dict{Symbol,Any},Nothing}}(nothing)
 
 # Pre-fetched JLD2 cache data — populated before with_mpi (see je_prefetch_caches!)
 # to move JLD2 JIT cost and disk I/O out of the Alya-blocking critical path.
-const JEXPRESSO_PREFETCHED_MESH_CACHE = Ref{Union{Nothing, Dict}}(nothing)
-const JEXPRESSO_PREFETCHED_SEM_CACHE  = Ref{Union{Nothing, Tuple}}(nothing)
+const JEXPRESSO_PREFETCHED_MESH_CACHE  = Ref{Union{Nothing, Dict}}(nothing)
+const JEXPRESSO_PREFETCHED_SEM_CACHE   = Ref{Union{Nothing, Tuple}}(nothing)
+# Pre-computed Alya point geometry (coords, ids, owner_ranks) — avoids running
+# extract_local_alya_coordinates inside with_mpi where Alya is already waiting.
+const JEXPRESSO_PREFETCHED_ALYA_COORDS = Ref{Union{Nothing, Tuple}}(nothing)
 
 function set_mpi_comm(comm::MPI.Comm)
     JEXPRESSO_MPI_COMM[] = comm
@@ -156,8 +159,9 @@ end
 # sem_setup.jl but are looked up at call time (same module scope), so the
 # forward references are fine.
 # ===========================================================================
-function je_prefetch_caches!(inputs::Dict, nparts::Int)
-    rank = MPI.Comm_rank(get_mpi_comm())
+function je_prefetch_caches!(inputs::Dict, nparts::Int,
+                              local_comm::MPI.Comm, world::MPI.Comm)
+    rank = MPI.Comm_rank(local_comm)
 
     # ── 1. Mesh topology cache ──────────────────────────────────────────────
     if JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
@@ -200,6 +204,63 @@ function je_prefetch_caches!(inputs::Dict, nparts::Int)
             flush(stdout)
         end
     end
+
+    # ── 3. Alya point geometry (extract_local_alya_coordinates) ────────────
+    # Build a minimal St_mesh from the prefetched cache and run the geometry
+    # search before with_mpi.  This moves the JIT cost of the geometry pipeline
+    # (+ its MPI.Allreduce calls) out of the Alya-blocking window.
+    # extract_local_alya_coordinates only needs x/y/nelem/ngl/connijk/nsd —
+    # all available in the mesh cache — and local_comm/world for Allreduce.
+    _je_prefetch_geometry!(inputs, local_comm, world, rank)
+end
+
+# Separated into its own function so the try/catch/return flow is clean.
+function _je_prefetch_geometry!(inputs::Dict, local_comm::MPI.Comm,
+                                 world::MPI.Comm, rank::Int)
+    JEXPRESSO_PREFETCHED_MESH_CACHE[]  === nothing && return
+    JEXPRESSO_COUPLING_DATA[]          === nothing && return
+    JEXPRESSO_PREFETCHED_ALYA_COORDS[] !== nothing && return
+
+    raw = JEXPRESSO_PREFETCHED_MESH_CACHE[]
+    haskey(raw, "mesh_fields") || return
+    flds = raw["mesh_fields"]
+
+    try
+        rank == 0 && (print("[prefetch] geometry   … "); flush(stdout))
+        t0 = time_ns()
+
+        nsd_val = haskey(flds, "__SD_nsd__") ? Int(flds["__SD_nsd__"]) :
+                                               Int(get(inputs, :nsd, 2))
+        SD_obj  = nsd_val == 3 ? NSD_3D() : nsd_val == 2 ? NSD_2D() : NSD_1D()
+        nop_val = Int64(inputs[:nop])
+        ngr_val = Int64(get(inputs, :nop_laguerre, 0) + 1)
+
+        # Construct a minimal St_mesh populated only with the fields that
+        # extract_local_alya_coordinates actually reads.
+        mesh_tmp = St_mesh{Int64, Float64, CPU()}(SD=SD_obj, nop=nop_val, ngr=ngr_val)
+
+        for f in (:x, :y, :z, :nelem, :ngl, :connijk, :nsd)
+            key = string(f)
+            haskey(flds, key) || continue
+            setfield!(mesh_tmp, f, flds[key])
+        end
+        # SD must match the saved integer (it was reset to NSD_1D() by the
+        # @kwdef default path — re-assert the correct value).
+        mesh_tmp.SD  = SD_obj
+        mesh_tmp.nsd = nsd_val
+
+        ξ_nodes = haskey(flds, "__ξω_ξ__") ? Vector{Float64}(flds["__ξω_ξ__"]) : nothing
+
+        coords, ids, owners = extract_local_alya_coordinates(
+            mesh_tmp, JEXPRESSO_COUPLING_DATA[], local_comm, world;
+            block_size=(64,64,64), use_cropping=true, ξ_nodes=ξ_nodes)
+
+        JEXPRESSO_PREFETCHED_ALYA_COORDS[] = (coords, ids, owners)
+        rank == 0 && @printf("%.2f s\n", (time_ns()-t0)/1e9)
+    catch e
+        rank == 0 && @warn "[prefetch] geometry pre-computation failed" exception=e
+    end
+    flush(stdout)
 end
 
 # ===========================================================================
@@ -891,11 +952,19 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     end
     lrank == 0 && (@printf("[setup_coupling] sem_setup done in %.2f s\n", t_sem); flush(stdout))
 
-    t_geom = @elapsed alya_local_coords, alya_local_ids, alya_owner_ranks =
-        extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
-                                       block_size=(64,64,64), use_cropping=true,
-                                       ξ_nodes=Vector{Float64}(sem.ξ))
-    lrank == 0 && (@printf("[setup_coupling] extract_alya_coords done in %.2f s\n", t_geom); flush(stdout))
+    t_geom = @elapsed begin
+        if JEXPRESSO_PREFETCHED_ALYA_COORDS[] !== nothing
+            alya_local_coords, alya_local_ids, alya_owner_ranks =
+                JEXPRESSO_PREFETCHED_ALYA_COORDS[]
+            lrank == 0 && println("[setup_coupling] using prefetched geometry")
+        else
+            alya_local_coords, alya_local_ids, alya_owner_ranks =
+                extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
+                                               block_size=(64,64,64), use_cropping=true,
+                                               ξ_nodes=Vector{Float64}(sem.ξ))
+        end
+    end
+    lrank == 0 && (@printf("[setup_coupling] geometry done in %.2f s\n", t_geom); flush(stdout))
 
     npoin_send = zeros(Int32, wsize)
     for wr in alya_owner_ranks; npoin_send[wr+1] += 1; end
