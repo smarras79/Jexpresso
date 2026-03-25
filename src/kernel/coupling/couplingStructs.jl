@@ -9,13 +9,17 @@ using Printf
 #
 # SEND_COORDS: controls what Julia sends to Alya at every timestep.
 #
-#   false  →  send velocity components [u, v, ...]   (normal coupled run)
-#   true   →  send coordinates         [x, y, ...]   (verification / debug)
+#   false  →  interpolate the solution and send velocity [u, v, ...]
+#             (normal coupled run)
+#   true   →  interpolate Jexpresso mesh coordinates [x, y, ...] to the
+#             Alya grid points via the same SEM Lagrange pipeline used for
+#             velocity, then send those interpolated coordinates
+#             (verification / debug — result should match the Alya coords)
 #
 # Both options produce a buffer of identical size [npoin × ndime].
 # Alya receives the same buffer either way and knows nothing about this flag.
 # ===========================================================================
-const SEND_COORDS = false
+const SEND_COORDS = true
 
 # ===========================================================================
 # GLOBAL MPI COMMUNICATOR REFS
@@ -89,8 +93,11 @@ mutable struct CouplingData
 
     # --------------------------------------------------------------------------
     # send_coords: user-settable flag in setup_coupling_and_mesh.
-    #   false (default) → send ndime velocity components per point each step.
-    #   true            → send ndime coordinate values   per point each step.
+    #   false (default) → interpolate solution, send ndime velocity components
+    #                     per point each step.
+    #   true            → interpolate Jexpresso mesh coordinates (x, y, …) to
+    #                     Alya point locations via the same SEM Lagrange pipeline,
+    #                     then send ndime coordinate values per point each step.
     # Both modes produce a buffer of size [npoin × ndime], so Alya's receive
     # path is identical either way. Only the physical meaning differs.
     # --------------------------------------------------------------------------
@@ -963,13 +970,15 @@ end
 # Set up the coupled simulation.
 #
 # Keyword argument
-# - `send_coords=false` *(default)*: Julia sends **velocity** components
-#  `[u, v, ...]` (columns `2:neqs-1` of the solution) to Alya each step.
-# - `send_coords=true`: Julia sends the **coordinates** `[x, y, ...]`
-#  of the Alya grid points it computed (useful for verifying point location).
+# - `send_coords=false` *(default)*: Julia interpolates the solution and sends
+#   **velocity** components `[u, v, ...]` (columns `2:neqs-1`) to Alya each step.
+# - `send_coords=true`: Julia treats the Jexpresso mesh coordinates `[x, y, …]`
+#   as a field, interpolates them to the Alya grid point locations using the same
+#   SEM Lagrange pipeline as for velocity, and sends the interpolated coordinates
+#   (useful for verifying that the interpolation is locating points correctly).
 #
 # Both modes produce a buffer of shape `[npoin × ndime]` with the same
-#field-fastest layout, so Alya's receive path is identical either way.
+# field-fastest layout, so Alya's receive path is identical either way.
 # ===========================================================================
 function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
                                  OUTPUT_DIR, TFloat;
@@ -1184,7 +1193,9 @@ end
 
 # Full per-step exchange.  Branches on cpg.send_coords (set once at startup):
 #   false -> interpolate solution, pack velocity columns 2:neqs-1, send.
-#   true  -> pack Alya coordinates directly, send. No interpolation needed.
+#   true  -> build a coordinate field at Jexpresso mesh nodes, interpolate it
+#            to Alya point locations via the same SEM Lagrange pipeline used
+#            for velocity, then pack and send the interpolated coordinates.
 function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       qout::Matrix{Float64},
                                       u_interp::Matrix{Float64},
@@ -1205,7 +1216,24 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       elem_bboxes::Vector{NTuple{4,Float64}},
                                       bins::ElemBins)
     if cpg.send_coords
-        pack_coord_data!(cpg, alya_coords, owner_ranks)
+        # Build a (npoin × ndime) matrix whose columns are the Jexpresso mesh
+        # node coordinates, then interpolate those fields to Alya point locations
+        # using the same SEM Lagrange pipeline as for velocity.
+        ndime     = cpg.ndime
+        npoin     = length(mesh_x)
+        coord_mat = Matrix{Float64}(undef, npoin, ndime)
+        @inbounds for ip in 1:npoin
+            coord_mat[ip, 1] = mesh_x[ip]
+            ndime >= 2 && (coord_mat[ip, 2] = mesh_y[ip])
+        end
+        interpolate_solution_to_alya_coords!(
+            u_interp, alya_coords, coord_mat,
+            ξ_nodes, ω, ndime,
+            elem_bboxes, bins,
+            e_conn, elem_x, elem_y,
+            ψξ, ψη, dψξ, dψη, α, x_e, y_e,
+            mesh_x, mesh_y)
+        pack_velocity_data!(cpg, u_interp[:, 1:ndime], owner_ranks)
     else
         npoin = size(qout, 1)
         u2uaux!(u_mat, u, neqs, npoin)
