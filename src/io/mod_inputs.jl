@@ -852,6 +852,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :amr_max_level))
         inputs[:amr_max_level] = 0
     end
+
+    if(!haskey(inputs, :lpreadapt))
+        inputs[:lpreadapt] = false
+    end
+
+    if inputs[:lpreadapt] == true
+        inputs[:ladapt] = true
+    end
     #------------------------------------------------------------------------
     # The following quantities stored in the inputs[] dictionary are only
     # auxiliary and are NEVER to be defined by the user
