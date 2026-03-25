@@ -17,7 +17,7 @@ function driver(nranks,
 
     coupling = nothing
     lsize = nranks
-    if rank == 0 printnl(" is_coupled: ", is_coupled) end    
+    if rank == 0 println(" is_coupled: ", is_coupled) end    
     if is_coupled
 
         # 2. Complete coupling setup

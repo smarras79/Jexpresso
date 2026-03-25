@@ -15,8 +15,7 @@ using Printf
 # Both options produce a buffer of identical size [npoin × ndime].
 # Alya receives the same buffer either way and knows nothing about this flag.
 # ===========================================================================
-const SEND_COORDS = true
-#const SEND_COORDS = false
+const SEND_COORDS = false
 
 # ===========================================================================
 # GLOBAL MPI COMMUNICATOR REFS
@@ -27,8 +26,18 @@ const JEXPRESSO_COUPLING_DATA  = Ref{Union{Dict{Symbol,Any},Nothing}}(nothing)
 
 # Pre-fetched JLD2 cache data — populated before with_mpi (see je_prefetch_caches!)
 # to move JLD2 JIT cost and disk I/O out of the Alya-blocking critical path.
-const JEXPRESSO_PREFETCHED_MESH_CACHE = Ref{Union{Nothing, Dict}}(nothing)
-const JEXPRESSO_PREFETCHED_SEM_CACHE  = Ref{Union{Nothing, Tuple}}(nothing)
+const JEXPRESSO_PREFETCHED_MESH_CACHE  = Ref{Union{Nothing, Dict}}(nothing)
+const JEXPRESSO_PREFETCHED_SEM_CACHE   = Ref{Union{Nothing, Tuple}}(nothing)
+# Pre-computed Alya point geometry (coords, ids, owner_ranks) — avoids running
+# extract_local_alya_coordinates inside with_mpi where Alya is already waiting.
+const JEXPRESSO_PREFETCHED_ALYA_COORDS = Ref{Union{Nothing, Tuple}}(nothing)
+
+# Early coupling sync: Barrier + Alltoall + send done BEFORE with_mpi when
+# geometry is available, so Alya unblocks from MPI_Barrier right after geometry
+# rather than waiting for the full sem_setup JIT inside with_mpi.
+const JEXPRESSO_EARLY_SYNC_DONE      = Ref{Bool}(false)
+const JEXPRESSO_EARLY_NPOIN_SEND     = Ref{Union{Nothing, Vector{Int32}}}(nothing)
+const JEXPRESSO_EARLY_SEND_TO_RANKS  = Ref{Union{Nothing, Vector{Int32}}}(nothing)
 
 function set_mpi_comm(comm::MPI.Comm)
     JEXPRESSO_MPI_COMM[] = comm
@@ -157,8 +166,9 @@ end
 # sem_setup.jl but are looked up at call time (same module scope), so the
 # forward references are fine.
 # ===========================================================================
-function je_prefetch_caches!(inputs::Dict, nparts::Int)
-    rank = MPI.Comm_rank(get_mpi_comm())
+function je_prefetch_caches!(inputs::Dict, nparts::Int,
+                              local_comm::MPI.Comm, world::MPI.Comm)
+    rank = MPI.Comm_rank(local_comm)
 
     # ── 1. Mesh topology cache ──────────────────────────────────────────────
     if JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
@@ -201,6 +211,104 @@ function je_prefetch_caches!(inputs::Dict, nparts::Int)
             flush(stdout)
         end
     end
+
+    # ── 3. Alya point geometry (extract_local_alya_coordinates) ────────────
+    # Build a minimal St_mesh from the prefetched cache and run the geometry
+    # search before with_mpi.  This moves the JIT cost of the geometry pipeline
+    # (+ its MPI.Allreduce calls) out of the Alya-blocking window.
+    # extract_local_alya_coordinates only needs x/y/nelem/ngl/connijk/nsd —
+    # all available in the mesh cache — and local_comm/world for Allreduce.
+    _je_prefetch_geometry!(inputs, local_comm, world, rank)
+end
+
+# Separated into its own function so the try/catch/return flow is clean.
+function _je_prefetch_geometry!(inputs::Dict, local_comm::MPI.Comm,
+                                 world::MPI.Comm, rank::Int)
+    JEXPRESSO_PREFETCHED_MESH_CACHE[]  === nothing && return
+    JEXPRESSO_COUPLING_DATA[]          === nothing && return
+    JEXPRESSO_PREFETCHED_ALYA_COORDS[] !== nothing && return
+
+    raw = JEXPRESSO_PREFETCHED_MESH_CACHE[]
+    haskey(raw, "mesh_fields") || return
+    flds = raw["mesh_fields"]
+
+    try
+        rank == 0 && (print("[prefetch] geometry   … "); flush(stdout))
+        t0 = time_ns()
+
+        nsd_val = haskey(flds, "__SD_nsd__") ? Int(flds["__SD_nsd__"]) :
+                                               Int(get(inputs, :nsd, 2))
+
+        # Use a NamedTuple instead of St_mesh{...} — extract_local_alya_coordinates
+        # only accesses x/y/z/nelem/ngl/connijk/nsd via duck typing.  A NamedTuple
+        # avoids the expensive @kwdef constructor JIT of a 150+-field struct.
+        mesh_tmp = (
+            x       = Vector{Float64}(haskey(flds,"x")       ? flds["x"]       : Float64[]),
+            y       = Vector{Float64}(haskey(flds,"y")       ? flds["y"]       : Float64[]),
+            z       = Vector{Float64}(haskey(flds,"z")       ? flds["z"]       : Float64[]),
+            nelem   = haskey(flds,"nelem")   ? Int(flds["nelem"])   : 0,
+            ngl     = haskey(flds,"ngl")     ? Int(flds["ngl"])     : 0,
+            connijk = haskey(flds,"connijk") ? flds["connijk"]      : Array{Int64}(undef,0,0,0,0),
+            nsd     = nsd_val,
+        )
+
+        ξ_nodes = haskey(flds, "__ξω_ξ__") ? Vector{Float64}(flds["__ξω_ξ__"]) : nothing
+
+        coords, ids, owners = extract_local_alya_coordinates(
+            mesh_tmp, JEXPRESSO_COUPLING_DATA[], local_comm, world;
+            block_size=(64,64,64), use_cropping=true, ξ_nodes=ξ_nodes)
+
+        JEXPRESSO_PREFETCHED_ALYA_COORDS[] = (coords, ids, owners)
+        rank == 0 && @printf("%.2f s\n", (time_ns()-t0)/1e9)
+    catch e
+        rank == 0 && @warn "[prefetch] geometry pre-computation failed" exception=e
+    end
+    flush(stdout)
+end
+
+# ===========================================================================
+# EARLY COUPLING SYNC
+# ===========================================================================
+#
+# When geometry is available before with_mpi (via _je_prefetch_geometry!),
+# Julia can complete the Barrier + Alltoall + node-list send right away — with
+# NO dependency on sem_setup.  This lets Alya unblock from MPI_Barrier and
+# receive the node list while Julia is still JIT-compiling sem_setup inside
+# with_mpi.  Alya then starts its time loop and posts MPI_Irecv; Julia's
+# MPI_Waitall in the time loop only blocks Alya until Julia finishes sem_setup
+# and sends the first time-step data.
+#
+# setup_coupling_and_mesh detects that the sync was already done and skips
+# the redundant Barrier/Alltoall/send.
+# ===========================================================================
+function je_early_coupling_sync!(local_comm::MPI.Comm, world::MPI.Comm)
+    JEXPRESSO_PREFETCHED_ALYA_COORDS[] === nothing && return
+    JEXPRESSO_EARLY_SYNC_DONE[]                   && return
+    JEXPRESSO_COUPLING_DATA[]          === nothing && return
+
+    rank  = MPI.Comm_rank(local_comm)
+    wsize = MPI.Comm_size(world)
+
+    alya_local_coords, alya_local_ids, alya_owner_ranks =
+        JEXPRESSO_PREFETCHED_ALYA_COORDS[]
+
+    npoin_send = zeros(Int32, wsize)
+    for wr in alya_owner_ranks; npoin_send[wr+1] += 1; end
+    send_to_ranks = Int32[i-1 for i in 1:wsize if npoin_send[i] > 0]
+
+    rank == 0 && (print("[early-sync] Barrier + Alltoall + send … "); flush(stdout))
+    t0 = time_ns()
+
+    recv_counts_dummy = zeros(Int32, wsize)
+    MPI.Barrier(world)
+    MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_dummy, 1, world)
+    je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
+
+    JEXPRESSO_EARLY_NPOIN_SEND[]    = npoin_send
+    JEXPRESSO_EARLY_SEND_TO_RANKS[] = send_to_ranks
+    JEXPRESSO_EARLY_SYNC_DONE[]     = true
+    rank == 0 && @printf("%.2f s\n", (time_ns()-t0)/1e9)
+    flush(stdout)
 end
 
 # ===========================================================================
@@ -892,23 +1000,38 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     end
     lrank == 0 && (@printf("[setup_coupling] sem_setup done in %.2f s\n", t_sem); flush(stdout))
 
-    t_geom = @elapsed alya_local_coords, alya_local_ids, alya_owner_ranks =
-        extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
-                                       block_size=(64,64,64), use_cropping=true,
-                                       ξ_nodes=Vector{Float64}(sem.ξ))
-    lrank == 0 && (@printf("[setup_coupling] extract_alya_coords done in %.2f s\n", t_geom); flush(stdout))
+    t_geom = @elapsed begin
+        if JEXPRESSO_PREFETCHED_ALYA_COORDS[] !== nothing
+            alya_local_coords, alya_local_ids, alya_owner_ranks =
+                JEXPRESSO_PREFETCHED_ALYA_COORDS[]
+            lrank == 0 && println("[setup_coupling] using prefetched geometry")
+        else
+            alya_local_coords, alya_local_ids, alya_owner_ranks =
+                extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
+                                               block_size=(64,64,64), use_cropping=true,
+                                               ξ_nodes=Vector{Float64}(sem.ξ))
+        end
+    end
+    lrank == 0 && (@printf("[setup_coupling] geometry done in %.2f s\n", t_geom); flush(stdout))
 
-    npoin_send = zeros(Int32, wsize)
-    for wr in alya_owner_ranks; npoin_send[wr+1] += 1; end
-    send_to_ranks = Int32[i-1 for i in 1:wsize if npoin_send[i] > 0]
+    if JEXPRESSO_EARLY_SYNC_DONE[]
+        # Barrier + Alltoall + send already done before with_mpi; reuse results.
+        npoin_send    = JEXPRESSO_EARLY_NPOIN_SEND[]
+        send_to_ranks = JEXPRESSO_EARLY_SEND_TO_RANKS[]
+        lrank == 0 && println("[setup_coupling] early-sync already done — skipping Barrier/Alltoall/send")
+    else
+        npoin_send = zeros(Int32, wsize)
+        for wr in alya_owner_ranks; npoin_send[wr+1] += 1; end
+        send_to_ranks = Int32[i-1 for i in 1:wsize if npoin_send[i] > 0]
 
-    lrank == 0 && (println("[setup_coupling] Alltoall to exchange point counts…"); flush(stdout))
+        lrank == 0 && (println("[setup_coupling] Alltoall to exchange point counts…"); flush(stdout))
 
-    recv_counts_from_alya = zeros(Int32, wsize)
-    MPI.Barrier(world)
-    MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_from_alya, 1, world)
+        recv_counts_from_alya = zeros(Int32, wsize)
+        MPI.Barrier(world)
+        MPI.Alltoall!(Vector{Int32}(npoin_send), recv_counts_from_alya, 1, world)
 
-    je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
+        je_send_node_list(Int32.(alya_local_ids), alya_owner_ranks, send_to_ranks, world)
+    end
 
     verify_coupling_communication_pattern(npoin_send, alya_owner_ranks, alya_local_ids,
                                           coupling_data, local_comm, world)
