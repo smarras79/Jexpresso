@@ -1,4 +1,4 @@
-
+#using Test
 # Define a mutable struct to hold the Legendre polynomial and derivatives
 mutable struct LegendrePoly
     p0::Float64   # Nth order Legendre polynomial
@@ -156,10 +156,6 @@ function scatter_gather_projection!(plane, nglx, ngly, nglz)
 
     return Psg
 end
-
-
-using Test
-
 
 function build_interpolation(ra, rb, wa)
     Nra = length(ra)
