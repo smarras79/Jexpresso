@@ -720,7 +720,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
     #@info minimum(S_face[:,:,:,2]), minimum(S_face[:,:,:,5]), minimum(S_face[:,:,:,6])
     if (lbdy_fluxes)
         DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl,
-        @view(coords[:,3]), zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
+                              @view(coords[:,3]), zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5])
         # @info minimum(S_flux[:,2]), minimum(S_flux[:,5])
         RHS[:,:] .= @view(RHS[:,:]) .+ @view(S_flux[:,:])

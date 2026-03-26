@@ -10,7 +10,7 @@ using Gridap.CellData
 using Gridap.Visualization
 using Gridap.Geometry: GridMock
 using GridapDistributed
-using GridapDistributed: GenericDistributedDiscreteModel
+using GridapDistributed: GenericDistributedDiscreteModel, compute_cell_graph
 using PartitionedArrays
 using GridapGmsh
 using GridapP4est

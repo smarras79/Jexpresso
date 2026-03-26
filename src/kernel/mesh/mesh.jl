@@ -270,8 +270,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             else
                 GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             end
-            cell_to_part      = _compute_xy_partition(smodel, nparts)
-            partitioned_model = DiscreteModel(parts, smodel, cell_to_part)
+            partitioned_model = if inputs[:lxy_partition]
+                cell_to_part = _compute_xy_partition(smodel, nparts)
+                DiscreteModel(parts, smodel, cell_to_part)
+            else
+                GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+            end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
 

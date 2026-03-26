@@ -46,6 +46,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
        inputs[:lwall_model] = false
     end
 
+    if(!haskey(inputs, :lxy_partition))
+        inputs[:lxy_partition] = false
+    end
+
+    if(inputs[:lwall_model] == false)
+        inputs[:lxy_partition] = true
+    end
+
     if(!haskey(inputs, :ifirst_wall_node_index))
          inputs[:ifirst_wall_node_index] = 2 #default is the first LGL point above the surface node along the vertical direction of the surface element
     end
@@ -785,6 +793,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     if(!haskey(inputs, :amr_max_level))
         inputs[:amr_max_level] = 0
+    end
+    
+    if(!haskey(inputs, :lpreadapt))
+        inputs[:lpreadapt] = false
+    end
+
+    if inputs[:lpreadapt] == true
+        inputs[:ladapt] = true
     end
     #------------------------------------------------------------------------
     # The following quantities stored in the inputs[] dictionary are only
