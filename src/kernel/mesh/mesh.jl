@@ -1293,17 +1293,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.gip2owner = find_gip_owner(mesh.ip2gip)
     mesh.gip2ip    = KernelAbstractions.zeros(backend, TInt, mesh.gnpoin)
 
-    # --- Load Balance Indicator ---
-    owned_ip        = count(==(rank), mesh.gip2owner)
-    ownership_ratio = owned_ip / mesh.npoin
-
-    min_ratio = MPI.Allreduce(ownership_ratio, MPI.MIN, comm)
-    max_ratio = MPI.Allreduce(ownership_ratio, MPI.MAX, comm)
-    avg_ratio = MPI.Allreduce(ownership_ratio, MPI.SUM, comm) / mpi_size
-
-    println_rank(" # Load balance (min/avg/max ratio)   : ",
-                min_ratio, " / ", avg_ratio, " / ", max_ratio;
-                msg_rank = rank, suppress = mesh.msg_suppress)
 
     for (ip, gip) in enumerate(mesh.ip2gip)
         mesh.gip2ip[gip] = ip
@@ -1854,6 +1843,38 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
 
     end
+
+    # --- Load Balance Indicator ---
+    owned_ip        = count(==(rank), mesh.gip2owner)
+    ownership_ratio = owned_ip / mesh.npoin
+
+    min_ratio = MPI.Allreduce(ownership_ratio, MPI.MIN, comm)
+    max_ratio = MPI.Allreduce(ownership_ratio, MPI.MAX, comm)
+    avg_ratio = MPI.Allreduce(ownership_ratio, MPI.SUM, comm) / mpi_size
+
+    println_rank(" # Load balance (min/avg/max ratio)   : ",
+                min_ratio, " / ", avg_ratio, " / ", max_ratio;
+                msg_rank = rank, suppress = mesh.msg_suppress)
+
+    # --- Owned-point count balance (absolute DSS work per rank) ---
+    owned_ip_f = Float64(owned_ip)
+    min_owned = Int(MPI.Allreduce(owned_ip_f, MPI.MIN, comm))
+    max_owned = Int(MPI.Allreduce(owned_ip_f, MPI.MAX, comm))
+    avg_owned = MPI.Allreduce(owned_ip_f, MPI.SUM, comm) / mpi_size
+    println_rank(" # Owned points (min/avg/max)          : ",
+                min_owned, " / ", round(avg_owned, digits=1), " / ", max_owned;
+                msg_rank = rank, suppress = mesh.msg_suppress)
+
+    # --- Wall-model BC load balance (bottom boundary faces per rank) ---
+    n_bottom_faces = count(==("MOST"), mesh.bdy_face_type)
+    n_bottom_f     = Float64(n_bottom_faces)
+    min_bot = Int(MPI.Allreduce(n_bottom_f, MPI.MIN, comm))
+    max_bot = Int(MPI.Allreduce(n_bottom_f, MPI.MAX, comm))
+    avg_bot = MPI.Allreduce(n_bottom_f, MPI.SUM, comm) / mpi_size
+    println_rank(" # Bottom faces (min/avg/max)          : ",
+                min_bot, " / ", round(avg_bot, digits=1), " / ", max_bot,
+                "  [imbalance: ", round(max_bot / max(avg_bot, 1.0), digits=2), "×]";
+                msg_rank = rank, suppress = mesh.msg_suppress)
 
     # for i = 0:MPI.Comm_size(comm)-1
     #     if i == rank
@@ -3650,6 +3671,9 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
+    lpreadapt = inputs[:lpreadapt]
+    max_ad_lv = inputs[:amr_max_level]
+
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
     partitioned_model = nothing
@@ -3663,11 +3687,35 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         n2o_ele_map = nothing
         if isnothing(adapt_flags)
             # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-            mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+            mesh_tmp = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
                                         nop=TInt(inputs[:nop]),
                                         ngr=TInt(inputs[:nop_laguerre]+1),
                                         SD=NSD_1D())
-            partitioned_model = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute)
+            partitioned_model_tmp = mod_mesh_read_gmsh!(mesh_tmp, inputs, nparts, distribute)
+            if lpreadapt
+                current_max_ad_lv = 0
+                mesh_r            = mesh_tmp
+                p_model_r         = partitioned_model_tmp
+                mesh_r_o          = mesh_tmp
+                p_model_r_o       = partitioned_model_tmp
+                while current_max_ad_lv < max_ad_lv
+                    mesh_r = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+                                            nop=TInt(inputs[:nop]),
+                                            ngr=TInt(inputs[:nop_laguerre]+1),
+                                            SD=NSD_1D())
+                    ref_coarse_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
+                    do_preadapt!(ref_coarse_flags, inputs, mesh_r_o)
+                    p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, ref_coarse_flags, p_model_r_o, mesh_r_o)
+                    current_max_ad_lv = maximum(mesh_r.ad_lvl)
+                    mesh_r_o          = mesh_r
+                    p_model_r_o       = p_model_r
+                end
+                mesh              = mesh_r
+                partitioned_model = p_model_r
+            else
+                mesh              = mesh_tmp
+                partitioned_model = partitioned_model_tmp
+            end
         else
             # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
             mesh_tmp = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
@@ -3968,6 +4016,6 @@ function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_
 end
 
 
-@inline function calculate_effective_delta!(delta::TFloat, ad_lvl::TInt, effective_delta::TFloat)
-    effective_delta = ldexp(delta, -ad_lvl)
+@inline function calculate_effective_delta(delta::TFloat, ad_lvl::TInt)
+    return ldexp(delta, -ad_lvl)
 end
