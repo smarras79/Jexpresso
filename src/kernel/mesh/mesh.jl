@@ -263,8 +263,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
         if ladaptive == false && linitial_refine == false
             smodel = if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(devnull) do
+                # Redirect stdout to /dev/null on non-zero ranks (must use open()
+                # not devnull: GMSH writes via C-level fprintf so we need an OS-level fd redirect)
+                redirect_stdout(open("/dev/null", "w")) do
                     GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 end
             else
