@@ -583,7 +583,7 @@ function _build_rhs!(RHS, u, params, time)
             filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
                     connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
         else
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
+            @timers filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
         end
     end
 
@@ -657,7 +657,7 @@ function _build_rhs!(RHS, u, params, time)
     end
 
      
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+    @timers inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
 
     if inputs[:ladapt] == true
@@ -679,7 +679,7 @@ function _build_rhs!(RHS, u, params, time)
         
         resetRHSToZero_viscous!(params, SD)
         
-        viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+        @timers viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
@@ -694,7 +694,7 @@ function _build_rhs!(RHS, u, params, time)
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
+    @timers apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
                                        params.metrics.nx, params.metrics.ny, params.metrics.nz,
                                        params.mesh.npoin, params.mesh.npoin_linear,
@@ -710,7 +710,7 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
 
-    DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+    @timers DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)
@@ -989,7 +989,7 @@ end
 
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     
-    Δ::params.T           = params.mesh.Δeffective_l
+    Δ::params.T = params.mesh.Δeffective_l
     Δ_effective::params.T = Δ
 
     nelem = params.mesh.nelem
@@ -1001,8 +1001,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     lrichardson = false
     # lrichardson = params.inputs[:lrichardson]
     # fill!(params.μ_max,    zero(params.T))
-    for iel=1:nelem        
-        # calculate_effective_delta!(Δ, ad_lvl[iel], Δ_effective)
+    for iel=1:nelem
+        # Δ_effective = calculate_effective_delta(Δ, ad_lvl[iel])
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j,k]
 
