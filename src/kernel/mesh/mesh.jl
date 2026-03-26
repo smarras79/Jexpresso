@@ -32,9 +32,9 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
         ip +=1
     end
     
-    extra_mesh.extra_connijk[nelem,1] = ip
+    extra_mesh.extra_connijk[nelem,1]     = ip
     extra_mesh.extra_connijk[nelem,nop+1] = ip+1
-    extra_mesh.extra_coords[ip+1] = θmax
+    extra_mesh.extra_coords[ip+1]         = θmax
     ip += 1
     ip_end = ip
     ## construct high order nodes
@@ -1274,12 +1274,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             
             ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
                 flags = zeros(Cint,length(indices))
-                flags.=nothing_flag
+                flags.= nothing_flag
                 # @info flags
                 # flags[1] = refine_flag
                 # flags[1:4:end] .= refine_flag
                 # if rank == 2
-                    # flags[1] = refine_flag
+                #     flags[1] = refine_flag
                 # end
                 flags
             end

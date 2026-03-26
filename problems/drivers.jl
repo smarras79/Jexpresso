@@ -113,7 +113,7 @@ function driver(nparts,
 
                 if inputs[:lelementLearning]
                     if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ......."))) end
-
+                    
                     
                     nelintpoints = (ngl - 2)^2
                     nelpoints    = ngl^2

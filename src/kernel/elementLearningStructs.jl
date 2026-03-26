@@ -205,9 +205,6 @@ function EL_InferBuffers(mesh, A_∂τ∂τ::SparseMatrixCSC,
     )
 end
 
-
-
-
 struct EL_WorkBuffers
     # Section 2 scratch
     conn_∂O_idx  :: Vector{Int}
@@ -247,10 +244,17 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
                         nfeatures::Int, nelintpoints::Int, elnbdypoints::Int,
                         onnx_path::String)
     T = eltype(A)
-    sess        = ONNXRunTime.load_inference(onnx_path)
-    input_name  = first(sess.input_names)
-    output_name = first(sess.output_names)
 
+    if isfile(onnx_path)
+        sess        = ONNXRunTime.load_inference(onnx_path)
+        input_name  = first(sess.input_names)
+        output_name = first(sess.output_names)
+    else
+        sess = nothing
+        input_name  = "nothing"
+        output_name = "nothing"
+    end
+   
     return EL_WorkBuffers(
         zeros(Int, elnbdypoints),                                   # conn_∂O_idx
         zeros(Int, elnbdypoints),                                   # conn_∂τ_idx

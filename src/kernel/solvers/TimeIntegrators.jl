@@ -152,32 +152,17 @@ function time_loop!(inputs, params, u, args...)
     
     #
     # Simulation
-    #
-    limex = false
-    if limex
-        ntime_steps = floor(Int32, inputs[:tend]/inputs[:Δt])
-        
-        # Basic usage
-        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, 
-                                           inputs[:Δt], ntime_steps, inputs[:lsource])
-        
-        # Or step-by-step
-        for n = 1:ntime_steps
-            imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
-        end
-        println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
-        @mystop()
-    else
-        solution = solve(prob,
-                         inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                         #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
-                         save_everystep = false,
-                         adaptive=inputs[:ode_adaptive_solver],
-                         saveat = range(inputs[:tinit],
-                                        inputs[:tend],
-                                        length=inputs[:ndiagnostics_outputs]));
-    end
+    #   
+    solution = solve(prob,
+                     inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                     #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
+                     callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
+                     save_everystep = false,
+                     adaptive=inputs[:ode_adaptive_solver],
+                     saveat = range(inputs[:tinit],
+                                    inputs[:tend],
+                                    length=inputs[:ndiagnostics_outputs]));
+    
     
     MPI.Barrier(comm)
     report_all_timers(params.timers)
