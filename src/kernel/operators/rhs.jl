@@ -112,67 +112,67 @@ function rhs!(du, u, params, time)
     # NaN/Inf diagnostic: find the first bad node before instability aborts
     # Also check for negative density (precursor to NaN blow-up)
     # -----------------------------------------------------------------------
-    comm_diag  = (params.SD == NSD_1D()) ? MPI.COMM_WORLD : params.mesh.parts.comm
-    rank_diag  = MPI.Comm_rank(comm_diag)
-    npoin_diag = params.mesh.npoin
-    neqs_diag  = params.neqs
+    # comm_diag  = (params.SD == NSD_1D()) ? MPI.COMM_WORLD : params.mesh.parts.comm
+    # rank_diag  = MPI.Comm_rank(comm_diag)
+    # npoin_diag = params.mesh.npoin
+    # neqs_diag  = params.neqs
 
-    function print_node_state(ip, label)
-        println("========== $label | rank=$(rank_diag) time=$(time) node=$(ip) ==========")
-        println("  coords : x=$(params.mesh.x[ip])  y=$(params.mesh.y[ip])  z=$(params.mesh.z[ip])")
-        println("  --- conserved (u) ---")
-        for ivar = 1:neqs_diag
-            println("    u[$ivar] = $(u[(ivar-1)*npoin_diag + ip])")
-        end
-        println("  --- primitives (uaux) ---")
-        for ivar = 1:neqs_diag
-            println("    uaux[$ivar] = $(params.uaux[ip, ivar])")
-        end
-        println("  --- reference state (qe) ---")
-        for ivar = 1:neqs_diag
-            println("    qe[$ivar] = $(params.qp.qe[ip, ivar])")
-        end
-        println("  --- microphysics (mp) ---")
-        println("    Tabs    = $(params.mp.Tabs[ip])")
-        println("    qn      = $(params.mp.qn[ip])")
-        println("    qc      = $(params.mp.qc[ip])")
-        println("    qi      = $(params.mp.qi[ip])")
-        println("    qr      = $(params.mp.qr[ip])")
-        println("    qs      = $(params.mp.qs[ip])")
-        println("    qg      = $(params.mp.qg[ip])")
-        println("    Pr      = $(params.mp.Pr[ip])")
-        println("    Ps      = $(params.mp.Ps[ip])")
-        println("    Pg      = $(params.mp.Pg[ip])")
-        println("    S_micro = $(params.mp.S_micro[ip])")
-        println("    qsatt   = $(params.mp.qsatt[ip])")
-        println("    flux_lw = $(params.mp.flux_lw[ip])")
-        println("    flux_sw = $(params.mp.flux_sw[ip])")
-        println("="^60)
-        flush(stdout)
-    end
-
-    # Check negative density (ivar=1) as early warning before NaN
-    # for ip = 1:npoin_diag
-    #     if u[ip] < 0
-    #         print_node_state(ip, "NEGATIVE DENSITY")
+    # function print_node_state(ip, label)
+    #     println("========== $label | rank=$(rank_diag) time=$(time) node=$(ip) ==========")
+    #     println("  coords : x=$(params.mesh.x[ip])  y=$(params.mesh.y[ip])  z=$(params.mesh.z[ip])")
+    #     println("  --- conserved (u) ---")
+    #     for ivar = 1:neqs_diag
+    #         println("    u[$ivar] = $(u[(ivar-1)*npoin_diag + ip])")
     #     end
+    #     println("  --- primitives (uaux) ---")
+    #     for ivar = 1:neqs_diag
+    #         println("    uaux[$ivar] = $(params.uaux[ip, ivar])")
+    #     end
+    #     println("  --- reference state (qe) ---")
+    #     for ivar = 1:neqs_diag
+    #         println("    qe[$ivar] = $(params.qp.qe[ip, ivar])")
+    #     end
+    #     println("  --- microphysics (mp) ---")
+    #     println("    Tabs    = $(params.mp.Tabs[ip])")
+    #     println("    qn      = $(params.mp.qn[ip])")
+    #     println("    qc      = $(params.mp.qc[ip])")
+    #     println("    qi      = $(params.mp.qi[ip])")
+    #     println("    qr      = $(params.mp.qr[ip])")
+    #     println("    qs      = $(params.mp.qs[ip])")
+    #     println("    qg      = $(params.mp.qg[ip])")
+    #     println("    Pr      = $(params.mp.Pr[ip])")
+    #     println("    Ps      = $(params.mp.Ps[ip])")
+    #     println("    Pg      = $(params.mp.Pg[ip])")
+    #     println("    S_micro = $(params.mp.S_micro[ip])")
+    #     println("    qsatt   = $(params.mp.qsatt[ip])")
+    #     println("    flux_lw = $(params.mp.flux_lw[ip])")
+    #     println("    flux_sw = $(params.mp.flux_sw[ip])")
+    #     println("="^60)
+    #     flush(stdout)
     # end
-    if any(!isfinite, u)
-        for ip = 1:npoin_diag
-            for ivar = 1:neqs_diag
-                if !isfinite(u[(ivar-1)*npoin_diag + ip])
-                    print_node_state(ip, "NaN/Inf ivar=$ivar")
-                    break  # one print per node is enough
-                end
-            end
-        end
-        error("Instability: NaN/Inf found in u at time=$time (see output above)")
-    end
+
+    # # Check negative density (ivar=1) as early warning before NaN
+    # # for ip = 1:npoin_diag
+    # #     if u[ip] < 0
+    # #         print_node_state(ip, "NEGATIVE DENSITY")
+    # #     end
+    # # end
+    # if any(!isfinite, u)
+    #     for ip = 1:npoin_diag
+    #         for ivar = 1:neqs_diag
+    #             if !isfinite(u[(ivar-1)*npoin_diag + ip])
+    #                 print_node_state(ip, "NaN/Inf ivar=$ivar")
+    #                 break  # one print per node is enough
+    #             end
+    #         end
+    #     end
+    #     error("Instability: NaN/Inf found in u at time=$time (see output above)")
+    # end
     # -----------------------------------------------------------------------
 
     # les_statistics(u, params, time)
     if (backend == CPU())
-        _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        @timers _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
         if (params.laguerre) 
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
