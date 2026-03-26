@@ -47,11 +47,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = false
-    end
-
-    if(inputs[:lwall_model] == false)
-        inputs[:lxy_partition] = true
+        inputs[:lxy_partition] = inputs[:lwall_model]
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))
