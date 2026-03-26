@@ -216,6 +216,31 @@ const pXest_copy = GridapP4est.pXest_copy
 const get_glue_components = GridapDistributed.get_glue_components
 
 
+# Partition cells into nparts by x-y centroid bins, ignoring z.
+# Returns a 1-indexed cell_to_part vector of length num_cells(model).
+function _compute_xy_partition(model, nparts)
+    Ω  = Triangulation(model)
+    coords = get_cell_coordinates(Ω)
+    cx = [sum(p[1] for p in c) / length(c) for c in coords]
+    cy = [sum(p[2] for p in c) / length(c) for c in coords]
+
+    lx = maximum(cx) - minimum(cx) + 1e-10
+    ly = maximum(cy) - minimum(cy) + 1e-10
+
+    # Find (nx, ny) with nx*ny == nparts, aspect-ratio aware
+    divisors   = [d for d in 1:nparts if nparts % d == 0]
+    target_nx  = sqrt(nparts * lx / ly)
+    nx = divisors[argmin(abs.(divisors .- target_nx))]
+    ny = nparts ÷ nx
+
+    x_min, y_min = minimum(cx), minimum(cy)
+    xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
+    yi = clamp.(floor.(Int, (cy .- y_min) ./ ly .* ny), 0, ny - 1)
+
+    return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+end
+
+
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
     backend = CPU()
@@ -237,14 +262,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
-            if rank != 0
+            smodel = if rank != 0
                 # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=false)
+                redirect_stdout(devnull) do
+                    GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 end
             else
-                partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=false)
+                GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             end
+            cell_to_part      = _compute_xy_partition(smodel, nparts)
+            partitioned_model = DiscreteModel(parts, smodel, cell_to_part)
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
 
