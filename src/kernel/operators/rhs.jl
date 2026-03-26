@@ -990,7 +990,7 @@ end
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     
     Δ::params.T           = params.mesh.Δeffective_l
-    Δ_effective::params.T = 0.0
+    Δ_effective::params.T = Δ
 
     nelem = params.mesh.nelem
     ngl   = params.mesh.ngl
@@ -1002,8 +1002,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     # lrichardson = params.inputs[:lrichardson]
     # fill!(params.μ_max,    zero(params.T))
     for iel=1:nelem        
-        calculate_effective_delta!(Δ, ad_lvl[iel], Δ_effective)
-
+        # calculate_effective_delta!(Δ, ad_lvl[iel], Δ_effective)
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j,k]
 
@@ -1044,7 +1043,6 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
         end
     end
     params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el .+ params.rhs_diffζ_el)
-
 end
 
 
