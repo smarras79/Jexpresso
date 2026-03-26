@@ -4,7 +4,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+	:ode_solver           =>  SSPRK43(), #CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.0003,
         :tinit                => 0.0,
         :tend                 => 10.0,
@@ -19,28 +19,28 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 7,      # Polynomial order
+        :nop                 => 2,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 1.0, 1.0, 5.0], #horizontal viscosity constant for momentum
-        #:μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
-        #:visc_model           => SMAG(),
-        :visc_model           => VREM(),
+        #:μ                   => [0.0, 1.0, 1.0, 5.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
+        :visc_model           => SMAG(),
+        #:visc_model           => VREM(),
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
         :lkep        => true,
-        #:volume_flux => artiano_etec(),
-        :volume_flux => central_theta(),
+        :volume_flux => artiano_etec(),
+        #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
 	#:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_40x40_unitsquare.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
