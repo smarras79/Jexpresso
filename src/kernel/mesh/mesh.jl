@@ -240,10 +240,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             if rank != 0
                 # Redirect stdout to /dev/null on non-zero ranks
                 redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+                    partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=false)
                 end
             else
-                partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+                partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=false)
             end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
