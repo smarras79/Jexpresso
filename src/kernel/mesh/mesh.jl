@@ -3671,7 +3671,8 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    lpreadapt = inputs[:lpreadapt]
+    # lpreadapt = inputs[:lpreadapt]
+    lpreadapt = false
     max_ad_lv = inputs[:amr_max_level]
 
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
