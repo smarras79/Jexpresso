@@ -3317,6 +3317,10 @@ function do_adapt!(adapt_flags, inputs, mesh, uaux, qp)
     adapt4periodicity!(adapt_flags, mesh, mesh.SD)
 end
 
+function do_preadapt!(adapt_flags, inputs, mesh)
+    user_get_preadapt_flags!(adapt_flags, inputs, mesh, mesh.ad_lvl, mesh.connijk, mesh.nelem, mesh.ngl)
+end
+
 
 function amr_strategy!(args...)
     inputs = args[1]

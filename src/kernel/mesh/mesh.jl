@@ -4630,6 +4630,9 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
+    lpreadapt = inputs[:lpreadapt]
+    max_ad_lv = inputs[:amr_max_level]
+
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
     partitioned_model = nothing
@@ -4643,11 +4646,35 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         n2o_ele_map = nothing
         if isnothing(adapt_flags)
             # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-            mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+            mesh_tmp = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
                                         nop=TInt(inputs[:nop]),
                                         ngr=TInt(inputs[:nop_laguerre]+1),
                                         SD=NSD_1D())
-            partitioned_model = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute)
+            partitioned_model_tmp = mod_mesh_read_gmsh!(mesh_tmp, inputs, nparts, distribute)
+            if lpreadapt
+                current_max_ad_lv = 0
+                mesh_r            = mesh_tmp
+                p_model_r         = partitioned_model_tmp
+                mesh_r_o          = mesh_tmp
+                p_model_r_o       = partitioned_model_tmp
+                while current_max_ad_lv < max_ad_lv
+                    mesh_r = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+                                            nop=TInt(inputs[:nop]),
+                                            ngr=TInt(inputs[:nop_laguerre]+1),
+                                            SD=NSD_1D())
+                    ref_coarse_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
+                    do_preadapt!(ref_coarse_flags, inputs, mesh_r_o)
+                    p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, ref_coarse_flags, p_model_r_o, mesh_r_o)
+                    current_max_ad_lv = maximum(mesh_r.ad_lvl)
+                    mesh_r_o          = mesh_r
+                    p_model_r_o       = p_model_r
+                end
+                mesh              = mesh_r
+                partitioned_model = p_model_r
+            else
+                mesh              = mesh_tmp
+                partitioned_model = partitioned_model_tmp
+            end
         else
             # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
             mesh_tmp = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),

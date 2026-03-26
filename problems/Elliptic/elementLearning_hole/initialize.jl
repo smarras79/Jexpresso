@@ -62,8 +62,32 @@ function user_get_adapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, q, qe, con
                 x = mesh.coords[ips, 1]
                 y = mesh.coords[ips, 2]
                 
-                if x >= -0.75 && x =< 0.25 && y >= -0.75 && y =< 0.25 && old_ad_lvl[iel] < max_level
+                if x >= -0.75 && x <= 0.25 && y >= -0.75 && y <= 0.25 && old_ad_lvl[iel] < max_level
                     adapt_flags[iel] = refine_flag
+                end
+            end
+        end
+    end
+    
+end
+
+function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk, nelem, ngl)
+
+    max_level = inputs[:amr_max_level]
+    for iel = 1:nelem
+        m = 1
+        for i = 1:ngl
+            for j = 1:ngl
+                ips = connijk[iel, i, j]
+                
+                # GEOMETRY HERE
+                x = mesh.coords[ips, 1]
+                y = mesh.coords[ips, 2]
+                
+                if x >= -0.75 && x <= 0.25 && y >= -0.75 && y <= 0.25 && old_ad_lvl[iel] < max_level
+                    adapt_flags[iel] = refine_flag
+                else
+                    adapt_flags[iel] = nothing_flag
                 end
             end
         end
