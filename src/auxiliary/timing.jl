@@ -16,11 +16,11 @@ mutable struct MPIFunctionTimer
 end
 
 """
-    reset_timer!(timer::MPIFunctionTimer)
+    je_reset_timer!(timer::MPIFunctionTimer)
 
 Reset the timer to initial state
 """
-function reset_timer!(timer::MPIFunctionTimer)
+function je_reset_timer!(timer::MPIFunctionTimer)
     timer.total_time = 0.0
     timer.call_count = 0
     timer.min_time = Inf
