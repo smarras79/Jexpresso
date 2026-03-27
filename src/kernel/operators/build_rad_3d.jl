@@ -1364,10 +1364,17 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
             @rankinfo rank "Writing output"
             title = @sprintf "Solution-Radiation"
-            write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
-              0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-              ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
-              return
+            if (inputs[:outformat] == VTK())
+                write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                    0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                    ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
+                return
+            elseif (inputs[:outformat] == NETCDF())
+                write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                    0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                    ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
+                return
+            end
         else
             
             @rankinfo rank "Writing output"
