@@ -771,133 +771,168 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
 end
 
-function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
-                      iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                      iout=1, nvar=1, qexact=zeros(1,nvar), case="",
+                      comm=MPI.COMM_WORLD)
 
-    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(varnames, Tuple)    || isa(varnames, String))    varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
-    
+
     nvar    = size(varnames, 1)
-    noutvar = max(nvar, size(outvarnames,1))
-    npoin   = mesh.npoin
-    
-    xx = zeros(size(mesh.x,1))
-    yy = zeros(size(mesh.x,1))
-    zz = zeros(size(mesh.x,1))
-    xx .= mesh.x 
-    yy .= mesh.y
-    zz .= mesh.z
-    nsubelem = mesh.nelem*(mesh.ngl-1)^3
-    subelem  = Array{Int64}(undef, nsubelem, 8)
-    
+    noutvar = max(nvar, size(outvarnames, 1))
+
+    rank   = MPI.Comm_rank(comm)
+    nranks = MPI.Comm_size(comm)
+
+    # ----------------------------------------------------------------
+    # local sizes
+    # ----------------------------------------------------------------
+    local_npoin    = mesh.npoin
+    local_nsubelem = mesh.nelem * (mesh.ngl - 1)^3
+
+    # ----------------------------------------------------------------
+    # global sizes
+    # ----------------------------------------------------------------
+    global_npoin    = MPI.Allreduce(local_npoin,    +, comm)
+    global_nsubelem = MPI.Allreduce(local_nsubelem, +, comm)
+
+    # ----------------------------------------------------------------
+    # local coordinates
+    # ----------------------------------------------------------------
+    xx = copy(mesh.x)
+    yy = copy(mesh.y)
+    zz = copy(mesh.z)
+
+    # ----------------------------------------------------------------
+    # build local subelement connectivity using ip2gip for global node indices
+    # ----------------------------------------------------------------
+    subelem = Array{Int64}(undef, local_nsubelem, 8)
     isel = 1
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
             for j = 1:mesh.ngl-1
                 for k = 1:mesh.ngl-1
-                    ip1 = mesh.connijk[iel,i,j,k]
-                    ip2 = mesh.connijk[iel,i+1,j,k]
-                    ip3 = mesh.connijk[iel,i+1,j+1,k]
-                    ip4 = mesh.connijk[iel,i,j+1,k]
-                    
-                    ip5 = mesh.connijk[iel,i,j,k+1]
-                    ip6 = mesh.connijk[iel,i+1,j,k+1]
-                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
-                    ip8 = mesh.connijk[iel,i,j+1,k+1]
-
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    
-                    isel = isel + 1
+                    subelem[isel, :] = [
+                        mesh.ip2gip[mesh.connijk[iel,i,  j,  k  ]],
+                        mesh.ip2gip[mesh.connijk[iel,i+1,j,  k  ]],
+                        mesh.ip2gip[mesh.connijk[iel,i+1,j+1,k  ]],
+                        mesh.ip2gip[mesh.connijk[iel,i,  j+1,k  ]],
+                        mesh.ip2gip[mesh.connijk[iel,i,  j,  k+1]],
+                        mesh.ip2gip[mesh.connijk[iel,i+1,j,  k+1]],
+                        mesh.ip2gip[mesh.connijk[iel,i+1,j+1,k+1]],
+                        mesh.ip2gip[mesh.connijk[iel,i,  j+1,k+1]],
+                    ]
+                    isel += 1
                 end
             end
         end
     end
-    
-    #
-    # Fetch user-defined diagnostic vars or take them from the solution vars:
-    #
-    qout = zeros(Float64, npoin, noutvar)
-    @show noutvar
-    u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 
-    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".nc")
-    NCDataset(fout_name, "c") do ds
-        
-        # dimensions
-        defDim(ds, "nMesh3d_node", npoin)
-        defDim(ds, "nMesh3d_volume", nsubelem)
-        defDim(ds, "nMaxMesh3d_volume_nodes", 8)
+    # ----------------------------------------------------------------
+    # diagnostic output vars
+    # ----------------------------------------------------------------
+    qout = zeros(Float64, local_npoin, noutvar)
+    u2uaux!(qaux, q, nvar, local_npoin)
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], local_npoin, nvar, noutvar)
 
-        # --- the mesh topology "dummy" variable with your exact attributes ---
-        mesh = defVar(ds, "mesh", Int32, ())  # scalar dummy
-        mesh.attrib["cf_role"]                  = "mesh_topology"
-        mesh.attrib["long_name"]                = "Topology of a 3-d unstructured mesh"
-        mesh.attrib["topology_dimension"]       = 3
-        mesh.attrib["node_coordinates"]         = "Mesh3d_node_x Mesh3d_node_y Mesh3d_node_z"
-        mesh.attrib["volume_node_connectivity"] = "Mesh3d_volume_nodes"
-        mesh.attrib["volume_shape_type"]        = "Mesh3d_vol_types"
-        mesh.attrib["volume_dimension"]         = "nMesh3d_volume"
+    # ----------------------------------------------------------------
+    # gather everything to rank 0
+    # ----------------------------------------------------------------
+    all_ip2gip  = MPI.gather(mesh.ip2gip, comm; root=0)
+    all_xx      = MPI.gather(xx,          comm; root=0)
+    all_yy      = MPI.gather(yy,          comm; root=0)
+    all_zz      = MPI.gather(zz,          comm; root=0)
+    all_subelem = MPI.gather(subelem,     comm; root=0)
+    all_qout    = [MPI.gather(qout[:,ivar], comm; root=0) for ivar in 1:noutvar]
 
-        vol_types = defVar(ds, "Mesh3d_vol_types", Int32, ("nMesh3d_volume",))
-        vol_types.attrib["cf_role"]       = "volume_shape_type"
-        vol_types.attrib["long_name"]     = "Specifies the shape of the individual volumes."
-        vol_types.attrib["flag_range"]    = [0, 2]                # integer array
-        vol_types.attrib["flag_values"]   = [0, 1, 2]             # integer array
-        vol_types.attrib["flag_meanings"] = "tetrahedron wedge hexahedron"
+    # ----------------------------------------------------------------
+    # rank 0 writes serially
+    # ----------------------------------------------------------------
+    if rank == 0
+        all_ip2gip  = vcat(all_ip2gip...)
+        all_xx      = vcat(all_xx...)
+        all_yy      = vcat(all_yy...)
+        all_zz      = vcat(all_zz...)
+        all_subelem = vcat(all_subelem...)
+        all_qout    = [vcat(all_qout[ivar]...) for ivar in 1:noutvar]
 
+        perm = sortperm(all_ip2gip)
+        # reorder node data by global index
+        perm = sortperm(all_ip2gip)
 
-        # node coordinates
-        nx = defVar(ds, "Mesh3d_node_x", Float64, ("nMesh3d_node",))
-        ny = defVar(ds, "Mesh3d_node_y", Float64, ("nMesh3d_node",))
-        nz = defVar(ds, "Mesh3d_node_z", Float64, ("nMesh3d_node",))
-        nx.attrib["standard_name"] = "projection_x_coordinate"
-        nx.attrib["units"]         = "m"
-        ny.attrib["standard_name"] = "projection_y_coordinate"
-        ny.attrib["units"]         = "m"
-        nz.attrib["standard_name"] = "projection_z_coordinate"
-        nz.attrib["units"]         = "m"
+        fout_name = string(OUTPUT_DIR, "/iter_", iout, ".nc")
+        mkpath(dirname(fout_name))
 
-        # volum->node connectivity 
-        FILL = Int32(2_147_483_647)
-        v2n = defVar(ds, "Mesh3d_volume_nodes", Int32, ("nMesh3d_volume", "nMaxMesh3d_volume_nodes");fillvalue=FILL)
-        v2n.attrib["cf_role"]     = "volume_node_connectivity"
-        v2n.attrib["start_index"] = 1   # choose 1-based; UGRID default is 0-based if unspecified
+        NCDataset(fout_name, "c") do ds
 
-        for ivar = 1:noutvar
+            # ---- dimensions ----
+            defDim(ds, "nMesh3d_node",            global_npoin)
+            defDim(ds, "nMesh3d_volume",          global_nsubelem)
+            defDim(ds, "nMaxMesh3d_volume_nodes", 8)
 
-            # Define data variable
-            data_var = defVar(ds, "q$(ivar)", Float64, ("nMesh3d_node",))
-            
-            # Add attributes for data
-            data_var.attrib["long_name"] = "q$(ivar) field"
-            data_var.attrib["location"]  = "node"
-            data_var.attrib["units"]     = "N/A"
-            data_var[:]                  = qout[:,ivar]
+            # ---- mesh topology ----
+            mesh_var = defVar(ds, "mesh", Int32, ())
+            mesh_var.attrib["cf_role"]                  = "mesh_topology"
+            mesh_var.attrib["long_name"]                = "Topology of a 3-d unstructured mesh"
+            mesh_var.attrib["topology_dimension"]       = 3
+            mesh_var.attrib["node_coordinates"]         = "Mesh3d_node_x Mesh3d_node_y Mesh3d_node_z"
+            mesh_var.attrib["volume_node_connectivity"] = "Mesh3d_volume_nodes"
+            mesh_var.attrib["volume_shape_type"]        = "Mesh3d_vol_types"
+            mesh_var.attrib["volume_dimension"]         = "nMesh3d_volume"
+
+            # ---- volume types ----
+            vol_types = defVar(ds, "Mesh3d_vol_types", Int32, ("nMesh3d_volume",))
+            vol_types.attrib["cf_role"]       = "volume_shape_type"
+            vol_types.attrib["long_name"]     = "Specifies the shape of the individual volumes."
+            vol_types.attrib["flag_range"]    = [0, 2]
+            vol_types.attrib["flag_values"]   = [0, 1, 2]
+            vol_types.attrib["flag_meanings"] = "tetrahedron wedge hexahedron"
+
+            # ---- node coordinates ----
+            nx = defVar(ds, "Mesh3d_node_x", Float64, ("nMesh3d_node",))
+            ny = defVar(ds, "Mesh3d_node_y", Float64, ("nMesh3d_node",))
+            nz = defVar(ds, "Mesh3d_node_z", Float64, ("nMesh3d_node",))
+            nx.attrib["standard_name"] = "projection_x_coordinate"
+            nx.attrib["units"]         = "m"
+            ny.attrib["standard_name"] = "projection_y_coordinate"
+            ny.attrib["units"]         = "m"
+            nz.attrib["standard_name"] = "projection_z_coordinate"
+            nz.attrib["units"]         = "m"
+
+            # ---- connectivity ----
+            FILL = Int32(2_147_483_647)
+            v2n = defVar(ds, "Mesh3d_volume_nodes", Int32,
+                         ("nMesh3d_volume", "nMaxMesh3d_volume_nodes"); fillvalue=FILL)
+            v2n.attrib["cf_role"]     = "volume_node_connectivity"
+            v2n.attrib["start_index"] = 1
+
+            # ---- solution variables ----
+            data_vars = [defVar(ds, "q$(ivar)", Float64, ("nMesh3d_node",)) for ivar = 1:noutvar]
+            for ivar = 1:noutvar
+                data_vars[ivar].attrib["long_name"] = "q$(ivar) field"
+                data_vars[ivar].attrib["location"]  = "node"
+                data_vars[ivar].attrib["units"]     = "N/A"
+            end
+
+            # ---- global attributes ----
+            ds.attrib["title"]       = "Unstructured data"
+            ds.attrib["Conventions"] = "CF-1.11 UGRID-1.0"
+
+            # ---- write data (nodes reordered by global index) ----
+            vol_types[:] = fill(Int32(2), global_nsubelem)
+            nx[:]        = all_xx[perm]
+            ny[:]        = all_yy[perm]
+            nz[:]        = all_zz[perm]
+            v2n[:]       = all_subelem
+            for ivar = 1:noutvar
+                data_vars[ivar][:] = all_qout[ivar][perm]
+            end
+
         end
-            
-        # Add global attributes
-        ds.attrib["title"] = "Unstructured data"
-        ds.attrib["Conventions"] = "CF-1.11 UGRID-1.0"
-
-        volume_type = zeros(Int32, nsubelem)
-        fill!(volume_type, 2)
-        vol_types[:] = volume_type
-        nx[:]        = xx
-        ny[:]        = yy
-        nz[:]        = zz
-        v2n[:]       = subelem
-            
     end
+
+    MPI.Barrier(comm)
 
 end

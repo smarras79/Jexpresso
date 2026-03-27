@@ -1136,8 +1136,15 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             restart = 30,
             tol     = 1e-4)
     else
-        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total;
-        npoin_g = npoin_ang_total)
+        x_warm = Float64[]
+        if (inputs[:lmanufactured_solution])
+            x_warm = ref
+        end
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+        npoin_g = npoin_ang_total,
+        precond = :none,
+        restart = 200,
+        tol     = 1e-4)
     end
 
     @rankinfo rank "Solve complete."
@@ -1365,10 +1372,17 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             
             @rankinfo rank "Writing output"
             title = @sprintf "Solution-Radiation"
-            write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
-              0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-              ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
-              return
+            if (inputs[:outformat] == VTK())
+                write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
+                0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+                return
+            elseif (inputs[:outformat] == NETCDF())
+                write_NetCDF(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
+                0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+                return
+            end
         end
     end
 

@@ -48,6 +48,7 @@ MPICH_jll = "7cb0a576-ebde-5e09-9194-50597f1243b4"
 MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
+NetCDF_jll = "7243133f-43d8-5620-bbf4-c2c921802cf3"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 P4est = "7d669430-f675-4ae7-b43e-fab78ec5a902"
 P4est_wrapper = "3743d7c0-8adf-11ea-380b-7d33b0ecc1da"
@@ -84,10 +85,19 @@ LinearOperators = "2.13.0"
 MPICH_jll = "4.3.2"
 MPIPreferences = "0.1.11"
 NearestNeighbors = "0.4.27"
+NetCDF_jll = "401.900.300"
 P4est = "0.4.11"
 Preferences = "1.5.2"
 PrettyTables = "2.4.0"
 QuadGK = "2.11.2"
 Serialization = "1.11.0"
 
-
+[preferences.MPIPreferences]
+__clear__ = ["preloads_env_switch"]
+_format = "1.0"
+abi = "MPICH"
+binary = "system"
+cclibs = []
+libmpi = "/opt/homebrew/Cellar/mpich/4.3.0/lib/libmpi.12.dylib"
+mpiexec = "/opt/homebrew/bin/mpiexec"
+preloads = []
