@@ -46,7 +46,8 @@ function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
 
     comm = MPI.COMM_WORLD
 
-    z = Array(mesh.z)  # ensure CPU array
+    z         = Array(mesh.z)  # ensure CPU array
+    gip2owner = Array(mesh.gip2owner)
 
     # Gather all unique z values across all ranks
     local_z_unique = sort(unique(round.(z; digits=8)))
@@ -67,11 +68,13 @@ function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
 
     nz = length(z_levels)
 
-    # Build local index groups for each global z-level
+    # Build local index groups for each global z-level — owned points only
+    # so that Allreduce counts each shared boundary node exactly once.
     z_groups = Vector{Vector{Int64}}(undef, nz)
     local_counts = zeros(Int64, nz)
     for iz in 1:nz
-        ids = findall(x -> abs(x - z_levels[iz]) < 1e-6, z)
+        ids = findall(ip -> abs(z[ip] - z_levels[iz]) < 1e-6 && gip2owner[ip] == rank,
+                      1:length(z))
         z_groups[iz] = ids
         local_counts[iz] = length(ids)
     end
@@ -509,16 +512,19 @@ function build_les_cross_section(mesh, basis, nprofiles::Int, nstress::Int, T)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    x = Array(mesh.x)
-    z = Array(mesh.z)
+    x         = Array(mesh.x)
+    z         = Array(mesh.z)
+    gip2owner = Array(mesh.gip2owner)
     npoin_local = length(x)
 
     xr = round.(x; digits=6)
     zr = round.(z; digits=6)
 
-    # Build local (x,z) → point index groups efficiently
+    # Build local (x,z) → point index groups — owned points only
+    # so that Allreduce counts each shared boundary node exactly once.
     xz_to_local = Dict{Tuple{Float64,Float64}, Vector{Int64}}()
     for ip in 1:npoin_local
+        gip2owner[ip] == rank || continue
         key = (xr[ip], zr[ip])
         push!(get!(xz_to_local, key, Int64[]), ip)
     end
