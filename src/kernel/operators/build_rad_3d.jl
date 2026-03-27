@@ -508,12 +508,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
             P    = nc_mat'
             rest = nc_mat
-            @info "checking equality of nc_mat and nc_mat_rhs", maximum(nc_mat-nc_mat_rhs), minimum(nc_mat-nc_mat_rhs)
-            rows_mat, vals_mat = findnz(nc_mat[:, 199435])
-            rows_rhs, vals_rhs = findnz(nc_mat_rhs[:, 199435])
-            @info "nc_mat entries" collect(zip(rows_mat, vals_mat))
-            @info "nc_mat_rhs entries" collect(zip(rows_rhs, vals_rhs))
-            @info "Same rows?" sort(rows_mat) == sort(rows_rhs)
+            
             Md = assemble_mass_diagonal_3Dby2D_adaptive(
                 ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
                 extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
@@ -609,26 +604,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         ref = zeros(TFloat, n_spa)
         BDY = zeros(TFloat, n_spa_g)
 
-        row_199435 = MLHS[199435, :]
-        @info "nnz in MLHS row 199435" nnz(row_199435)
-        @info "MLHS row 199435" findnz(row_199435)
-        row_202540 = MLHS[202540, :]
-        @info "nnz in MLHS row 202540" nnz(row_202540)
-        row_199435 = A_left_restricted[199435, :]
-        @info "nnz in MLHS row 199435" nnz(row_199435)
-        @info "MLHS row 199435" findnz(row_199435)
-        row_202540 = A_left_restricted[202540, :]
-        @info "nnz in MLHS row 202540" nnz(row_202540)
-        row_199435 = A_both_restricted[199435, :]
-        @info "nnz in MLHS row 199435" nnz(row_199435)
-        @info "MLHS row 199435" findnz(row_199435)
-        row_202540 = A_both_restricted[202540, :]
-        @info "nnz in MLHS row 202540" nnz(row_202540)
-        row_199435 = A[199435, :]
-        @info "nnz in MLHS row 199435" nnz(row_199435)
-        @info "MLHS row 199435" findnz(row_199435)
-        row_202540 = A[202540, :]
-        @info "nnz in MLHS row 202540" nnz(row_202540)
+        
+       
         
 
     else  # ── Non-adaptive path ────────────────────────────────────────────────
@@ -1007,7 +984,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     # Check if the system is consistent
     @info "norm(B_consistent)" norm(B)
     @info "norm(LHS_restricted)" norm(As, Inf)
-    @info "Initial residual" norm(B - As * zeros(n_spa))
 
     # Check diagonal
     d = diag(As)
@@ -1035,22 +1011,23 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     n_fixed = 0
     n_small = 0
     n_big = 0
-
-    for ip = 1:n_spa
-        ip in boundary_set && continue
-        if d[ip] < 0
-            # Get original physics diagonal from MLHS
-            original_diag = MLHS[ip,ip]
-            if (original_diag > 1e-6)
-                n_big +=1
-            end
-            if (original_diag < 1e-6)
-                n_small +=1
-            end
-            if original_diag > 0
-                As[ip, ip] = original_diag
-                #@info "Fixed negative diagonal at node $ip: $(diag(As)[ip]) → $original_diag"
-                n_fixed +=1
+    if (inputs[:adaptive_extra_meshes] && (inputs[:RT_shortwave] || inputs[:RT_longwave]))
+        for ip = 1:n_spa
+            ip in boundary_set && continue
+            if d[ip] < 0
+                # Get original physics diagonal from MLHS
+                original_diag = MLHS[ip,ip]
+                if (original_diag > 1e-6)
+                    n_big +=1
+                end
+                if (original_diag < 1e-6)
+                    n_small +=1
+                end
+                if original_diag > 0
+                    As[ip, ip] = original_diag
+                    #@info "Fixed negative diagonal at node $ip: $(diag(As)[ip]) → $original_diag"
+                    n_fixed +=1
+                end
             end
         end
     end
@@ -1126,7 +1103,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             g_gip2ip = gid_to_extended_parents,
             precond  = :none,
             restart  = 500,
-            tol      = 1e-7)
+            tol      = 1e-10)
 
        
 
@@ -1167,7 +1144,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     @rankinfo rank "Solve complete."
     #A = nothing; RHS = nothing; GC.gc()
     @info maximum(solution), minimum(solution)
-    @info solution[199435]
+   
     # ── Solution prolongation ─────────────────────────────────────────────────
     solution_new = zeros(Float64, n_spa)
     if inputs[:adaptive_extra_meshes]
@@ -1288,18 +1265,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 end
             end
         end
-    
-        ip_k1 = mesh.connijk[14, 5, 3, 1]
-        ip_k2 = mesh.connijk[14, 5, 3, 2]
-        ip_k3 = mesh.connijk[14, 5, 3, 3]
-        ip_k4 = mesh.connijk[14, 5, 3, 4]
-        ip_k5 = mesh.connijk[14, 5, 3, 5]
-        @info "int_sol_accum k=1" int_sol_accum[ip_k1]
-        @info "int_sol_accum k=2" int_sol_accum[ip_k2]
-        @info "int_sol_accum k=1" int_sol_accum[ip_k3]
-        @info "int_sol_accum k=2" int_sol_accum[ip_k4]
-        @info "int_sol_accum k=2" int_sol_accum[ip_k5]
-        @info abs(int_sol_accum[ip_k1]-int_sol_accum[ip_k2])/maximum(int_sol_accum)
 
         gnpoin_spa  = mesh.gnpoin
         g_int_sol   = zeros(Float64, gnpoin_spa)

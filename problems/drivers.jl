@@ -80,7 +80,7 @@ function driver(nparts,
 
         # Apply refinement: rebuild mesh with AMR framework using adapt_flags
         # (AMR is already enabled in inputs, just rebuild with custom refinement flags)
-        sem, partitioned_model = sem_setup(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, nothing)
+        sem, partitioned_model = sem_setup(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, sem.mesh, sem.interp, nothing, nothing)
 
         if rank == 0
             @info "[Stage 0] Spatial refinement complete"

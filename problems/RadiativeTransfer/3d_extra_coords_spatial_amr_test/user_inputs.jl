@@ -26,7 +26,7 @@ function user_inputs()
         # Mesh parameters: Use small uniform mesh for testing
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
-        :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/RICO_5x5.msh",
+        :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/hexa_TFI_3d_rad.msh",
         #---------------------------------------------------------------------------
         # Extra dimensions (angular mesh)
         #---------------------------------------------------------------------------
