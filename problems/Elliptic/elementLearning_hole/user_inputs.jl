@@ -11,27 +11,27 @@ function user_inputs()
         :ldss_laplace         => true,
         :lsparse              => true,
         :lelementLearning     => true,
-        :lEL_Sample           => true,
+        #:lEL_Sample           => true,
         :Nsamp                => 50000,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+       # :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/jexpresso_domain_unique_bcs.msh",
-      #  :gmsh_filename        => "./meshes/gmsh_grids/jex-el_domain_unique_bcs.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/jex-el_domain_unique_bcs.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/plate_word_unit.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_unit_square_10x10el.msh",
         #---------------------------------------------------------------------------
         # static adaptivity
         #---------------------------------------------------------------------------
-        #:lpreadapt       => true,
+        :lpreadapt       => true,
         :amr_max_level   => 1,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -55,7 +55,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output/",
+        :output_dir          => "/projects/smarras/smarras/EL/",
+        #:output_dir          => "./output/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
     ) #Dict
