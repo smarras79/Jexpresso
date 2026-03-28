@@ -246,6 +246,14 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
     T = eltype(A)
 
     if isfile(onnx_path)
+        
+        # Tell ORT exactly how many threads to use — disables affinity probing
+        env   = ONNXRunTime.OrtEnv()
+        opts  = ONNXRunTime.OrtSessionOptions()
+        ONNXRunTime.SetIntraOpNumThreads(opts, 1)          # or Threads.nthreads()
+        ONNXRunTime.SetInterOpNumThreads(opts, 1)
+        ONNXRunTime.DisableCpuMemArena(opts)               # optional but helpful on clusters
+        
         sess        = ONNXRunTime.load_inference(onnx_path)
         input_name  = first(sess.input_names)
         output_name = first(sess.output_names)
