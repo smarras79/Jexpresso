@@ -4657,7 +4657,8 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 p_model_r         = partitioned_model_tmp
                 mesh_r_o          = mesh_tmp
                 p_model_r_o       = partitioned_model_tmp
-                while current_max_ad_lv < max_ad_lv
+                cnt               = 0
+                while current_max_ad_lv < max_ad_lv && cout < 4
                     mesh_r = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
                                             nop=TInt(inputs[:nop]),
                                             ngr=TInt(inputs[:nop_laguerre]+1),
@@ -4665,9 +4666,10 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                     ref_coarse_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
                     do_preadapt!(ref_coarse_flags, inputs, mesh_r_o)
                     p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, ref_coarse_flags, p_model_r_o, mesh_r_o)
-                    current_max_ad_lv = maximum(mesh_r.ad_lvl)
+                    current_max_ad_lv = MPI.Allreduce(maximum(mesh_r.ad_lvl), MPI.MAX, comm)
                     mesh_r_o          = mesh_r
                     p_model_r_o       = p_model_r
+                    cnt              += 1
                 end
                 mesh              = mesh_r
                 partitioned_model = p_model_r
