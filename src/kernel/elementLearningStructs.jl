@@ -247,16 +247,16 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
 
     if isfile(onnx_path)
         
-        # Tell ORT exactly how many threads to use — disables affinity probing
-        env   = ONNXRunTime.OrtEnv()
-        opts  = ONNXRunTime.OrtSessionOptions()
-        ONNXRunTime.SetIntraOpNumThreads(opts, 1)          # or Threads.nthreads()
-        ONNXRunTime.SetInterOpNumThreads(opts, 1)
-        ONNXRunTime.DisableCpuMemArena(opts)               # optional but helpful on clusters
+        # Must be set before the ORT session is created
+        ENV["OMP_NUM_THREADS"]        = "1"
+        ENV["ORT_NUM_THREADS"]        = "1"
+        ENV["OPENBLAS_NUM_THREADS"]   = "1"   # avoids contention with Julia's BLAS
+        #ENV["OMP_NUM_THREADS"] = string(Sys.CPU_THREADS)
         
         sess        = ONNXRunTime.load_inference(onnx_path)
         input_name  = first(sess.input_names)
         output_name = first(sess.output_names)
+        
     else
         sess = nothing
         input_name  = "nothing"
