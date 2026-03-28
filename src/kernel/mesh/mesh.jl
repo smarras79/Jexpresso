@@ -2856,6 +2856,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
     end
 
+    # WARNING: this will be removed when x,y,z is fulyl replaced by coords
+    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
+    mesh.coords[:,1] = mesh.x[:]
+    if mesh.nsd > 1
+        mesh.coords[:,2] = mesh.y[:]
+        if mesh.nsd > 2
+            mesh.coords[:,3] = mesh.z[:]
+        end
+    end
+
     #open("./COORDS_GLOBAL.dat", "w") do f
     #    for ip = 1:mesh.npoin
     #        #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
@@ -4709,15 +4719,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 
         end
 
-        # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
-        mesh.coords[:,1] = mesh.x[:]
-        if mesh.nsd > 1
-            mesh.coords[:,2] = mesh.y[:]
-            if mesh.nsd > 2
-                mesh.coords[:,3] = mesh.z[:]
-            end
-        end
+
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
