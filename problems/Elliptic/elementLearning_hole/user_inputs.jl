@@ -55,7 +55,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/projects/smarras/smarras/EL/",
+        :output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
         #:output_dir          => "./output/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
