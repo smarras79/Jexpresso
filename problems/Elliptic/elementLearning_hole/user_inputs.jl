@@ -12,10 +12,19 @@ function user_inputs()
         :lsparse              => true,
         :lelementLearning     => true,
         #:lEL_Sample           => true,
-        :NNfile               => "JX_NN_model.onnx",
-        #:NNfile               => "JX_RFRC_best_model.onnx",
+        #:NNfile               => "JX_NN_model.onnx",
+        :NNfile               => "JX_RFRC_model.onnx",
         :Nsamp                => 50000,
         :rconst               => [0.0],
+        #---------------------------------------------------------------------------
+        # Plotting parameters
+        #---------------------------------------------------------------------------
+        :outformat           => "vtk",
+        #:output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
+        #:output_dir          => "./output-RNN/",
+        :output_dir          => "./output-RFRC/",
+        #:output_dir          => "./output-Axb/",
+        :loverwrite_output   => true,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -53,14 +62,6 @@ function user_inputs()
         :yscale              => 3.14,
         :xdisp               => 1.0,
         :ydisp               => 0.0,
-        #---------------------------------------------------------------------------
-        # Plotting parameters
-        #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-        #:output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
-        :output_dir          => "./output-Axb-solver/",
-        :loverwrite_output   => true,
-        #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
