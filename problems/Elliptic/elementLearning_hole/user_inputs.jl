@@ -14,6 +14,7 @@ function user_inputs()
         #:lEL_Sample           => true,
         #:NNfile               => "JX_NN_model.onnx",
         :NNfile               => "JX_RFRC_model.onnx",
+        #:NNfile               => "JX_RFRC_final.jld2",
         :Nsamp                => 50000,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
@@ -23,6 +24,7 @@ function user_inputs()
         #:output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
         #:output_dir          => "./output-RNN/",
         :output_dir          => "./output-RFRC/",
+        #:output_dir          => "./output-RFRC-JLD2/",
         #:output_dir          => "./output-Axb/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------

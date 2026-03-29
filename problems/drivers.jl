@@ -286,6 +286,7 @@ function driver(nparts,
                                              total_cols_writtenin=total_cols_writtenin,
                                              total_cols_writtenout=total_cols_writtenout)
 
+
                         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... DONE")))
                         usol = params.qp.qn
                         neqs = params.qp.neqs
@@ -351,10 +352,14 @@ function driver(nparts,
                                                          params.inputs, params.AD, sem.mesh.SD)
                     
                     println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage ..............")))
-                    sol = @btime solveAx($sem.matrix.L, $RHS, inputs[:ode_solver])
+
+                    #solAxb = @btime solveAx($sem.matrix.L, $RHS, inputs[:ode_solver])
+                    #sol = solAxb.u
+                    solAxb = sem.matrix.L \ RHS
+                    sol = solAxb
+
                     println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage .............. DONE")))
-                    
-                    args = (params.SD, sol.u, params.uaux, 1, 1,
+                    args = (params.SD, sol, params.uaux, 1, 1,
                             sem.mesh, nothing,
                             nothing, nothing,
                             0.0, 0.0, 0.0,
