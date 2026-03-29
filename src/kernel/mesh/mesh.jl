@@ -2856,6 +2856,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
     end
 
+    # WARNING: this will be removed when x,y,z is fulyl replaced by coords
+    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
+    mesh.coords[:,1] = mesh.x[:]
+    if mesh.nsd > 1
+        mesh.coords[:,2] = mesh.y[:]
+        if mesh.nsd > 2
+            mesh.coords[:,3] = mesh.z[:]
+        end
+    end
+
     #open("./COORDS_GLOBAL.dat", "w") do f
     #    for ip = 1:mesh.npoin
     #        #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
@@ -4658,6 +4668,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 mesh_r_o          = mesh_tmp
                 p_model_r_o       = partitioned_model_tmp
                 while current_max_ad_lv < max_ad_lv
+                    prev_max_ad_lv = current_max_ad_lv
                     mesh_r = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
                                             nop=TInt(inputs[:nop]),
                                             ngr=TInt(inputs[:nop_laguerre]+1),
@@ -4665,7 +4676,11 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                     ref_coarse_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
                     do_preadapt!(ref_coarse_flags, inputs, mesh_r_o)
                     p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, ref_coarse_flags, p_model_r_o, mesh_r_o)
-                    current_max_ad_lv = maximum(mesh_r.ad_lvl)
+                    current_max_ad_lv = MPI.Allreduce(maximum(mesh_r.ad_lvl), MPI.MAX, comm)
+                    if current_max_ad_lv == prev_max_ad_lv
+                        println(" No new refinement occurred: stop refining")
+                        break
+                    end
                     mesh_r_o          = mesh_r
                     p_model_r_o       = p_model_r
                 end
@@ -4704,15 +4719,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 
         end
 
-        # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
-        mesh.coords[:,1] = mesh.x[:]
-        if mesh.nsd > 1
-            mesh.coords[:,2] = mesh.y[:]
-            if mesh.nsd > 2
-                mesh.coords[:,3] = mesh.z[:]
-            end
-        end
+
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
