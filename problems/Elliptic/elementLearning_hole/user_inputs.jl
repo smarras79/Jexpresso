@@ -12,6 +12,8 @@ function user_inputs()
         :lsparse              => true,
         :lelementLearning     => true,
         #:lEL_Sample           => true,
+        :NNfile               => "JX_NN_model.onnx",
+        #:NNfile               => "JX_RFRC_best_model.onnx",
         :Nsamp                => 50000,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
@@ -22,8 +24,8 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/jexpresso_domain_unique_bcs.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/jex-el_domain_unique_bcs.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/plate_word_unit.msh",
@@ -31,8 +33,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # static adaptivity
         #---------------------------------------------------------------------------
-        :lpreadapt       => true,
-        :amr_max_level   => 1,
+        #:lpreadapt       => true,
+        #:amr_max_level   => 1,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -55,8 +57,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
-        #:output_dir          => "./output/",
+        #:output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
+        :output_dir          => "./output-Axb-solver/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
     ) #Dict

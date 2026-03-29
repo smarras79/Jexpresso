@@ -150,12 +150,13 @@ function driver(nparts,
                         A_∂τ∂τ  = A[sem.mesh.∂τ, sem.mesh.∂τ]
                         avisc   = zeros(TFloat, 1, ngl^2)          # shape fixed, values change each iter
                         nfeatures = size(avisc, 2)
-
+                        
                         wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
                                               nelintpoints, elnbdypoints,
-                                              "./JX_NN_model.onnx")  # load_inference called ONCE here
+                                              inputs[:NNfile])  # load_inference called ONCE here
 
-                        for isamp = 1:inputs[:Nsamp]
+                        Nsamples = inputs[:Nsamp]
+                        for isamp = 1:Nsamples
                             println(" # --- sample = $isamp")
 
                             # avisc changes each sample — update values in-place, no reallocation
@@ -267,10 +268,10 @@ function driver(nparts,
                         nfeatures    = size(avisc, 2)
                         A            = sem.matrix.L
                         A_∂τ∂τ       = A[sem.mesh.∂τ, sem.mesh.∂τ]   # needed by EL_WorkBuffers constructor
-
+                        
                         wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
                                               nelintpoints, elnbdypoints,
-                                              "./JX_NN_model.onnx")
+                                              inputs[:NNfile])
                         
                         total_cols_writtenin  = 0
                         total_cols_writtenout = 0
