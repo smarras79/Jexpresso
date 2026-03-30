@@ -37,6 +37,8 @@ Base.@kwdef mutable struct LESCrossSection{T <: AbstractFloat}
     n_samples    ::Int                              # number of snapshots accumulated
     sum_mean     ::Matrix{T}                        # nxz × nprofiles: running sum of global_mean
     sum_stress   ::Matrix{T}                        # nxz × nstress:   running sum of global_stress
+    # VTK cell connectivity — works for both flat and terrain-following meshes
+    xz_cells     ::Vector{NTuple{4,Int64}}          # quad corner indices (into xz_coords)
     # spectral cache (built once; nothing if spectra disabled)
     spec_cache   ::Union{Nothing, LESSpectralCache}
 end
@@ -566,6 +568,44 @@ function build_les_cross_section(mesh, basis, nprofiles::Int, nstress::Int, T)
     npts_per_xz = zeros(Int64, nxz)
     MPI.Allreduce!(local_counts, npts_per_xz, MPI.SUM, comm)
 
+    # Build VTK quad connectivity from element structure.
+    # Using connijk[iel, ix, 1, iz] (fixing iy=1) extracts the xz face of each
+    # element; works for both flat and terrain-following meshes.  Quads from
+    # all y-elements at the same (ie,ke) map to identical ixz corner indices
+    # and are deduplicated via a Set.
+    coord_to_ixz = Dict{Tuple{Float64,Float64}, Int64}(
+        xz_coords[ixz] => ixz for ixz in 1:nxz)
+
+    connijk_arr = Array(mesh.connijk)  # (nelem, ngl, ngl, ngl)
+    ngl_c       = mesh.ngl
+    x_arr       = Array(mesh.x)
+    z_arr       = Array(mesh.z)
+
+    seen_quads = Set{NTuple{4,Int64}}()
+    xz_cells   = NTuple{4,Int64}[]
+
+    for iel in 1:mesh.nelem
+        for ix in 1:ngl_c-1, iz in 1:ngl_c-1
+            ip1 = connijk_arr[iel, ix,   1, iz  ]
+            ip2 = connijk_arr[iel, ix+1, 1, iz  ]
+            ip3 = connijk_arr[iel, ix+1, 1, iz+1]
+            ip4 = connijk_arr[iel, ix,   1, iz+1]
+            k1 = (round(x_arr[ip1]; digits=6), round(z_arr[ip1]; digits=6))
+            k2 = (round(x_arr[ip2]; digits=6), round(z_arr[ip2]; digits=6))
+            k3 = (round(x_arr[ip3]; digits=6), round(z_arr[ip3]; digits=6))
+            k4 = (round(x_arr[ip4]; digits=6), round(z_arr[ip4]; digits=6))
+            i1 = get(coord_to_ixz, k1, 0)
+            i2 = get(coord_to_ixz, k2, 0)
+            i3 = get(coord_to_ixz, k3, 0)
+            i4 = get(coord_to_ixz, k4, 0)
+            (i1 > 0 && i2 > 0 && i3 > 0 && i4 > 0) || continue
+            dedup_key = tuple(sort!(Int64[i1, i2, i3, i4])...)
+            dedup_key in seen_quads && continue
+            push!(seen_quads, dedup_key)
+            push!(xz_cells, (i1, i2, i3, i4))
+        end
+    end
+
     cs = LESCrossSection{T}(
         xz_coords, xz_groups, npts_per_xz,
         zeros(T, nxz, nprofiles), zeros(T, nxz, nprofiles),
@@ -573,6 +613,7 @@ function build_les_cross_section(mesh, basis, nprofiles::Int, nstress::Int, T)
         zeros(T, nprofiles),      zeros(T, nstress),
         0,
         zeros(T, nxz, nprofiles), zeros(T, nxz, nstress),
+        xz_cells,
         nothing
     )
     # cs.spec_cache = build_les_spectral_cache(cs, mesh, basis)
@@ -640,24 +681,10 @@ function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing,
     lesstress_vars  = params.inputs[:lesstress_vars]
     nxz             = length(cs.xz_coords)
 
-    # Unique sorted x and z values — shared by xz and spectra grids
-    xs = sort(unique(p[1] for p in cs.xz_coords))
-    zs = sort(unique(p[2] for p in cs.xz_coords))
-    nx = length(xs)
-    nz = length(zs)
-
-    coord_to_idx = Dict{Tuple{Float64,Float64}, Int}(p => i for (i, p) in enumerate(cs.xz_coords))
-
-    # VTK_QUAD cells on the (x,z) plane
-    xz_cells = MeshCell[]
-    for ix in 1:nx-1, iz in 1:nz-1
-        i1 = get(coord_to_idx, (xs[ix],   zs[iz]  ), 0)
-        i2 = get(coord_to_idx, (xs[ix+1], zs[iz]  ), 0)
-        i3 = get(coord_to_idx, (xs[ix+1], zs[iz+1]), 0)
-        i4 = get(coord_to_idx, (xs[ix],   zs[iz+1]), 0)
-        i1 > 0 && i2 > 0 && i3 > 0 && i4 > 0 &&
-            push!(xz_cells, MeshCell(VTKCellTypes.VTK_QUAD, [i1, i2, i3, i4]))
-    end
+    # VTK_QUAD cells — connectivity built from element structure at init time,
+    # so this works for both flat and terrain-following meshes.
+    xz_cells_vtk = [MeshCell(VTKCellTypes.VTK_QUAD, [i1, i2, i3, i4])
+                    for (i1, i2, i3, i4) in cs.xz_cells]
 
     # Point coordinates — xz plane, y = 0
     x_pts = [p[1] for p in cs.xz_coords]
@@ -666,7 +693,7 @@ function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing,
 
     # ---- instantaneous xz snapshot ----
     fout_name = joinpath(params.inputs[:output_dir], @sprintf("les_xz_%06d", iout))
-    vtk = vtk_grid(fout_name, x_pts, y_pts, z_pts, xz_cells)
+    vtk = vtk_grid(fout_name, x_pts, y_pts, z_pts, xz_cells_vtk)
     for k in 1:nprofiles
         vtk[lesprofile_vars[k], VTKPointData()] = cs.global_mean[:, k]
     end
@@ -682,7 +709,7 @@ function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing,
     # ---- time-averaged xz (running average, overwritten each call) ----
     ns = cs.n_samples
     fout_tavg = joinpath(params.inputs[:output_dir], "les_xz_tavg")
-    vtk_tavg  = vtk_grid(fout_tavg, x_pts, y_pts, z_pts, xz_cells)
+    vtk_tavg  = vtk_grid(fout_tavg, x_pts, y_pts, z_pts, xz_cells_vtk)
     for k in 1:nprofiles
         vtk_tavg[lesprofile_vars[k], VTKPointData()] = cs.sum_mean[:, k] ./ ns
     end
@@ -711,12 +738,7 @@ function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing,
     # VTK_HEXAHEDRON cells: each xz-quad extruded between κ-slices ik and ik+1
     spec_cells = MeshCell[]
     for ik in 1:nk-1
-        for ix in 1:nx-1, iz in 1:nz-1
-            i1 = get(coord_to_idx, (xs[ix],   zs[iz]  ), 0)
-            i2 = get(coord_to_idx, (xs[ix+1], zs[iz]  ), 0)
-            i3 = get(coord_to_idx, (xs[ix+1], zs[iz+1]), 0)
-            i4 = get(coord_to_idx, (xs[ix],   zs[iz+1]), 0)
-            (i1>0 && i2>0 && i3>0 && i4>0) || continue
+        for (i1, i2, i3, i4) in cs.xz_cells
             b1=(ik-1)*nxz+i1; b2=(ik-1)*nxz+i2; b3=(ik-1)*nxz+i3; b4=(ik-1)*nxz+i4
             t1= ik   *nxz+i1; t2= ik   *nxz+i2; t3= ik   *nxz+i3; t4= ik   *nxz+i4
             push!(spec_cells, MeshCell(VTKCellTypes.VTK_HEXAHEDRON,
