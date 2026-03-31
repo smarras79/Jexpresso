@@ -8,7 +8,7 @@ function user_inputs()
         :tinit                => 0,
         :tend                 => 10800.0,
 	#:tend                 => 1.0,
-	:lrestart             => true,
+	#:lrestart             => true,
 	#:restart_output_file_path => "",
 	:restart_time         => 3600.0,
 	:diagnostics_at_times => (0:10:1250..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
