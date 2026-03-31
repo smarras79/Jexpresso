@@ -665,10 +665,6 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     θ_inside = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                                     θ_sfc    = Tabs[ipsfc]*(PhysConst.pref/uaux[ipsfc,end])^(1/PhysConst.cpoverR)
                                 end
-                                T_sfc    = 299.88 #K
-                                p_sfc    = 101200.0
-                                θ_sfc    = T_sfc*(PhysConst.pref/p_sfc)^(1/PhysConst.cpoverR)
-                                z_sfc    = coords[ipsfc, 3]
 
                                 Δx = coords[ip1, 1] - coords[ipsfc, 1]
                                 Δy = coords[ip1, 2] - coords[ipsfc, 2]
@@ -676,6 +672,9 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 z_inside = abs(Δx*nx[iface,i,j] + Δy*ny[iface,i,j] + Δz*nz[iface,i,j])
 
                                 if (micro > 1)
+                                    T_sfc    = 299.88 #K
+                                    p_sfc    = 101200.0
+                                    θ_sfc    = T_sfc*(PhysConst.pref/p_sfc)^(1/PhysConst.cpoverR)
                                     qv_in  = uaux[ip1, 6]/ρ
                                     qv_sfc = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
                                     CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
