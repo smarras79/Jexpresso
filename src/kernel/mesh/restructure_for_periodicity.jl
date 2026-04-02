@@ -2600,3 +2600,130 @@ function detect_periodic_ncf_parent_gels!(mesh, periodic_direction, elm2pelm)
         end
     end
 end
+
+function detect_periodic_ncf_parent_gels_2D!(mesh, periodic_direction, elm2pelm)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    ngl  = mesh.ngl
+
+    # ---- Phase 1: each rank collects its periodic boundary edges ----
+    local_iel = Int[]
+    local_gel = eltype(elm2pelm)[]
+    local_rk  = Int[]
+    cx1_loc   = Float64[]   # tangential centroid coordinate (along the edge)
+    cx3_loc   = Float64[]   # normal centroid coordinate (discriminates the two sides)
+    x1mn_loc  = Float64[]   # edge extent (tangential min)
+    x1mx_loc  = Float64[]   # edge extent (tangential max)
+
+    for iedge_bdy = 1:size(mesh.bdy_edge_type, 1)
+        mesh.bdy_edge_type[iedge_bdy] == periodic_direction || continue
+        iel = mesh.bdy_edge_in_elem[iedge_bdy]
+        gel = elm2pelm[iel]
+        cx = 0.0; cy = 0.0
+        x1mn = Inf; x1mx = -Inf
+        for k = 1:ngl
+            ip = mesh.poin_in_bdy_edge[iedge_bdy, k]
+            xx = mesh.x[ip]; yy = mesh.y[ip]
+            cx += xx; cy += yy
+            if periodic_direction == "periodicx"
+                x1mn = min(x1mn, yy); x1mx = max(x1mx, yy)
+            else  # "periodicy"
+                x1mn = min(x1mn, xx); x1mx = max(x1mx, xx)
+            end
+        end
+        npts = Float64(ngl)
+        push!(local_iel, iel); push!(local_gel, gel); push!(local_rk, rank)
+        if periodic_direction == "periodicx"
+            push!(cx1_loc, cy/npts); push!(cx3_loc, cx/npts)
+        else  # "periodicy"
+            push!(cx1_loc, cx/npts); push!(cx3_loc, cy/npts)
+        end
+        push!(x1mn_loc, x1mn); push!(x1mx_loc, x1mx)
+    end
+
+    gel_g  = MPI.gather(local_gel, comm)
+    cx1_g  = MPI.gather(cx1_loc,  comm)
+    cx3_g  = MPI.gather(cx3_loc,  comm)
+    x1mn_g = MPI.gather(x1mn_loc, comm)
+    x1mx_g = MPI.gather(x1mx_loc, comm)
+
+    # ---- Phase 2 (rank 0): detect coarser-side (parent) elements ----
+    parent_gels_r0 = eltype(elm2pelm)[]
+
+    if rank == 0
+        all_gel  = vcat(gel_g...)
+        all_cx1  = vcat(cx1_g...)
+        all_cx3  = vcat(cx3_g...)
+        all_x1mn = vcat(x1mn_g...)
+        all_x1mx = vcat(x1mx_g...)
+
+        if length(all_gel) > 0
+            x3v_min, x3v_max = extrema(all_cx3)
+            idx_min = findall(v -> AlmostEqual(v, x3v_min), all_cx3)
+            idx_max = findall(v -> AlmostEqual(v, x3v_max), all_cx3)
+
+            # Use sigdigits (relative precision) so that small centroid values near
+            # z=0 in stretched meshes are still distinguished correctly.
+            # digits=5 (absolute) would map both 1.49e-5 and 7.45e-6 to 1e-5,
+            # causing false conforming matches in the NCF detection.
+            key(v) = round(v; sigdigits=6)
+
+            max_cmap = Dict{Float64, Int}()
+            for k in idx_max
+                max_cmap[key(all_cx1[k])] = k
+            end
+            min_cmap = Dict{Float64, Int}()
+            for k in idx_min
+                min_cmap[key(all_cx1[k])] = k
+            end
+            conform_keys_min = Set(keys(filter(kv -> haskey(max_cmap, kv[1]), min_cmap)))
+            conform_keys_max = Set(keys(filter(kv -> haskey(min_cmap, kv[1]), max_cmap)))
+
+            nonconform_max = filter(k -> key(all_cx1[k]) ∉ conform_keys_max, idx_max)
+            nonconform_min = filter(k -> key(all_cx1[k]) ∉ conform_keys_min, idx_min)
+
+            tol = 1e-8
+            parent_gel_set = Set{eltype(elm2pelm)}()
+
+            # min-side children → max-side parents
+            for k in idx_min
+                key(all_cx1[k]) in conform_keys_min && continue
+                c1 = all_cx1[k]
+                for p in nonconform_max
+                    c1 > all_x1mn[p]-tol && c1 < all_x1mx[p]+tol || continue
+                    (all_x1mx[k]-all_x1mn[k]) < (all_x1mx[p]-all_x1mn[p]) - tol || continue
+                    push!(parent_gel_set, all_gel[p])
+                    break
+                end
+            end
+            # max-side children → min-side parents
+            for k in idx_max
+                key(all_cx1[k]) in conform_keys_max && continue
+                c1 = all_cx1[k]
+                for p in nonconform_min
+                    c1 > all_x1mn[p]-tol && c1 < all_x1mx[p]+tol || continue
+                    (all_x1mx[k]-all_x1mn[k]) < (all_x1mx[p]-all_x1mn[p]) - tol || continue
+                    push!(parent_gel_set, all_gel[p])
+                    break
+                end
+            end
+            parent_gels_r0 = collect(parent_gel_set)
+        end
+    end
+
+    # ---- Phase 3: broadcast parent gel IDs; each rank records locally-owned ones ----
+    nparents = (rank == 0) ? Int32(length(parent_gels_r0)) : Int32(0)
+    nparents = MPI.Bcast(nparents, 0, comm)
+    parent_gels_all = zeros(eltype(elm2pelm), nparents)
+    if rank == 0
+        parent_gels_all .= parent_gels_r0
+    end
+    MPI.Bcast!(parent_gels_all, 0, comm)
+
+    gel_to_iel = Dict{eltype(elm2pelm), Int}(local_gel[i] => local_iel[i] for i in eachindex(local_iel))
+    for gel in parent_gels_all
+        if haskey(gel_to_iel, gel)
+            push!(mesh.periodic_ncf_parent_gels, Int64(gel))
+        end
+    end
+end

@@ -2859,14 +2859,17 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
 end
 
 function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
-                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, params; ladapt = true) nothing end
+                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, q_el, q_el_pro,
+                           cache_ghost_p, q_ghost_p,
+                           cache_ghost_c, q_ghost_c,
+                           interp; ladapt=true, neqs=3) nothing end
 
 function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
-                           SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs,
+                           SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD,
                            q_el, q_el_pro,
                            cache_ghost_p, q_ghost_p,
                            cache_ghost_c, q_ghost_c,
-                           interp; ladapt = true)
+                           interp; ladapt=true, neqs=4)
     nelem = mesh.nelem
     npoin = mesh.npoin
     ngl = mesh.ngl
@@ -2911,11 +2914,11 @@ end
 
 
 function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
-                           SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs,
+                           SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD,
                            q_el, q_el_pro,
                            cache_ghost_p, q_ghost_p,
                            cache_ghost_c, q_ghost_c,
-                           interp; ladapt = true)
+                           interp; ladapt=true, neqs=5)
     nelem = mesh.nelem
     npoin = mesh.npoin
     ngl = mesh.ngl
@@ -3154,6 +3157,9 @@ function do_adapt!(adapt_flags, inputs, mesh, uaux, qp,
     # adapt4periodicity!(adapt_flags, mesh, mesh.SD, inputs[:amr_max_level])
 end
 
+function do_preadapt!(adapt_flags, inputs, mesh)
+    user_get_preadapt_flags!(adapt_flags, inputs, mesh, mesh.ad_lvl, mesh.connijk, mesh.nelem, mesh.ngl, inputs[:preadapt_max_level])
+end
 
 function amr_strategy!(args...)
     # @info size(params.uaux), size(u)

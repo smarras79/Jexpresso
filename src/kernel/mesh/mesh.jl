@@ -1765,10 +1765,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 end
             end
         end
+        if ladaptive
+            empty!(mesh.periodic_ncf_parent_gels)
+            detect_periodic_ncf_parent_gels_2D!(mesh, "periodicx", elm2pelm)
+            detect_periodic_ncf_parent_gels_2D!(mesh, "periodicy", elm2pelm)
+            total_peri_ncf = MPI.Allreduce(length(mesh.periodic_ncf_parent_gels), MPI.SUM, comm)
+            println_rank(" # Periodic NCF parent elements detected: $(total_peri_ncf) (will be refined by amr_strategy!)"; msg_rank = rank, suppress = false)
+        end
+        MPI.Barrier(comm)
         restructure4periodicity_2D(mesh, norx, "periodicx")
         restructure4periodicity_2D(mesh, nory, "periodicy")
-        restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
-        restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
+        # restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
+        # restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
         mesh.gel2owner = find_gip_owner(mesh.el2gel)
         mesh.sib2owner = find_gip_owner(mesh.el2sib)
 
@@ -1886,7 +1894,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
     println_rank(" # Load balance (min/avg/max ratio)   : ",
                 min_ratio, " / ", avg_ratio, " / ", max_ratio;
-                msg_rank = rank, suppress = mesh.msg_suppress)
+                msg_rank = rank)
 
     # --- Owned-point count balance (absolute DSS work per rank) ---
     owned_ip_f = Float64(owned_ip)
@@ -1895,7 +1903,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     avg_owned = MPI.Allreduce(owned_ip_f, MPI.SUM, comm) / mpi_size
     println_rank(" # Owned points (min/avg/max)          : ",
                 min_owned, " / ", round(avg_owned, digits=1), " / ", max_owned;
-                msg_rank = rank, suppress = mesh.msg_suppress)
+                msg_rank = rank)
 
     # --- Wall-model BC load balance (bottom boundary faces per rank) ---
     n_bottom_faces = count(==("MOST"), mesh.bdy_face_type)
@@ -1906,7 +1914,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     println_rank(" # Bottom faces (min/avg/max)          : ",
                 min_bot, " / ", round(avg_bot, digits=1), " / ", max_bot,
                 "  [imbalance: ", round(max_bot / max(avg_bot, 1.0), digits=2), "×]";
-                msg_rank = rank, suppress = mesh.msg_suppress)
+                msg_rank = rank)
 
     # for i = 0:MPI.Comm_size(comm)-1
     #     if i == rank
@@ -3702,10 +3710,8 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-
-    # lpreadapt = inputs[:lpreadapt]
-    lpreadapt = false
-    max_ad_lv = inputs[:amr_max_level]
+    lpreadapt = inputs[:lpreadapt]
+    max_ad_lv = inputs[:preadapt_max_level]
 
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
@@ -3732,19 +3738,35 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 mesh_r_o          = mesh_tmp
                 p_model_r_o       = partitioned_model_tmp
                 while current_max_ad_lv < max_ad_lv
+                    prev_max_ad_lv = current_max_ad_lv
                     mesh_r = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
                                             nop=TInt(inputs[:nop]),
                                             ngr=TInt(inputs[:nop_laguerre]+1),
                                             SD=NSD_1D())
-                    ref_coarse_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
-                    do_preadapt!(ref_coarse_flags, inputs, mesh_r_o)
-                    p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, ref_coarse_flags, p_model_r_o, mesh_r_o)
-                    current_max_ad_lv = maximum(mesh_r.ad_lvl)
+                    preadapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
+                    do_preadapt!(preadapt_flags, inputs, mesh_r_o)
+                    p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, preadapt_flags, p_model_r_o, mesh_r_o)
+                    current_max_ad_lv = MPI.Allreduce(maximum(mesh_r.ad_lvl), MPI.MAX, comm)
+                    if current_max_ad_lv == prev_max_ad_lv && !mesh_r_o.lneed_redistribute
+                        println(" No new refinement occurred: stop refining")
+                        break
+                    end
                     mesh_r_o          = mesh_r
                     p_model_r_o       = p_model_r
                 end
-                mesh              = mesh_r
-                partitioned_model = p_model_r
+                if (mesh_r.lneed_redistribute)
+                    # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
+                    mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+                                                nop=TInt(inputs[:nop]),
+                                                ngr=TInt(inputs[:nop_laguerre]+1),
+                                                SD=NSD_1D())
+                    preadapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r.nelem))
+                    do_preadapt!(preadapt_flags, inputs, mesh_r)
+                    partitioned_model, glue_redistribute = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute, preadapt_flags, p_model_r, mesh_r)
+                else
+                    mesh = mesh_r
+                    partitioned_model = p_model_r
+                end
             else
                 mesh              = mesh_tmp
                 partitioned_model = partitioned_model_tmp

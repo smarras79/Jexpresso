@@ -794,6 +794,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lpreadapt))
         inputs[:lpreadapt] = false
     end
+    
+    if(!haskey(inputs, :preadapt_max_level))
+        inputs[:preadapt_max_level] = 0
+    end
 
     if inputs[:lpreadapt] == true
         inputs[:ladapt] = true

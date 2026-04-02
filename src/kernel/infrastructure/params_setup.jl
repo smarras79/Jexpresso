@@ -259,22 +259,20 @@ function params_setup(sem,
                           sem.QT, sem.mesh.connijk,
                           sem.mesh, sem.matrix.Minv, 
                           sem.metrics.Je, sem.ω, sem.AD, 
-                          qp.neqs,
                           q_el, q_el_pro,
                           cache_ghost_p, q_ghost_p,
                           cache_ghost_c, q_ghost_c,
-                          sem.interp; ladapt = inputs[:ladapt])
+                          sem.interp; ladapt=inputs[:ladapt], neqs=qp.neqs)
         conformity4ncf_q!(qp.qe, rhs_el_tmp, @view(utmp[:,:]), vaux, 
                           g_dss_cache_qp,
                           sem.mesh.SD, 
                           sem.QT, sem.mesh.connijk, 
                           sem.mesh, sem.matrix.Minv, 
                           sem.metrics.Je, sem.ω, sem.AD, 
-                          qp.neqs,
                           q_el, q_el_pro,
                           cache_ghost_p, q_ghost_p,
                           cache_ghost_c, q_ghost_c,
-                          sem.interp; ladapt = inputs[:ladapt])
+                          sem.interp; ladapt=inputs[:ladapt], neqs=qp.neqs)
         MPI.Barrier(comm)
         if rank == 0
             @info "end conformity4ncf_q!"

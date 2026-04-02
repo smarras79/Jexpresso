@@ -291,10 +291,23 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
 
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
-    if (inputs[:bdy_fluxes])
+    PhysConst        = PhysicalConst{Float64}()
+    micro            = size(Tabs, 1)
+    lbdy_fluxes      = inputs[:bdy_fluxes]::Bool
+    lbulk_fluxes     = inputs[:bulk_fluxes]::Bool
+    SOL_VARS_TYPE    = inputs[:SOL_VARS_TYPE]
+    ifirst_wall_node = inputs[:ifirst_wall_node_index]::Int
+    δhf              = inputs[:δhf]
+    user_heatflux    = inputs[:user_heatflux]
+
+    τ_f_local = zeros(Float64, 3)
+    wθ_local  = zeros(Float64, 1)
+    wqv_local = zeros(Float64, 1)
+
+    if (lbdy_fluxes)
         for iedge = 1:nedges_bdy
             F_surf .= 0.0
-            if (inputs[:bulk_fluxes])
+            if (lbulk_fluxes)
                 for i = 1:ngl
                     ip  = poin_in_bdy_edge[iedge,i]
                     e   = bdy_edge_in_elem[iedge]
@@ -317,24 +330,100 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                 for i = 1:ngl
                     ip  = poin_in_bdy_edge[iedge,i]
                     e   = bdy_edge_in_elem[iedge]
-                    ip1 = connijk[e,i,ngl]
-                    
-                    user_bc_neumann!(@view(F_surf[i,:]), uaux[ip,:], uaux[ip1,:],
-                                     qe[ip,:], qe[ip1,:],
-                                     bdy_edge_type[iedge],
-                                     @view(coords[ip,:]), inputs[:SOL_VARS_TYPE])
+                    ip1 = connijk[e, i, ifirst_wall_node]
+
+                    θ  = 0.0
+                    θ1 = 0.0
+                    qn1 = 0
+                    qn2 = 0
+                    if (micro > 1)
+                        qn1 = qn[ip]
+                        qn2 = qn[ip1]
+                        if (Tabs[ip] < 1)
+                            θ  = uaux[ip,  4]/uaux[ip,  1]
+                            θ1 = uaux[ip1, 4]/uaux[ip1, 1]
+                        else
+                            θ  = Tabs[ip] *(PhysConst.pref/uaux[ip,  end])^(1/PhysConst.cpoverR)
+                            θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1, end])^(1/PhysConst.cpoverR)
+                        end
+                    end
+
+                    if (bdy_edge_type[iedge] == "MOST")
+                        ipsfc = connijk[e, i, 1]
+                        if SOL_VARS_TYPE == TOTAL()
+                            ρ        = uaux[ip1, 1]
+                            u_inside = uaux[ip1, 2]/ρ
+                            w_inside = uaux[ip1, 3]/ρ
+                            θ_inside = uaux[ip1, 4]/ρ
+                            θ_sfc    = uaux[ipsfc, 4]/uaux[ipsfc, 1]
+                        else # PERT
+                            ρ        = uaux[ip1, 1] + qe[ip1, 1]
+                            u_inside = (uaux[ip1, 2] + qe[ip1, 2])/ρ
+                            w_inside = (uaux[ip1, 3] + qe[ip1, 3])/ρ
+                            θ_inside = (uaux[ip1, 4] + qe[ip1, 4])/ρ
+                            θ_sfc    = (uaux[ipsfc, 4] + qe[ipsfc, 4])/(uaux[ipsfc, 1] + qe[ipsfc, 1])
+                        end
+
+                        vprojectedaux = u_inside*nx[iedge,i] + w_inside*ny[iedge,i]
+                        u_inside = u_inside - vprojectedaux*nx[iedge,i]
+                        w_inside = w_inside - vprojectedaux*ny[iedge,i]
+
+                        if (micro > 1)
+                            θ_inside = Tabs[ip1] *(PhysConst.pref/uaux[ip1,  end])^(1/PhysConst.cpoverR)
+                            θ_sfc    = Tabs[ipsfc]*(PhysConst.pref/uaux[ipsfc, end])^(1/PhysConst.cpoverR)
+                        end
+
+                        Δx = coords[ip1, 1] - coords[ipsfc, 1]
+                        Δy = coords[ip1, 2] - coords[ipsfc, 2]
+                        z_inside = abs(Δx*nx[iedge,i] + Δy*ny[iedge,i])
+
+                        if (micro > 1)
+                            T_sfc   = 299.88 #K
+                            p_sfc   = 101200.0
+                            θ_sfc   = T_sfc*(PhysConst.pref/p_sfc)^(1/PhysConst.cpoverR)
+                            qv_in   = uaux[ip1, 5]/ρ
+                            qv_sfc  = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
+                            CM_MOST!(τ_f_local, wθ_local, wqv_local,
+                                     ρ, u_inside, 0.0, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                     qv_in, qv_sfc, 2e-4, 2e-4)
+                        else
+                            CM_MOST!(τ_f_local, wθ_local,
+                                     ρ, u_inside, 0.0, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                     0.1, 0.01)
+                        end
+
+                        F_surf[i, 2] = τ_f_local[1]
+                        F_surf[i, 3] = τ_f_local[3]
+
+                        if (micro > 1)
+                            F_surf[i, 4] = ρ*PhysConst.cp*wθ_local[1] + ρ*PhysConst.Lc*wqv_local[1]
+                            F_surf[i, 5] = wqv_local[1]
+                        else
+                            F_surf[i, 4] = wθ_local[1]*(1.0 - δhf) + user_heatflux*δhf
+                        end
+                    else
+                        user_bc_neumann!(@view(F_surf[i,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
+                                         @view(qe[ip,:]), @view(qe[ip1,:]),
+                                         bdy_edge_type[iedge],
+                                         @view(coords[ip,:]),
+                                         τ_f_local, wθ_local, SOL_VARS_TYPE, PhysConst;
+                                         θ  = θ,
+                                         θ1 = θ1,
+                                         qn0 = qn1,
+                                         qn1 = qn2)
+                    end
                 end
             end
             compute_segment_integral!(S_face, F_surf, ω, Jef, iedge, ngl)
         end
     end
-    if (inputs[:bdy_fluxes])
+    if (lbdy_fluxes)
         DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
-        
+
         for ieq = 1:neqs
             RHS[:, ieq] .+= S_flux[:,ieq]
         end
-    
+
     end
 end
 

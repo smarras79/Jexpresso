@@ -192,8 +192,10 @@ function time_loop!(inputs, params, u, args...)
         println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
         @mystop()
     else
+        ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+        dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
         solution = solve(prob,
-                         inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                         inputs[:ode_solver], dt=dt,
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                          callback = CallbackSet(cb, cb_restart, cb_les_stat), tstops = dosetimes,
                          save_everystep = false,
