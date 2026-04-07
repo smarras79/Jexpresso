@@ -49,33 +49,28 @@ function driver(nparts,
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
 
-    # Stage 0 RT spatial AMR test: Apply selective refinement if requested
+    # Stage 1 RT spatial AMR test: Apply selective refinement if requested
     if (inputs[:lRT_problem]) && haskey(inputs, :lRT_spatial_amr) && inputs[:lRT_spatial_amr] == true
         if rank == 0
-            @info "[Stage 0] Applying selective spatial refinement for RT spatial AMR test..."
+            @info "[Stage 1b] Applying selective spatial refinement for RT spatial AMR cache test..."
         end
 
-        # Create refinement flags for specific elements (center region)
+        # Create refinement flags for specific elements
         adapt_flags = zeros(Int, sem.mesh.nelem)
-        for iel = 1:sem.mesh.nelem
-            x_elem = mean([sem.mesh.x[sem.mesh.connijk[iel,i,j,k]]
-                          for i=1:sem.mesh.ngl for j=1:sem.mesh.ngl for k=1:sem.mesh.ngl])
-            y_elem = mean([sem.mesh.y[sem.mesh.connijk[iel,i,j,k]]
-                          for i=1:sem.mesh.ngl for j=1:sem.mesh.ngl for k=1:sem.mesh.ngl])
 
-            # Refine if in central region
-            is_center_x = (x_elem > sem.mesh.xmin + 0.25*(sem.mesh.xmax - sem.mesh.xmin)) &&
-                         (x_elem < sem.mesh.xmin + 0.75*(sem.mesh.xmax - sem.mesh.xmin))
-            is_center_y = (y_elem > sem.mesh.ymin + 0.25*(sem.mesh.ymax - sem.mesh.ymin)) &&
-                         (y_elem < sem.mesh.ymin + 0.75*(sem.mesh.ymax - sem.mesh.ymin))
+        # Stage 1 verification: Refine only a single element (simplest case for cache verification)
+        # This tests:
+        # 1. Cache initialization with one local hanging facet
+        # 2. Single-element refinement hanging node pattern
+        # 3. SpatialAMRCache population
 
-            if is_center_x && is_center_y
-                adapt_flags[iel] = 1  # Mark for refinement
-            end
+        if sem.mesh.nelem > 0
+            # Mark element 1 for refinement (simplest test)
+            adapt_flags[14] = 1
         end
 
         if rank == 0
-            @info "[Stage 0] Marked $(sum(adapt_flags)) elements for refinement"
+            @info "[Stage 1b] Marked $(sum(adapt_flags)) element(s) for refinement (single-element test)"
         end
 
         # Apply refinement: rebuild mesh with AMR framework using adapt_flags
@@ -83,8 +78,12 @@ function driver(nparts,
         sem, partitioned_model = sem_setup(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, sem.mesh, sem.interp, nothing, nothing)
 
         if rank == 0
-            @info "[Stage 0] Spatial refinement complete"
-            @info "[Stage 0] Refined mesh: $(sem.mesh.nelem) elements, $(sem.mesh.num_hanging_facets) hanging facets"
+            @info "[Stage 1b] Spatial refinement complete"
+            @info "[Stage 1b] Refined mesh: $(sem.mesh.nelem) elements, $(sem.mesh.num_hanging_facets) hanging facets"
+            @info "[Stage 1b] Spatial non-conforming facets (ncf): $(sem.mesh.num_ncf)"
+            if sem.mesh.num_ncf > 0
+                @info "[Stage 1b] ✓ Cache will be initialized with $(sem.mesh.num_ncf) spatial hanging facets"
+            end
         end
     end
 

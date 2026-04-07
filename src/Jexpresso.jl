@@ -139,6 +139,8 @@ include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
 
+include(joinpath( "kernel", "mesh", "extra_mesh_spatial_amr.jl"))
+
 include(joinpath( "kernel", "mesh", "pole_handling.jl"))
 
 include(joinpath( "kernel", "bases", "basis_structs.jl"))
@@ -194,6 +196,12 @@ include(joinpath("kernel", "operators", "build_rad_2d.jl"))
 include(joinpath("kernel", "operators", "build_rad_3d.jl"))
 
 include(joinpath( "kernel", "operators", "angular_comms.jl"))
+
+include(joinpath( "kernel", "operators", "spatial_amr_cache.jl"))
+
+include(joinpath( "kernel", "operators", "spatial_constraint_matrices.jl"))
+
+include(joinpath( "kernel", "operators", "spatial_ghost_comms.jl"))
 
 include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
 

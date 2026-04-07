@@ -15,7 +15,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 2,      # Low polynomial order for fast testing
+        :nop                 => 4,      # Low polynomial order for fast testing
         #---------------------------------------------------------------------------
         # Physical parameters
         #---------------------------------------------------------------------------

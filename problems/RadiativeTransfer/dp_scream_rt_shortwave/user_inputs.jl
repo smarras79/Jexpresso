@@ -43,7 +43,7 @@ function user_inputs()
         :RT_ϕ0 => 0.0,
         :RT_radiative_heating => true,
         :extra_dimensions    => 2,
-        :adaptive_extra_meshes => true,
+        :adaptive_extra_meshes => false,
         :RT_amr_threshold => [0.99999],
         :extra_dimensions_order => 3,
         :extra_dimensions_nelemx => 3,
@@ -64,7 +64,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk", #"hdf5",
+        :outformat           => "netcdf", #"hdf5",
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

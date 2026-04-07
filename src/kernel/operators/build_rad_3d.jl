@@ -1,7 +1,6 @@
 using SparseArrays
 
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Logging helper: only rank 0 prints to avoid redundant multi-process output.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -195,21 +194,21 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     rank   = MPI.Comm_rank(MPI.COMM_WORLD)
     comm   = MPI.COMM_WORLD
 
-    # ── Stage 0: Check for spatial non-conformity ──────────────────────────────
-    # Spatial adaptive mesh support is under development. Currently only angular
-    # non-conformity is supported. This check provides graceful error handling.
-    has_spatial_hanging_nodes = !ismissing(mesh.num_hanging_facets) && mesh.num_hanging_facets > 0
+    # ── Stage 1b: Initialize Spatial AMR Cache ──────────────────────────────────
+    # Stage 1: Spatial Mesh Infrastructure Integration
+    # Initialize cache structure to hold spatial AMR data for constraint assembly.
+    spatial_amr_cache = SpatialAMRCache(
+        element_refinement_levels = Vector{Int}(mesh.ad_lvl),
+        num_spatial_hanging_facets = mesh.num_ncf
+    )
 
-    if has_spatial_hanging_nodes
-        @rankinfo rank "[$rank] Spatial non-conformity detected:"
-        @rankinfo rank "  - Number of hanging facets: $(mesh.num_hanging_facets)"
-        @rankinfo rank "  - Status: Spatial constraint support NOT YET IMPLEMENTED"
-        @rankinfo rank "  - Workaround: Use conforming spatial mesh (no AMR)"
-        @rankinfo rank "  - Target: Full spatial-angular non-conformity support in development"
-        error("[Rank $rank] Radiative transfer solver does not yet support spatial mesh non-conformity. " *
-              "Please use a conforming spatial mesh (no spatial AMR). " *
-              "Spatial-angular constraint support planned for Stage 1+ of development.")
-    end
+    # Compute GLOBAL max to ensure all ranks make same decision (prevent MPI divergence)
+    local_has_spatial = mesh.num_ncf > 0 ? 1 : 0
+    global_has_spatial = MPI.Allreduce(local_has_spatial, MPI.MAX, MPI.COMM_WORLD)
+    has_spatial_hanging_nodes = global_has_spatial == 1
+    @info rank, has_spatial_hanging_nodes
+    # Stage 2-3 will be called after angular mesh setup (either adaptive or uniform)
+    # Cache initialized but constraint building deferred until mesh fully available
 
     if inputs[:adaptive_extra_meshes]
         gip2owner_extra = []
@@ -526,6 +525,39 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @info "norm(MLHS, 1)" norm(M_inv*LHS, 1)
         end  # if adapted
 
+        # ── Stage 2-3: Spatial Constraints with Adaptive Angular Mesh ─────────────
+        if has_spatial_hanging_nodes
+            @info "[$rank] Building spatial constraints with adaptive angular mesh (Stage 2+)..."
+            try
+                spatial_amr_cache = build_spatial_constraint_matrices(
+                    mesh, spatial_amr_cache,
+                    extra_meshes_coords, extra_meshes_connijk,
+                    extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                    ngl, rank
+                )
+                @info "[$rank] ✓ Spatial constraint matrices built with adaptive angular"
+                @info "[$rank]   - $(length(spatial_amr_cache.parent_weights)) hanging nodes"
+
+                verify_spatial_constraints(spatial_amr_cache, rank, npoin, extra_meshes_extra_nelems, extra_meshes_extra_nops)
+                @info "[$rank] ✓ Verification passed"
+
+                spatial_amr_cache = exchange_spatial_ghosts(
+                    mesh, spatial_amr_cache,
+                    extra_meshes_coords, extra_meshes_connijk,
+                    extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                    rank, comm
+                )
+                @info "[$rank] ✓ Ghost exchange complete (Stage 3)"
+                verify_spatial_ghost_exchange(spatial_amr_cache, rank)
+
+                error("[Rank $rank] Stages 2-3 complete: Spatial constraints built with adaptive angular mesh. " *
+                      "Stages 4-5 (RHS/Matrix assembly) not yet implemented.")
+            catch err
+                @rankinfo rank "[$rank] Error: $err"
+                rethrow(err)
+            end
+        end
+
         # ── Mass matrix assembly and inversion ────────────────────────────────
         pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
         if pM !== nothing
@@ -603,12 +635,70 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         RHS = zeros(TFloat, n_spa_g)
         ref = zeros(TFloat, n_spa)
         BDY = zeros(TFloat, n_spa_g)
-
-        
-       
         
 
     else  # ── Non-adaptive path ────────────────────────────────────────────────
+
+        # ── Stage 2-3: Spatial Constraints with Uniform Angular Mesh ─────────────
+        R_spatial = nothing  # Will hold spatial restriction matrix if needed
+        P_spatial = nothing  # Will hold spatial prolongation matrix if needed
+        spatial_hanging_nodes_all_angular = Set{Int}()  # BC exclusion set
+
+        if has_spatial_hanging_nodes
+            @info "[$rank] Building spatial constraints with uniform angular mesh (Stage 2+)..."
+
+            # Create arrays mimicking adaptive mesh structure for uniform case
+            extra_meshes_coords_uniform = [extra_mesh.extra_coords[:,:] for _ in 1:nelem]
+            extra_meshes_connijk_uniform = [extra_mesh.extra_connijk for _ in 1:nelem]
+            extra_meshes_extra_nops_uniform = [[extra_mesh.extra_nop[1] for _ in 1:extra_mesh.extra_nelem] for _ in 1:nelem]
+            extra_meshes_extra_nelems_uniform = [extra_mesh.extra_nelem for _ in 1:nelem]
+
+            try
+                spatial_amr_cache = build_spatial_constraint_matrices(
+                    mesh, spatial_amr_cache,
+                    extra_meshes_coords_uniform, extra_meshes_connijk_uniform,
+                    extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
+                    ngl, rank
+                )
+                @info "[$rank] ✓ Spatial constraint matrices built with uniform angular"
+                @info "[$rank]   - $(length(spatial_amr_cache.parent_weights)) hanging nodes"
+
+                verify_spatial_constraints(spatial_amr_cache, rank, npoin, extra_meshes_extra_nelems_uniform, extra_meshes_extra_nops_uniform)
+                @info "[$rank] ✓ Verification passed"
+
+                spatial_amr_cache = exchange_spatial_ghosts(
+                    mesh, spatial_amr_cache,
+                    extra_meshes_coords_uniform, extra_meshes_connijk_uniform,
+                    extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
+                    rank, comm
+                )
+                @info "[$rank] ✓ Ghost exchange complete (Stage 3)"
+                verify_spatial_ghost_exchange(spatial_amr_cache, rank)
+
+                # Collect all spatial-angular hanging node DOF indices for BC exclusion
+                # These nodes inherit constraints and should not have BCs applied directly
+                spatial_hanging_nodes_all_angular = Set{Int}()
+                n_ang = extra_mesh.extra_npoin
+                for spatial_hanging_id in keys(spatial_amr_cache.parent_weights)
+                    for i_ang = 1:n_ang
+                        dof_idx = (spatial_hanging_id - 1) * n_ang + i_ang
+                        push!(spatial_hanging_nodes_all_angular, dof_idx)
+                    end
+                end
+                @info "[$rank] Tracked $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs for BC exclusion"
+
+                # ── Stage 4 prep: Build spatial constraint matrices for RHS/LHS assembly ────
+                @info "[$rank] Building spatial restriction and prolongation matrices (Stage 4 prep)..."
+                R_spatial, P_spatial = build_spatial_restriction_and_prolongation(
+                    spatial_amr_cache, npoin, extra_mesh.extra_npoin, spatial_hanging_nodes_all_angular
+                )
+                @info "[$rank] ✓ Spatial matrices built: R_spatial = $(size(R_spatial)), P_spatial = $(size(P_spatial))"
+
+            catch err
+                @info "[$rank] Error: $err"
+                rethrow(err)
+            end
+        end
 
         npoin_ang_total = npoin * extra_mesh.extra_npoin
         n_spa = npoin_ang_total
@@ -640,13 +730,27 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
         M_inv = spdiagm(0 => 1.0 ./ Md)
-        A     = sparse(M_inv * LHS)
+        MLHS     = sparse(M_inv * LHS)
+        A = MLHS
         M_inv = nothing; LHS = nothing
         GC.gc()
 
         BDY = zeros(TFloat, npoin_ang_total)
         RHS = zeros(TFloat, npoin_ang_total)
         ref = zeros(TFloat, npoin_ang_total)
+
+        # ── Stage 5: Apply spatial constraints to LHS matrix (uniform angular mesh) ────
+        if has_spatial_hanging_nodes && R_spatial !== nothing
+            @info "[$rank] Applying spatial constraints to LHS matrix (Stage 5)..."
+            # Apply spatial restriction: A_spatial = R_spatial * A * P_spatial
+            @info maximum(A), minimum(A)
+            @info maximum(R_spatial), minimum(R_spatial)
+            A = sparse(R_spatial * A * P_spatial)
+            @info maximum(A), minimum(A)
+            @info "[$rank] ✓ Spatial LHS constraints applied: A = $(size(A))"
+            @info "check that A has empty rows for hanging nodes"
+            
+        end
     end  # adaptive / non-adaptive
 
     # ── Common setup: nc_mat row structure, free DOF count ────────────────────
@@ -810,7 +914,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
                         Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
 
-                        if is_boundary
+                        if is_boundary && !(ip_g in spatial_hanging_nodes_all_angular)
                             best_dot = 0.0
                             best_nx  = face_normals[1][1]
                             best_ny  = face_normals[1][2]
@@ -825,6 +929,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             end
                             
                             if best_dot < -1e-13
+                               
+                            
                                 val = 0.0
                                 if inputs[:RT_shortwave]
                                     val = user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ, bdy, sw, F_dir[ip], τ_nodes[ip], sw_ω₀_lateral, inputs[:rad_HG_g][ip])
@@ -837,6 +943,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                 if !haskey(boundary_dict, ip_g)
                                     boundary_dict[ip_g] = is_owned ? val : 0.0
                                 end
+                                
                             else
                                 if is_owned
                                     RHS[ip_g] = if inputs[:RT_shortwave]
@@ -863,6 +970,16 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 end
             end
         end
+    end
+
+    # ── Stage 4: Apply spatial constraints to RHS (uniform angular mesh) ────────
+    if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
+        @info "[$rank] Applying spatial constraints to RHS (Stage 4)..."
+        n_ang = extra_mesh.extra_npoin
+        @info maximum(RHS), minimum(RHS)
+        RHS = R_spatial * RHS#apply_spatial_constraint_to_rhs(RHS, spatial_amr_cache, n_ang)
+        @info "[$rank] ✓ Spatial RHS constraints applied"
+        @info maximum(RHS), minimum(RHS)
     end
 
     # ── Ghost boundary nodes (extended ghost-parent DOFs) ─────────────────────
@@ -921,6 +1038,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     if inputs[:adaptive_extra_meshes]
         #RHS_mass_weighted = Md .* RHS
         @rankinfo rank "Restricting RHS..."
+        @info maximum(RHS), minimum(RHS)
         rhs_effects_to_send =
             compute_hanging_rhs_effects_before_restriction(
                 ghost_constraint_data_rhs, RHS, ip2gip_spa, gip2owner_spa, rank)
@@ -946,11 +1064,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         B = RHS_red
 
     
-        #=for ip in all_hanging_nodes
+        for ip in all_hanging_nodes
             A[ip,ip] = 1.0
             B[ip] = 0.0
-        end=#
-        
+        end
+        @info "maxima of restricted RHS"
+        @info maximum(RHS), minimum(RHS)
     else
         for (node, val) in boundary_dict
             RHS[node] = val
@@ -962,9 +1081,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     As  = sparse(A)
     rows_A = rowvals(As)
     vals_A = nonzeros(As)
-
+    
     for col in boundary_set
         val = BDY[col]
+        
         for ptr in nzrange(As, col)
             row = rows_A[ptr]
             row in boundary_set && continue  # skip BC-BC interactions
@@ -1004,32 +1124,28 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     neg_diag = [d[ip] for ip = 1:length(d) 
             if !(ip in boundary_set) && d[ip] < 0]
 
-    @info "Physics diagonal range" minimum(physics_diag), maximum(physics_diag)
-    @info "Physics diagonal median" median(physics_diag)
-    @info "Negative diagonal range" minimum(neg_diag), maximum(neg_diag)
-    @info "Ratio neg/physics_min" minimum(neg_diag) / minimum(physics_diag)
     n_fixed = 0
     n_small = 0
     n_big = 0
     if (inputs[:adaptive_extra_meshes] && (inputs[:RT_shortwave] || inputs[:RT_longwave]))
-        for ip = 1:n_spa
-            ip in boundary_set && continue
-            if d[ip] < 0
-                # Get original physics diagonal from MLHS
-                original_diag = MLHS[ip,ip]
-                if (original_diag > 1e-6)
-                    n_big +=1
-                end
-                if (original_diag < 1e-6)
-                    n_small +=1
-                end
-                if original_diag > 0
-                    As[ip, ip] = original_diag
-                    #@info "Fixed negative diagonal at node $ip: $(diag(As)[ip]) → $original_diag"
-                    n_fixed +=1
-                end
+    for ip = 1:n_spa
+        ip in boundary_set && continue
+        if d[ip] < 0
+            # Get original physics diagonal from MLHS
+            original_diag = MLHS[ip,ip]
+            if (original_diag > 1e-6)
+                n_big +=1
+            end
+            if (original_diag < 1e-6)
+                n_small +=1
+            end
+            if original_diag > 0
+                As[ip, ip] = original_diag
+                #@info "Fixed negative diagonal at node $ip: $(diag(As)[ip]) → $original_diag"
+                n_fixed +=1
             end
         end
+    end
     end
     @info "n_fixed=$n_fixed, number of large diag values used=$n_big, number of small diag values used=$n_small" 
     # ── Linear solve ──────────────────────────────────────────────────────────
@@ -1044,6 +1160,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     npoin_ang_total = size(B, 1)
     @info maximum(As), minimum(As), maximum(B), minimum(B)
+    
     solution = if (inputs[:adaptive_extra_meshes] && inputs[:RT_shortwave])
         x_warm = zeros(Float64,n_spa)
         if (rt_sol_sw_available)
@@ -1103,7 +1220,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             g_gip2ip = gid_to_extended_parents,
             precond  = :none,
             restart  = 500,
-            tol      = 1e-10)
+            tol      = 1e-4)
 
        
 
@@ -1137,14 +1254,20 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             restart = 30,
             tol     = 1e-4)
     else
-        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total;
-        npoin_g = npoin_ang_total)
+        x_warm = Float64[]
+        if (inputs[:lmanufactured_solution])
+            x_warm = ref
+        end
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+        npoin_g = npoin_ang_total,
+        precond = :none,
+        restart = 3000,
+        tol     = 1e-3)
     end
 
     @rankinfo rank "Solve complete."
     #A = nothing; RHS = nothing; GC.gc()
     @info maximum(solution), minimum(solution)
-   
     # ── Solution prolongation ─────────────────────────────────────────────────
     solution_new = zeros(Float64, n_spa)
     if inputs[:adaptive_extra_meshes]
@@ -1161,9 +1284,17 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         solution_new = add_solution_prolongation_contributions(
             @view(solution_local[1:n_spa]), received_solution_contributions,
             ip2gip_spa, n_spa, rank, gip_to_local)
+        @info "prolonged solution maxima"
+        @info maximum(solution_new), minimum(solution_new)
     end
     
-
+    if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
+        @info "[$rank] Applying spatial prolongation to solution (Stage 4)..."
+        n_ang = extra_mesh.extra_npoin
+        solution = P_spatial * solution#apply_spatial_constraint_to_rhs(RHS, spatial_amr_cache, n_ang)
+        @info "[$rank] ✓ Spatial prolongation applied"
+        @info maximum(solution), minimum(solution)
+    end
     # ── Angular integration and error computation ─────────────────────────────
     @rankinfo rank "Integrating solution in angle..."
     int_sol      = zeros(TFloat, npoin, 1)
@@ -1357,18 +1488,32 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
             @rankinfo rank "Writing output"
             title = @sprintf "Solution-Radiation"
-            write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
-              0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-              ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
-              return
+            if (inputs[:outformat] == VTK())
+                write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                    0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                    ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
+                return
+            elseif (inputs[:outformat] == NETCDF())
+                write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                    0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                    ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
+                return
+            end
         else
             
             @rankinfo rank "Writing output"
             title = @sprintf "Solution-Radiation"
-            write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
-              0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-              ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
-              return
+            if (inputs[:outformat] == VTK())
+                write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
+                0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+                return
+            elseif (inputs[:outformat] == NETCDF())
+                write_NetCDF(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
+                0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+                return
+            end
         end
     end
 
@@ -1643,7 +1788,7 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
             dηdx_ij  = dηdx[iel,i,j,k]; dηdy_ij = dηdy[iel,i,j,k]; dηdz_ij = dηdz[iel,i,j,k]
             dζdx_ij  = dζdx[iel,i,j,k]; dζdy_ij = dζdy[iel,i,j,k]; dζdz_ij = dζdz[iel,i,j,k]
             κ = rad_data ? κ_data[ip] : user_extinction(x[ip], y[ip], z[ip])
-            σ = 0.0#rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
+            σ = rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
 
             for e_ext = 1:nelem_ang[iel]
                 for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
@@ -1866,7 +2011,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
        
         while e_ext <= nelem_ang[iel]
           
-            if (iel == 14 && e_ext ==5) #abs(criterion[iel][e_ext]) > thresholds[1]
+            if abs(criterion[iel][e_ext]) > thresholds[1]
                #@info iel, e_ext
                #@info rank, criterion[iel][e_ext], thresholds[1], e_ext, iel
                 adapted_ang[iel] = 1

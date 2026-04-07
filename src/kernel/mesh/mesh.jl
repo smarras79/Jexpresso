@@ -8,7 +8,6 @@ export mod_mesh_read_gmsh!
 
 include("warping.jl")
 include("stretching.jl")
-include("extra_mesh_spatial_amr.jl")
 
 Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}
 
