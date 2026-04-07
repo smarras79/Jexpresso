@@ -3745,9 +3745,10 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                                             SD=NSD_1D())
                     preadapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
                     do_preadapt!(preadapt_flags, inputs, mesh_r_o)
+                    mesh_r_o.lneed_redistribute = false
                     p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, preadapt_flags, p_model_r_o, mesh_r_o)
                     current_max_ad_lv = MPI.Allreduce(maximum(mesh_r.ad_lvl), MPI.MAX, comm)
-                    if current_max_ad_lv == prev_max_ad_lv && !mesh_r_o.lneed_redistribute
+                    if current_max_ad_lv == prev_max_ad_lv
                         println(" No new refinement occurred: stop refining")
                         break
                     end
