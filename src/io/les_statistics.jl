@@ -12,6 +12,12 @@ Base.@kwdef mutable struct LESStatCache{T <: AbstractFloat, nz, dims_buf, dims_s
     n_samples       ::Int                   = 0
     sum_global_sum    ::VT2                 = KernelAbstractions.zeros(backend, T, dims_buf...)
     sum_global_stress ::VT2                 = KernelAbstractions.zeros(backend, T, dims_stress...)
+    # online accumulation (Approach 2): local running sums per time step, Allreduce only at end
+    n_online_samples     ::Int  = 0
+    local_online_sum     ::VT2  = KernelAbstractions.zeros(backend, T, dims_buf...)
+    local_online_stress  ::VT2  = KernelAbstractions.zeros(backend, T, dims_stress...)
+    global_online_sum    ::VT2  = KernelAbstractions.zeros(backend, T, dims_buf...)
+    global_online_stress ::VT2  = KernelAbstractions.zeros(backend, T, dims_stress...)
 end
 
 
@@ -41,6 +47,12 @@ Base.@kwdef mutable struct LESCrossSection{T <: AbstractFloat}
     xz_cells     ::Vector{NTuple{4,Int64}}          # quad corner indices (into xz_coords)
     # spectral cache (built once; nothing if spectra disabled)
     spec_cache   ::Union{Nothing, LESSpectralCache}
+    # online accumulation (Approach 2): local running sums per time step, Allreduce only at end
+    n_online_samples     ::Int
+    local_online_mean    ::Matrix{T}
+    local_online_stress  ::Matrix{T}
+    global_online_mean   ::Matrix{T}
+    global_online_stress ::Matrix{T}
 end
 
 function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
@@ -606,6 +618,26 @@ function build_les_cross_section(mesh, basis, nprofiles::Int, nstress::Int, T)
         end
     end
 
+    # Gather cells from all ranks to rank 0 — VTK is written by rank 0 only, but
+    # each rank only has its local elements, so rank 0 would only see its own slice.
+    local_cells_flat = Int64[v for t in xz_cells for v in t]
+    all_cells_flat   = MPI.gather(local_cells_flat, comm)
+    if rank == 0
+        merged_flat = vcat(all_cells_flat...)
+        ncells_all  = length(merged_flat) ÷ 4
+        seen_global = Set{NTuple{4,Int64}}()
+        xz_cells    = NTuple{4,Int64}[]
+        for i in 1:ncells_all
+            cell = (merged_flat[4i-3], merged_flat[4i-2], merged_flat[4i-1], merged_flat[4i])
+            key  = tuple(sort!(Int64[cell...])...)
+            key in seen_global && continue
+            push!(seen_global, key)
+            push!(xz_cells, cell)
+        end
+    else
+        xz_cells = NTuple{4,Int64}[]
+    end
+
     cs = LESCrossSection{T}(
         xz_coords, xz_groups, npts_per_xz,
         zeros(T, nxz, nprofiles), zeros(T, nxz, nprofiles),
@@ -614,7 +646,10 @@ function build_les_cross_section(mesh, basis, nprofiles::Int, nstress::Int, T)
         0,
         zeros(T, nxz, nprofiles), zeros(T, nxz, nstress),
         xz_cells,
-        nothing
+        nothing,
+        0,
+        zeros(T, nxz, nprofiles), zeros(T, nxz, nstress),
+        zeros(T, nxz, nprofiles), zeros(T, nxz, nstress)
     )
     # cs.spec_cache = build_les_spectral_cache(cs, mesh, basis)
     return cs
@@ -757,4 +792,200 @@ function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing,
     # pvd_spec = joinpath(params.inputs[:output_dir], "les_spectra.pvd")
     # if !isfile(pvd_spec); init_pvd_file(pvd_spec); end
     # append_pvd_entry(pvd_spec, time, basename(spec_outfiles[1]))
+end
+
+# ================================================================================
+# Online accumulation (Approach 2): no MPI per step, single Allreduce at end
+# ================================================================================
+
+"""
+    les_accumulate_online!(u, params)
+
+Accumulate local running sums for online recursive averaging (Approach 2).
+Called every time step in the statistics window; performs NO MPI communication.
+Call `les_finalize_online!` once at the end to Allreduce and write output.
+"""
+function les_accumulate_online!(u, params)
+    isnothing(params.les_stat_cache) && return
+
+    cache  = params.les_stat_cache
+    cs     = params.les_cross_section
+    mesh   = params.mesh
+    npoin  = mesh.npoin
+    neqs   = params.neqs
+    ET     = params.inputs[:SOL_VARS_TYPE]
+    uaux   = params.uaux
+    qe     = params.qp.qe
+
+    u2uaux!(@view(uaux[:,:]), u, neqs, npoin)
+
+    # 1D profile accumulation: sum over local owned points (no Allreduce)
+    nz        = length(cache.z_levels)
+    nprofiles = size(cache.local_online_sum, 2)
+    nstress   = size(cache.local_online_stress, 2)
+    means_buf = cache.prof
+    prof_buf  = cache.stress_prof
+
+    for iz in 1:nz
+        for ip in cache.z_groups[iz]
+            user_les_profiles!(means_buf, prof_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
+            for k in 1:nprofiles
+                cache.local_online_sum[iz, k] += means_buf[k]
+            end
+            for k in 1:nstress
+                cache.local_online_stress[iz, k] += prof_buf[k]
+            end
+        end
+    end
+    cache.n_online_samples += 1
+
+    # XZ cross-section accumulation: sum over local points (no Allreduce)
+    isnothing(cs) && return
+    nxz          = length(cs.xz_coords)
+    nprofiles_cs = size(cs.local_online_mean, 2)
+    nstress_cs   = size(cs.local_online_stress, 2)
+    for ixz in 1:nxz
+        for ip in cs.xz_groups[ixz]
+            user_les_profiles!(cs.prof_buf, cs.stress_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
+            for k in 1:nprofiles_cs
+                cs.local_online_mean[ixz, k] += cs.prof_buf[k]
+            end
+            for k in 1:nstress_cs
+                cs.local_online_stress[ixz, k] += cs.stress_buf[k]
+            end
+        end
+    end
+    cs.n_online_samples += 1
+end
+
+"""
+    les_finalize_online!(params, t)
+
+Finalize online statistics: perform a single MPI.Allreduce across all ranks,
+divide by (npts × n_online_samples) to get time-and-y averages, apply the
+fluctuation decomposition `<a'b'> = <ab> - <a><b>` via `user_les_stress!`,
+then write output files. Safe to call even if no steps were accumulated.
+"""
+function les_finalize_online!(params, t)
+    isnothing(params.les_stat_cache) && return
+
+    cache = params.les_stat_cache
+    ns    = cache.n_online_samples
+    ns == 0 && return
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+
+    nz        = length(cache.z_levels)
+    nprofiles = size(cache.local_online_sum, 2)
+    nstress   = size(cache.local_online_stress, 2)
+
+    # Single Allreduce for 1D profiles
+    MPI.Allreduce!(cache.local_online_sum,    cache.global_online_sum,    MPI.SUM, comm)
+    MPI.Allreduce!(cache.local_online_stress, cache.global_online_stress, MPI.SUM, comm)
+
+    # Divide by (npts_per_z × n_online_samples) → time-and-y averaged means and raw products
+    for iz in 1:nz
+        denom = Float64(cache.npts_per_z[iz]) * ns
+        for k in 1:nprofiles
+            cache.global_online_sum[iz, k] /= denom
+        end
+        for k in 1:nstress
+            cache.global_online_stress[iz, k] /= denom
+        end
+    end
+
+    # Convert raw products → fluctuation statistics using time-and-y means
+    profp = cache.stress_prof
+    for iz in 1:nz
+        means = @view cache.global_online_sum[iz, :]
+        prof  = @view cache.global_online_stress[iz, :]
+        user_les_stress!(profp, prof, means)
+        for k in 1:nstress
+            cache.global_online_stress[iz, k] = profp[k]
+        end
+    end
+
+    if rank == 0
+        lesprofile_vars = params.inputs[:lesprofile_vars]
+        lesstress_vars  = params.inputs[:lesstress_vars]
+
+        outfile = joinpath(params.inputs[:output_dir], "les_statistics_online.dat")
+        open(outfile, "w") do io
+            print(io, "# online_tavg  time_end=", @sprintf("%.6e", t), "  n_samples=", ns, "  z")
+            for k in 1:nprofiles; print(io, "  ", lesprofile_vars[k]); end
+            println(io)
+            for iz in 1:nz
+                @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
+                for k in 1:nprofiles; @printf(io, "  %.6e", cache.global_online_sum[iz, k]); end
+                println(io)
+            end
+        end
+
+        outfile_stress = joinpath(params.inputs[:output_dir], "les_stress_online.dat")
+        open(outfile_stress, "w") do io
+            print(io, "# online_tavg  time_end=", @sprintf("%.6e", t), "  n_samples=", ns, "  z")
+            for k in 1:nstress; print(io, "  ", lesstress_vars[k]); end
+            println(io)
+            for iz in 1:nz
+                @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
+                for k in 1:nstress; @printf(io, "  %.6e", cache.global_online_stress[iz, k]); end
+                println(io)
+            end
+        end
+    end
+
+    # XZ cross-section finalization
+    cs = params.les_cross_section
+    isnothing(cs) && return
+
+    ns_cs = cs.n_online_samples
+    ns_cs == 0 && return
+
+    nxz          = length(cs.xz_coords)
+    nprofiles_cs = size(cs.local_online_mean, 2)
+    nstress_cs   = size(cs.local_online_stress, 2)
+
+    MPI.Allreduce!(cs.local_online_mean,   cs.global_online_mean,   MPI.SUM, comm)
+    MPI.Allreduce!(cs.local_online_stress, cs.global_online_stress, MPI.SUM, comm)
+
+    for ixz in 1:nxz
+        denom = Float64(cs.npts_per_xz[ixz]) * ns_cs
+        for k in 1:nprofiles_cs
+            cs.global_online_mean[ixz, k] /= denom
+        end
+        for k in 1:nstress_cs
+            cs.global_online_stress[ixz, k] /= denom
+        end
+    end
+
+    profp_cs = cs.stress_buf
+    for ixz in 1:nxz
+        means = @view cs.global_online_mean[ixz, :]
+        prof  = @view cs.global_online_stress[ixz, :]
+        user_les_stress!(profp_cs, prof, means)
+        for k in 1:nstress_cs
+            cs.global_online_stress[ixz, k] = profp_cs[k]
+        end
+    end
+
+    rank != 0 && return
+
+    lesprofile_vars = params.inputs[:lesprofile_vars]
+    lesstress_vars  = params.inputs[:lesstress_vars]
+    xz_cells_vtk = [MeshCell(VTKCellTypes.VTK_QUAD, [i1, i2, i3, i4])
+                    for (i1, i2, i3, i4) in cs.xz_cells]
+    x_pts = [p[1] for p in cs.xz_coords]
+    y_pts = zeros(Float64, nxz)
+    z_pts = [p[2] for p in cs.xz_coords]
+
+    fout = joinpath(params.inputs[:output_dir], "les_xz_online")
+    vtk  = vtk_grid(fout, x_pts, y_pts, z_pts, xz_cells_vtk)
+    for k in 1:nprofiles_cs
+        vtk[lesprofile_vars[k], VTKPointData()] = cs.global_online_mean[:, k]
+    end
+    for k in 1:nstress_cs
+        vtk[lesstress_vars[k], VTKPointData()] = cs.global_online_stress[:, k]
+    end
+    vtk_save(vtk)
 end

@@ -336,6 +336,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:statistics_time] = 0.0
     end
 
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+
+    if(!haskey(inputs, :statistics_online_stride))
+        inputs[:statistics_online_stride] = 1
+    end
+
     if(!haskey(inputs, :lesprofile_vars))
         inputs[:lesprofile_vars] = []
     end

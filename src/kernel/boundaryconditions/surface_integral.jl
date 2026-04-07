@@ -55,15 +55,15 @@ function DSS_segment_integral!(S_flux, S_edge, M_seg_inv, nedges, ngl, connijk, 
 
     for iedge = 1:nedges
         for i = 1:ngl
-            e = bdy_edge_in_elem[iedge]
+            # e = bdy_edge_in_elem[iedge]
             ip = poin_in_bdy_edge[iedge,i]
-            ip1 = connijk[e,i,2]
+            # ip1 = connijk[e,i,2]
             for ieq = 1:neqs
-                if (ieq == 2)
-                    S_flux[ip,ieq] .+= S_edge[iedge,i,ieq]*M_seg_inv[ip]
-                else
-                    S_flux[ip1,ieq] .+= S_edge[iedge,i,ieq]*M_seg_inv[ip]
-                end
+                # if (ieq == 2)
+                    S_flux[ip,ieq] += S_edge[iedge,i,ieq]
+                # else
+                    # S_flux[ip1,ieq] .+= S_edge[iedge,i,ieq]
+                # end
             end
         end
     end

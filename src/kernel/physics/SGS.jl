@@ -22,6 +22,7 @@
     μ_mol = PhysConst.μ_mol  # Molecular viscosity [Pa·s]
     κ_mol = PhysConst.κ_mol  # Molecular thermal diffusivity [m²/s]
     C_s   = PhysConst.C_s    # Smagorinsky constant
+    cp    = PhysConst.cp
     C_s2  = C_s*C_s
 
     
@@ -49,7 +50,7 @@
         if inputs[:energy_equation] == "theta"
             return κ_turb * visc_coeffieq[ieq]
         else
-            return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            return (κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
         
     else

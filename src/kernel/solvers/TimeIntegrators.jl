@@ -17,8 +17,9 @@ function time_loop!(inputs, params, u, args...)
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
-    les_stat_t   = inputs[:statistics_time]
-    rad_time     = inputs[:radiation_time_step]
+    les_stat_t         = inputs[:statistics_time]
+    stats_online_start = get(inputs, :statistics_online_start, Inf)
+    rad_time           = inputs[:radiation_time_step]
     lnew_mesh    = true   
     lwrite_time  = (inputs[:outformat] == VTK()) && (rank == 0)
 
@@ -93,6 +94,18 @@ function time_loop!(inputs, params, u, args...)
         les_statistics(integrator.u, integrator.p, integrator.t)
     end
 
+    # Online statistics accumulation callback (Approach 2): fires every step, no MPI
+    stats_online_stride = get(inputs, :statistics_online_stride, 1)
+    online_step_ref     = Ref{Int}(0)
+    function les_online_condition(u, t, integrator)
+        return !isnothing(integrator.p.les_stat_cache) && t >= stats_online_start
+    end
+    function do_les_online!(integrator)
+        online_step_ref[] += 1
+        online_step_ref[] % stats_online_stride == 0 || return
+        les_accumulate_online!(integrator.u, integrator.p)
+    end
+
     
     # #------------------------------------------------------------------------
     # #  config
@@ -143,7 +156,8 @@ function time_loop!(inputs, params, u, args...)
             end
         end
     end
-    cb_les_stat = DiscreteCallback(les_stat_condition, do_les_statistics!)
+    cb_les_stat    = DiscreteCallback(les_stat_condition, do_les_statistics!)
+    cb_les_online  = DiscreteCallback(les_online_condition, do_les_online!)
 
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
     cb         = DiscreteCallback(condition, affect!)
@@ -197,7 +211,8 @@ function time_loop!(inputs, params, u, args...)
         solution = solve(prob,
                          inputs[:ode_solver], dt=dt,
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart, cb_les_stat), tstops = dosetimes,
+                         callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = dosetimes,
+                         #  callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = dosetimes,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit],
@@ -208,7 +223,7 @@ function time_loop!(inputs, params, u, args...)
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)
-    
+
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
@@ -225,6 +240,11 @@ function time_loop!(inputs, params, u, args...)
             report_all_timers(prob.p.timers)
             MPI.Barrier(comm)
         end
+    end
+
+    # Finalize online statistics: single Allreduce + write output
+    if stats_online_start < Inf
+        les_finalize_online!(params, solution.t[end])
     end
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)

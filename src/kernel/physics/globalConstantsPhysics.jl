@@ -95,7 +95,7 @@ using Parameters
     N0_graupel::T = 4e6      #m^(-4) Intercept parameter for graupel
     Ka::T         = 2.4e-2   #J m K^(-1)/s Thermal conductivity of air at 0C
     qc0::T        = 1e-3     #kg/kg Threshold cloud water for autoconversion
-    qi0::T        = 1e-4     #kg/kg Threshold cloud ice for aggregation
+    qi0::T        = 1e-4     #kg/kg Threshold cloud ice for aggregation (1~5)*10-4 
     T0n::T        = 273.16   #K maximum temperature for cloud ice
     T0p::T        = 283.16   #K maximum temperature for snow/graupel
     T0g::T        = 283.16   #K maximum temperature graupel

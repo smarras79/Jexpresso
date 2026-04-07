@@ -287,6 +287,8 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
     x           = coords[:,1]
     y           = coords[:,2]
     z           = coords[:,3]
+
+    preadapt_max_lvl = inputs[:preadapt_max_level]
     for iel = 1:nelem
         m = 1
         for i = 1:ngl
@@ -298,13 +300,46 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
             end
         end
         # @info q[ips,4] - qe[ips,4]
-        qi_el      = qi[ips]
+        qn_el      = qn[ips]
         z_el       = z[ips]
-        if any(qi_el .> tol) && (old_ad_lvl[iel] < max_level) && all(z_el .< 13999.9)
+        if any(qn_el .> tol) && (old_ad_lvl[iel] < max_level) && all(z_el .< 14000)
             adapt_flags[iel] = refine_flag
         end
-        # if all(qi_el .< tol)
-        #     adapt_flags[iel] = coarsen_flag
-        # end
+        if all(qn_el .<= 0) 
+            if all(z_el .< 4000.0) && old_ad_lvl[iel] > preadapt_max_lvl
+                adapt_flags[iel] = coarsen_flag
+            elseif all(z_el .< 10000.0) && all(z_el .>= 4000.0) && old_ad_lvl[iel] > max_level-1
+                adapt_flags[iel] = coarsen_flag
+            elseif all(z_el .< 14000.0) && all(z_el .>= 10000.0) && old_ad_lvl[iel] > max_level-2
+                adapt_flags[iel] = coarsen_flag
+            else
+                adapt_flags[iel] = nothing_flag
+            end
+        end
     end
+end
+
+function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk, nelem, ngl, max_level)
+
+    for iel = 1:nelem
+        for i = 1:ngl, j = 1:ngl, k = 1:ngl
+            ips = connijk[iel, i, j, k]
+            
+            # GEOMETRY HERE
+            x = mesh.x[ips]
+            y = mesh.y[ips]
+            z = mesh.z[ips]
+            
+            if z < 4000.0 && old_ad_lvl[iel] < max_level
+                adapt_flags[iel] = refine_flag
+            elseif z < 10000.0 && old_ad_lvl[iel] < max_level-1
+                adapt_flags[iel] = refine_flag
+            elseif z < 14000.0 && old_ad_lvl[iel] < max_level-2
+                adapt_flags[iel] = refine_flag
+            else
+                adapt_flags[iel] = nothing_flag
+            end
+        end
+    end
+    
 end
