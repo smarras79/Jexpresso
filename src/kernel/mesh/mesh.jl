@@ -2064,49 +2064,53 @@ end
 function find_gip_owner(a)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    size = MPI.Comm_size(comm)
-    
-    # Gather all elements from all ranks to rank 0
-    all_elements = MPI.gather(a, comm)
-    
-    if rank == 0
-        # Flatten the gathered list
-        flat_elements = vcat(all_elements...)
-        # all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
-        all_owners = [i for i in 0:size-1 for _ in 1:length(all_elements[i+1])]
+    nranks = MPI.Comm_size(comm)
 
-        # Create a dictionary to store the smallest rank for each element
-        element_owner_map = Dict{Int, Int}()
-        ownership_counts  = zeros(Int64, size)
-        for i in 1:length(flat_elements)
-            el = flat_elements[i]
-            owner = all_owners[i]
-            if !haskey(element_owner_map, el)
-                element_owner_map[el] = owner
-            else
-                # Conflict: element already seen on another rank
-                # Choose the rank with fewer owned elements
-                current_owner = element_owner_map[el]
-                if ownership_counts[owner+1] < ownership_counts[current_owner+1]
+    # Share local sizes with all ranks (avoids object serialization overhead)
+    local_n = length(a)
+    all_ns = MPI.Allgather(local_n, comm)  # Vector{Int64} of length nranks
+
+    element_owners = Vector{Int64}(undef, local_n)
+
+    if rank == 0
+        total_n = sum(all_ns)
+        flat_elements = Vector{Int64}(undef, total_n)
+        MPI.Gatherv!(a, MPI.VBuffer(flat_elements, Cint.(all_ns)), 0, comm)
+
+        # Determine ownership for each global point
+        element_owner_map = Dict{Int64, Int64}()
+        ownership_counts  = zeros(Int64, nranks)
+        offset = 0
+        for r in 0:nranks-1
+            sz = all_ns[r+1]
+            for i in offset+1:offset+sz
+                el    = flat_elements[i]
+                owner = Int64(r)
+                if !haskey(element_owner_map, el)
                     element_owner_map[el] = owner
+                else
+                    # Conflict: element shared across ranks — assign to rank with fewer owned elements
+                    current_owner = element_owner_map[el]
+                    if ownership_counts[owner+1] < ownership_counts[current_owner+1]
+                        element_owner_map[el] = owner
+                    end
+                    ownership_counts[element_owner_map[el]+1] += 1
                 end
-                ownership_counts[element_owner_map[el]+1] += 1
             end
+            offset += sz
         end
-        # Map the owners back to the original elements in each rank's vector
-        all_owners_result = [element_owner_map[el] for el in flat_elements]
-        
-        # Split the ownership result according to the original vectors
-        chunked_owners = [all_owners_result[sum(length.(all_elements)[1:i-1])+1:sum(length.(all_elements)[1:i])] for i in 1:size]
+
+        # Build flat result array
+        all_owners_result = Int64[element_owner_map[flat_elements[i]] for i in 1:total_n]
+
+        # Scatter ownership results back to each rank using raw Int64 buffers
+        MPI.Scatterv!(MPI.VBuffer(all_owners_result, Cint.(all_ns)), element_owners, 0, comm)
     else
-        chunked_owners = nothing
+        MPI.Gatherv!(a, nothing, 0, comm)
+        MPI.Scatterv!(nothing, element_owners, 0, comm)
     end
 
-    # Scatter the ownership chunks back to all ranks
-    element_owners = MPI.scatter(chunked_owners, comm)
-
     return element_owners
-    
 end
 
 function determine_colinearity(vec1, vec2)
