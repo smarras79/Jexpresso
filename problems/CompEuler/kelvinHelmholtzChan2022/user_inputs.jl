@@ -7,8 +7,9 @@ function user_inputs()
 	:ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.0003,
         :tinit                => 0.0,
-        :tend                 => 5.0,
-        :diagnostics_at_times => (0.0:0.25:10.0),
+        :tend                 => 0.5,
+        :diagnostics_at_times => (0.0:10.0:10.0),
+        #:diagnostics_at_times => (0.0:0.25:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
@@ -19,7 +20,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 3,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -54,10 +55,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
         :loverwrite_output   => false,
-        :lwrite_initial      => true,
+        :lwrite_initial      => false,
+       # :lwrite_initial      => true,
         :output_dir          => "./output-theta/",
         #:output_dir          => "./test/CI-run",
-        :loutput_pert        => true,  #this is only implemented for VTK for now
+        :loutput_pert        => false,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------

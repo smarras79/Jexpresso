@@ -270,14 +270,12 @@ end
             f1 = rho_mean * v1_avg
             f2 = f1 * v1_avg + p_avg
             f3 = f1 * v2_avg
-            f4 = f1 *
-		(velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) +
-                 0.5 * (p_ll * v1_rr + p_rr * v1_ll)
+            f4 = f1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5 * (p_ll * v1_rr + p_rr * v1_ll)
 
             g1 = rho_mean * v2_avg
             g2 = g1 * v1_avg 
 	    g3 = g1 * v2_avg + p_avg
-            g4 = g1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5f0 * (p_ll * v2_rr + p_rr * v2_ll)
+            g4 = g1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5 * (p_ll * v2_rr + p_rr * v2_ll)
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 

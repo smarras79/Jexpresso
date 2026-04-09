@@ -1,3 +1,5 @@
+using TrixiBase
+using TimerOutputs
 function time_loop!(inputs, params, u, args...)
 
     comm = MPI.COMM_WORLD
@@ -149,7 +151,8 @@ function time_loop!(inputs, params, u, args...)
         end
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
-    
+
+    TimerOutputs.reset_timer!(TrixiBase.timer())
     #
     # Simulation
     #
@@ -178,7 +181,7 @@ function time_loop!(inputs, params, u, args...)
                                         inputs[:tend],
                                         length=inputs[:ndiagnostics_outputs]));
     end
-    
+    display(TrixiBase.timer()) 
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)
