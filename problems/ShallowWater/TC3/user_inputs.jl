@@ -35,7 +35,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         # Generate mesh: gmsh -2 problems/ShallowWater/TC3/SWE_TC3.geo
-        :gmsh_filename        => "./problems/ShallowWater/TC3/SWE_TC3.msh",
+        :gmsh_filename        => "./meshes/gmsh_grids/SWE_TC3.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

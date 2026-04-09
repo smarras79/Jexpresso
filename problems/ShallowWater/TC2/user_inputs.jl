@@ -27,15 +27,15 @@ function user_inputs()
         # Filter for stabilization (CG SEM needs this for wave propagation)
         #---------------------------------------------------------------------------
         :lfilter              => true,
-        :mu_x                 => 0.01,
-        :mu_y                 => 0.01,
+        :mu_x                 => 0.15,
+        :mu_y                 => 0.15,
         :filter_type          => "erf",
         #---------------------------------------------------------------------------
         # Mesh parameters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         # Generate mesh: gmsh -2 problems/ShallowWater/TC2/SWE_TC2_periodic.geo
-        :gmsh_filename        => "./problems/ShallowWater/TC2/SWE_TC2_periodic.msh",
+        :gmsh_filename        => "./meshes/gmsh_grids/SWE_TC2_periodic.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
