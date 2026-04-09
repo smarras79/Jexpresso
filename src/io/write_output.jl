@@ -859,8 +859,11 @@ function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
         end
     end
 
-    iout  = inputs[:restart_vtk_iout]
-    fname = joinpath(vtk_dir, "iter_$(iout)", "iter_$(iout)_$(part).vtu")
+    iout   = inputs[:restart_vtk_iout]
+    nparts = MPI.Comm_size(comm)
+    # WriteVTK.jl zero-pads the part number to ndigits(nparts) digits
+    part_str = lpad(part, ndigits(nparts), '0')
+    fname    = joinpath(vtk_dir, "iter_$(iout)", "iter_$(iout)_$(part_str).vtu")
 
     if rank == 0
         @info " Reading VTK restart from: $fname"
