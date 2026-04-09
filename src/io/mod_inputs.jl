@@ -361,6 +361,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if (!haskey(inputs, :lrestart))
         inputs[:lrestart] = false
     end
+    if (!haskey(inputs, :lrestart_vtk))
+        inputs[:lrestart_vtk] = false
+    end
     #
     # Time:
     #

@@ -23,9 +23,13 @@ function time_loop!(inputs, params, u, args...)
     lnew_mesh    = true   
     lwrite_time  = (inputs[:outformat] == VTK()) && (rank == 0)
 
-    if (lwrite_time == true) 
+    if (lwrite_time == true)
         pvd_path = joinpath(inputs[:output_dir], "simulation.pvd")
-        init_pvd_file(pvd_path)
+        if get(inputs, :lrestart_vtk, false) && isfile(pvd_path)
+            # VTK restart: preserve existing simulation.pvd; continue appending
+        else
+            init_pvd_file(pvd_path)
+        end
     end
 
     function two_stream_condition(u, t, integrator)
@@ -170,9 +174,11 @@ function time_loop!(inputs, params, u, args...)
 
     #
     # Write initial conditions:
+    # Skipped on VTK restart — the snapshot already exists in the output dir
+    # and its entry is already in simulation.pvd from the previous run.
     #
     idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
-    if idx ≠ nothing
+    if idx ≠ nothing && !get(inputs, :lrestart_vtk, false)
         if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
         write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
                      params.mesh, params.mp,
@@ -182,7 +188,7 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe)
-        if (lwrite_time == true) 
+        if (lwrite_time == true)
             append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
         end
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
