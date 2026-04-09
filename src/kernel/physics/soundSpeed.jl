@@ -115,29 +115,34 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_2D; visc=[0
         else
             idx  = npoin
             umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
-        
+
             idx  = 2*npoin
             vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
         end
         velomax = max(umax, vmax)
-        
-        #speed of sound
-        c     = soundSpeed(npoin, mp, p, neqs, integrator, SD, integrator.p.SOL_VARS_TYPE)
+
         cfl_u = velomax*dt/Δs #Advective CFL
-        cfl_c = c*dt/Δs       #Acoustic CFL
-        
+
+        #speed of sound (only for systems with >= 4 equations, e.g. CompEuler)
+        if neqs >= 4
+            c     = soundSpeed(npoin, mp, p, neqs, integrator, SD, integrator.p.SOL_VARS_TYPE)
+            cfl_c = c*dt/Δs       #Acoustic CFL
+        else
+            cfl_c = 0.0
+        end
+
         Δs2      = Δs*Δs
         μ        = maximum(visc)
         λ        = 1.0 #free parameter
         cfl_visc = dt*λ*μ/Δs2 #Viscous CFL
-        
+
         println_rank(" #  Advective CFL: ", cfl_u;    msg_rank = rank) #, suppress = mesh.msg_suppress)
         println_rank(" #  Acoustic  CFL: ", cfl_c;    msg_rank = rank) #, suppress = mesh.msg_suppress)
         println_rank(" #  Viscous   CFL: ", cfl_visc; msg_rank = rank) #, suppress = mesh.msg_suppress)
     else
         nothing
     end
-    
+
 end
 
 function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_3D; visc=[0.0])
