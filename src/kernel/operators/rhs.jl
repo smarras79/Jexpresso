@@ -1077,7 +1077,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
     ngl   = params.mesh.ngl
     neqs  = params.neqs
    
-    entropy_variables = false
+    entropy_variables = inputs[:entropy_variables]
     if entropy_variables
 
     # Compute the u_transformed everywhere and store in uprimitive

@@ -32,6 +32,7 @@ function user_inputs()
         # LKEP:
         #---------------------------------------------------------------------------
         :lkep        => true,
+	:entropy_variables => false,
         :volume_flux => kennedy_gruber(),
         #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------
