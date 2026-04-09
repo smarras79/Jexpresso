@@ -4,7 +4,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-	:ode_solver           =>  SSPRK43(), #CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+	:ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.0003,
         :tinit                => 0.0,
         :tend                 => 10.0,
@@ -14,12 +14,12 @@ function user_inputs()
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => false, 
-        :SOL_VARS_TYPE        => THETA(),
+        :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 7,      # Polynomial order
+        :nop                 => 5,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ function user_inputs()
         # LKEP:
         #---------------------------------------------------------------------------
         :lkep        => true,
-        :volume_flux => artiano_etec(),
+        :volume_flux => ranocha(),
         #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:

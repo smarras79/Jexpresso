@@ -1,4 +1,5 @@
 using Distributions
+using TrixiBase
 using StaticArrays
 
 const PHYS_CONST = PhysicalConst{Float64}()
@@ -579,7 +580,7 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+    @trixi_timeit timer() "inviscid_rhs_el!" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD,
                      Val(params.inputs[:lsaturation]))
     
@@ -591,9 +592,8 @@ function _build_rhs!(RHS, u, params, time)
                            params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
                            params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost,
                            params.mesh.pgip_local, ngl-1, neqs, params.interp)
-
     end
-    DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+   @trixi_timeit timer() "DSS_rhs!" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -602,7 +602,7 @@ function _build_rhs!(RHS, u, params, time)
         
         resetRHSToZero_viscous!(params, SD)
         
-        viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+       @trixi_timeit timer() "viscous_rhs_el!" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
@@ -746,43 +746,37 @@ function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
                                   rhs_el, iel,
                                   ::CL, QT::Inexact,
                                   SD::NSD_2D, AD::ContGal,
-                                  uaux, fluxaux, connijk, volume_flux_type)
+                                  uaux, fluxaux, 
+  				     dFdx, dFdxi, dFdeta,
+				     dGdy, dGdxi, dGdeta,
+				  connijk, volume_flux_type)
     
-    dFdx = zeros(length(neqs),1)
-    dGdy = zeros(length(neqs),1)
-
     for j=1:ngl
         for i=1:ngl
             ip = connijk[iel,i,j]
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
-            
-            dFdξ = zeros(neqs,1)
-            dFdx = zeros(neqs,1)
-            dFdη = zeros(neqs,1)
-            dGdξ = zeros(neqs,1)
-            dGdy = zeros(neqs,1)
-            dGdη = zeros(neqs,1)
+            ωJac = ω[i]*ω[j]*Je[iel,i,j] 
+            @. dFdxi = 0
+	    @. dFdeta = 0 
+	    @. dGdxi = 0
+	    @. dGdeta = 0 
             for k = 1:ngl
                 kjp = connijk[iel,k, j]
         	ikp = connijk[iel,i, k]
                 
-		F_ik, G_ik = flux_turbo(@view(fluxaux[ip,:]), @view(fluxaux[ikp,:]), volume_flux_type)
-		F_kj, G_kj = flux_turbo(@view(fluxaux[ip,:]), @view(fluxaux[kjp,:]), volume_flux_type)
-                
-                @. dFdξ = dFdξ + 2 * dψ[k,i]*F_kj 
-                @. dFdη = dFdη + 2 * dψ[k,j]*F_ik
-                
-                @. dGdξ = dGdξ + 2 * dψ[k,i]*G_kj
-                @. dGdη = dGdη + 2 * dψ[k,j]*G_ik
+	F_ik, G_ik = flux_turbo(@view(fluxaux[ip,:]), @view(fluxaux[ikp,:]), volume_flux_type)
+	F_kj, G_kj = flux_turbo(@view(fluxaux[ip,:]), @view(fluxaux[kjp,:]), volume_flux_type)
+                 @. dFdxi += 2 * dψ[k,i]*F_kj 
+                 @. dFdeta += 2 * dψ[k,j]*F_ik
+                 @. dGdxi += 2 * dψ[k,i]*G_kj
+                 @. dGdeta += 2 * dψ[k,j]*G_ik
             end
             dξdx_ij = dξdx[iel,i,j]
             dξdy_ij = dξdy[iel,i,j]
             dηdx_ij = dηdx[iel,i,j]
             dηdy_ij = dηdy[iel,i,j]
             
-            @. dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-            
-            @. dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+             @. dFdx = dFdxi*dξdx_ij + dFdeta*dηdx_ij
+  	     @. dGdy = dGdxi*dξdy_ij + dGdeta*dηdy_ij
             for ieq=1:neqs    
                 rhs_el[iel,i,j,ieq] -=  ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
             end
@@ -813,7 +807,7 @@ function inviscid_rhs_el!(u, params,
             
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
             if lkep
-                user_fluxaux!(@view(params.fluxaux[ip,:]),
+         @trixi_timeit timer() "user_fluxaux!"       user_fluxaux!(@view(params.fluxaux[ip,:]),
                               SD,
                               @view(params.uaux[ip,:]),
                               params.SOL_VARS_TYPE,
@@ -828,7 +822,7 @@ function inviscid_rhs_el!(u, params,
             end
             
             if lsource
-                user_source!(@view(params.S[i,j,:]),
+          @trixi_timeit timer() "user_source!"      user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
@@ -850,7 +844,7 @@ function inviscid_rhs_el!(u, params,
         end
 
         if lkep
-            _expansion_inviscid_KEP!(u,
+           @trixi_timeit timer() "expansion_invisicid!" _expansion_inviscid_KEP!(u,
                                      params.neqs, params.mesh.ngl,
                                      params.basis.dψ, params.ω,
                                      params.F, params.G, params.S,
@@ -858,7 +852,10 @@ function inviscid_rhs_el!(u, params,
                                      params.metrics.dξdx, params.metrics.dξdy,
                                      params.metrics.dηdx, params.metrics.dηdy,
                                      params.rhs_el, iel, params.CL, params.QT, SD,
-                                     params.AD, params.uaux, params.fluxaux, connijk,
+                                     params.AD, params.uaux, params.fluxaux, 
+				     params.dFdx, params.dFdxi, params.dFdeta,
+				     params.dGdy, params.dGdxi, params.dGdeta,
+				     connijk,
                                      params.volume_flux)           
         else
             _expansion_inviscid!(u,
@@ -1643,7 +1640,7 @@ end
 
 #
 # viscous RHS 2D
-#
+# SMAG FUNCTION
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
