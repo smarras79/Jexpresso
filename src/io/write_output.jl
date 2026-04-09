@@ -686,11 +686,13 @@ function read_vtu_point_data(filename::String, varnames::Vector{String})
         idx    = findfirst(needle, buf)
         idx === nothing &&
             error("No <AppendedData> section found in first 8192 bytes of $filename")
-        gt = findnext(==(UInt8('>')), buf, last(idx))
-        buf[gt + 1] == UInt8('_') ||
-            error("Expected '_' immediately after <AppendedData ...> in $filename")
-        # 0-based file offset of first binary data byte, plus the header string
-        gt + 1, String(buf[1:gt-1])
+        gt  = findnext(==(UInt8('>')), buf, last(idx))
+        # The '_' marker may be separated from '>' by a newline; scan forward.
+        pos = findnext(==(UInt8('_')), buf, gt)
+        pos === nothing &&
+            error("Could not find '_' marker after <AppendedData ...> in $filename")
+        # pos is the 1-based index of '_'; first data byte is at 0-based file offset = pos
+        pos, String(buf[1:gt-1])
     end
 
     # --- Extract metadata from the XML header via regex ---
