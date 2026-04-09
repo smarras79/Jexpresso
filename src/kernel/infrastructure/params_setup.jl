@@ -87,6 +87,8 @@ function params_setup(sem,
     gradient_deta = uODE.gradient_deta
     gradient_dx = uODE.gradient_dx
     gradient_dy = uODE.gradient_dy
+    dx_flux= uODE.dx_flux
+    dy_flux = uODE.dy_flux
     utmp         = uODE.utmp
     F            = fluxes.F
     G            = fluxes.G
@@ -336,6 +338,7 @@ function params_setup(sem,
                   uaux, vaux, utmp, fluxaux, dFdx, dFdxi, dFdeta, dGdy, dGdxi, dGdeta,
 		  gradient_dxi, gradient_deta,
 		  gradient_dx, gradient_dy,
+		  dx_flux, dy_flux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el, rhs_el_tmp,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el, μ_max,
@@ -374,6 +377,7 @@ function params_setup(sem,
                   uaux, vaux, utmp, fluxaux, dFdx, dFdxi, dFdeta, dGdy, dGdxi, dGdeta,
 		  gradient_dxi, gradient_deta,
 		  gradient_dx, gradient_dy,
+		  dx_flux, dy_flux,
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
                   fijk, ∇f_el,

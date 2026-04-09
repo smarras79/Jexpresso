@@ -1098,6 +1098,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                              params.metrics.dηdx, params.metrics.dηdy,
                              params.inputs, params.rhs_el,
                              iel, params.neqs,
+			  params.gradient_dxi, params.gradient_deta, 
+			  params.gradient_dx, params.gradient_dy, params.dx_flux, params.dy_flux,
                              params.QT, params.VT, SD, params.AD; Δ=Δ)
     end
 
@@ -1818,16 +1820,12 @@ function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
                           inputs, rhs_el,
                           iel, neqs, 
 			  gradient_dxi, gradient_deta, 
-			  gradient_dx, gradient_dy,
+			  gradient_dx, gradient_dy, dx_flux, dy_flux,
                           QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     Sc_t      = PHYS_CONST.Sc_t
     Δ2        = Δ^2
 	
-    # Determine if this is a momentum equation
-    is_u_momentum  = (ieq == 2)
-    is_v_momentum  = (ieq == 3)
-    is_temperature = (ieq == 4)
     
     for l = 1:ngl
         ωl = ω[l]
@@ -1850,22 +1848,22 @@ function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
                 dηdx_kl = dηdx[iel,k,l]
                 dηdy_kl = dηdy[iel,k,l]
 
-		## FIX: probabily this is wrong and we should keep working in the reference coordinates
                 @. gradient_dx = gradient_dxi*dξdx_kl + gradient_deta*dηdx_kl
                 @. gradient_dy = gradient_dxi*dξdy_kl + gradient_deta*dηdy_kl
 
 		## TODO: Compute parabolic fluxes
-		@views flux_x = flux_parabolic(u_primitive[k,l,:], (gradient_dxi, gradient_deta), 1) 		
-		@views flux_y = flux_parabolic(u_primitive[k,l,:], (gradient_dxi, gradient_deta), 2) 		
+		@views flux_x = flux_parabolic(uprimitiveieq[k,l,:], (gradient_dx, gradient_dy), 1) 		
+		@views flux_y = flux_parabolic(uprimitiveieq[k,l,:], (gradient_dx, gradient_dy), 2) 		
 		## FIX: reference or physical and arrays
-                ∇ξ_flux_kl = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
-                ∇η_flux_kl = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
+                @. dx_flux = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
+                @. dy_flux = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]
                     dhdη_il = dψ[i,l]
-                    
-                    rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ_flux_kl
-                    rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η_flux_kl
+                   for ieq in 1:neqs 
+		    rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * dx_flux[ieq]
+		    rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * dy_flux[ieq]
+	    	  end
                 end
             end
         end  

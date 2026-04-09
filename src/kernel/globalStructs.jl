@@ -18,6 +18,8 @@ Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, dims
     gradient_deta = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
     gradient_dx = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
     gradient_dy = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    dx_flux = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    dy_flux = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
 end
 function allocate_uODE(SD, npoin, T, backend; neqs=1)
 

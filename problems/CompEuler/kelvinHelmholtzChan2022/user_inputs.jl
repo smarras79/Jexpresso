@@ -14,12 +14,12 @@ function user_inputs()
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => false, 
-        :SOL_VARS_TYPE        => THETA(),
+        :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 3,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ function user_inputs()
         # LKEP:
         #---------------------------------------------------------------------------
         :lkep        => true,
-        :volume_flux => central_theta(),
+        :volume_flux => kennedy_gruber(),
         #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
