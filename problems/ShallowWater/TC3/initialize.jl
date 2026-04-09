@@ -25,10 +25,22 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
     if (inputs[:backend] == CPU())
         #---------------------------------------------------------------------------------
+        # Get domain size from the actual mesh
+        #---------------------------------------------------------------------------------
+        xmax_g = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+        xmin_g = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+        ymax_g = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
+        ymin_g = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+        Lx = xmax_g - xmin_g
+        Ly = ymax_g - ymin_g
+
+        if rank == 0
+            @info "  Domain size: Lx = $Lx m, Ly = $Ly m"
+        end
+
+        #---------------------------------------------------------------------------------
         # Physical parameters (TC3: Bishnu et al. 2024)
         #---------------------------------------------------------------------------------
-        Lx   = 1.0e6     # domain length x [m]
-        Ly   = 1.0e6     # domain length y [m]
         H0   = 1.0e3     # mean depth [m]
         g    = 9.81       # gravity [m/s²]
         f0   = 1.0e-4     # base Coriolis [s⁻¹]
@@ -40,11 +52,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         Ry = Ry_frac * Ly
 
         # Domain center
-        comm_mpi = MPI.COMM_WORLD
-        x0 = (MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm_mpi) +
-               MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm_mpi)) / 2.0
-        y0 = (MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm_mpi) +
-               MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm_mpi)) / 2.0
+        x0 = (xmax_g + xmin_g) / 2.0
+        y0 = (ymax_g + ymin_g) / 2.0
 
         for ip = 1:mesh.npoin
             x = mesh.x[ip]

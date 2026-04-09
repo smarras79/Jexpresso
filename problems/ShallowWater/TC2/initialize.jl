@@ -25,10 +25,18 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
     if (inputs[:backend] == CPU())
         #---------------------------------------------------------------------------------
+        # Get domain size from the actual mesh
+        #---------------------------------------------------------------------------------
+        Lx = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm) - MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+        Ly = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm) - MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+
+        if rank == 0
+            @info "  Domain size: Lx = $Lx m, Ly = $Ly m"
+        end
+
+        #---------------------------------------------------------------------------------
         # Physical parameters
         #---------------------------------------------------------------------------------
-        Lx  = 1.0e7   # domain length x [m]
-        Ly  = 1.0e7   # domain length y [m]
         H0  = 1.0e3   # mean depth [m]
         g   = 9.81     # gravity [m/s²]
         f0  = 1.0e-4   # Coriolis parameter [s⁻¹]
@@ -50,6 +58,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         ω2  = sqrt(f0^2 + g * H0 * K2sq)
 
         t0 = inputs[:tinit]
+
+        if rank == 0
+            T1 = 2π / ω1
+            T2 = 2π / ω2
+            @info "  Mode 1: kx=$(kx1), ky=$(ky1), ω=$(ω1), T=$(T1/3600) h"
+            @info "  Mode 2: kx=$(kx2), ky=$(ky2), ω=$(ω2), T=$(T2/3600) h"
+        end
 
         for ip = 1:mesh.npoin
             x = mesh.x[ip]
