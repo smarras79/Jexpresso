@@ -800,17 +800,17 @@ function inviscid_rhs_el!(u, params,
     ngl   = params.mesh.ngl
     nelem = params.mesh.nelem
     
-    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax; ymin = params.ymin
 
     lkep = inputs[:lkep]
-    
+
     for iel = 1:nelem
-        
+
         for j = 1:ngl, i=1:ngl
-            
+
             ip = connijk[iel,i,j]
 
-            
+
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
             if lkep
                 user_fluxaux!(@view(params.fluxaux[ip,:]),
@@ -826,14 +826,15 @@ function inviscid_rhs_el!(u, params,
                            params.CL, params.SOL_VARS_TYPE;
                            neqs=params.neqs, ip=ip)
             end
-            
+
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
-                             x=coords[ip,1], y=coords[ip,2], ymax=ymax)
+                             x=coords[ip,1], y=coords[ip,2],
+                             ymax=ymax, ymin=ymin, xmax=xmax, xmin=xmin)
                 
                 if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
