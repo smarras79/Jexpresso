@@ -7,7 +7,7 @@ function user_inputs()
 	:ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.0003,
         :tinit                => 0.0,
-        :tend                 => 10.0,
+        :tend                 => 5.0,
         :diagnostics_at_times => (0.0:0.25:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
@@ -32,7 +32,7 @@ function user_inputs()
         # LKEP:
         #---------------------------------------------------------------------------
         :lkep        => true,
-        :volume_flux => artiano_tec(),
+        :volume_flux => central_theta(),
         #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:

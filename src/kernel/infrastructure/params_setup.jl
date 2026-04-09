@@ -85,6 +85,8 @@ function params_setup(sem,
     dGdeta = uODE.dGdη 
     gradient_dxi = uODE.gradient_dxi
     gradient_deta = uODE.gradient_deta
+    gradient_dx = uODE.gradient_dx
+    gradient_dy = uODE.gradient_dy
     utmp         = uODE.utmp
     F            = fluxes.F
     G            = fluxes.G
