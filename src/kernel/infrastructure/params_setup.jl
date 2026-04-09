@@ -83,6 +83,8 @@ function params_setup(sem,
     dGdy = uODE.dGdy
     dGdxi = uODE.dGdξ 
     dGdeta = uODE.dGdη 
+    gradient_dxi = uODE.gradient_dxi
+    gradient_deta = uODE.gradient_deta
     utmp         = uODE.utmp
     F            = fluxes.F
     G            = fluxes.G
@@ -330,6 +332,8 @@ function params_setup(sem,
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux, utmp, fluxaux, dFdx, dFdxi, dFdeta, dGdy, dGdxi, dGdeta,
+		  gradient_dxi, gradient_deta,
+		  gradient_dx, gradient_dy,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el, rhs_el_tmp,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el, μ_max,
@@ -366,6 +370,8 @@ function params_setup(sem,
         params = (backend,
                   T, inputs,
                   uaux, vaux, utmp, fluxaux, dFdx, dFdxi, dFdeta, dGdy, dGdxi, dGdeta,
+		  gradient_dxi, gradient_deta,
+		  gradient_dx, gradient_dy,
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
                   fijk, ∇f_el,
