@@ -678,42 +678,9 @@ the interleaved (x,y,z) array of length `3*npoin`.
 """
 function read_vtu_point_data(filename::String, varnames::Vector{String})
 
-    # --- Parse XML header for metadata ---
-    doc    = LightXML.parse_file(filename)
-    xroot  = LightXML.root(doc)
-
-    ht_str  = LightXML.attribute(xroot, "header_type")
-    HeaderT = (ht_str == "UInt64") ? UInt64 : UInt32
-
-    ugrid = LightXML.get_elements_by_tagname(xroot, "UnstructuredGrid")[1]
-    piece = LightXML.get_elements_by_tagname(ugrid, "Piece")[1]
-    npoin = parse(Int, LightXML.attribute(piece, "NumberOfPoints"))
-
-    var_offsets   = Dict{String,Int}()
-    var_ncomps    = Dict{String,Int}()   # number of components per array
-
-    # Scalar point data
-    pd_el  = LightXML.get_elements_by_tagname(piece, "PointData")[1]
-    for da in LightXML.get_elements_by_tagname(pd_el, "DataArray")
-        nm  = LightXML.attribute(da, "Name")
-        var_offsets[nm] = parse(Int, LightXML.attribute(da, "offset"))
-        var_ncomps[nm]  = 1
-    end
-
-    # Coordinates — stored as 3-component "Points" DataArray
-    pts_el = LightXML.get_elements_by_tagname(piece, "Points")[1]
-    for da in LightXML.get_elements_by_tagname(pts_el, "DataArray")
-        # Expose as "__coords__" so callers can request it explicitly
-        var_offsets["__coords__"] = parse(Int, LightXML.attribute(da, "offset"))
-        var_ncomps["__coords__"]  = 3
-    end
-
-    LightXML.free(doc)
-
-    # --- Locate the start of the raw appended binary data ---
-    # The XML header is always within the first few KB; read 8 KB to be safe.
-    # Returns the 0-based file offset of the first binary data byte.
-    raw_start = open(filename, "r") do f
+    # --- Read the XML header (everything before the binary AppendedData block) ---
+    # WriteVTK.jl always puts the XML header in the first few KB.
+    raw_start, hdr = open(filename, "r") do f
         buf    = read(f, 8192)
         needle = codeunits("<AppendedData")
         idx    = findfirst(needle, buf)
@@ -722,8 +689,40 @@ function read_vtu_point_data(filename::String, varnames::Vector{String})
         gt = findnext(==(UInt8('>')), buf, last(idx))
         buf[gt + 1] == UInt8('_') ||
             error("Expected '_' immediately after <AppendedData ...> in $filename")
-        # buf[gt+2] is the first data byte (1-based), i.e. 0-based file offset = gt+1
-        gt + 1
+        # 0-based file offset of first binary data byte, plus the header string
+        gt + 1, String(buf[1:gt-1])
+    end
+
+    # --- Extract metadata from the XML header via regex ---
+    # header_type (UInt32 or UInt64)
+    m = match(r"header_type=\"(\w+)\"", hdr)
+    HeaderT = (m !== nothing && m[1] == "UInt32") ? UInt32 : UInt64
+
+    # NumberOfPoints
+    m = match(r"NumberOfPoints=\"(\d+)\"", hdr)
+    m === nothing && error("NumberOfPoints not found in VTU header of $filename")
+    npoin = parse(Int, m[1])
+
+    # All DataArray entries: extract Name, optional NumberOfComponents, and offset.
+    # We scan every <DataArray .../> tag regardless of which section it belongs to,
+    # then use context (preceding section tag) to distinguish Points from PointData.
+    var_offsets = Dict{String,Int}()
+    var_ncomps  = Dict{String,Int}()
+
+    in_points_section = false
+    for line in split(hdr, '\n')
+        if   occursin("<Points",   line); in_points_section = true  end
+        if   occursin("</Points",  line) ||
+             occursin("<Cells",    line) ||
+             occursin("<CellData", line) ||
+             occursin("<PointData",line); in_points_section = false end
+        m = match(r"<DataArray[^>]+Name=\"([^\"]+)\"[^>]*offset=\"(\d+)\"", line)
+        if m !== nothing
+            nm  = in_points_section ? "__coords__" : String(m[1])
+            nc  = in_points_section ? 3 : 1
+            var_offsets[nm] = parse(Int, m[2])
+            var_ncomps[nm]  = nc
+        end
     end
 
     # --- Read each requested variable ---
