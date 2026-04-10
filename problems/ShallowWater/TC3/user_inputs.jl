@@ -6,7 +6,7 @@ function user_inputs()
         # Linearized rotating shallow water equations on a beta-plane
         # Domain [0, Lx] x [0, Ly] with sponge-layer absorbing BCs
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(),
+        :ode_solver           => CarpenterKennedy2N54(),
         :Δt                   => 10.0,
         :tinit                => 0.0,
         :tend                 => 1728000.0,   # 20 days in seconds
@@ -18,7 +18,7 @@ function user_inputs()
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  => "lgl",
-        :nop                  => 4,
+        :nop                  => 7,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         # Generate mesh: gmsh -2 problems/ShallowWater/TC3/SWE_TC3.geo
-        :gmsh_filename        => "./meshes/gmsh_grids/SWE_TC3.msh",
+        :gmsh_filename        => "./meshes/gmsh_grids/SWE_TC3_10x10.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
