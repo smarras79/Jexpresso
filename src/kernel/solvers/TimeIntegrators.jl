@@ -14,10 +14,11 @@ function time_loop!(inputs, params, u, args...)
     # Runtime callbacks
     #------------------------------------------------------------------------
     dosetimes    = inputs[:diagnostics_at_times]
+    les_stat_t         = inputs[:statistics_time]
+    tstops_all   = sort(unique(vcat(collect(Float64, dosetimes), collect(Float64, les_stat_t))))
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
-    les_stat_t         = inputs[:statistics_time]
     stats_online_start = get(inputs, :statistics_online_start, Inf)
     rad_time           = inputs[:radiation_time_step]
     lnew_mesh    = true   
@@ -219,8 +220,7 @@ function time_loop!(inputs, params, u, args...)
         solution = solve(prob,
                          inputs[:ode_solver], dt=dt,
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = sort(unique(vcat(dosetimes, collect(Float64, les_stat_t)))),
-                         #  callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = dosetimes,
+                         callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = tstops_all,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit],
