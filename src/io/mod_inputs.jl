@@ -377,7 +377,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #LES statistics
     #---------------------------------------------------------------------------
     if(!haskey(inputs, :statistics_time))
-        inputs[:statistics_time] = 0.0
+        inputs[:statistics_time] = Float64[]
     end
 
     if(!haskey(inputs, :statistics_online_start))
