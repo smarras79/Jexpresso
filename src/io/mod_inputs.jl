@@ -328,35 +328,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # END Plotting parameters:
     #
 
-
-    #---------------------------------------------------------------------------
-    #LES statistics
-    #---------------------------------------------------------------------------
-    if(!haskey(inputs, :statistics_time))
-        inputs[:statistics_time] = 0.0
-    end
-
-    if(!haskey(inputs, :statistics_online_start))
-        inputs[:statistics_online_start] = Inf
-    end
-
-    if(!haskey(inputs, :statistics_online_stride))
-        inputs[:statistics_online_stride] = 1
-    end
-
-    if(!haskey(inputs, :lesprofile_vars))
-        inputs[:lesprofile_vars] = []
-    end
-
-    if(!haskey(inputs, :lesstress_vars))
-        inputs[:lesstress_vars] = []
-    end
-
-
-    #---------------------------------------------------------------------------
-    #END LES statistics
-    #---------------------------------------------------------------------------
-
     #Restart:
     if (!haskey(inputs, :lrestart))
         inputs[:lrestart] = false
@@ -399,6 +370,37 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     else
         inputs[:ndiagnostics_outputs] = 0
     end
+
+
+
+    #---------------------------------------------------------------------------
+    #LES statistics
+    #---------------------------------------------------------------------------
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = 0.0
+    end
+
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+
+    if(!haskey(inputs, :statistics_online_interval))
+        inputs[:statistics_online_interval] = Float32(inputs[:Δt])
+    end
+
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
+
+    #---------------------------------------------------------------------------
+    #END LES statistics
+    #---------------------------------------------------------------------------
+
     
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT

@@ -86,7 +86,7 @@ function time_loop!(inputs, params, u, args...)
     # LES statistics callback:
     function les_stat_condition(u, t, integrator)
         # return les_stat_t ≠ 0.0 && rem(t, les_stat_t) < 1e-3
-        idx  = findfirst(x -> AlmostEqual(x, t), les_stat_t)
+        idx  = findfirst(x -> x == t, les_stat_t)
         if idx !== nothing
             return true
         else
@@ -98,15 +98,17 @@ function time_loop!(inputs, params, u, args...)
         les_statistics(integrator.u, integrator.p, integrator.t)
     end
 
-    # Online statistics accumulation callback (Approach 2): fires every step, no MPI
-    stats_online_stride = get(inputs, :statistics_online_stride, 1)
-    online_step_ref     = Ref{Int}(0)
+    # Online statistics accumulation callback (Approach 2): fires every interval, no MPI
+    stats_online_interval = Float64(get(inputs, :statistics_online_interval, inputs[:Δt]))
+    online_last_t         = Ref{Float64}(-Inf)
     function les_online_condition(u, t, integrator)
-        return !isnothing(integrator.p.les_stat_cache) && t >= stats_online_start
+        return !isnothing(integrator.p.les_stat_cache) &&
+               t >= stats_online_start &&
+               t - online_last_t[] >= stats_online_interval - eps(t)
     end
     function do_les_online!(integrator)
-        online_step_ref[] += 1
-        online_step_ref[] % stats_online_stride == 0 || return
+        online_last_t[] = integrator.t
+        println_rank(" # LES online accumulation at t=", integrator.t; msg_rank = rank)
         les_accumulate_online!(integrator.u, integrator.p)
     end
 
@@ -217,7 +219,7 @@ function time_loop!(inputs, params, u, args...)
         solution = solve(prob,
                          inputs[:ode_solver], dt=dt,
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = dosetimes,
+                         callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = sort(unique(vcat(dosetimes, collect(Float64, les_stat_t)))),
                          #  callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = dosetimes,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
