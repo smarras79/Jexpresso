@@ -14,7 +14,7 @@ function time_loop!(inputs, params, u, args...)
     # Runtime callbacks
     #------------------------------------------------------------------------
     dosetimes    = inputs[:diagnostics_at_times]
-    les_stat_t         = inputs[:statistics_time]
+    les_stat_t   = inputs[:statistics_time]
     tstops_all   = sort(unique(vcat(collect(Float64, dosetimes), collect(Float64, les_stat_t))))
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
@@ -109,7 +109,7 @@ function time_loop!(inputs, params, u, args...)
     end
     function do_les_online!(integrator)
         online_last_t[] = integrator.t
-        println_rank(" # LES online accumulation at t=", integrator.t; msg_rank = rank)
+        # println_rank(" # LES online accumulation at t=", integrator.t; msg_rank = rank)
         les_accumulate_online!(integrator.u, integrator.p)
     end
 

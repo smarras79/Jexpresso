@@ -813,27 +813,30 @@ function les_accumulate_online!(u, params)
     mesh   = params.mesh
     npoin  = mesh.npoin
     neqs   = params.neqs
-    ET     = params.inputs[:SOL_VARS_TYPE]
+    ET     = params.SOL_VARS_TYPE
     uaux   = params.uaux
     qe     = params.qp.qe
 
     u2uaux!(@view(uaux[:,:]), u, neqs, npoin)
 
+    local_online_sum    = cache.local_online_sum
+    local_online_stress = cache.local_online_stress
     # 1D profile accumulation: sum over local owned points (no Allreduce)
     nz        = length(cache.z_levels)
-    nprofiles = size(cache.local_online_sum, 2)
-    nstress   = size(cache.local_online_stress, 2)
+    nprofiles = size(local_online_sum, 2)
+    nstress   = size(local_online_stress, 2)
     means_buf = cache.prof
     prof_buf  = cache.stress_prof
+    z_groups  = cache.z_groups
 
     for iz in 1:nz
-        for ip in cache.z_groups[iz]
+        for ip in z_groups[iz]
             user_les_profiles!(means_buf, prof_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
             for k in 1:nprofiles
-                cache.local_online_sum[iz, k] += means_buf[k]
+                local_online_sum[iz, k] += means_buf[k]
             end
             for k in 1:nstress
-                cache.local_online_stress[iz, k] += prof_buf[k]
+                local_online_stress[iz, k] += prof_buf[k]
             end
         end
     end
@@ -841,17 +844,24 @@ function les_accumulate_online!(u, params)
 
     # XZ cross-section accumulation: sum over local points (no Allreduce)
     isnothing(cs) && return
+
+    cslocal_online_mean   = cs.local_online_mean
+    cslocal_online_stress = cs.local_online_stress
     nxz          = length(cs.xz_coords)
-    nprofiles_cs = size(cs.local_online_mean, 2)
-    nstress_cs   = size(cs.local_online_stress, 2)
+    nprofiles_cs = size(cslocal_online_mean, 2)
+    nstress_cs   = size(cslocal_online_stress, 2)
+    csprof_buf     = cs.prof_buf
+    csstress_buf   = cs.stress_buf
+    csxz_groups    = cs.xz_groups
+
     for ixz in 1:nxz
-        for ip in cs.xz_groups[ixz]
-            user_les_profiles!(cs.prof_buf, cs.stress_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
+        for ip in csxz_groups[ixz]
+            user_les_profiles!(csprof_buf, csstress_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
             for k in 1:nprofiles_cs
-                cs.local_online_mean[ixz, k] += cs.prof_buf[k]
+                cslocal_online_mean[ixz, k] += csprof_buf[k]
             end
             for k in 1:nstress_cs
-                cs.local_online_stress[ixz, k] += cs.stress_buf[k]
+                cslocal_online_stress[ixz, k] += csstress_buf[k]
             end
         end
     end
