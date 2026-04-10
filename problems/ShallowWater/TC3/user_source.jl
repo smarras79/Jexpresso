@@ -20,7 +20,7 @@ function user_source!(S,
     Lx = xmax - xmin
     Ly = ymax - ymin
     sponge_frac     = 0.12
-    sponge_sigma_max = 5.0e-3  # [s⁻¹]
+    sponge_sigma_max = 0.0 #5.0e-3  # [s⁻¹]
     sx = sponge_frac * Lx
     sy = sponge_frac * Ly
 

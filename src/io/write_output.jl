@@ -140,7 +140,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
         write_vtk(SD, mesh, u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=u_exact, case=case)
     end
     
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
+    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
     
 end
 
@@ -173,7 +173,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
@@ -209,7 +209,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                      iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
