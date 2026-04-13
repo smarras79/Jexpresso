@@ -21,41 +21,49 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     
     
-    if(!haskey(inputs, :backend))
-        inputs[:backend] = CPU()
+   # Backend selection: user sets :backend => "threads" | "cuda" | "amd"
+    # in user_inputs.jl, or omits it to get the default (threads).
+    # We load the backend package at runtime via Base.require so that no
+    # Julia session restart is needed when switching backends.
+    if !haskey(inputs, :backend)
+        inputs[:backend] = "threads"
     end
-    
-    if(!haskey(inputs, :lJACC))
-        inputs[:lJACC] = true
-    end
-
-    @info inputs[:JACC_backend] 
-
-    if(!haskey(inputs, :JACC_backend))
-        inputs[:JACC_backend] = "threads"
-    end
-
-    if inputs[:lJACC]
-        try
-            JACC.set_backend(inputs[:JACC_backend])
-            
-            print_rank(GREEN_FG(string(" # JACC backend set to: ", inputs[:JACC_backend], "\n")); msg_rank = rank)
-        catch e
-            error("Failed to set JACC backend to '$(inputs[:JACC_backend])'. 
-                   The available backends are: 'threads' (default), 'cuda', 'amdgpu', 'metal' and 'oneAPI'.
-                   Error: $e")
-        end
-    end
-
-    if (inputs[:backend] != CPU())
-        if (inputs[:backend] == CUDABackend())
-            global TInt = Int32
+ 
+    if isa(inputs[:backend], String)
+        _backend_tag = lowercase(inputs[:backend])
+        if _backend_tag == "cuda"
+            print_rank(GREEN_FG(string(" # Using CUDA backend")); msg_rank = rank)
+            Base.require(Main, :CUDA)
+            inputs[:backend] = CUDABackend()
+            global TInt   = Int32
             global TFloat = Float32
-            global cpu = false
+            global cpu    = false
+        elseif _backend_tag == "amd" || _backend_tag == "amdgpu" || _backend_tag == "rocm" || _backend_tag == "hip"
+            Base.require(Main, :AMDGPU)
+            inputs[:backend] = ROCBackend()
+            global TInt   = Int32
+            global TFloat = Float32
+            global cpu    = false
+        elseif _backend_tag == "threads" || _backend_tag == "cpu"
+            print_rank(GREEN_FG(string(" # Using threads backend")); msg_rank = rank)
+            inputs[:backend] = CPU()
+            global TInt   = Int64
+            global TFloat = Float64
+            global cpu    = true
         else
-            global TInt = Int32
-            global TFloat = Float32
-            global cpu = false
+            s = """
+                    WARNING in user_inputs.jl --> :backend = "$(inputs[:backend])"
+                    Unrecognised backend. Chose among:
+                        - "threads"  (default, CPU multi-threaded)
+                        - "cuda"     (NVIDIA GPU)
+                        - "amd"      (AMD GPU via ROCm/HIP)
+                    Falling back to "threads".
+                    """
+            @warn s
+            inputs[:backend] = CPU()
+            global TInt   = Int64
+            global TFloat = Float64
+            global cpu    = true
         end
     end
 
