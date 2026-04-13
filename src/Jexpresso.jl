@@ -151,9 +151,9 @@ include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "operators.jl"))
 
-include(joinpath( "kernel", "operators", "newrhs.jl"))
+include(joinpath( "kernel", "operators", "newrhs copy.jl"))
 
-include(joinpath( "kernel", "operators", "rhs_jacc.jl"))
+include(joinpath( "kernel", "operators", "rhs_jacc copy.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
