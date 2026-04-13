@@ -4,6 +4,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
+        :backend => "cuda" , #choices: "cpu", "threads", "cuda", "rocm", "metal"
         :ode_solver           => CarpenterKennedy2N54(), #SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(),
         :Δt                   => 0.5,
         :tinit                => 0.0,
@@ -27,7 +28,7 @@ function user_inputs()
         #:visc_model     => AV(),
         :visc_model     => VREM(),
         #:visc_model     => SMAG(),
-        :energy_equation => "theta",
+        #:energy_equation => "theta",
         :μ              => [0.0, 1.0, 1.0, 2.0], #horizontal viscosity constant for momentum
         #:μ              => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
