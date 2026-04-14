@@ -16,7 +16,14 @@ function params_setup(sem,
     end
 
     backend = inputs[:backend]
-    
+
+    # Upload mesh coordinate and connectivity arrays to the compute backend.
+    # The mesh is always built on CPU (MPI/Gridap requirement); this is the
+    # single upload point so all GPU kernels receive device-resident arrays.
+    if backend != CPU()
+        convert_mesh_arrays!(sem.mesh.SD, sem.mesh, backend, inputs)
+    end
+
     uODE = allocate_uODE(sem.mesh.SD,
                          sem.mesh.npoin,
                          T, backend;
@@ -249,11 +256,11 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
-    if (sem.mesh.SD != NSD_1D()) && !(sem.mesh.lLaguerre)
+    if (sem.mesh.SD != NSD_1D()) && !(sem.mesh.lLaguerre) && backend == CPU()
         if rank == 0
             @info "start conformity4ncf_q!"
         end
-        g_dss_cache_qp = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        g_dss_cache_qp = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner; backend = backend)
         conformity4ncf_q!(qp.qn, rhs_el_tmp, @view(utmp[:,:]), vaux, 
                           g_dss_cache_qp,
                           sem.mesh.SD, 
@@ -319,7 +326,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
-        g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner; backend = backend)
         params = (backend, T, F, G, H, S,
                   uaux, vaux, utmp, fluxaux,
                   ubdy, gradu, bdy_flux, #for B.C.
@@ -354,7 +361,7 @@ function params_setup(sem,
                   timers)
         
     else
-        g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner; backend = backend)
         params = (backend,
                   T, inputs,
                   uaux, vaux, utmp, fluxaux,

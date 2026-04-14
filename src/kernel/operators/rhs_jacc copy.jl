@@ -320,7 +320,174 @@ function _build_rhs_diff_jacc_3D_av!(idx, RHS_diff, rhs_diffξ_el, rhs_diffη_el
             Atomix.@atomic rhs_diffζ_el[ie, i_x, i_y, i, ieq] -= dhdζ_im * ∇ζ∇u_klm
         end
 
-        Atomix.@atomic RHS_diff[ip, ieq] += (rhs_diffξ_el[ie,i_x,i_y,i_z,ieq] + rhs_diffη_el[ie,i_x,i_y,i_z,ieq] + rhs_diffζ_el[ie,i_x,i_y,i_z,ieq]) * Minv[ip]
+        @inbounds final_rhs_diff = (rhs_diffξ_el[ie,i_x,i_y,i_z,ieq] + rhs_diffη_el[ie,i_x,i_y,i_z,ieq] + rhs_diffζ_el[ie,i_x,i_y,i_z,ieq]) * Minv[ip]
+        Atomix.@atomic RHS_diff[ip, ieq] += final_rhs_diff
+    end
+    return nothing
+end
+
+# --- Single-kernel version using JACC.sync_workgroup() ---
+# Requires: ngl^3 threads for one element all land in the same CUDA block.
+# With ngl=5 (ngl^3=125) and default block size 256 this can fail when an
+# element straddles a block boundary.  Use the three-pass version for safety.
+function _build_rhs_diff_jacc_3D_av_synced!(idx, RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst, lpert)
+
+    ngl3 = ngl * ngl * ngl
+    ie   = (idx - 1) ÷ ngl3 + 1
+    rem  = (idx - 1) % ngl3
+    i_x  = rem ÷ (ngl*ngl) + 1
+    rem2 = rem % (ngl*ngl)
+    i_y  = rem2 ÷ ngl + 1
+    i_z  = rem2 % ngl + 1
+    T    = eltype(RHS_diff)
+
+    @inbounds ip = connijk[ie, i_x, i_y, i_z]
+
+    # ── Phase 1: each thread writes its own uprimitive slot ───────────────────
+    @inbounds uprimitive[ie, i_x, i_y, i_z, 1:neq] .=
+        user_primitives_gpu(@view(u[ip, 1:neq]), @view(qe[ip, 1:neq]), lpert)
+
+    # ── Barrier 1: all writes to uprimitive visible before any reads ──────────
+    JACC.sync_workgroup()
+
+    @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[ie, i_x, i_y, i_z]
+
+    for ieq = 1:neq
+        dqdξ = zero(T); dqdη = zero(T); dqdζ = zero(T)
+
+        for ii = 1:ngl
+            @inbounds dqdξ += dψ[ii, i_x] * uprimitive[ie, ii, i_y, i_z, ieq]
+            @inbounds dqdη += dψ[ii, i_y] * uprimitive[ie, i_x, ii, i_z, ieq]
+            @inbounds dqdζ += dψ[ii, i_z] * uprimitive[ie, i_x, i_y, ii, ieq]
+        end
+
+        @inbounds dξdx_klm = dξdx[ie, i_x, i_y, i_z]
+        @inbounds dξdy_klm = dξdy[ie, i_x, i_y, i_z]
+        @inbounds dξdz_klm = dξdz[ie, i_x, i_y, i_z]
+        @inbounds dηdx_klm = dηdx[ie, i_x, i_y, i_z]
+        @inbounds dηdy_klm = dηdy[ie, i_x, i_y, i_z]
+        @inbounds dηdz_klm = dηdz[ie, i_x, i_y, i_z]
+        @inbounds dζdx_klm = dζdx[ie, i_x, i_y, i_z]
+        @inbounds dζdy_klm = dζdy[ie, i_x, i_y, i_z]
+        @inbounds dζdz_klm = dζdz[ie, i_x, i_y, i_z]
+
+        @inbounds dqdx = visc_coeff[ieq] * (dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm)
+        @inbounds dqdy = visc_coeff[ieq] * (dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm)
+        @inbounds dqdz = visc_coeff[ieq] * (dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm)
+
+        ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz) * ωJac
+        ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz) * ωJac
+        ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz) * ωJac
+
+        for i = 1:ngl
+            @inbounds dhdξ_ik = dψ[i, i_x]
+            @inbounds dhdη_il = dψ[i, i_y]
+            @inbounds dhdζ_im = dψ[i, i_z]
+            Atomix.@atomic rhs_diffξ_el[ie, i, i_y, i_z, ieq] -= dhdξ_ik * ∇ξ∇u_klm
+            Atomix.@atomic rhs_diffη_el[ie, i_x, i, i_z, ieq] -= dhdη_il * ∇η∇u_klm
+            Atomix.@atomic rhs_diffζ_el[ie, i_x, i_y, i, ieq] -= dhdζ_im * ∇ζ∇u_klm
+        end
+    end
+
+    # ── Barrier 2: all atomic writes to rhs_diff*_el visible before reading ──
+    JACC.sync_workgroup()
+
+    for ieq = 1:neq
+        @inbounds final_rhs_diff = (rhs_diffξ_el[ie,i_x,i_y,i_z,ieq] +
+                                    rhs_diffη_el[ie,i_x,i_y,i_z,ieq] +
+                                    rhs_diffζ_el[ie,i_x,i_y,i_z,ieq]) * Minv[ip]
+        Atomix.@atomic RHS_diff[ip, ieq] += final_rhs_diff
+    end
+    return nothing
+end
+
+# --- Three-pass replacement for _build_rhs_diff_jacc_3D_av! ---
+# Pass 1: fill uprimitive (no cross-thread reads → no race)
+function _fill_uprimitive_3D!(idx, uprimitive, u, qe, connijk, ngl, neq, lpert)
+    ngl3 = ngl * ngl * ngl
+    ie   = (idx - 1) ÷ ngl3 + 1
+    rem  = (idx - 1) % ngl3
+    i_x  = rem ÷ (ngl*ngl) + 1
+    rem2 = rem % (ngl*ngl)
+    i_y  = rem2 ÷ ngl + 1
+    i_z  = rem2 % ngl + 1
+
+    @inbounds ip = connijk[ie, i_x, i_y, i_z]
+    @inbounds uprimitive[ie, i_x, i_y, i_z, 1:neq] .= user_primitives_gpu(@view(u[ip, 1:neq]), @view(qe[ip, 1:neq]), lpert)
+    return nothing
+end
+
+# Pass 2: read uprimitive → atomic accumulate rhs_diff*_el (no reads of rhs_diff*_el)
+function _build_rhs_diff_el_3D_av!(idx, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive,
+    dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+    Je, dψ, ω, visc_coeff, ngl, neq)
+    ngl3 = ngl * ngl * ngl
+    ie   = (idx - 1) ÷ ngl3 + 1
+    rem  = (idx - 1) % ngl3
+    i_x  = rem ÷ (ngl*ngl) + 1
+    rem2 = rem % (ngl*ngl)
+    i_y  = rem2 ÷ ngl + 1
+    i_z  = rem2 % ngl + 1
+    T    = eltype(rhs_diffξ_el)
+
+    @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[ie, i_x, i_y, i_z]
+
+    for ieq = 1:neq
+        dqdξ = zero(T); dqdη = zero(T); dqdζ = zero(T)
+
+        for ii = 1:ngl
+            @inbounds dqdξ += dψ[ii, i_x] * uprimitive[ie, ii, i_y, i_z, ieq]
+            @inbounds dqdη += dψ[ii, i_y] * uprimitive[ie, i_x, ii, i_z, ieq]
+            @inbounds dqdζ += dψ[ii, i_z] * uprimitive[ie, i_x, i_y, ii, ieq]
+        end
+
+        @inbounds dξdx_klm = dξdx[ie, i_x, i_y, i_z]
+        @inbounds dξdy_klm = dξdy[ie, i_x, i_y, i_z]
+        @inbounds dξdz_klm = dξdz[ie, i_x, i_y, i_z]
+        @inbounds dηdx_klm = dηdx[ie, i_x, i_y, i_z]
+        @inbounds dηdy_klm = dηdy[ie, i_x, i_y, i_z]
+        @inbounds dηdz_klm = dηdz[ie, i_x, i_y, i_z]
+        @inbounds dζdx_klm = dζdx[ie, i_x, i_y, i_z]
+        @inbounds dζdy_klm = dζdy[ie, i_x, i_y, i_z]
+        @inbounds dζdz_klm = dζdz[ie, i_x, i_y, i_z]
+
+        @inbounds dqdx = visc_coeff[ieq] * (dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm)
+        @inbounds dqdy = visc_coeff[ieq] * (dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm)
+        @inbounds dqdz = visc_coeff[ieq] * (dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm)
+
+        ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz) * ωJac
+        ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz) * ωJac
+        ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz) * ωJac
+
+        for i = 1:ngl
+            @inbounds dhdξ_ik = dψ[i, i_x]
+            @inbounds dhdη_il = dψ[i, i_y]
+            @inbounds dhdζ_im = dψ[i, i_z]
+            Atomix.@atomic rhs_diffξ_el[ie, i, i_y, i_z, ieq] -= dhdξ_ik * ∇ξ∇u_klm
+            Atomix.@atomic rhs_diffη_el[ie, i_x, i, i_z, ieq] -= dhdη_il * ∇η∇u_klm
+            Atomix.@atomic rhs_diffζ_el[ie, i_x, i_y, i, ieq] -= dhdζ_im * ∇ζ∇u_klm
+        end
+    end
+    return nothing
+end
+
+# Pass 3: read rhs_diff*_el → accumulate RHS_diff (all atomic writes are done)
+function _accumulate_rhs_diff_3D!(idx, RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+    Minv, connijk, ngl, neq)
+    ngl3 = ngl * ngl * ngl
+    ie   = (idx - 1) ÷ ngl3 + 1
+    rem  = (idx - 1) % ngl3
+    i_x  = rem ÷ (ngl*ngl) + 1
+    rem2 = rem % (ngl*ngl)
+    i_y  = rem2 ÷ ngl + 1
+    i_z  = rem2 % ngl + 1
+
+    @inbounds ip = connijk[ie, i_x, i_y, i_z]
+    for ieq = 1:neq
+        @inbounds final_rhs_diff = (rhs_diffξ_el[ie,i_x,i_y,i_z,ieq] +
+                                    rhs_diffη_el[ie,i_x,i_y,i_z,ieq] +
+                                    rhs_diffζ_el[ie,i_x,i_y,i_z,ieq]) * Minv[ip]
+        Atomix.@atomic RHS_diff[ip, ieq] += final_rhs_diff
     end
     return nothing
 end

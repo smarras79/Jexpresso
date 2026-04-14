@@ -32,7 +32,7 @@ function user_bc_dirichlet!(q,
 end
 
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x,y, τ_f, wθ, CL)
 
     if (tag == "bottom")
         F_edge[4] = 0.0
@@ -41,7 +41,7 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
     end
 end
 
-function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,nz,qbdy,lpert)
+function user_bc_dirichlet_gpu(q,qe,x,y,z,t,nx,ny,nz,qbdy,lpert)
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])

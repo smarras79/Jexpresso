@@ -30,8 +30,8 @@ using Parameters
     Ri_crit::T  = 0.25                     #Critical Richardson number
     C_s::T      = 0.21                     #Smagorinsky constant
 
-    karman      = 0.4
-    
+    karman::T   = 0.4
+
     #Gravity
     g::T = 9.80616 #m/s²
     g2::T= 9.80616^2
@@ -43,8 +43,8 @@ using Parameters
     μ::T  = E/(2*(1+ν))
 
     ## molar masses
-    Mol_mass_air   = 28.9647      #g/mol
-    Mol_mass_water = 18.02        #g/mol
+    Mol_mass_air::T   = 28.9647      #g/mol
+    Mol_mass_water::T = 18.02        #g/mol
     # Reference pressure used in potential temperature definition... mainly for BMOEX case, very sensitive to pressure
     potential_temperature_reference_pressure::T = 101325.0 #Pa
 end

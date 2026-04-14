@@ -1563,8 +1563,9 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                 end
             end
         end
-        updated_global_per_gip = [get(changes_ip, x, x) for x in global_per_gip]
-        updated_owner = [get(changes_owner, x, owner[i])  for (i, x) in enumerate(global_per_gip)]
+        _TI = eltype(global_per_gip)
+        updated_global_per_gip = _TI[_TI(get(changes_ip, x, x)) for x in global_per_gip]
+        updated_owner          = _TI[_TI(get(changes_owner, x, owner[i])) for (i, x) in enumerate(global_per_gip)]
         s_gip_vbuf   = VBuffer(updated_global_per_gip, recv_counts)
         s_owner_vbuf = VBuffer(updated_owner, recv_counts)
     else

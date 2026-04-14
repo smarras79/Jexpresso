@@ -141,12 +141,19 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         
     else
         #VERIFY THIS on GPU
-        u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
-        KernelAbstractions.copyto!(CPU(),u, u_sol)
+        u       = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
+        u_aux   = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
-        KernelAbstractions.copyto!(CPU(),u_exact,qexact)
+        KernelAbstractions.copyto!(CPU(), u      , sol)
+        KernelAbstractions.copyto!(CPU(), u_aux  , uaux)
+        KernelAbstractions.copyto!(CPU(), u_exact, qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        write_vtk(SD, mesh, u, u_aux, mp, 
+                  connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                  t, title, OUTPUT_DIR, inputs,
+                  varnames, outvarnames;
+                  iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
@@ -518,11 +525,11 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         write_hdf5(SD, mesh, sol, qexact, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
     else
         u_gpu = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
-        KernelAbstractions.copyto!(CPU(),u_gpu, u)
+        KernelAbstractions.copyto!(CPU(),u_gpu, sol)
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_hdf5(SD, mesh, u_gpu, u_exact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+        write_hdf5(SD, mesh, u_gpu, u_exact, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
         convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
     end
 

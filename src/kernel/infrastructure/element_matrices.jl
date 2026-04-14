@@ -30,18 +30,18 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, SD, method)
     end
 end
 
-function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin; backend = CPU())
 
     if SD == NSD_1D()
         return nothing
     end
-    
-    pM = setup_assembler(SD, M, ip2gip, gip2owner)
-    
+
+    pM = setup_assembler(SD, M, ip2gip, gip2owner; backend = backend)
+
     @time assemble_mpi!(M,pM)
 
     return pM
-    
+
 end
 
 function DSS_rhs_laguerre!(RHS, rhs_el, connijk_lag, nelem_semi_inf, ngl, ngr, neqs, SD, method)
@@ -813,7 +813,7 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
         end
     end
 
-    pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner)
+    pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner; backend = CPU())
     if pM != nothing
         assemble_mpi!(@view(normals[:,:]),pM)
     end
@@ -862,7 +862,7 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
         end
     end
 
-    pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner)
+    pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner; backend = CPU())
     if pM != nothing
         assemble_mpi!(@view(normals[:,:]),pM)
     end
@@ -947,20 +947,20 @@ function DSS_global_RHS_v0!(M, pM)
     end
 end
 
-function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin; backend = CPU())
 
     if SD == NSD_1D()
         return nothing
     end
-    
+
     #check_memory(" in sem_setup before setup_assembler.")
-    g_dss_cache = setup_assembler(SD, M, ip2gip, gip2owner)
+    g_dss_cache = setup_assembler(SD, M, ip2gip, gip2owner; backend = backend)
     #check_memory(" in sem_setup after setup_assembler.")
-    
+
     assemble_mpi!(M,g_dss_cache)
 
     return g_dss_cache
-    
+
 end
 
 
@@ -1228,7 +1228,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
 
     end
 
-    pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin; backend = backend)
 
     mass_inverse!(Minv, M, QT)
 
@@ -1240,7 +1240,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         Le_base = zeros(TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
         Le = JACC.array(Le_base)
     
-    g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin; backend = backend)
 
     DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, SD)
     
@@ -1426,7 +1426,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
         
         @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
-        g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+        g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin; backend = backend)
     else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)

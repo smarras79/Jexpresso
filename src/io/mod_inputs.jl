@@ -10,7 +10,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
     if rank == 0
-        pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
+        pretty_table(sort(collect(inputs), by = first); style = TextTableStyle(table_border = crayon"yellow"))
     end
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
@@ -33,14 +33,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         _backend_tag = lowercase(inputs[:backend])
         if _backend_tag == "cuda"
             print_rank(GREEN_FG(string(" # Using CUDA backend")); msg_rank = rank)
-            Base.require(Main, :CUDA)
-            inputs[:backend] = CUDABackend()
+            _cuda = Base.require(Main, :CUDA)
+            inputs[:backend] = _cuda.CUDABackend()
             global TInt   = Int32
             global TFloat = Float32
             global cpu    = false
         elseif _backend_tag == "amd" || _backend_tag == "amdgpu" || _backend_tag == "rocm" || _backend_tag == "hip"
-            Base.require(Main, :AMDGPU)
-            inputs[:backend] = ROCBackend()
+            _amdgpu = Base.require(Main, :AMDGPU)
+            inputs[:backend] = _amdgpu.ROCBackend()
             global TInt   = Int32
             global TFloat = Float32
             global cpu    = false

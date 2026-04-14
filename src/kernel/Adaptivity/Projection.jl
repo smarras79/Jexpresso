@@ -218,6 +218,7 @@ end
 
 
 function build_projection_1d(ξa)
+    ξa = Array(ξa)  # move to CPU: this is a setup function; results are used in CPU element loops
     Np = length(ξa)
 
     # Create the barycentric weights (we assume a similar function exists in Julia)

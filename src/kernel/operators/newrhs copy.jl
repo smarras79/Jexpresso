@@ -149,9 +149,9 @@ function rhs!(du, u, params, time)
         elseif (params.SD == NSD_3D())
             params.RHS .= TFloat(0.0)
 
-            JACC.parallel_for((params.mesh.npoin, params.neqs), utouaux_jacc!,
-                              u, params.uaux, params.mesh.npoin, TInt(params.neqs))
-
+            # JACC.parallel_for((params.mesh.npoin, params.neqs), utouaux_jacc!,
+            #                   u, params.uaux, params.mesh.npoin, TInt(params.neqs))
+            copyto!(params.uaux, u)
             if (params.inputs[:lfilter])
                 params.B .= TFloat(0.0)
                 kf = filter_gpu_3d!(backend, (Int64(params.mesh.ngl), Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
@@ -166,8 +166,9 @@ function rhs!(du, u, params, time)
                 else
                     params.uaux .= params.B .+ params.qp.qe
                 end
-                JACC.parallel_for((params.mesh.npoin, params.neqs), uauxtou_jacc!,
-                                  u, params.uaux, params.mesh.npoin, TInt(params.neqs))
+                # JACC.parallel_for((params.mesh.npoin, params.neqs), uauxtou_jacc!,
+                #                   u, params.uaux, params.mesh.npoin, TInt(params.neqs))
+                copyto!(u, params.uaux)
             end
 
             JACC.parallel_for(params.mesh.nfaces_bdy * params.mesh.ngl^2, apply_boundary_conditions_jacc_3D!,
@@ -177,8 +178,9 @@ function rhs!(du, u, params, time)
                               params.mesh.poin_in_bdy_face, params.qbdy_gpu,
                               params.mesh.ngl, TInt(params.neqs), params.mesh.npoin, lpert)
 
-            JACC.parallel_for((params.mesh.npoin, params.neqs), utouaux_jacc!,
-                              u, params.uaux, params.mesh.npoin, TInt(params.neqs))
+            # JACC.parallel_for((params.mesh.npoin, params.neqs), utouaux_jacc!,
+            #                   u, params.uaux, params.mesh.npoin, TInt(params.neqs))
+            copyto!(params.uaux, u)
 
             if (params.inputs[:lmoist])
                 k_moist = do_micro_physics_gpu_3D!(backend)
@@ -233,7 +235,24 @@ function rhs!(du, u, params, time)
                 params.source_gpu   .= TFloat(0.0)
 
                 if params.VT == AV()
-                    JACC.parallel_for(params.mesh.nelem * params.mesh.ngl^3, _build_rhs_diff_jacc_3D_av!,
+                    # # Pass 1: fill uprimitive (kernel boundary = global sync after this)
+                    # JACC.parallel_for(params.mesh.nelem * params.mesh.ngl^3, _fill_uprimitive_3D!,
+                    #                   params.source_gpu, params.uaux, params.qp.qe,
+                    #                   params.mesh.connijk, params.mesh.ngl, TInt(params.neqs), lpert)
+                    # # Pass 2: compute gradients → accumulate rhs_diff*_el
+                    # JACC.parallel_for(params.mesh.nelem * params.mesh.ngl^3, _build_rhs_diff_el_3D_av!,
+                    #                   params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
+                    #                   params.source_gpu,
+                    #                   params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                    #                   params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                    #                   params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                    #                   params.metrics.Je, params.basis.dψ, params.ω,
+                    #                   params.visc_coeff, params.mesh.ngl, TInt(params.neqs))
+                    # # Pass 3: rhs_diff*_el → RHS_visc (all atomic writes from pass 2 are done)
+                    # JACC.parallel_for(params.mesh.nelem * params.mesh.ngl^3, _accumulate_rhs_diff_3D!,
+                    #                   params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
+                    #                   params.Minv, params.mesh.connijk, params.mesh.ngl, TInt(params.neqs))
+                    JACC.parallel_for(params.mesh.nelem * params.mesh.ngl^3, _build_rhs_diff_jacc_3D_av_synced!,
                                       params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
                                       params.uaux, params.qp.qe, params.source_gpu,
                                       params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk,
@@ -255,7 +274,6 @@ function rhs!(du, u, params, time)
                                       params.visc_coeff, params.mesh.ngl, TInt(params.neqs),
                                       params.mesh.Δeffective_s, PHYS_CONST, lpert)
                 end
-
                 if (params.inputs[:case] == "bomex")
                     JACC.parallel_for(params.mesh.nelem * params.mesh.ngl^3, saturation_adjustment_jacc_3D!,
                                       params.uaux, params.qp.qe, params.mesh.z, params.mesh.connijk,
@@ -265,16 +283,16 @@ function rhs!(du, u, params, time)
                 end
 
                 @inbounds params.RHS .+= params.RHS_visc
+                # @info "RHS_visc max per eq" [maximum(abs.(Array(params.RHS_visc)[:,ieq])) for ieq in 1:params.neqs]
             end
-
-            JACC.parallel_for((params.mesh.npoin, params.neqs), RHStodu_jacc!,
-                              params.RHS, du, params.mesh.npoin, TInt(params.neqs))
+            copyto!(du, params.RHS)
+            # JACC.parallel_for((params.mesh.npoin, params.neqs), RHStodu_jacc!,
+            #                   params.RHS, du, params.mesh.npoin, TInt(params.neqs))
 
         elseif (params.SD == NSD_2D())
             params.RHS .= TFloat(0.0)
 
-            JACC.parallel_for((params.mesh.npoin, params.neqs), utouaux_jacc!,
-                              u, params.uaux, params.mesh.npoin, TInt(params.neqs))
+            copyto!(params.uaux, u)
 
             if (params.inputs[:lfilter])
                 params.B .= TFloat(0.0)
@@ -301,8 +319,7 @@ function rhs!(du, u, params, time)
                 else
                     params.uaux .= params.B .+ params.qp.qe
                 end
-                JACC.parallel_for((params.mesh.npoin, params.neqs), uauxtou_jacc!,
-                                  u, params.uaux, params.mesh.npoin, TInt(params.neqs))
+                copyto!(u, params.uaux)
             end
 
             JACC.parallel_for(params.mesh.nedges_bdy * params.mesh.ngl, apply_boundary_conditions_jacc!,
@@ -325,8 +342,7 @@ function rhs!(du, u, params, time)
                 KernelAbstractions.synchronize(backend)
             end
 
-            JACC.parallel_for((params.mesh.npoin, params.neqs), utouaux_jacc!,
-                              u, params.uaux, params.mesh.npoin, TInt(params.neqs))
+            copyto!(params.uaux, u)
 
             JACC.parallel_for(params.mesh.nelem * params.mesh.ngl^2, _build_rhs_jacc_2D_v0!,
                               params.RHS, params.uaux, params.qp.qe,
@@ -396,8 +412,7 @@ function rhs!(du, u, params, time)
 
             DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
 
-            JACC.parallel_for((params.mesh.npoin, params.neqs), RHStodu_jacc!,
-                              params.RHS, du, params.mesh.npoin, TInt(params.neqs))
+            copyto!(du, params.RHS)
         end
     end
 end

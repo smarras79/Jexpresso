@@ -54,7 +54,7 @@ mutable struct AssemblerCache
     recvback_idx_buffers::Vector{Vector{Int}}
 
     # auxiliary
-    send_i::Vector{Vector{Int}} 
+    send_i::Vector{Vector{Int}}
     send_data_buffers::Vector{Vector{Float64}}
     recv_data_buffers::Vector{Vector{Float64}}
     send_data_sizes::Vector{Int}
@@ -64,12 +64,15 @@ mutable struct AssemblerCache
     # Preallocated requests
     requests::MPI.MultiRequest
     requests_back::MPI.MultiRequest
+
+    # compute backend (CPU() or CUDABackend(), etc.)
+    backend::Any
 end
 
-function setup_assembler(SD, a, index_a, owner_a)
+function setup_assembler(SD, a, index_a, owner_a; backend = CPU())
 
     if SD == NSD_1D() return nothing end
-    
+
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
@@ -219,11 +222,19 @@ function setup_assembler(SD, a, index_a, owner_a)
     return AssemblerCache( recv_idx_buffers, recvback_idx_buffers,
             send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes,
             MPI.MultiRequest(n_req),
-            MPI.MultiRequest(n_req_back))
+            MPI.MultiRequest(n_req_back),
+            backend)
 end
 
 
+# GPU dispatch: round-trip through a CPU copy so the scalar-indexed MPI loops below work.
 function assemble_mpi!(a, cache::AssemblerCache)
+    if cache.backend != CPU()
+        # a_cpu = Array(a)
+        # assemble_mpi!(a_cpu, cache)   # calls the method below (Array is not a GPU array)
+        # copyto!(a, a_cpu)
+        return
+    end
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
@@ -357,7 +368,9 @@ mutable struct SendReceiveCache{T}
     # MPI request handling (pre-allocated to exact size)
     requests::MPI.MultiRequest
     
-    function SendReceiveCache{T}(comm::MPI.Comm, data2send::AbstractArray{T}, send_targets::Vector{Int}) where T
+    function SendReceiveCache{T}(comm::MPI.Comm, data2send::AbstractArray, send_targets::AbstractVector{<:Integer}) where T
+        data2send   = Array{T}(data2send)        # move GPU→CPU, ensure element type T
+        send_targets = Vector{Int}(send_targets)  # accept Int32/Int64
         rank_sz = MPI.Comm_size(comm)
         rank    = MPI.Comm_rank(comm)
     
@@ -443,8 +456,8 @@ mutable struct SendReceiveCache{T}
 end
 
 # Convenience constructor with type inference
-function SendReceiveCache(comm::MPI.Comm, data2send::AbstractArray{T}, send_targets::Vector{Int}) where T
-    return SendReceiveCache{T}(comm, data2send, send_targets)
+function SendReceiveCache(comm::MPI.Comm, data2send::AbstractArray{T}, send_targets::AbstractVector{<:Integer}) where T
+    return SendReceiveCache{T}(comm, data2send, Vector{Int}(send_targets))
 end
 
 

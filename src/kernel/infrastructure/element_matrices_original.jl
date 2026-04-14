@@ -1032,18 +1032,18 @@ function DSS_global_RHS_v0!(M, pM)
 end
 
 
-function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin; backend = CPU())
 
     if SD == NSD_1D()
         return nothing
     end
-    
-    pM = setup_assembler(SD, M, ip2gip, gip2owner)
-    
+
+    pM = setup_assembler(SD, M, ip2gip, gip2owner; backend = backend)
+
     @time assemble_mpi!(M,pM)
 
     return pM
-    
+
 end
 
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
@@ -1112,7 +1112,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin; backend = backend)
     
     if (inputs[:ladapt] == true)
         @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
@@ -1309,7 +1309,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
         
         @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
-        pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+        pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin; backend = backend)
     else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)
