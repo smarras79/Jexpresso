@@ -1,4 +1,7 @@
 using ArgParse
+using MPI
+using BenchmarkTools
+using Jexpresso: NSD_2D, St_mesh
 
 #--------------------------------------------------------
 # The problem name is a command line argument:
@@ -16,7 +19,7 @@ using ArgParse
 #    CASE_NAME is the name of the user's subdirectory $JEXPRESSO/problems/BENCHMARK/CASE_NAME (e.g. theta)
 #
 # Ex. To run the rising thermal bubble benchmark: $JEXPRESSO/problems/CompEuler/theta
-# 
+#
 #  julia > push!(empty!(ARGS), "CompEuler", "theta");
 #  julia > include(./src/Jexpresso.jl)
 #
@@ -41,12 +44,12 @@ function parse_commandline()
         help = "Directoy that contains some user-defined cases"
         default = "CompEuler"
         required = false
-        
+
         "eqs_case"
         help = "case name in equations directory"
         default = "wave1d"
         required = false
-        
+
         "CI_MODE"
         help = "CI_MODE: true or false"
         default = "false"
@@ -109,7 +112,7 @@ user_defined_output_dir = inputs[:output_dir]
 
 if inputs[:loverwrite_output]
     outstring = string("output")
-else        
+else
     outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
     outstring = MPI.bcast(outstring, 0, comm)
 end
@@ -140,9 +143,9 @@ else
 end
 
 #--------------------------------------------------------
-# Save a copy of user_inputs.jl for the case being run 
+# Save a copy of user_inputs.jl for the case being run
 #--------------------------------------------------------
-if rank == 0 
+if rank == 0
     cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
 end
 
@@ -150,11 +153,11 @@ end
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
 with_mpi() do distribute
-    
+
     driver(nparts,
-           distribute, 
+           distribute,
            inputs,
            OUTPUT_DIR,
            TFloat)
-    
+
 end

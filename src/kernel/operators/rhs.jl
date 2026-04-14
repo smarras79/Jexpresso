@@ -3,6 +3,32 @@ using TrixiBase
 using StaticArrays
 using UnPack
 
+# TODO - This hardcoded 4 is terrible!
+# Even worse. The indices are assuming that the order is the opposite of what high performance requires
+@inline @inbounds function get_node_vars_4(u, index1)
+    # SVector(ntuple(@inline(v->u[indices..., v]), 4))
+    SVector(u[index1, 1], u[index1, 2], u[index1, 3], u[index1, 4])
+end
+
+@inline @inbounds function get_node_vars_4(u, index1, index2)
+    # SVector(ntuple(@inline(v->u[indices..., v]), 4))
+    SVector(u[index1, index2, 1], u[index1, index2, 2], u[index1, index2, 3], u[index1, index2, 4])
+end
+
+@inline @inbounds function set_node_vars_4!(u, values, index1)
+    u[index1, 1] = values[1]
+    u[index1, 2] = values[2]
+    u[index1, 3] = values[3]
+    u[index1, 4] = values[4]
+end
+
+@inline @inbounds function set_node_vars_4!(u, values, index1, index2)
+    u[index1, index2, 1] = values[1]
+    u[index1, index2, 2] = values[2]
+    u[index1, index2, 3] = values[3]
+    u[index1, index2, 4] = values[4]
+end
+
 const PHYS_CONST = PhysicalConst{Float64}()
 const MicroConst = MicrophysicalConst{Float64}()
 
@@ -1069,7 +1095,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
 
 end
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
+@inbounds function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
 
     @unpack mesh, neqs, inputs, uaux, uprimitive, SOL_VARS_TYPE, rhs_diffξ_el, rhs_diffη_el, visc_coeff, ω, metrics, rhs_el, ω, QT, VT, AD, basis, gradient_dxi, gradient_deta, gradient_dx, gradient_dy, dx_flux, dy_flux, rhs_diff_el = params
 
@@ -1090,11 +1116,12 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                                   dξdx, dξdy,
                                   dηdx, dηdy,
                                   inputs,
+                                  gradient_dxi, gradient_deta,
                                   gradient_dx, gradient_dy, dx_flux, dy_flux,
                                   rhs_el, QT, VT, SD, AD, Δ, rhs_diff_el, entropy_variables)
 end
 
-function viscous_rhs_el_type_stable!(u, connijk, neqs, nelem, ngl, dψ, ω,
+@inbounds function viscous_rhs_el_type_stable!(u, connijk, neqs, nelem, ngl, dψ, ω,
                                   rhs_diffξ_el, rhs_diffη_el,
                                   uaux, qe,
                                   uprimitive,
@@ -1104,60 +1131,70 @@ function viscous_rhs_el_type_stable!(u, connijk, neqs, nelem, ngl, dψ, ω,
                                   dξdx, dξdy,
                                   dηdx, dηdy,
                                   inputs,
+                                  gradient_dxi, gradient_deta,
                                   gradient_dx, gradient_dy, dx_flux, dy_flux,
                                   rhs_el, QT, VT, SD, AD, Δ, rhs_diff_el, entropy_variables)
 
 
     if entropy_variables
 
-    # Compute the u_transformed everywhere and store in uprimitive
-    for iel=1:nelem
-        for j = 1:ngl, i=1:ngl
-            ip = connijk[iel,i,j]
-            @views user_primitives!(uaux[ip,:],qe[ip,:],uprimitive[i,j,:], SOL_VARS_TYPE)
-        end
+        # Compute the u_transformed everywhere and store in uprimitive
+        for iel=1:nelem
+            for j = 1:ngl, i=1:ngl
+                ip = connijk[iel,i,j]
+                @assert false
+                uaux_node = get_node_vars_4(uaux, ip)
+                # qe_node = get_node_vars_4(qe, ip)
+                # uprimitive_node = get_node_vars_4(uprimitive, i, j)
+                @views user_primitives!(uaux[ip,:], qe[ip,:], uprimitive[i,j,:], SOL_VARS_TYPE)
+            end
             _expansion_visc_navierstokes!(rhs_diffξ_el,
-                             rhs_diffη_el,
-                             uprimitive,
-                             visc_coeff,
-                             ω,
-                             ngl,
-                             dψ,
-                             Je,
-                             dξdx, dξdy,
-                             dηdx, dηdy,
-                             inputs, rhs_el,
-                             iel, neqs, gradient_dxi, gradient_deta,
-                             gradient_dx, gradient_dy, dx_flux, dy_flux,
-                             QT, VT, SD, AD; Δ=Δ)
-    end
+                            rhs_diffη_el,
+                            uprimitive,
+                            visc_coeff,
+                            ω,
+                            ngl,
+                            dψ,
+                            Je,
+                            dξdx, dξdy,
+                            dηdx, dηdy,
+                            inputs, rhs_el,
+                            iel, neqs, gradient_dxi, gradient_deta,
+                            gradient_dx, gradient_dy, dx_flux, dy_flux,
+                            QT, VT, SD, AD; Δ=Δ)
+        end
 
 
     else
-    for iel=1:nelem
+        for iel=1:nelem
 
-        for j = 1:ngl, i=1:ngl
-            ip = connijk[iel,i,j]
-            @views user_primitives!(uaux[ip,:],qe[ip,:],uprimitive[i,j,:], SOL_VARS_TYPE)
+            @inbounds for j = 1:ngl, i=1:ngl
+                ip = connijk[iel,i,j]
+                uaux_node = get_node_vars_4(uaux, ip)
+                qe_node = get_node_vars_4(qe, ip)
+                uprimitive_node = get_node_vars_4(uprimitive, i, j)
+                user_primitives_node = user_primitives!(uaux_node, qe_node, uprimitive_node, SOL_VARS_TYPE)
+                set_node_vars_4!(uaux, user_primitives_node, ip)
+                # @views user_primitives!(uaux[ip,:],qe[ip,:],uprimitive[i,j,:], SOL_VARS_TYPE)
+            end
+
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffξ_el,
+                                rhs_diffη_el,
+                                uprimitive,
+                                visc_coeff,
+                                ω,
+                                ngl,
+                                dψ,
+                                Je,
+                                dξdx, dξdy,
+                                dηdx, dηdy,
+                                inputs, rhs_el,
+                                iel, ieq,
+                                QT, VT, SD, AD; Δ=Δ)
+            end
+
         end
-
-        for ieq = 1:neqs
-            _expansion_visc!(rhs_diffξ_el,
-                             rhs_diffη_el,
-                             uprimitive,
-                             visc_coeff,
-                             ω,
-                             ngl,
-                             dψ,
-                             Je,
-                             dξdx, dξdy,
-                             dηdx, dηdy,
-                             inputs, rhs_el,
-                             iel, ieq,
-                             QT, VT, SD, AD; Δ=Δ)
-        end
-
-    end
     end
 
     @. rhs_diff_el = rhs_diffξ_el + rhs_diffη_el

@@ -1,8 +1,12 @@
+# function user_primitives!(u,qe,uprimitive,::TOTAL)
+#     uprimitive[1] = u[1]
+#     uprimitive[2] = u[2]/u[1]
+#     uprimitive[3] = u[3]/u[1]
+#     uprimitive[4] = u[4]/u[1]
+# end
+
 function user_primitives!(u,qe,uprimitive,::TOTAL)
-    uprimitive[1] = u[1]
-    uprimitive[2] = u[2]/u[1]
-    uprimitive[3] = u[3]/u[1]
-    uprimitive[4] = u[4]/u[1]
+    SVector{4}(u[1], u[2]/u[1], u[3]/u[1], u[4]/u[1])
 end
 
 function user_primitives!(u,qe,uprimitive,::PERT)
