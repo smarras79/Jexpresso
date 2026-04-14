@@ -15,10 +15,31 @@ function user_primitives!(u, qe, uprimitive,::TOTAL)
     p           = PhysConst.γm1 * ρ * ei_specific # Pressure
     T           = p / (ρ * PhysConst.Rair)        # Temperature
 
-    # uprimitive[1] = ρ
-    # uprimitive[2] = u
-    # uprimitive[3] = v
-    # uprimitive[4] = T
+    uprimitive[1] = ρ
+    uprimitive[2] = u
+    uprimitive[3] = v
+    uprimitive[4] = T
+    # return SVector(ρ, u, v, T)
+#    uprimitive[4] = p
+end
+
+function user_primitives(u, qe, uprimitive, ::TOTAL)
+
+    PhysConst = PhysicalConst{Float64}()
+
+    ρ  = u[1]
+    ρu = u[2]
+    ρv = u[3]
+    ρE = u[4]
+
+    u           = ρu/ρ                            # Velocity u
+    v           = ρv/ρ                            # Velocity v
+    E_specific  = ρE/ρ                            # Specific total energy
+    KE_specific = 0.5 * (u^2 + v^2)               # Specific kinetic energy
+    ei_specific = E_specific - KE_specific        # Specific internal energy
+    p           = PhysConst.γm1 * ρ * ei_specific # Pressure
+    T           = p / (ρ * PhysConst.Rair)        # Temperature
+
     return SVector(ρ, u, v, T)
 #    uprimitive[4] = p
 end

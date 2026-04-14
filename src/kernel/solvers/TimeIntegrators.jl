@@ -6,12 +6,14 @@ function time_loop!(inputs, params, u, args...)
     rank = MPI.Comm_rank(comm)
     partitioned_model = args[1]
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
-    
+
     prob = ODEProblem(rhs!,
                       u,
                       params.tspan,
                       params);
-    
+    Main.debug[] = (; prob)
+    error()
+
     #------------------------------------------------------------------------
     # Runtime callbacks
     #------------------------------------------------------------------------
@@ -20,10 +22,10 @@ function time_loop!(inputs, params, u, args...)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
     rad_time     = inputs[:radiation_time_step]
-    lnew_mesh    = true   
+    lnew_mesh    = true
     lwrite_time  = (inputs[:outformat] == VTK()) && (rank == 0)
 
-    if (lwrite_time == true) 
+    if (lwrite_time == true)
         pvd_path = joinpath(inputs[:output_dir], "simulation.pvd")
         init_pvd_file(pvd_path)
     end
@@ -118,13 +120,13 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
-            if (lwrite_time == true) 
+            if (lwrite_time == true)
                 append_pvd_entry(pvd_path, integrator.t, "iter_$(idx).pvtu")
             end
         end
     end
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
-    cb         = DiscreteCallback(condition, affect!)    
+    cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
     CallbackSet(cb)#,cb_rad)
@@ -146,7 +148,7 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe)
-        if (lwrite_time == true) 
+        if (lwrite_time == true)
             append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
         end
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
@@ -159,11 +161,11 @@ function time_loop!(inputs, params, u, args...)
     limex = false
     if limex
         ntime_steps = floor(Int32, inputs[:tend]/inputs[:Δt])
-        
+
         # Basic usage
-        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, 
+        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords,
                                            inputs[:Δt], ntime_steps, inputs[:lsource])
-        
+
         # Or step-by-step
         for n = 1:ntime_steps
             imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
@@ -181,15 +183,15 @@ function time_loop!(inputs, params, u, args...)
                                         inputs[:tend],
                                         length=inputs[:ndiagnostics_outputs]));
     end
-    display(TrixiBase.timer()) 
+    display(TrixiBase.timer())
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)
-    
+
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
-            
+
             @time solution = solve(prob,
                                 inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                                 callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
@@ -201,7 +203,7 @@ function time_loop!(inputs, params, u, args...)
             MPI.Barrier(comm)
         end
     end
-    
+
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
 
     return solution

@@ -152,12 +152,12 @@ end
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
-with_mpi() do distribute
+Jexpresso.with_mpi() do distribute
 
-    driver(nparts,
+    Jexpresso.driver(Jexpresso.nparts,
            distribute,
-           inputs,
-           OUTPUT_DIR,
-           TFloat)
+           Jexpresso.inputs,
+           Jexpresso.OUTPUT_DIR,
+           Jexpresso.TFloat)
 
 end

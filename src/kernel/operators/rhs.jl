@@ -132,7 +132,9 @@ function reset∇fToZero!(params)
 end
 
 function rhs!(du, u, params, time)
-    backend = params.inputs[:backend]
+    @info "rhs!"
+    # backend = params.inputs[:backend]
+    backend = CPU()
     # for @timers, do not delete
     timers = params.timers
     if (backend == CPU())
@@ -738,7 +740,7 @@ function inviscid_rhs_el!(u, params,
 end
 
 
-function _expansion_inviscid_KEP!(u, neqs, ngl,
+@inline function _expansion_inviscid_KEP!(u, neqs, ngl,
                                   dψ, ω,
                                   F, S, D,
                                   rhs_el, uilgl, iel,
@@ -766,7 +768,7 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
 end
 
 
-function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
+@inline function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
                                   F, G, S,
                                   Je,
                                   dξdx, dξdy,
@@ -1170,12 +1172,12 @@ end
 
             @inbounds for j = 1:ngl, i=1:ngl
                 ip = connijk[iel,i,j]
-                uaux_node = get_node_vars_4(uaux, ip)
-                qe_node = get_node_vars_4(qe, ip)
-                uprimitive_node = get_node_vars_4(uprimitive, i, j)
-                user_primitives_node = user_primitives!(uaux_node, qe_node, uprimitive_node, SOL_VARS_TYPE)
-                set_node_vars_4!(uaux, user_primitives_node, ip)
-                # @views user_primitives!(uaux[ip,:],qe[ip,:],uprimitive[i,j,:], SOL_VARS_TYPE)
+                # uaux_node = @inline get_node_vars_4(uaux, ip)
+                # qe_node = @inline get_node_vars_4(qe, ip)
+                # uprimitive_node = @inline get_node_vars_4(uprimitive, i, j)
+                # user_primitives_node = user_primitives(uaux_node, qe_node, uprimitive_node, SOL_VARS_TYPE)
+                # set_node_vars_4!(uaux, user_primitives_node, ip)
+                @views user_primitives!(uaux[ip,:],qe[ip,:],uprimitive[i,j,:], SOL_VARS_TYPE)
             end
 
             for ieq = 1:neqs
@@ -1651,7 +1653,7 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::
 end
 
 
-function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
+@inline function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, inputs, rhs_el, iel, ieq,
                           QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal; Δ=1.0)
 
@@ -1677,13 +1679,13 @@ function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
 end
 
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
+@inline function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
                           mesh, basis, metrics, inputs, rhs_el, iel, ieq,
                           QT::Inexact, VT, SD::NSD_2D, ::FD)
     nothing
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+@inline function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
                           dξdx, dξdy,
@@ -1732,7 +1734,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+@inline function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
                           dξdx, dξdy,
@@ -1860,7 +1862,7 @@ end
 
 # viscous RHS 2D
 # SMAG FUNCTION
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+@inline function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
                           dξdx, dξdy,
@@ -2002,7 +2004,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
-function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
+@inline @inbounds function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
                           dξdx, dξdy,
@@ -2060,7 +2062,7 @@ function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+@inline function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           Tabs, qn, qs,
                           uaux,
@@ -2151,7 +2153,7 @@ end
 
 
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+@inline function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           Tabs, qn, qs,
                           uaux,
