@@ -2,14 +2,23 @@
 
 This guide provides detailed instructions for installing Jexpresso and its dependencies with the correct package versions.
 
-## Installation Status
+## Installation Status:
 
 **Note**: Jexpresso is currently in the process of being registered with the Julia General Registry. Once registration is complete, you will be able to install it directly with:
 
-```julia
-using Pkg
-Pkg.add("Jexpresso")
-```
+
+# As of today, April 15, we are using julia-1.12.5
+# To install Jexpresso with it, follow these 3 following steps steps religiously!
+#
+# Step 1: Install packages without precompiling
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+
+# Step 2: Now configure MPI (MPIPreferences is installed but not precompiled — that's fine)
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+
+# Step 3: Precompile everything
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+
 
 **Until registration is complete**, please use the manual installation method described below.
 
@@ -17,7 +26,7 @@ For information about the registration process, see [REGISTRATION.md](REGISTRATI
 
 ## Prerequisites
 
-- **Julia 1.11.2 or higher** (required)
+- **Julia 1.12.5**
 - **Git** (for cloning the repository - required until package is registered)
 - **MPI** (for parallel computing support)
 
@@ -42,8 +51,19 @@ git checkout yt/wallmodel
 
 We provide a robust installation script that automatically installs all dependencies with the correct versions:
 
+# As of today, April 15, we are using julia-1.12.5
+# To install Jexpresso with it, follow these 3 following steps steps religiously!
+#
 ```bash
-julia install_dependencies.jl
+# Step 1: Install packages without precompiling
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+
+# Step 2: Now configure MPI (MPIPreferences is installed but not precompiled — that's fine)
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+
+# Step 3: Precompile everything
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+
 ```
 
 The script will:
