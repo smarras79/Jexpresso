@@ -26,7 +26,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter for stabilization (CG SEM needs this for wave propagation)
         #---------------------------------------------------------------------------
-        :lfilter              => true,
+#        :lfilter              => true,
         :mu_x                 => 0.05,
         :mu_y                 => 0.05,
         :filter_type          => "erf",
