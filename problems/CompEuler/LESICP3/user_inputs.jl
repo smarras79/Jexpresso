@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.2,
+        :Δt                   => 0.04,
         :tinit                => 0.0,
         :tend                 => 10800.0,
 	:lrestart             => false,
@@ -27,12 +27,13 @@ function user_inputs()
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        :μ                    => [0.0, 15, 15, 15, 15], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 5, 5, 5, 5], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	:statistics_time           => (9000.0:10.0:10800.0),
-        :statistics_online_start   => 9000.0,
+	# :statistics_time           => (9000.0:10.0:10800.0),
+        # :statistics_online_start   => 9000.0,
+        # :statistics_online_stride  => 10,   # accumulate every 10 steps → ~450 samples/30 min at dt=0.4s
         :lesprofile_vars      => ["u_mean", "v_mean", "w_mean", "t_mean", "p_mean"],
         :lesstress_vars       => ["upup_res", "upvp_res", "upwp_res", "vpvp_res", "vpwp_res", "wpwp_res",
                                    "tptp_res", "uptp_res", "vptp_res", "wptp_res",

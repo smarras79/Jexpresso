@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.025,
+        :Δt                   => 0.04,
         :tinit                => 0,
         :tend                 => 10800.0,
 	:lrestart             => false,
@@ -23,6 +23,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
+        :user_heatflux        => 0.12,
         :lwall_model          => true,
         :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
