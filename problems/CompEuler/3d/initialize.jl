@@ -1,8 +1,4 @@
-
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    """
-
-            """
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
@@ -54,26 +50,14 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
-            comm = MPI.COMM_WORLD
-            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-            xc = (max_x + min_x)/2
-            zc = 2500.0 #m
-            r0 = 2000.0 #m
-        
-            θref = 300.0 #K
-            θc   =   2.0 #K
-            for ip = 1:mesh.npoin
+	    comm = MPI.COMM_WORLD
+            θL   = 288.15
+	    θS   = 278.15
+	    θ    = 0.5*(θS + θL)
+	    for ip = 1:mesh.npoin
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
             
-                r = sqrt( (x - xc)^2 + (z - zc)^2 )
-            
-                Δθ = 0.0 #K
-                if r < r0
-                    Δθ = θc*(1.0 - r/r0)
-                end
-                θ = θref + Δθ
                 p    = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
                 pref = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θref))^(PhysConst.cpoverR)
                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p)    #kg/m³
