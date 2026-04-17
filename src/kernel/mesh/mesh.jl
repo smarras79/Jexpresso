@@ -262,31 +262,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
-            smodel = if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks (must use open()
-                # not devnull: GMSH writes via C-level fprintf so we need an OS-level fd redirect)
-                redirect_stdout(open("/dev/null", "w")) do
-                    GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-                end
-            else
-                GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-            end
+            smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             partitioned_model = if inputs[:lxy_partition]
                 cell_to_part = _compute_xy_partition(smodel, nparts)
                 DiscreteModel(parts, smodel, cell_to_part)
             else
-                GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+                @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
 
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-                    partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
-                end
-            else
+            @outputrootonly begin
                 gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             end
@@ -295,13 +281,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
         elseif ladaptive == true && linitial_refine == false
 
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-                    partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
-                end
-            else
+            @outputrootonly begin
                 gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
@@ -326,13 +306,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
           
                 flags
             end
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
-                end
-            else
-                partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
+            @outputrootonly begin
+                partitioned_model, glue_adapt = Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
             end
             # partitioned_model, glue_redistribute = redistribute(partitioned_model)
             # glue_adapt = get_adaptivity_glue(partitioned_model.dmodel)
@@ -347,12 +322,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         end
     else
         if (omesh.lneed_redistribute)
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
-                end
-            else
+            @outputrootonly begin
                 partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
             end
         else
@@ -377,13 +347,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                                             partitioned_model_coarse.pXest_refinement_rule_type,
                                             partitioned_model_coarse.owns_ptr_pXest_connectivity,
                                             partitioned_model_coarse.gc_ref)
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
-                end
-            else
-                partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
+            @outputrootonly begin
+                partitioned_model, glue_adapt = Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
             end
             cmodel = local_views(discrete_partitioned_model_coarse.dmodel.models).item_ref[]
             cell_gids_c = local_views(partition(get_cell_gids(discrete_partitioned_model_coarse))).item_ref[]
@@ -3710,6 +3675,94 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 end
 
 
+"""
+    read_ad_lvl_from_p4est(ptr_pXest) -> Vector{TInt}
+
+Walk the local trees of a p8est forest and return the level of every
+local leaf quadrant, in p4est ordering.  This ordering matches the
+Jexpresso mesh element ordering when the mesh is built directly from
+the same forest (e.g. after an AMR restart via `load_p4est_checkpoint_model`).
+"""
+function read_ad_lvl_from_p4est(ptr_pXest)
+    forest    = unsafe_load(ptr_pXest)
+    trees_arr = unsafe_load(forest.trees)          # sc_array_t of p8est_tree_t
+    levels    = TInt[]
+    for t in forest.first_local_tree:forest.last_local_tree
+        tree_ptr = Ptr{P4est_wrapper.p8est_tree_t}(
+            trees_arr.array + t * trees_arr.elem_size)
+        tree   = unsafe_load(tree_ptr)
+        n_quads = Int(tree.quadrants.elem_count)
+        for q in 0:n_quads-1
+            quad_ptr = Ptr{P4est_wrapper.p8est_quadrant_t}(
+                tree.quadrants.array + q * tree.quadrants.elem_size)
+            quad = unsafe_load(quad_ptr)
+            push!(levels, TInt(quad.level))
+        end
+    end
+    return levels
+end
+
+"""
+    load_p4est_checkpoint_model(base_model, forest_file) -> OctreeDistributedDiscreteModel
+
+Load a p4est forest checkpoint saved by `write_p4est_checkpoint` and build a full
+`OctreeDistributedDiscreteModel` from it.
+
+`base_model` should be the coarse (or preadapted) `OctreeDistributedDiscreteModel`
+built from the original .msh file — its `coarse_model` and `ptr_pXest_connectivity`
+provide the geometric context for the loaded forest.  All MPI ranks call collectively.
+"""
+function load_p4est_checkpoint_model(base_model::OctreeDistributedDiscreteModel, forest_file::String)
+    pXest_type = base_model.pXest_type
+    parts      = base_model.parts
+
+    # Load forest (MPI-collective). p8est_load also fills *connectivity_ref with
+    # a freshly allocated connectivity that we leave to be GCed — we use the
+    # Gridap-managed connectivity from base_model throughout.
+    connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
+    loaded_ptr_pXest = P4est_wrapper.p8est_load(
+        forest_file,
+        MPI.COMM_WORLD,
+        Csize_t(0),      # no per-quadrant data stored
+        Cint(0),         # do not read payload
+        C_NULL,
+        connectivity_ref)
+
+    # Ghost layer and lnodes for a non-conforming (AMR) forest
+    ptr_ghost  = GridapP4est.setup_pXest_ghost(pXest_type, loaded_ptr_pXest)
+    ptr_lnodes = GridapP4est.setup_pXest_lnodes_nonconforming(pXest_type, loaded_ptr_pXest, ptr_ghost)
+
+    # Build Gridap distributed mesh from the loaded forest.
+    # base_model.coarse_model (GmshDiscreteModel) provides physical coordinates.
+    fmodel, nc_glue = GridapP4est.setup_non_conforming_distributed_discrete_model(
+        pXest_type,
+        GridapP4est.PXestUniformRefinementRuleType(),
+        parts,
+        base_model.coarse_model,
+        base_model.ptr_pXest_connectivity,
+        loaded_ptr_pXest,
+        ptr_ghost,
+        ptr_lnodes)
+
+    GridapP4est.pXest_ghost_destroy(pXest_type, ptr_ghost)
+    GridapP4est.pXest_lnodes_destroy(pXest_type, ptr_lnodes)
+
+    Dc = num_cell_dims(base_model.dmodel)
+    Dp = num_point_dims(base_model.dmodel)
+
+    return OctreeDistributedDiscreteModel(Dc, Dp,
+        parts,
+        fmodel,
+        nc_glue,
+        base_model.coarse_model,
+        base_model.ptr_pXest_connectivity,
+        loaded_ptr_pXest,
+        pXest_type,
+        GridapP4est.PXestUniformRefinementRuleType(),
+        false,         # does not own connectivity (base_model owns it)
+        base_model)    # gc_ref: keep base_model alive
+end
+
 function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     
     comm = MPI.COMM_WORLD
@@ -3787,7 +3840,9 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             project = args[end-1]
             interp  = args[end-2]
             uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
-            p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+            if !get(inputs, :lrestart_amr, false)
+                p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+            end
 
             # If any periodic boundaries are non-conforming, mark the coarser-side
             # parent elements for refinement and rebuild until conforming.
@@ -3835,6 +3890,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             end
                 
         end
+
 
         # WARNING: this will be removed when x,y,z is fulyl replaced by coords
         mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
