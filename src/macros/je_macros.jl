@@ -17,6 +17,30 @@ macro mystop(message=" MY STOP HERE")
 end
 
 """
+    @outputrootonly expr
+
+Macro that runs `expr` normally on MPI rank 0, and silences stdout on all other ranks.
+Requires a variable named `rank` (integer MPI rank) to be in scope at the call site.
+
+# Example
+```julia
+model = @outputrootonly GmshDiscreteModel(parts, filename, renumber=true)
+```
+"""
+macro outputrootonly(expr)
+    quote
+        if $(esc(:rank)) != 0
+            redirect_stdout(open("/dev/null", "w")) do
+                $(esc(expr))
+            end
+        else
+            $(esc(expr))
+        end
+    end
+end
+
+
+"""
     @timers func(args...)
 
 Macro to time a function call. Expects a variable named `timers` in scope.
