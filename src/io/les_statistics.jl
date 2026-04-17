@@ -172,30 +172,16 @@ function horizontal_stress!(cache)
     end
 end
 
-function les_statistics(u, params, time)
+function les_statistics(u, params, ::Any)
 
     isnothing(params.les_stat_cache) && return
-    t = time
-    iout  = findfirst(x -> AlmostEqual(x, time), params.inputs[:statistics_time])
 
-    mesh      = params.mesh
-    npoin     = mesh.npoin
-    neqs      = params.neqs
-    cache     = params.les_stat_cache
-    nz        = length(cache.z_levels)
-    nprofiles = size(cache.global_sum, 2)
-    ngl       = mesh.ngl
-    ET        = params.inputs[:SOL_VARS_TYPE]
-
-    wθ     = params.WM.wθ
-    wqv    = params.WM.wqv
-
-    nfaces_bdy       = mesh.nfaces_bdy
-    bdy_face_type    = mesh.bdy_face_type
-    poin_in_bdy_face = mesh.poin_in_bdy_face
-
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
+    mesh  = params.mesh
+    npoin = mesh.npoin
+    neqs  = params.neqs
+    cache = params.les_stat_cache
+    ET    = params.inputs[:SOL_VARS_TYPE]
+    comm  = MPI.COMM_WORLD
 
     uaux = params.uaux
     qe   = params.qp.qe
@@ -219,124 +205,6 @@ function les_statistics(u, params, time)
         cs.sum_mean   .+= cs.global_mean
         cs.sum_stress .+= cs.global_stress
         cs.n_samples  += 1
-        # all_spectra, kappa_global = compute_les_spectra!(cs, uaux, qe, mesh, ET, comm, params)
-        # all_spectra, kappa_global = nothing
-        write_xz_cross_section_vtk(cs, params, t, iout)
-        # write_xz_cross_section_vtk(cs, params, t, iout, all_spectra, kappa_global)
-    end
-
-    # MOST surface fluxes
-    # PhysConst   = PhysicalConst{Float64}()
-    # wθ_sum      = 0.0
-    # wqv_sum     = 0.0
-    # cnt         = 0.0
-    # for iface = 1:nfaces_bdy
-    #     if bdy_face_type[iface] == "MOST"
-    #         for i = 1:ngl, j = 1:ngl
-    #             ip       = poin_in_bdy_face[iface,i,j]
-    #             ρ        = uaux[ip, 1]
-    #             wθ_sum  += ρ * PhysConst.cp * wθ[iface,i,j,1]
-    #             wqv_sum += ρ * PhysConst.Lc * wqv[iface,i,j,1]
-    #             cnt     += 1.0
-    #         end
-    #     end
-    # end
-    # most_sum_local  = [wθ_sum, wqv_sum, cnt]
-    # most_sum_global = zeros(3)
-    # MPI.Allreduce!(most_sum_local, most_sum_global, MPI.SUM, comm)
-
-    if rank == 0
-        lesprofile_vars = params.inputs[:lesprofile_vars]
-
-        outfile_les = joinpath(params.inputs[:output_dir], "les_statistics.dat")
-        if !isfile(outfile_les)
-            open(outfile_les, "w") do io
-                print(io, "# time  z")
-                for k in 1:nprofiles
-                    print(io, "  ", lesprofile_vars[k])
-                end
-                println(io)
-            end
-        end
-        open(outfile_les, "a") do io
-            for iz in 1:nz
-                @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
-                for k in 1:nprofiles
-                    @printf(io, "  %.6e", cache.global_sum[iz, k])
-                end
-                println(io)
-            end
-            println(io)
-        end
-
-        nstress          = size(cache.global_stress, 2)
-        lesstress_vars   = params.inputs[:lesstress_vars]
-        outfile_stress   = joinpath(params.inputs[:output_dir], "les_stress.dat")
-        if !isfile(outfile_stress)
-            open(outfile_stress, "w") do io
-                print(io, "# time  z")
-                for k in 1:nstress
-                    print(io, "  ", lesstress_vars[k])
-                end
-                println(io)
-            end
-        end
-        open(outfile_stress, "a") do io
-            for iz in 1:nz
-                @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
-                for k in 1:nstress
-                    @printf(io, "  %.6e", cache.global_stress[iz, k])
-                end
-                println(io)
-            end
-            println(io)
-        end
-
-        # outfile_most = joinpath(params.inputs[:output_dir], "MOST_statistics.dat")
-        # if !isfile(outfile_most)
-        #     open(outfile_most, "w") do io
-        #         println(io, "# time  LHF  SHF")
-        #     end
-        # end
-        # open(outfile_most, "a") do io
-        #     @printf(io, "%.6e  %.6e  %.6e\n", t, most_sum_global[2]/most_sum_global[3], most_sum_global[1]/most_sum_global[3])
-        # end
-
-        # Time-averaged 1D profiles (running average over all accumulated snapshots)
-        ns = cache.n_samples
-        outfile_les_tavg = joinpath(params.inputs[:output_dir], "les_statistics_tavg.dat")
-        open(outfile_les_tavg, "w") do io
-            print(io, "# time_end=", @sprintf("%.6e", t), "  n_samples=", ns, "  z")
-            for k in 1:nprofiles
-                print(io, "  ", lesprofile_vars[k])
-            end
-            println(io)
-            for iz in 1:nz
-                @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
-                for k in 1:nprofiles
-                    @printf(io, "  %.6e", cache.sum_global_sum[iz, k] / ns)
-                end
-                println(io)
-            end
-        end
-
-        nstress_tavg   = size(cache.global_stress, 2)
-        lesstress_vars = params.inputs[:lesstress_vars]
-        outfile_stress_tavg = joinpath(params.inputs[:output_dir], "les_stress_tavg.dat")
-        open(outfile_stress_tavg, "w") do io
-            print(io, "# time_end=", @sprintf("%.6e", t), "  n_samples=", ns, "  z")
-            for k in 1:nstress_tavg
-                print(io, "  ", lesstress_vars[k])
-            end
-            println(io)
-            for iz in 1:nz
-                @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
-                for k in 1:nstress_tavg
-                    @printf(io, "  %.6e", cache.sum_global_stress[iz, k] / ns)
-                end
-                println(io)
-            end
-        end
     end
 end
 
@@ -727,19 +595,19 @@ function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing,
     z_pts = [p[2] for p in cs.xz_coords]
 
     # ---- instantaneous xz snapshot ----
-    fout_name = joinpath(params.inputs[:output_dir], @sprintf("les_xz_%06d", iout))
-    vtk = vtk_grid(fout_name, x_pts, y_pts, z_pts, xz_cells_vtk)
-    for k in 1:nprofiles
-        vtk[lesprofile_vars[k], VTKPointData()] = cs.global_mean[:, k]
-    end
-    for k in 1:nstress
-        vtk[lesstress_vars[k], VTKPointData()] = cs.global_stress[:, k]
-    end
-    outfiles = vtk_save(vtk)
+    # fout_name = joinpath(params.inputs[:output_dir], @sprintf("les_xz_%06d", iout))
+    # vtk = vtk_grid(fout_name, x_pts, y_pts, z_pts, xz_cells_vtk)
+    # for k in 1:nprofiles
+    #     vtk[lesprofile_vars[k], VTKPointData()] = cs.global_mean[:, k]
+    # end
+    # for k in 1:nstress
+    #     vtk[lesstress_vars[k], VTKPointData()] = cs.global_stress[:, k]
+    # end
+    # outfiles = vtk_save(vtk)
 
-    pvd_path = joinpath(params.inputs[:output_dir], "les_xz.pvd")
-    if !isfile(pvd_path); init_pvd_file(pvd_path); end
-    append_pvd_entry(pvd_path, time, basename(outfiles[1]))
+    # pvd_path = joinpath(params.inputs[:output_dir], "les_xz.pvd")
+    # if !isfile(pvd_path); init_pvd_file(pvd_path); end
+    # append_pvd_entry(pvd_path, time, basename(outfiles[1]))
 
     # ---- time-averaged xz (running average, overwritten each call) ----
     ns = cs.n_samples
@@ -792,6 +660,93 @@ function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing,
     # pvd_spec = joinpath(params.inputs[:output_dir], "les_spectra.pvd")
     # if !isfile(pvd_spec); init_pvd_file(pvd_spec); end
     # append_pvd_entry(pvd_spec, time, basename(spec_outfiles[1]))
+end
+
+# ================================================================================
+# Finalize (Approach 1): write final time-and-space averages once at the end
+# ================================================================================
+
+"""
+    les_finalize!(params, t)
+
+Write the final time-and-space averaged 1D profiles and xz cross-section VTK
+using all snapshots accumulated by `les_statistics`. Call once at the end of
+the statistics window. No additional MPI needed: all sums were already
+Allreduced during accumulation in `horizontal_mean!`.
+"""
+function les_finalize!(params, t)
+    isnothing(params.les_stat_cache) && return
+
+    cache = params.les_stat_cache
+    ns    = cache.n_samples
+    ns == 0 && return
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank != 0 && return
+
+    nz        = length(cache.z_levels)
+    nprofiles = size(cache.sum_global_sum, 2)
+    nstress   = size(cache.sum_global_stress, 2)
+    lesprofile_vars = params.inputs[:lesprofile_vars]
+    lesstress_vars  = params.inputs[:lesstress_vars]
+
+    outfile_les_tavg = joinpath(params.inputs[:output_dir], "les_statistics_tavg.dat")
+    open(outfile_les_tavg, "w") do io
+        print(io, "# time_end=", @sprintf("%.6e", t), "  n_samples=", ns, "  z")
+        for k in 1:nprofiles
+            print(io, "  ", lesprofile_vars[k])
+        end
+        println(io)
+        for iz in 1:nz
+            @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
+            for k in 1:nprofiles
+                @printf(io, "  %.6e", cache.sum_global_sum[iz, k] / ns)
+            end
+            println(io)
+        end
+    end
+
+    outfile_stress_tavg = joinpath(params.inputs[:output_dir], "les_stress_tavg.dat")
+    open(outfile_stress_tavg, "w") do io
+        print(io, "# time_end=", @sprintf("%.6e", t), "  n_samples=", ns, "  z")
+        for k in 1:nstress
+            print(io, "  ", lesstress_vars[k])
+        end
+        println(io)
+        for iz in 1:nz
+            @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
+            for k in 1:nstress
+                @printf(io, "  %.6e", cache.sum_global_stress[iz, k] / ns)
+            end
+            println(io)
+        end
+    end
+
+    # XZ cross-section final VTK
+    cs = params.les_cross_section
+    isnothing(cs) && return
+    ns_cs = cs.n_samples
+    ns_cs == 0 && return
+
+    nprofiles_cs = size(cs.sum_mean, 2)
+    nstress_cs   = size(cs.sum_stress, 2)
+    nxz          = length(cs.xz_coords)
+    xz_cells_vtk = [MeshCell(VTKCellTypes.VTK_QUAD, [i1, i2, i3, i4])
+                    for (i1, i2, i3, i4) in cs.xz_cells]
+    x_pts = [p[1] for p in cs.xz_coords]
+    y_pts = zeros(Float64, nxz)
+    z_pts = [p[2] for p in cs.xz_coords]
+
+    fout_tavg = joinpath(params.inputs[:output_dir], "les_xz_tavg")
+    vtk_tavg  = vtk_grid(fout_tavg, x_pts, y_pts, z_pts, xz_cells_vtk)
+    for k in 1:nprofiles_cs
+        vtk_tavg[lesprofile_vars[k], VTKPointData()] = cs.sum_mean[:, k] ./ ns_cs
+    end
+    for k in 1:nstress_cs
+        vtk_tavg[lesstress_vars[k], VTKPointData()] = cs.sum_stress[:, k] ./ ns_cs
+    end
+    vtk_save(vtk_tavg)
 end
 
 # ================================================================================

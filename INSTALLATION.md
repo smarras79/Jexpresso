@@ -226,55 +226,68 @@ After installation:
 
 ## Setup and Run with MPI
 
-JEXPRESSO supports parallel execution using either OpenMPI or MPICH. Follow these steps to configure and run with your preferred MPI implementation.
+Jexpresso supports parallel execution using either OpenMPI or MPICH. Follow these steps to configure and run with your preferred MPI implementation.
 
-### 1. Install MPI Implementation
+> **Important:** `LocalPreferences.toml` is gitignored intentionally — every user on every machine must configure MPI once using the steps below.
 
-Choose either OpenMPI or MPICH:
+### Installation Flow (Any Machine)
 
-#### OpenMPI Installation
-```bash
-# Ubuntu/Debian
-sudo apt install libopenmpi-dev openmpi-bin
+```
+Step 1. Clone the repo
+        git clone https://github.com/smarras79/Jexpresso.git && cd Jexpresso
 
-# macOS (Homebrew)
-brew install open-mpi
+Step 2. Install packages WITHOUT precompiling
+        julia --project=. -e \
+          'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
 
-# Verify installation
-mpiexec --version
+Step 3. Install system MPI — skip if using bundled JLL MPI (laptop/workstation)
+
+        Ubuntu/Debian:
+          sudo apt install mpich libmpich-dev        # MPICH
+          sudo apt install libopenmpi-dev openmpi-bin # OpenMPI
+
+        macOS (Homebrew):
+          brew install mpich    # MPICH
+          brew install open-mpi # OpenMPI
+
+        HPC cluster:
+          module load <mpich-or-openmpi-module>
+
+Step 4. Configure MPI — choose ONE based on your machine:
+
+        ┌─ Laptop / workstation (no system MPI, or don't want to install it)
+        │    julia --project=. -e \
+        │      'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
+        │    → no system MPI installation required
+        │
+        ├─ Laptop/workstation or HPC cluster with MPICH
+        │    julia --project=. -e '
+        │      using MPIPreferences
+        │      MPIPreferences.use_system_binary(;
+        │        extra_paths=["/path/to/mpich/lib"],
+        │        library_names=["libmpich", "libmpi"])'
+        │    macOS Homebrew path: /opt/homebrew/lib
+        │
+        └─ Laptop/workstation or HPC cluster with OpenMPI
+             julia --project=. -e '
+               using MPIPreferences
+               MPIPreferences.use_system_binary(;
+                 extra_paths=["/path/to/openmpi/lib"],
+                 library_names=["libmpi"])'
+             macOS Homebrew path: /opt/homebrew/lib
+
+Step 5. Verify MPI was detected correctly
+        julia --project=. -e 'using Pkg; Pkg.build("MPI")'
+        → check the log shows the expected impl and libmpi path
+        → if wrong MPI detected: rm LocalPreferences.toml and redo Step 4
+
+Step 6. Precompile
+        julia --project=. -e 'using Pkg; Pkg.precompile()'
 ```
 
-#### MPICH Installation
-```bash
-# Ubuntu/Debian
-sudo apt install mpich libmpich-dev
+> **Note for HPC clusters with MPICH:** MPICH's library is named `libmpich.so` while OpenMPI's is `libmpi.so`. If the cluster also has a system OpenMPI installed, Julia will find `libmpi` first. The `library_names=["libmpich", "libmpi"]` argument forces MPICH to be found first.
 
-# macOS (Homebrew) 
-brew install mpich
-
-# Verify installation
-mpiexec --version
-```
-
-### 2. Configure MPI Preferences
-
-#### Automatic Configuration (Default Path)
-Use this command when MPI (OpenMPI/MPICH) is installed in standard system paths (`/usr/bin`, `/usr/local/bin`, etc.):
-```bash
-julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary()'
-```
-
-#### Manual Configuration (For Multiple MPI Installations or MPI not in Default Path)
-For MPI installations in non-standard locations (e.g., /opt/openmpi, or custom paths):
-```bash
-julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary(;extra_paths = ["/where/your/mpi/lib"])'
-```
-If MPI is installed via homebrew on macOS, the MPI lib path is:
-```bash
-/opt/homebrew/lib
-```
-
-### 3. Running with MPI
+### Running with MPI
 
 #### Basic Execution
 ```bash
@@ -300,22 +313,27 @@ and run it like this:
 ./runjexpresso 4 CompEuler theta
 ```
 
-### Troubleshooting
+### MPI Troubleshooting
 
-- **Library conflicts:** Clear existing preferences:
+- **Wrong MPI detected (e.g. system OpenMPI found instead of MPICH):**
   ```bash
   rm -f LocalPreferences.toml
+  # Then redo Step 4 with library_names=["libmpich", "libmpi"]
   ```
+
+- **HDF5, NetCDF, P4est, or PartitionedArrays fail to precompile:** These all depend on HDF5_jll/MPI. Root cause is almost always MPI misconfiguration. Reset and redo Step 4.
+
 - **Path issues:** Verify paths with:
   ```bash
   which mpiexec
-  which mpirun
+  ls /path/to/mpi/lib/libmpi*
   ```
-  You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary:
+  You may need to use full absolute paths to `mpirun` and `julia`:
+  ```bash
+  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 \
+    /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia \
+    --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
   ```
-  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
-  ```
-
 
 - **Version mismatches:** Ensure consistent versions:
   ```bash

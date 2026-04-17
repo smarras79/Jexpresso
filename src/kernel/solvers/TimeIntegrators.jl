@@ -158,8 +158,15 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
-            if (lwrite_time == true) 
+            if (lwrite_time == true)
                 append_pvd_entry(pvd_path, integrator.t, "iter_$(idx).pvtu")
+            end
+            # Save p4est forest checkpoint alongside VTK for AMR restart support.
+            # p8est_save is MPI-collective: all ranks call together.
+            # Julia closures capture `partitioned_model` by binding — it always
+            # reflects the current forest after each AMR iteration.
+            if get(inputs, :lamr, false)
+                write_p4est_checkpoint(inputs[:output_dir], idx, partitioned_model)
             end
         end
     end
@@ -217,7 +224,7 @@ function time_loop!(inputs, params, u, args...)
     else
         ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
         dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
-        solution = solve(prob,
+        solution   = solve(prob,
                          inputs[:ode_solver], dt=dt,
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                          callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = tstops_all,
@@ -254,6 +261,8 @@ function time_loop!(inputs, params, u, args...)
     if stats_online_start < Inf
         les_finalize_online!(params, solution.t[end])
     end
+    # Finalize Approach 1 statistics: write final time-and-space averages
+    les_finalize!(params, solution.t[end])
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
 
