@@ -3124,6 +3124,7 @@ function amr_strategy!(args...)
     #     convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     # end
     inputs[:lrestart] = false
+    inputs[:lrestart_amr] = false
 
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 

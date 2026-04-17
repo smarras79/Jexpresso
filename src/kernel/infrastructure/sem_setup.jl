@@ -36,6 +36,39 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     #--------------------------------------------------------
     if isnothing(adapt_flags)
         mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
+        # AMR restart: replace coarse/preadapt mesh with the forest saved at checkpoint
+        if get(inputs, :lrestart_amr, false)
+            # Resolve checkpoint iteration index: explicit or auto-detected from simulation.pvd
+            iout = if haskey(inputs, :restart_amr_iout) && inputs[:restart_amr_iout] > 0
+                inputs[:restart_amr_iout]
+            else
+                pvd_path = joinpath(inputs[:output_dir], "simulation.pvd")
+                _, i = read_pvd_last_entry(pvd_path)
+                inputs[:restart_amr_iout] = i   # cache for initialize()
+                i
+            end
+            forest_file = joinpath(inputs[:output_dir], "iter_$(iout)", "iter_$(iout).p4est")
+            @info " AMR restart: loading p4est forest from $forest_file"
+
+            # Build OctreeDistributedDiscreteModel from the loaded forest
+            loaded_model = load_p4est_checkpoint_model(partitioned_model, forest_file)
+
+            # Build Jexpresso mesh struct from loaded model using the AMR-adapt path
+            # with no-op flags (all nothing_flag = no further adaptation).
+            # Build interp/project from the coarse mesh polynomial order first.
+            ξω_base = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])
+            interp_base, project_base = build_projection_1d(ξω_base.ξ)
+            nothing_flags = KernelAbstractions.zeros(CPU(), TInt, 0)   # empty → all nothing_flag
+            dummy_uaux    = KernelAbstractions.zeros(CPU(), TFloat, (mesh.npoin, 1))
+            mesh, partitioned_model, _ = mod_mesh_mesh_driver(
+                inputs, nparts, distribute,
+                nothing_flags, loaded_model, mesh,
+                interp_base, project_base, dummy_uaux)
+            # Restore ad_lvl from the loaded p4est forest.  The glue-propagation
+            # path inside mod_mesh_mesh_driver starts from the coarse mesh (ad_lvl=0)
+            # and cannot recover the true refinement levels of the checkpoint.
+            # mesh.ad_lvl = read_ad_lvl_from_p4est(partitioned_model.ptr_pXest)
+        end
     else
         mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     end
