@@ -42,7 +42,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         end
         
     else
-        lanalytic = false
+        lanalytic = true
         if lanalytic == true
             if (inputs[:backend] == CPU())    
                 PhysConst = PhysicalConst{Float64}()
