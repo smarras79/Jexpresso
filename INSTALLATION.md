@@ -255,26 +255,26 @@ Step 3. Install system MPI — skip if using bundled JLL MPI (laptop/workstation
 
 Step 4. Configure MPI — choose ONE based on your machine:
 
-        ┌─ Laptop / workstation (no system MPI, or don't want to install it)
-        │    julia --project=. -e \
-        │      'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
-        │    → no system MPI installation required
-        │
-        ├─ Laptop/workstation or HPC cluster with MPICH
-        │    julia --project=. -e '
-        │      using MPIPreferences
-        │      MPIPreferences.use_system_binary(;
-        │        extra_paths=["/path/to/mpich/lib"],
-        │        library_names=["libmpich", "libmpi"])'
-        │    macOS Homebrew path: /opt/homebrew/lib
-        │
-        └─ Laptop/workstation or HPC cluster with OpenMPI
+        - Laptop / workstation (no system MPI, or don't want to install it)
+           julia --project=. -e \
+              'using MPIPreferences; MPIPreferences.use_jll_binary("MPICH_jll")'
+            → no system MPI installation required
+        
+        - Laptop/workstation or HPC cluster with MPICH
+            julia --project=. -e '
+              using MPIPreferences
+              MPIPreferences.use_system_binary(;
+                extra_paths=["/path/to/mpich/lib"],
+                library_names=["libmpich", "libmpi"])'
+        ### macOS Homebrew path: /opt/homebrew/lib
+        
+        - Laptop/workstation or HPC cluster with OpenMPI
              julia --project=. -e '
                using MPIPreferences
                MPIPreferences.use_system_binary(;
                  extra_paths=["/path/to/openmpi/lib"],
                  library_names=["libmpi"])'
-             macOS Homebrew path: /opt/homebrew/lib
+         ### macOS Homebrew path: /opt/homebrew/lib
 
 Step 5. Verify MPI was detected correctly
         julia --project=. -e 'using Pkg; Pkg.build("MPI")'
