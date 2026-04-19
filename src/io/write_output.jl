@@ -1,4 +1,5 @@
 using WriteVTK
+using P4est_wrapper
 
 include("./plotting/jeplots.jl")
 
@@ -905,6 +906,127 @@ function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
 
     if rank == 0
         @info " VTK restart complete (npoin=$(mesh.npoin), iout=$iout)"
+    end
+end
+
+"""
+    write_p4est_checkpoint(output_dir, iter, partitioned_model)
+
+Save the p4est forest topology to `output_dir/iter_N/iter_N.p4est`.
+Called alongside each VTK write to enable AMR restarts.
+Only called when `inputs[:lamr] == true`.
+"""
+function write_p4est_checkpoint(output_dir::String, iter::Int, partitioned_model)
+    comm  = MPI.COMM_WORLD
+    rank  = MPI.Comm_rank(comm)
+    dir   = joinpath(output_dir, "iter_$(iter)")
+    fname = joinpath(dir, "iter_$(iter).p4est")
+    # Only rank 0 creates the directory; all ranks call p8est_save collectively.
+    if rank == 0
+        mkpath(dir)
+    end
+    MPI.Barrier(comm)
+    # save_data=0: no per-quadrant payload, forest topology only
+    P4est_wrapper.p8est_save(fname, partitioned_model.ptr_pXest, Cint(0))
+end
+
+"""
+    read_vtk_restart_gigales!(q, mesh, inputs, PhysConst; output_dir="")
+
+VTK restart for 7-variable moist compressible Euler (giga_les_MOST_amr).
+Reads primitive fields (ρ, u, v, w, hl/ρ, qt, qp) written by `user_uout!`
+and reconstructs the conserved state [ρ, ρu, ρv, ρw, ρhl, ρqt, ρqp, P] in q.qn.
+
+The VTK variable names follow qoutvars: "ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp"
+but user_uout! stores SPECIFIC (per-unit-mass) quantities, not conserved ones.
+
+Required entry in `inputs`:
+  - `:restart_vtk_input_dir`  path to OUTPUT_DIR containing iter_N/ subdirs
+
+Optional (auto-detected from simulation.pvd if absent):
+  - `:restart_vtk_iout`  iteration index
+  - `:tinit`             simulation time at restart
+"""
+function read_vtk_restart_gigales!(q, mesh, inputs, PhysConst; output_dir="")
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    part = rank + 1
+
+    vtk_dir = get(inputs, :restart_vtk_input_dir, output_dir)
+
+    # Auto-detect iout and tinit from simulation.pvd if not provided
+    if !haskey(inputs, :restart_vtk_iout)
+        pvd_path = joinpath(vtk_dir, "simulation.pvd")
+        time_arr = [0.0]
+        iout_arr = [0.0]
+        if rank == 0
+            t_pvd, i_pvd = read_pvd_last_entry(pvd_path)
+            time_arr[1]  = t_pvd
+            iout_arr[1]  = Float64(i_pvd)
+        end
+        MPI.Bcast!(time_arr, 0, comm)
+        MPI.Bcast!(iout_arr, 0, comm)
+        inputs[:tinit]            = time_arr[1]
+        inputs[:restart_vtk_iout] = Int(iout_arr[1])
+        if rank == 0
+            @info " VTK restart (giga_les): last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+        end
+    end
+
+    iout     = inputs[:restart_vtk_iout]
+    nparts   = MPI.Comm_size(comm)
+    part_str = lpad(part, ndigits(nparts), '0')
+    fname    = joinpath(vtk_dir, "iter_$(iout)", "iter_$(iout)_$(part_str).vtu")
+
+    if rank == 0
+        @info " Reading VTK restart (giga_les) from: $fname"
+    end
+
+    # "ρu","ρv","ρw","hl","ρqt","ρqp" are confusingly named:
+    # user_uout! stores u[k]/u[1] = specific (velocity / specific scalar),
+    # so the VTK values are per-unit-mass, NOT conserved momentum.
+    vars, npoin_vtk = read_vtu_point_data(
+        fname, ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "__coords__"])
+
+    npoin_vtk == mesh.npoin ||
+        error("Rank $rank: VTK point count ($npoin_vtk) ≠ mesh.npoin ($(mesh.npoin)).")
+
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+
+    ρ_arr  = vars["ρ"]
+    u_arr  = vars["ρu"]    # velocity u  (despite the name)
+    v_arr  = vars["ρv"]
+    w_arr  = vars["ρw"]
+    hl_arr = vars["hl"]    # specific moist enthalpy hl/ρ
+    qt_arr = vars["ρqt"]   # specific total water qt
+    qp_arr = vars["ρqp"]   # specific precipitation qp
+
+    for ip = 1:mesh.npoin
+        j  = ip_map[ip]
+        z  = mesh.z[ip]
+        ρ  = ρ_arr[j]
+        u  = u_arr[j]
+        v  = v_arr[j]
+        w  = w_arr[j]
+        hl = hl_arr[j]
+        qt = qt_arr[j]
+        qp = qp_arr[j]
+        # Reconstruct virtual temperature for pressure: approx qv ≈ qt
+        T  = (hl - PhysConst.g * z) / PhysConst.cp
+        Tv = T * (1 + 0.61 * qt)
+
+        q.qn[ip, 1]   = ρ
+        q.qn[ip, 2]   = ρ * u
+        q.qn[ip, 3]   = ρ * v
+        q.qn[ip, 4]   = ρ * w
+        q.qn[ip, 5]   = ρ * hl
+        q.qn[ip, 6]   = ρ * qt
+        q.qn[ip, 7]   = ρ * qp
+        q.qn[ip, end] = ρ * Tv * PhysConst.Rair   # pressure
+    end
+
+    if rank == 0
+        @info " VTK restart (giga_les) complete (npoin=$(mesh.npoin), iout=$iout)"
     end
 end
 
