@@ -1,5 +1,11 @@
 function user_inputs()
     # Coefficients of the method
+    # forward Euler
+    alpha_Euler = Array{Float64, 1}(undef, 1)
+    alpha_Euler[1] = 1.
+    beta_Euler = Array{Float64, 1}(undef, 1)
+    beta_Euler[1] = 1.
+
     # multistep
     alpha = Array{Float64, 1}(undef, 2)
     alpha[1] = 4. / 3.
@@ -70,6 +76,7 @@ function user_inputs()
         :maxiter      => 1,
         :abstol       => 1e-8,
         :precision    => Float32,
+        :prec_type    => "AMG",
         )
 
     # Source function
@@ -232,24 +239,30 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # IMEX method
         #---------------------------------------------------------------------------
-        :method             => "multistep",
+        :method             => "RK",
         :delta              => 1,
-        :k                  => 2,
-        :coeff              => Dict(
-                                   # IMEX Multistep
-                                   :xi       => 2. / 3.,
-                                   :alpha    => alpha,
-                                   :beta     => beta,
-                               ),
+        :k                  => 3,
 #        :coeff              => Dict(
-#                                   # IMEX RK
-#                                   :A_RK        => A_RK,
-#                                   :b_RK        => b_RK,
-#                                   :c_RK        => c_RK,
-#                                   :A_RK_tilde  => A_RK_tilde,
-#                                   :b_RK_tilde  => b_RK_tilde,
-#                                   :c_RK_tilde  => c_RK_tilde,
+#                                   # fprward Euler
+#                                   :xi       => 1.,
+#                                   :alpha    => alpha_Euler,
+#                                   :beta     => beta_Euler,
 #                               ),
+#        :coeff              => Dict(
+#                                   # IMEX Multistep
+#                                   :xi       => 2. / 3.,
+#                                   :alpha    => alpha,
+#                                   :beta     => beta,
+#                               ),
+        :coeff              => Dict(
+                                   # IMEX RK
+                                   :A_RK        => A_RK,
+                                   :b_RK        => b_RK,
+                                   :c_RK        => c_RK,
+                                   :A_RK_tilde  => A_RK_tilde,
+                                   :b_RK_tilde  => b_RK_tilde,
+                                   :c_RK_tilde  => c_RK_tilde,
+                               ),
         :lsolver            => nothing,#"GMRES",#LinearSolve.KrylovJL_GMRES(),
         :sp                 => solver_par,
         :prec_sp            => prec_sp,

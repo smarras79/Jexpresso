@@ -9,9 +9,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
-    if rank == 0
+    #=if rank == 0
         pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
-    end
+    end=#
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
     #
@@ -33,6 +33,54 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             global TFloat = Float32
             global cpu = false
         end
+    end
+
+    if(!haskey(inputs, :lcubed_sphere_angular_mesh))
+       inputs[:lcubed_sphere_angular_mesh] = false
+    end
+
+    if(!haskey(inputs, :rad_HG_g))
+      inputs[:rad_HG_g] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions))
+      inputs[:extra_dimensions] = 0
+    end
+    
+    if(!haskey(inputs, :adaptive_extra_meshes))
+      inputs[:adaptive_extra_meshes] = false
+    end
+
+    if(!haskey(inputs, :extra_dimensions_order))
+      inputs[:extra_dimensions_order] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_nelemx))
+      inputs[:extra_dimensions_nelemx] = 2
+    end
+
+    if(!haskey(inputs, :extra_dimensions_nelemy))
+      inputs[:extra_dimensions_nelemy] = 2
+    end
+
+    if(!haskey(inputs, :extra_dimensions_xmin))
+      inputs[:extra_dimensions_xmin] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_xmax))
+        inputs[:extra_dimensions_xmax] = 2*π
+    end
+
+    if(!haskey(inputs, :extra_dimensions_ymin))
+      inputs[:extra_dimensions_ymin] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_ymax))
+        inputs[:extra_dimensions_ymax] = 2*π
+    end
+
+    if(!haskey(inputs, :llinsolve))
+      inputs[:llinsolve] = false
     end
 
     if(!haskey(inputs, :bulk_fluxes))
@@ -97,10 +145,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
     if(!haskey(inputs, :read_topo_zone))
         inputs[:read_topo_zone] = 20
-    end
-
-    if(!haskey(inputs, :llinsolve))
-      inputs[:llinsolve] = false
     end
 
     if(!haskey(inputs, :lsparse))

@@ -293,7 +293,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz,
                                      xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
                                      connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                      neqs, dirichlet!, neumann, inputs)
-    
+
     for iedge = 1:nedges_bdy
 
         if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
@@ -359,7 +359,7 @@ function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                            connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                            Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
-    #
+    
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
     #for ip = 1:npoin

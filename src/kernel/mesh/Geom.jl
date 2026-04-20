@@ -17,6 +17,7 @@ using GridapP4est
 using P4est_wrapper
 using SparseArrays
 
+
 # Define your custom version of DiscreteModel function
 function Gridap.Geometry.DiscreteModel(
     parts::AbstractArray,
@@ -87,7 +88,7 @@ const _setup_cell_to_vertices = GridapGmsh._setup_cell_to_vertices
 const _setup_grid =GridapGmsh._setup_grid
 const _setup_labeling = GridapGmsh._setup_labeling
 
-function GridapGmsh.GmshDiscreteModel(gmsh::Module; has_affine_map=nothing)
+function GridapGmsh.GmshDiscreteModel(gmsh::Module; has_affine_map=nothing, orient_if_simplex=nothing)
 
     Dc = _setup_cell_dim(gmsh)
     Dp = Dc
@@ -195,6 +196,569 @@ mutable struct AssemblerCache
 
 end
 
+function setup_global_numbering_extra_dim(ip2gip, gip2owner, npoin, npoin_ang, npoin_total)
+
+    comm = MPI.COMM_WORLD
+
+    ip2gip_extra = KernelAbstractions.zeros(CPU(),Int64,npoin_total)
+    for ip = 1:npoin
+        gip = ip2gip[ip]
+        for ip_ext = 1:npoin_ang
+            idx_ip = (ip-1)*(npoin_ang) + ip_ext
+            idx_gip = (gip-1)*(npoin_ang) + ip_ext
+            #=if (ip != gip)
+                @info ip, gip
+            end=#
+            ip2gip_extra[idx_ip] = idx_gip
+        end
+    end
+    
+    gnpoin    = MPI.Allreduce(maximum(ip2gip_extra), MPI.MAX, comm)
+    gip2owner_extra = find_gip_owner(ip2gip_extra)
+    gip2ip    = KernelAbstractions.zeros(CPU(), TInt, gnpoin)
+    @info gnpoin, npoin_total
+    for (ip, gip) in enumerate(ip2gip_extra)
+        gip2ip[gip] = ip
+    end
+
+    return ip2gip_extra, gip2owner_extra, gnpoin
+end
+
+function setup_global_numbering_adaptive_angular_scalable(
+    ip2gip, gip2owner, mesh, connijk_spa,
+    extra_meshes_coords, extra_meshes_connijk,
+    extra_meshes_extra_nops, extra_meshes_extra_nelems,
+    n_spa, n_non_global_nodes, nc_non_global_nodes,
+)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    nproc = MPI.Comm_size(comm)
+    
+    nelem = mesh.nelem
+    ngl = mesh.ngl
+
+    # =========================================================================
+    # PHASE 0: Create hanging node lookup for fast checks
+    # =========================================================================
+    
+    hanging_node_set = Set{Int}(nc_non_global_nodes)
+    n_free_local = n_spa - n_non_global_nodes
+    
+    @info "[Rank $rank] Local DOFs: $n_spa (Free: $n_free_local, Hanging: $n_non_global_nodes)"
+    
+    # =========================================================================
+    # PHASE 1: Build local unique signatures (separated by type)
+    # =========================================================================
+    
+    local_free_points = Dict{NTuple{3,Float64}, Int}()
+    local_hanging_points = Dict{NTuple{3,Float64}, Int}()
+    
+    free_signature_list = NTuple{3,Float64}[]
+    hanging_signature_list = NTuple{3,Float64}[]
+
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j, k]
+            gip = ip2gip[ip]
+            
+            for e_ext = 1:extra_meshes_extra_nelems[iel]
+                for jθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
+                    for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
+                        ip_ext = extra_meshes_connijk[iel][e_ext, iθ, jθ]
+                        θ = extra_meshes_coords[iel][1, ip_ext]
+                        ϕ = extra_meshes_coords[iel][2, ip_ext]
+                        ip_spa = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
+                        
+                        sig = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
+                        
+                        # Separate free and hanging nodes
+                        is_hanging = ip_spa in hanging_node_set
+
+                        if is_hanging
+                            if !haskey(local_hanging_points, sig)
+                                local_hanging_points[sig] = ip_spa
+                                push!(hanging_signature_list, sig)
+                            end
+                        else
+                            if !haskey(local_free_points, sig)
+                                local_free_points[sig] = ip_spa
+                                push!(free_signature_list, sig)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    sort!(free_signature_list)
+    sort!(hanging_signature_list)
+    
+    n_local_free = length(free_signature_list)
+    n_local_hanging = length(hanging_signature_list)
+    
+    @info "[Rank $rank] Local unique points - Free: $n_local_free, Hanging: $n_local_hanging"
+
+
+    # =========================================================================
+    # PHASE 2: Identify processor boundary spatial-angular points
+    # =========================================================================
+    
+    # A spatial-angular point is on a processor boundary if:
+    # 1. Its spatial node (gip) is NOT owned by this processor, OR
+    # 2. Its spatial node (gip) IS owned but exists on other processors too
+    
+    # Find spatial nodes on processor boundaries
+    processor_boundary_spatial = Set{Int}()
+    
+    for ip = 1:mesh.npoin
+        gip = ip2gip[ip]
+        owner = gip2owner[ip]
+        
+        # If this processor doesn't own this spatial node, it's on a boundary
+        if owner != rank
+            push!(processor_boundary_spatial, gip)
+        end
+    end
+
+    # Additionally, find spatial nodes this processor owns but are shared
+    # (These are nodes owned by this rank but present on other ranks too)
+    owned_spatial = Set{Int}()
+    for ip = 1:mesh.npoin
+        gip = ip2gip[ip]
+        if gip2owner[ip] == rank
+            push!(owned_spatial, gip)
+        end
+    end
+
+    local_spatial = collect(processor_boundary_spatial)
+    n_local = Int32(length(local_spatial))
+
+    # Gather the counts from all processors
+    counts = MPI.Allgather([n_local], comm)
+
+    # Prepare the receive buffer
+    total_count = sum(counts)
+
+    # Handle empty case - need a typed array even if empty
+    if isempty(local_spatial)
+        local_spatial = Int[]  # Empty array with correct type
+    end
+
+    # Use Allgatherv to gather variable-length data
+    if total_count > 0
+        all_owned_spatial = MPI.Allgatherv(local_spatial, counts, comm)
+    else
+        # All ranks are empty
+        all_owned_spatial = Int[]
+    end
+    
+    for other_rank = 0:(nproc-1)
+        if other_rank == 0
+            offset = 0
+        else
+            offset = sum(counts[1:other_rank])
+        end
+
+        if other_rank == rank
+            continue
+        end
+        
+        other_not_owned = Set(all_owned_spatial[offset+1:counts[other_rank+1]])
+        
+        # Find intersection: spatial nodes owned by us but also present on other rank
+        shared = intersect(owned_spatial, other_not_owned)
+        
+        union!(processor_boundary_spatial, shared)
+        
+    end
+
+    @info "[Rank $rank] Found $(length(processor_boundary_spatial)) spatial nodes on processor boundaries"
+    
+    # =========================================================================
+    # PHASE 3: Extract processor boundary spatial-angular signatures (for free nodes only)
+    # =========================================================================
+    
+    processor_boundary_free_sigs = Dict{NTuple{3,Float64}, Int}()
+    
+    for sig in signature_list
+        gip_spatial = Int(sig[1])  # First element is the global spatial ID
+        
+        if gip_spatial in processor_boundary_spatial
+            idx = findfirst(x -> x == sig, signature_list)
+            processor_boundary_free_sigs[sig] = idx  # Store local index for now
+        end
+    end
+    
+    @info "[Rank $rank] Found $(length(processor_free_boundary_sigs)) FREE spatial-angular points on processor boundaries"
+    
+    # =========================================================================
+    # PHASE 4: Exchange boundary signatures and resolve duplicates (free only)
+    # =========================================================================
+    
+    # Gather all processor boundary signatures from all ranks
+    local_keys = collect(keys(processor_boundary_sigs))
+    n_local = length(local_keys)
+
+    # Flatten tuples to a matrix (3 x n_local)
+    local_data = hcat([collect(k) for k in local_keys]...)  # or stack them appropriately
+   
+    # Gather counts from all processors
+    counts = MPI.Allgather([n_local], comm)
+
+    # Prepare receive buffer
+    total_count = sum(counts)
+    
+    all_data = MPI.Allgatherv(local_data[:], Int32.(counts .* 3), comm)
+
+    # Reshape back to tuples
+    all_boundary_sigs = [Tuple(all_data[i:i+2]) for i in 1:3:length(all_data)]
+    #all_boundary_sigs = MPI.Allgather(collect(keys(processor_boundary_sigs)), comm)
+    
+    # Find globally shared signatures
+    global_boundary_sigs = Set{NTuple{3,Float64}}()
+    sig_counts = Dict{NTuple{3,Float64}, Int}()
+
+    for sig in all_boundary_sigs
+        sig_counts[sig] = get(sig_counts, sig, 0) + 1
+    end
+    
+    # A signature is shared if it appears on multiple processors
+    for (sig, count) in sig_counts
+        if count > 1
+            push!(global_boundary_sigs, sig)
+        end
+    end
+    
+    @info "[Rank $rank] Found $(length(global_boundary_sigs)) FREE globally shared spatial-angular points"
+    
+    # ==================================================================================
+    # PHASE 5: Assign tentative global IDs using parallel prefix sum - Free nodes first
+    # ==================================================================================
+    
+    # Each processor gets a contiguous range of global IDs
+    n_local_free = length(free_signature_list)
+    local_count = n_local_free
+    offset = MPI.Exscan(local_count_free, MPI.SUM, comm)
+    
+    if rank == 0
+        offset_free = 0
+    end
+    
+    # Build tentative mapping
+    sig_to_tentative_gid = Dict{NTuple{3,Float64}, Int}()
+    for (idx, sig) in enumerate(free_signature_list)
+        sig_to_tentative_gid[sig] = offset_free + idx
+    end
+    
+    @info "[Rank $rank] Tentative global ID range: [$(offset+1), $(offset+n_local)]"
+
+    # =========================================================================
+    # PHASE 6: Resolve shared free signatures (take minimum GID)
+    # =========================================================================
+    
+    # For shared signatures, gather all tentative GIDs and take minimum
+    shared_sig_resolution = Dict{NTuple{3,Float64}, Int}()
+    
+    # Each processor broadcasts its tentative GIDs for shared signatures
+    local_shared_tentative = Dict{NTuple{3,Float64}, Int}()
+    for sig in global_boundary_sigs
+        if haskey(sig_to_tentative_gid, sig)
+            local_shared_tentative[sig] = sig_to_tentative_gid[sig]
+        end
+    end
+    
+    # Serialize the dictionary
+    local_buffer = IOBuffer()
+    serialize(local_buffer, local_shared_tentative)
+    local_data = take!(local_buffer)
+
+    # Gather the sizes
+    n_local = Int32(length(local_data))
+    counts = MPI.Allgather([n_local], comm)
+
+    # Gather the serialized data
+    total_count = sum(counts)
+    if total_count > 0
+        all_data = MPI.Allgatherv(local_data, counts, comm)
+    
+        # Deserialize on each rank to get all dictionaries
+        all_shared_tentative = Dict{NTuple{3,Float64}, Int}[]
+        offset = 1
+        for count in counts
+            if count > 0
+                chunk = all_data[offset:offset+count-1]
+                push!(all_shared_tentative, deserialize(IOBuffer(chunk)))
+            else
+                push!(all_shared_tentative, Dict{NTuple{3,Float64}, Int}())
+            end
+            offset += count
+        end
+    else
+        all_shared_tentative = [Dict{NTuple{3,Float64}, Int}() for _ in 1:length(counts)]
+    end
+
+    
+    #all_shared_tentative = MPI.Allgather(local_shared_tentative, comm)
+    
+    # Resolve: take minimum tentative GID for each shared signature
+    for proc_shared in all_shared_tentative
+        for (sig, tentative_gid) in proc_shared
+            if haskey(shared_sig_resolution, sig)
+                shared_sig_resolution[sig] = min(shared_sig_resolution[sig], tentative_gid)
+            else
+                shared_sig_resolution[sig] = tentative_gid
+            end
+        end
+    end
+    
+    @info "[Rank $rank] Resolved $(length(shared_sig_resolution)) shared signatures"
+
+    # ===================================================================================
+    # PHASE 7: Build final global IDs (with duplicates for shared points) for free nodes
+    # ===================================================================================
+    
+    # For shared points, use resolved GID; for interior points, use tentative GID
+    sig_to_final_gid = Dict{NTuple{3,Float64}, Int}()
+    
+    for sig in free_signature_list
+        if haskey(shared_sig_resolution, sig)
+            sig_to_final_gid[sig] = shared_sig_resolution[sig]
+        else
+            sig_to_final_gid[sig] = sig_to_tentative_gid[sig]
+        end
+    end
+
+    # =========================================================================
+    # PHASE 8: Compact FREE numbering to remove gaps
+    # =========================================================================
+    
+    # Collect all used global IDs across all processors
+    #local_used_gids = Set(values(sig_to_final_gid))
+    local_used_gids = collect(values(sig_to_final_gid))
+    n_local = Int32(length(local_used_gids))
+
+    # Gather the counts from all processors
+    counts = MPI.Allgather([n_local], comm)
+
+    # Prepare the receive buffer
+    total_count = sum(counts)
+
+    # Handle empty case - need a typed array even if empty
+    if isempty(local_used_gids)
+        local_used_gids = Int[]  # Empty array with correct type
+    end
+
+    # Use Allgatherv to gather variable-length data
+    if total_count > 0
+        all_used_gids_list = MPI.Allgatherv(local_used_gids, counts, comm)
+    else
+        # All ranks are empty
+        all_used_gids_list = Int[]
+    end
+    
+    #all_used_gids_list = MPI.Allgather(collect(local_used_gids), comm)
+    
+    global_used_gids = Set{Int}(all_used_gids_list)
+    
+    # Create compaction map: old_gid -> new_gid (1:gnpoin with no gaps)
+    sorted_gids = sort(collect(global_used_gids))
+    old_to_new_free = Dict{Int, Int}()
+    for (new_id, old_id) in enumerate(sorted_gids)
+        old_to_new_free[old_id] = new_id
+    end
+    
+    gnpoin_free = length(sorted_gids)
+    
+    @info "[Rank $rank] Compacted to $gnpoin global spatial-angular points (no gaps)"
+
+    # =========================================================================
+    # PHASE 9: Assign global IDs to HANGING nodes (after free nodes)
+    # =========================================================================
+    
+    n_local_hanging = length(hanging_signature_list)
+    local_count_hanging = n_local_hanging
+    offset_hanging = MPI.Exscan(local_count_hanging, MPI.SUM, comm)
+    
+    if rank == 0
+        offset_hanging = 0
+    end
+    
+    # Hanging nodes get global IDs starting after all free nodes
+    for (idx, sig) in enumerate(hanging_signature_list)
+        sig_to_final_gid[sig] = gnpoin_free + offset_hanging + idx
+    end
+    
+    # Compute total hanging nodes globally
+    gnpoin_hanging = MPI.Allreduce(n_local_hanging, MPI.SUM, comm)
+    gnpoin = gnpoin_free + gnpoin_hanging
+    
+    @info "[Rank $rank] Hanging global ID range: [$(gnpoin_free+offset_hanging+1), $(gnpoin_free+offset_hanging+n_local_hanging)]"
+    @info "[Rank $rank] Total global DOFs: $gnpoin (Free: $gnpoin_free, Hanging: $gnpoin_hanging)"
+
+    # =========================================================================
+    # PHASE 10: Apply global numbering to local spatial-angular points
+    # =========================================================================
+    
+    ip2gip_spa = zeros(Int64, n_spa)
+    
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j, k]
+            gip = ip2gip[ip]
+            
+            for e_ext = 1:extra_meshes_extra_nelems[iel]
+                for jθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
+                    for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
+                        ip_ext = extra_meshes_connijk[iel][e_ext, iθ, jθ]
+                        θ = extra_meshes_coords[iel][1, ip_ext]
+                        ϕ = extra_meshes_coords[iel][2, ip_ext]
+                        ip_spa = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
+                        
+                        sig = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
+                        
+                        is_hanging = ip_spa in hanging_node_set
+                        
+                        if is_hanging
+                            # Direct lookup for hanging nodes (no compaction needed)
+                            ip2gip_spa[ip_spa] = sig_to_final_gid[sig]
+                        else
+                            # Apply compaction for free nodes
+                            old_gid = sig_to_final_gid[sig]
+                            new_gid = old_to_new_free[old_gid]
+                            ip2gip_spa[ip_spa] = new_gid
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    # =========================================================================
+    # PHASE 11: Verify numbering structure
+    # =========================================================================
+    
+    verify_hanging_node_numbering(ip2gip_spa, n_spa, gnpoin_free, gnpoin, 
+                                   hanging_node_set, rank, comm)
+    
+    gip2owner_spa = find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
+    
+    gip2ip = zeros(Int, gnpoin)
+    for (ip, gid) in enumerate(ip2gip_spa)
+        if gid > 0 && gip2owner_spa[gid] == rank
+            gip2ip[gid] = ip
+        end
+    end
+
+    return ip2gip_spa, gip2ip, gip2owner_spa, gnpoin
+end
+
+function find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
+    """
+    Determine which processor owns each global spatial-angular point
+    
+    Ownership rule: The processor with the minimum rank that has this point owns it
+    This ensures deterministic, consistent ownership across all processors
+    """
+    rank = MPI.Comm_rank(comm)
+    
+    # Each processor claims ownership of its points
+    local_ownership = fill(typemax(Int), gnpoin)
+    
+    for ip = 1:n_spa
+        gid = ip2gip_spa[ip]
+        if gid > 0 && gid <= gnpoin
+            local_ownership[gid] = rank
+        end
+    end
+    
+    # Global reduction: take minimum rank (lowest rank wins)
+    gip2owner_spa = similar(local_ownership)
+    MPI.Allreduce!(local_ownership, gip2owner_spa, MPI.MIN, comm)
+    
+    # Verify: all points should have an owner
+    unowned = findall(x -> x == typemax(Int), gip2owner_spa)
+    if !isempty(unowned) && rank == 0
+        @warn "Found $(length(unowned)) unowned spatial-angular points!"
+    end
+    
+    return gip2owner_spa
+end
+
+function verify_hanging_node_numbering(ip2gip_spa, n_spa, gnpoin_free, gnpoin, 
+                                       hanging_node_set, rank, comm)
+    """
+    Verify that:
+    1. Free nodes have global IDs in [1, gnpoin_free]
+    2. Hanging nodes have global IDs in [gnpoin_free+1, gnpoin]
+    3. No gaps in the numbering
+    """
+    
+    local_free_gids = Int[]
+    local_hanging_gids = Int[]
+    
+    for ip = 1:n_spa
+        gid = ip2gip_spa[ip]
+        
+        if ip in hanging_node_set
+            push!(local_hanging_gids, gid)
+            
+            # Verify hanging node is in correct range
+            if gid <= gnpoin_free || gid > gnpoin
+                @warn "[Rank $rank] Hanging node $ip has incorrect global ID $gid (should be in [$gnpoin_free+1, $gnpoin])"
+            end
+        else
+            push!(local_free_gids, gid)
+            
+            # Verify free node is in correct range
+            if gid < 1 || gid > gnpoin_free
+                @warn "[Rank $rank] Free node $ip has incorrect global ID $gid (should be in [1, $gnpoin_free])"
+            end
+        end
+    end
+    
+    # Check for duplicates within each category
+    if length(unique(local_free_gids)) != length(local_free_gids)
+        @warn "[Rank $rank] Duplicate global IDs found in free nodes!"
+    end
+    
+    # Gather all used global IDs
+    all_free_gids = MPI.Gather(local_free_gids, comm)
+    all_hanging_gids = MPI.Gather(local_hanging_gids, comm)
+    
+    if rank == 0
+        all_free = reduce(vcat, all_free_gids)
+        all_hanging = reduce(vcat, all_hanging_gids)
+        
+        unique_free = unique(all_free)
+        unique_hanging = unique(all_hanging)
+        
+        @info "Global verification:"
+        @info "  Free nodes: $(length(unique_free)) unique IDs, range [$(minimum(unique_free)), $(maximum(unique_free))]"
+        @info "  Hanging nodes: $(length(unique_hanging)) unique IDs, range [$(minimum(unique_hanging)), $(maximum(unique_hanging))]"
+        
+        # Check for gaps in free nodes
+        expected_free = Set(1:gnpoin_free)
+        actual_free = Set(unique_free)
+        missing_free = setdiff(expected_free, actual_free)
+        
+        if !isempty(missing_free)
+            @warn "Missing free node global IDs: $(sort(collect(missing_free)))"
+        else
+            @info "  ✓ Free node numbering is compact (no gaps)"
+        end
+        
+        # Check that free and hanging don't overlap
+        overlap = intersect(Set(unique_free), Set(unique_hanging))
+        if !isempty(overlap)
+            @warn "Global ID overlap between free and hanging nodes: $overlap"
+        else
+            @info "  ✓ No overlap between free and hanging node IDs"
+        end
+    end
+    
+    MPI.Barrier(comm)
+end
+
 function setup_assembler(SD, a, index_a, owner_a)
 
     if SD == NSD_1D() return nothing end
@@ -202,6 +766,8 @@ function setup_assembler(SD, a, index_a, owner_a)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
+
+    if rank_sz == 1 return nothing end
 
     global_max_index = maximum(index_a)
 
@@ -216,7 +782,6 @@ function setup_assembler(SD, a, index_a, owner_a)
     #     end
     # end
     # filter!(p -> !isempty(p.second), i_local)
-
     send_idx = Dict(i => Int[] for i in 0:rank_sz-1)
     send_i = [Int[] for i in 0:rank_sz-1]
     for (i, idx) in enumerate(index_a)
@@ -232,7 +797,6 @@ function setup_assembler(SD, a, index_a, owner_a)
     send_idx_sizes = [length(send_idx[i]) for i in 0:rank_sz-1]
     recv_idx_sizes = MPI.Alltoall(MPI.UBuffer(send_idx_sizes, 1), comm)
     MPI.Barrier(comm)
-
     # Prepare buffers for sending and receiving data
     send_idx_buffers = [send_idx[i] for i in 0:rank_sz-1]
     recv_idx_buffers = [Vector{Int}(undef, recv_idx_sizes[i+1]) for i in 0:rank_sz-1]
@@ -250,7 +814,6 @@ function setup_assembler(SD, a, index_a, owner_a)
 
     # Wait for all communication to complete
     MPI.Waitall!(requests)
-
     # Combine received data into a single vector
     # combined_recv_idx = Int[]
     # for i in 0:rank_sz-1
@@ -274,7 +837,6 @@ function setup_assembler(SD, a, index_a, owner_a)
     MPI.Barrier(comm)
 
 
-
     # Prepare buffers for sending and receiving back data
     sendback_idx_buffers = [sendback_idx[i] for i in 0:rank_sz-1]
     recvback_idx_buffers = [Vector{Int}(undef, length(send_idx[i])) for i in 0:rank_sz-1]
@@ -296,7 +858,6 @@ function setup_assembler(SD, a, index_a, owner_a)
     MPI.Waitall!(requests_back)
 
 
-
     # Combine received data into a single vector
     # combined_recv_back_idx = Int[]
     # for i in 0:rank_sz-1
@@ -309,14 +870,10 @@ function setup_assembler(SD, a, index_a, owner_a)
     sum_array_1D = zeros(Float64, global_max_index)
     sum_array_2D = zeros(Float64, global_max_index, m)
 
-    
     send_data_sizes = [send_idx_sizes[i+1] * m for i in 0:rank_sz-1]
     recv_data_sizes = [recv_idx_sizes[i+1] * m for i in 0:rank_sz-1]
-
     send_data_buffers = [zeros(Float64, send_idx_sizes[i+1] * m) for i in 0:rank_sz-1]
     recv_data_buffers = [zeros(Float64, recv_idx_sizes[i+1] * m) for i in 0:rank_sz-1]
-
-
 
     cache = AssemblerCache(global_max_index, index_a, owner_a, recv_idx_buffers,
             recvback_idx_buffers, sum_array_1D, sum_array_2D,
@@ -506,3 +1063,136 @@ function assemble_mpi!(a, cache::AssemblerCache)
         end
     end
 end
+
+function assemble_mpi_global_vec!(a, cache::AssemblerCache)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank_sz = MPI.Comm_size(comm)
+    T = eltype(a)
+
+    n = size(a, 1)
+
+    fill!(cache.sum_array_1D, zero(T))
+
+
+
+
+    @inbounds for (i, idx) in enumerate(cache.index_a)
+        owner = cache.owner_a[i]
+        if owner == rank
+            cache.sum_array_1D[idx] += a[i]
+        end
+    end
+    
+    for i in 0:rank_sz-1
+        fill!(cache.send_data_buffers[i+1], zero(T))
+    end
+
+    @inbounds for owner = 0:rank_sz-1
+        buf_data = cache.send_data_buffers[owner+1]
+        send_i_local = cache.send_i[owner+1]
+        for (i,idx) in enumerate(send_i_local)
+            buf_data[i] = a[idx]
+        end
+    end
+    # send_data_sizes = [length(cache.send_data_buffers[i+1]) for i in 0:rank_sz-1]
+    # recv_data_sizes = MPI.Alltoall(MPI.UBuffer(send_data_sizes, 1), comm)
+    MPI.Barrier(comm)
+
+    # Prepare buffers for sending and receiving data
+    # recv_data_buffers = [Vector{T}(undef, recv_data_sizes[i+1]) for i in 0:rank_sz-1]
+
+    for i in 0:rank_sz-1
+        fill!(cache.recv_data_buffers[i+1], zero(T))
+    end
+
+
+    # Communicate data
+    requests = MPI.Request[]
+    for i in 0:rank_sz-1
+        if cache.send_data_sizes[i+1] > 0
+            push!(requests, MPI.Isend(cache.send_data_buffers[i+1], i, 0, comm))
+        end
+        if cache.recv_data_sizes[i+1] > 0
+            push!(requests, MPI.Irecv!(cache.recv_data_buffers[i+1], i, 0, comm))
+        end
+    end
+
+    # Wait for all communication to complete
+    MPI.Waitall!(requests)
+
+    # Combine received data into a single vector
+    # combined_recv_data = vcat(cache.recv_data_buffers...)
+    # combined_recv_data = T[]
+    # for i in 0:rank_sz-1
+    #     if recv_data_sizes[i+1] > 0
+    #         append!(combined_recv_data, cache.recv_data_buffers[i+1])
+    #     end
+    # end
+    @inbounds for rk in 0:rank_sz-1
+        if cache.recv_data_sizes[rk+1] > 0
+            buffer = cache.recv_data_buffers[rk+1]
+            for (i, idx) in enumerate(cache.recv_idx_buffers[rk+1])
+                cache.sum_array_1D[idx] += buffer[i]
+            end
+        end
+    end
+
+    # send data back to original ranks
+    sendback_data_buffers = cache.recv_data_buffers
+    @inbounds for i in 0:rank_sz-1
+        if cache.recv_data_sizes[i+1] > 0
+            buf_data = sendback_data_buffers[i+1]
+            for (j, idx) in enumerate(cache.recv_idx_buffers[i+1])
+                buf_data[j] = cache.sum_array_1D[idx]
+            end
+        end
+    end
+    sendback_data_sizes = cache.recv_data_sizes
+    recvback_data_sizes = cache.send_data_sizes
+    MPI.Barrier(comm)
+
+    # Prepare buffers for sending and receiving back data
+    recvback_data_buffers = cache.send_data_buffers
+
+
+    # Communicate back data
+    requests_back = MPI.Request[]
+    @inbounds for i in 0:rank_sz-1
+        if sendback_data_sizes[i+1] > 0
+            push!(requests_back, MPI.Isend(sendback_data_buffers[i+1], i, 2, comm))
+        end
+        if recvback_data_sizes[i+1] > 0
+            push!(requests_back, MPI.Irecv!(recvback_data_buffers[i+1], i, 2, comm))
+        end
+    end
+
+
+    # Wait for all communication to complete
+    MPI.Waitall!(requests_back)
+
+
+    # Combine received data into a single vector
+    # combined_recv_back_data = vcat(recvback_data_buffers...)
+#     @time begin
+#     combined_recv_back_data = T[]
+#     for i in 0:rank_sz-1
+#         if recvback_data_sizes[i+1] > 0
+#             append!(combined_recv_back_data, recvback_data_buffers[i+1])
+#         end
+#     end
+# end
+    @inbounds for rk = 0:rank_sz-1
+        if recvback_data_sizes[rk+1] > 0
+            buffer = recvback_data_buffers[rk+1]
+            for (i, idx) in enumerate(cache.recvback_idx_buffers[rk+1])
+                cache.sum_array_1D[idx] = buffer[i]
+            end
+        end
+    end
+    
+    @inbounds for (i, idx) in enumerate(cache.index_a)
+        a[i] = cache.sum_array_1D[idx]
+    end
+end
+

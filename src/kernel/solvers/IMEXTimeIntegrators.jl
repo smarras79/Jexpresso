@@ -13,7 +13,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     t_n = inputs[:tinit]
 
     # Linear solver
-    haskey(inputs, :lsolve) ? lsolve = kwargs[:lsolve] : lsolve = nothing
+    haskey(inputs, :lsolve) ? lsolve = inputs[:lsolve] : lsolve = nothing
     # Solver parameters
     if lsolve == nothing
         haskey(inputs, :sp) ? solver_parameters = inputs[:sp] : solver_parameters = nothing
@@ -30,6 +30,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         haskey(inputs, :prec_sp) ? prec_sp = inputs[:prec_sp] : prec_sp = Dict(:maxiter      => 1,
                                                                                :abstol       => 1e-8,
                                                                                :precision    => Float64,
+                                                                               :prec_type    => "AMG",
                                                                                )
     end
 
@@ -195,12 +196,12 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         Is = sparse(1.0I, Int64(unkwn), Int64(unkwn))
 
         if delta == 0
-            L = Is
+            L = solver_precision.(Is)
         else
             # build_L needs to have included the scaling by inverse of mass matrix
             L_temp = build_L(u, t_n, params)
 
-            L = Is - lambda * L_temp
+            L = solver_precision.(Is - lambda * L_temp)
         end
 
         return L
@@ -211,12 +212,12 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         Is = sparse(1.0I, Int64(unkwn), Int64(unkwn))
 
         if delta == 0
-            L = Is
+            L = solver_precision.(Is)
         else
             # build_L needs to have included the scaling by inverse of mass matrix
             L_temp = build_L(u, t_n, params)
 
-            L = Is - Δt * a_tilde_ii * L_temp
+            L = solver_precision.(Is - Δt * a_tilde_ii * L_temp)
         end
 
         return L
@@ -233,6 +234,25 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         u .= u_next
     end
 
+    #------------------------------------------------------------------------
+    # Reshape rhs
+    #------------------------------------------------------------------------
+    function reshape_rhs_help!(rhs, rhs_help, npoint, neqs)
+        i_start = 1
+        for i = 1 : neqs
+            rhs_help[:, i] = rhs[i_start : i_start + npoint - 1]
+            i_start += npoint
+        end
+    end
+
+    function reshape_rhs!(rhs, rhs_help, npoint, neqs)
+        i_start = 1
+        for i = 1 : neqs
+            rhs[i_start : i_start + npoint - 1] = rhs_help[:, i]
+            i_start += npoint
+        end
+    end
+
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -244,6 +264,8 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     if method == "multistep"
         # Initialize solution vector
         u_next = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+
+        rhs_help = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(npoint), neqs)
 
         #------------------------------------------------------------------------
         # Building L_curr
@@ -257,8 +279,13 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             println(string("Solving for time ", t_n + Δt))
 
             rhs = construct_rhs(inputs, params, u_prev, t_n)
+            # reshape rhs_help
+            reshape_rhs_help!(rhs, rhs_help, npoint, neqs)
             # Apply bcs to rhs and L
-            bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
+            bcs_fun!(rhs_help, L_curr, t_n + Δt, params, sem, qp)
+            # reshape rhs
+            reshape_rhs_help!(rhs, rhs_help, npoint, neqs)
+
 
             # construct vector containing non-linear residual
             nonl_res = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
@@ -279,15 +306,15 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
                 # Solving the linear system
                 if lsolve == nothing
-                    prec = MyPrecClass.MyPrec(prec_sp[:precision].(solver_precision.(L_curr)),
+                    prec = MyPrecClass.MyPrec(prec_sp[:precision].(L_curr),
                                               RugeStubenAMG(), prec_sp)
 
-                    (x, stats) = fgmres(solver_precision.(L_curr), solver_precision.(nonl_res),
+                    (x, stats) = fgmres(L_curr, solver_precision.(nonl_res),
                                         memory=memory, N=prec, ldiv=true,
                                         restart=restart, atol=atol, rtol=rtol,
                                         itmax=itmax, verbose = verbose)
                 else
-                    x = lsolve(solver_precision.(L_curr),
+                    x = lsolve(L_curr,
                                solver_precision.(nonl_res))
                 end
                 @info "Solving linear system... DONE"
@@ -379,15 +406,15 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
                     # Solving the linear system
                     if lsolve == nothing
-                        prec = MyPrecClass.MyPrec(prec_sp[:precision].(solver_precision.(L_curr)),
+                        prec = MyPrecClass.MyPrec(prec_sp[:precision].(L_curr),
                                                   RugeStubenAMG(), prec_sp)
 
-                        (x, stats) = fgmres(solver_precision.(L_curr), solver_precision.(nonl_res),
+                        (x, stats) = fgmres(L_curr, solver_precision.(nonl_res),
                                             memory=memory, N=prec, ldiv=true,
                                             restart=restart, atol=atol, rtol=rtol,
                                             itmax=itmax, verbose = verbose)
                     else
-                        x = lsolve(solver_precision.(L_curr),
+                        x = lsolve(L_curr,
                                    solver_precision.(nonl_res))
                     end
                     @info "Solving linear system... DONE"
