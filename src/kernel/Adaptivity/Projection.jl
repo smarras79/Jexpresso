@@ -298,7 +298,7 @@ function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n
     if typeof(n2o_ele_map) == Vector
         while k_dst <= num_elem
             k_src = n2o_ele_map[k_dst]
-            
+
             # Source and Destination are at the same level
             if lvl_src[k_src] == lvl_dst[k_dst]
                 for k=1:nz, j=1:ny, i=1:nx
@@ -728,10 +728,10 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     backend = CPU()
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    
+
     #
     # Read GMSH grid from file
-    #      
+    #
     parts  = distribute(LinearIndices((nparts,)))
     mesh.parts = distribute(LinearIndices((nparts,)))
     mesh.nparts = nparts
@@ -759,12 +759,12 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     topology      = get_grid_topology(model)
     gtopology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
-    
+
     POIN_flg = 0
     EDGE_flg = 1
     FACE_flg = 2
     ELEM_flg = 3
-    
+
     if mesh.nsd == 3
         mesh.SD = NSD_3D()
 
@@ -777,7 +777,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
 
         mesh.SD = NSD_2D()
         ELEM_flg = FACE_flg
-        
+
         mesh.NNODES_EL  = 4
         mesh.NEDGES_EL  = 4
         mesh.NFACES_EL  = 1
@@ -794,10 +794,10 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     else
         error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
     end
-    
-    vtk_directory = "./refine/" 
+
+    vtk_directory = "./refine/"
     writevtk(partitioned_model, vtk_directory)
-    
+
 
     p2pp = Geometry.get_face_to_parent_face(model,0)
 
@@ -811,26 +811,26 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     elm2pelm = local_to_global(elgids)
 
 
-    mesh.gnpoin_linear = num_faces(partitioned_model.dmodel,POIN_flg)    
+    mesh.gnpoin_linear = num_faces(partitioned_model.dmodel,POIN_flg)
     mesh.gnpoin        = mesh.gnpoin_linear         #This will be updated for the high order grid
     mesh.gnedges       = num_faces(partitioned_model,EDGE_flg)
-    mesh.gnfaces       = num_faces(partitioned_model,FACE_flg)   
+    mesh.gnfaces       = num_faces(partitioned_model,FACE_flg)
     mesh.gnelem        = num_faces(partitioned_model,ELEM_flg)
 
 
-    mesh.npoin_linear = num_faces(model,POIN_flg)    
+    mesh.npoin_linear = num_faces(model,POIN_flg)
     mesh.npoin        = mesh.npoin_linear         #This will be updated for the high order grid
     mesh.nedges       = num_faces(model,EDGE_flg)
-    mesh.nfaces       = num_faces(model,FACE_flg)   
+    mesh.nfaces       = num_faces(model,FACE_flg)
     mesh.nelem        = num_faces(model,ELEM_flg)
 
 
-    
+
     if (ladpative == 1)
         mesh.nelem_bdy    = length(JeGeometry.get_boundary_cells(model,mesh.nsd))
         mesh.nfaces_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
         mesh.nedges_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
-    else 
+    else
         mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
         mesh.nfaces_bdy   = count(get_isboundary_face(topology,mesh.nsd-1))
         mesh.nedges_bdy   = count(get_isboundary_face(topology,mesh.nsd-2))
@@ -844,33 +844,33 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     println(" # N. Global points         : ", mesh.gnpoin_linear)
     println(" # N. Global elements       : ", mesh.gnelem)
     println(" # N. Global edges          : ", mesh.gnedges)
-    println(" # N. Global faces          : ", mesh.gnfaces)    
+    println(" # N. Global faces          : ", mesh.gnfaces)
     println(" # N. points         : ", mesh.npoin_linear)
     println(" # N. elements       : ", mesh.nelem)
     println(" # N. edges          : ", mesh.nedges)
-    println(" # N. faces          : ", mesh.nfaces)    
+    println(" # N. faces          : ", mesh.nfaces)
     println(" # N. internal elem  : ", mesh.nelem_int)
-    println(" # N. internal edges : ", mesh.nedges_int) 
-    println(" # N. internal faces : ", mesh.nfaces_int)    
+    println(" # N. internal edges : ", mesh.nedges_int)
+    println(" # N. internal faces : ", mesh.nfaces_int)
     println(" # N. boundary elem  : ", mesh.nelem_bdy)
     println(" # N. boundary edges : ", mesh.nedges_bdy)
     println(" # N. boundary faces : ", mesh.nfaces_bdy)
     println(" # GMSH LINEAR GRID PROPERTIES ...................... END")
-    
+
     ngl                     = mesh.nop + 1
     tot_linear_poin         = mesh.npoin_linear
-    
+
     tot_edges_internal_nodes = mesh.nedges*(ngl-2)
     tot_faces_internal_nodes = mesh.nfaces*(ngl-2)*(ngl-2)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)^(mesh.nsd)
-    
+
     el_edges_internal_nodes = mesh.NEDGES_EL*(ngl-2)
     el_faces_internal_nodes = mesh.NFACES_EL*(ngl-2)*(ngl-2)
     el_vol_internal_nodes   = (ngl-2)^(mesh.nsd)
-    
+
     #Update number of grid points from linear count to total high-order points
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + (mesh.nsd - 2)*tot_vol_internal_nodes
-    
+
     if (mesh.nop > 1)
         println(" # GMSH HIGH-ORDER GRID PROPERTIES")
         println(" # N. edges internal points   : ", tot_edges_internal_nodes)
@@ -879,7 +879,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         println(" # N. total high order points : ", mesh.npoin)
         println(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END")
     end
-    
+
     #
     # Resize as needed
     #
@@ -889,19 +889,19 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
 
     mesh.ip2gip = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
-    
-    
-    mesh.conn_edge_el = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
-    mesh.conn_face_el = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
-    mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+
+
+    mesh.conn_edge_el = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))
+    mesh.conn_face_el = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))
+    mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))
     mesh.poin_in_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
     mesh.poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
-    
+
     mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
     mesh.edge_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
     mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
-    mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
-    
+    mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))
+
     if mesh.nsd > 2
         mesh.poin_in_bdy_face = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces_bdy), Int64(mesh.ngl), Int64(mesh.ngl))
         mesh.face_type = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces))
@@ -910,7 +910,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
-    
+
     #
     # Connectivity matrices
     #
@@ -948,9 +948,9 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     if (mesh.nsd == 1)
         nothing
     elseif (mesh.nsd == 2)
-    
+
         mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl),1)
-    
+
         for iel = 1:mesh.nelem
             mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
             mesh.conn[iel, 2] = mesh.cell_node_ids[iel][2]
@@ -967,7 +967,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             mesh.connijk[iel, 1,    ngl] = mesh.cell_node_ids[iel][1]
             mesh.connijk[iel, ngl,  ngl] = mesh.cell_node_ids[iel][3]
             mesh.connijk[iel, ngl,    1] = mesh.cell_node_ids[iel][4]
-            
+
             # @printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[iel, 1, 1], mesh.connijk[iel, ngl, 1] , mesh.connijk[iel, 1,ngl], mesh.connijk[iel, ngl, ngl] )
         end
         #
@@ -979,17 +979,17 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         element_types = Dict(
             kk => :Quad4
             for kk = 1:mesh.nelem)
-        
+
         #
         # Rewrite coordinates in RCM order:
         #
-        # filename = "./COORDS_LO_" + rank + ".dat" 
+        # filename = "./COORDS_LO_" + rank + ".dat"
         open("./COORDS_LO_$rank.dat", "w") do f
             for ip = 1:mesh.npoin_linear
-                
+
                 mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
                 mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
-                
+
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
                 @printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
@@ -997,7 +997,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         end #f
 
     elseif (mesh.nsd == 3)
-        
+
         mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl))
         mesh.conn_edgesijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.NEDGES_EL))
 
@@ -1021,9 +1021,9 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             mesh.connijk[iel, ngl, 1, ngl]   = mesh.cell_node_ids[iel][3]
             mesh.connijk[iel, ngl, ngl, ngl] = mesh.cell_node_ids[iel][7]
             mesh.connijk[iel, 1, ngl, ngl]   = mesh.cell_node_ids[iel][8]
-            
+
         end
-        
+
         #
         # Fill in elements dictionary needed by NodeOrdering.jl
         #
@@ -1033,7 +1033,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         element_types = Dict(
             kk => :Hexa8
             for kk = 1:mesh.nelem)
-        
+
         #
         #Use NodeNumbering.jl
         #
@@ -1044,8 +1044,8 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         #RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
         #newmatrix = adjacency_visualization(RCM_adjacency)
         #display(UnicodePlots.heatmap(newmatrix))
-        
-        
+
+
         #
         # Rewrite coordinates in RCM order:
         #
@@ -1086,13 +1086,13 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     # Volume
     #
     # NOTICE: in 2D we consider only edges. faces are the elements.
-    #         
+    #
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD, elm2pelm)
 
     mesh.gnpoin = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
     # @info mesh.gnpoin
     mesh.gip2owner = find_gip_owner(mesh.ip2gip)
-    
+
     for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.x[ip] = mesh.x_ho[ip]
         mesh.y[ip] = mesh.y_ho[ip]
@@ -1101,7 +1101,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             mesh.z[ip] = mesh.z_ho[ip]
         end
     end
-    
+
     mesh.xmax = maximum(mesh.x)
     mesh.xmin = minimum(mesh.x)
     mesh.ymax = maximum(mesh.y)
@@ -1125,8 +1125,8 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     #
     if mesh.nsd == 2
         # isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
-        isboundary_edge = fill(false, mesh.nedges)  
-        
+        isboundary_edge = fill(false, mesh.nedges)
+
         # @info isboundary_edge
         #
         # Get labels contained in the current GMSH grid:
@@ -1137,7 +1137,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         for ilabel in labels.tag_to_name
             edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
             idx_edges_inflow = findall( x -> x == 1, edges_to_tag)
-            #    
+            #
             # Tag the boundary edge with its type as defined in the user-provided GMSH file:
             #
             for idx in idx_edges_inflow
@@ -1172,7 +1172,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         end
         # build mesh data structs for Laguerre semi-infinite elements
         if ("Laguerre" in mesh.bdy_edge_type)
-            gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend) 
+            gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
             factorx = inputs[:xfac_laguerre]#0.1
             factory = inputs[:yfac_laguerre]#0.025
             mesh.connijk_lag = KernelAbstractions.zeros(backend, TInt, Int64(n_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr),1)
@@ -1185,12 +1185,12 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             x_new[1:mesh.npoin] .= mesh.x[:]
             y_new[1:mesh.npoin] .= mesh.y[:]
             for iedge = 1:size(mesh.bdy_edge_type,1)
-                if (mesh.bdy_edge_type[iedge] == "Laguerre") 
+                if (mesh.bdy_edge_type[iedge] == "Laguerre")
                     iel = mesh.bdy_edge_in_elem[iedge]
                     #find tangent and normal vectors to the boundary
                     ip = mesh.poin_in_bdy_edge[iedge,1]
                     ip1 = mesh.poin_in_bdy_edge[iedge,2]
-                    #tangent vector 
+                    #tangent vector
                     x = mesh.x[ip]
                     x1 = mesh.x[ip1]
                     y = mesh.y[ip]
@@ -1249,7 +1249,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
 			                end
                             if (inputs[:yscale] == 1.0)
 			                    y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
-			                else 
+			                else
                                 y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
                             end
 			                matched = 0
@@ -1267,10 +1267,10 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
                                                     end
                                                 end
                                             end
-                                        end 
+                                        end
                                     end
                                     iter_end = 1
-                                end    
+                                end
                             else
                                 x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                                 y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
@@ -1282,9 +1282,9 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
                                 x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                                 y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
                                 mesh.connijk_lag[e_iter,i,j] = iter
-                                iter += 1 
+                                iter += 1
                             end
-                            
+
                             #@info nor[1],nor[2],x_new[iter],y_new[iter], mesh.x[ip],mesh.y[ip]
                         end
                     end
@@ -1302,7 +1302,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
 
     elseif mesh.nsd > 2
         # isboundary_face = compute_isboundary_face(topology, FACE_flg)
-        isboundary_face = fill(false, mesh.nfaces)  
+        isboundary_face = fill(false, mesh.nfaces)
         #
         # Get labels contained in the current GMSH grid:
         #
@@ -1310,7 +1310,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         for ilabel in labels.tag_to_name
             faces_to_tag  = get_face_tag_index(labels,ilabel,FACE_flg)
             idx_faces_inflow = findall( x -> x == 1, faces_to_tag)
-            #    
+            #
             # Tag the boundary edge with its type as defined in the user-provided GMSH file:
             #
             for idx in idx_faces_inflow
@@ -1391,8 +1391,8 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
     Mg = KernelAbstractions.zeros(CPU(),  TFloat, ngl)
     M_gatter_tmp = KernelAbstractions.zeros(CPU(),  TFloat, ngl)
     Imn = KernelAbstractions.zeros(CPU(),  TInt, ngl)
-    
-    
+
+
 
     Lt = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
 
@@ -1438,7 +1438,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
         Mg .= TFloat(0.0)
         M_gatter_tmp .= TFloat(0.0)
 
-        @turbo for l = 1:ngl 
+        @turbo for l = 1:ngl
             I = Imn[l]
             for j = 1:ngl
                 for i = 1:ngl
@@ -1459,7 +1459,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
                 ipp = IPp[j]
                 M[ipp] += Lt[j,i] * Mg[i]
             end
-            
+
         end
     end
 
@@ -1470,7 +1470,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
     #     return
     # # end
     M_gather_ghost = KernelAbstractions.zeros(CPU(),  TFloat, num_p_ghost * (ngl))
-    
+
     for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
         cell_ip_child, local_parent_facet_id, half = ncf
         if (local_parent_facet_id == 1)
@@ -1521,7 +1521,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
                 ipp = (idx-1) * ngl + j
                 M_gather_ghost[ipp] += Lt[j,i] * Mg[i]
             end
-            
+
         end
     end
 
@@ -1539,7 +1539,7 @@ function DSS_nc_scatter_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, co
     ngl = N+1
     Ms = KernelAbstractions.zeros(CPU(),  TFloat, ngl)
     M_scatter_tmp = KernelAbstractions.zeros(CPU(),  TFloat, ngl)
-    
+
 
     L = zeros(Float64, ngl, ngl)
     for ncf in non_conforming_facets
@@ -1656,7 +1656,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn
     ngl = N+1
     Mg = KernelAbstractions.zeros(CPU(),  TFloat, ngl)
     M_gatter_tmp = KernelAbstractions.zeros(CPU(),  TFloat, ngl)
-    
+
 
     Lt = zeros(Float64, ngl, ngl)
 
@@ -1706,7 +1706,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn
             Mg .= TFloat(0.0)
             M_gatter_tmp .= TFloat(0.0)
 
-            
+
             Mg[:] .= Mel[cell_ip_child,m,n,ieq] #if inexact
             for i = 1:ngl
                 ipc = IPc[i]
@@ -1717,7 +1717,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn
                 for j = 1:ngl
                     M_gatter_tmp[j] += Lt[j,i] * Mg[i]
                 end
-                
+
             end
             for j = 1:ngl
                 ipp = IPp[j]
@@ -1734,7 +1734,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn
     #     return
     # end
     M_gather_ghost = KernelAbstractions.zeros(CPU(),  TFloat, num_p_ghost * (ngl), neqs)
-    
+
     for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
         cell_ip_child, local_parent_facet_id, half = ncf
         if (local_parent_facet_id == 1)
@@ -1780,7 +1780,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn
                     ipp = (idx-1) * ngl + j
                     M_gather_ghost[ipp, ieq] += Lt[j,i] * Mg[i]
                 end
-                
+
             end
         end
     end
@@ -1832,7 +1832,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray,
             fill!(Mg, zero(TFloat))
             fill!(M_gatter_tmp, zero(TFloat))
 
-            
+
             Mg[:] .= Mel[cell_ip_child,m,n,ieq] #if inexact
             for i = 1:ngl
                 ipc = IPc[i]
@@ -1843,7 +1843,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray,
                 for j = 1:ngl
                     M_gatter_tmp[j] += Lt[j,i] * Mg[i]
                 end
-                
+
             end
             for j = 1:ngl
                 ipp = IPp[j]
@@ -1856,7 +1856,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray,
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     fill!(M_gather_ghost, zero(TFloat))
-    
+
     for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
         cell_ip_child, local_parent_facet_id, half = ncf
         if (local_parent_facet_id == 1)
@@ -1875,7 +1875,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray,
 
         IPc  = @view(IPc_list_pg[:,idx])
         Lt   = @view(interp[:,:,half])'
-        
+
         for ieq = 1:neqs
             fill!(Mg, zero(TFloat))
             fill!(M_gatter_tmp, zero(TFloat))
@@ -1893,7 +1893,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray,
                     ipp = (idx-1) * ngl + j
                     M_gather_ghost[ipp, ieq] += Lt[j,i] * Mg[i]
                 end
-                
+
             end
         end
     end
@@ -1911,7 +1911,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, con
     ngl = N+1
     Ms = KernelAbstractions.zeros(CPU(),  TFloat, ngl)
     M_scatter_tmp = KernelAbstractions.zeros(CPU(),  TFloat, ngl)
-    
+
 
     L = zeros(Float64, ngl, ngl)
 
@@ -2045,7 +2045,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact,
 
         IPc = @view(IPc_list[:,idx])
         IPp = @view(IPp_list[:,idx])
-        
+
         L   = @view(interp[:,:,half])
 
         fill!(Ms, zero(TFloat))
@@ -2210,7 +2210,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_3D, QT::Inexact, Mel::AbstractArra
     #     return
     # # end
     M_gather_ghost = KernelAbstractions.zeros(CPU(),  TFloat, num_p_ghost * (ngl2))
-    
+
     for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
         cell_ip_child, local_parent_facet_id, half_1, half_2 = ncf
         if (local_parent_facet_id == 1) # front
@@ -2473,7 +2473,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn
                             non_conforming_facets_parents_ghost, cip_pg, lfid_pg, half1_pg, half2_pg,
                             Mg, M_gatter_tmp, Lt_1, Lt_2, M_gather_ghost,IPc_list, IPp_list, IPc_list_pg,
                             ip2gip, gip2ip, gip_gather_ghost, gip_gather_owner, gip_local, N, neqs, interp)
-    
+
     ngl          = N+1
     ngl2         = ngl * ngl
 
@@ -2481,8 +2481,8 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn
     for (idx, ncf) in enumerate(non_conforming_facets)
 
         cell_ip_child         = cip[idx]
-        cell_ip_parent        = pip[idx] 
-        local_parent_facet_id = lfid[idx] 
+        cell_ip_parent        = pip[idx]
+        local_parent_facet_id = lfid[idx]
         half_1                = half1[idx]
         half_2                = half2[idx]
         # cell_ip_child, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
@@ -2518,7 +2518,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn
                     end
                 end
             end
-            
+
             for i2 = 1:ngl
                 for i1 = 1:ngl
                     i   = i1 + (i2 - 1) * ngl
@@ -2550,7 +2550,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     fill!(M_gather_ghost, zero(TFloat))
-    
+
     for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
         cell_ip_child, local_parent_facet_id, half_1, half_2 = ncf
         if (local_parent_facet_id == 1) # front
@@ -2581,7 +2581,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn
                     end
                 end
             end
-            
+
             for i2 = 1:ngl
                 for i1 = 1:ngl
                     i   = i1 + (i2 - 1) * ngl
@@ -2624,17 +2624,17 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray,
                             Mg, M_gatter_tmp, M_gather_ghost,
                             IPc_list, IPp_list, IPc_list_pg,
                             ip2gip, gip2ip, gip_gather_ghost, gip_local, N, neqs, interp)
-    
+
     ngl          = N+1
     ngl2         = ngl * ngl
-    
+
 
     # half 1 top, half 2 bottom
     for (idx, ncf) in enumerate(non_conforming_facets)
 
         # cell_ip_child         = cip[idx]
-        # cell_ip_parent        = pip[idx] 
-        # local_parent_facet_id = lfid[idx] 
+        # cell_ip_parent        = pip[idx]
+        # local_parent_facet_id = lfid[idx]
         # half_1                = half1[idx]
         # half_2                = half2[idx]
         cell_ip_child, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
@@ -2670,7 +2670,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray,
                     end
                 end
             end
-            
+
             for i2 = 1:ngl
                 for i1 = 1:ngl
                     i   = i1 + (i2 - 1) * ngl
@@ -2704,7 +2704,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray,
     # M_gather_ghost = cache_ghost_p.data2send
     fill!(M_gather_ghost, zero(TFloat))
 
-    
+
     for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
         cell_ip_child, local_parent_facet_id, half_1, half_2 = ncf
         if (local_parent_facet_id == 1) # front
@@ -2735,7 +2735,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray,
                     end
                 end
             end
-            
+
             for i2 = 1:ngl
                 for i1 = 1:ngl
                     i   = i1 + (i2 - 1) * ngl
@@ -2774,18 +2774,18 @@ end
 
 function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, conn_facets::AbstractArray,
                              non_conforming_facets, cip, pip, lfid, half1, half2,
-                             non_conforming_facets_children_ghost, pip_cg, lfid_cg, half1_cg, half2_cg, 
+                             non_conforming_facets_children_ghost, pip_cg, lfid_cg, half1_cg, half2_cg,
                              Ms, M_scatter_tmp, L_1, L_2, M_scatter_local, M_scatter_ghost, IPc_list, IPp_list, IPp_list_cg,
                              ip2gip, gip2ip, gip_scatter_ghost, gip_scatter_owner, gip_local, N, interp)
     ngl           = N+1
     ngl2          = ngl * ngl
-    
+
     # half 1 top, half 2 bottom
     for (idx, ncf) in enumerate(non_conforming_facets)
 
         cell_ip_child         = cip[idx]
-        cell_ip_parent        = pip[idx] 
-        local_parent_facet_id = lfid[idx] 
+        cell_ip_parent        = pip[idx]
+        local_parent_facet_id = lfid[idx]
         half_1                = half1[idx]
         half_2                = half2[idx]
         # cell_ip_child, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
@@ -2834,8 +2834,8 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, con
     rank = MPI.Comm_rank(comm)
 
     for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
-        cell_ip_parent        = pip_cg[idx] 
-        local_parent_facet_id = lfid_cg[idx] 
+        cell_ip_parent        = pip_cg[idx]
+        local_parent_facet_id = lfid_cg[idx]
         half_1                = half1_cg[idx]
         half_2                = half2_cg[idx]
         # cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
@@ -2852,7 +2852,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, con
         elseif (local_parent_facet_id == 6) # left
             l = ngl; m = 1:ngl; n = 1:ngl
         end
-        
+
         IPp  = @view(IPp_list_cg[:,idx])
         L_1 .= @view(interp[:,:,half_1])
         L_2 .= @view(interp[:,:,half_2])
@@ -2894,13 +2894,13 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
                              gip2ip, gip_local, N, interp)
     ngl           = N+1
     ngl2          = ngl * ngl
-    
+
     # half 1 top, half 2 bottom
     for (idx, ncf) in enumerate(non_conforming_facets)
 
         # cell_ip_child         = cip[idx]
-        # cell_ip_parent        = pip[idx] 
-        # local_parent_facet_id = lfid[idx] 
+        # cell_ip_parent        = pip[idx]
+        # local_parent_facet_id = lfid[idx]
         # half_1                = half1[idx]
         # half_2                = half2[idx]
         cell_ip_child, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
@@ -2964,7 +2964,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
         elseif (local_parent_facet_id == 6) # left
             l = ngl; m = 1:ngl; n = 1:ngl
         end
-        
+
         IPp = @view(IPp_list_cg[:,idx])
         L_1 = @view(interp[:,:,half_1])
         L_2 = @view(interp[:,:,half_2])
@@ -2998,10 +2998,10 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
     end
 end
 
-function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
                            SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, params; ladapt = true) nothing end
 
-function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
                            SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs,
                            q_el, q_el_pro,
                            cache_ghost_p, q_ghost_p,
@@ -3100,8 +3100,8 @@ function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
         if (ladapt == true)
             # DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, @view(q_el_tmp[:,:,:,:,ieq]), conn, mesh.poin_in_edge,
             #                     mesh.non_conforming_facets, mesh.cip, mesh.pip, mesh.lfid, mesh.half1, mesh.half2,
-            #                     mesh.non_conforming_facets_children_ghost, mesh.pip_cg, mesh.lfid_cg, mesh.half1_cg, mesh.half2_cg, 
-            #                     params.q_el, params.q_el_pro, params.mesh.q_local_c, params.q_ghost_c, 
+            #                     mesh.non_conforming_facets_children_ghost, mesh.pip_cg, mesh.lfid_cg, mesh.half1_cg, mesh.half2_cg,
+            #                     params.q_el, params.q_el_pro, params.mesh.q_local_c, params.q_ghost_c,
             #                     mesh.IPc_list, mesh.IPp_list, mesh.IPp_list_cg,
             #                     mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, mesh.cgip_local, ngl-1, params.interp)
             DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT,
@@ -3120,7 +3120,7 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
 
     q_src = KernelAbstractions.zeros(CPU(),  TFloat, (omesh.npoin, qp.neqs+1))
     q_src .= qp.qn .- qp.qe
-    
+
     nmesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
     nop=TInt(inputs[:nop]),
     ngr=TInt(inputs[:nop_laguerre]+1),
@@ -3171,7 +3171,7 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
     SD=NSD_1D())
     q_dst2, partitioned_model_refined2 = projection_solutions(q_dst, ref_coarse_flags2, partitioned_model_refined, nmesh, nmesh2, inputs, nparts, distribute)
     # @info n2o_ele_map2
-    
+
     comm = MPI.COMM_WORLD
 
     MPI.Barrier(comm)
@@ -3312,7 +3312,7 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D)
 end
 
 function do_adapt!(adapt_flags, inputs, mesh, uaux, qp)
-    
+
     user_get_adapt_flags!(adapt_flags, inputs, mesh, mesh.ad_lvl, uaux, qp.qe, mesh.connijk, mesh.nelem, mesh.ngl)
     adapt4periodicity!(adapt_flags, mesh, mesh.SD)
 end
@@ -3332,7 +3332,7 @@ function amr_strategy!(args...)
     # @info ref_coarse_flags
     # re - sem, init, and params_setup
     sem, partitioned_model_new, uaux_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, params.uaux)
-    
+
     # if (inputs[:backend] != CPU())
     #     convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     # end
@@ -3348,14 +3348,14 @@ function amr_strategy!(args...)
                               OUTPUT_DIR,
                               TFloat,
                               tspan)
-    
+
     uaux2u!(nu, uaux_new, nparams.neqs, nparams.mesh.npoin)
     prob = ODEProblem(rhs!,
                     nu,
                     nparams.tspan,
                     nparams);
     # @info "u3",  size(nu,1), prob.p.mesh.npoin
-    
+
     return prob, partitioned_model_new
     # GC.gc()
 end
@@ -3384,7 +3384,7 @@ function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl
             end
         end
     end
-    
+
     u2recv, u2recver = send_and_receive(u2send, u2owner, comm)
 
     id2recv = local_views(lids_rcv).item_ref[]
@@ -3446,7 +3446,7 @@ function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl
             end
         end
     end
-    
+
     u2recv, u2recver = send_and_receive(u2send, u2owner, comm)
 
     id2recv = local_views(lids_rcv).item_ref[]

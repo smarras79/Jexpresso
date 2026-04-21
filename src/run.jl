@@ -149,6 +149,16 @@ if rank == 0
     cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
 end
 
+if haskey(inputs, :use_named_tuples)
+    if inputs[:use_named_tuples] == true
+        inputs = NamedTuple(inputs)
+    end
+end
+
+val_lsaturation = Val(inputs[:lsaturation])
+
+inputs = (; inputs..., comm =MPI.COMM_WORLD, val_lsaturation = val_lsaturation)
+
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------

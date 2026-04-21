@@ -3,18 +3,18 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
             """
     @info " Initialize fields for 3D CompEuler with θ equation ........................ "
-    
+
     #---------------------------------------------------------------------------------
     # Solution variables:
     #
     # NOTICE: while these names can be arbitrary, the length of this tuple
     # defines neqs, which is the second dimension of q = define_q()
-    # 
+    #
     #---------------------------------------------------------------------------------
     qvars = ("ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
-    
+
     if (inputs[:backend] == CPU())
         PhysConst = PhysicalConst{Float64}()
         if inputs[:lrestart] == true
@@ -23,47 +23,47 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
             PhysConst = PhysicalConst{Float64}()
-        
+
             for ip=1:mesh.npoin
                 ρ  = q.qn[ip,1]
                 ρθ = q.qn[ip,5]
                 θ  = ρθ/ρ
                 P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
                 q.qn[ip,end] = P
-            
+
                 ρe  = q.qe[ip,1]
                 ρθe = q.qe[ip,5]
                 θe  = ρθe/ρ
                 Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
                 q.qe[ip,end] = Pe
             end
-        
+
         else
             #
             # INITIAL STATE from scratch:
             #
             xc = (maximum(mesh.x) + minimum(mesh.x))/2
             zc = 2000.0 #m
-        
+
             θc   =   3.0 #K
             qvc = 2e-3
             rx = 2400.0
             rz = 1500.0
             data = read_sounding(inputs[:sounding_file])
-            background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data) 
+            background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data)
             balanced = zeros(mesh.npoin,1)
-            @info minimum(background[:,3]), maximum(background[:,3])           
+            @info minimum(background[:,3]), maximum(background[:,3])
             for ip = 1:mesh.npoin
-            
+
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
-                 
+
                 r = sqrt( (x - xc)^2/(rx)^2 )
-            
+
                 ΔT = 0.0 #K
                 Δqv = 0.0
                 if (r <= 1) && (z <= 1199.0) && (z>= 350.0)
                     ΔT = θc*sinpi((r+1)/2)/((z-200)/200)
-                    Δqv = qvc*sinpi((r+1)/2)/((z-200)/200) 
+                    Δqv = qvc*sinpi((r+1)/2)/((z-200)/200)
                 end
                 T_ref = background[ip,1]
                 qv_ref = background[ip,2]/1000
@@ -109,7 +109,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qn[ip,7] = 0.0
                     q.qn[ip,end] = pref_m #+ ρ*qv_ref*PhysConst.Rvap*T
 
-                
+
                     #Store initial background state for plotting and analysis of pertuebations
                     q.qe[ip,1] = ρref
                     q.qe[ip,2] = ρref*u_ref
@@ -142,14 +142,14 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 #end
             end
         end
-        @info maximum(q.qn[:,end]), minimum(q.qn[:,end]), maximum(q.qn[:,2]), minimum(q.qn[:,2]), maximum(q.qn[:,6]), minimum(q.qn[:,6]), maximum(q.qn[:,1]), minimum(q.qn[:,1])    
+        @info maximum(q.qn[:,end]), minimum(q.qn[:,end]), maximum(q.qn[:,2]), minimum(q.qn[:,2]), maximum(q.qn[:,6]), minimum(q.qn[:,6]), maximum(q.qn[:,1]), minimum(q.qn[:,1])
         if inputs[:CL] == NCL()
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[:,2] .= q.qn[:,2]./(q.qn[:,1] + q.qe[:,1])
                 q.qn[:,3] .= q.qn[:,3]./(q.qn[:,1] + q.qe[:,1])
                 q.qn[:,4] .= q.qn[:,4]./(q.qn[:,1] + q.qe[:,1])
                 q.qn[:,5] .= q.qn[:,5]./(q.qn[:,1] + q.qe[:,1])
-            
+
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[:,5] .= q.qe[:,5]./q.qe[:,1]
             else

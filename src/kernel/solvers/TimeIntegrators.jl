@@ -11,8 +11,6 @@ function time_loop!(inputs, params, u, args...)
                       u,
                       params.tspan,
                       params);
-    Main.debug[] = (; prob)
-    error()
 
     #------------------------------------------------------------------------
     # Runtime callbacks

@@ -4,7 +4,7 @@
 #
 using  Quadmath
 using  Polynomials
-using  AMRVW 
+using  AMRVW
 export St_Lagrange
 export St_Legendre
 export St_lgl
@@ -23,7 +23,7 @@ abstract type AbstractInterpolationBasis end
 abstract type AbstractSpaceDimensions end
 
 mutable struct St_Legendre{TFloat}
-    
+
     """
     struct St_Legendre{TFloat<:Real}
           legendre  :: TFloat
@@ -32,7 +32,7 @@ mutable struct St_Legendre{TFloat}
            dq       :: TFloat -> dq = dlegendre(p+1) - dlegendre(p-1)
     end
     """
-    
+
     legendre  :: TFloat
     dlegendre :: TFloat
     q         :: TFloat
@@ -40,7 +40,7 @@ mutable struct St_Legendre{TFloat}
 end
 
 mutable struct St_Laguerre{Float128}
-   
+
    """
    struct St_Laguerre{TFloat<:Real}
         Laguerre  :: TFloat
@@ -52,7 +52,7 @@ mutable struct St_Laguerre{Float128}
    d2Laguerre :: Polynomial{Float128}
    d3Laguerre :: Polynomial{Float128}
 end
- 
+
 abstract type AbstractIntegrationPointAndWeights end
 abstract type AbstractInterpolationBasis end
 abstract type AbstractSpaceDimensions end
@@ -91,8 +91,8 @@ end
 
 
 Base.@kwdef mutable struct St_Lagrange{TFloat, backend} <:AbstractInterpolationBasis
-    ψ  = KernelAbstractions.zeros(backend, TFloat, 0, 0)#mesh.ngl, mesh.ngl)
-    dψ = KernelAbstractions.zeros(backend, TFloat, 0, 0)#mesh.ngl, mesh.ngl)    
+    ψ::Array{TFloat, 2}  = KernelAbstractions.zeros(backend, TFloat, 0, 0)#mesh.ngl, mesh.ngl)
+    dψ::Array{TFloat, 2} = KernelAbstractions.zeros(backend, TFloat, 0, 0)#mesh.ngl, mesh.ngl)
 end
 
 mutable struct St_ScaledLaguerre{TFloat} <:AbstractInterpolationBasis
@@ -103,10 +103,10 @@ end
 function basis_structs_ξ_ω!(::AbstractPointsType, nop, backend) end
 
 function basis_structs_ξ_ω!(ξωtype::LG, nop, backend)
-    
+
     lg = St_lg{TFloat}(KernelAbstractions.zeros(backend, TFloat, nop+1),
                        KernelAbstractions.zeros(backend, TFloat, nop+1))
-    
+
     build_Integration_points!(lg, nop, backend)
 
     return lg
@@ -118,7 +118,7 @@ function basis_structs_ξ_ω!(ξωtype::LGL, nop, backend)
     #
     lgl = St_lgl{TFloat, backend}(KernelAbstractions.zeros(backend, TFloat, nop+1),
                          KernelAbstractions.zeros(backend, TFloat, nop+1))
-    
+
     build_Integration_points!(lgl, nop, backend)
 
     return lgl
@@ -135,13 +135,13 @@ function basis_structs_ξ_ω!(ξωtype::LGR, nop, beta, backend)
 end
 
 function basis_structs_ξ_ω!(ξωtype::CG, nop, backend)
-    
+
     #
     # Note: `nop` means `nq` when building the quadrature points in sem_setup.jl
     #
     cg = St_cg{TFloat}(KernelAbstractions.zeros(backend, TFloat, nop+1),
                        KernelAbstractions.zeros(backend, TFloat, nop+1))
-    
+
     build_Integration_points!(cg, nop, backend)
 
     return cg
@@ -149,10 +149,10 @@ end
 
 
 function basis_structs_ξ_ω!(ξωtype::CGL, nop, backend)
-    
+
     cgl = St_cgl{TFloat}(KernelAbstractions.zeros(backend, TFloat, nop+1),
                          KernelAbstractions.zeros(backend, TFloat, nop+1))
-    
+
     build_Integration_points!(cgl, nop, backend)
 
     return cgl
@@ -160,7 +160,7 @@ end
 
 
 function build_Integration_points!(::AbstractIntegrationPointAndWeights,nop) end
- 
+
 function build_Integration_points!(cg::St_cg, nop, backend)
   build_cg!(cg,nop, backend)
 end
@@ -191,10 +191,10 @@ function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T, backend)
 
     N  = (Nξ + 1)
     Q  = (Qξ + 1)
-    
+
     basis = St_Lagrange{T, backend}(KernelAbstractions.zeros(backend, TFloat, N,Q), KernelAbstractions.zeros(backend, TFloat, N,Q))
     (basis.ψ, basis.dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T, backend)
-    
+
     return basis
 end
 
@@ -203,7 +203,7 @@ function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, beta, T, b
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0 @info "built laguerre basis ..... " end
-    
+
     Nξ = size(ξ,1)  - 1
     Qξ = size(ξq,1) - 1
 
@@ -234,13 +234,13 @@ function build_lgl!(Legendre::St_Legendre, lgl::St_lgl, nop, backend)
       
     """
     size::Int64 = nop+1
-    
+
     lgl.ξ = KernelAbstractions.zeros(backend, TFloat, size)
     lgl.ω = KernelAbstractions.zeros(backend, TFloat, size)
-    
+
     #LGL nodes
     LegendreGaussLobattoNodesAndWeights!(Legendre, lgl, nop, backend);
-    
+
     return lgl;
 end
 
@@ -250,40 +250,40 @@ function build_cg!(cg::St_cg, nop, backend)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0 println(" # Compute Chebyshev-Gauss nodes ........................ ") end
-        
+
     size::Int8=nop+1
     cg.ξ = KernelAbstractions.zeros(backend, TFloat, size)
     cg.ω = KernelAbstractions.zeros(backend, TFloat, size)
 
     #CG nodes
     ChebyshevGaussNodesAndWeights!(cg,nop, backend)
-    
+
     for j=1:size
         println( " # ξ cheby, ω =: ", " ", cg.ξ[j], " " , cg.ω[j])
     end
-    
+
     if rank == 0 println(" # Compute Chebyshev-Gauss nodes ........................ END") end
 
     return cg
 end
 
 function build_cgl!(cgl::St_cgl, nop, backend)
-    
+
     if rank == 0 println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ ") end
-    
+
     size::Int8=nop+1
     cgl.ξ = KernelAbstractions.zeros(backend, TFloat, size)
     cgl.ω = KernelAbstractions.zeros(backend, TFloat, size)
 
     #CGL nodes
     ChebyshevGaussLobattoNodesAndWeights!(cgl,nop, backend)
-    
-    for j=1:size        
+
+    for j=1:size
         println( " # ξ cheby, ω =: ", " ", cgl.ξ[j], " " , cgl.ω[j])
     end
-    
+
     if rank == 0 println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ DONE") end
-    
+
     return cgl
 end
 
@@ -339,7 +339,7 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop, ba
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    
+
     println_rank( " # Compute LG nodes ........................"; msg_rank = rank)
     NITER = 100
     TOL = 4*eps(TFloat)
@@ -375,13 +375,13 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop, ba
         lg.ω[TInt(nop/2)+1] = 2/Legendre.dlegendre^2
     end
 
-    
-    #for j=1:nop+1       
+
+    #for j=1:nop+1
     #    println_rank( " # ξ, ω =: ", " ", lg.ξ[j], " " , lg.ω[j]; msg_rank = rank)
     #end
-    
+
     #println_rank(" # Compute LG nodes ........................ DONE"; msg_rank = rank)
-    
+
 end
 
 function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl, nop, backend)
@@ -390,62 +390,62 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
      """
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    
+
     NITER = 100
     TOL = 4*eps()
-    
+
     ξ0 ::TFloat=0.0
     ξ1 ::TFloat=1.0
     ξP ::TFloat=1.0
     ξj ::TFloat=0.0
     ξj2::TFloat=0.0
     L2 ::TFloat=0.0
-    
+
     ω0 ::TFloat=0.0
     ω1 ::TFloat=0.0
     ωP ::TFloat=0.0
-    
+
     Δ  ::TFloat=0.0
     ξ = zeros(TFloat,nop+1)
     ω = zeros(TFloat,nop+1)
     #println_rank( " # Compute LGL nodes ........................"; msg_rank = rank)
-    
+
     for j=1:nop+1
 	ξ[j] = 0.0;
 	ω[j] = 1.0;
     end
-    
+
     if (nop == 1)
 	ξ0           = -1.0
 	ω0           =  1.0
 	ξ1           =  1.0
 	ω1           =   ω0
-        
+
 	ξ[1]     =   ξ0
 	ξ[nop+1] =   ξ1
 	ω[1]     =   ω0
 	ω[nop+1] =   ω1
-    else 
+    else
 	ξ0            = -1.0
 	ω0            =  TFloat(2.0/(nop*(nop + 1)))
 	ξP            =  1.0
 	ωP            =   ω0
-        
+
 	ξ[1]      =   ξ0
 	ξ[nop+1]  =   ξP
 	ω[1]      =   ω0
 	ω[nop+1]  =   ωP
-	
-        for jj = 2:floor(Int,(nop + 1)/2) 
+
+        for jj = 2:floor(Int,(nop + 1)/2)
 	    j = jj - 1
 	    ξj = -cos((j + 0.25)*π/nop - 3.0/(8.0*nop*π*(j + 0.25)))
 	    ξ[jj] = ξj;
-            
+
             for k = 0:NITER
 	        LegendreAndDerivativeAndQ!(Legendre, nop, ξj)
 	        Δ = -Legendre.q/Legendre.dq
 	        ξj    =  ξj + Δ
-	        
+
 	        if (abs(Δ) <= TOL*abs(ξj))
                     break
                 end
@@ -457,14 +457,14 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
 	    L2             = Legendre.legendre*Legendre.legendre
 	    ω[jj]      = 2.0/(nop*(nop + 1.0)*L2)
 	    ω[nop+1-j] = ω[jj]
-            
+
         end
     end
-    
+
     if (mod(nop,2) == 0)
 	LegendreAndDerivativeAndQ!(Legendre, nop, 0.0);
 	ξ[TInt(nop/2)+1] = 0.0;
-	
+
 	L2           = Legendre.legendre*Legendre.legendre;
 	ω[TInt(nop/2)+1] = 2.0/(nop*(nop + 1.0)*L2);
     end
@@ -476,16 +476,16 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
         KernelAbstractions.copyto!(backend,lgl.ξ,ξ)
         KernelAbstractions.copyto!(backend,lgl.ω,ω)
     end
-    #for j=1:nop+1       
+    #for j=1:nop+1
     #    println_rank( " # ξ, ω =: ", " ", ξ[j], " " , ω[j]; msg_rank = rank)
     #end
-    
+
     #println_rank(" # Compute LGL nodes ........................ DONE"; msg_rank = rank)
-    
+
 end
 
 function LegendreAndDerivativeAndQ!(Legendre::St_Legendre, nop, x)
-    
+
     """
              Evaluate by recursion, the Legendre polynomial of order p
              its Derivatives at coordinate x, and q:
@@ -505,7 +505,7 @@ function LegendreAndDerivativeAndQ!(Legendre::St_Legendre, nop, x)
 
          """
     #TFloat=TFloat
-    
+
     a   ::TFloat=0.0
     b   ::TFloat=0.0
     ϕ   ::TFloat=0.0
@@ -516,9 +516,9 @@ function LegendreAndDerivativeAndQ!(Legendre::St_Legendre, nop, x)
     dϕm1::TFloat=0.0
     ϕm2 ::TFloat=0.0
     dϕm2::TFloat=0.0
-    
-    
-    #st_legendre Legendre;  
+
+
+    #st_legendre Legendre;
     if (nop == 0) #Order 0 case
         ϕ    = 1.0
         dϕ   = 0.0
@@ -537,30 +537,30 @@ function LegendreAndDerivativeAndQ!(Legendre::St_Legendre, nop, x)
 
         #Construct Nth Order Legendre Polynomial
 	for k=2:nop
-             
+
             ϕ    = x*ϕm1*(2.0*k - 1.0)/k - ϕm2*(k - 1.0)/k
 	    dϕ   = dϕm2 + (2.0*k - 1.0)*ϕm1
-	    
+
 	    ϕp1  = x*ϕ*(2.0*k + 1.0)/(k+1) - ϕm1*k/(k+1)
 	    dϕp1 = dϕm1 + (2.0*k - 1.0)*ϕ
-            
+
             q  =  ϕp1 -  ϕm1
             dq = dϕp1 - dϕm1
-            
+
 	    ϕm2 = ϕm1
 	    ϕm1 = ϕ
 
 	    dϕm2 = dϕm1
 	    dϕm1 = dϕ
-            
+
 	end
     end
-    
+
     Legendre.legendre  =  ϕ
     Legendre.dlegendre = dϕ
     Legendre.q         =  q
     Legendre.dq        = dq
-    
+
 end
 
 function ChebyshevPolynomial!(Chebyshev::St_Chebyshev,nop,x::TFloat,Ks)
@@ -604,10 +604,10 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
     from https://github.com/fxgiraldo/Element-based-Galerkin-Methods/blob/master/Projects/Project_01_1D_Interpolation/For_Instructors/julia/lagrange_basis.jl
 
 """
-    
+
     N = size(ξ,1) - 1
     Q = size(ξq,1) - 1
-    
+
     #Initialize arrays
     L_1 = zeros(TFloat, N+1, Q+1)
     dLdx_1 = zeros(TFloat, N+1, Q+1)
@@ -623,7 +623,7 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
 
         #Construct Basis
         for i=1:N+1
-            
+
             xi        = ξ_1[i]
             L_1[i,l]    = 1.0
             dLdx_1[i,l] = 0.0
@@ -634,12 +634,12 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
                 if (j != i)
                     L_1[i,l] = L_1[i,l]*(xl - xj)/(xi - xj)
                 end
-                
+
                 ddL=1
                 if (j != i)
                     for k=1:N+1
                         xk = ξ_1[k]
-                        
+
                         #dL/dx
                         if (k !=i && k !=j)
                             ddL = ddL*(xl - xk)/(xi - xk)
@@ -714,16 +714,16 @@ function LaguerreAndDerivative!(nop,SL::St_Laguerre, backend)
     Lkm1[nop+1] = 1;
 
     for k=2:nop
-        
+
         Laguerre = zeros(Float128, nop+1);
 
         for e=nop-k+1:nop
             Laguerre[e] = (2*k-1)*Lkm1[e] - Lkm1[e+1] + (1-k)*Lkm2[e];
         end
-        
+
         Laguerre[nop+1] = (2*k-1)*Lkm1[nop+1] + (1-k)*Lkm2[nop+1];
         Laguerre = Laguerre/k;
-        
+
         Lkm2 .= Lkm1;
         Lkm1 .= Laguerre;
     end
@@ -759,7 +759,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     #if (backend == MetalBackend())
         thresh = 1e-5
     end
-        
+
     x0 = 0.0
     x1 = 0.0
     for k=1:ngr
@@ -775,9 +775,9 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
           ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
           L2 = Laguerre.Laguerre
           #x1 = x0 - L1(x0)/L3(x0)#+ (L1(x0) - L2(x0))/L2(x0)
-          #x1 = x0 -  L3(x0)/L4(x0) 
+          #x1 = x0 -  L3(x0)/L4(x0)
           # Laguerre root finder
-          x1 = x0 - L3(x0)/L4(x0) - L3(x0)*L5(x0)/(2*(L4(x0)^2)) 
+          x1 = x0 - L3(x0)/L4(x0) - L3(x0)*L5(x0)/(2*(L4(x0)^2))
           diff1 = abs(x1 -x0)
           x0 = x1
           repeat = 1.0
@@ -791,7 +791,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
              x0 = gr.ξ[k]*stuck
              diff = 1.0
           end=#
-          
+
       end
       ξ[k] = x1
     end
@@ -801,7 +801,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     #for k=1:ngr
     #  @info Laguerre.dLaguerre(gr.ξ[k]), gr.ξ[k]
     #end
-    ω = zeros(Float128,ngr) 
+    ω = zeros(Float128,ngr)
     ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
     Lkx = zeros(nop+1,1)
     for i=1:nop+1
@@ -809,7 +809,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
       #Lkx[i] = Laguerre.Laguerre(gr.ξ[i])
       ω[i] = 1/(beta*Pp1*Lkx[i]^2)
       #gr.ω[i] = exp(gr.ξ[i]*beta)/(beta*Pp1*Lkx[i]^2)
-    
+
     end
     if (backend == CPU())
         gr.ξ .= ξ
@@ -824,7 +824,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     #gr.ω[1] = 1-sum(gr.ω[2:nop+1])
     #@info gr.ω
     #if(scale)
-      #gr.ω .= exp.(gr.ξ*beta).*gr.ω 
+      #gr.ω .= exp.(gr.ξ*beta).*gr.ω
     #end
 end
 
@@ -832,7 +832,7 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
     nbasis = size(ξq,1)
     N = nbasis -1
     Np1 = N+1
-    
+
     psi_1 = ones(TFloat, nbasis, nbasis)
     dpsi_1 = zeros(TFloat, nbasis, nbasis)
     ξq_1 = zeros(TFloat, nbasis)
@@ -841,7 +841,7 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
     dpsi = KernelAbstractions.zeros(backend, TFloat, nbasis,nbasis)
     KernelAbstractions.copyto!(CPU(), ξq_1, ξq)
     KernelAbstractions.copyto!(CPU(), ξ_1, ξ)
-    
+
     dpsi_1[1,1]=-beta*((N +1)./2.0)
     for i = 1:nbasis
         xi = ξq_1[i]

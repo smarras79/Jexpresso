@@ -132,7 +132,7 @@ function reset∇fToZero!(params)
 end
 
 function rhs!(du, u, params, time)
-    @info "rhs!"
+@trixi_timeit timer() "rhs" begin
     # backend = params.inputs[:backend]
     backend = CPU()
     # for @timers, do not delete
@@ -503,6 +503,7 @@ k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoi
 
 end
 end
+end # timer
 end
 
 function _build_rhs!(RHS, u, params, time)
@@ -528,12 +529,10 @@ function _build_rhs!(RHS, u, params, time)
     # for @timers, do not delete
     timers  = params.timers
 
-    if SD == NSD_1D()
-        comm = MPI.COMM_WORLD
-    else
-        comm = params.mesh.parts.comm
-    end
-    mpisize = MPI.Comm_size(comm)
+    inputs = params.inputs
+
+    # comm = params.mesh.parts.comm
+    comm = params.inputs.comm
 
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
@@ -611,7 +610,7 @@ function _build_rhs!(RHS, u, params, time)
 
     @trixi_timeit timer() "inviscid_rhs_el!" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource,
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD,
-                     Val(params.inputs[:lsaturation]))
+                     inputs.val_lsaturation)
 
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
@@ -826,7 +825,7 @@ function inviscid_rhs_el!(u, params,
 
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
 
-    lkep = inputs[:lkep]
+    lkep = params.inputs[:lkep]
 
     for iel = 1:nelem
 
@@ -1139,7 +1138,6 @@ end
 
 
     if entropy_variables
-
         # Compute the u_transformed everywhere and store in uprimitive
         for iel=1:nelem
             for j = 1:ngl, i=1:ngl

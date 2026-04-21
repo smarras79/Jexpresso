@@ -3,7 +3,7 @@ using ONNXRunTime
 
 function driver(nparts,
                 distribute,
-                inputs::Dict,
+                inputs,
                 OUTPUT_DIR::String,
                 TFloat)
     

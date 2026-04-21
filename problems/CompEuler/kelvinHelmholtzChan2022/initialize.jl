@@ -1,46 +1,46 @@
-function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    
+function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
+
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
         @info " Initialize fields for 2D CompEuler ........................ "
     end
-    
+
     #---------------------------------------------------------------------------------
     # Solution variables:
     #
     # NOTICE: while these names can be arbitrary, the length of this tuple
     # defines neqs, which is the second dimension of q = define_q()
-    # 
+    #
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρv", "ρe"]
     qoutvars = ["ρ", "u", "w", "p", "T"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
-    if (inputs[:backend] == CPU())    
+    if (inputs[:backend] == CPU())
         PhysConst = PhysicalConst{Float64}()
-        
+
         #
         # INITIAL STATE from scratch:
         #
         comm = MPI.COMM_WORLD
         max_x = mesh.xmax
         min_x = mesh.xmin
-        
+
         for ip = 1:mesh.npoin
-            
+
             x, y = mesh.x[ip], mesh.y[ip]
 
             B      = tanh(15.0*y + 7.5) - tanh(15.0*y - 7.5)
-            ρ      = 0.5 + 3.0*B/4.0                
-            p      = 1.0 
+            ρ      = 0.5 + 3.0*B/4.0
+            p      = 1.0
             T      = p/(ρ*PhysConst.Rair)
             u      = 0.5*(B - 1.0)
             v      = sinpi(2.0*x)/10.0
             vmagsq = u*u + v*v
             ρe     = p/PhysConst.γm1 + 0.5*ρ*vmagsq # E = ρ*e
             e      = ρe/ρ
-            
+
 	    rho_theta = PhysConst.pref / PhysConst.Rair * exp(PhysConst.cv / PhysConst.cp * log(p / PhysConst.pref))
 	    rho_theta = (p/PhysConst.pref)^(PhysConst.cv/PhysConst.cp) * PhysConst.pref/PhysConst.Rair
 	    theta = rho_theta/ρ
@@ -49,19 +49,19 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             pref = p
             eref = e
 	    thetaref = theta
-	    
+
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[ip,1] = ρ   - ρref
                 q.qn[ip,2] = ρ*u - ρref*u
                 q.qn[ip,3] = ρ*v - ρref*v
                 q.qn[ip,4] = ρ*e - ρref*e
                 q.qn[ip,end] = p-pref
-                q.qn[ip,1] = ρ  
-                q.qn[ip,2] = ρ*u 
-                q.qn[ip,3] = ρ*v 
-                q.qn[ip,4] = ρ*theta 
+                q.qn[ip,1] = ρ
+                q.qn[ip,2] = ρ*u
+                q.qn[ip,3] = ρ*v
+                q.qn[ip,4] = ρ*theta
                 q.qn[ip,end] = p
-                
+
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[ip,1] = ρref
                 q.qe[ip,2] = u
@@ -69,12 +69,12 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[ip,4] = ρref*eref
                 q.qe[ip,end] = pref
 	    elseif inputs[:SOL_VARS_TYPE] == THETA()
-		q.qn[ip,1] = ρ  
-                q.qn[ip,2] = ρ*u 
-                q.qn[ip,3] = ρ*v 
-                q.qn[ip,4] = ρ*theta 
+		q.qn[ip,1] = ρ
+                q.qn[ip,2] = ρ*u
+                q.qn[ip,3] = ρ*v
+                q.qn[ip,4] = ρ*theta
                 q.qn[ip,end] = p
-                
+
                 q.qe[ip,1] = ρref
                 q.qe[ip,2] = ρref*u
                 q.qe[ip,3] = ρref*v
@@ -93,17 +93,17 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[ip,3] = ρref*v
                 q.qe[ip,4] = ρref*eref
                 q.qe[ip,end] = pref
-				
+
             end
             #end
         end
-        
+
         if inputs[:CL] == NCL()
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[:,2] .= q.qn[:,2]./(q.qn[:,1] + q.qe[:,1])
                 q.qn[:,3] .= q.qn[:,3]./(q.qn[:,1] + q.qe[:,1])
                 q.qn[:,4] .= q.qn[:,4]./(q.qn[:,1] + q.qe[:,1])
-                
+
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
             else
@@ -135,7 +135,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     if rank == 0
         @info " Initialize fields for 2D CompEuler........................ DONE "
     end
-    
+
     return q
 end
 
@@ -186,8 +186,8 @@ function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
     adapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(nelem))
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl)
     tol         = 1.0
-    max_level   = inputs[:amr_max_level] 
-    
+    max_level   = inputs[:amr_max_level]
+
     for iel = 1:nelem
         m = 1
         for i = 1:ngl

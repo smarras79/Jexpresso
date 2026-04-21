@@ -30,7 +30,7 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     plt
 end
 
-function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, PT=nothing)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::String, outvar, inputs; iout=1, nvar=1, PT=nothing)
 
     epsi = 1.1
     npoin = mesh.npoin
@@ -79,7 +79,7 @@ end
 
 
 function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, fig=nothing, color ="blue", p=[], marker = :circle, PT=nothing)
-    
+
     epsi = 1.1
     npoin = mesh.npoin
 

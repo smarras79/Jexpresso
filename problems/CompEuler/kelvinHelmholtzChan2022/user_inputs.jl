@@ -7,7 +7,7 @@ function user_inputs()
 	:ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.0003,
         :tinit                => 0.0,
-        :tend                 => 0.0006,
+        :tend                 => 0.5,
         :diagnostics_at_times => (0.0:10.0:10.0),
         #:diagnostics_at_times => (0.0:0.25:10.0),
         :restart_time         => 0.0,
@@ -16,6 +16,7 @@ function user_inputs()
         :case                 => "rtb",
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
+        :use_named_tuples     => true, # Converts inputs to named tuples
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

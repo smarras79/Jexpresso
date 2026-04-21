@@ -30,7 +30,7 @@ end
 # Callback for missing user_uout!()
 #------------------------------------------------------------------
 function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar)
-    
+
     if function_exists(@__MODULE__, :user_uout!)
         for ip=1:npoin
             user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,:]), @view(qe[ip,:]); mp=mp)
@@ -57,17 +57,17 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     #OK
     nvar = length(varnames)
     qout = zeros(mesh.npoin)
-    
+
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="")
-        
+
     #
     # 1D PNG of q(t) from dq/dt = RHS
     #
@@ -118,16 +118,16 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
 
     #
     # 2D VTK of x from Ax=b
-    #    
+    #
     if (inputs[:backend] == CPU())
 
         title = @sprintf "Solution-Axb"
-        write_vtk(SD, mesh, sol.u, uaux, nothing, 
+        write_vtk(SD, mesh, sol.u, uaux, nothing,
                   nothing, nothing,
                   0.0, 0.0, 0.0, 0.0, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
-                  iout=1, nvar=nvar, qexact=qexact, case=case) 
-        
+                  iout=1, nvar=nvar, qexact=qexact, case=case)
+
     else
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
         KernelAbstractions.copyto!(CPU(),u,sol.u)
@@ -135,34 +135,34 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
 
-        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)        
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
         title = @sprintf "Solution"
         write_vtk(SD, mesh, u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=u_exact, case=case)
     end
-    
+
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
-    
+
 end
 
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
-    
+
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
 
-        write_vtk(SD, mesh, sol, uaux, mp, 
+        write_vtk(SD, mesh, sol, uaux, mp,
                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
-                  iout=iout, nvar=nvar, qexact=qexact, case=case) 
-        
+                  iout=iout, nvar=nvar, qexact=qexact, case=case)
+
     else
         #VERIFY THIS on GPU
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
@@ -177,7 +177,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
 
 end
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                     OUTPUT_DIR::String, inputs::Dict,
                     varnames, outvarnames,
@@ -189,11 +189,11 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
 
-        write_NetCDF(SD, mesh, sol, uaux, mp, 
+        write_NetCDF(SD, mesh, sol, uaux, mp,
                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                      t, title, OUTPUT_DIR, inputs,
                      varnames, outvarnames;
-                     iout=iout, nvar=nvar, qexact=qexact, case=case) 
+                     iout=iout, nvar=nvar, qexact=qexact, case=case)
 
     else
         #VERIFY THIS on GPU
@@ -202,7 +202,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_NetCDF(SD, mesh, u, uaux, mp, 
+        write_NetCDF(SD, mesh, u, uaux, mp,
                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                      t, title, OUTPUT_DIR, inputs,
                      varnames, outvarnames;
@@ -216,14 +216,14 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
-    
+
     nvar     = size(varnames, 1)
     noutvar  = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     new_size = size(mesh.x,1)
@@ -233,7 +233,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     nelem_semi_inf = mesh.nelem_semi_inf
     ngl            = mesh.ngl
     ngr            = mesh.ngr
-    
+
     if (nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
         cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1)]
@@ -241,7 +241,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
         subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
         cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(ngl-1)^2]
     end
-    
+
     isel = 1
     for iel = 1:nelem
         for i = 1:ngl-1
@@ -254,9 +254,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 subelem[isel, 2] = ip2
                 subelem[isel, 3] = ip3
                 subelem[isel, 4] = ip4
-                
+
                 cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-                
+
                 isel = isel + 1
             end
         end
@@ -273,9 +273,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 subelem[isel, 2] = ip2
                 subelem[isel, 3] = ip3
                 subelem[isel, 4] = ip4
-                
+
                 cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-                
+
                 isel = isel + 1
             end
         end
@@ -288,7 +288,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 
-    
+
     #
     # Write solution to vtk:
     #
@@ -302,20 +302,20 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        
+
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+
         vtkf
     end
-    
+
     outfiles = map(vtk_save, vtkfile)
-    
+
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict,
@@ -324,14 +324,14 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
-    
+
     nvar    = size(varnames, 1)
     noutvar = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
-    
+
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
-    
+
     isel = 1
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
@@ -341,7 +341,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     ip2 = mesh.connijk[iel,i+1,j,k]
                     ip3 = mesh.connijk[iel,i+1,j+1,k]
                     ip4 = mesh.connijk[iel,i,j+1,k]
-                    
+
                     ip5 = mesh.connijk[iel,i,j,k+1]
                     ip6 = mesh.connijk[iel,i+1,j,k+1]
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
@@ -355,23 +355,23 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     subelem[isel, 6] = ip6
                     subelem[isel, 7] = ip7
                     subelem[isel, 8] = ip8
-                    
+
                     cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
-                    
+
                     isel = isel + 1
                 end
             end
         end
     end
-    
+
     #
     # Fetch user-defined diagnostic vars or take them from the solution vars:
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
-    
-    
+
+
     #
     # Write solution:
     #
@@ -390,20 +390,20 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+
         vtkf
     end
-    
+
     outfiles = map(vtk_save, vtkfile)
-    
+
 end
 
 function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
-    
+
     #nothing
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
     cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
-    
+
     isel = 1
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
@@ -416,14 +416,14 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
                 subelem[isel, 2] = ip2
                 subelem[isel, 3] = ip3
                 subelem[isel, 4] = ip4
-                
+
                 cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-                
+
                 isel = isel + 1
             end
         end
     end
-    
+
     for iel = 1:mesh.nelem_semi_inf
         for i = 1:mesh.ngl-1
             for j = 1:mesh.ngr-1
@@ -435,18 +435,18 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
                 subelem[isel, 2] = ip2
                 subelem[isel, 3] = ip3
                 subelem[isel, 4] = ip4
-                
+
                 cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-                
+
                 isel = isel + 1
             end
         end
         #end
     end
-    
+
     #Reference values only (definied in initial conditions)
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
-    
+
     vtkfile = map(parts) do part
         vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
@@ -454,7 +454,7 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
         vtkf
     end
 
-    
+
     outfiles = map(vtk_save, vtkfile)
 end
 
@@ -464,7 +464,7 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
 
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
-        
+
     isel = 1
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
@@ -474,7 +474,7 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
                     ip2 = mesh.connijk[iel,i+1,j,k]
                     ip3 = mesh.connijk[iel,i+1,j+1,k]
                     ip4 = mesh.connijk[iel,i,j+1,k]
-                    
+
                     ip5 = mesh.connijk[iel,i,j,k+1]
                     ip6 = mesh.connijk[iel,i+1,j,k+1]
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
@@ -488,18 +488,18 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
                     subelem[isel, 6] = ip6
                     subelem[isel, 7] = ip7
                     subelem[isel, 8] = ip8
-                    
+
                     cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
-                    
+
                     isel = isel + 1
                 end
             end
         end
     end
-    
+
     #Reference values only (definied in initial conditions)
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
-    
+
     # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
     vtkfile = map(parts) do part
         vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
@@ -514,13 +514,13 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::HDF5;
                       nvar=1, qexact=zeros(1,nvar), case="")
-    
+
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
     title = @sprintf "Final solution at t=%6.4f" t
@@ -528,7 +528,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         mkpath(OUTPUT_DIR)
     end
     if (inputs[:backend] == CPU())
-    
+
         write_hdf5(SD, mesh, sol, qexact, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
     else
         u_gpu = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
@@ -540,14 +540,14 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
     end
 
-    
+
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
-    
+
 end
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
-    
+
     #println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
-    
+
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
 
@@ -562,12 +562,12 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         write_hdf5(SD, mesh, u_gpu, u_exact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
         convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
     end
-    
+
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
-    
+
 end
 function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5; nvar=1)
-    
+
     #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
     println_rank(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ... DONE") ; msg_rank = rank)
@@ -577,14 +577,14 @@ end
 
 
 function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
-    
+
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     #Write one HDF5 file timestep
     if rank == 0
         fout_name = string(OUTPUT_DIR, "/t.h5")
-        h5open(fout_name, "w") do fid        
+        h5open(fout_name, "w") do fid
             write(fid, "time",  t);
         end
     end
@@ -592,8 +592,8 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
     for ivar = 1:nvar
         fout_name = string(OUTPUT_DIR, "/var_", ivar,"_",rank, ".h5")
         idx = (ivar - 1)*mesh.npoin
-        
-        h5open(fout_name, "w") do fid        
+
+        h5open(fout_name, "w") do fid
             write(fid, "q",  q[idx+1:ivar*mesh.npoin]);
             write(fid, "qe", qe[1:mesh.npoin, ivar]);
         end
@@ -608,7 +608,7 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
 
     q  = zeros(Float64, npoin, nvar+1)
     qe = zeros(Float64, npoin, nvar+1)
-    
+
     #read one HDF5 file time
     fout_name = string(INPUT_DIR, "/t.h5")
     time = rank == 0 ? convert(Float64, h5read(fout_name, "time")) : 0.0
@@ -621,11 +621,11 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
         q[:, ivar]  = convert(Array{Float64, 1}, h5read(fout_name, "q"))
         qe[:, ivar] = convert(Array{Float64, 1}, h5read(fout_name, "qe"))
     end
-    
+
     return q, qe
 end
 
-function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
@@ -662,13 +662,13 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 subelem[isel, 2] = mesh.ip2gip[ip2]
                 subelem[isel, 3] = mesh.ip2gip[ip3]
                 subelem[isel, 4] = mesh.ip2gip[ip4]
-                
-                
+
+
                 isel = isel + 1
             end
         end
     end
-    
+
     for iel = 1:nelem_semi_inf
         for i = 1:ngl-1
             for j = 1:ngr-1
@@ -680,7 +680,7 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 subelem[isel, 2] = mesh.ip2gip[ip2]
                 subelem[isel, 3] = mesh.ip2gip[ip3]
                 subelem[isel, 4] = mesh.ip2gip[ip4]
-                
+
                 isel = isel + 1
             end
         end
@@ -692,11 +692,11 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
-    
+
     comm   = MPI.COMM_WORLD
     rank   = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
-    
+
     local_list = findall(x->x == rank, mesh.gip2owner)
     # Gather data from all processes
     all_ip2gip  = MPI.gather(mesh.ip2gip[local_list], comm)
@@ -704,7 +704,7 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     all_yy      = MPI.gather(yy[local_list], comm)
     all_subelem = MPI.gather(subelem, comm)
     all_qout    = MPI.gather(qout[local_list,:], comm)
-    
+
     # Only rank 0 writes the file
     if rank == 0
 
@@ -714,17 +714,17 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
         global_yy           = vcat(all_yy...)[global_ip2gip]
         global_qout_flat    = vcat(all_qout...)
         global_subelem_flat = vcat(all_subelem...)
-        
+
         global_npoin::Int64    = length(global_xx)
         global_nsubelem::Int64 = length(global_subelem_flat) / 4
 
         global_subelem = reshape(global_subelem_flat, global_nsubelem, 4)
         global_qout    = reshape(global_qout_flat, global_npoin, noutvar)[global_ip2gip,:]
-        
+
         # Write NetCDF file
         fout_name_global = string(OUTPUT_DIR, "/iter_", iout, ".nc")
         NCDataset(fout_name_global, "c") do ds
-            
+
             # dimensions
             defDim(ds, "nMesh2_node", global_npoin)
             defDim(ds, "nMesh2_face", global_nsubelem)
@@ -772,33 +772,33 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
             nx[:]  = global_xx
             ny[:]  = global_yy
             f2n[:] = global_subelem
-            
+
         end
-        
+
         println("Rank 0: Wrote global NetCDF file with $global_npoin nodes, $global_nsubelem elements")
     end
-    
+
     MPI.Barrier(comm)
-    
+
 end
 
-function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
                       iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
-    
+
     nvar    = size(varnames, 1)
     noutvar = max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
     nelem   = mesh.nelem
     ngl     = mesh.ngl
-    
+
     nsubelem = mesh.nelem*(mesh.ngl-1)^3
     subelem  = Array{Int64}(undef, nsubelem, 8)
-    
+
     isel = 1
     for iel = 1:nelem
         for i = 1:ngl-1
@@ -808,7 +808,7 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     ip2 = mesh.connijk[iel,i+1,j,k]
                     ip3 = mesh.connijk[iel,i+1,j+1,k]
                     ip4 = mesh.connijk[iel,i,j+1,k]
-                    
+
                     ip5 = mesh.connijk[iel,i,j,k+1]
                     ip6 = mesh.connijk[iel,i+1,j,k+1]
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
@@ -822,13 +822,13 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     subelem[isel, 6] = ip6
                     subelem[isel, 7] = ip7
                     subelem[isel, 8] = ip8
-                    
+
                     isel = isel + 1
                 end
             end
         end
     end
-    
+
     #
     # Fetch user-defined diagnostic vars or take them from the solution vars:
     #
@@ -838,7 +838,7 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
 
     fout_name = string(OUTPUT_DIR, "/iter_", iout, ".nc")
     NCDataset(fout_name, "c") do ds
-        
+
         # dimensions
         defDim(ds, "nMesh3d_node", npoin)
         defDim(ds, "nMesh3d_volume", nsubelem)
@@ -873,7 +873,7 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
         nz.attrib["standard_name"] = "projection_z_coordinate"
         nz.attrib["units"]         = "m"
 
-        # volum->node connectivity 
+        # volum->node connectivity
         FILL = Int32(2_147_483_647)
         v2n = defVar(ds, "Mesh3d_volume_nodes", Int32, ("nMesh3d_volume", "nMaxMesh3d_volume_nodes");fillvalue=FILL)
         v2n.attrib["cf_role"]     = "volume_node_connectivity"
@@ -883,14 +883,14 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
 
             # Define data variable
             data_var = defVar(ds, "q$(ivar)", Float64, ("nMesh3d_node",))
-            
+
             # Add attributes for data
             data_var.attrib["long_name"] = "q$(ivar) field"
             data_var.attrib["location"]  = "node"
             data_var.attrib["units"]     = "N/A"
             data_var[:]                  = qout[:,ivar]
         end
-            
+
         # Add global attributes
         ds.attrib["title"] = "Unstructured data"
         ds.attrib["Conventions"] = "CF-1.11 UGRID-1.0"
@@ -902,7 +902,7 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
         ny[:]        = @view(mesh.coords[:,2])
         nz[:]        = @view(mesh.coords[:,3])
         v2n[:]       = subelem
-            
+
     end
 
 end

@@ -1,6 +1,6 @@
 function params_setup(sem,
                       qp::St_SolutionVars,
-                      inputs::Dict,
+                      inputs,
                       OUTPUT_DIR::String,
                       T,
                       tspan = [T(inputs[:tinit]), T(inputs[:tend])])

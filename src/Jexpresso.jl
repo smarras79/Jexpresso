@@ -216,7 +216,7 @@ include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 
-include("./run.jl")
+include("./run.jl") # TODO - Remove this so that the run can be separated
 
 export @timers
 
