@@ -77,7 +77,7 @@ function driver(nparts,
         #
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
         #
-        @time solution = time_loop!(inputs, params, u, partitioned_model)
+        @mpi_time solution = time_loop!(inputs, params, u, partitioned_model)
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
         
     else

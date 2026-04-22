@@ -39,6 +39,31 @@ macro outputrootonly(expr)
     end
 end
 
+"""
+    @mpi_time expr
+
+Drop-in replacement for `@time` in MPI code. Prints max wall time, allocations,
+and bytes only from rank 0. Requires `comm` and `rank` in scope.
+
+# Example
+```julia
+@mpi_time prob, partitioned_model = amr_strategy!(...)
+```
+"""
+macro mpi_time(expr)
+    label = string(expr)
+    quote
+        local _stats = @timed $(esc(expr))
+        local _t_max = MPI.Allreduce(_stats.time, MPI.MAX, $(esc(:comm)))
+        if $(esc(:rank)) == 0
+            local _allocs = _stats.gcstats.poolalloc + _stats.gcstats.malloc
+            @printf("  %s\n  %.6f seconds (max across ranks, %d allocs, %.3f MiB)\n",
+                    $label, _t_max, _allocs, _stats.bytes / 1024^2)
+        end
+        _stats.value
+    end
+end
+
 
 """
     @timers func(args...)

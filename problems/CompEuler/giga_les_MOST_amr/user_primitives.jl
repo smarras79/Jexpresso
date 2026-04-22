@@ -28,6 +28,37 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
+function user_read_vtu_point_data!(q, vars, ip_map, mesh)
+    ρ_arr  = vars["ρ"]
+    u_arr  = vars["ρu"]    # velocity u  (despite the name)
+    v_arr  = vars["ρv"]
+    w_arr  = vars["ρw"]
+    hl_arr = vars["hl"]    # specific moist enthalpy hl/ρ
+    qt_arr = vars["ρqt"]   # specific total water qt
+    qp_arr = vars["ρqp"]   # specific precipitation qp
+    P_arr  = vars["pressure"]
+
+    for ip = 1:mesh.npoin
+        j  = ip_map[ip]
+        ρ  = ρ_arr[j]
+        u  = u_arr[j]
+        v  = v_arr[j]
+        w  = w_arr[j]
+        hl = hl_arr[j]
+        qt = qt_arr[j]
+        qp = qp_arr[j]
+
+        q.qn[ip, 1]   = ρ
+        q.qn[ip, 2]   = ρ * u
+        q.qn[ip, 3]   = ρ * v
+        q.qn[ip, 4]   = ρ * w
+        q.qn[ip, 5]   = ρ * hl
+        q.qn[ip, 6]   = ρ * qt
+        q.qn[ip, 7]   = ρ * qp
+        q.qn[ip, end] = P_arr[j]
+    end
+end
+
 function user_uout!(ip, ET, uout, u, qe; mp = mp)
 
     if ET == TOTAL()

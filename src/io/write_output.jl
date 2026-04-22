@@ -667,6 +667,60 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
 end
 
 """
+    read_vtu_cell_data(filename, varnames) -> (Dict{String,Vector{Float64}}, Int)
+
+Read cell-data arrays from a VTK unstructured grid file (.vtu) written in
+appended raw-binary format (as produced by WriteVTK.jl with `compress=false`).
+
+Returns `(data_dict, ncells)`.
+"""
+function read_vtu_cell_data(filename::String, varnames::Vector{String})
+    raw_start, hdr = open(filename, "r") do f
+        buf    = read(f, 8192)
+        needle = codeunits("<AppendedData")
+        idx    = findfirst(needle, buf)
+        idx === nothing && error("No <AppendedData> section in $filename")
+        gt  = findnext(==(UInt8('>')), buf, last(idx))
+        pos = findnext(==(UInt8('_')), buf, gt)
+        pos === nothing && error("No '_' marker after <AppendedData> in $filename")
+        pos, String(buf[1:gt-1])
+    end
+
+    m = match(r"header_type=\"(\w+)\"", hdr)
+    HeaderT = (m !== nothing && m[1] == "UInt32") ? UInt32 : UInt64
+
+    m = match(r"NumberOfCells=\"(\d+)\"", hdr)
+    m === nothing && error("NumberOfCells not found in $filename")
+    ncells = parse(Int, m[1])
+
+    var_offsets = Dict{String,Int}()
+    in_cell_section = false
+    for line in split(hdr, '\n')
+        if   occursin("<CellData",  line); in_cell_section = true  end
+        if   occursin("</CellData", line); in_cell_section = false end
+        if in_cell_section
+            m = match(r"<DataArray[^>]+Name=\"([^\"]+)\"[^>]*offset=\"(\d+)\"", line)
+            if m !== nothing
+                var_offsets[String(m[1])] = parse(Int, m[2])
+            end
+        end
+    end
+
+    result = Dict{String,Vector{Float64}}()
+    open(filename, "r") do f
+        for vname in varnames
+            haskey(var_offsets, vname) || continue
+            seek(f, raw_start + var_offsets[vname])
+            read(f, HeaderT)
+            data = Vector{Float64}(undef, ncells)
+            read!(f, data)
+            result[vname] = data
+        end
+    end
+    return result, ncells
+end
+
+"""
     read_vtu_point_data(filename, varnames) -> (Dict{String,Vector{Float64}}, Int)
 
 Read point-data arrays from a VTK unstructured grid file (.vtu) written in
@@ -858,6 +912,12 @@ function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
         if rank == 0
             @info " VTK restart: last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
         end
+    else
+
+        inputs[:tinit] = collect(Float64, inputs[:diagnostics_at_times])[inputs[:restart_vtk_iout]]
+        if rank == 0
+            @info " VTK restart: snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+        end
     end
 
     iout   = inputs[:restart_vtk_iout]
@@ -921,24 +981,26 @@ function write_p4est_checkpoint(output_dir::String, iter::Int, partitioned_model
     rank  = MPI.Comm_rank(comm)
     dir   = joinpath(output_dir, "iter_$(iter)")
     fname = joinpath(dir, "iter_$(iter).p4est")
-    # Only rank 0 creates the directory; all ranks call p8est_save collectively.
     if rank == 0
         mkpath(dir)
     end
     MPI.Barrier(comm)
     # save_data=0: no per-quadrant payload, forest topology only
-    P4est_wrapper.p8est_save(fname, partitioned_model.ptr_pXest, Cint(0))
+    # Dispatch on 2D (p4est_save) vs 3D (p8est_save) to avoid passing the wrong struct type.
+    if partitioned_model.pXest_type isa GridapP4est.P4estType
+        @outputrootonly P4est_wrapper.p4est_save(fname, partitioned_model.ptr_pXest, Cint(0))
+    else
+        @outputrootonly P4est_wrapper.p8est_save(fname, partitioned_model.ptr_pXest, Cint(0))
+    end
 end
 
 """
-    read_vtk_restart_gigales!(q, mesh, inputs, PhysConst; output_dir="")
+    read_vtk_restart_gigales!(q, mesh, inputs; output_dir="")
 
 VTK restart for 7-variable moist compressible Euler (giga_les_MOST_amr).
-Reads primitive fields (ρ, u, v, w, hl/ρ, qt, qp) written by `user_uout!`
-and reconstructs the conserved state [ρ, ρu, ρv, ρw, ρhl, ρqt, ρqp, P] in q.qn.
-
-The VTK variable names follow qoutvars: "ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp"
-but user_uout! stores SPECIFIC (per-unit-mass) quantities, not conserved ones.
+Reads primitive fields written by `user_uout!` and reconstructs the conserved
+state in q.qn by calling `user_read_vtu_point_data!` from the problem's
+user_primitives.jl.
 
 Required entry in `inputs`:
   - `:restart_vtk_input_dir`  path to OUTPUT_DIR containing iter_N/ subdirs
@@ -947,7 +1009,7 @@ Optional (auto-detected from simulation.pvd if absent):
   - `:restart_vtk_iout`  iteration index
   - `:tinit`             simulation time at restart
 """
-function read_vtk_restart_gigales!(q, mesh, inputs, PhysConst; output_dir="")
+function read_vtk_restart_gigales!(q, mesh, inputs; output_dir="")
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     part = rank + 1
@@ -971,6 +1033,12 @@ function read_vtk_restart_gigales!(q, mesh, inputs, PhysConst; output_dir="")
         if rank == 0
             @info " VTK restart (giga_les): last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
         end
+    else
+
+        inputs[:tinit] = collect(Float64, inputs[:diagnostics_at_times])[inputs[:restart_vtk_iout]]
+        if rank == 0
+            @info " VTK restart: snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+        end
     end
 
     iout     = inputs[:restart_vtk_iout]
@@ -982,47 +1050,42 @@ function read_vtk_restart_gigales!(q, mesh, inputs, PhysConst; output_dir="")
         @info " Reading VTK restart (giga_les) from: $fname"
     end
 
-    # "ρu","ρv","ρw","hl","ρqt","ρqp" are confusingly named:
-    # user_uout! stores u[k]/u[1] = specific (velocity / specific scalar),
-    # so the VTK values are per-unit-mass, NOT conserved momentum.
+    if !function_exists(@__MODULE__, :user_read_vtu_point_data!)
+        error("""
+user_read_vtu_point_data! not found. Define it in your problem's user_primitives.jl:
+
+    function user_read_vtu_point_data!(q, vars, ip_map, mesh)
+        # vars is the Dict returned by read_vtu_point_data — keys are VTK variable names
+        # ip_map maps mesh point index to VTK array index
+        for ip = 1:mesh.npoin
+            j = ip_map[ip]
+            ρ = vars["ρ"][j]
+            # ... unpack and reconstruct conserved state ...
+            q.qn[ip, 1]   = ρ
+            q.qn[ip, end] = vars["pressure"][j]
+        end
+    end
+""")
+    end
+
     vars, npoin_vtk = read_vtu_point_data(
-        fname, ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "__coords__"])
+        fname, ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "pressure", "__coords__"])
 
     npoin_vtk == mesh.npoin ||
         error("Rank $rank: VTK point count ($npoin_vtk) ≠ mesh.npoin ($(mesh.npoin)).")
 
     ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
 
-    ρ_arr  = vars["ρ"]
-    u_arr  = vars["ρu"]    # velocity u  (despite the name)
-    v_arr  = vars["ρv"]
-    w_arr  = vars["ρw"]
-    hl_arr = vars["hl"]    # specific moist enthalpy hl/ρ
-    qt_arr = vars["ρqt"]   # specific total water qt
-    qp_arr = vars["ρqp"]   # specific precipitation qp
+    user_read_vtu_point_data!(q, vars, ip_map, mesh)
 
-    for ip = 1:mesh.npoin
-        j  = ip_map[ip]
-        z  = mesh.z[ip]
-        ρ  = ρ_arr[j]
-        u  = u_arr[j]
-        v  = v_arr[j]
-        w  = w_arr[j]
-        hl = hl_arr[j]
-        qt = qt_arr[j]
-        qp = qp_arr[j]
-        # Reconstruct virtual temperature for pressure: approx qv ≈ qt
-        T  = (hl - PhysConst.g * z) / PhysConst.cp
-        Tv = T * (1 + 0.61 * qt)
-
-        q.qn[ip, 1]   = ρ
-        q.qn[ip, 2]   = ρ * u
-        q.qn[ip, 3]   = ρ * v
-        q.qn[ip, 4]   = ρ * w
-        q.qn[ip, 5]   = ρ * hl
-        q.qn[ip, 6]   = ρ * qt
-        q.qn[ip, 7]   = ρ * qp
-        q.qn[ip, end] = ρ * Tv * PhysConst.Rair   # pressure
+    cdata, _ = read_vtu_cell_data(fname, ["gel_id", "ad_lvl"])
+    if haskey(cdata, "ad_lvl") && haskey(cdata, "gel_id")
+        stride = (mesh.ngl - 1)^3
+        for iel = 1:mesh.nelem
+            icell = (iel - 1) * stride + 1
+            @assert Int(cdata["gel_id"][icell]) == mesh.el2gel[iel] "gel_id mismatch at iel=$iel"
+            mesh.ad_lvl[iel] = Int(cdata["ad_lvl"][icell])
+        end
     end
 
     if rank == 0

@@ -23,10 +23,11 @@ function time_loop!(inputs, params, u, args...)
     rad_time           = inputs[:radiation_time_step]
     lnew_mesh    = true   
     lwrite_time  = (inputs[:outformat] == VTK()) && (rank == 0)
+    lwrite_init  = !(inputs[:lrestart] || inputs[:lrestart_vtk] || inputs[:lrestart_amr]) 
 
     if (lwrite_time == true)
         pvd_path = joinpath(inputs[:output_dir], "simulation.pvd")
-        if get(inputs, :lrestart_vtk, false) && isfile(pvd_path)
+        if !lwrite_init && isfile(pvd_path)
             # VTK restart: preserve existing simulation.pvd; continue appending
         else
             init_pvd_file(pvd_path)
@@ -188,7 +189,7 @@ function time_loop!(inputs, params, u, args...)
     # and its entry is already in simulation.pvd from the previous run.
     #
     idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
-    if idx ≠ nothing && !get(inputs, :lrestart_vtk, false)
+    if idx ≠ nothing && lwrite_init
         if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
         write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
                      params.mesh, params.mp,
@@ -241,11 +242,11 @@ function time_loop!(inputs, params, u, args...)
 
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
-            @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
+            @mpi_time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
             ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
             dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
             println_rank(" #  dt=", dt; msg_rank = rank)
-            @time solution = solve(prob,
+            @mpi_time solution = solve(prob,
                                 inputs[:ode_solver], dt=Float32(dt),
                                 callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
                                 save_everystep = false,

@@ -39,19 +39,21 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
         # AMR restart: replace coarse/preadapt mesh with the forest saved at checkpoint
         if get(inputs, :lrestart_amr, false)
             # Resolve checkpoint iteration index: explicit or auto-detected from simulation.pvd
-            iout = if haskey(inputs, :restart_amr_iout) && inputs[:restart_amr_iout] > 0
-                inputs[:restart_amr_iout]
+            iout = if haskey(inputs, :restart_vtk_iout) && inputs[:restart_vtk_iout] > 0
+                inputs[:restart_vtk_iout]
             else
                 pvd_path = joinpath(inputs[:output_dir], "simulation.pvd")
                 _, i = read_pvd_last_entry(pvd_path)
-                inputs[:restart_amr_iout] = i   # cache for initialize()
+                inputs[:restart_vtk_iout] = i   # cache for initialize()
                 i
             end
             forest_file = joinpath(inputs[:output_dir], "iter_$(iout)", "iter_$(iout).p4est")
-            @info " AMR restart: loading p4est forest from $forest_file"
+            if rank == 0 
+                @info " AMR restart: loading p4est forest from $forest_file" 
+            end
 
             # Build OctreeDistributedDiscreteModel from the loaded forest
-            loaded_model = load_p4est_checkpoint_model(partitioned_model, forest_file)
+            @outputrootonly loaded_model = load_p4est_checkpoint_model(partitioned_model, forest_file)
 
             # Build Jexpresso mesh struct from loaded model using the AMR-adapt path
             # with no-op flags (all nothing_flag = no further adaptation).

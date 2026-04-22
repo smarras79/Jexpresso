@@ -3117,14 +3117,14 @@ function amr_strategy!(args...)
     # end
     # writevtk(Ω_old, vtk_directory; celldata = ["adapt_flags" => flags_dist])
     
+    inputs[:lrestart] = false
+    inputs[:lrestart_amr] = false
     sem, partitioned_model_new, uaux_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, params.uaux)
 
     
     # if (inputs[:backend] != CPU())
     #     convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     # end
-    inputs[:lrestart] = false
-    inputs[:lrestart_amr] = false
 
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
