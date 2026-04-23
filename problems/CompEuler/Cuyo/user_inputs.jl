@@ -4,12 +4,12 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.12,
+        :Δt                   => 0.02,
         :tinit                => 0.0,
         :tend                 => 10000.0,
 	:lrestart             => false,
 	:restart_time         => 500,
-	:diagnostics_at_times => (0:10:100..., 500:100:5000..., 5000:100:8500...,  9000:10:10800.0...),
+	:diagnostics_at_times => (0:1:10..., 10:10:100..., 500:100:5000..., 5000:100:8500...,  9000:10:10800.0...),
 	:lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 2500.0,

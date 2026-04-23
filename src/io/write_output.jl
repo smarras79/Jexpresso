@@ -193,7 +193,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
@@ -229,7 +229,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                      iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 

@@ -12,6 +12,7 @@ function user_bc_dirichlet!(q,
     #
     # If you don't want Dirichlet to do anything, keep this function empty.
     #
+    # @info ...
     qnl = nx*q[2] + ny*q[3] + nz*q[4]
     qbdy[2] = (q[2] - qnl*nx) 
     qbdy[3] = (q[3] - qnl*ny)
