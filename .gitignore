@@ -2,7 +2,6 @@
 docs/build/
 plotnodes.py
 Manifest.toml
-Project.toml
 output/*
 LocalPreferences.toml
 ./meshes
