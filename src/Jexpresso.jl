@@ -22,8 +22,6 @@ using LinearAlgebra
 using SpecialFunctions
 using StaticArrays
 using StaticArrays: SVector, MVector
-using DiffEqBase
-using DiffEqDevTools
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
 # using SnoopCompile  # incompatible with sysimage builds
