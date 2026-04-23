@@ -16,7 +16,11 @@ function user_bc_dirichlet!(q,
     qbdy[2] = (q[2] - qnl*nx) 
     qbdy[3] = (q[3] - qnl*ny)
     qbdy[4] = (q[4] - qnl*nz)
-    
+    if tag == "sea"
+	qbdy[5] = 278.15
+    elseif tag  == "land"
+        qbdy[5] = 288.15
+    end    
 end
 
 function user_bc_dirichlet!(q,
@@ -33,6 +37,7 @@ function user_bc_dirichlet!(q,
     qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
     qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
     qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
+#    qbdy[5] = q[5]
 end
 
 

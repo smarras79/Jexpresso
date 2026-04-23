@@ -17,15 +17,15 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     qoutvars = ["ρ", "u", "v", "w", "θ", "p"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
-
+ 
+    PhysConst = PhysicalConst{Float64}()
+                
     if inputs[:lrestart] == true
         #
         # READ RESTART HDF5:
         #
         q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
 
-        PhysConst = PhysicalConst{Float64}()
-        
         
         for ip=1:mesh.npoin
             ρ  = q.qn[ip,1]
@@ -42,45 +42,29 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         end
         
     else
-        lanalytic = false
+        lanalytic = true
         if lanalytic == true
-            if (inputs[:backend] == CPU())    
-                PhysConst = PhysicalConst{Float64}()
-                
-                #
-                # INITIAL STATE from scratch:
+            if (inputs[:backend] == CPU())   
                 #    
-                zi  = 840.0 #m
-                θ1  = 289.0 #K
-                θ2  = 297.5 #K
-                Ts  = 290.4
-                H   = PhysConst.Rair*Ts/PhysConst.g
-                amp = 0.25
-                for ip = 1:mesh.npoin
-                    
-                    z = mesh.z[ip]
+                # INITIAL STATE from scratch:
+                #
+	            comm = MPI.COMM_WORLD
+                    θL   = 288.15
+	            θS   = 278.15
+	            θ    = 0.5*(θS + θL)
+	            for ip = 1:mesh.npoin
+            
+                        x, y, z = mesh.coords[ip,1], mesh.coords[ip,2], mesh.coords[ip,3]
+            
+                        p    = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
+                        pref =  p #PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θref))^(PhysConst.cpoverR)
+                        ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p)    #kg/m³
+                        ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=pref) #kg/m³
 
-                    if z <= zi
-                        θ = θ1
-                    else
-                        θ = θ2 + cbrt(z - zi)
-                    end
-                    p    = PhysConst.pref*exp(-z/H)
-                    pref = p
-
-                    randnoise = 0.0
-                    if z < 800.0
-                        randnoise = 2*amp*(rand() - 1.0)
-                    end
-                    θ    = θ + randnoise
-                    
-                    ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p)    #kg/m³
-                    ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=pref) #kg/m³
-
-                    u = 10.0
-                    v = 0.0
-                    w = 0.0
-
+                        u = 0.0
+                        v = 0.0
+                        w = 0.0
+		
                     if inputs[:SOL_VARS_TYPE] == PERT()
                         q.qn[ip,1] = ρ - ρref
                         q.qn[ip,2] = ρ*u - ρref*u

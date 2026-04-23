@@ -4,12 +4,12 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.18,
+        :Δt                   => 0.12,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 10000.0,
 	:lrestart             => false,
 	:restart_time         => 500,
-	:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:100:8500...,  9000:10:10800.0...),
+	:diagnostics_at_times => (0:10:100..., 500:100:5000..., 5000:100:8500...,  9000:10:10800.0...),
 	:lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 2500.0,
@@ -22,13 +22,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-#        :user_heatflux          => 0.12,
-        :lwall_model            => true,
+        #:user_heatflux          => 0.12,
+        #:lwall_model            => true,
         :ifirst_wall_node_index => 5, # This must be between 2 <= :first_wall_node_index <= nop+1
-        :bdy_fluxes             => true,
+        :bdy_fluxes             => false,
         :lvisc                  => true, #false by default
-        :visc_model             => SMAG(),
-        #:visc_model           => AV(),
+        #:visc_model             => SMAG(),
+        :visc_model           => AV(),
         :μ                      => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
         #---------------------------------------------------------------------------
         #LES statistics
@@ -51,8 +51,10 @@ function user_inputs()
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
-                
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/Cuyo.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/Cuyo_MOST.msh",
+
         # Warping:
         :lwarp => false,
         :mount_type => "LESICP",
@@ -71,7 +73,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        #:lfilter             => true,
         :mu_x                => 0.5,
         :mu_y                => 0.5,
 	:mu_z                => 0.5,
