@@ -7,7 +7,8 @@ function user_bc_dirichlet!(q,
                             ymin, ymax,
                             zmin, zmax,
                             qe, ::TOTAL)
-    
+
+    # CALLED BY DEFAULT.
     #
     # If you don't want Dirichlet to do anything, keep this function empty.
     #
@@ -16,11 +17,6 @@ function user_bc_dirichlet!(q,
     qbdy[3] = (q[3] - qnl*ny)
     qbdy[4] = (q[4] - qnl*nz)
     
-    if tag == "sea"
-        qbdy[5] = 278.15
-    elseif tag == "land"
-        qbdy[5] = 288.15
-    end
 end
 
 function user_bc_dirichlet!(q,
@@ -40,15 +36,24 @@ function user_bc_dirichlet!(q,
 end
 
 
-function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, PhysConst; z_inside=1, kwargs...)
+@inline function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, PhysConst; θ=0.0, θ1=0.0, qn0=0.0, qn1=0.0)
 
     nothing
+    
     # NOT CALLED BY DEFAULT UNLESS lbdy_flux => true in input
-
-   #if (tag == "sea")
-   #     ρ = q[1]
-   #     F_surf[5] = 0.12   # wθ[1]/(ρ*PhysConst.cp)   # θ equation
-   #end
+    
+    #if (tag == "wall_model_bottom" || tag == "wall_model_top" || tag == "MOST")
+   #= if (tag == "MOST")
+        ρ = q[1]
+        # Use the pre-computed wall shear stress components
+        # Apply with correct sign for Neumann BC
+        #if (τ_f[1] != 0.0 || τ_f[2] != 0.0) @info τ_f[1] τ_f[2] end
+        
+        F_surf[2] = τ_f[1]  # x-momentum equation
+        F_surf[3] = τ_f[2]  # y-momentum equation
+        F_surf[5] = 0.12   # wθ[1]/(ρ*PhysConst.cp)   # θ equation
+   end
+=#
     #
     # Example of user defined bulk formulas (in contrast to, e.g., CM_MOST, which is built in its own function called from within rhs.jl
     #

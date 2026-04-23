@@ -1,12 +1,9 @@
-
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    """
-
-            """
+    
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+        @info " Initialize analytic neutral ABL ........................ "
     end
     
     #---------------------------------------------------------------------------------
@@ -16,398 +13,352 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
-    qoutvars = ["ρ", "u", "v", "w", "θ", "θp"]
+    qvars    = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
+    qoutvars = ["ρ", "u", "v", "w", "θ", "p"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
-    
-    if (inputs[:backend] == CPU())
+
+    if inputs[:lrestart] == true
+        #
+        # READ RESTART HDF5:
+        #
+        q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
+
         PhysConst = PhysicalConst{Float64}()
-        if inputs[:lrestart] == true
-            #
-            # READ RESTART HDF5:
-            #
-           q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
+        
+        
+        for ip=1:mesh.npoin
+            ρ  = q.qn[ip,1]
+            ρθ = q.qn[ip,5]
+            θ  = ρθ/ρ
+            P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+            q.qn[ip,end] = P
+        
+            ρe  = q.qe[ip,1]
+            ρθe = q.qe[ip,5]
+            θe  = ρθe/ρ
+            Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
+            q.qe[ip,end] = Pe
+        end
+        
+    else
+        lanalytic = false
+        if lanalytic == true
+            if (inputs[:backend] == CPU())    
+                PhysConst = PhysicalConst{Float64}()
+                
+                #
+                # INITIAL STATE from scratch:
+                #    
+                zi  = 840.0 #m
+                θ1  = 289.0 #K
+                θ2  = 297.5 #K
+                Ts  = 290.4
+                H   = PhysConst.Rair*Ts/PhysConst.g
+                amp = 0.25
+                for ip = 1:mesh.npoin
+                    
+                    z = mesh.z[ip]
 
-            # pvtu_filepath = inputs[:restart_input_file_path]
+                    if z <= zi
+                        θ = θ1
+                    else
+                        θ = θ2 + cbrt(z - zi)
+                    end
+                    p    = PhysConst.pref*exp(-z/H)
+                    pref = p
 
-            # if rank == 0; println("\n--- Starting READ procedure ---"); end
-            # read_pvtu_restart!(q, pvtu_filepath; comm=comm, verbose=false)
-            # if rank == 0; println("Read successful."); end
-            
-            
-            for ip=1:mesh.npoin
-                ρ  = q.qn[ip,1]
-                ρθ = q.qn[ip,5]
-                θ  = ρθ/ρ
-                P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-                q.qn[ip,end] = P
-            
-                ρe  = q.qe[ip,1]
-                ρθe = q.qe[ip,5]
-                θe  = ρθe/ρ
-                Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
-                q.qe[ip,end] = Pe
-            end
-            
+                    randnoise = 0.0
+                    if z < 800.0
+                        randnoise = 2*amp*(rand() - 1.0)
+                    end
+                    θ    = θ + randnoise
+                    
+                    ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p)    #kg/m³
+                    ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=pref) #kg/m³
+
+                    u = 10.0
+                    v = 0.0
+                    w = 0.0
+
+                    if inputs[:SOL_VARS_TYPE] == PERT()
+                        q.qn[ip,1] = ρ - ρref
+                        q.qn[ip,2] = ρ*u - ρref*u
+                        q.qn[ip,3] = ρ*v - ρref*v
+                        q.qn[ip,4] = ρ*w - ρref*w
+                        q.qn[ip,5] = ρ*θ - ρref*θ
+                        q.qn[ip,end] = p
+                        
+                        #Store initial background state for plotting and analysis of pertuebations
+                        q.qe[ip,1] = 0.0*ρref
+                        q.qe[ip,2] = 0.0*u
+                        q.qe[ip,3] = 0.0*v
+                        q.qe[ip,4] = 0.0*w
+                        q.qe[ip,5] = 0.0*ρref*θ
+                        q.qe[ip,end] = 0.0*pref
+                    else
+                        q.qn[ip,1] = ρ
+                        q.qn[ip,2] = ρ*u
+                        q.qn[ip,3] = ρ*v
+                        q.qn[ip,4] = ρ*w
+                        q.qn[ip,5] = ρ*θ
+                        q.qn[ip,end] = p
+
+			q.qe[ip,1] = q.qn[ip,1]
+                	q.qe[ip,2] = q.qn[ip,2]
+                	q.qe[ip,3] = q.qn[ip,3]
+                	q.qe[ip,4] = q.qn[ip,4]
+                	q.qe[ip,5] = q.qn[ip,5]
+                	q.qe[ip,6] = q.qn[ip,end]
+
+                    end
+                end
+            end    
         else
+            PhysConst = PhysicalConst{Float64}()
+            
             #
             # INITIAL STATE from scratch:
             #
-            comm = MPI.COMM_WORLD
-            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-            xc = (max_x + min_x)/2
-            zc = 2500.0 #m
-            r0 = 2000.0 #m
-        
-            θref = 300.0 #K
-            θc   =   2.0 #K
-            for ip = 1:mesh.npoin
+            data = read_sounding(inputs[:sounding_file])
             
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+            sounding_nlevels = size(data)[1]
+            sounding_nvars   = size(data)[2]
+            data_with_p      = zeros(Float64, sounding_nlevels, sounding_nvars+1)
             
-                r = sqrt( (x - xc)^2 + (z - zc)^2 )
+            # Get surface pressure from sounding header (first line: pressure, theta, qv)
+            # This should be read from the surface values line in your sounding file
+            p_surface = 100000.0  # 1000 hPa converted to Pa, adjust based on your sounding reader
             
-                Δθ = 0.0 #K
-                if r < r0
-                    Δθ = θc*(1.0 - r/r0)
-                end
-                θ = θref + Δθ
-                p    = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
-                pref = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θref))^(PhysConst.cpoverR)
-                ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p)    #kg/m³
-                ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
+            # Copy original data (height, theta, qv, u, v)
+            data_with_p[:,1:sounding_nvars] = copy(data[:,:])
+            
+            # Calculate pressure from hydrostatic equilibrium with iterative balancing
+            # Assuming data structure: [height, theta, qv, u, v]
+            
+            # Initialize pressure array
+            pressure = zeros(Float64, sounding_nlevels)
 
-                u = 0.0
-                v = 0.0
-                w = 0.0
-            
-                if inputs[:SOL_VARS_TYPE] == PERT()
-                    q.qn[ip,1] = ρ - ρref
-                    q.qn[ip,2] = ρ*u - ρref*u
-                    q.qn[ip,3] = ρ*v - ρref*v
-                    q.qn[ip,4] = ρ*w - ρref*w
-                    q.qn[ip,5] = ρ*θ - ρref*θref
-                    q.qn[ip,end] = p
+            # Initial pressure calculation
+            for i = 1:sounding_nlevels
+                z_current  = data[i,1] # height (m)
+                θ_current  = data[i,2] # potential temperature (K)
+                qv_current = data[i,3] # water vapor mixing ratio (g/kg)
                 
-                    #Store initial background state for plotting and analysis of pertuebations
-                    q.qe[ip,1] = ρref
-                    q.qe[ip,2] = u
-                    q.qe[ip,3] = v
-                    q.qe[ip,4] = w
-                    q.qe[ip,5] = ρref*θref
-                    q.qe[ip,end] = pref
+                # Convert mixing ratio from g/kg to kg/kg
+                qv_kg_per_kg = qv_current / 1000.0
+                
+                if i == 1
+                    # For first level, use hydrostatic relation from surface
+                    # Calculate virtual potential temperature
+                    # θ_v = θ * (1 + 0.61 * qv) for mixing ratio
+                    θ_v = θ_current * (1.0 + 0.61 * qv_kg_per_kg)
+                    
+                    # Virtual temperature: T_v = θ_v * (p/p0)^(R/cp)
+                    T_v = θ_v * (p_surface/PhysConst.pref)^(PhysConst.Rair/PhysConst.cp)
+                    
+                    # Hydrostatic equation with virtual temperature
+                    pressure[i] = p_surface * exp(-PhysConst.g * z_current / (PhysConst.Rair * T_v))
                 else
-                    q.qn[ip,1] = ρ
-                    q.qn[ip,2] = ρ*u
-                    q.qn[ip,3] = ρ*v
-                    q.qn[ip,4] = ρ*w
-                    q.qn[ip,5] = ρ*θ
-                    q.qn[ip,end] = p
-
-                    #Store initial background state for plotting and analysis of pertuebations
-                    q.qe[ip,1] = ρref
-                    q.qe[ip,2] = ρref*u
-                    q.qe[ip,3] = ρref*v
-                    q.qe[ip,4] = ρref*w
-                    q.qe[ip,5] = ρref*θref
-                    q.qe[ip,end] = pref
+                    # For subsequent levels, integrate hydrostatic equation
+                    z_prev  = data[i-1,1]
+                    θ_prev  = data[i-1,2]
+                    qv_prev = data[i-1,3] / 1000.0  # Convert to kg/kg
+                    p_prev  = pressure[i-1]
+                    
+                    # Average values for integration
+                    z_avg = 0.5 * (z_current + z_prev)
+                    θ_avg = 0.5 * (θ_current + θ_prev)
+                    qv_avg = 0.5 * (qv_kg_per_kg + qv_prev)
+                    dz = z_current - z_prev
+                    
+                    # Virtual potential temperature
+                    θ_v_avg = θ_avg * (1.0 + 0.61 * qv_avg)
+                    
+                    # Virtual temperature for hydrostatic calculation
+                    T_v_avg = θ_v_avg * (p_prev/PhysConst.pref)^(PhysConst.Rair/PhysConst.cp)
+                    
+                    # Hydrostatic equation: dp/dz = -ρg = -pg/(R_v*T_v)
+                    # where R_v is the gas constant for moist air
+                    pressure[i] = p_prev * exp(-PhysConst.g * dz / (PhysConst.Rair * T_v_avg))
                 end
-                #end
             end
-        end
-    
-        if inputs[:CL] == NCL()
-            if inputs[:SOL_VARS_TYPE] == PERT()
-                q.qn[:,2] .= q.qn[:,2]./(q.qn[:,1] + q.qe[:,1])
-                q.qn[:,3] .= q.qn[:,3]./(q.qn[:,1] + q.qe[:,1])
-                q.qn[:,4] .= q.qn[:,4]./(q.qn[:,1] + q.qe[:,1])
-                q.qn[:,5] .= q.qn[:,5]./(q.qn[:,1] + q.qe[:,1])
+
+            # Iterative hydrostatic balance correction
+            max_iterations = 10
+            tolerance      = 1.0  # Pa
+            converged      = false
             
-                #Store initial background state for plotting and analysis of pertuebations
-                q.qe[:,5] .= q.qe[:,5]./q.qe[:,1]
-            else
-                q.qn[:,2] .= q.qn[:,2]./q.qn[:,1]
-                q.qn[:,3] .= q.qn[:,3]./q.qn[:,1]
-                q.qn[:,4] .= q.qn[:,4]./q.qn[:,1]
-                q.qn[:,5] .= q.qn[:,5]./q.qn[:,1]
+            if rank == 0
+                @info "Starting iterative hydrostatic balance correction..."
+            end
 
-                #Store initial background state for plotting and analysis of pertuebations
-                q.qe[:,5] .= q.qe[:,5]./q.qe[:,1]
+            for iter = 1:max_iterations
+                pressure_old   = copy(pressure)
+                max_correction = 0.0
+                
+                # Forward pass: recalculate pressure using updated values
+                for i = 2:sounding_nlevels
+                    z_current  = data[i,1]
+                    z_prev     = data[i-1,1]
+                    θ_current  = data[i,2]
+                    θ_prev     = data[i-1,2]
+                    qv_current = data[i,3]/1000.0
+                    qv_prev    = data[i-1,3]/1000.0
+                    
+                    dz = z_current - z_prev
+                    
+                    # Use updated pressure from previous level
+                    p_prev = pressure[i-1]
+                    
+                    # Calculate virtual temperature at both levels
+                    θ_v_prev = θ_prev * (1.0 + 0.61 * qv_prev)
+                    θ_v_current = θ_current * (1.0 + 0.61 * qv_current)
+                    
+                    T_v_prev = θ_v_prev * (p_prev/PhysConst.pref)^(PhysConst.Rair/PhysConst.cp)
+                    
+                    # More accurate integration using trapezoidal rule
+                    # First estimate for current level
+                    p_est = p_prev * exp(-PhysConst.g * dz / (PhysConst.Rair * T_v_prev))
+                    
+                    # Calculate virtual temperature at current level with estimated pressure
+                    T_v_current = θ_v_current * (p_est/PhysConst.pref)^(PhysConst.Rair/PhysConst.cp)
+                    
+                    # Average virtual temperature for better integration
+                    T_v_avg = 0.5 * (T_v_prev + T_v_current)
+                    
+                    # Refined pressure calculation
+                    pressure[i] = p_prev * exp(-PhysConst.g * dz / (PhysConst.Rair * T_v_avg))
+                    
+                    # Track maximum correction
+                    correction     = abs(pressure[i] - pressure_old[i])
+                    max_correction = max(max_correction, correction)
+                end
+                
+                # Check for convergence
+                if max_correction < tolerance
+                    converged = true
+                    if rank == 0
+                        @info "Hydrostatic balance converged after $iter iterations (max correction: $(max_correction) Pa)"
+                    end
+                    break
+                end
+                
+                if rank == 0 && iter % 3 == 0
+                    @info "Iteration $iter: max pressure correction = $(max_correction) Pa"
+                end
+            end
+
+            if !converged && rank == 0
+                @warn "Hydrostatic balance did not converge after $max_iterations iterations (max correction: $(max_correction) Pa)"
+            end
+            
+            # Verify hydrostatic balance
+            max_imbalance = 0.0
+            for i = 2:sounding_nlevels
+                z_current   = data[i,1]
+                z_prev      = data[i-1,1]
+                θ_current   = data[i,2]
+                θ_prev      = data[i-1,2]
+                qv_current  = data[i,3] / 1000.0
+                qv_prev     = data[i-1,3] / 1000.0
+                
+                dz          = z_current - z_prev
+                p_current   = pressure[i]
+                p_prev      = pressure[i-1]
+                
+                # Calculate average virtual temperature
+                θ_v_prev    = θ_prev * (1.0 + 0.61 * qv_prev)
+                θ_v_current = θ_current * (1.0 + 0.61 * qv_current)
+                T_v_prev    = θ_v_prev * (p_prev/PhysConst.pref)^(PhysConst.Rair/PhysConst.cp)
+                T_v_current = θ_v_current * (p_current/PhysConst.pref)^(PhysConst.Rair/PhysConst.cp)
+                T_v_avg     = 0.5 * (T_v_prev + T_v_current)
+                
+                # Calculate expected pressure from hydrostatic equation
+                p_expected  = p_prev * exp(-PhysConst.g * dz / (PhysConst.Rair * T_v_avg))
+                
+                # Calculate imbalance
+                imbalance = abs(p_current - p_expected)
+                max_imbalance = max(max_imbalance, imbalance)
+            end
+            
+            if rank == 0
+                @info "Final hydrostatic balance verification: max imbalance = $(max_imbalance) Pa"
+                relative_imbalance = max_imbalance / p_surface * 100.0
+                @info "Relative imbalance: $(relative_imbalance)%"
+            end
+            
+            # Store calculated pressures
+            data_with_p[:, sounding_nvars+1] .= pressure
+            
+            #Interpolate
+            data_interpolate = interpolate_sounding(inputs[:backend], mesh.npoin, mesh.z, data_with_p)
+
+            amp = 0.25
+            for ip = 1:mesh.npoin
+                randnoise = 0.0
+                if mesh.z[ip] < 800.0
+                    randnoise = 2*amp*(rand() - 1.0)
+                end
+                θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
+                qv    = data_interpolate[ip,2] / 1000.0     # qv from column 3, convert g/kg to kg/kg
+                Press = data_interpolate[ip,5]              # pressure from column 6 (newly calculated)
+                ρ     = perfectGasLaw_θPtoρ(PhysConst; Press=Press, θ=θ)           
+                u     = data_interpolate[ip,3]  # u from column 4
+                v     = data_interpolate[ip,4]  # v from column 5
+                w     = 0.0
+                
+                q.qn[ip,1] = ρ
+                q.qn[ip,2] = ρ*u
+                q.qn[ip,3] = ρ*v
+                q.qn[ip,4] = ρ*w
+                q.qn[ip,5] = ρ*θ
+                q.qn[ip,6] = Press
+                
+                #Store initial data_interpolate state for plotting and analysis of perturbations
+                q.qe[ip,1] = q.qn[ip,1]
+                q.qe[ip,2] = q.qn[ip,2]
+                q.qe[ip,3] = q.qn[ip,3]
+                q.qe[ip,4] = q.qn[ip,4]
+                q.qe[ip,5] = q.qn[ip,5]
+                q.qe[ip,6] = q.qn[ip,6]
             end
         end
-
-    else
-        if (inputs[:SOL_VARS_TYPE] == PERT())
-            lpert = true
-        else
-            lpert = false
-        end
-        PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
-        zc = TFloat(2500.0) #m
-        rθ = TFloat(2000.0) #m
-
-        θref = TFloat(300.0) #K
-        θc   =   TFloat(2.0) #K
-        k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, xc, rθ, zc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
+    
     if rank == 0
-        @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+        @info " Initialize analytic neutral ABL ........................ DONE "
     end
     
     return q
 end
 
-@kernel function initialize_gpu!(qn, qe, x, y, z, xc, rθ, zc, θref, θc, PhysConst, lpert)
-    ip = @index(Global, Linear)
 
-    T = eltype(x)
-    x = x[ip]
-    y = y[ip]
-    z = z[ip]
-    r = sqrt( (x - xc)^2 + (z - zc)^2 )
-    Δθ = T(0.0) #K
-    
-    if r < rθ
-        Δθ = T(θc*(T(1.0) - r/rθ))
-    end
-    
-    θ = θref + Δθ
-    p    = PhysConst.pref*(T(1.0) - PhysConst.g*z/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
-    pref = PhysConst.pref*(T(1.0) - PhysConst.g*z/(PhysConst.cp*θref))^(PhysConst.cpoverR)
-    ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p)    #kg/m³
-    ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
-
-    u = T(0.0)
-    v = T(0.0)
-    w = T(0.0)
-
-    if (lpert)
-        qn[ip,1] = ρ - ρref
-        qn[ip,2] = ρ*u - ρref*u
-        qn[ip,3] = ρ*v - ρref*v
-        qn[ip,4] = ρ*w - ρref*w
-        qn[ip,5] = ρ*θ - ρref*θref
-        qn[ip,end] = p
-    else
-        qn[ip,1] = ρ
-        qn[ip,2] = ρ*u
-        qn[ip,3] = ρ*v
-        qn[ip,4] = ρ*w
-        qn[ip,5] = ρ*θ
-        qn[ip,end] = p
-    end
-
-                    #Store initial background state for plotting and analysis of pertuebations
-    qe[ip,1] = ρref
-    qe[ip,2] = ρref*u
-    qe[ip,3] = ρref*v
-    qe[ip,4] = ρref*w
-    qe[ip,5] = ρref*θref
-    qe[ip,end] = pref
-
-end
-
-function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
-    ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
-    tol         = 301.2
+function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
+    adapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(nelem))
+    ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl)
+    tol         = 1.0
     max_level   = inputs[:amr_max_level] 
     
     for iel = 1:nelem
         m = 1
         for i = 1:ngl
             for j = 1:ngl
-                for k = 1:ngl
-                    ips[m] = connijk[iel, i, j, k]
-                    m += 1
-                end
+                ips[m] = connijk[iel, i, j]
+                m += 1
             end
         end
         # @info q[ips,4] - qe[ips,4]
-        theta      = q[ips, 5] ./ q[ips, 1]
-        theta_ref  = qe[ips, 5] ./ qe[ips, 1]
+        theta      = q[ips, 4] ./ q[ips, 1]
+        theta_ref  = qe[ips, 4] ./ qe[ips, 1]
         dtheta     = theta - theta_ref
-        if any(theta .> tol) && (old_ad_lvl[iel] < max_level)
+        # @info dtheta
+        if any(dtheta .> tol) && (old_ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
         end
-        if all(theta .< tol)
+        if all(dtheta .< tol)
             adapt_flags[iel] = coarsen_flag
         end
     end
+    return adapt_flags
 end
-
-
-"""
-    read_pvtu_restart!(q::SolutionData, pvtu_filepath::String; comm=MPI.COMM_WORLD, verbose=true)
-
-Reads a parallel VTK file collection (`.pvtu` and its associated `.vtu` files)
-and populates the `q.qn` array for a simulation restart.
-
-This function is MPI-aware and must be called by all processes in the communicator.
-Rank 0 reads the `.pvtu` file to get the list of partition files and broadcasts
-this list. Each rank then reads its corresponding `.vtu` file in parallel.
-
-# Arguments
-- `q::SolutionData`: A mutable struct holding the solution arrays. The `q.qn`
-  field, a matrix of size `(npoin_local, nvars)`, will be populated with data.
-  It is assumed to be pre-allocated with the correct dimensions for the local partition.
-- `pvtu_filepath::String`: The path to the main `.pvtu` file.
-- `comm::MPI.Comm`: The MPI communicator (defaults to `MPI.COMM_WORLD`).
-- `verbose::Bool`: If true, rank 0 will print status messages.
-"""
-# run_restart.jl
-# using MPI
-# using ReadVTK
-# using XMLDict
-# using Printf
-# using WriteVTK # Provides MeshCell and VTK writing functions
-
-# # --- Solver-Specific Data Structure ---
-# # This is an example of what your solver's data structure might look like.
-# # The I/O functions below are generic and will work as long as the
-# # object `q` has a `qn` matrix.
-# mutable struct SolverState
-#     qn::Matrix{Float64}
-#     # Your structure could have other fields, which the I/O functions will ignore.
-# end
-
-# # --- Generic I/O Functions ---
-
-# """
-#     read_pvtu_restart!(q, pvtu_filepath::String; ...)
-
-# Reads parallel VTK data (.pvtu) to populate the `q.qn` array for a restart.
-# This function is generic and works on any object `q` with a `q.qn` matrix.
-# """
-# function read_pvtu_restart!(q, pvtu_filepath::String; comm=MPI.COMM_WORLD, verbose=true)
-#     rank = MPI.Comm_rank(comm)
-#     nranks = MPI.Comm_size(comm)
-    
-#     local_vtu_filename = ""
-
-#     # This assumes a fixed filename like "iter_11.pvtu" needs to be appended.
-#     # If the full path is already in `pvtu_filepath`, you can remove the joinpath().
-#     full_pvtu_path = joinpath(pvtu_filepath, "iter_11.pvtu")
-    
-#     if rank == 0
-#         if !isfile(full_pvtu_path)
-#             error("PVTU file not found: $full_pvtu_path")
-#         end
-#         if verbose
-#             println("Rank 0: Reading PVTU manifest from '$full_pvtu_path'...")
-#         end
-
-#         xml_string = read(full_pvtu_path, String)
-        
-#         # --- START OF CORRECTION ---
-#         # Add a check to ensure the file is not empty before parsing.
-#         if isempty(xml_string)
-#             error("The PVTU file at '$full_pvtu_path' was found, but it is empty. Please check the file content.")
-#         end
-#         # --- END OF CORRECTION ---
-        
-#         xml_data = xml_dict(xml_string)
-        
-#         pieces = xml_data["VTKFile"]["PUnstructuredGrid"]["Piece"]
-#         if !(pieces isa AbstractVector); pieces = [pieces]; end
-#         if length(pieces) != nranks; error("PVTU has $(length(pieces)) pieces, but MPI size is $nranks."); end
-        
-#         vtu_files = Vector{String}(undef, nranks)
-#         for i in 1:nranks
-#             local piece = pieces[i]
-#             if !(piece isa AbstractDict)
-#                 error("Piece $i is not a valid dictionary structure: $piece")
-#             end
-
-#             if haskey(piece, :Source)
-#                 vtu_files[i] = piece[:Source]
-#             elseif haskey(piece, "Source")
-#                 vtu_files[i] = piece["Source"]
-#             else
-#                 error("Could not find Source attribute in piece $i: $piece")
-#             end
-#         end
-
-#         local_vtu_filename = vtu_files[1]
-#         for dest_rank in 1:(nranks-1)
-#             filename_bytes = Vector{UInt8}(vtu_files[dest_rank + 1])
-#             MPI.Send(filename_bytes, dest_rank, 0, comm)
-#         end
-#     else
-#         status = MPI.Probe(0, 0, comm)
-#         count = MPI.Get_count(status, UInt8)
-#         filename_bytes = Vector{UInt8}(undef, count)
-#         MPI.Recv!(filename_bytes, 0, 0, comm)
-#         local_vtu_filename = String(filename_bytes)
-#     end
-
-#     MPI.Barrier(comm)
-
-#     pvtu_dir = dirname(full_pvtu_path)
-#     local_vtu_filepath = joinpath(pvtu_dir, local_vtu_filename)
-#     if !isfile(local_vtu_filepath); error("Rank $rank: Cannot find data file: $local_vtu_filepath"); end
-    
-#     vtk = VTKFile(local_vtu_filepath)
-#     point_data = get_point_data(vtk)
-#     var_names = collect(keys(point_data))
-    
-#     npoin_local, nvars_alloc = size(q.qn)
-#     npoin_file = vtk.n_points
-#     nvars_file = length(var_names)
-    
-#     if npoin_local != npoin_file; error("Rank $rank: Point count mismatch. Allocated $npoin_local, file has $npoin_file."); end
-    
-#     nvars = min(nvars_alloc, nvars_file)
-#     for ivar in 1:nvars
-#         # Use ReadVTK.get_data to avoid ambiguity with other functions
-#         q.qn[:, ivar] .= ReadVTK.get_data(point_data[var_names[ivar]])
-#     end
-    
-#     if verbose && rank == 0
-#         println("All ranks successfully loaded restart data.")
-#     end
-    
-#     return nothing
-# end
-
-# """
-#     write_pvtu_data(q, x, y, z, var_names, output_basename; ...)
-
-# Writes the distributed solution data to a new parallel VTK collection.
-# This function is generic and takes coordinates as separate arguments.
-# """
-# function write_pvtu_data(q, x::Vector, y::Vector, z::Vector, var_names::Vector{String}, output_basename::String; comm=MPI.COMM_WORLD)
-#     rank = MPI.Comm_rank(comm)
-#     nranks = MPI.Comm_size(comm)
-#     if size(q.qn, 2) != length(var_names); error("Variable name count mismatch."); end
-
-#     output_dir = output_basename
-#     if rank == 0; mkpath(output_dir); end
-#     MPI.Barrier(comm)
-
-#     coords = hcat(x, y, z)'
-#     vtu_filename = joinpath(output_dir, "part_$(rank).vtu")
-
-#     vtk_grid(vtu_filename, coords, MeshCell[]) do vtk
-#         for (ivar, name) in enumerate(var_names)
-#             vtk[name] = q.qn[:, ivar]
-#         end
-#     end
-
-#     MPI.Barrier(comm)
-
-#     if rank == 0
-#         pvtu_filename = joinpath(output_dir, output_basename * ".pvtu")
-#         pvtk_grid(pvtu_filename, coords, MeshCell[]; part=rank+1, nparts=nranks) do pvtk
-#             for (ivar, name) in enumerate(var_names)
-#                 pvtk[name] = q.qn[:, ivar]
-#             end
-#         end
-#         println("Rank 0: Successfully wrote parallel data to '$pvtu_filename'")
-#     end
-
-#     return nothing
-# end

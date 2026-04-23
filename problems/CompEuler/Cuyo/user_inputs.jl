@@ -4,16 +4,16 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.04,
+        :Δt                   => 0.18,
         :tinit                => 0.0,
         :tend                 => 1000.0,
 	:lrestart             => false,
 	:restart_time         => 500,
-	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
-        :lsource              => true,
+	:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:100:8500...,  9000:10:10800.0...),
+	:lsource              => true,
 	:lsponge              => true,
-	:zsponge              => 1600.0,
-        #:sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge1000_noheader.dat",
+	:zsponge              => 2500.0,
+        #:sounding_file        =>"./data_files/input_sounding_teamx_u00_flat_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -22,19 +22,37 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lwall_model          => true,
-        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
-        :bdy_fluxes           => true,
-        :lvisc                => true, #false by default
-        #:visc_model           => SMAG(), #VREM
-        :visc_model           => AV(),
-        :μ                    => [0.0, 25.0, 25.0, 25.0, 25.0], #horizontal viscosity constant for momentum
+#        :user_heatflux          => 0.12,
+        :lwall_model            => true,
+        :ifirst_wall_node_index => 5, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :bdy_fluxes             => true,
+        :lvisc                  => true, #false by default
+        :visc_model             => SMAG(),
+        #:visc_model           => AV(),
+        :μ                      => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
+        #---------------------------------------------------------------------------
+        #LES statistics
+        #---------------------------------------------------------------------------
+	:statistics_time      => (7200.0:10.0:10800.0),
+        :lesprofile_vars      => ["u_mean", "v_mean", "w_mean", "t_mean", "p_mean"],
+        :lesstress_vars       => ["upup_res", "upvp_res", "upwp_res", "vpvp_res", "vpwp_res", "wpwp_res",
+                                   "tptp_res", "uptp_res", "vptp_res", "wptp_res",
+                                   "upup_sfs", "upvp_sfs", "upwp_sfs", "vpvp_sfs", "vpwp_sfs", "wpwp_sfs",
+                                   "tptp_sfs", "uptp_sfs", "vptp_sfs", "wptp_sfs",
+                                   "uppp", "vppp", "wppp", "eps", "eps_t", "rho",
+                                   "upupup", "upupvp", "upupwp",
+                                   "vpvpup", "vpvpvp", "vpvpwp",
+                                   "wpwpup", "wpwpvp", "wpwpwp",
+                                   "upuptp", "vpvptp", "wpwptp"],
+        :lesspectra_vars      => [],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-	:lread_gmsh    => true, #If false, a 1D problem will be enforced
-        :gmsh_filename => "./meshes/gmsh_grids/Cuyo.msh",
-        
+	#:lwarmup          => true,
+        :lread_gmsh       => true, #If false, a 1D problem will be enforced
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
+                
         # Warping:
         :lwarp => false,
         :mount_type => "LESICP",
@@ -53,17 +71,18 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => false,
-        :mu_x                => 0.05,
-        :mu_y                => 0.05,
-	:mu_z                => 0.05,
+        :lfilter             => true,
+        :mu_x                => 0.5,
+        :mu_y                => 0.5,
+	:mu_z                => 0.5,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output/",
-        :loverwrite_output   => false,  #this is only implemented for VTK for now
+        #:output_dir          => "/scratch/smarras/smarras/output/LESICP2_64x16x36_10kmX5kmX3dot5km-coarse",
+        :output_dir          => "./output",
+        :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
@@ -74,7 +93,10 @@ function user_inputs()
         # AMR
         #---------------------------------------------------------------------------
         :ladapt              => false,
-        :amr                 => false,
+        :amr                 => true,
+        #---------------------------------------------------------------------------
+        # AMR parameters
+        #---------------------------------------------------------------------------
         :amr_freq            => 20,
         :amr_max_level       => 1,
         #---------------------------------------------------------------------------
