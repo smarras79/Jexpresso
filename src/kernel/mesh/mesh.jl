@@ -4646,10 +4646,26 @@ function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
         n2o_ele_map = nothing
         if isnothing(adapt_flags)
             # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-            mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_2D}(nsd=TInt(inputs[:nsd]),
-                                        nop=TInt(inputs[:nop]),
-                                        ngr=TInt(inputs[:nop_laguerre]+1),
-                                        SD=NSD_2D())
+            #mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_2D}(nsd=TInt(inputs[:nsd]),
+            #                            nop=TInt(inputs[:nop]),
+            #                            ngr=TInt(inputs[:nop_laguerre]+1),
+            #                            SD=NSD_2D())
+            if inputs[:nsd] == 3
+                mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_3D}(nsd=TInt(inputs[:nsd]),
+                                                                   nop=TInt(inputs[:nop]),
+                                                                   ngr=TInt(inputs[:nop_laguerre]+1),
+                                                                   SD=NSD_3D())
+            elseif inputs[:nsd] == 2
+                mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_2D}(nsd=TInt(inputs[:nsd]),
+                                                                   nop=TInt(inputs[:nop]),
+                                                                   ngr=TInt(inputs[:nop_laguerre]+1),
+                                                                   SD=NSD_2D())
+            else
+                mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_1D}(nsd=TInt(inputs[:nsd]),
+                                                                   nop=TInt(inputs[:nop]),
+                                                                   ngr=TInt(inputs[:nop_laguerre]+1),
+                                                                   SD=NSD_1D())
+            end
             partitioned_model = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute)
         else
             # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
