@@ -28,8 +28,9 @@ function user_inputs()
         :bdy_fluxes             => false,
         :lvisc                  => true, #false by default
         #:visc_model             => SMAG(),
+        #:visc_model             => VREM(),
         :visc_model           => AV(),
-        :μ                      => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
+        :μ                      => [0.0, 100, 100, 100, 120], #horizontal viscosity constant for momentum	
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
