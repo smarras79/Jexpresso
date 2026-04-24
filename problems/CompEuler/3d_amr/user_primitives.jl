@@ -32,11 +32,19 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     # If you have not defined qoutvars in initialize.jl, then uout will only
     # be allocated to the length of u by default.
     #
-    uout[1] = u[1]
-    uout[2] = u[2]/u[1]
-    uout[3] = u[3]/u[1]
-    uout[4] = u[4]/u[1]
-    uout[5] = u[5]/u[1]
-    uout[6] = u[5]/u[1] - qe[5]/qe[1]
-    
+    if ET == TOTAL()
+        uout[1] = u[1]
+        uout[2] = u[2]/u[1]
+        uout[3] = u[3]/u[1]
+        uout[4] = u[4]/u[1]
+        uout[5] = u[5]/u[1]
+        uout[6] = qe[end]
+    elseif ET == PERT()
+        uout[1] = u[1]+qe[1]
+        uout[2] = u[2]/(u[1]+qe[1])
+        uout[3] = u[3]/(u[1]+qe[1])
+        uout[4] = u[4]/(u[1]+qe[1])
+        uout[5] = (u[5]+qe[5])/(u[1]+qe[1])
+        uout[6] = (u[5]+qe[5])/(u[1]+qe[1])-qe[5]/qe[1]
+    end
 end
