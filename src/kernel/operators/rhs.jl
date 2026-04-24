@@ -608,6 +608,8 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
 
+
+
     @trixi_timeit timer() "inviscid_rhs_el!" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource,
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD,
                      inputs.val_lsaturation)
@@ -834,7 +836,7 @@ function inviscid_rhs_el!(u, params,
 
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
             if lkep
-         @trixi_timeit timer() "user_fluxaux!"       user_fluxaux!(@view(params.fluxaux[ip,:]),
+         user_fluxaux!(@view(params.fluxaux[ip,:]),
                               SD,
                               @view(params.uaux[ip,:]),
                               params.SOL_VARS_TYPE,
@@ -871,7 +873,7 @@ function inviscid_rhs_el!(u, params,
         end
 
         if lkep
-           @trixi_timeit timer() "expansion_invisicid!" _expansion_inviscid_KEP!(u,
+           _expansion_inviscid_KEP!(u,
                                      params.neqs, params.mesh.ngl,
                                      params.basis.dψ, params.ω,
                                      params.F, params.G, params.S,
@@ -1757,13 +1759,13 @@ end
 
     for l = 1:ngl
         for k = 1:ngl
-            ωJac = ω[k]*ω[l]*Je[iel,k,l]
+            ωJac = ω[k]*ω[l]*Je[iel,k,l] # FIXME
 
             # Quantities for Smagorinsky
             dudξ = 0.0; dudη = 0.0
             dvdξ = 0.0; dvdη = 0.0
             for ii = 1:ngl
-                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                dudξ = muladd(dψ[ii,k], uprimitiveieq[ii,l,2], dudξ) # FIXME @muladd
                 dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
 
                 dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
@@ -1851,7 +1853,7 @@ end
                 dhdξ_ik = dψ[i,k]
                 dhdη_il = dψ[i,l]
 
-                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl # memory layout
                 rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
             end
         end

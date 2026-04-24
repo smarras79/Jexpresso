@@ -164,10 +164,10 @@ inputs = (; inputs..., comm =MPI.COMM_WORLD, val_lsaturation = val_lsaturation)
 #--------------------------------------------------------
 Jexpresso.with_mpi() do distribute
 
-    Jexpresso.driver(Jexpresso.nparts,
+    solution = Jexpresso.driver(Jexpresso.nparts,
            distribute,
            Jexpresso.inputs,
            Jexpresso.OUTPUT_DIR,
            Jexpresso.TFloat)
-
+    return solution
 end
