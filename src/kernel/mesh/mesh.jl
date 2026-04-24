@@ -4530,7 +4530,9 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 
     Δx::TFloat=0.0
     resize!(mesh.Δx, mesh.nelem)
-
+    resize!(mesh.x, mesh.npx)
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, mesh.npx, 1)
+    
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
 
@@ -4661,7 +4663,7 @@ function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
             partitioned_model = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute)
         else
             # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-            mesh_tmp = St_mesh{TInt,TFloat, RealT, CPU(), NSD_1D}(nsd=TInt(inputs[:nsd]),
+            mesh_tmp = St_mesh{TInt,TFloat, RealT, CPU(), NSD_1D}(nsd=nsd,
                                         nop=TInt(inputs[:nop]),
                                         ngr=TInt(inputs[:nop_laguerre]+1),
                                         SD=NSD_1D())
@@ -4671,12 +4673,39 @@ function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
             interp  = args[end-2]
             uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
             p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+
             if (mesh_tmp.lneed_redistribute)
+
+                if nsd == 3
+                    mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_3D}(
+                        nsd  = TInt(3),
+                        nop  = TInt(inputs[:nop]),
+                        ngr  = TInt(inputs[:nop_laguerre]+1),
+                        SD   = NSD_3D(),
+                    )
+                elseif nsd == 2
+                    mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_2D}(
+                        nsd  = TInt(2),
+                        nop  = TInt(inputs[:nop]),
+                        ngr  = TInt(inputs[:nop_laguerre]+1),
+                        SD   = NSD_2D(),
+                    )
+                else
+                    mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_1D}(
+                        nsd  = TInt(1),
+                        nop  = TInt(inputs[:nop]),
+                        ngr  = TInt(inputs[:nop_laguerre]+1),
+                        npx  = TInt(inputs[:npx]),
+                        xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                        SD   = NSD_1D(),
+                    )
+                end
+                
                 # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-                mesh = St_mesh{TInt,TFloat, RealT, CPU(), NSD_1D}(nsd=TInt(inputs[:nsd]),
-                                            nop=TInt(inputs[:nop]),
-                                            ngr=TInt(inputs[:nop_laguerre]+1),
-                                            SD=NSD_1D())
+                #mesh = St_mesh{TInt,TFloat, RealT, CPU(), NSD_1D}(nsd=nsd,
+                #                            nop=TInt(inputs[:nop]),
+                #                            ngr=TInt(inputs[:nop_laguerre]+1),
+                #                            SD=NSD_1D())
                 partitioned_model, glue_redistribute = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute, adapt_flags, partitioned_model_tmp, mesh_tmp)
                 uaux_new = KernelAbstractions.zeros(CPU(),  TFloat, (mesh.npoin, size(uaux, 2)))
                 redistributed_q!(uaux_new, uaux_refined, glue_redistribute, mesh.connijk, mesh_tmp.connijk, mesh.ngl, mesh.SD)
@@ -4702,43 +4731,20 @@ function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
 
     else
 
-        println(" # Build native grid")
+        println(" # Build 1D native grid")
+        println(" # ... build 1D grid ")
 
-        # Initialize mesh struct for native structured grid:
-        if (haskey(inputs, :nsd))
-
-            if (inputs[:nsd]==1)
-                println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat, CPU(), NSD_1D}(coords = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx]), 1),
-                                                   x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
-                                                   npx  = TInt(inputs[:npx]),
-                                                   xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                                   nop=TInt(inputs[:nop]),
-                                                   connijk = KernelAbstractions.zeros(CPU(), TInt,  Int64(inputs[:nelx]), Int64(inputs[:nop]+1), 1, 1),
-                                                   ngr=TInt(inputs[:nop_laguerre]+1),
-                                                   SD=NSD_1D())
-            else
-                @error( " INPUT ERROR: native grid can only be built in 1D. Use a GMSH generated grid for 2D/3D")
-            end
-
-        else
-
-            #
-            # Default grid is 1D if `nsd` is not defined in user_input.jl
-            #
-            println(" # ... build DEFAULT 1D grid")
-            println(" # ...... DEFINE NSD in your input dictionary if you want a different grid!")
-            mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(), TFloat, Int64(inputs[:npx]), 1),
-                                               npx  = Int64(inputs[:npx]),
-                                               xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                               nop=Int64(inputs[:nop]),
-                                               ngr=Int64(inputs[:nop_laguerre]+1),
-                                               SD=NSD_1D())
-        end
+        mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_1D}(nsd  = TInt(1),
+                                                           nop  = TInt(inputs[:nop]),
+                                                           ngr  = TInt(inputs[:nop_laguerre]+1),
+                                                           npx  = TInt(inputs[:npx]),
+                                                           xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                                           SD   = NSD_1D(),
+                                                           )
+        
         mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
-        #mesh.coords[:,1] .= mesh.x[:]
 
-        println(" # Build native grid ........................ DONE")
+        println(" # Build 1D native grid ..................... DONE")
     end
 
     if (mesh.nsd == 1)
@@ -4750,7 +4756,7 @@ function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     else
         error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
     end
-
+    
     #
     # Element size:
     #
