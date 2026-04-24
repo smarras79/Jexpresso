@@ -53,7 +53,7 @@ function user_inputs()
         #   as the polynomial order matches :nop above.
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x20_periodic.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
         #---------------------------------------------------------------------------
         # Output formats
         #---------------------------------------------------------------------------
