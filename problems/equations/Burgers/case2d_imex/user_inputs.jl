@@ -37,7 +37,7 @@ function user_inputs()
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 4,     # Polynomial order
+        :nop                 => 7,     # Polynomial order
         :lexact_integration  => false,
         :lsource             => false,
         #---------------------------------------------------------------------------
@@ -50,8 +50,7 @@ function user_inputs()
         # temporarily toggles it off around each explicit-RHS evaluation.
         #---------------------------------------------------------------------------
         :lvisc               => true,
-        :ivisc_equations     => [1],
-        :μ                   => [1.0e-3],   # set to 0.0 for the pure inviscid case in the paper
+        :μ                   => [1.0e-2, 1.0e-2],   # set to 0.0 for the pure inviscid case in the paper
         #---------------------------------------------------------------------------
         # Mesh parameters and files:
         #   Reuse the doubly-periodic quadrilateral mesh shipped with the
@@ -59,7 +58,7 @@ function user_inputs()
         #   as the polynomial order matches :nop above.
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_burgers2d.msh",
         #---------------------------------------------------------------------------
         # Output formats
         #---------------------------------------------------------------------------
