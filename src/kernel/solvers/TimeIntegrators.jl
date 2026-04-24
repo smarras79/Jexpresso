@@ -2,8 +2,17 @@ function time_loop!(inputs, params, u)
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+
+    #
+    # Dispatch to our self-contained IMEX Runge-Kutta integrator when the
+    # user selects one of the IMEX schemes defined in src/kernel/solvers/IMEX_ARS.jl.
+    #
+    if isa(inputs[:ode_solver], IMEX_ARS232)
+        return imex_ars232_time_loop!(inputs, params, u)
+    end
+
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
-    
+
     prob = ODEProblem(rhs!,
                       u,
                       params.tspan,
