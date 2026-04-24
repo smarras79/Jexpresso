@@ -9,17 +9,19 @@
 # stiff linear part (implicit), into an L-stable, second-order, 3-stage
 # additive Runge–Kutta scheme.
 #
-# For the 1D viscous Burgers equation
+# For the viscous Burgers equation
 #
-#     ∂q/∂t + ∂(q²/2)/∂x = ν ∂²q/∂x²,
+#     ∂q/∂t + ∇·F(q) = ν Δq,    F(q) = (q²/2, q²/2, …)
 #
 # we take
 #
-#     N(q) = -M⁻¹ ∂(q²/2)/∂x   (explicit nonlinear advection)
+#     N(q) = -M⁻¹ ∇·F(q)       (explicit nonlinear advection)
 #     L q  = -ν M⁻¹ K q        (implicit linear diffusion)
 #
 # where M is the SEM mass matrix (diagonal under inexact LGL quadrature) and
-# K is the SEM stiffness matrix Kᵢⱼ = ∫ dψᵢ/dx · dψⱼ/dx dx.
+# K is the SEM stiffness matrix Kᵢⱼ = ∫ ∇ψᵢ · ∇ψⱼ dΩ. Both 1D and 2D (NSD_2D,
+# CG/LGL, quadrilateral elements) are supported; the 2D path uses the usual
+# isoparametric chain rule through metrics.dξdx, dξdy, dηdx, dηdy, Je.
 #
 # Reference:
 #   U. Ascher, S. Ruuth, R. Spiteri,
@@ -131,6 +133,105 @@ function build_mass_stiff_1d(mesh, basis, ω)
 end
 
 #-------------------------------------------------------------------------------
+# Build 2D CG spectral-element mass (diagonal, inexact LGL) and stiffness
+# (sparse Laplacian ∑_e ∫ ∇ψ_i · ∇ψ_j dΩ) matrices on quadrilateral elements.
+#
+# With a tensor-product LGL basis ψ_{i,j}(ξ,η) = h_i(ξ) h_j(η) and LGL
+# interpolation = LGL quadrature nodes, h_j(η_l) = δ_{jl}. The Laplacian
+# entry K^e_{(i,j),(m,n)} collapses to four contributions:
+#
+#   (A) j == n:  Σ_k  ω_k ω_j Je(k,j) dψ[i,k] dψ[m,k] (ξx²+ξy²)(k,j)
+#   (B) i == m:  Σ_l  ω_i ω_l Je(i,l) dψ[j,l] dψ[n,l] (ηx²+ηy²)(i,l)
+#   (C) fixed (m,j):   ω_m ω_j Je(m,j) dψ[i,m] dψ[n,j] (ξx·ηx+ξy·ηy)(m,j)
+#   (D) fixed (i,n):   ω_i ω_n Je(i,n) dψ[j,n] dψ[m,i] (ξx·ηx+ξy·ηy)(i,n)
+#
+# Mesh-level periodicity (gmsh doubly-periodic quadrilateral meshes) is
+# already encoded in mesh.connijk, so the global sparse assembly below
+# automatically produces the correct periodic Laplacian.
+#-------------------------------------------------------------------------------
+function build_mass_stiff_2d(mesh, basis, ω, metrics)
+    ngl   = mesh.ngl
+    nelem = mesh.nelem
+    npoin = mesh.npoin
+
+    M  = zeros(Float64, npoin)
+    dψ = basis.dψ        # dψ[i,k] = h_i'(ξ_k)
+    Je   = metrics.Je    # (nelem, ngl, ngl, 1)
+    dξdx = metrics.dξdx; dξdy = metrics.dξdy
+    dηdx = metrics.dηdx; dηdy = metrics.dηdy
+
+    I_vec = Int[]; J_vec = Int[]; V_vec = Float64[]
+    nnz_hint = nelem * ngl^4
+    sizehint!(I_vec, nnz_hint); sizehint!(J_vec, nnz_hint); sizehint!(V_vec, nnz_hint)
+
+    @inbounds for iel = 1:nelem
+        # Diagonal mass
+        for j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j]
+            M[ip] += ω[i] * ω[j] * Je[iel, i, j, 1]
+        end
+
+        # Local stiffness: (ngl*ngl) × (ngl*ngl) block, assembled node-by-node.
+        for j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j]
+            for n = 1:ngl, m = 1:ngl
+                jp  = mesh.connijk[iel, m, n]
+                val = 0.0
+
+                # (A) sum over k at l = j, requires j == n
+                if j == n
+                    for k = 1:ngl
+                        w  = ω[k] * ω[j] * Je[iel, k, j, 1]
+                        ξx = dξdx[iel, k, j, 1]; ξy = dξdy[iel, k, j, 1]
+                        val += w * dψ[i, k] * dψ[m, k] * (ξx*ξx + ξy*ξy)
+                    end
+                end
+
+                # (B) sum over l at k = i, requires i == m
+                if i == m
+                    for l = 1:ngl
+                        w  = ω[i] * ω[l] * Je[iel, i, l, 1]
+                        ηx = dηdx[iel, i, l, 1]; ηy = dηdy[iel, i, l, 1]
+                        val += w * dψ[j, l] * dψ[n, l] * (ηx*ηx + ηy*ηy)
+                    end
+                end
+
+                # (C) single quadrature point (m, j)
+                let k = m, l = j
+                    w  = ω[k] * ω[l] * Je[iel, k, l, 1]
+                    ξx = dξdx[iel, k, l, 1]; ξy = dξdy[iel, k, l, 1]
+                    ηx = dηdx[iel, k, l, 1]; ηy = dηdy[iel, k, l, 1]
+                    val += w * dψ[i, k] * dψ[n, l] * (ξx*ηx + ξy*ηy)
+                end
+
+                # (D) single quadrature point (i, n)
+                let k = i, l = n
+                    w  = ω[k] * ω[l] * Je[iel, k, l, 1]
+                    ξx = dξdx[iel, k, l, 1]; ξy = dξdy[iel, k, l, 1]
+                    ηx = dηdx[iel, k, l, 1]; ηy = dηdy[iel, k, l, 1]
+                    val += w * dψ[j, l] * dψ[m, k] * (ηx*ξx + ηy*ξy)
+                end
+
+                push!(I_vec, ip); push!(J_vec, jp); push!(V_vec, val)
+            end
+        end
+    end
+
+    K = sparse(I_vec, J_vec, V_vec, npoin, npoin)
+    return M, K
+end
+
+#-------------------------------------------------------------------------------
+# Dispatcher: pick the 1D or 2D mass/stiffness builder from params.SD. 3D is
+# not implemented yet — this is a scalar, isotropic-Laplacian integrator.
+#-------------------------------------------------------------------------------
+build_mass_stiff(mesh, basis, ω, metrics, ::NSD_1D) =
+    build_mass_stiff_1d(mesh, basis, ω)
+
+build_mass_stiff(mesh, basis, ω, metrics, ::NSD_2D) =
+    build_mass_stiff_2d(mesh, basis, ω, metrics)
+
+#-------------------------------------------------------------------------------
 # Evaluate the explicit (inviscid / advective) RHS for the 1D problem by
 # calling the existing `rhs!` with the viscosity switch temporarily disabled,
 # then divided by the (diagonal) mass matrix as usual.
@@ -143,17 +244,17 @@ function eval_explicit_rhs!(du, u, params, time, saved_lvisc::Bool)
 end
 
 #-------------------------------------------------------------------------------
-# Main IMEX time loop (1D scalar or vector problem). Only the CPU / NSD_1D
-# / ContGal path is supported. Output is written at user-requested diagnostic
-# times via the existing write_output machinery.
+# Main IMEX time loop (scalar or vector problem on NSD_1D or NSD_2D, CPU /
+# ContGal). Output is written at user-requested diagnostic times via the
+# existing write_output machinery.
 #-------------------------------------------------------------------------------
 function imex_ars232_time_loop!(inputs, params, u)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     println_rank(" # Solving ODE with IMEX ARS(2,3,2) ........... "; msg_rank = rank)
 
-    if !(params.SD == NSD_1D())
-        error("IMEX_ARS232 is currently implemented for NSD_1D only.")
+    if !(params.SD == NSD_1D() || params.SD == NSD_2D())
+        error("IMEX_ARS232 is currently implemented for NSD_1D and NSD_2D only.")
     end
 
     mesh   = params.mesh
@@ -173,7 +274,7 @@ function imex_ars232_time_loop!(inputs, params, u)
     # The ARS(2,3,2) scheme has a single implicit-diagonal coefficient γ, so
     # the same matrix (M + Δt γ ν K) is used at stages 2 and 3.
     #---------------------------------------------------------------------------
-    M_diag, K = build_mass_stiff_1d(mesh, basis, ω)
+    M_diag, K = build_mass_stiff(mesh, basis, ω, params.metrics, params.SD)
     Minv      = 1.0 ./ M_diag
 
     A_ex, A_im, b_ex, b_im, c_ex, c_im = ars232_tableau(TFloat)
