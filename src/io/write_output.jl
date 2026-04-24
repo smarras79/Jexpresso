@@ -53,7 +53,7 @@ end
 # END Callback for missing user_uout!()
 #------------------------------------------------------------------
 
-function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
     qout = zeros(mesh.npoin)
@@ -108,7 +108,7 @@ end
 
 
 function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
@@ -173,13 +173,13 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                    OUTPUT_DIR::String, inputs::Dict,
+                    OUTPUT_DIR::String, inputs,
                     varnames, outvarnames,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="")
@@ -209,7 +209,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                      iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
@@ -318,7 +318,7 @@ end
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict,
+                   t, title::String, OUTPUT_DIR::String, inputs,
                    varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
@@ -544,7 +544,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
 
 end
-function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
 
     #println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
 
@@ -566,7 +566,7 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
 
 end
-function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5; nvar=1)
+function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5; nvar=1)
 
     #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
@@ -576,7 +576,7 @@ function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5
 end
 
 
-function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
+function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs, varnames; iout=1, nvar=1, case="")
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -601,7 +601,7 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
     end
 end
 
-function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
+function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
@@ -627,7 +627,7 @@ end
 
 function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
@@ -784,7 +784,7 @@ end
 
 function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                      t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                       iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end

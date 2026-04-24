@@ -722,7 +722,7 @@ end
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
 
 
-function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, mesh::St_mesh, inputs::Dict, nparts, distribute)
+function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, mesh::St_mesh, inputs, nparts, distribute)
 
     # determine backend
     backend = CPU()

@@ -880,7 +880,7 @@ function _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
+function mod_inputs_check(inputs, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
@@ -897,7 +897,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
+function mod_inputs_check(inputs, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """

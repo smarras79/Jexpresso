@@ -3,7 +3,7 @@ function user_inputs()
     #---------------------------------------------------------------------------
     # User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
-        :use_named_tuples => false,
+        :use_named_tuples     => true,
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.5,
         :tinit                => 0.0,

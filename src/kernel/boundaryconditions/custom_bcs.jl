@@ -7,13 +7,13 @@
 #end
 #---------------------------------------------------------------------------
 
-function neumann(q, gradq, coords, t, tag, inputs::Dict)
+function neumann(q, gradq, coords, t, tag, inputs)
     
-    rhs = user_bc_neumann(q, gradq, coords,  t, tag, inputs::Dict)
+    rhs = user_bc_neumann(q, gradq, coords,  t, tag, inputs)
     return rhs
 end
 
-function neumann(q, gradq, coords, t, inputs::Dict)
+function neumann(q, gradq, coords, t, inputs)
 
     rhs = user_bc_neumann(q, gradq, coords, t, inputs)
     return rhs
@@ -24,9 +24,9 @@ function dirichlet!(q, qbdy, coords, t, nx, ny, tag,qe,SOL)
    user_bc_dirichlet!(q, coords, t, tag, qbdy, nx, ny,qe,SOL)
 end
 
-function dirichlet!(q, gradq, coords, t, mesh, metrics, tag, qbdy, inputs::Dict)
+function dirichlet!(q, gradq, coords, t, mesh, metrics, tag, qbdy, inputs)
     
-    qbdy = user_bc_dirichlet!(q, gradq, coords, t, tag, qbdy, inputs::Dict)
+    qbdy = user_bc_dirichlet!(q, gradq, coords, t, tag, qbdy, inputs)
 
     return qbdy
 end
