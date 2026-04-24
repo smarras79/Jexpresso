@@ -96,14 +96,14 @@ _imex_cast_sparse(L::SparseMatrixCSC, ::Type{T}) where {T} =
     SparseMatrixCSC{T, Int}(L)
 
 function _imex_build_preconditioner(L_prec::SparseMatrixCSC, prec_sp::Dict)
-    prec_type = get(prec_sp, :prec_type, "AMG")
-    if prec_type == "AMG"
+    prec_type = lowercase(string(get(prec_sp, :prec_type, "AMG")))
+    if prec_type == "amg"
         return MyPrecClass.MyPrec(L_prec, RugeStubenAMG(), prec_sp)
-    elseif prec_type == "ILU"
-        droptol = get(prec_sp, :droptol, 0.1)
+    elseif prec_type == "ilu"
+        droptol = get(prec_sp, :droptol, get(prec_sp, :ilu_tol, 0.1))
         return MyPrecClass.MyPrec(L_prec, IncompleteLU.ilu(L_prec; τ = droptol), prec_sp)
-    elseif prec_type == "Jacobi" || prec_type == "jacobi"
-        return MyPrecClass.MyPrec(L_prec, diag(L_prec), prec_sp)
+    elseif prec_type == "jacobi"
+        return MyPrecClass.MyPrec(L_prec, Diagonal(diag(L_prec)), prec_sp)
     else
         error("StoredIMEXMatrix: unknown :prec_type = \"$prec_type\" " *
               "(expected \"AMG\", \"ILU\", or \"Jacobi\").")

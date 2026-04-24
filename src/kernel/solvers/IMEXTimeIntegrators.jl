@@ -337,8 +337,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                     if L_storage === nothing
                         # :matrix_free path: rebuild the preconditioner from a
                         # freshly cast copy of L_curr on every nonlinear iter.
-                        prec = MyPrecClass.MyPrec(prec_sp[:precision].(L_curr),
-                                                  RugeStubenAMG(), prec_sp)
+                        # Honour prec_sp[:prec_type] (AMG / ILU / Jacobi).
+                        prec = _imex_build_preconditioner(prec_sp[:precision].(L_curr),
+                                                          prec_sp)
 
                         (x, stats) = fgmres(L_curr, solver_precision.(nonl_res),
                                             memory=memory, N=prec, ldiv=true,
@@ -464,8 +465,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                         if L_storage === nothing
                             # :matrix_free path: rebuild the preconditioner from
                             # a freshly cast copy of L_curr on every iteration.
-                            prec = MyPrecClass.MyPrec(prec_sp[:precision].(L_curr),
-                                                      RugeStubenAMG(), prec_sp)
+                            # Honour prec_sp[:prec_type] (AMG / ILU / Jacobi).
+                            prec = _imex_build_preconditioner(prec_sp[:precision].(L_curr),
+                                                              prec_sp)
 
                             (x, stats) = fgmres(L_curr, solver_precision.(nonl_res),
                                                 memory=memory, N=prec, ldiv=true,

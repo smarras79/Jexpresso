@@ -73,7 +73,17 @@ SFloat = Float32
 cpu    = true
 
 function LinearAlgebra.ldiv!(y::AbstractVector{Float64}, F::Any, x::AbstractVector{Float64})
-    MyPrecClass.sol!(F, x, y)
+    prec_type = lowercase(string(get(F.kwargs, :prec_type, "AMG")))
+    if prec_type == "amg"
+        MyPrecClass.sol!(F, x, y)
+    elseif prec_type == "ilu"
+        MyPrecClass.ilusol!(F, x, y)
+    elseif prec_type == "jacobi"
+        MyPrecClass.Jacobisol!(F, x, y)
+    else
+        error("ldiv!: unknown :prec_type = \"$(prec_type)\" " *
+              "(expected \"AMG\", \"ILU\", or \"Jacobi\").")
+    end
 end
 
 using DocStringExtensions
