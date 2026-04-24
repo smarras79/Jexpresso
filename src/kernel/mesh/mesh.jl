@@ -1,13 +1,12 @@
 using .JeGeometry
 
-#export St_mesh
 export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
 include("./meshStructs.jl")
-include("warping.jl")
-include("stretching.jl")
+include("./warping.jl")
+include("./stretching.jl")
 
 function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     npoin = nelem*nop+1
@@ -22,7 +21,7 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     extra_mesh.extra_coords[1,1]      = θmin
     extra_mesh.extra_connijk[1,1]     = 1
     extra_mesh.extra_connijk[1,nop+1] = 2
-    extra_mesh.extra_coords[2]      = Δθe[1]
+    extra_mesh.extra_coords[2]        = Δθe[1]
     extra_mesh.extra_nop             .= nop
     ip = 2
     for e=2:nelem-1
@@ -4626,6 +4625,20 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 
 end
 
+_sd_type(::Val{1}) = NSD_1D
+_sd_type(::Val{2}) = NSD_2D
+_sd_type(::Val{3}) = NSD_3D
+
+function build_mesh(::Val{N}, inputs,
+                    ::Type{TInt}, ::Type{TFloat}, ::Type{RealT}) where {N, TInt, TFloat, RealT}
+    SDT = _sd_type(Val(N))
+    return St_mesh{TInt, TFloat, RealT, CPU(), SDT}(
+        nsd = TInt(N),
+        nop = TInt(inputs[:nop]),
+        ngr = TInt(inputs[:nop_laguerre] + 1),
+        SD  = SDT(),
+    )
+end
 
 function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
 
@@ -4640,32 +4653,11 @@ function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
 
         println_rank(" # Read gmsh grid and populate with high-order points "; msg_rank = rank, suppress = omesh == !isnothing)
 
-
-
         # Read gmsh grid using the GridapGmsh reader
         n2o_ele_map = nothing
+        nsd         = detect_nsd(inputs)        
         if isnothing(adapt_flags)
-            # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-            #mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_2D}(nsd=TInt(inputs[:nsd]),
-            #                            nop=TInt(inputs[:nop]),
-            #                            ngr=TInt(inputs[:nop_laguerre]+1),
-            #                            SD=NSD_2D())
-            if inputs[:nsd] == 3
-                mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_3D}(nsd=TInt(inputs[:nsd]),
-                                                                   nop=TInt(inputs[:nop]),
-                                                                   ngr=TInt(inputs[:nop_laguerre]+1),
-                                                                   SD=NSD_3D())
-            elseif inputs[:nsd] == 2
-                mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_2D}(nsd=TInt(inputs[:nsd]),
-                                                                   nop=TInt(inputs[:nop]),
-                                                                   ngr=TInt(inputs[:nop_laguerre]+1),
-                                                                   SD=NSD_2D())
-            else
-                mesh = St_mesh{TInt, TFloat, RealT, CPU(), NSD_1D}(nsd=TInt(inputs[:nsd]),
-                                                                   nop=TInt(inputs[:nop]),
-                                                                   ngr=TInt(inputs[:nop_laguerre]+1),
-                                                                   SD=NSD_1D())
-            end
+            mesh = build_mesh(Val(detect_nsd(inputs)), inputs, TInt, TFloat, RealT)
             partitioned_model = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute)
         else
             # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
@@ -4935,4 +4927,17 @@ function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_
     end
 end
 
+function detect_nsd_from_file(filename::AbstractString)
+    model = GmshDiscreteModel(filename)
+    return num_cell_dims(model)   # returns 1, 2, or 3
+end
 
+function detect_nsd(inputs)
+    if haskey(inputs, :gmsh_filename)
+        return detect_nsd_from_file(inputs[:gmsh_filename])
+    else
+        npy = get(inputs, :npy, 0)
+        npz = get(inputs, :npz, 0)
+        return npz > 1 ? 3 : (npy > 1 ? 2 : 1)
+    end
+end

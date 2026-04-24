@@ -15,7 +15,7 @@ function user_inputs()
         # restart options
         #---------------------------------------------------------------------------
         # set restart_time to enable write restart files every [restart_time] seconds 
-        :restart_time         => 100.0, 
+        :restart_time         => 500.0, 
         # the default restart output dir is $(your_output_dir)/restart but you can always specify
         # :restart_output_file_path => "./output/CompEuler/3d/output/restart",
         :lrestart             => false,
