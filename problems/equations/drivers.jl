@@ -11,20 +11,22 @@ function driver(nparts,
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
-    if (sem.mesh.SD == NSD_2D())
-        build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je, 
-                                     sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy, 
-                                     sem.metrics.nx, sem.metrics.ny, sem.mesh.elem_to_edge, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
-    else
-        build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
-                                     sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dξdz, 
-                                     sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
-                                     sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
-                                     sem.metrics.nx, sem.metrics.ny, sem.metrics.nz, 
-                                     sem.mesh.elem_to_face, sem.mesh.extra_mesh, sem.QT, NSD_3D(), sem.AD)
-    
+    if get(inputs, :lrad, false)
+        if (sem.mesh.SD == NSD_2D())
+            build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
+                                         sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy,
+                                         sem.metrics.nx, sem.metrics.ny, sem.mesh.elem_to_edge, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
+        elseif (sem.mesh.SD == NSD_3D())
+            build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
+                                         sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dξdz,
+                                         sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
+                                         sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
+                                         sem.metrics.nx, sem.metrics.ny, sem.metrics.nz,
+                                         sem.mesh.elem_to_face, sem.mesh.extra_mesh, sem.QT, NSD_3D(), sem.AD)
+        end
+        return
     end
-    #=
+
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
@@ -163,8 +165,8 @@ function driver(nparts,
                      inputs[:outformat])
 
         write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
-        
-    end=#
+
+    end
 end
 
 function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
