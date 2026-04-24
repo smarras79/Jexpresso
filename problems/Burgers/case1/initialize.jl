@@ -1,8 +1,8 @@
 function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
-        Initial condition for the 1D viscous Burgers equation:
+       Initial condition for the 1D viscous Burgers equation:
 
-            q(x,0) = sin(2π x / L),    L = xmax - xmin
+           q(x,0) = sin(2π x / L),    L = xmax - xmin
 
         which steepens and forms a (viscosity-smoothed) shock.
     """
