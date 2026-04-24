@@ -67,6 +67,29 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         # check if L has to be updated
         haskey(inputs, :upd_L) ? upd_L = inputs[:upd_L] : upd_L = false
     end
+
+    # Matrix storage mode for the implicit operator
+    #
+    #   :matrix_free - rebuild L each time it is needed, do not keep any
+    #                  persistent sparse / preconditioner state (legacy path).
+    #   :assembled   - store the assembled sparse operator in optimal CSC
+    #                  format together with mixed-precision copies and a
+    #                  cached preconditioner that is only rebuilt when the
+    #                  matrix is rebuilt. This is the path to use when adding
+    #                  ILU/AMG preconditioners or mixed-precision strategies.
+    #
+    # The default is :matrix_free to preserve existing behaviour for user
+    # configs that do not set the flag.
+    haskey(inputs, :matrix_storage) ? matrix_storage = inputs[:matrix_storage] : matrix_storage = :matrix_free
+    if matrix_storage != :matrix_free && matrix_storage != :assembled
+        error("IMEX: invalid :matrix_storage = $(repr(matrix_storage)). " *
+              "Expected :matrix_free or :assembled.")
+    end
+
+    # Persistent storage for the assembled operator (created lazily on first
+    # L_update call when :matrix_storage == :assembled; stays `nothing`
+    # otherwise).
+    L_storage = nothing
     # BCs of the solution
     bcs_fun! = inputs[:bcs_fun]
 
@@ -271,6 +294,11 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         # Building L_curr
         #------------------------------------------------------------------------
         L_curr = L_update(u_next, t_n + Δt)
+        if delta == 1 && matrix_storage == :assembled
+            L_storage = StoredIMEXMatrix(L_curr;
+                                         solver_precision = solver_precision,
+                                         prec_sp          = prec_sp)
+        end
 
         #------------------------------------------------------------------------
         # Simulation
@@ -306,13 +334,25 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
                 # Solving the linear system
                 if lsolve == nothing
-                    prec = MyPrecClass.MyPrec(prec_sp[:precision].(L_curr),
-                                              RugeStubenAMG(), prec_sp)
+                    if L_storage === nothing
+                        # :matrix_free path: rebuild the preconditioner from a
+                        # freshly cast copy of L_curr on every nonlinear iter.
+                        prec = MyPrecClass.MyPrec(prec_sp[:precision].(L_curr),
+                                                  RugeStubenAMG(), prec_sp)
 
-                    (x, stats) = fgmres(L_curr, solver_precision.(nonl_res),
-                                        memory=memory, N=prec, ldiv=true,
-                                        restart=restart, atol=atol, rtol=rtol,
-                                        itmax=itmax, verbose = verbose)
+                        (x, stats) = fgmres(L_curr, solver_precision.(nonl_res),
+                                            memory=memory, N=prec, ldiv=true,
+                                            restart=restart, atol=atol, rtol=rtol,
+                                            itmax=itmax, verbose = verbose)
+                    else
+                        # :assembled path: reuse the stored solver-precision
+                        # copy and the cached preconditioner.
+                        (x, stats) = fgmres(L_storage.L_solver,
+                                            solver_precision.(nonl_res),
+                                            memory=memory, N=L_storage.prec, ldiv=true,
+                                            restart=restart, atol=atol, rtol=rtol,
+                                            itmax=itmax, verbose = verbose)
+                    end
                 else
                     x = lsolve(L_curr,
                                solver_precision.(nonl_res))
@@ -326,6 +366,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 #------------------------------------------------------------------------
                 if delta == 1 && upd_L
                         L_curr = L_update(u_next, t_n + Δt)
+                        if L_storage !== nothing
+                            update_stored_matrix!(L_storage, L_curr)
+                        end
 
                         # Apply bcs to rhs and L
                         bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
@@ -363,6 +406,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             #------------------------------------------------------------------------
             if delta == 1 && upd_L && abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend]
                 L_curr = L_update(u_next, t_n + Δt)
+                if L_storage !== nothing
+                    update_stored_matrix!(L_storage, L_curr)
+                end
             end
         end
     elseif method == "RK"
@@ -379,6 +425,15 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 # Building L_curr
                 #------------------------------------------------------------------------
                 L_curr = L_update(U_stages[i_stages], time_tilde, A_RK_tilde[i_stages, i_stages])
+                if delta == 1 && matrix_storage == :assembled
+                    if L_storage === nothing
+                        L_storage = StoredIMEXMatrix(L_curr;
+                                                     solver_precision = solver_precision,
+                                                     prec_sp          = prec_sp)
+                    else
+                        update_stored_matrix!(L_storage, L_curr)
+                    end
+                end
 
                 #------------------------------------------------------------------------
                 # Building rhs
@@ -406,13 +461,25 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
                     # Solving the linear system
                     if lsolve == nothing
-                        prec = MyPrecClass.MyPrec(prec_sp[:precision].(L_curr),
-                                                  RugeStubenAMG(), prec_sp)
+                        if L_storage === nothing
+                            # :matrix_free path: rebuild the preconditioner from
+                            # a freshly cast copy of L_curr on every iteration.
+                            prec = MyPrecClass.MyPrec(prec_sp[:precision].(L_curr),
+                                                      RugeStubenAMG(), prec_sp)
 
-                        (x, stats) = fgmres(L_curr, solver_precision.(nonl_res),
-                                            memory=memory, N=prec, ldiv=true,
-                                            restart=restart, atol=atol, rtol=rtol,
-                                            itmax=itmax, verbose = verbose)
+                            (x, stats) = fgmres(L_curr, solver_precision.(nonl_res),
+                                                memory=memory, N=prec, ldiv=true,
+                                                restart=restart, atol=atol, rtol=rtol,
+                                                itmax=itmax, verbose = verbose)
+                        else
+                            # :assembled path: cached preconditioner + stored
+                            # solver-precision copy of the operator.
+                            (x, stats) = fgmres(L_storage.L_solver,
+                                                solver_precision.(nonl_res),
+                                                memory=memory, N=L_storage.prec, ldiv=true,
+                                                restart=restart, atol=atol, rtol=rtol,
+                                                itmax=itmax, verbose = verbose)
+                        end
                     else
                         x = lsolve(L_curr,
                                    solver_precision.(nonl_res))
@@ -426,6 +493,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                     #------------------------------------------------------------------------
                     if delta == 1 && upd_L
                             L_curr = L_update(U_stages[i_stages], time, A_RK_tilde[i, i])
+                            if L_storage !== nothing
+                                update_stored_matrix!(L_storage, L_curr)
+                            end
 
                             # Apply bcs to rhs and L
                             bcs_fun!(rhs, L_curr, time, params, sem, qp)

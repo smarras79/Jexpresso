@@ -29,7 +29,9 @@ using SnoopCompile
 using LinearSolve
 using LinearSolve: solve
 using Krylov
+using LinearOperators
 using AlgebraicMultigrid
+using IncompleteLU
 using SparseArrays
 import SciMLOperators as SMO
 using SciMLBase: CallbackSet, DiscreteCallback,
@@ -134,6 +136,10 @@ include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
 
+include(joinpath( "kernel", "solvers", "MyPrec.jl"))
+
+include(joinpath( "kernel", "solvers", "IMEXMatrixStorage.jl"))
+
 include(joinpath( "kernel", "solvers", "IMEXTimeIntegrators.jl"))
 
 include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
@@ -141,8 +147,6 @@ include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
 include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
-
-include(joinpath( "kernel", "solvers", "MyPrec.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 

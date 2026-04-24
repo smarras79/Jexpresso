@@ -271,6 +271,15 @@ function user_inputs()
         :bcs_fun            => bcs_fun!,
         :upd_L              => false,
         :build_L            => build_L,
+        #---------------------------------------------------------------------------
+        # Matrix storage for the IMEX implicit operator
+        #   :matrix_free  - (default) rebuild L and the preconditioner on demand
+        #   :assembled    - store L in optimal sparse (CSC) storage together
+        #                   with mixed-precision copies and a cached
+        #                   preconditioner. Required to use ILU / tuned AMG
+        #                   preconditioners or mixed-precision strategies.
+        #---------------------------------------------------------------------------
+        :matrix_storage     => :assembled,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
