@@ -29,7 +29,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Output formats
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "hdf5",
         :loverwrite_output   => true,
         :output_dir          => "none",
     ) #Dict

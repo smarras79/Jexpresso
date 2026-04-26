@@ -37,7 +37,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat            => "vtk",
+        :outformat            => "hdf5",
         :loverwrite_output    => true,
         :lwrite_initial       => false,
         :output_dir           => "none",

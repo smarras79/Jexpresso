@@ -36,14 +36,15 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
 
       # -----------------------------------------------------------------------
-      # Run each benchmark as a separate step.
-      # continue-on-error: true lets all benchmarks run even if one fails.
-      # CI_MODE=true makes Jexpresso load inputs from test/CI-runs/ (reduced
-      # parameters) instead of the full problems/ directory.
+      # Simulation steps — each benchmark runs as its own julia process so
+      # that a crash in one cannot affect the others.  CI_MODE=true makes
+      # Jexpresso load inputs from test/CI-runs/ (reduced tend, hdf5 output).
+      # Output .h5 files land in test/CI-runs/<EQ>/<CASE>/output/.
+      # continue-on-error lets all seven run even when one fails.
       # -----------------------------------------------------------------------
 
-      - name: "Benchmark: CompEuler/theta"
-        id: compeuler_theta
+      - name: "Simulate: CompEuler/theta"
+        id: sim_compeuler_theta
         continue-on-error: true
         timeout-minutes: 40
         run: |
@@ -52,8 +53,8 @@ jobs:
             include("src/Jexpresso.jl")
           '
 
-      - name: "Benchmark: CompEuler/3d"
-        id: compeuler_3d
+      - name: "Simulate: CompEuler/3d"
+        id: sim_compeuler_3d
         continue-on-error: true
         timeout-minutes: 40
         run: |
@@ -62,8 +63,8 @@ jobs:
             include("src/Jexpresso.jl")
           '
 
-      - name: "Benchmark: CompEuler/wave1d"
-        id: compeuler_wave1d
+      - name: "Simulate: CompEuler/wave1d"
+        id: sim_compeuler_wave1d
         continue-on-error: true
         timeout-minutes: 20
         run: |
@@ -72,8 +73,8 @@ jobs:
             include("src/Jexpresso.jl")
           '
 
-      - name: "Benchmark: Burgers/case1"
-        id: burgers_case1
+      - name: "Simulate: Burgers/case1"
+        id: sim_burgers_case1
         continue-on-error: true
         timeout-minutes: 20
         run: |
@@ -82,8 +83,8 @@ jobs:
             include("src/Jexpresso.jl")
           '
 
-      - name: "Benchmark: Burgers/case2d"
-        id: burgers_case2d
+      - name: "Simulate: Burgers/case2d"
+        id: sim_burgers_case2d
         continue-on-error: true
         timeout-minutes: 30
         run: |
@@ -92,8 +93,8 @@ jobs:
             include("src/Jexpresso.jl")
           '
 
-      - name: "Benchmark: Elliptic/2dlaplace"
-        id: elliptic_2dlaplace
+      - name: "Simulate: Elliptic/2dlaplace"
+        id: sim_elliptic_2dlaplace
         continue-on-error: true
         timeout-minutes: 20
         run: |
@@ -102,8 +103,8 @@ jobs:
             include("src/Jexpresso.jl")
           '
 
-      - name: "Benchmark: ShallowWater/TC2"
-        id: shallowwater_tc2
+      - name: "Simulate: ShallowWater/TC2"
+        id: sim_shallowwater_tc2
         continue-on-error: true
         timeout-minutes: 40
         run: |
@@ -113,7 +114,20 @@ jobs:
           '
 
       # -----------------------------------------------------------------------
-      # Write a markdown summary table visible on the workflow run page.
+      # Comparison step — loads only HDF5.jl (fast) and checks every .h5 file
+      # in test/CI-runs/<EQ>/<CASE>/output/ against the committed reference in
+      # test/CI-ref/<EQ>/<CASE>/output/ using atol=1e-5.
+      # If no reference files exist yet, the benchmark is marked as skipped
+      # rather than failed (run the generate-ci-ref workflow to bootstrap).
+      # -----------------------------------------------------------------------
+      - name: Compare against reference solutions
+        id: compare
+        if: always()
+        continue-on-error: true
+        run: julia --project=. test/compare_benchmarks.jl
+
+      # -----------------------------------------------------------------------
+      # Markdown summary table shown on the workflow run page.
       # -----------------------------------------------------------------------
       - name: Benchmark report
         if: always()
@@ -123,31 +137,43 @@ jobs:
           {
             echo "## Classical Benchmark Results"
             echo ""
+            echo "### Simulation (did the code run?)"
+            echo ""
             echo "| Benchmark | Result |"
             echo "|-----------|--------|"
-            echo "| CompEuler/theta    | $(icon '${{ steps.compeuler_theta.outcome }}') |"
-            echo "| CompEuler/3d       | $(icon '${{ steps.compeuler_3d.outcome }}') |"
-            echo "| CompEuler/wave1d   | $(icon '${{ steps.compeuler_wave1d.outcome }}') |"
-            echo "| Burgers/case1      | $(icon '${{ steps.burgers_case1.outcome }}') |"
-            echo "| Burgers/case2d     | $(icon '${{ steps.burgers_case2d.outcome }}') |"
-            echo "| Elliptic/2dlaplace | $(icon '${{ steps.elliptic_2dlaplace.outcome }}') |"
-            echo "| ShallowWater/TC2   | $(icon '${{ steps.shallowwater_tc2.outcome }}') |"
+            echo "| CompEuler/theta    | $(icon '${{ steps.sim_compeuler_theta.outcome }}') |"
+            echo "| CompEuler/3d       | $(icon '${{ steps.sim_compeuler_3d.outcome }}') |"
+            echo "| CompEuler/wave1d   | $(icon '${{ steps.sim_compeuler_wave1d.outcome }}') |"
+            echo "| Burgers/case1      | $(icon '${{ steps.sim_burgers_case1.outcome }}') |"
+            echo "| Burgers/case2d     | $(icon '${{ steps.sim_burgers_case2d.outcome }}') |"
+            echo "| Elliptic/2dlaplace | $(icon '${{ steps.sim_elliptic_2dlaplace.outcome }}') |"
+            echo "| ShallowWater/TC2   | $(icon '${{ steps.sim_shallowwater_tc2.outcome }}') |"
+            echo ""
+            echo "### Numerical comparison (do results match reference?)"
+            echo ""
+            echo "| Status |"
+            echo "|--------|"
+            echo "| $(icon '${{ steps.compare.outcome }}') (see Compare step log for per-benchmark detail) |"
+            echo ""
+            echo "> Reference files live in \`test/CI-ref/\`. "
+            echo "> If a benchmark shows **skipped**, run the **generate-ci-ref** workflow to create its reference."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # -----------------------------------------------------------------------
-      # Fail the overall job if any individual benchmark failed.
+      # Fail the overall job if any simulation or the comparison failed.
       # -----------------------------------------------------------------------
       - name: Fail if any benchmark failed
         if: always()
         run: |
           outcomes=(
-            "${{ steps.compeuler_theta.outcome }}"
-            "${{ steps.compeuler_3d.outcome }}"
-            "${{ steps.compeuler_wave1d.outcome }}"
-            "${{ steps.burgers_case1.outcome }}"
-            "${{ steps.burgers_case2d.outcome }}"
-            "${{ steps.elliptic_2dlaplace.outcome }}"
-            "${{ steps.shallowwater_tc2.outcome }}"
+            "${{ steps.sim_compeuler_theta.outcome }}"
+            "${{ steps.sim_compeuler_3d.outcome }}"
+            "${{ steps.sim_compeuler_wave1d.outcome }}"
+            "${{ steps.sim_burgers_case1.outcome }}"
+            "${{ steps.sim_burgers_case2d.outcome }}"
+            "${{ steps.sim_elliptic_2dlaplace.outcome }}"
+            "${{ steps.sim_shallowwater_tc2.outcome }}"
+            "${{ steps.compare.outcome }}"
           )
           failed=0
           for o in "${outcomes[@]}"; do

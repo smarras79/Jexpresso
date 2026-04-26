@@ -51,7 +51,7 @@ function user_inputs()
         :loverwrite_output   => true,
         :lwrite_initial      => false,
         #:output_dir          => "./output",
-        :output_dir          => "./test/CI-ref",
+        :output_dir          => "none",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
