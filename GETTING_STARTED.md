@@ -391,6 +391,66 @@ This is not required for the solver to find and run your case.
 
 ---
 
+## Adding a New Case with Claude (AI-assisted)
+
+If you have a paper describing a set of equations or a test case, you can ask **Claude Code** to read the PDF and generate all six required files for you automatically.
+
+### What you need
+
+- [Claude Code](https://claude.ai/code) installed (`npm install -g @anthropic-ai/claude-code`, then `claude` in your terminal)
+- The paper as a PDF file (e.g., `my_paper.pdf`)
+
+### How to do it
+
+Open Claude Code from the `Jexpresso/` folder and attach the PDF:
+
+```bash
+cd /path/to/Jexpresso
+claude
+```
+
+Then in the Claude Code session, drag-and-drop the PDF into the chat, or reference it by path, and send a prompt like:
+
+> I'm attaching a paper: `my_paper.pdf`
+>
+> Please read it and implement the equations described in it as a new Jexpresso case.
+>
+> - Equation set name: `MyEquations`
+> - Case name: `case1`
+>
+> Create the folder `problems/MyEquations/case1/` and populate it with all six required files:
+> `user_inputs.jl`, `initialize.jl`, `user_flux.jl`, `user_source.jl`, `user_bc.jl`, `user_primitives.jl`.
+>
+> Use `problems/CompEuler/theta/` as the reference for file structure and function signatures.
+> Use `TOTAL()` formulation. Assume 2D and a structured quad mesh unless the paper says otherwise.
+
+Claude will read the paper, extract the equations, initial conditions, and boundary conditions, and write the files directly into your repository.
+
+### Tips for a better result
+
+- **Be specific about which section of the paper to use.** If the paper has multiple test cases, say which one: _"implement the test case from Section 4.2"_.
+- **Mention the dimensionality.** Say _"1D"_, _"2D"_, or _"3D"_ if it is clear from the paper.
+- **Provide a mesh file if you have one.** Add `:gmsh_filename => "./meshes/..."` to the prompt so Claude can wire it up directly.
+- **Ask Claude to explain what it did.** Add _"After creating the files, briefly explain the equations and any assumptions you made"_ — this makes it easier to catch misinterpretations.
+
+### After Claude generates the files
+
+Always review the generated code before running it:
+
+1. Check `user_inputs.jl` — verify the time step and end time are physically reasonable.
+2. Check `initialize.jl` — confirm the initial condition matches the paper.
+3. Check `user_flux.jl` — the fluxes are the most important part; compare them against the paper's equations.
+4. Run the case:
+
+```julia
+push!(empty!(ARGS), "MyEquations", "case1")
+include("./src/Jexpresso.jl")
+```
+
+If something looks wrong, describe the issue to Claude in the same session and it will fix the files.
+
+---
+
 ## Help and Documentation
 
 - Full docs: https://smarras79.github.io/Jexpresso/dev/
