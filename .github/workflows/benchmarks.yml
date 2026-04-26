@@ -1,0 +1,160 @@
+name: Classical Benchmarks
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  schedule:
+    - cron: '0 2 * * 0'   # Weekly on Sunday at 02:00 UTC
+  workflow_dispatch:       # Allow manual triggering
+
+jobs:
+  benchmarks:
+    name: Classical Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: '1.11.2'
+          arch: x64
+
+      - uses: actions/cache@v3
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-benchmarks-${{ hashFiles('**/Project.toml', '**/Manifest.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-benchmarks-
+            ${{ runner.os }}-
+
+      - uses: julia-actions/julia-buildpkg@v1
+
+      # -----------------------------------------------------------------------
+      # Run each benchmark as a separate step.
+      # continue-on-error: true lets all benchmarks run even if one fails.
+      # CI_MODE=true makes Jexpresso load inputs from test/CI-runs/ (reduced
+      # parameters) instead of the full problems/ directory.
+      # -----------------------------------------------------------------------
+
+      - name: "Benchmark: CompEuler/theta"
+        id: compeuler_theta
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "CompEuler", "theta", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Benchmark: CompEuler/3d"
+        id: compeuler_3d
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "CompEuler", "3d", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Benchmark: CompEuler/wave1d"
+        id: compeuler_wave1d
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "CompEuler", "wave1d", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Benchmark: Burgers/case1"
+        id: burgers_case1
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "Burgers", "case1", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Benchmark: Burgers/case2d"
+        id: burgers_case2d
+        continue-on-error: true
+        timeout-minutes: 30
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "Burgers", "case2d", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Benchmark: Elliptic/2dlaplace"
+        id: elliptic_2dlaplace
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "Elliptic", "2dlaplace", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Benchmark: ShallowWater/TC2"
+        id: shallowwater_tc2
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "ShallowWater", "TC2", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      # -----------------------------------------------------------------------
+      # Write a markdown summary table visible on the workflow run page.
+      # -----------------------------------------------------------------------
+      - name: Benchmark report
+        if: always()
+        run: |
+          icon() { [ "$1" = "success" ] && echo "✅ Pass" || echo "❌ Fail"; }
+
+          {
+            echo "## Classical Benchmark Results"
+            echo ""
+            echo "| Benchmark | Result |"
+            echo "|-----------|--------|"
+            echo "| CompEuler/theta    | $(icon '${{ steps.compeuler_theta.outcome }}') |"
+            echo "| CompEuler/3d       | $(icon '${{ steps.compeuler_3d.outcome }}') |"
+            echo "| CompEuler/wave1d   | $(icon '${{ steps.compeuler_wave1d.outcome }}') |"
+            echo "| Burgers/case1      | $(icon '${{ steps.burgers_case1.outcome }}') |"
+            echo "| Burgers/case2d     | $(icon '${{ steps.burgers_case2d.outcome }}') |"
+            echo "| Elliptic/2dlaplace | $(icon '${{ steps.elliptic_2dlaplace.outcome }}') |"
+            echo "| ShallowWater/TC2   | $(icon '${{ steps.shallowwater_tc2.outcome }}') |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # -----------------------------------------------------------------------
+      # Fail the overall job if any individual benchmark failed.
+      # -----------------------------------------------------------------------
+      - name: Fail if any benchmark failed
+        if: always()
+        run: |
+          outcomes=(
+            "${{ steps.compeuler_theta.outcome }}"
+            "${{ steps.compeuler_3d.outcome }}"
+            "${{ steps.compeuler_wave1d.outcome }}"
+            "${{ steps.burgers_case1.outcome }}"
+            "${{ steps.burgers_case2d.outcome }}"
+            "${{ steps.elliptic_2dlaplace.outcome }}"
+            "${{ steps.shallowwater_tc2.outcome }}"
+          )
+          failed=0
+          for o in "${outcomes[@]}"; do
+            [ "$o" = "failure" ] && failed=1
+          done
+          if [ $failed -eq 1 ]; then
+            echo "One or more benchmarks failed. See the report above for details."
+            exit 1
+          fi
+          echo "All benchmarks passed."
