@@ -1,5 +1,5 @@
 module JeGeometry
-__precompile__(false)
+#__precompile__(false)
 using Gridap
 using Gridap.Arrays
 using Gridap.Arrays: Table

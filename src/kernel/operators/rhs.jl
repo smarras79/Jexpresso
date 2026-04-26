@@ -631,9 +631,11 @@ function _build_rhs!(RHS, u, params, time)
     if (params.inputs[:lvisc] == true)
 
         resetRHSToZero_viscous!(params, SD)
-
-       @trixi_timeit timer() "viscous_rhs_el!" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
-
+        
+        Main.debug[] = (; u, params, connijk = params.mesh.connijk, qe = params.qp.qe, SD)
+        error()
+        @trixi_timeit timer() "viscous_rhs_el!" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+        
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
                                params.mesh.non_conforming_facets,
