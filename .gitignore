@@ -8,6 +8,5 @@ LocalPreferences.toml
 ./meshes
 *.pvtu
 *.vtu
-runjexpresso
 meshes
 mesh.log
