@@ -776,29 +776,29 @@ end
 
 
 # Alternative version with pre-computed element matrices for better performance
-function DSS_laplace_sparse(mesh, Lel)
+function DSS_laplace_sparse(mesh, Lel::AbstractArray{T,5}) where {T}
 
     # Pre-allocate arrays for triplet format
     # Estimate size: ngl^2 entries per element * number of elements
     max_entries = mesh.ngl^2 * mesh.ngl^2 * mesh.nelem
-    
+
     I_vec = Vector{Int}()
     J_vec = Vector{Int}()
     V_vec = Vector{Float64}()
-    
+
     # Reserve space to avoid frequent reallocations
     sizehint!(I_vec, max_entries)
     sizehint!(J_vec, max_entries)
     sizehint!(V_vec, max_entries)
-    
+
     # Assembly loop
     for iel = 1:mesh.nelem
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             JP = mesh.connijk[iel, i, j]
-            
+
             for n = 1:mesh.ngl, m = 1:mesh.ngl
                 IP = mesh.connijk[iel, m, n]
-                
+
                 val = Lel[iel, m, n, i, j]
                 if abs(val) > eps(Float64)  # Skip near-zero entries
                     push!(I_vec, IP)
@@ -808,8 +808,42 @@ function DSS_laplace_sparse(mesh, Lel)
             end
         end
     end
-    
+
     # Create sparse matrix and sum duplicate entries automatically
+    return sparse(I_vec, J_vec, V_vec)
+end
+
+# 1D variant: build_laplace_matrix(::NSD_1D, ...) returns Lel[i, j, iel]
+# and the 1D mesh stores connijk as (nelem, ngl, 1, 1).
+function DSS_laplace_sparse(mesh, Lel::AbstractArray{T,3}) where {T}
+
+    max_entries = mesh.ngl^2 * mesh.nelem
+
+    I_vec = Vector{Int}()
+    J_vec = Vector{Int}()
+    V_vec = Vector{Float64}()
+
+    sizehint!(I_vec, max_entries)
+    sizehint!(J_vec, max_entries)
+    sizehint!(V_vec, max_entries)
+
+    for iel = 1:mesh.nelem
+        for j = 1:mesh.ngl
+            JP = mesh.connijk[iel, j, 1, 1]
+
+            for i = 1:mesh.ngl
+                IP = mesh.connijk[iel, i, 1, 1]
+
+                val = Lel[i, j, iel]
+                if abs(val) > eps(Float64)
+                    push!(I_vec, IP)
+                    push!(J_vec, JP)
+                    push!(V_vec, val)
+                end
+            end
+        end
+    end
+
     return sparse(I_vec, J_vec, V_vec)
 end
 
