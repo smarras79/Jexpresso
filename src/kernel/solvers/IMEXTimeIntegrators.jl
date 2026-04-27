@@ -441,7 +441,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 #------------------------------------------------------------------------
                 rhs = construct_rhs(inputs, params, u, U_stages, t_n, i_stages)
                 # Apply bcs to rhs and L
-                bcs_fun!(rhs, L_curr, time, params, sem, qp)
+                bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
 
                 # construct vector containing non-linear residual
                 nonl_res = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
@@ -494,13 +494,13 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                     # Updating L_curr
                     #------------------------------------------------------------------------
                     if delta == 1 && upd_L
-                            L_curr = L_update(U_stages[i_stages], time, A_RK_tilde[i, i])
+                            L_curr = L_update(U_stages[i_stages], time_tilde, A_RK_tilde[i_stages, i_stages])
                             if L_storage !== nothing
                                 update_stored_matrix!(L_storage, L_curr)
                             end
 
                             # Apply bcs to rhs and L
-                            bcs_fun!(rhs, L_curr, time, params, sem, qp)
+                            bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
                     end
 
                     nonl_res .= rhs - L_curr * U_stages[i_stages]

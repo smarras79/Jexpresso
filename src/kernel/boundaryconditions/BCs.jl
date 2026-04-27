@@ -337,7 +337,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz,
             L[ip,ip] = 1.0
             RHS[ip] = 0.0
         end
-        
+
         for e=1:nelem_semi_inf
             for i=1:ngl
                 ip = connijk_lag[e, i, ngr]
@@ -349,7 +349,37 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz,
             end
         end
     end
-    
+
+end
+
+
+function build_custom_bcs_lin_solve!(::NSD_1D, t, x, y, z, nx, ny, nz,
+                                     npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                     ngl, ngr, nelem_semi_inf, ω,
+                                     xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
+                                     connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
+                                     neqs, dirichlet!, neumann, inputs)
+
+    # Periodic 1D: connijk already identifies the first and last node,
+    # so the assembled L is implicitly periodic and no row modification is needed.
+    if get(inputs, :lperiodic_1d, false)
+        return nothing
+    end
+
+    for ip in (1, npoin_linear)
+        fill!(qbdy, 4325789.0)
+        user_bc_dirichlet!(@view(RHS[ip,:]), x[ip], t,
+                           ip == 1 ? "left" : "right",
+                           qbdy, @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
+
+        for ip1 = 1:npoin
+            L[ip, ip1] = 0.0
+        end
+        L[ip, ip] = 1.0
+        for ieq = 1:neqs
+            RHS[ip, ieq] = qbdy[ieq]
+        end
+    end
 end
 
 
