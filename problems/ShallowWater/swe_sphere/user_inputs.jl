@@ -1,15 +1,7 @@
 function user_inputs()
-
-    inputs = Dict(
-        #---------------------------------------------------------------------------
-        # SWE on the sphere -- stub case.
-        # Equations, mesh, BCs, source, and initialization are not implemented yet.
-        # This file exists so the case is registered and the problem boots.
-        #---------------------------------------------------------------------------
-        :case          => "swe_sphere",
-        :SOL_VARS_TYPE => TOTAL(),
-        :nimplemented  => true,
-    )
-
-    return inputs
+    # SWE on the sphere -- stub case. Bail out before the framework asks for
+    # a mesh / SEM setup / initial condition. Replace with a real Dict once
+    # the equations, mesh, BCs, source, and initialization are wired up.
+    println("swe_sphere: not implemented yet")
+    exit(0)
 end
