@@ -160,6 +160,8 @@ include(joinpath( "kernel", "solvers", "Axb.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
+include(joinpath( "kernel", "solvers", "IMEX_ARS.jl"))
+
 include(joinpath( "io", "mod_inputs.jl"))
 
 include(joinpath( "io", "mod_print_io.jl"))

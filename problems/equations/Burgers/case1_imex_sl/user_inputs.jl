@@ -160,9 +160,9 @@ function user_inputs()
         # The implicit split removes the parabolic Δt ∝ Δx² restriction and lets
         # the step size follow the (much milder) advective CFL condition.
         #---------------------------------------------------------------------------
-#        :ode_solver           => IMEX_ARS232(),
+        #:ode_solver           => IMEX_ARS232(),
         :tend                 => 1.0,
-        :Δt                   => 2.0e-3,
+        :Δt                   => 2.0e-4,
         :diagnostics_at_times => (0.1:0.1:1.0),
         :output_dir           => "./",
         #---------------------------------------------------------------------------
@@ -210,7 +210,7 @@ function user_inputs()
         # IMEX method
         #---------------------------------------------------------------------------
         :method             => "RK",
-        :delta              => 1,
+        :delta              => 0,
         :k                  => 3,
         :coeff              => Dict(
                                    # IMEX RK
