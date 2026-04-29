@@ -73,6 +73,32 @@ function params_setup(sem,
     else
         viscsgs = allocate_visc(sem.mesh.SD, 1, 1, 1, T, backend; neqs=1)
     end
+
+    #------------------------------------------------------------------------------------
+    # Incompressible Navier-Stokes (vorticity-stream function) auxiliary arrays
+    #------------------------------------------------------------------------------------
+    poisson_struct = allocate_poisson(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    poisson        = poisson_struct.poisson
+
+    F_data_struct  = allocate_F_data(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    F_data         = F_data_struct.F_data
+
+    number_struct  = allocate_number(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    number         = number_struct.number
+
+    rhs_p_struct   = allocate_rhs_p(sem.mesh.SD,
+                                    sem.mesh.nelem,
+                                    sem.mesh.npoin,
+                                    sem.mesh.ngl,
+                                    T, backend, inputs[:l_incompressible]; neqs=1)
+    RHS_p              = rhs_p_struct.RHS_p
+    rhs_el_p           = rhs_p_struct.rhs_el_p
+    rhs_laplacian_el_p = rhs_p_struct.rhs_laplacian_el_p
+    RHS_laplacian_p    = rhs_p_struct.RHS_laplacian_p
+
+    segment_p_struct = allocate_segment_p(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    seg_p            = segment_p_struct.seg_p
+
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
@@ -353,7 +379,9 @@ function params_setup(sem,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
-                  timers)
+                  timers,
+                  poisson, F_data, number,
+                  RHS_p, rhs_el_p, rhs_laplacian_el_p, RHS_laplacian_p, seg_p)
         
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -387,6 +415,8 @@ function params_setup(sem,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
                   timers,
+                  poisson, F_data, number,
+                  RHS_p, rhs_el_p, rhs_laplacian_el_p, RHS_laplacian_p, seg_p,
                   sem.interp, sem.project, sem.nparts, sem.distribute)
     end
 

@@ -126,6 +126,8 @@ include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
 include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
 
+include(joinpath( "kernel", "physics", "incompressible.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))

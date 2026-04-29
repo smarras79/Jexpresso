@@ -537,20 +537,33 @@ function _build_rhs!(RHS, u, params, time)
     end
     
     resetbdyfluxToZero!(params)
-    apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-                                         params.mesh.coords,
-                                         params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                         params.mesh.npoin, params.mesh.npoin_linear, 
-                                         params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                         params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
-                                         params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                                         xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                                         params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
-                                         params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                         params.mesh.connijk, params.metrics.Jef, params.S_face, 
-                                         params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                         params.mp.Tabs, params.mp.qn,
-                                         params.ω, neqs, params.inputs, AD, SD)
+
+    if (inputs[:l_incompressible] && inputs[:l_vort_stream] && "LID" in params.mesh.bdy_edge_type)
+
+        params.number[1,1] = params.number[1,1] + 1
+
+        compute_boundary(params, @view(params.poisson[:,1]), u, time,
+                         params.metrics.nx, params.metrics.ny,
+                         params.mesh.x, params.mesh.y,
+                         params.mesh.connijk,
+                         params.metrics.dxdξ, params.metrics.dydξ,
+                         params.metrics.dxdη, params.metrics.dydη)
+    else
+        apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+                                             params.mesh.coords,
+                                             params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                             params.mesh.npoin, params.mesh.npoin_linear,
+                                             params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                             params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
+                                             params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                             xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                             params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                             params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                             params.mesh.connijk, params.metrics.Jef, params.S_face,
+                                             params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                             params.mp.Tabs, params.mp.qn,
+                                             params.ω, neqs, params.inputs, AD, SD)
+    end
     
     if (params.inputs[:lmoist])
         
@@ -804,6 +817,10 @@ function inviscid_rhs_el!(u, params,
 
     lkep = inputs[:lkep]
 
+    if (params.inputs[:l_incompressible] && params.inputs[:l_vort_stream])
+        compute_∇ψ!(params, connijk, params.mesh.x, params.mesh.y, @view(params.F_data[:,:]))
+    end
+
     for iel = 1:nelem
 
         for j = 1:ngl, i=1:ngl
@@ -818,6 +835,13 @@ function inviscid_rhs_el!(u, params,
                               @view(params.uaux[ip,:]),
                               params.SOL_VARS_TYPE,
                               params.volume_flux)
+            elseif (params.inputs[:l_incompressible] && params.inputs[:l_vort_stream])
+                user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
+                           @view(params.uaux[ip,:]),
+                           @view(qe[ip,:]),
+                           params.mesh,
+                           params.CL, params.SOL_VARS_TYPE;
+                           neqs=params.neqs, ip=ip, ∇ψ = params.F_data[ip,:])
             else
                 user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                            @view(params.uaux[ip,:]),
