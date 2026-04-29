@@ -438,30 +438,28 @@ end
 # Element Laplace matrix
 #
 function build_laplace_matrix(SD::NSD_1D, ψ, dψ, ω, mesh, metrics, N, Q, T)
-    
+
     MN = N + 1
     QN = Q + 1
-    
-    L = zeros(MN, MN, mesh.nelem)
-    for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2.0
+
+    L = zeros(T, MN, MN, mesh.nelem)
+    for iel = 1:mesh.nelem
+        Jac  = mesh.Δx[iel]/2.0
         dξdx = 2.0/mesh.Δx[iel]
-        
+
         for k = 1:QN
             ωJk = ω[k]*Jac
-            
-            for i = 1:MN, j = 1:MN
 
-                dψik_dx = dψ[i,k]
-                dψjk_dx = dψ[j,k]
-                
-                L[i,j,iel] -= ωJk*(dψik_dx*dψjk_dx)*dξdx
+            for i = 1:MN, j = 1:MN
+                # dψ[i,k] is (dψ_i/dξ)(ξ_k); convert to physical-space gradient.
+                dψik_dx = dψ[i,k]*dξdx
+                dψjk_dx = dψ[j,k]*dξdx
+
+                L[i,j,iel] -= ωJk*dψik_dx*dψjk_dx
             end
         end
     end
-    #@info size(L)
-    #show(stdout, "text/plain", L)
-    
+
     return L
 end
 

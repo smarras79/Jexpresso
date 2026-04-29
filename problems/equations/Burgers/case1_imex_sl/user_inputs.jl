@@ -76,88 +76,25 @@ function lsolve(L_curr, b)
     return x
 end
 
-
-function build_stiff_1d(mesh, basis, ω)
-    ngl   = mesh.ngl
-    nelem = mesh.nelem
-    npoin = mesh.npoin
-
-    M = zeros(Float64, npoin)
-
-    I_vec = Int[]
-    J_vec = Int[]
-    V_vec = Float64[]
-    sizehint!(I_vec, ngl*ngl*nelem)
-    sizehint!(J_vec, ngl*ngl*nelem)
-    sizehint!(V_vec, ngl*ngl*nelem)
-
-    dψ = basis.dψ  # dψ[i,k] = (dψ_i/dξ)(ξ_k)
-
-    for iel = 1:nelem
-        Jac  = mesh.Δx[iel]/2.0     # dx/dξ
-        dξdx = 1.0/Jac              # dξ/dx
-
-        # Diagonal mass (inexact LGL: ψ_i(ξ_k) = δ_{ik})
-        for i = 1:ngl
-            ip = mesh.connijk[iel, i, 1]
-            M[ip] += ω[i] * Jac
-        end
-
-        # Local stiffness Kᵉ[i,j] = Σ_k ω_k (dψ_i/dx)(ξ_k)(dψ_j/dx)(ξ_k) * Jac
-        #                         = dξdx * Σ_k ω_k dψ[i,k] dψ[j,k]
-        for j = 1:ngl, i = 1:ngl
-            kij = 0.0
-            for k = 1:ngl
-                kij += ω[k] * dψ[i,k] * dψ[j,k]
-            end
-            kij *= dξdx   # ω_k * (1/J) factor; the two dξdx and Jac combine to 1/J
-
-            ip = mesh.connijk[iel, i, 1]
-            jp = mesh.connijk[iel, j, 1]
-            push!(I_vec, ip); push!(J_vec, jp); push!(V_vec, kij)
-        end
-    end
-
-    K = sparse(I_vec, J_vec, V_vec, npoin, npoin)
-    return M, K
-end
-
-
-
-    # Fast waves operator
+    # Fast waves operator: l_j = μ M⁻¹ Δ u, assembled with Jexpresso's native
+    # element-matrix infrastructure (build_laplace_matrix + DSS_laplace_sparse).
     function L_fun!(l_j, u, time, params)
-        SD    = params.SD
-        QT    = params.QT
-        AD    = params.AD
-        neqs  = params.neqs
-        ngl   = params.mesh.ngl
-        nelem = params.mesh.nelem
+        SD      = params.SD
+        basis   = params.basis
+        ω       = params.ω
+        mesh    = params.mesh
+        metrics = params.metrics
+        μ       = 0.01
+        N       = nop
+        Q       = N
 
-        resetRHSToZero_viscous!(params, SD)
-        
-        viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
-        
-        # @info "start DSS_rhs_viscous"
-        if inputs[:ladapt] == true
-            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                               params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
-        end
-        DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics,
+                                  N, Q, TFloat)
+        L  = DSS_laplace_sparse(mesh, Le)
 
-        DSS_global_RHS!(@view(params.RHS_visc[:,:]), params.pM, params.neqs)
-
-#        l_j .= params.RHS_visc
-
-
-    mesh   = params.mesh
-    basis  = params.basis
-    ω      = params.ω
-    M, K = build_stiff_1d(mesh, basis, ω)
-    Minv = 1.0 ./ M
-    mul!(l_j, K, u)
-    μ = 0.01
-    l_j .= - μ * (Minv .* l_j)
-
+        Minv = params.Minv
+        mul!(l_j, L, u)
+        l_j .= μ * (Minv .* l_j)
     end
 
     # Bcs application
@@ -182,36 +119,24 @@ end
                                              params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
     end
 
-    # Building fast waves operator
+    # Building fast waves operator: μ M⁻¹ Δ, assembled with the native
+    # Jexpresso element-matrix infrastructure.
     function build_L(u, time, params)
-        SD         = params.SD
-        basis      = params.basis
-        ω          = params.ω
-        mesh       = params.mesh
-        metrics    = params.metrics
-        μ          = 0.01
-        N          = nop
-        Q          = N
-        backend    = CPU()
-
-        Le = KernelAbstractions.zeros(backend, TFloat, 1, 1)
-        L  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        SD      = params.SD
+        basis   = params.basis
+        ω       = params.ω
+        mesh    = params.mesh
+        metrics = params.metrics
+        μ       = 0.01
+        N       = nop
+        Q       = N
 
         Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics,
                                   N, Q, TFloat)
+        L  = DSS_laplace_sparse(mesh, Le)
 
-        L = DSS_laplace_sparse(mesh, Le)
-
-
-    mesh   = params.mesh
-    basis  = params.basis
-    ω      = params.ω
-    M, K = build_stiff_1d(mesh, basis, ω)
-    Minv = 1.0 ./ M
-
-        L = - μ * (Minv .* K)
-        
-        return L
+        Minv = params.Minv
+        return μ * (Minv .* L)
     end
 
     inputs = Dict(
