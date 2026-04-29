@@ -109,7 +109,7 @@ function user_inputs()
 
     # Bcs application
     function bcs_fun!(u, L, time, params, sem, qp)
-        apply_boundary_conditions_lin_solve!(L, time, params.qp.qe,
+     #=   apply_boundary_conditions_lin_solve!(L, time, params.qp.qe,
                                              params.mesh.x, params.mesh.y, params.mesh.z,
                                              params.metrics.nx,
                                              params.metrics.ny,
@@ -126,7 +126,8 @@ function user_inputs()
                                              u, 0.0, params.ubdy,
                                              params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
                                              params.mesh.bdy_edge_type,
-                                             params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
+        params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
+        =#
     end
 
     # Building fast waves operator: -μ M⁻¹ K, assembled with the native
