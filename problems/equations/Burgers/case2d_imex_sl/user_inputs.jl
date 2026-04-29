@@ -71,29 +71,40 @@ function user_inputs()
         s_j .= params.RHS
     end
 
-    # Fast waves operator
-    function L_fun!(l_j, u, time, params)
-        SD    = params.SD
-        QT    = params.QT
-        AD    = params.AD
-        neqs  = params.neqs
-        ngl   = params.mesh.ngl
-        nelem = params.mesh.nelem
+    # The implicit operator -μ M⁻¹ K (K = positive 2D Galerkin stiffness)
+    # is linear and time-independent, so build_laplace_matrix +
+    # DSS_laplace_sparse only needs to run once. Cache the assembled
+    # sparse operator in the closure so build_L and L_fun! avoid
+    # re-assembling on every IMEX stage.
+    L_cache = Ref{Any}(nothing)
 
-        resetRHSToZero_viscous!(params, SD)
-        
-        viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
-        
-        # @info "start DSS_rhs_viscous"
-        if inputs[:ladapt] == true
-            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                               params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+    function _imex_L(params)
+        if L_cache[] === nothing
+            SD      = params.SD
+            basis   = params.basis
+            ω       = params.ω
+            mesh    = params.mesh
+            metrics = params.metrics
+            μ       = 1.0e-2
+            N       = nop
+            Q       = N
+
+            Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem,
+                                      mesh, metrics, N, Q, TFloat)
+            L_global = DSS_laplace_sparse(mesh, Le)
+            Minv = params.Minv
+            # NSD_2D build_laplace_matrix returns the positive stiffness K,
+            # so the diffusion operator ν Δ ↦ -μ M⁻¹ K picks up a minus sign
+            # (in 1D the native function returns -K, hence the opposite
+            # sign in case1_imex_sl).
+            L_cache[] = -μ * (Minv .* L_global)
         end
-        DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+        return L_cache[]
+    end
 
-        DSS_global_RHS!(@view(params.RHS_visc[:,:]), params.pM, params.neqs)
-
-        l_j .= params.RHS_visc
+    # Fast waves operator: l_j = -μ M⁻¹ K u, applied via cached sparse mul!.
+    function L_fun!(l_j, u, time, params)
+        mul!(l_j, _imex_L(params), u)
     end
 
     # Bcs application
@@ -103,7 +114,7 @@ function user_inputs()
                                              params.metrics.nx,
                                              params.metrics.ny,
                                              params.metrics.nz,
-                                             sem.mesh.npoin, params.mesh.npoin_linear, 
+                                             sem.mesh.npoin, params.mesh.npoin_linear,
                                              params.mesh.poin_in_bdy_edge,
                                              params.mesh.poin_in_bdy_face,
                                              params.mesh.nedges_bdy,
@@ -118,28 +129,10 @@ function user_inputs()
                                              params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
     end
 
-    # Building fast waves operator
+    # Building fast waves operator: -μ M⁻¹ K, assembled with the native
+    # Jexpresso element-matrix infrastructure. Returns the cached operator.
     function build_L(u, time, params)
-        SD         = params.SD
-        basis      = params.basis
-        ω          = params.ω
-        mesh       = params.mesh
-        metrics    = params.metrics
-        μ          = 1.0e-2
-        N          = nop
-        Q          = N
-        backend    = CPU()
-
-        Le = KernelAbstractions.zeros(backend, TFloat, 1, 1)
-        L  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
-
-        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics,
-                                  N, Q, TFloat)
-
-        L = DSS_laplace_sparse(mesh, Le)
-        L = - μ * L
-        
-        return L
+        return _imex_L(params)
     end
 
     inputs = Dict(
