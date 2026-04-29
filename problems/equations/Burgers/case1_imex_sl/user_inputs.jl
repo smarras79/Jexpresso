@@ -71,6 +71,59 @@ function user_inputs()
         s_j .= params.RHS
     end
 
+function lsolve(L_curr, b)
+    x = L_curr \ b
+    return x
+end
+
+
+function build_stiff_1d(mesh, basis, ω)
+    ngl   = mesh.ngl
+    nelem = mesh.nelem
+    npoin = mesh.npoin
+
+    M = zeros(Float64, npoin)
+
+    I_vec = Int[]
+    J_vec = Int[]
+    V_vec = Float64[]
+    sizehint!(I_vec, ngl*ngl*nelem)
+    sizehint!(J_vec, ngl*ngl*nelem)
+    sizehint!(V_vec, ngl*ngl*nelem)
+
+    dψ = basis.dψ  # dψ[i,k] = (dψ_i/dξ)(ξ_k)
+
+    for iel = 1:nelem
+        Jac  = mesh.Δx[iel]/2.0     # dx/dξ
+        dξdx = 1.0/Jac              # dξ/dx
+
+        # Diagonal mass (inexact LGL: ψ_i(ξ_k) = δ_{ik})
+        for i = 1:ngl
+            ip = mesh.connijk[iel, i, 1]
+            M[ip] += ω[i] * Jac
+        end
+
+        # Local stiffness Kᵉ[i,j] = Σ_k ω_k (dψ_i/dx)(ξ_k)(dψ_j/dx)(ξ_k) * Jac
+        #                         = dξdx * Σ_k ω_k dψ[i,k] dψ[j,k]
+        for j = 1:ngl, i = 1:ngl
+            kij = 0.0
+            for k = 1:ngl
+                kij += ω[k] * dψ[i,k] * dψ[j,k]
+            end
+            kij *= dξdx   # ω_k * (1/J) factor; the two dξdx and Jac combine to 1/J
+
+            ip = mesh.connijk[iel, i, 1]
+            jp = mesh.connijk[iel, j, 1]
+            push!(I_vec, ip); push!(J_vec, jp); push!(V_vec, kij)
+        end
+    end
+
+    K = sparse(I_vec, J_vec, V_vec, npoin, npoin)
+    return M, K
+end
+
+
+
     # Fast waves operator
     function L_fun!(l_j, u, time, params)
         SD    = params.SD
@@ -93,29 +146,23 @@ function user_inputs()
 
         DSS_global_RHS!(@view(params.RHS_visc[:,:]), params.pM, params.neqs)
 
-        l_j .= params.RHS_visc
+#        l_j .= params.RHS_visc
+
+
+    mesh   = params.mesh
+    basis  = params.basis
+    ω      = params.ω
+    M, K = build_stiff_1d(mesh, basis, ω)
+    Minv = 1.0 ./ M
+    mul!(l_j, K, u)
+    μ = 0.01
+    l_j .= - μ * (Minv .* l_j)
+
     end
 
     # Bcs application
     function bcs_fun!(u, L, time, params, sem, qp)
-        apply_boundary_conditions_lin_solve!(L, time, params.qp.qe,
-                                             params.mesh.x, params.mesh.y, params.mesh.z,
-                                             params.metrics.nx,
-                                             params.metrics.ny,
-                                             params.metrics.nz,
-                                             sem.mesh.npoin, params.mesh.npoin_linear, 
-                                             params.mesh.poin_in_bdy_edge,
-                                             params.mesh.poin_in_bdy_face,
-                                             params.mesh.nedges_bdy,
-                                             params.mesh.nfaces_bdy,
-                                             params.mesh.ngl, params.mesh.ngr,
-                                             params.mesh.nelem_semi_inf,
-                                             params.basis.ψ, params.basis.dψ,
-                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                             u, 0.0, params.ubdy,
-                                             params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
-                                             params.mesh.bdy_edge_type,
-                                             params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
+        # do nothing
     end
 
     # Building fast waves operator
@@ -125,7 +172,7 @@ function user_inputs()
         ω          = params.ω
         mesh       = params.mesh
         metrics    = params.metrics
-        visc_coeff = params.visc_coeff
+        μ          = 0.01
         N          = nop
         Q          = N
         backend    = CPU()
@@ -137,7 +184,15 @@ function user_inputs()
                                   N, Q, TFloat)
 
         L = DSS_laplace_sparse(mesh, Le)
-        L = - visc_coeff[1] * L
+
+
+    mesh   = params.mesh
+    basis  = params.basis
+    ω      = params.ω
+    M, K = build_stiff_1d(mesh, basis, ω)
+    Minv = 1.0 ./ M
+
+        L = - μ * (Minv .* K)
         
         return L
     end
@@ -162,7 +217,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #:ode_solver           => IMEX_ARS232(),
         :tend                 => 1.0,
-        :Δt                   => 2.0e-4,
+        :Δt                   => 5.0e-3,
         :diagnostics_at_times => (0.1:0.1:1.0),
         :output_dir           => "./",
         #---------------------------------------------------------------------------
@@ -210,7 +265,7 @@ function user_inputs()
         # IMEX method
         #---------------------------------------------------------------------------
         :method             => "RK",
-        :delta              => 0,
+        :delta              => 1,
         :k                  => 3,
         :coeff              => Dict(
                                    # IMEX RK
@@ -229,6 +284,7 @@ function user_inputs()
         :bcs_fun            => bcs_fun!,
         :upd_L              => false,
         :build_L            => build_L,
+        :lsolve             => lsolve,
         #---------------------------------------------------------------------------
         # Matrix storage for the IMEX implicit operator
         #   :matrix_free  - (default) rebuild L and the preconditioner on demand

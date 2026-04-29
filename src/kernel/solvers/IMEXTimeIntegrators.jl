@@ -15,6 +15,12 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
     # Linear solver
     haskey(inputs, :lsolve) ? lsolve = inputs[:lsolve] : lsolve = nothing
+    haskey(inputs, :solver_precision) ? solver_precision = inputs[:solver_precision] : solver_precision = Float64
+    haskey(inputs, :prec_sp) ? prec_sp = inputs[:prec_sp] : prec_sp = Dict(:maxiter      => 1,
+                                                                           :abstol       => 1e-8,
+                                                                           :precision    => Float64,
+                                                                           :prec_type    => "AMG",
+                                                                           )
     # Solver parameters
     if lsolve == nothing
         haskey(inputs, :sp) ? solver_parameters = inputs[:sp] : solver_parameters = nothing
@@ -25,14 +31,6 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         (solver_parameters != nothing && haskey(solver_parameters, :itmax)) ? itmax = solver_parameters[:itmax] : itmax = 100
         (solver_parameters != nothing && haskey(solver_parameters, :verbose)) ? verbose = solver_parameters[:verbose] : verbose = 1
         (solver_parameters != nothing && haskey(solver_parameters, :prec)) ? prec = solver_parameters[:prec] : prec = SmoothedAggregationPreconBuilder()
-
-        haskey(inputs, :solver_precision) ? solver_precision = inputs[:solver_precision] : solver_precision = Float64
-
-        haskey(inputs, :prec_sp) ? prec_sp = inputs[:prec_sp] : prec_sp = Dict(:maxiter      => 1,
-                                                                               :abstol       => 1e-8,
-                                                                               :precision    => Float64,
-                                                                               :prec_type    => "AMG",
-                                                                               )
     end
 
     # Non-linear parameters

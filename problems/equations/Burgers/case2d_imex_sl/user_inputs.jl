@@ -125,7 +125,7 @@ function user_inputs()
         ω          = params.ω
         mesh       = params.mesh
         metrics    = params.metrics
-        visc_coeff = params.visc_coeff
+        μ          = 1.0e-2
         N          = nop
         Q          = N
         backend    = CPU()
@@ -137,7 +137,7 @@ function user_inputs()
                                   N, Q, TFloat)
 
         L = DSS_laplace_sparse(mesh, Le)
-        L = - visc_coeff[1] * L
+        L = - μ * L
         
         return L
     end
@@ -173,7 +173,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
 #        :ode_solver           => IMEX_ARS232(),
         :tend                 => 0.5,
-        :Δt                   => 1.0e-3,
+        :Δt                   => 1.0e-4,
         :diagnostics_at_times => (0.05:0.05:0.5),
         :output_dir           => "./",
         #---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ function user_inputs()
         # IMEX method
         #---------------------------------------------------------------------------
         :method             => "RK",
-        :delta              => 1,
+        :delta              => 0,
         :k                  => 3,
         :coeff              => Dict(
                                    # IMEX RK
