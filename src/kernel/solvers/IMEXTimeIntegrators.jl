@@ -209,6 +209,32 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         return rhs
     end
 
+    # Runge-Kutta, in-place variant. Reuses caller-supplied buffers `rhs`,
+    # `s_j`, `l_j` so we don't allocate a fresh state vector for every
+    # stage / nonlinear iteration.
+    function construct_rhs_rk!(rhs, s_j, l_j, params, u_prev, U_stages, t_n, i)
+        copyto!(rhs, u_prev)
+
+        for j_stages = 1 : i - 1
+            fill!(s_j, zero(eltype(s_j)))
+            time = t_n + c_RK[j_stages] * Δt
+            S_fun!(s_j, U_stages[j_stages], time, params, sem)
+
+            if delta == 1
+                fill!(l_j, zero(eltype(l_j)))
+                L_fun!(l_j, U_stages[j_stages], time, params)
+                α = Δt * A_RK[i, j_stages]
+                β = Δt * (A_RK_tilde[i, j_stages] - A_RK[i, j_stages])
+                @. rhs += α * s_j + β * l_j
+            else
+                α = Δt * A_RK[i, j_stages]
+                @. rhs += α * s_j
+            end
+        end
+
+        return rhs
+    end
+
 
     #------------------------------------------------------------------------
     # Construct L
@@ -413,6 +439,16 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         end
     elseif method == "RK"
         #------------------------------------------------------------------------
+        # Pre-allocated work buffers reused across every time step / RK stage
+        # / nonlinear iteration. This keeps the hot loops allocation-free.
+        #------------------------------------------------------------------------
+        rhs_buf      = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+        s_j_buf      = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+        l_j_buf      = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+        nonl_res_buf = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+        Lu_buf       = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+
+        #------------------------------------------------------------------------
         # Simulation
         #------------------------------------------------------------------------
         while (abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend])
@@ -436,15 +472,16 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 end
 
                 #------------------------------------------------------------------------
-                # Building rhs
+                # Building rhs (in-place into rhs_buf, reusing s_j_buf / l_j_buf)
                 #------------------------------------------------------------------------
-                rhs = construct_rhs(inputs, params, u, U_stages, t_n, i_stages)
+                rhs = construct_rhs_rk!(rhs_buf, s_j_buf, l_j_buf,
+                                        params, u, U_stages, t_n, i_stages)
                 # Apply bcs to rhs and L
                 bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
 
                 # construct vector containing non-linear residual
-                nonl_res = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
-                nonl_res .= rhs
+                nonl_res = nonl_res_buf
+                copyto!(nonl_res, rhs)
 
                 nl_norm_0 = norm(nonl_res)
                 nl_norm_k = nl_norm_0
@@ -487,7 +524,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                     end
                     @info "Solving linear system... DONE"
 
-                    U_stages[i_stages] += x
+                    U_stages[i_stages] .+= x
 
                     #------------------------------------------------------------------------
                     # Updating L_curr
@@ -502,7 +539,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                             bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
                     end
 
-                    nonl_res .= rhs - L_curr * U_stages[i_stages]
+                    # nonl_res = rhs - L_curr * U_stages[i_stages]
+                    mul!(Lu_buf, L_curr, U_stages[i_stages])
+                    @. nonl_res = rhs - Lu_buf
                     nl_norm_k = norm(nonl_res)
 
                     nl_iter += 1
@@ -512,12 +551,12 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 #------------------------------------------------------------------------
             end
 
-            # Update solution
+            # Update solution: u += Σ_i Δt b_RK[i] S(U_i)
             for i_stages = 1 : k
-                s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+                fill!(s_j_buf, zero(eltype(s_j_buf)))
                 time = t_n + c_RK[i_stages] * Δt
-                S_fun!(s_j, U_stages[i_stages], time, params, sem)
-                u += Δt * b_RK[i_stages] * s_j
+                S_fun!(s_j_buf, U_stages[i_stages], time, params, sem)
+                axpy!(Δt * b_RK[i_stages], s_j_buf, u)
             end
 
             t_n += Δt
@@ -532,9 +571,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                          inputs[:outformat];
                          nvar=params.qp.neqs, qexact=params.qp.qe)
 
-            # Initialize stages
+            # Reset stage buffers for the next step
             for j_stages = 1 : k
-                U_stages[j_stages] = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+                fill!(U_stages[j_stages], zero(eltype(U_stages[j_stages])))
             end
         end
     end

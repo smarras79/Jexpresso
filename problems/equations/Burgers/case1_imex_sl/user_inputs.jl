@@ -76,25 +76,35 @@ function lsolve(L_curr, b)
     return x
 end
 
-    # Fast waves operator: l_j = μ M⁻¹ Δ u, assembled with Jexpresso's native
-    # element-matrix infrastructure (build_laplace_matrix + DSS_laplace_sparse).
+    # The implicit operator μ M⁻¹ Δ is linear and time-independent, so
+    # build_laplace_matrix + DSS_laplace_sparse only needs to run once.
+    # Cache the assembled sparse operator in the closure so build_L and
+    # L_fun! avoid re-assembling on every IMEX stage.
+    L_cache = Ref{Any}(nothing)
+
+    function _imex_L(params)
+        if L_cache[] === nothing
+            SD      = params.SD
+            basis   = params.basis
+            ω       = params.ω
+            mesh    = params.mesh
+            metrics = params.metrics
+            μ       = 0.01
+            N       = nop
+            Q       = N
+
+            Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics,
+                                      N, Q, TFloat)
+            L_global = DSS_laplace_sparse(mesh, Le)
+            Minv = params.Minv
+            L_cache[] = μ * (Minv .* L_global)
+        end
+        return L_cache[]
+    end
+
+    # Fast waves operator: l_j = μ M⁻¹ Δ u, applied via cached sparse mul!.
     function L_fun!(l_j, u, time, params)
-        SD      = params.SD
-        basis   = params.basis
-        ω       = params.ω
-        mesh    = params.mesh
-        metrics = params.metrics
-        μ       = 0.01
-        N       = nop
-        Q       = N
-
-        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics,
-                                  N, Q, TFloat)
-        L  = DSS_laplace_sparse(mesh, Le)
-
-        Minv = params.Minv
-        mul!(l_j, L, u)
-        l_j .= μ * (Minv .* l_j)
+        mul!(l_j, _imex_L(params), u)
     end
 
     # Bcs application
@@ -120,23 +130,9 @@ end
     end
 
     # Building fast waves operator: μ M⁻¹ Δ, assembled with the native
-    # Jexpresso element-matrix infrastructure.
+    # Jexpresso element-matrix infrastructure. Returns the cached operator.
     function build_L(u, time, params)
-        SD      = params.SD
-        basis   = params.basis
-        ω       = params.ω
-        mesh    = params.mesh
-        metrics = params.metrics
-        μ       = 0.01
-        N       = nop
-        Q       = N
-
-        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics,
-                                  N, Q, TFloat)
-        L  = DSS_laplace_sparse(mesh, Le)
-
-        Minv = params.Minv
-        return μ * (Minv .* L)
+        return _imex_L(params)
     end
 
     inputs = Dict(
