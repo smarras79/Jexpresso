@@ -90,7 +90,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     # otherwise).
     L_storage = nothing
     # BCs of the solution
-    bcs_fun! = inputs[:bcs_fun]
+    haskey(inputs, :bcs_fun) ? bcs_fun! = inputs[:bcs_fun] : bcs_fun! = nothing
 
     # coefficients of the method
     if method == "multistep"
@@ -253,7 +253,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     #------------------------------------------------------------------------
     # Reshape rhs
     #------------------------------------------------------------------------
-    function reshape_rhs_help!(rhs, rhs_help, npoint, neqs)
+    function reshape_rhs!(rhs, rhs_help, npoint, neqs)
         i_start = 1
         for i = 1 : neqs
             rhs_help[:, i] = rhs[i_start : i_start + npoint - 1]
@@ -261,13 +261,12 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         end
     end
 
-    function reshape_rhs!(rhs, rhs_help, npoint, neqs)
-        i_start = 1
-        for i = 1 : neqs
-            rhs[i_start : i_start + npoint - 1] = rhs_help[:, i]
-            i_start += npoint
-        end
-    end
+
+    # Diagnostics output schedule
+    dosetimes = collect(TFloat.(inputs[:diagnostics_at_times]))
+    sort!(dosetimes)
+    next_out_idx = 1
+    iout = 0
 
 
     comm = MPI.COMM_WORLD
@@ -307,11 +306,13 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             rhs = construct_rhs_multistep!(rhs_buf, s_j_buf, l_j_buf,
                                            params, u_prev, t_n)
             # reshape rhs_help
-            reshape_rhs_help!(rhs, rhs_help, npoint, neqs)
-            # Apply bcs to rhs and L
-            bcs_fun!(rhs_help, L_curr, t_n + Δt, params, sem, qp)
+            reshape_rhs!(rhs, rhs_help, npoint, neqs)
+            if bcs_fun! != nothing
+                # Apply bcs to rhs and L
+                bcs_fun!(rhs_help, L_curr, t_n + Δt, params, sem, qp)
+            end
             # reshape rhs
-            reshape_rhs_help!(rhs, rhs_help, npoint, neqs)
+            reshape_rhs!(rhs, rhs_help, npoint, neqs)
 
 
             # construct vector containing non-linear residual
@@ -370,8 +371,10 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                             update_stored_matrix!(L_storage, L_curr)
                         end
 
-                        # Apply bcs to rhs and L
-                        bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
+                        if bcs_fun! != nothing
+                            # Apply bcs to rhs and L
+                            bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
+                        end
                 end
 
                 # nonl_res = rhs - L_curr * u_next
@@ -391,14 +394,22 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             t_n += Δt
             n_step += 1
 
-            write_output(params.SD, u, params.uaux, t_n, n_step,
-                         params.mesh, params.mp,
-                         params.connijk_original, params.poin_in_bdy_face_original,
-                         params.x_original, params.y_original, params.z_original,
-                         inputs[:output_dir], inputs,
-                         params.qp.qvars, params.qp.qoutvars,
-                         inputs[:outformat];
-                         nvar=params.qp.neqs, qexact=params.qp.qe)
+            # --- Diagnostic output ----------------------------------------------
+            if next_out_idx <= length(dosetimes) &&
+                abs(t_n - dosetimes[next_out_idx]) < 1.0e-12
+                    iout += 1
+                    println_rank(@sprintf(" # IMEX: t = %.6f   step = %d", t_n, n_step);
+                                 msg_rank = rank)
+                    write_output(params.SD, u, params.uaux, t_n, n_step,
+                                 params.mesh, params.mp,
+                                 params.connijk_original, params.poin_in_bdy_face_original,
+                                 params.x_original, params.y_original, params.z_original,
+                                 inputs[:output_dir], inputs,
+                                 params.qp.qvars, params.qp.qoutvars,
+                                 inputs[:outformat];
+                                 nvar=params.qp.neqs, qexact=params.qp.qe)
+                    next_out_idx += 1
+            end
 
             # Reset solution vector for the next step
             fill!(u_next, zero(eltype(u_next)))
@@ -452,8 +463,10 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 #------------------------------------------------------------------------
                 rhs = construct_rhs_rk!(rhs_buf, s_j_buf, l_j_buf,
                                         params, u, U_stages, t_n, i_stages)
-                # Apply bcs to rhs and L
-                bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
+                if bcs_fun! != nothing
+                    # Apply bcs to rhs and L
+                    bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
+                end
 
                 # construct vector containing non-linear residual
                 nonl_res = nonl_res_buf
@@ -506,13 +519,15 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                     # Updating L_curr
                     #------------------------------------------------------------------------
                     if delta == 1 && upd_L
-                            L_curr = L_update(U_stages[i_stages], time_tilde, A_RK_tilde[i_stages, i_stages])
-                            if L_storage !== nothing
-                                update_stored_matrix!(L_storage, L_curr)
-                            end
+                        L_curr = L_update(U_stages[i_stages], time_tilde, A_RK_tilde[i_stages, i_stages])
+                        if L_storage !== nothing
+                            update_stored_matrix!(L_storage, L_curr)
+                        end
 
+                        if bcs_fun! != nothing
                             # Apply bcs to rhs and L
                             bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
+                        end
                     end
 
                     # nonl_res = rhs - L_curr * U_stages[i_stages]
@@ -538,20 +553,41 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             t_n += Δt
             n_step += 1
 
-            write_output(params.SD, u, params.uaux, t_n, n_step,
-                         params.mesh, params.mp,
-                         params.connijk_original, params.poin_in_bdy_face_original,
-                         params.x_original, params.y_original, params.z_original,
-                         inputs[:output_dir], inputs,
-                         params.qp.qvars, params.qp.qoutvars,
-                         inputs[:outformat];
-                         nvar=params.qp.neqs, qexact=params.qp.qe)
+            # --- Diagnostic output ----------------------------------------------
+            if next_out_idx <= length(dosetimes) &&
+                abs(t_n - dosetimes[next_out_idx]) < 1.0e-12
+                    iout += 1
+                    println_rank(@sprintf(" # IMEX: t = %.6f   step = %d", t_n, n_step);
+                                 msg_rank = rank)
+                    write_output(params.SD, u, params.uaux, t_n, n_step,
+                                 params.mesh, params.mp,
+                                 params.connijk_original, params.poin_in_bdy_face_original,
+                                 params.x_original, params.y_original, params.z_original,
+                                 inputs[:output_dir], inputs,
+                                 params.qp.qvars, params.qp.qoutvars,
+                                 inputs[:outformat];
+                                 nvar=params.qp.neqs, qexact=params.qp.qe)
+                    next_out_idx += 1
+            end
 
             # Reset stage buffers for the next step
             for j_stages = 1 : k
                 fill!(U_stages[j_stages], zero(eltype(U_stages[j_stages])))
             end
         end
+    end
+
+    # Always write a final snapshot if one is not already written.
+    if next_out_idx <= length(dosetimes) || iout == 0
+        iout += 1
+        write_output(params.SD, u, params.uaux, t_n, iout,
+                     params.mesh, params.mp,
+                     params.connijk_original, params.poin_in_bdy_face_original,
+                     params.x_original, params.y_original, params.z_original,
+                     inputs[:output_dir], inputs,
+                     params.qp.qvars, params.qp.qoutvars,
+                     inputs[:outformat];
+                     nvar = params.qp.neqs, qexact = params.qp.qe)
     end
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
