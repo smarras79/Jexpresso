@@ -177,8 +177,16 @@ function je_prefetch_caches!(inputs::Dict, nparts::Int,
                               local_comm::MPI.Comm, world::MPI.Comm)
     rank = MPI.Comm_rank(local_comm)
 
+    # The JLD2 cache helpers (_mesh_cache_path / _preprocess_cache_path) are
+    # part of the prefetch optimisation that has not been wired into the
+    # current mesh.jl / sem_setup.jl.  When they are absent, skip prefetch
+    # entirely — the standard path inside setup_coupling_and_mesh handles
+    # everything correctly, just without the Alya-side latency hiding.
+    have_mesh_helper = isdefined(@__MODULE__, :_mesh_cache_path)
+    have_sem_helper  = isdefined(@__MODULE__, :_preprocess_cache_path)
+
     # ── 1. Mesh topology cache ──────────────────────────────────────────────
-    if JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
+    if have_mesh_helper && JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
         mesh_path = _mesh_cache_path(inputs, nparts)
         if isfile(mesh_path)
             rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
@@ -199,7 +207,7 @@ function je_prefetch_caches!(inputs::Dict, nparts::Int,
     end
 
     # ── 2. SEM preprocess cache ─────────────────────────────────────────────
-    if JEXPRESSO_PREFETCHED_SEM_CACHE[] === nothing
+    if have_sem_helper && JEXPRESSO_PREFETCHED_SEM_CACHE[] === nothing
         Nξ       = inputs[:nop]
         Qξ       = get(inputs, :lexact_integration, false) ? Nξ + 1 : Nξ
         sem_path = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
