@@ -1025,7 +1025,6 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         flush(stdout)
     end
 
-    lrank == 0 && (println("[setup_coupling] about to call sem_setup"); flush(stdout))
     t_sem = @elapsed begin
         sem, partitioned_model = sem_setup(inputs, nranks, distribute)
         if inputs[:backend] != CPU()
