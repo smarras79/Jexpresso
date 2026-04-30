@@ -102,6 +102,8 @@ include(joinpath( "kernel", "ArtificialViscosity","viscousStructs.jl"))
 
 include(joinpath( "kernel", "ArtificialViscosity","Wall_model.jl"))
 
+include(joinpath( "kernel", "coupling", "couplingStructs.jl"))
+
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysics.jl"))
