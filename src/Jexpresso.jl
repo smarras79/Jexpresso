@@ -25,8 +25,6 @@ using SpecialFunctions
 using SparseArrays
 using StaticArrays
 using StaticArrays: SVector, MVector
-using DiffEqBase
-using DiffEqDevTools
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
 using SnoopCompile

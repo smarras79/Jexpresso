@@ -1,5 +1,5 @@
 include("./mesh/meshStructs.jl")
-include("../../EL_Jexpresso/NN_RFRC.jl")
+#include("../../EL_Jexpresso/NN_RFRC.jl")
 using SparseArrays
 using JLD2
 using ONNXRunTime
