@@ -6,7 +6,7 @@ function params_setup(sem,
                       tspan = [T(inputs[:tinit]), T(inputs[:tend])];
                       coupling = nothing)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # Build arrays and params ................................ "; msg_rank = rank, suppress = sem.mesh.msg_suppress)

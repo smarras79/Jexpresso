@@ -726,7 +726,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
 
     # determine backend
     backend = CPU()
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     
     #
@@ -1463,7 +1463,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_parents_ghost, 1)
     # if num_p_ghost == 0
@@ -1592,7 +1592,7 @@ function DSS_nc_scatter_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, co
 
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_children_ghost, 1)
     # if num_p_ghost == 0
@@ -1727,7 +1727,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn
     end
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_parents_ghost, 1)
     # if num_p_ghost == 0
@@ -1853,7 +1853,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray,
     end
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     fill!(M_gather_ghost, zero(TFloat))
     
@@ -1962,7 +1962,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, con
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_children_ghost, 1)
     # if num_p_ghost == 0
@@ -2063,7 +2063,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact,
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
@@ -2203,7 +2203,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_3D, QT::Inexact, Mel::AbstractArra
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_parents_ghost, 1)
     # if num_p_ghost == 0
@@ -2383,7 +2383,7 @@ function DSS_nc_scatter_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, co
 
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_children_ghost, 1)
     # if num_p_ghost == 0
@@ -2547,7 +2547,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn
     end
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     fill!(M_gather_ghost, zero(TFloat))
     
@@ -2699,7 +2699,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray,
     end
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     # M_gather_ghost = cache_ghost_p.data2send
     fill!(M_gather_ghost, zero(TFloat))
@@ -2830,7 +2830,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, con
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
@@ -2945,7 +2945,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     # M_scatter_ghost = cache_ghost_c.data2send
 
@@ -3172,7 +3172,7 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
     q_dst2, partitioned_model_refined2 = projection_solutions(q_dst, ref_coarse_flags2, partitioned_model_refined, nmesh, nmesh2, inputs, nparts, distribute)
     # @info n2o_ele_map2
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
 
     MPI.Barrier(comm)
     @mystop("my stop at mesh.jl L135")

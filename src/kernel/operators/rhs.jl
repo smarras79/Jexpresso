@@ -499,7 +499,7 @@ function _build_rhs!(RHS, u, params, time)
     timers  = params.timers
 
     if SD == NSD_1D()
-        comm = MPI.COMM_WORLD
+        comm = get_mpi_comm()
     else
         comm = params.mesh.parts.comm
     end

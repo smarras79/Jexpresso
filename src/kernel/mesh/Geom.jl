@@ -170,7 +170,7 @@ end
 
 function setup_global_numbering_extra_dim(ip2gip, gip2owner, npoin, npoin_ang, npoin_total)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
 
     ip2gip_extra = KernelAbstractions.zeros(CPU(),Int64,npoin_total)
     for ip = 1:npoin
@@ -202,7 +202,7 @@ function setup_global_numbering_adaptive_angular_scalable(
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
     n_spa, n_non_global_nodes, nc_non_global_nodes,
 )
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     nproc = MPI.Comm_size(comm)
     nelem = mesh.nelem
