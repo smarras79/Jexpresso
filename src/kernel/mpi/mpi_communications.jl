@@ -1,4 +1,51 @@
 
+"""
+    je_init_mpi_and_split_comm()
+
+Initialize MPI, split COMM_WORLD by APPID, and detect coupling mode.
+
+Returns a tuple `(world, local_comm, wsize, wrank, lsize, lrank, is_coupled)`.
+Used by run.jl when running coupled with another MPI code (e.g. Alya).
+When invoked standalone, `lsize == wsize` and `is_coupled == false`.
+
+# Environment Variables
+- `APPID`: Application ID for communicator splitting (default: 2). Alya
+  typically uses APPID=1; Jexpresso uses APPID=2.
+"""
+function je_init_mpi_and_split_comm()
+    if !MPI.Initialized()
+        MPI.Init()
+    end
+
+    world = MPI.COMM_WORLD
+    wsize = MPI.Comm_size(world)
+    wrank = MPI.Comm_rank(world)
+
+    appid = try
+        parse(Int, get(ENV, "APPID", "2"))
+    catch
+        2
+    end
+
+    local_comm = MPI.Comm_split(world, appid, wrank)
+    lsize = MPI.Comm_size(local_comm)
+    lrank = MPI.Comm_rank(local_comm)
+
+    set_mpi_comm(local_comm)
+    set_mpi_comm_world(world)
+
+    is_coupled = (lsize < wsize)
+
+    if lrank == 0 && is_coupled
+        println("[Jexpresso] Coupled mode detected:")
+        println("            World size = $wsize, Local size = $lsize, APPID = $appid")
+        println("            Handshake deferred to driver.")
+        flush(stdout)
+    end
+
+    return world, local_comm, wsize, wrank, lsize, lrank, is_coupled
+end
+
 mutable struct CyclingReverseDict
     mapping::Dict{Int, Vector{Int}}
     counters::Dict{Int, Int}

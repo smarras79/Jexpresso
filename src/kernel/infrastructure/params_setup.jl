@@ -3,7 +3,8 @@ function params_setup(sem,
                       inputs::Dict,
                       OUTPUT_DIR::String,
                       T,
-                      tspan = [T(inputs[:tinit]), T(inputs[:tend])])
+                      tspan = [T(inputs[:tinit]), T(inputs[:tend])];
+                      coupling = nothing)
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -353,7 +354,8 @@ function params_setup(sem,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
-                  timers)
+                  timers,
+                  coupling = coupling)
         
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -387,7 +389,8 @@ function params_setup(sem,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
                   timers,
-                  sem.interp, sem.project, sem.nparts, sem.distribute)
+                  sem.interp, sem.project, sem.nparts, sem.distribute,
+                  coupling = coupling)
     end
 
     println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)

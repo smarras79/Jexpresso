@@ -3,6 +3,11 @@ function time_loop!(inputs, params, u, args...)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     partitioned_model = args[1]
+    # Optional coupled-mode positional args: args[2] = is_coupled::Bool,
+    # args[3] = coupling::CouplingData. Both default to "off" when callers
+    # use the historical 1-arg form (drivers.jl standalone path).
+    is_coupled = length(args) >= 2 ? args[2] : false
+    coupling   = length(args) >= 3 ? args[3] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
     
     prob = ODEProblem(rhs!,
@@ -125,6 +130,7 @@ function time_loop!(inputs, params, u, args...)
     cb         = DiscreteCallback(condition, affect!)    
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
+    cb_coupling = is_coupled ? setup_coupling_callback(is_coupled, params, inputs) : nothing
     CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
@@ -153,10 +159,13 @@ function time_loop!(inputs, params, u, args...)
     #
     # Simulation
     #   
+    callbacks_main = (is_coupled && cb_coupling !== nothing) ?
+                     CallbackSet(cb, cb_restart, cb_coupling) :
+                     CallbackSet(cb, cb_restart)
     solution = solve(prob,
                      inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                      #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                     callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
+                     callback = callbacks_main, tstops = dosetimes,
                      save_everystep = false,
                      adaptive=inputs[:ode_adaptive_solver],
                      saveat = range(inputs[:tinit],

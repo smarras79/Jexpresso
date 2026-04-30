@@ -5,10 +5,47 @@ function driver(nparts,
                 distribute,
                 inputs::Dict,
                 OUTPUT_DIR::String,
-                TFloat)
-    
+                TFloat;
+                world      = nothing,
+                is_coupled::Bool = false)
+
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
+
+    #---------------------------------------------------------
+    # Coupled (MPMD) path: handshake has already been done in
+    # run.jl. Build the CouplingData object here, then fall
+    # through to the standard pipeline with the coupling object
+    # passed into params_setup and time_loop!.
+    #---------------------------------------------------------
+    coupling = nothing
+    if is_coupled
+        @assert world !== nothing "world communicator must be supplied when is_coupled=true"
+        coupling, sem_coupled, partitioned_model_coupled, qp_coupled = setup_coupling_and_mesh(
+            world, nparts, inputs, nparts, distribute, rank, OUTPUT_DIR, TFloat
+        )
+
+        if (inputs[:lamr] == true)
+            amr_freq = inputs[:amr_freq]
+            Δt_amr   = amr_freq * inputs[:Δt]
+            tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
+        else
+            tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+        end
+
+        params, u = params_setup(sem_coupled,
+                                 qp_coupled,
+                                 inputs,
+                                 OUTPUT_DIR,
+                                 TFloat,
+                                 tspan;
+                                 coupling = coupling)
+
+        @time solution = time_loop!(inputs, params, u,
+                                    partitioned_model_coupled,
+                                    is_coupled, coupling)
+        return
+    end
     
     if inputs[:lwarmup] == true
 
