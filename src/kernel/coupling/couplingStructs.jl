@@ -396,7 +396,7 @@ function je_receive_alya_data(world, nparts)
     if lrank == 0
         println("[je_receive_alya_data] ndime=$ndime  min=$rem_min  max=$rem_max  nx=$rem_nx")
         println(RED_FG(string(" ... NOW BE PATIENT and GO HAVE A CUP OF TEA ...")))
-        println(RED_FG(sting("  ... while Julia is precompiling. It's not running Jexpresso YET!!!!!! ....")))
+        println(RED_FG(string("  ... while Julia is precompiling. It's not running Jexpresso YET!!!!!! ....")))
         flush(stdout)
     end
 end
