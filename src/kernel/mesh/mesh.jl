@@ -1216,7 +1216,7 @@ const get_glue_components = GridapDistributed.get_glue_components
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
     backend = CPU()
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
@@ -2893,7 +2893,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 end
 
 function measure_elements_per_rank(local_elements)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
     needs_redistribution = false
@@ -2947,7 +2947,7 @@ function _handle_optional_args4amr(optional_args...)
 end
 
 function find_gip_owner_v1(a)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     size = MPI.Comm_size(comm)
     
@@ -2995,7 +2995,7 @@ function find_gip_owner_v1(a)
 end
 
 function find_gip_owner(a)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     size = MPI.Comm_size(comm)
     
@@ -3267,7 +3267,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3444,7 +3444,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3479,7 +3479,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     #
     edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     #open("./COORDS_HO_edges_$rank.dat", "w") do f
     # open("./COORDS_HO_edges.dat", "w") do f
@@ -3780,7 +3780,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3945,7 +3945,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3983,7 +3983,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
         resize!(mesh.z_ho, (mesh.npoin))
     end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     #open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_faces.dat", "w") do f
@@ -4334,7 +4334,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -4379,7 +4379,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
         resize!(mesh.z_ho, (mesh.npoin))
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     gip::Int64  = 0
     #open("./COORDS_HO_faces_$rank.dat", "w") do f
@@ -4637,7 +4637,7 @@ end
 
 function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     lpreadapt = inputs[:lpreadapt]
@@ -4825,7 +4825,7 @@ end
 #----------------------------------------------------------------------
 function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mesh.Δelem = KernelAbstractions.zeros(backend, T, mesh.nelem)
     for ie = 1:mesh.nelem

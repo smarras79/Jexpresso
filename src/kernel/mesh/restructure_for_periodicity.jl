@@ -1252,7 +1252,7 @@ end
 
 function restructure4periodicity_2D(mesh, norm, periodic_direction)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
     
@@ -1383,7 +1383,7 @@ end
 
 
 function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
     per_ip = Int[]

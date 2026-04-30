@@ -22,7 +22,7 @@ end
 
 function setup_MatvecSparse_assembler(index_a,gip2owner)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
 
@@ -66,7 +66,7 @@ function setup_MatvecSparse_assembler(index_a,gip2owner)
 end
 
 function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse)
-    comm   = MPI.COMM_WORLD
+    comm   = get_mpi_comm()
     rank   = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
     npoin  = size(y_local, 1)

@@ -1,6 +1,6 @@
 function time_loop!(inputs, params, u, args...)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     partitioned_model = args[1]
     # Optional coupled-mode positional args: args[2] = is_coupled::Bool,

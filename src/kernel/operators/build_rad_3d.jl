@@ -153,7 +153,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     npoin_ang_total = 0
     nprocs = MPI.Comm_size(MPI.COMM_WORLD)
     rank   = MPI.Comm_rank(MPI.COMM_WORLD)
-    comm   = MPI.COMM_WORLD
+    comm   = get_mpi_comm()
     
     if inputs[:adaptive_extra_meshes]
         gip2owner_extra = []
