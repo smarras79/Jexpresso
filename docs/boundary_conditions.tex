@@ -1,5 +1,6 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
+\usepackage{tabularx,booktabs}
 \usepackage{amsmath,amssymb}
 \usepackage{listings}
 \usepackage{xcolor}
@@ -378,21 +379,32 @@ verbatim. The user only has to:
 
 \section{Summary table}
 
-\begin{center}
-\begin{tabular}{|l|l|l|l|}
+\begin{tabularx}{\linewidth}{|l|l|X|l|}
 \hline
-Problem class & Driver branch & Kernel entry point & Action \\
+\textbf{Problem class} & \textbf{Driver branch} & \textbf{Kernel entry point} & \textbf{Action} \\
 \hline
-Hyperbolic, explicit  & \code{time\_loop!} & \code{apply\_boundary\_conditions\_dirichlet!} & overwrite \code{uaux}, zero RHS row \\
-                      &                      & \code{apply\_boundary\_conditions\_neumann!}   & add surface flux to RHS \\
+Hyperbolic, explicit
+  & \code{time\_loop!}
+  & \code{apply\_boundary\_conditions\_dirichlet!}
+  & overwrite \code{uaux}, zero RHS row \\
+  &
+  & \code{apply\_boundary\_conditions\_neumann!}
+  & add surface flux to RHS \\
 \hline
-Elliptic ($Ax=b$)     & \code{llinsolve} branch & \code{apply\_boundary\_conditions\_lin\_solve!} & zero $L$ row, $L_{ii}=1$, write RHS \\
+Elliptic ($Ax=b$)
+  & \code{llinsolve} branch
+  & \code{apply\_boundary\_conditions\_lin\_solve!}
+  & zero $L$ row, $L_{ii}=1$, write RHS \\
 \hline
-Hyperbolic, IMEX/impl.& \code{time\_loop!} + implicit stage & \code{apply\_boundary\_conditions\_lin\_solve!} & same as elliptic on stage matrix \\
-                      &                      & \code{apply\_boundary\_conditions\_neumann!}   & add surface flux to RHS \\
+Hyperbolic, IMEX/impl.
+  & \code{time\_loop!} $+$ implicit stage
+  & \code{apply\_boundary\_conditions\_lin\_solve!}
+  & same as elliptic on stage matrix \\
+  &
+  & \code{apply\_boundary\_conditions\_neumann!}
+  & add surface flux to RHS \\
 \hline
-\end{tabular}
-\end{center}
+\end{tabularx}
 
 \section{Files referenced}
 
