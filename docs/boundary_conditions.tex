@@ -1,6 +1,7 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
-\usepackage{tabularx,booktabs}
+\usepackage{tabularx,booktabs,array}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \usepackage{amsmath,amssymb}
 \usepackage{listings}
 \usepackage{xcolor}
@@ -379,7 +380,8 @@ verbatim. The user only has to:
 
 \section{Summary table}
 
-\begin{tabularx}{\linewidth}{|l|l|X|l|}
+\noindent\footnotesize
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.16\linewidth}|>{\raggedright\arraybackslash}p{0.16\linewidth}|Y|Y|}
 \hline
 \textbf{Problem class} & \textbf{Driver branch} & \textbf{Kernel entry point} & \textbf{Action} \\
 \hline
@@ -405,6 +407,7 @@ Hyperbolic, IMEX/impl.
   & add surface flux to RHS \\
 \hline
 \end{tabularx}
+\normalsize
 
 \section{Files referenced}
 
