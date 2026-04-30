@@ -212,7 +212,7 @@ function user_inputs()
         # IMEX method
         #---------------------------------------------------------------------------
         :method             => "RK",
-        :delta              => 0,
+        :delta              => 1,
         :k                  => 3,
         :coeff              => Dict(
                                    # IMEX RK
