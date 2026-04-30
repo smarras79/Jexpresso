@@ -1,0 +1,425 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{tabularx,booktabs,array}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage{amsmath,amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[hyphens]{url}
+\usepackage[htt]{hyphenat}
+\usepackage{hyperref}
+
+% Allow long \texttt tokens (with underscores, dots, !) to break across lines
+\sloppy
+\emergencystretch=3em
+\hyphenpenalty=1000
+
+% \code{...} : like \texttt but breakable after every "\_" so that long
+% snake_case identifiers are wrapped instead of running into the margin.
+\makeatletter
+\newcommand{\code}[1]{{\def\_{\char`\_\discretionary{}{}{}}\texttt{#1}}}
+\makeatother
+
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    language=Julia,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{teal},
+    showstringspaces=false
+}
+
+\title{Boundary Conditions in JEXPRESSO\\
+\large Code structure and user-side workflow}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Overview}
+
+In JEXPRESSO the application of boundary conditions (BCs) is split between
+two layers:
+
+\begin{enumerate}
+    \item A \textbf{kernel layer} located in
+    \code{src/kernel/boundaryconditions/}, which contains the generic
+    machinery that loops over boundary edges (2D) or faces (3D), reads the
+    \code{tag} associated with every boundary entity in the Gmsh mesh,
+    fetches normals, and pushes the boundary-node values either into
+    \code{uaux} (for time-dependent problems with explicit time
+    integration) or directly into the global linear system $L\,x = b$
+    (for elliptic problems).
+    \item A \textbf{user layer} located in
+    \code{problems/<EQUATION>/<CASE>/user\_bc.jl}, where the user
+    prescribes the actual boundary values or boundary fluxes by writing
+    one (or two) Julia functions:
+    \code{user\_bc\_dirichlet!} (essential conditions) and
+    \code{user\_bc\_neumann}/\code{user\_bc\_neumann!} (natural
+    conditions / surface fluxes).
+\end{enumerate}
+
+The bridge between the two layers is provided by
+\code{src/kernel/boundaryconditions/custom\_bcs.jl}, which contains the
+thin wrappers \code{dirichlet!} and \code{neumann} that simply
+forward the call to the user-defined \code{user\_bc\_*} functions.
+
+The high-level driver in \code{problems/drivers.jl} chooses
+\emph{which} BC entry point is invoked according to the type of problem
+(hyperbolic with explicit time integration, elliptic $A x = b$, or
+hyperbolic with implicit/IMEX time integration that places terms on the
+left-hand side).
+
+\section{Kernel-side structure}
+
+\subsection{Files in \code{src/kernel/boundaryconditions/}}
+
+\begin{description}
+    \item[\code{BCs.jl}] Defines the public entry points called by the
+    driver and the time integrators:
+    \begin{itemize}
+        \item \code{apply\_boundary\_conditions\_dirichlet!}
+        \item \code{apply\_boundary\_conditions\_neumann!}
+        \item \code{apply\_boundary\_conditions\_lin\_solve!}
+        \item \code{apply\_periodicity!}
+    \end{itemize}
+    Each public entry point dispatches to a dimension-specific
+    \code{build\_custom\_bcs\_*!} method using the spatial-dimension
+    type (\code{NSD\_1D}, \code{NSD\_2D}, \code{NSD\_3D}). For the
+    linear-solve case there is in addition a sparse variant
+    (\code{build\_custom\_bcs\_lin\_solve\_sparse!}) that mutates a
+    \code{SparseMatrixCSC}.
+    \item[\code{custom\_bcs.jl}] Wrappers \code{dirichlet!} and
+    \code{neumann} that simply forward to the
+    user-defined \code{user\_bc\_dirichlet!} /
+    \code{user\_bc\_neumann}.
+    \item[\code{surface\_integral.jl}] Helpers that build edge / face
+    mass matrices and assemble surface integrals
+    (\code{compute\_surface\_integral!},
+    \code{compute\_segment\_integral!}, \code{DSS\_*\_integral!},
+    \code{bulk\_surface\_flux!}). They are used by the Neumann path to
+    add the boundary surface flux contribution to the RHS:
+    \[
+        \text{RHS}_i \mathrel{+}= \int_{\partial \Omega} F_{\text{surf}}\,\psi_i\,dS .
+    \]
+\end{description}
+
+\subsection{Dirichlet machinery}
+
+For 2D, \code{build\_custom\_bcs\_dirichlet!(::NSD\_2D, \ldots)} loops
+over every boundary edge \code{iedge}; for each edge it skips
+\code{periodicx}, \code{periodicz}, \code{periodic1},
+\code{periodic2} and \code{Laguerre} tags, and for the remaining
+$ngl$ Lagrange-Gauss-Lobatto (LGL) nodes it
+\begin{enumerate}
+    \item fills a sentinel value \code{qbdy[ieq]\,=\,4325789.0};
+    \item calls \code{user\_bc\_dirichlet!(@view(uaux[ip,:]),\ldots,
+    bdy\_edge\_type[iedge], qbdy, nx, ny, @view(qe[ip,:]),
+    inputs[:SOL\_VARS\_TYPE])};
+    \item if the user changed the sentinel and the value differs from the
+    current solution, it overwrites \code{uaux[ip,ieq]} and zeroes
+    \code{RHS[ip,ieq]} (so the time integrator does not modify the
+    constrained DOF).
+\end{enumerate}
+At the end the array \code{u} is repacked from \code{uaux} via
+\code{uaux2u!(u, uaux, neqs, npoin)}.
+
+The 3D version is analogous, looping on \code{nfaces\_bdy} and using
+\code{poin\_in\_bdy\_face} together with the 3-component normal
+$(n_x,n_y,n_z)$.
+
+\subsection{Neumann machinery}
+
+\code{build\_custom\_bcs\_neumann!} is invoked only when
+\code{inputs[:bdy\_fluxes]\,=\,true}. For each boundary edge/face it
+
+\begin{enumerate}
+    \item zeroes \code{F\_surf};
+    \item if \code{inputs[:bulk\_fluxes]} is true, calls the analytic
+    \code{bulk\_surface\_flux!}; for the special tag \code{"MOST"}
+    in 3D it calls the Monin-Obukhov routine \code{CM\_MOST!};
+    \item otherwise calls the user routine
+    \code{user\_bc\_neumann!(@view(F\_surf[\ldots]), uaux[ip,:],
+    uaux[ip1,:], qe[ip,:], qe[ip1,:], bdy\_edge\_type[iedge],
+    coords, \ldots, inputs[:SOL\_VARS\_TYPE])};
+    \item integrates over the boundary segment/face with
+    \code{compute\_segment\_integral!} or
+    \code{compute\_surface\_integral!};
+    \item performs DSS and adds the result to the global RHS,
+    \code{RHS[:,ieq] .+= S\_flux[:,ieq]}.
+\end{enumerate}
+
+\subsection{Linear-solve machinery}
+
+The variant used by elliptic problems is
+\code{apply\_boundary\_conditions\_lin\_solve!}, which dispatches to
+either the dense or the sparse kernel:
+
+\begin{itemize}
+    \item \code{build\_custom\_bcs\_lin\_solve!(::NSD\_2D, \ldots)} (dense
+    \code{Matrix\{Float64\}}). For every Dirichlet boundary node
+    \code{ip} it
+    \begin{enumerate}
+        \item calls \code{user\_bc\_dirichlet!} \emph{but writes the
+        prescribed value into \code{RHS[ip,:]}} (and into the helper
+        \code{qbdy});
+        \item zeroes the row \code{L[ip, :]\,=\,0};
+        \item sets \code{L[ip, ip]\,=\,1};
+        \item assigns \code{RHS[ip, ieq]\,=\,qbdy[ieq]}.
+    \end{enumerate}
+    This is the standard ``identity row'' enforcement of essential BCs in
+    $A x = b$.
+    \item \code{build\_custom\_bcs\_lin\_solve\_sparse!} does the same on
+    a \code{SparseMatrixCSC}, calling
+    \code{apply\_dirichlet\_bc\_inplace!} which collects the unique
+    boundary nodes from \code{poin\_in\_bdy\_edge} and rewrites
+    \code{L[ip,:]\,=\,0; L[ip,ip]\,=\,1}.
+\end{itemize}
+
+\section{Driver-side dispatch}
+
+The function \code{driver(\ldots)} in \code{problems/drivers.jl}
+performs the high-level dispatch:
+
+\begin{lstlisting}
+if !inputs[:llinsolve]
+    # Hyperbolic / parabolic:  M dq/dt = RHS
+    solution = time_loop!(inputs, params, u, partitioned_model)
+else
+    # Elliptic:  L*q = M*RHS
+    ...
+    apply_boundary_conditions_lin_solve!(sem.matrix.L, ..., RHS, ...)
+    sol = sem.matrix.L \ RHS
+    write_output(...)
+end
+\end{lstlisting}
+
+Therefore the same \code{user\_bc\_dirichlet!} that a user writes in
+\code{user\_bc.jl} is reused in three different contexts:
+
+\begin{enumerate}
+    \item \emph{Hyperbolic with explicit time integration} -- called from
+    inside \code{time\_loop!} via
+    \code{apply\_boundary\_conditions\_dirichlet!} (and
+    \code{\dots\_neumann!} when boundary fluxes are activated). The
+    constraint is enforced on \code{uaux} and the corresponding row of
+    the RHS is zeroed so that the explicit RK step does not drift the
+    boundary values.
+    \item \emph{Elliptic ($A x = b$)} -- called from
+    \code{apply\_boundary\_conditions\_lin\_solve!}. The same user
+    routine is used, but the kernel writes the prescribed value into
+    \code{RHS} and modifies the system matrix \code{L} (zeroing the
+    row and putting a 1 on the diagonal).
+    \item \emph{Hyperbolic with implicit / IMEX time integration} -- the
+    implicit operator is assembled in the same Laplace-style matrix
+    \code{sem.matrix.L} that the elliptic path uses; the same
+    \code{apply\_boundary\_conditions\_lin\_solve!} entry point is
+    invoked at every implicit stage to constrain the rows that
+    correspond to Dirichlet nodes. Neumann contributions are still
+    assembled by \code{apply\_boundary\_conditions\_neumann!} and
+    added to the right-hand side.
+\end{enumerate}
+
+\section{User-side workflow}
+
+A user creates a problem under
+\code{problems/<EQUATION>/<CASE>/} and is required to provide
+\code{user\_bc.jl}. The Gmsh \code{.msh} file declares physical
+groups whose names become the \code{tag} string passed to the BC
+function. Inside \code{user\_bc.jl} the user uses an \code{if/elseif}
+ladder on \code{tag} to set the prescribed values:
+
+\begin{lstlisting}
+if (tag == "inflow")
+    qbdy[1] = 3.0
+elseif (tag == "fix_temperature")
+    qbdy[2] = 300.0
+end
+\end{lstlisting}
+
+Any component that the user does not assign keeps the sentinel
+\code{4325789.0}, which the kernel detects and \emph{leaves
+unchanged}, i.e.\ this is interpreted as a ``do nothing'' (natural)
+condition for that component.
+
+\subsection{Hyperbolic problems with explicit time integration}
+
+Example: \code{problems/CompEuler/theta/} (rising thermal bubble).
+
+\paragraph{user\_inputs.jl.} The user selects an explicit ODE solver
+and leaves \code{:llinsolve} unset (i.e.\ false, the default), which
+selects the \code{time\_loop!} branch in the driver:
+\begin{lstlisting}
+:ode_solver  => CarpenterKennedy2N54(),
+:Delta t     => 0.5,
+:tinit       => 0.0,
+:tend        => 1000.0,
+:SOL_VARS_TYPE => PERT(),
+\end{lstlisting}
+
+\paragraph{user\_bc.jl.} A free-slip wall is implemented by
+projecting out the normal component of the momentum
+$(\rho u, \rho v)$. Both the \code{TOTAL} and the \code{PERT}
+variable formulations are provided:
+
+\begin{lstlisting}
+function user_bc_dirichlet!(q, coords, t, tag, qbdy, nx, ny, qe, ::PERT)
+    qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
+    qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
+    qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
+end
+\end{lstlisting}
+
+The Neumann routine returns a zero flux because no surface flux is
+needed for this case:
+\begin{lstlisting}
+function user_bc_neumann(q, gradq, coords, t, tag, inputs::Dict)
+    return zeros(size(q,2),1)
+end
+\end{lstlisting}
+
+\paragraph{What the kernel does at every RK stage.} The integrator
+calls \code{apply\_boundary\_conditions\_dirichlet!}, which for every
+boundary node \code{ip} invokes the user routine with the local
+normal $(n_x,n_y)$ taken from \code{metrics.nx,~metrics.ny}, copies
+the returned \code{qbdy} into \code{uaux[ip,:]} and zeros
+\code{RHS[ip,:]}. The result is then mapped back into \code{u} via
+\code{uaux2u!}.
+
+\subsection{Elliptic problems leading to $A x = b$}
+
+Example: \code{problems/Elliptic/case1/} (Laplace with non-homogeneous
+Dirichlet data on a $5\times\pi$ rectangle).
+
+\paragraph{user\_inputs.jl.} The user activates the linear-solve path:
+\begin{lstlisting}
+:llinsolve            => true,
+:ldss_laplace         => true,
+:rconst               => [0.0],
+\end{lstlisting}
+which forces the driver into the \code{else} branch where the
+operator \code{sem.matrix.L} (the Laplacian) is assembled and the
+system \code{L * q = M * RHS} is solved by the chosen Krylov method
+(\code{:ode\_solver => "BICGSTABLE"}) or by the direct backslash.
+
+\paragraph{user\_bc.jl.} Only \code{user\_bc\_dirichlet!} is needed:
+\begin{lstlisting}
+function user_bc_dirichlet!(q, coords, t, tag, qbdy, nx, ny, qe, ::TOTAL)
+    L = 5.0
+    if     (tag == "bottom") qbdy[1] = 100.0
+    elseif (tag == "right")  qbdy[1] = 100.0
+    elseif (tag == "top")    qbdy[1] = 100 + 20.0*sin(pi*coords[1]/L)
+    elseif (tag == "left")   qbdy[1] = 100.0
+    end
+end
+\end{lstlisting}
+
+\paragraph{What the kernel does once.} Before the linear solve, the
+driver calls
+\code{apply\_boundary\_conditions\_lin\_solve!(sem.matrix.L, \ldots,
+RHS, \ldots)}. For every node on a non-periodic boundary, the user
+routine fills \code{qbdy}; the kernel then sets
+
+\[
+   L[ip,:] = 0, \qquad L[ip,ip] = 1, \qquad
+   \text{RHS}[ip] = \code{qbdy[1]} ,
+\]
+
+so that the linear system enforces $q_{ip} = \code{qbdy[1]}$
+exactly. Internally this is exactly the loop in
+\code{build\_custom\_bcs\_lin\_solve!} (or its sparse counterpart
+when \code{:lsparse => true}).
+
+\subsection{Hyperbolic problems with implicit / IMEX time integration}
+
+When part of the operator (typically a stiff diffusion or acoustic
+operator) is treated implicitly, that operator is assembled into the
+same matrix \code{sem.matrix.L} that the elliptic path uses, and the
+implicit (or IMEX) stage solves
+\[
+   (M + \Delta t\,\theta\,L)\,q^{\,n+1} \;=\; M\,q^{\,n} + \Delta t\,R(q^{\,n}, q^{\,n+1}).
+\]
+At every implicit stage the BC kernel is therefore called twice:
+
+\begin{enumerate}
+    \item \code{apply\_boundary\_conditions\_lin\_solve!} on the
+    implicit operator and on the right-hand side. This is the same
+    routine described in section 4.2 above: rows of the implicit
+    operator corresponding to Dirichlet nodes are replaced by an
+    identity row and the prescribed value is written into the RHS, so
+    that the Krylov solver returns the exact boundary value at each
+    implicit stage.
+    \item \code{apply\_boundary\_conditions\_neumann!}, which, when
+    \code{inputs[:bdy\_fluxes] = true}, evaluates the user-defined
+    surface flux through \code{user\_bc\_neumann!}, performs the
+    surface quadrature and the DSS, and adds the result to the
+    explicit part of the RHS via
+    \[
+        \text{RHS}[:,ieq] \mathrel{+}= S_{\text{flux}}[:,ieq].
+    \]
+\end{enumerate}
+
+\paragraph{User responsibility.} The user does \emph{not} have to
+rewrite the BC code: the same \code{user\_bc\_dirichlet!} and
+\code{user\_bc\_neumann!} written for the explicit case are reused
+verbatim. The user only has to:
+\begin{itemize}
+    \item select an implicit or IMEX integrator in
+    \code{user\_inputs.jl};
+    \item set \code{:llinsolve\,=>\,true} when the chosen integrator
+    requires the assembly of the implicit operator into
+    \code{sem.matrix.L};
+    \item set \code{:bdy\_fluxes\,=>\,true} (and optionally
+    \code{:bulk\_fluxes\,=>\,true} for the built-in bulk surface
+    flux, or \code{tag\,=\,"MOST"} for Monin-Obukhov) if surface
+    fluxes have to be added to the RHS at every stage.
+\end{itemize}
+
+\section{Summary table}
+
+\noindent\footnotesize
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.16\linewidth}|>{\raggedright\arraybackslash}p{0.16\linewidth}|Y|Y|}
+\hline
+\textbf{Problem class} & \textbf{Driver branch} & \textbf{Kernel entry point} & \textbf{Action} \\
+\hline
+Hyperbolic, explicit
+  & \code{time\_loop!}
+  & \code{apply\_boundary\_conditions\_dirichlet!}
+  & overwrite \code{uaux}, zero RHS row \\
+  &
+  & \code{apply\_boundary\_conditions\_neumann!}
+  & add surface flux to RHS \\
+\hline
+Elliptic ($Ax=b$)
+  & \code{llinsolve} branch
+  & \code{apply\_boundary\_conditions\_lin\_solve!}
+  & zero $L$ row, $L_{ii}=1$, write RHS \\
+\hline
+Hyperbolic, IMEX/impl.
+  & \code{time\_loop!} $+$ implicit stage
+  & \code{apply\_boundary\_conditions\_lin\_solve!}
+  & same as elliptic on stage matrix \\
+  &
+  & \code{apply\_boundary\_conditions\_neumann!}
+  & add surface flux to RHS \\
+\hline
+\end{tabularx}
+\normalsize
+
+\section{Files referenced}
+
+\begin{itemize}
+    \item \code{src/kernel/boundaryconditions/BCs.jl}
+    \item \code{src/kernel/boundaryconditions/custom\_bcs.jl}
+    \item \code{src/kernel/boundaryconditions/surface\_integral.jl}
+    \item \code{problems/drivers.jl}
+    \item \code{problems/CompEuler/theta/user\_bc.jl},
+          \code{user\_inputs.jl}
+    \item \code{problems/Elliptic/case1/user\_bc.jl},
+          \code{user\_inputs.jl}
+\end{itemize}
+
+\end{document}
