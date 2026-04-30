@@ -3,6 +3,30 @@ using GridapDistributed
 using PartitionedArrays
 using Base.Threads
 using Printf
+using JLD2
+
+# ───────────────────────────────────────────────────────────────────────────
+# Cache-path helpers used by je_prefetch_caches!.  These match the layout
+# produced by the (not-yet-ported) cache writers from sm/alyacouple, so once
+# those are wired into mesh.jl / sem_setup.jl the prefetch will start hitting.
+# Until then, the JLD2 files do not exist, isfile() returns false, and the
+# prefetch is a no-op — no error, just no acceleration.
+# ───────────────────────────────────────────────────────────────────────────
+function _mesh_cache_path(inputs::Dict, nparts::Int)
+    rank   = MPI.Comm_rank(get_mpi_comm())
+    dir    = let d = dirname(inputs[:gmsh_filename]); isempty(d) ? "." : d end
+    suffix = nparts > 1 ? "_rank$(rank)" : ""
+    return joinpath(dir, "MESH_nop$(inputs[:nop])$(suffix).jld2")
+end
+
+function _preprocess_cache_path(inputs::Dict, Nξ::Int, Qξ::Int, nparts::Int)
+    rank   = MPI.Comm_rank(get_mpi_comm())
+    gmsh   = inputs[:gmsh_filename]
+    dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
+    stem   = splitext(basename(gmsh))[1]
+    suffix = nparts > 1 ? "_rank$(rank)" : ""
+    return joinpath(dir, "PREPROCESS_$(stem)_nop$(Nξ)$(suffix).jld2")
+end
 
 # ===========================================================================
 # USER SETTING
@@ -177,16 +201,8 @@ function je_prefetch_caches!(inputs::Dict, nparts::Int,
                               local_comm::MPI.Comm, world::MPI.Comm)
     rank = MPI.Comm_rank(local_comm)
 
-    # The JLD2 cache helpers (_mesh_cache_path / _preprocess_cache_path) are
-    # part of the prefetch optimisation that has not been wired into the
-    # current mesh.jl / sem_setup.jl.  When they are absent, skip prefetch
-    # entirely — the standard path inside setup_coupling_and_mesh handles
-    # everything correctly, just without the Alya-side latency hiding.
-    have_mesh_helper = isdefined(@__MODULE__, :_mesh_cache_path)
-    have_sem_helper  = isdefined(@__MODULE__, :_preprocess_cache_path)
-
     # ── 1. Mesh topology cache ──────────────────────────────────────────────
-    if have_mesh_helper && JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
+    if JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
         mesh_path = _mesh_cache_path(inputs, nparts)
         if isfile(mesh_path)
             rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
@@ -207,7 +223,7 @@ function je_prefetch_caches!(inputs::Dict, nparts::Int,
     end
 
     # ── 2. SEM preprocess cache ─────────────────────────────────────────────
-    if have_sem_helper && JEXPRESSO_PREFETCHED_SEM_CACHE[] === nothing
+    if JEXPRESSO_PREFETCHED_SEM_CACHE[] === nothing
         Nξ       = inputs[:nop]
         Qξ       = get(inputs, :lexact_integration, false) ? Nξ + 1 : Nξ
         sem_path = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
@@ -378,7 +394,8 @@ function je_receive_alya_data(world, nparts)
 
     lrank = MPI.Comm_rank(get_mpi_comm())
     if lrank == 0
-        println("[je_receive_alya_data] ndime=$ndime  min=$rem_min  max=$rem_max  nx=$rem_nx")
+        println("[je_receive_alya_data] ndime=$ndime  min=$rem_min  max=$rem_max  nx=$rem_nx .............. DONE")
+        println(" ... NOW BE PATIENT! Julia JIT is happening before starting to do anything in Jexpresso!!!!!! ....")
         flush(stdout)
     end
 end
@@ -1010,7 +1027,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     end
 
     t_sem = @elapsed begin
-        sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
+        sem, partitioned_model = sem_setup(inputs, nranks, distribute)
         if inputs[:backend] != CPU()
             convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
         end
