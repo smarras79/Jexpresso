@@ -43,7 +43,7 @@ end
 # Both options produce a buffer of identical size [npoin × ndime].
 # Alya receives the same buffer either way and knows nothing about this flag.
 # ===========================================================================
-const SEND_COORDS = true
+const SEND_COORDS = false
 
 # ===========================================================================
 # GLOBAL MPI COMMUNICATOR REFS
