@@ -9,6 +9,92 @@ include("./meshStructs.jl")
 include("warping.jl")
 include("stretching.jl")
 
+# ─── Mesh topology cache helpers ──────────────────────────────────────────────
+# Cache the expensive result of mod_mesh_read_gmsh! (GmshDiscreteModel,
+# add_high_order_nodes_*, connectivity loops, ip2gip).  Only pure-array /
+# scalar fields are saved.  Skipped fields:
+#   :parts                  — PartitionedArrays.MPIArray, rebuilt via distribute()
+#   :cell_node_ids et al.   — Gridap.Arrays.Table, only used during mesh build
+#   :non_conforming_facets* — Vector{Vector} initialised with undef elements
+#   :SD                     — AbstractSpaceDimensions singleton, saved as int
+#   :extra_mesh             — Array{St_extra_mesh}, parametric type with
+#                             KernelAbstractions backend params, not roundtrip-safe
+# Not used for AMR runs (adapt_flags ≠ nothing) because the mesh changes.
+const _MESH_CACHE_SKIP_FIELDS = Set{Symbol}([
+    :parts,
+    :cell_node_ids, :cell_node_ids_ho,
+    :cell_edge_ids, :cell_face_ids,
+    :face_edge_ids, :facet_cell_ids,
+    :non_conforming_facets,
+    :non_conforming_facets_parents_ghost,
+    :non_conforming_facets_children_ghost,
+    :SD,
+    :extra_mesh,
+])
+
+const _MESH_CACHE_OPTSTRING_FIELDS = Set{Symbol}([
+    :edge_type, :face_type, :bdy_edge_type, :bdy_face_type,
+])
+const _MESH_CACHE_NOTHING_SENTINEL = "__nothing__"
+
+_encode_optstrings(v) = String[isnothing(x) ? _MESH_CACHE_NOTHING_SENTINEL : x for x in v]
+_decode_optstrings(v) = Array{Union{Nothing,String}}(
+    [x == _MESH_CACHE_NOTHING_SENTINEL ? nothing : x for x in v])
+
+function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int)
+    rank = MPI.Comm_rank(get_mpi_comm())
+    isfile(path) || return false
+    try
+        # Use pre-fetched data when available (populated by je_prefetch_caches!
+        # before with_mpi to keep JLD2 JIT + disk I/O off the Alya-blocking path).
+        raw = JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing ?
+              JEXPRESSO_PREFETCHED_MESH_CACHE[] : JLD2.load(path)
+        haskey(raw, "mesh_fields") || begin
+            rank == 0 && @info "Mesh cache $path has old format — discarding and rebuilding"
+            return false
+        end
+        flds = raw["mesh_fields"]
+        for f in fieldnames(typeof(mesh))
+            f ∈ _MESH_CACHE_SKIP_FIELDS && continue
+            haskey(flds, string(f)) || continue
+            v = flds[string(f)]
+            if f ∈ _MESH_CACHE_OPTSTRING_FIELDS
+                setfield!(mesh, f, _decode_optstrings(v))
+            else
+                setfield!(mesh, f, v)
+            end
+        end
+        if haskey(flds, "__SD_nsd__")
+            nsd_val = flds["__SD_nsd__"]
+            mesh.SD = nsd_val == 3 ? NSD_3D() : nsd_val == 2 ? NSD_2D() : NSD_1D()
+        end
+        mesh.parts = distribute(LinearIndices((nparts,)))
+        rank == 0 && @info "Loaded mesh topology from cache: $path"
+        return true
+    catch e
+        rank == 0 && @warn "Ignoring mesh cache $path" exception=(e, catch_backtrace())
+        return false
+    end
+end
+
+function _save_mesh_cache(path::String, mesh)
+    rank = MPI.Comm_rank(get_mpi_comm())
+    try
+        flds = Dict{String,Any}()
+        for f in fieldnames(typeof(mesh))
+            f ∈ _MESH_CACHE_SKIP_FIELDS && continue
+            v = getfield(mesh, f)
+            flds[string(f)] = f ∈ _MESH_CACHE_OPTSTRING_FIELDS ? _encode_optstrings(v) : v
+        end
+        flds["__SD_nsd__"] = mesh.nsd
+        JLD2.jldsave(path; mesh_fields = flds)
+        rank == 0 && @info "Saved mesh topology cache: $path"
+    catch e
+        rank == 0 && @warn "Failed to save mesh cache $path" exception=(e, catch_backtrace())
+    end
+end
+# ──────────────────────────────────────────────────────────────────────────────
+
 function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     npoin = nelem*nop+1
     dims1 = (npoin)
@@ -1230,7 +1316,21 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.rank       = rank
     ladaptive       = inputs[:ladapt]
     linitial_refine = inputs[:linitial_refine]
-    lamr_mesh       = !isnothing(adapt_flags) 
+    lamr_mesh       = !isnothing(adapt_flags)
+
+    # ── Early-exit cache check ────────────────────────────────────────────────
+    # For plain non-adaptive runs the cache stores the entire mesh struct;
+    # GmshDiscreteModel and all the connectivity / HO-node loops can be skipped.
+    # partitioned_model is only used by time_loop! when inputs[:lamr]==true,
+    # so returning nothing here is safe for standard (non-AMR) runs.
+    if isnothing(adapt_flags) && !ladaptive && !linitial_refine
+        _mesh_cache = _mesh_cache_path(inputs, nparts)
+        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts)
+            return nothing
+        end
+    end
+    # ─────────────────────────────────────────────────────────────────────────
+
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
@@ -2878,6 +2978,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #show(stdout, "text/plain", mesh.conn')
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     if isnothing(adapt_flags)
+        _save_mesh_cache(_mesh_cache_path(inputs, nparts), mesh)
         return partitioned_model
     else
         if (omesh.lneed_redistribute)
