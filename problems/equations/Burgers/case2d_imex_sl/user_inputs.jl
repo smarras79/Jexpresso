@@ -43,8 +43,6 @@ function user_inputs()
     c_RK_tilde[2] = 2. - sqrt(2.)
     c_RK_tilde[3] = 1.
 
-    # Polynomial order
-    nop = 4
 
     # Solver parameters
     solver_par = Dict(:restart  => true,
@@ -85,7 +83,7 @@ function user_inputs()
             ω       = params.ω
             mesh    = params.mesh
             metrics = params.metrics
-            μ       = 1.0e-2
+            μ       = params.inputs[:μ]
             N       = params.inputs[:nop]
             Q       = N
 
@@ -97,7 +95,7 @@ function user_inputs()
             # so the diffusion operator ν Δ ↦ -μ M⁻¹ K picks up a minus sign
             # (in 1D the native function returns -K, hence the opposite
             # sign in case1_imex_sl).
-            L_cache[] = -μ * (Minv .* L_global)
+            L_cache[] = -μ[1] * (Minv .* L_global)
         end
         return L_cache[]
     end
@@ -105,29 +103,6 @@ function user_inputs()
     # Fast waves operator: l_j = -μ M⁻¹ K u, applied via cached sparse mul!.
     function L_fun!(l_j, u, time, params)
         mul!(l_j, _imex_L(params), u)
-    end
-
-    # Bcs application
-    function bcs_fun!(u, L, time, params, sem, qp)
-     #=   apply_boundary_conditions_lin_solve!(L, time, params.qp.qe,
-                                             params.mesh.x, params.mesh.y, params.mesh.z,
-                                             params.metrics.nx,
-                                             params.metrics.ny,
-                                             params.metrics.nz,
-                                             sem.mesh.npoin, params.mesh.npoin_linear,
-                                             params.mesh.poin_in_bdy_edge,
-                                             params.mesh.poin_in_bdy_face,
-                                             params.mesh.nedges_bdy,
-                                             params.mesh.nfaces_bdy,
-                                             params.mesh.ngl, params.mesh.ngr,
-                                             params.mesh.nelem_semi_inf,
-                                             params.basis.ψ, params.basis.dψ,
-                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                             u, 0.0, params.ubdy,
-                                             params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
-                                             params.mesh.bdy_edge_type,
-        params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
-        =#
     end
 
     # Building fast waves operator: -μ M⁻¹ K, assembled with the native
@@ -167,7 +142,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
 #        :ode_solver           => IMEX_ARS232(),
         :tend                 => 0.5,
-        :Δt                   => 1.0e-4,
+        :Δt                   => 1.0e-3,
         :diagnostics_at_times => (0.05:0.05:0.5),
         :output_dir           => "./",
         #---------------------------------------------------------------------------
@@ -228,7 +203,6 @@ function user_inputs()
         :prec_sp            => prec_sp,
         :S_fun              => S_fun!,
         :L_fun              => L_fun!,
-        :bcs_fun            => bcs_fun!,
         :upd_L              => false,
         :build_L            => build_L,
         #---------------------------------------------------------------------------

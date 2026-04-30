@@ -43,8 +43,6 @@ function user_inputs()
     c_RK_tilde[2] = 2. - sqrt(2.)
     c_RK_tilde[3] = 1.
 
-    # Polynomial order
-    nop = 4
 
     # Solver parameters
     solver_par = Dict(:restart  => true,
@@ -71,10 +69,10 @@ function user_inputs()
         s_j .= params.RHS
     end
 
-function lsolve(L_curr, b)
-    x = L_curr \ b
-    return x
-end
+    function lsolve(L_curr, b)
+        x = L_curr \ b
+        return x
+    end
 
     # The implicit operator μ M⁻¹ Δ is linear and time-independent, so
     # build_laplace_matrix + DSS_laplace_sparse only needs to run once.
@@ -89,15 +87,15 @@ end
             ω       = params.ω
             mesh    = params.mesh
             metrics = params.metrics
-            μ       = 0.01
-            N       = nop
+            μ       = params.inputs[:μ]
+            N       = params.inputs[:nop]
             Q       = N
 
             Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics,
                                       N, Q, TFloat)
             L_global = DSS_laplace_sparse(mesh, Le)
             Minv = params.Minv
-            L_cache[] = μ * (Minv .* L_global)
+            L_cache[] = μ[1] * (Minv .* L_global)
         end
         return L_cache[]
     end
@@ -155,7 +153,7 @@ end
         #---------------------------------------------------------------------------
         #:ode_solver           => IMEX_ARS232(),
         :tend                 => 1.0,
-        :Δt                   => 5.0e-4,
+        :Δt                   => 5.0e-3,
         :diagnostics_at_times => (0.1:0.1:1.0),
         :output_dir           => "./",
         #---------------------------------------------------------------------------

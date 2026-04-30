@@ -58,8 +58,6 @@ function user_inputs()
     c_RK_tilde[2] = 2. - sqrt(2.)
     c_RK_tilde[3] = 1.
 
-    # Polynomial order
-    nop = 4
 
     # Solver parameters
     solver_par = Dict(:restart  => true,
@@ -141,7 +139,7 @@ function user_inputs()
         mesh       = params.mesh
         metrics    = params.metrics
         visc_coeff = params.visc_coeff
-        N          = nop
+        N          = params.inputs[:nop]
         Q          = N
         backend    = CPU()
 
