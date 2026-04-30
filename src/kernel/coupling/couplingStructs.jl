@@ -394,9 +394,9 @@ function je_receive_alya_data(world, nparts)
 
     lrank = MPI.Comm_rank(get_mpi_comm())
     if lrank == 0
-        println("[je_receive_alya_data] ndime=$ndime  min=$rem_min  max=$rem_max  nx=$rem_nx .............. DONE")
+        println("[je_receive_alya_data] ndime=$ndime  min=$rem_min  max=$rem_max  nx=$rem_nx")
         println(RED_FG(string(" ... NOW BE PATIENT and GO HAVE A CUP OF TEA ...")))
-        pruntln(RED_FG(sting("  ... while Julia is precompiling. It's not running Jexpresso YET!!!!!! ....")))
+        println(RED_FG(sting("  ... while Julia is precompiling. It's not running Jexpresso YET!!!!!! ....")))
         flush(stdout)
     end
 end
@@ -1027,6 +1027,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         flush(stdout)
     end
 
+    lrank == 0 && (println("[setup_coupling] about to call sem_setup"); flush(stdout))
     t_sem = @elapsed begin
         sem, partitioned_model = sem_setup(inputs, nranks, distribute)
         if inputs[:backend] != CPU()

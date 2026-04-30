@@ -1,10 +1,15 @@
 include("../mesh/restructure_for_periodicity.jl")
 
 function sem_setup(inputs::Dict, nparts, distribute, args...)
-    
+
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
+
+    _semtic = time_ns()
+    _semlog(label) = (rank == 0 &&
+        (@printf("[sem_setup] %s  +%.2f s\n", label, (time_ns()-_semtic)/1e9); flush(stdout)))
+    _semlog("entered")
     
     fx        = zeros(Float64,1,1)
     fy        = zeros(Float64,1,1)
@@ -35,11 +40,13 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # ξ = ND.ξ.ξ
     # ω = ND.ξ.ω
     #--------------------------------------------------------
+    _semlog("calling mod_mesh_mesh_driver")
     if isnothing(adapt_flags)
         mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
     else
         mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     end
+    _semlog("mod_mesh_mesh_driver returned")
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xscale] != 1.0)
@@ -49,8 +56,10 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     end
     # mesh.xmin = minimum(mesh.coords[:,1])
     # mesh.xmax = maximum(mesh.coords[:,1])
+    _semlog("Allreduce x bounds")
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
     mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+    _semlog("Allreduce x bounds done")
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
         mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
     elseif(inputs[:yscale] != 1.0)
@@ -59,8 +68,10 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
         mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp])
     end
     if mesh.nsd == 2
+        _semlog("Allreduce y bounds")
         mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
         mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+        _semlog("Allreduce y bounds done")
     end
     
     #--------------------------------------------------------
