@@ -86,7 +86,7 @@ function user_inputs()
             mesh    = params.mesh
             metrics = params.metrics
             μ       = 1.0e-2
-            N       = nop
+            N       = params.inputs[:nop]
             Q       = N
 
             Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem,
