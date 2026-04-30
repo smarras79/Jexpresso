@@ -205,7 +205,76 @@ $$\text{RHS}[:,ieq] \mathrel{+}= S_{\text{flux}}[:,ieq]$$
 
 ---
 
-## 5. Summary
+## 5. Sponge layers via `user_source.jl`
+
+When wave reflections from domain boundaries must be suppressed (e.g. in large-eddy simulations or non-reflecting top boundaries in atmospheric models), JEXPRESSO implements sponge (Rayleigh-damping) layers entirely inside `user_source.jl`, **not** inside `user_bc.jl`. The sponge adds a linear relaxation term to the source vector *S* that drives the solution back toward a reference state *q_e*:
+
+$$S_i \;\mathrel{-}=\; c_s(x,y,z)\,\bigl(q_i - q_{e,i}\bigr)$$
+
+where $c_s \in [0,1]$ is a spatially varying damping coefficient built from smooth ramp functions.
+
+### 5.1 Activation
+
+The sponge is enabled by setting two keys in `user_inputs.jl`:
+
+```julia
+:lsponge => true,
+:zsponge => 15000.0,   # height above which damping begins [m]
+```
+
+The flag `inputs[:lsponge]` is checked at the top of the sponge block inside `user_source!`; `inputs[:zsponge]` is the altitude *z_s* above which the vertical ramp is non-zero.
+
+### 5.2 Damping-coefficient construction
+
+The coefficient *c_s* is built as a product of complementary factors, one per spatial direction, so that sponge regions at different boundaries can be combined:
+
+```julia
+alpha = 0.5
+if z >= zsponge
+    betay_coe = alpha * sinpi(0.5*(z - zs)/(zmax - zs))
+else
+    betay_coe = 0.0
+end
+ctop = 1.0 * betay_coe   # vertical (top) sponge amplitude
+
+# Horizontal sponge amplitudes (set to 0 when inactive)
+cxr = 0.0 * betaxr_coe   # right-wall sponge
+cxl = 0.0 * betaxl_coe   # left-wall sponge
+cyr = 0.0
+cyl = 0.0
+
+cs = 1.0 - (1.0-ctop)*(1.0-cxr)*(1.0-cxl)*(1.0-cyr)*(1.0-cyl)
+```
+
+The sine-ramp
+
+$$\beta_{\text{top}}(z) = \alpha\,\sin\!\left(\frac{\pi}{2}\frac{z - z_s}{z_{\max} - z_s}\right), \quad z \ge z_s$$
+
+grows smoothly from 0 at $z = z_s$ to $\alpha$ at $z = z_{\max}$. Analogous ramps for lateral boundaries are available but zeroed in the reference case. The combined coefficient
+
+$$c_s = 1 - \prod_{d}\bigl(1 - c_d\bigr)$$
+
+equals zero outside every sponge region and approaches 1 where multiple sponges overlap.
+
+### 5.3 Application to the source vector
+
+Only the momentum equations are damped by default (density and potential temperature are left free):
+
+```julia
+S[2] -= cs * (q[2] - qe[2])   # ρu
+S[3] -= cs * (q[3] - qe[3])   # ρv
+S[4] -= cs * (q[4] - qe[4])   # ρw
+```
+
+The density source `S[1]` and the potential-temperature source `S[5]` are left unchanged (commented out in the reference implementation `problems/CompEuler/LESICP2/user_source.jl`).
+
+### 5.4 Interaction with other source terms
+
+Because the sponge is simply one block inside `user_source!`, it coexists naturally with other physics. In the LESICP2 case the same function also adds gravity $(-\rho g)$ and Coriolis/geostrophic forcing before returning *S*; the order of the blocks is irrelevant since all contributions are additive.
+
+---
+
+## 6. Summary table
 
 | Problem class | Driver branch | Kernel entry point | Action |
 |---|---|---|---|
@@ -217,7 +286,7 @@ $$\text{RHS}[:,ieq] \mathrel{+}= S_{\text{flux}}[:,ieq]$$
 
 ---
 
-## 6. Files referenced
+## 7. Files referenced
 
 - `src/kernel/boundaryconditions/BCs.jl`
 - `src/kernel/boundaryconditions/custom_bcs.jl`
