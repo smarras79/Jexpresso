@@ -395,7 +395,8 @@ function je_receive_alya_data(world, nparts)
     lrank = MPI.Comm_rank(get_mpi_comm())
     if lrank == 0
         println("[je_receive_alya_data] ndime=$ndime  min=$rem_min  max=$rem_max  nx=$rem_nx .............. DONE")
-        println(" ... NOW BE PATIENT! Julia JIT is happening before starting to do anything in Jexpresso!!!!!! ....")
+        println(RED_FG(string(" ... NOW BE PATIENT and GO HAVE A CUP OF TEA ...")))
+        pruntln(RED_FG(sting("  ... while Julia is precompiling. It's not running Jexpresso YET!!!!!! ....")))
         flush(stdout)
     end
 end
