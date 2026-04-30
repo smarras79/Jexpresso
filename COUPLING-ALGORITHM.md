@@ -10,8 +10,7 @@ This document describes the coupling algorithm between Jexpresso (Julia SEM solv
 Both codes are launched as a single MPI job sharing `MPI_COMM_WORLD`:
 
 ```
-mpirun -np <N_alya> ./AlyaProxy/Alya.x \
-     : -np <N_jexpresso> julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
+mpirun -np 2 ./AlyaProxy/Alya.x : -x JEXPRESSO_COUPLED=1 -np 2 julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
 ```
 
 Alya ranks occupy world ranks `0 .. N_alya-1`; Jexpresso occupies `N_alya .. N_alya+N_jexpresso-1`.
