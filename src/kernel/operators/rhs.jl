@@ -800,17 +800,17 @@ function inviscid_rhs_el!(u, params,
     ngl   = params.mesh.ngl
     nelem = params.mesh.nelem
     
-    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax; ymin = params.ymin
 
     lkep = inputs[:lkep]
-    
+
     for iel = 1:nelem
-        
+
         for j = 1:ngl, i=1:ngl
-            
+
             ip = connijk[iel,i,j]
 
-            
+
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
             if lkep
                 user_fluxaux!(@view(params.fluxaux[ip,:]),
@@ -826,14 +826,15 @@ function inviscid_rhs_el!(u, params,
                            params.CL, params.SOL_VARS_TYPE;
                            neqs=params.neqs, ip=ip)
             end
-            
+
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
-                             x=coords[ip,1], y=coords[ip,2], ymax=ymax)
+                             x=coords[ip,1], y=coords[ip,2],
+                             ymax=ymax, ymin=ymin, xmax=xmax, xmin=xmin)
                 
                 if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
@@ -1098,13 +1099,13 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                              params.metrics.Je,
                              params.metrics.dξdx, params.metrics.dξdy,
                              params.metrics.dηdx, params.metrics.dηdy,
-                             params.inputs, params.rhs_el,
+                             params.inputs,
                              iel, ieq,
                              params.QT, params.VT, SD, params.AD; Δ=Δ)
         end
-        
+
     end
-    
+
     params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
     
 end
@@ -1597,9 +1598,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           ngl, dψ, Je,
                           dξdx, dξdy,
                           dηdx, dηdy,
-                          inputs, rhs_el,
+                          inputs,
                           iel, ieq,
-                          QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          ::Inexact, ::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
     
     for l = 1:ngl
         ωl = ω[l]
@@ -1649,12 +1650,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           ngl, dψ, Je,
                           dξdx, dξdy,
                           dηdx, dηdy,
-                          inputs, rhs_el,
+                          inputs,
                           iel, ieq,
-                          QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
-    
-    Sc_t      = PHYS_CONST.Sc_t
-    Δ2        = Δ^2
+                          ::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0)
+
+    Δ2 = Δ^2
 
     # Determine if this is a momentum equation
     is_u_momentum  = (ieq == 2)
@@ -1797,36 +1797,24 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           inputs,
                           rhs_el,
                           iel, ieq,
-                          connijk,
-                          coords, 
+                          _connijk,
+                          _coords,
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
                           μsgs,
                           QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0)
-    conn_el = @view connijk[iel,:,:,:]
-    lsponge = inputs[:lsponge]
-    zs      = inputs[:zsponge]
     for m = 1:ngl
         for l = 1:ngl
-            
+
             ωl = ω[l]
             ωm = ω[m]
             ωlm = ωl * ωm
-            
+
             for k = 1:ngl
 
                 @inbounds begin
                     Je_klm = Je[iel,k,l,m]
                     ωJac   = ω[k] * ωlm * Je_klm
-                    ip     = conn_el[k,l,m]
-                    z      = coords[ip,3]
-                    
-                    σμ     = 1.0
-                    if (z > zs) && (ieq > 4)
-                        Z = (z - zs) / (25000. - zs)
-                        # Formula: 1 - (10*X^3 - 15*X^4 + 6*X^5)
-                        σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
-                    end
-                    
+
                     dqdξ = 0.0
                     dqdη = 0.0
                     dqdζ = 0.0
@@ -1856,9 +1844,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
                     dqdz = visc_coeffieq[ieq]*auxi
                     
-                    ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac * σμ
-                    ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac * σμ
-                    ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac * σμ
+                    ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
+                    ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
+                    ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac
                     
                     @turbo for i = 1:ngl
                         dhdξ_ik = dψ[i,k]
@@ -1902,8 +1890,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     conn_el        = @view connijk[iel,:,:,:]
     μ_max_ieq      = μ_max[ieq] 
 
-    lsponge = inputs[:lsponge]
-    zs      = inputs[:zsponge]
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1915,14 +1901,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
             for k = 1:ngl
 
                 ip     = conn_el[k,l,m]
-                z      = coords[ip,3]
-                
-                σμ     = 1.0
-                if (z > zs) && (ieq > 4)
-                    Z = (z - zs) / (25000. - zs)
-                    # Formula: 1 - (10*X^3 - 15*X^4 + 6*X^5)
-                    σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
-                end
                 @inbounds begin
                     Je_klm = Je[iel,k,l,m]
                     ωJac = ω[k] * ωlm * Je_klm
@@ -2100,7 +2078,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             cp        = PhysConst.cp
                             Rvap      = PhysConst.Rvap
                             Lc        = PhysConst.Lc
-                            ip        = connijk[iel,k,l,m]
                             # Compute energy gradient
                             dhldξ = 0.0; dhldη = 0.0; dhldζ = 0.0
                             @turbo for ii = 1:ngl
@@ -2196,9 +2173,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     end
 
                     # ===== Weak form assembly (3D) =====
-                    ∇ξ_flux_klm = (dξdx_klm*flux_x + dξdy_klm*flux_y + dξdz_klm*flux_z)*ωJac * σμ
-                    ∇η_flux_klm = (dηdx_klm*flux_x + dηdy_klm*flux_y + dηdz_klm*flux_z)*ωJac * σμ
-                    ∇ζ_flux_klm = (dζdx_klm*flux_x + dζdy_klm*flux_y + dζdz_klm*flux_z)*ωJac * σμ
+                    ∇ξ_flux_klm = (dξdx_klm*flux_x + dξdy_klm*flux_y + dξdz_klm*flux_z)*ωJac
+                    ∇η_flux_klm = (dηdx_klm*flux_x + dηdy_klm*flux_y + dηdz_klm*flux_z)*ωJac
+                    ∇ζ_flux_klm = (dζdx_klm*flux_x + dζdy_klm*flux_y + dζdz_klm*flux_z)*ωJac
                     
                     @turbo for i = 1:ngl
                         dhdξ_ik = dψ[i,k]
@@ -2209,7 +2186,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η_flux_klm
                         rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ_flux_klm
                     end
-                    μ_max_ieq = max(μ_local * σμ, μ_max_ieq)
+                    μ_max_ieq = max(μ_local, μ_max_ieq)
                 end
             end
         end
