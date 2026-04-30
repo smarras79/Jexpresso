@@ -1010,7 +1010,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     end
 
     t_sem = @elapsed begin
-        sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
+        sem, partitioned_model = sem_setup(inputs, nranks, distribute)
         if inputs[:backend] != CPU()
             convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
         end
