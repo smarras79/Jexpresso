@@ -1207,7 +1207,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             end
                             
                             
-                            if best_dot < -1e-13
+                            if best_dot < -1e-10
                                 if ip_g <= n_free && !(ip_g in all_hanging_nodes)
                                     val = 0.0
                                     if inputs[:RT_shortwave]
@@ -1276,7 +1276,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                 end
                             end
                             
-                            if best_dot < -1e-13
+                            if best_dot < -1e-10
                                
                             
                                 val = 0.0
@@ -1622,7 +1622,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     diagnose_rt_matrix(As, ip2gip_spa, gnpoin, "Longwave")
     d = diag(As)
 
-    
+    #solution=As\B    
     
 
     npoin_ang_total = size(B, 1)
@@ -1690,9 +1690,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents,
-            precond  = :none,
+            precond  = :klu,
             restart  = 500,
-            tol      = 1e-4)
+            tol      = 1e-6)
 
        
 
@@ -1741,11 +1741,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         npoin_g  = n_ext_spa,
         g_ip2gip = extended_parents_to_gid_spa,
         g_gip2ip = gid_to_extended_parents_spa,
-        precond  = :ilu,
+        precond  = :none,
         restart  = 50,
-        tol      = 1e-5)
+        tol      = 1e-7)
     end
-
+    
     @rankinfo rank "Solve complete."
     #A = nothing; RHS = nothing; GC.gc()
     @info maximum(solution), minimum(solution)
@@ -2487,7 +2487,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
        
         while e_ext <= nelem_ang[iel]
           
-            if (iel == 14 && e_ext == 2)#abs(criterion[iel][e_ext]) > thresholds[1]
+            if (abs(criterion[iel][e_ext]) > thresholds[1])
                #@info iel, e_ext
                #@info rank, criterion[iel][e_ext], thresholds[1], e_ext, iel
                 adapted_ang[iel] = 1
