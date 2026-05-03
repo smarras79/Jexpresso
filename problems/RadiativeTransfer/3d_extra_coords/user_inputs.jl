@@ -36,10 +36,10 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         
         :extra_dimensions    => 2,
-        :RT_amr_threshold   => [0.9999],
+        :RT_amr_threshold   => [0.999999],
         :lRT_problem        => true,
         :lmanufactured_solution => true,
-        :adaptive_extra_meshes => true,
+        :adaptive_extra_meshes => false,
         :extra_dimensions_order => 4,
         :extra_dimensions_nelemx => 3,
         :extra_dimensions_nelemy => 3,
@@ -58,7 +58,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "netcdf", #"hdf5",
+        :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

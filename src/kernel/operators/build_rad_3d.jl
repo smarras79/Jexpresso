@@ -209,7 +209,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     @info rank, has_spatial_hanging_nodes
     # Stage 2-3 will be called after angular mesh setup (either adaptive or uniform)
     # Cache initialized but constraint building deferred until mesh fully available
-
+    R_spatial = nothing  # Will hold spatial restriction matrix if needed
+    P_spatial = nothing  # Will hold spatial prolongation matrix if needed
+    spatial_hanging_nodes_all_angular = Set{Int}()  # set for spatial hanging nodes
     if inputs[:adaptive_extra_meshes]
         gip2owner_extra = []
         local_parent_indices = Set{Int}()
@@ -543,7 +545,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
                 spatial_amr_cache = exchange_spatial_ghosts(
                     mesh, spatial_amr_cache,
-                    extra_meshes_coords, extra_meshes_connijk,
                     extra_meshes_extra_nops, extra_meshes_extra_nelems,
                     rank, comm
                 )
@@ -640,9 +641,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     else  # ── Non-adaptive path ────────────────────────────────────────────────
 
         # ── Stage 2-3: Spatial Constraints with Uniform Angular Mesh ─────────────
-        R_spatial = nothing  # Will hold spatial restriction matrix if needed
-        P_spatial = nothing  # Will hold spatial prolongation matrix if needed
-        spatial_hanging_nodes_all_angular = Set{Int}()  # BC exclusion set
+        
 
         if has_spatial_hanging_nodes
             @info "[$rank] Building spatial constraints with uniform angular mesh (Stage 2+)..."
@@ -668,29 +667,94 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
                 spatial_amr_cache = exchange_spatial_ghosts(
                     mesh, spatial_amr_cache,
-                    extra_meshes_coords_uniform, extra_meshes_connijk_uniform,
                     extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
                     rank, comm
                 )
                 @info "[$rank] ✓ Ghost exchange complete (Stage 3)"
                 verify_spatial_ghost_exchange(spatial_amr_cache, rank)
 
-                # Collect all spatial-angular hanging node DOF indices for BC exclusion
-                # These nodes inherit constraints and should not have BCs applied directly
+                # ── Mutual-exclusivity post-processing ────────────────────────
+                # Corner nodes at junctions of multiple NCFs can appear simultaneously
+                # as parents of interpolated hanging nodes AND as coincident children of
+                # another NCF. Such nodes must NOT be classified as coincident, because
+                # coincident treatment zeroes their assembled rows. Collect all nodes
+                # that act as parents and remove them from the coincident sets.
+                local_parent_ip_set = Set{Int}()
+                for (_, plist) in spatial_amr_cache.parent_weights
+                    for (pip, _) in plist
+                        push!(local_parent_ip_set, pip)
+                    end
+                end
+                cross_rank_parent_gip_set = Set{Int}()
+                for (_, plist) in spatial_amr_cache.cross_rank_parent_weights
+                    for (pgip, _) in plist
+                        push!(cross_rank_parent_gip_set, pgip)
+                    end
+                end
+                n_removed_local      = 0
+                n_removed_cross_rank = 0
+                for child_ip in collect(keys(spatial_amr_cache.coincident_nodes))
+                    child_gip = Int(mesh.ip2gip[child_ip])
+                    # Remove if acting as a parent, OR if also classified as interpolated child
+                    # (parent_weights keys take precedence over coincident_nodes)
+                    if child_ip in local_parent_ip_set ||
+                       child_gip in cross_rank_parent_gip_set ||
+                       haskey(spatial_amr_cache.parent_weights, child_ip) ||
+                       haskey(spatial_amr_cache.cross_rank_parent_weights, child_ip)
+                        delete!(spatial_amr_cache.coincident_nodes, child_ip)
+                        n_removed_local += 1
+                    end
+                end
+                for child_ip in collect(keys(spatial_amr_cache.cross_rank_coincident_nodes))
+                    child_gip = Int(mesh.ip2gip[child_ip])
+                    if child_ip in local_parent_ip_set ||
+                       child_gip in cross_rank_parent_gip_set ||
+                       haskey(spatial_amr_cache.parent_weights, child_ip) ||
+                       haskey(spatial_amr_cache.cross_rank_parent_weights, child_ip)
+                        delete!(spatial_amr_cache.cross_rank_coincident_nodes, child_ip)
+                        n_removed_cross_rank += 1
+                    end
+                end
+                @info "[$rank] Mutual-exclusivity: removed $n_removed_local coincident + $n_removed_cross_rank cross-rank coincident nodes that were also acting as parents or interpolated children"
+
+                # Collect all spatial-angular hanging node DOF indices for BC exclusion.
+                # Includes both local-parent hanging nodes (parent_weights) and
+                # cross-rank hanging nodes (cross_rank_parent_weights).
                 spatial_hanging_nodes_all_angular = Set{Int}()
                 n_ang = extra_mesh.extra_npoin
                 for spatial_hanging_id in keys(spatial_amr_cache.parent_weights)
                     for i_ang = 1:n_ang
-                        dof_idx = (spatial_hanging_id - 1) * n_ang + i_ang
-                        push!(spatial_hanging_nodes_all_angular, dof_idx)
+                        push!(spatial_hanging_nodes_all_angular,
+                              (spatial_hanging_id - 1) * n_ang + i_ang)
                     end
                 end
-                @info "[$rank] Tracked $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs for BC exclusion"
+                for spatial_hanging_id in keys(spatial_amr_cache.cross_rank_parent_weights)
+                    for i_ang = 1:n_ang
+                        push!(spatial_hanging_nodes_all_angular,
+                              (spatial_hanging_id - 1) * n_ang + i_ang)
+                    end
+                end
+                # Coincident nodes: physically at the same location as a parent node.
+                # Excluded from free-node assembly (would double-count the parent).
+                for spatial_hanging_id in keys(spatial_amr_cache.coincident_nodes)
+                    for i_ang = 1:n_ang
+                        push!(spatial_hanging_nodes_all_angular,
+                              (spatial_hanging_id - 1) * n_ang + i_ang)
+                    end
+                end
+                for spatial_hanging_id in keys(spatial_amr_cache.cross_rank_coincident_nodes)
+                    for i_ang = 1:n_ang
+                        push!(spatial_hanging_nodes_all_angular,
+                              (spatial_hanging_id - 1) * n_ang + i_ang)
+                    end
+                end
+                @info "[$rank] Tracked $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs for BC exclusion ($(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank + $(length(spatial_amr_cache.coincident_nodes)) coincident + $(length(spatial_amr_cache.cross_rank_coincident_nodes)) cross-rank coincident)"
 
                 # ── Stage 4 prep: Build spatial constraint matrices for RHS/LHS assembly ────
                 @info "[$rank] Building spatial restriction and prolongation matrices (Stage 4 prep)..."
                 R_spatial, P_spatial = build_spatial_restriction_and_prolongation(
-                    spatial_amr_cache, npoin, extra_mesh.extra_npoin, spatial_hanging_nodes_all_angular
+                    spatial_amr_cache, npoin, extra_mesh.extra_npoin, spatial_hanging_nodes_all_angular,
+                    mesh, extra_mesh
                 )
                 @info "[$rank] ✓ Spatial matrices built: R_spatial = $(size(R_spatial)), P_spatial = $(size(P_spatial))"
 
@@ -701,6 +765,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
         npoin_ang_total = npoin * extra_mesh.extra_npoin
+        @info "total number of points DOFs", npoin_ang_total, npoin, extra_mesh.extra_npoin
         n_spa = npoin_ang_total
         @rankinfo rank "Assembling LHS ($npoin_ang_total DOF)..."
         LHS = sparse_lhs_assembly_3Dby2D(
@@ -732,6 +797,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         M_inv = spdiagm(0 => 1.0 ./ Md)
         MLHS     = sparse(M_inv * LHS)
         A = MLHS
+        @info "[$rank] A after assembly: size=$(size(A)), nnz=$(nnz(A))"
         M_inv = nothing; LHS = nothing
         GC.gc()
 
@@ -739,17 +805,302 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         RHS = zeros(TFloat, npoin_ang_total)
         ref = zeros(TFloat, npoin_ang_total)
 
+        # Extended parent structures for spatial AMR (populated inside the constraint block)
+        extended_parents_to_gid_spa = Int[]
+        gid_to_extended_parents_spa = Dict{Int,Int}()
+        n_ext_spa = npoin_ang_total
+
         # ── Stage 5: Apply spatial constraints to LHS matrix (uniform angular mesh) ────
         if has_spatial_hanging_nodes && R_spatial !== nothing
-            @info "[$rank] Applying spatial constraints to LHS matrix (Stage 5)..."
-            # Apply spatial restriction: A_spatial = R_spatial * A * P_spatial
-            @info maximum(A), minimum(A)
-            @info maximum(R_spatial), minimum(R_spatial)
-            A = sparse(R_spatial * A * P_spatial)
-            @info maximum(A), minimum(A)
-            @info "[$rank] ✓ Spatial LHS constraints applied: A = $(size(A))"
-            @info "check that A has empty rows for hanging nodes"
-            
+            @info "[$rank] Applying spatial constraints to LHS matrix (Stage 5, MPI-aware)..."
+
+            # Build helper data structures for MPI pattern
+            # gip_to_local: global DOF ID → local DOF index
+            gip_to_local_spa = Dict{Int,Int}()
+            sizehint!(gip_to_local_spa, npoin_ang_total)
+            for ip = 1:npoin_ang_total
+                gip_to_local_spa[ip2gip_spa[ip]] = ip
+            end
+
+            # gip2owner_spa_gid: global DOF ID → owner rank (for use in row/col effects functions)
+            gip2owner_spa_gid = Dict{Int,Int}()
+            sizehint!(gip2owner_spa_gid, npoin_ang_total)
+            for ip = 1:npoin_ang_total
+                gip2owner_spa_gid[ip2gip_spa[ip]] = gip2owner_extra[ip]
+            end
+            # Also add ghost parent DOF GIDs from cross-rank NCFs.
+            # mesh.pgip_ghost[k] = global SPATIAL IP of parent; mesh.pgip_owner[k] = its owner rank.
+            # These parents live on other ranks and are not in ip2gip_spa, so they must be
+            # inserted explicitly to avoid a KeyError in compute_hanging_row/col_effects.
+            for k = 1:length(mesh.pgip_ghost)
+                parent_gip_spa = Int(mesh.pgip_ghost[k])
+                parent_owner   = Int(mesh.pgip_owner[k])
+                parent_gip_spa <= 0 && continue
+                for i_ang = 1:n_ang
+                    parent_gid = (parent_gip_spa - 1) * n_ang + i_ang
+                    gip2owner_spa_gid[parent_gid] = parent_owner
+                end
+            end
+
+            # Find all parent spatial IPs and build parent DOF sets
+            parent_spatial_ips = Set{Int}()
+            for (_, weights) in spatial_amr_cache.parent_weights
+                for (parent_ip, _) in weights
+                    push!(parent_spatial_ips, parent_ip)
+                end
+            end
+
+            nonowned_parent_gids_spa = Set{Int}()
+            nonowned_parent_dofs_spa  = Int[]
+            for spatial_ip in parent_spatial_ips
+                for i_ang_p = 1:n_ang
+                    dof = (spatial_ip - 1) * n_ang + i_ang_p
+                    if dof >= 1 && dof <= npoin_ang_total && gip2owner_extra[dof] != rank
+                        push!(nonowned_parent_dofs_spa,  dof)
+                        push!(nonowned_parent_gids_spa,  ip2gip_spa[dof])
+                    end
+                end
+            end
+
+            # Build two ghost constraint dicts, mirroring the angular adaptive pattern:
+            #
+            # ghost_constraint_data_spa     → used for MATRIX row/col effects (Stage 5)
+            #   Contains ALL local parent GIDs (owned + non-owned) + cross-rank GIDs.
+            #   The matrix effects functions skip owned parents via `owner == rank && continue`,
+            #   so including them is harmless but keeps the pattern consistent with nc_mat.
+            #
+            # ghost_constraint_data_spa_rhs → used for RHS effects (Stage 4)
+            #   Contains ONLY non-owned local parent GIDs + cross-rank GIDs.
+            #   compute_hanging_rhs_effects_before_restriction has NO ownership skip,
+            #   so owned parents must be excluded (they're already in R_spatial_rhs * RHS).
+            #
+            # Also builds R_spatial_rhs: the RHS restriction matrix with ONLY owned-parent
+            # constraints (mirrors nc_mat_rhs in the angular adaptive case).
+
+            ghost_constraint_data_spa     = Dict{Int, Vector{Tuple{Int, Float64}}}()
+            ghost_constraint_data_spa_rhs = Dict{Int, Vector{Tuple{Int, Float64}}}()
+
+            # ── Source 1: fully cross-rank parents (go in BOTH dicts) ────────
+            for (hanging_local_spa, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
+                #@info "checking number of parents cross rank:", length(cross_weights)
+                for i_ang = 1:n_ang
+                    hanging_dof = (hanging_local_spa - 1) * n_ang + i_ang
+                    (hanging_dof < 1 || hanging_dof > npoin_ang_total) && continue
+                    parent_constraints = Tuple{Int, Float64}[]
+                    for (parent_global_spa, weight) in cross_weights
+                        parent_gid = (parent_global_spa - 1) * n_ang + i_ang
+                        push!(parent_constraints, (parent_gid, weight))
+                    end
+                    isempty(parent_constraints) && continue
+                    ghost_constraint_data_spa[hanging_dof]     = copy(parent_constraints)
+                    ghost_constraint_data_spa_rhs[hanging_dof] = copy(parent_constraints)
+                end
+            end
+
+            # ── Source 2: local parents split by ownership ────────────────────
+            # Build R_spatial_rhs (owned parents only) and populate both ghost dicts.
+            I_rhs_sp = Int[]; J_rhs_sp = Int[]; V_rhs_sp = Float64[]
+            for dof = 1:npoin_ang_total
+                if !(dof in spatial_hanging_nodes_all_angular)
+                    push!(I_rhs_sp, dof); push!(J_rhs_sp, dof); push!(V_rhs_sp, 1.0)
+                end
+            end
+            n_nonowned_local_added = 0
+            for (hanging_local_spa, local_weights) in spatial_amr_cache.parent_weights
+                #@info "checking number of parents local:", length(local_weights)
+                for i_ang = 1:n_ang
+                    hanging_dof = (hanging_local_spa - 1) * n_ang + i_ang
+                    (hanging_dof < 1 || hanging_dof > npoin_ang_total) && continue
+                    for (parent_local_spa, weight) in local_weights
+                        parent_dof = (parent_local_spa - 1) * n_ang + i_ang
+                        (parent_dof < 1 || parent_dof > npoin_ang_total) && continue
+                        parent_gid = ip2gip_spa[parent_dof]
+                        x_p = mesh.x[parent_local_spa]
+                        y_p = mesh.y[parent_local_spa]
+                        z_p = mesh.z[parent_local_spa]
+                        θ_p = extra_mesh.extra_coords[1,i_ang]
+                        ϕ_p = extra_mesh.extra_coords[2,i_ang]
+                        #=if (abs(x_p-2.0)<1e-3) && (abs(y_p-4/3)<1e-3) && (abs(z_p-2/3)<1e-3) && (abs(θ_p-2.951503249004322)<1e-3) && (abs(ϕ_p-1.732749272043855)<1e-3)
+                            @info "1", gip2owner_extra[parent_dof], i_ang, parent_local_spa, parent_dof, parent_gid
+                        end
+                        if (abs(x_p-2.0)<1e-3) && (abs(y_p-4/3)<1e-3) && (abs(z_p-4/3)<1e-3) && (abs(θ_p-1.0506882097005865)<1e-3) && (abs(ϕ_p-2.4560409327425354)<1e-3)
+                            @info "4", gip2owner_extra[parent_dof], i_ang, parent_local_spa, parent_dof, parent_gid
+                        end=#
+                        # Matrix dict gets ALL local parents (owned ones skipped at use time)
+                        mat_entry = get!(ghost_constraint_data_spa, hanging_dof, Tuple{Int,Float64}[])
+                        if !any(g == parent_gid for (g, _) in mat_entry)
+                            push!(mat_entry, (parent_gid, weight))
+                        end
+                        if gip2owner_extra[parent_dof] == rank
+                            # Owned parent → goes into R_spatial_rhs for local RHS multiply
+                            push!(I_rhs_sp, parent_dof)
+                            push!(J_rhs_sp, hanging_dof)
+                            push!(V_rhs_sp, weight)
+                        else
+                            # Non-owned local parent → RHS dict (will be exchanged via MPI)
+                            rhs_entry = get!(ghost_constraint_data_spa_rhs, hanging_dof, Tuple{Int,Float64}[])
+                            if !any(g == parent_gid for (g, _) in rhs_entry)
+                                push!(rhs_entry, (parent_gid, weight))
+                                n_nonowned_local_added += 1
+                            end
+                        end
+                    end
+                end
+            end
+            R_spatial_rhs = sparse(I_rhs_sp, J_rhs_sp, V_rhs_sp, npoin_ang_total, npoin_ang_total)
+            @info "[$rank] ghost_constraint_data_spa (matrix): $(length(ghost_constraint_data_spa)) hanging DOFs"
+            @info "[$rank] ghost_constraint_data_spa_rhs: $(length(ghost_constraint_data_spa_rhs)) hanging DOFs"
+            @info "[$rank] non-owned local parent RHS entries: $n_nonowned_local_added"
+            @info "[$rank] R_spatial_rhs: $(size(R_spatial_rhs)), nnz=$(nnz(R_spatial_rhs))"
+            @info "maxima of R_spatial_rhs", maximum(R_spatial_rhs), minimum(R_spatial_rhs)
+            @info "maxima of R_spatial", maximum(R_spatial), minimum(R_spatial)
+            # ── Build extended parent numbering for cross-rank parents ─────────
+            # For each cross-rank parent GID that appears in ghost_constraint_data_spa,
+            # assign an extended local index > npoin_ang_total on this rank.
+            # This mirrors the angular adaptive case's gid_to_extended_parents mechanism:
+            # rank 1 (hanging rank) computes cross-rank parent P0's row/col effects and
+            # stores them in extended rows/cols of the local matrix.  The parallel matvec
+            # then AllReduces these extended-row contributions to P0's global residual.
+            n_ghost_ext_spa = 0
+            for (_, parent_list) in ghost_constraint_data_spa
+                for (parent_gid, _) in parent_list
+                    # Only extend parents that are (a) owned by another rank AND
+                    # (b) not already present in the local DOF map.
+                    # Ghost parents (owned elsewhere but locally accessible) must NOT
+                    # get an extended slot — they go via the MPI path so that rank 0 can
+                    # add constraint contributions directly to its owned parent row.
+                    # Rank-1-interior column drops in add_hanging_row/col_effects are
+                    # corrected by the bounce-back exchange that follows each effect step.
+                    if gip2owner_spa_gid[parent_gid] != rank &&
+                       !haskey(gid_to_extended_parents_spa, parent_gid) &&
+                       !haskey(gip_to_local_spa, parent_gid)
+                        n_ghost_ext_spa += 1
+                        gid_to_extended_parents_spa[parent_gid] = npoin_ang_total + n_ghost_ext_spa
+                        push!(extended_parents_to_gid_spa, parent_gid)
+                    end
+                end
+            end
+            n_ext_spa = npoin_ang_total + n_ghost_ext_spa
+            @info "[$rank] Extended parent structures: $n_ghost_ext_spa cross-rank parent GIDs → n_ext=$n_ext_spa"
+
+            # Extended gip→local map that also resolves extended parent GIDs
+            gip_to_local_spa_ext = copy(gip_to_local_spa)
+            for (pgid, ext_idx) in gid_to_extended_parents_spa
+                gip_to_local_spa_ext[pgid] = ext_idx
+            end
+
+            # Extended R and P: same as R_spatial/P_spatial but with identity rows/cols
+            # at every extended parent index so that extended rows survive R * A_eff.
+            if n_ghost_ext_spa > 0
+                I_re, J_re, V_re = findnz(R_spatial)
+                for k = 1:n_ghost_ext_spa
+                    ext_idx = npoin_ang_total + k
+                    push!(I_re, ext_idx); push!(J_re, ext_idx); push!(V_re, 1.0)
+                end
+                R_spatial_ext = sparse(I_re, J_re, V_re, n_ext_spa, n_ext_spa)
+                P_spatial_ext = sparse(R_spatial_ext')
+            else
+                R_spatial_ext = R_spatial
+                P_spatial_ext = P_spatial
+            end
+
+            # ── Step 1: AllReduce parent–parent entries ───────────────────────
+            if nprocs > 1
+                @info "[$rank] AllReducing spatial parent-parent matrix entries..."
+                A = allreduce_parent_parent_entries(
+                    A, R_spatial_ext, gip2owner_extra, npoin_ang_total, rank, comm,
+                    ip2gip_spa, Int[], nonowned_parent_dofs_spa,
+                    nonowned_parent_gids_spa, gip_to_local_spa)
+                @info "[$rank] A after AllReduce: nnz=$(nnz(A))"
+            end
+
+            # ── Step 2: Parallel restriction (R from left) ───────────────────
+            # Cross-rank parent effects go into extended rows of A_eff (via extended
+            # parent structures); R_spatial_ext has identity at those rows so they survive
+            # the left-multiply.  No MPI exchange needed for the extended-parent effects.
+            @info "[$rank] ghost_constraint_data_spa: $(length(ghost_constraint_data_spa)) hanging DOFs, parent_weights: $(length(spatial_amr_cache.parent_weights)), cross_rank_parent_weights: $(length(spatial_amr_cache.cross_rank_parent_weights))"
+            @info "[$rank] Applying parallel spatial restriction (left multiply by R_ext)..."
+            row_effects_to_send, A_eff =
+                compute_hanging_row_effects_before_restriction(
+                    ghost_constraint_data_spa, A, ip2gip_spa, gip2owner_spa_gid, rank,
+                    gid_to_extended_parents_spa, extended_parents_to_gid_spa,
+                    gip_to_local_spa_ext)
+            @info "[$rank] A_eff after compute_row_effects: size=$(size(A_eff)), nnz=$(nnz(A_eff))"
+            for (dest, eff) in row_effects_to_send
+                @info "[$rank] → sending $(length(eff)) row effects to rank $dest"
+            end
+            if isempty(row_effects_to_send)
+                @info "[$rank] → no row effects to send (all cross-rank parents in extended set)"
+            end
+
+            # Left-multiply by extended R: local hanging rows get constraints applied;
+            # extended parent rows (identity in R_spatial_ext) pass through unchanged.
+            A_left = R_spatial_ext * A_eff
+            @info "[$rank] A after R_ext * A_eff: size=$(size(A_left)), nnz=$(nnz(A_left))"
+
+            received_row_effects = exchange_hanging_effects(row_effects_to_send, rank, comm)
+            for (src, eff) in received_row_effects
+                @info "[$rank] ← received $(length(eff)) row effects from rank $src"
+            end
+
+            A_with_rows = add_hanging_row_effects(
+                A_left, received_row_effects, ip2gip_spa,
+                n_ext_spa, rank, gip_to_local_spa_ext)
+            @info "[$rank] A after add_row_effects: nnz=$(nnz(A_with_rows))"
+
+            # ── Step 3: Parallel prolongation (P from right) ─────────────────
+            @info "[$rank] Applying parallel spatial prolongation (right multiply by P_ext)..."
+            col_effects_to_send, A_col_eff =
+                compute_hanging_col_effects_before_prolongation(
+                    ghost_constraint_data_spa, A_with_rows, ip2gip_spa, gip2owner_spa_gid,
+                    npoin_ang_total, n_ext_spa,
+                    spatial_hanging_nodes_all_angular, rank,
+                    gid_to_extended_parents_spa, extended_parents_to_gid_spa,
+                    gip_to_local_spa_ext)
+            @info "[$rank] A after compute_col_effects: nnz=$(nnz(A_col_eff))"
+            for (dest, eff) in col_effects_to_send
+                @info "[$rank] → sending $(length(eff)) col effects to rank $dest"
+            end
+            if isempty(col_effects_to_send)
+                @info "[$rank] → no col effects to send (all cross-rank parents in extended set)"
+            end
+
+            # Right-multiply by extended P: hanging columns get prolongation applied;
+            # extended parent columns (identity in P_spatial_ext) pass through unchanged.
+            A_both = A_col_eff * P_spatial_ext
+            @info "[$rank] A after *P_spatial_ext: size=$(size(A_both)), nnz=$(nnz(A_both)), nnz(P_spatial_ext)=$(nnz(P_spatial_ext))"
+
+            received_col_effects = exchange_hanging_effects(col_effects_to_send, rank, comm)
+            for (src, eff) in received_col_effects
+                @info "[$rank] ← received $(length(eff)) col effects from rank $src"
+            end
+
+            A_with_cols = add_hanging_col_effects(
+                A_both, received_col_effects, ip2gip_spa,
+                n_ext_spa, rank, gip_to_local_spa_ext)
+            @info "[$rank] A after add_col_effects: nnz=$(nnz(A_with_cols))"
+
+            A = sparse(A_with_cols)  # n_ext_spa × n_ext_spa
+
+            # ── Step 4: Zero non-owned parent entries (prevent GMRES double-count) ──
+            if nprocs > 1 && !isempty(nonowned_parent_dofs_spa)
+                @info "[$rank] Zeroing $(length(nonowned_parent_dofs_spa)) non-owned parent DOF entries..."
+                n_zeroed = 0
+                for i in nonowned_parent_dofs_spa
+                    i <= size(A, 1) || continue
+                    for j in nonowned_parent_dofs_spa
+                        j <= size(A, 2) || continue
+                        if abs(A[i,j]) > 0.0
+                            A[i,j] = 0.0
+                            n_zeroed += 1
+                        end
+                    end
+                end
+                A = sparse(A)
+                @info "[$rank] A after Step4 zero (n_zeroed=$n_zeroed): nnz=$(nnz(A))"
+            end
+
+            @info "[$rank] ✓ Spatial LHS constraints applied (MPI-aware): A = $(size(A)), final nnz=$(nnz(A))"
         end
     end  # adaptive / non-adaptive
 
@@ -785,9 +1136,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         for i = 1:ngl, j = 1:ngl, k = 1:ngl
             ip  = mesh.connijk[iel, i, j, k]
             x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
-            if (abs(x-2.0)<1e-4 && abs(y-1.0)<1e-4 && abs(z-(2/3))<1e-4)
-                @info iel, i,j,k, ip
-            end
             sf  = spatial_factor[ip]
             is_boundary = ip in mesh.poin_in_bdy_face
 
@@ -972,16 +1320,85 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
 
-    # ── Stage 4: Apply spatial constraints to RHS (uniform angular mesh) ────────
+    @info "CHECKING RHS values before and after restriction"
+    for i=1:npoin_ang_total
+        gip = ip2gip_spa[i]
+        if (gip == 4181)
+            @info "before 1", RHS[i]
+        elseif (gip == 4417)
+            @info "before 4", RHS[i]
+        end
+    end
+    #=for i=1:npoin_ang_total
+        gip = ip2gip_spa[i]
+        if (gip == 56710)
+            @info "before 1", RHS[i]
+        elseif (gip == 48347)
+            @info "before 4", RHS[i]
+        end
+    end=#
+    # ── Stage 4: Apply spatial constraints to RHS (uniform angular mesh, MPI-aware) ──
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
-        @info "[$rank] Applying spatial constraints to RHS (Stage 4)..."
+        @info "[$rank] Applying spatial constraints to RHS (Stage 4, MPI-aware)..."
         n_ang = extra_mesh.extra_npoin
-        @info maximum(RHS), minimum(RHS)
-        RHS = R_spatial * RHS#apply_spatial_constraint_to_rhs(RHS, spatial_amr_cache, n_ang)
-        @info "[$rank] ✓ Spatial RHS constraints applied"
-        @info maximum(RHS), minimum(RHS)
+
+        # Step 1: compute weighted RHS contributions from cross-rank hanging nodes
+        # and route them to the owning rank of each ghost parent.
+        # Uses ghost_constraint_data_spa_rhs (non-owned local + cross-rank only),
+        # since owned local parents are already handled by R_spatial_rhs * RHS.
+        rhs_effects_to_send =
+            compute_hanging_rhs_effects_before_restriction(
+                ghost_constraint_data_spa_rhs, RHS, ip2gip_spa, gip2owner_spa_gid, rank)
+        
+        # Step 2: local restriction using ownership-filtered R_spatial_rhs.
+        # Only owned-parent constraints are applied locally; non-owned local and
+        # cross-rank parents were sent in Step 1 via ghost_constraint_data_spa_rhs.
+        RHS = R_spatial_rhs*RHS#R_spatial_rhs * RHS
+
+        for i=1:npoin_ang_total
+            gip = ip2gip_spa[i]
+            if (gip == 4181)
+                @info "restricted 1", RHS[i]
+            elseif (gip == 4417)
+                @info "restricted 4", RHS[i]
+            end
+        end
+        #=for i=1:npoin_ang_total
+            gip = ip2gip_spa[i]
+            if (gip == 56710)
+                @info "restricted 1", RHS[i]
+            elseif (gip == 48347)
+                @info "restricted 4", RHS[i]
+            end
+        end=#
+        # Step 3: exchange cross-rank effects (collective — all ranks participate)
+        received_rhs_effects =
+            exchange_hanging_effects_vector(rhs_effects_to_send, rank, comm)
+
+        # Step 4: accumulate received effects into parent rows
+        RHS = add_hanging_rhs_effects(
+            RHS, received_rhs_effects, ip2gip_spa, npoin_ang_total, rank, gip_to_local_spa)
+        
+        for i=1:npoin_ang_total
+            gip = ip2gip_spa[i]
+            if (gip == 4181)
+                @info "added 1", RHS[i]
+            elseif (gip == 4417)
+                @info "added 4", RHS[i]
+            end
+        end
+        #=for i=1:npoin_ang_total
+            gip = ip2gip_spa[i]
+            if (gip == 56710)
+                @info "added 1", RHS[i]
+            elseif (gip == 48347)
+                @info "added 4", RHS[i]
+            end
+        end=#
+        @info "[$rank] ✓ Spatial RHS constraints applied (MPI-aware)"
     end
 
+    
     # ── Ghost boundary nodes (extended ghost-parent DOFs) ─────────────────────
     if inputs[:adaptive_extra_meshes] && n_spa_g > n_spa
         n_extended = n_spa_g - n_spa
@@ -1032,8 +1449,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
         A = dropzeros!(A)
-        
-    
+        @info "[$rank] A after BC application + dropzeros: nnz=$(nnz(A))"
+
+
     # ── RHS restriction ───────────────────────────────────────────────────────
     if inputs[:adaptive_extra_meshes]
         #RHS_mass_weighted = Md .* RHS
@@ -1064,10 +1482,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         B = RHS_red
 
     
-        for ip in all_hanging_nodes
-            A[ip,ip] = 1.0
-            B[ip] = 0.0
-        end
         @info "maxima of restricted RHS"
         @info maximum(RHS), minimum(RHS)
     else
@@ -1077,11 +1491,72 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         B = RHS
     end
 
+    # ── Coincident node enforcement (uniform angular path) ────────────────────
+    # Coincident nodes sit at exactly the same (x,y,z) as a parent node but have
+    # a different local spatial IP. Their assembled rows duplicate the parent's
+    # contribution. Zero their rows in A (identity diagonal) and zero their RHS;
+    # after the solve, copy the parent solution into them.
+    @info "maxima of A right before coicidence handling", maximum(A), minimum(A)
+    if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes
+        n_ang_c = extra_mesh.extra_npoin
+        # Build the set of all coincident DOF indices for fast lookup
+        coincident_dof_set = Set{Int}()
+        for child_spa in keys(spatial_amr_cache.coincident_nodes)
+            for i_ang = 1:n_ang_c
+                cdof = (child_spa - 1) * n_ang_c + i_ang
+                cdof >= 1 && cdof <= npoin_ang_total && push!(coincident_dof_set, cdof)
+            end
+        end
+        for child_spa in keys(spatial_amr_cache.cross_rank_coincident_nodes)
+            for i_ang = 1:n_ang_c
+                cdof = (child_spa - 1) * n_ang_c + i_ang
+                cdof >= 1 && cdof <= npoin_ang_total && push!(coincident_dof_set, cdof)
+            end
+        end
+        # Iterate over columns in CSC format to zero coincident rows (same pattern as BC loop)
+        rows_Ac = rowvals(A); vals_Ac = nonzeros(A)
+        for col = 1:size(A, 2)
+            for ptr in nzrange(A, col)
+                row = rows_Ac[ptr]
+                row in coincident_dof_set || continue
+                vals_Ac[ptr] = (row == col) ? 1.0 : 0.0
+            end
+        end
+        for cdof in coincident_dof_set
+            B[cdof] = 0.0
+        end
+        n_coin = length(spatial_amr_cache.coincident_nodes) + length(spatial_amr_cache.cross_rank_coincident_nodes)
+        @info "[$rank] Zeroed $n_coin×n_ang=$(length(coincident_dof_set)) coincident DOFs ($(length(spatial_amr_cache.coincident_nodes)) local, $(length(spatial_amr_cache.cross_rank_coincident_nodes)) cross-rank)"
+        A = dropzeros!(A)
+        @info "[$rank] A after coincident enforcement + dropzeros: nnz=$(nnz(A))"
+    end
+
     #-Symmetrize boundary conditions:
     As  = sparse(A)
     rows_A = rowvals(As)
     vals_A = nonzeros(As)
-    
+    @info "maxima of A right before comparison", maximum(As), minimum(As)
+    if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
+        _outdir = "."
+        _spa_amr_ref = joinpath(_outdir, "spa_amr_serial_reference.jld2")
+        if nprocs == 1
+            @info "[$rank] Saving serial spatial-AMR reference → $_spa_amr_ref"
+            save_serial_spatial_amr(
+                B, As, mesh, extra_mesh, n_ang, npoin_ang_total,
+                spatial_hanging_nodes_all_angular, _spa_amr_ref)
+        elseif isfile(_spa_amr_ref)
+            @info "[$rank] Comparing parallel spatial-AMR assembly against serial reference..."
+            reduce_and_compare_parallel_spatial_amr(
+                B, As, mesh, extra_mesh, n_ang, npoin_ang_total,
+                spatial_hanging_nodes_all_angular,
+                ip2gip_spa, gnpoin, extended_parents_to_gid_spa,
+                comm, rank, _spa_amr_ref)
+        else
+            @info "[$rank] No serial reference found at $_spa_amr_ref — run with 1 rank first to generate it"
+        end
+        MPI.Barrier(comm)
+    end
+
     for col in boundary_set
         val = BDY[col]
         
@@ -1099,30 +1574,16 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     if inputs[:adaptive_extra_meshes]
         for ip in all_hanging_nodes
             As[ip,ip] = 1.0
+            B[ip] = 0.0
+        end
+    elseif has_spatial_hanging_nodes && R_spatial !== nothing
+        @info length(spatial_hanging_nodes_all_angular)
+        for ip in spatial_hanging_nodes_all_angular
+            
+            As[ip,ip] = 1.0
+            B[ip] = 0.0
         end
     end
-    # Check if the system is consistent
-    @info "norm(B_consistent)" norm(B)
-    @info "norm(LHS_restricted)" norm(As, Inf)
-
-    # Check diagonal
-    d = diag(As)
-    @info "Negative diagonal count" count(d .< 0)
-    @info "Zero diagonal count" count(abs.(d) .< 1e-10)
-    @info "Diagonal range" minimum(d), maximum(d)
-
-    # Check if matrix is badly scaled
-    @info "1-norm" norm(As, 1)
-    @info "Inf-norm" norm(As, Inf)
-
-    # Check RHS magnitude
-    @info "max B" maximum(abs.(B))
-    @info "min B" minimum(abs.(B))
-    
-    physics_diag = [d[ip] for ip = 1:length(d) 
-                if !(ip in boundary_set) && d[ip] > 1e-10]
-    neg_diag = [d[ip] for ip = 1:length(d) 
-            if !(ip in boundary_set) && d[ip] < 0]
 
     n_fixed = 0
     n_small = 0
@@ -1147,10 +1608,16 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
     end
-    @info "n_fixed=$n_fixed, number of large diag values used=$n_big, number of small diag values used=$n_small" 
+    @info "n_fixed=$n_fixed, number of large diag values used=$n_big, number of small diag values used=$n_small"
+
+    # ── Parallel correctness check: compare assembled (As, B) against serial ──
+    # To use: run once with 1 rank to generate the reference file, then run with
+    # multiple ranks.  Set the path below to a writable location.
+    
+
     # ── Linear solve ──────────────────────────────────────────────────────────
     @rankinfo rank "Solving system ($(size(A,1)) DOF)..."
-    
+
     A   = nothing; GC.gc()
     diagnose_rt_matrix(As, ip2gip_spa, gnpoin, "Longwave")
     d = diag(As)
@@ -1204,8 +1671,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents,
-            precond  = :none,
-            restart  = 50,
+            precond  = :ilu,
+            restart  = 200,
             tol      = 1e-4)
 
     elseif inputs[:adaptive_extra_meshes]
@@ -1213,6 +1680,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         x_warm = Float64[]
         if (inputs[:lmanufactured_solution])
             x_warm = ref
+            
+            for i in all_hanging_nodes
+                x_warm[i] = 0.0
+            end
+           
         end
         solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             npoin_g  = n_spa_g,
@@ -1254,15 +1726,24 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             restart = 30,
             tol     = 1e-4)
     else
+        @info maximum(ip2gip_spa), minimum(ip2gip_spa)
         x_warm = Float64[]
         if (inputs[:lmanufactured_solution])
             x_warm = ref
+            if has_spatial_hanging_nodes && R_spatial !== nothing
+                for i in spatial_hanging_nodes_all_angular
+                    x_warm[i] = 0.0
+                end
+            end
         end
+
         solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
-        npoin_g = npoin_ang_total,
-        precond = :none,
-        restart = 3000,
-        tol     = 1e-3)
+        npoin_g  = n_ext_spa,
+        g_ip2gip = extended_parents_to_gid_spa,
+        g_gip2ip = gid_to_extended_parents_spa,
+        precond  = :ilu,
+        restart  = 50,
+        tol      = 1e-5)
     end
 
     @rankinfo rank "Solve complete."
@@ -1289,11 +1770,21 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     end
     
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
-        @info "[$rank] Applying spatial prolongation to solution (Stage 4)..."
-        n_ang = extra_mesh.extra_npoin
-        solution = P_spatial * solution#apply_spatial_constraint_to_rhs(RHS, spatial_amr_cache, n_ang)
-        @info "[$rank] ✓ Spatial prolongation applied"
-        @info maximum(solution), minimum(solution)
+        @info "[$rank] Applying spatial prolongation to solution..."
+        solution = P_spatial * solution
+        # Copy parent solution into same-rank coincident nodes.
+        # (Cross-rank coincident nodes would need a ghost exchange; left as 0 for now.)
+        n_ang_p = extra_mesh.extra_npoin
+        for (child_spa, parent_spa) in spatial_amr_cache.coincident_nodes
+            for i_ang = 1:n_ang_p
+                cdof = (child_spa  - 1) * n_ang_p + i_ang
+                pdof = (parent_spa - 1) * n_ang_p + i_ang
+                if cdof >= 1 && cdof <= length(solution) && pdof >= 1 && pdof <= length(solution)
+                    solution[cdof] = solution[pdof]
+                end
+            end
+        end
+        @info "[$rank] ✓ Spatial prolongation applied ($(length(spatial_amr_cache.coincident_nodes)) coincident nodes filled from parents)"
     end
     # ── Angular integration and error computation ─────────────────────────────
     @rankinfo rank "Integrating solution in angle..."
@@ -1305,40 +1796,13 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     L2_ref = 0.0
 
     # Compute node sharing divisors for correct accumulation at shared nodes
-    node_div = ones(Int, npoin)
+    node_div = zeros(Int, npoin)
     
         for iel = 1:nelem
             for k = 1:ngl, j = 1:ngl, i = 1:ngl
                 ip    = mesh.connijk[iel, i, j, k]
-                x_ip  = mesh.x[ip]; y_ip = mesh.y[ip]; z_ip = mesh.z[ip]
-                matchx  = abs(x_ip - mesh.xmin) < 1e-10 || abs(x_ip - mesh.xmax) < 1e-10
-                matchy  = abs(y_ip - mesh.ymin) < 1e-10 || abs(y_ip - mesh.ymax) < 1e-10
-                matchz  = abs(z_ip - mesh.zmin) < 1e-10 || abs(z_ip - mesh.zmax) < 1e-10
-                nmatches = matchx + matchy + matchz
-                on_bdy   = ip in mesh.poin_in_bdy_face
-
-                is_corner = (i ∈ (1,ngl)) && (j ∈ (1,ngl)) && (k ∈ (1,ngl))
-                is_edge   = !is_corner && (
-                    ((i ∈ (1,ngl)) && (j ∈ (1,ngl))) ||
-                    ((i ∈ (1,ngl)) && (k ∈ (1,ngl))) ||
-                    ((j ∈ (1,ngl)) && (k ∈ (1,ngl))))
-                is_face   = !is_corner && !is_edge &&
-                            (i ∈ (1,ngl) || j ∈ (1,ngl) || k ∈ (1,ngl))
-
-                div = 1
-                if is_corner
-                    if !on_bdy; div = 8
-                    elseif nmatches == 1; div = 4
-                    elseif nmatches == 2; div = 2
-                    end
-                elseif is_edge
-                    if !on_bdy; div = 4
-                    elseif nmatches == 1; div = 2
-                    end
-                elseif is_face
-                    if !on_bdy; div = 2 end
-                end
-                node_div[ip] = max(node_div[ip], div)
+                
+                node_div[ip] += 1
             end
         end
 
@@ -1397,6 +1861,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
 
+        for iel = 1:nelem
+            for i = 1:ngl, j = 1:ngl, k = 1:ngl
+                ip  = mesh.connijk[iel, i, j, k]
+                x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
+                if (abs(x -1.5) < 1e-3 && abs(y - 2/3) < 1e-3 && abs(z - 2/3) < 1e-3)
+                    @info "1", ip, int_sol_accum[ip], node_div[ip], int_sol_accum[ip] * node_div[ip]
+                end
+                if (abs(x -1.5) < 1e-3 && abs(y - 2/3) < 1e-2 && abs(z - 0.55) < 1e-2)
+                    @info "2", ip, int_sol_accum[ip], node_div[ip], int_sol_accum[ip] * node_div[ip]
+                end
+            end
+        end
         gnpoin_spa  = mesh.gnpoin
         g_int_sol   = zeros(Float64, gnpoin_spa)
         g_int_ref   = zeros(Float64, gnpoin_spa)
@@ -2011,7 +2487,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
        
         while e_ext <= nelem_ang[iel]
           
-            if abs(criterion[iel][e_ext]) > thresholds[1]
+            if (iel == 14 && e_ext == 2)#abs(criterion[iel][e_ext]) > thresholds[1]
                #@info iel, e_ext
                #@info rank, criterion[iel][e_ext], thresholds[1], e_ext, iel
                 adapted_ang[iel] = 1

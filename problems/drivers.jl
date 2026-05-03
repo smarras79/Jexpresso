@@ -66,7 +66,17 @@ function driver(nparts,
 
         if sem.mesh.nelem > 0
             # Mark element 1 for refinement (simplest test)
-            adapt_flags[14] = 1
+            if rank == 1
+                adapt_flags[1] = 1
+                for i=1:sem.mesh.ngl
+                    for j=1:sem.mesh.ngl
+                        for k=1:sem.mesh.ngl
+                            ip = sem.mesh.connijk[1,i,j,k]
+                            @info sem.mesh.x[ip], sem.mesh.y[ip], sem.mesh.z[ip]
+                        end
+                    end
+                end
+            end
         end
 
         if rank == 0

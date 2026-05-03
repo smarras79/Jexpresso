@@ -709,3 +709,375 @@ function reduce_and_compare_parallel_matrix(A_local, connijk_spa, connijk, x, y,
 
     return nothing
 end
+
+# =========================================================================
+# Spatial AMR + Uniform Angular Mesh Debug Utilities
+# =========================================================================
+# These mirror the adaptive-angular functions above but use the much simpler
+# DOF index formula for the uniform angular case:
+#   DOF i  →  ip_spa = div(i-1, n_ang) + 1,  ip_ang = mod(i-1, n_ang) + 1
+# Coordinates come straight from mesh.x/y/z and extra_mesh.extra_coords.
+# =========================================================================
+
+"""
+    dof_coords_spatial_amr(i, mesh, extra_mesh, n_ang) -> NTuple{5,Float64}
+
+Return (x, y, z, θ, ϕ) coordinates for the i-th DOF in the uniform-angular
+spatial-AMR system.
+"""
+function dof_coords_spatial_amr(i::Int, mesh, extra_mesh, n_ang::Int)
+    ip_spa = div(i - 1, n_ang) + 1
+    ip_ang = mod(i - 1, n_ang) + 1
+    return (Float64(mesh.x[ip_spa]),
+            Float64(mesh.y[ip_spa]),
+            Float64(mesh.z[ip_spa]),
+            Float64(extra_mesh.extra_coords[1, ip_ang]),
+            Float64(extra_mesh.extra_coords[2, ip_ang]))
+end
+
+"""
+    save_serial_spatial_amr(RHS, As, mesh, extra_mesh, n_ang, npoin_ang_total,
+                            hanging_nodes, filename)
+
+Save the serial RHS vector and A matrix with 5-tuple coordinates as the
+reference for later parallel comparison.  Call with 1 MPI rank.
+"""
+function save_serial_spatial_amr(RHS, As, mesh, extra_mesh, n_ang::Int,
+                                  npoin_ang_total::Int, hanging_nodes,
+                                  filename::String)
+    n = npoin_ang_total
+
+    # Build coordinate array (one row per DOF)
+    coords = Matrix{Float64}(undef, n, 5)
+    for i = 1:n
+        c = dof_coords_spatial_amr(i, mesh, extra_mesh, n_ang)
+        coords[i, 1] = c[1]; coords[i, 2] = c[2]; coords[i, 3] = c[3]
+        coords[i, 4] = c[4]; coords[i, 5] = c[5]
+    end
+
+    rhs_vec = vec(collect(Float64, RHS))
+    A_spa   = sparse(As)
+
+    # Matvec reference: x_test[ip] = coord_func(x,y,z,θ,ϕ)
+    # Using a linear combination of physical coordinates so that the test vector
+    # value at each DOF is the SAME whether running with 1 or N MPI ranks
+    # (i.e. independent of local/global index assignment).
+    coord_func_val(c1,c2,c3,c4,c5) = c1 + 1.7*c2 + 2.3*c3 + 3.1*c4 + 4.7*c5
+    x_test = Vector{Float64}(undef, n)
+    for i = 1:n
+        c = dof_coords_spatial_amr(i, mesh, extra_mesh, n_ang)
+        x_test[i] = coord_func_val(c[1], c[2], c[3], c[4], c[5])
+    end
+    y_matvec = A_spa * x_test
+
+    JLD2.jldopen(filename, "w") do f
+        f["RHS"]      = rhs_vec
+        f["A"]        = A_spa
+        f["y_matvec"] = y_matvec
+        f["coords"]   = coords
+        f["n"]        = n
+        f["hanging_nodes"] = collect(Set(hanging_nodes))
+    end
+    @info "Saved serial spatial-AMR reference to $filename: n=$n, nnz_A=$(nnz(A_spa))"
+end
+
+"""
+    reduce_and_compare_parallel_spatial_amr(RHS, As, mesh, extra_mesh, n_ang,
+                                            npoin_ang_total, hanging_nodes,
+                                            comm, rank, filename)
+
+Gather the parallel RHS and A matrix from all ranks using (x,y,z,θ,ϕ)
+as the matching key, then compare with the serial reference saved by
+`save_serial_spatial_amr`.  Reports mismatches, missing entries, and
+maximum errors.
+"""
+function reduce_and_compare_parallel_spatial_amr(
+    RHS, As, mesh, extra_mesh, n_ang::Int, npoin_ang_total::Int,
+    hanging_nodes, ip2gip_spa, gnpoin::Int,
+    extended_parents_to_gid_spa::Vector{Int},
+    comm, rank::Int, filename::String
+)
+    nproc       = MPI.Comm_size(comm)
+    hanging_set = Set(hanging_nodes)
+    n           = npoin_ang_total
+    n_ext       = length(extended_parents_to_gid_spa)
+    n_ext_spa   = n + n_ext
+
+    # ── Step 1: build local (coord, value) RHS entries ───────────────────────
+    get_coord = i -> dof_coords_spatial_amr(i, mesh, extra_mesh, n_ang)
+
+    rhs_vec = vec(collect(Float64, RHS))
+    local_rhs = Tuple{NTuple{5,Float64}, Float64}[]
+    for i = 1:n
+        i in hanging_set && continue
+        push!(local_rhs, (get_coord(i), rhs_vec[i]))
+    end
+
+    # ── Step 1b: coordinate-based matvec comparison ──────────────────────────
+    # Test vector: x[dof] = coord_func(x,y,z,θ,ϕ) — value is determined by the
+    # physical location, not by the local/global DOF index, so serial and parallel
+    # assign the same x value to the same physical point regardless of numbering.
+    #
+    # Extended parents (not in local ghost layer): their spatial coordinates are
+    # fetched via an AllGather of owned spatial node coordinates so every rank
+    # can resolve any global spatial IP.
+    coord_func_val(c1,c2,c3,c4,c5) = c1 + 1.7*c2 + 2.3*c3 + 3.1*c4 + 4.7*c5
+
+    # AllGather owned spatial node (spatial_GIP, x, y, z) pairs
+    npoin_spa = n ÷ n_ang
+    local_spa_xyz = [(Int(mesh.ip2gip[i]), Float64(mesh.x[i]),
+                      Float64(mesh.y[i]),   Float64(mesh.z[i]))
+                     for i = 1:npoin_spa if mesh.gip2owner[i] == rank]
+    sp_buf  = IOBuffer(); serialize(sp_buf, local_spa_xyz); sp_data = take!(sp_buf)
+    sp_sz   = Int64(length(sp_data))
+    all_sp_sz   = MPI.Allgather([sp_sz], comm)
+    all_sp_data = MPI.Allgatherv(sp_data, Int32.(all_sp_sz), comm)
+    spa_gip_to_xyz = Dict{Int, NTuple{3,Float64}}()
+    off_sp = 1
+    for r = 0:nproc-1
+        s = all_sp_sz[r+1]
+        if s > 0
+            for (gip, xv, yv, zv) in deserialize(IOBuffer(all_sp_data[off_sp:off_sp+s-1]))
+                spa_gip_to_xyz[gip] = (xv, yv, zv)
+            end
+        end
+        off_sp += s
+    end
+
+    @info "[$rank] Computing coord-based matvec: size(As)=$(size(As)), n=$n, n_ext=$n_ext"
+    x_local_coord = zeros(Float64, n_ext_spa)
+    for ip = 1:n
+        c = dof_coords_spatial_amr(ip, mesh, extra_mesh, n_ang)
+        x_local_coord[ip] = coord_func_val(c[1], c[2], c[3], c[4], c[5])
+    end
+    for k = 1:n_ext
+        gid_ext  = extended_parents_to_gid_spa[k]
+        spa_gip  = (gid_ext - 1) ÷ n_ang + 1
+        ang_idx  = (gid_ext - 1) % n_ang + 1
+        xyz      = get(spa_gip_to_xyz, spa_gip, (0.0, 0.0, 0.0))
+        θ_ext    = Float64(extra_mesh.extra_coords[1, ang_idx])
+        ϕ_ext    = Float64(extra_mesh.extra_coords[2, ang_idx])
+        x_local_coord[n + k] = coord_func_val(xyz[1], xyz[2], xyz[3], θ_ext, ϕ_ext)
+    end
+
+    y_temp_coord = As * x_local_coord
+    y_global_coord = zeros(Float64, gnpoin)
+    for ip = 1:n
+        y_global_coord[ip2gip_spa[ip]] += y_temp_coord[ip]
+    end
+    for k = 1:n_ext
+        y_global_coord[extended_parents_to_gid_spa[k]] += y_temp_coord[n + k]
+    end
+    MPI.Allreduce!(y_global_coord, +, comm)
+    @info "[$rank] Coord-based matvec AllReduce done"
+
+    # Emit (coord, y_value) for OWNED DOFs only (avoids ghost duplicates)
+    local_mat_y = Tuple{NTuple{5,Float64}, Float64}[]
+    for ip = 1:n
+        spa_ip = div(ip - 1, n_ang) + 1
+        mesh.gip2owner[spa_ip] == rank || continue
+        c = dof_coords_spatial_amr(ip, mesh, extra_mesh, n_ang)
+        push!(local_mat_y, (c, y_global_coord[ip2gip_spa[ip]]))
+    end
+
+
+
+    # ── Step 2: Gather to rank 0 only (avoids Allgatherv memory explosion) ──────
+    # Each non-0 rank sends its serialized entries to rank 0.
+    # Rank 0 receives sequentially — no large per-rank receive buffers elsewhere.
+    # MPI.Allgather([sz], comm) is called unconditionally so ALL ranks stay in sync.
+    # Uses Int64 for sizes to avoid Int32 overflow on large datasets.
+    function gather_to_rank0(local_entries, tag::Int; skip::Bool=false)
+        buf  = IOBuffer(); serialize(buf, local_entries); data = take!(buf)
+        sz   = Int64(length(data))
+        all_sz = MPI.Allgather([sz], comm)   # Vector{Int64}
+        
+
+        if rank == 0
+            result = collect(deserialize(IOBuffer(data)))
+            for r = 1:nproc-1
+                s = all_sz[r+1]
+                if s > 0
+                    rbuf = Vector{UInt8}(undef, s)
+                    MPI.Recv!(rbuf, r, tag, comm)
+                    append!(result, deserialize(IOBuffer(rbuf)))
+                end
+            end
+            return result
+        else
+            MPI.Send(data, 0, tag, comm)
+            return []
+        end
+    end
+
+    all_rhs_entries = gather_to_rank0(local_rhs, 42)
+    all_mat_y       = gather_to_rank0(local_mat_y, 43)
+
+    # ── Step 3: compare on rank 0 ────────────────────────────────────────────
+    if rank == 0
+        ref = JLD2.jldopen(filename, "r") do f
+            (RHS      = f["RHS"],
+             y_matvec = haskey(f, "y_matvec") ? f["y_matvec"] : nothing,
+             coords   = f["coords"],
+             n        = f["n"])
+        end
+        ref_n = ref.n
+        @info "Loaded serial reference: n=$ref_n"
+
+        # Build serial RHS dict
+        ref_rhs_dict = Dict{NTuple{5,Float64}, Float64}()
+        n_serial_overwrites = 0
+        for i = 1:ref_n
+            c = (ref.coords[i,1], ref.coords[i,2], ref.coords[i,3],
+                 ref.coords[i,4], ref.coords[i,5])
+            if haskey(ref_rhs_dict, c)
+                n_serial_overwrites += 1
+                n_serial_overwrites <= 5 &&
+                    @warn "serial RHS dict overwrite at coord $c: old=$(ref_rhs_dict[c]) new=$(ref.RHS[i])"
+            end
+            ref_rhs_dict[c] = ref.RHS[i]
+        end
+        n_serial_overwrites > 0 &&
+            @warn "serial RHS dict: $n_serial_overwrites coord collisions"
+        ref_y_matvec   = ref.y_matvec
+        ref_mat_coords = ref_y_matvec !== nothing ? ref.coords : nothing
+        ref = nothing; GC.gc()
+
+        # Aggregate parallel RHS
+        par_rhs_dict  = Dict{NTuple{5,Float64}, Float64}()
+        par_rhs_count = Dict{NTuple{5,Float64}, Int}()
+        if all_rhs_entries !== nothing
+            for (coord, val) in all_rhs_entries
+                par_rhs_dict[coord]  = get(par_rhs_dict, coord, 0.0) + val
+                par_rhs_count[coord] = get(par_rhs_count, coord, 0) + 1
+            end
+        end
+        n_dup = count(v -> v > 1, values(par_rhs_count))
+        if n_dup > 0
+            @warn "parallel RHS dict: $n_dup coords with >1 contribution"
+            shown = 0
+            for (coord, cnt) in par_rhs_count
+                cnt > 1 || continue; shown += 1; shown > 10 && break
+                @info "  dup coord $coord: count=$cnt val=$(par_rhs_dict[coord])"
+            end
+        else
+            @info "parallel RHS dict: no duplicate coord keys (good)"
+        end
+
+        # ── Compare RHS ──────────────────────────────────────────────────────
+        ref_rhs_dict_free = Dict{NTuple{5,Float64}, Float64}()
+        for (coord, val) in ref_rhs_dict
+            abs(val) > 1e-20 && (ref_rhs_dict_free[coord] = val)
+        end
+
+        @info "=== SPATIAL-AMR RHS COMPARISON ==="
+        all_rhs_coords = union(keys(ref_rhs_dict_free), keys(par_rhs_dict))
+        rhs_ndiff = 0; rhs_max_abs = 0.0; rhs_max_rel = 0.0
+        rhs_nmiss_par = 0; rhs_nextra_par = 0
+        for coord in all_rhs_coords
+            sv = get(ref_rhs_dict_free, coord, 0.0)
+            pv = get(par_rhs_dict, coord, 0.0)
+            ae = abs(pv - sv)
+            if ae > 1e-9
+                rhs_ndiff += 1
+                rhs_max_abs = max(rhs_max_abs, ae)
+                abs(sv) > 1e-15 && (rhs_max_rel = max(rhs_max_rel, ae / abs(sv)))
+                rhs_ndiff <= 20 && @info "  RHS diff at $coord: serial=$sv parallel=$pv err=$ae"
+            end
+            !haskey(par_rhs_dict, coord) && haskey(ref_rhs_dict_free, coord) && (rhs_nmiss_par += 1)
+            !haskey(ref_rhs_dict_free, coord) && haskey(par_rhs_dict, coord) && (rhs_nextra_par += 1)
+        end
+        @info "RHS totals: serial_nonzero=$(length(ref_rhs_dict_free)), parallel=$(length(par_rhs_dict))"
+        @info "RHS: missing_from_parallel=$rhs_nmiss_par, extra_in_parallel=$rhs_nextra_par, mismatches=$rhs_ndiff"
+        @info "RHS: max_abs_err=$rhs_max_abs, max_rel_err=$rhs_max_rel"
+        rhs_ok = (rhs_ndiff == 0 && rhs_nmiss_par == 0 && rhs_nextra_par == 0)
+        rhs_ok ? @info("✓ RHS MATCHES SERIAL") : @warn("✗ RHS DOES NOT MATCH SERIAL")
+
+        ref_rhs_dict = nothing; par_rhs_dict = nothing; par_rhs_count = nothing
+        ref_rhs_dict_free = nothing; all_rhs_coords = nothing
+        all_rhs_entries = nothing; GC.gc()
+
+        # ── Matvec-based matrix comparison (coordinate-based) ────────────────
+        mat_ok = true
+        if ref_y_matvec === nothing || ref_mat_coords === nothing
+            @warn "=== MATRIX COMPARISON SKIPPED: no y_matvec/coords in reference file (re-run serial to regenerate) ==="
+        else
+            @info "=== SPATIAL-AMR MATRIX COMPARISON (coord-based matvec) ==="
+
+            # Build serial coord → y_matvec dict
+            ser_mat_dict = Dict{NTuple{5,Float64}, Float64}()
+            n_ser_mat = length(ref_y_matvec)
+            n_ser_coll = 0
+            for i = 1:n_ser_mat
+                c = (ref_mat_coords[i,1], ref_mat_coords[i,2], ref_mat_coords[i,3],
+                     ref_mat_coords[i,4], ref_mat_coords[i,5])
+                if haskey(ser_mat_dict, c)
+                    n_ser_coll += 1
+                else
+                    ser_mat_dict[c] = ref_y_matvec[i]
+                end
+            end
+            n_ser_coll > 0 && @warn "serial mat dict: $n_ser_coll coord collisions (skipped)"
+
+            # Build parallel coord → y_matvec dict (sum contributions from all owned DOFs)
+            par_mat_dict  = Dict{NTuple{5,Float64}, Float64}()
+            par_mat_count = Dict{NTuple{5,Float64}, Int}()
+            for (coord, val) in all_mat_y
+                par_mat_dict[coord]  = get(par_mat_dict, coord, 0.0) + val
+                par_mat_count[coord] = get(par_mat_count, coord, 0) + 1
+            end
+            n_dup_mat = count(v -> v > 1, values(par_mat_count))
+            n_dup_mat > 0 && @warn "parallel mat dict: $n_dup_mat coords with >1 contribution (summed)"
+
+            # Compare by coordinate key
+            mat_ndiff = 0; mat_max_abs = 0.0; mat_max_rel = 0.0
+            mat_nmiss_par = 0; mat_nextra_par = 0
+            mat_ndiff_hang = 0; mat_ndiff_par_lt = 0; mat_ndiff_par_gt = 0
+            n_nonzero_ser = 0
+
+            # Build hanging node coord set for classification
+            hang_coords = Set{NTuple{5,Float64}}()
+            for hn_ip in hanging_nodes
+                c = dof_coords_spatial_amr(hn_ip, mesh, extra_mesh, n_ang)
+                push!(hang_coords, c)
+            end
+
+            all_mat_coords = union(keys(ser_mat_dict), keys(par_mat_dict))
+            for coord in all_mat_coords
+                sv = get(ser_mat_dict, coord, 0.0)
+                pv = get(par_mat_dict, coord, 0.0)
+                abs(sv) > 1e-20 && (n_nonzero_ser += 1)
+                ae = abs(pv - sv)
+                if ae > 1e-6
+                    mat_ndiff += 1
+                    mat_max_abs = max(mat_max_abs, ae)
+                    abs(sv) > 1e-15 && (mat_max_rel = max(mat_max_rel, ae / abs(sv)))
+                    is_hang = coord in hang_coords
+                    if pv < sv; mat_ndiff_par_lt += 1
+                    else;        mat_ndiff_par_gt += 1; end
+                    is_hang && (mat_ndiff_hang += 1)
+                    if mat_ndiff <= 20
+                        @info "  A*x diff at coord=$coord: serial=$sv parallel=$pv err=$ae hang=$is_hang"
+                    end
+                end
+                !haskey(par_mat_dict, coord) && haskey(ser_mat_dict, coord) && (mat_nmiss_par += 1)
+                !haskey(ser_mat_dict, coord) && haskey(par_mat_dict, coord) && (mat_nextra_par += 1)
+            end
+
+            @info "A*x totals: serial_nonzero=$n_nonzero_ser, serial_dofs=$(length(ser_mat_dict)), parallel_dofs=$(length(par_mat_dict))"
+            @info "A*x: missing_from_parallel=$mat_nmiss_par, extra_in_parallel=$mat_nextra_par, mismatches=$mat_ndiff"
+            @info "A*x mismatches: hanging=$mat_ndiff_hang, par<ser=$mat_ndiff_par_lt, par>ser=$mat_ndiff_par_gt"
+            @info "A*x: max_abs_err=$mat_max_abs, max_rel_err=$mat_max_rel"
+            mat_ok = (mat_ndiff == 0 && mat_nmiss_par == 0 && mat_nextra_par == 0)
+            mat_ok ? @info("✓ MATRIX MATVEC MATCHES SERIAL") : @warn("✗ MATRIX MATVEC DOES NOT MATCH SERIAL")
+
+            ref_mat_coords = nothing; ref_y_matvec = nothing
+            ser_mat_dict = nothing; par_mat_dict = nothing; par_mat_count = nothing
+            all_mat_y = nothing; hang_coords = nothing; GC.gc()
+        end
+
+        return rhs_ok && mat_ok
+    end
+
+    return nothing
+end

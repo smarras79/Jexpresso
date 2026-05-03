@@ -34,9 +34,9 @@ function user_inputs()
         :lRT_problem        => true,
         :lmanufactured_solution => true,
         :adaptive_extra_meshes => false,  # No angular adaptation for this test
-        :extra_dimensions_order => 2,
-        :extra_dimensions_nelemx => 2,
-        :extra_dimensions_nelemy => 2,
+        :extra_dimensions_order => 4,
+        :extra_dimensions_nelemx => 3,
+        :extra_dimensions_nelemy => 3,
         :lcubed_sphere_angular_mesh => false,
         :extra_dimensions_xmax => π,
         :extra_dimensions_ymax => 2*π,

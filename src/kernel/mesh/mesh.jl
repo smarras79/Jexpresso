@@ -4884,7 +4884,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                 uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
                 p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
             end
-            if (mesh_tmp.lneed_redistribute)
+            if (mesh_tmp.lneed_redistribute && !isnothing(uaux))
                 # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
                 mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
                                             nop=TInt(inputs[:nop]),

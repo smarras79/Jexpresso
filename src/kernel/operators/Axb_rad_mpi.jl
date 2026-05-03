@@ -1,4 +1,7 @@
 using Krylov
+using IncompleteLU
+using KLU
+using LinearAlgebra
 
 mutable struct MatvecCacheSparse
     # number of points on each process
@@ -510,7 +513,7 @@ function solve_parallel_gmres(ip2gip, gip2owner, A_local, b, gnpoin, npoin, x_pr
 
     b_global = zeros(Float64, gnpoin)
     for ip = 1:npoin
-        b_global[ip2gip[ip]] = b[ip]
+        b_global[ip2gip[ip]] += b[ip]
     end
     MPI.Allreduce!(b_global, +, comm)
 
@@ -541,13 +544,76 @@ function solve_parallel_gmres(ip2gip, gip2owner, A_local, b, gnpoin, npoin, x_pr
         end
     end
     
-    # Test as preconditioner
-
+    # Build preconditioner
+    N = if precond == :jacobi
+        build_jacobi_preconditioner(A_local, ip2gip, gnpoin, comm)
+    elseif precond == :block_jacobi
+        isnothing(npoin_ang) && error("block_jacobi requires npoin_ang")
+        n_spatial_local = npoin ÷ npoin_ang
+        build_block_jacobi_preconditioner(
+            A_local, ip2gip, gnpoin, n_spatial_local, npoin_ang, comm)
+    elseif precond == :ilu
+        if rank == 0
+            @info "Building ILU preconditioner on each rank (local block)"
+        end
+        ilu_factor = IncompleteLU.ilu(A_local)
+        # Apply locally: scatter global x to local, apply ILU, scatter back
+        LinearOperator(Float64, gnpoin, gnpoin, true, true,
+            (y, x) -> begin
+                x_local = [x[ip2gip[ip]] for ip = 1:npoin]
+                y_local = similar(x_local)
+                LinearAlgebra.ldiv!(y_local, ilu_factor, x_local)
+                fill!(y, 0.0)
+                for ip = 1:npoin
+                    y[ip2gip[ip]] += y_local[ip]
+                end
+                MPI.Allreduce!(y, +, comm)
+            end)
+    elseif precond == :lu
+        if rank == 0
+            @info "Building full LU preconditioner on each rank (local block)"
+        end
+        lu_factor = lu(A_local)
+        # Apply locally: scatter global x to local, apply LU, scatter back
+        LinearOperator(Float64, gnpoin, gnpoin, true, true,
+            (y, x) -> begin
+                x_local = [x[ip2gip[ip]] for ip = 1:npoin]
+                y_local = similar(x_local)
+                LinearAlgebra.ldiv!(y_local, lu_factor, x_local)
+                fill!(y, 0.0)
+                for ip = 1:npoin
+                    y[ip2gip[ip]] += y_local[ip]
+                end
+                MPI.Allreduce!(y, +, comm)
+            end)
+    elseif precond == :klu
+        # KLU multifrontal sparse direct solver as preconditioner
+        # KLU uses a fill-reducing ordering and is typically faster than UMFPACK
+        # for circuit-simulation and similar sparse structures
+        if rank == 0
+            @info "Building KLU multifrontal preconditioner on each rank (local block)"
+        end
+        klu_factor = klu(A_local)
+        LinearOperator(Float64, gnpoin, gnpoin, true, true,
+            (y, x) -> begin
+                x_local = [x[ip2gip[ip]] for ip = 1:npoin]
+                y_local = similar(x_local)
+                LinearAlgebra.ldiv!(y_local, klu_factor, x_local)
+                fill!(y, 0.0)
+                for ip = 1:npoin
+                    y[ip2gip[ip]] += y_local[ip]
+                end
+                MPI.Allreduce!(y, +, comm)
+            end)
+    else
+        LinearOperator(Float64, gnpoin, gnpoin, true, true,
+                       (y, x) -> copyto!(y, x))
+    end
 
     t_solve = @elapsed begin
         if isempty(x_prev)
             x, stats = Krylov.gmres(A_parallel, b_global;
-                                     
+                                     N=N,
                                      memory  = restart,
                                      restart = true,
                                      atol    = tol,
@@ -556,7 +622,7 @@ function solve_parallel_gmres(ip2gip, gip2owner, A_local, b, gnpoin, npoin, x_pr
                                      verbose = (rank == 0) ? 1 : 0)
         else
             x, stats = Krylov.gmres(A_parallel, b_global, x0;
-                    
+                                     N=N,
                                      memory  = restart,
                                      restart = true,
                                      atol    = tol,
