@@ -40,9 +40,9 @@ function user_inputs()
         :lRT_problem        => true,
         :lmanufactured_solution => true,
         :adaptive_extra_meshes => false,
-        :extra_dimensions_order => 4,
-        :extra_dimensions_nelemx => 3,
-        :extra_dimensions_nelemy => 3,
+        :extra_dimensions_order => 3,
+        :extra_dimensions_nelemx => 1,
+        :extra_dimensions_nelemy => 1,
         :lcubed_sphere_angular_mesh => false,
         :extra_dimensions_xmax => π,
         :extra_dimensions_ymax => 2*π,
@@ -58,7 +58,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "netcdf", #"hdf5",
+        :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

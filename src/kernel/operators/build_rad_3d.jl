@@ -1002,10 +1002,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     neg_diag = [d[ip] for ip = 1:length(d) 
             if !(ip in boundary_set) && d[ip] < 0]
 
-    @info "Physics diagonal range" minimum(physics_diag), maximum(physics_diag)
-    @info "Physics diagonal median" median(physics_diag)
-    @info "Negative diagonal range" minimum(neg_diag), maximum(neg_diag)
-    @info "Ratio neg/physics_min" minimum(neg_diag) / minimum(physics_diag)
     n_fixed = 0
     n_small = 0
     n_big = 0
