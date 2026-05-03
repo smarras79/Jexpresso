@@ -168,58 +168,31 @@ function get_boundary_faces(model,nsd,dim)
   findall(x -> x>0, facet_to_tag)
 end
 
-
-
-mutable struct AssemblerCache
-    global_max_index::Int
-    index_a::Vector{Int}
-    owner_a::Vector{Int}
-
-    # Index communication buffers
-    recv_idx_buffers::Vector{Vector{Int}}
-    # combined_recv_idx::Vector{Int}
-
-    # Send-back buffers
-    recvback_idx_buffers::Vector{Vector{Int}}
-    # combined_recv_back_idx::Vector{Int}
-
-    sum_array_1D::Vector{Float64}
-    sum_array_2D::Matrix{Float64}
-
-    # auxiliary
-    send_i::Vector{Vector{Int}} 
-    send_data_buffers::Vector{Vector{Float64}}
-    recv_data_buffers::Vector{Vector{Float64}}
-    send_data_sizes::Vector{Int}
-    recv_data_sizes::Vector{Int}
-    # i_local::Dict{Int, Vector{Int}}
-
-end
-
 function setup_global_numbering_extra_dim(ip2gip, gip2owner, npoin, npoin_ang, npoin_total)
 
     comm = MPI.COMM_WORLD
 
-    ip2gip_extra = KernelAbstractions.zeros(CPU(),Int64,npoin_total)
+    ip2gip_extra    = KernelAbstractions.zeros(CPU(), Int64, npoin_total)
+    # Ownership is derived from the spatial node owner so that ALL angular DOFs
+    # (ip_ext = 1:npoin_ang) for a given spatial node have the same owning rank.
+    # The previous find_gip_owner approach assigned ownership per-DOF via load
+    # balancing, causing different angular indices of the same spatial node to
+    # map to different ranks — incorrect for any ownership-based filtering.
+    gip2owner_extra = zeros(Int, npoin_total)
+
     for ip = 1:npoin
-        gip = ip2gip[ip]
+        gip       = ip2gip[ip]
+        spa_owner = gip2owner[ip]   # gip2owner is indexed by local ip, not global gip
         for ip_ext = 1:npoin_ang
-            idx_ip = (ip-1)*(npoin_ang) + ip_ext
-            idx_gip = (gip-1)*(npoin_ang) + ip_ext
-            #=if (ip != gip)
-                @info ip, gip
-            end=#
-            ip2gip_extra[idx_ip] = idx_gip
+            idx_ip  = (ip-1)*npoin_ang + ip_ext
+            idx_gip = (gip-1)*npoin_ang + ip_ext
+            ip2gip_extra[idx_ip]    = idx_gip
+            gip2owner_extra[idx_ip] = spa_owner
         end
     end
-    
-    gnpoin    = MPI.Allreduce(maximum(ip2gip_extra), MPI.MAX, comm)
-    gip2owner_extra = find_gip_owner(ip2gip_extra)
-    gip2ip    = KernelAbstractions.zeros(CPU(), TInt, gnpoin)
+
+    gnpoin = MPI.Allreduce(maximum(ip2gip_extra), MPI.MAX, comm)
     @info gnpoin, npoin_total
-    for (ip, gip) in enumerate(ip2gip_extra)
-        gip2ip[gip] = ip
-    end
 
     return ip2gip_extra, gip2owner_extra, gnpoin
 end

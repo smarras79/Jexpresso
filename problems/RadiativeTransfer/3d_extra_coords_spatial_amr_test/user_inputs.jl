@@ -15,7 +15,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 2,      # Low polynomial order for fast testing
+        :nop                 => 4,      # Low polynomial order for fast testing
         #---------------------------------------------------------------------------
         # Physical parameters
         #---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ function user_inputs()
         # Mesh parameters: Use small uniform mesh for testing
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
-        :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/RICO_5x5.msh",
+        :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/hexa_TFI_3d_rad.msh",
         #---------------------------------------------------------------------------
         # Extra dimensions (angular mesh)
         #---------------------------------------------------------------------------
@@ -34,9 +34,9 @@ function user_inputs()
         :lRT_problem        => true,
         :lmanufactured_solution => true,
         :adaptive_extra_meshes => false,  # No angular adaptation for this test
-        :extra_dimensions_order => 2,
-        :extra_dimensions_nelemx => 2,
-        :extra_dimensions_nelemy => 2,
+        :extra_dimensions_order => 4,
+        :extra_dimensions_nelemx => 3,
+        :extra_dimensions_nelemy => 3,
         :lcubed_sphere_angular_mesh => false,
         :extra_dimensions_xmax => π,
         :extra_dimensions_ymax => 2*π,

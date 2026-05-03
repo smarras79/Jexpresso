@@ -1520,8 +1520,8 @@ function add_hanging_row_effects(A_local, received_effects, ip2gip_spa,
             ip_parent = get(gip_to_local, parent_gid, nothing)
             ip_col    = get(gip_to_local, gid_col,    nothing)
             ip_parent === nothing && continue
-            ip_col    === nothing && continue
             ip_parent > n_spa    && continue
+            ip_col    === nothing && continue
             ip_col    > n_spa    && continue
             push!(I_new, ip_parent)
             push!(J_new, ip_col)
@@ -1548,8 +1548,8 @@ function add_hanging_col_effects(A_local, received_effects, ip2gip_spa,
             ip_parent = get(gip_to_local, parent_gid, nothing)
             ip_row    = get(gip_to_local, gid_row,    nothing)
             ip_parent === nothing && continue
-            ip_row    === nothing && continue
             ip_parent > n_spa    && continue
+            ip_row    === nothing && continue
             ip_row    > n_spa    && continue
             push!(I_new, ip_row)
             push!(J_new, ip_parent)
