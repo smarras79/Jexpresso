@@ -14,30 +14,24 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     t_n = inputs[:tinit]
 
     # Linear solver
-    haskey(inputs, :lsolve) ? lsolve = inputs[:lsolve] : lsolve = nothing
-    haskey(inputs, :solver_precision) ? solver_precision = inputs[:solver_precision] : solver_precision = Float64
-    haskey(inputs, :prec_sp) ? prec_sp = inputs[:prec_sp] : prec_sp = Dict(:maxiter      => 1,
-                                                                           :abstol       => 1e-8,
-                                                                           :precision    => Float64,
-                                                                           :prec_type    => "AMG",
-                                                                           )
+    lsolve = inputs[:lsolve]
+    solver_precision = inputs[:solver_precision]
+    prec_sp = inputs[:prec_sp]
     # Solver parameters
-    if lsolve == nothing
-        haskey(inputs, :sp) ? solver_parameters = inputs[:sp] : solver_parameters = nothing
-        (solver_parameters != nothing && haskey(solver_parameters, :atol)) ? atol = solver_parameters[:atol] : atol = 1.e-06
-        (solver_parameters != nothing && haskey(solver_parameters, :rtol)) ? rtol = solver_parameters[:rtol] : rtol = 1.e-10
-        (solver_parameters != nothing && haskey(solver_parameters, :restart)) ? restart = solver_parameters[:restart] : restart = true
-        (solver_parameters != nothing && haskey(solver_parameters, :memory)) ? memory = solver_parameters[:memory] : memory = 10
-        (solver_parameters != nothing && haskey(solver_parameters, :itmax)) ? itmax = solver_parameters[:itmax] : itmax = 100
-        (solver_parameters != nothing && haskey(solver_parameters, :verbose)) ? verbose = solver_parameters[:verbose] : verbose = 1
-        (solver_parameters != nothing && haskey(solver_parameters, :prec)) ? prec = solver_parameters[:prec] : prec = SmoothedAggregationPreconBuilder()
-    end
+    solver_parameters = inputs[:sp]
+    atol = solver_parameters[:atol]
+    rtol = solver_parameters[:rtol]
+    restart = solver_parameters[:restart]
+    memory = solver_parameters[:memory]
+    itmax = solver_parameters[:itmax]
+    verbose = solver_parameters[:verbose]
+    prec = solver_parameters[:prec]
 
     # Non-linear parameters
-    haskey(inputs, :nl_atol) ? nl_atol = inputs[:nl_atol] : nl_atol = 1.e-05
-    haskey(inputs, :nl_rtol) ? nl_rtol = inputs[:nl_rtol] : nl_rtol = 1.e-05
-    haskey(inputs, :max_nl_iter) ? max_nl_iter = inputs[:max_nl_iter] : max_nl_iter = 10
-    haskey(inputs, :nl_precision) ? nl_precision = inputs[:nl_precision] : nl_precision = Float64
+    nl_atol = inputs[:nl_atol]
+    nl_rtol = inputs[:nl_rtol]
+    max_nl_iter = inputs[:max_nl_iter]
+    nl_precision = inputs[:nl_precision]
 
     # IMEX
     # With delta = 0, apply explicit method;
@@ -64,7 +58,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         build_L = inputs[:build_L]
 
         # check if L has to be updated
-        haskey(inputs, :upd_L) ? upd_L = inputs[:upd_L] : upd_L = false
+        upd_L = inputs[:upd_L]
     end
 
     # Matrix storage mode for the implicit operator
@@ -79,7 +73,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     #
     # The default is :matrix_free to preserve existing behaviour for user
     # configs that do not set the flag.
-    haskey(inputs, :matrix_storage) ? matrix_storage = inputs[:matrix_storage] : matrix_storage = :matrix_free
+    matrix_storage = inputs[:matrix_storage]
     if matrix_storage != :matrix_free && matrix_storage != :assembled
         error("IMEX: invalid :matrix_storage = $(repr(matrix_storage)). " *
               "Expected :matrix_free or :assembled.")
@@ -90,10 +84,13 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     # otherwise).
     L_storage = nothing
     # BCs of the solution
-    haskey(inputs, :bcs_fun) ? bcs_fun! = inputs[:bcs_fun] : bcs_fun! = nothing
+    bcs_fun! = inputs[:bcs_fun]
 
     # coefficients of the method
     if method == "multistep"
+        if (!haskey(coeff, :alpha) || !haskey(coeff, :beta) || !haskey(coeff, :xi))
+            error("IMEX: missing coefficients defining the multistep method")
+        end
         alpha = coeff[:alpha]
         beta = coeff[:beta]
         xi = coeff[:xi]
@@ -109,7 +106,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
         # warm up
         if k > 1
-            haskey(inputs, :Δt_expl) ? Δt_expl = inputs[:Δt_expl] : Δt_expl = Δt / (k - 1)
+            Δt_expl = inputs[:Δt_expl]
             warmup_rhs = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
             warmup_s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
             for n_step = 2 : k
@@ -132,6 +129,10 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             end
         end
     elseif method == "RK"
+        if (!haskey(coeff, :A_RK) || !haskey(coeff, :b_RK) || !haskey(coeff, :c_RK)
+                || !haskey(coeff, :A_RK_tilde) || !haskey(coeff, :b_RK_tilde) || !haskey(coeff, :c_RK_tilde))
+            error("IMEX: missing coefficients defining the Runge-Kutta method")
+        end
         A_RK = coeff[:A_RK]
         b_RK = coeff[:b_RK]
         c_RK = coeff[:c_RK]

@@ -738,6 +738,91 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:amr_max_level] = 0
     end
 
+    #------------------------------------------------------------------------
+    # IMEX options
+    #------------------------------------------------------------------------
+    if(!haskey(inputs, :lsolve))
+        inputs[:lsolve] = nothing
+    end
+
+    if(!haskey(inputs, :solver_precision))
+        inputs[:solver_precision] = Float64
+    end
+
+    if(!haskey(inputs, :prec_sp))
+        inputs[:prec_sp] = Dict(:maxiter      => 1,
+                                :abstol       => 1e-8,
+                                :precision    => Float64,
+                                :prec_type    => "AMG",
+                                )
+    end
+
+    if inputs[:lsolve] == nothing
+        if(!haskey(inputs, :sp))
+            inputs[:sp] = nothing
+        end
+
+        if (!haskey(inputs[:sp], :atol))
+            inputs[:sp][:atol] = 1.e-06
+        end
+
+        if (!haskey(inputs[:sp], :rtol))
+            inputs[:sp][:rtol] = 1.e-10
+        end
+
+        if (!haskey(inputs[:sp], :restart))
+            inputs[:sp][:restart] = true
+        end
+
+        if (!haskey(inputs[:sp], :memory))
+            inputs[:sp][:memory] = 10
+        end
+
+        if (!haskey(inputs[:sp], :itmax))
+            inputs[:sp][:itmax] = 100
+        end
+
+        if (!haskey(inputs[:sp], :verbose))
+            inputs[:sp][:verbose] = 1
+        end
+
+        if (!haskey(inputs[:sp], :prec))
+            inputs[:sp][:prec] = SmoothedAggregationPreconBuilder()
+        end
+    end
+
+    if(!haskey(inputs, :nl_atol))
+        inputs[:nl_atol] = 1.e-05
+    end
+
+    if(!haskey(inputs, :nl_rtol))
+        inputs[:nl_rtol] = 1.e-05
+    end
+
+    if(!haskey(inputs, :max_nl_iter))
+        inputs[:max_nl_iter] = 10
+    end
+
+    if(!haskey(inputs, :nl_precision))
+        inputs[:nl_precision] = Float64
+    end
+
+    if(!haskey(inputs, :upd_L))
+        inputs[:upd_L] = false
+    end
+
+    if(!haskey(inputs, :matrix_storage))
+        inputs[:matrix_storage] = matrix_free
+    end
+
+    if(!haskey(inputs, :bcs_fun))
+        inputs[:bcs_fun] = nothing
+    end
+
+    if(!haskey(inputs, :Δt_expl))
+        inputs[:Δt_expl] = 1.e-05
+    end
+
     return inputs
 end
 
