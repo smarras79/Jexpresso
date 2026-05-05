@@ -759,7 +759,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
     if inputs[:lsolve] == nothing
         if(!haskey(inputs, :sp))
-            inputs[:sp] = nothing
+            inputs[:sp] = Dict()
         end
 
         if (!haskey(inputs[:sp], :atol))
