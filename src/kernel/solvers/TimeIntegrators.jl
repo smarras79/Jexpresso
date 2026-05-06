@@ -74,7 +74,7 @@ function time_loop!(inputs, params, u)
     function condition(u, t, integrator)
         idx  = findfirst(x -> x == t, dosetimes)
         if idx !== nothing
-            idx_ref[] = idx
+            idx_ref[] = idx - 1
             ret_dosetime_ref[] = true
         else
             ret_dosetime_ref[] = false

@@ -4,17 +4,24 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.025,
+        :Δt                   => 0.8,
         :tinit                => 0,
+        # :tend                 => 100.0,
         :tend                 => 10800.0,
-	:lrestart             => false,
-	#:restart_output_file_path => "",
-	:restart_time         => 500,
-	:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:250:8500...,  9000:10:10800.0...),
+        :lrestart             => false,
+        #:restart_output_file_path => "",
+        :restart_time         => 500,
+        # :diagnostics_at_times => (0:4:100),
+	:diagnostics_at_times => (0:4:40..., 100:100:5000..., 5000:250:8500...,  9000:10:10800.0...),
+	# :diagnostics_at_times => (0:4:40..., 100:500:600..., 610:10:700...,  800:100:1000.0...),
         :lsource              => true,
+        :lmoist               => true,
+        :lprecip              => true,
+        :SOL_VARS_TYPE        => TOTAL(),
+        :LST                  => true,
 	:lsponge              => true,
-	:zsponge              => 2500.0,
-        :sounding_file        =>"./data_files/input_sounding_teamx_u10_flat_noheader.dat",
+	:zsponge              => 19000.0,
+        :sounding_file        =>"./data_files/GIGALES_GATE_IDEAL_sounding.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -28,18 +35,21 @@ function user_inputs()
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        #:visc_model           => AV(),
-        #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 5, 5, 5, 5], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 1, 1, 1, 1, 1, 1], #horizontal viscosity constant for momentum
+        # :visc_model           => AV(),
+        # :μ           => [0.0, 100.0, 100.0, 100.0, 200.0, 200.0, 200.0], #horizontal viscosity constant for momentum
+        :energy_equation      => "energy",
+        # :lrichardson          => true,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
+        # :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_60kmx12kmx25km.msh",	
+	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les.msh",
 	
         # Warping:
         :lwarp => false,
@@ -59,7 +69,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => false,
+        :lfilter             => true,
         :mu_x                => 0.5,
         :mu_y                => 0.5,
 	:mu_z                => 0.5,
@@ -68,9 +78,9 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-       # :output_dir          => "/scratch/smarras/smarras/output/LESICP2_scaling-8nodes-128x128x72_10kmX10kmX3dot5km/",
-        :output_dir          => "./output/LESICP2/",
-        :loverwrite_output   => true,  #this is only implemented for VTK for now
+        :output_dir          => "./output_gigales_energy_moist/",
+        #:output_dir          => "./output",
+        :loverwrite_output   => false,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
@@ -81,7 +91,7 @@ function user_inputs()
         # AMR
         #---------------------------------------------------------------------------
         :ladapt              => false,
-        :amr                 => true,
+        :amr                 => false,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
