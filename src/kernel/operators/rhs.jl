@@ -1450,7 +1450,7 @@ function _expansion_inviscid!(u, neqs, ngl,
             ωl = ω[l]
             for k=1:Q
                 @inbounds begin
-                    Je_kl = Je[iel,k,l]
+                    Je_kl = Je[k, l, iel]
                     ωJac = ω[k] * ωl * Je_kl
 
                     dFdξ = 0.0
@@ -1467,10 +1467,10 @@ function _expansion_inviscid!(u, neqs, ngl,
                         end
                     end
 
-                    dξdx_kl = params.metrics.dξdx[iel,k,l]
-                    dξdy_kl = params.metrics.dξdy[iel,k,l]
-                    dηdx_kl = params.metrics.dηdx[iel,k,l]
-                    dηdy_kl = params.metrics.dηdy[iel,k,l]
+                    dξdx_kl = params.metrics.dξdx[k, l, iel]
+                    dξdy_kl = params.metrics.dξdy[k, l, iel]
+                    dηdx_kl = params.metrics.dηdx[k, l, iel]
+                    dηdy_kl = params.metrics.dηdy[k, l, iel]
                     for j = 1:N
                         for i = 1:N
                             dFdx = dFdξ*dξdx_kl + dFdη*dηdx_kl
