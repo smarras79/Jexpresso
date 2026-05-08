@@ -2093,7 +2093,7 @@ end
             for k = 1:ngl
 
                 @inbounds begin
-                    Je_klm = Je[iel,k,l,m]
+                    Je_klm = Je[k, l, m, iel]
                     ωJac   = ω[k] * ωlm * Je_klm
                     ip     = conn_el[k,l,m]
                     z      = coords[ip,3]
@@ -2113,17 +2113,17 @@ end
                         dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
                         dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
                     end
-                    dξdx_klm = dξdx[iel,k,l,m]
-                    dξdy_klm = dξdy[iel,k,l,m]
-                    dξdz_klm = dξdz[iel,k,l,m]
+                    dξdx_klm = dξdx[k, l, m, iel]
+                    dξdy_klm = dξdy[k, l, m, iel]
+                    dξdz_klm = dξdz[k, l, m, iel]
 
-                    dηdx_klm = dηdx[iel,k,l,m]
-                    dηdy_klm = dηdy[iel,k,l,m]
-                    dηdz_klm = dηdz[iel,k,l,m]
+                    dηdx_klm = dηdx[k, l, m, iel]
+                    dηdy_klm = dηdy[k, l, m, iel]
+                    dηdz_klm = dηdz[k, l, m, iel]
 
-                    dζdx_klm = dζdx[iel,k,l,m]
-                    dζdy_klm = dζdy[iel,k,l,m]
-                    dζdz_klm = dζdz[iel,k,l,m]
+                    dζdx_klm = dζdx[k, l, m, iel]
+                    dζdy_klm = dζdy[k, l, m, iel]
+                    dζdz_klm = dζdz[k, l, m, iel]
 
                     auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
                     dqdx = visc_coeffieq[ieq]*auxi
