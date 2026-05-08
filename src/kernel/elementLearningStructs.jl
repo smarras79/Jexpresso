@@ -1,4 +1,3 @@
-include("./mesh/meshStructs.jl")
 using SparseArrays
 using BenchmarkTools
 using Profile, PProf   # PProf gives a flame graph in the browser
