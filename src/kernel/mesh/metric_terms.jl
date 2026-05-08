@@ -68,13 +68,13 @@ end
 function allocate_metrics(SD, nelem, nfaces_bdy, Q, T, backend)
 
     if SD == NSD_1D()
-        dims1 = (nelem,      Q+1, 1, 1)
+        dims1 = (Q+1, 1, 1, nelem)
         dims2 = (nfaces_bdy, 1)
     elseif SD == NSD_2D()
-        dims1 = (nelem,      Q+1, Q+1, 1)
+        dims1 = (Q+1, Q+1, 1, nelem)
         dims2 = (nfaces_bdy, Q+1, 1)
     elseif SD == NSD_3D()
-        dims1 = (nelem,      Q+1, Q+1, Q+1)
+        dims1 = (Q+1, Q+1, Q+1, nelem)
         dims2 = (nfaces_bdy, Q+1, Q+1)
     end
 
