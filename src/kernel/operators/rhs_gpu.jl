@@ -80,16 +80,16 @@ end
             @inbounds dGdη += dψ[k,i_y]*G[i_x,k]
         end
 
-        @inbounds dξdx_ij = dξdx[ie,i_x,i_y]
-        @inbounds dξdy_ij = dξdy[ie,i_x,i_y]
-        @inbounds dηdx_ij = dηdx[ie,i_x,i_y]
-        @inbounds dηdy_ij = dηdy[ie,i_x,i_y]
+        @inbounds dξdx_ij = dξdx[i_x, i_y, ie]
+        @inbounds dξdy_ij = dξdy[i_x, i_y, ie]
+        @inbounds dηdx_ij = dηdx[i_x, i_y, ie]
+        @inbounds dηdy_ij = dηdy[i_x, i_y, ie]
 
         dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
         dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
 
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*Je[ie,i_x,i_y]*((dFdx + dGdy)- S[i_x,i_y])* Minv[ip]
+        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*Je[i_x, i_y, ie]*((dFdx + dGdy)- S[i_x,i_y])* Minv[ip]
     end
 end
 
