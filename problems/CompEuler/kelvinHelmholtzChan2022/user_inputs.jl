@@ -8,8 +8,7 @@ function user_inputs()
         :Δt                   => 0.0003,
         :tinit                => 0.0,
         :tend                 => 0.5,
-        :diagnostics_at_times => (0.0:10.0:10.0),
-        #:diagnostics_at_times => (0.0:0.25:10.0),
+        :diagnostics_at_times => (0.0:1.0:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
@@ -26,8 +25,8 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        #:μ                   => [0.0, 1.0, 1.0, 5.0], #horizontal viscosity constant for momentum
-        :μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
+        #:μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
         :visc_model           => SMAG(),
         #:visc_model           => VREM(),
         #---------------------------------------------------------------------------

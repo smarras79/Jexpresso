@@ -42,7 +42,6 @@ import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
 
-
 import ClimaComms
 @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
 
@@ -188,7 +187,7 @@ include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
 
 include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
 
-include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
+#include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 

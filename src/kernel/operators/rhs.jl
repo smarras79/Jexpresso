@@ -632,8 +632,8 @@ function _build_rhs!(RHS, u, params, time)
 
         resetRHSToZero_viscous!(params, SD)
         
-        Main.debug[] = (; u, params, connijk = params.mesh.connijk, qe = params.qp.qe, SD)
-        error()
+        #Main.debug[] = (; u, params, connijk = params.mesh.connijk, qe = params.qp.qe, SD)
+        #error()
         @trixi_timeit timer() "viscous_rhs_el!" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
         if inputs[:ladapt] == true

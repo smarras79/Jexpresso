@@ -1,3 +1,7 @@
+using JACC
+using SparseArrays
+import JACC
+
 # =========================================================================
 # JACC.jl Hardware-Agnostic Mass Matrix Assembly for 3D+2D Problems
 # =========================================================================
@@ -8,13 +12,9 @@
 # Original CPU version: sparse_mass_assembly_3Dby2D in build_rad_3d.jl
 # =========================================================================
 
-using JACC
-using SparseArrays
-import JACC
 # =========================================================================
 # Hardware-Agnostic Mass Matrix Assembly
 # =========================================================================
-
 function sparse_mass_assembly_3Dby2D_jacc(
     ω, Je, connijk, ωθ, ωϕ, ψ,
     connijk_ang, Je_ang, nop_ang, npoin_ang_total,
@@ -344,8 +344,6 @@ Single unified function that works efficiently on CPU, NVIDIA GPU, AMD GPU, etc.
 ## Basic Usage:
 
 ```julia
-using JACC
-
 # CPU (multi-threaded)
 M = sparse_mass_assembly_3Dby2D_jacc(
     ω, Je, connijk, ωθ, ωϕ, ψ,

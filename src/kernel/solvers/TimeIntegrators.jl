@@ -1,5 +1,8 @@
 using TrixiBase
-using TimerOutputs
+
+import TimerOutputs
+import KrylovPreconditioners
+
 function time_loop!(inputs, params, u, args...)
 
     comm = MPI.COMM_WORLD
