@@ -874,11 +874,11 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
 
                             a = dψ[i,k]*ψ[j,l]
                             b = ψ[i,k]*dψ[j,l]
-                            metrics.dxdξ[iel, k, l] += a * θij
-                            metrics.dxdη[iel, k, l] += b * θij
+                            metrics.dxdξ[k, l, 1, iel] += a * θij
+                            metrics.dxdη[k, l, 1, iel] += b * θij
 
-                            metrics.dydξ[iel, k, l] += a * ϕij
-                            metrics.dydη[iel, k, l] += b * ϕij
+                            metrics.dydξ[k, l, 1, iel] += a * ϕij
+                            metrics.dydη[k, l, 1, iel] += b * ϕij
 
                             #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
                         end
@@ -890,20 +890,20 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                 for k = 1:nop+1
 
                     # Extract values from memory once per iteration
-                    dxdξ_val = metrics.dxdξ[iel, k, l]
-                    dydη_val = metrics.dydη[iel, k, l]
-                    dydξ_val = metrics.dydξ[iel, k, l]
-                    dxdη_val = metrics.dxdη[iel, k, l]
+                    dxdξ_val = metrics.dxdξ[k, l, 1, iel]
+                    dydη_val = metrics.dydη[k, l, 1, iel]
+                    dydξ_val = metrics.dydξ[k, l, 1, iel]
+                    dxdη_val = metrics.dxdη[k, l, 1, iel]
                     ip = extra_mesh.extra_connijk[iel, k, l]
                     # Compute Je once and reuse its value
-                    metrics.Je[iel, k, l] = dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    metrics.Je[k, l, 1, iel] = dxdξ_val * dydη_val - dydξ_val * dxdη_val
                     # Use the precomputed Je value for the other calculations
-                    Jinv = 1.0/metrics.Je[iel, k, l]
+                    Jinv = 1.0/metrics.Je[k, l, 1, iel]
 
-                    metrics.dξdx[iel, k, l] =  dydη_val * Jinv
-                    metrics.dξdy[iel, k, l] = -dxdη_val * Jinv
-                    metrics.dηdx[iel, k, l] = -dydξ_val * Jinv
-                    metrics.dηdy[iel, k, l] =  dxdξ_val * Jinv
+                    metrics.dξdx[k, l, 1, iel] =  dydη_val * Jinv
+                    metrics.dξdy[k, l, 1, iel] = -dxdη_val * Jinv
+                    metrics.dηdx[k, l, 1, iel] = -dydξ_val * Jinv
+                    metrics.dηdy[k, l, 1, iel] =  dxdξ_val * Jinv
 
                 end
             end
@@ -1044,42 +1044,42 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                     dΘΘdξ = dΘΘdxg*dxgdξ[i,j] + dΘΘdyg*dygdξ[i,j]
                     dΘΘdη = dΘΘdxg*dxgdη[i,j] + dΘΘdyg*dygdη[i,j]
 
-                    metrics.dxdξ[iel, i,j] = dxdR*dRdξ[i,j] + dxdΘΘ*dΘΘdξ + dxdΦΘ*dΦΘdξ
-                    metrics.dxdη[iel, i,j] = dxdR*dRdη[i,j] + dxdΘΘ*dΘΘdη + dxdΦΘ*dΦΘdη
+                    metrics.dxdξ[i, j, 1, iel] = dxdR*dRdξ[i,j] + dxdΘΘ*dΘΘdξ + dxdΦΘ*dΦΘdξ
+                    metrics.dxdη[i, j, 1, iel] = dxdR*dRdη[i,j] + dxdΘΘ*dΘΘdη + dxdΦΘ*dΦΘdη
 
-                    metrics.dydξ[iel, i,j] = dydR*dRdξ[i,j] + dydΘΘ*dΘΘdξ + dydΦΘ*dΦΘdξ
-                    metrics.dydη[iel, i,j] = dydR*dRdη[i,j] + dydΘΘ*dΘΘdη + dydΦΘ*dΦΘdη
+                    metrics.dydξ[i, j, 1, iel] = dydR*dRdξ[i,j] + dydΘΘ*dΘΘdξ + dydΦΘ*dΦΘdξ
+                    metrics.dydη[i, j, 1, iel] = dydR*dRdη[i,j] + dydΘΘ*dΘΘdη + dydΦΘ*dΦΘdη
 
-                    metrics.dzdξ[iel, i,j] = dzdR*dRdξ[i,j] + dzdΘΘ*dΘΘdξ + dzdΦΘ*dΦΘdξ
-                    metrics.dzdη[iel, i,j] = dzdR*dRdη[i,j] + dzdΘΘ*dΘΘdη + dzdΦΘ*dΦΘdη
+                    metrics.dzdξ[i, j, 1, iel] = dzdR*dRdξ[i,j] + dzdΘΘ*dΘΘdξ + dzdΦΘ*dΦΘdξ
+                    metrics.dzdη[i, j, 1, iel] = dzdR*dRdη[i,j] + dzdΘΘ*dΘΘdη + dzdΦΘ*dΦΘdη
                 end
             end
             @inbounds for l = 1:nop+1
                 for k = 1:nop+1
 
                     # Extract values from memory once per iteration
-                    dxdξ_val = metrics.dxdξ[iel, k, l]
-                    dydη_val = metrics.dydη[iel, k, l]
-                    dydξ_val = metrics.dydξ[iel, k, l]
-                    dxdη_val = metrics.dxdη[iel, k, l]
-                    dzdξ_val = metrics.dzdξ[iel, k, l]
-                    dzdη_val = metrics.dzdη[iel, k, l]
+                    dxdξ_val = metrics.dxdξ[k, l, 1, iel]
+                    dydη_val = metrics.dydη[k, l, 1, iel]
+                    dydξ_val = metrics.dydξ[k, l, 1, iel]
+                    dxdη_val = metrics.dxdη[k, l, 1, iel]
+                    dzdξ_val = metrics.dzdξ[k, l, 1, iel]
+                    dzdη_val = metrics.dzdη[k, l, 1, iel]
 
                     ip = extra_mesh.extra_connijk[iel, k, l]
                     # Compute Je once and reuse its value
                     col1 = [dxdξ_val, dydξ_val, dzdξ_val]
                     col2 = [dxdη_val, dydη_val, dzdη_val]
-                    metrics.Je[iel, k, l] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
-                    #metrics.Je[iel, k, l]
+                    metrics.Je[k, l, 1, iel] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    #metrics.Je[k, l, 1, iel]
                     # Use the precomputed Je value for the other calculations
-                    Jinv = 1.0/metrics.Je[iel, k, l]
+                    Jinv = 1.0/metrics.Je[k, l, 1, iel]
 
-                    metrics.dξdx[iel, k, l] =  (dydη_val - dzdη_val) * Jinv
-                    metrics.dξdy[iel, k, l] = (dzdη_val - dxdη_val) * Jinv
-                    metrics.dξdz[iel, k, l] = (dxdη_val - dydη_val) * Jinv
-                    metrics.dηdx[iel, k, l] = (dzdξ_val - dydξ_val) * Jinv
-                    metrics.dηdy[iel, k, l] = (dxdξ_val - dzdξ_val) * Jinv
-                    metrics.dηdz[iel, k ,l] = (dydξ_val - dxdξ_val) * Jinv
+                    metrics.dξdx[k, l, 1, iel] =  (dydη_val - dzdη_val) * Jinv
+                    metrics.dξdy[k, l, 1, iel] = (dzdη_val - dxdη_val) * Jinv
+                    metrics.dξdz[k, l, 1, iel] = (dxdη_val - dydη_val) * Jinv
+                    metrics.dηdx[k, l, 1, iel] = (dzdξ_val - dydξ_val) * Jinv
+                    metrics.dηdy[k, l, 1, iel] = (dxdξ_val - dzdξ_val) * Jinv
+                    metrics.dηdz[k, l, 1, iel] = (dydξ_val - dxdξ_val) * Jinv
                 end
             end
             #=for j = 1:nop+1
