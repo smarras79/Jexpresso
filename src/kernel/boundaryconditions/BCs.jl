@@ -187,7 +187,7 @@ end
                                                 t::Real,
                                                 uaux::AbstractMatrix, coords::AbstractMatrix, qe::AbstractMatrix,
                                                 qbdy::AbstractVector, RHS::AbstractMatrix,
-                                                nx::AbstractMatrix, ny::AbstractMatrix,
+                                                nx::AbstractArray, ny::AbstractArray,
                                                 poin_in_bdy_edge::AbstractMatrix, bdy_edge_type::AbstractVector,
                                                 nedges_bdy::Integer, ngl::Integer, neqs::Integer)
     @inbounds for iedge = 1:nedges_bdy
