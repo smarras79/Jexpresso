@@ -1,22 +1,24 @@
-@inline function user_bc_dirichlet!(q::AbstractVector{Float64}, coords::AbstractVector{Float64},
-                                    t::Float64, tag::String, qbdy::AbstractVector{Float64},
-                                    nx::Float64, ny::Float64, qe::AbstractVector{Float64}, ::TOTAL)
+@inline function user_bc_dirichlet!(uaux::AbstractMatrix{Float64}, ip::Integer,
+                                    coords::AbstractMatrix{Float64}, t::Float64, tag::String,
+                                    qbdy::AbstractVector{Float64}, nx::Float64, ny::Float64,
+                                    qe::AbstractMatrix{Float64}, ::TOTAL)
     @inbounds begin
-        qnl = nx*q[2] + ny*q[3]
-        qbdy[2] = q[2] - qnl*nx
-        qbdy[3] = q[3] - qnl*ny
+        qnl = nx*uaux[ip,2] + ny*uaux[ip,3]
+        qbdy[2] = uaux[ip,2] - qnl*nx
+        qbdy[3] = uaux[ip,3] - qnl*ny
     end
 end
 
-@inline function user_bc_dirichlet!(q::AbstractVector{Float64}, coords::AbstractVector{Float64},
-                                    t::Float64, tag::String, qbdy::AbstractVector{Float64},
-                                    nx::Float64, ny::Float64, qe::AbstractVector{Float64}, ::PERT)
+@inline function user_bc_dirichlet!(uaux::AbstractMatrix{Float64}, ip::Integer,
+                                    coords::AbstractMatrix{Float64}, t::Float64, tag::String,
+                                    qbdy::AbstractVector{Float64}, nx::Float64, ny::Float64,
+                                    qe::AbstractMatrix{Float64}, ::PERT)
     @inbounds begin
-        u_ip = q[2] + qe[2]
-        v_ip = q[3] + qe[3]
+        u_ip = uaux[ip,2] + qe[ip,2]
+        v_ip = uaux[ip,3] + qe[ip,3]
         qnl = nx*u_ip + ny*v_ip
-        qbdy[2] = u_ip - qnl*nx - qe[2]
-        qbdy[3] = v_ip - qnl*ny - qe[3]
+        qbdy[2] = u_ip - qnl*nx - qe[ip,2]
+        qbdy[3] = v_ip - qnl*ny - qe[ip,3]
     end
 end
 

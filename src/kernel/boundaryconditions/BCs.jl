@@ -203,8 +203,8 @@ end
                 ny_l = ny[iedge, k]
                 fill!(qbdy, 4325789.0)
 
-                user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, edge_type,
-                                   qbdy, nx_l, ny_l, @view(qe[ip, :]), sol_vars_type)
+                user_bc_dirichlet!(uaux, ip, coords, t, edge_type,
+                                   qbdy, nx_l, ny_l, qe, sol_vars_type)
 
                 for ieq = 1:neqs
                     if !AlmostEqual(qbdy[ieq], uaux[ip, ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
@@ -231,8 +231,8 @@ end
             ny_l = 1.0
             nx_l = 0.0
             fill!(qbdy, 4325789.0)
-            user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, tag,
-                               qbdy, nx_l, ny_l, @view(qe[ip, :]), sol_vars_type)
+            user_bc_dirichlet!(uaux, ip, coords, t, tag,
+                               qbdy, nx_l, ny_l, qe, sol_vars_type)
 
             for ieq = 1:neqs
                 if !AlmostEqual(qbdy[ieq], uaux[ip, ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
@@ -249,8 +249,8 @@ end
                 ny_l = 0.0
                 nx_l = -1.0
                 fill!(qbdy, 4325789.0)
-                user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, tag,
-                                   qbdy, nx_l, ny_l, @view(qe[ip, :]), sol_vars_type)
+                user_bc_dirichlet!(uaux, ip, coords, t, tag,
+                                   qbdy, nx_l, ny_l, qe, sol_vars_type)
                 for ieq = 1:neqs
                     if !AlmostEqual(qbdy[ieq], uaux[ip, ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
                         uaux[ip, ieq] = qbdy[ieq]
@@ -267,8 +267,8 @@ end
                 ny_l = 0.0
                 nx_l = 1.0
                 fill!(qbdy, 4325789.0)
-                user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, tag,
-                                   qbdy, nx_l, ny_l, @view(qe[ip, :]), sol_vars_type)
+                user_bc_dirichlet!(uaux, ip, coords, t, tag,
+                                   qbdy, nx_l, ny_l, qe, sol_vars_type)
 
                 for ieq = 1:neqs
                     if !AlmostEqual(qbdy[ieq], uaux[ip, ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
