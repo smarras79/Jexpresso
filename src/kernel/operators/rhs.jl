@@ -1701,7 +1701,7 @@ end
         for k = 1:ngl
 
             @inbounds begin
-                Jekl = Je[iel,k,l]
+                Jekl = Je[k, l, iel]
                 ωJac = ω[k]*ωl*Jekl
 
                 dqdξ = 0.0
@@ -1710,10 +1710,10 @@ end
                     dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
                     dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
                 end
-                dξdx_kl = dξdx[iel,k,l]
-                dξdy_kl = dξdy[iel,k,l]
-                dηdx_kl = dηdx[iel,k,l]
-                dηdy_kl = dηdy[iel,k,l]
+                dξdx_kl = dξdx[k, l, iel]
+                dξdy_kl = dξdy[k, l, iel]
+                dηdx_kl = dηdx[k, l, iel]
+                dηdy_kl = dηdy[k, l, iel]
 
                 auxi = dqdξ*dξdx_kl + dqdη*dηdx_kl
                 dqdx = visc_coeffieq[ieq]*auxi
