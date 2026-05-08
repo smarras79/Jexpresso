@@ -229,7 +229,7 @@ end
     for l=1:Q+1
         for k=1:Q+1
             ωkl = ω[k]*ω[l]
-            Jkle = Je[ie,k,l]
+            Jkle = Je[k, l, 1, ie]
             ψJK = ψ[i_x,k]*ψ[i_y,l]
             for n=1:N+1
                 for m=1:N+1
