@@ -112,9 +112,9 @@ end
     il = @index(Local, Linear)
     T = eltype(x)
     for k=1:Q+1
-        dxdξ[k, 1, 1, ie] = Δx[ie]/2
-        Je[k, 1, 1, ie] = dxdξ[k, 1, 1, ie]
-        dξdx[k, 1, 1, ie] = T(1.0)/Je[k, 1, 1, ie]
+        dxdξ[k, ie] = Δx[ie]/2
+        Je[k, ie] = dxdξ[k, ie]
+        dξdx[k, ie] = T(1.0)/Je[k, ie]
     end
 
 end
@@ -176,9 +176,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         @inbounds for iel = 1:mesh.nelem  # PERF: Added @inbounds
             for i = 1:N+1
                 for k = 1:Q+1
-                    metrics.dxdξ[k, 1, 1, iel]  = mesh.Δx[iel]/2
-                    metrics.Je[k, 1, 1, iel]   = metrics.dxdξ[k, 1, 1, iel]
-                    metrics.dξdx[k, 1, 1, iel] = T(1.0)/metrics.Je[k, 1, 1, iel]  # FIXED: use type parameter T
+                    metrics.dxdξ[k, iel]  = mesh.Δx[iel]/2
+                    metrics.Je[k, iel]   = metrics.dxdξ[k, iel]
+                    metrics.dξdx[k, iel] = T(1.0)/metrics.Je[k, iel]  # FIXED: use type parameter T
                 end
             end
         end
@@ -208,10 +208,10 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
 
         @inbounds for iel = 1:mesh.nelem
             # Cache views to avoid repeated indexing overhead
-            dxdξ_iel = @view metrics.dxdξ[:, :, 1, iel]
-            dxdη_iel = @view metrics.dxdη[:, :, 1, iel]
-            dydξ_iel = @view metrics.dydξ[:, :, 1, iel]
-            dydη_iel = @view metrics.dydη[:, :, 1, iel]
+            dxdξ_iel = @view metrics.dxdξ[:, :, iel]
+            dxdη_iel = @view metrics.dxdη[:, :, iel]
+            dydξ_iel = @view metrics.dydξ[:, :, iel]
+            dydη_iel = @view metrics.dydη[:, :, iel]
             connijk_iel = @view mesh.connijk[iel, :, :]
 
             for j = 1:N+1
@@ -237,11 +237,11 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
 
             # Second loop with cached views and optimized calculations
-            Je_iel = @view metrics.Je[:, :, 1, iel]
-            dξdx_iel = @view metrics.dξdx[:, :, 1, iel]
-            dξdy_iel = @view metrics.dξdy[:, :, 1, iel]
-            dηdx_iel = @view metrics.dηdx[:, :, 1, iel]
-            dηdy_iel = @view metrics.dηdy[:, :, 1, iel]
+            Je_iel = @view metrics.Je[:, :, iel]
+            dξdx_iel = @view metrics.dξdx[:, :, iel]
+            dξdy_iel = @view metrics.dξdy[:, :, iel]
+            dηdx_iel = @view metrics.dηdx[:, :, iel]
+            dηdy_iel = @view metrics.dηdy[:, :, iel]
 
             @turbo for l = 1:Q+1
                 for k = 1:Q+1
@@ -653,11 +653,11 @@ end
     yij = y[ip]
     for l=1:Q+1
         for k=1:Q+1
-            KernelAbstractions.@atomic dxdξ[k, l, 1, ie] += dψ[i_x,k]*ψ[i_y,l] * xij
-            KernelAbstractions.@atomic dxdη[k, l, 1, ie] += ψ[i_x,k]*dψ[i_y,l] * xij
+            KernelAbstractions.@atomic dxdξ[k, l, ie] += dψ[i_x,k]*ψ[i_y,l] * xij
+            KernelAbstractions.@atomic dxdη[k, l, ie] += ψ[i_x,k]*dψ[i_y,l] * xij
 
-            KernelAbstractions.@atomic dydξ[k, l, 1, ie] += dψ[i_x,k]*ψ[i_y,l] * yij
-            KernelAbstractions.@atomic dydη[k, l, 1, ie] += ψ[i_x,k]*dψ[i_y,l] * yij
+            KernelAbstractions.@atomic dydξ[k, l, ie] += dψ[i_x,k]*ψ[i_y,l] * yij
+            KernelAbstractions.@atomic dydη[k, l, ie] += ψ[i_x,k]*dψ[i_y,l] * yij
         end
     end
 end
