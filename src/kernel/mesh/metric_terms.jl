@@ -112,9 +112,9 @@ end
     il = @index(Local, Linear)
     T = eltype(x)
     for k=1:Q+1
-        dxdξ[ie, k, 1] = Δx[ie]/2
-        Je[ie, k, 1] = dxdξ[ie, k, 1]
-        dξdx[ie, k, 1] = T(1.0)/Je[ie, k, 1]
+        dxdξ[k, 1, 1, ie] = Δx[ie]/2
+        Je[k, 1, 1, ie] = dxdξ[k, 1, 1, ie]
+        dξdx[k, 1, 1, ie] = T(1.0)/Je[k, 1, 1, ie]
     end
 
 end
@@ -176,9 +176,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         @inbounds for iel = 1:mesh.nelem  # PERF: Added @inbounds
             for i = 1:N+1
                 for k = 1:Q+1
-                    metrics.dxdξ[iel, k, 1]  = mesh.Δx[iel]/2
-                    metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
-                    metrics.dξdx[iel, k, 1] = T(1.0)/metrics.Je[iel, k, 1]  # FIXED: use type parameter T
+                    metrics.dxdξ[k, 1, 1, iel]  = mesh.Δx[iel]/2
+                    metrics.Je[k, 1, 1, iel]   = metrics.dxdξ[k, 1, 1, iel]
+                    metrics.dξdx[k, 1, 1, iel] = T(1.0)/metrics.Je[k, 1, 1, iel]  # FIXED: use type parameter T
                 end
             end
         end
