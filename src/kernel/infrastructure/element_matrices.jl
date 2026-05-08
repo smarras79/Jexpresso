@@ -131,7 +131,7 @@ function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, nelem, Je, Δx,
         #Jac = Δx[iel]/2
         
         for i=1:N+1
-            Me[i,iel] += Je[iel,i]*ω[i]
+            Me[i,iel] += Je[i, 1, 1, iel]*ω[i]
         end
     end
 end
