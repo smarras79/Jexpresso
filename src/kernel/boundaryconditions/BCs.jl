@@ -141,7 +141,7 @@ function build_custom_bcs_dirichlet!(::NSD_1D, t,
                                      Tabs, qn,
                                      neqs, dirichlet!, neumann, inputs)
 
-    sol_vars_type = inputs[:SOL_VARS_TYPE]::AbstractPert
+    sol_vars_type = inputs[:SOL_VARS_TYPE]::Union{PERT, TOTAL, THETA}
 
     ip = 1
     fill!(qbdy, 4325789.0)
@@ -194,7 +194,8 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
                                      Tabs, qn,
                                      neqs, dirichlet!, neumann, inputs)
 
-    sol_vars_type = inputs[:SOL_VARS_TYPE]::AbstractPert
+    sol_vars_type = inputs[:SOL_VARS_TYPE]::Union{PERT, TOTAL, THETA}
+    llaguerre_bc  = inputs[:llaguerre_bc]::Bool
 
     for iedge = 1:nedges_bdy
         iel  = bdy_edge_in_elem[iedge]
@@ -222,7 +223,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
         end
     end
 
-    if(inputs[:llaguerre_bc])
+    if llaguerre_bc
         if (nelem_semi_inf >0)
             tag = inputs[:laguerre_tag]
             for e=1:nelem_semi_inf
@@ -555,7 +556,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
                                      Tabs, qn,
                                      neqs, dirichlet!, neumann, inputs)
     PhysConst = PhysicalConst{Float64}()
-    sol_vars_type = inputs[:SOL_VARS_TYPE]::AbstractPert
+    sol_vars_type = inputs[:SOL_VARS_TYPE]::Union{PERT, TOTAL, THETA}
 
     for iface = 1:nfaces_bdy
         face_type = bdy_face_type[iface]
