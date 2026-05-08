@@ -392,9 +392,9 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, 
 
         # ── Step 1: Weighted contravariant metric at each quadrature point  O(N²) ──
         @inbounds for l = 1:Np1, k = 1:Np1
-            wJ  = ω[k] * ω[l] * metrics.Je[iel,k,l]
-            ξx  = metrics.dξdx[iel,k,l];  ξy = metrics.dξdy[iel,k,l]
-            ηx  = metrics.dηdx[iel,k,l];  ηy = metrics.dηdy[iel,k,l]
+            wJ  = ω[k] * ω[l] * metrics.Je[k, l, 1, iel]
+            ξx  = metrics.dξdx[k, l, 1, iel];  ξy = metrics.dξdy[k, l, 1, iel]
+            ηx  = metrics.dηdx[k, l, 1, iel];  ηy = metrics.dηdy[k, l, 1, iel]
             G11[k,l] = wJ * (ξx*ξx + ξy*ξy)
             G12[k,l] = wJ * (ξx*ηx + ξy*ηy)
             G22[k,l] = wJ * (ηx*ηx + ηy*ηy)
