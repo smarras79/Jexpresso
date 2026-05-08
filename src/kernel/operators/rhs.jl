@@ -2026,7 +2026,7 @@ end
         for k = 1:ngl
 
             @inbounds begin
-                Je_kl = Je[iel,k,l]
+                Je_kl = Je[k, l, iel]
                 ωJac  = ω[k]*ωl*Je_kl
                 @. gradient_dxi = 0
                 @. gradient_deta = 0
@@ -2037,10 +2037,10 @@ end
 		    gradient_deta[var] += dψ[ii,l]*uprimitiveieq[k,ii,var]
                 end
 		end
-                dξdx_kl = dξdx[iel,k,l]
-                dξdy_kl = dξdy[iel,k,l]
-                dηdx_kl = dηdx[iel,k,l]
-                dηdy_kl = dηdy[iel,k,l]
+                dξdx_kl = dξdx[k, l, iel]
+                dξdy_kl = dξdy[k, l, iel]
+                dηdx_kl = dηdx[k, l, iel]
+                dηdy_kl = dηdy[k, l, iel]
 
                 @. gradient_dx = gradient_dxi*dξdx_kl + gradient_deta*dηdx_kl
                 @. gradient_dy = gradient_dxi*dξdy_kl + gradient_deta*dηdy_kl
