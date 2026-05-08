@@ -1571,7 +1571,7 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::
         for k=1:Q
 
             @inbounds begin
-                ωJac = ω[k]*ωl*Je[k, l, ie]
+                ωJac = ω[k]*ωl*Je[k, l, iel]
 
                 dρudξ = 0.0; dρudη = 0.0
                 dρvdξ = 0.0; dρvdη = 0.0
@@ -1660,17 +1660,17 @@ end
                           QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal; Δ=1.0)
 
     for k = 1:ngl
-        ωJac = ω[k]*Je[iel,k]
+        ωJac = ω[k]*Je[k, iel]
 
         dqdξ = 0.0
         @turbo for ii = 1:ngl
             dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
         end
 
-        dξdx_kl = dqdξ*dξdx[iel,k]
+        dξdx_kl = dqdξ*dξdx[k, iel]
         dqdx = visc_coeffieq[ieq]*dξdx_kl
 
-        ∇ξ∇u_kl = dξdx[iel,k]*dqdx*ωJac
+        ∇ξ∇u_kl = dξdx[k, iel]*dqdx*ωJac
 
         @turbo for i = 1:ngl
             dhdξ_ik = dψ[i,k]
