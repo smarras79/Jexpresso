@@ -1370,7 +1370,7 @@ function _expansion_inviscid!(u, neqs, ngl,
                 for i=1:ngl
 
                     @inbounds begin
-                        Je_ijk = Je[iel,i,j,k]
+                        Je_ijk = Je[i, j, k, iel]
                         ωJac = ω[i] * ωjk * Je_ijk
 
                         dFdξ = 0.0
@@ -1397,17 +1397,17 @@ function _expansion_inviscid!(u, neqs, ngl,
                             dHdη += dψ[m,j]*H[i,m,k,ieq]
                             dHdζ += dψ[m,k]*H[i,j,m,ieq]
                         end
-                        dξdx_ij = dξdx[iel,i,j,k]
-                        dξdy_ij = dξdy[iel,i,j,k]
-                        dξdz_ij = dξdz[iel,i,j,k]
+                        dξdx_ij = dξdx[i, j, k, iel]
+                        dξdy_ij = dξdy[i, j, k, iel]
+                        dξdz_ij = dξdz[i, j, k, iel]
 
-                        dηdx_ij = dηdx[iel,i,j,k]
-                        dηdy_ij = dηdy[iel,i,j,k]
-                        dηdz_ij = dηdz[iel,i,j,k]
+                        dηdx_ij = dηdx[i, j, k, iel]
+                        dηdy_ij = dηdy[i, j, k, iel]
+                        dηdz_ij = dηdz[i, j, k, iel]
 
-                        dζdx_ij = dζdx[iel,i,j,k]
-                        dζdy_ij = dζdy[iel,i,j,k]
-                        dζdz_ij = dζdz[iel,i,j,k]
+                        dζdx_ij = dζdx[i, j, k, iel]
+                        dζdy_ij = dζdy[i, j, k, iel]
+                        dζdz_ij = dζdz[i, j, k, iel]
 
                         dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij + dFdζ*dζdx_ij
                         dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij + dGdζ*dζdx_ij
