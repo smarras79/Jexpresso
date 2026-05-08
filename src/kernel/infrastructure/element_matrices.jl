@@ -146,7 +146,7 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, nelem, Je, Δx,
             for k = 1:Q+1
                 
                 ωkl  = ω[k]*ω[l]
-                Jkle = Je[iel, k, l]
+                Jkle = Je[k, l, 1, iel]
                 ωJ   = ωkl*Jkle
                 
                 for j = 1:N+1
