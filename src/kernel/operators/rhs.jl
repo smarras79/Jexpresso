@@ -787,7 +787,7 @@ end
     for j=1:ngl
         for i=1:ngl
             ip = connijk[iel,i,j]
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
+            ωJac = ω[i]*ω[j]*Je[i, j, iel]
             @. dFdxi = 0
 	    @. dFdeta = 0
 	    @. dGdxi = 0
@@ -803,10 +803,10 @@ end
                  @. dGdxi += 2 * dψ[k,i]*G_kj
                  @. dGdeta += 2 * dψ[k,j]*G_ik
             end
-            dξdx_ij = dξdx[iel,i,j]
-            dξdy_ij = dξdy[iel,i,j]
-            dηdx_ij = dηdx[iel,i,j]
-            dηdy_ij = dηdy[iel,i,j]
+            dξdx_ij = dξdx[i, j, iel]
+            dξdy_ij = dξdy[i, j, iel]
+            dηdx_ij = dηdx[i, j, iel]
+            dηdy_ij = dηdy[i, j, iel]
 
              @. dFdx = dFdxi*dξdx_ij + dFdeta*dηdx_ij
   	     @. dGdy = dGdxi*dξdy_ij + dGdeta*dηdy_ij
