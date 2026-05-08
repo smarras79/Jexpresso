@@ -41,7 +41,7 @@ function user_inputs()
         :RT_longwave    => true,
         :RT_radiative_heating => true,
         :extra_dimensions    => 2,
-        :adaptive_extra_meshes => true,
+        :adaptive_extra_meshes => false,
         :RT_amr_threshold => [0.99999],
         :extra_dimensions_order => 3,
         :extra_dimensions_nelemx => 3,

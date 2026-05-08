@@ -203,10 +203,10 @@ function compute_rt_radiative_heating(
 
     # ── Heating rate at each spatial node ─────────────────────────────────────
     for ip = 1:npoin
-        T   = atmos_data.t_lay[ip]
+        T   = atmos_data.t_lev[ip]
         ρ   = atmos_data.rho[ip]
         κ_a = κ[ip]
-
+        σ_a = σ[ip]
         G = G_accum[ip]   # total G: diffuse + direct (if splitting active)
 
         if swlw
@@ -223,7 +223,8 @@ function compute_rt_radiative_heating(
                 # We use Q_dir directly since it was computed from the exact
                 # Beer-Lambert F_dir, which is more accurate than
                 # κ_abs × G_dir where G_dir comes from the discrete τ.
-                Q_rad[ip] = Q_dir[ip] + κ_a * (G - G_dir[ip])
+                Q_rad[ip] = Q_dir[ip] + κ_a * (G_accum[ip] - G_dir[ip])
+                #Q_rad[ip] = κ_a * G_accum[ip]
             else
                 # SW without splitting: standard
                 Q_rad[ip] = κ_a * G
@@ -254,12 +255,12 @@ end
 function dycore_to_atmos_data!(q, qe, npoin, T, qc, qi, lmoist, atmos_data, PhysConst, ::TOTAL)
     for i=1:npoin
         if (lmoist)
-            atmos_data.t_lay[i] =  T[i]
+            atmos_data.t_lev[i] =  T[i]
             atmos_data.qv = ((q[i,6]/q[i,1])-qc[i]-qi[i])*PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
             atmos_data.q_liq[i] = qc[i]
             atmos_data.q_ice[i] = qi[i]
         else
-            atmos_data.t_lay[i] = (q[i,5]/q[i,1])/((PhysConst.pref/q[end])^(PhysConst.Rair/PhysConst.cp))
+            atmos_data.t_lev[i] = (q[i,5]/q[i,1])/((PhysConst.pref/q[end])^(PhysConst.Rair/PhysConst.cp))
         end
         atmos_data.p_lay[i] = q[i,end]
         atmos_data.rho[i] = q[i,1]
@@ -274,12 +275,12 @@ function dycore_to_atmos_data!(q, qe, npoin, T, qc, qi, lmoist, atmos_data, Phys
         θ = (q[i,5]+qe[i,5])/ρ
         qt = (q[i,6]+qe[i,6])/ρ
         if (lmoist)
-            atmos_data.t_lay[i] =  T[i]
+            atmos_data.t_lev[i] =  T[i]
             atmos_data.vmr_h2o[i] = ((qt)-qc[i]-qi[i])*PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
             atmos_data.q_liq[i] = qc[i]
             atmos_data.q_ice[i] = qi[i]
         else
-            atmos_data.t_lay[i] = (θ)/((PhysConst.pref/q[i,end])^(PhysConst.Rair/PhysConst.cp))
+            atmos_data.t_lev[i] = (θ)/((PhysConst.pref/q[i,end])^(PhysConst.Rair/PhysConst.cp))
         end
         atmos_data.p_lay[i] = q[i,end]
         atmos_data.rho[i] = ρ

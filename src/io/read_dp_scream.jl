@@ -23,10 +23,12 @@ function read_atmospheric_data(filename::String)
         x = Array(ds["x"])
         y = Array(ds["y"])
         z = Array(ds["z"])
-        
+        z_lev = Array(ds["z_lev"])        
         # Extract atmospheric variables
         t_lay = Array(ds["t_lay"])
         p_lay = Array(ds["p_lay"])
+        t_lev = Array(ds["t_lev"])
+        p_lev = Array(ds["p_lev"])
         vmr_h2o = Array(ds["vmr_h2o"])
         vmr_o3 = Array(ds["vmr_o3"])
         lwp = Array(ds["lwp"])  # liquid water path (kg/m²)
@@ -35,8 +37,24 @@ function read_atmospheric_data(filename::String)
         rho = calculate_moist_density(p_lay, t_lay, vmr_h2o)
         
         # Calculate mixing ratios from water paths
-        q_liq, q_ice = calculate_mixing_ratios(lwp, iwp, p_lay, t_lay, vmr_h2o)
-        
+        q_liq, q_ice = lwp, iwp#calculate_mixing_ratios(lwp, iwp, p_lay, t_lay, vmr_h2o, z)
+        nx, ny, nz = size(p_lay)
+        for i=1:nx
+            for j=1:ny
+                for k=1:nz
+                    if (q_liq[i,j,k] < 1e-5)
+                        q_liq[i,j,k] =0.0
+                    end
+                    if (q_ice[i,j,k] < 1e-5)
+                        q_ice[i,j,k] =0.0
+                    end
+                    if z[k] < 400
+                        q_liq[i,j,k] =0.0
+                        q_ice[i,j,k] =0.0
+                    end
+                end
+            end
+        end
         # Verify dimensions
         nx, ny, nz = length(x), length(y), length(z)
         
@@ -45,8 +63,11 @@ function read_atmospheric_data(filename::String)
             x = x,
             y = y,
             z = z,
+            z_lev = z_lev,
             t_lay = t_lay,
             p_lay = p_lay,
+            t_lev = t_lev,
+            p_lev = p_lev,
             vmr_h2o = vmr_h2o,
             vmr_o3 = vmr_o3,
             q_liq = q_liq,
@@ -124,55 +145,36 @@ Convert liquid and ice water paths to mixing ratios using moist air density.
 - `q_liq`: Liquid water mixing ratio (kg/kg)
 - `q_ice`: Ice water mixing ratio (kg/kg)
 """
-function calculate_mixing_ratios(lwp, iwp, p_lay, t_lay, vmr_h2o)
-    # Constants
-    g = 9.80665  # gravitational acceleration (m/s²)
-    
+function calculate_mixing_ratios(lwp, iwp, p_lay, t_lay, vmr_h2o, z_lay)
     nx, ny, nz = size(p_lay)
-    
-    # Initialize mixing ratio arrays
     q_liq = zeros(Float64, nx, ny, nz)
-    q_ice = zeros(Float64, nx, ny, nz)
+    q_ice  = zeros(Float64, nx, ny, nz)
     
-    # Calculate moist air density
-    rho_moist = calculate_moist_density(p_lay, t_lay, vmr_h2o)
-    
-    # Calculate layer thickness in pressure coordinates
-    for i in 1:nx
-        for j in 1:ny
-            # Calculate pressure thickness for each layer (absolute value)
-            dp = zeros(nz)
-            for k in 1:nz
-                if k == 1
-                    dp[k] = abs(p_lay[i, j, k+1] - p_lay[i, j, k])
-                elseif k == nz
-                    dp[k] = abs(p_lay[i, j, k] - p_lay[i, j, k-1])
-                else
-                    dp[k] = abs(p_lay[i, j, k+1] - p_lay[i, j, k-1]) / 2
-                end
+    rho = calculate_moist_density(p_lay, t_lay, vmr_h2o)
+    #@info z_lay
+    #@info lwp[1,1,:]
+    for i in 1:nx, j in 1:ny
+        for k in 1:nz
+            # Layer thickness in metres from z coordinate
+            if k == 1
+                dz = abs(z_lay[k+1] - z_lay[k])
+            elseif k == nz
+                dz = abs(z_lay[k] - z_lay[k-1])
+            else
+                dz = abs(z_lay[k+1] - z_lay[k-1]) / 2
             end
             
-            # Layer mass per unit area: dm = dp/g
-            dm = dp ./ g
+            # Layer mass per unit area (kg/m²)
+            dm = rho[i,j,k] * dz
             
-            # Total column mass
-            total_mass = sum(dm)
-            
-            # Distribute water path proportionally to layer mass
-            if total_mass > 0
-                for k in 1:nz
-                    # Fraction of total column mass in this layer
-                    mass_fraction = dm[k] / total_mass
-                    
-                    # Mixing ratio = (water mass in layer) / (air mass in layer)
-                    # Water mass in layer = total water path × mass fraction
-                    q_liq[i, j, k] = lwp[i, j, k] * mass_fraction / dm[k]
-                    q_ice[i, j, k] = iwp[i, j, k] * mass_fraction / dm[k]
-                end
+            # q = LWP / (ρ dz) = LWP / dm
+            # Units: (kg/m²) / (kg/m²) = kg/kg  ✓
+            if dm > 0
+                q_liq[i,j,k] = lwp[i,j,k] / dm
+                q_ice[i,j,k] = iwp[i,j,k] / dm
             end
         end
     end
-    
     return q_liq, q_ice
 end
 
@@ -201,6 +203,8 @@ function interpolate_atmosphere_to_mesh(data, mesh)
     # Initialize output arrays
     t_lay_interp = zeros(Float64, npoin)
     p_lay_interp = zeros(Float64, npoin)
+    t_lev_interp = zeros(Float64, npoin)
+    p_lev_interp = zeros(Float64, npoin)
     vmr_h2o_interp = zeros(Float64, npoin)
     q_liq_interp = zeros(Float64, npoin)
     q_ice_interp = zeros(Float64, npoin)
@@ -218,7 +222,17 @@ function interpolate_atmosphere_to_mesh(data, mesh)
             data.x, data.y, data.z, data.p_lay,
             mesh.x[i], mesh.y[i], mesh.z[i]
         )
-        
+
+         t_lev_interp[i] = trilinear_interpolate(
+            data.x, data.y, data.z_lev, data.t_lev,
+            mesh.x[i], mesh.y[i], mesh.z[i]
+        )
+
+        p_lev_interp[i] = trilinear_interpolate(
+            data.x, data.y, data.z, data.p_lev,
+            mesh.x[i], mesh.y[i], mesh.z[i]
+        )
+ 
         vmr_h2o_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.vmr_h2o,
             mesh.x[i], mesh.y[i], mesh.z[i]
@@ -248,6 +262,8 @@ function interpolate_atmosphere_to_mesh(data, mesh)
     return (
         t_lay = t_lay_interp,
         p_lay = p_lay_interp,
+        t_lev = t_lev_interp,
+        p_lev = p_lev_interp,
         vmr_h2o = vmr_h2o_interp,
         vmr_o3 = vmr_o3_interp,
         q_liq = q_liq_interp,
