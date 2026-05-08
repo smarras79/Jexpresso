@@ -2541,7 +2541,7 @@ end
 function compute_vertical_derivative_q!(dqdz, q, iel::Int64, ngl::Int64, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
     for j=1:ngl
         for i=1:ngl
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
+            ωJac = ω[i]*ω[j]*Je[i, j, iel]
 
             dHdξ = 0.0
             dHdη = 0.0
@@ -2549,8 +2549,8 @@ function compute_vertical_derivative_q!(dqdz, q, iel::Int64, ngl::Int64, Je, dξ
                 dHdξ += dψ[m,i]*q[m,j,1]
                 dHdη += dψ[m,j]*q[i,m,1]
             end
-            dξdy_ij = dξdy[iel,i,j]
-            dηdy_ij = dηdy[iel,i,j]
+            dξdy_ij = dξdy[i, j, iel]
+            dηdy_ij = dηdy[i, j, iel]
 
             dHdz = dHdξ*dξdy_ij + dHdη*dηdy_ij
 
