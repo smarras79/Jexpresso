@@ -183,9 +183,107 @@ function build_custom_bcs_neumann!(::NSD_1D, t,
     nothing
 end
 
+@inline function _apply_dirichlet_bdy_edge_2d!(sol_vars_type::Union{PERT, TOTAL, THETA},
+                                                t::Real,
+                                                uaux::AbstractMatrix, coords::AbstractMatrix, qe::AbstractMatrix,
+                                                qbdy::AbstractVector, RHS::AbstractMatrix,
+                                                nx::AbstractMatrix, ny::AbstractMatrix,
+                                                poin_in_bdy_edge::AbstractMatrix, bdy_edge_type::AbstractVector,
+                                                nedges_bdy::Integer, ngl::Integer, neqs::Integer)
+    @inbounds for iedge = 1:nedges_bdy
+        edge_type = bdy_edge_type[iedge]
+
+        if edge_type != "periodicx" && edge_type != "periodicz" &&
+           edge_type != "periodic1" && edge_type != "periodic2" &&
+           edge_type != "Laguerre"
+
+            for k = 1:ngl
+                ip   = poin_in_bdy_edge[iedge, k]
+                nx_l = nx[iedge, k]
+                ny_l = ny[iedge, k]
+                fill!(qbdy, 4325789.0)
+
+                user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, edge_type,
+                                   qbdy, nx_l, ny_l, @view(qe[ip, :]), sol_vars_type)
+
+                for ieq = 1:neqs
+                    if !AlmostEqual(qbdy[ieq], uaux[ip, ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
+                        uaux[ip, ieq] = qbdy[ieq]
+                        RHS[ip, ieq]  = 0.0
+                    end
+                end
+            end
+        end
+    end
+end
+
+@inline function _apply_dirichlet_bdy_laguerre_2d!(sol_vars_type::Union{PERT, TOTAL, THETA},
+                                                    tag::AbstractString,
+                                                    t::Real,
+                                                    uaux::AbstractMatrix, coords::AbstractMatrix, qe::AbstractMatrix,
+                                                    qbdy::AbstractVector, RHS::AbstractMatrix,
+                                                    connijk_lag::AbstractArray,
+                                                    nelem_semi_inf::Integer, ngl::Integer, ngr::Integer, neqs::Integer,
+                                                    xmin::Real, xmax::Real)
+    @inbounds for e = 1:nelem_semi_inf
+        for i = 1:ngl
+            ip = connijk_lag[e, i, ngr]
+            ny_l = 1.0
+            nx_l = 0.0
+            fill!(qbdy, 4325789.0)
+            user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, tag,
+                               qbdy, nx_l, ny_l, @view(qe[ip, :]), sol_vars_type)
+
+            for ieq = 1:neqs
+                if !AlmostEqual(qbdy[ieq], uaux[ip, ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
+                    uaux[ip, ieq] = qbdy[ieq]
+                    RHS[ip, ieq]  = 0.0
+                end
+            end
+        end
+
+        ip_test = connijk_lag[e, 1, 1]
+        if coords[ip_test, 1] == xmin
+            for k = 1:ngr
+                ip = connijk_lag[e, 1, k]
+                ny_l = 0.0
+                nx_l = -1.0
+                fill!(qbdy, 4325789.0)
+                user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, tag,
+                                   qbdy, nx_l, ny_l, @view(qe[ip, :]), sol_vars_type)
+                for ieq = 1:neqs
+                    if !AlmostEqual(qbdy[ieq], uaux[ip, ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
+                        uaux[ip, ieq] = qbdy[ieq]
+                        RHS[ip, ieq]  = 0.0
+                    end
+                end
+            end
+        end
+
+        ip_test = connijk_lag[e, ngl, 1]
+        if coords[ip_test, 1] == xmax
+            for k = 1:ngr
+                ip = connijk_lag[nelem_semi_inf, ngl, k]
+                ny_l = 0.0
+                nx_l = 1.0
+                fill!(qbdy, 4325789.0)
+                user_bc_dirichlet!(@view(uaux[ip, :]), @view(coords[ip, :]), t, tag,
+                                   qbdy, nx_l, ny_l, @view(qe[ip, :]), sol_vars_type)
+
+                for ieq = 1:neqs
+                    if !AlmostEqual(qbdy[ieq], uaux[ip, ieq]) && !AlmostEqual(qbdy[ieq], 4325789.0)
+                        uaux[ip, ieq] = qbdy[ieq]
+                        RHS[ip, ieq]  = 0.0
+                    end
+                end
+            end
+        end
+    end
+end
+
 function build_custom_bcs_dirichlet!(::NSD_2D, t,
                                      coords,
-                                     nx, ny, nz, npoin, 
+                                     nx, ny, nz, npoin,
                                      npoin_linear, poin_in_bdy_edge, poin_in_bdy_face,
                                      nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                                      xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
@@ -197,86 +295,16 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
     sol_vars_type = inputs[:SOL_VARS_TYPE]::Union{PERT, TOTAL, THETA}
     llaguerre_bc  = inputs[:llaguerre_bc]::Bool
 
-    for iedge = 1:nedges_bdy
-        iel  = bdy_edge_in_elem[iedge]
-        edge_type = bdy_edge_type[iedge]
+    _apply_dirichlet_bdy_edge_2d!(sol_vars_type, t, uaux, coords, qe, qbdy, RHS,
+                                  nx, ny, poin_in_bdy_edge, bdy_edge_type,
+                                  nedges_bdy, ngl, neqs)
 
-        if edge_type != "periodicx" && edge_type != "periodicz" &&
-           edge_type != "periodic1" && edge_type != "periodic2" &&
-           edge_type != "Laguerre"
-
-            for k=1:ngl
-                ip = poin_in_bdy_edge[iedge,k]
-                nx_l = nx[iedge,k]
-                ny_l = ny[iedge,k]
-                fill!(qbdy, 4325789.0)
-
-                user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, edge_type, qbdy, nx_l, ny_l, @view(qe[ip,:]), sol_vars_type)
-
-                for ieq =1:neqs
-                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
-                        uaux[ip,ieq] = qbdy[ieq]
-                        RHS[ip, ieq] = 0.0
-                    end
-                end
-            end
-        end
+    if llaguerre_bc && nelem_semi_inf > 0
+        tag = inputs[:laguerre_tag]::AbstractString
+        _apply_dirichlet_bdy_laguerre_2d!(sol_vars_type, tag, t, uaux, coords, qe, qbdy, RHS,
+                                          connijk_lag, nelem_semi_inf, ngl, ngr, neqs, xmin, xmax)
     end
 
-    if llaguerre_bc
-        if (nelem_semi_inf >0)
-            tag = inputs[:laguerre_tag]
-            for e=1:nelem_semi_inf
-                for i=1:ngl
-                    ip = connijk_lag[e,i,ngr]
-                    ny_l = 1.0
-                    nx_l = 0.0
-                    fill!(qbdy, 4325789.0)
-                    user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]), sol_vars_type)
-
-                    for ieq =1:neqs
-                        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
-                            uaux[ip,ieq] = qbdy[ieq]
-                            RHS[ip, ieq] = 0.0
-                        end
-                    end
-                end
-                ip_test = connijk_lag[e,1,1]
-                if (coords[ip_test,1] == xmin)
-                    for k=1:ngr
-                        ip = connijk_lag[e,1,k]
-                        ny_l = 0.0
-                        nx_l = -1.0
-                        fill!(qbdy, 4325789.0)
-                        user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]), sol_vars_type)
-                        for ieq =1:neqs
-                            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
-                                uaux[ip,ieq] = qbdy[ieq]
-                                RHS[ip, ieq] = 0.0
-                            end
-                        end
-                    end
-                end
-                ip_test = connijk_lag[e,ngl,1]
-                if (coords[ip_test,1] == xmax)
-                    for k =1:ngr
-                        ip = connijk_lag[nelem_semi_inf,ngl,k]
-                        ny_l = 0.0
-                        nx_l = 1.0
-                        fill!(qbdy, 4325789.0)
-                        user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[ip,:]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]), sol_vars_type)
-
-                        for ieq =1:neqs
-                            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
-                                uaux[ip,ieq] = qbdy[ieq]
-                                RHS[ip, ieq] = 0.0
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
     uaux2u!(u, uaux, neqs, npoin)
 end
 function build_custom_bcs_neumann!(::NSD_2D, t,
