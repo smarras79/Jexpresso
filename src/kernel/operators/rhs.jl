@@ -1571,7 +1571,7 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::
         for k=1:Q
 
             @inbounds begin
-                ωJac = ω[k]*ωl*Je[ie,k,l]
+                ωJac = ω[k]*ωl*Je[k, l, ie]
 
                 dρudξ = 0.0; dρudη = 0.0
                 dρvdξ = 0.0; dρvdη = 0.0
@@ -1614,10 +1614,10 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::
                     end
                 end
 
-                dξdx_kl = params.metrics.dξdx[iel,k,l]
-                dξdy_kl = params.metrics.dξdy[iel,k,l]
-                dηdx_kl = params.metrics.dηdx[iel,k,l]
-                dηdy_kl = params.metrics.dηdy[iel,k,l]
+                dξdx_kl = params.metrics.dξdx[k, l, iel]
+                dξdy_kl = params.metrics.dξdy[k, l, iel]
+                dηdx_kl = params.metrics.dηdx[k, l, iel]
+                dηdy_kl = params.metrics.dηdy[k, l, iel]
 
                 dρudx = dρudξ*dξdx_kl + dρudη*dηdx_kl
                 dρudy = dρudξ*dξdy_kl + dρudη*dηdy_kl
