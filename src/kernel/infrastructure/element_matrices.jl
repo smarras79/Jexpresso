@@ -797,9 +797,9 @@ function assemble_and_DSS_laplace!(L::AbstractMatrix{T},
 
         # ── Step 1: Weighted contravariant metric tensors  O(N²) ──────────────
         @inbounds for l = 1:Np1, k = 1:Np1
-            wJ        = ω[k] * ω[l] * metrics.Je[iel, k, l]
-            ξx, ξy    = metrics.dξdx[iel,k,l], metrics.dξdy[iel,k,l]
-            ηx, ηy    = metrics.dηdx[iel,k,l], metrics.dηdy[iel,k,l]
+            wJ        = ω[k] * ω[l] * metrics.Je[k, l, iel]
+            ξx, ξy    = metrics.dξdx[k, l, iel], metrics.dξdy[k, l, iel]
+            ηx, ηy    = metrics.dηdx[k, l, iel], metrics.dηdy[k, l, iel]
             G11[k,l]  = wJ * (ξx*ξx + ξy*ξy)
             G12[k,l]  = wJ * (ξx*ηx + ξy*ηy)
             G22[k,l]  = wJ * (ηx*ηx + ηy*ηy)
@@ -1020,13 +1020,13 @@ end
     ip = connijk[ie, i, j]
     for k=1:nx
         jp = connijk[ie, k, j]
-        KernelAbstractions.@atomic L[ip, jp] += dξdx[ie, i, k] * Lel[i, k] * dydη[ie, i, k] * ωx[j]
-    end 
-    
+        KernelAbstractions.@atomic L[ip, jp] += dξdx[i, k, ie] * Lel[i, k] * dydη[i, k, ie] * ωx[j]
+    end
+
     for l=1:ny
         jp = connijk[ie,i,l]
-        KernelAbstractions.@atomic L[ip, jp] += dηdy[ie, i, l] * Lel[j, l]*dxdξ[ie, i, l] * ωy[i]
-    end 
+        KernelAbstractions.@atomic L[ip, jp] += dηdy[i, l, ie] * Lel[j, l]*dxdξ[i, l, ie] * ωy[i]
+    end
 end
 
 @kernel function DSS_laplace_gpu_lag!(L, Lel, connijk, ωx, ωy, nx, ny, dηdx_lag, dydη, dηdy, dxdη_lag)
