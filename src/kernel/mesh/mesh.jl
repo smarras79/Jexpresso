@@ -1205,6 +1205,30 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
    return extra_mesh
 end
 
+# Partition cells into nparts by x-y centroid bins, ignoring z.
+# Returns a 1-indexed cell_to_part vector of length num_cells(model).
+function _compute_xy_partition(model, nparts)
+    Ω  = Triangulation(model)
+    coords = get_cell_coordinates(Ω)
+    cx = [sum(p[1] for p in c) / length(c) for c in coords]
+    cy = [sum(p[2] for p in c) / length(c) for c in coords]
+
+    lx = maximum(cx) - minimum(cx) + 1e-10
+    ly = maximum(cy) - minimum(cy) + 1e-10
+
+    # Find (nx, ny) with nx*ny == nparts, aspect-ratio aware
+    divisors   = [d for d in 1:nparts if nparts % d == 0]
+    target_nx  = sqrt(nparts * lx / ly)
+    nx = divisors[argmin(abs.(divisors .- target_nx))]
+    ny = nparts ÷ nx
+
+    x_min, y_min = minimum(cx), minimum(cy)
+    xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
+    yi = clamp.(floor.(Int, (cy .- y_min) ./ ly .* ny), 0, ny - 1)
+
+    return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+end
+
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
 const Finalize = GridapP4est.Finalize
 const pXest_copy = GridapP4est.pXest_copy
