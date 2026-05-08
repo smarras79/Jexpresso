@@ -2202,7 +2202,7 @@ end
                     σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
                 end
                 @inbounds begin
-                    Je_klm = Je[iel,k,l,m]
+                    Je_klm = Je[k, l, m, iel]
                     ωJac = ω[k] * ωlm * Je_klm
 
                     # ===== Compute all velocity gradients =====
@@ -2231,17 +2231,17 @@ end
                     end
 
                     # Metric terms
-                    dξdx_klm = dξdx[iel,k,l,m]
-                    dξdy_klm = dξdy[iel,k,l,m]
-                    dξdz_klm = dξdz[iel,k,l,m]
+                    dξdx_klm = dξdx[k, l, m, iel]
+                    dξdy_klm = dξdy[k, l, m, iel]
+                    dξdz_klm = dξdz[k, l, m, iel]
 
-                    dηdx_klm = dηdx[iel,k,l,m]
-                    dηdy_klm = dηdy[iel,k,l,m]
-                    dηdz_klm = dηdz[iel,k,l,m]
+                    dηdx_klm = dηdx[k, l, m, iel]
+                    dηdy_klm = dηdy[k, l, m, iel]
+                    dηdz_klm = dηdz[k, l, m, iel]
 
-                    dζdx_klm = dζdx[iel,k,l,m]
-                    dζdy_klm = dζdy[iel,k,l,m]
-                    dζdz_klm = dζdz[iel,k,l,m]
+                    dζdx_klm = dζdx[k, l, m, iel]
+                    dζdy_klm = dζdy[k, l, m, iel]
+                    dζdz_klm = dζdz[k, l, m, iel]
 
                     # Transform to physical coordinates
                     # u-velocity
@@ -2515,7 +2515,7 @@ function compute_vertical_derivative_q!(dqdz::Array{Float64,4}, q::Array{Float64
     for k=1:ngl
         for j=1:ngl
             for i=1:ngl
-                @inbounds ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                @inbounds ωJac = ω[i]*ω[j]*ω[k]*Je[i, j, k, iel]
 
                 dHdξ = 0.0
                 dHdη = 0.0
@@ -2525,9 +2525,9 @@ function compute_vertical_derivative_q!(dqdz::Array{Float64,4}, q::Array{Float64
                     dHdη += dψ[m,j]*q[i,m,k,1]
                     dHdζ += dψ[m,k]*q[i,j,m,1]
                 end
-                dξdz_ij = dξdz[iel,i,j,k]
-                dηdz_ij = dηdz[iel,i,j,k]
-                dζdz_ij = dζdz[iel,i,j,k]
+                dξdz_ij = dξdz[i, j, k, iel]
+                dηdz_ij = dηdz[i, j, k, iel]
+                dζdz_ij = dζdz[i, j, k, iel]
 
                 dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
 
