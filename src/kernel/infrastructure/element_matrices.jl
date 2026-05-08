@@ -217,7 +217,7 @@ end
     ie = @index(Group, Linear)
     i = @index(Local, Linear)
     
-    Me[i,ie] += Je[ie, i, 1] * ω[i]
+    Me[i,ie] += Je[i, 1, 1, ie] * ω[i]
 end
 
 @kernel function build_mass_matrix_2d_gpu!(Me, ψ, ω, Je, N, Q)
