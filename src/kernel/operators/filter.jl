@@ -59,7 +59,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
             for i=1:params.mesh.ngl
                 ip = params.mesh.connijk[e,i,j]
                 for m=1:params.neqs
-                    params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*Je[e,i,j]
+                    params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*Je[i, j, e]
                 end
             end
         end
@@ -143,7 +143,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
         for j=1:params.mesh.ngl
             for i=1:params.mesh.ngl
                 for m=1:params.neqs
-                    params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*Je[e,i,j]
+                    params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*Je[i, j, e]
                 end
             end
         end
@@ -340,7 +340,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
             for i=1:ngl
                 for k=1:ngl
                     for m=1:params.neqs
-                        params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[e,i,j,k]
+                        params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[i, j, k, e]
                     end
                 end
             end
@@ -458,7 +458,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
             for i=1:params.mesh.ngl
                 for k=1:params.mesh.ngl
                     for m=1:params.neqs
-                        params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[e,i,j,k]
+                        params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[i, j, k, e]
                     end
                 end
             end
@@ -535,7 +535,7 @@ end
             @inbounds fqf[i,j] += q_ti[i,k] * fy_t[k,j]
         end
 
-        @inbounds KernelAbstractions.@atomic B[ip,m] += ω_x[i]*ω_y[j]*Je[ie,i,j]*fqf[i,j] * Minv[ip]
+        @inbounds KernelAbstractions.@atomic B[ip,m] += ω_x[i]*ω_y[j]*Je[i, j, ie]*fqf[i,j] * Minv[ip]
     end
 end
 
@@ -579,7 +579,7 @@ end
         end
 
 
-        @inbounds KernelAbstractions.@atomic B[ip,m] += ω_x[i]*ω_y[j]*ω_z[k]*Je[ie,i,j,k]*fqf[i,j,k]*Minv[ip]
+        @inbounds KernelAbstractions.@atomic B[ip,m] += ω_x[i]*ω_y[j]*ω_z[k]*Je[i, j, k, ie]*fqf[i,j,k]*Minv[ip]
     end 
 end
 
