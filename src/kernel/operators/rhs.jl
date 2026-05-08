@@ -1761,7 +1761,7 @@ end
 
     for l = 1:ngl
         for k = 1:ngl
-            ωJac = ω[k]*ω[l]*Je[iel,k,l] # FIXME
+            ωJac = ω[k]*ω[l]*Je[k, l, iel] # FIXME
 
             # Quantities for Smagorinsky
             dudξ = 0.0; dudη = 0.0
@@ -1773,10 +1773,10 @@ end
                 dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
                 dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
             end
-            dξdx_kl = dξdx[iel,k,l]
-            dξdy_kl = dξdy[iel,k,l]
-            dηdx_kl = dηdx[iel,k,l]
-            dηdy_kl = dηdy[iel,k,l]
+            dξdx_kl = dξdx[k, l, iel]
+            dξdy_kl = dξdy[k, l, iel]
+            dηdx_kl = dηdx[k, l, iel]
+            dηdy_kl = dηdy[k, l, iel]
 
             #u
             dudx = dudξ*dξdx_kl + dudη*dηdx_kl
