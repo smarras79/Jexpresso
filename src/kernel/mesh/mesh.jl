@@ -57,9 +57,9 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     for iel = 1:nelem
         for i = 1:nop+1
             for k = 1:nop+1
-                metrics.dxdξ[iel, k, 1]  = Δθe[iel]/2
-                metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
-                metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+                metrics.dxdξ[k, 1, 1, iel]  = Δθe[iel]/2
+                metrics.Je[k, 1, 1, iel]   = metrics.dxdξ[k, 1, 1, iel]
+                metrics.dξdx[k, 1, 1, iel] = 1.0/metrics.Je[k, 1, 1, iel]
             end
         end
     end
