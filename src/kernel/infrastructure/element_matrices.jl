@@ -253,7 +253,7 @@ end
         for n=1:Q+1
             for m=1:Q+1 
                 ωmno = ω[m]*ω[n]*ω[o]
-                Jmnoe = Je[ie,m,n,o]
+                Jmnoe = Je[m, n, o, ie]
                 ψJK = ψ[i_x,m]*ψ[i_y,n]*ψ[i_z,o]
                 for r=1:N+1
                     for q=1:N+1
