@@ -208,10 +208,10 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
 
         @inbounds for iel = 1:mesh.nelem
             # Cache views to avoid repeated indexing overhead
-            dxdξ_iel = @view metrics.dxdξ[iel, :, :]
-            dxdη_iel = @view metrics.dxdη[iel, :, :]
-            dydξ_iel = @view metrics.dydξ[iel, :, :]
-            dydη_iel = @view metrics.dydη[iel, :, :]
+            dxdξ_iel = @view metrics.dxdξ[:, :, 1, iel]
+            dxdη_iel = @view metrics.dxdη[:, :, 1, iel]
+            dydξ_iel = @view metrics.dydξ[:, :, 1, iel]
+            dydη_iel = @view metrics.dydη[:, :, 1, iel]
             connijk_iel = @view mesh.connijk[iel, :, :]
 
             for j = 1:N+1
@@ -237,11 +237,11 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
 
             # Second loop with cached views and optimized calculations
-            Je_iel = @view metrics.Je[iel, :, :]
-            dξdx_iel = @view metrics.dξdx[iel, :, :]
-            dξdy_iel = @view metrics.dξdy[iel, :, :]
-            dηdx_iel = @view metrics.dηdx[iel, :, :]
-            dηdy_iel = @view metrics.dηdy[iel, :, :]
+            Je_iel = @view metrics.Je[:, :, 1, iel]
+            dξdx_iel = @view metrics.dξdx[:, :, 1, iel]
+            dξdy_iel = @view metrics.dξdy[:, :, 1, iel]
+            dηdx_iel = @view metrics.dηdx[:, :, 1, iel]
+            dηdy_iel = @view metrics.dηdy[:, :, 1, iel]
 
             @turbo for l = 1:Q+1
                 for k = 1:Q+1
@@ -653,11 +653,11 @@ end
     yij = y[ip]
     for l=1:Q+1
         for k=1:Q+1
-            KernelAbstractions.@atomic dxdξ[ie, k, l] += dψ[i_x,k]*ψ[i_y,l] * xij
-            KernelAbstractions.@atomic dxdη[ie, k, l] += ψ[i_x,k]*dψ[i_y,l] * xij
+            KernelAbstractions.@atomic dxdξ[k, l, 1, ie] += dψ[i_x,k]*ψ[i_y,l] * xij
+            KernelAbstractions.@atomic dxdη[k, l, 1, ie] += ψ[i_x,k]*dψ[i_y,l] * xij
 
-            KernelAbstractions.@atomic dydξ[ie, k, l] += dψ[i_x,k]*ψ[i_y,l] * yij
-            KernelAbstractions.@atomic dydη[ie, k, l] += ψ[i_x,k]*dψ[i_y,l] * yij
+            KernelAbstractions.@atomic dydξ[k, l, 1, ie] += dψ[i_x,k]*ψ[i_y,l] * yij
+            KernelAbstractions.@atomic dydη[k, l, 1, ie] += ψ[i_x,k]*dψ[i_y,l] * yij
         end
     end
 end
