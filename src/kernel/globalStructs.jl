@@ -8,16 +8,19 @@ Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, dims
     vaux    = KernelAbstractions.zeros(backend, T, dims3) #generic auxiliary array for general use
     utmp    = KernelAbstractions.zeros(backend, T, dims2) #for conformity use
     fluxaux = KernelAbstractions.zeros(backend, T, dims4) #generic auxiliary array for general use
-    dFdξ = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
-    dFdη = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
-    dFdx = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
-    dGdξ = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
-    dGdη = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
-    dGdy = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
-    gradient_dxi = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+
+    dFdξ    = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    dFdη    = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    dFdx    = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    dGdξ    = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    dGdη    = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    dGdy    = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+
+    gradient_dxi  = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
     gradient_deta = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
-    gradient_dx = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
-    gradient_dy = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    gradient_dx   = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+    gradient_dy   = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
+
     dx_flux = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
     dy_flux = KernelAbstractions.zeros(backend, T, dims5) #generic auxiliary array for general use
 end
@@ -116,10 +119,10 @@ function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
         dims2 = (Int64(ngl), Int64(neqs+1))
     elseif SD == NSD_2D()
         dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
-        dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+1))
+        dims2 = (Int64(neqs+1), Int64(ngl), Int64(ngl))
     elseif SD == NSD_3D()
         dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
-        dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs+1))
+        dims2 = (Int64(neqs+1), Int64(ngl), Int64(ngl), Int64(ngl))
     end
 
     fluxes = St_fluxes{T, dims1, dims2, backend}()

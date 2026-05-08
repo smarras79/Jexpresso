@@ -712,7 +712,7 @@ function inviscid_rhs_el!(u, params,
 
             user_primitives!(@view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
-                             @view(params.uprimitive[i,:]),
+                             @view(params.uprimitive[:,i]),
                              params.SOL_VARS_TYPE)
 
             user_flux!(@view(params.F[i,:]),
@@ -836,7 +836,7 @@ function inviscid_rhs_el!(u, params,
         for j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j]
 
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[:,i,j]), params.SOL_VARS_TYPE)
             if lkep
          user_fluxaux!(@view(params.fluxaux[ip,:]),
                               SD,
@@ -922,7 +922,7 @@ function inviscid_rhs_el!(u, params,
 
             ip = connijk[iel,i,j,k]
 
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,k,:]), params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[:,i,j,k]), params.SOL_VARS_TYPE)
 
 
             user_flux!(@view(params.F[i,j,k,:]),
@@ -1078,7 +1078,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
 
         for i=1:ngl
             ip = connijk[iel,i]
-           user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
+           user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[:,i]), params.SOL_VARS_TYPE)
         end
 
         for ieq = 1:neqs
@@ -1150,7 +1150,7 @@ end
                 uaux_node = get_node_vars_4(uaux, ip)
                 # qe_node = get_node_vars_4(qe, ip)
                 # uprimitive_node = get_node_vars_4(uprimitive, i, j)
-                @views user_primitives!(uaux[ip,:], qe[ip,:], uprimitive[i,j,:], SOL_VARS_TYPE)
+                @views user_primitives!(uaux[ip,:], qe[ip,:], uprimitive[:,i,j], SOL_VARS_TYPE)
             end
             _expansion_visc_navierstokes!(rhs_diffξ_el,
                             rhs_diffη_el,
@@ -1179,7 +1179,7 @@ end
                 # uprimitive_node = @inline get_node_vars_4(uprimitive, i, j)
                 # user_primitives_node = user_primitives(uaux_node, qe_node, uprimitive_node, SOL_VARS_TYPE)
                 # set_node_vars_4!(uaux, user_primitives_node, ip)
-                @views user_primitives!(uaux[ip,:],qe[ip,:],uprimitive[i,j,:], SOL_VARS_TYPE)
+                @views user_primitives!(uaux[ip,:],qe[ip,:],uprimitive[:,i,j], SOL_VARS_TYPE)
             end
 
             for ieq = 1:neqs
@@ -1222,7 +1222,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
 
             user_primitives!(@view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
-                             @view(params.uprimitive[i,j,k,:]),
+                             @view(params.uprimitive[:,i,j,k]),
                              params.SOL_VARS_TYPE)
         end
 
@@ -1664,7 +1664,7 @@ end
 
         dqdξ = 0.0
         @turbo for ii = 1:ngl
-            dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
+            dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii]
         end
 
         dξdx_kl = dqdξ*dξdx[iel,k]
@@ -1707,8 +1707,8 @@ end
                 dqdξ = 0.0
                 dqdη = 0.0
                 @turbo for ii = 1:ngl
-                    dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
-                    dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+                    dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l]
+                    dqdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii]
                 end
                 dξdx_kl = dξdx[iel,k,l]
                 dξdy_kl = dξdy[iel,k,l]
@@ -1767,11 +1767,11 @@ end
             dudξ = 0.0; dudη = 0.0
             dvdξ = 0.0; dvdη = 0.0
             for ii = 1:ngl
-                dudξ = muladd(dψ[ii,k], uprimitiveieq[ii,l,2], dudξ) # FIXME @muladd
-                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+                dudξ = muladd(dψ[ii,k], uprimitiveieq[2,ii,l], dudξ) # FIXME @muladd
+                dudη += dψ[ii,l]*uprimitiveieq[2,k,ii]
 
-                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
-                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+                dvdξ += dψ[ii,k]*uprimitiveieq[3,ii,l]
+                dvdη += dψ[ii,l]*uprimitiveieq[3,k,ii]
             end
             dξdx_kl = dξdx[iel,k,l]
             dξdy_kl = dξdy[iel,k,l]
@@ -1814,8 +1814,8 @@ end
             # Compute scalar gradient for diffusion iequation by iequation
             dqdξ = 0.0; dqdη = 0.0
             for ii = 1:ngl
-                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
-                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+                dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l]
+                dqdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii]
             end
             # Transform scalar gradient to physical coordinates
             dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
@@ -1829,7 +1829,7 @@ end
             # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
             if ieq == 4  # Assuming potential temperature equation is at index 5
                 # For temperature: use thermal diffusivity (ν_t / Pr_t)
-                ρ           = uprimitiveieq[k,l,1]
+                ρ           = uprimitiveieq[1,k,l]
                 α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
                 α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
 
@@ -1894,10 +1894,10 @@ end
                 dvdξ = 0.0; dvdη = 0.0
 		## Computing the gradients
                 @turbo for ii = 1:ngl
-                    dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
-                    dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
-                    dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
-                    dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+                    dudξ += dψ[ii,k]*uprimitiveieq[2,ii,l]
+                    dudη += dψ[ii,l]*uprimitiveieq[2,k,ii]
+                    dvdξ += dψ[ii,k]*uprimitiveieq[3,ii,l]
+                    dvdη += dψ[ii,l]*uprimitiveieq[3,k,ii]
                 end
                 dξdx_kl = dξdx[iel,k,l]
                 dξdy_kl = dξdy[iel,k,l]
@@ -1918,7 +1918,7 @@ end
                 if is_u_momentum
                     # USE EFFECTIVE VISCOSITY
                     effective_viscosity =  SGS_diffusion(visc_coeffieq, ieq,
-                                                         uprimitiveieq[k,l,1],
+                                                         uprimitiveieq[1,k,l],
                                                          dudx, dvdy, dudy, dvdx,
                                                          PHYS_CONST, Δ2,
                                                          inputs,
@@ -1933,7 +1933,7 @@ end
                 elseif is_v_momentum
                     # USE EFFECTIVE VISCOSITY
                     effective_viscosity =  SGS_diffusion(visc_coeffieq, ieq,
-                                                         uprimitiveieq[k,l,1],
+                                                         uprimitiveieq[1,k,l],
                                                          dudx, dvdy, dudy, dvdx,
                                                          PHYS_CONST, Δ2,
                                                          inputs,
@@ -1947,7 +1947,7 @@ end
                 elseif is_temperature
                     # USE EFFECTIVE DIFFUSIVITY
                     effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                          uprimitiveieq[k,l,1],
+                                                          uprimitiveieq[1,k,l],
                                                           dudx, dvdy, dudy, dvdx,
                                                           PHYS_CONST, Δ2,
                                                           inputs,
@@ -1956,8 +1956,8 @@ end
                     # Compute temperature gradient
                     dθdξ = 0.0; dθdη = 0.0
                     @turbo for ii = 1:ngl
-                        dθdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
-                        dθdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+                        dθdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l]
+                        dθdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii]
                     end
 
                     dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl
@@ -1970,7 +1970,7 @@ end
                     # Other scalars (use appropriate Schmidt number)
                     # USE EFFECTIVE DIFFUSIVITY
                     effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                          uprimitiveieq[k,l,1],
+                                                          uprimitiveieq[1,k,l],
                                                           dudx, dvdy, dudy, dvdx,
                                                           PHYS_CONST, Δ2,
                                                           inputs,
@@ -1979,8 +1979,8 @@ end
                     # Compute temperature gradient
                     dqdξ = 0.0; dqdη = 0.0
                     @turbo for ii = 1:ngl
-                        dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
-                        dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+                        dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l]
+                        dqdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii]
                     end
 
                     dqdx = dqdξ*dξdx_kl + dqdη*dηdx_kl
@@ -2033,8 +2033,8 @@ end
 		## Computing the gradients
 		for var in  1:neqs
                 for ii = 1:ngl
-		    gradient_dxi[var] += dψ[ii,k]*uprimitiveieq[ii,l,var]
-		    gradient_deta[var] += dψ[ii,l]*uprimitiveieq[k,ii,var]
+		    gradient_dxi[var] += dψ[ii,k]*uprimitiveieq[var,ii,l]
+		    gradient_deta[var] += dψ[ii,l]*uprimitiveieq[var,k,ii]
                 end
 		end
                 dξdx_kl = dξdx[iel,k,l]
@@ -2046,8 +2046,8 @@ end
                 @. gradient_dy = gradient_dxi*dξdy_kl + gradient_deta*dηdy_kl
 
 		## TODO: Compute parabolic fluxes
-		@views flux_x = flux_parabolic(uprimitiveieq[k,l,:], (gradient_dx, gradient_dy), 1)
-		@views flux_y = flux_parabolic(uprimitiveieq[k,l,:], (gradient_dx, gradient_dy), 2)
+		@views flux_x = flux_parabolic(uprimitiveieq[:,k,l], (gradient_dx, gradient_dy), 1)
+		@views flux_y = flux_parabolic(uprimitiveieq[:,k,l], (gradient_dx, gradient_dy), 2)
 		## FIX: reference or physical and arrays
                 @. dx_flux = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
                 @. dy_flux = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
@@ -2109,9 +2109,9 @@ end
                     dqdη = 0.0
                     dqdζ = 0.0
                     @turbo for ii = 1:ngl
-                        dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
-                        dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
-                        dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
+                        dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l,m]
+                        dqdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii,m]
+                        dqdζ += dψ[ii,m]*uprimitiveieq[ieq,k,l,ii]
                     end
                     dξdx_klm = dξdx[iel,k,l,m]
                     dξdy_klm = dξdy[iel,k,l,m]
@@ -2209,25 +2209,25 @@ end
                     # u-velocity gradients
                     dudξ = 0.0; dudη = 0.0; dudζ = 0.0
                     @turbo for ii = 1:ngl
-                        dudξ += dψ[ii,k]*uprimitiveieq[ii,l,m,2]
-                        dudη += dψ[ii,l]*uprimitiveieq[k,ii,m,2]
-                        dudζ += dψ[ii,m]*uprimitiveieq[k,l,ii,2]
+                        dudξ += dψ[ii,k]*uprimitiveieq[2,ii,l,m]
+                        dudη += dψ[ii,l]*uprimitiveieq[2,k,ii,m]
+                        dudζ += dψ[ii,m]*uprimitiveieq[2,k,l,ii]
                     end
 
                     # v-velocity gradients
                     dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
                     @turbo for ii = 1:ngl
-                        dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,3]
-                        dvdη += dψ[ii,l]*uprimitiveieq[k,ii,m,3]
-                        dvdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,3]
+                        dvdξ += dψ[ii,k]*uprimitiveieq[3,ii,l,m]
+                        dvdη += dψ[ii,l]*uprimitiveieq[3,k,ii,m]
+                        dvdζ += dψ[ii,m]*uprimitiveieq[3,k,l,ii]
                     end
 
                     # w-velocity gradients (NEW)
                     dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
                     @turbo for ii = 1:ngl
-                        dwdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,4]
-                        dwdη += dψ[ii,l]*uprimitiveieq[k,ii,m,4]
-                        dwdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,4]
+                        dwdξ += dψ[ii,k]*uprimitiveieq[4,ii,l,m]
+                        dwdη += dψ[ii,l]*uprimitiveieq[4,k,ii,m]
+                        dwdζ += dψ[ii,m]*uprimitiveieq[4,k,l,ii]
                     end
 
                     # Metric terms
@@ -2265,7 +2265,7 @@ end
                     if is_u_momentum
                         # USE EFFECTIVE VISCOSITY
                         effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
-                                                            uprimitiveieq[k,l,m,1],
+                                                            uprimitiveieq[1,k,l,m],
                                                             dudx, dvdy, dwdz,
                                                             dudy, dvdx,
                                                             dudz, dwdx,
@@ -2289,7 +2289,7 @@ end
                     elseif is_v_momentum
                         # USE EFFECTIVE VISCOSITY
                         effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
-                                                            uprimitiveieq[k,l,m,1],
+                                                            uprimitiveieq[1,k,l,m],
                                                             dudx, dvdy, dwdz,
                                                             dudy, dvdx,
                                                             dudz, dwdx,
@@ -2313,7 +2313,7 @@ end
                     elseif is_w_momentum  # NEW BLOCK
                         # USE EFFECTIVE VISCOSITY
                         effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
-                                                            uprimitiveieq[k,l,m,1],
+                                                            uprimitiveieq[1,k,l,m],
                                                             dudx, dvdy, dwdz,
                                                             dudy, dvdx,
                                                             dudz, dwdx,
@@ -2340,9 +2340,9 @@ end
                             # Compute temperature gradient
                             dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
                             @turbo for ii = 1:ngl
-                                dθdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
-                                dθdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
-                                dθdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
+                                dθdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l,m]
+                                dθdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii,m]
+                                dθdζ += dψ[ii,m]*uprimitiveieq[ieq,k,l,ii]
                             end
 
                             # Transform to physical coordinates
@@ -2351,14 +2351,14 @@ end
                             dθdz = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
 
                             if inputs[:lrichardson]
-                                θ_ref = uprimitiveieq[k,l,m,5]  # Local temperature
+                                θ_ref = uprimitiveieq[5,k,l,m]  # Local temperature
                             else
                                 θ_ref = 1.0  # Dummy value (not used when lrichardson=false)
                             end
 
                             # USE EFFECTIVE DIFFUSIVITY
                             effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                                uprimitiveieq[k,l,m,1],
+                                                                uprimitiveieq[1,k,l,m],
                                                                 dudx, dvdy, dwdz,
                                                                 dudy, dvdx,
                                                                 dudz, dwdx,
@@ -2382,9 +2382,9 @@ end
                             # Compute energy gradient
                             dhldξ = 0.0; dhldη = 0.0; dhldζ = 0.0
                             @turbo for ii = 1:ngl
-                                dhldξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
-                                dhldη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
-                                dhldζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
+                                dhldξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l,m]
+                                dhldη += dψ[ii,l]*uprimitiveieq[ieq,k,ii,m]
+                                dhldζ += dψ[ii,m]*uprimitiveieq[ieq,k,l,ii]
                             end
                             # Transform to physical coordinates
                             dhldx = dhldξ*dξdx_klm + dhldη*dηdx_klm + dhldζ*dζdx_klm
@@ -2422,7 +2422,7 @@ end
 
                              # USE EFFECTIVE DIFFUSIVITY
                             effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                                uprimitiveieq[k,l,m,1],
+                                                                uprimitiveieq[1,k,l,m],
                                                                 dudx, dvdy, dwdz,
                                                                 dudy, dvdx,
                                                                 dudz, dwdx,
@@ -2443,7 +2443,7 @@ end
                         # Other scalars (use appropriate Schmidt number)
                         # USE EFFECTIVE DIFFUSIVITY
                         effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                              uprimitiveieq[k,l,m,1],
+                                                              uprimitiveieq[1,k,l,m],
                                                               dudx, dvdy, dwdz,
                                                               dudy, dvdx,
                                                               dudz, dwdx,
@@ -2457,9 +2457,9 @@ end
                         # Compute scalar gradient
                         dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
                         @turbo for ii = 1:ngl
-                            dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
-                            dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
-                            dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
+                            dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l,m]
+                            dqdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii,m]
+                            dqdζ += dψ[ii,m]*uprimitiveieq[ieq,k,l,ii]
                         end
 
                         # Transform to physical coordinates
@@ -2571,32 +2571,4 @@ function saturation_adjustment(uaux, qe, z, connijk, nelem, ngl, neqs, thermo_pa
             end
         end
     end
-end
-
-@inline function flux_ranocha(u_ll, u_rr, orientation::Integer,
-                              equations)
-    # Unpack left and right state
-    rho_ll, v1_ll, p_ll = cons2prim(u_ll, equations)
-    rho_rr, v1_rr, p_rr = cons2prim(u_rr, equations)
-    params.uprimitive[i,:]
-
-    # Compute the necessary mean values
-    rho_mean = ln_mean(rho_ll, rho_rr)
-    # Algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
-    # in exact arithmetic since
-    #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
-    #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
-    inv_rho_p_mean = p_ll * p_rr * inv_ln_mean(rho_ll * p_rr, rho_rr * p_ll)
-    v1_avg = 0.5 * (v1_ll + v1_rr)
-    p_avg = 0.5 * (p_ll + p_rr)
-    velocity_square_avg = 0.5 * (v1_ll * v1_rr)
-
-    # Calculate fluxes
-    # Ignore orientation since it is always "1" in 1D
-    f1 = rho_mean * v1_avg
-    f2 = f1 * v1_avg + p_avg
-    f3 = f1 * (velocity_square_avg + inv_rho_p_mean * equations.inv_gamma_minus_one) +
-        0.5 * (p_ll * v1_rr + p_rr * v1_ll)
-
-    return SVector(f1, f2, f3)
 end

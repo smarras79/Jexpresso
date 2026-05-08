@@ -75,8 +75,8 @@ function _expansion_inviscid_KEP_twopoint!(u, uprimitive,
             # Get conservative and primitive variables at point (i,j)
             u_ij = @SVector [u[i, j, 1], u[i, j, 2], 
                              u[i, j, 3], u[i, j, 4]]
-            uprim_ij = (uprimitive[i, j, 1], uprimitive[i, j, 2], 
-                        uprimitive[i, j, 3], uprimitive[i, j, 4])
+            uprim_ij = (uprimitive[1, i, j], uprimitive[2, i, j], 
+                        uprimitive[3, i, j], uprimitive[4, i, j])
             
             # --- Compute two-point flux divergence in ξ-direction ---
             dFdξ_1, dFdξ_2, dFdξ_3, dFdξ_4 = 0.0, 0.0, 0.0, 0.0
@@ -85,8 +85,8 @@ function _expansion_inviscid_KEP_twopoint!(u, uprimitive,
                 # Get state at point (k,j)
                 u_kj = @SVector [u[k, j, 1], u[k, j, 2], 
                                  u[k, j, 3], u[k, j, 4]]
-                uprim_kj = (uprimitive[k, j, 1], uprimitive[k, j, 2], 
-                            uprimitive[k, j, 3], uprimitive[k, j, 4])
+                uprim_kj = (uprimitive[1, k, j], uprimitive[2, k, j], 
+                            uprimitive[3, k, j], uprimitive[4, k, j])
                 
                 # Compute two-point flux in ξ-direction (orientation=1 for x-component)
                 f1, f2, f3, f4 = flux_shima_etal_2d(u_ij, u_kj, uprim_ij, uprim_kj, 1, PhysConst.γ)
@@ -105,8 +105,8 @@ function _expansion_inviscid_KEP_twopoint!(u, uprimitive,
                 # Get state at point (i,k)
                 u_ik = @SVector [u[i, k, 1], u[i, k, 2], 
                                  u[i, k, 3], u[i, k, 4]]
-                uprim_ik = (uprimitive[i, k, 1], uprimitive[i, k, 2], 
-                            uprimitive[i, k, 3], uprimitive[i, k, 4])
+                uprim_ik = (uprimitive[1, i, k], uprimitive[2, i, k], 
+                            uprimitive[3, i, k], uprimitive[4, i, k])
                 
                 # Compute two-point flux in η-direction (orientation=2 for y-component)
                 g1, g2, g3, g4 = flux_shima_etal_2d(u_ij, u_ik, uprim_ij, uprim_ik, 2, PhysConst.γ)
