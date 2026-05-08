@@ -1314,7 +1314,7 @@ function _expansion_inviscid!(u, neqs, ngl,
             for i=1:ngl
 
                 @inbounds begin
-                    Jeij = Je[iel,i,j]
+                    Jeij = Je[i, j, iel]
                     ωJac = ω[i]*ωj*Jeij
 
                     dFdξ = 0.0
@@ -1328,10 +1328,10 @@ function _expansion_inviscid!(u, neqs, ngl,
                         dGdξ += dψ[k,i]*G[k,j,ieq]
                         dGdη += dψ[k,j]*G[i,k,ieq]
                     end
-                    dξdx_ij = dξdx[iel,i,j]
-                    dξdy_ij = dξdy[iel,i,j]
-                    dηdx_ij = dηdx[iel,i,j]
-                    dηdy_ij = dηdy[iel,i,j]
+                    dξdx_ij = dξdx[i, j, iel]
+                    dξdy_ij = dξdy[i, j, iel]
+                    dηdx_ij = dηdx[i, j, iel]
+                    dηdy_ij = dηdy[i, j, iel]
 
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
                     dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
