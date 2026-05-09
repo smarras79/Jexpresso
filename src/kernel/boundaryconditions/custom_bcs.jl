@@ -24,7 +24,7 @@ function dirichlet!(q, qbdy, coords, t, nx, ny, tag,qe,SOL)
    user_bc_dirichlet!(q, coords, t, tag, qbdy, nx, ny,qe,SOL)
 end
 
-function dirichlet!(q, gradq, coords, t, mesh, metrics, tag, qbdy, inputs)
+function dirichlet!(q, gradq, coords, t, mesh, metrics, tag, qbdy, inputs::Dict)
     
     qbdy = user_bc_dirichlet!(q, gradq, coords, t, tag, qbdy, inputs)
 

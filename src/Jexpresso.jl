@@ -91,6 +91,8 @@ include(joinpath( "auxiliary", "timing.jl"))
 
 include(joinpath( "kernel", "abstractTypes.jl"))
 
+include(joinpath( "kernel", "mesh", "meshStructs.jl"))
+
 #include(joinpath( "kernel", "elementLearningStructs_new.jl"))
 #include(joinpath( "kernel", "elementLearningStructs_sparse.jl"))
 include(joinpath( "kernel", "elementLearningStructs.jl"))
@@ -166,10 +168,6 @@ include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
-
-include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
-
-include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 
