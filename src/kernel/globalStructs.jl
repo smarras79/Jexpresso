@@ -116,7 +116,7 @@ function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
 
     if SD == NSD_1D()
         dims1 = (Int64(ngl), Int64(neqs))
-        dims2 = (Int64(ngl), Int64(neqs+1))
+        dims2 = (Int64(neqs+1), Int64(ngl))
     elseif SD == NSD_2D()
         dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
         dims2 = (Int64(neqs+1), Int64(ngl), Int64(ngl))

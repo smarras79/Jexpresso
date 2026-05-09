@@ -1250,6 +1250,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
     mesh.rank       = rank
     ladaptive       = inputs[:ladapt]
     linitial_refine = inputs[:linitial_refine]
+    lxy_partition   = inputs[:lxy_partition]
     lamr_mesh       = !isnothing(adapt_flags)
     if isnothing(adapt_flags)
     

@@ -1,7 +1,7 @@
 include("custom_bcs.jl")
 
 function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
-                                              coords, 
+                                              coords,
                                               nx, ny, nz,
                                               npoin, npoin_linear,
                                               poin_in_bdy_edge, poin_in_bdy_face,
@@ -11,7 +11,7 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                               bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
                                               connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                                               Tabs, qn,
-                                              ω, neqs, inputs, AD, SD)
+                                              ω, neqs, inputs::I, AD, SD) where {I<:NamedTuple}
     
     if inputs[:lperiodic_1d] && typeof(SD) == NSD_1D
         
@@ -141,7 +141,7 @@ function build_custom_bcs_dirichlet!(::NSD_1D, t,
                                      Tabs, qn,
                                      neqs, dirichlet!, neumann, inputs)
 
-    sol_vars_type = inputs[:SOL_VARS_TYPE]::Union{PERT, TOTAL, THETA}
+    sol_vars_type = inputs[:SOL_VARS_TYPE]
 
     ip = 1
     fill!(qbdy, 4325789.0)
@@ -183,13 +183,13 @@ function build_custom_bcs_neumann!(::NSD_1D, t,
     nothing
 end
 
-@inline function _apply_dirichlet_bdy_edge_2d!(sol_vars_type::Union{PERT, TOTAL, THETA},
+@inline function _apply_dirichlet_bdy_edge_2d!(sol_vars_type::T,
                                                 t::Real,
                                                 uaux::AbstractMatrix, coords::AbstractMatrix, qe::AbstractMatrix,
                                                 qbdy::AbstractVector, RHS::AbstractMatrix,
                                                 nx::AbstractArray, ny::AbstractArray,
                                                 poin_in_bdy_edge::AbstractMatrix, bdy_edge_type::AbstractVector,
-                                                nedges_bdy::Integer, ngl::Integer, neqs::Integer)
+                                                nedges_bdy::Integer, ngl::Integer, neqs::Integer) where T
     @inbounds for iedge = 1:nedges_bdy
         edge_type = bdy_edge_type[iedge]
 
@@ -217,14 +217,14 @@ end
     end
 end
 
-@inline function _apply_dirichlet_bdy_laguerre_2d!(sol_vars_type::Union{PERT, TOTAL, THETA},
+@inline function _apply_dirichlet_bdy_laguerre_2d!(sol_vars_type::T,
                                                     tag::AbstractString,
                                                     t::Real,
                                                     uaux::AbstractMatrix, coords::AbstractMatrix, qe::AbstractMatrix,
                                                     qbdy::AbstractVector, RHS::AbstractMatrix,
                                                     connijk_lag::AbstractArray,
                                                     nelem_semi_inf::Integer, ngl::Integer, ngr::Integer, neqs::Integer,
-                                                    xmin::Real, xmax::Real)
+                                                    xmin::Real, xmax::Real) where T
     @inbounds for e = 1:nelem_semi_inf
         for i = 1:ngl
             ip = connijk_lag[e, i, ngr]
@@ -290,17 +290,17 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
                                      connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                                      connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                                      Tabs, qn,
-                                     neqs, dirichlet!, neumann, inputs)
+                                     neqs, dirichlet!, neumann, inputs::I) where {I<:NamedTuple}
 
-    sol_vars_type = inputs[:SOL_VARS_TYPE]::Union{PERT, TOTAL, THETA}
-    llaguerre_bc  = inputs[:llaguerre_bc]::Bool
+    sol_vars_type = inputs[:SOL_VARS_TYPE]
+    llaguerre_bc  = inputs[:llaguerre_bc]
 
-   @code_warntype _apply_dirichlet_bdy_edge_2d!(sol_vars_type, t, uaux, coords, qe, qbdy, RHS,
+    _apply_dirichlet_bdy_edge_2d!(sol_vars_type, t, uaux, coords, qe, qbdy, RHS,
                                   nx, ny, poin_in_bdy_edge, bdy_edge_type,
                                   nedges_bdy, ngl, neqs)
 
     if llaguerre_bc && nelem_semi_inf > 0
-        tag = inputs[:laguerre_tag]::AbstractString
+        tag = inputs[:laguerre_tag]
         _apply_dirichlet_bdy_laguerre_2d!(sol_vars_type, tag, t, uaux, coords, qe, qbdy, RHS,
                                           connijk_lag, nelem_semi_inf, ngl, ngr, neqs, xmin, xmax)
     end
@@ -584,7 +584,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
                                      Tabs, qn,
                                      neqs, dirichlet!, neumann, inputs)
     PhysConst = PhysicalConst{Float64}()
-    sol_vars_type = inputs[:SOL_VARS_TYPE]::Union{PERT, TOTAL, THETA}
+    sol_vars_type = inputs[:SOL_VARS_TYPE]
 
     for iface = 1:nfaces_bdy
         face_type = bdy_face_type[iface]

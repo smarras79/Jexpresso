@@ -138,14 +138,14 @@ function rhs!(du, u, params, time)
     # for @timers, do not delete
     timers = params.timers
     if (backend == CPU())
-        _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        _build_rhs!(params.RHS, u, params, time)
 
         if (params.laguerre)
-            build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-            params.RHS .= @views(params.RHS .+ params.RHS_lag)
+            build_rhs_laguerre!(params.RHS_lag, u, params, time)
+            params.RHS .+= params.RHS_lag
         end
 
-        RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+        RHStoDU!(du, params.RHS, params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
             lpert = true
@@ -495,7 +495,7 @@ if (params.inputs[:lvisc])
     @inbounds params.RHS .+= params.RHS_visc
 end
 #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
-DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+DSS_global_RHS!(params.RHS, params.g_dss_cache, params.neqs)
 
 k1 = RHStodu_gpu!(backend)
 k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
@@ -537,7 +537,7 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------
-    resetRHSToZero_inviscid!(params)
+    @trixi_timeit timer() " RESETRHSTOZERO "  resetRHSToZero_inviscid!(params)
     if (params.inputs[:lfilter])
         reset_filters!(params)
         if (params.laguerre)
@@ -549,7 +549,7 @@ function _build_rhs!(RHS, u, params, time)
         end
     end
 
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(params.uaux, u, params.neqs, params.mesh.npoin)
 
     if inputs[:ladapt] == true
         conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
@@ -565,22 +565,24 @@ function _build_rhs!(RHS, u, params, time)
                           params.interp)
     end
 
-    @trixi_timeit timer() "resetbyflux0" resetbdyfluxToZero!(params)
-    #   @trixi_timeit timer() "apply DC boundary" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-    @code_warntype apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-                                                        params.mesh.coords,
-                                                        params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                                        params.mesh.npoin, params.mesh.npoin_linear,
-                                                        params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                                        params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
-                                                        params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                                                        xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                                                        params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
-                                                        params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                                        params.mesh.connijk, params.metrics.Jef, params.S_face,
-                                                        params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                                        params.mp.Tabs, params.mp.qn,
-                                                        params.ω, neqs, params.inputs, AD, SD)
+    resetbdyfluxToZero!(params)
+    
+    #@code_warntype apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+    #@trixi_timeit timer() "apply DC boundary" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+    apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+                                         params.mesh.coords,
+                                         params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                         params.mesh.npoin, params.mesh.npoin_linear,
+                                         params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                         params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
+                                         params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                         xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                         params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                         params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                         params.mesh.connijk, params.metrics.Jef, params.S_face,
+                                         params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                         params.mp.Tabs, params.mp.qn,
+                                         params.ω, neqs, params.inputs, AD, SD)
 
     if (params.inputs[:lmoist])
 
@@ -648,7 +650,7 @@ function _build_rhs!(RHS, u, params, time)
         end
 
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-        params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
+        params.RHS .+= params.RHS_visc
     end
     apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
@@ -666,7 +668,7 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD)
 
-    DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+    DSS_global_RHS!(params.RHS, params.g_dss_cache, params.neqs)
 
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)
@@ -674,31 +676,44 @@ function _build_rhs!(RHS, u, params, time)
         params.qp.qnm2 .= params.uaux
     end
 
-    for ieq=1:neqs
-        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
-
-        if inputs[:ladapt] == true
-
-            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT,
-                                params.mesh.non_conforming_facets,
-                                params.mesh.non_conforming_facets_children_ghost, params.cache_ghost_c,
-                                params.q_el, params.q_el_pro, params.q_ghost_c,
-                                params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
-                                params.mesh.gip2ip, params.mesh.cgip_local, ngl-1, params.interp)
+    Minv = params.Minv
+    if Minv isa AbstractVector
+        for ieq = 1:neqs
+            divide_by_mass_matrix!(params.RHS, ieq, Minv, npoin, AD)
+            if inputs[:ladapt] == true
+                DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT,
+                                    params.mesh.non_conforming_facets,
+                                    params.mesh.non_conforming_facets_children_ghost, params.cache_ghost_c,
+                                    params.q_el, params.q_el_pro, params.q_ghost_c,
+                                    params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                    params.mesh.gip2ip, params.mesh.cgip_local, ngl-1, params.interp)
+            end
+        end
+    else
+        for ieq = 1:neqs
+            divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, Minv, neqs, npoin, AD)
+            if inputs[:ladapt] == true
+                DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT,
+                                    params.mesh.non_conforming_facets,
+                                    params.mesh.non_conforming_facets_children_ghost, params.cache_ghost_c,
+                                    params.q_el, params.q_el_pro, params.q_ghost_c,
+                                    params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                    params.mesh.gip2ip, params.mesh.cgip_local, ngl-1, params.interp)
+            end
         end
     end
     end
 end
 
 function inviscid_rhs_el!(u, params,
-                          connijk,
-                          qe,
+                          connijk::Array{Int64,4},
+                          qe::Matrix{Float64},
                           coords,
                           lsource, S_micro_vec, qn_vec,
                           flux_lw_vec, flux_sw_vec,
                           SD::NSD_1D, ::Val{false})
 
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(params.uaux, u, params.neqs, params.mesh.npoin)
 
     ngl   = params.mesh.ngl
     npoin = params.mesh.npoin
@@ -906,8 +921,8 @@ function inviscid_rhs_el!(u, params,
 end
 
 function inviscid_rhs_el!(u, params,
-                          connijk,
-                          qe,
+                          connijk::Array{Int64,4},
+                          qe::Matrix{Float64},
                           coords,
                           lsource, S_micro_vec, qn_vec,
                           flux_lw_vec, flux_sw_vec,
@@ -916,7 +931,7 @@ function inviscid_rhs_el!(u, params,
     nelem = params.mesh.nelem
     ngl   = params.mesh.ngl
 
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(params.uaux, u, params.neqs, params.mesh.npoin)
     xmin = params.xmin; xmax = params.xmax; zmax = params.zmax
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i=1:ngl
@@ -991,12 +1006,12 @@ end
 
 
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D, ::Val{true})
+function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D, ::Val{true})
 
     nelem = params.mesh.nelem
     ngl   = params.mesh.ngl
 
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(params.uaux, u, params.neqs, params.mesh.npoin)
     xmin = params.xmin; xmax = params.xmax; zmax = params.zmax
 
     for iel = 1:nelem
@@ -1067,7 +1082,7 @@ end
 
 
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_1D)
 
     Δ = params.mesh.Δeffective_l
 
@@ -1206,7 +1221,7 @@ end
 end
 
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
 
     Δ = params.mesh.Δeffective_l
 
@@ -1521,8 +1536,8 @@ function _expansion_inviscid!(u, neqs, ngl,
                         dGdξ += dψ[k,i]*G[k,j,ieq]
                         dGdη += dψ[k,j]*G[i,k,ieq]
 
-                        dpdξ += dψ[k,i]*uprimitive[k,j,neqs+1]
-                        dpdη += dψ[k,j]*uprimitive[i,k,neqs+1]
+                        dpdξ += dψ[k,i]*uprimitive[neqs+1,k,j]
+                        dpdη += dψ[k,j]*uprimitive[neqs+1,i,k]
                     end
                     dξdx_ij = dξdx[i, j, iel]
                     dξdy_ij = dξdy[i, j, iel]
@@ -1538,9 +1553,9 @@ function _expansion_inviscid!(u, neqs, ngl,
                     dpdx = dpdξ*dξdx_ij + dpdη*dηdx_ij
                     dpdy = dpdξ*dξdy_ij + dpdη*dηdy_ij
 
-                    ρij = uprimitive[i,j,1]
-                    uij = uprimitive[i,j,2]
-                    vij = uprimitive[i,j,3]
+                    ρij = uprimitive[1,i,j]
+                    uij = uprimitive[2,i,j]
+                    vij = uprimitive[3,i,j]
 
                     if (ieq == 1)
                         auxi = ωJac*(dFdx + dGdy)
@@ -1596,21 +1611,21 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::
                         dρvdξ += dψmk_ψnl*params.G[m,n,1]
                         dρvdη +=  ψmk_dψnl*params.G[m,n,1]
 
-                        dudξ += dψmk_ψnl*params.uprimitive[m,n,2]
-                        dudη +=  ψmk_dψnl*params.uprimitive[m,n,2]
+                        dudξ += dψmk_ψnl*params.uprimitive[2,m,n]
+                        dudη +=  ψmk_dψnl*params.uprimitive[2,m,n]
 
-                        dvdξ += dψmk_ψnl*params.uprimitive[m,n,3]
-                        dvdη +=  ψmk_dψnl*params.uprimitive[m,n,3]
+                        dvdξ += dψmk_ψnl*params.uprimitive[3,m,n]
+                        dvdη +=  ψmk_dψnl*params.uprimitive[3,m,n]
 
-                        dθdξ += dψmk_ψnl*params.uprimitive[m,n,4]
-                        dθdη +=  ψmk_dψnl*params.uprimitive[m,n,4]
+                        dθdξ += dψmk_ψnl*params.uprimitive[4,m,n]
+                        dθdη +=  ψmk_dψnl*params.uprimitive[4,m,n]
 
-                        dpdξ += dψmk_ψnl*params.uprimitive[m,n,params.neqs+1]
-                        dpdη +=  ψmk_dψnl*params.uprimitive[m,n,params.neqs+1]
+                        dpdξ += dψmk_ψnl*params.uprimitive[params.neqs+1,m,n]
+                        dpdη +=  ψmk_dψnl*params.uprimitive[params.neqs+1,m,n]
 
-                        ρkl += ψmk*ψnl*params.uprimitive[m,n,1]
-                        ukl += ψmk*ψnl*params.uprimitive[m,n,2]
-                        vkl += ψmk*ψnl*params.uprimitive[m,n,3]
+                        ρkl += ψmk*ψnl*params.uprimitive[1,m,n]
+                        ukl += ψmk*ψnl*params.uprimitive[2,m,n]
+                        vkl += ψmk*ψnl*params.uprimitive[3,m,n]
                         Skl += ψmk*ψnl*params.S[m,n,3]
                     end
                 end
