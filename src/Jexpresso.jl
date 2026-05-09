@@ -77,6 +77,8 @@ using PartitionedArrays
 using GridapGmsh
 using GridapP4est
 
+using InteractiveUtils
+
 TInt   = Int64
 TFloat = Float64
 cpu    = true

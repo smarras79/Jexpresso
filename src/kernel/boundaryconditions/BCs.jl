@@ -295,7 +295,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
     sol_vars_type = inputs[:SOL_VARS_TYPE]::Union{PERT, TOTAL, THETA}
     llaguerre_bc  = inputs[:llaguerre_bc]::Bool
 
-    _apply_dirichlet_bdy_edge_2d!(sol_vars_type, t, uaux, coords, qe, qbdy, RHS,
+   @code_warntype _apply_dirichlet_bdy_edge_2d!(sol_vars_type, t, uaux, coords, qe, qbdy, RHS,
                                   nx, ny, poin_in_bdy_edge, bdy_edge_type,
                                   nedges_bdy, ngl, neqs)
 
