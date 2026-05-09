@@ -26,7 +26,7 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω, neqs, ::Inexact,::TOTA
 
             for j=1:mesh.ngl, i=1:mesh.ngl
                 ip = mesh.connijk[iel,i,j]
-                ωJac = ω1[i]*ω1[j]*metrics[1].Je[iel,i,j]
+                ωJac = ω1[i]*ω1[j]*metrics[1].Je[i, j, iel]
                 ρ    = uaux[ip,1]
                 mass += ρ*ωJac
             end
@@ -35,7 +35,7 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω, neqs, ::Inexact,::TOTA
 
             for j=1:mesh.ngr, i=1:mesh.ngl
                 ip = mesh.connijk_lag[iel,i,j]
-                ωJac = ω1[i]*ω2[j]*metrics[2].Je[iel,i,j]
+                ωJac = ω1[i]*ω2[j]*metrics[2].Je[i, j, iel]
                 ρ    = uaux[ip,1]
                 mass += ρ*ωJac
             end
@@ -47,7 +47,7 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω, neqs, ::Inexact,::TOTA
 
             for j=1:mesh.ngl, i=1:mesh.ngl
                 ip = mesh.connijk[iel,i,j]
-                ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+                ωJac = ω[i]*ω[j]*metrics.Je[i, j, iel]
                 ρ    = uaux[ip,1]
                 mass += ρ*ωJac        
             end
@@ -66,7 +66,7 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs,::Inexact,::PERT)
 
            for j=1:mesh.ngl, i=1:mesh.ngl
                ip = mesh.connijk[iel,i,j]
-               ωJac = ω1[i]*ω1[j]*metrics[1].Je[iel,i,j]
+               ωJac = ω1[i]*ω1[j]*metrics[1].Je[i, j, iel]
                ρ    = uaux[ip,1] + uauxe[ip,1]
                mass += ρ*ωJac
            end
@@ -75,7 +75,7 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs,::Inexact,::PERT)
 
            for j=1:mesh.ngr, i=1:mesh.ngl
                ip = mesh.connijk_lag[iel,i,j]
-               ωJac = ω1[i]*ω2[j]*metrics[2].Je[iel,i,j]
+               ωJac = ω1[i]*ω2[j]*metrics[2].Je[i, j, iel]
                ρ    = uaux[ip,1] + uauxe[ip,1]
                mass += ρ*ωJac
            end
@@ -87,7 +87,7 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs,::Inexact,::PERT)
 
            for j=1:mesh.ngl, i=1:mesh.ngl
                ip = mesh.connijk[iel,i,j]
-               ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+               ωJac = ω[i]*ω[j]*metrics.Je[i, j, iel]
                ρ    = uaux[ip,1] + uauxe[ip,1]
                mass += ρ*ωJac        
            end
@@ -104,7 +104,7 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs,::Exact,Q,ψ)
     mass = 0.0	
     for iel=1:mesh.nelem
     	for l=1:Q, k=1:Q
-	     ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l]
+	     ωJac = ω[k]*ω[l]*metrics.Je[k, l, iel]
           for j=1:mesh.ngl, i=1:mesh.ngl
               ip = mesh.connijk[iel,i,j]
               ρ  = uaux[ip,1]
@@ -128,7 +128,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
         for iel=1:mesh.nelem
             for j=1:mesh.ngl, i=1:mesh.ngl
                 ip = mesh.connijk[iel,i,j]
-                ωJac = ω1[i]*ω1[j]*metrics[1].Je[iel,i,j]
+                ωJac = ω1[i]*ω1[j]*metrics[1].Je[i, j, iel]
                 ρ    = uaux[ip,1]
                 u    = uaux[ip,2]/ρ
                 v    = uaux[ip,3]/ρ
@@ -147,7 +147,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
         for iel=1:mesh.nelem_semi_inf
             for j=1:mesh.ngr, i=1:mesh.ngl
                 ip = mesh.connijk_lag[iel,i,j]
-                ωJac = ω1[i]*ω2[j]*metrics[2].Je[iel,i,j]
+                ωJac = ω1[i]*ω2[j]*metrics[2].Je[i, j, iel]
                 ρ    = uaux[ip,1]
                 u    = uaux[ip,2]/ρ
                 v    = uaux[ip,3]/ρ
@@ -167,7 +167,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
         for iel=1:mesh.nelem
             for j=1:mesh.ngl, i=1:mesh.ngl
                 ip = mesh.connijk[iel,i,j]
-                ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+                ωJac = ω[i]*ω[j]*metrics.Je[i, j, iel]
                 ρ    = uaux[ip,1]
                 u    = uaux[ip,2]/ρ
                 v    = uaux[ip,3]/ρ
@@ -196,7 +196,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs,QT::Exact,Q,ψ)
     energy = 0.0	
     for iel=1:mesh.nelem
        for l=1:Q, k=1:Q
-	  ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l] 
+	  ωJac = ω[k]*ω[l]*metrics.Je[k, l, iel] 
 
           for j=1:mesh.ngl, i=1:mesh.ngl
               ip = mesh.connijk[iel,i,j]

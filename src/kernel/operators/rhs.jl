@@ -566,20 +566,21 @@ function _build_rhs!(RHS, u, params, time)
     end
 
     @trixi_timeit timer() "resetbyflux0" resetbdyfluxToZero!(params)
-    @trixi_timeit timer() "apply DC boundary" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-                                         params.mesh.coords,
-                                         params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                         params.mesh.npoin, params.mesh.npoin_linear,
-                                         params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                         params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
-                                         params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                                         xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                                         params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
-                                         params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                         params.mesh.connijk, params.metrics.Jef, params.S_face,
-                                         params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                         params.mp.Tabs, params.mp.qn,
-                                         params.ω, neqs, params.inputs, AD, SD)
+    #   @trixi_timeit timer() "apply DC boundary" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+    @code_warntype apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+                                                        params.mesh.coords,
+                                                        params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                                        params.mesh.npoin, params.mesh.npoin_linear,
+                                                        params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                                                        params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
+                                                        params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                                        xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                                        params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                                        params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                                        params.mesh.connijk, params.metrics.Jef, params.S_face,
+                                                        params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                                        params.mp.Tabs, params.mp.qn,
+                                                        params.ω, neqs, params.inputs, AD, SD)
 
     if (params.inputs[:lmoist])
 
@@ -787,7 +788,7 @@ end
     for j=1:ngl
         for i=1:ngl
             ip = connijk[iel,i,j]
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
+            ωJac = ω[i]*ω[j]*Je[i, j, iel]
             @. dFdxi = 0
 	    @. dFdeta = 0
 	    @. dGdxi = 0
@@ -803,10 +804,10 @@ end
                  @. dGdxi += 2 * dψ[k,i]*G_kj
                  @. dGdeta += 2 * dψ[k,j]*G_ik
             end
-            dξdx_ij = dξdx[iel,i,j]
-            dξdy_ij = dξdy[iel,i,j]
-            dηdx_ij = dηdx[iel,i,j]
-            dηdy_ij = dηdy[iel,i,j]
+            dξdx_ij = dξdx[i, j, iel]
+            dξdy_ij = dξdy[i, j, iel]
+            dηdx_ij = dηdx[i, j, iel]
+            dηdy_ij = dηdy[i, j, iel]
 
              @. dFdx = dFdxi*dξdx_ij + dFdeta*dηdx_ij
   	     @. dGdy = dGdxi*dξdy_ij + dGdeta*dηdy_ij
@@ -1314,7 +1315,7 @@ function _expansion_inviscid!(u, neqs, ngl,
             for i=1:ngl
 
                 @inbounds begin
-                    Jeij = Je[iel,i,j]
+                    Jeij = Je[i, j, iel]
                     ωJac = ω[i]*ωj*Jeij
 
                     dFdξ = 0.0
@@ -1328,10 +1329,10 @@ function _expansion_inviscid!(u, neqs, ngl,
                         dGdξ += dψ[k,i]*G[k,j,ieq]
                         dGdη += dψ[k,j]*G[i,k,ieq]
                     end
-                    dξdx_ij = dξdx[iel,i,j]
-                    dξdy_ij = dξdy[iel,i,j]
-                    dηdx_ij = dηdx[iel,i,j]
-                    dηdy_ij = dηdy[iel,i,j]
+                    dξdx_ij = dξdx[i, j, iel]
+                    dξdy_ij = dξdy[i, j, iel]
+                    dηdx_ij = dηdx[i, j, iel]
+                    dηdy_ij = dηdy[i, j, iel]
 
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
                     dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
@@ -1370,7 +1371,7 @@ function _expansion_inviscid!(u, neqs, ngl,
                 for i=1:ngl
 
                     @inbounds begin
-                        Je_ijk = Je[iel,i,j,k]
+                        Je_ijk = Je[i, j, k, iel]
                         ωJac = ω[i] * ωjk * Je_ijk
 
                         dFdξ = 0.0
@@ -1397,17 +1398,17 @@ function _expansion_inviscid!(u, neqs, ngl,
                             dHdη += dψ[m,j]*H[i,m,k,ieq]
                             dHdζ += dψ[m,k]*H[i,j,m,ieq]
                         end
-                        dξdx_ij = dξdx[iel,i,j,k]
-                        dξdy_ij = dξdy[iel,i,j,k]
-                        dξdz_ij = dξdz[iel,i,j,k]
+                        dξdx_ij = dξdx[i, j, k, iel]
+                        dξdy_ij = dξdy[i, j, k, iel]
+                        dξdz_ij = dξdz[i, j, k, iel]
 
-                        dηdx_ij = dηdx[iel,i,j,k]
-                        dηdy_ij = dηdy[iel,i,j,k]
-                        dηdz_ij = dηdz[iel,i,j,k]
+                        dηdx_ij = dηdx[i, j, k, iel]
+                        dηdy_ij = dηdy[i, j, k, iel]
+                        dηdz_ij = dηdz[i, j, k, iel]
 
-                        dζdx_ij = dζdx[iel,i,j,k]
-                        dζdy_ij = dζdy[iel,i,j,k]
-                        dζdz_ij = dζdz[iel,i,j,k]
+                        dζdx_ij = dζdx[i, j, k, iel]
+                        dζdy_ij = dζdy[i, j, k, iel]
+                        dζdz_ij = dζdz[i, j, k, iel]
 
                         dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij + dFdζ*dζdx_ij
                         dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij + dGdζ*dζdx_ij
@@ -1450,7 +1451,7 @@ function _expansion_inviscid!(u, neqs, ngl,
             ωl = ω[l]
             for k=1:Q
                 @inbounds begin
-                    Je_kl = Je[iel,k,l]
+                    Je_kl = Je[k, l, iel]
                     ωJac = ω[k] * ωl * Je_kl
 
                     dFdξ = 0.0
@@ -1467,10 +1468,10 @@ function _expansion_inviscid!(u, neqs, ngl,
                         end
                     end
 
-                    dξdx_kl = params.metrics.dξdx[iel,k,l]
-                    dξdy_kl = params.metrics.dξdy[iel,k,l]
-                    dηdx_kl = params.metrics.dηdx[iel,k,l]
-                    dηdy_kl = params.metrics.dηdy[iel,k,l]
+                    dξdx_kl = params.metrics.dξdx[k, l, iel]
+                    dξdy_kl = params.metrics.dξdy[k, l, iel]
+                    dηdx_kl = params.metrics.dηdx[k, l, iel]
+                    dηdy_kl = params.metrics.dηdy[k, l, iel]
                     for j = 1:N
                         for i = 1:N
                             dFdx = dFdξ*dξdx_kl + dFdη*dηdx_kl
@@ -1507,7 +1508,7 @@ function _expansion_inviscid!(u, neqs, ngl,
             for i=1:ngl
 
                 @inbounds begin
-                    Je_ij = Je[iel,i,j]
+                    Je_ij = Je[i, j, iel]
                     ωJac  = ω[i]*ωj*Je_ij
 
                     dFdξ = 0.0; dFdη = 0.0
@@ -1523,10 +1524,10 @@ function _expansion_inviscid!(u, neqs, ngl,
                         dpdξ += dψ[k,i]*uprimitive[k,j,neqs+1]
                         dpdη += dψ[k,j]*uprimitive[i,k,neqs+1]
                     end
-                    dξdx_ij = dξdx[iel,i,j]
-                    dξdy_ij = dξdy[iel,i,j]
-                    dηdx_ij = dηdx[iel,i,j]
-                    dηdy_ij = dηdy[iel,i,j]
+                    dξdx_ij = dξdx[i, j, iel]
+                    dξdy_ij = dξdy[i, j, iel]
+                    dηdx_ij = dηdx[i, j, iel]
+                    dηdy_ij = dηdy[i, j, iel]
 
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
                     dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
@@ -1571,7 +1572,7 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::
         for k=1:Q
 
             @inbounds begin
-                ωJac = ω[k]*ωl*Je[ie,k,l]
+                ωJac = ω[k]*ωl*Je[k, l, iel]
 
                 dρudξ = 0.0; dρudη = 0.0
                 dρvdξ = 0.0; dρvdη = 0.0
@@ -1614,10 +1615,10 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::
                     end
                 end
 
-                dξdx_kl = params.metrics.dξdx[iel,k,l]
-                dξdy_kl = params.metrics.dξdy[iel,k,l]
-                dηdx_kl = params.metrics.dηdx[iel,k,l]
-                dηdy_kl = params.metrics.dηdy[iel,k,l]
+                dξdx_kl = params.metrics.dξdx[k, l, iel]
+                dξdy_kl = params.metrics.dξdy[k, l, iel]
+                dηdx_kl = params.metrics.dηdx[k, l, iel]
+                dηdy_kl = params.metrics.dηdy[k, l, iel]
 
                 dρudx = dρudξ*dξdx_kl + dρudη*dηdx_kl
                 dρudy = dρudξ*dξdy_kl + dρudη*dηdy_kl
@@ -1660,17 +1661,17 @@ end
                           QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal; Δ=1.0)
 
     for k = 1:ngl
-        ωJac = ω[k]*Je[iel,k]
+        ωJac = ω[k]*Je[k, iel]
 
         dqdξ = 0.0
         @turbo for ii = 1:ngl
             dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii]
         end
 
-        dξdx_kl = dqdξ*dξdx[iel,k]
+        dξdx_kl = dqdξ*dξdx[k, iel]
         dqdx = visc_coeffieq[ieq]*dξdx_kl
 
-        ∇ξ∇u_kl = dξdx[iel,k]*dqdx*ωJac
+        ∇ξ∇u_kl = dξdx[k, iel]*dqdx*ωJac
 
         @turbo for i = 1:ngl
             dhdξ_ik = dψ[i,k]
@@ -1701,7 +1702,7 @@ end
         for k = 1:ngl
 
             @inbounds begin
-                Jekl = Je[iel,k,l]
+                Jekl = Je[k, l, iel]
                 ωJac = ω[k]*ωl*Jekl
 
                 dqdξ = 0.0
@@ -1710,10 +1711,10 @@ end
                     dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l]
                     dqdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii]
                 end
-                dξdx_kl = dξdx[iel,k,l]
-                dξdy_kl = dξdy[iel,k,l]
-                dηdx_kl = dηdx[iel,k,l]
-                dηdy_kl = dηdy[iel,k,l]
+                dξdx_kl = dξdx[k, l, iel]
+                dξdy_kl = dξdy[k, l, iel]
+                dηdx_kl = dηdx[k, l, iel]
+                dηdy_kl = dηdy[k, l, iel]
 
                 auxi = dqdξ*dξdx_kl + dqdη*dηdx_kl
                 dqdx = visc_coeffieq[ieq]*auxi
@@ -1761,7 +1762,7 @@ end
 
     for l = 1:ngl
         for k = 1:ngl
-            ωJac = ω[k]*ω[l]*Je[iel,k,l] # FIXME
+            ωJac = ω[k]*ω[l]*Je[k, l, iel] # FIXME
 
             # Quantities for Smagorinsky
             dudξ = 0.0; dudη = 0.0
@@ -1773,10 +1774,10 @@ end
                 dvdξ += dψ[ii,k]*uprimitiveieq[3,ii,l]
                 dvdη += dψ[ii,l]*uprimitiveieq[3,k,ii]
             end
-            dξdx_kl = dξdx[iel,k,l]
-            dξdy_kl = dξdy[iel,k,l]
-            dηdx_kl = dηdx[iel,k,l]
-            dηdy_kl = dηdy[iel,k,l]
+            dξdx_kl = dξdx[k, l, iel]
+            dξdy_kl = dξdy[k, l, iel]
+            dηdx_kl = dηdx[k, l, iel]
+            dηdy_kl = dηdy[k, l, iel]
 
             #u
             dudx = dudξ*dξdx_kl + dudη*dηdx_kl
@@ -1886,7 +1887,7 @@ end
         for k = 1:ngl
 
             @inbounds begin
-                Je_kl = Je[iel,k,l]
+                Je_kl = Je[k, l, iel]
                 ωJac  = ω[k]*ωl*Je_kl
 
                 # Quantities for Smagorinsky
@@ -1899,10 +1900,10 @@ end
                     dvdξ += dψ[ii,k]*uprimitiveieq[3,ii,l]
                     dvdη += dψ[ii,l]*uprimitiveieq[3,k,ii]
                 end
-                dξdx_kl = dξdx[iel,k,l]
-                dξdy_kl = dξdy[iel,k,l]
-                dηdx_kl = dηdx[iel,k,l]
-                dηdy_kl = dηdy[iel,k,l]
+                dξdx_kl = dξdx[k, l, iel]
+                dξdy_kl = dξdy[k, l, iel]
+                dηdx_kl = dηdx[k, l, iel]
+                dηdy_kl = dηdy[k, l, iel]
 
                 #u
                 dudx = dudξ*dξdx_kl + dudη*dηdx_kl
@@ -2026,7 +2027,7 @@ end
         for k = 1:ngl
 
             @inbounds begin
-                Je_kl = Je[iel,k,l]
+                Je_kl = Je[k, l, iel]
                 ωJac  = ω[k]*ωl*Je_kl
                 @. gradient_dxi = 0
                 @. gradient_deta = 0
@@ -2037,10 +2038,10 @@ end
 		    gradient_deta[var] += dψ[ii,l]*uprimitiveieq[var,k,ii]
                 end
 		end
-                dξdx_kl = dξdx[iel,k,l]
-                dξdy_kl = dξdy[iel,k,l]
-                dηdx_kl = dηdx[iel,k,l]
-                dηdy_kl = dηdy[iel,k,l]
+                dξdx_kl = dξdx[k, l, iel]
+                dξdy_kl = dξdy[k, l, iel]
+                dηdx_kl = dηdx[k, l, iel]
+                dηdy_kl = dηdy[k, l, iel]
 
                 @. gradient_dx = gradient_dxi*dξdx_kl + gradient_deta*dηdx_kl
                 @. gradient_dy = gradient_dxi*dξdy_kl + gradient_deta*dηdy_kl
@@ -2093,7 +2094,7 @@ end
             for k = 1:ngl
 
                 @inbounds begin
-                    Je_klm = Je[iel,k,l,m]
+                    Je_klm = Je[k, l, m, iel]
                     ωJac   = ω[k] * ωlm * Je_klm
                     ip     = conn_el[k,l,m]
                     z      = coords[ip,3]
@@ -2113,17 +2114,17 @@ end
                         dqdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii,m]
                         dqdζ += dψ[ii,m]*uprimitiveieq[ieq,k,l,ii]
                     end
-                    dξdx_klm = dξdx[iel,k,l,m]
-                    dξdy_klm = dξdy[iel,k,l,m]
-                    dξdz_klm = dξdz[iel,k,l,m]
+                    dξdx_klm = dξdx[k, l, m, iel]
+                    dξdy_klm = dξdy[k, l, m, iel]
+                    dξdz_klm = dξdz[k, l, m, iel]
 
-                    dηdx_klm = dηdx[iel,k,l,m]
-                    dηdy_klm = dηdy[iel,k,l,m]
-                    dηdz_klm = dηdz[iel,k,l,m]
+                    dηdx_klm = dηdx[k, l, m, iel]
+                    dηdy_klm = dηdy[k, l, m, iel]
+                    dηdz_klm = dηdz[k, l, m, iel]
 
-                    dζdx_klm = dζdx[iel,k,l,m]
-                    dζdy_klm = dζdy[iel,k,l,m]
-                    dζdz_klm = dζdz[iel,k,l,m]
+                    dζdx_klm = dζdx[k, l, m, iel]
+                    dζdy_klm = dζdy[k, l, m, iel]
+                    dζdz_klm = dζdz[k, l, m, iel]
 
                     auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
                     dqdx = visc_coeffieq[ieq]*auxi
@@ -2202,7 +2203,7 @@ end
                     σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
                 end
                 @inbounds begin
-                    Je_klm = Je[iel,k,l,m]
+                    Je_klm = Je[k, l, m, iel]
                     ωJac = ω[k] * ωlm * Je_klm
 
                     # ===== Compute all velocity gradients =====
@@ -2231,17 +2232,17 @@ end
                     end
 
                     # Metric terms
-                    dξdx_klm = dξdx[iel,k,l,m]
-                    dξdy_klm = dξdy[iel,k,l,m]
-                    dξdz_klm = dξdz[iel,k,l,m]
+                    dξdx_klm = dξdx[k, l, m, iel]
+                    dξdy_klm = dξdy[k, l, m, iel]
+                    dξdz_klm = dξdz[k, l, m, iel]
 
-                    dηdx_klm = dηdx[iel,k,l,m]
-                    dηdy_klm = dηdy[iel,k,l,m]
-                    dηdz_klm = dηdz[iel,k,l,m]
+                    dηdx_klm = dηdx[k, l, m, iel]
+                    dηdy_klm = dηdy[k, l, m, iel]
+                    dηdz_klm = dηdz[k, l, m, iel]
 
-                    dζdx_klm = dζdx[iel,k,l,m]
-                    dζdy_klm = dζdy[iel,k,l,m]
-                    dζdz_klm = dζdz[iel,k,l,m]
+                    dζdx_klm = dζdx[k, l, m, iel]
+                    dζdy_klm = dζdy[k, l, m, iel]
+                    dζdz_klm = dζdz[k, l, m, iel]
 
                     # Transform to physical coordinates
                     # u-velocity
@@ -2515,7 +2516,7 @@ function compute_vertical_derivative_q!(dqdz::Array{Float64,4}, q::Array{Float64
     for k=1:ngl
         for j=1:ngl
             for i=1:ngl
-                @inbounds ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                @inbounds ωJac = ω[i]*ω[j]*ω[k]*Je[i, j, k, iel]
 
                 dHdξ = 0.0
                 dHdη = 0.0
@@ -2525,9 +2526,9 @@ function compute_vertical_derivative_q!(dqdz::Array{Float64,4}, q::Array{Float64
                     dHdη += dψ[m,j]*q[i,m,k,1]
                     dHdζ += dψ[m,k]*q[i,j,m,1]
                 end
-                dξdz_ij = dξdz[iel,i,j,k]
-                dηdz_ij = dηdz[iel,i,j,k]
-                dζdz_ij = dζdz[iel,i,j,k]
+                dξdz_ij = dξdz[i, j, k, iel]
+                dηdz_ij = dηdz[i, j, k, iel]
+                dζdz_ij = dζdz[i, j, k, iel]
 
                 dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
 
@@ -2541,7 +2542,7 @@ end
 function compute_vertical_derivative_q!(dqdz, q, iel::Int64, ngl::Int64, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
     for j=1:ngl
         for i=1:ngl
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
+            ωJac = ω[i]*ω[j]*Je[i, j, iel]
 
             dHdξ = 0.0
             dHdη = 0.0
@@ -2549,8 +2550,8 @@ function compute_vertical_derivative_q!(dqdz, q, iel::Int64, ngl::Int64, Je, dξ
                 dHdξ += dψ[m,i]*q[m,j,1]
                 dHdη += dψ[m,j]*q[i,m,1]
             end
-            dξdy_ij = dξdy[iel,i,j]
-            dηdy_ij = dηdy[iel,i,j]
+            dξdy_ij = dξdy[i, j, iel]
+            dηdy_ij = dηdy[i, j, iel]
 
             dHdz = dHdξ*dξdy_ij + dHdη*dηdy_ij
 

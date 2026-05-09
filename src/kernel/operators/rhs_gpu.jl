@@ -80,16 +80,16 @@ end
             @inbounds dGdη += dψ[k,i_y]*G[i_x,k]
         end
 
-        @inbounds dξdx_ij = dξdx[ie,i_x,i_y]
-        @inbounds dξdy_ij = dξdy[ie,i_x,i_y]
-        @inbounds dηdx_ij = dηdx[ie,i_x,i_y]
-        @inbounds dηdy_ij = dηdy[ie,i_x,i_y]
+        @inbounds dξdx_ij = dξdx[i_x, i_y, ie]
+        @inbounds dξdy_ij = dξdy[i_x, i_y, ie]
+        @inbounds dηdx_ij = dηdx[i_x, i_y, ie]
+        @inbounds dηdy_ij = dηdy[i_x, i_y, ie]
 
         dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
         dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
 
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*Je[ie,i_x,i_y]*((dFdx + dGdy)- S[i_x,i_y])* Minv[ip]
+        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*Je[i_x, i_y, ie]*((dFdx + dGdy)- S[i_x,i_y])* Minv[ip]
     end
 end
 
@@ -151,17 +151,17 @@ end
         end
         @synchronize()
 
-        @inbounds dξdx_ijk = dξdx[ie,i_x,i_y,i_z]
-        @inbounds dξdy_ijk = dξdy[ie,i_x,i_y,i_z]
-        @inbounds dξdz_ijk = dξdz[ie,i_x,i_y,i_z]
+        @inbounds dξdx_ijk = dξdx[i_x, i_y, i_z, ie]
+        @inbounds dξdy_ijk = dξdy[i_x, i_y, i_z, ie]
+        @inbounds dξdz_ijk = dξdz[i_x, i_y, i_z, ie]
         
-        @inbounds dηdx_ijk = dηdx[ie,i_x,i_y,i_z]
-        @inbounds dηdy_ijk = dηdy[ie,i_x,i_y,i_z]
-        @inbounds dηdz_ijk = dηdz[ie,i_x,i_y,i_z]
+        @inbounds dηdx_ijk = dηdx[i_x, i_y, i_z, ie]
+        @inbounds dηdy_ijk = dηdy[i_x, i_y, i_z, ie]
+        @inbounds dηdz_ijk = dηdz[i_x, i_y, i_z, ie]
 
-        @inbounds dζdx_ijk = dζdx[ie,i_x,i_y,i_z]
-        @inbounds dζdy_ijk = dζdy[ie,i_x,i_y,i_z]
-        @inbounds dζdz_ijk = dζdz[ie,i_x,i_y,i_z]
+        @inbounds dζdx_ijk = dζdx[i_x, i_y, i_z, ie]
+        @inbounds dζdy_ijk = dζdy[i_x, i_y, i_z, ie]
+        @inbounds dζdz_ijk = dζdz[i_x, i_y, i_z, ie]
 
         dFdx = dFdξ*dξdx_ijk + dFdη*dηdx_ijk + dFdζ*dζdx_ijk
         dGdy = dGdξ*dξdy_ijk + dGdη*dηdy_ijk + dGdζ*dζdy_ijk
@@ -169,7 +169,7 @@ end
 
 
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*((dFdx + dGdy + dHdz)- S[i_x,i_y,i_z])* Minv[ip]
+        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*ω[i_z]*Je[i_x, i_y, i_z, ie]*((dFdx + dGdy + dHdz)- S[i_x,i_y,i_z])* Minv[ip]
         @synchronize()
     end
 end
@@ -211,20 +211,20 @@ end
             @inbounds dHdη += dψ[k,i_y]*H[i_x,k,i_z]
             @inbounds dHdζ += dψ[k,i_z]*H[i_x,i_y,k]
         end
-        @inbounds dξdz_ijk = dξdz[ie,i_x,i_y,i_z]
+        @inbounds dξdz_ijk = dξdz[i_x, i_y, i_z, ie]
 
-        @inbounds dηdz_ijk = dηdz[ie,i_x,i_y,i_z]
+        @inbounds dηdz_ijk = dηdz[i_x, i_y, i_z, ie]
 
-        @inbounds dζdz_ijk = dζdz[ie,i_x,i_y,i_z]
+        @inbounds dζdz_ijk = dζdz[i_x, i_y, i_z, ie]
 
         dHdz = dHdξ*dξdz_ijk + dHdη*dηdz_ijk + dHdζ*dζdz_ijk
 
 
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] += ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*((dHdz) + S[i_x,i_y,i_z])* Minv[ip]
+        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] += ω[i_x]*ω[i_y]*ω[i_z]*Je[i_x, i_y, i_z, ie]*((dHdz) + S[i_x,i_y,i_z])* Minv[ip]
         if (ieq == 6)
             ωn = T(max(T(0),min(T(1),(Tabs[ip]-MicroConst.T00n)/(MicroConst.T0n - MicroConst.T00n))))
-            @inbounds KernelAbstractions.@atomic RHS[ip,ieq-1] += ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*(((MicroConst.Lc + ωn*MicroConst.Lf)*dHdz))* Minv[ip] 
+            @inbounds KernelAbstractions.@atomic RHS[ip,ieq-1] += ω[i_x]*ω[i_y]*ω[i_z]*Je[i_x, i_y, i_z, ie]*(((MicroConst.Lc + ωn*MicroConst.Lf)*dHdz))* Minv[ip] 
         end
     end
 end
@@ -287,17 +287,17 @@ for ieq =1:neq
     end
     @synchronize()
 
-    @inbounds dξdx_ijk = dξdx[ie,i_x,i_y,i_z]
-    @inbounds dξdy_ijk = dξdy[ie,i_x,i_y,i_z]
-    @inbounds dξdz_ijk = dξdz[ie,i_x,i_y,i_z]
+    @inbounds dξdx_ijk = dξdx[i_x, i_y, i_z, ie]
+    @inbounds dξdy_ijk = dξdy[i_x, i_y, i_z, ie]
+    @inbounds dξdz_ijk = dξdz[i_x, i_y, i_z, ie]
     
-    @inbounds dηdx_ijk = dηdx[ie,i_x,i_y,i_z]
-    @inbounds dηdy_ijk = dηdy[ie,i_x,i_y,i_z]
-    @inbounds dηdz_ijk = dηdz[ie,i_x,i_y,i_z]
+    @inbounds dηdx_ijk = dηdx[i_x, i_y, i_z, ie]
+    @inbounds dηdy_ijk = dηdy[i_x, i_y, i_z, ie]
+    @inbounds dηdz_ijk = dηdz[i_x, i_y, i_z, ie]
 
-    @inbounds dζdx_ijk = dζdx[ie,i_x,i_y,i_z]
-    @inbounds dζdy_ijk = dζdy[ie,i_x,i_y,i_z]
-    @inbounds dζdz_ijk = dζdz[ie,i_x,i_y,i_z]
+    @inbounds dζdx_ijk = dζdx[i_x, i_y, i_z, ie]
+    @inbounds dζdy_ijk = dζdy[i_x, i_y, i_z, ie]
+    @inbounds dζdz_ijk = dζdz[i_x, i_y, i_z, ie]
 
     dFdx = dFdξ*dξdx_ijk + dFdη*dηdx_ijk + dFdζ*dζdx_ijk
     dGdy = dGdξ*dξdy_ijk + dGdη*dηdy_ijk + dGdζ*dζdy_ijk
@@ -305,7 +305,7 @@ for ieq =1:neq
 
 
 ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-    @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*((dFdx + dGdy + dHdz)- S[i_x,i_y,i_z])* Minv[ip]
+    @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*ω[i_z]*Je[i_x, i_y, i_z, ie]*((dFdx + dGdy + dHdz)- S[i_x,i_y,i_z])* Minv[ip]
     @synchronize()
 end
 end
@@ -326,7 +326,7 @@ end
     
     @inbounds uprimitive[ie, i_x, i_y, i_z, 1:neq] .= user_primitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]),lpert)
     
-    @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]
+    @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[i_x, i_y, i_z, ie]
 
     for ieq=1:neq
 
@@ -344,15 +344,15 @@ end
             @inbounds dqdζ += dψ[ii,i_z]*U[i_x,i_y,ii]
         end
        
-        @inbounds dξdx_klm = dξdx[ie,i_x,i_y,i_z]
-        @inbounds dξdy_klm = dξdy[ie,i_x,i_y,i_z]
-        @inbounds dξdz_klm = dξdz[ie,i_x,i_y,i_z]
-        @inbounds dηdx_klm = dηdx[ie,i_x,i_y,i_z]
-        @inbounds dηdy_klm = dηdy[ie,i_x,i_y,i_z]
-        @inbounds dηdz_klm = dηdz[ie,i_x,i_y,i_z]
-        @inbounds dζdx_klm = dζdx[ie,i_x,i_y,i_z]
-        @inbounds dζdy_klm = dζdy[ie,i_x,i_y,i_z]
-        @inbounds dζdz_klm = dζdz[ie,i_x,i_y,i_z]
+        @inbounds dξdx_klm = dξdx[i_x, i_y, i_z, ie]
+        @inbounds dξdy_klm = dξdy[i_x, i_y, i_z, ie]
+        @inbounds dξdz_klm = dξdz[i_x, i_y, i_z, ie]
+        @inbounds dηdx_klm = dηdx[i_x, i_y, i_z, ie]
+        @inbounds dηdy_klm = dηdy[i_x, i_y, i_z, ie]
+        @inbounds dηdz_klm = dηdz[i_x, i_y, i_z, ie]
+        @inbounds dζdx_klm = dζdx[i_x, i_y, i_z, ie]
+        @inbounds dζdy_klm = dζdy[i_x, i_y, i_z, ie]
+        @inbounds dζdz_klm = dζdz[i_x, i_y, i_z, ie]
 
         
         auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
@@ -400,7 +400,7 @@ end
 
     @inbounds uprimitive[ie, i_x, i_y, i_z, 1:neq] .= user_primitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]),lpert)
 
-    @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]
+    @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[i_x, i_y, i_z, ie]
 
 
     @inbounds U[i_x,i_y,i_z] = uprimitive[ie,i_x,i_y,i_z,2]
@@ -437,15 +437,15 @@ end
         @inbounds dwdζ += dψ[ii,i_z]*W[i_x,i_y,ii]
     end
 
-    @inbounds dξdx_klm = dξdx[ie,i_x,i_y,i_z]
-    @inbounds dξdy_klm = dξdy[ie,i_x,i_y,i_z]
-    @inbounds dξdz_klm = dξdz[ie,i_x,i_y,i_z]
-    @inbounds dηdx_klm = dηdx[ie,i_x,i_y,i_z]
-    @inbounds dηdy_klm = dηdy[ie,i_x,i_y,i_z]
-    @inbounds dηdz_klm = dηdz[ie,i_x,i_y,i_z]
-    @inbounds dζdx_klm = dζdx[ie,i_x,i_y,i_z]
-    @inbounds dζdy_klm = dζdy[ie,i_x,i_y,i_z]
-    @inbounds dζdz_klm = dζdz[ie,i_x,i_y,i_z]
+    @inbounds dξdx_klm = dξdx[i_x, i_y, i_z, ie]
+    @inbounds dξdy_klm = dξdy[i_x, i_y, i_z, ie]
+    @inbounds dξdz_klm = dξdz[i_x, i_y, i_z, ie]
+    @inbounds dηdx_klm = dηdx[i_x, i_y, i_z, ie]
+    @inbounds dηdy_klm = dηdy[i_x, i_y, i_z, ie]
+    @inbounds dηdz_klm = dηdz[i_x, i_y, i_z, ie]
+    @inbounds dζdx_klm = dζdx[i_x, i_y, i_z, ie]
+    @inbounds dζdy_klm = dζdy[i_x, i_y, i_z, ie]
+    @inbounds dζdz_klm = dζdz[i_x, i_y, i_z, ie]
 
     
     dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
@@ -497,7 +497,7 @@ end
 
     @inbounds uprimitive[ie, i_x, i_y, i_z, 1:neq] .= user_primitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]),lpert)
 
-    @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]
+    @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[i_x, i_y, i_z, ie]
 
 
     @inbounds U[i_x,i_y,i_z] = uprimitive[ie,i_x,i_y,i_z,2]
@@ -535,15 +535,15 @@ end
     end
     @synchronize()
 
-    @inbounds dξdx_klm = dξdx[ie,i_x,i_y,i_z]
-    @inbounds dξdy_klm = dξdy[ie,i_x,i_y,i_z]
-    @inbounds dξdz_klm = dξdz[ie,i_x,i_y,i_z]
-    @inbounds dηdx_klm = dηdx[ie,i_x,i_y,i_z]
-    @inbounds dηdy_klm = dηdy[ie,i_x,i_y,i_z]
-    @inbounds dηdz_klm = dηdz[ie,i_x,i_y,i_z]
-    @inbounds dζdx_klm = dζdx[ie,i_x,i_y,i_z]
-    @inbounds dζdy_klm = dζdy[ie,i_x,i_y,i_z]
-    @inbounds dζdz_klm = dζdz[ie,i_x,i_y,i_z]
+    @inbounds dξdx_klm = dξdx[i_x, i_y, i_z, ie]
+    @inbounds dξdy_klm = dξdy[i_x, i_y, i_z, ie]
+    @inbounds dξdz_klm = dξdz[i_x, i_y, i_z, ie]
+    @inbounds dηdx_klm = dηdx[i_x, i_y, i_z, ie]
+    @inbounds dηdy_klm = dηdy[i_x, i_y, i_z, ie]
+    @inbounds dηdz_klm = dηdz[i_x, i_y, i_z, ie]
+    @inbounds dζdx_klm = dζdx[i_x, i_y, i_z, ie]
+    @inbounds dζdy_klm = dζdy[i_x, i_y, i_z, ie]
+    @inbounds dζdz_klm = dζdz[i_x, i_y, i_z, ie]
 
     
     dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
@@ -569,7 +569,7 @@ end
     S33 = dwdz
     # |Sij|
     Sij::T = sqrt(2.0 * (S11*S11 + S12*S12 + S13*S13 + S21*S21 + S22*S22 + S23*S23 + S31*S31 + S32*S32 + S33*S33))
-    delta2::T = (2.0 * cbrt(Je[ie,i_x,i_y,i_z]) / (ngl-1))^2
+    delta2::T = (2.0 * cbrt(Je[i_x, i_y, i_z, ie]) / (ngl-1))^2
 
     for ieq=1:neq
 
@@ -587,15 +587,15 @@ end
             @inbounds dqdζ += dψ[ii,i_z]*U[i_x,i_y,ii]
         end
         @synchronize()
-        @inbounds dξdx_klm = dξdx[ie,i_x,i_y,i_z]
-        @inbounds dξdy_klm = dξdy[ie,i_x,i_y,i_z]
-        @inbounds dξdz_klm = dξdz[ie,i_x,i_y,i_z]
-        @inbounds dηdx_klm = dηdx[ie,i_x,i_y,i_z]
-        @inbounds dηdy_klm = dηdy[ie,i_x,i_y,i_z]
-        @inbounds dηdz_klm = dηdz[ie,i_x,i_y,i_z]
-        @inbounds dζdx_klm = dζdx[ie,i_x,i_y,i_z]
-        @inbounds dζdy_klm = dζdy[ie,i_x,i_y,i_z]
-        @inbounds dζdz_klm = dζdz[ie,i_x,i_y,i_z]
+        @inbounds dξdx_klm = dξdx[i_x, i_y, i_z, ie]
+        @inbounds dξdy_klm = dξdy[i_x, i_y, i_z, ie]
+        @inbounds dξdz_klm = dξdz[i_x, i_y, i_z, ie]
+        @inbounds dηdx_klm = dηdx[i_x, i_y, i_z, ie]
+        @inbounds dηdy_klm = dηdy[i_x, i_y, i_z, ie]
+        @inbounds dηdz_klm = dηdz[i_x, i_y, i_z, ie]
+        @inbounds dζdx_klm = dζdx[i_x, i_y, i_z, ie]
+        @inbounds dζdy_klm = dζdy[i_x, i_y, i_z, ie]
+        @inbounds dζdz_klm = dζdz[i_x, i_y, i_z, ie]
 
         
         auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
@@ -641,7 +641,7 @@ end
 
     @inbounds uprimitive[ie, i_x, i_y, 1:neq] .= user_primitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]),lpert)
 
-    @inbounds ωJac = ω[i_x]*ω[i_y]*Je[ie,i_x,i_y]
+    @inbounds ωJac = ω[i_x]*ω[i_y]*Je[i_x, i_y, ie]
 
     for ieq=1:neq
 
@@ -657,10 +657,10 @@ end
             @inbounds dqdη += dψ[ii,i_y]*U[i_x,ii]
         end
 
-        @inbounds dξdx_kl = dξdx[ie,i_x,i_y]
-        @inbounds dξdy_kl = dξdy[ie,i_x,i_y]
-        @inbounds dηdx_kl = dηdx[ie,i_x,i_y]
-        @inbounds dηdy_kl = dηdy[ie,i_x,i_y]
+        @inbounds dξdx_kl = dξdx[i_x, i_y, ie]
+        @inbounds dξdy_kl = dξdy[i_x, i_y, ie]
+        @inbounds dηdx_kl = dηdx[i_x, i_y, ie]
+        @inbounds dηdy_kl = dηdy[i_x, i_y, ie]
 
         auxi = dqdξ*dξdx_kl + dqdη*dηdx_kl
         @inbounds dqdx = visc_coeff[ieq]*auxi

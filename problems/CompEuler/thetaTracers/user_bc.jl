@@ -1,16 +1,25 @@
-function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
-    qnl = nx*q[2] + ny*q[3]
-    qbdy[2] = q[2] - qnl*nx
-    qbdy[3] = q[3] - qnl*ny
-    
+@inline function user_bc_dirichlet!(uaux::AbstractMatrix{Float64}, ip::Integer,
+                                    coords::AbstractMatrix{Float64}, t::Float64, tag::String,
+                                    qbdy::AbstractVector{Float64}, nx::Float64, ny::Float64,
+                                    qe::AbstractMatrix{Float64}, ::TOTAL)
+    @inbounds begin
+        qnl = nx*uaux[ip,2] + ny*uaux[ip,3]
+        qbdy[2] = uaux[ip,2] - qnl*nx
+        qbdy[3] = uaux[ip,3] - qnl*ny
+    end
 end
 
-function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
-      
-    qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
-    qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
-    qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-    
+@inline function user_bc_dirichlet!(uaux::AbstractMatrix{Float64}, ip::Integer,
+                                    coords::AbstractMatrix{Float64}, t::Float64, tag::String,
+                                    qbdy::AbstractVector{Float64}, nx::Float64, ny::Float64,
+                                    qe::AbstractMatrix{Float64}, ::PERT)
+    @inbounds begin
+        u_ip = uaux[ip,2] + qe[ip,2]
+        v_ip = uaux[ip,3] + qe[ip,3]
+        qnl = nx*u_ip + ny*v_ip
+        qbdy[2] = u_ip - qnl*nx - qe[ip,2]
+        qbdy[3] = v_ip - qnl*ny - qe[ip,3]
+    end
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs)

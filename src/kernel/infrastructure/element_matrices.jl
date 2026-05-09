@@ -131,7 +131,7 @@ function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, nelem, Je, Δx,
         #Jac = Δx[iel]/2
         
         for i=1:N+1
-            Me[i,iel] += Je[iel,i]*ω[i]
+            Me[i,iel] += Je[i, iel]*ω[i]
         end
     end
 end
@@ -146,7 +146,7 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, nelem, Je, Δx,
             for k = 1:Q+1
                 
                 ωkl  = ω[k]*ω[l]
-                Jkle = Je[iel, k, l]
+                Jkle = Je[k, l, iel]
                 ωJ   = ωkl*Jkle
                 
                 for j = 1:N+1
@@ -181,7 +181,7 @@ function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, nelem, Je, Δx,
                 for m = 1:Q+1
                     
                     ωmno  = ω[m]*ω[n]*ω[o]
-                    Jmnoe = Je[iel, m, n, o]
+                    Jmnoe = Je[m, n, o, iel]
                     ωJ    = ωmno*Jmnoe
 
                     for k = 1:N+1
@@ -217,7 +217,7 @@ end
     ie = @index(Group, Linear)
     i = @index(Local, Linear)
     
-    Me[i,ie] += Je[ie, i, 1] * ω[i]
+    Me[i,ie] += Je[i, ie] * ω[i]
 end
 
 @kernel function build_mass_matrix_2d_gpu!(Me, ψ, ω, Je, N, Q)
@@ -229,7 +229,7 @@ end
     for l=1:Q+1
         for k=1:Q+1
             ωkl = ω[k]*ω[l]
-            Jkle = Je[ie,k,l]
+            Jkle = Je[k, l, ie]
             ψJK = ψ[i_x,k]*ψ[i_y,l]
             for n=1:N+1
                 for m=1:N+1
@@ -253,7 +253,7 @@ end
         for n=1:Q+1
             for m=1:Q+1 
                 ωmno = ω[m]*ω[n]*ω[o]
-                Jmnoe = Je[ie,m,n,o]
+                Jmnoe = Je[m, n, o, ie]
                 ψJK = ψ[i_x,m]*ψ[i_y,n]*ψ[i_z,o]
                 for r=1:N+1
                     for q=1:N+1
@@ -392,9 +392,9 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, 
 
         # ── Step 1: Weighted contravariant metric at each quadrature point  O(N²) ──
         @inbounds for l = 1:Np1, k = 1:Np1
-            wJ  = ω[k] * ω[l] * metrics.Je[iel,k,l]
-            ξx  = metrics.dξdx[iel,k,l];  ξy = metrics.dξdy[iel,k,l]
-            ηx  = metrics.dηdx[iel,k,l];  ηy = metrics.dηdy[iel,k,l]
+            wJ  = ω[k] * ω[l] * metrics.Je[k, l, iel]
+            ξx  = metrics.dξdx[k, l, iel];  ξy = metrics.dξdy[k, l, iel]
+            ηx  = metrics.dηdx[k, l, iel];  ηy = metrics.dηdy[k, l, iel]
             G11[k,l] = wJ * (ξx*ξx + ξy*ξy)
             G12[k,l] = wJ * (ξx*ηx + ξy*ηy)
             G22[k,l] = wJ * (ηx*ηx + ηy*ηy)
@@ -797,9 +797,9 @@ function assemble_and_DSS_laplace!(L::AbstractMatrix{T},
 
         # ── Step 1: Weighted contravariant metric tensors  O(N²) ──────────────
         @inbounds for l = 1:Np1, k = 1:Np1
-            wJ        = ω[k] * ω[l] * metrics.Je[iel, k, l]
-            ξx, ξy    = metrics.dξdx[iel,k,l], metrics.dξdy[iel,k,l]
-            ηx, ηy    = metrics.dηdx[iel,k,l], metrics.dηdy[iel,k,l]
+            wJ        = ω[k] * ω[l] * metrics.Je[k, l, iel]
+            ξx, ξy    = metrics.dξdx[k, l, iel], metrics.dξdy[k, l, iel]
+            ηx, ηy    = metrics.dηdx[k, l, iel], metrics.dηdy[k, l, iel]
             G11[k,l]  = wJ * (ξx*ξx + ξy*ξy)
             G12[k,l]  = wJ * (ξx*ηx + ξy*ηy)
             G22[k,l]  = wJ * (ηx*ηx + ηy*ηy)
@@ -1020,13 +1020,13 @@ end
     ip = connijk[ie, i, j]
     for k=1:nx
         jp = connijk[ie, k, j]
-        KernelAbstractions.@atomic L[ip, jp] += dξdx[ie, i, k] * Lel[i, k] * dydη[ie, i, k] * ωx[j]
-    end 
-    
+        KernelAbstractions.@atomic L[ip, jp] += dξdx[i, k, ie] * Lel[i, k] * dydη[i, k, ie] * ωx[j]
+    end
+
     for l=1:ny
         jp = connijk[ie,i,l]
-        KernelAbstractions.@atomic L[ip, jp] += dηdy[ie, i, l] * Lel[j, l]*dxdξ[ie, i, l] * ωy[i]
-    end 
+        KernelAbstractions.@atomic L[ip, jp] += dηdy[i, l, ie] * Lel[j, l]*dxdξ[i, l, ie] * ωy[i]
+    end
 end
 
 @kernel function DSS_laplace_gpu_lag!(L, Lel, connijk, ωx, ωy, nx, ny, dηdx_lag, dydη, dηdy, dxdη_lag)

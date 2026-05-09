@@ -243,13 +243,13 @@ function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
     # ∇f = [∂f∂x]
     #
     for i=1:ngl
-        ωJac = ω[i]*Je[iel,i]
+        ωJac = ω[i]*Je[i, iel]
         
         dfdξ = 0.0
         @turbo for k = 1:ngl
             dfdξ += dψ[k,i]*f[k]
         end
-        dξdx_i = dξdx[iel,i]
+        dξdx_i = dξdx[i, iel]
         
         ∇f_el[iel,i] = ωJac*dfdξ*dξdx_i
         
@@ -264,7 +264,7 @@ function _∇fnew!(∇f_el, f, ngl, dψ, ω, Je,
     #
     # ∇f = [∂f∂x, ∂f/∂y]
     #
-    ωJac = ω[i]*ω[j]*Je[iel,i,j]
+    ωJac = ω[i]*ω[j]*Je[i, j, iel]
     
     dfdξ = 0.0
     dfdη = 0.0
@@ -272,10 +272,10 @@ function _∇fnew!(∇f_el, f, ngl, dψ, ω, Je,
         dfdξ += dψ[k,i]*f[k,j]
         dfdη += dψ[k,j]*f[i,k]
     end
-    dξdx_ij = dξdx[iel,i,j]
-    dξdy_ij = dξdy[iel,i,j]
-    dηdx_ij = dηdx[iel,i,j]
-    dηdy_ij = dηdy[iel,i,j]
+    dξdx_ij = dξdx[i, j, iel]
+    dξdy_ij = dξdy[i, j, iel]
+    dηdx_ij = dηdx[i, j, iel]
+    dηdy_ij = dηdy[i, j, iel]
     
     ∇f_el[iel,i,j,1] = ωJac*(dfdξ*dξdx_ij + dfdη*dηdx_ij)
     ∇f_el[iel,i,j,2] = ωJac*(dfdξ*dξdy_ij + dfdη*dηdy_ij)
@@ -294,7 +294,7 @@ function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
     #
     for j=1:ngl
         for i=1:ngl
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
+            ωJac = ω[i]*ω[j]*Je[i, j, iel]
             
             dfdξ = 0.0
             dfdη = 0.0
@@ -302,10 +302,10 @@ function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
                 dfdξ += dψ[k,i]*f[k,j]
                 dfdη += dψ[k,j]*f[i,k]
             end
-            dξdx_ij = dξdx[iel,i,j]
-            dξdy_ij = dξdy[iel,i,j]
-            dηdx_ij = dηdx[iel,i,j]
-            dηdy_ij = dηdy[iel,i,j]
+            dξdx_ij = dξdx[i, j, iel]
+            dξdy_ij = dξdy[i, j, iel]
+            dηdx_ij = dηdx[i, j, iel]
+            dηdy_ij = dηdy[i, j, iel]
             
             ∇f_el[iel,i,j,1] = ωJac*(dfdξ*dξdx_ij + dfdη*dηdx_ij)
             ∇f_el[iel,i,j,2] = ωJac*(dfdξ*dξdy_ij + dfdη*dηdy_ij)
@@ -326,7 +326,7 @@ function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
     for k=1:ngl
         for j=1:ngl
             for i=1:ngl
-                ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                ωJac = ω[i]*ω[j]*ω[k]*Je[i, j, k, iel]
                 
                 dfdξ = 0.0
                 dfdη = 0.0
@@ -336,17 +336,17 @@ function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
                     dfdη += dψ[m,j]*f[i,m,k]
                     dfdζ += dψ[m,k]*f[i,j,m]
                 end
-                dξdx_ijk = dξdx[iel,i,j,k]
-                dξdy_ijk = dξdy[iel,i,j,k]
-                dξdz_ijk = dξdz[iel,i,j,k]
+                dξdx_ijk = dξdx[i, j, k, iel]
+                dξdy_ijk = dξdy[i, j, k, iel]
+                dξdz_ijk = dξdz[i, j, k, iel]
                 
-                dηdx_ijk = dηdx[iel,i,j,k]
-                dηdy_ijk = dηdy[iel,i,j,k]
-                dηdz_ijk = dηdz[iel,i,j,k]
+                dηdx_ijk = dηdx[i, j, k, iel]
+                dηdy_ijk = dηdy[i, j, k, iel]
+                dηdz_ijk = dηdz[i, j, k, iel]
 
-                dζdx_ijk = dζdx[iel,i,j,k]
-                dζdy_ijk = dζdy[iel,i,j,k]
-                dζdz_ijk = dζdz[iel,i,j,k]
+                dζdx_ijk = dζdx[i, j, k, iel]
+                dζdy_ijk = dζdy[i, j, k, iel]
+                dζdz_ijk = dζdz[i, j, k, iel]
                 
                 ∇f_el[iel,i,j,k,1]   = ωJac*(dfdξ*dξdx_ijk + dfdη*dηdx_ijk + dfdζ*dζdx_ijk)
                 ∇f_el[iel,i,j,k,2]   = ωJac*(dfdξ*dξdy_ijk + dfdη*dηdy_ijk + dfdζ*dζdy_ijk)

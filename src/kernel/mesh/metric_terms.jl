@@ -68,13 +68,13 @@ end
 function allocate_metrics(SD, nelem, nfaces_bdy, Q, T, backend)
 
     if SD == NSD_1D()
-        dims1 = (nelem,      Q+1, 1, 1)
+        dims1 = (Q+1, nelem)
         dims2 = (nfaces_bdy, 1)
     elseif SD == NSD_2D()
-        dims1 = (nelem,      Q+1, Q+1, 1)
+        dims1 = (Q+1, Q+1, nelem)
         dims2 = (nfaces_bdy, Q+1, 1)
     elseif SD == NSD_3D()
-        dims1 = (nelem,      Q+1, Q+1, Q+1)
+        dims1 = (Q+1, Q+1, Q+1, nelem)
         dims2 = (nfaces_bdy, Q+1, Q+1)
     end
 
@@ -112,9 +112,9 @@ end
     il = @index(Local, Linear)
     T = eltype(x)
     for k=1:Q+1
-        dxdξ[ie, k, 1] = Δx[ie]/2
-        Je[ie, k, 1] = dxdξ[ie, k, 1]
-        dξdx[ie, k, 1] = T(1.0)/Je[ie, k, 1]
+        dxdξ[k, ie] = Δx[ie]/2
+        Je[k, ie] = dxdξ[k, ie]
+        dξdx[k, ie] = T(1.0)/Je[k, ie]
     end
 
 end
@@ -176,9 +176,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         @inbounds for iel = 1:mesh.nelem  # PERF: Added @inbounds
             for i = 1:N+1
                 for k = 1:Q+1
-                    metrics.dxdξ[iel, k, 1]  = mesh.Δx[iel]/2
-                    metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
-                    metrics.dξdx[iel, k, 1] = T(1.0)/metrics.Je[iel, k, 1]  # FIXED: use type parameter T
+                    metrics.dxdξ[k, iel]  = mesh.Δx[iel]/2
+                    metrics.Je[k, iel]   = metrics.dxdξ[k, iel]
+                    metrics.dξdx[k, iel] = T(1.0)/metrics.Je[k, iel]  # FIXED: use type parameter T
                 end
             end
         end
@@ -208,10 +208,10 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
 
         @inbounds for iel = 1:mesh.nelem
             # Cache views to avoid repeated indexing overhead
-            dxdξ_iel = @view metrics.dxdξ[iel, :, :]
-            dxdη_iel = @view metrics.dxdη[iel, :, :]
-            dydξ_iel = @view metrics.dydξ[iel, :, :]
-            dydη_iel = @view metrics.dydη[iel, :, :]
+            dxdξ_iel = @view metrics.dxdξ[:, :, iel]
+            dxdη_iel = @view metrics.dxdη[:, :, iel]
+            dydξ_iel = @view metrics.dydξ[:, :, iel]
+            dydη_iel = @view metrics.dydη[:, :, iel]
             connijk_iel = @view mesh.connijk[iel, :, :]
 
             for j = 1:N+1
@@ -237,11 +237,11 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
 
             # Second loop with cached views and optimized calculations
-            Je_iel = @view metrics.Je[iel, :, :]
-            dξdx_iel = @view metrics.dξdx[iel, :, :]
-            dξdy_iel = @view metrics.dξdy[iel, :, :]
-            dηdx_iel = @view metrics.dηdx[iel, :, :]
-            dηdy_iel = @view metrics.dηdy[iel, :, :]
+            Je_iel = @view metrics.Je[:, :, iel]
+            dξdx_iel = @view metrics.dξdx[:, :, iel]
+            dξdy_iel = @view metrics.dξdy[:, :, iel]
+            dηdx_iel = @view metrics.dηdx[:, :, iel]
+            dηdy_iel = @view metrics.dηdy[:, :, iel]
 
             @turbo for l = 1:Q+1
                 for k = 1:Q+1
@@ -365,15 +365,15 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
 
             # Cache all metric views for current element
-            dxdξ_iel = @view metrics.dxdξ[iel, :, :, :]
-            dxdη_iel = @view metrics.dxdη[iel, :, :, :]
-            dxdζ_iel = @view metrics.dxdζ[iel, :, :, :]
-            dydξ_iel = @view metrics.dydξ[iel, :, :, :]
-            dydη_iel = @view metrics.dydη[iel, :, :, :]
-            dydζ_iel = @view metrics.dydζ[iel, :, :, :]
-            dzdξ_iel = @view metrics.dzdξ[iel, :, :, :]
-            dzdη_iel = @view metrics.dzdη[iel, :, :, :]
-            dzdζ_iel = @view metrics.dzdζ[iel, :, :, :]
+            dxdξ_iel = @view metrics.dxdξ[:, :, :, iel]
+            dxdη_iel = @view metrics.dxdη[:, :, :, iel]
+            dxdζ_iel = @view metrics.dxdζ[:, :, :, iel]
+            dydξ_iel = @view metrics.dydξ[:, :, :, iel]
+            dydη_iel = @view metrics.dydη[:, :, :, iel]
+            dydζ_iel = @view metrics.dydζ[:, :, :, iel]
+            dzdξ_iel = @view metrics.dzdξ[:, :, :, iel]
+            dzdη_iel = @view metrics.dzdη[:, :, :, iel]
+            dzdζ_iel = @view metrics.dzdζ[:, :, :, iel]
 
             # Optimized triple loop with better memory access
             coord_idx = 1
@@ -422,16 +422,16 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
 
             # Optimized Jacobian calculations with better memory access
-            Je_iel   = @view metrics.Je[iel, :, :, :]
-            dξdx_iel = @view metrics.dξdx[iel, :, :, :]
-            dξdy_iel = @view metrics.dξdy[iel, :, :, :]
-            dξdz_iel = @view metrics.dξdz[iel, :, :, :]
-            dηdx_iel = @view metrics.dηdx[iel, :, :, :]
-            dηdy_iel = @view metrics.dηdy[iel, :, :, :]
-            dηdz_iel = @view metrics.dηdz[iel, :, :, :]
-            dζdx_iel = @view metrics.dζdx[iel, :, :, :]
-            dζdy_iel = @view metrics.dζdy[iel, :, :, :]
-            dζdz_iel = @view metrics.dζdz[iel, :, :, :]
+            Je_iel   = @view metrics.Je[:, :, :, iel]
+            dξdx_iel = @view metrics.dξdx[:, :, :, iel]
+            dξdy_iel = @view metrics.dξdy[:, :, :, iel]
+            dξdz_iel = @view metrics.dξdz[:, :, :, iel]
+            dηdx_iel = @view metrics.dηdx[:, :, :, iel]
+            dηdy_iel = @view metrics.dηdy[:, :, :, iel]
+            dηdz_iel = @view metrics.dηdz[:, :, :, iel]
+            dζdx_iel = @view metrics.dζdx[:, :, :, iel]
+            dζdy_iel = @view metrics.dζdy[:, :, :, iel]
+            dζdz_iel = @view metrics.dζdz[:, :, :, iel]
 
             @turbo for n = 1:Q1, m = 1:Q1, l = 1:Q1
                 # Load derivatives once with better naming
@@ -653,11 +653,11 @@ end
     yij = y[ip]
     for l=1:Q+1
         for k=1:Q+1
-            KernelAbstractions.@atomic dxdξ[ie, k, l] += dψ[i_x,k]*ψ[i_y,l] * xij
-            KernelAbstractions.@atomic dxdη[ie, k, l] += ψ[i_x,k]*dψ[i_y,l] * xij
+            KernelAbstractions.@atomic dxdξ[k, l, ie] += dψ[i_x,k]*ψ[i_y,l] * xij
+            KernelAbstractions.@atomic dxdη[k, l, ie] += ψ[i_x,k]*dψ[i_y,l] * xij
 
-            KernelAbstractions.@atomic dydξ[ie, k, l] += dψ[i_x,k]*ψ[i_y,l] * yij
-            KernelAbstractions.@atomic dydη[ie, k, l] += ψ[i_x,k]*dψ[i_y,l] * yij
+            KernelAbstractions.@atomic dydξ[k, l, ie] += dψ[i_x,k]*ψ[i_y,l] * yij
+            KernelAbstractions.@atomic dydη[k, l, ie] += ψ[i_x,k]*dψ[i_y,l] * yij
         end
     end
 end
@@ -677,17 +677,17 @@ end
     for m=1:Q+1
         for l=1:Q+1
             for k=1:Q+1
-                KernelAbstractions.@atomic dxdξ[ie, k, l, m] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * xijk
-                KernelAbstractions.@atomic dxdη[ie, k, l, m] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * xijk
-                KernelAbstractions.@atomic dxdζ[ie, k, l, m] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * xijk
+                KernelAbstractions.@atomic dxdξ[k, l, m, ie] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * xijk
+                KernelAbstractions.@atomic dxdη[k, l, m, ie] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * xijk
+                KernelAbstractions.@atomic dxdζ[k, l, m, ie] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * xijk
 
-                KernelAbstractions.@atomic dydξ[ie, k, l, m] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * yijk
-                KernelAbstractions.@atomic dydη[ie, k, l, m] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * yijk
-                KernelAbstractions.@atomic dydζ[ie, k, l, m] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * yijk
+                KernelAbstractions.@atomic dydξ[k, l, m, ie] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * yijk
+                KernelAbstractions.@atomic dydη[k, l, m, ie] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * yijk
+                KernelAbstractions.@atomic dydζ[k, l, m, ie] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * yijk
 
-                KernelAbstractions.@atomic dzdξ[ie, k, l, m] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * zijk
-                KernelAbstractions.@atomic dzdη[ie, k, l, m] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * zijk
-                KernelAbstractions.@atomic dzdζ[ie, k, l, m] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * zijk
+                KernelAbstractions.@atomic dzdξ[k, l, m, ie] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * zijk
+                KernelAbstractions.@atomic dzdη[k, l, m, ie] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * zijk
+                KernelAbstractions.@atomic dzdζ[k, l, m, ie] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * zijk
             end
         end
     end
