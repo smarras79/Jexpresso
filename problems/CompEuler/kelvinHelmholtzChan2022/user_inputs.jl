@@ -4,15 +4,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-	:ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+	:ode_solver           => CarpenterKennedy2N54(),
         :Δt                   => 1.0e-2,
         :tinit                => 0.0,
         :tend                 => 3.0,
         :diagnostics_at_times => (0.0:1.0:3.0),
         :restart_time         => 0.0,
         :lrestart             => false,
-        :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
-        :case                 => "rtb",
+        #:case                 => "rtb",
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(), #THETA(),
         :use_named_tuples     => true, # Converts inputs to named tuples
