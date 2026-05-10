@@ -52,7 +52,7 @@ absorption component returned from `atmos_to_rad_longwave`, not the sum
 function user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
 
     σ_SB  = 5.670374419e-8   # W m⁻² K⁻⁴
-    T     = atmos_data.t_lev[ip]
+    T     = atmos_data.t_lay[ip]
     κ_abs = κ[ip]
 
     # Gray Planck radiance (W m⁻² sr⁻¹)
@@ -113,7 +113,7 @@ function user_rad_bc_longwave(x, y, z, θ, ϕ, nx_n, ny_n, nz_n,
     else
         # Lateral face — periodic in x,y so this should rarely be reached,
         # but emit as a blackbody wall for robustness
-        T_wall = atmos_data.t_lev[ip]
+        T_wall = atmos_data.t_lay[ip]
         return σ_SB * T_wall^4 / π
     end
 end

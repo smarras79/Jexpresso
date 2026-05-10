@@ -33,28 +33,29 @@ function read_atmospheric_data(filename::String)
         vmr_o3 = Array(ds["vmr_o3"])
         lwp = Array(ds["lwp"])  # liquid water path (kg/m²)
         iwp = Array(ds["iwp"])  # ice water path (kg/m²)
+
+        # --- Filter 1: Remove upper-level numerical noise ---
+        # Real cloud LWP >> 1e-4 kg/m², upper level noise is ~1e-5 to 5e-5
+        lwp[lwp .< 1e-4] .= 0.0
+        iwp[iwp .< 1e-4] .= 0.0
+
+        # --- Filter 2: Remove sub-cloud boundary layer condensate ---
+        # Focus on convective clouds above LCL (~1500m for RICO)
+        # z_lay is (128,) — find indices below cutoff
+        z_cutoff = 1500.0  # metres
+        for k in 1:length(z)
+            if z[k] < z_cutoff
+                lwp[:,:,k] .= 0.0
+                iwp[:,:,k] .= 0.0
+            end
+        end
+
         # Calculate moist air density
         rho = calculate_moist_density(p_lay, t_lay, vmr_h2o)
         
         # Calculate mixing ratios from water paths
-        q_liq, q_ice = lwp, iwp#calculate_mixing_ratios(lwp, iwp, p_lay, t_lay, vmr_h2o, z)
-        nx, ny, nz = size(p_lay)
-        for i=1:nx
-            for j=1:ny
-                for k=1:nz
-                    if (q_liq[i,j,k] < 1e-5)
-                        q_liq[i,j,k] =0.0
-                    end
-                    if (q_ice[i,j,k] < 1e-5)
-                        q_ice[i,j,k] =0.0
-                    end
-                    if z[k] < 400
-                        q_liq[i,j,k] =0.0
-                        q_ice[i,j,k] =0.0
-                    end
-                end
-            end
-        end
+        q_liq, q_ice = calculate_mixing_ratios(lwp, iwp, p_lay, t_lay, vmr_h2o, z)
+       
         # Verify dimensions
         nx, ny, nz = length(x), length(y), length(z)
         
@@ -259,7 +260,7 @@ function interpolate_atmosphere_to_mesh(data, mesh)
         )
     end
     
-    return (
+    atmos_data = (
         t_lay = t_lay_interp,
         p_lay = p_lay_interp,
         t_lev = t_lev_interp,
@@ -270,6 +271,8 @@ function interpolate_atmosphere_to_mesh(data, mesh)
         q_ice = q_ice_interp,
         rho = rho_interp
     )
+    diagnose_cloud_distribution(data, atmos_data, mesh)
+    return atmos_data
 end
 
 """
@@ -395,3 +398,69 @@ end
 # println("Interpolated temperature at point 1: $(mesh_data.t_lay[1])")
 # println("Interpolated temperature at point 3: $(mesh_data.t_lay[3])")
 
+function diagnose_cloud_distribution(data, atmos_mesh, mesh)
+    
+    # On the SOURCE NetCDF data - where is cloud?
+    println("\n=== NetCDF source data cloud statistics ===")
+    println("Total columns: $(size(data.q_liq, 1) * size(data.q_liq, 2))")
+    
+    cloudy_cols = 0
+    z_cloud_all = Float64[]
+    
+    nx, ny, nz = size(data.q_liq)
+    for i in 1:nx, j in 1:ny
+        col = data.q_liq[i,j,:]
+        if maximum(col) > 1e-5
+            cloudy_cols += 1
+            for k in 1:nz
+                if col[k] > 1e-6
+                    push!(z_cloud_all, data.z[k])
+                end
+            end
+        end
+    end
+    
+    println("Cloudy columns in NetCDF: $cloudy_cols")
+    if !isempty(z_cloud_all)
+        println("Cloud z range in NetCDF: $(extrema(z_cloud_all)) m")
+        println("Cloud z mean in NetCDF:  $(sum(z_cloud_all)/length(z_cloud_all)) m")
+        
+        # Histogram by 500m bins
+        println("\nCloud occurrence by altitude (NetCDF):")
+        for z_lo in 0:500:maximum(z_cloud_all)
+            count = sum(z_lo .<= z_cloud_all .< z_lo+500)
+            count > 0 && println("  $(z_lo)–$(z_lo+500)m : $count points")
+        end
+    end
+
+    # On the INTERPOLATED mesh data - where is cloud?
+    println("\n=== Interpolated mesh cloud statistics ===")
+    cloud_pts = findall(x -> x > 1e-5, atmos_mesh.q_liq)
+    println("Total mesh points: $(length(atmos_mesh.q_liq))")
+    println("Cloudy mesh points: $(length(cloud_pts))")
+    
+    if !isempty(cloud_pts)
+        z_mesh_cloud = mesh.z[cloud_pts]
+        println("Cloud z range on mesh: $(extrema(z_mesh_cloud)) m")
+        println("Cloud z mean on mesh:  $(sum(z_mesh_cloud)/length(z_mesh_cloud)) m")
+        
+        println("\nCloud occurrence by altitude (mesh):")
+        for z_lo in 0:500:maximum(z_mesh_cloud)
+            count = sum(z_lo .<= z_mesh_cloud .< z_lo+500)
+            count > 0 && println("  $(z_lo)–$(z_lo+500)m : $count points")
+        end
+        
+        # Check if two-peak structure is domain-wide or isolated
+        low_cloud  = sum(z_mesh_cloud .< 1500)
+        high_cloud = sum(1500 .<= z_mesh_cloud .< 3500)
+        println("\nLow cloud points  (z < 1500m):      $low_cloud")
+        println("Cumulus points    (1500m < z < 3500m): $high_cloud")
+        println("Ratio high/low: $(round(high_cloud/max(low_cloud,1), digits=2))")
+    end
+    
+    # Cross-check: do the same columns have cloud in both source and mesh?
+    println("\n=== Max q_liq extrema ===")
+    println("NetCDF max q_liq: $(maximum(data.q_liq))")
+    println("Mesh   max q_liq: $(maximum(atmos_mesh.q_liq))")
+    println("Ratio mesh/NetCDF: $(maximum(atmos_mesh.q_liq)/maximum(data.q_liq))")
+end

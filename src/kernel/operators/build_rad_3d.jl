@@ -1562,9 +1562,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             row = rows_A[ptr]
             row in boundary_set && continue  # skip BC-BC interactions
             row > n_free && continue
-            if(gip2owner_extra[row] == rank)
+            #if(gip2owner_extra[row] == rank)
                 B[row] -= vals_A[ptr] * val
-            end
+            #end
             vals_A[ptr] = 0.0
         end
     end
@@ -1895,6 +1895,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
     if (inputs[:lmanufactured_solution])
+        @info "local errors", rank, sqrt(L2_err), sqrt(L2_ref), sqrt(L2_err / L2_ref) 
         @rankinfo rank @sprintf("L2 error: ‖e‖ = %.6e  ‖u‖ = %.6e  relative = %.6e",
         sqrt(L2_err_g), sqrt(L2_ref_g), sqrt(L2_err_g / L2_ref_g))
     end
