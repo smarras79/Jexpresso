@@ -14,7 +14,7 @@ function user_inputs()
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => false,
-        :SOL_VARS_TYPE        => THETA(),
+        :SOL_VARS_TYPE        => TOTAL(), #THETA(),
         :use_named_tuples     => true, # Converts inputs to named tuples
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -32,11 +32,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
-        #:lkep        => true,
+        :lkep        => true,
 	:entropy_variables => false,
-        #:volume_flux => kennedy_gruber(),
+        :volume_flux => kennedy_gruber(),
         #:volume_flux => artiano_tec(),
-        :volume_flux => central_theta(),
+        #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
