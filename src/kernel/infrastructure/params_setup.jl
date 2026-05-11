@@ -313,8 +313,10 @@ function params_setup(sem,
         visc_coeff = [0.0]
     end
 
-    # setup timer
-    timers = Dict{String, MPIFunctionTimer}()
+    # setup timer.  Wrapped in TimerRegistry so SciMLBase doesn't descend
+    # into the underlying Dict when introspecting ODEProblem.p and emit the
+    # "arrays or dicts to store parameters of different types" warning.
+    timers = TimerRegistry()
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
