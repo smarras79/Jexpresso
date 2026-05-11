@@ -9,7 +9,29 @@ function time_loop!(inputs, params, u, args...)
     is_coupled = length(args) >= 2 ? args[2] : false
     coupling   = length(args) >= 3 ? args[3] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
-    
+
+    #------------------------------------------------------------------------
+    # Diagnostic: identify any AbstractDict-typed field inside params before
+    # SciMLBase introspects it.  Any such field will trigger the
+    # "Using arrays or dicts to store parameters of different types" warning
+    # from SciMLBase/performance_warnings.jl — print it so the offender is
+    # named, then leave the run untouched.  Set :diag_params_dicts => false
+    # in user_inputs to silence.  Rank 0 only.
+    #------------------------------------------------------------------------
+    if rank == 0 && get(inputs, :diag_params_dicts, true) == true
+        offenders = Tuple{Symbol, DataType}[]
+        for (k, v) in pairs(params)
+            v isa AbstractDict && push!(offenders, (k, typeof(v)))
+        end
+        if !isempty(offenders)
+            println(" # [params-dict-scan] AbstractDict fields in params (these trigger the SciMLBase perf warning):")
+            for (k, t) in offenders
+                println("     • params.$(k) :: $(t)")
+            end
+            flush(stdout)
+        end
+    end
+
     prob = ODEProblem(rhs!,
                       u,
                       params.tspan,
