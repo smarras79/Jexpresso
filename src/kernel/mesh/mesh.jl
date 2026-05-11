@@ -1,11 +1,8 @@
-using .JeGeometry
-
 #export St_mesh
 export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
-include("./meshStructs.jl")
 include("warping.jl")
 include("stretching.jl")
 
@@ -1293,6 +1290,30 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
    return extra_mesh
 end
 
+# Partition cells into nparts by x-y centroid bins, ignoring z.
+# Returns a 1-indexed cell_to_part vector of length num_cells(model).
+function _compute_xy_partition(model, nparts)
+    Ω  = Triangulation(model)
+    coords = get_cell_coordinates(Ω)
+    cx = [sum(p[1] for p in c) / length(c) for c in coords]
+    cy = [sum(p[2] for p in c) / length(c) for c in coords]
+
+    lx = maximum(cx) - minimum(cx) + 1e-10
+    ly = maximum(cy) - minimum(cy) + 1e-10
+
+    # Find (nx, ny) with nx*ny == nparts, aspect-ratio aware
+    divisors   = [d for d in 1:nparts if nparts % d == 0]
+    target_nx  = sqrt(nparts * lx / ly)
+    nx = divisors[argmin(abs.(divisors .- target_nx))]
+    ny = nparts ÷ nx
+
+    x_min, y_min = minimum(cx), minimum(cy)
+    xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
+    yi = clamp.(floor.(Int, (cy .- y_min) ./ ly .* ny), 0, ny - 1)
+
+    return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+end
+
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
 const Finalize = GridapP4est.Finalize
 const pXest_copy = GridapP4est.pXest_copy
@@ -1317,6 +1338,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     ladaptive       = inputs[:ladapt]
     linitial_refine = inputs[:linitial_refine]
     lamr_mesh       = !isnothing(adapt_flags)
+    lxy_partition   = inputs[:lxy_partition]
 
     # ── Early-exit cache check ────────────────────────────────────────────────
     # For plain non-adaptive runs the cache stores the entire mesh struct;
@@ -1334,62 +1356,52 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
-                end
+            partitioned_model = if lxy_partition
+                smodel = @outputrootonly GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                cell_to_part = _compute_xy_partition(smodel, nparts)
+                DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
             else
-                partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+                @outputrootonly GmshDiscreteModel(NoGhostParts(parts), NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
             end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
 
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-                    partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
-                end
-            else
-                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+            @outputrootonly begin
+                gmodel = GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
                 partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             end
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
             dmodel = local_views(partitioned_model).item_ref[]
             model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
-            
         elseif ladaptive == true && linitial_refine == false
 
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-                    partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
-                end
-            else
-                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+            @outputrootonly begin
+                gmodel = GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
-            
-            ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
-                flags = zeros(Cint,length(indices))
-                flags.= nothing_flag
-                # @info flags
-                # flags[1] = refine_flag
-                # flags[1:4:end] .= refine_flag
-                # if rank == 2
-                #     flags[1] = refine_flag
-                # end
+            function set_id_refined(flags, indices, target_gid)
+                l2g = local_to_global(indices)
+                local_id = findfirst(==(target_gid), l2g)
+                # # local_ids = (2:2:200)
+                # # flags[local_ids] .= refine_flag
+                if local_id !== nothing
+                    flags[local_id] = refine_flag
+                end
+            end
+            ref_coarse_flags = map(parts, partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank, indices
+                flags = zeros(Cint, length(indices))
+                flags .= nothing_flag
+                # set_id_refined(flags, indices, 157)
+                # set_id_refined(flags, indices, 158)
+                # set_id_refined(flags, indices, 187)
+                # set_id_refined(flags, indices, 193)
+                # set_id_refined(flags, indices, 195)
+                # set_id_refined(flags, indices, 197)
+          
                 flags
             end
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
-                end
-            else
-                partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
+            @outputrootonly begin
+                partitioned_model, glue_adapt = Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
             end
             # partitioned_model, glue_redistribute = redistribute(partitioned_model)
             # glue_adapt = get_adaptivity_glue(partitioned_model.dmodel)
@@ -1404,12 +1416,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         end
     else
         if (omesh.lneed_redistribute)
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
-                end
-            else
+            @outputrootonly begin
                 partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
             end
         else
@@ -1434,13 +1441,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                                             partitioned_model_coarse.pXest_refinement_rule_type,
                                             partitioned_model_coarse.owns_ptr_pXest_connectivity,
                                             partitioned_model_coarse.gc_ref)
-            if rank != 0
-                # Redirect stdout to /dev/null on non-zero ranks
-                redirect_stdout(open("/dev/null", "w")) do
-                    partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
-                end
-            else
-                partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
+            @outputrootonly begin
+                partitioned_model, glue_adapt = Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
             end
             cmodel = local_views(discrete_partitioned_model_coarse.dmodel.models).item_ref[]
             cell_gids_c = local_views(partition(get_cell_gids(discrete_partitioned_model_coarse))).item_ref[]
