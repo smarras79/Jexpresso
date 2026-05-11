@@ -14,9 +14,16 @@ using JLD2
 # ───────────────────────────────────────────────────────────────────────────
 function _mesh_cache_path(inputs::Dict, nparts::Int)
     rank   = MPI.Comm_rank(get_mpi_comm())
-    dir    = let d = dirname(inputs[:gmsh_filename]); isempty(d) ? "." : d end
+    gmsh   = inputs[:gmsh_filename]
+    dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
+    # Include the gmsh-file stem so caches from different mesh files (e.g. a
+    # 2D thetaAlya mesh and a 3D CompEuler/3d mesh in the same dir) don't
+    # collide.  Without the stem a stale 2D cache silently overrides mesh.nsd
+    # when a 3D mesh is loaded at the same :nop, dispatching the initialize
+    # method on NSD_2D() instead of NSD_3D().
+    stem   = splitext(basename(gmsh))[1]
     suffix = nparts > 1 ? "_rank$(rank)" : ""
-    return joinpath(dir, "MESH_nop$(inputs[:nop])$(suffix).jld2")
+    return joinpath(dir, "MESH_$(stem)_nop$(inputs[:nop])$(suffix).jld2")
 end
 
 function _preprocess_cache_path(inputs::Dict, Nξ::Int, Qξ::Int, nparts::Int)
