@@ -3,7 +3,7 @@ using ONNXRunTime
 
 function driver(nparts,
                 distribute,
-                inputs::Dict,
+                inputs,
                 OUTPUT_DIR::String,
                 TFloat;
                 world      = nothing,
@@ -44,9 +44,17 @@ function driver(nparts,
             if rank == 0 println(BLUE_FG(string(" # JIT pre-compilation of large problem ..."))) end
 
             input_mesh = inputs[:gmsh_filename]
-            inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
-            sem_dummy = sem_setup(inputs, nparts, distribute)
-            inputs[:gmsh_filename] = input_mesh
+            # inputs may be a Dict (mutable) or a NamedTuple (immutable, when
+            # :use_named_tuples => true).  Swap the mesh field via the
+            # container's idiomatic update path.
+            if inputs isa NamedTuple
+                inputs_warm = (; inputs..., gmsh_filename = inputs[:gmsh_filename_c])
+                sem_dummy   = sem_setup(inputs_warm, nparts, distribute)
+            else
+                inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
+                sem_dummy = sem_setup(inputs, nparts, distribute)
+                inputs[:gmsh_filename] = input_mesh
+            end
             sem_dummy = nothing
 
             if rank == 0 println(BLUE_FG(string(" # JIT pre-compilation of large problem ... DONE"))) end

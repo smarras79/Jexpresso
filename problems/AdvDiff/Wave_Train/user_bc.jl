@@ -46,7 +46,7 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,qbdy::Abstr
     end
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, inputs)
     
     flux = zeros(size(q,2),1)
     return flux
