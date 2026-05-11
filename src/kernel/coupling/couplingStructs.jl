@@ -104,6 +104,25 @@ struct ElemBins
     bins::Vector{Vector{Int}}
 end
 
+# 3D analogue of ElemBins.  Bins are stored in a flat vector indexed by
+# ix + iy*nx + iz*nx*ny + 1.  Used by the coupling SEM-interpolation pipeline
+# when ndime == 3.
+struct ElemBins3D
+    xmin::Float64
+    xmax::Float64
+    ymin::Float64
+    ymax::Float64
+    zmin::Float64
+    zmax::Float64
+    nx::Int
+    ny::Int
+    nz::Int
+    dx::Float64
+    dy::Float64
+    dz::Float64
+    bins::Vector{Vector{Int}}
+end
+
 mutable struct CouplingData
     npoin_recv::Vector{Int32}
     npoin_send::Vector{Int32}
@@ -133,11 +152,13 @@ mutable struct CouplingData
     alya_local_ids::Union{Nothing, Vector{Int32}}
     alya_owner_ranks::Union{Nothing, Vector{Int32}}
 
-    elem_bboxes::Union{Nothing, Vector{NTuple{4,Float64}}}
-    interp_bins::Union{Nothing, ElemBins}
+    # 2D bboxes are NTuple{4,Float64}; 3D bboxes are NTuple{6,Float64}.
+    elem_bboxes::Union{Nothing, Vector{NTuple{4,Float64}}, Vector{NTuple{6,Float64}}}
+    interp_bins::Union{Nothing, ElemBins, ElemBins3D}
     elem_conn::Union{Nothing, Matrix{Int}}
     elem_x::Union{Nothing, Matrix{Float64}}
     elem_y::Union{Nothing, Matrix{Float64}}
+    elem_z::Union{Nothing, Matrix{Float64}}
     ξ_nodes_ref::Union{Nothing, Vector{Float64}}
     ω_bary::Union{Nothing, Vector{Float64}}
 
@@ -146,11 +167,14 @@ mutable struct CouplingData
 
     ψξ_scratch::Union{Nothing, Vector{Float64}}
     ψη_scratch::Union{Nothing, Vector{Float64}}
+    ψζ_scratch::Union{Nothing, Vector{Float64}}
     dψξ_scratch::Union{Nothing, Vector{Float64}}
     dψη_scratch::Union{Nothing, Vector{Float64}}
+    dψζ_scratch::Union{Nothing, Vector{Float64}}
     α_scratch::Union{Nothing, Vector{Float64}}
     x_e_scratch::Union{Nothing, Vector{Float64}}
     y_e_scratch::Union{Nothing, Vector{Float64}}
+    z_e_scratch::Union{Nothing, Vector{Float64}}
 
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
                           comm_world, lrank, neqs, ndime, send_coords=false)
@@ -158,10 +182,10 @@ mutable struct CouplingData
             comm_world, lrank, neqs, ndime, send_coords,
             nothing,
             nothing, nothing, nothing,
-            nothing, nothing, nothing, nothing, nothing, nothing, nothing,
+            nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
             nothing, nothing,
-            nothing, nothing, nothing, nothing, nothing,
-            nothing, nothing)
+            nothing, nothing, nothing, nothing, nothing, nothing, nothing,
+            nothing, nothing, nothing)
     end
 end
 
@@ -480,6 +504,49 @@ end
     return bins.bins[iy * bins.nx + ix + 1]
 end
 
+# 3D analogue of _build_elem_bins.
+function _build_elem_bins(elem_bboxes::Vector{NTuple{6,Float64}}; bins_per_dim::Int=64)
+    ne = length(elem_bboxes)
+    xmin = +Inf; xmax = -Inf
+    ymin = +Inf; ymax = -Inf
+    zmin = +Inf; zmax = -Inf
+    for (x0,x1,y0,y1,z0,z1) in elem_bboxes
+        xmin = min(xmin, x0); xmax = max(xmax, x1)
+        ymin = min(ymin, y0); ymax = max(ymax, y1)
+        zmin = min(zmin, z0); zmax = max(zmax, z1)
+    end
+    nx = max(1, bins_per_dim); ny = max(1, bins_per_dim); nz = max(1, bins_per_dim)
+    dx = (xmax > xmin) ? (xmax - xmin) / nx : 1.0
+    dy = (ymax > ymin) ? (ymax - ymin) / ny : 1.0
+    dz = (zmax > zmin) ? (zmax - zmin) / nz : 1.0
+    bin_lists = [Int[] for _ in 1:(nx*ny*nz)]
+    for e in 1:ne
+        (x0,x1,y0,y1,z0,z1) = elem_bboxes[e]
+        ix0 = clamp(Int(floor((x0 - xmin)/dx)), 0, nx-1)
+        ix1 = clamp(Int(floor((x1 - xmin)/dx)), 0, nx-1)
+        iy0 = clamp(Int(floor((y0 - ymin)/dy)), 0, ny-1)
+        iy1 = clamp(Int(floor((y1 - ymin)/dy)), 0, ny-1)
+        iz0 = clamp(Int(floor((z0 - zmin)/dz)), 0, nz-1)
+        iz1 = clamp(Int(floor((z1 - zmin)/dz)), 0, nz-1)
+        for iz in iz0:iz1, iy in iy0:iy1, ix in ix0:ix1
+            push!(bin_lists[(iz*ny + iy)*nx + ix + 1], e)
+        end
+    end
+    fallback = collect(1:ne)
+    for i in eachindex(bin_lists)
+        isempty(bin_lists[i]) && (bin_lists[i] = fallback)
+    end
+    return ElemBins3D(xmin, xmax, ymin, ymax, zmin, zmax,
+                      nx, ny, nz, dx, dy, dz, bin_lists)
+end
+
+@inline function _bin_candidates(bins::ElemBins3D, x::Float64, y::Float64, z::Float64)
+    ix = clamp(Int(floor((x - bins.xmin) / bins.dx)), 0, bins.nx - 1)
+    iy = clamp(Int(floor((y - bins.ymin) / bins.dy)), 0, bins.ny - 1)
+    iz = clamp(Int(floor((z - bins.zmin) / bins.dz)), 0, bins.nz - 1)
+    return bins.bins[(iz*bins.ny + iy)*bins.nx + ix + 1]
+end
+
 function evaluate_lagrange_1d!(ψ::Vector{Float64}, ξ::Float64,
                                 ξ_nodes::Vector{Float64}, ω::Vector{Float64})
     n = length(ξ_nodes)
@@ -559,6 +626,63 @@ end
     return ξ, η, false
 end
 
+@inline function physical_to_reference_3d(px::Float64, py::Float64, pz::Float64,
+                                           x_elem::AbstractVector,
+                                           y_elem::AbstractVector,
+                                           z_elem::AbstractVector,
+                                           ξ_nodes::Vector{Float64}, ω::Vector{Float64},
+                                           ngl::Int,
+                                           ψξ::Vector{Float64}, ψη::Vector{Float64}, ψζ::Vector{Float64},
+                                           dψξ::Vector{Float64}, dψη::Vector{Float64}, dψζ::Vector{Float64},
+                                           α::Vector{Float64})
+    ξ, η, ζ = 0.0, 0.0, 0.0
+    for _ in 1:20
+        evaluate_lagrange_1d!(ψξ, ξ, ξ_nodes, ω)
+        evaluate_lagrange_1d!(ψη, η, ξ_nodes, ω)
+        evaluate_lagrange_1d!(ψζ, ζ, ξ_nodes, ω)
+        evaluate_lagrange_1d_derivative!(dψξ, ξ, ξ_nodes, ω, α)
+        evaluate_lagrange_1d_derivative!(dψη, η, ξ_nodes, ω, α)
+        evaluate_lagrange_1d_derivative!(dψζ, ζ, ξ_nodes, ω, α)
+        x_c = y_c = z_c = 0.0
+        dxdξ = dxdη = dxdζ = 0.0
+        dydξ = dydη = dydζ = 0.0
+        dzdξ = dzdη = dzdζ = 0.0
+        idx = 1
+        @inbounds for k in 1:ngl, j in 1:ngl, i in 1:ngl
+            ψv  = ψξ[i]*ψη[j]*ψζ[k]
+            dξv = dψξ[i]*ψη[j]*ψζ[k]
+            dηv = ψξ[i]*dψη[j]*ψζ[k]
+            dζv = ψξ[i]*ψη[j]*dψζ[k]
+            x_c  += ψv *x_elem[idx]; y_c  += ψv *y_elem[idx]; z_c  += ψv *z_elem[idx]
+            dxdξ += dξv*x_elem[idx]; dxdη += dηv*x_elem[idx]; dxdζ += dζv*x_elem[idx]
+            dydξ += dξv*y_elem[idx]; dydη += dηv*y_elem[idx]; dydζ += dζv*y_elem[idx]
+            dzdξ += dξv*z_elem[idx]; dzdη += dηv*z_elem[idx]; dzdζ += dζv*z_elem[idx]
+            idx += 1
+        end
+        rx = px - x_c; ry = py - y_c; rz = pz - z_c
+        sqrt(rx*rx + ry*ry + rz*rz) < 1e-12 && return ξ, η, ζ, true
+        # 3×3 Jacobian determinant (rule of Sarrus).
+        det_J = dxdξ*(dydη*dzdζ - dydζ*dzdη) -
+                dxdη*(dydξ*dzdζ - dydζ*dzdξ) +
+                dxdζ*(dydξ*dzdη - dydη*dzdξ)
+        abs(det_J) < 1e-15 && return ξ, η, ζ, false
+        inv_d = 1.0 / det_J
+        # Inverse of the Jacobian times r — adjugate (cofactor transpose).
+        Δξ = inv_d * ( (dydη*dzdζ - dydζ*dzdη)*rx -
+                       (dxdη*dzdζ - dxdζ*dzdη)*ry +
+                       (dxdη*dydζ - dxdζ*dydη)*rz )
+        Δη = inv_d * (-(dydξ*dzdζ - dydζ*dzdξ)*rx +
+                       (dxdξ*dzdζ - dxdζ*dzdξ)*ry -
+                       (dxdξ*dydζ - dxdζ*dydξ)*rz )
+        Δζ = inv_d * ( (dydξ*dzdη - dydη*dzdξ)*rx -
+                       (dxdξ*dzdη - dxdη*dzdξ)*ry +
+                       (dxdξ*dydη - dxdη*dydξ)*rz )
+        ξ += Δξ; η += Δη; ζ += Δζ
+        (abs(ξ) > 10.0 || abs(η) > 10.0 || abs(ζ) > 10.0) && return ξ, η, ζ, false
+    end
+    return ξ, η, ζ, false
+end
+
 function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
                                               alya_coords::Matrix{Float64},
                                               u_mat::Matrix{Float64},
@@ -612,6 +736,77 @@ function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
             min_d2  = (mesh_x[1]-px)^2 + (mesh_y[1]-py)^2
             @inbounds for ip in 2:npoin
                 d2 = (mesh_x[ip]-px)^2 + (mesh_y[ip]-py)^2
+                if d2 < min_d2; min_d2 = d2; nearest = ip; end
+            end
+            @inbounds for q in 1:neqs; u_interp[ipt, q] = u_mat[nearest, q]; end
+        end
+    end
+end
+
+# 3D variant.  Same algorithm as the 2D version, with an extra reference
+# coordinate ζ and trilinear tensor-product Lagrange evaluation.
+function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
+                                              alya_coords::Matrix{Float64},
+                                              u_mat::Matrix{Float64},
+                                              ξ_nodes::Vector{Float64},
+                                              ω::Vector{Float64},
+                                              neqs::Int,
+                                              elem_bboxes::Vector{NTuple{6,Float64}},
+                                              bins::ElemBins3D,
+                                              elem_conn::Matrix{Int},
+                                              elem_x::Matrix{Float64},
+                                              elem_y::Matrix{Float64},
+                                              elem_z::Matrix{Float64},
+                                              ψξ::Vector{Float64}, ψη::Vector{Float64}, ψζ::Vector{Float64},
+                                              dψξ::Vector{Float64}, dψη::Vector{Float64}, dψζ::Vector{Float64},
+                                              α::Vector{Float64},
+                                              x_e::Vector{Float64}, y_e::Vector{Float64}, z_e::Vector{Float64},
+                                              mesh_x::Vector{Float64},
+                                              mesh_y::Vector{Float64},
+                                              mesh_z::Vector{Float64})
+    n_points = size(alya_coords, 1)
+    ngl      = length(ξ_nodes)
+    ngl3     = ngl * ngl * ngl
+    npoin    = size(u_mat, 1)
+
+    @inbounds for ipt in 1:n_points
+        px = alya_coords[ipt, 1]
+        py = alya_coords[ipt, 2]
+        pz = alya_coords[ipt, 3]
+        candidates = _bin_candidates(bins, px, py, pz)
+        found = false
+        for e in candidates
+            bb = elem_bboxes[e]
+            (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
+             py < bb[3]-1e-10 || py > bb[4]+1e-10 ||
+             pz < bb[5]-1e-10 || pz > bb[6]+1e-10) && continue
+            @inbounds for k in 1:ngl3
+                x_e[k] = elem_x[e, k]; y_e[k] = elem_y[e, k]; z_e[k] = elem_z[e, k]
+            end
+            ξ_ref, η_ref, ζ_ref, converged = physical_to_reference_3d(
+                px, py, pz, x_e, y_e, z_e, ξ_nodes, ω, ngl,
+                ψξ, ψη, ψζ, dψξ, dψη, dψζ, α)
+            (!converged || abs(ξ_ref) > 1.0+1e-10 ||
+                            abs(η_ref) > 1.0+1e-10 ||
+                            abs(ζ_ref) > 1.0+1e-10) && continue
+            evaluate_lagrange_1d!(ψξ, ξ_ref, ξ_nodes, ω)
+            evaluate_lagrange_1d!(ψη, η_ref, ξ_nodes, ω)
+            evaluate_lagrange_1d!(ψζ, ζ_ref, ξ_nodes, ω)
+            for q in 1:neqs
+                val = 0.0; idx = 1
+                for k in 1:ngl, j in 1:ngl, i in 1:ngl
+                    val += ψξ[i] * ψη[j] * ψζ[k] * u_mat[elem_conn[e, idx], q]
+                    idx += 1
+                end
+                u_interp[ipt, q] = val
+            end
+            found = true; break
+        end
+        if !found
+            nearest = 1
+            min_d2  = (mesh_x[1]-px)^2 + (mesh_y[1]-py)^2 + (mesh_z[1]-pz)^2
+            @inbounds for ip in 2:npoin
+                d2 = (mesh_x[ip]-px)^2 + (mesh_y[ip]-py)^2 + (mesh_z[ip]-pz)^2
                 if d2 < min_d2; min_d2 = d2; nearest = ip; end
             end
             @inbounds for q in 1:neqs; u_interp[ipt, q] = u_mat[nearest, q]; end
@@ -1117,44 +1312,81 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     let mesh  = sem.mesh,
         nelem = _num_elems(sem.mesh),
         ngl   = sem.mesh.ngl,
-        ngl2  = sem.mesh.ngl * sem.mesh.ngl,
         gc    = _make_conn_accessor(sem.mesh)
 
-        bb = Vector{NTuple{4,Float64}}(undef, nelem)
-        @inbounds for e in 1:nelem
-            ns = gc(e)
-            bb[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                     minimum(mesh.y[ns]), maximum(mesh.y[ns]))
-        end
-        coupling.elem_bboxes = bb
-        coupling.interp_bins = _build_elem_bins(bb; bins_per_dim=64)
-
-        conn_mat = Matrix{Int}(undef, nelem, ngl2)
-        ex_mat   = Matrix{Float64}(undef, nelem, ngl2)
-        ey_mat   = Matrix{Float64}(undef, nelem, ngl2)
-        @inbounds for e in 1:nelem
-            ns = gc(e)
-            for k in 1:ngl2
-                conn_mat[e,k] = ns[k]
-                ex_mat[e,k]   = mesh.x[ns[k]]
-                ey_mat[e,k]   = mesh.y[ns[k]]
+        if ndime == 3
+            ngln    = ngl * ngl * ngl
+            bb3     = Vector{NTuple{6,Float64}}(undef, nelem)
+            @inbounds for e in 1:nelem
+                ns = gc(e)
+                bb3[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
+                          minimum(mesh.y[ns]), maximum(mesh.y[ns]),
+                          minimum(mesh.z[ns]), maximum(mesh.z[ns]))
             end
+            coupling.elem_bboxes = bb3
+            coupling.interp_bins = _build_elem_bins(bb3; bins_per_dim=64)
+
+            conn_mat = Matrix{Int}(undef, nelem, ngln)
+            ex_mat   = Matrix{Float64}(undef, nelem, ngln)
+            ey_mat   = Matrix{Float64}(undef, nelem, ngln)
+            ez_mat   = Matrix{Float64}(undef, nelem, ngln)
+            @inbounds for e in 1:nelem
+                ns = gc(e)
+                for k in 1:ngln
+                    conn_mat[e,k] = ns[k]
+                    ex_mat[e,k]   = mesh.x[ns[k]]
+                    ey_mat[e,k]   = mesh.y[ns[k]]
+                    ez_mat[e,k]   = mesh.z[ns[k]]
+                end
+            end
+            coupling.elem_conn = conn_mat
+            coupling.elem_x    = ex_mat
+            coupling.elem_y    = ey_mat
+            coupling.elem_z    = ez_mat
+        else
+            ngl2 = ngl * ngl
+            bb = Vector{NTuple{4,Float64}}(undef, nelem)
+            @inbounds for e in 1:nelem
+                ns = gc(e)
+                bb[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
+                         minimum(mesh.y[ns]), maximum(mesh.y[ns]))
+            end
+            coupling.elem_bboxes = bb
+            coupling.interp_bins = _build_elem_bins(bb; bins_per_dim=64)
+
+            conn_mat = Matrix{Int}(undef, nelem, ngl2)
+            ex_mat   = Matrix{Float64}(undef, nelem, ngl2)
+            ey_mat   = Matrix{Float64}(undef, nelem, ngl2)
+            @inbounds for e in 1:nelem
+                ns = gc(e)
+                for k in 1:ngl2
+                    conn_mat[e,k] = ns[k]
+                    ex_mat[e,k]   = mesh.x[ns[k]]
+                    ey_mat[e,k]   = mesh.y[ns[k]]
+                end
+            end
+            coupling.elem_conn = conn_mat
+            coupling.elem_x    = ex_mat
+            coupling.elem_y    = ey_mat
         end
-        coupling.elem_conn = conn_mat
-        coupling.elem_x    = ex_mat
-        coupling.elem_y    = ey_mat
 
         ξ_nodes_v        = Vector{Float64}(sem.ξ)
         coupling.ξ_nodes_ref = ξ_nodes_v
         coupling.ω_bary      = barycentric_weights(ξ_nodes_v)
 
+        ngln_scratch = ndime == 3 ? ngl*ngl*ngl : ngl*ngl
         coupling.ψξ_scratch  = Vector{Float64}(undef, ngl)
         coupling.ψη_scratch  = Vector{Float64}(undef, ngl)
         coupling.dψξ_scratch = Vector{Float64}(undef, ngl)
         coupling.dψη_scratch = Vector{Float64}(undef, ngl)
         coupling.α_scratch   = Vector{Float64}(undef, ngl)
-        coupling.x_e_scratch = Vector{Float64}(undef, ngl2)
-        coupling.y_e_scratch = Vector{Float64}(undef, ngl2)
+        coupling.x_e_scratch = Vector{Float64}(undef, ngln_scratch)
+        coupling.y_e_scratch = Vector{Float64}(undef, ngln_scratch)
+        if ndime == 3
+            coupling.ψζ_scratch  = Vector{Float64}(undef, ngl)
+            coupling.dψζ_scratch = Vector{Float64}(undef, ngl)
+            coupling.z_e_scratch = Vector{Float64}(undef, ngln_scratch)
+        end
 
         coupling.qout     = zeros(Float64, mesh.npoin,             coupling.neqs)
         coupling.u_interp = zeros(Float64, length(alya_local_ids), coupling.neqs)
@@ -1276,6 +1508,66 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
     coupling_exchange_data!(cpg)
 end
 
+# 3D variant of je_perform_coupling_exchange.  Same structure as the 2D
+# function, but uses the trilinear SEM interpolation path and pulls the
+# z-coordinate machinery (elem_z, ψζ/dψζ, z_e, mesh_z, NTuple{6} bboxes,
+# ElemBins3D) from the CouplingData.
+function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
+                                          qout::Matrix{Float64},
+                                          u_interp::Matrix{Float64},
+                                          ξ_nodes::Vector{Float64},
+                                          ω::Vector{Float64},
+                                          e_conn::Matrix{Int},
+                                          elem_x::Matrix{Float64},
+                                          elem_y::Matrix{Float64},
+                                          elem_z::Matrix{Float64},
+                                          ψξ::Vector{Float64}, ψη::Vector{Float64}, ψζ::Vector{Float64},
+                                          dψξ::Vector{Float64}, dψη::Vector{Float64}, dψζ::Vector{Float64},
+                                          α::Vector{Float64},
+                                          x_e::Vector{Float64}, y_e::Vector{Float64}, z_e::Vector{Float64},
+                                          alya_coords::Matrix{Float64},
+                                          owner_ranks::Vector{Int32},
+                                          mesh_x::Vector{Float64},
+                                          mesh_y::Vector{Float64},
+                                          mesh_z::Vector{Float64},
+                                          inputs, neqs::Int,
+                                          elem_bboxes::Vector{NTuple{6,Float64}},
+                                          bins::ElemBins3D)
+    if cpg.send_coords
+        ndime     = cpg.ndime
+        npoin     = length(mesh_x)
+        coord_mat = Matrix{Float64}(undef, npoin, ndime)
+        @inbounds for ip in 1:npoin
+            coord_mat[ip, 1] = mesh_x[ip]
+            coord_mat[ip, 2] = mesh_y[ip]
+            coord_mat[ip, 3] = mesh_z[ip]
+        end
+        interpolate_solution_to_alya_coords!(
+            u_interp, alya_coords, coord_mat,
+            ξ_nodes, ω, ndime,
+            elem_bboxes, bins,
+            e_conn, elem_x, elem_y, elem_z,
+            ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
+            x_e, y_e, z_e,
+            mesh_x, mesh_y, mesh_z)
+        pack_velocity_data!(cpg, u_interp[:, 1:ndime], owner_ranks)
+    else
+        npoin = size(qout, 1)
+        u2uaux!(u_mat, u, neqs, npoin)
+        call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
+        interpolate_solution_to_alya_coords!(
+            u_interp, alya_coords, qout,
+            ξ_nodes, ω, neqs,
+            elem_bboxes, bins,
+            e_conn, elem_x, elem_y, elem_z,
+            ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
+            x_e, y_e, z_e,
+            mesh_x, mesh_y, mesh_z)
+        pack_velocity_data!(cpg, u_interp[:, 2:neqs-1], owner_ranks)
+    end
+    coupling_exchange_data!(cpg)
+end
+
 # ===========================================================================
 # SETUP-TIME COMMUNICATION VERIFICATION
 # ===========================================================================
@@ -1378,19 +1670,44 @@ function setup_coupling_callback(is_coupled, params, inputs)
     _y_e         = cpg.y_e_scratch::Vector{Float64}
     _alya_coords = cpg.alya_local_coords::Matrix{Float64}
     _owner_ranks = cpg.alya_owner_ranks::Vector{Int32}
-    _elem_bboxes = cpg.elem_bboxes::Vector{NTuple{4,Float64}}
-    _bins        = cpg.interp_bins::ElemBins
     _mesh_x      = mesh.x::Vector{Float64}
     _mesh_y      = mesh.y::Vector{Float64}
 
-    function do_coupling_exchange!(integrator)
-        je_perform_coupling_exchange(
-            integrator.u, integrator.p.uaux, integrator.t, cpg,
-            _qout, _u_interp, _ξ_nodes, _ω, _e_conn, _elem_x, _elem_y,
-            _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
-            _alya_coords, _owner_ranks, _mesh_x, _mesh_y,
-            inputs, neqs, _elem_bboxes, _bins)
-    end
+    if cpg.ndime == 3
+        _elem_z      = cpg.elem_z::Matrix{Float64}
+        _ψζ          = cpg.ψζ_scratch::Vector{Float64}
+        _dψζ         = cpg.dψζ_scratch::Vector{Float64}
+        _z_e         = cpg.z_e_scratch::Vector{Float64}
+        _mesh_z      = mesh.z::Vector{Float64}
+        _elem_bboxes3 = cpg.elem_bboxes::Vector{NTuple{6,Float64}}
+        _bins3        = cpg.interp_bins::ElemBins3D
 
-    return DiscreteCallback(coupling_condition, do_coupling_exchange!)
+        function do_coupling_exchange_3d!(integrator)
+            je_perform_coupling_exchange_3d(
+                integrator.u, integrator.p.uaux, integrator.t, cpg,
+                _qout, _u_interp, _ξ_nodes, _ω,
+                _e_conn, _elem_x, _elem_y, _elem_z,
+                _ψξ, _ψη, _ψζ, _dψξ, _dψη, _dψζ, _α,
+                _x_e, _y_e, _z_e,
+                _alya_coords, _owner_ranks,
+                _mesh_x, _mesh_y, _mesh_z,
+                inputs, neqs, _elem_bboxes3, _bins3)
+        end
+
+        return DiscreteCallback(coupling_condition, do_coupling_exchange_3d!)
+    else
+        _elem_bboxes = cpg.elem_bboxes::Vector{NTuple{4,Float64}}
+        _bins        = cpg.interp_bins::ElemBins
+
+        function do_coupling_exchange!(integrator)
+            je_perform_coupling_exchange(
+                integrator.u, integrator.p.uaux, integrator.t, cpg,
+                _qout, _u_interp, _ξ_nodes, _ω, _e_conn, _elem_x, _elem_y,
+                _ψξ, _ψη, _dψξ, _dψη, _α, _x_e, _y_e,
+                _alya_coords, _owner_ranks, _mesh_x, _mesh_y,
+                inputs, neqs, _elem_bboxes, _bins)
+        end
+
+        return DiscreteCallback(coupling_condition, do_coupling_exchange!)
+    end
 end
