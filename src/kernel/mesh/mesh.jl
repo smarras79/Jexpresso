@@ -1299,7 +1299,7 @@ const pXest_copy = GridapP4est.pXest_copy
 const get_glue_components = GridapDistributed.get_glue_components
 
 
-function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
+function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
     backend = CPU()
     comm = get_mpi_comm()
@@ -4736,7 +4736,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 end
 
 
-function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
+function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)

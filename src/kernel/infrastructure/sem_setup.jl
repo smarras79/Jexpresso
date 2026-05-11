@@ -32,7 +32,7 @@ function _save_sem_cache(path::String, metrics, matrix)
 end
 # ──────────────────────────────────────────────────────────────────────────────
 
-function sem_setup(inputs::Dict, nparts, distribute, args...)
+function sem_setup(inputs, nparts, distribute, args...)
 
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
