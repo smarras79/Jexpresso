@@ -13,7 +13,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #Alya coupling
         #---------------------------------------------------------------------------
-        #:enable_coupling      => true,
         :couple_time_tol      => 1e-12,
         :Δt_couple            => :Δt,     # or larger macro step later
         :SOL_VARS_TYPE        => TOTAL(), #TOTAL() is default
@@ -48,28 +47,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lwarmup             => true,
-        # Warping:
-        :lwarp => false,
-        :mount_type => "agnesi",
-        :a_mount => 4000.0,
-        :h_mount => 1000.0,
-        :c_mount => 5000.0,
-
-        # Stretching factors:
-        :lstretch => false,
-        :stretch_factor => 1.5,
-        :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
-        :first_zelement_size => 250.0,
-        :zlevel_transition => 5000.0,
-
-        # GMSH files:
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/2x2x2.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/unstructured_xz_20x2x20.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

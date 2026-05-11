@@ -80,10 +80,10 @@ program unitt_alya_with_another_code
      deallocate(app_dumm)
   end if
 
-  rem_min = [-5000.0,     0.0, 0.0]
-  rem_max = [ 5000.0, 10000.0, 0.0]
-  rem_nx  = [10,      10,        1]
-  ndime = 2
+  rem_min = [-5000.0,    0.0,     0.0]
+  rem_max = [ 5000.0, 1000.0, 10000.0]
+  rem_nx  = [10,      1,           10]
+  ndime = 3
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
   do idime = 1,3
      call MPI_Bcast(rem_min(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)

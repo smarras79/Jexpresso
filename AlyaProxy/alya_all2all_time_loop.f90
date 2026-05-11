@@ -107,9 +107,9 @@ program unitt_alya_with_another_code
   ! STEP 2: GRID METADATA  (broadcast order must match Julia exactly)
   !--------------------------------------------------------------------------
   rem_min = [-5000.0,     0.0, 0.0]
-  rem_max = [ 5000.0, 10000.0, 0.0]
-  rem_nx  = [50,      50,      1  ]
-  ndime   = 2
+  rem_max = [ 5000.0, 10000.0, 10000.0]
+  rem_nx  = [10,      10,      10]
+  ndime   = 3
 
   if (rank == 0) then
      write(*,'(A)')        ' ALYA-2-JEXP'
@@ -390,6 +390,9 @@ contains
     integer(4),   intent(in) :: total_pts, nfields, timestep
     real(8),      intent(in) :: time
 
+    integer          :: vis_nx(3)
+    real(8)          :: vis_dx(3)
+    integer          :: idim
     integer          :: nmax, r_rem_loc, np_base
     integer          :: i_start_r, count_r
     integer          :: irank, iunit, ierr_loc, ierr_mpi
@@ -406,12 +409,21 @@ contains
     nworkers_loc = max(1, asize - 1)
     r_rem_loc    = mod(nmax, nworkers_loc)
     np_base      = nmax / nworkers_loc
-
-    dx = 0.0d0; dy = 0.0d0; dz = 0.0d0
-    if (rem_nx(1) > 1) dx = dble(rem_max(1)-rem_min(1)) / dble(rem_nx(1)-1)
-    if (rem_nx(2) > 1) dy = dble(rem_max(2)-rem_min(2)) / dble(rem_nx(2)-1)
-    if (rem_nx(3) > 1) dz = dble(rem_max(3)-rem_min(3)) / dble(rem_nx(3)-1)
-
+    
+    do idim = 1, 3
+       if (rem_nx(idim) == 1 .and. rem_max(idim) > rem_min(idim)) then
+          vis_nx(idim) = 2
+          vis_dx(idim) = dble(rem_max(idim) - rem_min(idim))
+       else if (rem_nx(idim) > 1) then
+          vis_nx(idim) = rem_nx(idim)
+          vis_dx(idim) = dble(rem_max(idim) - rem_min(idim)) / dble(rem_nx(idim) - 1)
+       else
+          vis_nx(idim) = 1
+          vis_dx(idim) = 0.0d0
+       end if
+    end do
+    
+    dx = vis_dx(1); dy = vis_dx(2); dz = vis_dx(3)
     allocate(sendcounts(0:asize-1))
     allocate(displs    (0:asize-1))
 
@@ -476,17 +488,18 @@ contains
 
     write(iunit,'(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A)') &
          '  <StructuredGrid WholeExtent="', &
-         0, ' ', rem_nx(1)-1, ' ', 0, ' ', rem_nx(2)-1, ' ', 0, ' ', rem_nx(3)-1, '">'
+         0, ' ', vis_nx(1)-1, ' ', 0, ' ', vis_nx(2)-1, ' ', 0, ' ', vis_nx(3)-1, '">'
 
     write(iunit,'(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A)') &
          '    <Piece Extent="', &
-         0, ' ', rem_nx(1)-1, ' ', 0, ' ', rem_nx(2)-1, ' ', 0, ' ', rem_nx(3)-1, '">'
+         0, ' ', vis_nx(1)-1, ' ', 0, ' ', vis_nx(2)-1, ' ', 0, ' ', vis_nx(3)-1, '">'
 
     write(iunit,'(A)') '      <Points>'
     write(iunit,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="ascii">'
-    do iz = 0, rem_nx(3)-1
-       do iy = 0, rem_nx(2)-1
-          do ix = 0, rem_nx(1)-1
+
+    do iz = 0, vis_nx(3)-1
+       do iy = 0, vis_nx(2)-1
+          do ix = 0, vis_nx(1)-1
              x = dble(rem_min(1)) + ix * dx
              y = dble(rem_min(2)) + iy * dy
              z = dble(rem_min(3)) + iz * dz
@@ -494,6 +507,7 @@ contains
           end do
        end do
     end do
+    
     write(iunit,'(A)') '        </DataArray>'
     write(iunit,'(A)') '      </Points>'
 
@@ -519,14 +533,19 @@ contains
           grid_var(ix, iy, iz) = full_field(k * nfields + ieq)
        end do
 
-       do iz = 0, rem_nx(3)-1
-          do iy = 0, rem_nx(2)-1
-             do ix = 0, rem_nx(1)-1
-                write(iunit,'(E16.8)') grid_var(ix, iy, iz)
+       do iz = 0, vis_nx(3)-1
+          do iy = 0, vis_nx(2)-1
+             do ix = 0, vis_nx(1)-1
+                ! Index back into the real (rem_nx) grid; clamp to the single
+                ! layer in any expanded direction.
+                write(iunit,'(E16.8)') &
+                     grid_var( min(ix, rem_nx(1)-1), &
+                     min(iy, rem_nx(2)-1), &
+                     min(iz, rem_nx(3)-1) )
              end do
           end do
        end do
-
+       
        write(iunit,'(A)') '        </DataArray>'
     end do
 
