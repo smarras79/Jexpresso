@@ -12,7 +12,7 @@ using JLD2
 # Until then, the JLD2 files do not exist, isfile() returns false, and the
 # prefetch is a no-op — no error, just no acceleration.
 # ───────────────────────────────────────────────────────────────────────────
-function _mesh_cache_path(inputs::Dict, nparts::Int)
+function _mesh_cache_path(inputs, nparts::Int)
     rank   = MPI.Comm_rank(get_mpi_comm())
     gmsh   = inputs[:gmsh_filename]
     dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
@@ -26,7 +26,7 @@ function _mesh_cache_path(inputs::Dict, nparts::Int)
     return joinpath(dir, "MESH_$(stem)_nop$(inputs[:nop])$(suffix).jld2")
 end
 
-function _preprocess_cache_path(inputs::Dict, Nξ::Int, Qξ::Int, nparts::Int)
+function _preprocess_cache_path(inputs, Nξ::Int, Qξ::Int, nparts::Int)
     rank   = MPI.Comm_rank(get_mpi_comm())
     gmsh   = inputs[:gmsh_filename]
     dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
@@ -228,7 +228,7 @@ end
 # sem_setup.jl but are looked up at call time (same module scope), so the
 # forward references are fine.
 # ===========================================================================
-function je_prefetch_caches!(inputs::Dict, nparts::Int,
+function je_prefetch_caches!(inputs, nparts::Int,
                               local_comm::MPI.Comm, world::MPI.Comm)
     rank = MPI.Comm_rank(local_comm)
 
@@ -284,7 +284,7 @@ function je_prefetch_caches!(inputs::Dict, nparts::Int,
 end
 
 # Separated into its own function so the try/catch/return flow is clean.
-function _je_prefetch_geometry!(inputs::Dict, local_comm::MPI.Comm,
+function _je_prefetch_geometry!(inputs, local_comm::MPI.Comm,
                                  world::MPI.Comm, rank::Int)
     JEXPRESSO_PREFETCHED_MESH_CACHE[]  === nothing && return
     JEXPRESSO_COUPLING_DATA[]          === nothing && return

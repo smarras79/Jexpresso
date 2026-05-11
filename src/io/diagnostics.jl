@@ -1,5 +1,5 @@
 # ASCII
-function solution_norms(sol::ODESolution, OUTPUT_DIR::String, inputs::Dict;)
+function solution_norms(sol::ODESolution, OUTPUT_DIR::String, inputs;)
     
     println(string(" # Writing diagnostics to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
 

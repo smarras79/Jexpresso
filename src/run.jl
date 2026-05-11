@@ -165,11 +165,38 @@ else
 end
 
 #--------------------------------------------------------
-# Save a copy of user_inputs.jl for the case being run 
+# Save a copy of user_inputs.jl for the case being run
 #--------------------------------------------------------
-if rank == 0 
+if rank == 0
     cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
 end
+
+#--------------------------------------------------------
+# Convert inputs Dict → NamedTuple if the user opted in.
+#
+# Carrying inputs as a NamedTuple removes the per-call dictionary lookups
+# from hot paths (RHS, time loop, BCs) and lets the compiler specialise on
+# the concrete field types.  All historical `inputs[:key]` reads continue
+# to work; only WRITES (which would mutate the container) are forbidden,
+# so any `inputs[:key] = value` left in downstream code must be expressed
+# as a rebind `inputs = (; inputs..., key = value)` (see drivers.jl).
+#
+# All inputs mutations above this point operate on the Dict, so they are
+# safe; the conversion happens here, just before the coupling handshake
+# and the with_mpi block.
+#
+# val_lsaturation is a Val-wrapped boolean made available so RHS kernels
+# can dispatch on it without paying a runtime branch + dictionary lookup
+# on every step (matches the ab/hacky pattern).
+#--------------------------------------------------------
+if get(inputs, :use_named_tuples, false) == true
+    inputs = NamedTuple(inputs)
+end
+
+val_lsaturation = Val(get(inputs, :lsaturation, false))
+inputs = inputs isa NamedTuple ?
+    (; inputs..., comm = MPI.COMM_WORLD, val_lsaturation = val_lsaturation) :
+    inputs
 
 #--------------------------------------------------------
 # Coupling handshake (must happen OUTSIDE the with_mpi block so the
