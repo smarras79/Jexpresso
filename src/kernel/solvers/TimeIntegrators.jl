@@ -165,7 +165,13 @@ function time_loop!(inputs, params, u, args...)
     callbacks_main = (is_coupled && cb_coupling !== nothing) ?
                      CallbackSet(cb, cb_restart, cb_coupling) :
                      CallbackSet(cb, cb_restart)
+<<<<<<< HEAD
     solution = @trixi_timeit TrixiBase.timer() "simulation" solve(prob,
+=======
+    TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
+    rank == 0 && println(" # Simulation timing and allocations:")
+    solution = @time solve(prob,
+>>>>>>> 666f7dd5 (break down per-section allocations via TimerOutputs at call sites)
                      inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                      #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                      callback = callbacks_main, tstops = dosetimes,
@@ -174,10 +180,15 @@ function time_loop!(inputs, params, u, args...)
                      saveat = range(inputs[:tinit],
                                     inputs[:tend],
                                     length=inputs[:ndiagnostics_outputs]));
+<<<<<<< HEAD
 
     if rank == 0
         display(TrixiBase.timer())
     end
+=======
+    rank == 0 && show(stdout, JEXPRESSO_TIMER; allocations=true, sortby=:firstexec)
+    rank == 0 && println()
+>>>>>>> 666f7dd5 (break down per-section allocations via TimerOutputs at call sites)
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)

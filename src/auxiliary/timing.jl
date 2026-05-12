@@ -1,3 +1,10 @@
+using TimerOutputs
+
+# Global TimerOutputs instance used by @timeit at call sites in the hot
+# path (e.g. rhs!). The wrap is around the *call*, not the function body,
+# so type inference is preserved inside the timed function.
+const JEXPRESSO_TIMER = TimerOutput()
+
 """
 Mutable struct to store timing statistics for a function that's called multiple times
 """
