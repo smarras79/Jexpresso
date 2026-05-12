@@ -62,6 +62,12 @@ function user_inputs()
         :prec_type    => "AMG",
         )
 
+    # Solver
+    function lsolve(L_curr, b)
+        x = L_curr \ b
+        return x
+    end
+
     # Source function
     function S_fun!(s_j, u, time, params, sem)
         rhs!(s_j, u, params, time)
@@ -143,7 +149,7 @@ function user_inputs()
 #        :ode_solver           => IMEX_ARS232(),
         :tend                 => 0.5,
         :Δt                   => 1.0e-3,
-        :diagnostics_at_times => (0.05:0.05:0.5),
+        :diagnostics_at_times => (0.1:0.1:0.5),
         :output_dir           => "./",
         #---------------------------------------------------------------------------
         # Integration and quadrature properties
@@ -205,6 +211,9 @@ function user_inputs()
         :L_fun              => L_fun!,
         :upd_L              => false,
         :build_L            => build_L,
+        :lsolve             => lsolve,
+        :solver_precision   => Float32,
+        :nl_precision       => Float32,
         #---------------------------------------------------------------------------
         # Matrix storage for the IMEX implicit operator
         #   :matrix_free  - (default) rebuild L and the preconditioner on demand

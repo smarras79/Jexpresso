@@ -48,6 +48,7 @@ function driver(nparts,
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
         #
         @time solution = imex_time_loop!(inputs, sem, qp, params, u)
+#        @btime solution = imex_time_loop!($inputs, $sem, $qp, $params, $u)
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
         
     else
