@@ -1,3 +1,5 @@
+using TrixiBase
+using TimerOutputs
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -155,10 +157,11 @@ function time_loop!(inputs, params, u, args...)
         end
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
-    
+
+    TimerOutputs.reset_timer!(TrixiBase.timer())
     #
     # Simulation
-    #   
+    #
     callbacks_main = (is_coupled && cb_coupling !== nothing) ?
                      CallbackSet(cb, cb_restart, cb_coupling) :
                      CallbackSet(cb, cb_restart)
@@ -171,8 +174,10 @@ function time_loop!(inputs, params, u, args...)
                      saveat = range(inputs[:tinit],
                                     inputs[:tend],
                                     length=inputs[:ndiagnostics_outputs]));
-    
-    
+
+    if rank == 0
+        display(TrixiBase.timer())
+    end
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)
