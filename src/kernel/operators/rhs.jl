@@ -1,5 +1,6 @@
 using Distributions
 using StaticArrays
+using TrixiBase
 
 const PHYS_CONST = PhysicalConst{Float64}()
 const MicroConst = MicrophysicalConst{Float64}()
@@ -476,7 +477,7 @@ end
 end
 
 function _build_rhs!(RHS, u, params, time)
-
+@trixi_timeit timer() "build_rhs" begin
     T       = Float64
     SD      = params.SD
     VT      = params.VT
@@ -654,6 +655,7 @@ function _build_rhs!(RHS, u, params, time)
                                 params.mesh.gip2ip, params.mesh.cgip_local, ngl-1, params.interp)
         end
     end
+end
 end
 
 function inviscid_rhs_el!(u, params,

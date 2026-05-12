@@ -38,9 +38,13 @@ _encode_optstrings(v) = String[isnothing(x) ? _MESH_CACHE_NOTHING_SENTINEL : x f
 _decode_optstrings(v) = Array{Union{Nothing,String}}(
     [x == _MESH_CACHE_NOTHING_SENTINEL ? nothing : x for x in v])
 
-function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int)
+function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int; gmsh_path::String="")
     rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return false
+    if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
+        rank == 0 && @info "Mesh cache $path is older than $gmsh_path — discarding stale cache"
+        return false
+    end
     try
         # Use pre-fetched data when available (populated by je_prefetch_caches!
         # before with_mpi to keep JLD2 JIT + disk I/O off the Alya-blocking path).
@@ -1348,7 +1352,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
     # so returning nothing here is safe for standard (non-AMR) runs.
     if isnothing(adapt_flags) && !ladaptive && !linitial_refine
         _mesh_cache = _mesh_cache_path(inputs, nparts)
-        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts)
+        gmsh_path   = get(inputs, :gmsh_filename, "")
+        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts; gmsh_path=gmsh_path)
             return nothing
         end
     end
