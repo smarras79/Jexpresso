@@ -75,6 +75,7 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
 end
 
 function _save_mesh_cache(path::String, mesh)
+    isempty(path) && return
     rank = MPI.Comm_rank(get_mpi_comm())
     try
         flds = Dict{String,Any}()

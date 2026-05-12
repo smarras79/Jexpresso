@@ -13,6 +13,7 @@ using JLD2
 # prefetch is a no-op — no error, just no acceleration.
 # ───────────────────────────────────────────────────────────────────────────
 function _mesh_cache_path(inputs, nparts::Int)
+    haskey(inputs, :gmsh_filename) || return ""
     rank   = MPI.Comm_rank(get_mpi_comm())
     gmsh   = inputs[:gmsh_filename]
     dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
@@ -22,6 +23,7 @@ function _mesh_cache_path(inputs, nparts::Int)
 end
 
 function _preprocess_cache_path(inputs, Nξ::Int, Qξ::Int, nparts::Int)
+    haskey(inputs, :gmsh_filename) || return ""
     rank   = MPI.Comm_rank(get_mpi_comm())
     gmsh   = inputs[:gmsh_filename]
     dir    = let d = dirname(gmsh); isempty(d) ? "." : d end

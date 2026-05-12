@@ -22,6 +22,7 @@ function _try_load_sem_cache(path::String)
 end
 
 function _save_sem_cache(path::String, metrics, matrix)
+    isempty(path) && return
     rank = MPI.Comm_rank(get_mpi_comm())
     try
         JLD2.jldsave(path; metrics, matrix)
