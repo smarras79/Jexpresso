@@ -165,7 +165,7 @@ function time_loop!(inputs, params, u, args...)
     callbacks_main = (is_coupled && cb_coupling !== nothing) ?
                      CallbackSet(cb, cb_restart, cb_coupling) :
                      CallbackSet(cb, cb_restart)
-    solution = solve(prob,
+    solution = @trixi_timeit TrixiBase.timer() "simulation" solve(prob,
                      inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                      #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                      callback = callbacks_main, tstops = dosetimes,
