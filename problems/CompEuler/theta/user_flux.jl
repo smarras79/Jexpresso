@@ -13,13 +13,13 @@ function user_flux!(F, G, SD::NSD_2D, q, qe,
     Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
     
     F[1] = ρu
-    F[2] = ρu*u .+ Pressure
+    F[2] = ρu*u + Pressure
     F[3] = ρv*u
     F[4] = ρθ*u
 
     G[1] = ρv
     G[2] = ρu*v
-    G[3] = ρv*v .+ Pressure
+    G[3] = ρv*v + Pressure
     G[4] = ρθ*v
 end
 

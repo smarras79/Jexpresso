@@ -1,34 +1,32 @@
-function user_flux!(F, G, SD::NSD_2D,
-                    q,
-                    qe,
-                    mesh::St_mesh,
-                    ::CL, ::TOTAL; neqs=6, ip=1)
+function user_flux!(F, G, SD::NSD_2D, q, qe,
+                    mesh::St_mesh, ::CL, ::TOTAL; neqs=6, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
     
-    ρ  = q[1]
-    ρu = q[2]
-    ρv = q[3]
-    ρθ = q[4]
-    qtr= q[5]
-    θ  = ρθ/ρ
-    u  = ρu/ρ
-    v  = ρv/ρ
+    ρ   = q[1]
+    ρu  = q[2]
+    ρv  = q[3]
+    ρθ  = q[4]
+    qtr1= q[5]
+    qtr2= q[6]
+    θ   = ρθ/ρ
+    u   = ρu/ρ
+    v   = ρv/ρ
     
     Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
     F[1] = ρu
     F[2] = ρu*u + Press
     F[3] = ρv*u
     F[4] = ρθ*u
-    F[5] = q[5]*u
-    F[6] = q[6]*u
+    F[5] = qtr1*u
+    F[6] = qtr2*u
     
     G[1] = ρv
     G[2] = ρu*v
     G[3] = ρv*v + Press
     G[4] = ρθ*v
-    G[5] = q[5]*v
-    G[6] = q[6]*v
+    G[5] = qtr1*v
+    G[6] = qtr2*v
 end
 
 function user_flux!(F, G, SD::NSD_2D,
