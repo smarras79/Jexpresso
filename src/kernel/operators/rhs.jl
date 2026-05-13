@@ -1162,7 +1162,6 @@ end
         for iel=1:nelem
             for j = 1:ngl, i=1:ngl
                 ip = connijk[iel,i,j]
-                @assert false
                 uaux_node = get_node_vars_4(uaux, ip)
                 # qe_node = get_node_vars_4(qe, ip)
                 # uprimitive_node = get_node_vars_4(uprimitive, i, j)

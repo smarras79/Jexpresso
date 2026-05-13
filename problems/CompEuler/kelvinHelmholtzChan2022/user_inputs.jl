@@ -4,11 +4,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-	:ode_solver           => CarpenterKennedy2N54(),
-        :Δt                   => 1.0e-2,
+	:ode_solver           => SSPRK43(),
+        :Δt                   => 1.0e-3,
         :tinit                => 0.0,
-        :tend                 => 3.0,
-        :diagnostics_at_times => (0.0:1.0:3.0),
+        :tend                 => 10.0,
+        :diagnostics_at_times => (0.0:1.0:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         #:case                 => "rtb",
@@ -19,7 +19,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 3,
+        :nop                 => 4,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
