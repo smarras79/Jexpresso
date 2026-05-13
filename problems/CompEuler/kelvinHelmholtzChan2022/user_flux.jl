@@ -3,24 +3,24 @@ function user_flux!(F, G, SD::NSD_2D,
                     qe,
                     mesh::St_mesh,
                     ::CL, ::THETA; neqs=4, ip=1)
-    
+
     PhysConst = PhysicalConst{Float64}()
-                
-    ρ  = q[1] 
+
+    ρ  = q[1]
     ρu = q[2]
     ρv = q[3]
-    ρθ = q[4] 
-    
+    ρθ = q[4]
+
     θ  = ρθ/ρ
     u  = ρu/ρ
     v  = ρv/ρ
     Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    
+
     F[1] = ρu
     F[2] = ρu*u + Press
     F[3] = ρv*u
     F[4] = ρθ*u
-    
+
     G[1] = ρv
     G[2] = ρu*v
     G[3] = ρv*v + Press
@@ -29,7 +29,7 @@ end
 
 @inline function flux(q, ::central_euler)
     PhysConst = PhysicalConst{Float64}()
-    
+
     ρ  = q[1]
     ρu = q[2]
     ρv = q[3]
@@ -41,11 +41,11 @@ end
 
     γ   = PhysConst.γ
     γm1 = γ - 1.0
-    
+
     velomagsq = (u*u + v*v)
     ke        = 0.5*ρ*velomagsq
     Pressure  = γm1*(ρe - ke)
-    
+
     f1 = ρu
     f2 = ρu*u .+ Pressure
     f3 = ρv*u
@@ -59,24 +59,24 @@ end
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 
-@inline function flux(q, ::central_theta) 
+@inline function flux(q, ::central_theta)
     PhysConst = PhysicalConst{Float64}()
-                
-    ρ  = q[1] 
+
+    ρ  = q[1]
     ρu = q[2]
     ρv = q[3]
-    ρθ = q[4] 
-    
+    ρθ = q[4]
+
     θ  = ρθ/ρ
     u  = ρu/ρ
     v  = ρv/ρ
     Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    
+
     f1 = ρu
     f2 = ρu*u + Press
     f3 = ρv*u
     f4 = ρθ*u
-    
+
     g1 = ρv
     g2 = ρu*v
     g3 = ρv*v + Press
@@ -86,7 +86,7 @@ end
 end
 
 function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::central_theta)
-    
+
     PhysConst = PhysicalConst{Float64}()
 
     aux[1] = q[1]
@@ -97,7 +97,7 @@ end
 
 
 function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::central_euler)
-    
+
     PhysConst = PhysicalConst{Float64}()
 
     aux[1] = q[1]
@@ -107,20 +107,20 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::central_euler)
 end
 
 function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::kennedy_gruber)
-    
+
     PhysConst = PhysicalConst{Float64}()
-                
-    rho  = q[1] 
+
+    rho  = q[1]
     rho_u = q[2]
     rho_v = q[3]
     rho_e = q[4]
 
     u  = rho_u/rho
     v  = rho_v/rho
-	
+
     γ   = PhysConst.γ
     gammam1 = γ - 1.0
-    p = gammam1 * (rho_e - (0.5 * rho_u * u + 0.5 * v * rho_v)) 
+    p = gammam1 * (rho_e - (0.5 * rho_u * u + 0.5 * v * rho_v))
 
     aux[1] = rho
     aux[2] = u
@@ -130,20 +130,20 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::kennedy_gruber)
 end
 
 function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::ranocha)
-    
+
     PhysConst = PhysicalConst{Float64}()
-                
-    rho  = q[1] 
+
+    rho  = q[1]
     rho_u = q[2]
     rho_v = q[3]
     rho_e = q[4]
 
     u  = rho_u/rho
     v  = rho_v/rho
-	
+
     γ   = PhysConst.γ
     gammam1 = γ - 1.0
-    p = gammam1 * (rho_e - (0.5 * rho_u * u + 0.5 * v * rho_v)) 
+    p = gammam1 * (rho_e - (0.5 * rho_u * u + 0.5 * v * rho_v))
 
     aux[1] = rho
     aux[2] = u
@@ -155,10 +155,10 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::ranocha)
 end
 
 function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_ec)
-    
+
     PhysConst = PhysicalConst{Float64}()
-                
-    rho  = q[1] 
+
+    rho  = q[1]
     rho_u = q[2]
     rho_v = q[3]
     rho_theta = q[4]
@@ -179,10 +179,10 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_ec)
 end
 
 function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_tec)
-    
+
     PhysConst = PhysicalConst{Float64}()
-                
-    rho  = q[1] 
+
+    rho  = q[1]
     rho_u = q[2]
     rho_v = q[3]
     rho_theta = q[4]
@@ -204,10 +204,10 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_tec)
     aux[7] = rho_theta^gammam1
 end
 function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_etec)
-    
+
     PhysConst = PhysicalConst{Float64}()
-                
-    rho  = q[1] 
+
+    rho  = q[1]
     rho_u = q[2]
     rho_v = q[3]
     rho_theta = q[4]
@@ -273,7 +273,7 @@ end
             f4 = f1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5 * (p_ll * v1_rr + p_rr * v1_ll)
 
             g1 = rho_mean * v2_avg
-            g2 = g1 * v1_avg 
+            g2 = g1 * v1_avg
 	    g3 = g1 * v2_avg + p_avg
             g4 = g1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5 * (p_ll * v2_rr + p_rr * v2_ll)
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
@@ -321,7 +321,7 @@ end
             f4 = f1 * inv_rho_rho_theta_mean
 
             g1 = rho_mean * v2_avg
-            g2 = g1 * v1_avg 
+            g2 = g1 * v1_avg
 	    g3 = g1 * v2_avg + p_avg
 	    g4 = g1 * inv_rho_rho_theta_mean
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
@@ -353,7 +353,7 @@ denominator_f2 = x3 * (x3_plus_y3 + x3) + y3 * y3
 f2 = numerator_f2 / denominator_f2
 
     PhysConst = PhysicalConst{Float64}()
-                
+
 
     gamma   = PhysConst.γ
 c1 = (gamma - 2) / 3
@@ -372,30 +372,30 @@ gammamean = ifelse(f2 < 1.0e-4, special_path3, regular_path3)
     p_avg = 0.5f0 * (p_ll + p_rr)
 
     # Calculate fluxes depending on normal_direction
-    f1 = rho_mean * v1_avg 
-    f2 = f1 * v1_avg + p_avg 
-    f3 = f1 * v2_avg 
-    f4 = gammamean * v1_avg 
+    f1 = rho_mean * v1_avg
+    f2 = f1 * v1_avg + p_avg
+    f3 = f1 * v2_avg
+    f4 = gammamean * v1_avg
 
-    g1 = rho_mean * v2_avg 
-    g2 = g1 * v1_avg 
-    g3 = g1 * v2_avg + p_avg 
-    g4 = gammamean * v2_avg 
+    g1 = rho_mean * v2_avg
+    g2 = g1 * v1_avg
+    g3 = g1 * v2_avg + p_avg
+    g4 = gammamean * v2_avg
 	return SVector(f1, f2, f3, f4), SVector(g1,g2,g3,g4)
 end
 
 @inline function flux_turbo(u_ll, u_rr, ::artiano_etec)
     rho_ll, v1_ll, v2_ll, p_ll, rho_theta_ll, log_rho_ll, log_rho_theta_ll, rho_theta_pow_gamma_m1_ll = u_ll
     rho_rr, v1_rr, v2_rr, p_rr, rho_theta_rr, log_rho_rr, log_rho_theta_rr, rho_theta_pow_gamma_m1_rr = u_rr
-    
+
     PhysConst = PhysicalConst{Float64}()
     gamma = PhysConst.γ
-    
-   
+
+
 	x_ratio = rho_ll / rho_theta_ll
 log_x_ratio = log_rho_ll - log_rho_theta_ll  # log(a/b) = log(a) - log(b)
 
-y_ratio = rho_rr / rho_theta_rr  
+y_ratio = rho_rr / rho_theta_rr
 log_y_ratio = log_rho_rr - log_rho_theta_rr
 
 # Calcolo ln_mean standard
@@ -419,37 +419,37 @@ ln_rho_over_theta = ifelse(f2_ratio < 1.0e-4, special_ratio, regular_ratio)
     y_theta = rho_theta_rr
     x_theta_plus_y = x_theta + y_theta
     y_theta_minus_x = y_theta - x_theta
-    
+
     numerator_f2 = x_theta * (x_theta - 2*y_theta) + y_theta * y_theta
     denominator_f2 = x_theta * (x_theta + 2*y_theta) + y_theta * y_theta
     f2 = numerator_f2 / denominator_f2
-    
+
     c1 = (gamma - 2) / 3
     c2 = -(gamma + 1) * (gamma - 3) * c1 / 15
     c3 = -(2 * gamma * (gamma - 2) - 9) * c2 / 21
-    
+
     special_gamma = 0.5 * x_theta_plus_y * (1 + f2 * (c1 + f2 * (c2 + f2 * c3)))
-    
+
     yg_minus_xg = rho_theta_pow_gamma_m1_rr - rho_theta_pow_gamma_m1_ll
     regular_gamma = (gamma - 1) * (rho_theta_pow_gamma_m1_rr * y_theta - rho_theta_pow_gamma_m1_ll * x_theta) / (gamma * yg_minus_xg)
-    
+
     gammamean = ifelse(f2 < 1.0e-4, special_gamma, regular_gamma)
 
 
     v1_avg = 0.5 * (v1_ll + v1_rr)
     v2_avg = 0.5 * (v2_ll + v2_rr)
     p_avg = 0.5 * (p_ll + p_rr)
-    
-    f4 = gammamean * v1_avg 
-    f1 = f4 * ln_rho_over_theta  
-    f2 = f1 * v1_avg + p_avg 
-    f3 = f1 * v2_avg 
-    
-    g4 = gammamean * v2_avg 
+
+    f4 = gammamean * v1_avg
+    f1 = f4 * ln_rho_over_theta
+    f2 = f1 * v1_avg + p_avg
+    f3 = f1 * v2_avg
+
+    g4 = gammamean * v2_avg
     g1 = g4 * ln_rho_over_theta
-    g2 = g1 * v1_avg 
-    g3 = g1 * v2_avg + p_avg 
-    
+    g2 = g1 * v1_avg
+    g3 = g1 * v2_avg + p_avg
+
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 
@@ -466,12 +466,12 @@ end
     e_avg = 0.5f0 * (e_ll + e_rr)
 
     # Calculate fluxes depending on orientation
-    
+
         f1 = rho_avg * v1_avg
         f2 = rho_avg * v1_avg * v1_avg + p_avg
         f3 = rho_avg * v1_avg * v2_avg
         f4 = (rho_avg * e_avg + p_avg) * v1_avg
-    
+
         g1 = rho_avg * v2_avg
         g2 = rho_avg * v2_avg * v1_avg
         g3 = rho_avg * v2_avg * v2_avg + p_avg
@@ -544,11 +544,11 @@ end
     end
 end
 
-@inline function convert_transformed_to_primitive(u_transformed) 
+@inline function convert_transformed_to_primitive(u_transformed)
     return u_transformed
 end
 
-@inline function convert_derivative_to_primitive(u, gradient) 
+@inline function convert_derivative_to_primitive(u, gradient)
     return gradient
 end
 
@@ -588,7 +588,7 @@ function flux_parabolic(u, gradients, orientation::Integer)
     # `dynamic_viscosity` is a helper function that handles both cases
     # by dispatching on the type of `equations.mu`.
     #mu = dynamic_viscosity(u, equations)
-    mu = 0.01 
+    mu = 0.01
 
     if orientation == 1
         # parabolic flux components in the x-direction

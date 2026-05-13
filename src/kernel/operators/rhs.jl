@@ -566,7 +566,7 @@ function _build_rhs!(RHS, u, params, time)
     end
 
     resetbdyfluxToZero!(params)
-    
+
     #@code_warntype apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
     #@trixi_timeit timer() "apply DC boundary" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
     apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
@@ -634,11 +634,11 @@ function _build_rhs!(RHS, u, params, time)
     if (params.inputs[:lvisc] == true)
 
         resetRHSToZero_viscous!(params, SD)
-        
+
         #Main.debug[] = (; u, params, connijk = params.mesh.connijk, qe = params.qp.qe, SD)
         #error()
         @trixi_timeit timer() "viscous_rhs_el!" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
-        
+
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
                                params.mesh.non_conforming_facets,
