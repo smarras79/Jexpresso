@@ -118,7 +118,7 @@ function assemble_element_lhs_simple!(iel, params, Δt, dFp_du, dGp_du, dHp_du,
                     
                     # Integration weight times Jacobian
                     ωJac = (params.ω[i_test] * params.ω[j_test] * params.ω[k_test] * 
-                           params.metrics.Je[iel, i_test, j_test, k_test])
+                           params.metrics.Je[i_test,j_test,k_test,iel])
                     
                     # Loop over trial functions  
                     for ieq_trial = 1:neqs
@@ -186,17 +186,17 @@ function compute_divergence_pressure_jacobian_simple(params, iel, dFp_du, dGp_du
     end
     
     # Transform to physical coordinates using metric terms
-    dξdx_ij = params.metrics.dξdx[iel,i_test,j_test,k_test]
-    dξdy_ij = params.metrics.dξdy[iel,i_test,j_test,k_test] 
-    dξdz_ij = params.metrics.dξdz[iel,i_test,j_test,k_test]
+    dξdx_ij = params.metrics.dξdx[i_test,j_test,k_test,iel]
+    dξdy_ij = params.metrics.dξdy[i_test,j_test,k_test,iel] 
+    dξdz_ij = params.metrics.dξdz[i_test,j_test,k_test,iel]
     
-    dηdx_ij = params.metrics.dηdx[iel,i_test,j_test,k_test]
-    dηdy_ij = params.metrics.dηdy[iel,i_test,j_test,k_test]
-    dηdz_ij = params.metrics.dηdz[iel,i_test,j_test,k_test]
+    dηdx_ij = params.metrics.dηdx[i_test,j_test,k_test,iel]
+    dηdy_ij = params.metrics.dηdy[i_test,j_test,k_test,iel]
+    dηdz_ij = params.metrics.dηdz[i_test,j_test,k_test,iel]
     
-    dζdx_ij = params.metrics.dζdx[iel,i_test,j_test,k_test]
-    dζdy_ij = params.metrics.dζdy[iel,i_test,j_test,k_test] 
-    dζdz_ij = params.metrics.dζdz[iel,i_test,j_test,k_test]
+    dζdx_ij = params.metrics.dζdx[i_test,j_test,k_test,iel]
+    dζdy_ij = params.metrics.dζdy[i_test,j_test,k_test,iel] 
+    dζdz_ij = params.metrics.dζdz[i_test,j_test,k_test,iel]
     
     dFp_dx = dFp_dξ*dξdx_ij + dFp_dη*dηdx_ij + dFp_dζ*dζdx_ij
     dGp_dy = dGp_dξ*dξdy_ij + dGp_dη*dηdy_ij + dGp_dζ*dζdy_ij  
@@ -300,7 +300,7 @@ function apply_divergence_operator_simple!(params, iel, RHS_explicit, connijk)
                 for i = 1:ngl
                     
                     ωJac = (params.ω[i] * params.ω[j] * params.ω[k] * 
-                           params.metrics.Je[iel,i,j,k])
+                           params.metrics.Je[i,j,k,iel])
                     
                     # Compute derivatives in reference coordinates (no @turbo)
                     dFdξ = 0.0; dFdη = 0.0; dFdζ = 0.0
@@ -322,17 +322,17 @@ function apply_divergence_operator_simple!(params, iel, RHS_explicit, connijk)
                     end
                     
                     # Transform to physical coordinates
-                    dξdx_ij = params.metrics.dξdx[iel,i,j,k]
-                    dξdy_ij = params.metrics.dξdy[iel,i,j,k]
-                    dξdz_ij = params.metrics.dξdz[iel,i,j,k]
+                    dξdx_ij = params.metrics.dξdx[i,j,k,iel]
+                    dξdy_ij = params.metrics.dξdy[i,j,k,iel]
+                    dξdz_ij = params.metrics.dξdz[i,j,k,iel]
                     
-                    dηdx_ij = params.metrics.dηdx[iel,i,j,k]
-                    dηdy_ij = params.metrics.dηdy[iel,i,j,k]
-                    dηdz_ij = params.metrics.dηdz[iel,i,j,k]
+                    dηdx_ij = params.metrics.dηdx[i,j,k,iel]
+                    dηdy_ij = params.metrics.dηdy[i,j,k,iel]
+                    dηdz_ij = params.metrics.dηdz[i,j,k,iel]
                     
-                    dζdx_ij = params.metrics.dζdx[iel,i,j,k]
-                    dζdy_ij = params.metrics.dζdy[iel,i,j,k]
-                    dζdz_ij = params.metrics.dζdz[iel,i,j,k]
+                    dζdx_ij = params.metrics.dζdx[i,j,k,iel]
+                    dζdy_ij = params.metrics.dζdy[i,j,k,iel]
+                    dζdz_ij = params.metrics.dζdz[i,j,k,iel]
                     
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij + dFdζ*dζdx_ij
                     dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij + dGdζ*dζdy_ij

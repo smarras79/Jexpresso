@@ -340,7 +340,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
             for i=1:ngl
                 for k=1:ngl
                     for m=1:params.neqs
-                        params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[e,i,j,k]
+                        params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[i,j,k,e]
                     end
                 end
             end
@@ -458,7 +458,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
             for i=1:params.mesh.ngl
                 for k=1:params.mesh.ngl
                     for m=1:params.neqs
-                        params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[e,i,j,k]
+                        params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[i,j,k,e]
                     end
                 end
             end

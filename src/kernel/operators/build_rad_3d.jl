@@ -95,7 +95,7 @@ solves with `solve_parallel_lsqr`.
 | `dψ` | `Array` | Spatial basis derivative matrix `dψ[m,i]` |
 | `ψ` | `Array` | Spatial basis matrix `ψ[i,m]` |
 | `ω` | `Vector` | 1D Gauss–Lobatto quadrature weights |
-| `Je` | `Array` | Spatial Jacobian determinant `Je[iel,i,j,k]` |
+| `Je` | `Array` | Spatial Jacobian determinant `Je[i,j,k,iel]` |
 | `dξdx ... dζdz` | `Array` | Spatial metric terms `[iel,i,j,k]` |
 | `nx, ny, nz` | `Array` | Outward boundary face normals `[iface,i,j]` |
 | `elem_to_face` | `Array` | Map from `(iel,i,j,k)` to boundary face index and local coords |
@@ -864,9 +864,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             int_sol_accum[ip] += solution_new[ip_g] * weight / node_div[ip]
                             if (inputs[:lmanufactured_solution])
                                 int_ref_accum[ip] += ref[ip_g] * weight / node_div[ip]
-                                L2_ref += ref[ip_g]^2 * weight * ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                                L2_ref += ref[ip_g]^2 * weight * ω[i]*ω[j]*ω[k]*Je[i,j,k,iel]
                                 L2_err += (ref[ip_g] - solution_new[ip_g])^2 *
-                                      weight * ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                                      weight * ω[i]*ω[j]*ω[k]*Je[i,j,k,iel]
                             end
                         end
                     end
@@ -892,11 +892,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                 L2_ref += ref[ip_g]^2 *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] *
-                                ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                                ω[i]*ω[j]*ω[k]*Je[i,j,k,iel]
                                 L2_err += (ref[ip_g])^2 *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] *
-                                ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                                ω[i]*ω[j]*ω[k]*Je[i,j,k,iel]
                             end
                         end
                     end
@@ -1027,10 +1027,10 @@ function sparse_lhs_assembly_3Dby2D(ω, Je, connijk, ωθ, ωϕ, x, y, z,
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
             ip       = connijk[iel,i,j,k]
-            ωJac     = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
-            dξdx_ij  = dξdx[iel,i,j,k]; dξdy_ij = dξdy[iel,i,j,k]; dξdz_ij = dξdz[iel,i,j,k]
-            dηdx_ij  = dηdx[iel,i,j,k]; dηdy_ij = dηdy[iel,i,j,k]; dηdz_ij = dηdz[iel,i,j,k]
-            dζdx_ij  = dζdx[iel,i,j,k]; dζdy_ij = dζdy[iel,i,j,k]; dζdz_ij = dζdz[iel,i,j,k]
+            ωJac     = ω[i]*ω[j]*ω[k]*Je[i,j,k,iel]
+            dξdx_ij  = dξdx[i,j,k,iel]; dξdy_ij = dξdy[i,j,k,iel]; dξdz_ij = dξdz[i,j,k,iel]
+            dηdx_ij  = dηdx[i,j,k,iel]; dηdy_ij = dηdy[i,j,k,iel]; dηdz_ij = dηdz[i,j,k,iel]
+            dζdx_ij  = dζdx[i,j,k,iel]; dζdy_ij = dζdy[i,j,k,iel]; dζdz_ij = dζdz[i,j,k,iel]
             κ = rad_data ? κ_data[ip] : user_extinction(x[ip], y[ip], z[ip])
             σ = rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
 
@@ -1149,10 +1149,10 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
             ip       = connijk[iel,i,j,k]
-            ωJac     = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
-            dξdx_ij  = dξdx[iel,i,j,k]; dξdy_ij = dξdy[iel,i,j,k]; dξdz_ij = dξdz[iel,i,j,k]
-            dηdx_ij  = dηdx[iel,i,j,k]; dηdy_ij = dηdy[iel,i,j,k]; dηdz_ij = dηdz[iel,i,j,k]
-            dζdx_ij  = dζdx[iel,i,j,k]; dζdy_ij = dζdy[iel,i,j,k]; dζdz_ij = dζdz[iel,i,j,k]
+            ωJac     = ω[i]*ω[j]*ω[k]*Je[i,j,k,iel]
+            dξdx_ij  = dξdx[i,j,k,iel]; dξdy_ij = dξdy[i,j,k,iel]; dξdz_ij = dξdz[i,j,k,iel]
+            dηdx_ij  = dηdx[i,j,k,iel]; dηdy_ij = dηdy[i,j,k,iel]; dηdz_ij = dηdz[i,j,k,iel]
+            dζdx_ij  = dζdx[i,j,k,iel]; dζdy_ij = dζdy[i,j,k,iel]; dζdz_ij = dζdz[i,j,k,iel]
             κ = rad_data ? κ_data[ip] : user_extinction(x[ip], y[ip], z[ip])
             σ = rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
 
@@ -1235,7 +1235,7 @@ function assemble_mass_diagonal_3Dby2D(ω, Je, connijk, ωθ, ωϕ, connijk_ang,
     Md = zeros(Float64, npoin_ang_total)
     @inbounds for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
-            ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+            ωJac = ω[i]*ω[j]*ω[k]*Je[i,j,k,iel]
             ip   = connijk[iel,i,j,k]
             for e_ext = 1:nelem_ang
                 for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
@@ -1267,7 +1267,7 @@ function assemble_mass_diagonal_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ,
     Md = zeros(Float64, npoin_ang_total)
     @inbounds for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
-            ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+            ωJac = ω[i]*ω[j]*ω[k]*Je[i,j,k,iel]
             for e_ext = 1:nelem_ang[iel]
                 for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
                     ωJac_rad = ωθ[iθ]*ωϕ[jθ]*Je_ang[iel][e_ext,iθ,jθ]

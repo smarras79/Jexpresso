@@ -181,7 +181,7 @@ function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, nelem, Je, Δx,
                 for m = 1:Q+1
                     
                     ωmno  = ω[m]*ω[n]*ω[o]
-                    Jmnoe = Je[iel, m, n, o]
+                    Jmnoe = Je[m, n, o, iel]
                     ωJ    = ωmno*Jmnoe
 
                     for k = 1:N+1

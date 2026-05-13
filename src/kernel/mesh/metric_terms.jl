@@ -74,12 +74,12 @@ function allocate_metrics(SD, nelem, nfaces_bdy, Q, T, backend)
         dims1 = (nelem,      Q+1, Q+1, 1)
         dims2 = (nfaces_bdy, Q+1, 1)
     elseif SD == NSD_3D()
-        dims1 = (nelem,      Q+1, Q+1, Q+1)
+        dims1 = (Q+1, Q+1, Q+1, nelem)
         dims2 = (nfaces_bdy, Q+1, Q+1)
     end
 
     metrics = St_metrics{T, dims1, dims2, backend}()
-    
+
     return metrics
 end
 
@@ -363,15 +363,15 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
             
             # Cache all metric views for current element
-            dxdξ_iel = @view metrics.dxdξ[iel, :, :, :]
-            dxdη_iel = @view metrics.dxdη[iel, :, :, :]
-            dxdζ_iel = @view metrics.dxdζ[iel, :, :, :]
-            dydξ_iel = @view metrics.dydξ[iel, :, :, :]
-            dydη_iel = @view metrics.dydη[iel, :, :, :]
-            dydζ_iel = @view metrics.dydζ[iel, :, :, :]
-            dzdξ_iel = @view metrics.dzdξ[iel, :, :, :]
-            dzdη_iel = @view metrics.dzdη[iel, :, :, :]
-            dzdζ_iel = @view metrics.dzdζ[iel, :, :, :]
+            dxdξ_iel = @view metrics.dxdξ[:, :, :, iel]
+            dxdη_iel = @view metrics.dxdη[:, :, :, iel]
+            dxdζ_iel = @view metrics.dxdζ[:, :, :, iel]
+            dydξ_iel = @view metrics.dydξ[:, :, :, iel]
+            dydη_iel = @view metrics.dydη[:, :, :, iel]
+            dydζ_iel = @view metrics.dydζ[:, :, :, iel]
+            dzdξ_iel = @view metrics.dzdξ[:, :, :, iel]
+            dzdη_iel = @view metrics.dzdη[:, :, :, iel]
+            dzdζ_iel = @view metrics.dzdζ[:, :, :, iel]
             
             # Optimized triple loop with better memory access
             coord_idx = 1
@@ -420,16 +420,16 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
             
             # Optimized Jacobian calculations with better memory access
-            Je_iel   = @view metrics.Je[iel, :, :, :]
-            dξdx_iel = @view metrics.dξdx[iel, :, :, :]
-            dξdy_iel = @view metrics.dξdy[iel, :, :, :]
-            dξdz_iel = @view metrics.dξdz[iel, :, :, :]
-            dηdx_iel = @view metrics.dηdx[iel, :, :, :]
-            dηdy_iel = @view metrics.dηdy[iel, :, :, :]
-            dηdz_iel = @view metrics.dηdz[iel, :, :, :]
-            dζdx_iel = @view metrics.dζdx[iel, :, :, :]
-            dζdy_iel = @view metrics.dζdy[iel, :, :, :]
-            dζdz_iel = @view metrics.dζdz[iel, :, :, :]
+            Je_iel   = @view metrics.Je[:, :, :, iel]
+            dξdx_iel = @view metrics.dξdx[:, :, :, iel]
+            dξdy_iel = @view metrics.dξdy[:, :, :, iel]
+            dξdz_iel = @view metrics.dξdz[:, :, :, iel]
+            dηdx_iel = @view metrics.dηdx[:, :, :, iel]
+            dηdy_iel = @view metrics.dηdy[:, :, :, iel]
+            dηdz_iel = @view metrics.dηdz[:, :, :, iel]
+            dζdx_iel = @view metrics.dζdx[:, :, :, iel]
+            dζdy_iel = @view metrics.dζdy[:, :, :, iel]
+            dζdz_iel = @view metrics.dζdz[:, :, :, iel]
             
             @turbo for n = 1:Q1, m = 1:Q1, l = 1:Q1
                 # Load derivatives once with better naming
