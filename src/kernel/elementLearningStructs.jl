@@ -501,11 +501,15 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                                avisc, EL, A_∂τ∂τ, ∂τ_pos, gΓ, wbuf.infer,
                                nelintpoints, elnbdypoints)
 
-        @btime elementLearning_infer!($u, $mesh,
-                                      $wbuf.model, $wbuf.model_type,
-                                      $wbuf.input_name, $wbuf.output_name,
-                                      $avisc, $EL, $A_∂τ∂τ, $∂τ_pos, $gΓ, $wbuf.infer,
-                                      $nelintpoints, $elnbdypoints)
+        # @btime disabled: BenchmarkTools' generate_benchmark_definition Core.evals into
+        # the Jexpresso module at call time, which trips precompile when this branch is
+        # walked. Re-enable manually with explicit `let` bindings (no field-access
+        # interpolations) when running performance experiments.
+        # @btime elementLearning_infer!($u, $mesh,
+        #                               $wbuf.model, $wbuf.model_type,
+        #                               $wbuf.input_name, $wbuf.output_name,
+        #                               $avisc, $EL, $A_∂τ∂τ, $∂τ_pos, $gΓ, $wbuf.infer,
+        #                               $nelintpoints, $elnbdypoints)
         println(YELLOW_FG(string(" # --- INFERENCE — solution stored in u .......... DONE")))
     end
 
