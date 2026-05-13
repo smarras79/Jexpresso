@@ -624,7 +624,7 @@ function flux_parabolic(u, gradients, orientation::Integer)
     # `dynamic_viscosity` is a helper function that handles both cases
     # by dispatching on the type of `equations.mu`.
     #mu = dynamic_viscosity(u, equations)
-    mu = 1e-2 
+    mu = 1e-4 
 
     if orientation == 1
         # parabolic flux components in the x-direction

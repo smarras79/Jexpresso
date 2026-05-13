@@ -4,7 +4,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-	:ode_solver           => SSPRK43(),
+	:ode_solver           => CarpenterKennedy2N54(),
         :Δt                   => 1.0e-3,
         :tinit                => 0.0,
         :tend                 => 10.0,
@@ -15,11 +15,12 @@ function user_inputs()
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(), #THETA(),
         :use_named_tuples     => true, # Converts inputs to named tuples
+        :ode_adaptive_solver  => false,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,
+        :nop                 => 3,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -32,7 +33,7 @@ function user_inputs()
         # LKEP:
         #---------------------------------------------------------------------------
         :lkep        => true,
-	:entropy_variables => false,
+        :entropy_variables => true,
         :volume_flux => kennedy_gruber(),
         #:volume_flux => artiano_tec(),
         #:volume_flux => central_theta(),
@@ -57,7 +58,7 @@ function user_inputs()
         :loverwrite_output   => false,
         :lwrite_initial      => false,
        # :lwrite_initial      => true,
-        :output_dir          => "./output-theta/",
+        :output_dir          => "./output-nse/",
         #:output_dir          => "./test/CI-run",
         :loutput_pert        => false,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
@@ -81,5 +82,4 @@ function user_inputs()
     #---------------------------------------------------------------------------
 
     return inputs
-
 end
