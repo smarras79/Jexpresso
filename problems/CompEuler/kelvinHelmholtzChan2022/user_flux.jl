@@ -588,9 +588,9 @@ end
     return gradient
 end
 
-function flux_parabolic(u, gradients, orientation::Integer)
+function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, inputs, delta2)
 	# Here, `u` is assumed to be the "transformed" variables specified by `gradient_variable_transformation`.
-    _, v1, v2, _ = convert_transformed_to_primitive(u)
+    rho, v1, v2, _ = convert_transformed_to_primitive(u)
     # Here `gradients` is assumed to contain the gradients of the primitive variables (rho, v1, v2, T)
     # either computed directly or reverse engineered from the gradient of the entropy variables
     # by way of the `convert_gradient_variables` function.
@@ -607,16 +607,22 @@ function flux_parabolic(u, gradients, orientation::Integer)
     # (4/3 * (v2)_y - 2/3 * (v1)_x)
     tau_22 = (4 * dv2dy - 2 * dv1dx) / 3
 
-    # Fourier's law q = -kappa * grad(T) = -kappa * grad(p / (R rho))
-    # with thermal diffusivity constant kappa = gamma μ R / ((gamma-1) Pr)
-    # Note, the gas constant cancels under this formulation, so it is not present
-    # in the implementation
     PhysConst = PhysicalConst{Float64}()
-    gamma  = PhysConst.γ
-    Pr = PhysConst.Pr
-    kappa = gamma / (( gamma- 1)  * Pr)
-    q1 = kappa * dTdx
-    q2 = kappa * dTdy
+
+    mu_eff_momentum = SGS_diffusion(visc_coeffieq, 2,  # ieq=2 for u-momentum
+                                    rho, dv1dx, dv2dy, dv1dy, dv2dx,
+                                    PhysConst, delta2, inputs, SMAG(), NSD_2D())
+    
+    kappa_eff_temp = SGS_diffusion(visc_coeffieq, 4,  # ieq=4 for temperature
+                                    rho, dv1dx, dv2dy, dv1dy, dv2dx,
+                                   PhysConst, delta2, inputs, SMAG(), NSD_2D())
+    
+    mu_total = mu_eff_momentum 
+    
+        cp = PhysConst.cp
+        kappa = kappa_eff_temp / cp 
+        q1 = kappa * dTdx
+        q2 = kappa * dTdy
 
     # In the simplest cases, the user passed in `mu` or `mu()`
     # (which returns just a constant) but
@@ -624,14 +630,15 @@ function flux_parabolic(u, gradients, orientation::Integer)
     # `dynamic_viscosity` is a helper function that handles both cases
     # by dispatching on the type of `equations.mu`.
     #mu = dynamic_viscosity(u, equations)
-    mu = 1e-4 
+    #mu = 1e-4 
+    mu = mu_total
 
     if orientation == 1
         # parabolic flux components in the x-direction
         f1 = 0
         f2 = tau_11 * mu
         f3 = tau_12 * mu
-        f4 = (v1 * tau_11 + v2 * tau_12 + q1) * mu
+        f4 = (v1 * tau_11 + v2 * tau_12 ) * mu * 0 + q1
 
         return SVector(f1, f2, f3, f4)
     else # if orientation == 2
@@ -640,7 +647,7 @@ function flux_parabolic(u, gradients, orientation::Integer)
         g1 = 0
         g2 = tau_12 * mu # tau_21 * mu
         g3 = tau_22 * mu
-        g4 = (v1 * tau_12 + v2 * tau_22 + q2) * mu
+        g4 = (v1 * tau_12 + v2 * tau_22 ) * mu * 0 + q2
 
         return SVector(g1, g2, g3, g4)
     end

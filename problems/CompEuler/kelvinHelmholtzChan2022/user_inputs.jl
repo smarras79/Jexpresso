@@ -5,7 +5,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
 	:ode_solver           => CarpenterKennedy2N54(),
-        :Δt                   => 1.0e-3,
+        :Δt                   => 1.0e-4,
         :tinit                => 0.0,
         :tend                 => 10.0,
         :diagnostics_at_times => (0.0:1.0:10.0),
@@ -20,7 +20,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 3,
+        :nop                 => 5,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
