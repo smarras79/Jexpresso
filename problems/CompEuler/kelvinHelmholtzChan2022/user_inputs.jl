@@ -5,7 +5,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
 	:ode_solver           => CarpenterKennedy2N54(),
-        :Δt                   => 1.0e-4,
+        :Δt                   => 1.0e-3,
         :tinit                => 0.0,
         :tend                 => 10.0,
         :diagnostics_at_times => (0.0:1.0:10.0),
@@ -13,14 +13,14 @@ function user_inputs()
         :lrestart             => false,
         #:case                 => "rtb",
         :lsource              => false,
-        :SOL_VARS_TYPE        => TOTAL(), #THETA(),
+        :SOL_VARS_TYPE        => TOTAL(), #TOTAL(),
         :use_named_tuples     => true, # Converts inputs to named tuples
         :ode_adaptive_solver  => false,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 5,
+        :nop                 => 3,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -28,13 +28,14 @@ function user_inputs()
         :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
         #:μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
         :visc_model           => SMAG(),
+	#:energy_equation      => "theta",
         #:visc_model           => VREM(),
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
         :lkep        => true,
-        :entropy_variables => true,
-        :volume_flux => kennedy_gruber(),
+        :entropy_variables => false,
+        :volume_flux => ranocha(),
         #:volume_flux => artiano_tec(),
         #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------

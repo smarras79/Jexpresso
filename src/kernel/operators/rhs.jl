@@ -1895,7 +1895,7 @@ end
     end
 end
 
-
+#=
 @inline function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
@@ -2021,6 +2021,7 @@ end
         end
     end
 end
+=#
 
 @inline @inbounds function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,

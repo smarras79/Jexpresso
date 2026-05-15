@@ -174,7 +174,6 @@ function time_loop!(inputs, params, u, args...)
         println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
         @mystop()
     else
-        @show "testing"
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
