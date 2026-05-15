@@ -1,8 +1,11 @@
 using ArgParse
 using MPI
 using BenchmarkTools
-using Jexpresso: NSD_2D, St_mesh
+using Jexpresso
 
+# TODO - These should be imported
+using Jexpresso: NSD_2D, St_mesh, CL, THETA, central_euler, central_theta, TOTAL, kennedy_gruber, ranocha, artiano_ec, artiano_tec, artiano_etec, TInt, PERT, NCL, AbstractPert, mod_inputs_print_welcome, CarpenterKennedy2N54, SMAG, VREM, mod_inputs_user_inputs!, Dates, now
+using KernelAbstractions
 #--------------------------------------------------------
 # The problem name is a command line argument:
 #
