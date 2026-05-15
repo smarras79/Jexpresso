@@ -12,7 +12,16 @@ using JLD2
 # Until then, the JLD2 files do not exist, isfile() returns false, and the
 # prefetch is a no-op — no error, just no acceleration.
 # ───────────────────────────────────────────────────────────────────────────
+# Caching is opt-in: only build a cache path when the user explicitly sets
+# inputs[:luse_mesh_cache] = true. Otherwise the helpers return "" and every
+# load/save site treats that as "no cache" (file-existence checks fail, save
+# helpers early-return). This prevents stale JLD2 files from being silently
+# reused when the user switches problems or regenerates the gmsh mesh.
+_use_mesh_cache(inputs) = get(inputs, :luse_mesh_cache, false) === true
+
 function _mesh_cache_path(inputs, nparts::Int)
+    _use_mesh_cache(inputs) || return ""
+    haskey(inputs, :gmsh_filename) || return ""
     rank   = MPI.Comm_rank(get_mpi_comm())
     gmsh   = inputs[:gmsh_filename]
     dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
@@ -22,12 +31,22 @@ function _mesh_cache_path(inputs, nparts::Int)
 end
 
 function _preprocess_cache_path(inputs, Nξ::Int, Qξ::Int, nparts::Int)
+    _use_mesh_cache(inputs) || return ""
+    haskey(inputs, :gmsh_filename) || return ""
     rank   = MPI.Comm_rank(get_mpi_comm())
     gmsh   = inputs[:gmsh_filename]
     dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
     stem   = splitext(basename(gmsh))[1]
     suffix = nparts > 1 ? "_rank$(rank)" : ""
     return joinpath(dir, "PREPROCESS_$(stem)_nop$(Nξ)$(suffix).jld2")
+end
+
+# Cache is considered stale if the source gmsh file is newer than the cache
+# file. Callers pass the cache path and the gmsh filename (already validated
+# to exist by the caller's isfile() check).
+function _cache_is_stale(cache_path::String, gmsh_path::String)
+    (isfile(cache_path) && isfile(gmsh_path)) || return false
+    return mtime(gmsh_path) > mtime(cache_path)
 end
 
 # ===========================================================================

@@ -5,9 +5,13 @@ include("../mesh/restructure_for_periodicity.jl")
 # state.  Cache file path is computed by _preprocess_cache_path (see
 # coupling/couplingStructs.jl).  rank is obtained via MPI inside each helper
 # so callers don't need to thread it through.
-function _try_load_sem_cache(path::String)
+function _try_load_sem_cache(path::String; gmsh_path::String="")
     rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return (nothing, nothing)
+    if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
+        rank == 0 && @info "SEM cache $path is older than $gmsh_path — discarding stale cache"
+        return (nothing, nothing)
+    end
     try
         # Use pre-fetched data when available (populated by je_prefetch_caches!).
         if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing
@@ -22,6 +26,7 @@ function _try_load_sem_cache(path::String)
 end
 
 function _save_sem_cache(path::String, metrics, matrix)
+    isempty(path) && return
     rank = MPI.Comm_rank(get_mpi_comm())
     try
         JLD2.jldsave(path; metrics, matrix)
@@ -134,7 +139,8 @@ function sem_setup(inputs, nparts, distribute, args...)
 
     # ── SEM preprocess cache load ────────────────────────────────────────────
     preprocess_cache = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
-    cached_metrics, cached_matrix = _try_load_sem_cache(preprocess_cache)
+    cached_metrics, cached_matrix = _try_load_sem_cache(preprocess_cache;
+                                                        gmsh_path=get(inputs, :gmsh_filename, ""))
     loaded_from_cache = !isnothing(cached_metrics)
     if loaded_from_cache
         rank == 0 && @info "Loaded SEM preprocess cache — skipping metric terms and matrix build: $preprocess_cache"

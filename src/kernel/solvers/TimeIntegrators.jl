@@ -1,3 +1,5 @@
+using TrixiBase
+using TimerOutputs
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -86,14 +88,14 @@ function time_loop!(inputs, params, u, args...)
         end
         MPI.Barrier(comm)
         write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
-                        integrator.p.mesh, integrator.p.mp,
-                        integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
-                        integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-                        tmp_restart_path, inputs,
-                        integrator.p.qp.qvars,
-                        integrator.p.qp.qoutvars,
-                        res_fortmat;
-                        nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+                     integrator.p.mesh, integrator.p.mp,
+                     integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
+                     integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
+                     tmp_restart_path, inputs,
+                     integrator.p.qp.qvars,
+                     integrator.p.qp.qoutvars,
+                     res_fortmat;
+                     nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
         MPI.Barrier(comm)
         if rank == 0
             cp(tmp_restart_path, inputs[:restart_output_file_path]; force=true)
@@ -129,10 +131,10 @@ function time_loop!(inputs, params, u, args...)
             #CFL
             if inputs[:ladapt] == false
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
-                        integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
-                        integrator.p.mesh.Δeffective_s,
-                        integrator,
-                        integrator.p.SD; visc=inputs[:μ])
+                           integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
+                           integrator.p.mesh.Δeffective_s,
+                           integrator,
+                           integrator.p.SD; visc=inputs[:μ])
             end
             write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
@@ -177,24 +179,29 @@ function time_loop!(inputs, params, u, args...)
         end
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
-    
+
+    TimerOutputs.reset_timer!(TrixiBase.timer())
     #
     # Simulation
-    #   
+    #
     callbacks_main = (is_coupled && cb_coupling !== nothing) ?
-                     CallbackSet(cb, cb_restart, cb_coupling) :
-                     CallbackSet(cb, cb_restart)
-    solution = solve(prob,
-                     inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                     #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                     callback = callbacks_main, tstops = dosetimes,
-                     save_everystep = false,
-                     adaptive=inputs[:ode_adaptive_solver],
-                     saveat = range(inputs[:tinit],
-                                    inputs[:tend],
-                                    length=inputs[:ndiagnostics_outputs]));
-    
-    
+        CallbackSet(cb, cb_restart, cb_coupling) :
+        CallbackSet(cb, cb_restart)
+
+    TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
+    rank == 0 && println(" # Simulation timing and allocations:")
+    solution = @time solve(prob,
+                           inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                           #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
+                           callback = callbacks_main, tstops = dosetimes,
+                           save_everystep = false,
+                           adaptive=inputs[:ode_adaptive_solver],
+                           saveat = range(inputs[:tinit],
+                                          inputs[:tend],
+                                          length=inputs[:ndiagnostics_outputs]));
+
+    rank == 0 && show(stdout, JEXPRESSO_TIMER; allocations=true, sortby=:firstexec)
+    rank == 0 && println()
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)
@@ -204,11 +211,11 @@ function time_loop!(inputs, params, u, args...)
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
             
             @time solution = solve(prob,
-                                inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                                callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
-                                save_everystep = false,
-                                adaptive=inputs[:ode_adaptive_solver],
-                                saveat = []);
+                                   inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                                   callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
+                                   save_everystep = false,
+                                   adaptive=inputs[:ode_adaptive_solver],
+                                   saveat = []);
             MPI.Barrier(comm)
             report_all_timers(prob.p.timers)
             MPI.Barrier(comm)
