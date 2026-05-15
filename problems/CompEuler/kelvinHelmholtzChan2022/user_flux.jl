@@ -618,9 +618,13 @@ function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, input
                                    PhysConst, delta2, inputs, SMAG(), NSD_2D())
     
     mu_total = mu_eff_momentum 
+    mu_total = 1e-4
     
         cp = PhysConst.cp
         kappa = kappa_eff_temp / cp 
+	Pr = 0.72
+	gamma =  PhysConst.γ
+	kappa = gamma /(gamma-1)/ Pr
         q1 = kappa * dTdx
         q2 = kappa * dTdy
 
@@ -638,7 +642,7 @@ function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, input
         f1 = 0
         f2 = tau_11 * mu
         f3 = tau_12 * mu
-        f4 = (v1 * tau_11 + v2 * tau_12 ) * mu * 0 + q1
+        f4 = (v1 * tau_11 + v2 * tau_12 + q1) * mu 
 
         return SVector(f1, f2, f3, f4)
     else # if orientation == 2
@@ -647,7 +651,7 @@ function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, input
         g1 = 0
         g2 = tau_12 * mu # tau_21 * mu
         g3 = tau_22 * mu
-        g4 = (v1 * tau_12 + v2 * tau_22 ) * mu * 0 + q2
+        g4 = (v1 * tau_12 + v2 * tau_22 + q2) * mu 
 
         return SVector(g1, g2, g3, g4)
     end

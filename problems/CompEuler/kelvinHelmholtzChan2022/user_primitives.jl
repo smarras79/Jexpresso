@@ -13,6 +13,7 @@ function user_primitives!(u, qe, uprimitive,::TOTAL)
     KE_specific = 0.5 * (u^2 + v^2)               # Specific kinetic energy
     ei_specific = E_specific - KE_specific        # Specific internal energy
     p           = PhysConst.γm1 * ρ * ei_specific # Pressure
+    p = PhysConst.γm1 * ( ρE - 0.5f0 * ( ρu^2 +  ρv^2)/ρ)
     T           = p / (ρ * PhysConst.Rair)        # Temperature
 
     uprimitive[1] = ρ

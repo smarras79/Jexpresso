@@ -3,7 +3,7 @@ using Parameters
 @with_kw struct PhysicalConst{T}
 
     #Thermodynamic constants at T=300 K
-    Rair::T     =  287.0   #J/kg.K
+    Rair::T     =  1.0   #J/kg.K
     cp::T       = 1004.0   #J/kg.K
     cv::T       =  717.0   #J/kg.K
     Lc::T       = 2.5104e6 #J/kg Latent heat of vaporization
