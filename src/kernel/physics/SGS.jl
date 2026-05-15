@@ -23,7 +23,7 @@
     κ_mol = PhysConst.κ_mol  # Molecular thermal diffusivity [m²/s]
     C_s   = PhysConst.C_s    # Smagorinsky constant
     C_s2  = C_s*C_s
-
+    cp    = PhysConst.cp
     
     # Smagorinsky
     # Strain rate tensor (symmetric part of velocity gradient)
