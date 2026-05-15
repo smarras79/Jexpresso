@@ -2,7 +2,6 @@
 using SparseArrays
 using JLD2
 using ONNXRunTime
-using BenchmarkTools
 using Profile, PProf   # PProf gives a flame graph in the browser
 
 # =============================================================================

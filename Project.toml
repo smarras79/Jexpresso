@@ -69,7 +69,7 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [compat]
-BenchmarkTools = "1.6.3"
+BenchmarkTools = "1.8.0"
 CSV = "0.10.16"
 Crayons = "=4.1.1"
 Gridap = "=0.18.12"
