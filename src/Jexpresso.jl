@@ -172,10 +172,6 @@ include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
-include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
-
-include(joinpath("kernel", "operators", "filter.jl"))
-
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
