@@ -3,7 +3,6 @@ export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
-include("./meshStructs.jl")
 include("warping.jl")
 include("stretching.jl")
 
