@@ -155,28 +155,28 @@ end
 # =============================================================================
 struct EL_InferBuffers
     # ── ONNX staging (row-major: samples × features) ─────────────────────────
-    avisc_f32    :: Matrix{Float32}    # (1,          nfeatures)  — Case A shared
-    avisc_batch  :: Matrix{Float32}    # (nelem,      nfeatures)  — Case B per-element
+    avisc_f32    :: Array{Float32, 2}    # (1,          nfeatures)  — Case A shared
+    avisc_batch  :: Array{Float32, 2}    # (nelem,      nfeatures)  — Case B per-element
 
     # ── JLD2/RFRC staging (column-major: features × samples) ─────────────────
-    avisc_f32_T  :: Matrix{Float32}    # (nfeatures,  nelem)      — transposed for NNRFRC
-    ŷ_f32_batch  :: Matrix{Float32}    # (nout,       nelem)      — JLD2 output buffer
+    avisc_f32_T  :: Array{Float32, 2}    # (nfeatures,  nelem)      — transposed for NNRFRC
+    ŷ_f32_batch  :: Array{Float32, 2}    # (nout,       nelem)      — JLD2 output buffer
 
     # ── Shared staging ────────────────────────────────────────────────────────
     ŷ_f64_buf    :: Vector{Float64}    # (nout,)                  — per-element cast buffer
 
     # ── Element assembly ──────────────────────────────────────────────────────
     Tie_nn_all   :: Array{Float64, 3}  # (nelintpoints, elnbdypoints, nelem)
-    conn_∂τ_idx  :: Vector{Int}        # (elnbdypoints,)
-    M            :: Matrix{Float64}    # (elnbdypoints, elnbdypoints)
+    M            :: Array{Float64, 2}    # (elnbdypoints, elnbdypoints)
     B_∂τ∂τ       :: SparseMatrixCSC{Float64, Int32}
+    conn_∂τ_idx  :: Vector{Int}        # (elnbdypoints,)
 
     # ── Index maps ────────────────────────────────────────────────────────────
     ∂O_in_∂τ     :: Vector{Int}
     Γ_in_∂τ      :: Vector{Int}
 
     # ── Gather / recovery ─────────────────────────────────────────────────────
-    uvb_nn       :: Matrix{Float64}    # (nelem, elnbdypoints)
+    uvb_nn       :: Array{Float64, 2}    # (nelem, elnbdypoints)
     uvo_nn       :: Vector{Float64}    # (nelintpoints,)
 end
 
@@ -190,23 +190,23 @@ function EL_InferBuffers(mesh, A_∂τ∂τ::SparseMatrixCSC,
     nout = nelintpoints * elnbdypoints
     return EL_InferBuffers(
         # ONNX staging
-        Matrix{Float32}(undef, 1,          nfeatures),
-        Matrix{Float32}(undef, mesh.nelem, nfeatures),
+        Array{Float32, 2}(undef, 1,          nfeatures),
+        Array{Float32, 2}(undef, mesh.nelem, nfeatures),
         # JLD2/RFRC staging
-        Matrix{Float32}(undef, nfeatures,  mesh.nelem),
-        Matrix{Float32}(undef, nout,       mesh.nelem),
+        Array{Float32, 2}(undef, nfeatures,  mesh.nelem),
+        Array{Float32, 2}(undef, nout,       mesh.nelem),
         # Shared staging
         Vector{Float64}(undef, nout),
         # Element assembly
         Array{Float64, 3}(undef, nelintpoints, elnbdypoints, mesh.nelem),
         Vector{Int}(undef, elnbdypoints),
-        Matrix{Float64}(undef, elnbdypoints, elnbdypoints),
+        Array{Float64, 2}(undef, elnbdypoints, elnbdypoints),
         copy(A_∂τ∂τ),
         # Index maps
         Vector{Int}(undef, mesh.length∂O),
         Vector{Int}(undef, mesh.lengthΓ),
         # Gather / recovery
-        Matrix{Float64}(undef, mesh.nelem, elnbdypoints),
+        Array{Float64, 2}(undef, mesh.nelem, elnbdypoints),
         Vector{Float64}(undef, nelintpoints),
     )
 end
@@ -222,20 +222,20 @@ struct EL_WorkBuffers
 
     # Sampling block scratch
     ΔB           :: SparseMatrixCSC{Float64, Int32}
-    invAvovo_buf :: Matrix{Float64}
-    BC_local     :: Matrix{Float64}
+    invAvovo_buf :: Array{Float64, 2}
+    BC_local     :: Array{Float64, 2}
     ∂O_in_∂τ     :: Vector{Int}
     Γ_in_∂τ      :: Vector{Int}
     u∂O          :: Vector{Float64}
 
     # Recovery block scratch
-    AIoΓ_ie      :: Matrix{Float64}
+    AIoΓ_ie      :: Array{Float64, 2}
     AIou∂O_ie    :: Vector{Float64}
     AIoΓg_ie     :: Vector{Float64}
     rhs_ie       :: Vector{Float64}
     uvo_ie       :: Vector{Float64}
-    fvo_ie       :: Matrix{Float64}
-    invAIoIo_buf :: Matrix{Float64}
+    fvo_ie       :: Array{Float64, 2}
+    invAIoIo_buf :: Array{Float64, 2}
     
     # Inference buffers
     infer        :: EL_InferBuffers
@@ -292,9 +292,9 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
             #       W_in, W_res, W_out, b_out, ridge_alpha, activation
             #   end
             model = NNRFRC.RFRC{Float32}(
-                Matrix{Float32}(raw.W_in),       # 1st: W_in
-                Matrix{Float32}(raw.W_res),      # 2nd: W_res
-                Matrix{Float32}(raw.W_out),      # 3rd: W_out
+                Array{Float32, 2}(raw.W_in),       # 1st: W_in
+                Array{Float32, 2}(raw.W_res),      # 2nd: W_res
+                Array{Float32, 2}(raw.W_out),      # 3rd: W_out
                 Vector{Float32}(raw.b_out),      # 4th: b_out
                 Float32(raw.ridge_alpha),         # 5th: ridge_alpha
                 raw.activation                    # 6th: activation (Function)
@@ -329,9 +329,9 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
 end
 
 
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  Main function                                                              ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
+# =========================================================================
+# Main function
+# =========================================================================
 function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               A::SparseMatrixCSC,
                               ubdy, EL,
@@ -375,7 +375,6 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             ipo = mesh.conn[iel, i]
 
             wbuf.fvo_ie[ii, iel] = ubdy[ipo]
-            @info wbuf.fvo_ie[ii, iel]
             
             for j = 1:elnbdypoints
                 gj  = mesh.conn[iel, j]
@@ -501,8 +500,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             LinearAlgebra.mul!(EL.Tie,  invAvovo, @view(EL.Avovb[:, :, iel]), -1.0, 0.0)
             LinearAlgebra.mul!(EL.T1,   transpose(@view(EL.Avovb[:, :, iel])), EL.Tie, -1.0, 0.0)
 
-            #LinearAlgebra.mul!(EL.tie,  invAvovo, @view(EL.fvo[:, iel]))
-            
+            LinearAlgebra.mul!(EL.tie,  invAvovo, @view(EL.fvo[:, iel]))
+            @info EL.tie
             EL.output_tensor[:, isamp] .= -vec(EL.Tie)
         end
         write_MLtensor!(bufferin,  EL.input_tensor[:,  isamp])
@@ -559,13 +558,13 @@ Element-learning inference step.  Dispatches on `model_type`:
 - `elnbdypoints`  : number of boundary nodes per element
 """
 function elementLearning_infer!(
-    u            :: AbstractMatrix{Float64},
+    u            :: AbstractArray{Float64, 2},
     mesh,
     model,
     model_type   :: Symbol,
     input_name   :: String,
     output_name  :: String,
-    avisc        :: Matrix{Float64},
+    avisc        :: Array{Float64, 2},
     EL,
     A_∂τ∂τ       :: SparseMatrixCSC,
     ∂τ_pos       :: Dict,
@@ -763,7 +762,7 @@ end
 #    H = get_features(model, X)       # H = activation(W_in * X)
 #    Y = W_out * H + b_out
 #
-#  get_features expects X as Matrix{Float32} of shape (nfeatures, nbatch).
+#  get_features expects X as Array{Float32, 2} of shape (nfeatures, nbatch).
 #  We pass raw features; get_features handles the W_in projection internally.
 # =============================================================================
 function _infer_jld2!(buf, model,
@@ -777,7 +776,7 @@ function _infer_jld2!(buf, model,
             buf.avisc_f32_T[k, 1] = Float32(avisc[1, k])
         end
         # get_features wants Matrix{T}, not SubArray — use slicing (allocates a small copy)
-        avisc_in = buf.avisc_f32_T[:, 1:1]   # (nfeatures, 1) Matrix{Float32}
+        avisc_in = buf.avisc_f32_T[:, 1:1]   # (nfeatures, 1) Array{Float32, 2}
 
         # Forward pass: H = activation(W_in * X), then Y = W_out * H + b_out
         H_res = NNRFRC.get_features(model, avisc_in)
@@ -831,7 +830,7 @@ function flush_MLtensor!(buffer::Vector{Vector{Float64}}, total_cols_written, fn
     isempty(buffer) && return total_cols_written
     nrows = length(buffer[1])
     ncols = length(buffer)
-    data  = Matrix{Float64}(undef, nrows, ncols)
+    data  = Array{Float64, 2}(undef, nrows, ncols)
     for (j, col) in enumerate(buffer)
         data[:, j] .= col
     end
