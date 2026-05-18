@@ -1,4 +1,3 @@
-include("./mesh/meshStructs.jl")
 #include("../../EL_Jexpresso/NN_RFRC.jl")
 using SparseArrays
 using JLD2
