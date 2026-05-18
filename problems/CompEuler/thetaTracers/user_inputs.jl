@@ -6,7 +6,7 @@ function user_inputs()
         :tend                 => 1000.0,
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.2,
-        :diagnostics_at_times => [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
+        :diagnostics_at_times => (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000),
         :case                 => "rtb",
         :lsource              => true,
         #---------------------------------------------------------------------------
@@ -21,7 +21,7 @@ function user_inputs()
         #:visc_model     => AV(),
         #:visc_model     => VREM(),
         :visc_model     => SMAG(),
-        :energy_equation => "theta",
+        #:energy_equation => "theta",
         :μ                   => [0.0, 1.0, 1.0, 2.0, 3.0, 1.0], #horizontal viscosity constant for momentum
         #:μ                   => [0.0, 40.0, 40.0, 60.0, 60.0, 60.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------

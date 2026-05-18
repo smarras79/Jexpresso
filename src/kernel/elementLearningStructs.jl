@@ -78,6 +78,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
                                            dims_vovo,
                                            dims_∂Ovo,
                                            dims_vovb,
+                                           dims_t,
                                            dims_T2,
                                            dims_T1,
                                            dimsML1,
@@ -88,7 +89,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
     # ── Per-element: interior × interior  (nvo × nvo × nelem) ────────────────
     Avovo   = KernelAbstractions.zeros(backend, T, dims_vovo)
     AIoIo   = KernelAbstractions.zeros(backend, T, dims_vovo)
-
+    
     # ── Per-element: interior × local-boundary  (nvo × elnbdy × nelem) ───────
     Avovb   = KernelAbstractions.zeros(backend, T, dims_vovb)
     Avo∂O   = KernelAbstractions.zeros(backend, T, dims_vovb)
@@ -104,7 +105,8 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
     T1      = KernelAbstractions.zeros(backend, T, dims_T1)
     T2      = KernelAbstractions.zeros(backend, T, dims_T2)
     Tie     = KernelAbstractions.zeros(backend, T, dims_T2)
-
+    tie     = KernelAbstractions.zeros(backend, T, dims_t)
+    
     lEL_Sample = lELSample
 
     # ── ML tensors ────────────────────────────────────────────────────────────
@@ -126,6 +128,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
     dims_vovo  = (nvo,          nvo,          nelem)
     dims_vovb  = (nvo,          elnbdypoints, nelem)
     dims_∂Ovo  = (elnbdypoints, nvo,          nelem)
+    dims_t     = (nvo,          nelem)
     dims_T1    = (elnbdypoints, elnbdypoints)
     dims_T2    = (nvo,          elnbdypoints)
     dimsML1    = ((k+1)^2,        Nsamp)
@@ -137,6 +140,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
                            dims_vovo,
                            dims_∂Ovo,
                            dims_vovb,
+                           dims_t,
                            dims_T2,
                            dims_T1,
                            dimsML1,
@@ -230,8 +234,9 @@ struct EL_WorkBuffers
     AIoΓg_ie     :: Vector{Float64}
     rhs_ie       :: Vector{Float64}
     uvo_ie       :: Vector{Float64}
+    fvo_ie       :: Matrix{Float64}
     invAIoIo_buf :: Matrix{Float64}
-
+    
     # Inference buffers
     infer        :: EL_InferBuffers
 
@@ -304,7 +309,7 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
     return EL_WorkBuffers(
         zeros(Int, elnbdypoints),                                   # conn_∂O_idx
         zeros(Int, elnbdypoints),                                   # conn_∂τ_idx
-        spzeros(T, mesh.length∂O, mesh.length∂τ),                  # ΔB
+        spzeros(T, mesh.length∂O, mesh.length∂τ),                   # ΔB
         Matrix{T}(undef, nelintpoints, nelintpoints),               # invAvovo_buf
         Matrix{T}(undef, nelintpoints, elnbdypoints),               # BC_local
         Vector{Int}(undef, mesh.length∂O),                          # ∂O_in_∂τ
@@ -315,9 +320,10 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
         Vector{T}(undef, nelintpoints),                             # AIoΓg_ie
         Vector{T}(undef, nelintpoints),                             # rhs_ie
         Vector{T}(undef, nelintpoints),                             # uvo_ie
+        Matrix{T}(undef, nelintpoints, mesh.nelem),                 # fvo_ie
         Matrix{T}(undef, nelintpoints, nelintpoints),               # invAIoIo_buf
-        EL_InferBuffers(mesh, A_∂τ∂τ, nfeatures,
-                        nelintpoints, elnbdypoints),                # infer
+        EL_InferBuffers(mesh, A_∂τ∂τ, nfeatures,                    # infer
+                        nelintpoints, elnbdypoints),
         model, m_type, m_inname, m_outname,
     )
 end
@@ -337,25 +343,26 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               total_cols_writtenin=0,
                               total_cols_writtenout=0)
 
+    nelem         = mesh.nelem
+    ngl           = mesh.ngl
     mesh.lengthO  = mesh.length∂O + mesh.lengthIo
-    nelintpoints  = (mesh.ngl - 2)^2
+    nelintpoints  = (ngl - 2)^2
     nelpoints     = size(mesh.conn, 2)
     elnbdypoints  = nelpoints - nelintpoints
 
     # ── DOF → position lookup tables ─────────────────────────────────────────
     ∂O_pos = Dict{Int,Int}(mesh.∂O[i] => i for i in 1:mesh.length∂O)
     ∂τ_pos = Dict{Int,Int}(mesh.∂τ[j] => j for j in 1:mesh.length∂τ)
-
+    
     # =========================================================================
     # SECTION 1: Sparse skeleton submatrices
     # =========================================================================
     A_∂τ∂τ = A[mesh.∂τ, mesh.∂τ]
     A_∂O∂τ = A[mesh.∂O, mesh.∂τ]
-
+    
     # =========================================================================
     # SECTION 2: Fill per-element 3D blocks from A
-    # =========================================================================
-    nelem = mesh.nelem
+    # =========================================================================   
     @inbounds for iel = 1:nelem
         for j = 1:elnbdypoints
             gnode                  = mesh.conn[iel, j]
@@ -366,6 +373,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         ii = 1
         for i = elnbdypoints+1:nelpoints
             ipo = mesh.conn[iel, i]
+
+            wbuf.fvo_ie[ii, iel] = ubdy[ipo]
+            @info wbuf.fvo_ie[ii, iel]
+            
             for j = 1:elnbdypoints
                 gj  = mesh.conn[iel, j]
                 val = A[ipo, gj]
@@ -385,6 +396,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                 val = A[ipo, mesh.conn[iel, j]]
                 EL.Avovo[ii, jj, iel] = val
                 EL.AIoIo[ii, jj, iel] = val
+               
                 jj += 1
             end
             ii += 1
@@ -449,7 +461,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         @inbounds for io = 1:mesh.lengthΓ;   u[mesh.Γ[io]]  = gΓ[io];        end
 
         # ── Per-element interior recovery ─────────────────────────────────────
-        @inbounds for iel = 1:mesh.nelem
+        @inbounds for iel = 1:nelem
             for j = 1:elnbdypoints
                 wbuf.conn_∂O_idx[j] = get(∂O_pos, mesh.conn[iel, j], 0)
             end
@@ -488,6 +500,9 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             invAvovo = inv(wbuf.invAvovo_buf)
             LinearAlgebra.mul!(EL.Tie,  invAvovo, @view(EL.Avovb[:, :, iel]), -1.0, 0.0)
             LinearAlgebra.mul!(EL.T1,   transpose(@view(EL.Avovb[:, :, iel])), EL.Tie, -1.0, 0.0)
+
+            #LinearAlgebra.mul!(EL.tie,  invAvovo, @view(EL.fvo[:, iel]))
+            
             EL.output_tensor[:, isamp] .= -vec(EL.Tie)
         end
         write_MLtensor!(bufferin,  EL.input_tensor[:,  isamp])
