@@ -105,7 +105,8 @@ function driver(nparts,
             nelem_semi_inf = params.mesh.nelem_semi_inf
             ngl            = sem.mesh.ngl
             ngr            = sem.mesh.ngr
-            
+
+            #RHS is "\int(f\psi)" in Au = f
             RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(npoin))
             Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(npoin))
             
@@ -137,8 +138,8 @@ function driver(nparts,
                         #-----------------------------------------------------
                         # 1. Sampling
                         #-----------------------------------------------------
-                        bufferin  = Vector{Vector{Float64}}()
-                        bufferout = Vector{Vector{Float64}}()
+                        bufferin              = Vector{Vector{Float64}}()
+                        bufferout             = Vector{Vector{Float64}}()
                         total_cols_writtenin  = 0
                         total_cols_writtenout = 0
                         
@@ -146,9 +147,12 @@ function driver(nparts,
                         if isfile("output_tensor.csv"); rm("output_tensor.csv"); end
 
                         # ── Allocate ONCE outside the loop ────────────────────────────────────────
-                        A       = sem.matrix.L
-                        A_∂τ∂τ  = A[sem.mesh.∂τ, sem.mesh.∂τ]
-                        avisc   = zeros(TFloat, 1, ngl^2)          # shape fixed, values change each iter
+                        A         = sem.matrix.L
+                        A_∂τ∂τ    = A[sem.mesh.∂τ, sem.mesh.∂τ]
+                        
+                        fiel      = zeros(TFloat, ngl^2, nelem)
+
+                        avisc     = zeros(TFloat, 1, ngl^2)          # shape fixed, values change each iter
                         nfeatures = size(avisc, 2)
                         
                         wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
@@ -160,18 +164,19 @@ function driver(nparts,
                             println(" # --- sample = $isamp")
 
                             # avisc changes each sample — update values in-place, no reallocation
-                            ranvisc      = 0.5 + rand()
-                            avisc[1, :] .= ranvisc
+                            avisc[1, :] .= 0.5 + rand()
 
                             for ip = 1:npoin
-                                user_source!(RHS[ip], params.qp.qn[ip], params.qp.qe[ip],
+                                user_source!(@view(RHS[ip:ip]),
+                                             params.qp.qn[ip],
+                                             params.qp.qe[ip],
                                              npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
                                              neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
                                              xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
                                              ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
                             end
                             RHS = sem.matrix.M .* RHS
-
+                            
                             apply_boundary_conditions_lin_solve!(sem.matrix.L,
                                                                  0.0, params.qp.qe,
                                                                  params.mesh.coords,
@@ -311,14 +316,14 @@ function driver(nparts,
                     # L*q = M*RHS   See algo 12.18 of Giraldo's book
                     #-----------------------------------------------------
                     for ip =1:sem.mesh.npoin
-                        RHS[ip] = user_source!(RHS[ip],
-                                               params.qp.qn[ip],
-                                               params.qp.qe[ip],
-                                               sem.mesh.npoin,
-                                               inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                               neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
-                                               xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
-                                               ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
+                        user_source!(@view(RHS[ip:ip]),
+                                     params.qp.qn[ip],
+                                     params.qp.qe[ip],
+                                     sem.mesh.npoin,
+                                     inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                     neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                                     xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
+                                     ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
                     end
                     RHS = sem.matrix.M.*RHS
                     

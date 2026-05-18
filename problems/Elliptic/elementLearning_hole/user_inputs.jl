@@ -15,7 +15,7 @@ function user_inputs()
         :NNfile               => "JX_NN_model.onnx",
         #:NNfile               => "JX_RFRC_model.onnx",
         #:NNfile               => "JX_RFRC_final.jld2",
-        :Nsamp                => 50000,
+        :Nsamp                => 1, #50000,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         # Plotting parameters

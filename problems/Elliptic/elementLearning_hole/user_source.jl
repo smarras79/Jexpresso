@@ -14,27 +14,16 @@ function user_source!(S,
     #
     # S(q(x))
     #
-    #L     = sqrt((xmax-xmin)^2 + (ymax-ymin)^2)
-    L     = abs(xmax-xmin)
-    
-    alpha = 0.0 #1.0
-    beta  = 0.0 #1.0
-    gamma = 0.0 #1.0
+    #L     = sqrt((xmax - xmin)^2 + (ymax - ymin)^2)
+    L     = abs(xmax - xmin)
+    alpha = 10.0 #1.0
+    beta  = 20.0 #1.0
+    gamma = 30.0 #1.0
     
     f   = - beta*(cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y)
+    u_e =   gamma*sin(x/L) * exp(-x/L)*cos(y)
     
-    u_e = gamma*sin(x/L)*exp(-x/L)*cos(y)
+    S[1] = f - alpha*u_e
     
-    return f - alpha*u_e
-    
-end
-
-function user_source_gpu(q, qe, x, y)
-    T = eltype(q)
-    L = 2
-    alpha = 10 
-    f   = T(0.0) #T(- (cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y))
-    u_e = T(0.0) #T(sin(x/L)*exp(-x/L)*cos(y))
-
-    return T(f - alpha*u_e)
+    return nothing
 end
