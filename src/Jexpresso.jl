@@ -92,6 +92,8 @@ include(joinpath( "auxiliary", "timing.jl"))
 
 include(joinpath( "kernel", "abstractTypes.jl"))
 
+include(joinpath( "kernel", "mesh", "meshStructs.jl"))
+
 #include(joinpath( "kernel", "elementLearningStructs_new.jl"))
 #include(joinpath( "kernel", "elementLearningStructs_sparse.jl"))
 include(joinpath( "kernel", "elementLearningStructs.jl"))
@@ -188,7 +190,7 @@ include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
 
 include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
 
-include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
+# include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
