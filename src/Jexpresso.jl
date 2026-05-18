@@ -190,7 +190,7 @@ include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
 
 include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
 
-# include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
+include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
