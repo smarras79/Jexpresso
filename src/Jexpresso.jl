@@ -32,7 +32,7 @@ using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
-                 SplitODEProblem
+                 SplitODEProblem, FullSpecialize
 using HDF5
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,

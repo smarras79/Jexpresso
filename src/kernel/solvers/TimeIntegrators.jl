@@ -1,5 +1,35 @@
 using TrixiBase
 using TimerOutputs
+
+"""
+    alloc_summary_enabled(inputs) -> Bool
+
+Decide whether the end-of-run per-function timing & allocation summary
+table is printed. Precedence (highest first):
+
+ 1. ENV variable `JEXPRESSO_ALLOC_SUMMARY` — set it from the REPL before
+    running, e.g. `ENV["JEXPRESSO_ALLOC_SUMMARY"] = "false"`.
+ 2. Command-line flag — pass `--no-alloc-summary` (or `no-alloc-summary`)
+    in Julia's `ARGS`, e.g. `julia run.jl ... --no-alloc-summary`.
+ 3. `:lalloc_summary` in the case's `user_inputs.jl`.
+ 4. Default: `true` (on).
+
+Accepted truthy ENV values: 1/true/yes/on; falsy: 0/false/no/off
+(case-insensitive).
+"""
+function alloc_summary_enabled(inputs)
+    e = get(ENV, "JEXPRESSO_ALLOC_SUMMARY", nothing)
+    if e !== nothing
+        v = lowercase(strip(e))
+        v in ("0", "false", "no", "off")  && return false
+        v in ("1", "true", "yes", "on")   && return true
+    end
+    if any(a -> a in ("--no-alloc-summary", "no-alloc-summary"), ARGS)
+        return false
+    end
+    return get(inputs, :lalloc_summary, true) == true
+end
+
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -34,7 +64,14 @@ function time_loop!(inputs, params, u, args...)
         end
     end
 
-    prob = ODEProblem(rhs!,
+    # FullSpecialize: no type-erasing FunctionWrapper around rhs!. The
+    # default AutoSpecialize wrapper type-erases p=params, so every
+    # params.* access inside rhs!/inviscid_rhs_el!/viscous_rhs_el! boxes
+    # (the ~2 KiB/call seen in the allocation summary). FullSpecialize
+    # makes the integrator specialize on the concrete rhs!/params/du
+    # types. Requires RHStoDU! to scalar-assign du so low-storage RK's
+    # ArrayFuse du works without the wrapper.
+    prob = ODEProblem{true, FullSpecialize}(rhs!,
                       u,
                       params.tspan,
                       params);
@@ -188,8 +225,21 @@ function time_loop!(inputs, params, u, args...)
         CallbackSet(cb, cb_restart, cb_coupling) :
         CallbackSet(cb, cb_restart)
 
+    # Warm-up: run the full rhs! path once, untimed, so JIT compilation
+    # of rhs!/_build_rhs!/the inviscid·viscous barriers/expansions/BCs/DSS
+    # is excluded from the summary. Without this the @timeit table counts
+    # the first (compiling) call, inflating per-call allocations by the
+    # one-time compile cost / n_calls (huge on short runs). Skipped when
+    # the summary is disabled so we don't add an eval needlessly.
+    if alloc_summary_enabled(inputs)
+        let du_warmup = similar(u)
+            rhs!(du_warmup, u, prob.p, params.tspan[1])
+        end
+        MPI.Barrier(comm)
+    end
+
     TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
-    rank == 0 && println(" # Simulation timing and allocations:")
+    rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
     solution = @time solve(prob,
                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                            #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
@@ -200,8 +250,15 @@ function time_loop!(inputs, params, u, args...)
                                           inputs[:tend],
                                           length=inputs[:ndiagnostics_outputs]));
 
-    rank == 0 && show(stdout, JEXPRESSO_TIMER; allocations=true, sortby=:firstexec)
-    rank == 0 && println()
+    # End-of-simulation per-function timing & allocation summary table.
+    # On by default. Disable via ENV["JEXPRESSO_ALLOC_SUMMARY"]="false"
+    # (REPL), the --no-alloc-summary CLI flag, or :lalloc_summary => false
+    # in user_inputs.jl. See alloc_summary_enabled above for precedence.
+    if rank == 0 && alloc_summary_enabled(inputs)
+        println("\n # Per-function timing & allocation summary (disable via ENV[\"JEXPRESSO_ALLOC_SUMMARY\"]=\"false\", --no-alloc-summary, or :lalloc_summary => false):")
+        show(stdout, JEXPRESSO_TIMER; allocations=true, sortby=:firstexec)
+        println()
+    end
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)

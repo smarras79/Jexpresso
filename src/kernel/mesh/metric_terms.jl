@@ -1,61 +1,61 @@
-Base.@kwdef mutable struct St_metrics{TFloat <: AbstractFloat, dims1, dims2, backend}
+Base.@kwdef mutable struct St_metrics{TFloat <: AbstractFloat, dims1, dims2, backend, Arr1, Arr2}
 
-    dxdξ = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dxdη = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dxdζ = KernelAbstractions.zeros(backend,TFloat, dims1)
-    
-    dydξ = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dydη = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dydζ = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dxdξ::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dxdη::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dxdζ::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
 
-    dzdξ = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dzdη = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dzdζ = KernelAbstractions.zeros(backend,TFloat, dims1)
-    
-    dξdx = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dξdy = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dξdz = KernelAbstractions.zeros(backend,TFloat, dims1)
-    
-    dηdx = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dηdy = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dηdz = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dydξ::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dydη::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dydζ::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
 
-    dζdx = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dζdy = KernelAbstractions.zeros(backend,TFloat, dims1)
-    dζdz = KernelAbstractions.zeros(backend,TFloat, dims1)
-    
+    dzdξ::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dzdη::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dzdζ::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+
+    dξdx::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dξdy::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dξdz::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+
+    dηdx::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dηdy::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dηdz::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+
+    dζdx::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dζdy::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+    dζdz::Arr1 = KernelAbstractions.zeros(backend,TFloat, dims1)
+
     #
     # Element jacobian determinant
     #
-    Je  = KernelAbstractions.zeros(backend,TFloat, dims1)
-    Jef = KernelAbstractions.zeros(backend,TFloat, dims2)
-    nx  = KernelAbstractions.zeros(backend,TFloat, dims2)
-    ny  = KernelAbstractions.zeros(backend,TFloat, dims2)
-    nz  = KernelAbstractions.zeros(backend,TFloat, dims2)
-    
-    dxdξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dxdη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dxdζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    Je::Arr1  = KernelAbstractions.zeros(backend,TFloat, dims1)
+    Jef::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    nx::Arr2  = KernelAbstractions.zeros(backend,TFloat, dims2)
+    ny::Arr2  = KernelAbstractions.zeros(backend,TFloat, dims2)
+    nz::Arr2  = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dydξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dydη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dydζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dxdξ_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dxdη_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dxdζ_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dzdξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dzdη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dzdζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dydξ_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dydη_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dydζ_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dξdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dξdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dξdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dzdξ_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dzdη_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dzdζ_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dηdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dηdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dηdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dξdx_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dξdy_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dξdz_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
-    dζdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dζdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
-    dζdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dηdx_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dηdy_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dηdz_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+
+    dζdx_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dζdy_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dζdz_f::Arr2 = KernelAbstractions.zeros(backend,TFloat, dims2)
 
 
     #
@@ -78,8 +78,10 @@ function allocate_metrics(SD, nelem, nfaces_bdy, Q, T, backend)
         dims2 = (nfaces_bdy, Q+1, Q+1)
     end
 
-    metrics = St_metrics{T, dims1, dims2, backend}()
-    
+    Arr1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    Arr2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
+    metrics = St_metrics{T, dims1, dims2, backend, Arr1, Arr2}()
+
     return metrics
 end
 
@@ -97,8 +99,10 @@ function allocate_metrics_laguerre(SD, nelem, nfaces_bdy, Q, Qgr, T, backend)
         dims2 = (nfaces_bdy, Q+1, Q+1)
     end
 
-    metrics = St_metrics{T, dims1, dims2, backend}()
-    
+    Arr1 = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    Arr2 = typeof(KernelAbstractions.zeros(backend, T, dims2))
+    metrics = St_metrics{T, dims1, dims2, backend, Arr1, Arr2}()
+
     return metrics
 end
 
