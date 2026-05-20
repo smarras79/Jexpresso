@@ -939,8 +939,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
 
     ad_lvl = params.mesh.ad_lvl
 
-    lrichardson = false
     # lrichardson = params.inputs[:lrichardson]
+    lrichardson = true #change later for formal coding
     # fill!(params.μ_max,    zero(params.T))
     for iel=1:nelem
         Δ_effective = calculate_effective_delta(Δ, ad_lvl[iel])
@@ -978,7 +978,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                             #  params.μ_max[ieq],
                              params.QT, params.VT, SD, params.AD,
                              Δ_effective,
-                             false
+                             lrichardson
                              )
             
         end
@@ -1936,7 +1936,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             dθdy = dθdξ*dξdy_klm + dθdη*dηdy_klm + dθdζ*dζdy_klm
                             dθdz = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
 
-                            if inputs[:lrichardson]
+                            if lrichardson
                                 θ_ref = uprimitiveieq[k,l,m,5]  # Local temperature
                             else
                                 θ_ref = 1.0  # Dummy value (not used when lrichardson=false)
@@ -1954,7 +1954,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                                                 PHYS_CONST, Δ2,
                                                                 inputs, 
                                                                 VT, SD,
-                                                                ltheta_eqn=(micro == 1))
+                                                                ltheta_eqn=(micro == 1),
+                                                                lrichardson=lrichardson )
                             flux_x = effective_diffusivity * dθdx
                             flux_y = effective_diffusivity * dθdy
                             flux_z = effective_diffusivity * dθdz
@@ -1976,7 +1977,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             dhldx = dhldξ*dξdx_klm + dhldη*dηdx_klm + dhldζ*dζdx_klm
                             dhldy = dhldξ*dξdy_klm + dhldη*dηdy_klm + dhldζ*dζdy_klm
                             dhldz = dhldξ*dξdz_klm + dhldη*dηdz_klm + dhldζ*dζdz_klm
-                            if inputs[:lrichardson]
+                            if lrichardson
                                 T_ref = Tabs[ip]
                                 # θ_ref = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
 
