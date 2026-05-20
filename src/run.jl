@@ -125,6 +125,15 @@ mod_inputs_print_welcome(rank)
 inputs = Dict{}()
 
 inputs = user_inputs()
+# Make the case directory available to the mesh/SEM cache helpers so cache
+# files live next to user_inputs.jl (per-case), not next to the shared
+# *.msh file.  This is what lets two cases that happen to point at the same
+# gmsh file keep separate caches and what makes "running a new case"
+# automatically miss the cache without any user-visible flag.
+inputs[:_case_dir]            = case_name_dir
+inputs[:_parsed_equations]    = parsed_equations
+inputs[:_parsed_case_name]    = parsed_equations_case_name
+inputs[:_user_input_file]     = user_input_file
 mod_inputs_user_inputs!(inputs, rank)
 
 #--------------------------------------------------------

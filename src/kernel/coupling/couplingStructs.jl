@@ -6,47 +6,160 @@ using Printf
 using JLD2
 
 # ───────────────────────────────────────────────────────────────────────────
-# Cache-path helpers used by je_prefetch_caches!.  These match the layout
-# produced by the (not-yet-ported) cache writers from sm/alyacouple, so once
-# those are wired into mesh.jl / sem_setup.jl the prefetch will start hitting.
-# Until then, the JLD2 files do not exist, isfile() returns false, and the
-# prefetch is a no-op — no error, just no acceleration.
+# Mesh / SEM preprocess cache: location, invalidation, fingerprint.
+#
+# Caching is on by default — first run pays the full gmsh-read + metric-build
+# cost, subsequent runs of the same case re-use the JLD2 caches.  Users do
+# NOT have to set anything; they can opt out with inputs[:luse_mesh_cache]
+# = false.
+#
+# Cache files live in a hidden directory next to user_inputs.jl
+# (case_name_dir/.jexpresso_cache/).  This is what makes "running a new
+# case" automatically miss — different cases have different case_name_dirs.
+# A shared gmsh file used by two cases does NOT cross-contaminate.
+#
+# Three invalidation triggers (any one fires → cache discarded):
+#   1. cache file path differs (different gmsh basename, different :nop,
+#      different rank count) — handled by encoding those in the filename
+#   2. gmsh file mtime newer than cache mtime — handled by _cache_is_stale
+#   3. fingerprint of preprocessing-relevant inputs does not match — handled
+#      by _cache_fingerprint stored inside the JLD2 and checked on load.
+#
+# In coupled mode rank0 is Alya, but get_mpi_comm() returns Jexpresso's
+# LOCAL communicator, so MPI.Comm_rank(get_mpi_comm()) is the local rank
+# inside Jexpresso (0..nparts-1) — the rank suffix in the cache filename
+# does not collide with Alya.
 # ───────────────────────────────────────────────────────────────────────────
-# Caching is opt-in: only build a cache path when the user explicitly sets
-# inputs[:luse_mesh_cache] = true. Otherwise the helpers return "" and every
-# load/save site treats that as "no cache" (file-existence checks fail, save
-# helpers early-return). This prevents stale JLD2 files from being silently
-# reused when the user switches problems or regenerates the gmsh mesh.
-_use_mesh_cache(inputs) = get(inputs, :luse_mesh_cache, false) === true
+_use_mesh_cache(inputs) = get(inputs, :luse_mesh_cache, true) !== false
+
+# Resolve the directory where cache files live.  Prefer the per-case
+# directory (set in run.jl as inputs[:_case_dir]); fall back to the
+# directory of the gmsh file if the case dir is not available (e.g. when
+# Jexpresso is driven outside run.jl).  Returns "" if neither is known —
+# callers treat that as "no cache".
+function _cache_dir(inputs)
+    if haskey(inputs, :_case_dir)
+        d = String(inputs[:_case_dir])
+        isempty(d) || return joinpath(d, ".jexpresso_cache")
+    end
+    if haskey(inputs, :gmsh_filename)
+        d = dirname(String(inputs[:gmsh_filename]))
+        return isempty(d) ? "." : d
+    end
+    return ""
+end
+
+# Build a small identifier for the gmsh source used by the case.  When
+# :gmsh_filename is absent (native meshes) the stem is just "native".
+function _gmsh_stem(inputs)
+    haskey(inputs, :gmsh_filename) || return "native"
+    return splitext(basename(String(inputs[:gmsh_filename])))[1]
+end
 
 function _mesh_cache_path(inputs, nparts::Int)
     _use_mesh_cache(inputs) || return ""
-    haskey(inputs, :gmsh_filename) || return ""
+    dir = _cache_dir(inputs)
+    isempty(dir) && return ""
     rank   = MPI.Comm_rank(get_mpi_comm())
-    gmsh   = inputs[:gmsh_filename]
-    dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
-    stem   = splitext(basename(gmsh))[1]
-    suffix = nparts > 1 ? "_rank$(rank)" : ""
+    stem   = _gmsh_stem(inputs)
+    suffix = nparts > 1 ? "_rank$(rank)of$(nparts)" : ""
     return joinpath(dir, "MESH_$(stem)_nop$(inputs[:nop])$(suffix).jld2")
 end
 
 function _preprocess_cache_path(inputs, Nξ::Int, Qξ::Int, nparts::Int)
     _use_mesh_cache(inputs) || return ""
-    haskey(inputs, :gmsh_filename) || return ""
+    dir = _cache_dir(inputs)
+    isempty(dir) && return ""
     rank   = MPI.Comm_rank(get_mpi_comm())
-    gmsh   = inputs[:gmsh_filename]
-    dir    = let d = dirname(gmsh); isempty(d) ? "." : d end
-    stem   = splitext(basename(gmsh))[1]
-    suffix = nparts > 1 ? "_rank$(rank)" : ""
-    return joinpath(dir, "PREPROCESS_$(stem)_nop$(Nξ)$(suffix).jld2")
+    stem   = _gmsh_stem(inputs)
+    suffix = nparts > 1 ? "_rank$(rank)of$(nparts)" : ""
+    return joinpath(dir, "PREPROCESS_$(stem)_nop$(Nξ)_Q$(Qξ)$(suffix).jld2")
+end
+
+# Make sure the .jexpresso_cache directory exists before a save.  Called
+# from the cache-writing helpers in mesh.jl / sem_setup.jl.
+function _ensure_cache_dir(path::String)
+    isempty(path) && return
+    d = dirname(path)
+    (isempty(d) || isdir(d)) && return
+    try
+        mkpath(d)
+    catch
+        # Best-effort — if mkpath fails the JLD2 write will surface the error.
+    end
 end
 
 # Cache is considered stale if the source gmsh file is newer than the cache
-# file. Callers pass the cache path and the gmsh filename (already validated
-# to exist by the caller's isfile() check).
+# file.  Returns false when the gmsh file is not provided (native meshes).
 function _cache_is_stale(cache_path::String, gmsh_path::String)
     (isfile(cache_path) && isfile(gmsh_path)) || return false
     return mtime(gmsh_path) > mtime(cache_path)
+end
+
+# Fingerprint of every input that meaningfully changes what mod_mesh_read_gmsh!
+# / sem_setup compute.  Two runs with the same fingerprint MUST produce the
+# same mesh struct + metric tensors + matrix.  Stored inside both the mesh
+# and SEM JLD2 files; on load we recompute it from the current inputs and
+# discard the cache if it differs.  Anything that affects topology, node
+# placement, metric tensors, mass/Laplace/differentiation matrices, or
+# physics-grid construction belongs here.
+# Note: full gmsh path is NOT in the fingerprint — only basename + mtime —
+# so moving the repo or switching to a relative-vs-absolute path doesn't
+# spuriously invalidate the cache.
+const _CACHE_FINGERPRINT_KEYS = (
+    :nop, :nsd, :backend,
+    :lexact_integration, :interpolation_nodes, :quadrature_nodes,
+    :llump, :ldss_laplace, :ldss_differentiation,
+    :llaguerre_1d_right, :llaguerre_1d_left,
+    :laguerre_beta, :llaguerre_bc,
+    :lperiodic_1d, :lperiodic_laguerre,
+    :lphysics_grid, :nlay_pg, :nx_pg, :ny_pg,
+    :ladapt, :linitial_refine, :init_refine_lvl, :lamr,
+    :lxy_partition, :lwarp,
+    :xscale, :yscale, :zscale, :xdisp, :ydisp, :zdisp,
+    :_parsed_equations, :_parsed_case_name,
+)
+
+function _cache_fingerprint(inputs, nparts::Int)
+    fp = Dict{String,Any}()
+    fp["__nparts__"] = nparts
+    for k in _CACHE_FINGERPRINT_KEYS
+        if haskey(inputs, k)
+            v = inputs[k]
+            # Stringify non-trivial values so JLD2 round-trips cleanly and
+            # equality stays meaningful across Julia / package versions.
+            fp[string(k)] = (v isa Number || v isa AbstractString || v isa Bool) ?
+                            v : string(v)
+        end
+    end
+    if haskey(inputs, :gmsh_filename)
+        gmsh = String(inputs[:gmsh_filename])
+        fp["__gmsh_basename__"] = basename(gmsh)
+        # mtime is a coarse content-change signal — cheaper than hashing the
+        # whole mesh file and good enough to detect remesh / re-export.
+        fp["__gmsh_mtime__"] = isfile(gmsh) ? mtime(gmsh) : 0.0
+    end
+    return fp
+end
+
+# Compare a fingerprint dict loaded from a JLD2 cache against the current
+# inputs.  Returns true if they match → cache is reusable.
+function _cache_fingerprint_matches(saved::Dict, inputs, nparts::Int)
+    current = _cache_fingerprint(inputs, nparts)
+    length(saved) == length(current) || return false
+    for (k, v) in current
+        haskey(saved, k) || return false
+        if v isa AbstractFloat || saved[k] isa AbstractFloat
+            try
+                abs(Float64(v) - Float64(saved[k])) < 1e-6 || return false
+            catch
+                v == saved[k] || return false
+            end
+        else
+            v == saved[k] || return false
+        end
+    end
+    return true
 end
 
 # ===========================================================================
@@ -246,24 +359,32 @@ function je_prefetch_caches!(inputs, nparts::Int,
                               local_comm::MPI.Comm, world::MPI.Comm)
     rank = MPI.Comm_rank(local_comm)
 
+    gmsh_path = get(inputs, :gmsh_filename, "")
+
     # ── 1. Mesh topology cache ──────────────────────────────────────────────
     if JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
         mesh_path = _mesh_cache_path(inputs, nparts)
         if isfile(mesh_path)
-            rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
-            t0 = time_ns()
-            try
-                raw = JLD2.load(mesh_path)
-                if haskey(raw, "mesh_fields")
-                    JEXPRESSO_PREFETCHED_MESH_CACHE[] = raw
-                    rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, mesh_path)
-                else
-                    rank == 0 && println("old-format cache ignored (will rebuild)")
+            if !isempty(gmsh_path) && _cache_is_stale(mesh_path, gmsh_path)
+                rank == 0 && println("[prefetch] mesh cache older than $gmsh_path — ignoring")
+            else
+                rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
+                t0 = time_ns()
+                try
+                    raw = JLD2.load(mesh_path)
+                    if haskey(raw, "mesh_fields") && haskey(raw, "fingerprint") &&
+                       raw["fingerprint"] isa Dict &&
+                       _cache_fingerprint_matches(raw["fingerprint"], inputs, nparts)
+                        JEXPRESSO_PREFETCHED_MESH_CACHE[] = raw
+                        rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, mesh_path)
+                    else
+                        rank == 0 && println("incompatible cache ignored (will rebuild)")
+                    end
+                catch e
+                    rank == 0 && @warn "[prefetch] mesh cache load failed" exception=e
                 end
-            catch e
-                rank == 0 && @warn "[prefetch] mesh cache load failed" exception=e
+                flush(stdout)
             end
-            flush(stdout)
         end
     end
 
@@ -273,18 +394,26 @@ function je_prefetch_caches!(inputs, nparts::Int,
         Qξ       = get(inputs, :lexact_integration, false) ? Nξ + 1 : Nξ
         sem_path = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
         if isfile(sem_path)
-            rank == 0 && (print("[prefetch] SEM cache  … "); flush(stdout))
-            t0 = time_ns()
-            try
-                d = JLD2.load(sem_path)
-                if haskey(d, "metrics") && haskey(d, "matrix")
-                    JEXPRESSO_PREFETCHED_SEM_CACHE[] = (d["metrics"], d["matrix"])
-                    rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, sem_path)
+            if !isempty(gmsh_path) && _cache_is_stale(sem_path, gmsh_path)
+                rank == 0 && println("[prefetch] SEM cache older than $gmsh_path — ignoring")
+            else
+                rank == 0 && (print("[prefetch] SEM cache  … "); flush(stdout))
+                t0 = time_ns()
+                try
+                    d = JLD2.load(sem_path)
+                    if haskey(d, "metrics") && haskey(d, "matrix") &&
+                       haskey(d, "fingerprint") && d["fingerprint"] isa Dict &&
+                       _cache_fingerprint_matches(d["fingerprint"], inputs, nparts)
+                        JEXPRESSO_PREFETCHED_SEM_CACHE[] = (d["metrics"], d["matrix"])
+                        rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, sem_path)
+                    else
+                        rank == 0 && println("incompatible SEM cache ignored (will rebuild)")
+                    end
+                catch e
+                    rank == 0 && @warn "[prefetch] SEM cache load failed" exception=e
                 end
-            catch e
-                rank == 0 && @warn "[prefetch] SEM cache load failed" exception=e
+                flush(stdout)
             end
-            flush(stdout)
         end
     end
 

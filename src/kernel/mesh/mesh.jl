@@ -38,7 +38,8 @@ _encode_optstrings(v) = String[isnothing(x) ? _MESH_CACHE_NOTHING_SENTINEL : x f
 _decode_optstrings(v) = Array{Union{Nothing,String}}(
     [x == _MESH_CACHE_NOTHING_SENTINEL ? nothing : x for x in v])
 
-function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int; gmsh_path::String="")
+function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int;
+                                gmsh_path::String="", inputs=nothing)
     rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return false
     if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
@@ -52,6 +53,19 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
               JEXPRESSO_PREFETCHED_MESH_CACHE[] : JLD2.load(path)
         haskey(raw, "mesh_fields") || begin
             rank == 0 && @info "Mesh cache $path has old format — discarding and rebuilding"
+            return false
+        end
+        # Fingerprint check.  Required so that switching cases that happen to
+        # share a gmsh basename, or changing any preprocessing-relevant input
+        # without changing the cache filename, invalidates the cache.
+        if inputs !== nothing && haskey(raw, "fingerprint")
+            saved_fp = raw["fingerprint"]
+            if !(saved_fp isa Dict) || !_cache_fingerprint_matches(saved_fp, inputs, nparts)
+                rank == 0 && @info "Mesh cache $path fingerprint mismatch — discarding and rebuilding"
+                return false
+            end
+        elseif inputs !== nothing
+            rank == 0 && @info "Mesh cache $path has no fingerprint — discarding and rebuilding"
             return false
         end
         flds = raw["mesh_fields"]
@@ -78,10 +92,11 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
     end
 end
 
-function _save_mesh_cache(path::String, mesh)
+function _save_mesh_cache(path::String, mesh; inputs=nothing, nparts::Int=1)
     isempty(path) && return
     rank = MPI.Comm_rank(get_mpi_comm())
     try
+        _ensure_cache_dir(path)
         flds = Dict{String,Any}()
         for f in fieldnames(typeof(mesh))
             f ∈ _MESH_CACHE_SKIP_FIELDS && continue
@@ -89,7 +104,8 @@ function _save_mesh_cache(path::String, mesh)
             flds[string(f)] = f ∈ _MESH_CACHE_OPTSTRING_FIELDS ? _encode_optstrings(v) : v
         end
         flds["__SD_nsd__"] = mesh.nsd
-        JLD2.jldsave(path; mesh_fields = flds)
+        fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
+        JLD2.jldsave(path; mesh_fields = flds, fingerprint = fp)
         rank == 0 && @info "Saved mesh topology cache: $path"
     catch e
         rank == 0 && @warn "Failed to save mesh cache $path" exception=(e, catch_backtrace())
@@ -1353,7 +1369,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
     if isnothing(adapt_flags) && !ladaptive && !linitial_refine
         _mesh_cache = _mesh_cache_path(inputs, nparts)
         gmsh_path   = get(inputs, :gmsh_filename, "")
-        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts; gmsh_path=gmsh_path)
+        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
+                                 gmsh_path=gmsh_path, inputs=inputs)
             return nothing
         end
     end
@@ -2986,7 +3003,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
     #show(stdout, "text/plain", mesh.conn')
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     if isnothing(adapt_flags)
-        _save_mesh_cache(_mesh_cache_path(inputs, nparts), mesh)
+        _save_mesh_cache(_mesh_cache_path(inputs, nparts), mesh;
+                         inputs=inputs, nparts=nparts)
         return partitioned_model
     else
         if (omesh.lneed_redistribute)

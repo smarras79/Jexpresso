@@ -5,7 +5,8 @@ include("../mesh/restructure_for_periodicity.jl")
 # state.  Cache file path is computed by _preprocess_cache_path (see
 # coupling/couplingStructs.jl).  rank is obtained via MPI inside each helper
 # so callers don't need to thread it through.
-function _try_load_sem_cache(path::String; gmsh_path::String="")
+function _try_load_sem_cache(path::String; gmsh_path::String="",
+                              inputs=nothing, nparts::Int=1)
     rank = MPI.Comm_rank(get_mpi_comm())
     isfile(path) || return (nothing, nothing)
     if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
@@ -14,10 +15,23 @@ function _try_load_sem_cache(path::String; gmsh_path::String="")
     end
     try
         # Use pre-fetched data when available (populated by je_prefetch_caches!).
+        # The prefetched copy is already validated against the gmsh mtime; we
+        # still re-check the fingerprint on the disk copy when it's needed.
         if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing
             return JEXPRESSO_PREFETCHED_SEM_CACHE[]
         end
         d = JLD2.load(path)
+        if inputs !== nothing
+            if !haskey(d, "fingerprint")
+                rank == 0 && @info "SEM cache $path has no fingerprint — discarding and rebuilding"
+                return (nothing, nothing)
+            end
+            saved_fp = d["fingerprint"]
+            if !(saved_fp isa Dict) || !_cache_fingerprint_matches(saved_fp, inputs, nparts)
+                rank == 0 && @info "SEM cache $path fingerprint mismatch — discarding and rebuilding"
+                return (nothing, nothing)
+            end
+        end
         return (d["metrics"], d["matrix"])
     catch e
         rank == 0 && @warn "Ignoring unreadable SEM cache $path" exception=(e, catch_backtrace())
@@ -25,11 +39,13 @@ function _try_load_sem_cache(path::String; gmsh_path::String="")
     end
 end
 
-function _save_sem_cache(path::String, metrics, matrix)
+function _save_sem_cache(path::String, metrics, matrix; inputs=nothing, nparts::Int=1)
     isempty(path) && return
     rank = MPI.Comm_rank(get_mpi_comm())
     try
-        JLD2.jldsave(path; metrics, matrix)
+        _ensure_cache_dir(path)
+        fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
+        JLD2.jldsave(path; metrics, matrix, fingerprint = fp)
         rank == 0 && @info "Saved SEM preprocess cache: $path"
     catch e
         rank == 0 && @warn "Failed to save SEM cache $path" exception=(e, catch_backtrace())
@@ -140,7 +156,8 @@ function sem_setup(inputs, nparts, distribute, args...)
     # ── SEM preprocess cache load ────────────────────────────────────────────
     preprocess_cache = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
     cached_metrics, cached_matrix = _try_load_sem_cache(preprocess_cache;
-                                                        gmsh_path=get(inputs, :gmsh_filename, ""))
+                                                        gmsh_path=get(inputs, :gmsh_filename, ""),
+                                                        inputs=inputs, nparts=nparts)
     loaded_from_cache = !isnothing(cached_metrics)
     if loaded_from_cache
         rank == 0 && @info "Loaded SEM preprocess cache — skipping metric terms and matrix build: $preprocess_cache"
@@ -209,7 +226,7 @@ function sem_setup(inputs, nparts, distribute, args...)
 
                 matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                                  ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-                _save_sem_cache(preprocess_cache, metrics, matrix)
+                _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
 
         else
@@ -271,7 +288,7 @@ function sem_setup(inputs, nparts, distribute, args...)
                                         ldss_differentiation=inputs[:ldss_differentiation],
                                         backend = inputs[:backend], interp)
                 if (rank == 0)  println(" # Matrix wrapper ...... END") end
-                _save_sem_cache(preprocess_cache, metrics, matrix)
+                _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
         end
     else
@@ -300,7 +317,7 @@ function sem_setup(inputs, nparts, distribute, args...)
                 metrics = (metrics1, metrics2)
                 if (rank == 0) println(" # Build metrics ...... DONE") end
                 matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-                _save_sem_cache(preprocess_cache, metrics, matrix)
+                _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -336,7 +353,7 @@ function sem_setup(inputs, nparts, distribute, args...)
                                         ldss_laplace=inputs[:ldss_laplace],
                                         ldss_differentiation=inputs[:ldss_differentiation],
                                         backend = inputs[:backend], interp)
-                _save_sem_cache(preprocess_cache, metrics, matrix)
+                _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
         end
     end
