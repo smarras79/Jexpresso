@@ -232,7 +232,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             #end
             if (rank == 0) @info " Build metrics ......" end
             metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
-            @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
+            @mpi_time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
             if (rank == 0) @info " Build metrics ...... END" end
             
             if (inputs[:lphysics_grid])
