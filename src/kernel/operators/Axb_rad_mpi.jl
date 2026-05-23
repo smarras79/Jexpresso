@@ -171,7 +171,7 @@ function create_parallel_linear_operator(A_local::AbstractMatrix{T},
                                         npoin_g::Int,
                                         g_ip2gip::AbstractVector{Int},
                                         g_gip2ip,
-                                        comm::MPI.Comm = MPI.COMM_WORLD) where T
+                                        comm::MPI.Comm = get_mpi_comm()) where T
 
     # Forward operator: y = A*x
     nprocs = MPI.Comm_size(comm)
@@ -244,14 +244,14 @@ function create_parallel_linear_operator(A_local::AbstractMatrix{T},
     return LinearOperator{T}(gnpoin, gnpoin, false, false, matvec!, rmatvec!, rmatvec!)
 end
 
-function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; npoin_g=0, g_ip2gip=Int[], g_gip2ip=Int[], tol::Float64 = 1e-10)
-   
+function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; npoin_g=0, g_ip2gip=Int[], g_gip2ip=Int[], tol::Float64 = 1e-10, comm::MPI.Comm = get_mpi_comm())
+
      # Create parallel linear operator (better than AbstractMatrix)
-    A_parallel = create_parallel_linear_operator(A_local, ip2gip, gip2owner, npoin, gnpoin, npoin_g, g_ip2gip, g_gip2ip)
+    A_parallel = create_parallel_linear_operator(A_local, ip2gip, gip2owner, npoin, gnpoin, npoin_g, g_ip2gip, g_gip2ip, comm)
 
     # Gather the full RHS vector with proper Allgatherv
-    rank = MPI.Comm_rank(MPI.COMM_WORLD)
-    nprocs = MPI.Comm_size(MPI.COMM_WORLD)
+    rank = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
 
     #build contributions to global RHS
     b_global = zeros(Float64,gnpoin)
@@ -260,13 +260,13 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; n
         b_global[gip] = b[ip]
     end
     #Use allreduce to build global rhs vector
-    MPI.Allreduce!(b_global, +, MPI.COMM_WORLD)
+    MPI.Allreduce!(b_global, +, comm)
     @info maximum(b_global), minimum(b_global), maximum(b), minimum(b)
     # Solve using LSQR
     if rank == 0
         println("Starting parallel LSQR solve...")
         println("Global problem size: $(gnpoin) × $(gnpoin)")
-        println("Number of processes: $(MPI.Comm_size(MPI.COMM_WORLD))")
+        println("Number of processes: $(nprocs)")
     end
     maxiter = gnpoin
     @info tol, maxiter
