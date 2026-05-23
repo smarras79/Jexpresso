@@ -135,7 +135,6 @@ inputs[:_parsed_equations]    = parsed_equations
 inputs[:_parsed_case_name]    = parsed_equations_case_name
 inputs[:_user_input_file]     = user_input_file
 mod_inputs_user_inputs!(inputs, rank)
-println("[init][rank=$rank] mod_inputs_user_inputs! returned"); flush(stdout)
 
 #--------------------------------------------------------
 # Create output directory if it doesn't exist:
@@ -158,9 +157,6 @@ end
 if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
 end
-println("[init][rank=$rank] OUTPUT_DIR ready: $OUTPUT_DIR"); flush(stdout)
-MPI.Barrier(comm)
-println("[init][rank=$rank] passed barrier after OUTPUT_DIR"); flush(stdout)
 
 #--------------------------------------------------------
 # Create restart output/inupt directory if it doesn't exist:
@@ -210,9 +206,6 @@ val_lsaturation = Val(get(inputs, :lsaturation, false))
 inputs = inputs isa NamedTuple ?
     (; inputs..., comm = MPI.COMM_WORLD, val_lsaturation = val_lsaturation) :
     inputs
-println("[init][rank=$rank] inputs container finalised (Dict/NamedTuple)"); flush(stdout)
-MPI.Barrier(comm)
-println("[init][rank=$rank] about to enter with_mpi block ..."); flush(stdout)
 
 #--------------------------------------------------------
 # Coupling handshake (must happen OUTSIDE the with_mpi block so the
@@ -252,32 +245,7 @@ if JEXPRESSO_COUPLING_ENABLED
         end
     end
 else
-    # Probe MPI state before calling PartitionedArrays.with_mpi(), to isolate
-    # whether the hang originates in our own MPI handling or inside
-    # PartitionedArrays' closure setup (which typically does Comm_dup +
-    # threadlevel checks).
-    println("[init][rank=$rank] MPI.Initialized() = $(MPI.Initialized())"); flush(stdout)
-    if MPI.Initialized()
-        try
-            _thread_level = MPI.Query_thread()
-            println("[init][rank=$rank] MPI.Query_thread() = $_thread_level"); flush(stdout)
-        catch e
-            println("[init][rank=$rank] MPI.Query_thread() threw: $e"); flush(stdout)
-        end
-    end
-    println("[init][rank=$rank] probing MPI.Comm_dup(comm) directly ..."); flush(stdout)
-    _probe_dup = MPI.Comm_dup(comm)
-    println("[init][rank=$rank] MPI.Comm_dup(comm) returned ok"); flush(stdout)
-    # Skip explicit Comm_free — MPI.jl frees duplicated comms at finalize anyway,
-    # and the symbol name differs across MPI.jl versions.
-
-    println("[init][rank=$rank] >>> calling with_mpi(; comm=MPI.COMM_WORLD) now"); flush(stdout)
-    with_mpi(; comm = MPI.COMM_WORLD) do distribute
-        local _r = MPI.Comm_rank(distribute.comm)
-        local _s = MPI.Comm_size(distribute.comm)
-        println("[init][rank=$_r] inside with_mpi: distribute.comm acquired (size=$_s)"); flush(stdout)
-        MPI.Barrier(distribute.comm)
-        println("[init][rank=$_r] inside with_mpi: passed barrier, calling driver()"); flush(stdout)
+    with_mpi() do distribute
         driver(nparts,
                distribute,
                inputs,

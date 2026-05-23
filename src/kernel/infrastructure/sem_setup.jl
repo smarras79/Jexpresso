@@ -57,7 +57,6 @@ function sem_setup(inputs, nparts, distribute, args...)
 
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
-    println_rank(" [init] sem_setup entered (rank=$rank, nparts=$nparts)"; msg_rank = rank)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
     fx        = zeros(Float64,1,1)
@@ -89,13 +88,11 @@ function sem_setup(inputs, nparts, distribute, args...)
     # ξ = ND.ξ.ξ
     # ω = ND.ξ.ω
     #--------------------------------------------------------
-    println_rank(" [init] sem_setup: calling mod_mesh_mesh_driver ..."; msg_rank = rank)
     if isnothing(adapt_flags)
         mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
     else
         mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     end
-    println_rank(" [init] sem_setup: mod_mesh_mesh_driver returned"; msg_rank = rank)
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xscale] != 1.0)

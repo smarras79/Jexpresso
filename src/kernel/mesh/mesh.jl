@@ -1311,22 +1311,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
    return extra_mesh
 end
 
-# Partition cells into nparts contiguous equal-sized blocks by cell index.
-# Returns a 1-indexed cell_to_part vector of length num_cells(model).
-# Used as a fallback when the parallel GmshDiscreteModel(parts, file) call
-# is unsafe on the target platform (see crash note next to the call site
-# in mod_mesh_read_gmsh!). Geometry-agnostic — no centroid computation,
-# no aspect-ratio heuristics; partition quality is whatever a contiguous
-# slab of the gmsh cell numbering gives. Adequate for getting standalone
-# runs unblocked; a true xy-aware partitioner (set lxy_partition=true) or
-# graph partitioner (e.g. METIS via GridapDistributed) is preferred for
-# load-balanced production runs.
-function _compute_block_partition(model, nparts)
-    ncells = num_cells(model)
-    cells_per_part = cld(ncells, nparts)
-    return Int[min(div(c - 1, cells_per_part) + 1, nparts) for c in 1:ncells]
-end
-
 # Partition cells into nparts by x-y centroid bins, ignoring z.
 # Returns a 1-indexed cell_to_part vector of length num_cells(model).
 function _compute_xy_partition(model, nparts)
@@ -1363,7 +1347,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
-    println_rank(" [init] mod_mesh_read_gmsh! entered"; msg_rank = rank)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
     #
@@ -1386,55 +1369,41 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
     if isnothing(adapt_flags) && !ladaptive && !linitial_refine
         _mesh_cache = _mesh_cache_path(inputs, nparts)
         gmsh_path   = get(inputs, :gmsh_filename, "")
-        println_rank(" [init] mod_mesh_read_gmsh!: checking mesh cache at \"$_mesh_cache\""; msg_rank = rank)
         if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
                                  gmsh_path=gmsh_path, inputs=inputs)
-            println_rank(" [init] mod_mesh_read_gmsh!: loaded mesh from cache, returning"; msg_rank = rank)
             return nothing
         end
-        println_rank(" [init] mod_mesh_read_gmsh!: no usable cache, building mesh from .msh"; msg_rank = rank)
     end
     # ─────────────────────────────────────────────────────────────────────────
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
-            println_rank(" [init] mod_mesh_read_gmsh!: entering GmshDiscreteModel call (lxy_partition=$lxy_partition) ..."; msg_rank = rank)
+            # Match hw/giga_les exactly: serial read on every rank to
+            # produce smodel, then either xy-partition it or fall back to
+            # the parallel GmshDiscreteModel(parts, file) collective.
+            # Crucially:
+            #   - the serial form is plain GmshDiscreteModel(file, ...)
+            #     (NO NoEmbedMeshFile wrapper — NoEmbedMeshFile is what
+            #      crashes in _platform_memmove on macOS arm64 + OMPI 5);
+            #   - the lxy_partition assembly is
+            #     DiscreteModel(parts, smodel, cell_to_part)
+            #     (NO NoGhostParts wrapper around parts);
+            #   - the parallel-collective fallback is
+            #     GmshDiscreteModel(parts, file, ...) wrapped in
+            #     @outputrootonly (the macro now uses the safe per-call
+            #     open("/dev/null","w"), see je_macros.jl).
+            smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             partitioned_model = if lxy_partition
-                # Serial GmshDiscreteModel constructor: runs on every rank
-                # because the result is needed locally to compute the xy
-                # partition. Suppress duplicated Gmsh chatter on rank>0
-                # via @outputrootonly — this is the serial form, no MPI
-                # collective is in flight here.
-                smodel = @outputrootonly GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
                 cell_to_part = _compute_xy_partition(smodel, nparts)
-                DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
+                DiscreteModel(parts, smodel, cell_to_part)
             else
-                # Workaround for macOS arm64 + Open MPI 5 + Gridap stack:
-                # the parallel GmshDiscreteModel(parts, file, ...)
-                # constructor SIGBUSes in _platform_memmove. Read serially
-                # on every rank, then construct the partitioned model
-                # from the serial one. Drop NoEmbedMeshFile wrapper here
-                # too — 020c761 with NoEmbedMeshFile still crashes in
-                # memmove (probably during _compute_block_partition's
-                # Triangulation / num_cells walk over the model's
-                # cell_node_ids, which NoEmbedMeshFile makes a lazy/mmap
-                # view), so use the plain serial form which embeds the
-                # gmsh data into the model directly.
-                println_rank(" [init] mod_mesh_read_gmsh!: [serial-path] before serial GmshDiscreteModel(file) ..."; msg_rank = rank)
-                smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-                println_rank(" [init] mod_mesh_read_gmsh!: [serial-path] serial GmshDiscreteModel returned"; msg_rank = rank)
-                cell_to_part = _compute_block_partition(smodel, nparts)
-                println_rank(" [init] mod_mesh_read_gmsh!: [serial-path] block partition computed (ncells=$(length(cell_to_part)))"; msg_rank = rank)
-                pm = DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
-                println_rank(" [init] mod_mesh_read_gmsh!: [serial-path] DiscreteModel(NoGhostParts, ...) returned"; msg_rank = rank)
-                pm
+                @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             end
-            println_rank(" [init] mod_mesh_read_gmsh!: GmshDiscreteModel call returned"; msg_rank = rank)
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
 
             @outputrootonly begin
-                gmodel = GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             end
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
@@ -1443,7 +1412,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
         elseif ladaptive == true && linitial_refine == false
 
             @outputrootonly begin
-                gmodel = GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
             function set_id_refined(flags, indices, target_gid)
@@ -4810,7 +4779,6 @@ function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    println_rank(" [init] mod_mesh_mesh_driver entered"; msg_rank = rank)
 
     lpreadapt = inputs[:lpreadapt]
     max_ad_lv = inputs[:amr_max_level]
