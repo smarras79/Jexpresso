@@ -1393,13 +1393,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
             #     @outputrootonly (the macro now uses the safe per-call
             #     open("/dev/null","w"), see je_macros.jl).
             smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+            println("[gmsh-probe][rank=$rank] serial GmshDiscreteModel(file) returned (lxy_partition=$lxy_partition)"); flush(stdout)
             partitioned_model = if lxy_partition
                 cell_to_part = _compute_xy_partition(smodel, nparts)
                 DiscreteModel(parts, smodel, cell_to_part)
             else
                 @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             end
+            println("[gmsh-probe][rank=$rank] partitioned_model built"); flush(stdout)
             model = local_views(partitioned_model).item_ref[]
+            println("[gmsh-probe][rank=$rank] local_views done"); flush(stdout)
         elseif linitial_refine == true
 
             @outputrootonly begin
