@@ -252,8 +252,27 @@ if JEXPRESSO_COUPLING_ENABLED
         end
     end
 else
-    println("[init][rank=$rank] >>> calling with_mpi() now (default comm=MPI.COMM_WORLD)"); flush(stdout)
-    with_mpi() do distribute
+    # Probe MPI state before calling PartitionedArrays.with_mpi(), to isolate
+    # whether the hang originates in our own MPI handling or inside
+    # PartitionedArrays' closure setup (which typically does Comm_dup +
+    # threadlevel checks).
+    println("[init][rank=$rank] MPI.Initialized() = $(MPI.Initialized())"); flush(stdout)
+    if MPI.Initialized()
+        try
+            _thread_level = MPI.Query_thread()
+            println("[init][rank=$rank] MPI.Query_thread() = $_thread_level"); flush(stdout)
+        catch e
+            println("[init][rank=$rank] MPI.Query_thread() threw: $e"); flush(stdout)
+        end
+    end
+    println("[init][rank=$rank] probing MPI.Comm_dup(comm) directly ..."); flush(stdout)
+    _probe_dup = MPI.Comm_dup(comm)
+    println("[init][rank=$rank] MPI.Comm_dup(comm) returned ok"); flush(stdout)
+    MPI.Comm_free(_probe_dup)
+    println("[init][rank=$rank] MPI.Comm_free(probe_dup) returned ok"); flush(stdout)
+
+    println("[init][rank=$rank] >>> calling with_mpi(; comm=MPI.COMM_WORLD) now"); flush(stdout)
+    with_mpi(; comm = MPI.COMM_WORLD) do distribute
         local _r = MPI.Comm_rank(distribute.comm)
         local _s = MPI.Comm_size(distribute.comm)
         println("[init][rank=$_r] inside with_mpi: distribute.comm acquired (size=$_s)"); flush(stdout)
