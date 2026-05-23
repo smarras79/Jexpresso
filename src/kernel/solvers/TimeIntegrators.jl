@@ -27,7 +27,7 @@ function alloc_summary_enabled(inputs)
     if any(a -> a in ("--no-alloc-summary", "no-alloc-summary"), ARGS)
         return false
     end
-    return get(inputs, :lalloc_summary, true) == true
+    return get(inputs, :lalloc_summary, true) == false
 end
 
 function time_loop!(inputs, params, u, args...)
