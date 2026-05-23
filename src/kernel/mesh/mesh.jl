@@ -1392,46 +1392,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
             #     GmshDiscreteModel(parts, file, ...) wrapped in
             #     @outputrootonly (the macro now uses the safe per-call
             #     open("/dev/null","w"), see je_macros.jl).
-            # GridapGmsh on macOS arm64 + Julia 1.12 + the full set of
-            # modules our Jexpresso.jl loads (couplingStructs,
-            # mass_assembly_jacc, imex, build_rad_2d/3d, atmos_to_rad,
-            # …) hits a SIGBUS in _platform_memmove inside the serial
-            # GmshDiscreteModel(file) constructor, immediately after
-            # libgmsh prints "Done reading *.msh". The hw/giga_les
-            # branch with the identical call site does not reproduce
-            # — the only material difference is that hw/giga_les loads
-            # far fewer files, which keeps GC pressure low. The crash
-            # is a classic Julia 1.12 parallel-GC race relocating a
-            # buffer while libgmsh -> Julia memmove copies into it.
-            #
-            # Two complementary mitigations applied here:
-            #   1. GC.gc(true) immediately before the call to drain any
-            #      pending compaction work, then GC.enable(false) to
-            #      stop the GC from running during the libgmsh/Julia
-            #      buffer copies. Re-enable + run an explicit GC.gc()
-            #      after the call so we don't leave the global GC
-            #      disabled for the rest of the run.
-            #   2. Two GmshDiscreteModel calls share parse state via
-            #      libgmsh's static caches; the second call (parallel,
-            #      with parts) doesn't re-parse but still allocates,
-            #      so it's wrapped too.
-            GC.gc(true)
-            GC.enable(false)
-            local _gc_reenabled = false
-            try
-                smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-                partitioned_model = if lxy_partition
-                    cell_to_part = _compute_xy_partition(smodel, nparts)
-                    DiscreteModel(parts, smodel, cell_to_part)
-                else
-                    @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
-                end
-                GC.enable(true); _gc_reenabled = true
-                GC.gc(false)
-            finally
-                if !_gc_reenabled
-                    GC.enable(true)
-                end
+            smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+            partitioned_model = if lxy_partition
+                cell_to_part = _compute_xy_partition(smodel, nparts)
+                DiscreteModel(parts, smodel, cell_to_part)
+            else
+                @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
