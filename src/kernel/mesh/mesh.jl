@@ -1347,6 +1347,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
+    println_rank(" [init] mod_mesh_read_gmsh! entered"; msg_rank = rank)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
     #
@@ -1369,15 +1370,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
     if isnothing(adapt_flags) && !ladaptive && !linitial_refine
         _mesh_cache = _mesh_cache_path(inputs, nparts)
         gmsh_path   = get(inputs, :gmsh_filename, "")
+        println_rank(" [init] mod_mesh_read_gmsh!: checking mesh cache at \"$_mesh_cache\""; msg_rank = rank)
         if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
                                  gmsh_path=gmsh_path, inputs=inputs)
+            println_rank(" [init] mod_mesh_read_gmsh!: loaded mesh from cache, returning"; msg_rank = rank)
             return nothing
         end
+        println_rank(" [init] mod_mesh_read_gmsh!: no usable cache, building mesh from .msh"; msg_rank = rank)
     end
     # ─────────────────────────────────────────────────────────────────────────
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
+            println_rank(" [init] mod_mesh_read_gmsh!: entering GmshDiscreteModel call (lxy_partition=$lxy_partition) ..."; msg_rank = rank)
             partitioned_model = if lxy_partition
                 smodel = @outputrootonly GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
                 cell_to_part = _compute_xy_partition(smodel, nparts)
@@ -1385,6 +1390,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
             else
                 @outputrootonly GmshDiscreteModel(NoGhostParts(parts), NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
             end
+            println_rank(" [init] mod_mesh_read_gmsh!: GmshDiscreteModel call returned"; msg_rank = rank)
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
 
@@ -4762,9 +4768,10 @@ end
 
 
 function mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
-    
+
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
+    println_rank(" [init] mod_mesh_mesh_driver entered"; msg_rank = rank)
 
     lpreadapt = inputs[:lpreadapt]
     max_ad_lv = inputs[:amr_max_level]

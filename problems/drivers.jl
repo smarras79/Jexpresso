@@ -11,6 +11,7 @@ function driver(nparts,
 
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
+    println_rank(" [init] driver() entered (nparts=$nparts, rank=$rank)"; msg_rank = rank)
 
     #---------------------------------------------------------
     # Time span (shared by both standalone and coupled paths).
@@ -60,7 +61,9 @@ function driver(nparts,
             if rank == 0 println(BLUE_FG(string(" # JIT pre-compilation of large problem ... DONE"))) end
         end
 
+        println_rank(" [init] driver: calling sem_setup ..."; msg_rank = rank)
         sem, partitioned_model = sem_setup(inputs, nparts, distribute)
+        println_rank(" [init] driver: sem_setup returned"; msg_rank = rank)
 
         if inputs[:backend] != CPU()
             convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
