@@ -135,7 +135,7 @@ inputs[:_parsed_equations]    = parsed_equations
 inputs[:_parsed_case_name]    = parsed_equations_case_name
 inputs[:_user_input_file]     = user_input_file
 mod_inputs_user_inputs!(inputs, rank)
-println_rank(" [init] mod_inputs_user_inputs! returned"; msg_rank = rank)
+println("[init][rank=$rank] mod_inputs_user_inputs! returned"); flush(stdout)
 
 #--------------------------------------------------------
 # Create output directory if it doesn't exist:
@@ -158,7 +158,9 @@ end
 if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
 end
-println_rank(" [init] OUTPUT_DIR ready: $OUTPUT_DIR"; msg_rank = rank)
+println("[init][rank=$rank] OUTPUT_DIR ready: $OUTPUT_DIR"); flush(stdout)
+MPI.Barrier(comm)
+println("[init][rank=$rank] passed barrier after OUTPUT_DIR"); flush(stdout)
 
 #--------------------------------------------------------
 # Create restart output/inupt directory if it doesn't exist:
@@ -208,7 +210,9 @@ val_lsaturation = Val(get(inputs, :lsaturation, false))
 inputs = inputs isa NamedTuple ?
     (; inputs..., comm = MPI.COMM_WORLD, val_lsaturation = val_lsaturation) :
     inputs
-println_rank(" [init] inputs container finalised (Dict/NamedTuple). entering with_mpi block ..."; msg_rank = rank)
+println("[init][rank=$rank] inputs container finalised (Dict/NamedTuple)"); flush(stdout)
+MPI.Barrier(comm)
+println("[init][rank=$rank] about to enter with_mpi block ..."); flush(stdout)
 
 #--------------------------------------------------------
 # Coupling handshake (must happen OUTSIDE the with_mpi block so the
@@ -248,8 +252,13 @@ if JEXPRESSO_COUPLING_ENABLED
         end
     end
 else
+    println("[init][rank=$rank] >>> calling with_mpi() now (default comm=MPI.COMM_WORLD)"); flush(stdout)
     with_mpi() do distribute
-        println_rank(" [init] inside with_mpi: distribute.comm acquired"; msg_rank = MPI.Comm_rank(distribute.comm))
+        local _r = MPI.Comm_rank(distribute.comm)
+        local _s = MPI.Comm_size(distribute.comm)
+        println("[init][rank=$_r] inside with_mpi: distribute.comm acquired (size=$_s)"); flush(stdout)
+        MPI.Barrier(distribute.comm)
+        println("[init][rank=$_r] inside with_mpi: passed barrier, calling driver()"); flush(stdout)
         driver(nparts,
                distribute,
                inputs,
