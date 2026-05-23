@@ -200,6 +200,16 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     num_ncf_pg::Union{TInt, Missing} = 0
     num_ncf_cg::Union{TInt, Missing} = 0
 
+    # giga_les-only fields (added so the swapped mesh.jl can populate them):
+    el2gel              = KernelAbstractions.zeros(backend, TInt, 0)
+    gel2owner           = KernelAbstractions.zeros(backend, TInt, 0)
+    el2sib              = KernelAbstractions.zeros(backend, TInt, 0)
+    sib2owner           = KernelAbstractions.zeros(backend, TInt, 0)
+    num_ncf_peri::Union{TInt, Missing}    = 0
+    num_ncf_pg_peri::Union{TInt, Missing} = 0
+    num_ncf_cg_peri::Union{TInt, Missing} = 0
+    periodic_ncf_parent_gels = KernelAbstractions.zeros(backend, TInt, 0)
+
     lneed_redistribute::Bool = false
 
     msg_suppress::Bool = false

@@ -1,51 +1,4 @@
 
-"""
-    je_init_mpi_and_split_comm()
-
-Initialize MPI, split COMM_WORLD by APPID, and detect coupling mode.
-
-Returns a tuple `(world, local_comm, wsize, wrank, lsize, lrank, is_coupled)`.
-Used by run.jl when running coupled with another MPI code (e.g. Alya).
-When invoked standalone, `lsize == wsize` and `is_coupled == false`.
-
-# Environment Variables
-- `APPID`: Application ID for communicator splitting (default: 2). Alya
-  typically uses APPID=1; Jexpresso uses APPID=2.
-"""
-function je_init_mpi_and_split_comm()
-    if !MPI.Initialized()
-        MPI.Init()
-    end
-
-    world = MPI.COMM_WORLD
-    wsize = MPI.Comm_size(world)
-    wrank = MPI.Comm_rank(world)
-
-    appid = try
-        parse(Int, get(ENV, "APPID", "2"))
-    catch
-        2
-    end
-
-    local_comm = MPI.Comm_split(world, appid, wrank)
-    lsize = MPI.Comm_size(local_comm)
-    lrank = MPI.Comm_rank(local_comm)
-
-    set_mpi_comm(local_comm)
-    set_mpi_comm_world(world)
-
-    is_coupled = (lsize < wsize)
-
-    if lrank == 0 && is_coupled
-        println("[Jexpresso] Coupled mode detected:")
-        println("            World size = $wsize, Local size = $lsize, APPID = $appid")
-        println("            Handshake deferred to driver.")
-        flush(stdout)
-    end
-
-    return world, local_comm, wsize, wrank, lsize, lrank, is_coupled
-end
-
 mutable struct CyclingReverseDict
     mapping::Dict{Int, Vector{Int}}
     counters::Dict{Int, Int}
@@ -93,20 +46,26 @@ end
 
 # for non-periodic only
 mutable struct AssemblerCache
+    # MPI info (cached to avoid repeated calls in hot path)
+    comm::MPI.Comm
+    rank_sz::Int
+
     # Index communication buffers
     recv_idx_buffers::Vector{Vector{Int}}
-    # combined_recv_idx::Vector{Int}
 
     # Send-back buffers
     recvback_idx_buffers::Vector{Vector{Int}}
 
     # auxiliary
-    send_i::Vector{Vector{Int}} 
+    send_i::Vector{Vector{Int}}
     send_data_buffers::Vector{Vector{Float64}}
     recv_data_buffers::Vector{Vector{Float64}}
     send_data_sizes::Vector{Int}
     recv_data_sizes::Vector{Int}
-    # i_local::Dict{Int, Vector{Int}}
+
+    # Pre-computed active rank lists (avoid per-call zero-size checks)
+    active_send_ranks::Vector{Int}
+    active_recv_ranks::Vector{Int}
 
     # Preallocated requests
     requests::MPI.MultiRequest
@@ -117,7 +76,7 @@ function setup_assembler(SD, a, index_a, owner_a)
 
     if SD == NSD_1D() return nothing end
     
-    comm = get_mpi_comm()
+    comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
 
@@ -263,123 +222,181 @@ function setup_assembler(SD, a, index_a, owner_a)
     n_req = sum(send_data_sizes .> 0) + sum(recv_data_sizes .> 0)
     n_req_back = sum(recv_data_sizes .> 0) + sum(send_data_sizes .> 0)
 
-    return AssemblerCache( recv_idx_buffers, recvback_idx_buffers,
-            send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes,
+    active_send_ranks = [i for i in 0:rank_sz-1 if send_data_sizes[i+1] > 0]
+    active_recv_ranks = [i for i in 0:rank_sz-1 if recv_data_sizes[i+1] > 0]
+
+    return AssemblerCache(comm, rank_sz,
+            recv_idx_buffers, recvback_idx_buffers,
+            send_i, send_data_buffers, recv_data_buffers, send_data_sizes, recv_data_sizes,
+            active_send_ranks, active_recv_ranks,
             MPI.MultiRequest(n_req),
             MPI.MultiRequest(n_req_back))
 end
 
 
 function assemble_mpi!(a, cache::AssemblerCache)
-    comm = get_mpi_comm()
-    rank = MPI.Comm_rank(comm)
-    rank_sz = MPI.Comm_size(comm)
+    comm    = cache.comm
     T = eltype(a)
 
     is1D = ndims(a) == 1
-    n = size(a, 1)
     m = is1D ? 1 : size(a, 2)
 
-    for i in 0:rank_sz-1
-        fill!(cache.send_data_buffers[i+1], zero(T))
-    end
-    @inbounds for owner = 0:rank_sz-1
-        buf_data = cache.send_data_buffers[owner+1]
+    # Pack send buffers (outer j for cache-friendly column access in a)
+    @inbounds for owner in cache.active_send_ranks
+        buf_data     = cache.send_data_buffers[owner+1]
         send_i_local = cache.send_i[owner+1]
-
-        for (i,idx) in enumerate(send_i_local)
-            for j = 1:m
-                buf_data[(i-1)*m + j] = a[idx,j]
+        for j = 1:m
+            for (i, idx) in enumerate(send_i_local)
+                buf_data[(i-1)*m + j] = a[idx, j]
             end
         end
     end
-    # MPI.Barrier(comm)
 
-
-    for i in 0:rank_sz-1
-        fill!(cache.recv_data_buffers[i+1], zero(T))
-    end
-
-
-    # Communicate data
+    # Communicate data (non-owner → owner)
     req_idx = 1
-    @inbounds for i in 0:rank_sz-1
-        if cache.send_data_sizes[i+1] > 0
-            MPI.Isend(cache.send_data_buffers[i+1], comm, cache.requests[req_idx]; dest=i, tag=0)
-            req_idx += 1
-        end
-        if cache.recv_data_sizes[i+1] > 0
-            MPI.Irecv!(cache.recv_data_buffers[i+1], comm, cache.requests[req_idx]; source=i, tag=0)
-            req_idx += 1
-        end
+    @inbounds for i in cache.active_send_ranks
+        MPI.Isend(cache.send_data_buffers[i+1], comm, cache.requests[req_idx]; dest=i, tag=0)
+        req_idx += 1
+    end
+    @inbounds for i in cache.active_recv_ranks
+        MPI.Irecv!(cache.recv_data_buffers[i+1], comm, cache.requests[req_idx]; source=i, tag=0)
+        req_idx += 1
     end
 
-    # Wait for all communication to complete
     MPI.Waitall(cache.requests)
 
-    @inbounds for rk in 0:rank_sz-1
-        if cache.recv_data_sizes[rk+1] > 0
-            buffer = cache.recv_data_buffers[rk+1]
-            for (i, local_idx) in enumerate(cache.recv_idx_buffers[rk+1])
-                for j = 1:m
-                    a[local_idx, j] += buffer[(i-1)*m+j]
-                end
+    # Accumulate received contributions
+    @inbounds for rk in cache.active_recv_ranks
+        buffer   = cache.recv_data_buffers[rk+1]
+        recv_idx = cache.recv_idx_buffers[rk+1]
+        for j = 1:m
+            for (i, local_idx) in enumerate(recv_idx)
+                a[local_idx, j] += buffer[(i-1)*m+j]
             end
         end
     end
 
-    # send data back to original ranks
+    # Pack sendback buffers (reuse recv_data_buffers)
     sendback_data_buffers = cache.recv_data_buffers
-    @inbounds for rk in 0:rank_sz-1
-        if cache.recv_data_sizes[rk+1] > 0
-            buf_data = sendback_data_buffers[rk+1]
-            for (i, local_idx) in enumerate(cache.recv_idx_buffers[rk+1])
-                for j = 1:m
-                    buf_data[(i-1)*m+j] = a[local_idx, j]
-                end
+    @inbounds for rk in cache.active_recv_ranks
+        buf_data = sendback_data_buffers[rk+1]
+        recv_idx = cache.recv_idx_buffers[rk+1]
+        for j = 1:m
+            for (i, local_idx) in enumerate(recv_idx)
+                buf_data[(i-1)*m+j] = a[local_idx, j]
             end
         end
     end
-    sendback_data_sizes = cache.recv_data_sizes
-    recvback_data_sizes = cache.send_data_sizes
-    # MPI.Barrier(comm)
 
-
-
-    # Prepare buffers for sending and receiving back data
     recvback_data_buffers = cache.send_data_buffers
 
-
-    # Communicate back data
+    # Communicate back (owner → non-owner)
     req_idx = 1
-    @inbounds for i in 0:rank_sz-1
-        if sendback_data_sizes[i+1] > 0
-            MPI.Isend(sendback_data_buffers[i+1], comm, cache.requests_back[req_idx]; dest=i, tag=2)
-            req_idx += 1
-        end
-        if recvback_data_sizes[i+1] > 0
-            MPI.Irecv!(recvback_data_buffers[i+1], comm, cache.requests_back[req_idx]; source=i, tag=2)
-            req_idx += 1
-        end
+    @inbounds for i in cache.active_recv_ranks
+        MPI.Isend(sendback_data_buffers[i+1], comm, cache.requests_back[req_idx]; dest=i, tag=2)
+        req_idx += 1
+    end
+    @inbounds for i in cache.active_send_ranks
+        MPI.Irecv!(recvback_data_buffers[i+1], comm, cache.requests_back[req_idx]; source=i, tag=2)
+        req_idx += 1
     end
 
-
-    # Wait for all communication to complete
     MPI.Waitall(cache.requests_back)
 
-
-    @inbounds for rk = 0:rank_sz-1
-        if recvback_data_sizes[rk+1] > 0
-            buffer = recvback_data_buffers[rk+1]
+    # Unpack recvback data
+    @inbounds for rk in cache.active_send_ranks
+        buffer = recvback_data_buffers[rk+1]
+        for j = 1:m
             for (i, local_idx) in enumerate(cache.recvback_idx_buffers[rk+1])
-                for j = 1:m
-                    a[local_idx, j] = buffer[(i-1)*m+j]
-                end
+                a[local_idx, j] = buffer[(i-1)*m+j]
             end
         end
     end
 end
 
+
+```
+efficiency needs to be tested
+```
+function assemble_mpi!(a, cache::AssemblerCache; operator = +)
+    comm = cache.comm
+    T = eltype(a)
+
+    is1D = ndims(a) == 1
+    m = is1D ? 1 : size(a, 2)
+
+    # Pack send buffers (outer j for cache-friendly column access in a)
+    @inbounds for owner in cache.active_send_ranks
+        buf_data     = cache.send_data_buffers[owner+1]
+        send_i_local = cache.send_i[owner+1]
+        for j = 1:m
+            for (i, idx) in enumerate(send_i_local)
+                buf_data[(i-1)*m + j] = a[idx, j]
+            end
+        end
+    end
+
+    # Communicate data (non-owner → owner)
+    req_idx = 1
+    @inbounds for i in cache.active_send_ranks
+        MPI.Isend(cache.send_data_buffers[i+1], comm, cache.requests[req_idx]; dest=i, tag=0)
+        req_idx += 1
+    end
+    @inbounds for i in cache.active_recv_ranks
+        MPI.Irecv!(cache.recv_data_buffers[i+1], comm, cache.requests[req_idx]; source=i, tag=0)
+        req_idx += 1
+    end
+
+    MPI.Waitall(cache.requests)
+
+    # Apply operator to received contributions
+    @inbounds for rk in cache.active_recv_ranks
+        buffer   = cache.recv_data_buffers[rk+1]
+        recv_idx = cache.recv_idx_buffers[rk+1]
+        for j = 1:m
+            for (i, local_idx) in enumerate(recv_idx)
+                a[local_idx, j] = operator(a[local_idx, j], buffer[(i-1)*m+j])
+            end
+        end
+    end
+
+    # Pack sendback buffers (reuse recv_data_buffers)
+    sendback_data_buffers = cache.recv_data_buffers
+    @inbounds for rk in cache.active_recv_ranks
+        buf_data = sendback_data_buffers[rk+1]
+        recv_idx = cache.recv_idx_buffers[rk+1]
+        for j = 1:m
+            for (i, local_idx) in enumerate(recv_idx)
+                buf_data[(i-1)*m+j] = a[local_idx, j]
+            end
+        end
+    end
+
+    recvback_data_buffers = cache.send_data_buffers
+
+    # Communicate back (owner → non-owner)
+    req_idx = 1
+    @inbounds for i in cache.active_recv_ranks
+        MPI.Isend(sendback_data_buffers[i+1], comm, cache.requests_back[req_idx]; dest=i, tag=2)
+        req_idx += 1
+    end
+    @inbounds for i in cache.active_send_ranks
+        MPI.Irecv!(recvback_data_buffers[i+1], comm, cache.requests_back[req_idx]; source=i, tag=2)
+        req_idx += 1
+    end
+
+    MPI.Waitall(cache.requests_back)
+
+    # Unpack recvback data
+    @inbounds for rk in cache.active_send_ranks
+        buffer = recvback_data_buffers[rk+1]
+        for j = 1:m
+            for (i, local_idx) in enumerate(cache.recvback_idx_buffers[rk+1])
+                a[local_idx, j] = buffer[(i-1)*m+j]
+            end
+        end
+    end
+end
 
 mutable struct SendReceiveCache{T}
     # MPI info
