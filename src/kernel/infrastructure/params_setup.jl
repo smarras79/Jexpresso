@@ -1,11 +1,12 @@
 function params_setup(sem,
                       qp::St_SolutionVars,
-                      inputs::Dict,
+                      inputs,
                       OUTPUT_DIR::String,
                       T,
-                      tspan = [T(inputs[:tinit]), T(inputs[:tend])])
+                      tspan = [T(inputs[:tinit]), T(inputs[:tend])];
+                      coupling = nothing)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # Build arrays and params ................................ "; msg_rank = rank, suppress = sem.mesh.msg_suppress)
@@ -312,8 +313,10 @@ function params_setup(sem,
         visc_coeff = [0.0]
     end
 
-    # setup timer
-    timers = Dict{String, MPIFunctionTimer}()
+    # setup timer.  Wrapped in TimerRegistry so SciMLBase doesn't descend
+    # into the underlying Dict when introspecting ODEProblem.p and emit the
+    # "arrays or dicts to store parameters of different types" warning.
+    timers = TimerRegistry()
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
@@ -353,7 +356,8 @@ function params_setup(sem,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
-                  timers)
+                  timers,
+                  coupling = coupling)
         
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -387,7 +391,8 @@ function params_setup(sem,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
                   timers,
-                  sem.interp, sem.project, sem.nparts, sem.distribute)
+                  sem.interp, sem.project, sem.nparts, sem.distribute,
+                  coupling = coupling)
     end
 
     println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)

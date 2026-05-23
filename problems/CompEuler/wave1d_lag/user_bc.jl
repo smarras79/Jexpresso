@@ -47,7 +47,7 @@ function user_bc_dirichlet!(q, x, t, tag::String,qbdy,qe,::PERT)
    nothing
 end
 
-function user_bc_neumann(q, gradq, x, t, inputs::Dict)
+function user_bc_neumann(q, gradq, x, t, inputs)
     
     flux = zeros(size(q,2),1)
     return flux

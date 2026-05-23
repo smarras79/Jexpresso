@@ -2,7 +2,7 @@ using SparseArrays
 using KrylovPreconditioners
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dηdx, dηdy, nx, ny, elem_to_edge, 
         extra_mesh, QT::Inexact, SD::NSD_2D, AD::ContGal)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     npoin = mesh.npoin
     nelem = mesh.nelem
     nc_mat = zeros(Float64,1)

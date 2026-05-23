@@ -1,6 +1,6 @@
 function stretch_mesh!(mesh,inputs,npoin)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     
@@ -33,7 +33,7 @@ end
 
 function stretch_mesh_3D!(mesh,inputs, npoin)  
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     

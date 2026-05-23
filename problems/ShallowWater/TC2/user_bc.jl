@@ -8,12 +8,12 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::Abst
     # TC2 uses periodic BCs -- no Dirichlet conditions needed.
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs)
     flux = zeros(size(q,2), 1)
     return flux
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, inputs)
     flux = zeros(size(q,2), 1)
     return flux
 end

@@ -50,7 +50,7 @@ function build_nonconforming_ghost_layer(
     extra_meshes_ref_level,
     n_spa, neighbors
 )
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     nproc = MPI.Comm_size(comm)
     

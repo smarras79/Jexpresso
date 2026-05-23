@@ -1,4 +1,3 @@
-
 """
     @missinginput "Error message"
 Macro used to raise an error, when something is not implemented.
@@ -31,7 +30,7 @@ model = @outputrootonly GmshDiscreteModel(parts, filename, renumber=true)
 macro outputrootonly(expr)
     quote
         if $(esc(:rank)) != 0
-            redirect_stdout(open("/dev/null", "w")) do
+            redirect_stdout(devnull) do
                 $(esc(expr))
             end
         else

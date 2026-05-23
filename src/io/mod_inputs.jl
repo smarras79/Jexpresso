@@ -10,7 +10,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
     if rank == 0
-        pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
+        # Wrap long values across multiple lines so nothing is cropped — the
+        # default pretty_table truncates wide cells with "…" and hides the
+        # tail of long paths / vectors / NamedTuples that users need to see.
+        term_cols = try displaysize(stdout)[2] catch; 120 end
+        key_w     = 32
+        # Leave room for the two outer borders, the column separator, and the
+        # padding PrettyTables adds around each cell (≈ 7 chars total).
+        val_w     = max(40, term_cols - key_w - 7)
+        pretty_table(inputs;
+                     sortkeys       = true,
+                     border_crayon  = crayon"yellow",
+                     linebreaks     = true,
+                     autowrap       = true,
+                     columns_width  = [key_w, val_w],
+                     crop           = :none)
     end
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
@@ -103,6 +117,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
        inputs[:lwall_model] = false
     end
     
+    if(!haskey(inputs, :lxy_partition))
+        inputs[:lxy_partition] = inputs[:lwall_model]
+    end
+
     if(!haskey(inputs, :lxy_partition))
         inputs[:lxy_partition] = inputs[:lwall_model]
     end
@@ -900,7 +918,7 @@ function _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
+function mod_inputs_check(inputs, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
@@ -917,7 +935,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
+function mod_inputs_check(inputs, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """
