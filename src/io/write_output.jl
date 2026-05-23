@@ -602,7 +602,7 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
 end
 
 function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
 
