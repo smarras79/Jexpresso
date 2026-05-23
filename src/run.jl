@@ -268,8 +268,8 @@ else
     println("[init][rank=$rank] probing MPI.Comm_dup(comm) directly ..."); flush(stdout)
     _probe_dup = MPI.Comm_dup(comm)
     println("[init][rank=$rank] MPI.Comm_dup(comm) returned ok"); flush(stdout)
-    MPI.Comm_free(_probe_dup)
-    println("[init][rank=$rank] MPI.Comm_free(probe_dup) returned ok"); flush(stdout)
+    # Skip explicit Comm_free — MPI.jl frees duplicated comms at finalize anyway,
+    # and the symbol name differs across MPI.jl versions.
 
     println("[init][rank=$rank] >>> calling with_mpi(; comm=MPI.COMM_WORLD) now"); flush(stdout)
     with_mpi(; comm = MPI.COMM_WORLD) do distribute
