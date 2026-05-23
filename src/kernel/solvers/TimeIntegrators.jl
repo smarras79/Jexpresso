@@ -1,77 +1,10 @@
-using TrixiBase
-using TimerOutputs
-
-"""
-    alloc_summary_enabled(inputs) -> Bool
-
-Decide whether the end-of-run per-function timing & allocation summary
-table is printed. Precedence (highest first):
-
- 1. ENV variable `JEXPRESSO_ALLOC_SUMMARY` — set it from the REPL before
-    running, e.g. `ENV["JEXPRESSO_ALLOC_SUMMARY"] = "false"`.
- 2. Command-line flag — pass `--no-alloc-summary` (or `no-alloc-summary`)
-    in Julia's `ARGS`, e.g. `julia run.jl ... --no-alloc-summary`.
- 3. `:lalloc_summary` in the case's `user_inputs.jl`.
- 4. Default: `true` (on).
-
-Accepted truthy ENV values: 1/true/yes/on; falsy: 0/false/no/off
-(case-insensitive).
-"""
-function alloc_summary_enabled(inputs)
-    e = get(ENV, "JEXPRESSO_ALLOC_SUMMARY", nothing)
-    if e !== nothing
-        v = lowercase(strip(e))
-        v in ("0", "false", "no", "off")  && return false
-        v in ("1", "true", "yes", "on")   && return true
-    end
-    if any(a -> a in ("--no-alloc-summary", "no-alloc-summary"), ARGS)
-        return false
-    end
-    return get(inputs, :lalloc_summary, true) == false
-end
-
 function time_loop!(inputs, params, u, args...)
 
-    comm = get_mpi_comm()
+    comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     partitioned_model = args[1]
-    # Optional coupled-mode positional args: args[2] = is_coupled::Bool,
-    # args[3] = coupling::CouplingData. Both default to "off" when callers
-    # use the historical 1-arg form (drivers.jl standalone path).
-    is_coupled = length(args) >= 2 ? args[2] : false
-    coupling   = length(args) >= 3 ? args[3] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
-
-    #------------------------------------------------------------------------
-    # Diagnostic: identify any AbstractDict-typed field inside params before
-    # SciMLBase introspects it.  Any such field will trigger the
-    # "Using arrays or dicts to store parameters of different types" warning
-    # from SciMLBase/performance_warnings.jl — print it so the offender is
-    # named, then leave the run untouched.  Set :diag_params_dicts => false
-    # in user_inputs to silence.  Rank 0 only.
-    #------------------------------------------------------------------------
-    if rank == 0 && get(inputs, :diag_params_dicts, true) == true
-        offenders = Tuple{Symbol, DataType}[]
-        for (k, v) in pairs(params)
-            v isa AbstractDict && push!(offenders, (k, typeof(v)))
-        end
-        if !isempty(offenders)
-            println(" # [params-dict-scan] AbstractDict fields in params (these trigger the SciMLBase perf warning):")
-            for (k, t) in offenders
-                println("     • params.$(k) :: $(t)")
-            end
-            flush(stdout)
-        end
-    end
-
-    # DIAGNOSTIC: temporarily reverted from
-    #   ODEProblem{true, FullSpecialize}(rhs!, u, params.tspan, params)
-    # to the historical default-specialize form to test whether parallel
-    # blow-up in CompEuler/theta and CompEuler/thetaTracers is caused by
-    # the FullSpecialize / ArrayFuse interaction introduced in e37b4c96.
-    # If parallel runs correctly again, the bug is in that interaction
-    # (not in the numerical kernels) and the FullSpecialize optimization
-    # needs to be reworked to be parallel-safe.
+    
     prob = ODEProblem(rhs!,
                       u,
                       params.tspan,
@@ -81,16 +14,24 @@ function time_loop!(inputs, params, u, args...)
     # Runtime callbacks
     #------------------------------------------------------------------------
     dosetimes    = inputs[:diagnostics_at_times]
+    les_stat_t   = inputs[:statistics_time]
+    tstops_all   = sort(unique(vcat(collect(Float64, dosetimes), collect(Float64, les_stat_t))))
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
-    rad_time     = inputs[:radiation_time_step]
+    stats_online_start = get(inputs, :statistics_online_start, Inf)
+    rad_time           = inputs[:radiation_time_step]
     lnew_mesh    = true   
     lwrite_time  = (inputs[:outformat] == VTK()) && (rank == 0)
+    lwrite_init  = !(inputs[:lrestart] || inputs[:lrestart_vtk] || inputs[:lrestart_amr]) 
 
-    if (lwrite_time == true) 
+    if (lwrite_time == true)
         pvd_path = joinpath(inputs[:output_dir], "simulation.pvd")
-        init_pvd_file(pvd_path)
+        if !lwrite_init && isfile(pvd_path)
+            # VTK restart: preserve existing simulation.pvd; continue appending
+        else
+            init_pvd_file(pvd_path)
+        end
     end
 
     function two_stream_condition(u, t, integrator)
@@ -126,14 +67,14 @@ function time_loop!(inputs, params, u, args...)
         end
         MPI.Barrier(comm)
         write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
-                     integrator.p.mesh, integrator.p.mp,
-                     integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
-                     integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-                     tmp_restart_path, inputs,
-                     integrator.p.qp.qvars,
-                     integrator.p.qp.qoutvars,
-                     res_fortmat;
-                     nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+                        integrator.p.mesh, integrator.p.mp,
+                        integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
+                        integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
+                        tmp_restart_path, inputs,
+                        integrator.p.qp.qvars,
+                        integrator.p.qp.qoutvars,
+                        res_fortmat;
+                        nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
         MPI.Barrier(comm)
         if rank == 0
             cp(tmp_restart_path, inputs[:restart_output_file_path]; force=true)
@@ -142,6 +83,38 @@ function time_loop!(inputs, params, u, args...)
 
         println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
     end
+
+
+    # LES statistics callback:
+    function les_stat_condition(u, t, integrator)
+        # return les_stat_t ≠ 0.0 && rem(t, les_stat_t) < 1e-3
+        idx  = findfirst(x -> x == t, les_stat_t)
+        if idx !== nothing
+            return true
+        else
+            return false
+        end
+    end
+    function do_les_statistics!(integrator)
+        println_rank(" # LES Statistics at t=", integrator.t; msg_rank = rank)
+        les_statistics(integrator.u, integrator.p, integrator.t)
+    end
+
+    # Online statistics accumulation callback (Approach 2): fires every interval, no MPI
+    stats_online_interval = Float64(get(inputs, :statistics_online_interval, inputs[:Δt]))
+    online_last_t         = Ref{Float64}(-Inf)
+    function les_online_condition(u, t, integrator)
+        return !isnothing(integrator.p.les_stat_cache) &&
+               t >= stats_online_start &&
+               t - online_last_t[] >= stats_online_interval - eps(t)
+    end
+    function do_les_online!(integrator)
+        online_last_t[] = integrator.t
+        # println_rank(" # LES online accumulation at t=", integrator.t; msg_rank = rank)
+        les_accumulate_online!(integrator.u, integrator.p)
+    end
+
+    
     # #------------------------------------------------------------------------
     # #  config
     # #------------------------------------------------------------------------
@@ -167,13 +140,16 @@ function time_loop!(inputs, params, u, args...)
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-            if inputs[:ladapt] == false
+            # if inputs[:ladapt] == false
+
+                ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+                dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
-                           integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
-                           integrator.p.mesh.Δeffective_s,
-                           integrator,
-                           integrator.p.SD; visc=inputs[:μ])
-            end
+                        integrator.p.mp, integrator.p.uaux[:,end], Float32(dt),
+                        integrator.p.mesh.Δeffective_s,
+                        integrator,
+                        integrator.p.SD; visc=inputs[:μ])
+            # end
             write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
@@ -183,16 +159,25 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
-            if (lwrite_time == true) 
+            if (lwrite_time == true)
                 append_pvd_entry(pvd_path, integrator.t, "iter_$(idx).pvtu")
+            end
+            # Save p4est forest checkpoint alongside VTK for AMR restart support.
+            # p8est_save is MPI-collective: all ranks call together.
+            # Julia closures capture `partitioned_model` by binding — it always
+            # reflects the current forest after each AMR iteration.
+            if get(inputs, :lamr, false)
+                write_p4est_checkpoint(inputs[:output_dir], idx, partitioned_model)
             end
         end
     end
+    cb_les_stat    = DiscreteCallback(les_stat_condition, do_les_statistics!)
+    cb_les_online  = DiscreteCallback(les_online_condition, do_les_online!)
+
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
-    cb         = DiscreteCallback(condition, affect!)    
+    cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
-    cb_coupling = is_coupled ? setup_coupling_callback(is_coupled, params, inputs) : nothing
     CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
@@ -200,9 +185,11 @@ function time_loop!(inputs, params, u, args...)
 
     #
     # Write initial conditions:
+    # Skipped on VTK restart — the snapshot already exists in the output dir
+    # and its entry is already in simulation.pvd from the previous run.
     #
     idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
-    if idx ≠ nothing
+    if idx ≠ nothing && lwrite_init
         if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
         write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
                      params.mesh, params.mp,
@@ -212,73 +199,71 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe)
-        if (lwrite_time == true) 
+        if (lwrite_time == true)
             append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
         end
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
-
-    TimerOutputs.reset_timer!(TrixiBase.timer())
+    
     #
     # Simulation
     #
-    callbacks_main = (is_coupled && cb_coupling !== nothing) ?
-        CallbackSet(cb, cb_restart, cb_coupling) :
-        CallbackSet(cb, cb_restart)
-
-    # Warm-up: run the full rhs! path once, untimed, so JIT compilation
-    # of rhs!/_build_rhs!/the inviscid·viscous barriers/expansions/BCs/DSS
-    # is excluded from the summary. Without this the @timeit table counts
-    # the first (compiling) call, inflating per-call allocations by the
-    # one-time compile cost / n_calls (huge on short runs). Skipped when
-    # the summary is disabled so we don't add an eval needlessly.
-    if alloc_summary_enabled(inputs)
-        let du_warmup = similar(u)
-            rhs!(du_warmup, u, prob.p, params.tspan[1])
+    limex = false
+    if limex
+        ntime_steps = floor(Int32, inputs[:tend]/inputs[:Δt])
+        
+        # Basic usage
+        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, 
+                                           inputs[:Δt], ntime_steps, inputs[:lsource])
+        
+        # Or step-by-step
+        for n = 1:ntime_steps
+            imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
         end
-        MPI.Barrier(comm)
+        println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
+        @mystop()
+    else
+        ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+        dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
+        solution   = solve(prob,
+                         inputs[:ode_solver], dt=dt,
+                         #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
+                         callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = tstops_all,
+                         save_everystep = false,
+                         adaptive=inputs[:ode_adaptive_solver],
+                         saveat = range(inputs[:tinit],
+                                        inputs[:tend],
+                                        length=inputs[:ndiagnostics_outputs]));
     end
-
-    TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
-    rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
-    solution = @time solve(prob,
-                           inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                           #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                           callback = callbacks_main, tstops = dosetimes,
-                           save_everystep = false,
-                           adaptive=inputs[:ode_adaptive_solver],
-                           saveat = range(inputs[:tinit],
-                                          inputs[:tend],
-                                          length=inputs[:ndiagnostics_outputs]));
-
-    # End-of-simulation per-function timing & allocation summary table.
-    # On by default. Disable via ENV["JEXPRESSO_ALLOC_SUMMARY"]="false"
-    # (REPL), the --no-alloc-summary CLI flag, or :lalloc_summary => false
-    # in user_inputs.jl. See alloc_summary_enabled above for precedence.
-    if rank == 0 && alloc_summary_enabled(inputs)
-        println("\n # Per-function timing & allocation summary (disable via ENV[\"JEXPRESSO_ALLOC_SUMMARY\"]=\"false\", --no-alloc-summary, or :lalloc_summary => false):")
-        show(stdout, JEXPRESSO_TIMER; allocations=true, sortby=:firstexec)
-        println()
-    end
+    
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)
-    
+
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
-            @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
-            
-            @time solution = solve(prob,
-                                   inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                                   callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
-                                   save_everystep = false,
-                                   adaptive=inputs[:ode_adaptive_solver],
-                                   saveat = []);
+            @mpi_time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
+            ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+            dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
+            println_rank(" #  dt=", dt; msg_rank = rank)
+            @mpi_time solution = solve(prob,
+                                inputs[:ode_solver], dt=Float32(dt),
+                                callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
+                                save_everystep = false,
+                                adaptive=inputs[:ode_adaptive_solver],
+                                saveat = []);
             MPI.Barrier(comm)
             report_all_timers(prob.p.timers)
             MPI.Barrier(comm)
         end
     end
+
+    # Finalize online statistics: single Allreduce + write output
+    if stats_online_start < Inf
+        les_finalize_online!(params, solution.t[end])
+    end
+    # Finalize Approach 1 statistics: write final time-and-space averages
+    les_finalize!(params, solution.t[end])
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
 

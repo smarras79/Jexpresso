@@ -859,6 +859,33 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lamr] = false
     end
 
+    # LES statistics defaults (used by giga_les TimeIntegrators.jl callbacks).
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = Float64[]
+    end
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+    if(!haskey(inputs, :statistics_online_interval))
+        inputs[:statistics_online_interval] = Float32(inputs[:Δt])
+    end
+
+    # VTK / AMR restart defaults (used by giga_les TimeIntegrators.jl).
+    if(!haskey(inputs, :lrestart_vtk))
+        inputs[:lrestart_vtk] = false
+    end
+    if(!haskey(inputs, :lrestart_amr))
+        inputs[:lrestart_amr] = false
+    end
+
+    # LES profile/stress var defaults (used by giga_les params_setup.jl).
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
     if(!haskey(inputs, :amr_freq))
         inputs[:amr_freq] = 0
     end
