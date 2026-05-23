@@ -113,7 +113,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     #
@@ -151,8 +151,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
-    
-    comm = MPI.COMM_WORLD
+
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
@@ -184,7 +184,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="")
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
@@ -577,8 +577,8 @@ end
 
 
 function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs, varnames; iout=1, nvar=1, case="")
-    
-    comm = MPI.COMM_WORLD
+
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     #Write one HDF5 file timestep
@@ -699,10 +699,10 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
     
-    comm   = MPI.COMM_WORLD
+    comm   = get_mpi_comm()
     rank   = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
-    
+
     local_list = findall(x->x == rank, mesh.gip2owner)
     # Gather data from all processes
     all_ip2gip  = MPI.gather(mesh.ip2gip[local_list], comm)
