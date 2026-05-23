@@ -64,14 +64,15 @@ function time_loop!(inputs, params, u, args...)
         end
     end
 
-    # FullSpecialize: no type-erasing FunctionWrapper around rhs!. The
-    # default AutoSpecialize wrapper type-erases p=params, so every
-    # params.* access inside rhs!/inviscid_rhs_el!/viscous_rhs_el! boxes
-    # (the ~2 KiB/call seen in the allocation summary). FullSpecialize
-    # makes the integrator specialize on the concrete rhs!/params/du
-    # types. Requires RHStoDU! to scalar-assign du so low-storage RK's
-    # ArrayFuse du works without the wrapper.
-    prob = ODEProblem{true, FullSpecialize}(rhs!,
+    # DIAGNOSTIC: temporarily reverted from
+    #   ODEProblem{true, FullSpecialize}(rhs!, u, params.tspan, params)
+    # to the historical default-specialize form to test whether parallel
+    # blow-up in CompEuler/theta and CompEuler/thetaTracers is caused by
+    # the FullSpecialize / ArrayFuse interaction introduced in e37b4c96.
+    # If parallel runs correctly again, the bug is in that interaction
+    # (not in the numerical kernels) and the FullSpecialize optimization
+    # needs to be reworked to be parallel-safe.
+    prob = ODEProblem(rhs!,
                       u,
                       params.tspan,
                       params);
