@@ -40,10 +40,20 @@ Base.getindex(p::NoGhostParts, i::Integer) = p.data[i]
 Base.map(f::Function, p::NoGhostParts) = map(f, p.data)
 Base.map(f::Function, p::NoGhostParts, args...) = map(f, p.data, args...)
 
-# Not type piracy — dispatches on NoGhostParts which belongs to this module.
-# Omits Gridap's neighbor loop that adds ghost/halo cells to each partition.
+# Override Gridap.Geometry.DiscreteModel(parts, smodel, cell_to_part) to
+# build a partition WITHOUT ghost cells (drops Gridap's neighbor loop that
+# adds ghost/halo cells to each part). Matches hw/giga_les behavior.
+#
+# Dispatching on parts::AbstractArray (not NoGhostParts) means this method
+# also intercepts the internal Gridap call made by the parallel
+# GmshDiscreteModel(parts, file) constructor in GridapGmsh — without this
+# broader dispatch, that path silently uses Gridap's stock partitioner
+# WITH ghost cells, which then makes every interface DOF receive an extra
+# contribution at DSS time (owner's element + ghost element's element),
+# accumulating drift that blows up runs in parallel only. See
+# https://claude.ai/code for the diagnostic chain.
 function Gridap.Geometry.DiscreteModel(
-    parts::NoGhostParts,
+    parts::AbstractArray,
     model::Gridap.Geometry.DiscreteModel,
     cell_to_part::AbstractArray,
     cell_graph::SparseArrays.SparseMatrixCSC = GridapDistributed.compute_cell_graph(model)
