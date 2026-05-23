@@ -1311,6 +1311,22 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
    return extra_mesh
 end
 
+# Partition cells into nparts contiguous equal-sized blocks by cell index.
+# Returns a 1-indexed cell_to_part vector of length num_cells(model).
+# Used as a fallback when the parallel GmshDiscreteModel(parts, file) call
+# is unsafe on the target platform (see crash note next to the call site
+# in mod_mesh_read_gmsh!). Geometry-agnostic — no centroid computation,
+# no aspect-ratio heuristics; partition quality is whatever a contiguous
+# slab of the gmsh cell numbering gives. Adequate for getting standalone
+# runs unblocked; a true xy-aware partitioner (set lxy_partition=true) or
+# graph partitioner (e.g. METIS via GridapDistributed) is preferred for
+# load-balanced production runs.
+function _compute_block_partition(model, nparts)
+    ncells = num_cells(model)
+    cells_per_part = cld(ncells, nparts)
+    return Int[min(div(c - 1, cells_per_part) + 1, nparts) for c in 1:ncells]
+end
+
 # Partition cells into nparts by x-y centroid bins, ignoring z.
 # Returns a 1-indexed cell_to_part vector of length num_cells(model).
 function _compute_xy_partition(model, nparts)
@@ -1393,18 +1409,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
                 cell_to_part = _compute_xy_partition(smodel, nparts)
                 DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
             else
-                # Parallel GmshDiscreteModel constructor (MPI collective).
-                # On macOS arm64 + Open MPI 5 + Gridap + GridapGmsh, the
-                # post-81b9f55 form
-                #   GmshDiscreteModel(NoGhostParts(parts),
-                #                     NoEmbedMeshFile(file), renumber=true)
-                # crashes with Bus error 10 in _platform_memmove right
-                # after "Done reading *.msh", regardless of whether
-                # stdout is redirected on non-root ranks. The pre-81b9f55
-                # form
-                #   GmshDiscreteModel(parts, file, renumber=true)
-                # is the historically-working API on this platform.
-                GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+                # Parallel GmshDiscreteModel(parts, file) consistently
+                # SIGBUSes in _platform_memmove on macOS arm64 + Open MPI
+                # 5.0.8 + Gridap 0.18.12 / GridapDistributed 0.4.7 /
+                # GridapGmsh 0.7.2 / PartitionedArrays 0.3.5, in the
+                # cell-array distribute step right after Gmsh parses the
+                # file. Both the NoGhostParts(parts)+NoEmbedMeshFile(file)
+                # form and the legacy (parts, file) form reproduce the
+                # crash identically (the macro/redirect ruled out in
+                # df51f2f; the legacy API ruled out in 7576bd3).
+                #
+                # Workaround: read the gmsh file serially on every rank
+                # (cheap — even the largest cases used here are O(10^5)
+                # cells) and build the partitioned model from it with a
+                # simple contiguous block partition. This avoids the
+                # parallel collective's distribute step entirely and is
+                # the same construction shape that lxy_partition=true
+                # already uses successfully.
+                smodel = @outputrootonly GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                cell_to_part = _compute_block_partition(smodel, nparts)
+                DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
             end
             println_rank(" [init] mod_mesh_read_gmsh!: GmshDiscreteModel call returned"; msg_rank = rank)
             model = local_views(partitioned_model).item_ref[]
