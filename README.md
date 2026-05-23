@@ -1,13 +1,3 @@
-# ANNOUNCEMENT:
-
-Dear all, 
-
-as we have noticed an increased interest in Jexpresso (this is amazing, thank you for this!), we added a script to [automate the installation](INSTALLATION.md) of Jexpresso.
-
-Moreover, we have added **ERA5** reading capabilities and the branch for that will be merged soon into master, as well as an improved handling of boundary conditions from the user's perspective.
-
-Thank you your interest in the Jexpresso!
-
 
 # <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
