@@ -1384,11 +1384,28 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
         if ladaptive == false && linitial_refine == false
             println_rank(" [init] mod_mesh_read_gmsh!: entering GmshDiscreteModel call (lxy_partition=$lxy_partition) ..."; msg_rank = rank)
             partitioned_model = if lxy_partition
+                # Serial GmshDiscreteModel constructor: runs on every rank
+                # because the result is needed locally to compute the xy
+                # partition. Suppress duplicated Gmsh chatter on rank>0
+                # via @outputrootonly — this is the serial form, no MPI
+                # collective is in flight here.
                 smodel = @outputrootonly GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
                 cell_to_part = _compute_xy_partition(smodel, nparts)
                 DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
             else
-                @outputrootonly GmshDiscreteModel(NoGhostParts(parts), NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                # Parallel GmshDiscreteModel constructor — this is an MPI
+                # collective. Do NOT wrap it in @outputrootonly /
+                # redirect_stdout: on macOS arm64 + Open MPI 5 + Gridap +
+                # GridapGmsh, redirecting stdout on non-root ranks across
+                # this collective consistently triggers a Bus error 10 in
+                # _platform_memmove right after "Done reading *.msh".
+                # The trade-off is duplicated "Reading ...msh / Done
+                # reading ...msh" lines from rank>0; that is acceptable
+                # and matches the historical pre-@outputrootonly
+                # behaviour of the in-parallel branch.
+                GmshDiscreteModel(NoGhostParts(parts),
+                                  NoEmbedMeshFile(inputs[:gmsh_filename]),
+                                  renumber=true)
             end
             println_rank(" [init] mod_mesh_read_gmsh!: GmshDiscreteModel call returned"; msg_rank = rank)
             model = local_views(partitioned_model).item_ref[]
