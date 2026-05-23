@@ -31,6 +31,36 @@ function GridapGmsh.GmshDiscreteModel(f::NoEmbedMeshFile; renumber=true, has_aff
     model
 end
 
+# Override of GridapGmsh.GmshDiscreteModel(gmsh::Module) restored from
+# hw/giga_les. Forces Dp = Dc (embedding dim = cell dim).
+#
+# Without this override, GridapGmsh's default GmshDiscreteModel(gmsh::Module)
+# reads the .msh's stored coordinate dimension as Dp - so a 2D mesh saved
+# with z=0 columns becomes UnstructuredDiscreteModel{2,3}, not {2,2}. That
+# silently propagates a 3D coordinate slot through node_to_coords, the
+# grid, and downstream metric / DSS / boundary code paths. In serial the
+# extra 3rd component is just zero and most computations still work; in
+# parallel, GridapDistributed and PartitionedArrays make different
+# decisions about ghost/halo construction and face-partition equality
+# checks based on Dp, which manifests as accumulating DSS drift at
+# interface DOFs (theta blowing up at t=100s with rho*theta negative).
+#
+# This override is invoked by the internal call chain underneath BOTH
+# the serial GmshDiscreteModel(file) and the parallel
+# GmshDiscreteModel(parts, file) constructors, so installing it here
+# fixes both code paths.
+function GridapGmsh.GmshDiscreteModel(gmsh::Module; has_affine_map=nothing, orient_if_simplex=nothing)
+    Dc = GridapGmsh._setup_cell_dim(gmsh)
+    Dp = Dc
+    node_to_coords = GridapGmsh._setup_node_coords(gmsh, Dp)
+    vertex_to_node, node_to_vertex = GridapGmsh._setup_nodes_and_vertices(gmsh, node_to_coords)
+    grid, cell_to_entity = GridapGmsh._setup_grid(gmsh, Dc, Dp, node_to_coords, node_to_vertex; has_affine_map)
+    cell_to_vertices, vertex_to_node, node_to_vertex = GridapGmsh._setup_cell_to_vertices(grid, vertex_to_node, node_to_vertex)
+    grid_topology = Gridap.Geometry.UnstructuredGridTopology(grid, cell_to_vertices, vertex_to_node)
+    labeling = GridapGmsh._setup_labeling(gmsh, grid, grid_topology, cell_to_entity, vertex_to_node, node_to_vertex)
+    Gridap.Geometry.UnstructuredDiscreteModel(grid, grid_topology, labeling)
+end
+
 struct NoGhostParts{T<:AbstractVector} <: AbstractVector{eltype(T)}
     data::T
 end
