@@ -30,8 +30,21 @@ model = @outputrootonly GmshDiscreteModel(parts, filename, renumber=true)
 macro outputrootonly(expr)
     quote
         if $(esc(:rank)) != 0
-            redirect_stdout(devnull) do
-                $(esc(expr))
+            # Use a fresh per-call sink instead of the global Base.devnull:
+            # 88438d9 swapped open("/dev/null","w") -> devnull for
+            # portability, but on macOS arm64 with Open MPI 5 + Gridap +
+            # GridapGmsh the shared devnull stream interacts badly with
+            # Gmsh's C-level stdout buffering inside the parallel
+            # GmshDiscreteModel collective, triggering a Bus error 10
+            # in _platform_memmove right after "Done reading *.msh". Going
+            # back to a fresh IOStream sink avoids the shared-handle issue.
+            local _sink = open("/dev/null", "w")
+            try
+                redirect_stdout(_sink) do
+                    $(esc(expr))
+                end
+            finally
+                close(_sink)
             end
         else
             $(esc(expr))
