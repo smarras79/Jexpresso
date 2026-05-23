@@ -1393,19 +1393,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
                 cell_to_part = _compute_xy_partition(smodel, nparts)
                 DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
             else
-                # Parallel GmshDiscreteModel constructor — this is an MPI
-                # collective. Do NOT wrap it in @outputrootonly /
-                # redirect_stdout: on macOS arm64 + Open MPI 5 + Gridap +
-                # GridapGmsh, redirecting stdout on non-root ranks across
-                # this collective consistently triggers a Bus error 10 in
-                # _platform_memmove right after "Done reading *.msh".
-                # The trade-off is duplicated "Reading ...msh / Done
-                # reading ...msh" lines from rank>0; that is acceptable
-                # and matches the historical pre-@outputrootonly
-                # behaviour of the in-parallel branch.
-                GmshDiscreteModel(NoGhostParts(parts),
-                                  NoEmbedMeshFile(inputs[:gmsh_filename]),
-                                  renumber=true)
+                # Parallel GmshDiscreteModel constructor (MPI collective).
+                # On macOS arm64 + Open MPI 5 + Gridap + GridapGmsh, the
+                # post-81b9f55 form
+                #   GmshDiscreteModel(NoGhostParts(parts),
+                #                     NoEmbedMeshFile(file), renumber=true)
+                # crashes with Bus error 10 in _platform_memmove right
+                # after "Done reading *.msh", regardless of whether
+                # stdout is redirected on non-root ranks. The pre-81b9f55
+                # form
+                #   GmshDiscreteModel(parts, file, renumber=true)
+                # is the historically-working API on this platform.
+                GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             end
             println_rank(" [init] mod_mesh_read_gmsh!: GmshDiscreteModel call returned"; msg_rank = rank)
             model = local_views(partitioned_model).item_ref[]
