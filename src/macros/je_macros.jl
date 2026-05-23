@@ -53,6 +53,21 @@ macro outputrootonly(expr)
 end
 
 
+macro mpi_time(expr)
+    label = string(expr)
+    quote
+        local _stats = @timed $(esc(expr))
+        local _t_max = MPI.Allreduce(_stats.time, MPI.MAX, $(esc(:comm)))
+        if $(esc(:rank)) == 0
+            local _allocs = _stats.gcstats.poolalloc + _stats.gcstats.malloc
+            @printf("  %s\n  %.6f seconds (max across ranks, %d allocs, %.3f MiB)\n",
+                    $label, _t_max, _allocs, _stats.bytes / 1024^2)
+        end
+        _stats.value
+    end
+end
+
+
 """
     @timers func(args...)
 
