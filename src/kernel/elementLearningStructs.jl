@@ -77,7 +77,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
                                            dims_vovo,
                                            dims_∂Ovo,
                                            dims_vovb,
-                                           dims_t,
+                                           dims_vo,
                                            dims_T2,
                                            dims_T1,
                                            dimsML1,
@@ -88,6 +88,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
     # ── Per-element: interior × interior  (nvo × nvo × nelem) ────────────────
     Avovo   = KernelAbstractions.zeros(backend, T, dims_vovo)
     AIoIo   = KernelAbstractions.zeros(backend, T, dims_vovo)
+    fvo     = KernelAbstractions.zeros(backend, T, dims_vo)
     
     # ── Per-element: interior × local-boundary  (nvo × elnbdy × nelem) ───────
     Avovb   = KernelAbstractions.zeros(backend, T, dims_vovb)
@@ -104,7 +105,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
     T1      = KernelAbstractions.zeros(backend, T, dims_T1)
     T2      = KernelAbstractions.zeros(backend, T, dims_T2)
     Tie     = KernelAbstractions.zeros(backend, T, dims_T2)
-    tie     = KernelAbstractions.zeros(backend, T, dims_t)
+    tie     = KernelAbstractions.zeros(backend, T, dims_vo)
     
     lEL_Sample = lELSample
 
@@ -127,7 +128,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
     dims_vovo  = (nvo,          nvo,          nelem)
     dims_vovb  = (nvo,          elnbdypoints, nelem)
     dims_∂Ovo  = (elnbdypoints, nvo,          nelem)
-    dims_t     = (nvo,          nelem)
+    dims_vo    = (nvo,          nelem)
     dims_T1    = (elnbdypoints, elnbdypoints)
     dims_T2    = (nvo,          elnbdypoints)
     dimsML1    = ((k+1)^2,        Nsamp)
@@ -139,7 +140,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
                            dims_vovo,
                            dims_∂Ovo,
                            dims_vovb,
-                           dims_t,
+                           dims_vo,
                            dims_T2,
                            dims_T1,
                            dimsML1,
@@ -152,61 +153,61 @@ end
 # =============================================================================
 #  EL_InferBuffers — pre-allocated working arrays for inference
 # =============================================================================
-struct EL_InferBuffers
+Base.@kwdef struct EL_InferBuffers
     # ── ONNX staging (row-major: samples × features) ─────────────────────────
-    avisc_f32    :: Array{Float32, 2}    # (1,          nfeatures)  — Case A shared
-    avisc_batch  :: Array{Float32, 2}    # (nelem,      nfeatures)  — Case B per-element
+    avisc_f32    :: Array{Float32, 2}                # (1,          nfeatures)
+    avisc_batch  :: Array{Float32, 2}                # (nelem,      nfeatures)
 
     # ── JLD2/RFRC staging (column-major: features × samples) ─────────────────
-    avisc_f32_T  :: Array{Float32, 2}    # (nfeatures,  nelem)      — transposed for NNRFRC
-    ŷ_f32_batch  :: Array{Float32, 2}    # (nout,       nelem)      — JLD2 output buffer
+    avisc_f32_T  :: Array{Float32, 2}                # (nfeatures,  nelem)
+    ŷ_f32_batch  :: Array{Float32, 2}                # (nout,       nelem)
 
     # ── Shared staging ────────────────────────────────────────────────────────
-    ŷ_f64_buf    :: Vector{Float64}    # (nout,)                  — per-element cast buffer
+    ŷ_f64_buf    :: Vector{Float64}                  # (nout,)
 
     # ── Element assembly ──────────────────────────────────────────────────────
-    Tie_nn_all   :: Array{Float64, 3}  # (nelintpoints, elnbdypoints, nelem)
-    M            :: Array{Float64, 2}    # (elnbdypoints, elnbdypoints)
+    Tie_nn_all   :: Array{Float64, 3}                # (nelintpoints, elnbdypoints, nelem)
+    M            :: Array{Float64, 2}                # (elnbdypoints, elnbdypoints)
     B_∂τ∂τ       :: SparseMatrixCSC{Float64, Int32}
-    conn_∂τ_idx  :: Vector{Int}        # (elnbdypoints,)
+    conn_∂τ_idx  :: Vector{Int}                      # (elnbdypoints,)
 
     # ── Index maps ────────────────────────────────────────────────────────────
     ∂O_in_∂τ     :: Vector{Int}
     Γ_in_∂τ      :: Vector{Int}
-
+    
     # ── Gather / recovery ─────────────────────────────────────────────────────
-    uvb_nn       :: Array{Float64, 2}    # (nelem, elnbdypoints)
-    uvo_nn       :: Vector{Float64}    # (nelintpoints,)
+    uvb_nn       :: Array{Float64, 2}                # (nelem, elnbdypoints)
+    uvo_nn       :: Vector{Float64}                  # (nelintpoints,)
 end
 
 """
     EL_InferBuffers(mesh, A_∂τ∂τ, nfeatures, nelintpoints, elnbdypoints)
 
-Allocate all working arrays for `elementLearning_infer!` once.
+    Allocate all working arrays for `elementLearning_infer!` once.
 """
 function EL_InferBuffers(mesh, A_∂τ∂τ::SparseMatrixCSC,
                          nfeatures::Int, nelintpoints::Int, elnbdypoints::Int)
     nout = nelintpoints * elnbdypoints
     return EL_InferBuffers(
         # ONNX staging
-        Array{Float32, 2}(undef, 1,          nfeatures),
-        Array{Float32, 2}(undef, mesh.nelem, nfeatures),
+        avisc_f32    = Array{Float32, 2}(undef, 1,          nfeatures),
+        avisc_batch  = Array{Float32, 2}(undef, mesh.nelem, nfeatures),
         # JLD2/RFRC staging
-        Array{Float32, 2}(undef, nfeatures,  mesh.nelem),
-        Array{Float32, 2}(undef, nout,       mesh.nelem),
+        avisc_f32_T  = Array{Float32, 2}(undef, nfeatures,  mesh.nelem),
+        ŷ_f32_batch  = Array{Float32, 2}(undef, nout,       mesh.nelem),
         # Shared staging
-        Vector{Float64}(undef, nout),
+        ŷ_f64_buf    = Vector{Float64}(undef, nout),
         # Element assembly
-        Array{Float64, 3}(undef, nelintpoints, elnbdypoints, mesh.nelem),
-        Vector{Int}(undef, elnbdypoints),
-        Array{Float64, 2}(undef, elnbdypoints, elnbdypoints),
-        copy(A_∂τ∂τ),
+        Tie_nn_all   = Array{Float64, 3}(undef, nelintpoints, elnbdypoints, mesh.nelem),
+        M            = Array{Float64, 2}(undef, elnbdypoints, elnbdypoints),
+        B_∂τ∂τ       = copy(A_∂τ∂τ),
+        conn_∂τ_idx  = Vector{Int}(undef, elnbdypoints),
         # Index maps
-        Vector{Int}(undef, mesh.length∂O),
-        Vector{Int}(undef, mesh.lengthΓ),
+        ∂O_in_∂τ     = Vector{Int}(undef, mesh.length∂O),
+        Γ_in_∂τ      = Vector{Int}(undef, mesh.lengthΓ),
         # Gather / recovery
-        Array{Float64, 2}(undef, mesh.nelem, elnbdypoints),
-        Vector{Float64}(undef, nelintpoints),
+        uvb_nn       = Array{Float64, 2}(undef, mesh.nelem, elnbdypoints),
+        uvo_nn       = Vector{Float64}(undef, nelintpoints),
     )
 end
 
@@ -233,7 +234,6 @@ struct EL_WorkBuffers
     AIoΓg_ie     :: Vector{Float64}
     rhs_ie       :: Vector{Float64}
     uvo_ie       :: Vector{Float64}
-    fvo_ie       :: Array{Float64, 2}
     invAIoIo_buf :: Array{Float64, 2}
     
     # Inference buffers
@@ -319,7 +319,6 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
         Vector{T}(undef, nelintpoints),                             # AIoΓg_ie
         Vector{T}(undef, nelintpoints),                             # rhs_ie
         Vector{T}(undef, nelintpoints),                             # uvo_ie
-        Matrix{T}(undef, nelintpoints, mesh.nelem),                 # fvo_ie
         Matrix{T}(undef, nelintpoints, nelintpoints),               # invAIoIo_buf
         EL_InferBuffers(mesh, A_∂τ∂τ, nfeatures,                    # infer
                         nelintpoints, elnbdypoints),
@@ -333,7 +332,7 @@ end
 # =========================================================================
 function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               A::SparseMatrixCSC,
-                              ubdy, EL,
+                              RHS, EL,
                               avisc,
                               bufferin, bufferout,
                               BOΓg, gΓ,
@@ -369,14 +368,19 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             wbuf.conn_∂τ_idx[j]   = get(∂τ_pos, gnode, 0)
         end
 
+        for ibdy = 1:elnbdypoints
+            i = mesh.conn[iel, ibdy] #el boundary nodes
+            EL.fvb[ibdy, iel] = RHS[i]
+        end
+
         ii = 1
         for i = elnbdypoints+1:nelpoints
-            ipo = mesh.conn[iel, i]
-
-            wbuf.fvo_ie[ii, iel] = ubdy[ipo]
+            ipo = mesh.conn[iel, i] #el internal nodes
+            
+            EL.fvo[ii, iel] = RHS[ipo]
             
             for j = 1:elnbdypoints
-                gj  = mesh.conn[iel, j]
+                gj  = mesh.conn[iel, j] #el boundary nodes
                 val = A[ipo, gj]
                 EL.Avovb[ii, j, iel] = val
                 EL.Avo∂τ[ii, j, iel] = val
@@ -406,7 +410,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     # =========================================================================
     lengthΓ = mesh.lengthΓ
     @inbounds for iΓ = 1:lengthΓ
-        gΓ[iΓ] = ubdy[mesh.Γ[iΓ], 1]
+        gΓ[iΓ] = RHS[mesh.Γ[iΓ], 1]
     end
 
     if EL.lEL_Sample
@@ -452,8 +456,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         B_∂O∂O = B_∂O∂τ[:, wbuf.∂O_in_∂τ]
         B_∂O∂Γ = B_∂O∂τ[:, wbuf.Γ_in_∂τ]
 
-        BOΓg_tmp          = B_∂O∂Γ * gΓ
-        wbuf.u∂O         .= -(B_∂O∂O \ BOΓg_tmp)
+        BOΓg_tmp  = B_∂O∂Γ * gΓ
+        wbuf.u∂O .= -(B_∂O∂O \ BOΓg_tmp)
 
         @inbounds for io = 1:mesh.length∂O;  u[mesh.∂O[io]] = wbuf.u∂O[io];  end
         @inbounds for io = 1:mesh.lengthΓ;   u[mesh.Γ[io]]  = gΓ[io];        end
@@ -496,11 +500,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         let iel = 1
             copyto!(wbuf.invAvovo_buf, @view(EL.Avovo[:, :, iel]))
             invAvovo = inv(wbuf.invAvovo_buf)
-            LinearAlgebra.mul!(EL.Tie,  invAvovo, @view(EL.Avovb[:, :, iel]), -1.0, 0.0)
+            LinearAlgebra.mul!(EL.Tie,  invAvovo, @view(EL.Avovb[:, :, iel]), -1.0, 0.0)           # (1.6a)
             LinearAlgebra.mul!(EL.T1,   transpose(@view(EL.Avovb[:, :, iel])), EL.Tie, -1.0, 0.0)
-
-            LinearAlgebra.mul!(EL.tie,  invAvovo, @view(EL.fvo[:, iel]))
-            @info EL.tie
+            LinearAlgebra.mul!(EL.tie,  invAvovo, @view(EL.fvo[:, iel]))                           # (1.6b)
+            
             EL.output_tensor[:, isamp] .= -vec(EL.Tie)
         end
         write_MLtensor!(bufferin,  EL.input_tensor[:,  isamp])
@@ -522,14 +525,14 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                                       $nelintpoints, $elnbdypoints)
         println(YELLOW_FG(string(" # --- INFERENCE — solution stored in u .......... DONE")))
     end
-
+    
     return nothing
 end
 
 
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  Inference engine — supports both ONNX and JLD2/RFRC models                ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
+# =============================================================================
+#   Inference engine — supports both ONNX and JLD2/RFRC models                  
+# =============================================================================
 
 """
     elementLearning_infer!(u, mesh, model, model_type, input_name, output_name,
@@ -604,9 +607,8 @@ function elementLearning_infer!(
         for j = 1:elnbdypoints
             buf.conn_∂τ_idx[j] = get(∂τ_pos, mesh.conn[iel, j], 0)
         end
-        LinearAlgebra.mul!(buf.M,
-                           transpose(@view(EL.Avovb[:, :, iel])),
-                           @view(buf.Tie_nn_all[:, :, iel]))
+        LinearAlgebra.mul!(buf.M,  transpose(@view(EL.Avovb[:, :, iel])), @view(buf.Tie_nn_all[:, :, iel])) # (1.8)L
+        LinearAlgebra.mul!(buf.At, transpose(@view(EL.Avovb[:, :, iel])), @view(buf.Tie_nn_all[:, :, iel])) # (1.8)R
         for i = 1:elnbdypoints
             i_prime = buf.conn_∂τ_idx[i];  i_prime == 0 && continue
             for j = 1:elnbdypoints
