@@ -1409,26 +1409,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs, nparts::Int64, @nospecialize
                 cell_to_part = _compute_xy_partition(smodel, nparts)
                 DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
             else
-                # Parallel GmshDiscreteModel(parts, file) consistently
-                # SIGBUSes in _platform_memmove on macOS arm64 + Open MPI
-                # 5.0.8 + Gridap 0.18.12 / GridapDistributed 0.4.7 /
-                # GridapGmsh 0.7.2 / PartitionedArrays 0.3.5, in the
-                # cell-array distribute step right after Gmsh parses the
-                # file. Both the NoGhostParts(parts)+NoEmbedMeshFile(file)
-                # form and the legacy (parts, file) form reproduce the
-                # crash identically (the macro/redirect ruled out in
-                # df51f2f; the legacy API ruled out in 7576bd3).
-                #
-                # Workaround: read the gmsh file serially on every rank
-                # (cheap — even the largest cases used here are O(10^5)
-                # cells) and build the partitioned model from it with a
-                # simple contiguous block partition. This avoids the
-                # parallel collective's distribute step entirely and is
-                # the same construction shape that lxy_partition=true
-                # already uses successfully.
-                smodel = @outputrootonly GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                # Workaround for macOS arm64 + Open MPI 5 + Gridap stack:
+                # the parallel GmshDiscreteModel(parts, file, ...)
+                # constructor SIGBUSes in _platform_memmove. Read serially
+                # on every rank, then construct the partitioned model
+                # from the serial one. Drop NoEmbedMeshFile wrapper here
+                # too — 020c761 with NoEmbedMeshFile still crashes in
+                # memmove (probably during _compute_block_partition's
+                # Triangulation / num_cells walk over the model's
+                # cell_node_ids, which NoEmbedMeshFile makes a lazy/mmap
+                # view), so use the plain serial form which embeds the
+                # gmsh data into the model directly.
+                println_rank(" [init] mod_mesh_read_gmsh!: [serial-path] before serial GmshDiscreteModel(file) ..."; msg_rank = rank)
+                smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                println_rank(" [init] mod_mesh_read_gmsh!: [serial-path] serial GmshDiscreteModel returned"; msg_rank = rank)
                 cell_to_part = _compute_block_partition(smodel, nparts)
-                DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
+                println_rank(" [init] mod_mesh_read_gmsh!: [serial-path] block partition computed (ncells=$(length(cell_to_part)))"; msg_rank = rank)
+                pm = DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
+                println_rank(" [init] mod_mesh_read_gmsh!: [serial-path] DiscreteModel(NoGhostParts, ...) returned"; msg_rank = rank)
+                pm
             end
             println_rank(" [init] mod_mesh_read_gmsh!: GmshDiscreteModel call returned"; msg_rank = rank)
             model = local_views(partitioned_model).item_ref[]
