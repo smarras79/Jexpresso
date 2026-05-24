@@ -1,13 +1,25 @@
 using Distributions
 using StaticArrays
 
-const PHYS_CONST = PhysicalConst{Float32}()
-const MicroConst = MicrophysicalConst{Float32}()
+# Float64 to match the Float64 arithmetic inside user_source! / user_flux! /
+# add_micro_precip_sources!. With Float32 here, every const-field access
+# inside those callbacks triggered Float32->Float64 promotion in the inner
+# loop, breaking inference in a few spots. sm/alyacouple-merge uses Float64.
+const PHYS_CONST = PhysicalConst{Float64}()
+const MicroConst = MicrophysicalConst{Float64}()
 
 function RHStoDU!(du, RHS, neqs, npoin)
+    # Scalar (not range/@view) assignment so `du` can be an
+    # OrdinaryDiffEq low-storage RK ArrayFuse, which only supports
+    # setindex!(::ArrayFuse, v, ::Int) - not range setindex!. Range
+    # form was incompatible with FullSpecialize'd ODEProblem and also
+    # less cache-friendly than the straight scalar loop. RHS keeps
+    # its [npoin, neqs] layout.
     for i=1:neqs
         idx = (i-1)*npoin
-        du[idx+1:i*npoin] = @view RHS[:,i]
+        for j=1:npoin
+            du[idx+j] = RHS[j,i]
+        end
     end
 end
 
@@ -926,46 +938,68 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     
 end
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
-    
-    Δ = params.mesh.Δeffective_l
+function viscous_rhs_el!(u, params, connijk::Array{Int64,3}, qe::Matrix{Float64}, SD::NSD_2D)
+    # 2D typed function barrier (mirrors the 3D pattern at
+    # viscous_rhs_el!(NSD_3D) and inviscid_rhs_el!(NSD_3D)). Hoists
+    # every params.* field used in the hot loop out into concretely-
+    # typed positional arguments so the inner _viscous_rhs_el_2d!
+    # compiles fully specialized.
+    _viscous_rhs_el_2d!(params.uaux, qe, params.uprimitive,
+                        params.rhs_diffξ_el, params.rhs_diffη_el,
+                        params.rhs_diff_el, params.visc_coeff, params.ω,
+                        params.mp.Tabs, params.mp.qn, params.mp.qsatt,
+                        Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                        params.metrics.dξdx, params.metrics.dξdy,
+                        params.metrics.dηdx, params.metrics.dηdy,
+                        params.mesh.connijk, params.inputs, params.rhs_el,
+                        Int64(params.mesh.nelem), Int64(params.neqs),
+                        connijk, Float64(params.mesh.Δeffective_l),
+                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+end
 
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    neqs  = params.neqs
-    
-    for iel=1:nelem
-        
+function _viscous_rhs_el_2d!(uaux, qe, uprimitive,
+                             rhs_diffξ_el, rhs_diffη_el,
+                             rhs_diff_el, visc_coeff, ω,
+                             Tabs, qn_mp, qsatt,
+                             ngl, dψ, Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             connijk_mesh, inputs, rhs_el,
+                             nelem, neqs,
+                             connijk, Δ,
+                             QT, VT, SD, AD, SOL_VARS_TYPE)
+    for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j]
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
-        end
-        
-        for ieq = 1:neqs
-            _expansion_visc!(params.rhs_diffξ_el,
-                             params.rhs_diffη_el,
-                             params.uprimitive,
-                             params.visc_coeff,
-                             params.ω,
-                             params.mp.Tabs,
-                             params.mp.qn,
-                             params.mp.qsatt,
-                             params.uaux,
-                             params.mesh.ngl,
-                             params.basis.dψ,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy,
-                             params.metrics.dηdx, params.metrics.dηdy,
-                             params.mesh.connijk,
-                             params.inputs, params.rhs_el,
-                             iel, ieq,
-                             params.QT, params.VT, SD, params.AD; Δ=Δ)
+            user_primitives!(@view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(uprimitive[i,j,:]),
+                             SOL_VARS_TYPE)
         end
 
+        for ieq = 1:neqs
+            _expansion_visc!(rhs_diffξ_el,
+                             rhs_diffη_el,
+                             uprimitive,
+                             visc_coeff,
+                             ω,
+                             Tabs,
+                             qn_mp,
+                             qsatt,
+                             uaux,
+                             ngl,
+                             dψ,
+                             Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             connijk_mesh,
+                             inputs, rhs_el,
+                             iel, ieq,
+                             QT, VT, SD, AD; Δ=Δ)
+        end
     end
 
-    params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
-    
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
 end
 
 

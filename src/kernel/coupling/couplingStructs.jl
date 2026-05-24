@@ -1695,7 +1695,7 @@ end
 
 # Pack interpolated velocity components [u, v, ...] into send buffers.
 function pack_velocity_data!(cpg::CouplingData,
-                              interp_values::Matrix{Float64},
+                              interp_values::AbstractMatrix{Float64},
                               alya_owner_ranks::Vector{Int32})
     n_local = size(interp_values, 1)
     nfields = size(interp_values, 2)
@@ -1764,7 +1764,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
             e_conn, elem_x, elem_y,
             ψξ, ψη, dψξ, dψη, α, x_e, y_e,
             mesh_x, mesh_y)
-        pack_velocity_data!(cpg, u_interp[:, 1:ndime], owner_ranks)
+        pack_velocity_data!(cpg, @view(u_interp[:, 1:ndime]), owner_ranks)
     else
         npoin = size(qout, 1)
         u2uaux!(u_mat, u, neqs, npoin)
@@ -1776,7 +1776,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
             e_conn, elem_x, elem_y,
             ψξ, ψη, dψξ, dψη, α, x_e, y_e,
             mesh_x, mesh_y)
-        pack_velocity_data!(cpg, u_interp[:, 2:neqs-1], owner_ranks)
+        pack_velocity_data!(cpg, @view(u_interp[:, 2:neqs-1]), owner_ranks)
     end
     coupling_exchange_data!(cpg)
 end
@@ -1823,7 +1823,7 @@ function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
             ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
             x_e, y_e, z_e,
             mesh_x, mesh_y, mesh_z)
-        pack_velocity_data!(cpg, u_interp[:, 1:ndime], owner_ranks)
+        pack_velocity_data!(cpg, @view(u_interp[:, 1:ndime]), owner_ranks)
     else
         npoin = size(qout, 1)
         u2uaux!(u_mat, u, neqs, npoin)
@@ -1836,7 +1836,7 @@ function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
             ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
             x_e, y_e, z_e,
             mesh_x, mesh_y, mesh_z)
-        pack_velocity_data!(cpg, u_interp[:, 2:neqs-1], owner_ranks)
+        pack_velocity_data!(cpg, @view(u_interp[:, 2:neqs-1]), owner_ranks)
     end
     coupling_exchange_data!(cpg)
 end
