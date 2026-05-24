@@ -803,7 +803,7 @@ function inviscid_rhs_el!(u, params,
     # loop dereferences `params.F`, `params.G`, etc. directly, which
     # boxes when FullSpecialize ISN'T active and forces extra dispatch
     # work even when it is.
-    _inviscid_rhs_el_3d!(u, params.uaux, qe, params.uprimitive,
+    _inviscid_rhs_el_3d!(u, params.uaux, qe,
                          params.F, params.G, params.H, params.S,
                          params.basis.dψ, params.ω, params.metrics.Je,
                          params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
@@ -821,7 +821,7 @@ function inviscid_rhs_el!(u, params,
                          Float64(params.xmin), Float64(params.xmax), Float64(params.zmax))
 end
 
-function _inviscid_rhs_el_3d!(u, uaux, qe, uprimitive,
+function _inviscid_rhs_el_3d!(u, uaux, qe,
                               F, G, H, S,
                               dψ, ω, Je,
                               dξdx, dξdy, dξdz,
@@ -886,7 +886,6 @@ function _inviscid_rhs_el_3d!(u, uaux, qe, uprimitive,
         _expansion_inviscid!(u,
                              neqs, ngl,
                              dψ, ω,
-                             uprimitive,
                              F, G, H, S,
                              Je,
                              dξdx, dξdy, dξdz,
