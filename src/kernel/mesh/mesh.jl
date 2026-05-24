@@ -3678,7 +3678,7 @@ function load_p4est_checkpoint_model(base_model::OctreeDistributedDiscreteModel,
     connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
     loaded_ptr_pXest = P4est_wrapper.p8est_load(
         forest_file,
-        MPI.COMM_WORLD,
+        get_mpi_comm(),
         Csize_t(0),      # no per-quadrant data stored
         Cint(0),         # do not read payload
         C_NULL,

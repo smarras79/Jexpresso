@@ -181,7 +181,7 @@ function les_statistics(u, params, ::Any)
     neqs  = params.neqs
     cache = params.les_stat_cache
     ET    = params.inputs[:SOL_VARS_TYPE]
-    comm  = MPI.COMM_WORLD
+    comm = get_mpi_comm()
 
     uaux = params.uaux
     qe   = params.qp.qe
