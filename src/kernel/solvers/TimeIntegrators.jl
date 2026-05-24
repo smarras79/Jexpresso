@@ -1,3 +1,43 @@
+"""
+    alloc_summary_enabled(inputs) -> Bool
+
+Decide whether the end-of-run per-function timing & allocation summary
+table is printed at end of `time_loop!`. Precedence (highest first):
+
+ 1. ENV variable `JEXPRESSO_ALLOC_SUMMARY` — set from shell or REPL
+    before running, e.g.
+      `ENV["JEXPRESSO_ALLOC_SUMMARY"] = "1"`     (REPL, enable)
+      `JEXPRESSO_ALLOC_SUMMARY=1 julia ...`      (shell, enable)
+      `JEXPRESSO_ALLOC_SUMMARY=false julia ...`  (shell, disable)
+    For coupled-mode mpirun, pass via mpirun's `-x`:
+      `mpirun -np 2 ./AlyaProxy/Alya.x : \\`
+      `       -x JEXPRESSO_COUPLED=1 -x JEXPRESSO_ALLOC_SUMMARY=1 \\`
+      `       -np 2 julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya`
+ 2. Command-line flag — pass `--no-alloc-summary` (or `no-alloc-summary`)
+    in Julia's `ARGS`, e.g. `julia run.jl ... --no-alloc-summary`.
+ 3. `:lalloc_summary` in the case's `user_inputs.jl` (Bool).
+ 4. Default: `false` (off) — the summary adds an extra full-RHS warm-up
+    call before the real solve, so it's opt-in for performance runs.
+
+Accepted truthy ENV values: 1/true/yes/on; falsy: 0/false/no/off
+(case-insensitive).
+
+Ported from origin/sm/alyacouple-merge:src/kernel/solvers/TimeIntegrators.jl
+after the giga_les wholesale swap dropped it.
+"""
+function alloc_summary_enabled(inputs)
+    e = get(ENV, "JEXPRESSO_ALLOC_SUMMARY", nothing)
+    if e !== nothing
+        v = lowercase(strip(e))
+        v in ("0", "false", "no", "off") && return false
+        v in ("1", "true", "yes", "on")  && return true
+    end
+    if any(a -> a in ("--no-alloc-summary", "no-alloc-summary"), ARGS)
+        return false
+    end
+    return get(inputs, :lalloc_summary, false) == true
+end
+
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -241,6 +281,23 @@ function time_loop!(inputs, params, u, args...)
         callbacks_main = (is_coupled && cb_coupling !== nothing) ?
             CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling) :
             CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online)
+
+        # Warm-up: when the alloc summary is enabled, run the full rhs!
+        # path once UNTIMED so JIT compilation of rhs! and friends is
+        # excluded from the @timeit table inside JEXPRESSO_TIMER.
+        # Without this, the first (compiling) call inflates per-call
+        # allocations by the one-time compile cost / n_calls (huge on
+        # short runs).  Skipped when the summary is off so we don't add
+        # an eval needlessly.
+        if alloc_summary_enabled(inputs)
+            let du_warmup = similar(u)
+                rhs!(du_warmup, u, prob.p, params.tspan[1])
+            end
+            MPI.Barrier(comm)
+            TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
+            rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
+        end
+
         solution   = solve(prob,
                          inputs[:ode_solver], dt=dt,
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
@@ -250,6 +307,15 @@ function time_loop!(inputs, params, u, args...)
                          saveat = range(inputs[:tinit],
                                         inputs[:tend],
                                         length=inputs[:ndiagnostics_outputs]));
+
+        # End-of-simulation per-function timing & allocation summary.
+        # Set ENV["JEXPRESSO_ALLOC_SUMMARY"]="1" or :lalloc_summary => true
+        # to enable; see alloc_summary_enabled above for precedence.
+        if rank == 0 && alloc_summary_enabled(inputs)
+            println("\n # Per-function timing & allocation summary (set ENV[\"JEXPRESSO_ALLOC_SUMMARY\"]=\"0\" to disable):")
+            show(stdout, JEXPRESSO_TIMER; allocations=true, sortby=:firstexec)
+            println()
+        end
     end
     
     MPI.Barrier(comm)
