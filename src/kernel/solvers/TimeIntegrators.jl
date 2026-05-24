@@ -99,7 +99,14 @@ function time_loop!(inputs, params, u, args...)
     coupling   = length(args) >= 3 ? args[3] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
     
-    prob = ODEProblem(rhs!,
+    # FullSpecialize: SciMLBase's default AutoSpecialize wraps rhs! in a
+    # FunctionWrapper that type-erases `params` to ::Any. That defeats
+    # type inference inside the entire RHS chain - every `params.field`
+    # access in rhs!/_build_rhs!/inviscid_rhs_el!/viscous_rhs_el! boxes,
+    # adding ~2 KiB / RK stage on this case. FullSpecialize keeps the
+    # concrete params type all the way down. Paired with the typed
+    # function barriers below in inviscid_rhs_el!/viscous_rhs_el!.
+    prob = ODEProblem{true, FullSpecialize}(rhs!,
                       u,
                       params.tspan,
                       params);
