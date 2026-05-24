@@ -40,6 +40,53 @@ function alloc_summary_enabled(inputs)
     return get(inputs, :lalloc_summary, false) == true
 end
 
+"""
+    precompile_warmup_enabled(inputs) -> Bool
+
+Decide whether `time_loop!` runs a one-shot RHS warm-up call before
+the real `solve(...)`. The warm-up triggers JIT compilation of
+`rhs!`, `_build_rhs!`, and the rest of the per-step kernel chain on
+an arbitrary (initial-condition) state, then the real run starts
+already compiled.
+
+Most useful when launching from the command line, where every run
+incurs JIT-compile cost on the first timestep that REPL users avoid
+by re-running inside the same session. Default: ON.
+
+Precedence (highest first):
+
+ 1. ENV variable `JEXPRESSO_PRECOMPILE_WARMUP`. Examples:
+      `JEXPRESSO_PRECOMPILE_WARMUP=0 julia ...`           (disable)
+      `JEXPRESSO_PRECOMPILE_WARMUP=false julia ...`       (disable)
+    For coupled-mode mpirun, pass via mpirun's `-x`:
+      `mpirun -np 2 ./AlyaProxy/Alya.x : \\`
+      `       -x JEXPRESSO_COUPLED=1 -x JEXPRESSO_PRECOMPILE_WARMUP=0 \\`
+      `       -np 2 julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya`
+ 2. Command-line flag — pass `--no-precompile-warmup` in Julia's `ARGS`.
+ 3. `:lprecompile_warmup` in the case's `user_inputs.jl` (Bool).
+ 4. Default: `true` (on).
+
+Note: when `alloc_summary_enabled(inputs)` is true, the warm-up runs
+unconditionally (the alloc summary needs the post-JIT measurement
+window to be meaningful). The flag here only controls the
+warm-up-without-alloc-summary case.
+
+Accepted truthy ENV values: 1/true/yes/on; falsy: 0/false/no/off
+(case-insensitive).
+"""
+function precompile_warmup_enabled(inputs)
+    e = get(ENV, "JEXPRESSO_PRECOMPILE_WARMUP", nothing)
+    if e !== nothing
+        v = lowercase(strip(e))
+        v in ("0", "false", "no", "off") && return false
+        v in ("1", "true", "yes", "on")  && return true
+    end
+    if any(a -> a in ("--no-precompile-warmup", "no-precompile-warmup"), ARGS)
+        return false
+    end
+    return get(inputs, :lprecompile_warmup, true) == true
+end
+
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -284,20 +331,35 @@ function time_loop!(inputs, params, u, args...)
             CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling) :
             CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online)
 
-        # Warm-up: when the alloc summary is enabled, run the full rhs!
-        # path once UNTIMED so JIT compilation of rhs! and friends is
-        # excluded from the @timeit table inside JEXPRESSO_TIMER.
-        # Without this, the first (compiling) call inflates per-call
-        # allocations by the one-time compile cost / n_calls (huge on
-        # short runs).  Skipped when the summary is off so we don't add
-        # an eval needlessly.
-        if alloc_summary_enabled(inputs)
+        # Precompile warm-up: run the full rhs! path once UNTIMED so JIT
+        # compilation of rhs!, _build_rhs!, inviscid/viscous kernels,
+        # BCs, DSS, etc. is excluded from the real run's wall time. From
+        # the command line, the first timestep of every fresh process
+        # otherwise pays the full JIT bill (~5–40s depending on the
+        # case), which dominates short runs and inflates per-call alloc
+        # measurements. Skipped only when explicitly disabled via
+        # JEXPRESSO_PRECOMPILE_WARMUP=0 / --no-precompile-warmup /
+        # :lprecompile_warmup => false.
+        #
+        # Coupled-mode safety: this is a LOCAL Julia call (rhs! + an
+        # MPI.Barrier on the Julia sub-comm). It does NOT exchange data
+        # with Alya - the coupling callback `cb_coupling` only fires
+        # inside `solve(...)`, not during the warm-up. Safe to run
+        # before Alya's first send/recv.
+        if precompile_warmup_enabled(inputs) || alloc_summary_enabled(inputs)
+            rank == 0 && (print(" # Precompile warm-up (1 rhs! call) ......... "); flush(stdout))
+            t0_warmup = time_ns()
             let du_warmup = similar(u)
                 rhs!(du_warmup, u, prob.p, params.tspan[1])
             end
             MPI.Barrier(comm)
-            TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
-            rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
+            rank == 0 && @printf("%.2f s\n", (time_ns() - t0_warmup) / 1e9)
+            # If the alloc summary is also on, reset JEXPRESSO_TIMER so
+            # the warm-up's allocations aren't counted in the summary.
+            if alloc_summary_enabled(inputs)
+                TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
+                rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
+            end
         end
 
         # Silence SciMLBase's per-call "Using arrays or dicts to store
