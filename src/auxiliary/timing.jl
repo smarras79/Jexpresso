@@ -1,9 +1,34 @@
 using TimerOutputs
 
-# Global TimerOutputs instance used by @timeit at call sites in the hot
-# path (e.g. rhs!). The wrap is around the *call*, not the function body,
-# so type inference is preserved inside the timed function.
+# Global TimerOutputs instance used by @timeit_debug at call sites in
+# the hot path (e.g. rhs!). The wrap is around the *call*, not the
+# function body, so type inference is preserved inside the timed
+# function.
 const JEXPRESSO_TIMER = TimerOutput()
+
+# Enable @timeit_debug at MODULE LOAD time when the user asks for
+# the alloc summary. This is a compile-time gate: enable_debug_timings
+# redefines `timeit_debug_enabled()` and invalidates compiled methods,
+# so it MUST run before any function containing @timeit_debug is JIT-
+# compiled (which is right at first call). Calling it later (e.g. from
+# inside time_loop!) is too late - the rhs! chain has already been
+# compiled with the no-op expansion.
+#
+# Default is off, so all @timeit_debug calls expand to nothing -
+# zero per-call overhead for production runs.
+#
+# Set JEXPRESSO_ALLOC_SUMMARY=1 in the environment to enable.
+# Examples:
+#   JEXPRESSO_ALLOC_SUMMARY=1 julia --project=. ./src/Jexpresso.jl ...
+#   mpirun -np 2 ./AlyaProxy/Alya.x : \
+#       -x JEXPRESSO_COUPLED=1 -x JEXPRESSO_ALLOC_SUMMARY=1 \
+#       -np 2 julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
+let
+    e = get(ENV, "JEXPRESSO_ALLOC_SUMMARY", nothing)
+    if e !== nothing && lowercase(strip(e)) in ("1", "true", "yes", "on")
+        TimerOutputs.enable_debug_timings(@__MODULE__)
+    end
+end
 
 """
 Mutable struct to store timing statistics for a function that's called multiple times

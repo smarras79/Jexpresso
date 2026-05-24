@@ -165,15 +165,12 @@ function precompile_warmup_run!(inputs, params, u,
     rank == 0 && @printf("%.2f s\n", (time_ns() - t0) / 1e9)
 
     # Reset JEXPRESSO_TIMER so the alloc summary table only reflects
-    # steady-state allocations from the real solve.  Enable the
-    # @timeit_debug bookkeeping AT THE SAME TIME so the per-stage
-    # entries in rhs.jl actually fire during the real solve.  When the
-    # summary is off, @timeit_debug stays a no-op (zero per-call
-    # overhead) for the whole run - this is the fix for the 3D-case
-    # regression where the live @timeit cost was visible on every RK
-    # stage / element loop.
+    # steady-state allocations from the real solve. The
+    # @timeit_debug compile-time gate is set at module load time in
+    # src/auxiliary/timing.jl based on JEXPRESSO_ALLOC_SUMMARY - it
+    # MUST happen before any rhs!-containing function is JIT-compiled
+    # (calling enable_debug_timings here would be too late).
     if alloc_summary_enabled(inputs)
-        TimerOutputs.enable_debug_timings(@__MODULE__)
         TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
     end
     return nothing
