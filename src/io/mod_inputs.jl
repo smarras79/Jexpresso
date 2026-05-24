@@ -918,6 +918,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lpreadapt] = false
     end
 
+    if(!haskey(inputs, :preadapt_max_level))
+        inputs[:preadapt_max_level] = 0
+    end
+
+    if(!haskey(inputs, :amr_start_time))
+        inputs[:amr_start_time] = Float32(0.0)
+    end
+
+    if(!haskey(inputs, :user_heatflux))
+        inputs[:user_heatflux] = 0.0
+        inputs[:δhf] = 0.0
+    else
+        inputs[:δhf] = 1.0
+    end
+
     if inputs[:lpreadapt] == true
         inputs[:ladapt] = true
     end
