@@ -87,6 +87,91 @@ function precompile_warmup_enabled(inputs)
     return get(inputs, :lprecompile_warmup, true) == true
 end
 
+"""
+    precompile_warmup_run!(inputs, params, u, partitioned_model, is_coupled, coupling)
+
+Run one timestep of the real solve as a JIT warm-up, snapshotting and
+restoring mutable state so the actual time loop starts from a clean
+initial condition. Returns `nothing`.
+
+Called from drivers.jl BEFORE the `@time time_loop!(...)` wrapper so the
+warm-up's JIT-compile allocations are NOT counted in the displayed
+total. A 1-step `solve(...)` (not just an `rhs!` call) compiles the
+SciML integrator's `step!`, the callback dispatch machinery, and
+`save_*` paths in addition to the entire RHS chain - matches the
+"REPL second run" warmth.
+
+No-op when both `precompile_warmup_enabled(inputs) == false` AND
+`alloc_summary_enabled(inputs) == false`.
+
+Coupled-mode safety: the warm-up `solve` uses `CallbackSet()` (empty),
+so the coupling exchange callback (`cb_coupling`) and the diagnostic
+output callbacks are NOT registered for this 1-step run. Julia does
+not exchange data with Alya during warm-up; only the local Julia
+sub-comm is touched (via an `MPI.Barrier` at the end).
+
+State preserved across warm-up: `u`, `params.qp.qnm1`, `params.qp.qnm2`.
+Other params working arrays (RHS, uaux, fluxes, ...) get overwritten on
+the real solve's first `rhs!` call.
+"""
+function precompile_warmup_run!(inputs, params, u,
+                                partitioned_model, is_coupled, coupling)
+    (precompile_warmup_enabled(inputs) || alloc_summary_enabled(inputs)) || return nothing
+
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+    rank == 0 && (print(" # Precompile warm-up (1 step solve) ......... "); flush(stdout))
+    t0 = time_ns()
+
+    # Snapshot mutable state that the warm-up step would advance.
+    u_snapshot    = copy(u)
+    qnm1_snapshot = copy(params.qp.qnm1)
+    qnm2_snapshot = copy(params.qp.qnm2)
+
+    # 1-step problem; same params and same FullSpecialize as the real
+    # solve, so the compiled code is reused.
+    Δt_warmup    = Float32(inputs[:Δt])
+    t0_warmup    = params.tspan[1]
+    warmup_tspan = (t0_warmup, t0_warmup + Δt_warmup)
+    warmup_prob  = ODEProblem{true, FullSpecialize}(rhs!, u, warmup_tspan, params)
+
+    # Silence all log output during the warm-up step. Also silences the
+    # SciMLBase "Using arrays or dicts..." warning so it doesn't appear
+    # twice (warm-up + real solve).
+    with_logger(NullLogger()) do
+        try
+            solve(warmup_prob,
+                  inputs[:ode_solver], dt=Δt_warmup,
+                  callback = CallbackSet(),
+                  save_everystep = false,
+                  save_start = false,
+                  save_end = false,
+                  adaptive = false)
+        catch e
+            # Warm-up failure must not prevent the real run. Surface a
+            # one-line warning on rank 0 and continue uncompiled - the
+            # real solve will JIT on its first step as before.
+            rank == 0 && @warn "precompile warm-up failed; continuing without it" exception=e
+        end
+    end
+
+    # Restore u and the qnm1/qnm2 history slots so the real solve sees
+    # the same initial condition the caller passed in.
+    u .= u_snapshot
+    params.qp.qnm1 .= qnm1_snapshot
+    params.qp.qnm2 .= qnm2_snapshot
+
+    MPI.Barrier(comm)
+    rank == 0 && @printf("%.2f s\n", (time_ns() - t0) / 1e9)
+
+    # Reset JEXPRESSO_TIMER so the alloc summary table only reflects
+    # steady-state allocations from the real solve.
+    if alloc_summary_enabled(inputs)
+        TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
+    end
+    return nothing
+end
+
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -338,35 +423,13 @@ function time_loop!(inputs, params, u, args...)
             CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling) :
             CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online)
 
-        # Precompile warm-up: run the full rhs! path once UNTIMED so JIT
-        # compilation of rhs!, _build_rhs!, inviscid/viscous kernels,
-        # BCs, DSS, etc. is excluded from the real run's wall time. From
-        # the command line, the first timestep of every fresh process
-        # otherwise pays the full JIT bill (~5–40s depending on the
-        # case), which dominates short runs and inflates per-call alloc
-        # measurements. Skipped only when explicitly disabled via
-        # JEXPRESSO_PRECOMPILE_WARMUP=0 / --no-precompile-warmup /
-        # :lprecompile_warmup => false.
-        #
-        # Coupled-mode safety: this is a LOCAL Julia call (rhs! + an
-        # MPI.Barrier on the Julia sub-comm). It does NOT exchange data
-        # with Alya - the coupling callback `cb_coupling` only fires
-        # inside `solve(...)`, not during the warm-up. Safe to run
-        # before Alya's first send/recv.
-        if precompile_warmup_enabled(inputs) || alloc_summary_enabled(inputs)
-            rank == 0 && (print(" # Precompile warm-up (1 rhs! call) ......... "); flush(stdout))
-            t0_warmup = time_ns()
-            let du_warmup = similar(u)
-                rhs!(du_warmup, u, prob.p, params.tspan[1])
-            end
-            MPI.Barrier(comm)
-            rank == 0 && @printf("%.2f s\n", (time_ns() - t0_warmup) / 1e9)
-            # If the alloc summary is also on, reset JEXPRESSO_TIMER so
-            # the warm-up's allocations aren't counted in the summary.
-            if alloc_summary_enabled(inputs)
-                TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
-                rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
-            end
+        # Note: precompile warm-up moved OUT of time_loop! so its JIT
+        # cost is not counted by the `@time` wrapper in drivers.jl.
+        # See `precompile_warmup_run!` (called from drivers.jl before
+        # `@time time_loop!(...)`). If the alloc summary is enabled,
+        # JEXPRESSO_TIMER is reset there too.
+        if alloc_summary_enabled(inputs)
+            rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
         end
 
         # Silence SciMLBase's per-call "Using arrays or dicts to store

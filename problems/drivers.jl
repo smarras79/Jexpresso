@@ -118,6 +118,16 @@ function driver(nparts,
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS.
         # is_coupled / coupling are no-ops for standalone runs.
         #-----------------------------------------------------------------------------------
+
+        # Precompile warm-up: run a 1-step solve OUTSIDE the @time block
+        # so its JIT-compile allocations are not counted in the displayed
+        # total. The real `time_loop!` call below then starts with all
+        # the hot-path methods already specialized. Disable via
+        # JEXPRESSO_PRECOMPILE_WARMUP=0 (env), --no-precompile-warmup
+        # (CLI), or :lprecompile_warmup => false (user_inputs.jl).
+        precompile_warmup_run!(inputs, params, u, partitioned_model,
+                               is_coupled, coupling)
+
         @time solution = time_loop!(inputs, params, u, partitioned_model,
                                     is_coupled, coupling)
 
