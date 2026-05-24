@@ -938,7 +938,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     
 end
 
-function viscous_rhs_el!(u, params, connijk::Array{Int64,3}, qe::Matrix{Float64}, SD::NSD_2D)
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_2D)
     # 2D typed function barrier (mirrors the 3D pattern at
     # viscous_rhs_el!(NSD_3D) and inviscid_rhs_el!(NSD_3D)). Hoists
     # every params.* field used in the hot loop out into concretely-
