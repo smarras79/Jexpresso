@@ -120,8 +120,15 @@ const _CACHE_FINGERPRINT_KEYS = (
     :_parsed_equations, :_parsed_case_name,
 )
 
+# Bump this any time the cache schema or any cached struct field-set
+# changes - on-disk caches written with an older schema will then fail
+# the fingerprint check and be regenerated automatically. No manual
+# `rm -rf .jexpresso_cache` needed.
+const _CACHE_SCHEMA_VERSION = 2
+
 function _cache_fingerprint(inputs, nparts::Int)
     fp = Dict{String,Any}()
+    fp["__schema_version__"] = _CACHE_SCHEMA_VERSION
     fp["__nparts__"] = nparts
     for k in _CACHE_FINGERPRINT_KEYS
         if haskey(inputs, k)

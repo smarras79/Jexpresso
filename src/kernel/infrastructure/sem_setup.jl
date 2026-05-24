@@ -36,11 +36,32 @@ function _try_load_sem_cache(path::String; gmsh_path::String="",
                 return (nothing, nothing)
             end
         end
-        return (d["metrics"], d["matrix"])
+        # Re-inject g_dss_cache=nothing into the loaded NamedTuple.
+        # We strip it on save (it holds MPI handles - MPI.Comm, MultiRequest -
+        # that are tied to the current MPI session and aren't safe to
+        # serialize). It's also dead in `matrix`: params_setup.jl rebuilds
+        # its own g_dss_cache via setup_assembler() and stores it on
+        # `params`. The field is kept in the loaded NamedTuple as
+        # `nothing` purely to preserve the original return shape for any
+        # downstream code that uses propertynames() or similar reflection.
+        loaded_matrix = d["matrix"]
+        if loaded_matrix isa NamedTuple && !haskey(loaded_matrix, :g_dss_cache)
+            loaded_matrix = merge(loaded_matrix, (; g_dss_cache = nothing))
+        end
+        return (d["metrics"], loaded_matrix)
     catch e
         rank == 0 && @warn "Ignoring unreadable SEM cache $path" exception=(e, catch_backtrace())
         return (nothing, nothing)
     end
+end
+
+# Strip non-serializable / MPI-bound entries from `matrix` before saving.
+# Currently: g_dss_cache (holds MPI.Comm + MPI.MultiRequest, unique per
+# MPI session). Add new MPI-bound fields here as they appear.
+function _matrix_for_cache(matrix)
+    matrix isa NamedTuple || return matrix
+    keep = filter(k -> k !== :g_dss_cache, propertynames(matrix))
+    return NamedTuple{keep}(map(k -> getproperty(matrix, k), keep))
 end
 
 function _save_sem_cache(path::String, metrics, matrix; inputs=nothing, nparts::Int=1)
@@ -49,7 +70,8 @@ function _save_sem_cache(path::String, metrics, matrix; inputs=nothing, nparts::
     try
         _ensure_cache_dir(path)
         fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
-        JLD2.jldsave(path; metrics, matrix, fingerprint = fp)
+        slim_matrix = _matrix_for_cache(matrix)
+        JLD2.jldsave(path; metrics, matrix = slim_matrix, fingerprint = fp)
         rank == 0 && @info "Saved SEM preprocess cache: $path"
     catch e
         rank == 0 && @warn "Failed to save SEM cache $path" exception=(e, catch_backtrace())
