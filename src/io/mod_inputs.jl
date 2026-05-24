@@ -116,13 +116,19 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lwall_model))
        inputs[:lwall_model] = false
     end
-    
-    if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = inputs[:lwall_model]
-    end
 
+    # On macOS (Apple Silicon in particular) the parallel
+    # `GmshDiscreteModel(parts, file)` collective in GridapGmsh + Open MPI
+    # SIGBUSes / SIGABRTs right after "Done reading *.msh" - reproducible on
+    # >=2 ranks. The `lxy_partition` path avoids the parallel collective:
+    # rank 0 reads the mesh serially, then `_compute_xy_partition` +
+    # `DiscreteModel(parts, smodel, cell_to_part)` broadcasts the chunks.
+    # Default to that path on macOS so multi-rank runs Just Work without
+    # the user having to set this flag per problem. Linux keeps the
+    # original behaviour (only enable for wall-model runs, which need
+    # the xy partition for other reasons).
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = inputs[:lwall_model]
+        inputs[:lxy_partition] = Sys.isapple() ? true : inputs[:lwall_model]
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))
