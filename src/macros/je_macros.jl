@@ -93,7 +93,12 @@ macro timers(expr)
         
         # Create timer if it doesn't exist
         if !haskey(timers, func_name)
-            timers[func_name] = MPIFunctionTimer(MPI.COMM_WORLD; skip_first_n=10)
+            # get_mpi_comm() returns Julia's local sub-comm in coupled
+            # mode (where rank 0 of COMM_WORLD is Alya, not Julia) and
+            # COMM_WORLD otherwise. Using it here keeps the timer's
+            # internal MPI.Gather (timing.jl:101-104) collectives
+            # restricted to Julia ranks.
+            timers[func_name] = MPIFunctionTimer(get_mpi_comm(); skip_first_n=10)
         end
         
         local timer_obj = timers[func_name]
