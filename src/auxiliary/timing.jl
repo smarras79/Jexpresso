@@ -6,18 +6,21 @@ using TimerOutputs
 # function.
 const JEXPRESSO_TIMER = TimerOutput()
 
-# Enable @timeit_debug at MODULE LOAD time when the user asks for
-# the alloc summary. This is a compile-time gate: enable_debug_timings
-# redefines `timeit_debug_enabled()` and invalidates compiled methods,
-# so it MUST run before any function containing @timeit_debug is JIT-
-# compiled (which is right at first call). Calling it later (e.g. from
-# inside time_loop!) is too late - the rhs! chain has already been
-# compiled with the no-op expansion.
+# Compile-time gate for @timeit_debug. The macro checks `Mod.timeit_debug_enabled()`
+# at expansion time (which happens when each file using @timeit_debug is loaded)
+# and either emits the timed body or a no-op based on the return value.
 #
-# Default is off, so all @timeit_debug calls expand to nothing -
-# zero per-call overhead for production runs.
+# We define the gate function ourselves here, BEFORE any file that uses
+# @timeit_debug is loaded, so the macros have a stable target to look up.
+# Setting JEXPRESSO_ALLOC_SUMMARY=1 in the environment flips the gate
+# to `true` before rhs.jl & friends are loaded -> @timeit_debug expands
+# to the timed version on first compile. Default off -> all @timeit_debug
+# calls expand to nothing (zero per-call overhead for production runs).
 #
-# Set JEXPRESSO_ALLOC_SUMMARY=1 in the environment to enable.
+# Bypasses TimerOutputs.enable_debug_timings entirely because it expects
+# the module's `timeit_debug_enabled` to already exist (auto-created on
+# first @timeit_debug expansion), and we're earlier than that.
+#
 # Examples:
 #   JEXPRESSO_ALLOC_SUMMARY=1 julia --project=. ./src/Jexpresso.jl ...
 #   mpirun -np 2 ./AlyaProxy/Alya.x : \
@@ -25,9 +28,8 @@ const JEXPRESSO_TIMER = TimerOutput()
 #       -np 2 julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
 let
     e = get(ENV, "JEXPRESSO_ALLOC_SUMMARY", nothing)
-    if e !== nothing && lowercase(strip(e)) in ("1", "true", "yes", "on")
-        TimerOutputs.enable_debug_timings(@__MODULE__)
-    end
+    on = (e !== nothing) && lowercase(strip(e)) in ("1", "true", "yes", "on")
+    @eval timeit_debug_enabled() = $on
 end
 
 """

@@ -151,7 +151,7 @@ end
             # Cap at maximum enhancement factor (e.g., 3x)
             min(sqrt(1.0 - 16.0*Ri), 3.0)
         end
-    elseif lrichardson && (inputs[:energy_equation]::String) == "energy"
+    elseif lrichardson && inputs[:energy_equation] == "energy"
         # ===== Moist Richardson Number Logic =====
         # Note: In this mode, the caller has pre-calculated:
         # θ_ref  => T_abs (Absolute Temperature in Kelvin)
