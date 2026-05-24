@@ -1,3 +1,5 @@
+using Logging: with_logger, NullLogger, current_logger
+
 """
     alloc_summary_enabled(inputs) -> Bool
 
@@ -298,15 +300,23 @@ function time_loop!(inputs, params, u, args...)
             rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
         end
 
-        solution   = solve(prob,
-                         inputs[:ode_solver], dt=dt,
-                         #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = callbacks_main, tstops = tstops_all,
-                         save_everystep = false,
-                         adaptive=inputs[:ode_adaptive_solver],
-                         saveat = range(inputs[:tinit],
-                                        inputs[:tend],
-                                        length=inputs[:ndiagnostics_outputs]));
+        # Silence SciMLBase's per-call "Using arrays or dicts to store
+        # parameters of different types can hurt performance" warning on
+        # non-root ranks - the warning is identical from every rank so
+        # printing it nparts times is pure noise.  Root rank still sees
+        # the warning once, which is the right amount.
+        solve_logger = rank == 0 ? current_logger() : NullLogger()
+        solution = with_logger(solve_logger) do
+            solve(prob,
+                  inputs[:ode_solver], dt=dt,
+                  #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
+                  callback = callbacks_main, tstops = tstops_all,
+                  save_everystep = false,
+                  adaptive=inputs[:ode_adaptive_solver],
+                  saveat = range(inputs[:tinit],
+                                 inputs[:tend],
+                                 length=inputs[:ndiagnostics_outputs]))
+        end
 
         # End-of-simulation per-function timing & allocation summary.
         # Set ENV["JEXPRESSO_ALLOC_SUMMARY"]="1" or :lalloc_summary => true

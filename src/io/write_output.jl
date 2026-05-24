@@ -103,7 +103,7 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
             end
         #end
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
 
@@ -140,8 +140,8 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
         write_vtk(SD, mesh, u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=u_exact, case=case)
     end
     
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
-    
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
+
 end
 
 
@@ -563,8 +563,8 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
     end
     
-    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
-    
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
+
 end
 function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5; nvar=1)
     

@@ -109,14 +109,14 @@ function rhs!(du, u, params, time)
     timers = params.timers
 
     if (backend == CPU())
-        _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        @timeit JEXPRESSO_TIMER "build_rhs" _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
-        if (params.laguerre) 
-            build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+        if (params.laguerre)
+            @timeit JEXPRESSO_TIMER "build_rhs_laguerre" build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
-        
-        RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+
+        @timeit JEXPRESSO_TIMER "RHStoDU" RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
             lpert = true
