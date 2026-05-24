@@ -58,7 +58,7 @@ end
 function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
     nprofiles == 0 && return nothing
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
 
     z         = Array(mesh.z)  # ensure CPU array
     gip2owner = Array(mesh.gip2owner)
@@ -391,7 +391,7 @@ end
 function build_les_cross_section(mesh, basis, nprofiles::Int, nstress::Int, T)
     nprofiles == 0 && return nothing
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     x         = Array(mesh.x)
@@ -574,7 +574,7 @@ function compute_xz_cross_section!(cs, uaux, qe, ET, comm)
 end
 
 function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing, kappa_global=nothing)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     rank != 0 && return
 
@@ -681,7 +681,7 @@ function les_finalize!(params, t)
     ns    = cache.n_samples
     ns == 0 && return
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     rank != 0 && return
 
@@ -838,7 +838,7 @@ function les_finalize_online!(params, t)
     ns    = cache.n_online_samples
     ns == 0 && return
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     nz        = length(cache.z_levels)

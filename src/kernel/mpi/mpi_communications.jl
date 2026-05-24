@@ -76,7 +76,7 @@ function setup_assembler(SD, a, index_a, owner_a)
 
     if SD == NSD_1D() return nothing end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
 
