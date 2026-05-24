@@ -212,25 +212,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     if isnothing(adapt_flags)
 
         if ladaptive == false && linitial_refine == false
-            println("[mesh-probe rank $rank] before GmshDiscreteModel"); flush(stdout)
             smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-            println("[mesh-probe rank $rank] after  GmshDiscreteModel  lxy_partition=$(inputs[:lxy_partition])"); flush(stdout)
             partitioned_model = if inputs[:lxy_partition]
-                println("[mesh-probe rank $rank] before _compute_xy_partition"); flush(stdout)
                 cell_to_part = _compute_xy_partition(smodel, nparts)
-                println("[mesh-probe rank $rank] after  _compute_xy_partition (length=$(length(cell_to_part)))"); flush(stdout)
-                pm = DiscreteModel(parts, smodel, cell_to_part)
-                println("[mesh-probe rank $rank] after  DiscreteModel(parts, smodel, cell_to_part)"); flush(stdout)
-                pm
+                DiscreteModel(parts, smodel, cell_to_part)
             else
-                println("[mesh-probe rank $rank] before parallel GmshDiscreteModel(parts, ...)"); flush(stdout)
-                pm = @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
-                println("[mesh-probe rank $rank] after  parallel GmshDiscreteModel(parts, ...)"); flush(stdout)
-                pm
+                @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             end
-            println("[mesh-probe rank $rank] before local_views(partitioned_model)"); flush(stdout)
             model = local_views(partitioned_model).item_ref[]
-            println("[mesh-probe rank $rank] after  local_views(partitioned_model)"); flush(stdout)
         elseif linitial_refine == true
 
             @outputrootonly begin
