@@ -12,18 +12,25 @@ include("../mesh/restructure_for_periodicity.jl")
 function _try_load_sem_cache(path::String; gmsh_path::String="",
                               inputs=nothing, nparts::Int=1)
     rank = MPI.Comm_rank(get_mpi_comm())
-    isfile(path) || return (nothing, nothing)
-    if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
-        rank == 0 && @info "SEM cache $path is older than $gmsh_path — discarding stale cache"
-        return (nothing, nothing)
+    # Prefer the prefetched payload before any disk I/O.
+    if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing
+        return JEXPRESSO_PREFETCHED_SEM_CACHE[]
+    end
+    # Pre-load validity check via fingerprint-only read. See
+    # _check_cache_validity (couplingStructs.jl) for the rationale -
+    # this dodges JLD2 reconstruct failures from custom-struct shape
+    # changes and auto-deletes the stale file.
+    if inputs !== nothing
+        valid, _ = _check_cache_validity(path, inputs, nparts; gmsh_path=gmsh_path)
+        valid || return (nothing, nothing)
+    else
+        isfile(path) || return (nothing, nothing)
+        if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
+            rank == 0 && @info "SEM cache $path is older than $gmsh_path — discarding stale cache"
+            return (nothing, nothing)
+        end
     end
     try
-        # Use pre-fetched data when available (populated by je_prefetch_caches!).
-        # The prefetched copy is already validated against the gmsh mtime; we
-        # still re-check the fingerprint on the disk copy when it's needed.
-        if JEXPRESSO_PREFETCHED_SEM_CACHE[] !== nothing
-            return JEXPRESSO_PREFETCHED_SEM_CACHE[]
-        end
         d = JLD2.load(path)
         if inputs !== nothing
             if !haskey(d, "fingerprint")

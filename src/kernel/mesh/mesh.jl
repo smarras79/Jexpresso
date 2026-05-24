@@ -42,10 +42,19 @@ _decode_optstrings(v) = Array{Union{Nothing,String}}(
 function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int;
                                 gmsh_path::String="", inputs=nothing)
     rank = MPI.Comm_rank(get_mpi_comm())
-    isfile(path) || return false
-    if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
-        rank == 0 && @info "Mesh cache $path is older than $gmsh_path — discarding stale cache"
-        return false
+    # Pre-load validity check: reads only the fingerprint Dict, so
+    # it survives custom-struct shape changes that would crash
+    # JLD2.load(). Deletes the file on mismatch so the next save
+    # writes a clean replacement.
+    if inputs !== nothing
+        valid, _ = _check_cache_validity(path, inputs, nparts; gmsh_path=gmsh_path)
+        valid || return false
+    else
+        isfile(path) || return false
+        if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
+            rank == 0 && @info "Mesh cache $path is older than $gmsh_path — discarding stale cache"
+            return false
+        end
     end
     try
         # Use pre-fetched data when available (populated by je_prefetch_caches!

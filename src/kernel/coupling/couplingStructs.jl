@@ -169,6 +169,56 @@ function _cache_fingerprint_matches(saved::Dict, inputs, nparts::Int)
     return true
 end
 
+# Validate the cache by reading ONLY the fingerprint, without touching
+# any custom-typed payload field. JLD2's full-file `load(path)` triggers
+# reconstruction of every struct in the file - including types whose
+# field set has changed since the cache was written - and that
+# reconstruction can fail HARD before any user code gets a chance to
+# check the schema version. By reading only `fingerprint` (a plain
+# `Dict{String,Any}`), we get a portable validity check that works
+# across struct-shape changes.
+#
+# Returns (valid::Bool, action_taken::Symbol) where action_taken is one
+# of :missing, :unopenable, :no_fingerprint, :mismatch, :ok. On any
+# non-:ok / non-:missing outcome the file is deleted before returning,
+# so the next save can write a clean replacement.
+function _check_cache_validity(path::String, inputs, nparts::Int;
+                                gmsh_path::String = "")
+    isempty(path)   && return (false, :missing)
+    isfile(path)    || return (false, :missing)
+
+    # gmsh source newer than cache -> stale by definition; delete and
+    # rebuild. Cheap mtime comparison, no JLD2 work.
+    if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
+        try; rm(path; force=true); catch _; end
+        return (false, :mismatch)
+    end
+
+    # Pre-load fingerprint check.  Reading `fingerprint` with `read(f, key)`
+    # only touches the Dict — it does NOT walk other fields or trigger
+    # struct-type reconstruction for them.  So even if `matrix` /
+    # `metrics` in the same file have struct shapes that have drifted
+    # since the cache was written, this read succeeds.
+    valid = try
+        JLD2.jldopen(path, "r") do f
+            haskey(f, "fingerprint") || return false
+            fp = read(f, "fingerprint")
+            fp isa Dict || return false
+            _cache_fingerprint_matches(fp, inputs, nparts)
+        end
+    catch _
+        # Truly unopenable (corrupted, wrong magic, JLD2 version skew).
+        # Treat as mismatch and delete.
+        false
+    end
+
+    if !valid
+        try; rm(path; force=true); catch _; end
+        return (false, :mismatch)
+    end
+    return (true, :ok)
+end
+
 # ===========================================================================
 # USER SETTING
 #
@@ -418,36 +468,34 @@ function je_prefetch_caches!(inputs, nparts::Int,
     # ── 1. Mesh topology cache ──────────────────────────────────────────────
     if JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing
         mesh_path = _mesh_cache_path(inputs, nparts)
-        if isfile(mesh_path)
-            if !isempty(gmsh_path) && _cache_is_stale(mesh_path, gmsh_path)
-                rank == 0 && println("[prefetch] mesh cache older than $gmsh_path — ignoring")
-            else
-                rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
-                t0 = time_ns()
-                try
-                    raw = JLD2.load(mesh_path)
-                    if haskey(raw, "mesh_fields") && haskey(raw, "fingerprint") &&
-                       raw["fingerprint"] isa Dict &&
-                       _cache_fingerprint_matches(raw["fingerprint"], inputs, nparts)
-                        JEXPRESSO_PREFETCHED_MESH_CACHE[] = raw
-                        rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, mesh_path)
-                    else
-                        rank == 0 && println("incompatible cache ignored (will rebuild)")
-                        # Schema-version mismatch with a still-readable
-                        # file: delete so the next save replaces it
-                        # cleanly. Per-rank file, no race.
-                        try; rm(mesh_path; force=true); catch _; end
-                    end
-                catch e
-                    rank == 0 && @warn "[prefetch] mesh cache load failed" exception=e
-                    # JLD2 threw before we could check the fingerprint
-                    # (struct shape changed, type can't be reconstructed,
-                    # etc.). Delete the unreadable file so the next save
-                    # writes a clean one.
-                    try; isfile(mesh_path) && rm(mesh_path; force=true); catch _; end
+        # Fingerprint-only pre-check via jldopen.  Survives custom-struct
+        # shape changes that would otherwise crash JLD2.load() before
+        # the fingerprint mismatch could even be checked.  Auto-deletes
+        # the stale / mismatched / unopenable file inside the helper.
+        valid_mesh, _ = _check_cache_validity(mesh_path, inputs, nparts;
+                                              gmsh_path=gmsh_path)
+        if valid_mesh
+            rank == 0 && (print("[prefetch] mesh cache … "); flush(stdout))
+            t0 = time_ns()
+            try
+                raw = JLD2.load(mesh_path)
+                if haskey(raw, "mesh_fields")
+                    JEXPRESSO_PREFETCHED_MESH_CACHE[] = raw
+                    rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, mesh_path)
+                else
+                    rank == 0 && println("missing mesh_fields — ignoring")
+                    try; rm(mesh_path; force=true); catch _; end
                 end
-                flush(stdout)
+            catch e
+                # Fingerprint was valid but full load still failed.
+                # Delete and rebuild.
+                rank == 0 && @warn "[prefetch] mesh cache full load failed" exception=e
+                try; isfile(mesh_path) && rm(mesh_path; force=true); catch _; end
             end
+            flush(stdout)
+        elseif isfile(mesh_path) || isfile(_mesh_cache_path(inputs, nparts))
+            # _check_cache_validity already deleted the bad file.
+            rank == 0 && println("[prefetch] mesh cache … incompatible / stale (will rebuild)")
         end
     end
 
@@ -456,41 +504,39 @@ function je_prefetch_caches!(inputs, nparts::Int,
         Nξ       = inputs[:nop]
         Qξ       = get(inputs, :lexact_integration, false) ? Nξ + 1 : Nξ
         sem_path = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
-        if isfile(sem_path)
-            if !isempty(gmsh_path) && _cache_is_stale(sem_path, gmsh_path)
-                rank == 0 && println("[prefetch] SEM cache older than $gmsh_path — ignoring")
-            else
-                rank == 0 && (print("[prefetch] SEM cache  … "); flush(stdout))
-                t0 = time_ns()
-                try
-                    d = JLD2.load(sem_path)
-                    if haskey(d, "metrics") && haskey(d, "matrix") &&
-                       haskey(d, "fingerprint") && d["fingerprint"] isa Dict &&
-                       _cache_fingerprint_matches(d["fingerprint"], inputs, nparts)
-                        # Re-inject the dead g_dss_cache slot stripped
-                        # at save time so the loaded NamedTuple shape
-                        # matches what matrix_wrapper would have built
-                        # (see _matrix_for_cache in sem_setup.jl).
-                        matrix_loaded = d["matrix"]
-                        if matrix_loaded isa NamedTuple && !haskey(matrix_loaded, :g_dss_cache)
-                            matrix_loaded = merge(matrix_loaded, (; g_dss_cache = nothing))
-                        end
-                        JEXPRESSO_PREFETCHED_SEM_CACHE[] = (d["metrics"], matrix_loaded)
-                        rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, sem_path)
-                    else
-                        rank == 0 && println("incompatible SEM cache ignored (will rebuild)")
-                        try; rm(sem_path; force=true); catch _; end
+        # Same fingerprint-only pre-check as the mesh path. Avoids the
+        # AssemblerCache/St_metrics reconstruct failure that previously
+        # forced a manual clean_cache.sh.
+        valid_sem, _ = _check_cache_validity(sem_path, inputs, nparts;
+                                             gmsh_path=gmsh_path)
+        if valid_sem
+            rank == 0 && (print("[prefetch] SEM cache  … "); flush(stdout))
+            t0 = time_ns()
+            try
+                d = JLD2.load(sem_path)
+                if haskey(d, "metrics") && haskey(d, "matrix")
+                    # Re-inject the dead g_dss_cache slot stripped
+                    # at save time so the loaded NamedTuple shape
+                    # matches what matrix_wrapper would have built
+                    # (see _matrix_for_cache in sem_setup.jl).
+                    matrix_loaded = d["matrix"]
+                    if matrix_loaded isa NamedTuple && !haskey(matrix_loaded, :g_dss_cache)
+                        matrix_loaded = merge(matrix_loaded, (; g_dss_cache = nothing))
                     end
-                catch e
-                    rank == 0 && @warn "[prefetch] SEM cache load failed" exception=e
-                    # JLD2 threw before we could check the fingerprint;
-                    # delete the unreadable file. Common after a struct
-                    # gains/loses fields (e.g. AssemblerCache + MPI.Comm
-                    # in the giga_les swap).
-                    try; isfile(sem_path) && rm(sem_path; force=true); catch _; end
+                    JEXPRESSO_PREFETCHED_SEM_CACHE[] = (d["metrics"], matrix_loaded)
+                    rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, sem_path)
+                else
+                    rank == 0 && println("missing metrics/matrix — ignoring")
+                    try; rm(sem_path; force=true); catch _; end
                 end
-                flush(stdout)
+            catch e
+                # Fingerprint was valid but full load still failed.
+                rank == 0 && @warn "[prefetch] SEM cache full load failed" exception=e
+                try; isfile(sem_path) && rm(sem_path; force=true); catch _; end
             end
+            flush(stdout)
+        elseif isfile(sem_path) || isfile(_preprocess_cache_path(inputs, Nξ, Qξ, nparts))
+            rank == 0 && println("[prefetch] SEM cache  … incompatible / stale (will rebuild)")
         end
     end
 
