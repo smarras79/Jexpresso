@@ -71,8 +71,10 @@ end
                                θ_ref,
                                dθdz,
                                PhysConst, Δ2,
-                               inputs, 
-                               ::SMAG, ::NSD_3D)
+                               inputs,
+                               ::SMAG, ::NSD_3D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
     
     PhysConst = PhysicalConst{Float64}()
     C_s   = PhysConst.C_s       # Smagorinsky constant
@@ -287,10 +289,12 @@ end
                                u11, u12, u13,
                                u21, u22, u23,
                                u31, u32, u33,
-                               θ_ref, dθdz, 
+                               θ_ref, dθdz,
                                PhysConst, Δ2,
-                               inputs, 
-                               ::VREM, ::NSD_3D)
+                               inputs,
+                               ::VREM, ::NSD_3D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
 
     is_u_momentum  = (ieq == 2)
     is_v_momentum  = (ieq == 3)

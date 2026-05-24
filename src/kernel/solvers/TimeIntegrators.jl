@@ -142,7 +142,7 @@ function time_loop!(inputs, params, u, args...)
             #CFL
             # if inputs[:ladapt] == false
 
-                ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+                ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
                 dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
                         integrator.p.mp, integrator.p.uaux[:,end], Float32(dt),
@@ -223,7 +223,7 @@ function time_loop!(inputs, params, u, args...)
         println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
         @mystop()
     else
-        ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+        ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
         dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
         solution   = solve(prob,
                          inputs[:ode_solver], dt=dt,
@@ -243,7 +243,7 @@ function time_loop!(inputs, params, u, args...)
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @mpi_time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
-            ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+            ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
             dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
             println_rank(" #  dt=", dt; msg_rank = rank)
             @mpi_time solution = solve(prob,
