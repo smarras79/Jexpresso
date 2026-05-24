@@ -91,7 +91,7 @@ function time_loop!(inputs, params, u, args...)
 
     function do_radiation!(integrator)
         println(" doing two stream radiation heat flux calculations at t=", integrator.t)
-        #@info "doing rad test"
+        #println(" # doing rad test")
         compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
     end
 

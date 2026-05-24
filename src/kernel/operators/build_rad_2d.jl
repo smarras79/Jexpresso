@@ -38,14 +38,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_ang_total += mesh.ngl*mesh.ngl*extra_mesh[e].extra_npoin
         end
         connijk_spa = [Array{Int}(undef, ngl, ngl, extra_meshes_extra_nelems[iel], extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
-        @info "building initial adaptive connectivity"
+        println(" # building initial adaptive connectivity")
         neighbors = zeros(Int,nelem,8,2)
         adapted = false
         
         nc_mat, nc_mat_div, nc_non_global_nodes, n_non_global_nodes, n_spa  = adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, mesh.connijk, 
                                                                                                      extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
                                                   extra_meshes_coords, mesh.x, mesh.y,extra_meshes_ref_level, neighbors, adapted)
-        @info "built initial adaptive spatial angular connectivity"
+        println(" # built initial adaptive spatial angular connectivity")
         @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl, extra_meshes_extra_nelems,
@@ -56,7 +56,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelems,
                                    extra_meshes_extra_npoins, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
         total_ip = size(LHS,1)
-        @info "built pre-adaptivity matrices"
+        println(" # built pre-adaptivity matrices")
         @info maximum(LHS), minimum(LHS)
         @info maximum(M), minimum(M)
         one_vec = Vector{Float64}(undef, size(LHS,1))
@@ -66,18 +66,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         @time criterion = compute_adaptivity_criterion(pointwise_interaction, nelem, ngl, mesh.connijk, extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_coords,
                                                 connijk_spa)
         
-        @info "criterion computed"
+        println(" # criterion computed")
         @time adapt_angular_grid_2Dby1D!(criterion,inputs[:RT_amr_threshold], extra_meshes_ref_level,nelem,ngl,extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors, extra_meshes_extra_npoins,
                                   extra_meshes_connijk, extra_meshes_coords, extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dxdξ, mesh.connijk,
                                   mesh.x, mesh.y, mesh.xmin, mesh.ymin, mesh.xmax, mesh.ymax) 
-        @info "angular mesh adapted"
+        println(" # angular mesh adapted")
         if !(maximum(extra_meshes_ref_level[:][:]) == 0)
             connijk_spa = [Array{Int}(undef, ngl, ngl, extra_meshes_extra_nelems[iel], extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
             @time nc_mat, nc_mat_div, nc_non_global_nodes, n_non_global_nodes, n_spa  = adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, mesh.connijk, 
                                                                extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
                                                                 extra_meshes_coords, mesh.x, mesh.y, extra_meshes_ref_level, neighbors, adapted)
             
-            @info "adapted connectivity"
+            println(" # adapted connectivity")
             adapted = true
             @info "number of hanging nodes", n_non_global_nodes
             @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
@@ -93,7 +93,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelems,
                                    extra_meshes_extra_npoins, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
-            @info "built adapted matrices"
+            println(" # built adapted matrices")
             M_test = nc_mat*M*nc_mat'
 
             @info maximum(A_test), minimum(A_test)
@@ -152,12 +152,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     extra_mesh.extra_metrics.Je, 
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    dξdx, dξdy, dηdx, dηdy, extra_mesh.extra_npoin, inputs[:rad_HG_g])
-        @info "assembled LHS"
+        println(" # assembled LHS")
         @time M = sparse_mass_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk,
                                     extra_mesh.extra_metrics.Je,
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    extra_mesh.extra_npoin)
-        @info "assembled Mass matrix"
+        println(" # assembled Mass matrix")
         @info nnz(M), nnz(LHS), npoin_ang_total^2, nnz(M)/npoin_ang_total^2, nnz(LHS)/npoin_ang_total^2
         
         # inexact integration makes M diagonal, build the sparse inverse to save space
@@ -202,7 +202,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         M_sp = nothing
         GC.gc()
     
-        @info "LHS max/min"
+        println(" # LHS max/min")
         @info maximum(LHS), minimum(LHS)
         @info maximum(M), minimum(M)
         A = sparse(M_inv*LHS)
@@ -452,7 +452,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
         B = U_red_proj
     end
-    @info "RHS max/min"
+    println(" # RHS max/min")
     @info maximum(B), minimum(B)
     #@info maximum(U_red_proj), minimum(U_red_proj)
 
@@ -461,9 +461,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     #display(Makie.scatter(x, y, label="e-values"))
 
     #A_inv = inv(A)
-    @info "built RHS"
+    println(" # built RHS")
     #@info RHS
-    @info "solving system"
+    println(" # solving system")
     As = sparse(A)
     A = nothing
     GC.gc()
@@ -483,12 +483,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     npoin_g = npoin_ang_total)
    
     @info maximum(solution), minimum(solution)
-    @info "done radiation solved"
+    println(" # done radiation solved")
     @info "dof", npoin_ang_total
     A = nothing
     RHS = nothing
     GC.gc()
-    @info "integrating solution and reference in angle"
+    println(" # integrating solution and reference in angle")
     int_sol = zeros(TFloat, npoin,1)
     int_ref = zeros(TFloat, npoin,1)
     L2_err = 0.0
@@ -1190,7 +1190,7 @@ function adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, conni
             end
         end
     end
-    @info "finished non-adaptive connectivity"
+    println(" # finished non-adaptive connectivity")
     @info "total number of independent points", iter-1
     n_spa = iter-1
     max_entries = iter^2
@@ -1548,7 +1548,7 @@ function find_edge_node_match(ngl,iel,ip,connijk)
 
     end
     if (found == false) 
-        @info "failed to find" 
+        println(" # failed to find")
     end
     return k, j, ip1
 end

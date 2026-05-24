@@ -953,7 +953,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
         end
     end
 
-    #@info " COVARIANT metric terms WIP"
+    #println(" # COVARIANT metric terms WIP")
     @inbounds for iel = 1:nelem  # PERF: Added @inbounds for 6 nested loops
         for n = 1:Q3+1
             for m = 1:Q2+1

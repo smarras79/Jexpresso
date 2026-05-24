@@ -202,7 +202,7 @@ function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, beta, T, b
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    if rank == 0 @info "built laguerre basis ..... " end
+    if rank == 0 println(" # built laguerre basis ..... ") end
     
     Nξ = size(ξ,1)  - 1
     Qξ = size(ξq,1) - 1
@@ -211,7 +211,7 @@ function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, beta, T, b
     Q  = (Qξ + 1)
     basis = St_Lagrange{T, backend}(KernelAbstractions.zeros(backend, TFloat, N,Q), KernelAbstractions.zeros(backend, TFloat, N,Q))
     (basis.ψ, basis.dψ) = LagrangeLaguerreBasis(ξ, ξq, beta,T, backend)
-    if rank == 0 @info "built laguerre basis ..... DONE" end
+    if rank == 0 println(" # built laguerre basis ..... DONE") end
     return basis
 end
 

@@ -3211,7 +3211,7 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_2D)
     # end
 
     g_dss_cache = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
-    # @info "after DSS_global_mass!"
+    # println(" # after DSS_global_mass!")
     for (iel, ips) in bdry_el2ips
         flags = aux_flags[ips]
         # if iel == 1 || iel == 3 || iel == 7 || iel == 9
@@ -3278,7 +3278,7 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D)
     # end
 
     g_dss_cache = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
-    # @info "after DSS_global_mass!"
+    # println(" # after DSS_global_mass!")
     for (iel, ips) in bdry_el2ips
         flags = aux_flags[ips]
         # if iel == 1 || iel == 3 || iel == 7 || iel == 9

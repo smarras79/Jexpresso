@@ -26,7 +26,7 @@ function _try_load_sem_cache(path::String; gmsh_path::String="",
     else
         isfile(path) || return (nothing, nothing)
         if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
-            rank == 0 && @info "SEM cache $path is older than $gmsh_path — discarding stale cache"
+            rank == 0 && println(" # SEM cache $path is older than $gmsh_path — discarding stale cache")
             return (nothing, nothing)
         end
     end
@@ -34,12 +34,12 @@ function _try_load_sem_cache(path::String; gmsh_path::String="",
         d = JLD2.load(path)
         if inputs !== nothing
             if !haskey(d, "fingerprint")
-                rank == 0 && @info "SEM cache $path has no fingerprint — discarding and rebuilding"
+                rank == 0 && println(" # SEM cache $path has no fingerprint — discarding and rebuilding")
                 return (nothing, nothing)
             end
             saved_fp = d["fingerprint"]
             if !(saved_fp isa Dict) || !_cache_fingerprint_matches(saved_fp, inputs, nparts)
-                rank == 0 && @info "SEM cache $path fingerprint mismatch — discarding and rebuilding"
+                rank == 0 && println(" # SEM cache $path fingerprint mismatch — discarding and rebuilding")
                 return (nothing, nothing)
             end
         end
@@ -88,7 +88,7 @@ function _save_sem_cache(path::String, metrics, matrix; inputs=nothing, nparts::
         fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
         slim_matrix = _matrix_for_cache(matrix)
         JLD2.jldsave(path; metrics, matrix = slim_matrix, fingerprint = fp)
-        rank == 0 && @info "Saved SEM preprocess cache: $path"
+        rank == 0 && println(" # Saved SEM preprocess cache: $path")
     catch e
         rank == 0 && @warn "Failed to save SEM cache $path" exception=(e, catch_backtrace())
     end
@@ -144,7 +144,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             end
             forest_file = joinpath(inputs[:output_dir], "iter_$(iout)", "iter_$(iout).p4est")
             if rank == 0 
-                @info " AMR restart: loading p4est forest from $forest_file" 
+                println(" # AMR restart: loading p4est forest from $forest_file")
             end
 
             # Build OctreeDistributedDiscreteModel from the loaded forest
@@ -251,12 +251,12 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
         (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
         local_loaded
     if loaded_from_cache
-        rank == 0 && @info "Loaded SEM preprocess cache — skipping metric terms and matrix build: $preprocess_cache"
+        rank == 0 && println(" # Loaded SEM preprocess cache — skipping metric terms and matrix build: $preprocess_cache")
     elseif local_loaded
         # We had a usable local cache but some peer didn't — drop ours so
         # downstream code doesn't accidentally use it.
         cached_metrics, cached_matrix = nothing, nothing
-        rank == 0 && @info "SEM cache: some ranks failed to load — discarding all and rebuilding"
+        rank == 0 && println(" # SEM cache: some ranks failed to load — discarding all and rebuilding")
     end
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -310,7 +310,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 metrics = cached_metrics
                 matrix  = cached_matrix
             else
-                if (rank == 0) @info " Build metrics ......" end
+                if (rank == 0) println(" # Build metrics ......") end
                 metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
                 @time build_metric_terms!(metrics1, mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat, COVAR(), SD; backend = inputs[:backend])
 
@@ -318,7 +318,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 build_metric_terms!(metrics2, mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat, COVAR(), SD; backend = inputs[:backend])
 
                 metrics = (metrics1, metrics2)
-                if (rank == 0) @info " Build metrics ...... DONE" end
+                if (rank == 0) println(" # Build metrics ...... DONE") end
 
                 matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                                  ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
@@ -326,9 +326,9 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             end
 
         else
-            if (rank == 0) @info " Build interpolation bases ......" end
+            if (rank == 0) println(" # Build interpolation bases ......") end
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
-            if (rank == 0) @info " Build interpolation bases ...... END" end
+            if (rank == 0) println(" # Build interpolation bases ...... END") end
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
@@ -372,20 +372,20 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                     phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
                 end
             else
-                if (rank == 0) @info " Build metrics ......" end
+                if (rank == 0) println(" # Build metrics ......") end
                 metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
                 @mpi_time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
-                if (rank == 0) @info " Build metrics ...... END" end
+                if (rank == 0) println(" # Build metrics ...... END") end
 
                 if (inputs[:lphysics_grid])
                     phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
                 end
-                if (rank == 0) @info " Build periodicity infrastructure ......" end
+                if (rank == 0) println(" # Build periodicity infrastructure ......") end
 
-                if (rank == 0) @info " Matrix wrapper ......" end
+                if (rank == 0) println(" # Matrix wrapper ......") end
                 matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
                             ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-                if (rank == 0)  @info " Matrix wrapper ...... END" end
+                if (rank == 0)  println(" # Matrix wrapper ...... END") end
                 _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end
         end
@@ -409,14 +409,14 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 metrics = cached_metrics
                 matrix  = cached_matrix
             else
-                if (rank == 0) @info " Build metrics ......" end
+                if (rank == 0) println(" # Build metrics ......") end
                 metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
                 build_metric_terms!(metrics1, mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
                 metrics2 = allocate_metrics(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, mesh.ngr, TFloat, inputs[:backend])
                 build_metric_terms_1D_Laguerre!(metrics2, mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat, COVAR(), SD;backend = inputs[:backend])
 
                 metrics = (metrics1, metrics2)
-                if (rank == 0) @info " Build metrics ...... DONE" end
+                if (rank == 0) println(" # Build metrics ...... DONE") end
                 matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
                 _save_sem_cache(preprocess_cache, metrics, matrix; inputs=inputs, nparts=nparts)
             end

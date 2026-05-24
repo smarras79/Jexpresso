@@ -1247,7 +1247,7 @@ end
 end
 mesh.npoin = npoin
 if mesh.rank == 0
-    @info " periodicity_restructure!"
+    println(" # periodicity_restructure!")
 end
 end
 

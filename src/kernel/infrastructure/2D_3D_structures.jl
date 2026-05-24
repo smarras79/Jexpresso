@@ -1081,7 +1081,7 @@ function PreconditionedConjugateGradientSolve(Nit,Tol,NP::NodalPotential)
         LinearAlgebra.axpy!(ω,v,NP.Φ)
         LinearAlgebra.axpy!(-ω,z,r)
         if (BLAS.nrm2(L,r,1) <= Tol)
-            @info "converged"
+            println(" # converged")
             return NP
         end
         z = SSORSweep(r,1+k/Nit,NP)
@@ -1090,7 +1090,7 @@ function PreconditionedConjugateGradientSolve(Nit,Tol,NP::NodalPotential)
         LinearAlgebra.axpy!(1,z,v)
         c = d
     end
-    @info "did not converge"
+    println(" # did not converge")
     return NP
 end
 

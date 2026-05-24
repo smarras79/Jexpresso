@@ -52,7 +52,7 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
     else
         isfile(path) || return false
         if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
-            rank == 0 && @info "Mesh cache $path is older than $gmsh_path — discarding stale cache"
+            rank == 0 && println(" # Mesh cache $path is older than $gmsh_path — discarding stale cache")
             return false
         end
     end
@@ -62,7 +62,7 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
         raw = JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing ?
               JEXPRESSO_PREFETCHED_MESH_CACHE[] : JLD2.load(path)
         haskey(raw, "mesh_fields") || begin
-            rank == 0 && @info "Mesh cache $path has old format — discarding and rebuilding"
+            rank == 0 && println(" # Mesh cache $path has old format — discarding and rebuilding")
             return false
         end
         # Fingerprint check.  Required so that switching cases that happen to
@@ -71,11 +71,11 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
         if inputs !== nothing && haskey(raw, "fingerprint")
             saved_fp = raw["fingerprint"]
             if !(saved_fp isa Dict) || !_cache_fingerprint_matches(saved_fp, inputs, nparts)
-                rank == 0 && @info "Mesh cache $path fingerprint mismatch — discarding and rebuilding"
+                rank == 0 && println(" # Mesh cache $path fingerprint mismatch — discarding and rebuilding")
                 return false
             end
         elseif inputs !== nothing
-            rank == 0 && @info "Mesh cache $path has no fingerprint — discarding and rebuilding"
+            rank == 0 && println(" # Mesh cache $path has no fingerprint — discarding and rebuilding")
             return false
         end
         flds = raw["mesh_fields"]
@@ -94,7 +94,7 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
             mesh.SD = nsd_val == 3 ? NSD_3D() : nsd_val == 2 ? NSD_2D() : NSD_1D()
         end
         mesh.parts = distribute(LinearIndices((nparts,)))
-        rank == 0 && @info "Loaded mesh topology from cache: $path"
+        rank == 0 && println(" # Loaded mesh topology from cache: $path")
         return true
     catch e
         rank == 0 && @warn "Ignoring mesh cache $path" exception=(e, catch_backtrace())
@@ -127,7 +127,7 @@ function _save_mesh_cache(path::String, mesh; inputs=nothing, nparts::Int=1)
         flds["__SD_nsd__"] = mesh.nsd
         fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
         JLD2.jldsave(path; mesh_fields = flds, fingerprint = fp)
-        rank == 0 && @info "Saved mesh topology cache: $path"
+        rank == 0 && println(" # Saved mesh topology cache: $path")
     catch e
         rank == 0 && @warn "Failed to save mesh cache $path" exception=(e, catch_backtrace())
     end
@@ -214,7 +214,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         if all_loaded
             return nothing
         elseif local_loaded && !all_loaded
-            rank == 0 && @info "Mesh cache: some ranks failed to load — discarding all and rebuilding"
+            rank == 0 && println(" # Mesh cache: some ranks failed to load — discarding all and rebuilding")
         end
     end
     # ─────────────────────────────────────────────────────────────────────────
@@ -2347,7 +2347,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         end
     #end #do f
     #show(stdout, "text/plain", poin_in_edge)
-    #@info "-----2D edges"
+    #println(" # -----2D edges")
     
     #
     # Second pass: populate mesh.conn[∀ elem, 1:4+el_edges_internal_nodes]\n")
@@ -2536,7 +2536,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
         end
     #end #end f
     #show(stdout, "text/plain", mesh.poin_in_edge)
-    #@info "-----3D edges"
+    #println(" # -----3D edges")
         
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")

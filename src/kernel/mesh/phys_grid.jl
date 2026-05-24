@@ -199,7 +199,7 @@ function store_mesh_to_phys_grid_correspondance!(phys_grid,el_max,el_min,nelem,n
                 e += 1
             end
             if (found == false)
-                @info "error could not find corresponding element on dynamics mesh, something is broken"
+                println(" # error could not find corresponding element on dynamics mesh, something is broken")
                 @info e, x, y, z, maximum(el_max[:,1]), minimum(el_min[:,1])
             end
             S = 0

@@ -62,7 +62,7 @@ function save_serial_rhs(RHS, connijk_spa, connijk, x, y, z, n_spa, coords_ang, 
         file["n_free"] = n_free
     end
 
-    @info "Saved serial RHS to $filename: n_free=$n_free, nnz=$(count(!iszero, rhs_vec))"
+    println(" # Saved serial RHS to $filename: n_free=$n_free, nnz=$(count(!iszero, rhs_vec))")
 end
 
 """
@@ -186,7 +186,7 @@ function reduce_and_compare_parallel_rhs(RHS_local, connijk_spa, connijk, x, y, 
         end
     end
 
-    @info "[Rank $rank] Local free nodes: $(length(local_entries)) entries"
+    println(" # [Rank $rank] Local free nodes: $(length(local_entries)) entries")
 
     # =====================================================================
     # Step 2: Gather all entries from all processors
@@ -247,7 +247,7 @@ function reduce_and_compare_parallel_rhs(RHS_local, connijk_spa, connijk, x, y, 
             ref_coords_spa = ref_data.coords_spa
             ref_n_free = ref_data.n_free
 
-            @info "Loaded reference: n_free=$ref_n_free, nnz=$(count(!iszero, ref_rhs))"
+            println(" # Loaded reference: n_free=$ref_n_free, nnz=$(count(!iszero, ref_rhs))")
             @info "checking coords size", size(ref_coords_spa)
             # Build reference dictionary for comparison
             ref_entries = Dict{NTuple{5, Float64}, Float64}()
@@ -262,7 +262,7 @@ function reduce_and_compare_parallel_rhs(RHS_local, connijk_spa, connijk, x, y, 
             # Compare
             # ================================================================
 
-            @info "=== RHS COMPARISON ==="
+            println(" # === RHS COMPARISON ===")
 
             # Check all coordinates that appear in either
             all_coords = union(Set(keys(global_entries)), Set(keys(ref_entries)))
@@ -289,7 +289,7 @@ function reduce_and_compare_parallel_rhs(RHS_local, connijk_spa, connijk, x, y, 
                     end
 
                     if n_different <= 20  # Print first 20 differences
-                        @info "  Difference at coord=$coord: serial=$serial_val, parallel=$parallel_val, abs_err=$abs_err"
+                        println(" # Difference at coord=$coord: serial=$serial_val, parallel=$parallel_val, abs_err=$abs_err")
                     end
                 end
 
@@ -301,15 +301,15 @@ function reduce_and_compare_parallel_rhs(RHS_local, connijk_spa, connijk, x, y, 
                 end
             end
 
-            @info "Total entries: serial=$(length(ref_entries)), parallel=$(length(global_entries))"
-            @info "Missing from parallel: $n_missing_parallel"
-            @info "Extra in parallel: $n_missing_serial"
-            @info "Value mismatches: $n_different entries with |error| > 1e-14"
-            @info "Max absolute error: $max_abs_error"
-            @info "Max relative error: $max_rel_error"
+            println(" # Total entries: serial=$(length(ref_entries)), parallel=$(length(global_entries))")
+            println(" # Missing from parallel: $n_missing_parallel")
+            println(" # Extra in parallel: $n_missing_serial")
+            println(" # Value mismatches: $n_different entries with |error| > 1e-14")
+            println(" # Max absolute error: $max_abs_error")
+            println(" # Max relative error: $max_rel_error")
 
             if n_different == 0 && n_missing_parallel == 0 && n_missing_serial == 0
-                @info "✓ RHS VECTORS MATCH PERFECTLY!"
+                println(" # ✓ RHS VECTORS MATCH PERFECTLY!")
                 return true
             else
                 @warn "✗ RHS VECTORS DO NOT MATCH"
@@ -394,7 +394,7 @@ function save_serial_matrix(A, connijk_spa, connijk, x, y, z, n_spa, coords_ang,
         file["n_free"] = n_free
     end
 
-    @info "Saved serial matrix to $filename: n_free=$n_free, nnz=$(nnz(A_dense))"
+    println(" # Saved serial matrix to $filename: n_free=$n_free, nnz=$(nnz(A_dense))")
 end
 
 """
@@ -545,7 +545,7 @@ function reduce_and_compare_parallel_matrix(A_local, connijk_spa, connijk, x, y,
         end
     end
 
-    @info "[Rank $rank] Local matrix entries: $(length(local_matrix_entries)) non-zero entries"
+    println(" # [Rank $rank] Local matrix entries: $(length(local_matrix_entries)) non-zero entries")
 
     # =====================================================================
     # Step 2: Gather all entries from all processors
@@ -605,7 +605,7 @@ function reduce_and_compare_parallel_matrix(A_local, connijk_spa, connijk, x, y,
         ref_coords_spa = ref_data.coords_spa
         ref_n_free = ref_data.n_free
 
-        @info "Loaded reference matrix: n_free=$ref_n_free, nnz=$(nnz(ref_A))"
+        println(" # Loaded reference matrix: n_free=$ref_n_free, nnz=$(nnz(ref_A))")
 
         # Build reference dictionary for comparison (efficient sparse iteration)
         ref_matrix_entries = Dict{Tuple{NTuple{5, Float64}, NTuple{5, Float64}}, Float64}()
@@ -650,7 +650,7 @@ function reduce_and_compare_parallel_matrix(A_local, connijk_spa, connijk, x, y,
         # Compare
         # ================================================================
 
-        @info "=== MATRIX COMPARISON ==="
+        println(" # === MATRIX COMPARISON ===")
 
         all_keys = union(Set(keys(global_matrix_entries)), Set(keys(ref_matrix_entries)))
 
@@ -677,7 +677,7 @@ function reduce_and_compare_parallel_matrix(A_local, connijk_spa, connijk, x, y,
 
                 if n_different <= 20  # Print first 20 differences
                     row_coord, col_coord = key
-                    @info "  Difference at entry (row=$row_coord, col=$col_coord): serial=$serial_val, parallel=$parallel_val, abs_err=$abs_err"
+                    println(" # Difference at entry (row=$row_coord, col=$col_coord): serial=$serial_val, parallel=$parallel_val, abs_err=$abs_err")
                 end
             end
 
@@ -691,15 +691,15 @@ function reduce_and_compare_parallel_matrix(A_local, connijk_spa, connijk, x, y,
             end
         end
 
-        @info "Total entries: serial=$(length(ref_matrix_entries)), parallel=$(length(global_matrix_entries))"
-        @info "Missing from parallel: $n_missing_parallel"
-        @info "Extra in parallel: $n_missing_serial"
-        @info "Value mismatches: $n_different entries with |error| > 1e-7"
-        @info "Max absolute error: $max_abs_error"
-        @info "Max relative error: $max_rel_error"
+        println(" # Total entries: serial=$(length(ref_matrix_entries)), parallel=$(length(global_matrix_entries))")
+        println(" # Missing from parallel: $n_missing_parallel")
+        println(" # Extra in parallel: $n_missing_serial")
+        println(" # Value mismatches: $n_different entries with |error| > 1e-7")
+        println(" # Max absolute error: $max_abs_error")
+        println(" # Max relative error: $max_rel_error")
 
         if n_different == 0 && n_missing_parallel == 0 && n_missing_serial == 0
-            @info "✓ MATRIX ENTRIES MATCH PERFECTLY!"
+            println(" # ✓ MATRIX ENTRIES MATCH PERFECTLY!")
             return true
         else
             @warn "✗ MATRIX ENTRIES DO NOT MATCH"

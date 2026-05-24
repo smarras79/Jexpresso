@@ -251,7 +251,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     if (sem.mesh.SD != NSD_1D()) && !(sem.mesh.lLaguerre)
         if rank == 0
-            @info "start conformity4ncf_q!"
+            println(" # start conformity4ncf_q!")
         end
         g_dss_cache_qp = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
         conformity4ncf_q!(qp.qn, rhs_el_tmp, @view(utmp[:,:]), vaux, 
@@ -276,7 +276,7 @@ function params_setup(sem,
                           sem.interp; ladapt=inputs[:ladapt], neqs=qp.neqs)
         MPI.Barrier(comm)
         if rank == 0
-            @info "end conformity4ncf_q!"
+            println(" # end conformity4ncf_q!")
         end
     end
     for i=1:qp.neqs
