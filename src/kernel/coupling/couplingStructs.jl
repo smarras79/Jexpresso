@@ -433,9 +433,18 @@ function je_prefetch_caches!(inputs, nparts::Int,
                         rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, mesh_path)
                     else
                         rank == 0 && println("incompatible cache ignored (will rebuild)")
+                        # Schema-version mismatch with a still-readable
+                        # file: delete so the next save replaces it
+                        # cleanly. Per-rank file, no race.
+                        try; rm(mesh_path; force=true); catch _; end
                     end
                 catch e
                     rank == 0 && @warn "[prefetch] mesh cache load failed" exception=e
+                    # JLD2 threw before we could check the fingerprint
+                    # (struct shape changed, type can't be reconstructed,
+                    # etc.). Delete the unreadable file so the next save
+                    # writes a clean one.
+                    try; isfile(mesh_path) && rm(mesh_path; force=true); catch _; end
                 end
                 flush(stdout)
             end
@@ -458,13 +467,27 @@ function je_prefetch_caches!(inputs, nparts::Int,
                     if haskey(d, "metrics") && haskey(d, "matrix") &&
                        haskey(d, "fingerprint") && d["fingerprint"] isa Dict &&
                        _cache_fingerprint_matches(d["fingerprint"], inputs, nparts)
-                        JEXPRESSO_PREFETCHED_SEM_CACHE[] = (d["metrics"], d["matrix"])
+                        # Re-inject the dead g_dss_cache slot stripped
+                        # at save time so the loaded NamedTuple shape
+                        # matches what matrix_wrapper would have built
+                        # (see _matrix_for_cache in sem_setup.jl).
+                        matrix_loaded = d["matrix"]
+                        if matrix_loaded isa NamedTuple && !haskey(matrix_loaded, :g_dss_cache)
+                            matrix_loaded = merge(matrix_loaded, (; g_dss_cache = nothing))
+                        end
+                        JEXPRESSO_PREFETCHED_SEM_CACHE[] = (d["metrics"], matrix_loaded)
                         rank == 0 && @printf("%.2f s  (%s)\n", (time_ns()-t0)/1e9, sem_path)
                     else
                         rank == 0 && println("incompatible SEM cache ignored (will rebuild)")
+                        try; rm(sem_path; force=true); catch _; end
                     end
                 catch e
                     rank == 0 && @warn "[prefetch] SEM cache load failed" exception=e
+                    # JLD2 threw before we could check the fingerprint;
+                    # delete the unreadable file. Common after a struct
+                    # gains/loses fields (e.g. AssemblerCache + MPI.Comm
+                    # in the giga_les swap).
+                    try; isfile(sem_path) && rm(sem_path; force=true); catch _; end
                 end
                 flush(stdout)
             end

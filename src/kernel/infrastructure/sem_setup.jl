@@ -51,6 +51,15 @@ function _try_load_sem_cache(path::String; gmsh_path::String="",
         return (d["metrics"], loaded_matrix)
     catch e
         rank == 0 && @warn "Ignoring unreadable SEM cache $path" exception=(e, catch_backtrace())
+        # Auto-delete the unreadable file so the next save writes a
+        # clean replacement. Common after struct-shape changes that JLD2
+        # cannot reconstruct. Per-rank file in parallel runs, so no
+        # race - each rank owns and deletes its own slice.
+        try
+            isfile(path) && rm(path; force=true)
+        catch _
+            # best-effort
+        end
         return (nothing, nothing)
     end
 end

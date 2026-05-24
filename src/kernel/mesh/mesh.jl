@@ -89,6 +89,17 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
         return true
     catch e
         rank == 0 && @warn "Ignoring mesh cache $path" exception=(e, catch_backtrace())
+        # Auto-delete the unreadable file so the next save writes a
+        # clean replacement. Common after struct-shape changes that
+        # JLD2 cannot reconstruct (e.g. AssemblerCache gaining MPI
+        # fields). Per-rank file in parallel runs, so no race - each
+        # rank owns and deletes its own slice.
+        try
+            isfile(path) && rm(path; force=true)
+        catch _
+            # best-effort: a stale file is only a noise problem, not a
+            # correctness one
+        end
         return false
     end
 end
