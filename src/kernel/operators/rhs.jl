@@ -734,78 +734,60 @@ function inviscid_rhs_el!(u, params,
                           coords,
                           lsource, S_micro_vec, qn_vec, flux_lw_vec,
                           flux_sw_vec, SD::NSD_2D)
-    # 2D typed function barrier (mirrors the 3D inviscid + 2D/3D viscous
-    # barriers). FullSpecialize at the ODEProblem site already gets most
-    # of the win by keeping `params` concrete inside rhs!; this barrier
-    # is the incremental ~10-20% on top of it for the wide 2D element
-    # loop.
-    _inviscid_rhs_el_2d!(u, params.uaux, qe, params.F, params.G, params.S,
-                         params.basis.dψ, params.ω, params.metrics.Je,
-                         params.metrics.dξdx, params.metrics.dξdy,
-                         params.metrics.dηdx, params.metrics.dηdy,
-                         params.rhs_el, connijk, coords,
-                         Int64(params.mesh.ngl), Int64(params.mesh.nelem),
-                         Int64(params.neqs), Int64(params.mesh.npoin),
-                         params.CL, params.QT, SD, params.AD, params.SOL_VARS_TYPE,
-                         params.mesh,
-                         lsource, params.inputs[:lmoist]::Bool,
-                         S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
-                         Float64(params.xmin), Float64(params.xmax), Float64(params.ymax))
-end
+    # NOTE: typed function barrier (_inviscid_rhs_el_2d!) reverted -
+    # the wider arg list was tripping LLVM codegen / inference setup on
+    # theta builds (compile-time crash, no Julia traceback). The 2D
+    # path runs fine with FullSpecialize alone; the barrier's
+    # incremental ~10-20% wasn't worth losing theta.
+    ngl   = params.mesh.ngl
+    nelem = params.mesh.nelem
 
-function _inviscid_rhs_el_2d!(u, uaux, qe, F, G, S,
-                              dψ, ω, Je,
-                              dξdx, dξdy,
-                              dηdx, dηdy,
-                              rhs_el, connijk, coords,
-                              ngl, nelem, neqs, npoin,
-                              CL, QT, SD, AD, SOL_VARS_TYPE,
-                              mesh,
-                              lsource, lmoist,
-                              S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
-                              xmin, xmax, ymax)
+    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+
     for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
 
             ip = connijk[iel,i,j]
 
-            user_flux!(@view(F[i,j,:]), @view(G[i,j,:]), SD,
-                       @view(uaux[ip,:]),
+            user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
+                       @view(params.uaux[ip,:]),
                        @view(qe[ip,:]),
-                       mesh,
-                       CL, SOL_VARS_TYPE;
-                       neqs=neqs, ip=ip)
+                       params.mesh,
+                       params.CL, params.SOL_VARS_TYPE;
+                       neqs=params.neqs, ip=ip)
 
             if lsource
-                user_source!(@view(S[i,j,:]),
-                             @view(uaux[ip,:]),
+                user_source!(@view(params.S[i,j,:]),
+                             @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
-                             npoin, CL, SOL_VARS_TYPE;
-                             neqs=neqs,
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
+                             neqs=params.neqs,
                              x=coords[ip,1], y=coords[ip,2], ymax=ymax)
 
-                if (lmoist)
+                if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
                     flux_lw::Float64 = @inbounds flux_lw_vec[ip]
                     flux_sw::Float64 = @inbounds flux_sw_vec[ip]
                     qn::Float64 = @inbounds qn_vec[ip]
-                    add_micro_precip_sources!(@view(S[i,j,:]),
-                                              @view(uaux[ip,:]),
+                    add_micro_precip_sources!(@view(params.S[i,j,:]),
+                                              @view(params.uaux[ip,:]),
                                               @view(qe[ip,:]),
                                               S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
-                                              SD, SOL_VARS_TYPE)
+                                              SD, params.SOL_VARS_TYPE)
                 end
             end
         end
 
         _expansion_inviscid!(u,
-                             neqs, ngl,
-                             dψ, ω,
-                             F, G, S,
-                             Je,
-                             dξdx, dξdy,
-                             dηdx, dηdy,
-                             rhs_el, iel, CL, QT, SD, AD)
+                             params.neqs, params.mesh.ngl,
+                             params.basis.dψ, params.ω,
+                             params.F, params.G, params.S,
+                             params.metrics.Je,
+                             params.metrics.dξdx, params.metrics.dξdy,
+                             params.metrics.dηdx, params.metrics.dηdy,
+                             params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+
+
     end
 end
 
