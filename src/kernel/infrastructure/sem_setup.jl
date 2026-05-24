@@ -220,13 +220,27 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # for the Alya coupling path. When the cache is unusable (stale, missing,
     # fingerprint mismatch, or :luse_mesh_cache=false) we fall through and
     # rebuild as normal, then save at the end of each metric-build branch.
+    #
+    # Cross-rank consistency: same pattern as the mesh cache. If any rank
+    # fails to load (missing/stale/mismatched file), every rank rebuilds.
+    # Prevents silent inconsistency where one rank uses cached metrics tied
+    # to one partition and another rank builds fresh metrics for a different
+    # one.
     preprocess_cache = _preprocess_cache_path(inputs, Nξ, Qξ, nparts)
     cached_metrics, cached_matrix = _try_load_sem_cache(preprocess_cache;
                                                         gmsh_path=get(inputs, :gmsh_filename, ""),
                                                         inputs=inputs, nparts=nparts)
-    loaded_from_cache = !isnothing(cached_metrics)
+    local_loaded = !isnothing(cached_metrics)
+    loaded_from_cache = nparts > 1 ?
+        (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
+        local_loaded
     if loaded_from_cache
         rank == 0 && @info "Loaded SEM preprocess cache — skipping metric terms and matrix build: $preprocess_cache"
+    elseif local_loaded
+        # We had a usable local cache but some peer didn't — drop ours so
+        # downstream code doesn't accidentally use it.
+        cached_metrics, cached_matrix = nothing, nothing
+        rank == 0 && @info "SEM cache: some ranks failed to load — discarding all and rebuilding"
     end
     # ─────────────────────────────────────────────────────────────────────────
 

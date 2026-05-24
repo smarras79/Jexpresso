@@ -175,12 +175,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # JEXPRESSO_PREFETCHED_MESH_CACHE (populated by je_prefetch_caches! before
     # the with_mpi block) is honoured by _try_load_mesh_cache! when Alya
     # coupling is active, so this path also works with coupled runs.
+    #
+    # Cross-rank consistency: each rank independently checks its own file
+    # and fingerprint, then we MPI.Allreduce(MIN) to agree on whether ALL
+    # ranks succeeded. If any rank failed (missing/stale/mismatched file,
+    # which can happen after switching nparts, interrupting a previous
+    # save, or rebuilding only some files), every rank rebuilds from
+    # scratch. This prevents silent inconsistency where one rank loads a
+    # stale partition and the others build a fresh one.
     if isnothing(adapt_flags) && !ladaptive && !linitial_refine
         _mesh_cache = _mesh_cache_path(inputs, nparts)
         gmsh_path   = get(inputs, :gmsh_filename, "")
-        if _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
-                                 gmsh_path=gmsh_path, inputs=inputs)
+        local_loaded = _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
+                                              gmsh_path=gmsh_path, inputs=inputs)
+        all_loaded = nparts > 1 ?
+            (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
+            local_loaded
+        if all_loaded
             return nothing
+        elseif local_loaded && !all_loaded
+            rank == 0 && @info "Mesh cache: some ranks failed to load — discarding all and rebuilding"
         end
     end
     # ─────────────────────────────────────────────────────────────────────────
