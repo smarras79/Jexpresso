@@ -2998,15 +2998,15 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
     end
 end
 
-function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
-                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, params; ladapt = true) nothing end
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
+                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, params; ladapt = true, neqs = 4) nothing end
 
-function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
-                           SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs,
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
+                           SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD,
                            q_el, q_el_pro,
                            cache_ghost_p, q_ghost_p,
                            cache_ghost_c, q_ghost_c,
-                           interp; ladapt = true)
+                           interp; ladapt = true, neqs = 4)
     nelem = mesh.nelem
     npoin = mesh.npoin
     ngl = mesh.ngl
@@ -3051,11 +3051,11 @@ end
 
 
 function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
-                           SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs,
+                           SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD,
                            q_el, q_el_pro,
                            cache_ghost_p, q_ghost_p,
                            cache_ghost_c, q_ghost_c,
-                           interp; ladapt = true)
+                           interp; ladapt = true, neqs = 4)
     nelem = mesh.nelem
     npoin = mesh.npoin
     ngl = mesh.ngl
