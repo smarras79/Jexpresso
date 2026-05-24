@@ -167,12 +167,135 @@ edges:
 
 ## Suggested low-effort fixes
 
-- **CFL Allreduce batching** — one Allreduce of a 4-vector instead of
-  4 sequential Allreduces. ~10 lines.
-- **NetCDF parallel I/O** — give the NetCDF path the same
-  per-rank-write treatment the VTK path already has.
-- **Runtime imbalance diagnostic** — wire
-  `measure_elements_per_rank` into the startup banner so users see
-  min/avg/max immediately.
-- **ParMETIS integration** — design decision required (which package,
-  what fallback when ParMETIS is unavailable). Not a one-line fix.
+- **CFL Allreduce batching** — DONE in commit `23d7c82d`. Collapsed
+  2D `[u, v]` → 1 Allreduce and 3D `[u, v, w, μmax]` → 1 Allreduce;
+  also folded local `cmax` from `soundSpeed` into the same reduction
+  to fix a pre-existing per-rank-local acoustic-CFL bug.
+- **Runtime imbalance diagnostic** — already wired:
+  `measure_elements_per_rank` (`mesh.jl:1775`) is called from
+  `mod_mesh_read_gmsh!` (`mesh.jl:342`) and prints min/avg/max/imbalance
+  ratio on rank 0 during init. What is missing is the *follow-through* —
+  the returned `lneed_redistribute` flag is set but no code path acts
+  on it. Acting on it is a real feature, not a small fix.
+- **NetCDF parallel I/O** — give the NetCDF path the same per-rank-write
+  treatment the VTK path already has. Bigger change; parallel
+  HDF5/NetCDF on macOS arm64 has its own portability issues. Defer
+  until someone actually needs the NetCDF format at scale.
+
+## Follow-up: ParMETIS integration plan
+
+The xy-bin partitioner (`_compute_xy_partition`, `mesh.jl:21-41`) is
+the most fragile piece of the parallel pipeline (see §1 of the punch
+list above). It works for column-extruded LES boxes on composite
+`nparts`; it falls over on prime `nparts`, on graded meshes, on
+arbitrary 3-D geometries, and on anything where the xy projection is
+not representative of cell density. Plugging in METIS / ParMETIS would
+fix all of these.
+
+This is **not a small edit** and the right way to make it happen is
+to land it as its own PR after the design questions below are
+answered. Filing the plan here so it does not get lost.
+
+### Open design questions (answer before coding)
+
+1. **Which Julia binding?** Options as of writing:
+   - `Metis.jl` (mature, well-maintained) — wraps the **serial** METIS
+     library. Adequate if rank 0 partitions and broadcasts; not adequate
+     at the very scale where partitioning quality matters most.
+   - `ParMETIS_jll` — Yggdrasil ships the C library, but I am not aware
+     of a high-level Julia wrapper. May need to write the ccalls
+     directly, which is real work.
+   - Native partitioning hooks in `GridapDistributed` /
+     `PartitionedArrays` (already deps in `Project.toml`). Worth a
+     careful read before reinventing.
+   - **Decision needed**: do we accept the serial-METIS limitation
+     (partition on rank 0, broadcast assignment), or commit to
+     ParMETIS_jll and the wrapper work?
+
+2. **Required vs optional dependency?**
+   - As **required**: simpler, but inherits the binding's platform
+     support. `ParMETIS_jll` may not build cleanly on macOS arm64
+     (this needs verification on the target dev machine before
+     committing).
+   - As **optional** (Project.toml `[extras]` / package extension):
+     keeps the build portable but doubles the partitioner code paths.
+   - **Recommendation**: optional, with the existing xy-bin partitioner
+     as the universal fallback. New input flag selects:
+     ```julia
+     :partitioner => :parmetis | :metis | :xy | :gmsh   # default :xy
+     ```
+
+3. **Adjacency-graph source.** ParMETIS needs a CSR-format cell graph
+   (each cell + neighbours via shared face). Gridap should expose this
+   via `get_cell_faces` / `get_face_cells`, but the exact wiring needs
+   verification. For 3-D high-order spectral elements, neighbour
+   relationship is via faces (not vertices), so use the **3-D-face**
+   topology, not vertex topology.
+
+4. **Interaction with p4est / AMR.** When `inputs[:lamr] == true` the
+   mesh is an `OctreeDistributedDiscreteModel` and p4est handles
+   partitioning internally on refine/coarsen. A METIS partition would
+   only apply to the initial coarse mesh; p4est takes over afterwards.
+   Confirm this does not double-partition or invalidate p4est's
+   internal connectivity.
+
+5. **Interaction with periodic restructuring.**
+   `restructure_for_periodicity.jl` already does heavy rank-0 work
+   (~12 root-funnelled rounds, audit §4). It assumes a specific
+   ownership pattern. Need to check whether METIS-assigned ownership
+   breaks any of its invariants.
+
+### Concrete sequencing once the questions are answered
+
+1. **Spike** (~half day): in a scratch script, partition a 10k-cell
+   3-D theta mesh with `Metis.jl` on rank 0, broadcast the assignment,
+   construct `DiscreteModel(parts, smodel, cell_to_part)` exactly as
+   `_compute_xy_partition` does today. Compare min/avg/max/imbalance
+   against the xy-bin partition. If imbalance is comparable or worse,
+   stop — the win is too small to justify the dependency.
+
+2. **Hook up the input flag** (~1 day): add `:partitioner` default
+   in `mod_inputs.jl`, branch in `mod_mesh_read_gmsh!` between
+   `_compute_xy_partition` / `_compute_metis_partition` /
+   `_compute_parmetis_partition` / gmsh-default based on the flag.
+   Keep `lxy_partition` for backwards compatibility (`:xy` when set).
+
+3. **Verify partition quality** (~1 day): run the existing
+   `measure_elements_per_rank` diagnostic on a representative sweep
+   (theta 2-D, theta 3-D, BoMex, a graded-mesh case if available) at
+   2/4/8/16/32 ranks. Record imbalance ratios before / after. Reject
+   any partitioner that does not strictly improve over xy-bin on
+   non-column-extruded meshes.
+
+4. **Measure DSS communication volume** (~1 day): instrument
+   `assemble_mpi!` to log `length(cache.active_send_ranks)` and
+   `sum(cache.send_data_sizes)` per rank at startup. Compare the
+   partitioners. The ratio of communication-volume reduction to
+   imbalance-reduction is what actually matters for scaling, not
+   imbalance alone.
+
+5. **ParMETIS only if METIS-on-rank-0 hits a memory wall** (~3 days
+   if needed): if step 3 shows METIS wins on quality but step 4
+   shows the rank-0 partition phase is too expensive at the target
+   mesh size, then escalate to ParMETIS_jll and write the ccall
+   wrapper. Until that data exists, **do not** start on ParMETIS —
+   it is the higher-cost option and may not be needed.
+
+### Risks / unknowns
+
+- `ParMETIS_jll` build status on macOS arm64 not verified.
+- Gridap's cell-adjacency exposure may not be CSR-shaped; conversion
+  cost is O(nelem) but adds complexity.
+- p4est-managed AMR paths may render the partition irrelevant for
+  AMR runs (METIS only helps the initial coarse mesh).
+- `restructure_for_periodicity` rank-0 invariants need verification
+  against arbitrary partitions.
+
+### Rough effort estimate
+
+- Steps 1–4 (METIS-on-rank-0 path with quality + comm measurements):
+  **3–4 days** of focused work.
+- Step 5 (ParMETIS escalation if needed): **+3 days**, with platform
+  risk on macOS arm64.
+
+Total: **3–7 days** depending on whether ParMETIS is needed.
