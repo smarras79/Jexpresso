@@ -3,6 +3,11 @@ function time_loop!(inputs, params, u, args...)
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     partitioned_model = args[1]
+    # Optional coupled-mode positional args: args[2] = is_coupled::Bool,
+    # args[3] = coupling::CouplingData. Both default to "off" when callers
+    # use the historical 1-arg form (standalone non-coupled runs).
+    is_coupled = length(args) >= 2 ? args[2] : false
+    coupling   = length(args) >= 3 ? args[3] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
     
     prob = ODEProblem(rhs!,
@@ -178,6 +183,11 @@ function time_loop!(inputs, params, u, args...)
     cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
+    # Coupled-mode exchange callback: fires once per accepted timestep,
+    # sends Julia's interpolated solution to Alya so its MPI.Waitall in
+    # the time loop can advance. Without this Alya hangs and never
+    # writes its VTS output.
+    cb_coupling = is_coupled ? setup_coupling_callback(is_coupled, params, inputs) : nothing
     CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
@@ -225,10 +235,16 @@ function time_loop!(inputs, params, u, args...)
     else
         ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl; init=0), MPI.MAX, comm)
         dt         = Float32(inputs[:Δt]/(2.0^(ad_lvl_max)))
+        # Include cb_coupling in coupled mode so Julia's per-timestep
+        # send to Alya actually fires; without it Alya's MPI.Waitall
+        # blocks and its VTS output never gets written.
+        callbacks_main = (is_coupled && cb_coupling !== nothing) ?
+            CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling) :
+            CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online)
         solution   = solve(prob,
                          inputs[:ode_solver], dt=dt,
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online), tstops = tstops_all,
+                         callback = callbacks_main, tstops = tstops_all,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit],
