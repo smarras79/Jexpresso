@@ -169,31 +169,54 @@ function get_boundary_faces(model,nsd,dim)
 end
 
 function setup_global_numbering_extra_dim(ip2gip, gip2owner, npoin, npoin_ang, npoin_total)
-
+ 
     comm = MPI.COMM_WORLD
-
+    rank = MPI.Comm_rank(comm)
+ 
     ip2gip_extra    = KernelAbstractions.zeros(CPU(), Int64, npoin_total)
-    # Ownership is derived from the spatial node owner so that ALL angular DOFs
-    # (ip_ext = 1:npoin_ang) for a given spatial node have the same owning rank.
-    # The previous find_gip_owner approach assigned ownership per-DOF via load
-    # balancing, causing different angular indices of the same spatial node to
-    # map to different ranks — incorrect for any ownership-based filtering.
     gip2owner_extra = zeros(Int, npoin_total)
-
+ 
+    # ── Build a contiguous spatial GID → dense rank mapping ──────────────────
+    # The spatial ip2gip may have gaps (missing GIDs) which propagate into
+    # the angular-spatial product numbering, creating empty rows in the global
+    # matrix. We replace the raw spatial GID with a dense contiguous index by:
+    #   1. Each rank broadcasts its spatial GIDs
+    #   2. All ranks sort and deduplicate to get the global spatial GID list
+    #   3. The position of each GID in the sorted list is its dense index
+ 
+    # Gather all spatial GIDs from all ranks
+    local_gips    = collect(ip2gip)
+    n_local       = Int32(length(local_gips))
+    counts        = MPI.Allgather([n_local], comm)
+    all_gips_raw  = MPI.Allgatherv(local_gips, counts, comm)
+ 
+    # Sort and deduplicate to get the global spatial GID ordering
+    all_gips_sorted = sort(unique(all_gips_raw))
+    n_spatial_global = length(all_gips_sorted)
+ 
+    # Build GID → dense index map
+    gid_to_dense = Dict{Int,Int}(gid => i for (i, gid) in enumerate(all_gips_sorted))
+ 
+    # ── Construct angular-spatial product numbering using dense spatial index ─
     for ip = 1:npoin
         gip       = ip2gip[ip]
-        spa_owner = gip2owner[ip]   # gip2owner is indexed by local ip, not global gip
+        spa_owner = gip2owner[ip]
+        dense_gip = gid_to_dense[gip]    # contiguous spatial index, no gaps
         for ip_ext = 1:npoin_ang
-            idx_ip  = (ip-1)*npoin_ang + ip_ext
-            idx_gip = (gip-1)*npoin_ang + ip_ext
+            idx_ip  = (ip - 1) * npoin_ang + ip_ext
+            idx_gip = (dense_gip - 1) * npoin_ang + ip_ext   # gap-free
             ip2gip_extra[idx_ip]    = idx_gip
             gip2owner_extra[idx_ip] = spa_owner
         end
     end
-
-    gnpoin = MPI.Allreduce(maximum(ip2gip_extra), MPI.MAX, comm)
-    @info gnpoin, npoin_total
-
+ 
+    gnpoin = n_spatial_global * npoin_ang
+ 
+    if rank == 0
+        @info "setup_global_numbering_extra_dim: " *
+              "n_spatial_global=$n_spatial_global npoin_ang=$npoin_ang gnpoin=$gnpoin"
+    end
+ 
     return ip2gip_extra, gip2owner_extra, gnpoin
 end
 

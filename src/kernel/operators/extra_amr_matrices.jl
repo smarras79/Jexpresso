@@ -1816,3 +1816,73 @@ function allreduce_parent_parent_entries(
 
     return MLHS_updated
 end
+
+function allreduce_shared_entries(
+    A, gip2owner_extra, n_spa, comm, ip2gip_spa,
+    nonowned_gids,
+    gip_to_local
+)
+    nproc = MPI.Comm_size(comm)
+
+    # Exchange non-owned parent GIDs as flat Int array
+    local_gids  = collect(nonowned_gids)
+    n_local     = Int32(length(local_gids))
+    gid_counts  = MPI.Allgather([n_local], comm)
+    all_gids    = MPI.Allgatherv(local_gids, gid_counts, comm)
+    all_parent_gids = Set(all_gids)
+
+    # Extract relevant (row_gid, col_gid, val) triples
+    rows_sp = rowvals(A)
+    vals_sp = nonzeros(A)
+    local_I = Int[]
+    local_J = Int[]
+    local_V = Float64[]
+
+    for col_idx = 1:n_spa
+        col_gid = ip2gip_spa[col_idx]
+        col_gid in all_parent_gids || continue
+        for idx in nzrange(A, col_idx)
+            row_idx = rows_sp[idx]
+            row_gid = ip2gip_spa[row_idx]
+            row_gid in all_parent_gids || continue
+            push!(local_I, row_gid)
+            push!(local_J, col_gid)
+            push!(local_V, vals_sp[idx])
+        end
+    end
+
+    # Pack as flat arrays: [row_gid, col_gid, ...] and [val, ...]
+    n_local_entries = Int32(length(local_I))
+    entry_counts    = MPI.Allgather([n_local_entries], comm)
+
+    send_ij  = Vector{Int}(undef,     2 * n_local_entries)
+    send_v   = Vector{Float64}(undef, n_local_entries)
+    for k = 1:n_local_entries
+        send_ij[2k-1] = local_I[k]
+        send_ij[2k]   = local_J[k]
+        send_v[k]     = local_V[k]
+    end
+
+    all_ij = MPI.Allgatherv(send_ij, Int32.(entry_counts .* 2), comm)
+    all_v  = MPI.Allgatherv(send_v,  entry_counts,              comm)
+
+    # Accumulate
+    global_entries = Dict{Tuple{Int,Int}, Float64}()
+    for k = 1:length(all_v)
+        rg = all_ij[2k-1]; cg = all_ij[2k]; v = all_v[k]
+        key = (rg, cg)
+        global_entries[key] = get(global_entries, key, 0.0) + v
+    end
+
+    # Update MLHS in-place
+    A_updated = copy(A)
+    for ((row_gid, col_gid), reduced_val) in global_entries
+        row_idx = get(gip_to_local, row_gid, nothing)
+        col_idx = get(gip_to_local, col_gid, nothing)
+        row_idx === nothing && continue
+        col_idx === nothing && continue
+        A_updated[row_idx, col_idx] = reduced_val
+    end
+
+    return A_updated
+end

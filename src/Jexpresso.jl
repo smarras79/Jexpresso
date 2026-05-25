@@ -189,6 +189,8 @@ include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 
+include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
+
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
 include(joinpath("kernel", "operators", "build_rad_2d.jl"))

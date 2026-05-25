@@ -183,6 +183,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     end
     nc_mat = zeros(Float64,1)
     P = zeros(Float64,1)
+    MLHS_pre = zeros(Float64,1)
     rest = zeros(Float64,1)
     nc_non_global_nodes = []
     n_non_global_nodes = 0
@@ -566,7 +567,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
         M_inv = spdiagm(0 => 1.0 ./ Md)
         MLHS  = sparse(M_inv * LHS)
-
         # ── All-reduce parent–parent entries across ranks ─────────────────────
         # Hanging-node constraint handling requires that (parent, parent) blocks
         # of M⁻¹LHS are globally consistent before restriction/prolongation.
@@ -1434,6 +1434,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         boundary_set = Set(keys(boundary_dict))
         rows_A = rowvals(A)
         vals_A = nonzeros(A)
+        
+        
 
         for col = 1:size(A, 2)
             for ptr = nzrange(A, col)
@@ -1447,6 +1449,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
         A = dropzeros!(A)
+        
+        
         @info "[$rank] A after BC application + dropzeros: nnz=$(nnz(A))"
 
 
@@ -1474,11 +1478,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         for (node, val) in boundary_dict
             if val != 0.0
                 RHS_red[node] = val
+                
             end
         end
         
         B = RHS_red
-
     
         @info "maxima of restricted RHS"
         @info maximum(RHS), minimum(RHS)
@@ -1555,7 +1559,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         MPI.Barrier(comm)
     end
 
-    for col in boundary_set
+    #=for col in boundary_set
         val = BDY[col]
         
         for ptr in nzrange(As, col)
@@ -1567,7 +1571,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             #end
             vals_A[ptr] = 0.0
         end
-    end
+    end=#
     As = dropzeros!(As)
     if inputs[:adaptive_extra_meshes]
         for ip in all_hanging_nodes
@@ -1684,15 +1688,27 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
            
         end
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
+        
+        #=solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents,
             precond  = :ilu,
             restart  = 500,
-            tol      = 1e-6)
+            tol      = 1e-6)=#
+        #diagnose_ghost_rows(As, ip2gip_spa, gip2owner_extra, gnpoin, n_spa_g,
+        #            extended_parents_to_gid, MPI.COMM_WORLD)
 
-       
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin,
+            n_spa, x_warm;
+            precond     = :global_ilu,
+            asm_solver  = :rcmilu,
+            asm_ilu_tau = 0.1,
+            npoin_g     = n_spa_g,
+            g_ip2gip    = extended_parents_to_gid,
+            g_gip2ip    = gid_to_extended_parents,
+            restart     = 100,
+            tol         = 1e-7)
 
     elseif (inputs[:RT_shortwave])
         x_warm = Float64[]
@@ -1734,14 +1750,50 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 end
             end
         end
-
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+        #=nonowned_indices = Set{Int}()
+        for i=1:npoin_ang_total
+            if gip2owner_extra[i] != rank
+                push!(nonowned_indices, ip2gip_spa[i])
+            end
+        end
+        gip_to_local = Dict{Int, Int}()
+        sizehint!(gip_to_local, npoin_ang_total)
+        for ip = 1:npoin_ang_total
+            gip_to_local[ip2gip_spa[ip]] = ip
+        end
+        As = allreduce_shared_entries(
+            As, gip2owner_extra, npoin_ang_total, comm, ip2gip_spa,
+            nonowned_indices,
+            gip_to_local
+        )
+        As = sparse(As)=#
+        #=solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
         npoin_g  = n_ext_spa,
         g_ip2gip = extended_parents_to_gid_spa,
         g_gip2ip = gid_to_extended_parents_spa,
         precond  = :none,
         restart  = 50,
+        tol      = 1e-7)=#
+        #=target_gid = 5761
+        for ip = 1:npoin_ang_total
+            @info ip, ip2gip_spa[ip]
+            if ip2gip_spa[ip] == target_gid
+                diag_val = As[ip, ip]
+                row_nnz  = nnz(As[ip:ip, :])
+                @info "Rank $rank: GID $target_gid found at local ip=$ip diagonal=$diag_val row_nnz=$row_nnz"
+            end
+        end=#
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+        npoin_g  = n_ext_spa,
+        g_ip2gip = extended_parents_to_gid_spa,
+        g_gip2ip = gid_to_extended_parents_spa,
+        #precond  = :inner_gmres,
+        precond  = :schur,
+        asm_solver = :rcmsplu,
+        asm_ilu_tau = 0.1,
+        restart  = 50,
         tol      = 1e-7)
+
     end
     
     @rankinfo rank "Solve complete."
