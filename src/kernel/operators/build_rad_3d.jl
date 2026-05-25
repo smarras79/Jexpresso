@@ -1698,10 +1698,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             tol      = 1e-6)=#
         #diagnose_ghost_rows(As, ip2gip_spa, gip2owner_extra, gnpoin, n_spa_g,
         #            extended_parents_to_gid, MPI.COMM_WORLD)
-
+        
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin,
             n_spa, x_warm;
-            precond     = :global_ilu,
+            precond     = :mumps_dist,
             asm_solver  = :rcmilu,
             asm_ilu_tau = 0.1,
             npoin_g     = n_spa_g,

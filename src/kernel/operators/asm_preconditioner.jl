@@ -1,3 +1,5 @@
+import ParU_jll
+import STRUMPACK_jll
 using SparseArrays
 using LinearAlgebra
 using KLU
@@ -6,6 +8,9 @@ using IncompleteLU
 using Krylov
 using LinearOperators
 using AMD
+using LinearSolve
+using Pardiso
+using MUMPS
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ASMPreconditioner
@@ -191,6 +196,21 @@ end
 #    :spilu    — ILU(0) on sparsified matrix
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── LinearSolve.jl wrapper for advanced solvers ──────────────────────────────
+#  Used for :paru, :pardiso, :strumpack solvers.
+#  Returns a wrapper that acts like a factorization via ldiv!.
+struct LinearSolveFactor
+    cache :: Any   # LinearSolve cache object
+    n     :: Int
+end
+
+function LinearAlgebra.ldiv!(y::AbstractVector, F::LinearSolveFactor, x::AbstractVector)
+    F.cache.b .= x
+    LinearSolve.solve!(F.cache)
+    copyto!(y, F.cache.u)
+    return y
+end
+
 function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau::Float64)
     if solver == :klu
         return klu(A)
@@ -216,11 +236,93 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         return ILUZero.ilu0(A)
     elseif solver == :spilu
         return ILUZero.ilu0(_sparsify(A, ilu_tau))
+
+    # ── Advanced parallel solvers via LinearSolve.jl ─────────────────────────
+
+    elseif solver == :paru
+        # ParU: parallel multifrontal LU (OpenMP, shared memory).
+        # Reuses UMFPACK symbolic analysis, parallelises numeric phase.
+        # Requires: import ParU_jll; using LinearSolve
+        # Install: ] add LinearSolve ParU_jll
+        @isdefined(LinearSolve) ||
+            error(":paru requires `import ParU_jll; using LinearSolve`")
+        isdefined(LinearSolve, :ParUFactorization) ||
+            error(":paru: ParUFactorization not found — " *
+                  "ensure `import ParU_jll` is called BEFORE `using LinearSolve`")
+        n = size(A, 1)
+        b_dummy = zeros(Float64, n)
+        prob  = LinearSolve.LinearProblem(A, b_dummy)
+        cache = LinearSolve.init(prob, LinearSolve.ParUFactorization())
+        LinearSolve.solve!(cache)
+        return LinearSolveFactor(cache, n)
+
+    elseif solver == :pardiso
+        # MKL Pardiso: highly optimised parallel sparse direct solver (OpenMP).
+        # Requires Intel MKL to be installed.
+        # Install: ] add LinearSolve Pardiso
+        # Note: also try :pardiso_iter for iterative Pardiso variant.
+        @isdefined(LinearSolve) ||
+            error(":pardiso requires `using LinearSolve` and Intel MKL")
+        n = size(A, 1)
+        b_dummy = zeros(Float64, n)
+        prob  = LinearSolve.LinearProblem(A, b_dummy)
+        cache = LinearSolve.init(prob, LinearSolve.MKLPardisoFactorize())
+        LinearSolve.solve!(cache)
+        return LinearSolveFactor(cache, n)
+
+    elseif solver == :strumpack
+        # STRUMPACK: sparse direct solver with optional low-rank compression.
+        # Supports both shared (OpenMP) and distributed (MPI) parallelism.
+        # Requires STRUMPACK_jll to be imported BEFORE using LinearSolve
+        # so the extension is loaded:
+        #   import STRUMPACK_jll; using LinearSolve
+        # Install: ] add LinearSolve STRUMPACK_jll
+        @isdefined(LinearSolve) ||
+            error(":strumpack requires `import STRUMPACK_jll; using LinearSolve`")
+        isdefined(LinearSolve, :STRUMPACKFactorization) ||
+            error(":strumpack: STRUMPACKFactorization not found — " *
+                  "ensure `import STRUMPACK_jll` is called BEFORE `using LinearSolve`")
+        n = size(A, 1)
+        b_dummy = zeros(Float64, n)
+        prob  = LinearSolve.LinearProblem(A, b_dummy)
+        cache = LinearSolve.init(prob, LinearSolve.STRUMPACKFactorization())
+        LinearSolve.solve!(cache)
+        return LinearSolveFactor(cache, n)
+
+    elseif solver == :mumps
+        # MUMPS: multifrontal parallel sparse direct solver (JuliaSmoothOptimizers).
+        # Install: ] add MUMPS;  Usage: using MUMPS
+        # NOTE: Known MPI communicator conflicts on macOS with OpenMPI.
+        #       Recommended for cluster use with system MPI only.
+        @isdefined(MUMPS) ||
+            error(":mumps requires `using MUMPS` (] add MUMPS)")
+        # High-level API: mumps_factorize takes SparseMatrixCSC directly
+        mumps_obj = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
+                                          MUMPS.default_icntl,
+                                          MUMPS.default_cntl64)
+        MUMPS.associate_matrix!(mumps_obj, A)
+        MUMPS.factorize!(mumps_obj)
+        return mumps_obj
+
     else
-        error("Unknown solver: $solver. Choose :klu, :splu, :lu, :rcmsplu, " *
-              ":rcmilu, :rcmilu0, :ilu, :ilu0, :spilu")
+        error("Unknown solver: $solver. Options:
+" *
+              "  Local:   :klu, :splu, :lu, :rcmsplu, :rcmilu, :rcmilu0, :ilu, :ilu0, :spilu
+" *
+              "  Parallel (require extra packages):
+" *
+              "    :paru      — ParU (OpenMP, SuiteSparse) — add LinearSolve ParU_jll
+" *
+              "    :pardiso   — MKL Pardiso (OpenMP, Intel MKL) — add LinearSolve
+" *
+              "    :strumpack — STRUMPACK (OpenMP/MPI) — add LinearSolve STRUMPACK_jll
+" *
+              "    :mumps     — MUMPS (MPI distributed) — add MUMPS_jll")
     end
 end
+
+# Note: MUMPS.jl (JuliaSmoothOptimizers) defines ldiv! for Mumps objects automatically.
+# LinearSolveFactor.ldiv! handles ParU/Pardiso/STRUMPACK via LinearSolve.jl cache.
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  build_asm_preconditioner
@@ -409,16 +511,132 @@ function build_global_factorization_preconditioner(
             MPI.Allreduce!(x_global, MPI.SUM, comm)
 
             fill!(y_global, 0.0)
-            if rank == 0
-                y_sub = view(y_global, 1:actual_gnpoin)
+            y_sub = view(y_global, 1:actual_gnpoin)
+            # Check if global_factor is a MUMPS object (MPI-collective ldiv!)
+            # If so all ranks must call ldiv! together.
+            # For non-MPI solvers (UMFPACK, KLU, ParU etc.) only rank 0 solves.
+            is_mumps = @isdefined(MUMPS) && global_factor isa MUMPS.Mumps
+            if is_mumps
+                # All ranks participate in MUMPS solve
                 LinearAlgebra.ldiv!(y_sub, global_factor, x_global)
+            else
+                if rank == 0
+                    LinearAlgebra.ldiv!(y_sub, global_factor, x_global)
+                end
+                MPI.Bcast!(y_global, 0, comm)
             end
+            copyto!(y, y_global)
+            return y
+        end)
+end
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  build_mumps_preconditioner
+#
+#  Fully distributed MUMPS preconditioner — each MPI rank contributes its
+#  local matrix directly. MUMPS handles distributed assembly, symbolic
+#  analysis, and numeric factorization internally across all ranks.
+#  No gather-to-rank-0 step — true distributed-memory parallel factorization.
+#
+#  Contrast with :global_mumps which gathers to rank 0 first (cheaper for
+#  small rank counts but loses distributed scalability).
+#
+#  Requires: using MUMPS (] add MUMPS)
+#  MUMPS must be initialised within the same MPI communicator.
+#  NOTE: Known MPI communicator conflicts on macOS with OpenMPI.
+#        Recommended for cluster use with system MPI only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+function build_mumps_preconditioner(
+        A_local   :: AbstractSparseMatrix{Float64},
+        ip2gip    :: AbstractVector{Int},
+        gip2owner :: AbstractVector{Int},
+        gnpoin    :: Int;
+        npoin_g   :: Int         = length(ip2gip),
+        g_ip2gip  :: Vector{Int} = Int[],
+        comm      :: MPI.Comm    = MPI.COMM_WORLD)
+
+    @isdefined(MUMPS) ||
+        error(":mumps_dist requires `using MUMPS` (] add MUMPS)")
+
+    rank   = MPI.Comm_rank(comm)
+    npoin  = length(ip2gip)
+
+    # Build global GID-indexed local matrix contribution.
+    # Each rank provides its owned rows in global (GID) indexing.
+    # MUMPS assembles the global system from all ranks' contributions.
+    has_ghosts_g = npoin_g > npoin
+    ip2gip_g_loc = Vector{Int}(undef, npoin_g)
+    ip2gip_g_loc[1:npoin] .= ip2gip
+    if has_ghosts_g; ip2gip_g_loc[npoin+1:npoin_g] .= g_ip2gip; end
+
+    # Actual global DOF count
+    local_max_gid = maximum(ip2gip)
+    actual_gnpoin = MPI.Allreduce(local_max_gid, MPI.MAX, comm)
+
+    # Build GID-indexed local matrix (owned rows only, all cols)
+    local_I = Int[]; local_J = Int[]; local_V = Float64[]
+    rows_sp = rowvals(A_local); vals_sp = nonzeros(A_local)
+    for col_ip = 1:npoin_g
+        col_gid = ip2gip_g_loc[col_ip]
+        col_gid > actual_gnpoin && continue
+        for idx in nzrange(A_local, col_ip)
+            row_ip  = rows_sp[idx]
+            row_gid = ip2gip_g_loc[row_ip]
+            row_gid > actual_gnpoin && continue
+            push!(local_I, row_gid)
+            push!(local_J, col_gid)
+            push!(local_V, vals_sp[idx])
+        end
+    end
+
+    # Assemble local sparse matrix in global GID indexing
+    A_local_gid = sparse(local_I, local_J, local_V,
+                         actual_gnpoin, actual_gnpoin)
+
+    # Initialise MUMPS — all ranks participate
+    mumps_handle = MUMPS.Mumps{Float64}(
+        MUMPS.mumps_unsymmetric,
+        MUMPS.default_icntl,
+        MUMPS.default_cntl64)
+
+    # Each rank provides its local contribution; MUMPS assembles globally
+    MUMPS.associate_matrix!(mumps_handle, A_local_gid)
+    t = @elapsed MUMPS.factorize!(mumps_handle)
+    rank == 0 && @info "MUMPS distributed factorization: $(round(t,digits=3))s"
+
+    # Work vector for RHS/solution
+    rhs_buf = zeros(Float64, actual_gnpoin)
+    y_global = zeros(Float64, gnpoin)
+
+    return LinearOperator(Float64, gnpoin, gnpoin, false, false,
+        (y, x) -> begin
+            # Gather owned DOF values into complete global RHS on all ranks
+            fill!(rhs_buf, 0.0)
+            @inbounds for ip = 1:npoin
+                gip2owner[ip] == rank || continue
+                gid = ip2gip[ip]
+                gid <= actual_gnpoin || continue
+                rhs_buf[gid] = x[gid]
+            end
+            MPI.Allreduce!(rhs_buf, MPI.SUM, comm)
+
+            # MUMPS solve — all ranks participate
+            MUMPS.associate_rhs!(mumps_handle, rhs_buf)
+            MUMPS.solve!(mumps_handle)
+
+            # Retrieve solution on rank 0, broadcast to all
+            fill!(y_global, 0.0)
+            if rank == 0
+                sol = MUMPS.get_solution(mumps_handle)
+                copyto!(view(y_global, 1:actual_gnpoin), sol)
+            end
             MPI.Bcast!(y_global, 0, comm)
             copyto!(y, y_global)
             return y
         end)
 end
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Jacobi preconditioner
@@ -533,10 +751,14 @@ function solve_parallel_gmres_asm(
                      :rcmsplu, :rcmilu, :rcmilu0)
     # Global solvers — route through build_global_factorization_preconditioner
     global_solver_map = Dict(
-        :global_klu   => :klu,
-        :global_lu    => :rcmsplu,
-        :global_ilu   => :rcmilu,
-        :global_ilu0  => :rcmilu0,
+        :global_klu      => :klu,
+        :global_lu       => :rcmsplu,
+        :global_ilu      => :rcmilu,
+        :global_ilu0     => :rcmilu0,
+        :global_paru     => :paru,      # ParU parallel (OpenMP)
+        :global_pardiso  => :pardiso,   # MKL Pardiso parallel (OpenMP)
+        :global_strumpack => :strumpack, # STRUMPACK (OpenMP/MPI)
+        :global_mumps    => :mumps,     # MUMPS distributed (MPI)
     )
 
     effective_precond = precond
@@ -548,6 +770,8 @@ function solve_parallel_gmres_asm(
     elseif haskey(global_solver_map, precond)
         effective_precond = :global
         effective_solver  = global_solver_map[precond]
+    elseif precond == :mumps_dist
+        effective_precond = :mumps_dist
     end
 
     # ── Build preconditioner ──────────────────────────────────────────────────
@@ -559,6 +783,11 @@ function solve_parallel_gmres_asm(
     elseif effective_precond == :global
         build_global_factorization_preconditioner(A_local, ip2gip, gip2owner, gnpoin;
             solver=effective_solver, ilu_tau=asm_ilu_tau,
+            npoin_g=npoin_g, g_ip2gip=g_ip2gip, comm=comm)
+
+    elseif effective_precond == :mumps_dist
+        # Fully distributed MUMPS — no gather, true distributed factorization
+        build_mumps_preconditioner(A_local, ip2gip, gip2owner, gnpoin;
             npoin_g=npoin_g, g_ip2gip=g_ip2gip, comm=comm)
 
     elseif effective_precond == :inner_gmres
@@ -577,7 +806,7 @@ function solve_parallel_gmres_asm(
                        "restart=$restart tol=$tol DOFs=$gnpoin ranks=$(MPI.Comm_size(comm))"
 
     # Global preconditioners are nonlinear (contain MPI collectives) → fgmres
-    use_fgmres = effective_precond in (:global, :inner_gmres)
+    use_fgmres = effective_precond in (:global, :inner_gmres, :mumps_dist)
     krylov_solve = use_fgmres ? Krylov.fgmres : Krylov.gmres
 
     t_solve = @elapsed begin
