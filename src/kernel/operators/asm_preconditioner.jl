@@ -26,7 +26,7 @@
 #    # Requires libstrumpack — verify with:
 #    #   import Libdl; Libdl.find_library(["libstrumpack"])
 #
-#  :global_mumps / :mumps_dist
+#  :mumps_dist
 #    using MUMPS              # standalone, no LinearSolve needed
 #    # Requires system MPI — set JULIA_MPI_BINARY=system and rebuild MPI.jl
 #    # Recommended env vars:
@@ -37,7 +37,7 @@
 #  ── Preconditioner options ────────────────────────────────────────────────
 #  Local ASM:      :klu :rcmsplu :rcmilu :rcmilu0 :splu :lu :ilu :ilu0 :spilu
 #  Global (rank0): :global_klu :global_lu :global_ilu :global_ilu0
-#                  :global_paru :global_pardiso :global_strumpack :global_mumps
+#                  :global_paru :global_pardiso :global_strumpack
 #  Distributed:    :mumps_dist
 #  Other:          :jacobi :inner_gmres :none
 # ═════════════════════════════════════════════════════════════════════════════
@@ -52,8 +52,8 @@ using Krylov
 using LinearOperators
 using AMD
 using LinearSolve
-using MUMPS
 using Pardiso
+using MUMPS
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ASMPreconditioner
@@ -289,8 +289,9 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         # Install: ] add LinearSolve ParU_jll
         @isdefined(LinearSolve) ||
             error(":paru requires `import ParU_jll; using LinearSolve`")
-        @isdefined(LinearSolve, :ParUFactorization) ||
-            error(":paru: ParUFactorization not found — ensure `import ParU_jll` is called BEFORE `using LinearSolve`")
+        isdefined(LinearSolve, :ParUFactorization) ||
+            error(":paru: ParUFactorization not found — " *
+                  "ensure `import ParU_jll` is called BEFORE `using LinearSolve`")
         n = size(A, 1)
         b_dummy = zeros(Float64, n)
         prob  = LinearSolve.LinearProblem(A, b_dummy)
@@ -321,76 +322,25 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         # Install: ] add LinearSolve STRUMPACK_jll
         @isdefined(LinearSolve) ||
             error(":strumpack requires `import STRUMPACK_jll; using LinearSolve`")
+        if !isdefined(LinearSolve, :STRUMPACKFactorization)
+            @isdefined(STRUMPACK_jll) ||
+                error(":strumpack: `import STRUMPACK_jll` must come before `using LinearSolve`")
+            # Library may not be in system search path — load via jll path explicitly
+            import Libdl
+            Libdl.dlopen(STRUMPACK_jll.libstrumpack, Libdl.RTLD_GLOBAL)
+        end
+        isdefined(LinearSolve, :STRUMPACKFactorization) ||
+            error(":strumpack: extension still not loaded after dlopen — "
+                  * "restart Julia and ensure `import STRUMPACK_jll` comes before `using LinearSolve`")
         n = size(A, 1)
         b_dummy = zeros(Float64, n)
         prob  = LinearSolve.LinearProblem(A, b_dummy)
-        # STRUMPACKFactorization targets single-node multithreaded sparse LU
-        # Thread count controlled by OMP_NUM_THREADS environment variable
         cache = LinearSolve.init(prob, LinearSolve.STRUMPACKFactorization())
         LinearSolve.solve!(cache)
         return LinearSolveFactor(cache, n)
 
-    elseif solver == :mumps
-        # MUMPS: multifrontal parallel sparse direct solver (JuliaSmoothOptimizers).
-        # Install: ] add MUMPS;  Usage: using MUMPS
-        # NOTE: Known MPI communicator conflicts on macOS with OpenMPI.
-        #       Recommended for cluster use with system MPI only.
-        @isdefined(MUMPS) ||
-            error(":mumps requires `using MUMPS` (] add MUMPS)")
-        # High-level API: mumps_factorize takes SparseMatrixCSC directly
-        # Use set_icntl! and set_job! (proper API, works on constructed Mumps object)
-        # Run analysis first (JOB=1) to get memory estimate, then factorize (JOB=2)
-        mumps_obj = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
-                                          MUMPS.default_icntl,
-                                          MUMPS.default_cntl64)
-        MUMPS.set_icntl!(mumps_obj, 1, -1;   displaylevel=0)  # suppress output
-        MUMPS.set_icntl!(mumps_obj, 2, -1;   displaylevel=0)
-        MUMPS.set_icntl!(mumps_obj, 3, -1;   displaylevel=0)
-        MUMPS.set_icntl!(mumps_obj, 4,  1;   displaylevel=0)  # errors only
-        MUMPS.associate_matrix!(mumps_obj, A)
-        # Analysis phase only — populates infog[16] with memory estimate
-        MUMPS.set_job!(mumps_obj, 1)
-        MUMPS.invoke_mumps!(mumps_obj)
-        analysis_err = mumps_obj.infog[1]
-        if analysis_err == 0
-            mem_est   = mumps_obj.infog[16]   # max MB per process estimate
-            mem_limit = ceil(Int32, mem_est * 1.5)
-            @info "MUMPS analysis: ~$(mem_est)MB/proc → allocating $(mem_limit)MB/proc"
-            MUMPS.set_icntl!(mumps_obj, 23, mem_limit)
-        else
-            @warn "MUMPS analysis failed (INFO(1)=$analysis_err), using default memory"
-        end
-        # Factorization phase
-        MUMPS.set_job!(mumps_obj, 2)
-        MUMPS.invoke_mumps!(mumps_obj)
-        infog1 = mumps_obj.infog[1]
-        if infog1 == -10
-            # Still out of memory — double the limit and retry
-            mem_limit2 = ceil(Int32, mumps_obj.infog[16] * 3.0)
-            @warn "MUMPS out of memory, retrying with $(mem_limit2)MB/proc"
-            MUMPS.set_icntl!(mumps_obj, 23, mem_limit2)
-            MUMPS.set_job!(mumps_obj, 2)
-            MUMPS.invoke_mumps!(mumps_obj)
-            infog1 = mumps_obj.infog[1]
-        end
-        infog1 == 0 || error("MUMPS factorization failed INFO(1)=$infog1 " *
-                             "INFO(2)=$(mumps_obj.infog[2])")
-        return mumps_obj
-
     else
-        error("Unknown solver: $solver. Options:
-" *
-              "  Local:   :klu, :splu, :lu, :rcmsplu, :rcmilu, :rcmilu0, :ilu, :ilu0, :spilu
-" *
-              "  Parallel (require extra packages):
-" *
-              "    :paru      — ParU (OpenMP, SuiteSparse) — add LinearSolve ParU_jll
-" *
-              "    :pardiso   — MKL Pardiso (OpenMP, Intel MKL) — add LinearSolve
-" *
-              "    :strumpack — STRUMPACK (OpenMP/MPI) — add LinearSolve STRUMPACK_jll
-" *
-              "    :mumps     — MUMPS (MPI distributed) — add MUMPS_jll")
+        error("Unknown solver: $solver")
     end
 end
 
@@ -611,8 +561,7 @@ end
 #  analysis, and numeric factorization internally across all ranks.
 #  No gather-to-rank-0 step — true distributed-memory parallel factorization.
 #
-#  Contrast with :global_mumps which gathers to rank 0 first (cheaper for
-#  small rank counts but loses distributed scalability).
+#  Matrix gathered to rank 0 via Allgatherv; MUMPS factorizes across all ranks.
 #
 #  Requires: using MUMPS (] add MUMPS)
 #  MUMPS must be initialised within the same MPI communicator.
@@ -671,12 +620,7 @@ function build_mumps_preconditioner(
     MUMPS.set_icntl!(mumps_handle, 2, -1; displaylevel=0)
     MUMPS.set_icntl!(mumps_handle, 3, -1; displaylevel=0)
     MUMPS.set_icntl!(mumps_handle, 4,  1; displaylevel=0)
-    # ICNTL(18)=0: matrix assembled on host (rank 0).
-    # Each rank sends its completed owned rows; rank 0 assembles the global matrix
-    # via Allgatherv (same as global_lu) and MUMPS factorizes using all MPI ranks.
-    # This is simpler and more reliable than ICNTL(18)=3 distributed input.
-    # True distributed input (ICNTL(18)=3) requires COO format on each rank
-    # which is complex to set up correctly — use global_mumps for now.
+    # ICNTL(18)=0: matrix assembled on rank 0, factorization distributed across all ranks.
 
     # Gather complete matrix to rank 0 for MUMPS (same as global_lu approach)
     # Allgatherv of owned rows from all ranks
@@ -880,7 +824,6 @@ function solve_parallel_gmres_asm(
         :global_paru     => :paru,      # ParU parallel (OpenMP)
         :global_pardiso  => :pardiso,   # MKL Pardiso parallel (OpenMP)
         :global_strumpack => :strumpack, # STRUMPACK (OpenMP/MPI)
-        :global_mumps    => :mumps,     # MUMPS distributed (MPI)
     )
 
     effective_precond = precond
