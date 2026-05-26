@@ -322,6 +322,7 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         # Install: ] add LinearSolve STRUMPACK_jll
         @isdefined(LinearSolve) ||
             error(":strumpack requires `import STRUMPACK_jll; using LinearSolve`")
+
         n = size(A, 1)
         b_dummy = zeros(Float64, n)
         prob  = LinearSolve.LinearProblem(A, b_dummy)
@@ -339,30 +340,39 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         @isdefined(MUMPS) ||
             error(":mumps requires `using MUMPS` (] add MUMPS)")
         # High-level API: mumps_factorize takes SparseMatrixCSC directly
-        # Correct API: pass modified icntl at construction time
-        # (icntl field is immutable NTuple — cannot be mutated after construction)
-        # First pass: run analysis+factorization with default settings
-        icntl_v = MUMPS.default_icntl[:]
-        icntl_v[1] = -1; icntl_v[2] = -1; icntl_v[3] = -1; icntl_v[4] = 1
-        icntl_v[14] = 50
+        # Use set_icntl! and set_job! (proper API, works on constructed Mumps object)
+        # Run analysis first (JOB=1) to get memory estimate, then factorize (JOB=2)
         mumps_obj = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
-                                          icntl_v, MUMPS.default_cntl64)
+                                          MUMPS.default_icntl,
+                                          MUMPS.default_cntl64)
+        MUMPS.set_icntl!(mumps_obj, 1, -1)   # suppress output
+        MUMPS.set_icntl!(mumps_obj, 2, -1)
+        MUMPS.set_icntl!(mumps_obj, 3, -1)
+        MUMPS.set_icntl!(mumps_obj, 4,  1)   # errors only
         MUMPS.associate_matrix!(mumps_obj, A)
-        MUMPS.factorize!(mumps_obj)
+        # Analysis phase only — populates infog[16] with memory estimate
+        MUMPS.set_job!(mumps_obj, 1)
+        MUMPS.invoke_mumps!(mumps_obj)
+        analysis_err = mumps_obj.infog[1]
+        if analysis_err == 0
+            mem_est   = mumps_obj.infog[16]   # max MB per process estimate
+            mem_limit = ceil(Int32, mem_est * 1.5)
+            @info "MUMPS analysis: ~$(mem_est)MB/proc → allocating $(mem_limit)MB/proc"
+            MUMPS.set_icntl!(mumps_obj, 23, mem_limit)
+        else
+            @warn "MUMPS analysis failed (INFO(1)=$analysis_err), using default memory"
+        end
+        # Factorization phase
+        MUMPS.set_job!(mumps_obj, 2)
+        MUMPS.invoke_mumps!(mumps_obj)
         infog1 = mumps_obj.infog[1]
         if infog1 == -10
-            # Out of memory — read estimate, reconstruct with explicit limit
-            mem_est   = mumps_obj.infog[16]
-            mem_limit = ceil(Int32, mem_est * 2.0)
-            @info "MUMPS out of memory (INFO(1)=-10), retrying with $(mem_limit)MB/proc"
-            MUMPS.finalize(mumps_obj)
-            icntl_v2 = MUMPS.default_icntl[:]
-            icntl_v2[1] = -1; icntl_v2[2] = -1; icntl_v2[3] = -1; icntl_v2[4] = 1
-            icntl_v2[23] = mem_limit
-            mumps_obj = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
-                                              icntl_v2, MUMPS.default_cntl64)
-            MUMPS.associate_matrix!(mumps_obj, A)
-            MUMPS.factorize!(mumps_obj)
+            # Still out of memory — double the limit and retry
+            mem_limit2 = ceil(Int32, mumps_obj.infog[16] * 3.0)
+            @warn "MUMPS out of memory, retrying with $(mem_limit2)MB/proc"
+            MUMPS.set_icntl!(mumps_obj, 23, mem_limit2)
+            MUMPS.set_job!(mumps_obj, 2)
+            MUMPS.invoke_mumps!(mumps_obj)
             infog1 = mumps_obj.infog[1]
         end
         infog1 == 0 || error("MUMPS factorization failed INFO(1)=$infog1 " *
@@ -660,35 +670,42 @@ function build_mumps_preconditioner(
                          actual_gnpoin, actual_gnpoin)
 
     # Initialise MUMPS — all ranks participate
-    # Pass modified icntl at construction time (NTuple is immutable)
-    icntl_d = MUMPS.default_icntl[:]
-    icntl_d[1] = -1; icntl_d[2] = -1; icntl_d[3] = -1; icntl_d[4] = 1
-    icntl_d[14] = 50
     mumps_handle = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
-                                         icntl_d, MUMPS.default_cntl64)
+                                         MUMPS.default_icntl,
+                                         MUMPS.default_cntl64)
+    MUMPS.set_icntl!(mumps_handle, 1, -1)
+    MUMPS.set_icntl!(mumps_handle, 2, -1)
+    MUMPS.set_icntl!(mumps_handle, 3, -1)
+    MUMPS.set_icntl!(mumps_handle, 4,  1)
 
     # Each rank provides its local contribution; MUMPS assembles globally
     MUMPS.associate_matrix!(mumps_handle, A_local_gid)
-    t = @elapsed MUMPS.factorize!(mumps_handle)
+
+    # Analysis phase — get memory estimate before factorization
+    MUMPS.set_job!(mumps_handle, 1)
+    MUMPS.invoke_mumps!(mumps_handle)
+    if mumps_handle.infog[1] == 0
+        mem_est   = mumps_handle.infog[16]
+        mem_limit = ceil(Int32, mem_est * 1.5)
+        rank == 0 && @info "MUMPS dist analysis: ~$(mem_est)MB/proc → $(mem_limit)MB/proc"
+        MUMPS.set_icntl!(mumps_handle, 23, mem_limit)
+    end
+
+    # Factorization phase
+    MUMPS.set_job!(mumps_handle, 2)
+    t = @elapsed MUMPS.invoke_mumps!(mumps_handle)
     infog1 = mumps_handle.infog[1]
 
     if infog1 == -10
-        # Out of memory — read estimate, finalize, reconstruct with explicit limit
-        mem_est   = mumps_handle.infog[16]
-        mem_limit = ceil(Int32, mem_est * 2.0)
-        rank == 0 && @warn "MUMPS dist out of memory, retrying with $(mem_limit)MB/proc"
-        MUMPS.finalize(mumps_handle)
-        icntl_d2 = MUMPS.default_icntl[:]
-        icntl_d2[1] = -1; icntl_d2[2] = -1; icntl_d2[3] = -1; icntl_d2[4] = 1
-        icntl_d2[23] = mem_limit
-        mumps_handle = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
-                                             icntl_d2, MUMPS.default_cntl64)
-        MUMPS.associate_matrix!(mumps_handle, A_local_gid)
-        t = @elapsed MUMPS.factorize!(mumps_handle)
+        mem_limit2 = ceil(Int32, mumps_handle.infog[16] * 3.0)
+        rank == 0 && @warn "MUMPS dist out of memory, retrying with $(mem_limit2)MB/proc"
+        MUMPS.set_icntl!(mumps_handle, 23, mem_limit2)
+        MUMPS.set_job!(mumps_handle, 2)
+        t = @elapsed MUMPS.invoke_mumps!(mumps_handle)
         infog1 = mumps_handle.infog[1]
     end
     if infog1 != 0
-        rank == 0 && @warn "MUMPS dist factorization failed INFO(1)=$infog1 — preconditioner will be identity"
+        rank == 0 && @warn "MUMPS dist factorization failed INFO(1)=$infog1"
     else
         rank == 0 && @info "MUMPS distributed factorization: $(round(t,digits=3))s"
     end
