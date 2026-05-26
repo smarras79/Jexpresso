@@ -214,7 +214,7 @@ function user_inputs()
         :L_fun              => L_fun!,
         :upd_L              => false,
         :build_L            => build_L,
-#        :lsolve             => lsolve,
+        :lsolve             => lsolve,
         :solver_precision   => TFloat,
         :nl_precision       => TFloat,
         #---------------------------------------------------------------------------
