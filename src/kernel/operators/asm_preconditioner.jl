@@ -274,14 +274,6 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         # Install: ] add LinearSolve STRUMPACK_jll
         @isdefined(LinearSolve) ||
             error(":strumpack requires `import STRUMPACK_jll; using LinearSolve`")
-        isdefined(LinearSolve, :STRUMPACKFactorization) ||
-            error(":strumpack: STRUMPACKFactorization not found in LinearSolve.
-" *
-                  "  1. Ensure STRUMPACK_jll is installed: ] add STRUMPACK_jll
-" *
-                  "  2. Import BEFORE using LinearSolve: import STRUMPACK_jll; using LinearSolve
-" *
-                  "  3. Verify libstrumpack is discoverable (check with Libdl.find_library(["libstrumpack"]))")
         n = size(A, 1)
         b_dummy = zeros(Float64, n)
         prob  = LinearSolve.LinearProblem(A, b_dummy)
