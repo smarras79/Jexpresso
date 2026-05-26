@@ -51,10 +51,9 @@ using IncompleteLU
 using Krylov
 using LinearOperators
 using AMD
+using LinearSolve
 using Pardiso
 using MUMPS
-using LinearSolve
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  ASMPreconditioner
 # ─────────────────────────────────────────────────────────────────────────────
@@ -675,16 +674,32 @@ function build_mumps_preconditioner(
     MUMPS.set_icntl!(mumps_handle, 2, -1; displaylevel=0)
     MUMPS.set_icntl!(mumps_handle, 3, -1; displaylevel=0)
     MUMPS.set_icntl!(mumps_handle, 4,  1; displaylevel=0)
-    # ICNTL(18)=3: matrix is distributed — each rank provides its own entries.
-    # Without this MUMPS assumes only rank 0 has the complete matrix (ICNTL(18)=0).
-    MUMPS.set_icntl!(mumps_handle, 18, 3; displaylevel=0)
+    # ICNTL(18)=0: matrix assembled on host (rank 0).
+    # Each rank sends its completed owned rows; rank 0 assembles the global matrix
+    # via Allgatherv (same as global_lu) and MUMPS factorizes using all MPI ranks.
+    # This is simpler and more reliable than ICNTL(18)=3 distributed input.
+    # True distributed input (ICNTL(18)=3) requires COO format on each rank
+    # which is complex to set up correctly — use global_mumps for now.
 
-    # Each rank provides its local entries in COO format.
-    # With ICNTL(18)=3, MUMPS expects distributed input via (n, irow, jcol, vals).
-    # Extract COO from A_local_gid (already in global GID indexing)
-    coo_A = findnz(A_local_gid)   # (I, J, V) in global indices
-    MUMPS.associate_matrix!(mumps_handle, actual_gnpoin,
-                             coo_A[1], coo_A[2], coo_A[3])
+    # Gather complete matrix to rank 0 for MUMPS (same as global_lu approach)
+    # Allgatherv of owned rows from all ranks
+    n_local_m   = Int32(length(local_V))
+    counts_m    = MPI.Allgather([n_local_m], comm)
+    send_ij_m   = Vector{Int}(undef, 2*n_local_m)
+    for k = 1:n_local_m
+        send_ij_m[2k-1] = local_I[k]; send_ij_m[2k] = local_J[k]
+    end
+    all_ij_m = MPI.Allgatherv(send_ij_m, Int32.(counts_m .* 2), comm)
+    all_v_m  = MPI.Allgatherv(local_V, counts_m, comm)
+
+    if rank == 0
+        n_total_m = length(all_v_m)
+        GI_m = [all_ij_m[2k-1] for k=1:n_total_m]
+        GJ_m = [all_ij_m[2k]   for k=1:n_total_m]
+        A_global_m = sparse(GI_m, GJ_m, all_v_m, actual_gnpoin, actual_gnpoin)
+        @info "MUMPS dist: global matrix $(actual_gnpoin)×$(actual_gnpoin), nnz=$(nnz(A_global_m))"
+        MUMPS.associate_matrix!(mumps_handle, A_global_m)
+    end
 
     # Analysis phase — get memory estimate before factorization
     MUMPS.set_job!(mumps_handle, 1)
