@@ -51,9 +51,10 @@ using IncompleteLU
 using Krylov
 using LinearOperators
 using AMD
-using LinearSolve
-using Pardiso
 using MUMPS
+using Pardiso
+using LinearSolve
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  ASMPreconditioner
 # ─────────────────────────────────────────────────────────────────────────────
@@ -343,10 +344,10 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         mumps_obj = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
                                           MUMPS.default_icntl,
                                           MUMPS.default_cntl64)
-        MUMPS.set_icntl!(mumps_obj, 1, -1)   # suppress output
-        MUMPS.set_icntl!(mumps_obj, 2, -1)
-        MUMPS.set_icntl!(mumps_obj, 3, -1)
-        MUMPS.set_icntl!(mumps_obj, 4,  1)   # errors only
+        MUMPS.set_icntl!(mumps_obj, 1, -1;   displaylevel=0)  # suppress output
+        MUMPS.set_icntl!(mumps_obj, 2, -1;   displaylevel=0)
+        MUMPS.set_icntl!(mumps_obj, 3, -1;   displaylevel=0)
+        MUMPS.set_icntl!(mumps_obj, 4,  1;   displaylevel=0)  # errors only
         MUMPS.associate_matrix!(mumps_obj, A)
         # Analysis phase only — populates infog[16] with memory estimate
         MUMPS.set_job!(mumps_obj, 1)
@@ -666,14 +667,23 @@ function build_mumps_preconditioner(
     A_local_gid = sparse(local_I, local_J, local_V,
                          actual_gnpoin, actual_gnpoin)
 
+    # Diagnostic: verify A_local_gid has no zero diagonal
+    d_local_gid = diag(A_local_gid)
+    n_zero_d = count(==(0.0), d_local_gid)
+    if n_zero_d > 0
+        @warn "Rank $rank: A_local_gid has $n_zero_d zero diagonal entries — may cause pivot failures"
+    else
+        @info "Rank $rank: A_local_gid $(size(A_local_gid,1))×$(size(A_local_gid,1)) nnz=$(nnz(A_local_gid)) zero_diag=$n_zero_d"
+    end
+
     # Initialise MUMPS — all ranks participate
     mumps_handle = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
                                          MUMPS.default_icntl,
                                          MUMPS.default_cntl64)
-    MUMPS.set_icntl!(mumps_handle, 1, -1)
-    MUMPS.set_icntl!(mumps_handle, 2, -1)
-    MUMPS.set_icntl!(mumps_handle, 3, -1)
-    MUMPS.set_icntl!(mumps_handle, 4,  1)
+    MUMPS.set_icntl!(mumps_handle, 1, -1; displaylevel=0)
+    MUMPS.set_icntl!(mumps_handle, 2, -1; displaylevel=0)
+    MUMPS.set_icntl!(mumps_handle, 3, -1; displaylevel=0)
+    MUMPS.set_icntl!(mumps_handle, 4,  1; displaylevel=0)
 
     # Each rank provides its local contribution; MUMPS assembles globally
     MUMPS.associate_matrix!(mumps_handle, A_local_gid)
