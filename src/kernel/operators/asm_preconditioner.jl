@@ -20,12 +20,6 @@
 #    # Recommended env vars:
 #    #   export MKL_NUM_THREADS=<cores_per_node>
 #
-#  :global_strumpack
-#    import STRUMPACK_jll     # must come BEFORE using LinearSolve
-#    using LinearSolve
-#    # Requires libstrumpack — verify with:
-#    #   import Libdl; Libdl.find_library(["libstrumpack"])
-#
 #  :mumps_dist
 #    using MUMPS              # standalone, no LinearSolve needed
 #    # Requires system MPI — set JULIA_MPI_BINARY=system and rebuild MPI.jl
@@ -37,12 +31,11 @@
 #  ── Preconditioner options ────────────────────────────────────────────────
 #  Local ASM:      :klu :rcmsplu :rcmilu :rcmilu0 :splu :lu :ilu :ilu0 :spilu
 #  Global (rank0): :global_klu :global_lu :global_ilu :global_ilu0
-#                  :global_paru :global_pardiso :global_strumpack
+#                  :global_paru :global_pardiso
 #  Distributed:    :mumps_dist
 #  Other:          :jacobi :inner_gmres :none
 # ═════════════════════════════════════════════════════════════════════════════
 import ParU_jll
-import STRUMPACK_jll
 using SparseArrays
 using LinearAlgebra
 using KLU
@@ -240,7 +233,7 @@ end
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── LinearSolve.jl wrapper for advanced solvers ──────────────────────────────
-#  Used for :paru, :pardiso, :strumpack solvers.
+#  Used for :paru, :pardiso solvers.
 #  Returns a wrapper that acts like a factorization via ldiv!.
 struct LinearSolveFactor
     cache :: Any   # LinearSolve cache object
@@ -313,39 +306,23 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         LinearSolve.solve!(cache)
         return LinearSolveFactor(cache, n)
 
-    elseif solver == :strumpack
-        # STRUMPACK: sparse direct solver with optional low-rank compression.
-        # Supports both shared (OpenMP) and distributed (MPI) parallelism.
-        # Requires STRUMPACK_jll to be imported BEFORE using LinearSolve
-        # so the extension is loaded:
-        #   import STRUMPACK_jll; using LinearSolve
-        # Install: ] add LinearSolve STRUMPACK_jll
-        @isdefined(LinearSolve) ||
-            error(":strumpack requires `import STRUMPACK_jll; using LinearSolve`")
-        if !isdefined(LinearSolve, :STRUMPACKFactorization)
-            @isdefined(STRUMPACK_jll) ||
-                error(":strumpack: `import STRUMPACK_jll` must come before `using LinearSolve`")
-            # Library may not be in system search path — load via jll path explicitly
-            import Libdl
-            Libdl.dlopen(STRUMPACK_jll.libstrumpack, Libdl.RTLD_GLOBAL)
-        end
-        isdefined(LinearSolve, :STRUMPACKFactorization) ||
-            error(":strumpack: extension still not loaded after dlopen — "
-                  * "restart Julia and ensure `import STRUMPACK_jll` comes before `using LinearSolve`")
-        n = size(A, 1)
-        b_dummy = zeros(Float64, n)
-        prob  = LinearSolve.LinearProblem(A, b_dummy)
-        cache = LinearSolve.init(prob, LinearSolve.STRUMPACKFactorization())
-        LinearSolve.solve!(cache)
-        return LinearSolveFactor(cache, n)
-
     else
-        error("Unknown solver: $solver")
+        error("Unknown solver: $solver. Options:
+" *
+              "  Local:   :klu, :splu, :lu, :rcmsplu, :rcmilu, :rcmilu0, :ilu, :ilu0, :spilu
+" *
+              "  Parallel (require extra packages):
+" *
+              "    :paru      — ParU (OpenMP, SuiteSparse) — add LinearSolve ParU_jll
+" *
+              "    :pardiso   — MKL Pardiso (OpenMP, Intel MKL) — add LinearSolve
+" *
+              "    :pardiso   — MKL Pardiso (OpenMP) — add LinearSolve Pardiso")
     end
 end
 
 # Note: MUMPS.jl (JuliaSmoothOptimizers) defines ldiv! for Mumps objects automatically.
-# LinearSolveFactor.ldiv! handles ParU/Pardiso/STRUMPACK via LinearSolve.jl cache.
+# LinearSolveFactor.ldiv! handles ParU/Pardiso via LinearSolve.jl cache.
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  build_asm_preconditioner
@@ -823,7 +800,6 @@ function solve_parallel_gmres_asm(
         :global_ilu0     => :rcmilu0,
         :global_paru     => :paru,      # ParU parallel (OpenMP)
         :global_pardiso  => :pardiso,   # MKL Pardiso parallel (OpenMP)
-        :global_strumpack => :strumpack, # STRUMPACK (OpenMP/MPI)
     )
 
     effective_precond = precond
