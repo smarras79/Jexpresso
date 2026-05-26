@@ -68,8 +68,8 @@ using NCDatasets
 using MPI
 
 TInt   = Int64
-#TFloat = Float64
-TFloat = Float32
+TFloat = Float64
+#TFloat = Float32
 SFloat = Float32
 cpu    = true
 

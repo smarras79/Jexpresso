@@ -440,9 +440,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         # Simulation
         #------------------------------------------------------------------------
         while (abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend])
-            println(string("Solving for time ", t_n + Δt))
+#            println(string("Solving for time ", t_n + Δt))
             for i_stages = 1 : k
-                @info "Stage " i_stages
+#                @info "Stage " i_stages
                 time_tilde = t_n + c_RK_tilde[i_stages] * Δt
 
                 #------------------------------------------------------------------------
@@ -482,9 +482,9 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 # Non-linear loop
                 #------------------------------------------------------------------------
                 while (nl_norm_k > nl_atol && (nl_norm_k > nl_rtol * nl_norm_0) && nl_iter < max_nl_iter)
-                    println(string("Non-linear solver: iteration ", nl_iter,", non-linear residual ", nl_norm_k))
+#                    println(string("Non-linear solver: iteration ", nl_iter,", non-linear residual ", nl_norm_k))
 
-                    @info "Solving linear system..."
+#                    @info "Solving linear system..."
 
                     # Solving the linear system
                     if lsolve == nothing
@@ -512,7 +512,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                         x = lsolve(L_curr,
                                    solver_precision.(nonl_res))
                     end
-                    @info "Solving linear system... DONE"
+#                    @info "Solving linear system... DONE"
 
                     U_stages[i_stages] .+= x
 

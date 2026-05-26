@@ -2,54 +2,54 @@ function user_inputs()
     # Runge-Kutta
     a_32 = 1. / 6. * (3. + 2. * sqrt(2.))
     A_RK = zeros(3, 3)
-    A_RK[1, 1] = 0.
-    A_RK[1, 2] = 0.
-    A_RK[1, 3] = 0.
-    A_RK[2, 1] = 2. - sqrt(2.)
-    A_RK[2, 2] = 0.
-    A_RK[2, 3] = 0.
-    A_RK[3, 1] = 1. - a_32
-    A_RK[3, 2] = a_32
-    A_RK[3, 3] = 0.
+    A_RK[1, 1] = TFloat.(0.)
+    A_RK[1, 2] = TFloat.(0.)
+    A_RK[1, 3] = TFloat.(0.)
+    A_RK[2, 1] = TFloat.(2. - sqrt(2.))
+    A_RK[2, 2] = TFloat.(0.)
+    A_RK[2, 3] = TFloat.(0.)
+    A_RK[3, 1] = TFloat.(1. - a_32)
+    A_RK[3, 2] = TFloat.(a_32)
+    A_RK[3, 3] = TFloat.(0.)
 
-    b_RK = Array{Float64, 1}(undef, 3)
-    b_RK[1] = 1. / (2. * sqrt(2.))
-    b_RK[2] = 1. / (2. * sqrt(2.))
-    b_RK[3] = 1. - 1. / sqrt(2.)
+    b_RK = Array{TFloat, 1}(undef, 3)
+    b_RK[1] = TFloat.(1. / (2. * sqrt(2.)))
+    b_RK[2] = TFloat.(1. / (2. * sqrt(2.)))
+    b_RK[3] = TFloat.(1. - 1. / sqrt(2.))
 
-    c_RK = Array{Float64, 1}(undef, 3)
-    c_RK[1] = 0.
-    c_RK[2] = 2. - sqrt(2.)
-    c_RK[3] = 1.
+    c_RK = Array{TFloat, 1}(undef, 3)
+    c_RK[1] = TFloat.(0.)
+    c_RK[2] = TFloat.(2. - sqrt(2.))
+    c_RK[3] = TFloat.(1.)
 
     A_RK_tilde = zeros(3, 3)
-    A_RK_tilde[1, 1] = 0.
-    A_RK_tilde[1, 2] = 0.
-    A_RK_tilde[1, 3] = 0.
-    A_RK_tilde[2, 1] = 1. - 1. / sqrt(2.)
-    A_RK_tilde[2, 2] = 1. - 1. / sqrt(2.)
-    A_RK_tilde[2, 3] = 0.
-    A_RK_tilde[3, 1] = 1. / (2. * sqrt(2.))
-    A_RK_tilde[3, 2] = 1. / (2. * sqrt(2.))
-    A_RK_tilde[3, 3] = 1. - 1. / sqrt(2.)
+    A_RK_tilde[1, 1] = TFloat.(0.)
+    A_RK_tilde[1, 2] = TFloat.(0.)
+    A_RK_tilde[1, 3] = TFloat.(0.)
+    A_RK_tilde[2, 1] = TFloat.(1. - 1. / sqrt(2.))
+    A_RK_tilde[2, 2] = TFloat.(1. - 1. / sqrt(2.))
+    A_RK_tilde[2, 3] = TFloat.(0.)
+    A_RK_tilde[3, 1] = TFloat.(1. / (2. * sqrt(2.)))
+    A_RK_tilde[3, 2] = TFloat.(1. / (2. * sqrt(2.)))
+    A_RK_tilde[3, 3] = TFloat.(1. - 1. / sqrt(2.))
 
-    b_RK_tilde = Array{Float64, 1}(undef, 3)
-    b_RK_tilde[1] = 1. / (2. * sqrt(2.))
-    b_RK_tilde[2] = 1. / (2. * sqrt(2.))
-    b_RK_tilde[3] = 1. - 1. / sqrt(2.)
+    b_RK_tilde = Array{TFloat, 1}(undef, 3)
+    b_RK_tilde[1] = TFloat.(1. / (2. * sqrt(2.)))
+    b_RK_tilde[2] = TFloat.(1. / (2. * sqrt(2.)))
+    b_RK_tilde[3] = TFloat.(1. - 1. / sqrt(2.))
 
-    c_RK_tilde = Array{Float64, 1}(undef, 3)
-    c_RK_tilde[1] = 0.
-    c_RK_tilde[2] = 2. - sqrt(2.)
-    c_RK_tilde[3] = 1.
+    c_RK_tilde = Array{TFloat, 1}(undef, 3)
+    c_RK_tilde[1] = TFloat.(0.)
+    c_RK_tilde[2] = TFloat.(2. - sqrt(2.))
+    c_RK_tilde[3] = TFloat.(1.)
 
 
     # Solver parameters
     solver_par = Dict(:restart  => true,
                       :memory   => 10,
-                      :verbose  => 1,
-                      :atol     => 1.e-10,
-                      :rtol     => 1.e-10,
+                      :verbose  => 0,
+                      :atol     => TFloat.(1.e-10),
+                      :rtol     => TFloat.(1.e-10),
                       :itmax    => 100,
                       :prec     => SmoothedAggregationPreconBuilder()
                       )
@@ -57,7 +57,7 @@ function user_inputs()
     # Preconditioner parameters
     prec_sp = Dict(
         :maxiter      => 1,
-        :abstol       => 1e-8,
+        :abstol       => TFloat.(1e-8),
         :precision    => Float32,
         :prec_type    => "AMG",
         )
@@ -147,8 +147,9 @@ function user_inputs()
         # square.
         #---------------------------------------------------------------------------
 #        :ode_solver           => IMEX_ARS232(),
-        :tend                 => 0.5,
-        :Δt                   => 1.0e-3,
+        :tinit                 => TFloat.(0.0),
+        :tend                 => TFloat.(0.5),
+        :Δt                   => TFloat.(1.0e-3),
         :diagnostics_at_times => (0.1:0.1:0.5),
         :output_dir           => "./",
         #---------------------------------------------------------------------------
@@ -168,7 +169,7 @@ function user_inputs()
         # temporarily toggles it off around each explicit-RHS evaluation.
         #---------------------------------------------------------------------------
         :lvisc               => true,
-        :μ                   => [1.0e-2, 1.0e-2],   # set to 0.0 for the pure inviscid case in the paper
+        :μ                   => [TFloat.(1.0e-2), TFloat.(1.0e-2)],   # set to 0.0 for the pure inviscid case in the paper
         #---------------------------------------------------------------------------
         # Mesh parameters and files:
         #   Reuse the doubly-periodic quadrilateral mesh shipped with the
@@ -177,6 +178,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_burgers2d.msh",
+        :linitial_refine     => true,
+        :init_refine_lvl     => 1, #1 means that the initial mesh is split 1 time. 2 means that it is split again, etc. 
         #---------------------------------------------------------------------------
         # Output formats
         #---------------------------------------------------------------------------
@@ -204,16 +207,16 @@ function user_inputs()
                                    :b_RK_tilde  => b_RK_tilde,
                                    :c_RK_tilde  => c_RK_tilde,
                                ),
-        :lsolver            => nothing,#"GMRES",#LinearSolve.KrylovJL_GMRES(),
+#        :lsolver            => nothing,#"GMRES",#LinearSolve.KrylovJL_GMRES(),
         :sp                 => solver_par,
         :prec_sp            => prec_sp,
         :S_fun              => S_fun!,
         :L_fun              => L_fun!,
         :upd_L              => false,
         :build_L            => build_L,
-        :lsolve             => lsolve,
-        :solver_precision   => Float32,
-        :nl_precision       => Float32,
+#        :lsolve             => lsolve,
+        :solver_precision   => TFloat,
+        :nl_precision       => TFloat,
         #---------------------------------------------------------------------------
         # Matrix storage for the IMEX implicit operator
         #   :matrix_free  - (default) rebuild L and the preconditioner on demand
