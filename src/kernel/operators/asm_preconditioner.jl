@@ -52,8 +52,9 @@ using Krylov
 using LinearOperators
 using AMD
 using LinearSolve
-using Pardiso
 using MUMPS
+using Pardiso
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  ASMPreconditioner
 # ─────────────────────────────────────────────────────────────────────────────
@@ -288,9 +289,8 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         # Install: ] add LinearSolve ParU_jll
         @isdefined(LinearSolve) ||
             error(":paru requires `import ParU_jll; using LinearSolve`")
-        isdefined(LinearSolve, :ParUFactorization) ||
-            error(":paru: ParUFactorization not found — " *
-                  "ensure `import ParU_jll` is called BEFORE `using LinearSolve`")
+        @isdefined(LinearSolve, :ParUFactorization) ||
+            error(":paru: ParUFactorization not found — ensure `import ParU_jll` is called BEFORE `using LinearSolve`")
         n = size(A, 1)
         b_dummy = zeros(Float64, n)
         prob  = LinearSolve.LinearProblem(A, b_dummy)
@@ -641,30 +641,27 @@ function build_mumps_preconditioner(
     local_max_gid = maximum(ip2gip)
     actual_gnpoin = MPI.Allreduce(local_max_gid, MPI.MAX, comm)
 
-    # Complete local matrix first — fills split interface entries that would
-    # otherwise cause zero pivots (INFO(1)=-10) in MUMPS factorization.
-    A_complete_d = complete_preconditioner_matrix(
-        A_local, ip2gip, gip2owner, gnpoin, npoin_g,
-        has_ghosts_g ? g_ip2gip : Int[], comm)
+    # Send ALL entries from A_local (including ghost rows) in global GID indexing.
+    # Ghost rows carry parent-parent coupling from child elements — essential
+    # for non-conforming case. Same approach as build_global_factorization_preconditioner.
+    ip2gip_g_loc = Vector{Int}(undef, npoin_g)
+    ip2gip_g_loc[1:npoin] .= ip2gip
+    if has_ghosts_g; ip2gip_g_loc[npoin+1:npoin_g] .= g_ip2gip; end
 
-    # Build GID-indexed matrix from completed owned rows
     local_I = Int[]; local_J = Int[]; local_V = Float64[]
-    rows_c = rowvals(A_complete_d); vals_c = nonzeros(A_complete_d)
-    for col_ip = 1:npoin
-        col_gid = ip2gip[col_ip]
-        for idx in nzrange(A_complete_d, col_ip)
-            row_ip  = rows_c[idx]
-            vals_c[idx] == 0.0 && continue
-            gip2owner[row_ip] == rank || continue
-            push!(local_I, ip2gip[row_ip])
+    rows_sp = rowvals(A_local); vals_sp = nonzeros(A_local)
+    for col_ip = 1:npoin_g
+        col_gid = ip2gip_g_loc[col_ip]
+        col_gid > actual_gnpoin && continue
+        for idx in nzrange(A_local, col_ip)
+            row_ip  = rows_sp[idx]
+            row_gid = ip2gip_g_loc[row_ip]
+            row_gid > actual_gnpoin && continue
+            push!(local_I, row_gid)
             push!(local_J, col_gid)
-            push!(local_V, vals_c[idx])
+            push!(local_V, vals_sp[idx])
         end
     end
-
-    # Assemble local sparse matrix in global GID indexing
-    A_local_gid = sparse(local_I, local_J, local_V,
-                         actual_gnpoin, actual_gnpoin)
 
     # Initialise MUMPS — all ranks participate
     mumps_handle = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
@@ -911,7 +908,10 @@ function solve_parallel_gmres_asm(
             npoin_g=npoin_g, g_ip2gip=g_ip2gip, comm=comm)
 
     elseif effective_precond == :mumps_dist
-        # Fully distributed MUMPS — no gather, true distributed factorization
+        # MUMPS distributed factorization — matrix gathered to rank 0,
+        # factorization distributed across all MPI ranks by MUMPS internally.
+        # Uses build_mumps_preconditioner which handles the full MUMPS workflow
+        # including dynamic memory allocation and analysis/factorization phases.
         build_mumps_preconditioner(A_local, ip2gip, gip2owner, gnpoin;
             npoin_g=npoin_g, g_ip2gip=g_ip2gip, comm=comm)
 
