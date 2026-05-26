@@ -1,5 +1,3 @@
-import ParU_jll
-import STRUMPACK_jll
 using SparseArrays
 using LinearAlgebra
 using KLU
@@ -8,9 +6,6 @@ using IncompleteLU
 using Krylov
 using LinearOperators
 using AMD
-using LinearSolve
-using Pardiso
-using MUMPS
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ASMPreconditioner
@@ -280,11 +275,18 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         @isdefined(LinearSolve) ||
             error(":strumpack requires `import STRUMPACK_jll; using LinearSolve`")
         isdefined(LinearSolve, :STRUMPACKFactorization) ||
-            error(":strumpack: STRUMPACKFactorization not found — " *
-                  "ensure `import STRUMPACK_jll` is called BEFORE `using LinearSolve`")
+            error(":strumpack: STRUMPACKFactorization not found in LinearSolve.
+" *
+                  "  1. Ensure STRUMPACK_jll is installed: ] add STRUMPACK_jll
+" *
+                  "  2. Import BEFORE using LinearSolve: import STRUMPACK_jll; using LinearSolve
+" *
+                  "  3. Verify libstrumpack is discoverable (check with Libdl.find_library(["libstrumpack"]))")
         n = size(A, 1)
         b_dummy = zeros(Float64, n)
         prob  = LinearSolve.LinearProblem(A, b_dummy)
+        # STRUMPACKFactorization targets single-node multithreaded sparse LU
+        # Thread count controlled by OMP_NUM_THREADS environment variable
         cache = LinearSolve.init(prob, LinearSolve.STRUMPACKFactorization())
         LinearSolve.solve!(cache)
         return LinearSolveFactor(cache, n)
@@ -300,8 +302,49 @@ function _factorize_matrix(A::SparseMatrixCSC{Float64}, solver::Symbol, ilu_tau:
         mumps_obj = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
                                           MUMPS.default_icntl,
                                           MUMPS.default_cntl64)
+        # Suppress most MUMPS output
+        MUMPS.set_icntl!(mumps_obj, 1, -1)
+        MUMPS.set_icntl!(mumps_obj, 2, -1)
+        MUMPS.set_icntl!(mumps_obj, 3, -1)
+        MUMPS.set_icntl!(mumps_obj, 4, 1)
+
+        # ── Dynamic memory allocation ────────────────────────────────────────
+        # Run analysis phase only (JOB=1) to get memory estimates,
+        # then set ICNTL(23) (memory per process in MB) from the estimate
+        # with a safety margin. This scales automatically with problem size.
         MUMPS.associate_matrix!(mumps_obj, A)
-        MUMPS.factorize!(mumps_obj)
+        MUMPS.set_job!(mumps_obj, 1)   # analysis only
+        MUMPS.invoke_mumps!(mumps_obj)
+        analysis_err = MUMPS.get_infog(mumps_obj, 1)
+        if analysis_err == 0
+            # INFOG(16) = estimated max memory per process (MB)
+            # INFOG(17) = estimated total memory (MB)
+            mem_per_proc = MUMPS.get_infog(mumps_obj, 16)
+            mem_total    = MUMPS.get_infog(mumps_obj, 17)
+            # Add 50% safety margin and set as memory limit per process
+            mem_limit = ceil(Int, mem_per_proc * 1.5)
+            MUMPS.set_icntl!(mumps_obj, 23, mem_limit)
+            @info "MUMPS analysis: ~$(mem_per_proc)MB/proc, ~$(mem_total)MB total → allocating $(mem_limit)MB/proc"
+        else
+            # Analysis failed — fall back to generous fixed relaxation
+            @warn "MUMPS analysis phase failed (INFO(1)=$analysis_err), using ICNTL(14)=200"
+            MUMPS.set_icntl!(mumps_obj, 14, 200)
+        end
+
+        # ── Factorization (JOB=2) ────────────────────────────────────────────
+        MUMPS.set_job!(mumps_obj, 2)
+        MUMPS.invoke_mumps!(mumps_obj)
+        infog1 = MUMPS.get_infog(mumps_obj, 1)
+        if infog1 == -10
+            # Still out of memory — retry with doubled limit
+            mem_limit2 = ceil(Int, MUMPS.get_infog(mumps_obj, 16) * 3.0)
+            @warn "MUMPS out of memory (INFO(1)=-10), retrying with $(mem_limit2)MB/proc"
+            MUMPS.set_icntl!(mumps_obj, 23, mem_limit2)
+            MUMPS.set_job!(mumps_obj, 2)
+            MUMPS.invoke_mumps!(mumps_obj)
+            infog1 = MUMPS.get_infog(mumps_obj, 1)
+        end
+        infog1 == 0 || error("MUMPS factorization failed INFO(1)=$infog1 INFO(2)=$(MUMPS.get_infog(mumps_obj,2))")
         return mumps_obj
 
     else
@@ -600,10 +643,47 @@ function build_mumps_preconditioner(
         MUMPS.default_icntl,
         MUMPS.default_cntl64)
 
+    # Suppress MUMPS output
+    MUMPS.set_icntl!(mumps_handle, 1, -1)
+    MUMPS.set_icntl!(mumps_handle, 2, -1)
+    MUMPS.set_icntl!(mumps_handle, 3, -1)
+    MUMPS.set_icntl!(mumps_handle, 4, 1)
+
     # Each rank provides its local contribution; MUMPS assembles globally
     MUMPS.associate_matrix!(mumps_handle, A_local_gid)
-    t = @elapsed MUMPS.factorize!(mumps_handle)
-    rank == 0 && @info "MUMPS distributed factorization: $(round(t,digits=3))s"
+
+    # ── Dynamic memory: analysis phase first ─────────────────────────────────
+    MUMPS.set_job!(mumps_handle, 1)
+    MUMPS.invoke_mumps!(mumps_handle)
+    analysis_err = MUMPS.get_infog(mumps_handle, 1)
+    if analysis_err == 0
+        mem_per_proc = MUMPS.get_infog(mumps_handle, 16)
+        mem_total    = MUMPS.get_infog(mumps_handle, 17)
+        mem_limit    = ceil(Int, mem_per_proc * 1.5)
+        MUMPS.set_icntl!(mumps_handle, 23, mem_limit)
+        rank == 0 && @info "MUMPS dist analysis: ~$(mem_per_proc)MB/proc, ~$(mem_total)MB total → $(mem_limit)MB/proc"
+    else
+        rank == 0 && @warn "MUMPS dist analysis failed (INFO(1)=$analysis_err), using ICNTL(14)=200"
+        MUMPS.set_icntl!(mumps_handle, 14, 200)
+    end
+
+    # ── Factorization ─────────────────────────────────────────────────────────
+    MUMPS.set_job!(mumps_handle, 2)
+    t = @elapsed MUMPS.invoke_mumps!(mumps_handle)
+    infog1 = MUMPS.get_infog(mumps_handle, 1)
+    if infog1 == -10
+        mem_limit2 = ceil(Int, MUMPS.get_infog(mumps_handle, 16) * 3.0)
+        rank == 0 && @warn "MUMPS out of memory, retrying with $(mem_limit2)MB/proc"
+        MUMPS.set_icntl!(mumps_handle, 23, mem_limit2)
+        MUMPS.set_job!(mumps_handle, 2)
+        t = @elapsed MUMPS.invoke_mumps!(mumps_handle)
+        infog1 = MUMPS.get_infog(mumps_handle, 1)
+    end
+    if infog1 != 0
+        rank == 0 && @warn "MUMPS distributed factorization failed INFO(1)=$infog1 — preconditioner will be identity"
+    else
+        rank == 0 && @info "MUMPS distributed factorization: $(round(t,digits=3))s"
+    end
 
     # Work vector for RHS/solution
     rhs_buf = zeros(Float64, actual_gnpoin)
