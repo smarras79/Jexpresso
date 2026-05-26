@@ -51,8 +51,8 @@ using IncompleteLU
 using Krylov
 using LinearOperators
 using AMD
-using MUMPS
 using Pardiso
+using MUMPS
 using LinearSolve
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -667,15 +667,6 @@ function build_mumps_preconditioner(
     A_local_gid = sparse(local_I, local_J, local_V,
                          actual_gnpoin, actual_gnpoin)
 
-    # Diagnostic: verify A_local_gid has no zero diagonal
-    d_local_gid = diag(A_local_gid)
-    n_zero_d = count(==(0.0), d_local_gid)
-    if n_zero_d > 0
-        @warn "Rank $rank: A_local_gid has $n_zero_d zero diagonal entries — may cause pivot failures"
-    else
-        @info "Rank $rank: A_local_gid $(size(A_local_gid,1))×$(size(A_local_gid,1)) nnz=$(nnz(A_local_gid)) zero_diag=$n_zero_d"
-    end
-
     # Initialise MUMPS — all ranks participate
     mumps_handle = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
                                          MUMPS.default_icntl,
@@ -684,9 +675,16 @@ function build_mumps_preconditioner(
     MUMPS.set_icntl!(mumps_handle, 2, -1; displaylevel=0)
     MUMPS.set_icntl!(mumps_handle, 3, -1; displaylevel=0)
     MUMPS.set_icntl!(mumps_handle, 4,  1; displaylevel=0)
+    # ICNTL(18)=3: matrix is distributed — each rank provides its own entries.
+    # Without this MUMPS assumes only rank 0 has the complete matrix (ICNTL(18)=0).
+    MUMPS.set_icntl!(mumps_handle, 18, 3; displaylevel=0)
 
-    # Each rank provides its local contribution; MUMPS assembles globally
-    MUMPS.associate_matrix!(mumps_handle, A_local_gid)
+    # Each rank provides its local entries in COO format.
+    # With ICNTL(18)=3, MUMPS expects distributed input via (n, irow, jcol, vals).
+    # Extract COO from A_local_gid (already in global GID indexing)
+    coo_A = findnz(A_local_gid)   # (I, J, V) in global indices
+    MUMPS.associate_matrix!(mumps_handle, actual_gnpoin,
+                             coo_A[1], coo_A[2], coo_A[3])
 
     # Analysis phase — get memory estimate before factorization
     MUMPS.set_job!(mumps_handle, 1)
