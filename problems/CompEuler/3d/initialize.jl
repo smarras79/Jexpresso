@@ -1,4 +1,4 @@
-function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -13,7 +13,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
+    qvars    = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
     qoutvars = ["ρ", "u", "v", "w", "θ", "θp"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------

@@ -403,7 +403,7 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
+Test 6a: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
 
@@ -415,6 +415,13 @@ include("./src/Jexpresso.jl")
 <img src="assets/wvelo.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
+
+Test 6b: Non-hydrostatic mountain waves: comparison against WRF
+
+<img src="assets/NHjexpVSwrf.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
 
 Test 7: Shallow cumuli simulation with BOMEX conditions:
 

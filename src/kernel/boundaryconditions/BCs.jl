@@ -45,7 +45,7 @@ function apply_boundary_conditions_neumann!(u, uaux, t,qe,
                                             bdy_edge_type, bdy_face_in_elem, bdy_face_type,
                                             connijk, Jef,
                                             S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
-                                            τ_f, wθ,
+                                            τ_f, wθ, wqv,
                                             Tabs, qn,
                                             ω, neqs, inputs, AD, SD)
 
@@ -56,7 +56,7 @@ function apply_boundary_conditions_neumann!(u, uaux, t,qe,
                               xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
                               connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                               connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
-                              τ_f, wθ,
+                              τ_f, wθ, wqv,
                               Tabs, qn,
                               neqs, dirichlet!, neumann, inputs)
 end
@@ -107,8 +107,8 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                               RHS, rhs_el, ubdy,
                                               connijk_lag, bdy_edge_in_elem, bdy_edge_type,
                                               ω, neqs, inputs, AD, SD)
+
     if inputs[:lsparse]
-        
         # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
         build_custom_bcs_lin_solve_sparse!(SD, t, coords, nx, ny, nz, npoin, npoin_linear,
                                            poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
@@ -117,7 +117,6 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                            neqs, dirichlet!, neumann, inputs)
     else
-
         # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
         build_custom_bcs_lin_solve!(SD, t, coords, nx, ny, nz, npoin, npoin_linear,
                                     poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
@@ -174,7 +173,7 @@ function build_custom_bcs_neumann!(::NSD_1D, t,
                                    xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                                    connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
-                                   τ_f, wθ,
+                                   τ_f, wθ, wqv,
                                    Tabs, qn,
                                    neqs, dirichlet!, neumann, inputs)
 
@@ -286,16 +285,29 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                                    xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                                    connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
-                                   τ_f, wθ,
+                                   τ_f, wθ, wqv,
                                    Tabs, qn,
                                    neqs, dirichlet!, neumann, inputs)
 
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
-    if (inputs[:bdy_fluxes])
+    PhysConst        = PhysicalConst{Float64}()
+    micro            = size(Tabs, 1)
+    lbdy_fluxes      = inputs[:bdy_fluxes]::Bool
+    lbulk_fluxes     = inputs[:bulk_fluxes]::Bool
+    SOL_VARS_TYPE    = inputs[:SOL_VARS_TYPE]
+    ifirst_wall_node = inputs[:ifirst_wall_node_index]::Int
+    δhf              = inputs[:δhf]
+    user_heatflux    = inputs[:user_heatflux]
+
+    τ_f_local = zeros(Float64, 3)
+    wθ_local  = zeros(Float64, 1)
+    wqv_local = zeros(Float64, 1)
+
+    if (lbdy_fluxes)
         for iedge = 1:nedges_bdy
             F_surf .= 0.0
-            if (inputs[:bulk_fluxes])
+            if (lbulk_fluxes)
                 for i = 1:ngl
                     ip  = poin_in_bdy_edge[iedge,i]
                     e   = bdy_edge_in_elem[iedge]
@@ -318,31 +330,106 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                 for i = 1:ngl
                     ip  = poin_in_bdy_edge[iedge,i]
                     e   = bdy_edge_in_elem[iedge]
-                    ip1 = connijk[e,i,ngl]
-                    
-                    user_bc_neumann!(@view(F_surf[i,:]), uaux[ip,:], uaux[ip1,:],
-                                     qe[ip,:], qe[ip1,:],
-                                     bdy_edge_type[iedge],
-                                     @view(coords[ip,:]), inputs[:SOL_VARS_TYPE])
+                    ip1 = connijk[e, i, ifirst_wall_node]
+
+                    θ  = 0.0
+                    θ1 = 0.0
+                    qn1 = 0
+                    qn2 = 0
+                    if (micro > 1)
+                        qn1 = qn[ip]
+                        qn2 = qn[ip1]
+                        if (Tabs[ip] < 1)
+                            θ  = uaux[ip,  4]/uaux[ip,  1]
+                            θ1 = uaux[ip1, 4]/uaux[ip1, 1]
+                        else
+                            θ  = Tabs[ip] *(PhysConst.pref/uaux[ip,  end])^(1/PhysConst.cpoverR)
+                            θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1, end])^(1/PhysConst.cpoverR)
+                        end
+                    end
+
+                    if (bdy_edge_type[iedge] == "MOST")
+                        ipsfc = connijk[e, i, 1]
+                        if SOL_VARS_TYPE == TOTAL()
+                            ρ        = uaux[ip1, 1]
+                            u_inside = uaux[ip1, 2]/ρ
+                            w_inside = uaux[ip1, 3]/ρ
+                            θ_inside = uaux[ip1, 4]/ρ
+                            θ_sfc    = uaux[ipsfc, 4]/uaux[ipsfc, 1]
+                        else # PERT
+                            ρ        = uaux[ip1, 1] + qe[ip1, 1]
+                            u_inside = (uaux[ip1, 2] + qe[ip1, 2])/ρ
+                            w_inside = (uaux[ip1, 3] + qe[ip1, 3])/ρ
+                            θ_inside = (uaux[ip1, 4] + qe[ip1, 4])/ρ
+                            θ_sfc    = (uaux[ipsfc, 4] + qe[ipsfc, 4])/(uaux[ipsfc, 1] + qe[ipsfc, 1])
+                        end
+
+                        vprojectedaux = u_inside*nx[iedge,i] + w_inside*ny[iedge,i]
+                        u_inside = u_inside - vprojectedaux*nx[iedge,i]
+                        w_inside = w_inside - vprojectedaux*ny[iedge,i]
+
+                        if (micro > 1)
+                            θ_inside = Tabs[ip1] *(PhysConst.pref/uaux[ip1,  end])^(1/PhysConst.cpoverR)
+                            θ_sfc    = Tabs[ipsfc]*(PhysConst.pref/uaux[ipsfc, end])^(1/PhysConst.cpoverR)
+                        end
+
+                        Δx = coords[ip1, 1] - coords[ipsfc, 1]
+                        Δy = coords[ip1, 2] - coords[ipsfc, 2]
+                        z_inside = abs(Δx*nx[iedge,i] + Δy*ny[iedge,i])
+
+                        if (micro > 1)
+                            T_sfc   = 299.88 #K
+                            p_sfc   = 101200.0
+                            θ_sfc   = T_sfc*(PhysConst.pref/p_sfc)^(1/PhysConst.cpoverR)
+                            qv_in   = uaux[ip1, 5]/ρ
+                            qv_sfc  = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
+                            CM_MOST!(τ_f_local, wθ_local, wqv_local,
+                                     ρ, u_inside, 0.0, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                     qv_in, qv_sfc, 2e-4, 2e-4)
+                        else
+                            CM_MOST!(τ_f_local, wθ_local,
+                                     ρ, u_inside, 0.0, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                     0.1, 0.01)
+                        end
+
+                        F_surf[i, 2] = τ_f_local[1]
+                        F_surf[i, 3] = τ_f_local[3]
+
+                        if (micro > 1)
+                            F_surf[i, 4] = ρ*PhysConst.cp*wθ_local[1] + ρ*PhysConst.Lc*wqv_local[1]
+                            F_surf[i, 5] = wqv_local[1]
+                        else
+                            F_surf[i, 4] = wθ_local[1]*(1.0 - δhf) + user_heatflux*δhf
+                        end
+                    else
+                        user_bc_neumann!(@view(F_surf[i,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
+                                         @view(qe[ip,:]), @view(qe[ip1,:]),
+                                         bdy_edge_type[iedge],
+                                         @view(coords[ip,:]),
+                                         τ_f_local, wθ_local, SOL_VARS_TYPE, PhysConst;
+                                         θ  = θ,
+                                         θ1 = θ1,
+                                         qn0 = qn1,
+                                         qn1 = qn2)
+                    end
                 end
             end
             compute_segment_integral!(S_face, F_surf, ω, Jef, iedge, ngl)
         end
     end
-    if (inputs[:bdy_fluxes])
-        DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
-        
+    if (lbdy_fluxes)
+        DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem, neqs)
+
         for ieq = 1:neqs
             RHS[:, ieq] .+= S_flux[:,ieq]
         end
-    
+
     end
 end
 
 
 function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, coords, nx, ny, nz,
-                                            npoin, npoin_linear,
-                                            poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                            npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
                                             ngl, ngr, nelem_semi_inf, ω,
                                             xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
                                             connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
@@ -450,35 +537,6 @@ function apply_dirichlet_bc_inplace!(L::SparseMatrixCSC, poin_in_bdy_edge, ngl)
     return L
 end
 
-function apply_dirichlet_bc_inplace!(L::Matrix{Float64}, poin_in_bdy_edge, ngl)
-    """
-    Apply Dirichlet boundary conditions by modifying dense matrix in-place.
-    Sets boundary rows to: L[ip, :] = 0, L[ip, ip] = 1
-    """
-
-    # Get boundary node indices
-    boundary_nodes = Int[]
-    for iedge = 1:size(poin_in_bdy_edge, 1)
-        for k = 1:ngl
-            ip = poin_in_bdy_edge[iedge, k]
-            if ip > 0
-                push!(boundary_nodes, ip)
-            end
-        end
-    end
-
-    # Remove duplicates and sort
-    boundary_nodes = unique!(sort!(boundary_nodes))
-
-    for ip in boundary_nodes
-        # Zero out entire row — for dense Matrix, a view-based fill! is optimal
-        @views fill!(L[ip, :], 0.0)
-        # Set diagonal to 1
-        L[ip, ip] = 1.0
-    end
-
-    return L
-end
 
 function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
                                      nx, ny, nz,
@@ -487,7 +545,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
                                      xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
                                      connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                      neqs, dirichlet!, neumann, inputs)
-
+    
     for iedge = 1:nedges_bdy
 
         if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
@@ -595,20 +653,31 @@ end
 
 
 function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin_linear,
-                                   poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
-                                   xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                                   connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                                   poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                   ngl, ngr, nelem_semi_inf, ω,
+                                   xmax, ymax, zmax, xmin, ymin, zmin,
+                                   qbdy, uaux, u, qe,
+                                   connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                   RHS, rhs_el,
                                    connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
-                                   τ_f, wθ, 
+                                   τ_f, wθ, wqv,
                                    Tabs, qn,
-                                   neqs, dirichlet!, neumann, inputs)
+                                   neqs, dirichlet!,
+                                   neumann, inputs)
 
-    PhysConst = PhysicalConst{Float64}() 
-    micro = size(Tabs,1)
+    PhysConst           = PhysicalConst{Float64}()
+    micro               = size(Tabs,1)
+    lbdy_fluxes         = inputs[:bdy_fluxes]::Bool
+    lbulk_fluxes        = inputs[:bulk_fluxes]::Bool
+    SOL_VARS_TYPE       = inputs[:SOL_VARS_TYPE]
+    ifirst_wall_node    = inputs[:ifirst_wall_node_index]::Int
+    δhf                 = inputs[:δhf]
+    user_heatflux       = inputs[:user_heatflux]
+    
     for iface = 1:nfaces_bdy
-        if (inputs[:bdy_fluxes])
+        if (lbdy_fluxes)
             F_surf .= 0.0
-            if (inputs[:bulk_fluxes])
+            if (lbulk_fluxes)
                 if (coords[poin_in_bdy_face[iface,3,3],3] == zmin)
                     for i = 1:ngl
                         for j = 1:ngl
@@ -622,7 +691,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
                                 θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                             end
-                            bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])                        
+                            bulk_surface_flux!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]), @view(qe[ip,:]), @view(qe[ip1,:]), θ, θ1, qn[ip], qn[ip1])                        
                             #@info F_surf[i,j,:]
                         end
                     end
@@ -638,8 +707,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             e   = bdy_face_in_elem[iface]
 
                             #Inside point
-                            iz  = inputs[:ifirst_wall_node_index]
-                            ip1 = connijk[e,i,j,iz]
+                            ip1 = connijk[e,i,j,ifirst_wall_node]
                             
                             θ = 0.0   
                             θ1 = 0.0 
@@ -657,58 +725,72 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 end
                             end
 
+                            # if (false)
                             if (bdy_face_type[iface] == "MOST")
                                 ipsfc    = connijk[e,i,j,1]
-                                ρ        = uaux[ipsfc, 1]
-                                
-                                u_inside = uaux[ip1,   2]/ρ
-                                v_inside = uaux[ip1,   3]/ρ                                
-                                w_inside = uaux[ip1,   4]/ρ
+                                if SOL_VARS_TYPE == TOTAL()
+                                    ρ        = uaux[ip1, 1]
+                                    u_inside = uaux[ip1, 2]/ρ
+                                    v_inside = uaux[ip1, 3]/ρ
+                                    w_inside = uaux[ip1, 4]/ρ
+                                    θ_inside = uaux[ip1,   5]/ρ
+                                    θ_sfc    = uaux[ipsfc, 5]/uaux[ipsfc, 1]
+                                else # PERT
+                                    ρ        = uaux[ip1, 1] + qe[ip1, 1]
+                                    u_inside = (uaux[ip1, 2] + qe[ip1, 2])/ρ
+                                    v_inside = (uaux[ip1, 3] + qe[ip1, 3])/ρ
+                                    w_inside = (uaux[ip1, 4] + qe[ip1, 4])/ρ
+                                    θ_inside = (uaux[ip1,   5] + qe[ip1,   5])/ρ
+                                    θ_sfc    = (uaux[ipsfc, 5] + qe[ipsfc, 5])/(uaux[ipsfc, 1] + qe[ipsfc, 1])
+                                end
 
                                 vprojectedaux = u_inside*nx[iface,i,j] + v_inside*ny[iface,i,j] + w_inside*nz[iface,i,j]
-                                
+
                                 u_inside = u_inside - vprojectedaux*nx[iface,i,j]
                                 v_inside = v_inside - vprojectedaux*ny[iface,i,j]
                                 w_inside = w_inside - vprojectedaux*nz[iface,i,j]
-                                
-                                θ_inside = uaux[ip1,   5]/ρ
-                                θ_sfc    = uaux[ipsfc, 5]/ρ
+
                                 if (micro > 1)
                                     θ_inside = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                                     θ_sfc    = Tabs[ipsfc]*(PhysConst.pref/uaux[ipsfc,end])^(1/PhysConst.cpoverR)
                                 end
-                                z_sfc    = coords[ipsfc, 3]
-                                                                
+
                                 Δx = coords[ip1, 1] - coords[ipsfc, 1]
                                 Δy = coords[ip1, 2] - coords[ipsfc, 2]
                                 Δz = coords[ip1, 3] - coords[ipsfc, 3]
-                                z_inside = abs(Δx*nx[iface,i,j] + Δy*ny[iface,i,j] + Δz*nz[iface,i,j]) 
-                                
-                                CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside)
+                                z_inside = abs(Δx*nx[iface,i,j] + Δy*ny[iface,i,j] + Δz*nz[iface,i,j])
+
+                                if (micro > 1)
+                                    T_sfc    = 299.88 #K
+                                    p_sfc    = 101200.0
+                                    θ_sfc    = T_sfc*(PhysConst.pref/p_sfc)^(1/PhysConst.cpoverR)
+                                    qv_in  = uaux[ip1, 6]/ρ
+                                    qv_sfc = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
+                                    CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
+                                            ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                            qv_in, qv_sfc, 2e-4, 2e-4)
+                                else
+                                    CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]),
+                                            ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
+                                            0.1, 0.01)
+                                end
                                 # @info τ_f[iface,i,j,1], τ_f[iface,i,j,2], τ_f[iface,i,j,3]
                                 F_surf[i,j,2] = τ_f[iface,i,j,1]
                                 F_surf[i,j,3] = τ_f[iface,i,j,2]
                                 F_surf[i,j,4] = τ_f[iface,i,j,3]
 
-                                LHF = 50.0
-                                SHF = 4.0
-                                if inputs[:energy_equation] == "theta" 
-                                    F_surf[i,j,5] = 0.12
-                                elseif inputs[:energy_equation] == "energy" 
-                                    F_surf[i,j,5] = 120
+                                if (micro > 1)
+                                    F_surf[i,j,5] = ρ*PhysConst.cp*wθ[iface,i,j,1] + ρ*PhysConst.Lc*wqv[iface,i,j,1]
+                                    F_surf[i,j,6] = wqv[iface,i,j,1]
+                                else
+                                    F_surf[i,j,5] = wθ[iface,i,j,1]*(1.0- δhf) + user_heatflux*δhf
                                 end
-                                if (inputs[:lmoist] == true)
-                                    F_surf[i,j,6] = 0.12e-5
-                                end
-                                # if (inputs[:lmoist] == true)
-                                #     F_surf[i,j,6] = 0.12e-5
-                                # end
                             else
-                                user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
-                                                 qe[ip,:], qe[ip1,:],
+                                user_bc_neumann!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
+                                                 @view(qe[ip,:]), @view(qe[ip1,:]),
                                                  bdy_face_type[iface],
                                                  @view(coords[ip,:]),
-                                                 @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE], PhysConst;
+                                                 @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), SOL_VARS_TYPE, PhysConst;
                                                  θ = θ,
                                                  θ1 = θ1,
                                                  qn0 = qn1,
@@ -718,19 +800,17 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                     end
                  #end
             end
-            compute_surface_integral!(S_face, F_surf, ω, Jef, iface, ngl)
+            compute_surface_integral!(@view(S_face[iface,:,:,:]), F_surf, ω, @view(Jef[iface,:,:]), ngl, neqs)
         end
         
     end
     #@info maximum(S_face[:,:,:,2]), maximum(S_face[:,:,:,5]), maximum(S_face[:,:,:,6])
     #@info minimum(S_face[:,:,:,2]), minimum(S_face[:,:,:,5]), minimum(S_face[:,:,:,6])
-    if (inputs[:bdy_fluxes])
+    if (lbdy_fluxes)
         DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl,
-                              coords[:,3], zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
+                              @view(coords[:,3]), zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5])
-        #@info minimum(S_flux[:,2]), minimum(S_flux[:,5])
-        for ieq = 1:neqs
-            RHS[:, ieq] .+= S_flux[:,ieq]
-        end
+        # @info minimum(S_flux[:,2]), minimum(S_flux[:,5])
+        RHS[:,:] .= @view(RHS[:,:]) .+ @view(S_flux[:,:])
     end
 end

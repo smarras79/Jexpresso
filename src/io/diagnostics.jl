@@ -1,6 +1,11 @@
 # ASCII
-function solution_norms(sol::ODESolution, OUTPUT_DIR::String, inputs::Dict;)
-    
+function solution_norms(sol::ODESolution, OUTPUT_DIR::String, inputs;)
+
+    rank = MPI.Comm_rank(get_mpi_comm())
+    # Diagnostics file is rank-0 only; gate both the print and the open()
+    # so non-root ranks don't all race to write the same diagnostics.dat.
+    rank == 0 || return
+
     println(string(" # Writing diagnostics to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
 
     fname = @sprintf "diagnostics.dat"
@@ -222,7 +227,10 @@ end
 
 
 function print_diagnostics(mass_ini, energy_ini, uaux, uauxe, solution, mesh, metrics, ω, neqs,QT,ψ)
-    
+
+    rank = MPI.Comm_rank(get_mpi_comm())
+    rank == 0 || return
+
     iout = inputs[:ndiagnostics_outputs]
     lexact_integration = inputs[:lexact_integration]
     @info size(solution.u)
