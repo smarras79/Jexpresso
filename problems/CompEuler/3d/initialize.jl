@@ -1,4 +1,3 @@
-
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     
     comm = MPI.COMM_WORLD

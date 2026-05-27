@@ -587,7 +587,7 @@ end
 function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     
     if rank == 0
-        @info "Legendre filter"
+        println(" # Legendre filter")
     end
     
     f = zeros(TFloat,nop+1,nop+1)
@@ -657,7 +657,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     ierr = 0
     gaujordf!(leg_inv,nop+1,ierr)
     if (ierr != 0)
-        @info "Error in GAUJORDF in FILTER INIT"
+        println(" # Error in GAUJORDF in FILTER INIT")
         @info "ierr", ierr
         exit
     end
@@ -666,7 +666,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     filter_type = inputs[:filter_type]
     if (filter_type == "erf")   
         if rank == 0
-            @info "erf filtering on"
+            println(" # erf filtering on")
         end
         
         for k=1:nop+1
@@ -675,7 +675,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         end
     elseif (filter_type == "quad")
         if rank == 0
-            @info "quadratic filtering on"
+            println(" # quadratic filtering on")
         end
         mode_filter = floor(quad_order)   
         k0 = Int64(nop+1 - mode_filter)
@@ -687,7 +687,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         end
     elseif (filter_type == "exp")
         if rank == 0
-            @info "exponential filtering on"
+            println(" # exponential filtering on")
         end
         for k=1:nop+1
             weight[k] = exp(-exp_alpha*(Float64(k-1)/nop)^exp_order)
@@ -848,7 +848,7 @@ function vandeven_modal(kk,ngl,p)
         x=1
         return 0.0
     else
-        @info "problem in Vandeven_modal"
+        println(" # problem in Vandeven_modal")
         exit
     end
 end

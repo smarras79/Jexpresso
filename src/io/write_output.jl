@@ -53,7 +53,7 @@ end
 # END Callback for missing user_uout!()
 #------------------------------------------------------------------
 
-function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
     qout = zeros(mesh.npoin)
@@ -63,7 +63,7 @@ end
 
 function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="")
@@ -103,17 +103,17 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
             end
         #end
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
 
 function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     #
@@ -140,19 +140,19 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
         write_vtk(SD, mesh, u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=u_exact, case=case)
     end
     
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
-    
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
+
 end
 
 
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
-    
-    comm = MPI.COMM_WORLD
+
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
@@ -179,12 +179,12 @@ end
 
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                    OUTPUT_DIR::String, inputs::Dict,
+                    OUTPUT_DIR::String, inputs,
                     varnames, outvarnames,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="")
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
@@ -218,7 +218,7 @@ end
 #------------
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
@@ -318,7 +318,7 @@ end
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict,
+                   t, title::String, OUTPUT_DIR::String, inputs,
                    varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
@@ -516,7 +516,7 @@ end
 #------------
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::HDF5;
                       nvar=1, qexact=zeros(1,nvar), case="")
@@ -544,7 +544,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
 end
-function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     #println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     
@@ -563,10 +563,10 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
     end
     
-    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
-    
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
+
 end
-function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5; nvar=1)
+function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5; nvar=1)
     
     #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
@@ -576,9 +576,9 @@ function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5
 end
 
 
-function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
-    
-    comm = MPI.COMM_WORLD
+function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs, varnames; iout=1, nvar=1, case="")
+
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     #Write one HDF5 file timestep
@@ -601,8 +601,8 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
     end
 end
 
-function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
-    comm = MPI.COMM_WORLD
+function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
 
@@ -613,7 +613,13 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     fout_name = string(INPUT_DIR, "/t.h5")
     time = rank == 0 ? convert(Float64, h5read(fout_name, "time")) : 0.0
     time = MPI.bcast(time, 0, comm)
-    inputs[:tinit] = time
+    if inputs isa AbstractDict
+        inputs[:tinit] = time
+    else
+        @warn "read_hdf5: cannot write :tinit into a NamedTuple inputs; " *
+              "restart time = $time will be ignored unless you rebind " *
+              "inputs in the caller."
+    end
     #Write one HDF5 file per variable
     for ivar = 1:nvar
         fout_name   = string(INPUT_DIR, "/var_", ivar,"_",rank, ".h5")
@@ -627,7 +633,7 @@ end
 
 function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
@@ -693,10 +699,10 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
     
-    comm   = MPI.COMM_WORLD
+    comm   = get_mpi_comm()
     rank   = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
-    
+
     local_list = findall(x->x == rank, mesh.gip2owner)
     # Gather data from all processes
     all_ip2gip  = MPI.gather(mesh.ip2gip[local_list], comm)
@@ -784,7 +790,7 @@ end
 
 function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                      t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                       iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end

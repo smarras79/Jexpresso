@@ -1,4 +1,4 @@
-function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
     TC2: Inertia-Gravity Wave on f-plane (Bishnu et al. 2024, Sec. 2.3)
 

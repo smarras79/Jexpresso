@@ -1,1208 +1,145 @@
-#export St_mesh
+using .JeGeometry
+
+export St_mesh
 export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
+
 include("warping.jl")
 include("stretching.jl")
 
-function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
-    npoin = nelem*nop+1
-    dims1 = (npoin)
-    dims2 = (nelem,nop+1)
-    dims3 = (nelem)
-    dims4 = (nelem, 0, nop+1)
-    dims5 = (2,npoin)
-    extra_mesh = St_extra_mesh{TInt, TFloat, NSD_1D(), dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}()
-    Δθe = KernelAbstractions.zeros(backend, TFloat, nelem)
-    Δθe .= (θmax-θmin)/nelem 
-    extra_mesh.extra_coords[1,1]      = θmin
-    extra_mesh.extra_connijk[1,1]     = 1
-    extra_mesh.extra_connijk[1,nop+1] = 2
-    extra_mesh.extra_coords[2]      = Δθe[1]
-    extra_mesh.extra_nop             .= nop
-    ip = 2
-    for e=2:nelem-1
-        extra_mesh.extra_connijk[e,1] = ip
-        extra_mesh.extra_connijk[e,nop+1] = ip+1
-        extra_mesh.extra_coords[ip+1] = θmin + Δθe[e]*e
-        ip +=1
-    end
-    
-    extra_mesh.extra_connijk[nelem,1]     = ip
-    extra_mesh.extra_connijk[nelem,nop+1] = ip+1
-    extra_mesh.extra_coords[ip+1]         = θmax
-    ip += 1
-    ip_end = ip
-    ## construct high order nodes
-    lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
-    extra_mesh.ωθ = lgl.ω
-    ip +=1
+# ─── Mesh topology cache helpers ──────────────────────────────────────────────
+# Cache the expensive result of mod_mesh_read_gmsh! (GmshDiscreteModel,
+# add_high_order_nodes_*, connectivity loops, ip2gip).  Only pure-array /
+# scalar fields are saved.  Skipped fields:
+#   :parts                  — PartitionedArrays.MPIArray, rebuilt via distribute()
+#   :cell_node_ids et al.   — Gridap.Arrays.Table, only used during mesh build
+#   :non_conforming_facets* — Vector{Vector} initialised with undef elements
+#   :SD                     — AbstractSpaceDimensions singleton, saved as int
+# Not used for AMR runs (adapt_flags ≠ nothing) because the mesh changes.
+# Path / fingerprint / staleness helpers live in coupling/couplingStructs.jl.
+const _MESH_CACHE_SKIP_FIELDS = Set{Symbol}([
+    :parts,
+    :cell_node_ids, :cell_node_ids_ho,
+    :cell_edge_ids, :cell_face_ids,
+    :face_edge_ids, :facet_cell_ids,
+    :non_conforming_facets,
+    :non_conforming_facets_parents_ghost,
+    :non_conforming_facets_children_ghost,
+    :SD,
+])
 
-    for e=1:nelem
-        ip1 = extra_mesh.extra_connijk[e,1]
-        ip2 = extra_mesh.extra_connijk[e,nop+1]
-        for i=2:nop
-            ξ = lgl.ξ[i]
-            extra_mesh.extra_coords[ip] = extra_mesh.extra_coords[ip1]*(1.0-ξ)*0.5+extra_mesh.extra_coords[ip2]*(1.0 + ξ)*0.5
-            extra_mesh.extra_connijk[e,i] = ip
-            ip += 1
+const _MESH_CACHE_OPTSTRING_FIELDS = Set{Symbol}([
+    :edge_type, :face_type, :bdy_edge_type, :bdy_face_type,
+])
+const _MESH_CACHE_NOTHING_SENTINEL = "__nothing__"
+
+_encode_optstrings(v) = String[isnothing(x) ? _MESH_CACHE_NOTHING_SENTINEL : x for x in v]
+_decode_optstrings(v) = Array{Union{Nothing,String}}(
+    [x == _MESH_CACHE_NOTHING_SENTINEL ? nothing : x for x in v])
+
+function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int;
+                                gmsh_path::String="", inputs=nothing)
+    rank = MPI.Comm_rank(get_mpi_comm())
+    # Pre-load validity check: reads only the fingerprint Dict, so
+    # it survives custom-struct shape changes that would crash
+    # JLD2.load(). Deletes the file on mismatch so the next save
+    # writes a clean replacement.
+    if inputs !== nothing
+        valid, _ = _check_cache_validity(path, inputs, nparts; gmsh_path=gmsh_path)
+        valid || return false
+    else
+        isfile(path) || return false
+        if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
+            rank == 0 && println(" # Mesh cache $path is older than $gmsh_path — discarding stale cache")
+            return false
         end
     end
-    # build extra grid metrics
-    metrics = allocate_metrics(NSD_1D(), nelem, 0, nop+1, TFloat, backend)
-
-    for iel = 1:nelem
-        for i = 1:nop+1
-            for k = 1:nop+1
-                metrics.dxdξ[iel, k, 1]  = Δθe[iel]/2
-                metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
-                metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+    try
+        # Use pre-fetched data when available (populated by je_prefetch_caches!
+        # before with_mpi to keep JLD2 JIT + disk I/O off the Alya-blocking path).
+        raw = JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing ?
+              JEXPRESSO_PREFETCHED_MESH_CACHE[] : JLD2.load(path)
+        haskey(raw, "mesh_fields") || begin
+            rank == 0 && println(" # Mesh cache $path has old format — discarding and rebuilding")
+            return false
+        end
+        # Fingerprint check.  Required so that switching cases that happen to
+        # share a gmsh basename, or changing any preprocessing-relevant input
+        # without changing the cache filename, invalidates the cache.
+        if inputs !== nothing && haskey(raw, "fingerprint")
+            saved_fp = raw["fingerprint"]
+            if !(saved_fp isa Dict) || !_cache_fingerprint_matches(saved_fp, inputs, nparts)
+                rank == 0 && println(" # Mesh cache $path fingerprint mismatch — discarding and rebuilding")
+                return false
+            end
+        elseif inputs !== nothing
+            rank == 0 && println(" # Mesh cache $path has no fingerprint — discarding and rebuilding")
+            return false
+        end
+        flds = raw["mesh_fields"]
+        for f in fieldnames(typeof(mesh))
+            f ∈ _MESH_CACHE_SKIP_FIELDS && continue
+            haskey(flds, string(f)) || continue
+            v = flds[string(f)]
+            if f ∈ _MESH_CACHE_OPTSTRING_FIELDS
+                setfield!(mesh, f, _decode_optstrings(v))
+            else
+                setfield!(mesh, f, v)
             end
         end
-    end
-    
-    extra_mesh.extra_metrics = metrics
-    
-    if (lper)
-        ip_old = extra_mesh.extra_connijk[nelem,nop+1]
-        extra_mesh.extra_connijk[nelem,nop+1] = 1
-        for e=1:extra_mesh.extra_nelem
-            for i=1:extra_mesh.extra_nop[e]+1
-                ip = extra_mesh.extra_connijk[e,i]
-                if (ip >= ip_old)
-                    extra_mesh.extra_connijk[e,i] -= 1
-                end
-            end
+        if haskey(flds, "__SD_nsd__")
+            nsd_val = flds["__SD_nsd__"]
+            mesh.SD = nsd_val == 3 ? NSD_3D() : nsd_val == 2 ? NSD_2D() : NSD_1D()
         end
-        for i = ip_old+1: extra_mesh.extra_npoin
-            extra_mesh.extra_coords[i-1] = extra_mesh.extra_coords[i] 
+        mesh.parts = distribute(LinearIndices((nparts,)))
+        rank == 0 && println(" # Loaded mesh topology from cache: $path")
+        return true
+    catch e
+        rank == 0 && @warn "Ignoring mesh cache $path" exception=(e, catch_backtrace())
+        # Auto-delete the unreadable file so the next save writes a
+        # clean replacement. Common after struct-shape changes that
+        # JLD2 cannot reconstruct (e.g. AssemblerCache gaining MPI
+        # fields). Per-rank file in parallel runs, so no race - each
+        # rank owns and deletes its own slice.
+        try
+            isfile(path) && rm(path; force=true)
+        catch _
+            # best-effort: a stale file is only a noise problem, not a
+            # correctness one
         end
-        extra_mesh.extra_npoin -= 1
+        return false
     end
-
-    basis = build_Interpolation_basis!(LagrangeBasis(), lgl.ξ, lgl.ξ, TFloat, inputs[:backend])
-    extra_mesh.ψ = basis.ψ
-    extra_mesh.dψ = basis.dψ
-    Me = KernelAbstractions.zeros(backend, TFloat, (nop+1)^2, Int64(nelem))
-    build_mass_matrix!(Me, NSD_1D(), Inexact(), basis.ψ, lgl.ω, nelem, metrics.Je, Δθe, nop, nop, TFloat)
-    M    = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
-    Minv = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
-    DSS_mass!(M, NSD_1D(), Inexact(), Me, extra_mesh.extra_connijk, nelem, npoin, nop, TFloat; llump=inputs[:llump])
-    Minv .= TFloat(1.0)./M
-    extra_mesh.Minv = Minv
-    return extra_mesh
 end
 
-function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, basis, backend, inputs, lper)
-  
-   if (inputs[:lcubed_sphere_angular_mesh])
-        ####### PERIODICITY STILL MISSING FOR CUBED SPHERE MESH
-        #build quadrant 1
-        #first point
-        npoin = 6*(nop+1)^2#(nelemθ*nop+1)*(nelemϕ*nop+1)
-        dims1 = (2,npoin)
-        dims2 = (6,nop+1,nop+1)
-        dims3 = (6)
-        dims4 = (6, 0, nop+1)
-        dims5 = (3,npoin)
-        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, dims5, 6, npoin, backend}()
-        Δθe = (θmax-θmin)/nelemθ
-        Δϕe = (ϕmax-ϕmin)/nelemϕ
-        extra_mesh.extra_nop             .= nop
-        x = -1
-        y = -1
-        z = -1
-        r = sqrt(x^2 + y^2 + z^2)
-        x1 = x/r
-        y1 = -y/r
-        z1 = z/r
-        θ = asin(z1) + π/2
-        ϕ = atan(y1,x1) - 3*π/4
-        if (ϕ < 0)
-            ϕ = ϕ + 2*π
+function _save_mesh_cache(path::String, mesh; inputs=nothing, nparts::Int=1)
+    isempty(path) && return
+    rank = MPI.Comm_rank(get_mpi_comm())
+    try
+        _ensure_cache_dir(path)
+        flds = Dict{String,Any}()
+        for f in fieldnames(typeof(mesh))
+            f ∈ _MESH_CACHE_SKIP_FIELDS && continue
+            v = getfield(mesh, f)
+            flds[string(f)] = f ∈ _MESH_CACHE_OPTSTRING_FIELDS ? _encode_optstrings(v) : v
         end
-        extra_mesh.extra_connijk[1,1,1] = 1
-        extra_mesh.extra_coords[1,1] = θ
-        extra_mesh.extra_coords[2,1] = ϕ
-        extra_mesh.extra_coords_cart[1,1] = x1
-        extra_mesh.extra_coords_cart[2,1] = -y1
-        extra_mesh.extra_coords_cart[3,1] = z1
-        #second point
-        x = -1
-        y = 1
-        z = -1
-        r = sqrt(x^2 + y^2 + z^2)
-        x1 = x/r
-        y1 = -y/r
-        z1 = z/r
-        θ = asin(z1) + π/2
-        ϕ = atan(y1,x1) - 3*π/4 
-        if (ϕ < 0)
-            ϕ = ϕ + 2*π
-        end 
-        extra_mesh.extra_connijk[1,nop+1,1] = 2
-        extra_mesh.extra_coords[1,2] = θ
-        extra_mesh.extra_coords[2,2] = ϕ
-        extra_mesh.extra_coords_cart[1,2] = x1
-        extra_mesh.extra_coords_cart[2,2] = -y1
-        extra_mesh.extra_coords_cart[3,2] = z1
-        #third point
-        x = -1
-        y = -1
-        z = 1
-        r = sqrt(x^2 + y^2 + z^2)
-        x1 = x/r
-        y1 = -y/r
-        z1 = z/r
-        θ = asin(z1) + π/2
-        ϕ = atan(y1,x1) - 3*π/4
-        if (ϕ < 0)
-            ϕ = ϕ + 2*π
-        end 
-        extra_mesh.extra_connijk[1,1,nop+1] = 3
-        extra_mesh.extra_coords[1,3] = θ
-        extra_mesh.extra_coords[2,3] = ϕ
-        extra_mesh.extra_coords_cart[1,3] = x1
-        extra_mesh.extra_coords_cart[2,3] = -y1
-        extra_mesh.extra_coords_cart[3,3] = z1
-        #fourth point
-        x = -1
-        y = 1
-        z = 1
-        r = sqrt(x^2 + y^2 + z^2)
-        x1 = x/r
-        y1 = -y/r
-        z1 = z/r
-        θ = asin(z1) + π/2
-        ϕ = atan(y1,x1) - 3*π/4
-        if (ϕ < 0)
-            ϕ = ϕ + 2*π
-        end 
-        extra_mesh.extra_connijk[1,nop+1,nop+1] = 4
-        extra_mesh.extra_coords[1,4] = θ
-        extra_mesh.extra_coords[2,4] = ϕ
-        extra_mesh.extra_coords_cart[1,4] = x1
-        extra_mesh.extra_coords_cart[2,4] = -y1
-        extra_mesh.extra_coords_cart[3,4] = z1
-        #build quadrant 2
-        #first point
-        extra_mesh.extra_connijk[2,1,1] = 2
-        #third point
-        extra_mesh.extra_connijk[2,1,nop+1] = 4
-        #second point
-        x = 1
-        y = 1
-        z = -1
-        r = sqrt(x^2 + y^2 + z^2)
-        x1 = -x/r
-        y1 = y/r
-        z1 = z/r
-        θ = asin(z1) + π/2
-        ϕ = atan(y1,x1) + π/4
-        extra_mesh.extra_connijk[2,nop+1,1] = 5
-        extra_mesh.extra_coords[1,5] = θ
-        extra_mesh.extra_coords[2,5] = ϕ
-        extra_mesh.extra_coords_cart[1,5] = -x1
-        extra_mesh.extra_coords_cart[2,5] = y1
-        extra_mesh.extra_coords_cart[3,5] = z1
-        #fourth point
-        x = 1
-        y = 1
-        z = 1
-        r = sqrt(x^2 + y^2 + z^2)
-        x1 = -x/r
-        y1 = y/r
-        z1 = z/r
-        θ = asin(z1) + π/2
-        ϕ = atan(y1,x1) +π/4
-        extra_mesh.extra_connijk[2,nop+1,nop+1] = 6
-        extra_mesh.extra_coords[1,6] = θ
-        extra_mesh.extra_coords[2,6] = ϕ
-        extra_mesh.extra_coords_cart[1,6] = -x1
-        extra_mesh.extra_coords_cart[2,6] = y1
-        extra_mesh.extra_coords_cart[3,6] = z1
-        #build quadrant 3
-        #first point
-        extra_mesh.extra_connijk[3,1,1] = 5
-        #third point
-        extra_mesh.extra_connijk[3,1,nop+1] = 6
-        #second point
-        x = 1
-        y = -1
-        z = -1
-        r = sqrt(x^2 + y^2 + z^2)
-        x1 = x/r
-        y1 = y/r
-        z1 = z/r
-        θ = asin(z1) + π/2
-        ϕ = atan(y1,x1) + 3*π/2 + π/4 
-        extra_mesh.extra_connijk[3,nop+1,1] = 7
-        extra_mesh.extra_coords[1,7] = θ
-        extra_mesh.extra_coords[2,7] = ϕ
-        extra_mesh.extra_coords_cart[1,7] = x1
-        extra_mesh.extra_coords_cart[2,7] = y1
-        extra_mesh.extra_coords_cart[3,7] = z1
-        #fourth point
-        x = 1
-        y = -1
-        z = 1
-        r = sqrt(x^2 + y^2 + z^2)
-        x1 = x/r
-        y1 = y/r
-        z1 = z/r
-        θ = asin(z1) + π/2
-        ϕ = atan(y1,x1) + 3*π/2 + π/4
-        extra_mesh.extra_connijk[3,nop+1,nop+1] = 8
-        extra_mesh.extra_coords[1,8] = θ
-        extra_mesh.extra_coords[2,8] = ϕ
-        extra_mesh.extra_coords_cart[1,8] = x1
-        extra_mesh.extra_coords_cart[2,8] = y1
-        extra_mesh.extra_coords_cart[3,8] = z1
-
-        #build quadrant 4
-        #second point
-        extra_mesh.extra_connijk[4,nop+1,1] = 1
-        #fourth point
-        extra_mesh.extra_connijk[4,nop+1,nop+1] = 3
-        #first point
-        extra_mesh.extra_connijk[4,1,1] = 7
-        #third point
-        extra_mesh.extra_connijk[4,1,nop+1] = 8
-        #build quadrant 5
-        #first point
-        extra_mesh.extra_connijk[5,1,1] = 3
-        #second point
-        extra_mesh.extra_connijk[5,nop+1,1] = 4
-        #third point
-        extra_mesh.extra_connijk[5,1,nop+1] = 8
-        #fourth point
-        extra_mesh.extra_connijk[5,nop+1,nop+1] = 6
-        #build quadrant 6
-        #third point
-        extra_mesh.extra_connijk[6,1,nop+1] = 1
-        #fourth point
-        extra_mesh.extra_connijk[6,nop+1,nop+1] = 2
-        #first point
-        extra_mesh.extra_connijk[6,1,1] = 7
-        #second point
-        extra_mesh.extra_connijk[6,nop+1,1] = 5
-        lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
-        extra_mesh.ωθ = lgl.ω
-        extra_mesh.ωϕ = lgl.ω
-        #construct edge nodes
-        #first quadrant
-        ip = 9
-        #first edge
-        for i=2:nop
-            
-            y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            z = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            x = -1
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = -y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) - 3*π/4
-            if (ϕ < 0)
-                ϕ = ϕ + 2*π
-            end 
-            extra_mesh.extra_connijk[1,i,1] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = -y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #second edge
-        for i=2:nop
-
-            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = -1
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = -y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) - 3*π/4
-            if (ϕ < 0)
-                ϕ = ϕ + 2*π
-            end 
-            extra_mesh.extra_connijk[1,1,i] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = -y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #third edge
-        for i=2:nop
-
-            y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            z = (1)#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            x = -1
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = -y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) - 3*π/4
-            if (ϕ < 0)
-                ϕ = ϕ + 2*π
-            end 
-            extra_mesh.extra_connijk[1,i,nop+1] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = -y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #fourth edge
-        for i=2:nop
-
-            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = -1
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = -y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) - 3*π/4
-            if (ϕ < 0)
-                ϕ = ϕ + 2*π
-            end 
-            extra_mesh.extra_connijk[1,nop+1,i] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = -y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-
-        #second quadrant
-        #first edge
-        for i=2:nop
-
-            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = -x/r
-            y1 = y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) +π/4
-            extra_mesh.extra_connijk[2,i,1] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = -x1
-            extra_mesh.extra_coords_cart[2,ip] = y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #second edge
-        for i=2:nop
-            extra_mesh.extra_connijk[2,1,i] = extra_mesh.extra_connijk[1,nop+1,i]
-        end
-        #third edge
-        for i=2:nop
-
-            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = -x/r
-            y1 = y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) +π/4
-            extra_mesh.extra_connijk[2,i,nop+1] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = -x1
-            extra_mesh.extra_coords_cart[2,ip] = y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #fourth edge
-        for i=2:nop
-
-            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = -x/r
-            y1 = y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) +π/4
-            extra_mesh.extra_connijk[2,nop+1,i] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = -x1
-            extra_mesh.extra_coords_cart[2,ip] = y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #third quadrant
-        #first edge
-        for i=2:nop
-            
-            y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
-            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) + π + π/4
-            extra_mesh.extra_connijk[3,i,1] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        # second edge
-        for i=2:nop
-
-            extra_mesh.extra_connijk[3,1,i] = extra_mesh.extra_connijk[2,nop+1,i]
-        end
-        #third edge
-        for i=2:nop
-
-            y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
-            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) +π + π/4   
-            extra_mesh.extra_connijk[3,i,nop+1] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #fourth edge
-        for i=2:nop
-
-            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) +3*π/2 + π/4
-            extra_mesh.extra_connijk[3,nop+1,i] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #fourth quadrant
-        #first edge
-        for i=2:nop
-
-            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) + 2*π + π/4
-            extra_mesh.extra_connijk[4,i,1] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #second edge
-        for i=2:nop
-            extra_mesh.extra_connijk[4,1,i] = extra_mesh.extra_connijk[3,nop+1,i]
-        end
-        #third edge
-        for i=2:nop
-
-            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-            x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
-            r = sqrt(x^2 + y^2 + z^2)
-            x1 = x/r
-            y1 = y/r
-            z1 = z/r
-            θ = asin(z1) + π/2
-            ϕ = atan(y1,x1) + 2*π + π/4
-            extra_mesh.extra_connijk[4,i,nop+1] = ip
-            extra_mesh.extra_coords[1,ip] = θ
-            extra_mesh.extra_coords[2,ip] = ϕ
-            extra_mesh.extra_coords_cart[1,ip] = x1
-            extra_mesh.extra_coords_cart[2,ip] = y1
-            extra_mesh.extra_coords_cart[3,ip] = z1
-            ip += 1
-        end
-        #fourth edge
-        for i=2:nop
-            extra_mesh.extra_connijk[4,nop+1,i] = extra_mesh.extra_connijk[1,1,i]
-        end
-        #fifth quadrant
-        #first edge
-        for i=2:nop
-            extra_mesh.extra_connijk[5,i,1] = extra_mesh.extra_connijk[1,i,nop+1]
-        end
-        #second edge
-        for i=2:nop
-            extra_mesh.extra_connijk[5,1,nop+2-i] = extra_mesh.extra_connijk[4,i,nop+1]
-        end
-        #third edge
-        for i=2:nop
-            extra_mesh.extra_connijk[5,nop+2-i,nop+1] = extra_mesh.extra_connijk[3,i,nop+1]
-        end
-        #fourth edge
-        for i=2:nop
-            extra_mesh.extra_connijk[5,nop+1,i] = extra_mesh.extra_connijk[2,i,nop+1]
-        end
-        #sixth quadrant
-        #first edge
-        for i=2:nop
-            extra_mesh.extra_connijk[6,nop+2-i,1] = extra_mesh.extra_connijk[3,i,1]
-        end
-        #second edge
-        for i=2:nop
-            extra_mesh.extra_connijk[6,1,i] = extra_mesh.extra_connijk[4,i,1]
-        end
-        #third edge
-        for i=2:nop
-            extra_mesh.extra_connijk[6,i,nop+1] = extra_mesh.extra_connijk[1,i,1]
-        end
-        #fourth edge
-        for i=2:nop
-            extra_mesh.extra_connijk[6,nop+1,nop+2-i] = extra_mesh.extra_connijk[2,i,1]
-        end
-        #finished with cubed sphere element edges, populate interior nodes next
-        #first quadrant
-        for i=2:nop
-            for j=2:nop
-                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
-                x = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-                r = sqrt(x^2 + y^2 + z^2)
-                x1 = x/r
-                y1 = -y/r
-                z1 = z/r
-                θ = asin(z1) + π/2
-                ϕ = atan(y1,x1) - 3*π/4
-                if (ϕ < 0)
-                    ϕ = ϕ + 2*π
-                end 
-                extra_mesh.extra_connijk[1,i,j] = ip
-                extra_mesh.extra_coords[1,ip] = θ
-                extra_mesh.extra_coords[2,ip] = ϕ
-                extra_mesh.extra_coords_cart[1,ip] = x1
-                extra_mesh.extra_coords_cart[2,ip] = -y1
-                extra_mesh.extra_coords_cart[3,ip] = z1
-                ip += 1
-            end
-        end
-        #second quadrant
-        for i=2:nop
-            for j=2:nop
-                y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
-                x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-                r = sqrt(x^2 + y^2 + z^2)
-                x1 = -x/r
-                y1 = y/r
-                z1 = z/r
-                θ = asin(z1) + π/2
-                ϕ = atan(y1,x1) + π/4
-
-                extra_mesh.extra_connijk[2,i,j] = ip
-                extra_mesh.extra_coords[1,ip] = θ
-                extra_mesh.extra_coords[2,ip] = ϕ
-                extra_mesh.extra_coords_cart[1,ip] = -x1
-                extra_mesh.extra_coords_cart[2,ip] = y1
-                extra_mesh.extra_coords_cart[3,ip] = z1
-                ip += 1
-            end
-        end
-        #third quadrant
-        for i=2:nop
-            for j=2:nop
-                y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
-                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
-                x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-                r = sqrt(x^2 + y^2 + z^2)
-                x1 = x/r
-                y1 = y/r
-                z1 = z/r
-                θ = asin(z1) + π/2
-                ϕ = atan(y1,x1) +π + π/4
-                extra_mesh.extra_connijk[3,i,j] = ip
-                extra_mesh.extra_coords[1,ip] = θ
-                extra_mesh.extra_coords[2,ip] = ϕ
-                extra_mesh.extra_coords_cart[1,ip] = x1
-                extra_mesh.extra_coords_cart[2,ip] = y1
-                extra_mesh.extra_coords_cart[3,ip] = z1
-                ip += 1
-            end
-        end
-        #fourth quadrant
-        for i=2:nop
-            for j=2:nop
-                y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
-                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
-                x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
-                r = sqrt(x^2 + y^2 + z^2)
-                x1 = x/r
-                y1 = y/r
-                z1 = z/r
-                θ = asin(z1) + π/2
-                ϕ = atan(y1,x1) + 2*π + π/4
-                extra_mesh.extra_connijk[4,i,j] = ip
-                extra_mesh.extra_coords[1,ip] = θ
-                extra_mesh.extra_coords[2,ip] = ϕ
-                extra_mesh.extra_coords_cart[1,ip] = x1
-                extra_mesh.extra_coords_cart[2,ip] = y1
-                extra_mesh.extra_coords_cart[3,ip] = z1
-                ip += 1
-            end
-        end
-        #fifth quadrant
-        for i=2:nop
-            for j=2:nop
-                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-                z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-                x = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
-                r = sqrt(x^2 + y^2 + z^2)
-                x1 = x/r
-                y1 = y/r
-                z1 = z/r
-                θ = asin(z1) + π/2
-                ϕ = atan(y1,x1) + π
-                #=if (ϕ == 7*π/4)
-                    ϕ = 3*π/4
-                elseif (ϕ == 3*π/4)
-                    ϕ = 7*π/4
-                end=#
-                extra_mesh.extra_connijk[5,i,j] = ip
-                extra_mesh.extra_coords[1,ip] = θ
-                extra_mesh.extra_coords[2,ip] = ϕ
-                extra_mesh.extra_coords_cart[1,ip] = x1
-                extra_mesh.extra_coords_cart[2,ip] = y1
-                extra_mesh.extra_coords_cart[3,ip] = z1
-                ip += 1
-            end
-        end
-        #sixth quadrant
-        for i=2:nop
-            for j=2:nop
-                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-                z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
-                x = (-1)*(1.0-lgl.ξ[nop+2-j])*0.5+(1)*(1.0 + lgl.ξ[nop+2-j])*0.5
-                r = sqrt(x^2 + y^2 + z^2)
-                x1 = -x/r
-                y1 = y/r
-                z1 = z/r
-                θ = asin(z1) + π/2
-                ϕ = atan(y1,x1) +π
-                #=if (ϕ == 3*π/4)
-                    ϕ = 7*π/4
-                elseif (ϕ == 7*π/4)
-                    ϕ = 3*π/4
-                end=#
-                extra_mesh.extra_connijk[6,i,j] = ip
-                extra_mesh.extra_coords[1,ip] = θ
-                extra_mesh.extra_coords[2,ip] = ϕ
-                extra_mesh.extra_coords_cart[1,ip] = -x1
-                extra_mesh.extra_coords_cart[2,ip] = y1
-                extra_mesh.extra_coords_cart[3,ip] = z1
-                ip += 1
-            end
-        end
-        extra_mesh.extra_npoin = ip - 1
-    else
-        npoin = (nelemθ*nop+1)*(nelemϕ*nop+1)
-        dims1 = (2,npoin)
-        dims2 = (nelemθ*nelemϕ, nop+1, nop+1)
-        dims3 = (nelemθ*nelemϕ)
-        dims4 = (nelemθ*nelemϕ, 0, nop+1)
-        dims5 = (3,npoin)
-        ip = 5
-        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, dims5, nelemθ*nelemϕ, npoin, backend}()
-        Δθe = (θmax-θmin)/nelemθ
-        Δϕe = (ϕmax-ϕmin)/nelemϕ
-        extra_mesh.extra_nop             .= nop
-        extra_mesh.extra_connijk[1,1,1] = 1
-        extra_mesh.extra_connijk[1,nop+1,1] = 2
-        extra_mesh.extra_connijk[1,1,nop+1] = 3
-        extra_mesh.extra_connijk[1,nop+1,nop+1] = 4 
-        extra_mesh.extra_coords[1,1] = θmin
-        extra_mesh.extra_coords[2,1] = ϕmin
-        extra_mesh.extra_coords[1,2] = θmin + Δθe
-        extra_mesh.extra_coords[2,2] = ϕmin
-        extra_mesh.extra_coords[1,3] = θmin
-        extra_mesh.extra_coords[2,3] = ϕmin + Δϕe
-        extra_mesh.extra_coords[1,4] = θmin + Δθe
-        extra_mesh.extra_coords[2,4] = ϕmin + Δϕe
-        #construct linear mesh
-        for eθ=1:nelemθ
-            for eϕ=1:nelemϕ
-                if (eϕ > 1 || eθ > 1)
-                    e_left = eϕ + (eθ-1 - 1)*nelemϕ
-                    e_down = eϕ-1 + (eθ - 1)*nelemϕ
-                    e = eϕ + (eθ - 1)*nelemϕ
-                    if (eθ > 1 && eϕ > 1)
-                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_left,nop+1,1]
-                        extra_mesh.extra_connijk[e,1,nop+1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
-                        extra_mesh.extra_connijk[e,nop+1,1] = extra_mesh.extra_connijk[e_down,nop+1,nop+1]
-                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
-                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe 
-                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
-                        ip += 1
-                    elseif (eθ > 1)
-                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_left,nop+1,1]
-                        extra_mesh.extra_connijk[e,1,nop+1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
-                        extra_mesh.extra_connijk[e,nop+1,1] = ip
-                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe
-                        extra_mesh.extra_coords[2,ip] = ϕmin 
-                        ip += 1
-                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
-                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe
-                        extra_mesh.extra_coords[2,ip] = ϕmin + Δϕe
-                        ip += 1
-                    elseif (eϕ > 1)
-                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_down,1,nop+1]
-                        extra_mesh.extra_connijk[e,nop+1,1] = extra_mesh.extra_connijk[e_down,nop+1,nop+1]
-                        extra_mesh.extra_connijk[e,1,nop+1] = ip
-                        extra_mesh.extra_coords[1,ip] = θmin 
-                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
-                        ip += 1
-                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
-                        extra_mesh.extra_coords[1,ip] = θmin + Δθe
-                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
-                        ip += 1        
-                    end
-                end
-            end
-        end
-        ip_end = ip
-        ## construct high order nodes
-        lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
-        extra_mesh.ωθ = lgl.ω
-        extra_mesh.ωϕ = lgl.ω
-        for e=1:nelemθ*nelemϕ
-       
-            ip1 = extra_mesh.extra_connijk[e,1,1]
-            ip2 = extra_mesh.extra_connijk[e,nop+1,1]
-            ip3 = extra_mesh.extra_connijk[e,1,nop+1]
-        
-            for i=1:nop+1
-                for j=1:nop+1
-                    c1 = ( (i == 1 || i == nop + 1)  && (j > 1 && j < nop+1))
-                    c2 = ( (j == 1 || j == nop + 1) && i > 1 && j < nop + 1) 
-                    c3 = ( i > 1 && j > 1 && i < nop + 1 && j < nop + 1)
-                    if ( (i == 1 || i == nop + 1)  && (j > 1 && j < nop+1)) || ( (j == 1 || j == nop + 1) && (i > 1 && i < nop + 1)) || ( i > 1 && j > 1 && i < nop + 1 && j < nop + 1)
-                        ξθ = lgl.ξ[i]
-                        ξϕ = lgl.ξ[j]
-                        θ = extra_mesh.extra_coords[1,ip1]*(1.0-ξθ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξθ)*0.5
-                        ϕ = extra_mesh.extra_coords[2,ip1]*(1.0-ξϕ)*0.5+extra_mesh.extra_coords[2,ip3]*(1.0 + ξϕ)*0.5
-                        iter = 1
-                        test = false
-                        while (test == false && iter < ip)
-                            if (AlmostEqual(extra_mesh.extra_coords[1,iter],θ) && AlmostEqual(extra_mesh.extra_coords[2,iter],ϕ))
-                                test = true
-                            end
-                            iter += 1
-                        end
-                        if (test == true)
-                            extra_mesh.extra_connijk[e,i,j] = iter - 1
-                        else
-                            extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip1]*(1.0-ξθ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξθ)*0.5
-                            extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip1]*(1.0-ξϕ)*0.5+extra_mesh.extra_coords[2,ip3]*(1.0 + ξϕ)*0.5
-                            extra_mesh.extra_connijk[e,i,j] = ip
-                            ip += 1
-                        end
-                    end
-                end
-            end
-        end
-        extra_mesh.extra_npoin = ip - 1
+        flds["__SD_nsd__"] = mesh.nsd
+        fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
+        JLD2.jldsave(path; mesh_fields = flds, fingerprint = fp)
+        rank == 0 && println(" # Saved mesh topology cache: $path")
+    catch e
+        rank == 0 && @warn "Failed to save mesh cache $path" exception=(e, catch_backtrace())
     end
-   # build extra grid metrics
-   metrics = allocate_metrics(NSD_2D(), nelemθ*nelemϕ, 0, nop+1, TFloat, backend)
-   
-   ψ  = @view(basis.ψ[:,:])
-   dψ = @view(basis.dψ[:,:])
-        
-   xij = 0.0
-   yij = 0.0
-   if !(inputs[:lcubed_sphere_angular_mesh])
-        @inbounds for iel = 1:nelemθ*nelemϕ
-            for j = 1:nop+1
-                for i = 1:nop+1
-
-                    ip = extra_mesh.extra_connijk[iel, i, j]
-                    θij = extra_mesh.extra_coords[1,ip]
-                    ϕij = extra_mesh.extra_coords[2,ip]
-                
-                    @turbo for l=1:nop+1
-                        for k=1:nop+1
-        
-                            a = dψ[i,k]*ψ[j,l]
-                            b = ψ[i,k]*dψ[j,l]
-                            metrics.dxdξ[iel, k, l] += a * θij
-                            metrics.dxdη[iel, k, l] += b * θij
-
-                            metrics.dydξ[iel, k, l] += a * ϕij
-                            metrics.dydη[iel, k, l] += b * ϕij
-
-                            #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
-                        end
-                    end
-                end
-            end
-        
-            @inbounds for l = 1:nop+1
-                for k = 1:nop+1
-
-                    # Extract values from memory once per iteration
-                    dxdξ_val = metrics.dxdξ[iel, k, l]
-                    dydη_val = metrics.dydη[iel, k, l]
-                    dydξ_val = metrics.dydξ[iel, k, l]
-                    dxdη_val = metrics.dxdη[iel, k, l]
-                    ip = extra_mesh.extra_connijk[iel, k, l]
-                    # Compute Je once and reuse its value
-                    metrics.Je[iel, k, l] = dxdξ_val * dydη_val - dydξ_val * dxdη_val
-                    # Use the precomputed Je value for the other calculations
-                    Jinv = 1.0/metrics.Je[iel, k, l]
-
-                    metrics.dξdx[iel, k, l] =  dydη_val * Jinv
-                    metrics.dξdy[iel, k, l] = -dxdη_val * Jinv
-                    metrics.dηdx[iel, k, l] = -dydξ_val * Jinv
-                    metrics.dηdy[iel, k, l] =  dxdξ_val * Jinv
-
-                end
-            end
-        end
-    else
-        lon = [0.0 90.0 180.0 270.0]
-        lat = [0.0 0.0 0.0 0.0 90.0 -90.0]
-        @inbounds for iel = 1:nelemθ*nelemϕ
-            xg = zeros(nop+1,nop+1)
-            yg = zeros(nop+1,nop+1)
-            xgs = zeros(nop+1,nop+1)
-            ygs = zeros(nop+1,nop+1)
-            dxgdξ = zeros(nop+1,nop+1)
-            dxgdη = zeros(nop+1,nop+1)
-            dygdξ = zeros(nop+1,nop+1)
-            dygdη = zeros(nop+1,nop+1)
-            dxgsdξ = zeros(nop+1,nop+1)
-            dxgsdη = zeros(nop+1,nop+1)
-            dygsdξ = zeros(nop+1,nop+1)
-            dygsdη = zeros(nop+1,nop+1)
-            dRdξ = zeros(nop+1,nop+1)
-            dRdη = zeros(nop+1,nop+1)
-            R = zeros(nop+1,nop+1)
-            Θ = zeros(nop+1,nop+1)
-            Φ = zeros(nop+1,nop+1)
-            irot = zeros(3,3)
-            for j = 1:nop+1
-                for i = 1:nop+1
-
-                    ip = extra_mesh.extra_connijk[iel, i, j]
-                    xij = extra_mesh.extra_coords_cart[1,ip]
-                    yij = extra_mesh.extra_coords_cart[2,ip]
-                    zij = extra_mesh.extra_coords_cart[3,ip]
-                    θij = extra_mesh.extra_coords[1,ip]
-                    ϕij = extra_mesh.extra_coords[2,ip]
-                    rot = zeros(3,3)
-                    if (iel < 5)
-                        θ = lon[iel]
-                        rot[1,1] = cos(θ)
-                        rot[1,2] = sin(θ)
-                        rot[2,1] = -sin(θ)
-                        rot[2,2] = cos(θ)
-                        rot[3,3] = 1.0
-                    else
-                        l = lat[iel]
-                        rot[1,1] = cos(θ)
-                        rot[1,3] = sin(θ)
-                        rot[2,2] = 1.0
-                        rot[3,1] = -sin(θ)
-                        rot[3,3] = cos(θ)
-                    end
-                    irot = inv(rot)       
-                    X = dot(rot[1,:],[xij, yij, zij])
-                    Y = dot(rot[2,:],[xij, yij, zij])
-                    Z = dot(rot[3,:],[xij, yij, zij])
-                    
-                    R[i,j] = sqrt(X^2 + Y^2 + Z^2)
-                    Θ[i,j] = asin(Z/R[i,j])
-                    Φ[i,j] = atan(Y,X+eps(Float64))
-
-                    xg[i,j] = tan(Φ[i,j])
-                    yg[i,j] = tan(Θ[i,j])/cos(Φ[i,j])
-               
-                    xgs[i,j] = atan(xg[i,j])
-                    ygs[i,j] = atan(yg[i,j])
-                    for l=1:nop+1
-                        for k = 1:nop+1
-                            a = dψ[i,k]*ψ[j,l]
-                            b = ψ[i,k]*dψ[j,l]
-                            dRdξ[k, l] += a * R[i,j]
-                            dxgdξ[k, l] += a * xg[i,j] 
-                            dygdξ[k, l] += a * yg[i,j]
-                            dxgsdξ[k, l] += a * xgs[i,j]
-                            dygsdξ[k, l] += a * ygs[i,j]
-
-                            dRdη[k, l] += b * R[i,j]
-                            dxgdη[k, l] += b * xg[i,j]
-                            dygdη[k, l] += b * yg[i,j]
-                            dxgsdη[k, l] += b * xgs[i,j]
-                            dygsdη[k, l] += b * ygs[i,j]
-                        end
-                    end
-
-                end
-            end
-
-            for j = 1:nop+1
-                for i = 1:nop+1
-
-                    dxdR = cos(Θ[i,j])*cos(Φ[i,j])
-                    dydR = cos(Θ[i,j])*sin(Φ[i,j])
-                    dzdR = sin(Φ[i,j])
-
-                    dxdΘ = -R[i,j]*sin(Θ[i,j])*cos(Φ[i,j])
-                    dydΘ = -R[i,j]*sin(Θ[i,j])*sin(Φ[i,j])
-                    dzdΘ = R[i,j]*cos(Φ[i,j])
-
-                    dxdΦ = -R[i,j]*cos(Θ[i,j])*sin(Φ[i,j])
-                    dydΦ = R[i,j]*cos(Θ[i,j])*cos(Φ[i,j])
-                    dzdΦ = 0.0
-
-                    dxdΦΘ = dot(irot[1,:],[dxdΦ dydΦ dzdΦ])
-                    dydΦΘ = dot(irot[2,:],[dxdΦ dydΦ dzdΦ])
-                    dzdΦΘ = dot(irot[3,:],[dxdΦ dydΦ dzdΦ])
-
-                    dxdΘΘ = dot(irot[1,:],[dxdΘ dydΘ dzdΘ])
-                    dydΘΘ = dot(irot[2,:],[dxdΘ dydΘ dzdΘ])
-                    dzdΘΘ = dot(irot[3,:],[dxdΘ dydΘ dzdΘ])
-
-                    dxdR = dot(irot[1,:],[dxdR dydR dzdR])
-                    dydR = dot(irot[2,:],[dxdR dydR dzdR])
-                    dzdR = dot(irot[3,:],[dxdR dydR dzdR])
-
-                    dxgdxgs = 1.0/(cos(xgs[i,j])^2)
-                    dxgdygs = 0.0
-                    dygdxgs = 0.0
-                    dygdygs = 1.0/(cos(ygs[i,j])^2)
-                    
-                    tmpx = dxgdxgs * dxgsdξ[i,j] + dxgdygs*dygsdξ[i,j]
-                    tmpy = dygdxgs * dxgsdξ[i,j] + dygdygs*dygsdξ[i,j]
-                    dxgdξ[i,j] = tmpx
-                    dygdξ[i,j] = tmpy
-                    
-                    tmpx = dxgdxgs * dxgsdη[i,j] + dxgdygs*dygsdη[i,j]
-                    tmpy = dygdxgs * dxgsdη[i,j] + dygdygs*dygsdη[i,j]
-                    dxgdη[i,j] = tmpx
-                    dygdη[i,j] = tmpy
-
-
-                    dΦΘdxg = 1.0/(1.0 + xg[i,j]^2)
-                    dΦΘdyg = 0.0
-                    dΘΘdxg = -yg[i,j]*sin(Φ[i,j])*dΦΘdxg/(1.0+(yg[i,j]*cos(Φ[i,j]))^2) 
-                    dΘΘdyg = cos(Φ[i,j])/(1.0+(yg[i,j]*cos(Φ[i,j]))^2)
-
-                    dΦΘdξ = dΦΘdxg*dxgdξ[i,j] + dΦΘdyg*dygdξ[i,j]
-                    dΦΘdη = dΦΘdxg*dxgdη[i,j] + dΦΘdyg*dygdη[i,j]
-
-                    dΘΘdξ = dΘΘdxg*dxgdξ[i,j] + dΘΘdyg*dygdξ[i,j]
-                    dΘΘdη = dΘΘdxg*dxgdη[i,j] + dΘΘdyg*dygdη[i,j]
-
-                    metrics.dxdξ[iel, i,j] = dxdR*dRdξ[i,j] + dxdΘΘ*dΘΘdξ + dxdΦΘ*dΦΘdξ
-                    metrics.dxdη[iel, i,j] = dxdR*dRdη[i,j] + dxdΘΘ*dΘΘdη + dxdΦΘ*dΦΘdη
-
-                    metrics.dydξ[iel, i,j] = dydR*dRdξ[i,j] + dydΘΘ*dΘΘdξ + dydΦΘ*dΦΘdξ
-                    metrics.dydη[iel, i,j] = dydR*dRdη[i,j] + dydΘΘ*dΘΘdη + dydΦΘ*dΦΘdη
-                    
-                    metrics.dzdξ[iel, i,j] = dzdR*dRdξ[i,j] + dzdΘΘ*dΘΘdξ + dzdΦΘ*dΦΘdξ
-                    metrics.dzdη[iel, i,j] = dzdR*dRdη[i,j] + dzdΘΘ*dΘΘdη + dzdΦΘ*dΦΘdη
-                end
-            end
-            @inbounds for l = 1:nop+1
-                for k = 1:nop+1
-
-                    # Extract values from memory once per iteration
-                    dxdξ_val = metrics.dxdξ[iel, k, l]
-                    dydη_val = metrics.dydη[iel, k, l]
-                    dydξ_val = metrics.dydξ[iel, k, l]
-                    dxdη_val = metrics.dxdη[iel, k, l]
-                    dzdξ_val = metrics.dzdξ[iel, k, l]
-                    dzdη_val = metrics.dzdη[iel, k, l]
-
-                    ip = extra_mesh.extra_connijk[iel, k, l]
-                    # Compute Je once and reuse its value
-                    col1 = [dxdξ_val, dydξ_val, dzdξ_val]
-                    col2 = [dxdη_val, dydη_val, dzdη_val]
-                    metrics.Je[iel, k, l] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
-                    #metrics.Je[iel, k, l] 
-                    # Use the precomputed Je value for the other calculations
-                    Jinv = 1.0/metrics.Je[iel, k, l]
-
-                    metrics.dξdx[iel, k, l] =  (dydη_val - dzdη_val) * Jinv
-                    metrics.dξdy[iel, k, l] = (dzdη_val - dxdη_val) * Jinv
-                    metrics.dξdz[iel, k, l] = (dxdη_val - dydη_val) * Jinv
-                    metrics.dηdx[iel, k, l] = (dzdξ_val - dydξ_val) * Jinv
-                    metrics.dηdy[iel, k, l] = (dxdξ_val - dzdξ_val) * Jinv
-                    metrics.dηdz[iel, k ,l] = (dydξ_val - dxdξ_val) * Jinv
-                end
-            end      
-            #=for j = 1:nop+1
-                for i = 1:nop+1
-
-                    ip = extra_mesh.extra_connijk[iel, i, j]
-                    xij = extra_mesh.extra_coords_cart[1,ip]
-                    yij = extra_mesh.extra_coords_cart[2,ip]
-                    zij = extra_mesh.extra_coords_cart[3,ip]
-                    for l=1:nop+1
-                        for k=1:nop+1
-
-                            a = dψ[i,k]*ψ[j,l]
-                            b = ψ[i,k]*dψ[j,l]
-                            metrics.dxdξ[iel, k, l] += a * xij
-                            metrics.dxdη[iel, k, l] += b * xij
-                            metrics.dydξ[iel, k, l] += a * yij
-                            metrics.dydη[iel, k, l] += b * yij
-
-                            metrics.dzdξ[iel, k, l] += a * zij
-                            metrics.dzdη[iel, k, l] += b * zij
-                            #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
-                        end
-                    end
-                end
-            end
-            @inbounds for l = 1:nop+1
-                for k = 1:nop+1
-
-                    # Extract values from memory once per iteration
-                    dxdξ_val = metrics.dxdξ[iel, k, l]
-                    dydη_val = metrics.dydη[iel, k, l]
-                    dydξ_val = metrics.dydξ[iel, k, l]
-                    dxdη_val = metrics.dxdη[iel, k, l]
-                    dzdξ_val = metrics.dzdξ[iel, k, l]
-                    dzdη_val = metrics.dzdη[iel, k, l]
-
-                    ip = extra_mesh.extra_connijk[iel, k, l]
-                    # Compute Je once and reuse its value
-                    col1 = [dxdξ_val, dydξ_val, dzdξ_val]
-                    col2 = [dxdη_val, dydη_val, dzdη_val]
-                    metrics.Je[iel, k, l] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
-                    #metrics.Je[iel, k, l] 
-                    # Use the precomputed Je value for the other calculations
-                    Jinv = 1.0/metrics.Je[iel, k, l]
-
-                    metrics.dξdx[iel, k, l] =  (dydη_val - dzdη_val) * Jinv
-                    metrics.dξdy[iel, k, l] = (dzdη_val - dxdη_val) * Jinv
-                    metrics.dξdz[iel, k, l] = (dxdη_val - dydη_val) * Jinv
-                    metrics.dηdx[iel, k, l] = (dzdξ_val - dydξ_val) * Jinv
-                    metrics.dηdy[iel, k, l] = (dxdξ_val - dzdξ_val) * Jinv
-                    metrics.dηdz[iel, k ,l] = (dydξ_val - dxdξ_val) * Jinv
-                end
-            end=#
-
-        end
-    end
-
-   extra_mesh.extra_metrics = metrics
-    
-    if !(inputs[:lcubed_sphere_angular_mesh])
-        for rep = 1:2
-            for iper=1:extra_mesh.extra_npoin
-                θ = extra_mesh.extra_coords[1,iper]
-                ϕ = extra_mesh.extra_coords[2,iper]
-                if (abs(ϕ/π - 2.0) <= eps(Float64))
-                    #found a periodic point
-                    iper1 = 1
-                    found = false
-                    while (iper1 <= extra_mesh.extra_npoin && found == false)
-                        θ1 = extra_mesh.extra_coords[1,iper1]
-                        ϕ1 = extra_mesh.extra_coords[2,iper1]
-                        if (ϕ1 <= eps(Float64) && abs(θ-θ1) <= eps(Float64))
-                            found = true
-                        end
-                        iper1 += 1
-                    end
-                    if (found)
-                        ip_old = iper
-                        ip_new = iper1-1
-                        for e=1:extra_mesh.extra_nelem
-                            for i=1:extra_mesh.extra_nop[e]+1
-                                for j=1:extra_mesh.extra_nop[e]+1
-                                    ip = extra_mesh.extra_connijk[e,i,j]
-                                    if (ip == ip_old)
-                                        extra_mesh.extra_connijk[e,i,j] = ip_new
-                                        extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip_new]
-                                        extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip_new]
-                                    end
-                                end
-                            end
-                        end
-                        for e=1:extra_mesh.extra_nelem
-                            for i=1:extra_mesh.extra_nop[e]+1
-                                for j=1:extra_mesh.extra_nop[e]+1
-                                    ip = extra_mesh.extra_connijk[e,i,j]
-                                    if (ip >= ip_old)
-                                        extra_mesh.extra_connijk[e,i,j] -= 1
-                                    end
-                                end
-                            end
-                        end
-                        for i = ip_old+1: extra_mesh.extra_npoin
-                            extra_mesh.extra_coords[1,i-1] = extra_mesh.extra_coords[1,i]
-                            extra_mesh.extra_coords[2,i-1] = extra_mesh.extra_coords[2,i]
-                        end
-                        extra_mesh.extra_npoin -= 1
-                    end
-                end
-            end
-        end
-    end
-   
-   basis = build_Interpolation_basis!(LagrangeBasis(), lgl.ξ, lgl.ξ, TFloat, inputs[:backend])
-   extra_mesh.ψ = basis.ψ
-   extra_mesh.dψ = basis.dψ
-   #=Me = KernelAbstractions.zeros(backend, TFloat, (nop+1)^2, (nop+1)^2, Int64(nelemθ*nelemϕ))
-   build_mass_matrix!(Me, NSD_2D(), Inexact(), basis.ψ, lgl.ω, nelemθ*nelemϕ, metrics.Je, Δϕe, nop, nop, TFloat)
-   M    = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
-   Minv = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
-   DSS_mass!(M, NSD_2D(), Inexact(), Me, extra_mesh.extra_connijk, nelemθ*nelemϕ, npoin, nop, TFloat; llump=inputs[:llump])
-   Minv = TFloat(1.0)./M
-   extra_mesh.Minv = Minv=#
-   return extra_mesh
 end
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
+const Finalize = GridapP4est.Finalize
+const pXest_copy = GridapP4est.pXest_copy
+const get_glue_components = GridapDistributed.get_glue_components
+
 
 # Partition cells into nparts by x-y centroid bins, ignoring z.
 # Returns a 1-indexed cell_to_part vector of length num_cells(model).
@@ -1228,16 +165,11 @@ function _compute_xy_partition(model, nparts)
     return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
 end
 
-const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
-const Finalize = GridapP4est.Finalize
-const pXest_copy = GridapP4est.pXest_copy
-const get_glue_components = GridapDistributed.get_glue_components
-
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
     backend = CPU()
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
@@ -1251,23 +183,56 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.rank       = rank
     ladaptive       = inputs[:ladapt]
     linitial_refine = inputs[:linitial_refine]
-    lamr_mesh       = !isnothing(adapt_flags) 
-    lxy_partition   = inputs[:lxy_partition]
+    lamr_mesh       = !isnothing(adapt_flags)
+
+    # ─── Try the JLD2 mesh-topology cache ────────────────────────────────────
+    # For plain non-adaptive runs the cache stores the entire mesh struct;
+    # GmshDiscreteModel and all the connectivity / HO-node loops can be skipped.
+    # partitioned_model is only used by time_loop! when inputs[:lamr]==true,
+    # so returning nothing here is safe for standard (non-AMR) runs.
+    # Per-rank cache files are produced by _mesh_cache_path when nparts > 1,
+    # so each rank reads/writes its own slice without contention.
+    # JEXPRESSO_PREFETCHED_MESH_CACHE (populated by je_prefetch_caches! before
+    # the with_mpi block) is honoured by _try_load_mesh_cache! when Alya
+    # coupling is active, so this path also works with coupled runs.
+    #
+    # Cross-rank consistency: each rank independently checks its own file
+    # and fingerprint, then we MPI.Allreduce(MIN) to agree on whether ALL
+    # ranks succeeded. If any rank failed (missing/stale/mismatched file,
+    # which can happen after switching nparts, interrupting a previous
+    # save, or rebuilding only some files), every rank rebuilds from
+    # scratch. This prevents silent inconsistency where one rank loads a
+    # stale partition and the others build a fresh one.
+    if isnothing(adapt_flags) && !ladaptive && !linitial_refine
+        _mesh_cache = _mesh_cache_path(inputs, nparts)
+        gmsh_path   = get(inputs, :gmsh_filename, "")
+        local_loaded = _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
+                                              gmsh_path=gmsh_path, inputs=inputs)
+        all_loaded = nparts > 1 ?
+            (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
+            local_loaded
+        if all_loaded
+            return nothing
+        elseif local_loaded && !all_loaded
+            rank == 0 && println(" # Mesh cache: some ranks failed to load — discarding all and rebuilding")
+        end
+    end
+    # ─────────────────────────────────────────────────────────────────────────
     if isnothing(adapt_flags)
-    
+
         if ladaptive == false && linitial_refine == false
-            partitioned_model = if lxy_partition
-                smodel = @outputrootonly GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+            smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+            partitioned_model = if inputs[:lxy_partition]
                 cell_to_part = _compute_xy_partition(smodel, nparts)
-                DiscreteModel(NoGhostParts(parts), smodel, cell_to_part)
+                DiscreteModel(parts, smodel, cell_to_part)
             else
-                @outputrootonly GmshDiscreteModel(NoGhostParts(parts), NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
 
             @outputrootonly begin
-                gmodel = GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             end
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
@@ -1276,7 +241,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         elseif ladaptive == true && linitial_refine == false
 
             @outputrootonly begin
-                gmodel = GmshDiscreteModel(NoEmbedMeshFile(inputs[:gmsh_filename]), renumber=true)
+                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
             function set_id_refined(flags, indices, target_gid)
@@ -1397,8 +362,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
 
     # Write the partitioned model to a VTK file
-    # vtk_directory = "./coarse/" 
-    # writevtk(partitioned_model_coarse, vtk_directory)
+    # vtk_directory = "./output_mesh/" 
+    # writevtk(partitioned_model, vtk_directory)
     # # if omesh.lneed_redistribute == true
     #     vtk_directory = "./refine/"
     #     writevtk(partitioned_model.dmodel, vtk_directory)
@@ -1431,7 +396,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         elm2pelm     = Geometry.get_face_to_parent_face(model,ELEM_flg)
     end
     # @info rank, p2pp, point2ppoint
-    if lamr_mesh == true
+    if ladaptive == true
         hanging_vert_glue  = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
         hanging_facet_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[mesh.nsd]
         num_regular_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_regular_faces[mesh.nsd]
@@ -1643,8 +608,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.ip2gip    = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
     
-    
-    mesh.elem_to_edge     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), 2)
     mesh.conn_edge_el              = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
     mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
     mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
@@ -1873,7 +836,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.half1_cg = KernelAbstractions.zeros(backend, TInt, 0)
     mesh.half2_cg = KernelAbstractions.zeros(backend, TInt, 0)
     # mesh.non_conforming_facets = [KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0) for _ in 1:num_hanging_facets]
-    if lamr_mesh == true
+    if ladaptive == true
      
         cell_fecet_pids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
         facet_cell_pids = get_faces(dtopology, mesh.nsd-1, mesh.nsd) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
@@ -2025,6 +988,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
         elseif mesh.nsd == 3
             offset = 20
+            n_hf_skipped = 0
             for idx in 1: num_hanging_facets
                 half_1 = 0
                 half_2 = 0
@@ -2033,6 +997,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 cid = facet_cell_pids[cfacet][1]
                 pid, lfacetid, half = hanging_facet_glue[idx]
                 if pid == -1
+                    # gel_c = elm2pelm[cid]
+                    # cx = sum(mesh.x[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                    # cy = sum(mesh.y[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                    # cz = sum(mesh.z[ip] for ip in mesh.connijk[cid,:,:,:]) / ngl^3
+                    # println("[NCF-DBG] Rank $rank | hanging face idx=$idx skipped (pid=-1): cid=$cid gel=$gel_c  lfacetid=$lfacetid  half=$half  elem_centroid=($(round(cx;digits=3)), $(round(cy;digits=3)), $(round(cz;digits=3)))")
+                    n_hf_skipped += 1
                     continue
                 end
                 
@@ -2119,9 +1089,53 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 # @info "comm_coord", mesh.x[comm_ip], mesh.y[comm_ip], mesh.z[comm_ip] 
                 
             end
+            # println("[NCF-DBG] Rank $rank | hanging faces: total=$num_hanging_facets  skipped(pid=-1)=$n_hf_skipped  accepted=$(num_hanging_facets - n_hf_skipped)")
+            # flush(stdout)
             mesh.num_ncf    = length(mesh.cip)
             mesh.num_ncf_pg = length(mesh.cip_pg)
             mesh.num_ncf_cg = length(mesh.pip_cg)
+
+            # let ngl_c = ngl, r3 = x -> round(x; digits=3)
+            #     face_name = ("front(j=ngl)","back(j=1)","bottom(k=ngl)","top(k=1)","right(i=1)","left(i=ngl)")
+            #     function face_nodes(iel, fid)
+            #         if     fid==1; return mesh.connijk[iel,1:ngl_c,ngl_c,1:ngl_c][:]
+            #         elseif fid==2; return mesh.connijk[iel,1:ngl_c,1,1:ngl_c][:]
+            #         elseif fid==3; return mesh.connijk[iel,1:ngl_c,1:ngl_c,ngl_c][:]
+            #         elseif fid==4; return mesh.connijk[iel,1:ngl_c,1:ngl_c,1][:]
+            #         elseif fid==5; return mesh.connijk[iel,1,1:ngl_c,1:ngl_c][:]
+            #         else;          return mesh.connijk[iel,ngl_c,1:ngl_c,1:ngl_c][:]
+            #         end
+            #     end
+            #     opp = (2,1,4,3,6,5)
+            #     for (idx, ncf) in enumerate(mesh.non_conforming_facets)
+            #         ciel, piel, cfid, h1, h2 = ncf
+            #         pfid = opp[cfid]
+            #         cips = face_nodes(ciel, cfid)
+            #         pips = face_nodes(piel, pfid)
+            #         # transverse coordinates depend on face direction
+            #         if cfid in (1,2)       # y-face: transverse = x,z
+            #             c1c, c2c = sum(mesh.x[ip] for ip in cips)/length(cips), sum(mesh.z[ip] for ip in cips)/length(cips)
+            #             x1mn, x1mx = extrema(mesh.x[ip] for ip in pips)
+            #             x2mn, x2mx = extrema(mesh.z[ip] for ip in pips)
+            #         elseif cfid in (3,4)   # z-face: transverse = x,y
+            #             c1c, c2c = sum(mesh.x[ip] for ip in cips)/length(cips), sum(mesh.y[ip] for ip in cips)/length(cips)
+            #             x1mn, x1mx = extrema(mesh.x[ip] for ip in pips)
+            #             x2mn, x2mx = extrema(mesh.y[ip] for ip in pips)
+            #         else                   # x-face: transverse = y,z
+            #             c1c, c2c = sum(mesh.y[ip] for ip in cips)/length(cips), sum(mesh.z[ip] for ip in cips)/length(cips)
+            #             x1mn, x1mx = extrema(mesh.y[ip] for ip in pips)
+            #             x2mn, x2mx = extrema(mesh.z[ip] for ip in pips)
+            #         end
+            #         mid1 = (x1mn + x1mx) / 2
+            #         mid2 = (x2mn + x2mx) / 2
+            #         h1_geo = c1c > mid1 ? 1 : 2
+            #         h2_geo = c2c > mid2 ? 1 : 2
+            #         ok = (h1 == h1_geo) && (h2 == h2_geo)
+            #         status = ok ? "OK" : "MISMATCH"
+            #         println("[NCF-HALF $status] Rank $rank idx=$idx ciel=$ciel piel=$piel face=$(face_name[cfid])  stored=(h1=$h1,h2=$h2)  geo=(h1=$h1_geo,h2=$h2_geo)  child_centroid=($(r3(c1c)),$(r3(c2c)))  parent_mid=($(r3(mid1)),$(r3(mid2)))")
+            #     end
+            #     flush(stdout)
+            # end
 
             # reorder mesh.non_conforming_facets_parents_ghost and mesh.non_conforming_facets_children_ghost in rank orders\
             sorted_idx = sortperm(gpfacets_owner)
@@ -2235,21 +1249,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.gip2owner = find_gip_owner(mesh.ip2gip)
     mesh.gip2ip    = KernelAbstractions.zeros(backend, TInt, mesh.gnpoin)
 
-    # --- Load Balance Indicator ---
-    owned_ip        = count(==(rank), mesh.gip2owner)
-    ownership_ratio = owned_ip / mesh.npoin
-
-    min_ratio = MPI.Allreduce(ownership_ratio, MPI.MIN, comm)
-    max_ratio = MPI.Allreduce(ownership_ratio, MPI.MAX, comm)
-    avg_ratio = MPI.Allreduce(ownership_ratio, MPI.SUM, comm) / mpi_size
-
-    println_rank(" # Load balance (min/avg/max ratio)   : ",
-                min_ratio, " / ", avg_ratio, " / ", max_ratio;
-                msg_rank = rank, suppress = mesh.msg_suppress)
 
     for (ip, gip) in enumerate(mesh.ip2gip)
         mesh.gip2ip[gip] = ip
     end
+
     #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
     #----------------------------------------------------------------------
@@ -2308,30 +1312,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     n_semi_inf += 1
                 end
                 iedge_bdy += 1
-            end
-        end
-        
-        for e = 1:mesh.nelem
-            for j=1:mesh.ngl
-                for i = 1:mesh.ngl
-                    ip = mesh.connijk[e, i, j]
-                    if (ip in mesh.poin_in_bdy_edge)
-                        found = false
-                        iedge = 1
-                        while (iedge <= mesh.nedges_bdy && found == false)
-                            for i1 = 1:mesh.ngl
-                                ip1 = mesh.poin_in_bdy_edge[iedge, i1]
-                                e1 = mesh.bdy_edge_in_elem[iedge]
-                                if (ip1 == ip && e1 == e)
-                                    mesh.elem_to_edge[e,i,j,1] = iedge
-                                    mesh.elem_to_edge[e,i,j,2] = i1
-                                    found = true
-                                end
-                            end
-                            iedge += 1
-                        end
-                    end
-                end
             end
         end
         n_semi_infg = MPI.Allreduce(n_semi_inf, MPI.SUM, comm)
@@ -2544,11 +1524,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         iface_bdy = 1
         for iface in findall(x -> x == true, isboundary_face) #total nedges
             # if isboundary_face[iface] == true
+            mesh.bdy_face_type[iface_bdy] = mesh.face_type[iface]
+            mesh.bdy_face_in_elem[iface_bdy] = mesh.facet_cell_ids[iface][1]
                 for igl = 1:mesh.ngl
                     for jgl = 1:mesh.ngl
                         mesh.poin_in_bdy_face[iface_bdy, igl,jgl] = mesh.poin_in_face[iface, igl,jgl]
-                        mesh.bdy_face_type[iface_bdy] = mesh.face_type[iface]
-                        mesh.bdy_face_in_elem[iface_bdy] = mesh.facet_cell_ids[iface][1]
                         if (size(mesh.facet_cell_ids[iface],1) ≠ 1)
                             s = """
                             Check boundary elements! size(mesh.facet_cell_ids[iface],1) ≠ 1 
@@ -2600,34 +1580,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 end
             end
         end=#
-        for e = 1:mesh.nelem
-            for k=1:mesh.ngl
-                for j=1:mesh.ngl   
-                    for i = 1:mesh.ngl
-                        ip = mesh.connijk[e, i, j, k]
-                        if (ip in mesh.poin_in_bdy_face)
-                            found = false
-                            iface = 1
-                            while (iface <= mesh.nfaces_bdy && found == false)
-                                for j1 = 1:mesh.ngl
-                                    for i1 = 1: mesh.ngl
-                                        ip1 = mesh.poin_in_bdy_face[iface, i1, j1]
-                                        e1 = mesh.bdy_face_in_elem[iface]
-                                        if (ip1 == ip && e1 == e) 
-                                            mesh.elem_to_face[e,i,j,k,1] = iface
-                                            mesh.elem_to_face[e,i,j,k,2] = i1
-                                            mesh.elem_to_face[e,i,j,k,3] = j1
-                                            found = true
-                                        end
-                                    end
-                                end
-                                iface += 1
-                            end
-                        end
-                    end
-                end
-            end
-        end
     end
 
     #----------------------------------------------------------------------
@@ -2637,6 +1589,70 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #----------------------------------------------------------------------
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
+
+    mesh.el2gel    = copy(elm2pelm)
+    mesh.el2sib    = copy(elm2pelm)
+
+    # Assign all children from the same parent the same el2sib (parent's global ID).
+    # el2sib is kept separate from el2gel (periodicity) so that the two assemble_mpi!
+    # passes can use different operators: refine must NOT propagate across siblings.
+    if ladaptive == true
+        if isnothing(adapt_flags)
+            # Initial adaptive mesh from scratch: use coarse cell global IDs
+            glue_local    = local_views(glue_adapt).item_ref[]
+            nelem_c       = num_faces(model_coarse, ELEM_flg)
+            coarse_global = local_to_global(cell_gids_c)
+            for i in 1:nelem_c
+                for j in glue_local.o2n_faces_map[i]
+                    mesh.el2sib[j] = eltype(mesh.el2sib)(coarse_global[i])
+                end
+            end
+        elseif !omesh.lneed_redistribute
+            glue_local    = local_views(glue_adapt).item_ref[]
+            coarse_global = local_to_global(cell_gids_c)
+            for i = 1:omesh.nelem
+                n_new = length(glue_local.o2n_faces_map[i])
+                for j in glue_local.o2n_faces_map[i]
+                    if n_new > 1  # refinement: children share parent's global ID
+                        mesh.el2sib[j] = eltype(mesh.el2sib)(coarse_global[i])
+                    else          # nothing or coarsen: preserve existing sibling group
+                        mesh.el2sib[j] = eltype(mesh.el2sib)(omesh.el2sib[i])
+                    end
+                end
+            end
+        elseif omesh.lneed_redistribute
+            # Redistribute: send/receive old el2sib across ranks (same pattern as ad_lvl)
+            lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = GridapDistributed.get_glue_components(glue_redistribute, Val(false))
+            id2send      = local_views(lids_snd).item_ref[]
+            num2send     = id2send.ptrs[end] - 1
+            el2sib2send  = KernelAbstractions.zeros(backend, TInt, Int64(num2send))
+            el2sib2owner = KernelAbstractions.zeros(backend, TInt, Int64(num2send))
+            cnt = 1
+            for (i, part) in enumerate(local_views(parts_snd).item_ref[])
+                for idx in getindex(id2send, i)
+                    el2sib2send[cnt]  = omesh.el2sib[idx]
+                    el2sib2owner[cnt] = part - 1
+                    cnt += 1
+                end
+            end
+            el2sib2recv, _ = send_and_receive(el2sib2send, el2sib2owner, comm)
+            id2recv = local_views(lids_rcv).item_ref[]
+            cnt = 1
+            for (i, _) in enumerate(local_views(parts_rcv).item_ref[])
+                for idx in getindex(id2recv, i)
+                    mesh.el2sib[idx] = el2sib2recv[cnt]
+                    cnt += 1
+                end
+            end
+            for (id, n2o_id) in enumerate(local_views(new2old).item_ref[])
+                n2o_id == 0 && continue
+                mesh.el2sib[id] = omesh.el2sib[n2o_id]
+            end
+        end
+    end
+
+    mesh.gel2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.nelem))*local_views(parts).item_ref[]
+
     if mesh.nsd == 2 
             
         norx = [1.0, 0.0]
@@ -2673,8 +1689,20 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 end
             end
         end
+        if ladaptive
+            empty!(mesh.periodic_ncf_parent_gels)
+            detect_periodic_ncf_parent_gels_2D!(mesh, "periodicx", elm2pelm)
+            detect_periodic_ncf_parent_gels_2D!(mesh, "periodicy", elm2pelm)
+            total_peri_ncf = MPI.Allreduce(length(mesh.periodic_ncf_parent_gels), MPI.SUM, comm)
+            println_rank(" # Periodic NCF parent elements detected: $(total_peri_ncf) (will be refined by amr_strategy!)"; msg_rank = rank, suppress = false)
+        end
+        MPI.Barrier(comm)
         restructure4periodicity_2D(mesh, norx, "periodicx")
         restructure4periodicity_2D(mesh, nory, "periodicy")
+        # restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
+        # restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
+        mesh.gel2owner = find_gip_owner(mesh.el2gel)
+        mesh.sib2owner = find_gip_owner(mesh.el2sib)
 
     elseif mesh.nsd > 2
 
@@ -2747,10 +1775,29 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
      
+        # Detect periodic-NCF pairs (AMR across periodic boundaries).
+        # Instead of building NCF interpolation infrastructure for periodic faces,
+        # record the coarser-side (parent) element global IDs in
+        # mesh.periodic_ncf_parent_gels.  amr_strategy! will iteratively refine
+        # those elements until the periodic boundaries are conforming.
+        if ladaptive
+            empty!(mesh.periodic_ncf_parent_gels)
+            detect_periodic_ncf_parent_gels!(mesh, "periodicx", elm2pelm)
+            detect_periodic_ncf_parent_gels!(mesh, "periodicy", elm2pelm)
+            detect_periodic_ncf_parent_gels!(mesh, "periodicz", elm2pelm)
+            total_peri_ncf = MPI.Allreduce(length(mesh.periodic_ncf_parent_gels), MPI.SUM, comm)
+            println_rank(" # Periodic NCF parent elements detected: $(total_peri_ncf) (will be refined by amr_strategy!)"; msg_rank = rank, suppress = false)
+        end
+        MPI.Barrier(comm)
         restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
         restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
         restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
-        
+        # restructure_el2gel_for_periodicity_3D!(mesh, norx, "periodicx")
+        # restructure_el2gel_for_periodicity_3D!(mesh, nory, "periodicy")
+        # restructure_el2gel_for_periodicity_3D!(mesh, norz, "periodicz")
+        mesh.gel2owner = find_gip_owner(mesh.el2gel)
+        mesh.sib2owner = find_gip_owner(mesh.el2sib)
+
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
         #check_memory(" AFTER restructure4periodicity before GC")
@@ -2760,6 +1807,45 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
 
     end
+
+    # --- Load Balance Indicator ---
+    owned_ip        = count(==(rank), mesh.gip2owner)
+    ownership_ratio = owned_ip / mesh.npoin
+
+    min_ratio = MPI.Allreduce(ownership_ratio, MPI.MIN, comm)
+    max_ratio = MPI.Allreduce(ownership_ratio, MPI.MAX, comm)
+    avg_ratio = MPI.Allreduce(ownership_ratio, MPI.SUM, comm) / mpi_size
+
+    println_rank(" # Load balance (min/avg/max ratio)   : ",
+                min_ratio, " / ", avg_ratio, " / ", max_ratio;
+                msg_rank = rank)
+
+    # --- Owned-point count balance (absolute DSS work per rank) ---
+    owned_ip_f = Float64(owned_ip)
+    min_owned = Int(MPI.Allreduce(owned_ip_f, MPI.MIN, comm))
+    max_owned = Int(MPI.Allreduce(owned_ip_f, MPI.MAX, comm))
+    avg_owned = MPI.Allreduce(owned_ip_f, MPI.SUM, comm) / mpi_size
+    println_rank(" # Owned points (min/avg/max)          : ",
+                min_owned, " / ", round(avg_owned, digits=1), " / ", max_owned;
+                msg_rank = rank)
+
+    # --- Wall-model BC load balance (bottom boundary faces per rank) ---
+    n_bottom_faces = count(==("MOST"), mesh.bdy_face_type)
+    n_bottom_f     = Float64(n_bottom_faces)
+    min_bot = Int(MPI.Allreduce(n_bottom_f, MPI.MIN, comm))
+    max_bot = Int(MPI.Allreduce(n_bottom_f, MPI.MAX, comm))
+    avg_bot = MPI.Allreduce(n_bottom_f, MPI.SUM, comm) / mpi_size
+    println_rank(" # Bottom faces (min/avg/max)          : ",
+                min_bot, " / ", round(avg_bot, digits=1), " / ", max_bot,
+                "  [imbalance: ", round(max_bot / max(avg_bot, 1.0), digits=2), "×]";
+                msg_rank = rank)
+
+    # for i = 0:MPI.Comm_size(comm)-1
+    #     if i == rank
+    #         print_ncf_ip_coords!(mesh)
+    #     end
+    #     MPI.Barrier(comm)
+    # end
     #----------------------------------------------------------------------
     # END periodicity_restructure for MPI
     #----------------------------------------------------------------------
@@ -2801,46 +1887,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #----------------------------------------------------------------------
     # END Extract boundary edges and faces nodes
     #----------------------------------------------------------------------
-
-#writevtk(model,"gmsh_grid")
-
-    if (inputs[:extra_dimensions] > 0)
-        println(" # constructing extra grids for extra dimensions ...................... IN PROGRESS")
-        if (inputs[:adaptive_extra_meshes])
-            mesh.extra_mesh = Array{St_extra_mesh,1}(undef, Int64(mesh.nelem))
-        
-            for iel = 1:mesh.nelem
-                if (inputs[:extra_dimensions] == 1)
-                    mesh.extra_mesh[iel] = make_extra_mesh_1D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_order], inputs[:extra_dimensions_xmin],
-                                                                           inputs[:extra_dimensions_xmax], backend, inputs, true)
-                elseif (inputs[:extra_dimensions] == 2)
-                    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], inputs[:extra_dimensions_order], inputs[:backend])
-                    basis = build_Interpolation_basis!(LagrangeBasis(), ξω.ξ, ξω.ξ, TFloat, inputs[:backend]) 
-                    mesh.extra_mesh[iel] = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
-                                                                          inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin], 
-                                                                          inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
-                else
-                    println("Extra meshes of dimensions 1 or 2 only are currently supported")
-                end
-            end
-
-        else
-            if (inputs[:extra_dimensions] == 1)
-                mesh.extra_mesh = make_extra_mesh_1D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_order], inputs[:extra_dimensions_xmin],
-                                                                           inputs[:extra_dimensions_xmax], backend, inputs, true)
-            elseif (inputs[:extra_dimensions] == 2)
-                ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], inputs[:extra_dimensions_order], inputs[:backend])
-                basis = build_Interpolation_basis!(LagrangeBasis(), ξω.ξ, ξω.ξ, TFloat, inputs[:backend])
-                mesh.extra_mesh = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
-                                                                          inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin],
-                                                                          inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
-            end
-        end
-
-        println(" # constructing extra grids for extra dimensions ...................... DONE")
-
-    end
-
+ 
     #
     #
     # Free memory of obsolete arrays
@@ -2858,16 +1905,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
     end
 
-    # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
-    mesh.coords[:,1] = mesh.x[:]
-    if mesh.nsd > 1
-        mesh.coords[:,2] = mesh.y[:]
-        if mesh.nsd > 2
-            mesh.coords[:,3] = mesh.z[:]
-        end
-    end
-
     #open("./COORDS_GLOBAL.dat", "w") do f
     #    for ip = 1:mesh.npoin
     #        #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
@@ -2880,6 +1917,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #show(stdout, "text/plain", mesh.conn')
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     if isnothing(adapt_flags)
+        # Persist the mesh topology for fast restart on subsequent runs.
+        # _save_mesh_cache is a no-op when _use_mesh_cache(inputs) is false
+        # or when no cache directory can be resolved. Per-rank cache paths
+        # avoid file-write races in parallel.
+        _save_mesh_cache(_mesh_cache_path(inputs, nparts), mesh;
+                         inputs=inputs, nparts=nparts)
         return partitioned_model
     else
         if (omesh.lneed_redistribute)
@@ -2895,7 +1938,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 end
 
 function measure_elements_per_rank(local_elements)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
     needs_redistribution = false
@@ -2909,12 +1952,12 @@ function measure_elements_per_rank(local_elements)
         max_elements = maximum(all_counts)
         min_elements = minimum(all_counts)
         
-        println("\n # Load Balance Analysis:")
-        println(" #   Total elements: $total_elements")
-        println(" #   Average per rank: $(round(avg_elements, digits=2))")
-        println(" #   Max elements: $max_elements")
-        println(" #   Min elements: $min_elements")
-        println(" #   Load imbalance ratio: $(round(max_elements/avg_elements, digits=3))")
+        println("\nLoad Balance Analysis:")
+        println("Total elements: $total_elements")
+        println("Average per rank: $(round(avg_elements, digits=2))")
+        println("Max elements: $max_elements")
+        println("Min elements: $min_elements")
+        println("Load imbalance ratio: $(round(max_elements/avg_elements, digits=3))")
         
         # Check if redistribution is needed
         imbalance_threshold = 1.2  # 20% imbalance threshold
@@ -2948,100 +1991,56 @@ function _handle_optional_args4amr(optional_args...)
     return adapt_flags, partitioned_model_coarse, omesh
 end
 
-function find_gip_owner_v1(a)
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    size = MPI.Comm_size(comm)
-    
-    # Gather all elements from all ranks to rank 0
-    all_elements = MPI.gather(a, comm)
-    
-    if rank == 0
-        # Flatten the gathered list
-        flat_elements = vcat(all_elements...)
-        # all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
-        all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
-
-        # Create a dictionary to store the smallest rank for each element
-        element_owner_map = Dict{Int, Int}()
-        ownership_counts  = zeros(Int64, size)
-        for i in 1:length(flat_elements)
-            el = flat_elements[i]
-            owner = all_owners[i]
-            if !haskey(element_owner_map, el)
-                element_owner_map[el] = owner
-            else
-                # Conflict: element already seen on another rank
-                # Choose the rank with fewer owned elements
-                current_owner = element_owner_map[el]
-                if ownership_counts[owner] < ownership_counts[current_owner]
-                    element_owner_map[el] = owner
-                end
-                ownership_counts[element_owner_map[el]] += 1
-            end
-        end
-        # Map the owners back to the original elements in each rank's vector
-        all_owners_result = [element_owner_map[el] for el in flat_elements]
-        
-        # Split the ownership result according to the original vectors
-        chunked_owners = [all_owners_result[sum(length.(all_elements)[1:i-1])+1:sum(length.(all_elements)[1:i])] for i in 1:size]
-    else
-        chunked_owners = nothing
-    end
-
-    # Scatter the ownership chunks back to all ranks
-    element_owners = MPI.scatter(chunked_owners, comm)
-
-    return element_owners
-    
-end
-
 function find_gip_owner(a)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    size = MPI.Comm_size(comm)
-    
-    # Gather all elements from all ranks to rank 0
-    all_elements = MPI.gather(a, comm)
-    
-    if rank == 0
-        # Flatten the gathered list
-        flat_elements = vcat(all_elements...)
-        # all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
-        all_owners = [i for i in 0:size-1 for _ in 1:length(all_elements[i+1])]
+    nranks = MPI.Comm_size(comm)
 
-        # Create a dictionary to store the smallest rank for each element
-        element_owner_map = Dict{Int, Int}()
-        ownership_counts  = zeros(Int64, size)
-        for i in 1:length(flat_elements)
-            el = flat_elements[i]
-            owner = all_owners[i]
-            if !haskey(element_owner_map, el)
-                element_owner_map[el] = owner
-            else
-                # Conflict: element already seen on another rank
-                # Choose the rank with fewer owned elements
-                current_owner = element_owner_map[el]
-                if ownership_counts[owner+1] < ownership_counts[current_owner+1]
+    # Share local sizes with all ranks (avoids object serialization overhead)
+    local_n = length(a)
+    all_ns = MPI.Allgather(local_n, comm)  # Vector{Int64} of length nranks
+
+    element_owners = Vector{Int64}(undef, local_n)
+
+    if rank == 0
+        total_n = sum(all_ns)
+        flat_elements = Vector{Int64}(undef, total_n)
+        MPI.Gatherv!(a, MPI.VBuffer(flat_elements, Cint.(all_ns)), 0, comm)
+
+        # Determine ownership for each global point
+        element_owner_map = Dict{Int64, Int64}()
+        ownership_counts  = zeros(Int64, nranks)
+        offset = 0
+        for r in 0:nranks-1
+            sz = all_ns[r+1]
+            for i in offset+1:offset+sz
+                el    = flat_elements[i]
+                owner = Int64(r)
+                if !haskey(element_owner_map, el)
                     element_owner_map[el] = owner
+                else
+                    # Conflict: element shared across ranks — assign to rank with fewer owned elements
+                    current_owner = element_owner_map[el]
+                    if ownership_counts[owner+1] < ownership_counts[current_owner+1]
+                        element_owner_map[el] = owner
+                    end
+                    ownership_counts[element_owner_map[el]+1] += 1
                 end
-                ownership_counts[element_owner_map[el]+1] += 1
             end
+            offset += sz
         end
-        # Map the owners back to the original elements in each rank's vector
-        all_owners_result = [element_owner_map[el] for el in flat_elements]
-        
-        # Split the ownership result according to the original vectors
-        chunked_owners = [all_owners_result[sum(length.(all_elements)[1:i-1])+1:sum(length.(all_elements)[1:i])] for i in 1:size]
+
+        # Build flat result array
+        all_owners_result = Int64[element_owner_map[flat_elements[i]] for i in 1:total_n]
+
+        # Scatter ownership results back to each rank using raw Int64 buffers
+        MPI.Scatterv!(MPI.VBuffer(all_owners_result, Cint.(all_ns)), element_owners, 0, comm)
     else
-        chunked_owners = nothing
+        MPI.Gatherv!(a, nothing, 0, comm)
+        MPI.Scatterv!(nothing, element_owners, 0, comm)
     end
 
-    # Scatter the ownership chunks back to all ranks
-    element_owners = MPI.scatter(chunked_owners, comm)
-
     return element_owners
-    
 end
 
 function determine_colinearity(vec1, vec2)
@@ -3062,6 +2061,10 @@ function determine_colinearity(vec1, vec2)
 
     # For 3D vectors
     else
+        norm_v1 = sqrt(vec1[1] * vec1[1] + vec1[2] * vec1[2] + vec1[3] * vec1[3])
+        norm_v2 = sqrt(vec2[1] * vec2[1] + vec2[2] * vec2[2] + vec2[3] * vec2[3])
+        vec1    = vec1 ./ norm_v1
+        vec2    = vec2 ./ norm_v2
         return abs(vec1[2] * vec2[3] - vec1[3] * vec2[2]) < 1e-7 &&
                abs(vec1[3] * vec2[1] - vec1[1] * vec2[3]) < 1e-7 &&
                abs(vec1[1] * vec2[2] - vec1[2] * vec2[1]) < 1e-7
@@ -3269,7 +2272,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3344,7 +2347,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         end
     #end #do f
     #show(stdout, "text/plain", poin_in_edge)
-    #@info "-----2D edges"
+    #println(" # -----2D edges")
     
     #
     # Second pass: populate mesh.conn[∀ elem, 1:4+el_edges_internal_nodes]\n")
@@ -3446,7 +2449,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3481,7 +2484,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     #
     edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     #open("./COORDS_HO_edges_$rank.dat", "w") do f
     # open("./COORDS_HO_edges.dat", "w") do f
@@ -3533,7 +2536,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
         end
     #end #end f
     #show(stdout, "text/plain", mesh.poin_in_edge)
-    #@info "-----3D edges"
+    #println(" # -----3D edges")
         
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")
@@ -3782,7 +2785,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3947,7 +2950,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3985,7 +2988,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
         resize!(mesh.z_ho, (mesh.npoin))
     end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     #open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_faces.dat", "w") do f
@@ -4336,7 +3339,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -4381,7 +3384,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
         resize!(mesh.z_ho, (mesh.npoin))
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     gip::Int64  = 0
     #open("./COORDS_HO_faces_$rank.dat", "w") do f
@@ -4637,13 +3640,100 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 end
 
 
+"""
+    read_ad_lvl_from_p4est(ptr_pXest) -> Vector{TInt}
+
+Walk the local trees of a p8est forest and return the level of every
+local leaf quadrant, in p4est ordering.  This ordering matches the
+Jexpresso mesh element ordering when the mesh is built directly from
+the same forest (e.g. after an AMR restart via `load_p4est_checkpoint_model`).
+"""
+function read_ad_lvl_from_p4est(ptr_pXest)
+    forest    = unsafe_load(ptr_pXest)
+    trees_arr = unsafe_load(forest.trees)          # sc_array_t of p8est_tree_t
+    levels    = TInt[]
+    for t in forest.first_local_tree:forest.last_local_tree
+        tree_ptr = Ptr{P4est_wrapper.p8est_tree_t}(
+            trees_arr.array + t * trees_arr.elem_size)
+        tree   = unsafe_load(tree_ptr)
+        n_quads = Int(tree.quadrants.elem_count)
+        for q in 0:n_quads-1
+            quad_ptr = Ptr{P4est_wrapper.p8est_quadrant_t}(
+                tree.quadrants.array + q * tree.quadrants.elem_size)
+            quad = unsafe_load(quad_ptr)
+            push!(levels, TInt(quad.level))
+        end
+    end
+    return levels
+end
+
+"""
+    load_p4est_checkpoint_model(base_model, forest_file) -> OctreeDistributedDiscreteModel
+
+Load a p4est forest checkpoint saved by `write_p4est_checkpoint` and build a full
+`OctreeDistributedDiscreteModel` from it.
+
+`base_model` should be the coarse (or preadapted) `OctreeDistributedDiscreteModel`
+built from the original .msh file — its `coarse_model` and `ptr_pXest_connectivity`
+provide the geometric context for the loaded forest.  All MPI ranks call collectively.
+"""
+function load_p4est_checkpoint_model(base_model::OctreeDistributedDiscreteModel, forest_file::String)
+    pXest_type = base_model.pXest_type
+    parts      = base_model.parts
+
+    # Load forest (MPI-collective). p8est_load also fills *connectivity_ref with
+    # a freshly allocated connectivity that we leave to be GCed — we use the
+    # Gridap-managed connectivity from base_model throughout.
+    connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
+    loaded_ptr_pXest = P4est_wrapper.p8est_load(
+        forest_file,
+        get_mpi_comm(),
+        Csize_t(0),      # no per-quadrant data stored
+        Cint(0),         # do not read payload
+        C_NULL,
+        connectivity_ref)
+
+    # Ghost layer and lnodes for a non-conforming (AMR) forest
+    ptr_ghost  = GridapP4est.setup_pXest_ghost(pXest_type, loaded_ptr_pXest)
+    ptr_lnodes = GridapP4est.setup_pXest_lnodes_nonconforming(pXest_type, loaded_ptr_pXest, ptr_ghost)
+
+    # Build Gridap distributed mesh from the loaded forest.
+    # base_model.coarse_model (GmshDiscreteModel) provides physical coordinates.
+    fmodel, nc_glue = GridapP4est.setup_non_conforming_distributed_discrete_model(
+        pXest_type,
+        GridapP4est.PXestUniformRefinementRuleType(),
+        parts,
+        base_model.coarse_model,
+        base_model.ptr_pXest_connectivity,
+        loaded_ptr_pXest,
+        ptr_ghost,
+        ptr_lnodes)
+
+    GridapP4est.pXest_ghost_destroy(pXest_type, ptr_ghost)
+    GridapP4est.pXest_lnodes_destroy(pXest_type, ptr_lnodes)
+
+    Dc = num_cell_dims(base_model.dmodel)
+    Dp = num_point_dims(base_model.dmodel)
+
+    return OctreeDistributedDiscreteModel(Dc, Dp,
+        parts,
+        fmodel,
+        nc_glue,
+        base_model.coarse_model,
+        base_model.ptr_pXest_connectivity,
+        loaded_ptr_pXest,
+        pXest_type,
+        GridapP4est.PXestUniformRefinementRuleType(),
+        false,         # does not own connectivity (base_model owns it)
+        base_model)    # gc_ref: keep base_model alive
+end
+
 function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-
     lpreadapt = inputs[:lpreadapt]
-    max_ad_lv = inputs[:amr_max_level]
+    max_ad_lv = inputs[:preadapt_max_level]
 
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
@@ -4675,9 +3765,10 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                                             nop=TInt(inputs[:nop]),
                                             ngr=TInt(inputs[:nop_laguerre]+1),
                                             SD=NSD_1D())
-                    ref_coarse_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
-                    do_preadapt!(ref_coarse_flags, inputs, mesh_r_o)
-                    p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, ref_coarse_flags, p_model_r_o, mesh_r_o)
+                    preadapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r_o.nelem))
+                    do_preadapt!(preadapt_flags, inputs, mesh_r_o)
+                    mesh_r_o.lneed_redistribute = false
+                    p_model_r, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_r, inputs, nparts, distribute, preadapt_flags, p_model_r_o, mesh_r_o)
                     current_max_ad_lv = MPI.Allreduce(maximum(mesh_r.ad_lvl), MPI.MAX, comm)
                     if current_max_ad_lv == prev_max_ad_lv
                         println(" No new refinement occurred: stop refining")
@@ -4686,8 +3777,19 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                     mesh_r_o          = mesh_r
                     p_model_r_o       = p_model_r
                 end
-                mesh              = mesh_r
-                partitioned_model = p_model_r
+                if (mesh_r.lneed_redistribute)
+                    # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
+                    mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+                                                nop=TInt(inputs[:nop]),
+                                                ngr=TInt(inputs[:nop_laguerre]+1),
+                                                SD=NSD_1D())
+                    preadapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(mesh_r.nelem))
+                    do_preadapt!(preadapt_flags, inputs, mesh_r)
+                    partitioned_model, glue_redistribute = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute, preadapt_flags, p_model_r, mesh_r)
+                else
+                    mesh = mesh_r
+                    partitioned_model = p_model_r
+                end
             else
                 mesh              = mesh_tmp
                 partitioned_model = partitioned_model_tmp
@@ -4703,7 +3805,40 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             project = args[end-1]
             interp  = args[end-2]
             uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
-            p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+            if !get(inputs, :lrestart_amr, false)
+                p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+            end
+
+            # If any periodic boundaries are non-conforming, mark the coarser-side
+            # parent elements for refinement and rebuild until conforming.
+            total_peri_ncf = MPI.Allreduce(length(mesh_tmp.periodic_ncf_parent_gels), MPI.SUM, comm)
+            while total_peri_ncf > 0
+                rank == 0 && println(" # Periodic NCF detected: $(total_peri_ncf) parent elements — refining for conformity")
+                ncf_parent_set = Set{Int64}(mesh_tmp.periodic_ncf_parent_gels)
+                peri_conform_flags = zeros(TInt, Int64(mesh_tmp.nelem))
+                for iel = 1:mesh_tmp.nelem
+                    if Int64(mesh_tmp.el2gel[iel]) in ncf_parent_set
+                        peri_conform_flags[iel] = refine_flag
+                    end
+                end
+                mesh_tmp.lneed_redistribute = false  # force adapt (not redistribute) path
+                mesh_prev = mesh_tmp
+                uaux_prev = uaux_refined
+                mesh_tmp  = St_mesh{TInt,TFloat,CPU()}(nsd=TInt(inputs[:nsd]),
+                                                       nop=TInt(inputs[:nop]),
+                                                       ngr=TInt(inputs[:nop_laguerre]+1),
+                                                       SD=NSD_1D())
+                partitioned_model_tmp, n2o_ele_map_tmp = mod_mesh_read_gmsh!(
+                    mesh_tmp, inputs, nparts, distribute,
+                    peri_conform_flags, partitioned_model_tmp, mesh_prev, interp, project, uaux_prev)
+                uaux_refined = KernelAbstractions.zeros(CPU(), TFloat, (mesh_tmp.npoin, size(uaux_prev, 2)))
+                p8est_transfer_q!(uaux_refined, uaux_prev,
+                                  mesh_prev.ad_lvl, mesh_tmp.ad_lvl,
+                                  mesh_tmp, mesh_prev,
+                                  n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+                total_peri_ncf = MPI.Allreduce(length(mesh_tmp.periodic_ncf_parent_gels), MPI.SUM, comm)
+            end
+
             if (mesh_tmp.lneed_redistribute)
                 # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
                 mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
@@ -4722,6 +3857,15 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         end
 
 
+        # WARNING: this will be removed when x,y,z is fulyl replaced by coords
+        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
+        mesh.coords[:,1] = mesh.x[:]
+        if mesh.nsd > 1
+            mesh.coords[:,2] = mesh.y[:]
+            if mesh.nsd > 2
+                mesh.coords[:,3] = mesh.z[:]
+            end
+        end
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
@@ -4827,14 +3971,14 @@ end
 #----------------------------------------------------------------------
 function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mesh.Δelem = KernelAbstractions.zeros(backend, T, mesh.nelem)
     for ie = 1:mesh.nelem
          compute_element_size!(SD, ie, mesh::St_mesh, T)
     end
-    mesh.Δelem_s      = minimum(mesh.Δelem)    
-    mesh.Δelem_l      = maximum(mesh.Δelem)
+    mesh.Δelem_s      = MPI.Allreduce(minimum(mesh.Δelem), MPI.MIN, comm) 
+    mesh.Δelem_l      = MPI.Allreduce(maximum(mesh.Δelem), MPI.MAX, comm)
     mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
     mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
 
@@ -4953,3 +4097,6 @@ function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_
 end
 
 
+@inline function calculate_effective_delta(delta::TFloat, ad_lvl::TInt)
+    return ldexp(delta, -ad_lvl)
+end

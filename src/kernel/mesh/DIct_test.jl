@@ -1,7 +1,5 @@
-    
 using Random
 using MPI
-using BenchmarkTools
 using SparseArrays
 if !MPI.Initialized()
     MPI.Init()

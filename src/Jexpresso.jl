@@ -32,7 +32,7 @@ using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
-                 SplitODEProblem
+                 SplitODEProblem, FullSpecialize
 using HDF5
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
@@ -103,6 +103,8 @@ include(joinpath( "kernel", "globalStructs.jl"))
 include(joinpath( "kernel", "ArtificialViscosity","viscousStructs.jl"))
 
 include(joinpath( "kernel", "ArtificialViscosity","Wall_model.jl"))
+
+include(joinpath( "kernel", "coupling", "couplingStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
@@ -193,6 +195,8 @@ include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 include(joinpath( "kernel", "mpi", "mpi_communications.jl"))
 
 include(joinpath( "io", "mod_inputs.jl"))
+
+include(joinpath( "io", "les_statistics.jl"))
 
 include(joinpath( "io", "mod_print_io.jl"))
 

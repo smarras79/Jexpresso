@@ -3,11 +3,11 @@ function params_setup(sem,
                       inputs::Dict,
                       OUTPUT_DIR::String,
                       T,
-                      tspan = [T(inputs[:tinit]), T(inputs[:tend])])
+                      tspan = [T(inputs[:tinit]), T(inputs[:tend])];
+                      coupling = nothing)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-
     println_rank(" # Build arrays and params ................................ "; msg_rank = rank, suppress = sem.mesh.msg_suppress)
     if rank == 0 && tspan[1] == T(inputs[:tinit])
         @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
@@ -76,7 +76,6 @@ function params_setup(sem,
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
-    fluxaux      = uODE.fluxaux
     utmp         = uODE.utmp
     F            = fluxes.F
     G            = fluxes.G
@@ -91,9 +90,10 @@ function params_setup(sem,
     rhs_diffξ_el = rhs.rhs_diffξ_el
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
-    rhs_el_tmp   = rhs.rhs_el_tmp
     μsgs         = viscsgs.μ
     μ_max        = viscsgs.μ_max
+    
+    rhs_el_tmp   = rhs.rhs_el_tmp
     
     #------------------------------------------------------------------------------------
     # non conforming faces arrays and mpi cache
@@ -130,7 +130,6 @@ function params_setup(sem,
     source_micro   = gpuMoist.source_micro
     adjusted       = gpuMoist.adjusted
     Pm             = gpuMoist.Pm
-    
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
@@ -228,12 +227,6 @@ function params_setup(sem,
         b_lag            = filter_lag.b_lag
         B_lag            = filter_lag.B_lag
     end
-
-    
-    #------------------------------------------------------------------------------------
-    # Element learning
-    #------------------------------------------------------------------------------------
-    lEL_Sample = inputs[:lEL_Sample]
     
     #------------------------------------------------------------------------------------
     # Allocate micophysics arrays
@@ -246,7 +239,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate wall model arrays
     #------------------------------------------------------------------------------------
-    WM = allocate_Wall_model(sem.mesh.nfaces_bdy, sem.mesh.ngl, T, backend; lwall_model=inputs[:lwall_model])
+    WM = allocate_Wall_model(sem.mesh.nfaces_bdy, sem.mesh.ngl, T, backend; lwall_model=inputs[:lwall_model], lmoist=inputs[:lmoist])
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
@@ -258,7 +251,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     if (sem.mesh.SD != NSD_1D()) && !(sem.mesh.lLaguerre)
         if rank == 0
-            @info "start conformity4ncf_q!"
+            println(" # start conformity4ncf_q!")
         end
         g_dss_cache_qp = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
         conformity4ncf_q!(qp.qn, rhs_el_tmp, @view(utmp[:,:]), vaux, 
@@ -267,25 +260,23 @@ function params_setup(sem,
                           sem.QT, sem.mesh.connijk,
                           sem.mesh, sem.matrix.Minv, 
                           sem.metrics.Je, sem.ω, sem.AD, 
-                          qp.neqs,
                           q_el, q_el_pro,
                           cache_ghost_p, q_ghost_p,
                           cache_ghost_c, q_ghost_c,
-                          sem.interp; ladapt = inputs[:ladapt])
+                          sem.interp; ladapt=inputs[:ladapt], neqs=qp.neqs)
         conformity4ncf_q!(qp.qe, rhs_el_tmp, @view(utmp[:,:]), vaux, 
                           g_dss_cache_qp,
                           sem.mesh.SD, 
                           sem.QT, sem.mesh.connijk, 
                           sem.mesh, sem.matrix.Minv, 
                           sem.metrics.Je, sem.ω, sem.AD, 
-                          qp.neqs,
                           q_el, q_el_pro,
                           cache_ghost_p, q_ghost_p,
                           cache_ghost_c, q_ghost_c,
-                          sem.interp; ladapt = inputs[:ladapt])
+                          sem.interp; ladapt=inputs[:ladapt], neqs=qp.neqs)
         MPI.Barrier(comm)
         if rank == 0
-            @info "end conformity4ncf_q!"
+            println(" # end conformity4ncf_q!")
         end
     end
     for i=1:qp.neqs
@@ -293,11 +284,18 @@ function params_setup(sem,
         u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
         qp.qnm1[:,i] = @view(qp.qn[:,i])
         qp.qnm2[:,i] = @view(qp.qn[:,i])
+        
     end
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    
+    #if (backend == CPU())
+    #    visc_coeff = zeros(TFloat, qp.neqs)
+    #    if inputs[:lvisc]
+    #        visc_coeff .= inputs[:μ]
+    #    end
+    #else
+   
     if inputs[:lvisc]
         coeffs = zeros(TFloat, qp.neqs)
         if size(inputs[:μ]) > size(coeffs)
@@ -314,16 +312,21 @@ function params_setup(sem,
 
     # setup timer
     timers = Dict{String, MPIFunctionTimer}()
+
+    # LES statistics z-level cache (computed once, shared across timesteps)
+    nprofiles        = length(inputs[:lesprofile_vars])
+    nstress          = length(inputs[:lesstress_vars])
+    les_stat_cache   = build_les_stat_cache(sem.mesh, nprofiles, nstress, TFloat, backend)
+    les_cross_section = build_les_cross_section(sem.mesh, sem.basis, nprofiles, nstress, TFloat)
+
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
-        inputs[:llaguerre_1d_right] ||
-        inputs[:llaguerre_1d_left])
-        
+        inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
-                  uaux, vaux, utmp, fluxaux,
+                  uaux, vaux, utmp,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el, rhs_el_tmp,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el, μ_max,
@@ -341,7 +344,7 @@ function params_setup(sem,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
                   RHS_lag, RHS_visc_lag, uprimitive_lag, 
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD,
-                  sem.SOL_VARS_TYPE, sem.volume_flux,
+                  sem.SOL_VARS_TYPE,
                   neqs=qp.neqs,
                   sem.mesh,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
@@ -353,13 +356,16 @@ function params_setup(sem,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
-                  timers)
-        
+                  les_stat_cache,
+                  les_cross_section,
+                  timers,
+                  coupling = coupling)
+
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
                   T, inputs,
-                  uaux, vaux, utmp, fluxaux,
+                  uaux, vaux, utmp,
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
                   fijk, ∇f_el,
@@ -374,9 +380,8 @@ function params_setup(sem,
                   cache_ghost_p, cache_ghost_c,
                   q_t, q_ti, q_tij, fqf, b, B,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD, 
-                  sem.SOL_VARS_TYPE, sem.volume_flux,
+                  sem.SOL_VARS_TYPE, 
                   neqs=qp.neqs,
-                  lEL_Sample, 
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff,
@@ -385,9 +390,12 @@ function params_setup(sem,
                   WM,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
+                  les_stat_cache,
+                  les_cross_section,
                   OUTPUT_DIR,
                   timers,
-                  sem.interp, sem.project, sem.nparts, sem.distribute)
+                  sem.interp, sem.project, sem.nparts, sem.distribute,
+                  coupling = coupling)
     end
 
     println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)
