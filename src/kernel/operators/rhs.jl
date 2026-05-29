@@ -1,13 +1,25 @@
 using Distributions
 using StaticArrays
 
-const PHYS_CONST = PhysicalConst{Float32}()
-const MicroConst = MicrophysicalConst{Float32}()
+# Float64 to match the Float64 arithmetic inside user_source! / user_flux! /
+# add_micro_precip_sources!. With Float32 here, every const-field access
+# inside those callbacks triggered Float32->Float64 promotion in the inner
+# loop, breaking inference in a few spots. sm/alyacouple-merge uses Float64.
+const PHYS_CONST = PhysicalConst{Float64}()
+const MicroConst = MicrophysicalConst{Float64}()
 
 function RHStoDU!(du, RHS, neqs, npoin)
+    # Scalar (not range/@view) assignment so `du` can be an
+    # OrdinaryDiffEq low-storage RK ArrayFuse, which only supports
+    # setindex!(::ArrayFuse, v, ::Int) - not range setindex!. Range
+    # form was incompatible with FullSpecialize'd ODEProblem and also
+    # less cache-friendly than the straight scalar loop. RHS keeps
+    # its [npoin, neqs] layout.
     for i=1:neqs
         idx = (i-1)*npoin
-        du[idx+1:i*npoin] = @view RHS[:,i]
+        for j=1:npoin
+            du[idx+j] = RHS[j,i]
+        end
     end
 end
 
@@ -109,14 +121,14 @@ function rhs!(du, u, params, time)
     timers = params.timers
 
     if (backend == CPU())
-        _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        @timeit_debug JEXPRESSO_TIMER "build_rhs" _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
-        if (params.laguerre) 
-            build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+        if (params.laguerre)
+            @timeit_debug JEXPRESSO_TIMER "build_rhs_laguerre" build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
-        
-        RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+
+        @timeit_debug JEXPRESSO_TIMER "RHStoDU" RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
             lpert = true
@@ -504,7 +516,7 @@ function _build_rhs!(RHS, u, params, time)
     timers  = params.timers
 # @time begin
     if SD == NSD_1D()
-        comm = MPI.COMM_WORLD
+        comm = get_mpi_comm()
     else
         comm = params.mesh.parts.comm
     end
@@ -512,22 +524,22 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
-    resetRHSToZero_inviscid!(params)
+    @timeit_debug JEXPRESSO_TIMER "resetRHS_inv" resetRHSToZero_inviscid!(params)
     if (params.inputs[:lfilter])
         reset_filters!(params)
         if (params.laguerre)
             reset_laguerre_filters!(params)
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
+            @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
                     connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
         else
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
+            @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
         end
     end
 
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     if inputs[:ladapt] == true
-        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
+        @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
                           params.g_dss_cache,
                           params.mesh.SD,
                           params.QT, params.mesh.connijk,
@@ -539,8 +551,8 @@ function _build_rhs!(RHS, u, params, time)
                           params.interp)
     end
     
-    resetbdyfluxToZero!(params)
-    apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+    @timeit_debug JEXPRESSO_TIMER "reset_bdyflux" resetbdyfluxToZero!(params)
+    @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
                                          params.mesh.coords,
                                          params.metrics.nx, params.metrics.ny, params.metrics.nz,
                                          params.mesh.npoin, params.mesh.npoin_linear, 
@@ -557,7 +569,7 @@ function _build_rhs!(RHS, u, params, time)
 
     if (params.inputs[:lmoist])
         
-        do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+        @timeit_debug JEXPRESSO_TIMER "do_micro_physics" do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
                           params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
                           params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
                           params.uaux, @view(params.mesh.coords[:,end]),
@@ -581,19 +593,19 @@ function _build_rhs!(RHS, u, params, time)
         # end
             
         if (params.inputs[:lprecip])
-            compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
+            @timeit_debug JEXPRESSO_TIMER "precip_derivs" compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
                                                params.mp.Pg, params.mp.Tabs, params.mp.qi,
                                                @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
                                                params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
                                                params.metrics, params.ω, params.basis.dψ, SD, params.SOL_VARS_TYPE)
             
-            micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
+            @timeit_debug JEXPRESSO_TIMER "micro2rhs" micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
         end
-        uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
+        @timeit_debug JEXPRESSO_TIMER "uaux2u" uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
 
      
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+    @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
 
     if inputs[:ladapt] == true
@@ -606,16 +618,16 @@ function _build_rhs!(RHS, u, params, time)
                            params.mesh.pgip_local, ngl-1, neqs, params.interp)
 
     end
-    DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+    @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
     if (params.inputs[:lvisc] == true)
         
-        resetRHSToZero_viscous!(params, SD)
+        @timeit_debug JEXPRESSO_TIMER "resetRHS_visc" resetRHSToZero_viscous!(params, SD)
         
-        viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
@@ -627,10 +639,10 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.pgip_local, ngl-1, neqs, params.interp)
         end
         
-        DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+        @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
+    @timeit_debug JEXPRESSO_TIMER "BC_neumann" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
                                        params.metrics.nx, params.metrics.ny, params.metrics.nz,
                                        params.mesh.npoin, params.mesh.npoin_linear,
@@ -646,7 +658,7 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
 
-    DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+    @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)
@@ -672,7 +684,7 @@ end
 
 function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
     
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     ngl   = params.mesh.ngl
     npoin = params.mesh.npoin
@@ -719,27 +731,31 @@ end
 function inviscid_rhs_el!(u, params,
                           connijk::Array{Int64,4},
                           qe::Matrix{Float64},
-                          coords, 
+                          coords,
                           lsource, S_micro_vec, qn_vec, flux_lw_vec,
                           flux_sw_vec, SD::NSD_2D)
-    
+    # NOTE: typed function barrier (_inviscid_rhs_el_2d!) reverted -
+    # the wider arg list was tripping LLVM codegen / inference setup on
+    # theta builds (compile-time crash, no Julia traceback). The 2D
+    # path runs fine with FullSpecialize alone; the barrier's
+    # incremental ~10-20% wasn't worth losing theta.
     ngl   = params.mesh.ngl
     nelem = params.mesh.nelem
-    
+
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
 
     for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
-            
+
             ip = connijk[iel,i,j]
-            
+
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(qe[ip,:]),
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs, ip=ip)
-            
+
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
@@ -747,7 +763,7 @@ function inviscid_rhs_el!(u, params,
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
                              x=coords[ip,1], y=coords[ip,2], ymax=ymax)
-                
+
                 if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
                     flux_lw::Float64 = @inbounds flux_lw_vec[ip]
@@ -761,7 +777,7 @@ function inviscid_rhs_el!(u, params,
                 end
             end
         end
-        
+
         _expansion_inviscid!(u,
                              params.neqs, params.mesh.ngl,
                              params.basis.dψ, params.ω,
@@ -770,82 +786,122 @@ function inviscid_rhs_el!(u, params,
                              params.metrics.dξdx, params.metrics.dξdy,
                              params.metrics.dηdx, params.metrics.dηdy,
                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
-        
+
 
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D)
-    
-    nelem  = params.mesh.nelem
-    ngl    = params.mesh.ngl
-    lmoist = params.inputs[:lmoist]::Bool
-    LST    = params.inputs[:LST]::Bool
-    
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
+function inviscid_rhs_el!(u, params,
+                          connijk::Array{Int64,4},
+                          qe::Matrix{Float64},
+                          coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
+                          SD::NSD_3D)
+
+    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
+    # Typed function barrier (paired with FullSpecialize at the
+    # ODEProblem construction site in TimeIntegrators.jl): pull every
+    # params.* field out into concretely-typed positional arguments so
+    # the hot per-element loop in _inviscid_rhs_el_3d! compiles
+    # specialized and non-allocating. Without this barrier the inner
+    # loop dereferences `params.F`, `params.G`, etc. directly, which
+    # boxes when FullSpecialize ISN'T active and forces extra dispatch
+    # work even when it is.
+    _inviscid_rhs_el_3d!(u, params.uaux, qe,
+                         params.F, params.G, params.H, params.S,
+                         params.basis.dψ, params.ω, params.metrics.Je,
+                         params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                         params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                         params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                         params.rhs_el, connijk, coords,
+                         Int64(params.mesh.ngl), Int64(params.mesh.nelem),
+                         Int64(params.neqs), Int64(params.mesh.npoin),
+                         params.CL, params.QT, SD, params.AD, params.SOL_VARS_TYPE,
+                         params.mesh, params.LST,
+                         lsource, params.inputs[:lmoist]::Bool, params.inputs[:LST]::Bool,
+                         S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
+                         params.mesh.connijk, params.mesh.poin_in_bdy_face,
+                         params.mesh.elem_to_face, params.mesh.bdy_face_type,
+                         Float64(params.xmin), Float64(params.xmax), Float64(params.zmax))
+end
+
+function _inviscid_rhs_el_3d!(u, uaux, qe,
+                              F, G, H, S,
+                              dψ, ω, Je,
+                              dξdx, dξdy, dξdz,
+                              dηdx, dηdy, dηdz,
+                              dζdx, dζdy, dζdz,
+                              rhs_el, connijk, coords,
+                              ngl, nelem, neqs, npoin,
+                              CL, QT, SD, AD, SOL_VARS_TYPE,
+                              mesh, LST,
+                              lsource, lmoist, lLST,
+                              S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
+                              connijk_mesh, poin_in_bdy_face,
+                              elem_to_face, bdy_face_type,
+                              xmin, xmax, zmax)
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i=1:ngl
-            
+
             ip = connijk[iel,i,j,k]
-            
-            user_flux!(@view(params.F[i,j,k,:]),
-                       @view(params.G[i,j,k,:]),
-                       @view(params.H[i,j,k,:]),
-                       @view(params.uaux[ip,:]),
+
+            user_flux!(@view(F[i,j,k,:]),
+                       @view(G[i,j,k,:]),
+                       @view(H[i,j,k,:]),
+                       @view(uaux[ip,:]),
                        @view(qe[ip,:]),
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
-            
+                       mesh,
+                       CL, SOL_VARS_TYPE;
+                       neqs=neqs, ip=ip)
+
             if lsource
-                user_source!(@view(params.S[i,j,k,:]),
-                             @view(params.uaux[ip,:]),
+                user_source!(@view(S[i,j,k,:]),
+                             @view(uaux[ip,:]),
                              @view(qe[ip,:]),
-                             params.mesh.npoin,
-                             params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs,
+                             npoin,
+                             CL, SOL_VARS_TYPE;
+                             neqs=neqs,
                              x=coords[ip,1], y=coords[ip,2], z=coords[ip,3],
                              xmax=xmax, xmin=xmin, zmax=zmax)
-                
+
                 if (lmoist)
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
                     flux_lw::Float64 = @inbounds flux_lw_vec[ip]
                     flux_sw::Float64 = @inbounds flux_sw_vec[ip]
                     qn::Float64 = @inbounds qn_vec[ip]
-                    add_micro_precip_sources!(@view(params.S[i,j,k,:]),
-                                              @view(params.uaux[ip,:]),
+                    add_micro_precip_sources!(@view(S[i,j,k,:]),
+                                              @view(uaux[ip,:]),
                                               @view(qe[ip,:]),
                                               S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
-                                              SD, params.SOL_VARS_TYPE)
-                    if (LST)
-                        large_scale_source!(@view(params.uaux[ip,:]),
+                                              SD, SOL_VARS_TYPE)
+                    if (lLST)
+                        large_scale_source!(@view(uaux[ip,:]),
                                             @view(qe[ip,:]),
-                                            @view(params.S[i,j,k,:]), 
-                                            params.LST.Rad_cool[ip],
-                                            params.LST.T_adv[ip],
-                                            params.LST.q_adv[ip],
-                                            params.SOL_VARS_TYPE)
+                                            @view(S[i,j,k,:]),
+                                            LST.Rad_cool[ip],
+                                            LST.T_adv[ip],
+                                            LST.q_adv[ip],
+                                            SOL_VARS_TYPE)
                     end
                 end
             end
         end
-        
+
         _expansion_inviscid!(u,
-                             params.neqs, params.mesh.ngl,
-                             params.basis.dψ, params.ω,
-                             params.F, params.G, params.H, params.S,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
-                             params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
-                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
-                             params.rhs_el, iel, 
-                             params.mesh.connijk,
-                             params.mesh.coords,
-                             params.mesh.poin_in_bdy_face,
-                             params.mesh.elem_to_face,
-                             params.mesh.bdy_face_type,
-                             params.CL, params.QT, SD, params.AD)
+                             neqs, ngl,
+                             dψ, ω,
+                             F, G, H, S,
+                             Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             rhs_el, iel,
+                             connijk_mesh,
+                             coords,
+                             poin_in_bdy_face,
+                             elem_to_face,
+                             bdy_face_type,
+                             CL, QT, SD, AD)
     end
 end
 
@@ -885,105 +941,156 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     
 end
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
-    
-    Δ = params.mesh.Δeffective_l
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_2D)
+    # 2D typed function barrier (mirrors the 3D pattern at
+    # viscous_rhs_el!(NSD_3D) and inviscid_rhs_el!(NSD_3D)). Hoists
+    # every params.* field used in the hot loop out into concretely-
+    # typed positional arguments so the inner _viscous_rhs_el_2d!
+    # compiles fully specialized.
+    _viscous_rhs_el_2d!(params.uaux, qe, params.uprimitive,
+                        params.rhs_diffξ_el, params.rhs_diffη_el,
+                        params.rhs_diff_el, params.visc_coeff, params.ω,
+                        params.mp.Tabs, params.mp.qn, params.mp.qsatt,
+                        Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                        params.metrics.dξdx, params.metrics.dξdy,
+                        params.metrics.dηdx, params.metrics.dηdy,
+                        params.mesh.connijk, params.inputs, params.rhs_el,
+                        Int64(params.mesh.nelem), Int64(params.neqs),
+                        connijk, Float64(params.mesh.Δeffective_l),
+                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+end
 
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    neqs  = params.neqs
-    
-    for iel=1:nelem
-        
+function _viscous_rhs_el_2d!(uaux, qe, uprimitive,
+                             rhs_diffξ_el, rhs_diffη_el,
+                             rhs_diff_el, visc_coeff, ω,
+                             Tabs, qn_mp, qsatt,
+                             ngl, dψ, Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             connijk_mesh, inputs, rhs_el,
+                             nelem, neqs,
+                             connijk, Δ,
+                             QT, VT, SD, AD, SOL_VARS_TYPE)
+    for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j]
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
-        end
-        
-        for ieq = 1:neqs
-            _expansion_visc!(params.rhs_diffξ_el,
-                             params.rhs_diffη_el,
-                             params.uprimitive,
-                             params.visc_coeff,
-                             params.ω,
-                             params.mp.Tabs,
-                             params.mp.qn,
-                             params.mp.qsatt,
-                             params.uaux,
-                             params.mesh.ngl,
-                             params.basis.dψ,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy,
-                             params.metrics.dηdx, params.metrics.dηdy,
-                             params.mesh.connijk,
-                             params.inputs, params.rhs_el,
-                             iel, ieq,
-                             params.QT, params.VT, SD, params.AD; Δ=Δ)
+            user_primitives!(@view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(uprimitive[i,j,:]),
+                             SOL_VARS_TYPE)
         end
 
+        for ieq = 1:neqs
+            _expansion_visc!(rhs_diffξ_el,
+                             rhs_diffη_el,
+                             uprimitive,
+                             visc_coeff,
+                             ω,
+                             Tabs,
+                             qn_mp,
+                             qsatt,
+                             uaux,
+                             ngl,
+                             dψ,
+                             Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             connijk_mesh,
+                             inputs, rhs_el,
+                             iel, ieq,
+                             QT, VT, SD, AD; Δ=Δ)
+        end
     end
 
-    params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
-    
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
 end
 
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
-    
-    Δ::params.T = params.mesh.Δeffective_l
-    Δ_effective::params.T = Δ
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
+    # Typed function barrier (paired with FullSpecialize at the
+    # ODEProblem construction site in TimeIntegrators.jl): pull every
+    # params.* field used in the hot loop out into concretely-typed
+    # positional arguments so the inner _viscous_rhs_el_3d! compiles
+    # fully specialized and non-allocating. The VREM/Smagorinsky hot
+    # loop accesses ~20 params.* fields per element and dominated the
+    # per-step cost without this barrier.
+    _viscous_rhs_el_3d!(params.uaux, qe, params.uprimitive,
+                        params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
+                        params.rhs_diff_el, params.visc_coeff, params.ω,
+                        params.mp.Tabs, params.mp.qn, params.mp.qsatt, params.uaux,
+                        Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                        params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                        params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                        params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                        params.inputs, params.rhs_el, params.mesh.connijk,
+                        params.mesh.coords, params.mesh.poin_in_bdy_face,
+                        params.mesh.elem_to_face, params.mesh.bdy_face_type,
+                        params.μ_max, Int64(params.mesh.nelem), Int64(params.neqs),
+                        params.mesh.ad_lvl, connijk, Float64(params.mesh.Δeffective_l),
+                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+end
 
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    neqs  = params.neqs
+function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
+                             rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                             rhs_diff_el, visc_coeff, ω,
+                             Tabs, qn_mp, qsatt, uaux_e,
+                             ngl, dψ, Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             inputs, rhs_el, connijk_mesh,
+                             coords, poin_in_bdy_face,
+                             elem_to_face, bdy_face_type,
+                             μ_max, nelem, neqs,
+                             ad_lvl, connijk, Δ,
+                             QT, VT, SD, AD, SOL_VARS_TYPE)
+    # TODO: route lrichardson through inputs (was hardcoded `true` in the
+    # un-barriered version; keep that behaviour for now to preserve
+    # numerical results).
+    lrichardson = true
+    Δ_effective = Δ
 
-    ad_lvl = params.mesh.ad_lvl
-
-    # lrichardson = params.inputs[:lrichardson]
-    lrichardson = true #change later for formal coding
-    # fill!(params.μ_max,    zero(params.T))
-    for iel=1:nelem
+    for iel = 1:nelem
         Δ_effective = calculate_effective_delta(Δ, ad_lvl[iel])
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j,k]
 
-            user_primitives!(@view(params.uaux[ip,:]),
+            user_primitives!(@view(uaux[ip,:]),
                              @view(qe[ip,:]),
-                             @view(params.uprimitive[i,j,k,:]),
-                             params.SOL_VARS_TYPE)
+                             @view(uprimitive[i,j,k,:]),
+                             SOL_VARS_TYPE)
         end
-        
+
         for ieq = 1:neqs
-            _expansion_visc!(params.rhs_diffξ_el,
-                             params.rhs_diffη_el,
-                             params.rhs_diffζ_el,
-                             params.uprimitive,
-                             params.visc_coeff,
-                             params.ω,
-                             params.mp.Tabs,
-                             params.mp.qn,
-                             params.mp.qsatt,
-                             params.uaux,
-                             params.mesh.ngl,
-                             params.basis.dψ,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, 
-                             params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
-                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
-                             params.inputs, params.rhs_el, iel, ieq,
-                             params.mesh.connijk,
-                             params.mesh.coords,                             
-                             params.mesh.poin_in_bdy_face, params.mesh.elem_to_face,
-                             params.mesh.bdy_face_type, 
-                            #  params.μ_max[ieq],
-                             params.QT, params.VT, SD, params.AD,
+            _expansion_visc!(rhs_diffξ_el,
+                             rhs_diffη_el,
+                             rhs_diffζ_el,
+                             uprimitive,
+                             visc_coeff,
+                             ω,
+                             Tabs,
+                             qn_mp,
+                             qsatt,
+                             uaux_e,
+                             ngl,
+                             dψ,
+                             Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             inputs, rhs_el, iel, ieq,
+                             connijk_mesh,
+                             coords,
+                             poin_in_bdy_face, elem_to_face,
+                             bdy_face_type,
+                             QT, VT, SD, AD,
                              Δ_effective,
                              lrichardson
                              )
-            
+
         end
     end
-    params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el .+ params.rhs_diffζ_el)
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el .+ rhs_diffζ_el)
 end
 
 

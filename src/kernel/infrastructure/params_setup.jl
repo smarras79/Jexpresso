@@ -3,9 +3,10 @@ function params_setup(sem,
                       inputs::Dict,
                       OUTPUT_DIR::String,
                       T,
-                      tspan = [T(inputs[:tinit]), T(inputs[:tend])])
+                      tspan = [T(inputs[:tinit]), T(inputs[:tend])];
+                      coupling = nothing)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     println_rank(" # Build arrays and params ................................ "; msg_rank = rank, suppress = sem.mesh.msg_suppress)
     if rank == 0 && tspan[1] == T(inputs[:tinit])
@@ -250,7 +251,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     if (sem.mesh.SD != NSD_1D()) && !(sem.mesh.lLaguerre)
         if rank == 0
-            @info "start conformity4ncf_q!"
+            println(" # start conformity4ncf_q!")
         end
         g_dss_cache_qp = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
         conformity4ncf_q!(qp.qn, rhs_el_tmp, @view(utmp[:,:]), vaux, 
@@ -275,7 +276,7 @@ function params_setup(sem,
                           sem.interp; ladapt=inputs[:ladapt], neqs=qp.neqs)
         MPI.Barrier(comm)
         if rank == 0
-            @info "end conformity4ncf_q!"
+            println(" # end conformity4ncf_q!")
         end
     end
     for i=1:qp.neqs
@@ -357,7 +358,8 @@ function params_setup(sem,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
                   les_stat_cache,
                   les_cross_section,
-                  timers)
+                  timers,
+                  coupling = coupling)
 
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -392,7 +394,8 @@ function params_setup(sem,
                   les_cross_section,
                   OUTPUT_DIR,
                   timers,
-                  sem.interp, sem.project, sem.nparts, sem.distribute)
+                  sem.interp, sem.project, sem.nparts, sem.distribute,
+                  coupling = coupling)
     end
 
     println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)

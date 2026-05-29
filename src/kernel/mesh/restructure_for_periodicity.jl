@@ -1247,13 +1247,13 @@ end
 end
 mesh.npoin = npoin
 if mesh.rank == 0
-    @info " periodicity_restructure!"
+    println(" # periodicity_restructure!")
 end
 end
 
 function restructure4periodicity_2D(mesh, norm, periodic_direction)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
     
@@ -1384,7 +1384,7 @@ end
 
 
 function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
-    comm    = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank    = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
     ngl     = mesh.ngl
@@ -1577,7 +1577,7 @@ end
 
 
 function restructure_el2gel_for_periodicity_3D!(mesh, _norm, periodic_direction)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     ngl  = mesh.ngl
 
@@ -1694,7 +1694,7 @@ end
 
 
 function restructure_el2gel_for_periodicity_2D!(mesh, _norm, periodic_direction)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     ngl  = mesh.ngl
 
@@ -1798,7 +1798,7 @@ end
 # For periodicz: child on min-side → cfid=4, child on max-side → cfid=3
 # ---------------------------------------------------------------------------
 function collect_periodic_ncf_pairs_3D!(mesh, periodic_direction, elm2pelm)
-    comm  = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank  = MPI.Comm_rank(comm)
     ngl   = mesh.ngl
     ngl2  = ngl * ngl
@@ -2251,7 +2251,7 @@ end
 #   5 right(i=1)    6 left(i=ngl)
 # ---------------------------------------------------------------------------
 function print_periodic_ncf_debug!(mesh)
-    comm  = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank  = MPI.Comm_rank(comm)
     ngl   = mesh.ngl
 
@@ -2377,7 +2377,7 @@ end
 # the "1 parent ip → N child ips" view the DSS gather accumulates.
 # ---------------------------------------------------------------------------
 function print_ncf_ip_coords!(mesh)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     ngl  = mesh.ngl
     ngl2 = ngl * ngl
@@ -2462,7 +2462,7 @@ end
 # detected parents until periodic boundaries are conforming.
 # ---------------------------------------------------------------------------
 function detect_periodic_ncf_parent_gels!(mesh, periodic_direction, elm2pelm)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     ngl  = mesh.ngl
     ngl2 = ngl * ngl
@@ -2602,7 +2602,7 @@ function detect_periodic_ncf_parent_gels!(mesh, periodic_direction, elm2pelm)
 end
 
 function detect_periodic_ncf_parent_gels_2D!(mesh, periodic_direction, elm2pelm)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     ngl  = mesh.ngl
 

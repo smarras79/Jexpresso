@@ -4,7 +4,7 @@ function user_inputs()
     # User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.5,
+        :Δt                   => 0.65,
         :tinit                => 0.0,
         :tend                 => 1000.0,
         :diagnostics_at_times => (100:100:1000),
@@ -14,7 +14,7 @@ function user_inputs()
         # restart options
         #---------------------------------------------------------------------------
         # set restart_time to enable write restart files every [restart_time] seconds 
-        :restart_time         => 100.0, 
+        :restart_time         => 10000000.0, 
         # the default restart output dir is $(your_output_dir)/restart but you can always specify
         # :restart_output_file_path => "./output/CompEuler/3d/output/restart",
         :lrestart             => false,

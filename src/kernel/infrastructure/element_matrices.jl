@@ -1201,7 +1201,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if (ldss_differentiation) lbuild_differentiation_matrix = true end
     if (ldss_laplace) lbuild_laplace_matrix = true end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     if typeof(SD) == NSD_1D
@@ -1303,9 +1303,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
                                       N, Q, TFloat)
             
             if (inputs[:lsparse])
-                @info " DSS sparse"
+                println(" # DSS sparse")
                 L = DSS_laplace_sparse(mesh, Le)
-                @info " DSS sparse .................... DONE"
+                println(" # DSS sparse .................... DONE")
             else
                 L = KernelAbstractions.zeros(backend,
                                              TFloat,

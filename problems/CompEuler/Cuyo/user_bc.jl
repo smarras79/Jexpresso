@@ -18,7 +18,7 @@ function user_bc_dirichlet!(q,
     
     if tag == "sea"
         qbdy[5] = 278.15
-    else if tag == "land"
+    elseif tag == "land"
         qbdy[5] = 288.15
     end
 end

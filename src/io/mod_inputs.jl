@@ -10,7 +10,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
     if rank == 0
-        pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
+        # Wrap long values across multiple lines so nothing is cropped — the
+        # default pretty_table truncates wide cells with "…" and hides the
+        # tail of long paths / vectors / NamedTuples that users need to see.
+        term_cols = try displaysize(stdout)[2] catch; 120 end
+        key_w     = 32
+        # Leave room for the two outer borders, the column separator, and the
+        # padding PrettyTables adds around each cell (≈ 7 chars total).
+        val_w     = max(40, term_cols - key_w - 7)
+        pretty_table(inputs;
+                     sortkeys       = true,
+                     border_crayon  = crayon"yellow",
+                     linebreaks     = true,
+                     autowrap       = true,
+                     columns_width  = [key_w, val_w],
+                     crop           = :none)
     end
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
@@ -34,26 +48,96 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             global cpu    = false
         end
     end
-    
-    if(!haskey(inputs, :user_heatflux))
-        inputs[:user_heatflux] = 0.0
-        inputs[:δhf] = 0.0
-    else
-        inputs[:δhf] = 1.0
+
+    if(!haskey(inputs, :lmanufactured_solution))
+       inputs[:lmanufactured_solution] = false
+    end
+
+    if(!haskey(inputs, :RT_amr_threshold))
+       inputs[:lRT_amr_threshold] = [1.0]
+    end
+
+    if(!haskey(inputs, :lRT_problem))
+       inputs[:lRT_problem] = false
+    end
+
+    if(!haskey(inputs, :lRT_from_data))
+       inputs[:lRT_from_data] = false
+    end
+
+    if(!haskey(inputs, :RT_data_file))
+       inputs[:RT_data_file] = ""
+    end
+
+    if(!haskey(inputs, :lcubed_sphere_angular_mesh))
+       inputs[:lcubed_sphere_angular_mesh] = false
+    end
+
+    if(!haskey(inputs, :rad_HG_g))
+      inputs[:rad_HG_g] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions))
+      inputs[:extra_dimensions] = 0
     end
     
+    if(!haskey(inputs, :adaptive_extra_meshes))
+      inputs[:adaptive_extra_meshes] = false
+    end
+
+    if(!haskey(inputs, :extra_dimensions_order))
+      inputs[:extra_dimensions_order] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_nelemx))
+      inputs[:extra_dimensions_nelemx] = 2
+    end
+
+    if(!haskey(inputs, :extra_dimensions_nelemy))
+      inputs[:extra_dimensions_nelemy] = 2
+    end
+
+    if(!haskey(inputs, :extra_dimensions_xmin))
+      inputs[:extra_dimensions_xmin] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_xmax))
+        inputs[:extra_dimensions_xmax] = 2*π
+    end
+
+    if(!haskey(inputs, :extra_dimensions_ymin))
+      inputs[:extra_dimensions_ymin] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_ymax))
+        inputs[:extra_dimensions_ymax] = 2*π
+    end
+
     if(!haskey(inputs, :lwall_model))
        inputs[:lwall_model] = false
     end
 
+    # On macOS (Apple Silicon in particular) the parallel
+    # `GmshDiscreteModel(parts, file)` collective in GridapGmsh + Open MPI
+    # SIGBUSes / SIGABRTs right after "Done reading *.msh" - reproducible on
+    # >=2 ranks. The `lxy_partition` path avoids the parallel collective:
+    # rank 0 reads the mesh serially, then `_compute_xy_partition` +
+    # `DiscreteModel(parts, smodel, cell_to_part)` broadcasts the chunks.
+    # Default to that path on macOS so multi-rank runs Just Work without
+    # the user having to set this flag per problem. Linux keeps the
+    # original behaviour (only enable for wall-model runs, which need
+    # the xy partition for other reasons).
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = inputs[:lwall_model]
+        inputs[:lxy_partition] = Sys.isapple() ? true : inputs[:lwall_model]
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))
          inputs[:ifirst_wall_node_index] = 2 #default is the first LGL point above the surface node along the vertical direction of the surface element
     end
     
+    if(!haskey(inputs, :lkep))
+       inputs[:lkep] = false
+    end
     
     if(!haskey(inputs, :bdy_fluxes))
        inputs[:bdy_fluxes] = false
@@ -130,8 +214,24 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :lsparse))
-      inputs[:lsparse] = true
+        inputs[:lsparse] = true
+
+        if(haskey(inputs, :lelementLearning) &&
+            inputs[:lelementLearning] == true)
+           # inputs[:lsparse] = false
+        end
+    else
+        if(inputs[:lsparse] == true &&
+            haskey(inputs, :lelementLearning) &&
+            inputs[:lelementLearning] == true)
+            #inputs[:lsparse] = false
+        end
     end
+    
+    if(!haskey(inputs, :NNfile))
+      inputs[:NNfile] = nothing
+    end
+
 
     if(!haskey(inputs, :plot_vlines))
       inputs[:plot_vlines] = "empty"
@@ -497,6 +597,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lelementLearning] = false
     end
     
+    if !haskey(inputs, :lEL_Sample)
+        inputs[:lEL_Sample] = false
+    end
+        
     #
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
     # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
@@ -625,6 +729,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lrichardson] = false #Default is artificial viscosity with constant coefficient
     end
 
+    #
+    # Kinetic Energy or Entropy Preserving
+    #
+    if(!haskey(inputs, :lkep))
+        inputs[:lkep] = false
+    end
+        
+    if inputs[:lkep] == true
+        if(!haskey(inputs, :volume_flux))
+            inputs[:volume_flux] = "ranocha"
+        end
+    else
+        if(!haskey(inputs, :volume_flux))
+            inputs[:volume_flux] = nothing
+        end
+    end
+    
     #
     # saturation adjustment:
     #
@@ -780,12 +901,46 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ldss_laplace] = false
     end
 
-    # AMR
-    
+    # AMR    
     if(!haskey(inputs, :lamr))
         inputs[:lamr] = false
     end
 
+    # LES statistics defaults (used by giga_les TimeIntegrators.jl callbacks).
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = Float64[]
+    end
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+    if(!haskey(inputs, :statistics_online_interval))
+        inputs[:statistics_online_interval] = Float32(inputs[:Δt])
+    end
+
+    # VTK / AMR restart defaults (used by giga_les TimeIntegrators.jl).
+    if(!haskey(inputs, :lrestart_vtk))
+        inputs[:lrestart_vtk] = false
+    end
+    if(!haskey(inputs, :lrestart_amr))
+        inputs[:lrestart_amr] = false
+    end
+
+    # LES profile/stress var defaults (used by giga_les params_setup.jl).
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
+    if(!haskey(inputs, :amr_freq))
+        inputs[:amr_freq] = 0
+    end
+
+    if(!haskey(inputs, :amr_max_level))
+        inputs[:amr_max_level] = 0
+    end
+     
     if(!haskey(inputs, :ladapt))
         inputs[:ladapt] = false
     end
@@ -809,13 +964,24 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :amr_max_level))
         inputs[:amr_max_level] = 0
     end
-    
+
     if(!haskey(inputs, :lpreadapt))
         inputs[:lpreadapt] = false
     end
-    
+
     if(!haskey(inputs, :preadapt_max_level))
         inputs[:preadapt_max_level] = 0
+    end
+
+    if(!haskey(inputs, :amr_start_time))
+        inputs[:amr_start_time] = Float32(0.0)
+    end
+
+    if(!haskey(inputs, :user_heatflux))
+        inputs[:user_heatflux] = 0.0
+        inputs[:δhf] = 0.0
+    else
+        inputs[:δhf] = 1.0
     end
 
     if inputs[:lpreadapt] == true
@@ -845,7 +1011,7 @@ function _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
+function mod_inputs_check(inputs, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
@@ -862,7 +1028,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
+function mod_inputs_check(inputs, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """

@@ -8,3 +8,4 @@ struct ShallowWater <: AbstractEquations end
 struct SoilTopo <: AbstractEquations end
 struct Helmholtz <: AbstractEquations end
 struct CompEuler <: AbstractEquations end
+struct RadiativeTransfer <: AbstractEquations end

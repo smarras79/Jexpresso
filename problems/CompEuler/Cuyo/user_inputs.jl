@@ -9,7 +9,7 @@ function user_inputs()
         :tend                 => 1000.0,
 	:lrestart             => false,
 	:restart_time         => 500,
-	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
+	:diagnostics_at_times => (0:1:1000..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
         :lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 1600.0,

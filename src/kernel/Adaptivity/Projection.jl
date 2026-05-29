@@ -156,10 +156,6 @@ function scatter_gather_projection!(plane, nglx, ngly, nglz)
     return Psg
 end
 
-
-using Test
-
-
 function build_interpolation(ra, rb, wa)
     Nra = length(ra)
     Nrb = length(rb)
@@ -725,11 +721,11 @@ end
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
 
 
-function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, mesh::St_mesh, inputs::Dict, nparts, distribute)
+function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, mesh::St_mesh, inputs, nparts, distribute)
 
     # determine backend
     backend = CPU()
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     
     #
@@ -830,9 +826,9 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
 
     
     if (ladpative == 1)
-        mesh.nelem_bdy    = length(JeGeometry.get_boundary_cells(model,mesh.nsd))
-        mesh.nfaces_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
-        mesh.nedges_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
+        mesh.nelem_bdy    = length(get_boundary_cells(model,mesh.nsd))
+        mesh.nfaces_bdy   = length(get_boundary_faces(model,mesh.nsd,FACE_flg))
+        mesh.nedges_bdy   = length(get_boundary_faces(model,mesh.nsd,EDGE_flg))
     else 
         mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
         mesh.nfaces_bdy   = count(get_isboundary_face(topology,mesh.nsd-1))
@@ -1466,7 +1462,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_parents_ghost, 1)
     # if num_p_ghost == 0
@@ -1595,7 +1591,7 @@ function DSS_nc_scatter_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, co
 
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_children_ghost, 1)
     # if num_p_ghost == 0
@@ -1730,7 +1726,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn
     end
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_parents_ghost, 1)
     # if num_p_ghost == 0
@@ -1856,7 +1852,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray,
     end
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     fill!(M_gather_ghost, zero(TFloat))
     
@@ -1965,7 +1961,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, con
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_children_ghost, 1)
     # if num_p_ghost == 0
@@ -2066,7 +2062,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact,
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
@@ -2206,7 +2202,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_3D, QT::Inexact, Mel::AbstractArra
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_parents_ghost, 1)
     # if num_p_ghost == 0
@@ -2394,7 +2390,7 @@ function DSS_nc_scatter_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, co
 
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     num_p_ghost = size(non_conforming_facets_children_ghost, 1)
     # if num_p_ghost == 0
@@ -2559,7 +2555,7 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray,
     end
 
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     # M_gather_ghost = cache_ghost_p.data2send
     fill!(M_gather_ghost, zero(TFloat))
@@ -2690,7 +2686,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, con
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
@@ -2805,7 +2801,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
         end
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     # M_scatter_ghost = cache_ghost_c.data2send
 
@@ -2858,18 +2854,15 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
     end
 end
 
-function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
-                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, q_el, q_el_pro,
-                           cache_ghost_p, q_ghost_p,
-                           cache_ghost_c, q_ghost_c,
-                           interp; ladapt=true, neqs=3) nothing end
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
+                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, params; ladapt = true, neqs = 4) nothing end
 
-function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
                            SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD,
                            q_el, q_el_pro,
                            cache_ghost_p, q_ghost_p,
                            cache_ghost_c, q_ghost_c,
-                           interp; ladapt=true, neqs=4)
+                           interp; ladapt = true, neqs = 4)
     nelem = mesh.nelem
     npoin = mesh.npoin
     ngl = mesh.ngl
@@ -3024,7 +3017,7 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
     q_dst2, partitioned_model_refined2 = projection_solutions(q_dst, ref_coarse_flags2, partitioned_model_refined, nmesh, nmesh2, inputs, nparts, distribute)
     # @info n2o_ele_map2
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
 
     MPI.Barrier(comm)
     @mystop("my stop at mesh.jl L135")
@@ -3094,8 +3087,6 @@ function do_preadapt!(adapt_flags, inputs, mesh)
 end
 
 function amr_strategy!(args...)
-    # @info size(params.uaux), size(u)
-    # @info u
     inputs = args[1]
     params = args[2]
     u = args[3]
@@ -3122,11 +3113,7 @@ function amr_strategy!(args...)
     sem, partitioned_model_new, uaux_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, params.uaux)
 
     
-    # if (inputs[:backend] != CPU())
-    #     convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
-    # end
-
-    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     amr_freq = inputs[:amr_freq]
     Δt_amr   = amr_freq * inputs[:Δt]
@@ -3143,10 +3130,8 @@ function amr_strategy!(args...)
                     nu,
                     nparams.tspan,
                     nparams);
-    # @info "u3",  size(nu,1), prob.p.mesh.npoin
     
     return prob, partitioned_model_new
-    # GC.gc()
 end
 
 

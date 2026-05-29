@@ -6,6 +6,7 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
+using QuadGK
 using MPI
 using KernelAbstractions
 # using Revise  # incompatible with sysimage builds
@@ -19,11 +20,11 @@ using ElasticArrays
 using Geodesy
 using InternedStrings
 using LinearAlgebra
+using LinearOperators
 using SpecialFunctions
+using SparseArrays
 using StaticArrays
 using StaticArrays: SVector, MVector
-using DiffEqBase
-using DiffEqDevTools
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
 # using SnoopCompile  # incompatible with sysimage builds
@@ -31,7 +32,7 @@ using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
-                 SplitODEProblem
+                 SplitODEProblem, FullSpecialize
 using HDF5
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
@@ -58,10 +59,10 @@ using RRTMGP.RTE
 using RRTMGP.RTESolver
 import RRTMGP.Parameters.RRTMGPParameters
 using RRTMGP.ArtifactPaths
+using Serialization
 
 using UnicodePlots
 using Printf
-using NCDatasets
 
 using Gridap
 using Gridap.Arrays
@@ -91,6 +92,10 @@ include(joinpath( "auxiliary", "timing.jl"))
 
 include(joinpath( "kernel", "abstractTypes.jl"))
 
+include(joinpath( "kernel", "mesh", "meshStructs.jl"))
+
+#include(joinpath( "kernel", "elementLearningStructs_new.jl"))
+#include(joinpath( "kernel", "elementLearningStructs_sparse.jl"))
 include(joinpath( "kernel", "elementLearningStructs.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
@@ -98,6 +103,8 @@ include(joinpath( "kernel", "globalStructs.jl"))
 include(joinpath( "kernel", "ArtificialViscosity","viscousStructs.jl"))
 
 include(joinpath( "kernel", "ArtificialViscosity","Wall_model.jl"))
+
+include(joinpath( "kernel", "coupling", "couplingStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
@@ -120,6 +127,8 @@ include(joinpath( "kernel", "physics", "turbul.jl"))
 include(joinpath( "kernel", "physics", "SGS.jl"))
 
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))
+
+include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
 
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
@@ -161,13 +170,29 @@ include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
+include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
+
 include(joinpath( "kernel", "solvers", "Axb.jl"))
+
+include(joinpath("kernel", "operators", "build_rad_2d.jl"))
+
+include(joinpath("kernel", "operators", "build_rad_3d.jl"))
+
+include(joinpath( "kernel", "operators", "angular_comms.jl"))
+
+include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
+
+include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
+
+include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
 include(joinpath( "kernel", "mpi", "mpi_communications.jl"))
 
 include(joinpath( "io", "mod_inputs.jl"))
+
+include(joinpath( "io", "les_statistics.jl"))
 
 include(joinpath( "io", "mod_print_io.jl"))
 
@@ -181,7 +206,7 @@ include(joinpath( "io", "print_matrix.jl"))
 
 include(joinpath( "io", "soundings.jl"))
 
-include(joinpath( "io", "les_statistics.jl"))
+include(joinpath( "io", "read_dp_scream.jl"))
 
 include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 

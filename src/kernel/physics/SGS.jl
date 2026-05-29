@@ -2,11 +2,13 @@
 # SMAGORINSKY
 #----------------------------------------------------------------------
 @inline function SGS_diffusion(visc_coeffieq, ieq,
-                               ρ, 
+                               ρ,
                                u11, u22, u12, u21,
                                PhysConst, Δ2,
-                               inputs, 
-                               ::SMAG, ::NSD_2D)
+                               inputs,
+                               ::SMAG, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
 
     is_u_momentum  = (ieq == 2)
     is_v_momentum  = (ieq == 3)
@@ -46,8 +48,8 @@
         
     elseif is_temperature
         κ_turb = μ_turb / (ρ * Pr_t)
-        
-        if inputs[:energy_equation] == "theta"
+
+        if ltheta_eqn
             return κ_turb * visc_coeffieq[ieq]
         else
             return (κ_mol + κ_turb) * visc_coeffieq[ieq]
@@ -72,7 +74,7 @@ end
                                θ_ref,
                                dθdz,
                                PhysConst, Δ2,
-                               inputs, 
+                               inputs,
                                ::SMAG, ::NSD_3D;
                                ltheta_eqn=true,
                                lrichardson=false)
@@ -150,7 +152,7 @@ end
             # Cap at maximum enhancement factor (e.g., 3x)
             min(sqrt(1.0 - 16.0*Ri), 3.0)
         end
-    elseif (ltheta_eqn==false) && lrichardson
+    elseif lrichardson && inputs[:energy_equation] == "energy"
         # ===== Moist Richardson Number Logic =====
         # Note: In this mode, the caller has pre-calculated:
         # θ_ref  => T_abs (Absolute Temperature in Kelvin)
@@ -199,7 +201,6 @@ end
     elseif is_temperature
         # Temperature equation uses effective thermal diffusivity
         κ_turb = μ_turb / (ρ * Pr_t)
-        
         if ltheta_eqn
             # Potential temperature equation
             return κ_turb * visc_coeffieq[ieq]
@@ -219,11 +220,13 @@ end
 # VREMAN
 #----------------------------------------------------------------------
 @inline function SGS_diffusion(visc_coeffieq, ieq,
-                               ρ, 
+                               ρ,
                                u11, u22, u12, u21,
                                PhysConst, Δ2,
-                               inputs, 
-                               ::VREM, ::NSD_2D)
+                               inputs,
+                               ::VREM, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
 
     
     is_u_momentum  = (ieq == 2)
@@ -269,13 +272,13 @@ end
     elseif  is_temperature # Assuming potential temperature equation is at index 4
 
         κ_turb = μ_turb / (ρ * Pr_t)
-        
-        if inputs[:energy_equation] == "theta"
+
+        if ltheta_eqn
             return κ_turb * visc_coeffieq[ieq]
         else
             return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
-        
+
     else
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
@@ -290,9 +293,9 @@ end
                                u11, u12, u13,
                                u21, u22, u23,
                                u31, u32, u33,
-                               θ_ref, dθdz, 
+                               θ_ref, dθdz,
                                PhysConst, Δ2,
-                               inputs, 
+                               inputs,
                                ::VREM, ::NSD_3D;
                                ltheta_eqn=true,
                                lrichardson=false)
@@ -334,7 +337,7 @@ end
 
     
     f_Ri = 1.0
-    if inputs[:energy_equation] == "theta" && inputs[:lrichardson]
+    if ltheta_eqn && lrichardson
         
         # Strain rate tensor (symmetric part of velocity gradient)
         S11 = u11
@@ -382,13 +385,13 @@ end
     elseif  is_temperature # Assuming potential temperature equation is at index 4
 
         κ_turb = μ_turb / (ρ * Pr_t)
-        
-        if inputs[:energy_equation] == "theta"
+
+        if ltheta_eqn
             return κ_turb * visc_coeffieq[ieq]
         else
             return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
-        
+
     else
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]

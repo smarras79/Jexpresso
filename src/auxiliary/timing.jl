@@ -1,3 +1,37 @@
+using TimerOutputs
+
+# Global TimerOutputs instance used by @timeit_debug at call sites in
+# the hot path (e.g. rhs!). The wrap is around the *call*, not the
+# function body, so type inference is preserved inside the timed
+# function.
+const JEXPRESSO_TIMER = TimerOutput()
+
+# Compile-time gate for @timeit_debug. The macro checks `Mod.timeit_debug_enabled()`
+# at expansion time (which happens when each file using @timeit_debug is loaded)
+# and either emits the timed body or a no-op based on the return value.
+#
+# We define the gate function ourselves here, BEFORE any file that uses
+# @timeit_debug is loaded, so the macros have a stable target to look up.
+# Setting JEXPRESSO_ALLOC_SUMMARY=1 in the environment flips the gate
+# to `true` before rhs.jl & friends are loaded -> @timeit_debug expands
+# to the timed version on first compile. Default off -> all @timeit_debug
+# calls expand to nothing (zero per-call overhead for production runs).
+#
+# Bypasses TimerOutputs.enable_debug_timings entirely because it expects
+# the module's `timeit_debug_enabled` to already exist (auto-created on
+# first @timeit_debug expansion), and we're earlier than that.
+#
+# Examples:
+#   JEXPRESSO_ALLOC_SUMMARY=1 julia --project=. ./src/Jexpresso.jl ...
+#   mpirun -np 2 ./AlyaProxy/Alya.x : \
+#       -x JEXPRESSO_COUPLED=1 -x JEXPRESSO_ALLOC_SUMMARY=1 \
+#       -np 2 julia --project=. ./src/Jexpresso.jl CompEuler 3dAlya
+let
+    e = get(ENV, "JEXPRESSO_ALLOC_SUMMARY", nothing)
+    on = (e !== nothing) && lowercase(strip(e)) in ("1", "true", "yes", "on")
+    @eval timeit_debug_enabled() = $on
+end
+
 """
 Mutable struct to store timing statistics for a function that's called multiple times
 """
@@ -9,18 +43,46 @@ mutable struct MPIFunctionTimer
     comm::MPI.Comm
     skip_first_n::Int64
     skipped_count::Int64
-    
+
     function MPIFunctionTimer(comm::MPI.Comm=MPI.COMM_WORLD; skip_first_n::Int=1)
         new(0.0, 0, Inf, 0.0, comm, skip_first_n, 0)
     end
 end
 
 """
-    reset_timer!(timer::MPIFunctionTimer)
+    TimerRegistry
+
+Lightweight wrapper around the timers Dict so that when the registry is stored
+in `params` (a NamedTuple passed to `ODEProblem`) SciMLBase's recursive
+parameter walker stops at the struct boundary instead of descending into the
+underlying `Dict{String,MPIFunctionTimer}` and triggering the
+"Using arrays or dicts to store parameters of different types" performance
+warning.  The Dict itself is mutated lazily by the `@timers` macro the first
+time each function name is timed; the wrapper carries no runtime cost
+(the field access compiles to a pointer load).
+"""
+struct TimerRegistry
+    d::Dict{String, MPIFunctionTimer}
+end
+TimerRegistry() = TimerRegistry(Dict{String, MPIFunctionTimer}())
+
+# Forwarding helpers so callsites that already treat `timers` like a Dict
+# keep working without leaking the wrapper.
+@inline Base.haskey(r::TimerRegistry, k::String)      = haskey(r.d, k)
+@inline Base.getindex(r::TimerRegistry, k::String)    = r.d[k]
+@inline Base.setindex!(r::TimerRegistry, v::MPIFunctionTimer, k::String) = (r.d[k] = v)
+@inline Base.length(r::TimerRegistry)                 = length(r.d)
+@inline Base.iterate(r::TimerRegistry)                = iterate(r.d)
+@inline Base.iterate(r::TimerRegistry, st)            = iterate(r.d, st)
+@inline Base.pairs(r::TimerRegistry)                  = pairs(r.d)
+
+
+"""
+    je_reset_timer!(timer::MPIFunctionTimer)
 
 Reset the timer to initial state
 """
-function reset_timer!(timer::MPIFunctionTimer)
+function je_reset_timer!(timer::MPIFunctionTimer)
     timer.total_time = 0.0
     timer.call_count = 0
     timer.min_time = Inf
@@ -130,15 +192,18 @@ function create_timer_dict(function_names::Vector{String}, comm::MPI.Comm=MPI.CO
 end
 
 """
-    report_all_timers(timers::Dict{String, MPIFunctionTimer})
+    report_all_timers(timers)
 
-Report timing for all functions in the dictionary
+Report timing for all functions in the registry.  Accepts both the raw
+`Dict{String, MPIFunctionTimer}` (historical callers) and a `TimerRegistry`
+(callers that pulled the dict out of `params`).
 """
 function report_all_timers(timers::Dict{String, MPIFunctionTimer})
     for name in sort(collect(keys(timers)))
         report_timer(timers[name], name=name)
     end
 end
+report_all_timers(reg::TimerRegistry) = report_all_timers(reg.d)
 
 # ============================================================================
 # Example usage with ODEProblem

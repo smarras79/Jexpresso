@@ -9,206 +9,131 @@ export mod_mesh_read_gmsh!
 include("warping.jl")
 include("stretching.jl")
 
-Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
+# ─── Mesh topology cache helpers ──────────────────────────────────────────────
+# Cache the expensive result of mod_mesh_read_gmsh! (GmshDiscreteModel,
+# add_high_order_nodes_*, connectivity loops, ip2gip).  Only pure-array /
+# scalar fields are saved.  Skipped fields:
+#   :parts                  — PartitionedArrays.MPIArray, rebuilt via distribute()
+#   :cell_node_ids et al.   — Gridap.Arrays.Table, only used during mesh build
+#   :non_conforming_facets* — Vector{Vector} initialised with undef elements
+#   :SD                     — AbstractSpaceDimensions singleton, saved as int
+# Not used for AMR runs (adapt_flags ≠ nothing) because the mesh changes.
+# Path / fingerprint / staleness helpers live in coupling/couplingStructs.jl.
+const _MESH_CACHE_SKIP_FIELDS = Set{Symbol}([
+    :parts,
+    :cell_node_ids, :cell_node_ids_ho,
+    :cell_edge_ids, :cell_face_ids,
+    :face_edge_ids, :facet_cell_ids,
+    :non_conforming_facets,
+    :non_conforming_facets_parents_ghost,
+    :non_conforming_facets_children_ghost,
+    :SD,
+])
 
-    x      = KernelAbstractions.zeros(backend, TFloat, 2)
-    y      = KernelAbstractions.zeros(backend, TFloat, 2)
-    z      = KernelAbstractions.zeros(backend, TFloat, 2)
-    coords = KernelAbstractions.zeros(backend, TFloat, 2, 1)
-    
-    x_ho = KernelAbstractions.zeros(backend, TFloat, 2)
-    y_ho = KernelAbstractions.zeros(backend, TFloat, 2)
-    z_ho = KernelAbstractions.zeros(backend, TFloat, 2)
+const _MESH_CACHE_OPTSTRING_FIELDS = Set{Symbol}([
+    :edge_type, :face_type, :bdy_edge_type, :bdy_face_type,
+])
+const _MESH_CACHE_NOTHING_SENTINEL = "__nothing__"
 
-    Δx = KernelAbstractions.zeros(backend, TFloat, 2)
-    Δy = KernelAbstractions.zeros(backend, TFloat, 2)
-    Δz = KernelAbstractions.zeros(backend, TFloat, 2)
-    
-    xmin::Union{TFloat, Missing} = -1.0;
-    xmax::Union{TFloat, Missing} = +1.0;
-    
-    ymin::Union{TFloat, Missing} = -1.0;
-    ymax::Union{TFloat, Missing} = +1.0;
+_encode_optstrings(v) = String[isnothing(x) ? _MESH_CACHE_NOTHING_SENTINEL : x for x in v]
+_decode_optstrings(v) = Array{Union{Nothing,String}}(
+    [x == _MESH_CACHE_NOTHING_SENTINEL ? nothing : x for x in v])
 
-    zmin::Union{TFloat, Missing} = -1.0;
-    zmax::Union{TFloat, Missing} = +1.0;
-    
-    npx::Union{TInt, Missing} = 1
-    npy::Union{TInt, Missing} = 1
-    npz::Union{TInt, Missing} = 1
-    
-    nelem::Union{TInt, Missing} = 1
-    nelem_semi_inf::Union{TInt, Missing} = 0# Semi infinite elements for Laguerre BC
-    nelem_int::Union{TInt, Missing} = 1    # internal elements
-    npoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
-    npoin_original::Union{TInt, Missing} =1# Storage for original npoin if modified for Laguerre semi_inf
-    npoin_linear::Union{TInt, Missing} = 1 # This is always the original number of the first-order grid
-    nelem_bdy::Union{TInt, Missing} = 1    # bdy elements
-    
-    nedges::Union{TInt, Missing} = 1       # total number of edges
-    nedges_bdy::Union{TInt, Missing} = 1   # bdy edges
-    nedges_int::Union{TInt, Missing} = 1   # internal edges
-    
-    nfaces::Union{TInt, Missing} = 1       # total number of faces
-    nfaces_bdy::Union{TInt, Missing} = 1   # bdy faces
-    nfaces_int::Union{TInt, Missing} = 1   # internal faces
-
-    # global for MPI
-    gnelem::Union{TInt, Missing} = 1
-    gnpoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
-    gnpoin_linear::Union{TInt, Missing} = 1 # This is always the original number of the first-order grid
-    gnedges::Union{TInt, Missing} = 1       # total number of edges
-    gnfaces::Union{TInt, Missing} = 1       # total number of faces
-    
-    nsd::Union{TInt, Missing} = 1              # number of space dim
-    nop::Union{TInt, Missing} = 4              # poly order
-    ngl::Union{TInt, Missing} = nop + 1        # number of quad point 
-    ngr::Union{TInt, Missing} = 0              # nop_gr
-    lLaguerre::Union{Bool, Missing} = false # whether or not Laguerre boundaries are in the mesh
-    npoin_el::Union{TInt, Missing} = 1         # Total number of points in the reference element
-    
-
-    NNODES_EL::Union{TInt, Missing}  =  2^nsd
-    NEDGES_EL::Union{TInt, Missing}  = 12
-    NFACES_EL::Union{TInt, Missing}  =  6
-    EDGE_NODES::Union{TInt, Missing} =  2
-    FACE_NODES::Union{TInt, Missing} =  4
-    
-    #low and high order connectivity tables
-    cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
-    cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(1))
-    cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))    
-    cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
-    face_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nfaces), zeros(1))
-    facet_cell_ids::Table{Int64,Vector{Int64},Vector{Int64}}   = Gridap.Arrays.Table(zeros(nfaces), zeros(1))
-
-    connijk_lag = KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
-    connijk =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
-    conn_edgesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # edge analogue of connijk
-    conn_facesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # face analogue of connijk
-
-    el_min = KernelAbstractions.zeros(backend,TFloat, 0, 0)
-    el_max = KernelAbstractions.zeros(backend,TFloat, 0, 0)
-
-    conn::Array{TInt,2}   = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    conn_unique_edges     = Array{TInt}(undef,  1, 2)
-    conn_unique_edges1    = Array{Int64}(undef,  1, 2)
-    conn_unique_faces     = Array{TInt}(undef,  1, 4)
-    poin_in_edge          = Array{TInt}(undef, 0, 0)
-    internal_poin_in_edge = Array{TInt}(undef, 0, 0)
-    conn_edge_el          = Array{TInt}(undef, 0, 0, 0)
-    poin_in_face          = Array{TInt}(undef, 0, 0, 0)
-    conn_face_el          = Array{TInt}(undef, 0, 0, 0)
-    face_in_elem          = Array{TInt}(undef, 0, 0, 0)
-
-    # Skeleton arrays needed by "element learning"
-    lengthΓ  = 0  #non-repeated bdy points from mesh.poin_in_bdy_edge    
-    lengthO  = 0  #all internal, including edges, but without domain's bdy
-    length∂τ = 0
-    lengthIo = 0
-    length∂O = 0
-    Γ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthΓ)
-    O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthO)
-    ∂τ::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂τ)
-    Io::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, lengthIo)
-    ∂O::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂O)
-        
-    edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
-    
-    #MPI variables
-    rank                = 0
-    ip2gip              = KernelAbstractions.zeros(backend, TInt, 0)
-    gip2owner           = KernelAbstractions.zeros(backend, TInt, 0)
-    gip2ip              = KernelAbstractions.zeros(backend, TInt, 0)
-    el2gel              = KernelAbstractions.zeros(backend, TInt, 0)
-    gel2owner           = KernelAbstractions.zeros(backend, TInt, 0)
-    el2sib              = KernelAbstractions.zeros(backend, TInt, 0)  # sibling grouping: all children → parent global ID
-    sib2owner           = KernelAbstractions.zeros(backend, TInt, 0)
-    parts               = 1
-    nparts              = 1
-    
-    #Auxiliary arrays for boundary conditions
-    edge_in_elem              = KernelAbstractions.zeros(backend, TInt, 0)
-    bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
-    elem_to_face              = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0, 0)
-    edge_type                 = Array{Union{Nothing, String}}(nothing, 1)
-    face_type                 = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_edge_type             = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_face_type             = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_edge_type_id          = KernelAbstractions.zeros(backend, TInt, 0)
-
-    Δelem                = KernelAbstractions.zeros(backend, TInt, 0)
-    Δelem_s              = 0.0
-    Δelem_l              = 0.0
-    Δeffective_s         = 0.0
-    Δeffective_l::TFloat = 0.0
-        
-    SD::AbstractSpaceDimensions
-
-    # for AMR
-    ad_lvl::Vector{TInt}                     = KernelAbstractions.zeros(backend, TInt, 0)
-    num_hanging_facets::Union{TInt, Missing} = 0
-    non_conforming_facets                    = Vector{Vector{TInt}}(undef,num_hanging_facets)
-    non_conforming_facets_parents_ghost      = Vector{Vector{TInt}}(undef,num_hanging_facets)
-    non_conforming_facets_children_ghost     = Vector{Vector{TInt}}(undef,num_hanging_facets)
-
-    pgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
-    pgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
-    pgip_local = KernelAbstractions.zeros(backend, TInt, 0)
-    cgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
-    cgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
-    cgip_local = KernelAbstractions.zeros(backend, TInt, 0)
-
-    q_local_c  = KernelAbstractions.zeros(backend, TFloat, 0)
-
-
-    # non_conforming_facets arrays
-    cip         = KernelAbstractions.zeros(backend, TInt, 0)
-    pip         = KernelAbstractions.zeros(backend, TInt, 0)
-    lfid        = KernelAbstractions.zeros(backend, TInt, 0)
-    half1       = KernelAbstractions.zeros(backend, TInt, 0)
-    half2       = KernelAbstractions.zeros(backend, TInt, 0)
-    IPc_list    = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    IPp_list    = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    IPc_list_pg = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    IPp_list_cg = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    # non_conforming_facets arrays for own child facet, ghost parent facet 
-    cip_pg   = KernelAbstractions.zeros(backend, TInt, 0)
-    lfid_pg  = KernelAbstractions.zeros(backend, TInt, 0)
-    half1_pg = KernelAbstractions.zeros(backend, TInt, 0)
-    half2_pg = KernelAbstractions.zeros(backend, TInt, 0)
-    IPpg_list= KernelAbstractions.zeros(backend, TInt, 0, 0)
-    # non_conforming_facets arrays for ghost child facet, own parent facet
-    pip_cg   = KernelAbstractions.zeros(backend, TInt, 0)
-    lfid_cg  = KernelAbstractions.zeros(backend, TInt, 0)
-    half1_cg = KernelAbstractions.zeros(backend, TInt, 0)
-    half2_cg = KernelAbstractions.zeros(backend, TInt, 0)
-    IPcg_list= KernelAbstractions.zeros(backend, TInt, 0, 0)
-
-    num_ncf::Union{TInt, Missing}    = 0
-    num_ncf_pg::Union{TInt, Missing} = 0
-    num_ncf_cg::Union{TInt, Missing} = 0
-
-    num_ncf_peri::Union{TInt, Missing}    = 0
-    num_ncf_pg_peri::Union{TInt, Missing} = 0
-    num_ncf_cg_peri::Union{TInt, Missing} = 0
-
-    # Global element IDs of coarser-side (parent) elements at periodic boundaries
-    # that are non-conforming with their finer periodic partner.
-    # Populated by detect_periodic_ncf_parent_gels! during mesh build.
-    # Used by amr_strategy! to drive iterative refinement until conformity is achieved.
-    periodic_ncf_parent_gels::Vector{Int64} = Int64[]
-
-    lneed_redistribute::Bool = false
-
-    msg_suppress::Bool = false
-
+function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int;
+                                gmsh_path::String="", inputs=nothing)
+    rank = MPI.Comm_rank(get_mpi_comm())
+    # Pre-load validity check: reads only the fingerprint Dict, so
+    # it survives custom-struct shape changes that would crash
+    # JLD2.load(). Deletes the file on mismatch so the next save
+    # writes a clean replacement.
+    if inputs !== nothing
+        valid, _ = _check_cache_validity(path, inputs, nparts; gmsh_path=gmsh_path)
+        valid || return false
+    else
+        isfile(path) || return false
+        if !isempty(gmsh_path) && _cache_is_stale(path, gmsh_path)
+            rank == 0 && println(" # Mesh cache $path is older than $gmsh_path — discarding stale cache")
+            return false
+        end
+    end
+    try
+        # Use pre-fetched data when available (populated by je_prefetch_caches!
+        # before with_mpi to keep JLD2 JIT + disk I/O off the Alya-blocking path).
+        raw = JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing ?
+              JEXPRESSO_PREFETCHED_MESH_CACHE[] : JLD2.load(path)
+        haskey(raw, "mesh_fields") || begin
+            rank == 0 && println(" # Mesh cache $path has old format — discarding and rebuilding")
+            return false
+        end
+        # Fingerprint check.  Required so that switching cases that happen to
+        # share a gmsh basename, or changing any preprocessing-relevant input
+        # without changing the cache filename, invalidates the cache.
+        if inputs !== nothing && haskey(raw, "fingerprint")
+            saved_fp = raw["fingerprint"]
+            if !(saved_fp isa Dict) || !_cache_fingerprint_matches(saved_fp, inputs, nparts)
+                rank == 0 && println(" # Mesh cache $path fingerprint mismatch — discarding and rebuilding")
+                return false
+            end
+        elseif inputs !== nothing
+            rank == 0 && println(" # Mesh cache $path has no fingerprint — discarding and rebuilding")
+            return false
+        end
+        flds = raw["mesh_fields"]
+        for f in fieldnames(typeof(mesh))
+            f ∈ _MESH_CACHE_SKIP_FIELDS && continue
+            haskey(flds, string(f)) || continue
+            v = flds[string(f)]
+            if f ∈ _MESH_CACHE_OPTSTRING_FIELDS
+                setfield!(mesh, f, _decode_optstrings(v))
+            else
+                setfield!(mesh, f, v)
+            end
+        end
+        if haskey(flds, "__SD_nsd__")
+            nsd_val = flds["__SD_nsd__"]
+            mesh.SD = nsd_val == 3 ? NSD_3D() : nsd_val == 2 ? NSD_2D() : NSD_1D()
+        end
+        mesh.parts = distribute(LinearIndices((nparts,)))
+        rank == 0 && println(" # Loaded mesh topology from cache: $path")
+        return true
+    catch e
+        rank == 0 && @warn "Ignoring mesh cache $path" exception=(e, catch_backtrace())
+        # Auto-delete the unreadable file so the next save writes a
+        # clean replacement. Common after struct-shape changes that
+        # JLD2 cannot reconstruct (e.g. AssemblerCache gaining MPI
+        # fields). Per-rank file in parallel runs, so no race - each
+        # rank owns and deletes its own slice.
+        try
+            isfile(path) && rm(path; force=true)
+        catch _
+            # best-effort: a stale file is only a noise problem, not a
+            # correctness one
+        end
+        return false
+    end
 end
+
+function _save_mesh_cache(path::String, mesh; inputs=nothing, nparts::Int=1)
+    isempty(path) && return
+    rank = MPI.Comm_rank(get_mpi_comm())
+    try
+        _ensure_cache_dir(path)
+        flds = Dict{String,Any}()
+        for f in fieldnames(typeof(mesh))
+            f ∈ _MESH_CACHE_SKIP_FIELDS && continue
+            v = getfield(mesh, f)
+            flds[string(f)] = f ∈ _MESH_CACHE_OPTSTRING_FIELDS ? _encode_optstrings(v) : v
+        end
+        flds["__SD_nsd__"] = mesh.nsd
+        fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
+        JLD2.jldsave(path; mesh_fields = flds, fingerprint = fp)
+        rank == 0 && println(" # Saved mesh topology cache: $path")
+    catch e
+        rank == 0 && @warn "Failed to save mesh cache $path" exception=(e, catch_backtrace())
+    end
+end
+# ──────────────────────────────────────────────────────────────────────────────
+
 
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
 const Finalize = GridapP4est.Finalize
@@ -241,10 +166,35 @@ function _compute_xy_partition(model, nparts)
 end
 
 
+# Partition cells into nparts by x-y centroid bins, ignoring z.
+# Returns a 1-indexed cell_to_part vector of length num_cells(model).
+function _compute_xy_partition(model, nparts)
+    Ω  = Triangulation(model)
+    coords = get_cell_coordinates(Ω)
+    cx = [sum(p[1] for p in c) / length(c) for c in coords]
+    cy = [sum(p[2] for p in c) / length(c) for c in coords]
+
+    lx = maximum(cx) - minimum(cx) + 1e-10
+    ly = maximum(cy) - minimum(cy) + 1e-10
+
+    # Find (nx, ny) with nx*ny == nparts, aspect-ratio aware
+    divisors   = [d for d in 1:nparts if nparts % d == 0]
+    target_nx  = sqrt(nparts * lx / ly)
+    nx = divisors[argmin(abs.(divisors .- target_nx))]
+    ny = nparts ÷ nx
+
+    x_min, y_min = minimum(cx), minimum(cy)
+    xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
+    yi = clamp.(floor.(Int, (cy .- y_min) ./ ly .* ny), 0, ny - 1)
+
+    return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+end
+
+
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
     backend = CPU()
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
@@ -258,9 +208,43 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.rank       = rank
     ladaptive       = inputs[:ladapt]
     linitial_refine = inputs[:linitial_refine]
-    lamr_mesh       = !isnothing(adapt_flags) 
+    lamr_mesh       = !isnothing(adapt_flags)
+
+    # ─── Try the JLD2 mesh-topology cache ────────────────────────────────────
+    # For plain non-adaptive runs the cache stores the entire mesh struct;
+    # GmshDiscreteModel and all the connectivity / HO-node loops can be skipped.
+    # partitioned_model is only used by time_loop! when inputs[:lamr]==true,
+    # so returning nothing here is safe for standard (non-AMR) runs.
+    # Per-rank cache files are produced by _mesh_cache_path when nparts > 1,
+    # so each rank reads/writes its own slice without contention.
+    # JEXPRESSO_PREFETCHED_MESH_CACHE (populated by je_prefetch_caches! before
+    # the with_mpi block) is honoured by _try_load_mesh_cache! when Alya
+    # coupling is active, so this path also works with coupled runs.
+    #
+    # Cross-rank consistency: each rank independently checks its own file
+    # and fingerprint, then we MPI.Allreduce(MIN) to agree on whether ALL
+    # ranks succeeded. If any rank failed (missing/stale/mismatched file,
+    # which can happen after switching nparts, interrupting a previous
+    # save, or rebuilding only some files), every rank rebuilds from
+    # scratch. This prevents silent inconsistency where one rank loads a
+    # stale partition and the others build a fresh one.
+    if isnothing(adapt_flags) && !ladaptive && !linitial_refine
+        _mesh_cache = _mesh_cache_path(inputs, nparts)
+        gmsh_path   = get(inputs, :gmsh_filename, "")
+        local_loaded = _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
+                                              gmsh_path=gmsh_path, inputs=inputs)
+        all_loaded = nparts > 1 ?
+            (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
+            local_loaded
+        if all_loaded
+            return nothing
+        elseif local_loaded && !all_loaded
+            rank == 0 && println(" # Mesh cache: some ranks failed to load — discarding all and rebuilding")
+        end
+    end
+    # ─────────────────────────────────────────────────────────────────────────
     if isnothing(adapt_flags)
-    
+
         if ladaptive == false && linitial_refine == false
             smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             partitioned_model = if inputs[:lxy_partition]
@@ -1958,6 +1942,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #show(stdout, "text/plain", mesh.conn')
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     if isnothing(adapt_flags)
+        # Persist the mesh topology for fast restart on subsequent runs.
+        # _save_mesh_cache is a no-op when _use_mesh_cache(inputs) is false
+        # or when no cache directory can be resolved. Per-rank cache paths
+        # avoid file-write races in parallel.
+        _save_mesh_cache(_mesh_cache_path(inputs, nparts), mesh;
+                         inputs=inputs, nparts=nparts)
         return partitioned_model
     else
         if (omesh.lneed_redistribute)
@@ -1973,7 +1963,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 end
 
 function measure_elements_per_rank(local_elements)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
     needs_redistribution = false
@@ -2027,7 +2017,7 @@ function _handle_optional_args4amr(optional_args...)
 end
 
 function find_gip_owner(a)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     nranks = MPI.Comm_size(comm)
 
@@ -2307,7 +2297,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -2382,7 +2372,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         end
     #end #do f
     #show(stdout, "text/plain", poin_in_edge)
-    #@info "-----2D edges"
+    #println(" # -----2D edges")
     
     #
     # Second pass: populate mesh.conn[∀ elem, 1:4+el_edges_internal_nodes]\n")
@@ -2484,7 +2474,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -2519,7 +2509,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     #
     edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     #open("./COORDS_HO_edges_$rank.dat", "w") do f
     # open("./COORDS_HO_edges.dat", "w") do f
@@ -2571,7 +2561,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
         end
     #end #end f
     #show(stdout, "text/plain", mesh.poin_in_edge)
-    #@info "-----3D edges"
+    #println(" # -----3D edges")
         
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")
@@ -2820,7 +2810,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -2985,7 +2975,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3023,7 +3013,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
         resize!(mesh.z_ho, (mesh.npoin))
     end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     #open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_faces.dat", "w") do f
@@ -3374,7 +3364,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
 
     if (mesh.nop < 2) return end
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3419,7 +3409,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
         resize!(mesh.z_ho, (mesh.npoin))
     end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     gip::Int64  = 0
     #open("./COORDS_HO_faces_$rank.dat", "w") do f
@@ -3722,7 +3712,7 @@ function load_p4est_checkpoint_model(base_model::OctreeDistributedDiscreteModel,
     connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
     loaded_ptr_pXest = P4est_wrapper.p8est_load(
         forest_file,
-        MPI.COMM_WORLD,
+        get_mpi_comm(),
         Csize_t(0),      # no per-quadrant data stored
         Cint(0),         # do not read payload
         C_NULL,
@@ -3765,7 +3755,7 @@ end
 
 function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     lpreadapt = inputs[:lpreadapt]
     max_ad_lv = inputs[:preadapt_max_level]
@@ -4006,7 +3996,7 @@ end
 #----------------------------------------------------------------------
 function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mesh.Δelem = KernelAbstractions.zeros(backend, T, mesh.nelem)
     for ie = 1:mesh.nelem
