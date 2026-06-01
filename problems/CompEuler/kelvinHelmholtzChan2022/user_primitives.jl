@@ -5,23 +5,22 @@ function user_primitives!(u, qe, uprimitive,::TOTAL)
     ρ  = u[1]
     ρu = u[2]
     ρv = u[3]
-    ρE = u[4]
-
-    u           = ρu/ρ                            # Velocity u
-    v           = ρv/ρ                            # Velocity v
-    E_specific  = ρE/ρ                            # Specific total energy
-    KE_specific = 0.5 * (u^2 + v^2)               # Specific kinetic energy
-    ei_specific = E_specific - KE_specific        # Specific internal energy
-    p           = PhysConst.γm1 * ρ * ei_specific # Pressure
-    p = PhysConst.γm1 * ( ρE - 0.5f0 * ( ρu^2 +  ρv^2)/ρ)
-    T           = p / (ρ * PhysConst.Rair)        # Temperature
-
-    uprimitive[1] = ρ
-    uprimitive[2] = u
-    uprimitive[3] = v
-    uprimitive[4] = T
-    # return SVector(ρ, u, v, T)
-#    uprimitive[4] = p
+    # Slot 4 is ρθ when :energy_equation == "theta", ρE otherwise.
+    # SGS_diffusion follows the same convention (see SGS.jl).
+    if inputs[:energy_equation] == "theta"
+        ρθ = u[4]
+        uprimitive[1] = ρ
+        uprimitive[2] = ρu/ρ
+        uprimitive[3] = ρv/ρ
+        uprimitive[4] = ρθ/ρ                          # θ
+    else
+        ρE = u[4]
+        p  = PhysConst.γm1 * (ρE - 0.5f0 * (ρu^2 + ρv^2)/ρ)
+        uprimitive[1] = ρ
+        uprimitive[2] = ρu/ρ
+        uprimitive[3] = ρv/ρ
+        uprimitive[4] = p / (ρ * PhysConst.Rair)      # T
+    end
 end
 
 function user_primitives(u, qe, uprimitive, ::TOTAL)
@@ -31,18 +30,14 @@ function user_primitives(u, qe, uprimitive, ::TOTAL)
     ρ  = u[1]
     ρu = u[2]
     ρv = u[3]
-    ρE = u[4]
-
-    u           = ρu/ρ                            # Velocity u
-    v           = ρv/ρ                            # Velocity v
-    E_specific  = ρE/ρ                            # Specific total energy
-    KE_specific = 0.5 * (u^2 + v^2)               # Specific kinetic energy
-    ei_specific = E_specific - KE_specific        # Specific internal energy
-    p           = PhysConst.γm1 * ρ * ei_specific # Pressure
-    T           = p / (ρ * PhysConst.Rair)        # Temperature
-
-    return SVector(ρ, u, v, T)
-#    uprimitive[4] = p
+    if inputs[:energy_equation] == "theta"
+        ρθ = u[4]
+        return SVector(ρ, ρu/ρ, ρv/ρ, ρθ/ρ)
+    else
+        ρE = u[4]
+        p  = PhysConst.γm1 * (ρE - 0.5 * (ρu^2 + ρv^2)/ρ)
+        return SVector(ρ, ρu/ρ, ρv/ρ, p / (ρ * PhysConst.Rair))
+    end
 end
 
 
@@ -69,11 +64,14 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[1] = u[1]      #ρ
     uout[2] = u[2]/u[1] #u
     uout[3] = u[3]/u[1] #v
-    uout[4] = u[4]/u[1] #e
 
-    velomagsq = uout[2]*uout[2] + uout[3]*uout[3]
-    uout[4] = PhysConst.γm1 * (u[4] - 0.5 * u[1] * velomagsq) #Pressure
+    if inputs[:energy_equation] == "theta"
+        θ        = u[4]/u[1]                                          # θ
+        uout[4]  = perfectGasLaw_ρθtoP(PhysConst; ρ=uout[1], θ=θ)     # P
+    else
+        velomagsq = uout[2]*uout[2] + uout[3]*uout[3]
+        uout[4]   = PhysConst.γm1 * (u[4] - 0.5 * u[1] * velomagsq)   # P
+    end
 
-    uout[5] = uout[4]/(PhysConst.Rair*uout[1]) # T = p/(ρ*R)
-
+    uout[5] = uout[4]/(PhysConst.Rair*uout[1])                        # T = p/(ρ*R)
 end

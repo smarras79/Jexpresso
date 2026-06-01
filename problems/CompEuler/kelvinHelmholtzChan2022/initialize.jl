@@ -72,14 +72,22 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 q.qn[ip,1] = ρ
                 q.qn[ip,2] = ρ*u
                 q.qn[ip,3] = ρ*v
-                q.qn[ip,4] = ρe
+                if inputs[:energy_equation] == "theta"
+                    q.qn[ip,4] = ρ*theta
+                else
+                    q.qn[ip,4] = ρe
+                end
                 q.qn[ip,end] = p
 
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[ip,1] = ρref
                 q.qe[ip,2] = ρref*u
                 q.qe[ip,3] = ρref*v
-                q.qe[ip,4] = ρref*eref
+                if inputs[:energy_equation] == "theta"
+                    q.qe[ip,4] = ρref*thetaref
+                else
+                    q.qe[ip,4] = ρref*eref
+                end
                 q.qe[ip,end] = pref
 
             end
