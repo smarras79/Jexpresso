@@ -45,25 +45,27 @@
         
     elseif is_temperature
         κ_turb = μ_turb / (ρ * Pr_t)
-        
+
         if inputs[:energy_equation] == "theta"
             return κ_turb * visc_coeffieq[ieq]
         else
-            return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            # Total-energy / enthalpy form: need thermal conductivity k [W/(m·K)]
+            # k_eff = cp * μ_eff / Pr_t  (NOT cp * κ_eff, which would be off by ρ)
+            return cp * (μ_mol + μ_turb) / Pr_t * visc_coeffieq[ieq]
         end
-        
+
     else
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
-    
+
 end
 
 
 #
 #
 @inline function SGS_diffusion(visc_coeffieq, ieq,
-                               ρ, 
+                               ρ,
                                u11, u22, u33,
                                u12, u21,
                                u13, u31,
@@ -196,15 +198,16 @@ end
     elseif is_temperature
         # Temperature equation uses effective thermal diffusivity
         κ_turb = μ_turb / (ρ * Pr_t)
-        
+
         if inputs[:energy_equation] == "theta"
             # Potential temperature equation
             return κ_turb * visc_coeffieq[ieq]
         else
-            # Internal energy or enthalpy equation
-            return (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            # Internal energy / total-energy / enthalpy equation:
+            # return thermal conductivity k_eff = cp * μ_eff / Pr_t  [W/(m·K)]
+            return cp * (μ_mol + μ_turb) / Pr_t * visc_coeffieq[ieq]
         end
-        
+
     else
         # Other scalar equations (species, TKE, etc.)
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
@@ -266,24 +269,25 @@ end
     elseif  is_temperature # Assuming potential temperature equation is at index 4
 
         κ_turb = μ_turb / (ρ * Pr_t)
-        
+
         if inputs[:energy_equation] == "theta"
             return κ_turb * visc_coeffieq[ieq]
         else
-            return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            # Total-energy / enthalpy form: thermal conductivity k_eff = cp * μ_eff / Pr_t
+            return cp * (μ_mol + μ_turb) / Pr_t * visc_coeffieq[ieq]
         end
-        
+
     else
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
-    
+
 end
 
 
 
 @inline function SGS_diffusion(visc_coeffieq, ieq,
-                               ρ, 
+                               ρ,
                                u11, u12, u13,
                                u21, u22, u23,
                                u31, u32, u33,
@@ -377,16 +381,17 @@ end
     elseif  is_temperature # Assuming potential temperature equation is at index 4
 
         κ_turb = μ_turb / (ρ * Pr_t)
-        
+
         if inputs[:energy_equation] == "theta"
             return κ_turb * visc_coeffieq[ieq]
         else
-            return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            # Total-energy / enthalpy form: thermal conductivity k_eff = cp * μ_eff / Pr_t
+            return cp * (μ_mol + μ_turb) / Pr_t * visc_coeffieq[ieq]
         end
-        
+
     else
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
-    
+
 end

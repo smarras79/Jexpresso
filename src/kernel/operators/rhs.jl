@@ -1855,6 +1855,25 @@ end
                     flux_x = effective_diffusivity * dθdx
                     flux_y = effective_diffusivity * dθdy
 
+                    # Total-energy equation: also add the viscous-work term τ·u so that
+                    # the SGS-momentum dissipation is consistently returned to the energy
+                    # budget. Skip for the θ form where the ρθ equation has no τ·u term.
+                    if inputs[:energy_equation] != "theta"
+                        effective_viscosity = SGS_diffusion(visc_coeffieq, 2,
+                                                            uprimitiveieq[1,k,l],
+                                                            dudx, dvdy, dudy, dvdx,
+                                                            PHYS_CONST, Δ2,
+                                                            inputs,
+                                                            VT, SD)
+                        τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
+                        τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
+                        τ_xy = effective_viscosity * (dudy + dvdx)
+                        u_loc = uprimitiveieq[2,k,l]
+                        v_loc = uprimitiveieq[3,k,l]
+                        flux_x += τ_xx * u_loc + τ_xy * v_loc
+                        flux_y += τ_xy * u_loc + τ_yy * v_loc
+                    end
+
                 else
                     # Other scalars (use appropriate Schmidt number)
                     # USE EFFECTIVE DIFFUSIVITY
@@ -2324,6 +2343,33 @@ end
                             flux_y = effective_diffusivity * dhldy
                             flux_z = effective_diffusivity * dhldz
                             μ_local = effective_diffusivity
+
+                            # Total-energy / enthalpy equation: add the viscous-work term τ·u.
+                            # Without it, SGS-momentum dissipation is not returned to the
+                            # energy budget and the scheme blows up.
+                            effective_viscosity = SGS_diffusion(visc_coeffieq, 2,
+                                                                uprimitiveieq[1,k,l,m],
+                                                                dudx, dvdy, dwdz,
+                                                                dudy, dvdx,
+                                                                dudz, dwdx,
+                                                                dvdz, dwdy,
+                                                                0.0,
+                                                                0.0,
+                                                                PHYS_CONST, Δ2,
+                                                                inputs,
+                                                                VT, SD)
+                            τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
+                            τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
+                            τ_zz = 2.0 * effective_viscosity * dwdz - (2.0/3.0) * effective_viscosity * div_u
+                            τ_xy = effective_viscosity * (dudy + dvdx)
+                            τ_xz = effective_viscosity * (dudz + dwdx)
+                            τ_yz = effective_viscosity * (dvdz + dwdy)
+                            u_loc = uprimitiveieq[2,k,l,m]
+                            v_loc = uprimitiveieq[3,k,l,m]
+                            w_loc = uprimitiveieq[4,k,l,m]
+                            flux_x += τ_xx * u_loc + τ_xy * v_loc + τ_xz * w_loc
+                            flux_y += τ_xy * u_loc + τ_yy * v_loc + τ_yz * w_loc
+                            flux_z += τ_xz * u_loc + τ_yz * v_loc + τ_zz * w_loc
                         end
 
 
