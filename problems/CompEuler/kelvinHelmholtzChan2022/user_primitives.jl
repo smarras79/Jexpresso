@@ -7,7 +7,7 @@ function user_primitives!(u, qe, uprimitive,::TOTAL)
     ρv = u[3]
     # Slot 4 is ρθ when :energy_equation == "theta", ρE otherwise.
     # SGS_diffusion follows the same convention (see SGS.jl).
-    if inputs[:energy_equation] == "theta"
+    if ENERGY_EQUATION_THETA[]
         ρθ = u[4]
         uprimitive[1] = ρ
         uprimitive[2] = ρu/ρ
@@ -30,7 +30,7 @@ function user_primitives(u, qe, uprimitive, ::TOTAL)
     ρ  = u[1]
     ρu = u[2]
     ρv = u[3]
-    if inputs[:energy_equation] == "theta"
+    if ENERGY_EQUATION_THETA[]
         ρθ = u[4]
         return SVector(ρ, ρu/ρ, ρv/ρ, ρθ/ρ)
     else
@@ -65,7 +65,7 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[2] = u[2]/u[1] #u
     uout[3] = u[3]/u[1] #v
 
-    if inputs[:energy_equation] == "theta"
+    if ENERGY_EQUATION_THETA[]
         θ        = u[4]/u[1]                                          # θ
         uout[4]  = perfectGasLaw_ρθtoP(PhysConst, uout[1], θ)         # P
     else

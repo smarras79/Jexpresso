@@ -159,6 +159,16 @@ val_lsaturation = Val(inputs[:lsaturation])
 
 inputs = (; inputs..., comm =MPI.COMM_WORLD, val_lsaturation = val_lsaturation)
 
+# Typed cache of :energy_equation for hot-path callers (user_flux!,
+# user_primitives!, user_uout!). Reading the non-const module-global
+# `inputs` from inside per-quadrature-point loops costs ~38 ns per
+# access and inhibits inlining; a Ref{Bool} const reads in ~2 ns and
+# is type-stable.
+if !@isdefined(ENERGY_EQUATION_THETA)
+    const ENERGY_EQUATION_THETA = Ref{Bool}(false)
+end
+ENERGY_EQUATION_THETA[] = (inputs[:energy_equation] == "theta")
+
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------

@@ -12,7 +12,7 @@ function user_flux!(F, G, SD::NSD_2D,
     u  = ρu/ρ
     v  = ρv/ρ
 
-    if inputs[:energy_equation] == "theta"
+    if ENERGY_EQUATION_THETA[]
         # Slot 4 carries ρθ; pressure from the perfect-gas law in (ρ, θ).
         ρθ = q[4]
         θ  = ρθ/ρ
