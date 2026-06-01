@@ -68,19 +68,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 q.qe[ip,3] = v
                 q.qe[ip,4] = ρref*eref
                 q.qe[ip,end] = pref
-	    elseif inputs[:SOL_VARS_TYPE] == THETA()
-		q.qn[ip,1] = ρ
-                q.qn[ip,2] = ρ*u
-                q.qn[ip,3] = ρ*v
-                q.qn[ip,4] = ρ*theta
-                q.qn[ip,end] = p
-
-                q.qe[ip,1] = ρref
-                q.qe[ip,2] = ρref*u
-                q.qe[ip,3] = ρref*v
-                q.qe[ip,4] = ρref*thetaref
-                q.qe[ip,end] = pref
-	   else
+           else
                 q.qn[ip,1] = ρ
                 q.qn[ip,2] = ρ*u
                 q.qn[ip,3] = ρ*v

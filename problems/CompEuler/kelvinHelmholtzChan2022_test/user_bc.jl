@@ -8,14 +8,6 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::Abst
     
 end
 
-function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::THETA)
-
-    #if !occursin("periodic", tag)
-        qnl     = nx*q[2] + ny*q[3]
-        qbdy[2] = q[2] - qnl*nx
-        qbdy[3] = q[3] - qnl*ny
-    #end
-end
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 
     #if !occursin("periodic", tag)

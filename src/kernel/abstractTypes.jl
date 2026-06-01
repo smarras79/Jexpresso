@@ -59,7 +59,10 @@ struct NCL <: AbstractLaw end
 abstract type AbstractPert end
 struct PERT  <: AbstractPert end
 struct TOTAL <: AbstractPert end
-struct THETA <: AbstractPert end
+# NOTE: SOL_VARS_TYPE indicates whether we solve the total state (TOTAL)
+# or the perturbation from a hydrostatically-balanced reference state (PERT).
+# It does NOT encode the form of the energy equation. To pick ρθ vs ρE use
+# inputs[:energy_equation] = "theta" or "energy".
 
 #
 # viscosity type

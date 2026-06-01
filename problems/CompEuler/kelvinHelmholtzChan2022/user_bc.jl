@@ -19,19 +19,6 @@
     
 end
 
-#function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::THETA)
-@inline function user_bc_dirichlet!(uaux::AbstractMatrix{Float64}, ip::Integer,
-                                    coords::AbstractMatrix{Float64}, t::Float64, tag::String,
-                                    qbdy::AbstractVector{Float64}, nx::Float64, ny::Float64,
-                                    qe::AbstractMatrix{Float64}, ::THETA)
-    #if !occursin("periodic", tag)
-    @inbounds begin
-        qnl = nx*uaux[ip,2] + ny*uaux[ip,3]
-        qbdy[2] = uaux[ip,2] - qnl*nx
-        qbdy[3] = uaux[ip,3] - qnl*ny
-    end
-    #end
-end
 #function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 @inline function user_bc_dirichlet!(uaux::AbstractMatrix{Float64}, ip::Integer,
                                     coords::AbstractMatrix{Float64}, t::Float64, tag::String,
