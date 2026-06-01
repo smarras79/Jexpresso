@@ -165,6 +165,100 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::ranocha)
     aux[7] = log(p)
 end
 
+# ──────────────────────────────────────────────────────────────────────
+# θ-form aux methods (slot 4 = ρθ). These dispatch on ::TOTAL because
+# SOL_VARS_TYPE = TOTAL() is the balance choice; what slot 4 holds is
+# decided by :energy_equation. Pairing one of these volume fluxes
+# (central_theta / artiano_*) with :energy_equation => "theta" gives
+# ρθ in slot 4 and the math matches.
+# ──────────────────────────────────────────────────────────────────────
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::central_theta)
+
+    PhysConst = PhysicalConst{Float64}()
+
+    aux[1] = q[1]
+    aux[2] = q[2]
+    aux[3] = q[3]
+    aux[4] = q[4]
+end
+
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::artiano_ec)
+
+    PhysConst = PhysicalConst{Float64}()
+
+    rho       = q[1]
+    rho_u     = q[2]
+    rho_v     = q[3]
+    rho_theta = q[4]
+
+    theta = rho_theta/rho
+    u     = rho_u/rho
+    v     = rho_v/rho
+
+    p = perfectGasLaw_ρθtoP(PhysConst, rho, theta)
+
+    aux[1] = rho
+    aux[2] = u
+    aux[3] = v
+    aux[4] = p
+    aux[5] = rho_theta
+    aux[6] = log(rho)
+    aux[7] = log(rho_theta)
+end
+
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::artiano_tec)
+
+    PhysConst = PhysicalConst{Float64}()
+
+    rho       = q[1]
+    rho_u     = q[2]
+    rho_v     = q[3]
+    rho_theta = q[4]
+
+    γ       = PhysConst.γ
+    gammam1 = γ - 1.0
+    theta   = rho_theta/rho
+    u       = rho_u/rho
+    v       = rho_v/rho
+
+    p = perfectGasLaw_ρθtoP(PhysConst, rho, theta)
+
+    aux[1] = rho
+    aux[2] = u
+    aux[3] = v
+    aux[4] = p
+    aux[5] = rho_theta
+    aux[6] = log(rho)
+    aux[7] = rho_theta^gammam1
+end
+
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::artiano_etec)
+
+    PhysConst = PhysicalConst{Float64}()
+
+    rho       = q[1]
+    rho_u     = q[2]
+    rho_v     = q[3]
+    rho_theta = q[4]
+
+    γ       = PhysConst.γ
+    gammam1 = γ - 1.0
+    theta   = rho_theta/rho
+    u       = rho_u/rho
+    v       = rho_v/rho
+
+    p = perfectGasLaw_ρθtoP(PhysConst, rho, theta)
+
+    aux[1] = rho
+    aux[2] = u
+    aux[3] = v
+    aux[4] = p
+    aux[5] = rho_theta
+    aux[6] = log(rho)
+    aux[7] = log(rho_theta)
+    aux[8] = rho_theta^gammam1
+end
+
 @inline function flux_turbo(u_ll, u_rr, ::ranocha)
     PhysConst = PhysicalConst{Float64}()
 	rho_ll, v1_ll, v2_ll, p_ll, rho_e_ll, log_rho_ll, log_p_ll = u_ll
