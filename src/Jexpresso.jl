@@ -216,6 +216,8 @@ include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 
+include(joinpath( "auxiliary", "extrae_tracing.jl"))
+
 include("./run.jl")
 
 export @timers

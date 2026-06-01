@@ -88,6 +88,15 @@ else
 end
 
 #--------------------------------------------------------
+# Extrae tracing (opt-in via JEXPRESSO_EXTRAE; see extrae_tracing.jl).
+# Init runs after MPI.Init so libmpitrace's MPI_Init interception has
+# already taken effect; the user-event palette is registered once per
+# run so the resulting Paraver trace is labelled.
+#--------------------------------------------------------
+je_extrae_init()
+je_extrae_register_events()
+
+#--------------------------------------------------------
 # Parse command line args:
 #--------------------------------------------------------
 parsed_args                = parse_commandline()
@@ -228,7 +237,7 @@ end
 #--------------------------------------------------------
 if JEXPRESSO_COUPLING_ENABLED
     with_mpi(; comm = _local_comm) do distribute
-        driver(nparts,
+        @je_trace JE_EVT_DRIVER driver(nparts,
                distribute,
                inputs,
                OUTPUT_DIR,
@@ -243,13 +252,18 @@ if JEXPRESSO_COUPLING_ENABLED
         if _is_coupled
             MPI.Barrier(_world)
         end
+
+        # Flush Extrae buffers before with_mpi tears MPI down.
+        je_extrae_finish()
     end
 else
     with_mpi() do distribute
-        driver(nparts,
+        @je_trace JE_EVT_DRIVER driver(nparts,
                distribute,
                inputs,
                OUTPUT_DIR,
                TFloat)
+
+        je_extrae_finish()
     end
 end
