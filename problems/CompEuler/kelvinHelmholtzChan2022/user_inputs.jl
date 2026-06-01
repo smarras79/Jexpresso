@@ -4,8 +4,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-	:ode_solver           => SSPRK43(),
-        :Δt                   => 1e-3,
+	:ode_solver           => CarpenterKennedy2N54(),
+        :Δt                   => 1e-2,
         :tinit                => 0.0,
         :tend                 => 10.0,
         :diagnostics_at_times => (0.0:1.0:10.0),
@@ -24,18 +24,18 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
-        #:μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
-        :visc_model           => SMAG(),
-	#:energy_equation      => "theta",
-        #:visc_model           => VREM(),
+        :lvisc            => true, #false by default NOTICE: works only for Inexact
+        :μ                => [0.0, 1.0, 1.0, 3.0], #horizontal viscosity constant for momentum
+        #:μ                => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
+        :visc_model       => SMAG(),
+        #:visc_model       => VREM(),
+	#:energy_equation  => "theta",
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
-        :lkep        => true,
-        :entropy_variables => false,
-        :volume_flux => ranocha(),
+        #:lkep        => true,
+        #:entropy_variables => false,
+        #:volume_flux => ranocha(),
         #:volume_flux => artiano_tec(),
         #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------
@@ -48,10 +48,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        #:lfilter             => true,
-        #:mu_x                => 0.01,
-        #:mu_y                => 0.01,
-        #:filter_type         => "erf",
+        :lfilter             => true,
+        :mu_x                => 0.2,
+        :mu_y                => 0.2,
+        :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

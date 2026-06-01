@@ -1186,7 +1186,7 @@ end
 
     else
         for iel=1:nelem
-
+            
             @inbounds for j = 1:ngl, i=1:ngl
                 ip = connijk[iel,i,j]
                 # uaux_node = @inline get_node_vars_4(uaux, ip)
@@ -1895,134 +1895,6 @@ end
     end
 end
 
-#=
-@inline function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
-                          uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je,
-                          dξdx, dξdy,
-                          dηdx, dηdy,
-                          inputs, rhs_el,
-                          iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
-    #
-    # Constants for Richardson stability correction
-    #
-    PhysConst  = PhysicalConst{Float32}()
-    Pr_t       = PhysConst.Pr_t
-    #
-    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
-    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
-    # Very unstable:    Pr_t ≈ 1/3
-    #
-    κ          = PhysConst.κ
-    cp         = PhysConst.cp
-    C_s        = PhysConst.C_s
-    C_s2       = C_s^2
-
-    for l = 1:ngl
-        for k = 1:ngl
-            ωJac = ω[k]*ω[l]*Je[k, l, iel] # FIXME
-
-            # Quantities for Smagorinsky
-            dudξ = 0.0; dudη = 0.0
-            dvdξ = 0.0; dvdη = 0.0
-            for ii = 1:ngl
-                dudξ = muladd(dψ[ii,k], uprimitiveieq[2,ii,l], dudξ) # FIXME @muladd
-                dudη += dψ[ii,l]*uprimitiveieq[2,k,ii]
-
-                dvdξ += dψ[ii,k]*uprimitiveieq[3,ii,l]
-                dvdη += dψ[ii,l]*uprimitiveieq[3,k,ii]
-            end
-            dξdx_kl = dξdx[k, l, iel]
-            dξdy_kl = dξdy[k, l, iel]
-            dηdx_kl = dηdx[k, l, iel]
-            dηdy_kl = dηdy[k, l, iel]
-
-            #u
-            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
-            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
-
-            #v
-            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
-            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
-
-            # Smagorinsky
-            # Strain rate tensor (symmetric part of velocity gradient)
-            S11 = dudx
-            S22 = dvdy
-            S12 = 0.5 * (dudy + dvdx)
-            S21 = S12
-
-            # Rotation tensor (anti-symmetric part)
-            #Ω12 = 0.5 * (dudy - dvdx)
-            #Ω21 = -Ω12
-
-            # Strain rate magnitude
-	    # |S| = sqrt(2 * S_ij * S_ij)
-            S_ij_S_ij = S11*S11 + S22*S22 + 2.0*S12*S12
-            Sij = sqrt(2.0 * S_ij_S_ij)
-
-            # Filter width calculation
-            Δ2      = Δ * Δ
-
-            # Base Smagorinsky eddy viscosity
-            ν_t_base = C_s2 * Δ2 * Sij
-            ν_t = ν_t_base
-
-            # END Smagorinsky
-
-            # Compute scalar gradient for diffusion iequation by iequation
-            dqdξ = 0.0; dqdη = 0.0
-            for ii = 1:ngl
-                dqdξ += dψ[ii,k]*uprimitiveieq[ieq,ii,l]
-                dqdη += dψ[ii,l]*uprimitiveieq[ieq,k,ii]
-            end
-            # Transform scalar gradient to physical coordinates
-            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
-            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
-
-
-            # Determine effective diffusivity based on scalar type
-            # TODO: Replace this logic with proper equation identification
-            # Common orderings:
-            # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
-            # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
-            if ieq == 4  # Assuming potential temperature equation is at index 5
-                # For temperature: use thermal diffusivity (ν_t / Pr_t)
-                ρ           = uprimitiveieq[1,k,l]
-                α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
-                α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
-
-                if inputs[:SOL_VARS_TYPE] == THETA()
-                    effective_diffusivity = (α_turbulent) * visc_coeffieq[ieq]
-                else
-                    effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
-                end
-
-            else
-                # For momentum equations: use momentum diffusivity
-                effective_diffusivity = visc_coeffieq[ieq] * ν_t
-            end
-
-            # Apply effective diffusivity to scalar gradients
-            dqdx = effective_diffusivity * dqdx_phys
-            dqdy = effective_diffusivity * dqdy_phys
-
-            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
-            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac
-
-            for i = 1:ngl
-                dhdξ_ik = dψ[i,k]
-                dhdη_il = dψ[i,l]
-
-                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl # memory layout
-                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
-            end
-        end
-    end
-end
-=#
-
 @inline @inbounds function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
@@ -2036,8 +1908,7 @@ end
 
     Sc_t      = PHYS_CONST.Sc_t
     Δ2        = Δ^2
-
-
+    
     for l = 1:ngl
         ωl = ω[l]
         for k = 1:ngl
