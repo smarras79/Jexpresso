@@ -11,7 +11,6 @@ function user_inputs()
         :diagnostics_at_times => (0.0:1.0:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
-        #:case                 => "rtb",
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(), #TOTAL(),
         :use_named_tuples     => true, # Converts inputs to named tuples
@@ -51,7 +50,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        :lfilter             => false,
         :mu_x                => 0.2,
         :mu_y                => 0.2,
         :filter_type         => "erf",
