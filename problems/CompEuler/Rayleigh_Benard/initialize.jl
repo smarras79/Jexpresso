@@ -32,13 +32,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 ρ  = q.qn[ip,1]
                 ρθ = q.qn[ip,4]
                 θ  = ρθ/ρ
-                P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+                P = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
                 q.qn[ip,end] = P
             
                 ρe  = q.qe[ip,1]
                 ρθe = q.qe[ip,4]
                 θe  = ρθe/ρ
-                Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
+                Pe = perfectGasLaw_ρθtoP(PhysConst, ρe, θe)
                 q.qe[ip,end] = Pe
             end
         

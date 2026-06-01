@@ -16,7 +16,7 @@ function user_flux!(F, G, SD::NSD_2D,
         # Slot 4 carries ρθ; pressure from the perfect-gas law in (ρ, θ).
         ρθ = q[4]
         θ  = ρθ/ρ
-        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
 
         F[1] = ρu
         F[2] = ρu*u + Pressure
@@ -92,7 +92,7 @@ end
     θ  = ρθ/ρ
     u  = ρu/ρ
     v  = ρv/ρ
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     
     f1 = ρu
     f2 = ρu*u + Press

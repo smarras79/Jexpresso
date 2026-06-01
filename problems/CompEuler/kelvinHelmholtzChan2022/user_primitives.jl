@@ -67,7 +67,7 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
 
     if inputs[:energy_equation] == "theta"
         θ        = u[4]/u[1]                                          # θ
-        uout[4]  = perfectGasLaw_ρθtoP(PhysConst; ρ=uout[1], θ=θ)     # P
+        uout[4]  = perfectGasLaw_ρθtoP(PhysConst, uout[1], θ)         # P
     else
         velomagsq = uout[2]*uout[2] + uout[3]*uout[3]
         uout[4]   = PhysConst.γm1 * (u[4] - 0.5 * u[1] * velomagsq)   # P

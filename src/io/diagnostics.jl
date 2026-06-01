@@ -133,7 +133,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
                 u    = uaux[ip,2]/ρ
                 v    = uaux[ip,3]/ρ
                 θ   = uaux[ip,4]/ρ
-                P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+                P = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
                 exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
                 T =  θ*exner
                 z = mesh.z[ip]                                        #Only valid for flow in a box
@@ -152,7 +152,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
                 u    = uaux[ip,2]/ρ
                 v    = uaux[ip,3]/ρ
                 θ   = uaux[ip,4]/ρ
-                P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+                P = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
                 exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
                 T =  θ*exner
                 z = mesh.z[ip]                                        #Only valid for flow in a box
@@ -172,7 +172,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
                 u    = uaux[ip,2]/ρ
                 v    = uaux[ip,3]/ρ
                 θ   = uaux[ip,4]/ρ		
-                P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+                P = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
 	        exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
                 T =  θ*exner  
                 z = mesh.z[ip]                                        #Only valid for flow in a box
@@ -204,7 +204,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs,QT::Exact,Q,ψ)
               u    = uaux[ip,2]/ρ
               v    = uaux[ip,3]/ρ
               θ   = uaux[ip,4]/ρ		
-              P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+              P = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
 	      exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
               T =  θ*exner  
               z = mesh.z[ip]                                        #Only valid for flow in a box

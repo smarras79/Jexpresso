@@ -41,7 +41,7 @@ end
     θ  = ρθ/ρ
     u  = ρu/ρ
     v  = ρv/ρ
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     
     f1 = ρu
     f2 = ρu*u + Press

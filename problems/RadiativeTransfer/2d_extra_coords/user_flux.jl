@@ -16,7 +16,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
     u  = ρu/ρ
     v  = ρv/ρ
     w  = ρw/ρ
-    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
@@ -56,7 +56,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
     u  = ρu/ρ
     v  = ρv/ρ
     w  = ρw/ρ
-    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     Pressure = Pressure - qe[end]
 
     F[1] = ρu
@@ -91,7 +91,7 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
         u  = ρu/ρ
         v  = ρv/ρ
         w  = ρw/ρ
-        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ) - qe[6]
+        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ, θ) - qe[6]
         return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρw*u), T(ρθ*u), T(ρv), T(ρu*v), T(ρv*v + Pressure), T(ρw*v), T(ρθ*v), T(ρw), T(ρu*w), T(ρv*w), T(ρw*w + Pressure), T(ρθ*w)
     else
         ρ  = q[1]
@@ -103,7 +103,7 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
         u  = ρu/ρ
         v  = ρv/ρ
         w  = ρw/ρ
-        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
         return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρw*u), T(ρθ*u), T(ρv), T(ρu*v), T(ρv*v + Pressure), T(ρw*v), T(ρθ*v), T(ρw), T(ρu*w), T(ρv*w), T(ρw*w + Pressure), T(ρθ*w)
     end
 end

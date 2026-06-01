@@ -15,7 +15,7 @@ function user_flux!(F, G, SD::NSD_2D,
     u  = ρu/ρ
     v  = ρv/ρ
     
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     F[1] = ρu
     F[2] = ρu*u + Press
     F[3] = ρv*u
@@ -50,7 +50,7 @@ function user_flux!(F, G, SD::NSD_2D,
     u  = ρu/ρ
     v  = ρv/ρ
     
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     Press = Press - qe[end]
     
     F[1] = ρu
@@ -82,7 +82,7 @@ function user_flux!(F, G, SD::NSD_2D,
     v = q[3]
     θ = q[4]
     
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     F[1] = ρ*u
     F[2] = u
     F[3] = v
@@ -108,7 +108,7 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
         θ  = ρθ/ρ
         u  = ρu/ρ
         v  = ρv/ρ
-        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ) - qe[5]
+        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ, θ) - qe[5]
         return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρθ*u), T(ρv),T(ρu*v),T(ρv*v + Pressure),T(ρθ*v)
     else
         ρ  = q[1]
@@ -118,7 +118,7 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
         θ  = ρθ/ρ
         u  = ρu/ρ
         v  = ρv/ρ
-        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
         return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρθ*u), T(q[5]), T(q[6]), T(ρv),T(ρu*v),T(ρv*v + Pressure),T(ρθ*v), T(q[5]), T(q[6])
     end
 end

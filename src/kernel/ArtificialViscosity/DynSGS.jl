@@ -266,7 +266,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_2D, PT::CompEuler, q, q1,
                 u[i,j] = q[ip,2]/q[ip,1]
                 v[i,j] = q[ip,3]/q[ip,1]
                 e[i,j] = q[ip,4]/q[ip,1]
-                p_bar += perfectGasLaw_ρθtoP(PhysConst, ρ= q[ip,1], θ=e[i,j])
+                p_bar += perfectGasLaw_ρθtoP(PhysConst, q[ip,1], e[i,j])
             end
         end
         ρ_bar = ρ_bar/mesh.ngl^2

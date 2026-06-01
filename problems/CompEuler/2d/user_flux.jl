@@ -10,7 +10,7 @@ function user_flux!(F, G, SD::NSD_2D, q, mesh::St_mesh; neqs=4, ip=1)
     u  = ρu/ρ
     v  = ρv/ρ
     
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     F[1] = ρu
     F[2] = ρu*u + Press
     F[3] = ρv*u
