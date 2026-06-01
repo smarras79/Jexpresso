@@ -28,10 +28,8 @@ function user_inputs()
         #:μ                => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
         :visc_model       => SMAG(),
         #:visc_model       => VREM(),
-        :energy_equation  => "energy", # match SOL_VARS_TYPE = TOTAL() (ρE form);
-                                       # required so SGS_diffusion takes the
-                                       # total-energy branch and the τ·u work
-                                       # term is added to the energy flux.
+        :energy_equation  => "theta",
+        #:energy_equation  => "energy",
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
