@@ -10,7 +10,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
     if rank == 0
-        pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
+        # Wrap long values across multiple lines so nothing is cropped — the
+        # default pretty_table truncates wide cells with "…" and hides the
+        # tail of long paths / vectors / NamedTuples that users need to see.
+        term_cols = try displaysize(stdout)[2] catch; 120 end
+        key_w     = 32
+        # Leave room for the two outer borders, the column separator, and the
+        # padding PrettyTables adds around each cell (≈ 7 chars total).
+        val_w     = max(40, term_cols - key_w - 7)
+        pretty_table(inputs;
+                     sortkeys       = true,
+                     border_crayon  = crayon"yellow",
+                     linebreaks     = true,
+                     autowrap       = true,
+                     columns_width  = [key_w, val_w],
+                     crop           = :none)
     end
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
@@ -102,9 +116,19 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lwall_model))
        inputs[:lwall_model] = false
     end
-    
+
+    # On macOS (Apple Silicon in particular) the parallel
+    # `GmshDiscreteModel(parts, file)` collective in GridapGmsh + Open MPI
+    # SIGBUSes / SIGABRTs right after "Done reading *.msh" - reproducible on
+    # >=2 ranks. The `lxy_partition` path avoids the parallel collective:
+    # rank 0 reads the mesh serially, then `_compute_xy_partition` +
+    # `DiscreteModel(parts, smodel, cell_to_part)` broadcasts the chunks.
+    # Default to that path on macOS so multi-rank runs Just Work without
+    # the user having to set this flag per problem. Linux keeps the
+    # original behaviour (only enable for wall-model runs, which need
+    # the xy partition for other reasons).
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = inputs[:lwall_model]
+        inputs[:lxy_partition] = Sys.isapple() ? true : inputs[:lwall_model]
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))
@@ -203,6 +227,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             #inputs[:lsparse] = false
         end
     end
+    
+    if(!haskey(inputs, :NNfile))
+      inputs[:NNfile] = nothing
+    end
+
 
     if(!haskey(inputs, :plot_vlines))
       inputs[:plot_vlines] = "empty"
@@ -675,11 +704,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             inputs[:volume_flux] = nothing
         end
     end
-   
-    if(!haskey(inputs, :entropy_variables))	
-    inputs[:entropy_variables] = false
-    end
-
+    
     #
     # saturation adjustment:
     #
@@ -835,12 +860,46 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ldss_laplace] = false
     end
 
-    # AMR
-    
+    # AMR    
     if(!haskey(inputs, :lamr))
         inputs[:lamr] = false
     end
 
+    # LES statistics defaults (used by giga_les TimeIntegrators.jl callbacks).
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = Float64[]
+    end
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+    if(!haskey(inputs, :statistics_online_interval))
+        inputs[:statistics_online_interval] = Float32(inputs[:Δt])
+    end
+
+    # VTK / AMR restart defaults (used by giga_les TimeIntegrators.jl).
+    if(!haskey(inputs, :lrestart_vtk))
+        inputs[:lrestart_vtk] = false
+    end
+    if(!haskey(inputs, :lrestart_amr))
+        inputs[:lrestart_amr] = false
+    end
+
+    # LES profile/stress var defaults (used by giga_les params_setup.jl).
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
+    if(!haskey(inputs, :amr_freq))
+        inputs[:amr_freq] = 0
+    end
+
+    if(!haskey(inputs, :amr_max_level))
+        inputs[:amr_max_level] = 0
+    end
+     
     if(!haskey(inputs, :ladapt))
         inputs[:ladapt] = false
     end
@@ -859,6 +918,29 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     if(!haskey(inputs, :amr_max_level))
         inputs[:amr_max_level] = 0
+    end
+
+    if(!haskey(inputs, :lpreadapt))
+        inputs[:lpreadapt] = false
+    end
+
+    if(!haskey(inputs, :preadapt_max_level))
+        inputs[:preadapt_max_level] = 0
+    end
+
+    if(!haskey(inputs, :amr_start_time))
+        inputs[:amr_start_time] = Float32(0.0)
+    end
+
+    if(!haskey(inputs, :user_heatflux))
+        inputs[:user_heatflux] = 0.0
+        inputs[:δhf] = 0.0
+    else
+        inputs[:δhf] = 1.0
+    end
+
+    if inputs[:lpreadapt] == true
+        inputs[:ladapt] = true
     end
     #------------------------------------------------------------------------
     # The following quantities stored in the inputs[] dictionary are only
