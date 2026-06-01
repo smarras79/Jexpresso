@@ -5,14 +5,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
 	:ode_solver           => CarpenterKennedy2N54(),
-        :Δt                   => 1e-2,
+        :Δt                   => 5e-3,
         :tinit                => 0.0,
         :tend                 => 10.0,
         :diagnostics_at_times => (0.0:1.0:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => false,
-        :SOL_VARS_TYPE        => TOTAL(), #TOTAL(),
+        :SOL_VARS_TYPE        => TOTAL(),
         :use_named_tuples     => true, # Converts inputs to named tuples
         :ode_adaptive_solver  => false,
         #---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc            => true, #false by default NOTICE: works only for Inexact
-        :μ                => [0.0, 1.0, 1.0, 3.0], #horizontal viscosity constant for momentum
+        :μ                => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
         #:μ                => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
         :visc_model       => SMAG(),
         #:visc_model       => VREM(),
@@ -50,9 +50,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => false,
-        :mu_x                => 0.2,
-        :mu_y                => 0.2,
+        :lfilter             => true,
+        :mu_x                => 0.02,
+        :mu_y                => 0.02,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
