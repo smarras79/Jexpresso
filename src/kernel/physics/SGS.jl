@@ -23,7 +23,10 @@
     κ_mol = PhysConst.κ_mol  # Molecular thermal diffusivity [m²/s]
     C_s   = PhysConst.C_s    # Smagorinsky constant
     C_s2  = C_s*C_s
-    cp    = PhysConst.cp
+    # EOS-consistent cp = γ·R/(γ-1). Using PhysConst.cp directly is unsafe
+    # for non-dimensional setups where Rair is rescaled but cp is left at its
+    # SI value, which would over-estimate k_eff by orders of magnitude.
+    cp    = PhysConst.γ * PhysConst.Rair / PhysConst.γm1
     
     # Smagorinsky
     # Strain rate tensor (symmetric part of velocity gradient)
@@ -84,9 +87,10 @@ end
     κ_mol = PhysConst.κ_mol     # Molecular thermal diffusivity [m²/s]
     Ri_crit = PhysConst.Ri_crit # Critical Richardson number (typically 0.25)
     g     = PhysConst.g
-    cp    = PhysConst.cp
+    # EOS-consistent cp = γ·R/(γ-1); see 2D-SMAG comment for rationale.
+    cp    = PhysConst.γ * PhysConst.Rair / PhysConst.γm1
     C_s2  = C_s*C_s
-    
+
     # Equation type identification
     is_u_momentum  = (ieq == 2)
     is_v_momentum  = (ieq == 3)
@@ -241,7 +245,8 @@ end
     κ_mol      = PhysConst.κ_mol  # Molecular thermal diffusivity [m²/s]
     C_s        = PhysConst.C_s    # Smagorinsky constant
     C_s2       = C_s*C_s
-    cp         = PhysConst.cp
+    # EOS-consistent cp = γ·R/(γ-1); see 2D-SMAG comment for rationale.
+    cp         = PhysConst.γ * PhysConst.Rair / PhysConst.γm1
     C_vrem     = 2.5 * C_s2  # Vreman coefficient
     eps_vreman = eps(1.0)    # Safety epsilon
     
@@ -309,7 +314,8 @@ end
     Ri_crit    = PhysConst.Ri_crit   # Critical Richardson number
     C_s        = PhysConst.C_s    # Smagorinsky constant
     C_s2       = C_s*C_s
-    cp         = PhysConst.cp
+    # EOS-consistent cp = γ·R/(γ-1); see 2D-SMAG comment for rationale.
+    cp         = PhysConst.γ * PhysConst.Rair / PhysConst.γm1
     C_vrem     = 2.5 * C_s2  # Vreman coefficient
     eps_vreman = eps(1.0)    # Safety epsilon
     
