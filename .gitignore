@@ -10,3 +10,6 @@ LocalPreferences.toml
 runjexpresso
 meshes
 mesh.log
+
+# Claude Code per-user overrides
+.claude/settings.local.json
