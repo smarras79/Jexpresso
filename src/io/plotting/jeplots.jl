@@ -118,6 +118,48 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
     end
 end
 
+#
+# Plot the per-element DSGS viscosity μ_dsgs as a piecewise-constant
+# (per-element) staircase against x.  μ_dsgs has length mesh.nelem
+# and is filled by compute_dsgs_viscosity!.  We draw the same value
+# on every node belonging to an element so the rendering picks up
+# element boundaries cleanly.
+#
+function plot_dsgs_1d(mesh::St_mesh, μ_dsgs, t, OUTPUT_DIR::String, inputs;
+                      iout = 1, varname = "μ_dsgs")
+
+    nelem = mesh.nelem
+    ngl   = mesh.ngl
+
+    xs = Vector{Float64}(undef, nelem*ngl)
+    ys = Vector{Float64}(undef, nelem*ngl)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = mesh.connijk[ie, i, 1, 1]
+            xs[(ie-1)*ngl + i] = mesh.coords[ip, 1]
+            ys[(ie-1)*ngl + i] = μ_dsgs[ie]
+        end
+    end
+    sort_idx = sortperm(xs)
+
+    plt = Plots.plot(xs[sort_idx], ys[sort_idx];
+                     line = (:red, 2),
+                     marker = (:circle, 3, :red),
+                     title = string(varname, " (DSGS)  t = ", round(t, digits=4)),
+                     xlabel = "x",
+                     ylabel = varname,
+                     titlefontsize = 18,
+                     guidefontsize = 14,
+                     legendfontsize = 12,
+                     tickfontsize = 12,
+                     legend = false,
+                     size = (600, 400))
+
+    fout_name = string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".png")
+    Plots.savefig(plt, fout_name)
+    plt
+end
+
 function plot_1d_grid(mesh::St_mesh)
 
     plt = Plots.plot() #Clear plot

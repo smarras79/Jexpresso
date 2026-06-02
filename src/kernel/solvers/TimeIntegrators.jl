@@ -349,6 +349,14 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+            # Plot the DSGS viscosity coefficient alongside the solution.
+            # μ_dsgs[1:nelem] reflects the value computed at the last rhs!
+            # call before this diagnostic checkpoint.
+            if integrator.p.VT == DSGS() && integrator.p.SD == NSD_1D() &&
+               isa(inputs[:outformat], PNG)
+                plot_dsgs_1d(integrator.p.mesh, integrator.p.μ_dsgs,
+                             integrator.t, inputs[:output_dir], inputs; iout=idx)
+            end
             if (lwrite_time == true)
                 append_pvd_entry(pvd_path, integrator.t, "iter_$(idx).pvtu")
             end
