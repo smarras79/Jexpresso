@@ -206,7 +206,7 @@ function compute_rt_radiative_heating(
         T   = atmos_data.t_lay[ip]
         ρ   = atmos_data.rho[ip]
         κ_a = κ[ip]
-
+        σ_a = σ[ip]
         G = G_accum[ip]   # total G: diffuse + direct (if splitting active)
 
         if swlw
@@ -223,7 +223,8 @@ function compute_rt_radiative_heating(
                 # We use Q_dir directly since it was computed from the exact
                 # Beer-Lambert F_dir, which is more accurate than
                 # κ_abs × G_dir where G_dir comes from the discrete τ.
-                Q_rad[ip] = Q_dir[ip] + κ_a * (G - G_dir[ip])
+                Q_rad[ip] = Q_dir[ip] + κ_a * (G_accum[ip] - G_dir[ip])
+                #Q_rad[ip] = κ_a * G_accum[ip]
             else
                 # SW without splitting: standard
                 Q_rad[ip] = κ_a * G

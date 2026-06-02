@@ -36,7 +36,7 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         :lRT_problem        => true,
         :lRT_from_data       => true,
-        :RT_data_file       => "./DP_SCREAM_DATA/RICO_5x5/scream_dpxx_RICO_5x5/test/input/scream_dpxx_RICO_5x5.scream.INSTANT.nhours_x1.2004-12-16-00000.012.in.nc",
+        :RT_data_file       => "./DP_SCREAM_DATA/RICO_5x5/scream_dpxx_RICO_5x5/test/input/scream_dpxx_RICO_5x5.scream.INSTANT.nhours_x1.2004-12-16-00000.011.in.nc",
         :RT_shortwave   => true,
         :RT_longwave    => false,
         :RT_μ0 => cos(deg2rad(45.0)),

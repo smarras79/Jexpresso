@@ -61,7 +61,7 @@ function atmos_to_rad_longwave(atmos_data, npoin)
     # Liquid cloud: geometric optics, Q_abs ≈ 2, r_eff ≈ 10 μm, ρ_liq = 1000 kg/m³
     # k = 3 Q_abs / (4 ρ_liq r_eff) ≈ 3×2/(4×1000×10e-6) ≈ 150 m²/kg
     # Broadband Planck-mean is somewhat lower; 100 m²/kg is representative.
-    k_liq = 100.0
+    k_liq = 130.0
 
     # Ice cloud: larger effective radius (~30 μm), lower absorption efficiency.
     # k_ice ≈ k_liq × (r_eff_liq / r_eff_ice) × (Q_abs_ice / Q_abs_liq) ≈ 35 m²/kg

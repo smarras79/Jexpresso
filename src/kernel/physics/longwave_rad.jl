@@ -107,7 +107,7 @@ function user_rad_bc_longwave(x, y, z, θ, ϕ, nx_n, ny_n, nz_n,
         return σ_SB * lw.T_space^4 / π
 
     elseif bdy.is_bottom(z)
-        T_sfc = atmos_data.t_lay[ip]
+        T_sfc = atmos_data.t_lev[ip]
         return lw.ε_surface * σ_SB * T_sfc^4 / π
 
     else

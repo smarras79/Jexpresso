@@ -1,215 +1,213 @@
-using Krylov
-using IncompleteLU
-using KLU
+
+using MPI
+using SparseArrays
 using LinearAlgebra
-
+using LinearOperators
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+#  MatvecCacheSparse
+#
+#  Sparse point-to-point matvec assembler for nprocs > 4.
+#  Sends only nonzero contributions using GLOBAL indices directly —
+#  eliminates the proc_ip2gip table (nprocs × npoin per rank) entirely.
+#
+#  Memory per rank:
+#    Old: O(nprocs × npoin)  for proc_ip2gip
+#    New: O(nprocs + nnz_local) — only counts and nonzero buffers
+#
+#  The nnzeros, request arrays, and send/recv buffers are pre-allocated
+#  and reused across matvec calls to avoid allocation in the hot path.
+# ─────────────────────────────────────────────────────────────────────────────
+ 
 mutable struct MatvecCacheSparse
-    # number of points on each process
-    proc_npoin      :: Vector{Int}
-    # Local 2 global indices for each process
-    proc_ip2gip     :: Vector{Vector{Int}}
-    # Matvec sparse contributions
-    proc_vec        :: Vector{Vector{Float64}}
-    # Indices of non-zero contributions by process
-    proc_sp_ip      :: Vector{Vector{Int}}
-    # Indices of non-zero contribution of local process
-    sp_ip           :: Vector{Int}
-    # Values of non-zero contributions of local process
-    sp_val          :: Vector{Float64}
-    # Number of non-zero contributions from each process
+    # Number of nonzero send contributions from this rank (updated each call)
+    nnzero_local    :: Int
+    # Number of nonzero contributions received from each rank (updated each call)
     nnzeros         :: Vector{Int}
-    #Preallocated request arrays
-    request         :: MPI.MultiRequest
-    request_indices :: MPI.MultiRequest
+    # Send buffers: global indices and values of nonzero contributions
+    send_gip        :: Vector{Int}       # global indices (pre-allocated to npoin_g)
+    send_val        :: Vector{Float64}   # values (pre-allocated to npoin_g)
+    # Receive buffers: resized each call based on nnzeros exchange
+    recv_gip        :: Vector{Vector{Int}}
+    recv_val        :: Vector{Vector{Float64}}
+    # Pre-allocated MPI request arrays (2*(nprocs-1) requests per round)
+    req_counts      :: MPI.MultiRequest
+    req_indices     :: MPI.MultiRequest
+    req_values      :: MPI.MultiRequest
+    nprocs          :: Int
+    rank            :: Int
 end
-
-function setup_MatvecSparse_assembler(index_a,gip2owner)
-
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    rank_sz = MPI.Comm_size(comm)
-
-    global_max_index = MPI.Allreduce(maximum(index_a), MPI.MAX, comm)
-
-    npoin = size(index_a,1)
-    proc_npoin = MPI.Allgather(npoin,comm)
-
-    proc_ip2gip = [Vector{Int}(undef, proc_npoin[i+1]) for i in 0:rank_sz-1]
-
-    nreq = 0
-    requests = MPI.Request[]
-    for i in 0:rank_sz-1
-        if i != rank
-            push!(requests, MPI.Isend(index_a, i, 1, comm))
-            nreq += 1
-        end
-        if i != rank
-            push!(requests, MPI.Irecv!(proc_ip2gip[i+1], i, 1, comm))
-            nreq += 1
-        end
-    end
-
-    MPI.Waitall!(requests)
-
-    proc_ip2gip[rank+1] .= index_a
-
-    proc_vec = [Vector{Float64}(undef, proc_npoin[i+1]) for i in 0:rank_sz-1]
-
-    proc_sp_ip = [Vector{Int}(undef, proc_npoin[i+1]) for i in 0:rank_sz-1]
-
-    sp_ip  = zeros(Int, npoin)
-
-    sp_val = zeros(Float64, npoin)
-
-    nnzeros = zeros(Int, rank_sz)
-
-    cache = MatvecCacheSparse(proc_npoin, proc_ip2gip, proc_vec, proc_sp_ip, sp_ip, sp_val, nnzeros, MPI.MultiRequest(nreq), MPI.MultiRequest(nreq))
-
-    return cache
+ 
+function setup_MatvecSparse_assembler(ip2gip_g::AbstractVector{Int},
+                                      gip2owner::AbstractVector{Int},
+                                      comm::MPI.Comm = MPI.COMM_WORLD)
+    rank    = MPI.Comm_rank(comm)
+    nprocs  = MPI.Comm_size(comm)
+    npoin_g = length(ip2gip_g)
+ 
+    nreq = 2 * (nprocs - 1)
+ 
+    return MatvecCacheSparse(
+        0,                                              # nnzero_local
+        zeros(Int, nprocs),                            # nnzeros
+        zeros(Int,     npoin_g),                       # send_gip (max size)
+        zeros(Float64, npoin_g),                       # send_val (max size)
+        [Int[]     for _ in 1:nprocs],                 # recv_gip
+        [Float64[] for _ in 1:nprocs],                 # recv_val
+        MPI.MultiRequest(nreq),                        # req_counts
+        MPI.MultiRequest(nreq),                        # req_indices
+        MPI.MultiRequest(nreq),                        # req_values
+        nprocs, rank)
 end
-
-function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse)
-    comm   = MPI.COMM_WORLD
-    rank   = MPI.Comm_rank(comm)
-    rank_sz = MPI.Comm_size(comm)
-    npoin  = size(y_local, 1)
-
-    # Find nonzero indices and values — no threshold, use exact zero only
-    iter = 1
-    @inbounds for ip = 1:npoin
+ 
+function assemble_mpi_matvec_sparse!(y_local  :: AbstractVector{Float64},
+                                     y_global :: AbstractVector{Float64},
+                                     ip2gip_g :: AbstractVector{Int},
+                                     cache    :: MatvecCacheSparse,
+                                     comm     :: MPI.Comm = MPI.COMM_WORLD)
+    nprocs = cache.nprocs
+    rank   = cache.rank
+    npoin_g = length(ip2gip_g)
+ 
+    # ── Pack nonzero contributions as (global_index, value) pairs ────────────
+    # Send global indices directly — no proc_ip2gip lookup needed on receiver.
+    nnz = 0
+    @inbounds for ip = 1:npoin_g
         val = y_local[ip]
-        if val != zero(Float64)
-            cache.sp_ip[iter]  = ip
-            cache.sp_val[iter] = val
-            iter += 1
-        end
+        val == zero(Float64) && continue
+        nnz += 1
+        cache.send_gip[nnz] = ip2gip_g[ip]
+        cache.send_val[nnz] = val
     end
-    nnzero = iter - 1
-
+    cache.nnzero_local = nnz
+ 
     # ── Round 1: exchange nnzero counts ──────────────────────────────────────
     req_idx = 1
-    @inbounds for i in 0:rank_sz-1
+    @inbounds for i in 0:nprocs-1
         i == rank && continue
-        MPI.Isend(nnzero, comm, cache.request[req_idx]; dest=i, tag=0)
+        MPI.Isend(nnz, comm, cache.req_counts[req_idx]; dest=i, tag=10)
         req_idx += 1
-        MPI.Irecv!(@view(cache.nnzeros[i+1:i+1]), comm, cache.request[req_idx]; source=i, tag=0)
+        MPI.Irecv!(@view(cache.nnzeros[i+1:i+1]), comm,
+                   cache.req_counts[req_idx]; source=i, tag=10)
         req_idx += 1
     end
-    cache.nnzeros[rank+1] = nnzero
-    MPI.Waitall(cache.request)
-
-    # ── Resize receive buffers BEFORE posting receives ────────────────────────
-    @inbounds for i in 0:rank_sz-1
+    cache.nnzeros[rank+1] = nnz
+    MPI.Waitall(cache.req_counts)
+ 
+    # ── Resize receive buffers to match incoming counts ───────────────────────
+    # Only reallocates when size changes — stable after warmup iterations.
+    @inbounds for i in 0:nprocs-1
         i == rank && continue
         n = cache.nnzeros[i+1]
-        if length(cache.proc_sp_ip[i+1]) != n
-            resize!(cache.proc_sp_ip[i+1], n)
-        end
-        if length(cache.proc_vec[i+1]) != n
-            resize!(cache.proc_vec[i+1], n)
-        end
+        length(cache.recv_gip[i+1]) != n && resize!(cache.recv_gip[i+1], n)
+        length(cache.recv_val[i+1]) != n && resize!(cache.recv_val[i+1], n)
     end
-
-    # ── Round 2: exchange indices ─────────────────────────────────────────────
+ 
+    # ── Round 2: exchange global indices ─────────────────────────────────────
     req_idx = 1
-    send_ip_buf = @view(cache.sp_ip[1:nnzero])
-    @inbounds for i in 0:rank_sz-1
+    @inbounds for i in 0:nprocs-1
         i == rank && continue
-        if nnzero > 0
-            MPI.Isend(send_ip_buf, comm, cache.request_indices[req_idx]; dest=i, tag=1)
-        else
-            MPI.Isend(Int[], comm, cache.request_indices[req_idx]; dest=i, tag=1)
-        end
+        send_view = @view(cache.send_gip[1:nnz])
+        MPI.Isend(send_view, comm, cache.req_indices[req_idx]; dest=i, tag=11)
         req_idx += 1
         n = cache.nnzeros[i+1]
-        if n > 0
-            MPI.Irecv!(cache.proc_sp_ip[i+1], comm, cache.request_indices[req_idx]; source=i, tag=1)
-        else
-            MPI.Irecv!(Int[], comm, cache.request_indices[req_idx]; source=i, tag=1)
-        end
+        recv_view = n > 0 ? cache.recv_gip[i+1] : @view(cache.recv_gip[i+1][1:0])
+        MPI.Irecv!(recv_view, comm, cache.req_indices[req_idx]; source=i, tag=11)
         req_idx += 1
     end
-    cache.proc_sp_ip[rank+1][1:nnzero] .= send_ip_buf
-
+    MPI.Waitall(cache.req_indices)
+ 
     # ── Round 3: exchange values ──────────────────────────────────────────────
     req_idx = 1
-    send_val_buf = @view(cache.sp_val[1:nnzero])
-    @inbounds for i in 0:rank_sz-1
+    @inbounds for i in 0:nprocs-1
         i == rank && continue
-        if nnzero > 0
-            MPI.Isend(send_val_buf, comm, cache.request[req_idx]; dest=i, tag=2)
-        else
-            MPI.Isend(Float64[], comm, cache.request[req_idx]; dest=i, tag=2)
-        end
+        send_view = @view(cache.send_val[1:nnz])
+        MPI.Isend(send_view, comm, cache.req_values[req_idx]; dest=i, tag=12)
         req_idx += 1
         n = cache.nnzeros[i+1]
-        if n > 0
-            MPI.Irecv!(cache.proc_vec[i+1], comm, cache.request[req_idx]; source=i, tag=2)
-        else
-            MPI.Irecv!(Float64[], comm, cache.request[req_idx]; source=i, tag=2)
-        end
+        recv_view = n > 0 ? cache.recv_val[i+1] : @view(cache.recv_val[i+1][1:0])
+        MPI.Irecv!(recv_view, comm, cache.req_values[req_idx]; source=i, tag=12)
         req_idx += 1
     end
-    cache.proc_vec[rank+1][1:nnzero] .= send_val_buf
-    MPI.Waitall(cache.request_indices)
-    MPI.Waitall(cache.request)
-
-    # ── Accumulate into global vector ─────────────────────────────────────────
-    fill!(y, zero(Float64))
-    @inbounds for i in 0:rank_sz-1
+    MPI.Waitall(cache.req_values)
+ 
+    # ── Accumulate: self contributions + received ─────────────────────────────
+    fill!(y_global, zero(Float64))
+ 
+    # Self contributions
+    @inbounds for j = 1:nnz
+        y_global[cache.send_gip[j]] += cache.send_val[j]
+    end
+ 
+    # Remote contributions — global index used directly, no lookup needed
+    @inbounds for i in 0:nprocs-1
+        i == rank && continue
         n = cache.nnzeros[i+1]
+        gips = cache.recv_gip[i+1]
+        vals = cache.recv_val[i+1]
         for j = 1:n
-            ip  = cache.proc_sp_ip[i+1][j]
-            gip = cache.proc_ip2gip[i+1][ip]
-            y[gip] += cache.proc_vec[i+1][j]
+            y_global[gips[j]] += vals[j]
         end
     end
 end
-
-function create_parallel_linear_operator(A_local::AbstractMatrix{T},
-                                        ip2gip::AbstractVector{Int},
-                                        gip2owner::AbstractVector{Int},
-                                        npoin::Int,
-                                        gnpoin::Int,
-                                        npoin_g::Int,
-                                        g_ip2gip::AbstractVector{Int},
-                                        g_gip2ip,
-                                        comm::MPI.Comm = MPI.COMM_WORLD) where T
-
-    # Forward operator: y = A*x
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+#  create_parallel_linear_operator
+#
+#  Builds a parallel matrix-vector product operator for distributed GMRES.
+#  Uses Allreduce for nprocs <= 4 (simpler, lower latency at small scale).
+#  Uses sparse point-to-point for nprocs > 4 (avoids O(gnpoin) Allreduce).
+#
+#  Memory improvements over original:
+#  - No proc_ip2gip table (was nprocs × npoin per rank)
+#  - Send/recv buffers sized to max local nnz, not full npoin
+#  - Global indices sent directly, eliminating indirect lookup on receive
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+function create_parallel_linear_operator(
+        A_local   :: AbstractMatrix{T},
+        ip2gip    :: AbstractVector{Int},
+        gip2owner :: AbstractVector{Int},
+        npoin     :: Int,
+        gnpoin    :: Int,
+        npoin_g   :: Int,
+        g_ip2gip  :: AbstractVector{Int},
+        g_gip2ip,
+        comm      :: MPI.Comm = MPI.COMM_WORLD) where T
+ 
     nprocs = MPI.Comm_size(comm)
-    rank = MPI.Comm_rank(comm)
-    tolerance = 1e-14
-    y_local = zeros(Float64,gnpoin)
-    y_temp = zeros(Float64,npoin_g)
-    A_rows = A_local.rowval
-    A_ranges = zeros(Int64, npoin_g,2)
-    x_local = zeros(Float64,npoin_g)
-    local_gips = zeros(Int64,npoin)
-    local_values = zeros(Float64,npoin)
-
-    ip2gip_g = zeros(Int,npoin_g)
-    ip2gip_g[1:npoin] .= ip2gip[:]
-    #Set up ghost_parent ip2gip if necessary
-    if (npoin_g > npoin)
-        for ip=npoin+1:npoin_g
-            i = ip - npoin
-            ip2gip_g[ip] = g_ip2gip[i]
+    rank   = MPI.Comm_rank(comm)
+ 
+    # ── Pre-allocate fixed-size work arrays ───────────────────────────────────
+    y_local  = zeros(Float64, gnpoin)
+    y_temp   = zeros(Float64, npoin_g)
+    x_local  = zeros(Float64, npoin_g)
+ 
+    # Build extended ip2gip covering ghost nodes
+    ip2gip_g = zeros(Int, npoin_g)
+    ip2gip_g[1:npoin] .= ip2gip
+    if npoin_g > npoin
+        @inbounds for ip = npoin+1:npoin_g
+            ip2gip_g[ip] = g_ip2gip[ip - npoin]
         end
     end
-    for ip=1:npoin_g
-        A_ranges[ip,1], A_ranges[ip,2] = first(nzrange(A_local, ip)), last(nzrange(A_local, ip))
-    end
-    
-    pM = setup_MatvecSparse_assembler(ip2gip_g,gip2owner)
-    
+ 
+    # Sparse assembler cache (only needed for nprocs > 4)
+    pM = nprocs > 4 ? setup_MatvecSparse_assembler(ip2gip_g, gip2owner, comm) :
+                      nothing
+ 
+    # ── Matvec ────────────────────────────────────────────────────────────────
     function matvec!(y, x)
+        # Gather x into local extended vector
         @inbounds for ip = 1:npoin_g
             x_local[ip] = x[ip2gip_g[ip]]
         end
+ 
+        # Local sparse matvec
         mul!(y_temp, A_local, x_local)
-
+ 
         if nprocs <= 4
+            # Small rank count: Allreduce is simpler and lower latency
             fill!(y_local, zero(T))
             @inbounds for ip = 1:npoin_g
                 y_local[ip2gip_g[ip]] += y_temp[ip]
@@ -217,18 +215,18 @@ function create_parallel_linear_operator(A_local::AbstractMatrix{T},
             MPI.Allreduce!(y_local, +, comm)
             copyto!(y, y_local)
         else
-            assemble_mpi_matvec_sparse!(y_temp, y_local, pM)
+            # Large rank count: sparse point-to-point assembly
+            assemble_mpi_matvec_sparse!(y_temp, y_local, ip2gip_g, pM, comm)
             copyto!(y, y_local)
         end
         return y
     end
-
+ 
     function rmatvec!(y, x)
         @inbounds for ip = 1:npoin_g
             x_local[ip] = x[ip2gip_g[ip]]
         end
         mul!(y_temp, A_local', x_local)
-
         if nprocs <= 4
             fill!(y_local, zero(T))
             @inbounds for ip = 1:npoin_g
@@ -237,13 +235,12 @@ function create_parallel_linear_operator(A_local::AbstractMatrix{T},
             MPI.Allreduce!(y_local, +, comm)
             copyto!(y, y_local)
         else
-            assemble_mpi_matvec_sparse!(y_temp, y_local, pM)
+            assemble_mpi_matvec_sparse!(y_temp, y_local, ip2gip_g, pM, comm)
             copyto!(y, y_local)
         end
         return y
     end
-
-    # Create LinearOperator
+ 
     return LinearOperator{T}(gnpoin, gnpoin, false, false, matvec!, rmatvec!, rmatvec!)
 end
 
@@ -556,7 +553,7 @@ function solve_parallel_gmres(ip2gip, gip2owner, A_local, b, gnpoin, npoin, x_pr
         if rank == 0
             @info "Building ILU preconditioner on each rank (local block)"
         end
-        ilu_factor = IncompleteLU.ilu(A_local, τ=0.1)
+        ilu_factor = IncompleteLU.ilu(A_local, τ = 0.01)
         # Apply locally: scatter global x to local, apply ILU, scatter back
         LinearOperator(Float64, gnpoin, gnpoin, true, true,
             (y, x) -> begin

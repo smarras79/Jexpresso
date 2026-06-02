@@ -183,6 +183,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     end
     nc_mat = zeros(Float64,1)
     P = zeros(Float64,1)
+    MLHS_pre = zeros(Float64,1)
     rest = zeros(Float64,1)
     nc_non_global_nodes = []
     n_non_global_nodes = 0
@@ -566,7 +567,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
         M_inv = spdiagm(0 => 1.0 ./ Md)
         MLHS  = sparse(M_inv * LHS)
-
         # ── All-reduce parent–parent entries across ranks ─────────────────────
         # Hanging-node constraint handling requires that (parent, parent) blocks
         # of M⁻¹LHS are globally consistent before restriction/prolongation.
@@ -1404,7 +1404,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
                         Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
 
-                        if is_boundary
+                        if is_boundary && ip_g <= n_free && !(ip_g in all_hanging_nodes)
                             # Find the most-inflow face normal for this direction:
                             # the one giving the most negative Ω·n.
                             # If the minimum dot product is < -1e-13 the direction
@@ -1424,8 +1424,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             end
                             
                             
-                            if best_dot < -1e-13
-                                if ip_g <= n_free && !(ip_g in all_hanging_nodes)
+                            if best_dot < -1e-10
                                     val = 0.0
                                     if inputs[:RT_shortwave]
                                         val = user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ, bdy, sw, F_dir[ip], τ_nodes[ip], sw_ω₀_lateral, inputs[:rad_HG_g][ip])
@@ -1438,7 +1437,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     if !haskey(boundary_dict, ip_g)
                                         boundary_dict[ip_g] = is_owned ? val : 0.0
                                     end
-                                end
                             else
                                 if is_owned
                                     RHS[ip_g] = if inputs[:RT_shortwave]
@@ -1497,7 +1495,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                 end
                             end
                             
-                            if best_dot < -1e-13
+                            if best_dot < -1e-10
                                
                             
                                 val = 0.0
@@ -1657,6 +1655,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         boundary_set = Set(keys(boundary_dict))
         rows_A = rowvals(A)
         vals_A = nonzeros(A)
+        
+        
 
         for col = 1:size(A, 2)
             for ptr = nzrange(A, col)
@@ -1670,6 +1670,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
         A = dropzeros!(A)
+        
+        
         @info "[$rank] A after BC application + dropzeros: nnz=$(nnz(A))"
 
 
@@ -1697,11 +1699,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         for (node, val) in boundary_dict
             if val != 0.0
                 RHS_red[node] = val
+                
             end
         end
         
         B = RHS_red
-
     
         @info "maxima of restricted RHS"
         @info maximum(RHS), minimum(RHS)
@@ -1801,19 +1803,19 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         MPI.Barrier(comm)=#
     end
 
-    for col in boundary_set
+    #=for col in boundary_set
         val = BDY[col]
         
         for ptr in nzrange(As, col)
             row = rows_A[ptr]
             row in boundary_set && continue  # skip BC-BC interactions
             row > n_free && continue
-            if(gip2owner_extra[row] == rank)
+            #if(gip2owner_extra[row] == rank)
                 B[row] -= vals_A[ptr] * val
-            end
+            #end
             vals_A[ptr] = 0.0
         end
-    end
+    end=#
     As = dropzeros!(As)
     if inputs[:adaptive_extra_meshes]
         for ip in all_hanging_nodes
@@ -1866,7 +1868,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     diagnose_rt_matrix(As, ip2gip_spa, gnpoin, "Longwave")
     d = diag(As)
 
-    
+    #solution=As\B    
     
 
     npoin_ang_total = size(B, 1)
@@ -1930,15 +1932,27 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
            
         end
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
+        
+        #=solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents,
-            precond  = :none,
+            precond  = :ilu,
             restart  = 500,
-            tol      = 1e-4)
-
-       
+            tol      = 1e-6)=#
+        #diagnose_ghost_rows(As, ip2gip_spa, gip2owner_extra, gnpoin, n_spa_g,
+        #            extended_parents_to_gid, MPI.COMM_WORLD)
+        
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin,
+            n_spa, x_warm;
+            precond     = :mumps_dist,
+            asm_solver  = :rcmilu,
+            asm_ilu_tau = 0.1,
+            npoin_g     = n_spa_g,
+            g_ip2gip    = extended_parents_to_gid,
+            g_gip2ip    = gid_to_extended_parents,
+            restart     = 100,
+            tol         = 1e-7)
 
     elseif (inputs[:RT_shortwave])
         x_warm = Float64[]
@@ -1948,7 +1962,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
             npoin_g       = n_dofs,
             precond       = :none,
-            restart       = 100,
+            restart       = 60,
             tol           = 1e-7,
             extra_nelem   = extra_mesh.extra_nelem,
             extra_nops    = extra_mesh.extra_nop,
@@ -1967,7 +1981,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
             npoin_g = n_dofs,
             precond = :none,
-            restart = 30,
+            restart = 60,
             tol     = 1e-7)
     else
         @info maximum(ip2gip_spa), minimum(ip2gip_spa)
@@ -1980,16 +1994,52 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 end
             end
         end
-
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
+        #=nonowned_indices = Set{Int}()
+        for i=1:npoin_ang_total
+            if gip2owner_extra[i] != rank
+                push!(nonowned_indices, ip2gip_spa[i])
+            end
+        end
+        gip_to_local = Dict{Int, Int}()
+        sizehint!(gip_to_local, npoin_ang_total)
+        for ip = 1:npoin_ang_total
+            gip_to_local[ip2gip_spa[ip]] = ip
+        end
+        As = allreduce_shared_entries(
+            As, gip2owner_extra, npoin_ang_total, comm, ip2gip_spa,
+            nonowned_indices,
+            gip_to_local
+        )
+        As = sparse(As)=#
+        #=solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
         npoin_g  = n_ext_spa,
         g_ip2gip = extended_parents_to_gid_spa,
         g_gip2ip = gid_to_extended_parents_spa,
         precond  = :none,
         restart  = 50,
-        tol      = 1e-5)
-    end
+        tol      = 1e-7)=#
+        #=target_gid = 5761
+        for ip = 1:npoin_ang_total
+            @info ip, ip2gip_spa[ip]
+            if ip2gip_spa[ip] == target_gid
+                diag_val = As[ip, ip]
+                row_nnz  = nnz(As[ip:ip, :])
+                @info "Rank $rank: GID $target_gid found at local ip=$ip diagonal=$diag_val row_nnz=$row_nnz"
+            end
+        end=#
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+        npoin_g  = n_ext_spa,
+        g_ip2gip = extended_parents_to_gid_spa,
+        g_gip2ip = gid_to_extended_parents_spa,
+        #precond  = :inner_gmres,
+        precond  = :global_ilu,
+        asm_solver = :rcmsplu,
+        asm_ilu_tau = 0.1,
+        restart  = 50,
+        tol      = 1e-7)
 
+    end
+    
     @rankinfo rank "Solve complete."
     #A = nothing; RHS = nothing; GC.gc()
     @info maximum(solution), minimum(solution)
@@ -2133,6 +2183,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
     if (inputs[:lmanufactured_solution])
+        @info "local errors", rank, sqrt(L2_err), sqrt(L2_ref), sqrt(L2_err / L2_ref) 
         @rankinfo rank @sprintf("L2 error: ‖e‖ = %.6e  ‖u‖ = %.6e  relative = %.6e",
         sqrt(L2_err_g), sqrt(L2_ref_g), sqrt(L2_err_g / L2_ref_g))
     end
@@ -2144,7 +2195,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 solution_new, atmos_data, mesh,
                 connijk_spa, extra_meshes_connijk, extra_meshes_coords,
                 extra_meshes_extra_Je, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_npoins,
-                nelem, ngl, κ, σ, extra_mesh[1].ωθ, extra_mesh[1].ωθ, node_div, true, inputs[:RT_shortwave];
+                nelem, ngl, κ, σ, extra_mesh[1].ωθ, extra_mesh[1].ωθ, node_div, true, inputs[:RT_longwave];
                 G_dir = G_dir,
                 Q_dir = Q_dir,
                 sw_μ₀ = sw.μ₀,
@@ -2164,7 +2215,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 solution, atmos_data, mesh,
                 connijk_spa, extra_mesh.extra_connijk, extra_mesh.extra_coords,
                 extra_mesh.extra_metrics.Je, extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_npoin,
-                nelem, ngl, κ, σ, extra_mesh.ωθ, extra_mesh.ωθ, node_div, false, inputs[:RT_shortwave];
+                nelem, ngl, κ, σ, extra_mesh.ωθ, extra_mesh.ωθ, node_div, false, inputs[:RT_longwave];
                 G_dir = G_dir,
                 Q_dir = Q_dir,
                 sw_μ₀ = sw.μ₀,
@@ -2186,30 +2237,60 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     else
         # ── VTK output ────────────────────────────────────────────────────────────
         if (inputs[:RT_radiative_heating]) && (inputs[:RT_longwave] || inputs[:RT_shortwave])
-            out_vectors = zeros(mesh.npoin,7)
+            out_vectors = zeros(mesh.npoin,12)
+            if (inputs[:adaptive_extra_meshes])
+                out_vectors = zeros(mesh.npoin,13)
+            end
             for i=1:mesh.npoin
                 out_vectors[i,1] = int_sol[i]
                 out_vectors[i,2] = Q[i]
                 out_vectors[i,3] = dTdt[i]
                 out_vectors[i,4] = F_net[i]
                 out_vectors[i,5] = G[i]
+                out_vectors[i,6] = atmos_data.t_lev[i]
+                out_vectors[i,7] = atmos_data.q_liq[i]
+                out_vectors[i,8] = atmos_data.q_ice[i]
+                out_vectors[i,9] = κ[i]
+                out_vectors[i,10] = σ[i]
                 if (inputs[:RT_shortwave])
-                    out_vectors[i,6] = F_dir[i]
-                    out_vectors[i,7] = τ_nodes[i]
+                    out_vectors[i,11] = F_dir[i]
+                    out_vectors[i,12] = τ_nodes[i]
+                end
+            end
+            if (inputs[:adaptive_extra_meshes])
+                for iel = 1:nelem
+                    for i = 1:ngl, j = 1:ngl, k = 1:ngl
+                        ip = mesh.connijk[iel,i,j,k]
+                        out_vectors[ip,13] = extra_meshes_extra_nelems[iel]
+                    end
                 end
             end
             @rankinfo rank "Writing output"
             title = @sprintf "Solution-Radiation"
             if (inputs[:outformat] == VTK())
-                write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
-                    0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-                    ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
-                return
+                if (inputs[:adaptive_extra_mesh])
+                    write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"]; iout=1, nvar=13)
+                    return
+                else
+                    write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"]; iout=1, nvar=12)
+                    return
+                end
             elseif (inputs[:outformat] == NETCDF())
-                write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
-                    0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-                    ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "F_dir", "τ_nodes"]; iout=1, nvar=5)
-                return
+                if (inputs[:adaptive_extra_meshes])
+                    write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"]; iout=1, nvar=13)
+                    return
+                else
+                    write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"]; iout=1, nvar=12)
+                    return
+                end
             end
         else
             
@@ -2886,7 +2967,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
        
         while e_ext <= nelem_ang[iel]
           
-            if (iel == 14 && e_ext == 2)#abs(criterion[iel][e_ext]) > thresholds[1]
+            if (abs(criterion[iel][e_ext]) > thresholds[1])
                #@info iel, e_ext
                #@info rank, criterion[iel][e_ext], thresholds[1], e_ext, iel
                 adapted_ang[iel] = 1
