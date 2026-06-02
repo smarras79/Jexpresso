@@ -703,7 +703,11 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,1] = zero(TT)                             # ρ : no mass diffusion
         μ_dsgs[ie,2] = visc_coeff[2] * μ                    # ρu
         μ_dsgs[ie,3] = visc_coeff[3] * μ                    # ρv
-        μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ         # ρθ (eq. 10b)
+        # DIAGNOSTIC: θ-equation DSGS forced to zero to isolate whether
+        # κ_θ·∇²θ on the LGL-discretized total θ field is the cold-start
+        # blow-up source. Restore `visc_coeff[4] * (Pr/γm1) * μ` (Marras
+        # eq. 10b) once the perturbation-θ fix is in.
+        μ_dsgs[ie,4] = zero(TT)                             # ρθ (DIAG: disabled)
     end
 
     return nothing
