@@ -34,17 +34,16 @@ function user_inputs()
         :visc_model           => DSGS(),     # Marras et al. Dynamic SGS
         :energy_equation      => "theta",
         # Per-equation multiplier on the DSGS coefficient. The Marras
-        # value is 1.0; turn an equation off with 0.0; throttle a
-        # too-aggressive coefficient with a value in (0, 1).
+        # paper value is 1.0; turn an equation off with 0.0; throttle a
+        # too-aggressive coefficient with a value in (0, 1). The ρ
+        # entry must stay at 0.0 because the mass equation is left
+        # conservative (Marras eq. 10).
         #
-        # Default is set conservatively (1 % of the un-scaled Marras
-        # coefficient) so the rising bubble survives the full 1000 s
-        # run. Dial up to ≈ 0.1 if you want stronger shock-style
-        # damping; 1.0 reproduces the unscaled paper formula and tends
-        # to over-diffuse the bubble in this low-Mach-number case.
-        # The ρ entry must stay at 0.0 because the mass equation is
-        # left conservative (Marras eq. 10).
-        :μ                    => [0.0, 0.01, 0.01, 0.01],
+        # 1.0 is the historical baseline that runs to completion (the
+        # bubble diffuses noticeably but the simulation finishes). Dial
+        # it down to e.g. 0.1 if you want the bubble shape preserved
+        # at the cost of less shock-style damping.
+        :μ                    => [0.0, 1.0, 1.0, 1.0],
         :Pr                   => 0.1,        # artificial Prandtl number (Marras eq. 10b)
         #---------------------------------------------------------------------------
         # Mesh

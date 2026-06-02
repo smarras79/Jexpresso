@@ -576,23 +576,28 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
 
     # Marras et al. (JCP 2015) eq. (8-10), as written. One unified
-    # residual-based coefficient per element with FULL-STATE
-    # denominators:
+    # residual-based coefficient per element with FULL-STATE denominators:
     #     μ_res = C1 · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
     #     μ_max = C2 · Δ · (|u| + c)_∞,e
     #     μ     = max(0, min(μ_max, μ_res))
-    # then split per equation:
+    # split per equation by the caller-supplied multiplier:
     #     μ_dsgs[iel, 1] = 0                              (no mass diffusion)
     #     μ_dsgs[iel, 2] = visc_coeff[2] · μ              (ρu)
     #     μ_dsgs[iel, 3] = visc_coeff[3] · μ              (ρv)
     #     μ_dsgs[iel, 4] = visc_coeff[4] · Pr/(γ-1) · μ   (ρθ — eq. 10b)
-    # where visc_coeff = inputs[:μ] is the per-equation user multiplier.
+    #
+    # The residual R_i uses rhs[ip, i] *directly* (weak-form residual,
+    # pre-mass-matrix division). Multiplying by Minv to convert to
+    # dq/dt looks dimensionally cleaner but for 2D atmospheric scales
+    # (M ≈ 10³ m³ on a 500 m element) it shrinks R by ~10³–10⁴; the
+    # algorithm then sees R/denom ≈ 0 and effectively turns off DSGS,
+    # which is what made theta_dsgs run without any visible damping.
+    # The Marras / fp-mymaster lineage uses rhs directly and so do we.
+    # Minv is kept in the signature for 1D-symmetry / forward
+    # compatibility but is unused in the body.
     #
     # qe is accepted in the signature for forward compatibility / 1D
-    # symmetry but the body uses the full conservative state.  The
-    # hydrostatic-exempting variant (q − qe denominators) is unstable
-    # for the rising-bubble case because |ρθ − ρ_ref·θ_ref| collapses
-    # to a tiny perturbation scale and R/denom saturates the cap.
+    # symmetry but the body uses the full conservative state.
 
     invnp = one(TT)/(nelem*ngl*ngl)
     γ     = PhysConst.γ
@@ -601,14 +606,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     C2    = TT(0.5)
     γm1   = γ - one(TT)
     eps   = Base.eps(TT)
-    # Characteristic-scale floor on the denominators. The fluid starts
-    # at rest in the rising-bubble case, so ‖ρu − ⟨ρu⟩‖∞,Ω and
-    # ‖ρv − ⟨ρv⟩‖∞,Ω would otherwise be at machine precision for the
-    # first few time steps; R/denom then saturates the wave-speed cap
-    # and the integrator blows up before any real flow develops.
-    # δ_floor scales the "minimum admissible perturbation" relative to
-    # the domain-average momentum (ρ_avg · c_ref) and energy (ρθ_avg).
-    δ_floor = TT(1.0e-3)
 
     # --- Pass 1: domain averages of the conservative state q -----------
     ρ_avg  = zero(TT); ρu_avg = zero(TT)
@@ -627,17 +624,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     ρ_avg  *= invnp; ρu_avg *= invnp
     ρv_avg *= invnp; ρθ_avg *= invnp
 
-    # Reference sound speed from the domain-average state; used only to
-    # build the floor on the momentum denominators.
-    θ_avg  = ρθ_avg/max(ρ_avg, eps)
-    p_avg  = C0*(max(ρ_avg*θ_avg, zero(TT)))^γ
-    c_avg  = sqrt(max(γ*p_avg/max(ρ_avg, eps), zero(TT)))
-
-    floor1 = δ_floor * abs(ρ_avg)
-    floor2 = δ_floor * abs(ρ_avg)  * c_avg
-    floor3 = floor2
-    floor4 = δ_floor * abs(ρθ_avg)
-
     # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
     denom1 = zero(TT); denom2 = zero(TT)
     denom3 = zero(TT); denom4 = zero(TT)
@@ -652,12 +638,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
-    denom1 = max(denom1, floor1) + eps
-    denom2 = max(denom2, floor2) + eps
-    denom3 = max(denom3, floor3) + eps
-    denom4 = max(denom4, floor4) + eps
+    denom1 += eps; denom2 += eps
+    denom3 += eps; denom4 += eps
 
-    # --- Pass 3: per-element loop, one unified μ split per equation ----
+    # --- Pass 3: per-element loop --------------------------------------
     inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
         Δ  = Δelem[ie]/ngl
@@ -668,12 +652,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         for j = 1:ngl
             @simd for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                Mi = Minv[ip]
 
-                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
-                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
-                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
-                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - Mi*rhs[ip,4])
+                # Residuals use the weak-form rhs directly — see the
+                # block comment above for why no Minv multiplication.
+                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - rhs[ip,1])
+                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - rhs[ip,2])
+                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - rhs[ip,3])
+                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - rhs[ip,4])
                 n1 = max(n1, R1); n2 = max(n2, R2)
                 n3 = max(n3, R3); n4 = max(n4, R4)
 
@@ -691,13 +676,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_res = C1*Δ2*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
         μ     = max(zero(TT), min(μ_max, μ_res))
 
-        # ρ : Marras eq. (10) leaves continuity conservative.
         μ_dsgs[ie,1] = zero(TT)
-        # ρu, ρv : dynamic viscosity μ, scaled by the user's
-        # per-equation multiplier visc_coeff[ieq].
         μ_dsgs[ie,2] = visc_coeff[2] * μ
         μ_dsgs[ie,3] = visc_coeff[3] * μ
-        # ρθ : κ = Pr/(γ-1) · μ (eq. 10b), again user-scaled.
         μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ
     end
 
