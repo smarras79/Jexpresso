@@ -398,3 +398,120 @@ end
     end
     
 end
+
+#----------------------------------------------------------------------
+# DYNAMIC SGS (Marras et al.) — residual-based artificial viscosity
+#
+# The full DSGS coefficient is a per-element scalar built from
+#     μ_res = C1 · Δ² · max_i ‖R_i‖∞,Ω / ‖q_i − ⟨q_i⟩‖∞,Ω
+#     μ_max = C2 · Δ · max(|u| + c)
+#     μ_dsgs[iel] = max(0, min(μ_res, μ_max))
+# where the residual R_i is the BDF2-form inviscid residual evaluated on
+# the latest spectral-element solution.  Because both numerator and
+# denominator are global L∞ norms it must be precomputed once per RHS
+# call (compute_dsgs_viscosity! below); it cannot be inlined into the
+# (k,l) loop the way SMAG/VREM are.  SGS_diffusion(::DSGS, ::NSD_1D) is
+# the standard per-quadrature-point accessor — the caller updates
+# visc_coeffieq with the current element's μ_dsgs[iel] before entering
+# the (k,l) loop, so this returns it unchanged.
+#----------------------------------------------------------------------
+
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               inputs,
+                               ::DSGS, ::NSD_1D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+
+    # DSGS is precomputed per element (see compute_dsgs_viscosity! below);
+    # visc_coeffieq[ieq] is set to that per-element value by the caller.
+    return visc_coeffieq[ieq]
+
+end
+
+# Per-element DSGS viscosity. Writes μ_dsgs[1:nelem] in place — no
+# allocations. q is the current solution (npoin × ≥3), q1 = qⁿ⁻¹,
+# q2 = qⁿ⁻², rhs is the post-DSS inviscid RHS pre-mass-matrix division.
+# Built for the 1D CompEuler system (ρ, ρu, ρE); the algorithm uses
+# only generic conservation-law residuals so it does NOT dispatch on
+# the equations type.
+function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
+                                 ::DSGS, ::NSD_1D,
+                                 q, q1, q2, rhs, Δt, mesh)
+
+    TT    = eltype(μ_dsgs)
+    nelem = mesh.nelem
+    ngl   = mesh.ngl
+    invnp = one(TT)/(nelem*ngl)
+
+    γ   = TT(1.4)
+    C1  = TT(1.0)
+    C2  = TT(0.5)
+    eps = TT(1.0e-16)
+
+    # --- Pass 1: domain averages of the conservative variables ----------
+    ρ_avg  = zero(TT)
+    ρu_avg = zero(TT)
+    ρE_avg = zero(TT)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = mesh.connijk[ie,i,1,1]
+            ρ_avg  += q[ip,1]
+            ρu_avg += q[ip,2]
+            ρE_avg += q[ip,3]
+        end
+    end
+    ρ_avg  *= invnp
+    ρu_avg *= invnp
+    ρE_avg *= invnp
+
+    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩|, accumulated as scalars ---
+    denom1 = zero(TT)
+    denom2 = zero(TT)
+    denom3 = zero(TT)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = mesh.connijk[ie,i,1,1]
+            denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
+            denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
+            denom3 = max(denom3, abs(q[ip,3] - ρE_avg))
+        end
+    end
+    denom1 += eps
+    denom2 += eps
+    denom3 += eps
+
+    # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] -------
+    @inbounds for ie = 1:nelem
+        Δ = mesh.Δx[ie]/ngl
+
+        n1   = zero(TT)
+        n2   = zero(TT)
+        n3   = zero(TT)
+        uTmx = zero(TT)
+        @simd for i = 1:ngl
+            ip = mesh.connijk[ie,i,1,1]
+
+            R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - rhs[ip,1])
+            R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - rhs[ip,2])
+            R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - rhs[ip,3])
+            n1 = max(n1, R1)
+            n2 = max(n2, R2)
+            n3 = max(n3, R3)
+
+            ρl   = q[ip,1]
+            ul   = q[ip,2]/ρl
+            el   = q[ip,3]/ρl
+            Tl   = max(el - TT(0.5)*ul*ul, zero(TT))
+            uTmx = max(uTmx, abs(ul) + sqrt(γ*Tl))
+        end
+
+        μ_res    = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
+        μ_max    = C2*Δ*uTmx
+        μ_dsgs[ie] = max(zero(TT), min(μ_max, μ_res))
+    end
+
+    return nothing
+end

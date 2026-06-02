@@ -8,23 +8,6 @@ using StaticArrays
 const PHYS_CONST = PhysicalConst{Float64}()
 const MicroConst = MicrophysicalConst{Float64}()
 
-# Map the equation-directory string (inputs[:parsed_equations]) to the
-# corresponding AbstractEquations instance. Used by the DSGS viscosity model
-# to dispatch compute_viscosity! on the right PT.
-function _problem_type(parsed_equations::AbstractString)
-    if parsed_equations == "CompEuler"
-        return CompEuler()
-    elseif parsed_equations == "AdvDiff"
-        return AdvDiff()
-    elseif parsed_equations == "ShallowWater"
-        return ShallowWater()
-    elseif parsed_equations == "Burgers"
-        return Burgers()
-    else
-        error("rhs.jl: DSGS viscosity is not implemented for equations \"$parsed_equations\"")
-    end
-end
-
 function RHStoDU!(du, RHS, neqs, npoin)
     # Scalar (not range/@view) assignment so `du` can be an
     # OrdinaryDiffEq low-storage RK ArrayFuse, which only supports
@@ -932,18 +915,14 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     ngl   = params.mesh.ngl
     neqs  = params.neqs
 
-    # If the user picked Marras-style Dynamic SGS (DSGS), compute the per-element
-    # SGS viscosity μ_dsgs[iel] before entering the visc-expansion loop. The
-    # current solution is in params.uaux; the BDF2 residual uses params.qp.qnm2
-    # (qⁿ⁻¹) and params.qp.qnm1 (qⁿ⁻²).
-    μ_dsgs = nothing
+    # Marras-style Dynamic SGS: fill the pre-allocated per-element μ_dsgs
+    # buffer (sized in params_setup.jl) before the visc-expansion loop.
+    # The current solution is in params.uaux; the BDF2 residual uses
+    # params.qp.qnm2 (qⁿ⁻¹) and params.qp.qnm1 (qⁿ⁻²).
     if params.VT == DSGS()
-        μ_dsgs = zeros(params.T, nelem)
-        compute_viscosity!(μ_dsgs, SD,
-                           _problem_type(params.inputs[:parsed_equations]),
-                           params.uaux, params.qp.qnm2, params.qp.qnm1,
-                           params.RHS, params.Δt,
-                           params.mesh, params.metrics, params.T)
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.RHS, params.Δt, params.mesh)
     end
 
     for iel=1:nelem
@@ -954,7 +933,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
         end
 
         if params.VT == DSGS()
-            μ_el = μ_dsgs[iel]
+            μ_el = params.μ_dsgs[iel]
             for ieq = 1:neqs
                 _expansion_visc!(params.rhs_diffξ_el,
                                  params.uprimitive,
