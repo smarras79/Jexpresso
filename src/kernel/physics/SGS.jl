@@ -575,26 +575,27 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
 
-    # Marras et al. (JCP 2015) eq. (8-10), as written. One unified
-    # residual-based coefficient per element with FULL-STATE denominators:
-    #     μ_res = C1 · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
-    #     μ_max = C2 · Δ · (|u| + c)_∞,e
-    #     μ     = max(0, min(μ_max, μ_res))
-    # split per equation by the caller-supplied multiplier:
+    # Nazarov (Int. J. Numer. Meth. Fluids 2013) eq. (3.5)
+    # (the FE-spectral-element-friendly DYNAMIC-viscosity form of the
+    # Marras et al. DSGS coefficient):
+    #
+    #     μ_res|e = C1 · Δ² · ‖ρ − ⟨ρ⟩‖∞,Ω
+    #               · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
+    #     μ_max|e = C2 · Δ · ‖ρ‖∞,e · (|u| + c)_∞,e
+    #     μ|e     = max(0, min(μ_max, μ_res))
+    #
+    # The strong-form residual R_i = (BDF2 q)_i − (M⁻¹·rhs)_i is the
+    # one consistent with the spectral-element weak form (Minv brings
+    # the post-DSS weak-form residual back to a dq/dt), and the outer
+    # ‖ρ − ⟨ρ⟩‖∞,Ω (resp. ‖ρ‖∞,e) restores the dynamic-viscosity
+    # scale [kg/(m·s)] that the 2D _expansion_visc! kernel expects
+    # when it multiplies by ∂_x u to form the stress.
+    #
+    # Per-equation split (Marras eq. 10):
     #     μ_dsgs[iel, 1] = 0                              (no mass diffusion)
     #     μ_dsgs[iel, 2] = visc_coeff[2] · μ              (ρu)
     #     μ_dsgs[iel, 3] = visc_coeff[3] · μ              (ρv)
     #     μ_dsgs[iel, 4] = visc_coeff[4] · Pr/(γ-1) · μ   (ρθ — eq. 10b)
-    #
-    # The residual R_i uses rhs[ip, i] *directly* (weak-form residual,
-    # pre-mass-matrix division). Multiplying by Minv to convert to
-    # dq/dt looks dimensionally cleaner but for 2D atmospheric scales
-    # (M ≈ 10³ m³ on a 500 m element) it shrinks R by ~10³–10⁴; the
-    # algorithm then sees R/denom ≈ 0 and effectively turns off DSGS,
-    # which is what made theta_dsgs run without any visible damping.
-    # The Marras / fp-mymaster lineage uses rhs directly and so do we.
-    # Minv is kept in the signature for 1D-symmetry / forward
-    # compatibility but is unused in the body.
     #
     # qe is accepted in the signature for forward compatibility / 1D
     # symmetry but the body uses the full conservative state.
@@ -641,6 +642,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     denom1 += eps; denom2 += eps
     denom3 += eps; denom4 += eps
 
+    # Nazarov's dynamic-viscosity scale factor [kg/m³] — the outer
+    # ‖ρ − ⟨ρ⟩‖∞,Ω in eq. (3.5). Promoting the otherwise kinematic
+    # μ_res to a dynamic viscosity is what the Jexpresso 2D
+    # _expansion_visc! kernel expects (it multiplies by ∂_x u and
+    # forms a stress that the conservation-form ρu equation
+    # consumes directly).
+    ρ_scale = denom1
+
     # --- Pass 3: per-element loop --------------------------------------
     inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
@@ -649,16 +658,19 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
         n1 = zero(TT); n2 = zero(TT); n3 = zero(TT); n4 = zero(TT)
         uTmx = zero(TT)
+        ρmx  = zero(TT)
         for j = 1:ngl
             @simd for i = 1:ngl
                 ip = connijk[ie,i,j,1]
+                Mi = Minv[ip]
 
-                # Residuals use the weak-form rhs directly — see the
-                # block comment above for why no Minv multiplication.
-                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - rhs[ip,1])
-                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - rhs[ip,2])
-                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - rhs[ip,3])
-                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - rhs[ip,4])
+                # Strong-form BDF2 residual: (BDF2 q) − M⁻¹·rhs gives a
+                # dq/dt-like quantity, the right thing to compare with
+                # ‖q − ⟨q⟩‖∞,Ω on the denominator (cf. Nazarov 3.4–3.5).
+                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - Mi*rhs[ip,4])
                 n1 = max(n1, R1); n2 = max(n2, R2)
                 n3 = max(n3, R3); n4 = max(n4, R4)
 
@@ -669,11 +681,16 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 pl = C0*(ρl*θl)^γ
                 cl = sqrt(max(γ*pl/ρl, zero(TT)))
                 uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + cl)
+                ρmx  = max(ρmx, ρl)
             end
         end
 
-        μ_max = C2*Δ*uTmx
-        μ_res = C1*Δ2*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
+        # Dynamic-viscosity μ_max from Nazarov eq. (3.6):
+        #   μ_max = C2 · Δ · ‖ρ‖∞,e · (|u| + c)_∞,e
+        μ_max = C2*Δ*ρmx*uTmx
+        # Dynamic-viscosity μ_res from Nazarov eq. (3.5):
+        #   μ_res = C1 · Δ² · ‖ρ − ⟨ρ⟩‖∞,Ω · max_i (R_i / denom_i)
+        μ_res = C1*Δ2*ρ_scale*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
         μ     = max(zero(TT), min(μ_max, μ_res))
 
         μ_dsgs[ie,1] = zero(TT)
