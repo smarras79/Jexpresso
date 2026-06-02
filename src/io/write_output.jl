@@ -62,12 +62,13 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::PNG;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -180,12 +181,13 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
 
 end
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                     OUTPUT_DIR::String, inputs,
                     varnames, outvarnames,
                     outformat::NETCDF;
-                    nvar=1, qexact=zeros(1,nvar), case="")
+                    nvar=1, qexact=zeros(1,nvar), case="",
+                    μ_dsgs_pnode=nothing)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -521,12 +523,13 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::HDF5;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)

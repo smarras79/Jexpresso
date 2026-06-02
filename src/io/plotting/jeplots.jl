@@ -119,14 +119,15 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
 end
 
 #
-# Plot the per-element DSGS viscosity μ_dsgs as a piecewise-constant
-# (per-element) staircase against x.  μ_dsgs has length mesh.nelem
-# and is filled by compute_dsgs_viscosity!.  We draw the same value
-# on every node belonging to an element so the rendering picks up
-# element boundaries cleanly.
+# Plot the per-element DSGS viscosity as a piecewise-constant staircase
+# against x.  μ_dsgs[1:nelem, 1:neqs] is filled by compute_dsgs_viscosity!
+# (one column per equation).  By default we draw column ieq=2 (the
+# momentum equation) since for 1D E-form Marras gives a single μ shared
+# by every equation. Every node of an element gets that element's
+# value so the staircase is rendered cleanly.
 #
-function plot_dsgs_1d(mesh::St_mesh, μ_dsgs, t, OUTPUT_DIR::String, inputs;
-                      iout = 1, varname = "μ_dsgs")
+function plot_dsgs_1d(mesh::St_mesh, μ_dsgs::AbstractMatrix, t, OUTPUT_DIR::String, inputs;
+                      iout = 1, varname = "μ_dsgs", ieq = min(2, size(μ_dsgs, 2)))
 
     nelem = mesh.nelem
     ngl   = mesh.ngl
@@ -137,7 +138,7 @@ function plot_dsgs_1d(mesh::St_mesh, μ_dsgs, t, OUTPUT_DIR::String, inputs;
         for i = 1:ngl
             ip = mesh.connijk[ie, i, 1, 1]
             xs[(ie-1)*ngl + i] = mesh.coords[ip, 1]
-            ys[(ie-1)*ngl + i] = μ_dsgs[ie]
+            ys[(ie-1)*ngl + i] = μ_dsgs[ie, ieq]
         end
     end
     sort_idx = sortperm(xs)

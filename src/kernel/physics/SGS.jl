@@ -454,11 +454,12 @@ end
 # a hand-typed function barrier (concrete arrays, no params.* lookups)
 # so Julia can specialize and the inner loop is allocation-free.
 #
-function compute_dsgs_viscosity!(μ_dsgs::AbstractVector{TT},
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,
                                  q::AbstractMatrix{TT},
                                  q1::AbstractMatrix{TT},
                                  q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
                                  rhs::AbstractMatrix{TT},
                                  Minv::AbstractVector{TT},
                                  Δt::TT,
@@ -466,50 +467,55 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector{TT},
                                  Δx::AbstractVector{TT},
                                  nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
 
+    # 1D CompEuler in total-energy form q = (ρ, ρu, ρE). Marras's
+    # unified formula gives ONE residual-based coefficient per element;
+    # for visualisation parity with the 2D version we replicate it into
+    # every column of μ_dsgs[iel, :] so the caller / VTU sees per-
+    # equation slots even when they are identical.
+
     invnp = one(TT)/(nelem*ngl)
     γ     = TT(1.4)
     C1    = TT(1.0)
     C2    = TT(0.5)
     eps   = TT(1.0e-16)
+    neqs  = size(μ_dsgs, 2)
 
-    # --- Pass 1: domain averages ---------------------------------------
-    ρ_avg  = zero(TT)
-    ρu_avg = zero(TT)
-    ρE_avg = zero(TT)
+    # --- Pass 1: domain averages of the PERTURBATION (q - qe) ----------
+    ρp_avg  = zero(TT); ρup_avg = zero(TT); ρEp_avg = zero(TT)
     @inbounds for ie = 1:nelem
         for i = 1:ngl
             ip = connijk[ie,i,1,1]
-            ρ_avg  += q[ip,1]
-            ρu_avg += q[ip,2]
-            ρE_avg += q[ip,3]
+            ρp_avg  += q[ip,1] - qe[ip,1]
+            ρup_avg += q[ip,2] - qe[ip,2]
+            ρEp_avg += q[ip,3] - qe[ip,3]
         end
     end
-    ρ_avg  *= invnp
-    ρu_avg *= invnp
-    ρE_avg *= invnp
+    ρp_avg  *= invnp
+    ρup_avg *= invnp
+    ρEp_avg *= invnp
 
-    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    # --- Pass 2: domain L∞ norms of |(q-qe) - ⟨q-qe⟩| ------------------
     denom1 = zero(TT); denom2 = zero(TT); denom3 = zero(TT)
     @inbounds for ie = 1:nelem
         for i = 1:ngl
             ip = connijk[ie,i,1,1]
-            denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
-            denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
-            denom3 = max(denom3, abs(q[ip,3] - ρE_avg))
+            denom1 = max(denom1, abs((q[ip,1]-qe[ip,1]) - ρp_avg))
+            denom2 = max(denom2, abs((q[ip,2]-qe[ip,2]) - ρup_avg))
+            denom3 = max(denom3, abs((q[ip,3]-qe[ip,3]) - ρEp_avg))
         end
     end
     denom1 += eps; denom2 += eps; denom3 += eps
 
     # --- Pass 3: per-element loop --------------------------------------
+    inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
         Δ = Δx[ie]/ngl
 
         n1   = zero(TT); n2 = zero(TT); n3 = zero(TT)
         uTmx = zero(TT)
         @simd for i = 1:ngl
-            ip   = connijk[ie,i,1,1]
-            Mi   = Minv[ip]
-            inv2Δt = one(TT)/(2*Δt)
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
 
             R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
             R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
@@ -523,9 +529,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector{TT},
             uTmx = max(uTmx, abs(ul) + sqrt(γ*Tl))
         end
 
-        μ_res      = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
-        μ_max      = C2*Δ*uTmx
-        μ_dsgs[ie] = max(zero(TT), min(μ_max, μ_res))
+        μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
+        μ_max = C2*Δ*uTmx
+        μ     = max(zero(TT), min(μ_max, μ_res))
+
+        # Same coefficient on every equation (1D E-form, Marras eq. 10).
+        for ieq = 1:neqs
+            μ_dsgs[ie, ieq] = μ
+        end
     end
 
     return nothing
@@ -539,65 +550,85 @@ end
 # function-barrier discipline as the 1D variant — no params accesses,
 # no struct constructions, no allocations.
 #
-function compute_dsgs_viscosity!(μ_dsgs::AbstractVector{TT},
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_2D,
                                  q::AbstractMatrix{TT},
                                  q1::AbstractMatrix{TT},
                                  q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
                                  rhs::AbstractMatrix{TT},
                                  Minv::AbstractVector{TT},
                                  Δt::TT,
                                  connijk::AbstractArray{TI,4},
                                  Δelem::AbstractVector{TT},
                                  PhysConst::PhysicalConst{TT},
+                                 Pr::TT,
                                  nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+
+    # μ_dsgs[iel, ieq]: per-equation residual-based coefficient.
+    #   ieq = 1 (ρ):    not used as a diffusion coefficient (no mass
+    #                   diffusion is added per Marras eq. 10), but the
+    #                   slot is filled so users can inspect ν_ρ in the
+    #                   plot file.
+    #   ieq = 2 (ρu):   μ on the x-momentum equation
+    #   ieq = 3 (ρv):   μ on the y-momentum equation
+    #   ieq = 4 (ρθ):   κ on the energy/θ equation
+    #
+    # Denominators are computed on the PERTURBATION (q - qe) so the
+    # hydrostatic background does not flatten ‖q - ⟨q⟩‖∞,Ω in TOTAL
+    # mode. The residuals R_i themselves are insensitive to whether we
+    # use q or q - qe (a stationary equilibrium gives R(qe) = 0).
+    # |u|+c is built from the FULL state q.
 
     invnp = one(TT)/(nelem*ngl*ngl)
     γ     = PhysConst.γ
     C0    = PhysConst.C0
     C1    = TT(1.0)
     C2    = TT(0.5)
+    γm1   = γ - one(TT)
     eps   = TT(1.0e-16)
 
-    # --- Pass 1: domain averages ---------------------------------------
-    ρ_avg  = zero(TT); ρu_avg = zero(TT)
-    ρv_avg = zero(TT); ρθ_avg = zero(TT)
+    # --- Pass 1: domain averages of the PERTURBATION (q - qe) ----------
+    ρp_avg  = zero(TT); ρup_avg = zero(TT)
+    ρvp_avg = zero(TT); ρθp_avg = zero(TT)
     @inbounds for ie = 1:nelem
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                ρ_avg  += q[ip,1]
-                ρu_avg += q[ip,2]
-                ρv_avg += q[ip,3]
-                ρθ_avg += q[ip,4]
+                ρp_avg  += q[ip,1] - qe[ip,1]
+                ρup_avg += q[ip,2] - qe[ip,2]
+                ρvp_avg += q[ip,3] - qe[ip,3]
+                ρθp_avg += q[ip,4] - qe[ip,4]
             end
         end
     end
-    ρ_avg  *= invnp; ρu_avg *= invnp
-    ρv_avg *= invnp; ρθ_avg *= invnp
+    ρp_avg  *= invnp; ρup_avg *= invnp
+    ρvp_avg *= invnp; ρθp_avg *= invnp
 
-    # --- Pass 2: domain L∞ norms --------------------------------------
+    # --- Pass 2: domain L∞ norms of |(q-qe) - ⟨q-qe⟩| ------------------
     denom1 = zero(TT); denom2 = zero(TT)
     denom3 = zero(TT); denom4 = zero(TT)
     @inbounds for ie = 1:nelem
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
-                denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
-                denom3 = max(denom3, abs(q[ip,3] - ρv_avg))
-                denom4 = max(denom4, abs(q[ip,4] - ρθ_avg))
+                denom1 = max(denom1, abs((q[ip,1]-qe[ip,1]) - ρp_avg))
+                denom2 = max(denom2, abs((q[ip,2]-qe[ip,2]) - ρup_avg))
+                denom3 = max(denom3, abs((q[ip,3]-qe[ip,3]) - ρvp_avg))
+                denom4 = max(denom4, abs((q[ip,4]-qe[ip,4]) - ρθp_avg))
             end
         end
     end
     denom1 += eps; denom2 += eps
     denom3 += eps; denom4 += eps
 
-    # --- Pass 3: per-element loop --------------------------------------
+    # --- Pass 3: per-element loop, per-equation residual indicators ----
     inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
-        Δ = Δelem[ie]/ngl
+        Δ  = Δelem[ie]/ngl
+        Δ2 = Δ*Δ
 
+        # Per-element L∞ of |R_i|
         n1 = zero(TT); n2 = zero(TT); n3 = zero(TT); n4 = zero(TT)
         uTmx = zero(TT)
         for j = 1:ngl
@@ -612,6 +643,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector{TT},
                 n1 = max(n1, R1); n2 = max(n2, R2)
                 n3 = max(n3, R3); n4 = max(n4, R4)
 
+                # |u|+c built from the full state q (qn).
                 ρl = q[ip,1]
                 ul = q[ip,2]/ρl
                 vl = q[ip,3]/ρl
@@ -622,45 +654,69 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector{TT},
             end
         end
 
-        μ_res      = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
-        μ_max      = C2*Δ*uTmx
-        μ_dsgs[ie] = max(zero(TT), min(μ_max, μ_res))
+        μ_max = C2*Δ*uTmx
+
+        # ρ (mass) — diagnostic only; not actually applied as diffusion.
+        ν_ρ      = C1*Δ2*(n1/denom1)
+        μ_dsgs[ie,1] = max(zero(TT), min(μ_max, ν_ρ))
+
+        # x-momentum: ν driven by the joint ρu + ρ residuals.
+        ν_ρu     = C1*Δ2*max(n2/denom2, n1/denom1)
+        μ_dsgs[ie,2] = max(zero(TT), min(μ_max, ν_ρu))
+
+        # y-momentum: ν driven by the joint ρv + ρ residuals.
+        ν_ρv     = C1*Δ2*max(n3/denom3, n1/denom1)
+        μ_dsgs[ie,3] = max(zero(TT), min(μ_max, ν_ρv))
+
+        # ρθ (θ analogue): κ from the θ-residual, scaled by Pr/(γ-1)
+        # per Marras eq. (10b). The cap uses μ_max (same wave-speed bound).
+        ν_ρθ     = C1*Δ2*(n4/denom4)
+        κ_θ      = (Pr/γm1)*min(μ_max, ν_ρθ)
+        μ_dsgs[ie,4] = max(zero(TT), κ_θ)
     end
 
     return nothing
 end
 
-# Helper: expand the per-element μ_dsgs onto every node so the value
-# can be written to PNG / VTU like any other field. Shared (DSS) nodes
-# get the value of the last element they belong to — that's fine for
-# visualization.
-function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractVector{TT},
-                                  μ_dsgs::AbstractVector{TT},
+# Helper: expand the per-element, per-equation μ_dsgs[1:nelem,1:neqs]
+# onto every node so the per-equation coefficients can be written to
+# PNG / VTU like any other field. Shared (DSS) nodes get the value of
+# the last element they belong to — that's fine for visualization.
+function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
+                                  μ_dsgs::AbstractMatrix{TT},
                                   connijk::AbstractArray{TI,4},
-                                  nelem::Int, ngl::Int, SD::AbstractSpaceDimensions) where {TT,TI}
+                                  nelem::Int, ngl::Int,
+                                  SD::AbstractSpaceDimensions) where {TT,TI}
+    neqs = size(μ_dsgs, 2)
     if SD === NSD_1D()
         @inbounds for ie = 1:nelem
-            v = μ_dsgs[ie]
             for i = 1:ngl
-                μ_dsgs_pnode[connijk[ie,i,1,1]] = v
+                ip = connijk[ie,i,1,1]
+                for ieq = 1:neqs
+                    μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                end
             end
         end
     elseif SD === NSD_2D()
         @inbounds for ie = 1:nelem
-            v = μ_dsgs[ie]
             for j = 1:ngl
                 for i = 1:ngl
-                    μ_dsgs_pnode[connijk[ie,i,j,1]] = v
+                    ip = connijk[ie,i,j,1]
+                    for ieq = 1:neqs
+                        μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                    end
                 end
             end
         end
     elseif SD === NSD_3D()
         @inbounds for ie = 1:nelem
-            v = μ_dsgs[ie]
             for k = 1:ngl
                 for j = 1:ngl
                     for i = 1:ngl
-                        μ_dsgs_pnode[connijk[ie,i,j,k]] = v
+                        ip = connijk[ie,i,j,k]
+                        for ieq = 1:neqs
+                            μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                        end
                     end
                 end
             end

@@ -915,14 +915,18 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     ngl   = params.mesh.ngl
     neqs  = params.neqs
 
-    # Marras-style Dynamic SGS: fill the pre-allocated per-element μ_dsgs
-    # buffer (sized in params_setup.jl) before the visc-expansion loop.
-    # The current solution is in params.uaux; the BDF2 residual uses
-    # params.qp.qnm2 (qⁿ⁻¹) and params.qp.qnm1 (qⁿ⁻²).
+    # Marras-style Dynamic SGS: fill the pre-allocated per-element
+    # μ_dsgs[1:nelem, 1:neqs] buffer (sized in params_setup.jl) before
+    # the visc-expansion loop. Current solution is uaux; BDF2 history
+    # is qnm2 (qⁿ⁻¹) and qnm1 (qⁿ⁻²); qe is the equilibrium / reference
+    # state — subtracted inside compute_dsgs_viscosity! so the L∞
+    # denominators measure perturbations, not the hydrostatic
+    # background.
     if params.VT == DSGS()
         TT = eltype(params.μ_dsgs)
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                 params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.qp.qe,
                                 params.RHS, params.Minv, TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δx,
                                 Int(nelem), Int(ngl))
@@ -939,8 +943,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
         end
 
         if params.VT == DSGS()
-            μ_el = params.μ_dsgs[iel]
             for ieq = 1:neqs
+                μ_el = params.μ_dsgs[iel, ieq]
                 _expansion_visc!(params.rhs_diffξ_el,
                                  params.uprimitive,
                                  μ_el,
@@ -981,19 +985,23 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # dispatches SGS_diffusion(::DSGS, ::NSD_2D) which simply returns
     # visc_coeffieq[ieq], so the per-element value flows straight through.
     if params.VT == DSGS()
-        TT      = eltype(params.μ_dsgs)
-        Pr_coef = TT(params.inputs[:Pr])/(PHYS_CONST.γ - one(TT))
+        TT = eltype(params.μ_dsgs)
 
-        # Step 1 — fill the per-element μ_dsgs buffer. All args concretely
-        # typed so compute_dsgs_viscosity! specialises and stays alloc-free.
+        # Step 1 — fill the per-equation per-element μ_dsgs buffer. All
+        # arguments are concretely typed so compute_dsgs_viscosity!
+        # specialises and stays allocation-free.  Subtracting qe inside
+        # keeps the L∞ denominators measuring perturbations, not the
+        # hydrostatic background.
+        Pr_TT = TT(params.inputs[:Pr])
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                 params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.qp.qe,
                                 params.RHS, params.Minv, TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δelem,
-                                PHYS_CONST,
+                                PHYS_CONST, Pr_TT,
                                 Int(params.mesh.nelem), Int(params.mesh.ngl))
 
-        # Step 2 — broadcast μ_dsgs[iel] onto every node for VTK output.
+        # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
                                  Int(params.mesh.nelem),
@@ -1003,7 +1011,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
                                  params.rhs_diffξ_el, params.rhs_diffη_el,
                                  params.rhs_diff_el,
-                                 params.visc_coeff_dsgs, params.μ_dsgs, Pr_coef,
+                                 params.visc_coeff_dsgs, params.μ_dsgs,
                                  params.ω,
                                  params.mp.Tabs, params.mp.qn, params.mp.qsatt,
                                  Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
@@ -1038,10 +1046,20 @@ end
 # _viscous_rhs_el_2d!  — every argument is a concretely typed array
 # or scalar so the per-element loop compiles fully specialised and
 # allocates nothing.
+#
+# μ_dsgs[iel, ieq] already carries the per-equation coefficient set
+# by compute_dsgs_viscosity!:
+#   ieq = 1 : diagnostic ν_ρ (NOT applied — Marras drops mass diffusion)
+#   ieq = 2 : μ on the x-momentum
+#   ieq = 3 : μ on the y-momentum
+#   ieq = 4 : κ on the θ-equation (already scaled by Pr/(γ-1))
+# All this loop needs to do is unpack μ_dsgs[iel, :] into the per-
+# element visc_coeff_dsgs scratch (zeroing ieq=1 so ρ stays
+# conservative) and pass it to the generic 2D _expansion_visc!.
 function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   rhs_diffξ_el, rhs_diffη_el,
                                   rhs_diff_el,
-                                  visc_coeff_dsgs, μ_dsgs, Pr_coef,
+                                  visc_coeff_dsgs, μ_dsgs,
                                   ω,
                                   Tabs, qn_mp, qsatt,
                                   ngl, dψ, Je,
@@ -1053,15 +1071,11 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   QT, AD, SOL_VARS_TYPE)
 
     for iel = 1:nelem
-        μ_el = μ_dsgs[iel]
-        # Marras et al. eq. (10): no mass diffusion, μ for momentum,
-        # Pr/(γ-1)·μ for the θ equation. Generalises to any neqs ≥ 3:
-        # equation 1 = ρ, equations 2..neqs-1 = momentum, neqs = θ.
+        # Marras (10): mass conservation untouched.
         visc_coeff_dsgs[1] = zero(eltype(visc_coeff_dsgs))
-        for ieq = 2:(neqs - 1)
-            visc_coeff_dsgs[ieq] = μ_el
+        for ieq = 2:neqs
+            visc_coeff_dsgs[ieq] = μ_dsgs[iel, ieq]
         end
-        visc_coeff_dsgs[neqs] = Pr_coef * μ_el
 
         for j = 1:ngl, i = 1:ngl
             ip = connijk[iel,i,j]

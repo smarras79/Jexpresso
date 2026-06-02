@@ -17,11 +17,18 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # 
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρv", "ρθ"]
-    # Adding "μ_dsgs" to qoutvars writes the per-element Marras DSGS
-    # coefficient (broadcast onto every LGL node) to the VTU file as a
-    # standalone point-data field. user_uout! pulls it from
-    # params.μ_dsgs_pnode via the kwarg threaded through call_user_uout.
-    qoutvars = ["ρ", "u", "w", "θ", "p", "μ_dsgs"]
+    # Per-equation DSGS coefficients written to the VTU as standalone
+    # point-data fields:
+    #   μ_ρu = ν on the x-momentum equation
+    #   μ_ρv = ν on the y-momentum equation
+    #   κ_θ  = κ on the θ equation (already includes the Pr/(γ-1)
+    #          scaling and is built from the θ-residual specifically —
+    #          the "theta analogue" of the DSGS coefficient).
+    # All three are broadcast from the per-element params.μ_dsgs
+    # matrix and threaded through call_user_uout via the μ_dsgs_pnode
+    # kwarg.  Drop any of them from this list (and from user_uout!) to
+    # leave it out of the VTU.
+    qoutvars = ["ρ", "u", "w", "θ", "p", "μ_ρu", "μ_ρv", "κ_θ"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    

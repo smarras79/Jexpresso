@@ -21,11 +21,14 @@ function user_primitives_gpu(u, qe, lpert)
     end
 end
 
-# The 6th output (μ_dsgs in initialize.jl) is the Marras DSGS coefficient.
-# It is fed through call_user_uout via the μ_dsgs_pnode kwarg — a length-
-# npoin Vector that broadcast_dsgs_to_nodes! filled with the per-element
-# value of params.μ_dsgs. If the kwarg is absent (e.g. running without
-# DSGS) the slot is left as 0.
+# Output slots 6..8 are the per-equation Marras DSGS coefficients
+# pulled from params.μ_dsgs_pnode[ip, :], a npoin × neqs matrix that
+# broadcast_dsgs_to_nodes! fills from the per-element coefficients.
+# Layout:
+#   uout[6] = μ on the x-momentum equation  ( params.μ_dsgs_pnode[ip,2] )
+#   uout[7] = μ on the y-momentum equation  ( params.μ_dsgs_pnode[ip,3] )
+#   uout[8] = κ on the θ equation, already scaled by Pr/(γ-1)
+#                                           ( params.μ_dsgs_pnode[ip,4] )
 function user_uout!(ip, ::TOTAL, uout, u, qe; mp=nothing, μ_dsgs_pnode=nothing, kwargs...)
 
     uout[1] = u[1]
@@ -36,8 +39,10 @@ function user_uout!(ip, ::TOTAL, uout, u, qe; mp=nothing, μ_dsgs_pnode=nothing,
     PhysConst = PhysicalConst{Float64}()
     uout[5] = perfectGasLaw_ρθtoP(PhysConst, ρ=u[1], θ=u[4]/u[1])
 
-    if length(uout) >= 6 && μ_dsgs_pnode !== nothing
-        uout[6] = μ_dsgs_pnode[ip]
+    if length(uout) >= 8 && μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 2) >= 4
+        uout[6] = μ_dsgs_pnode[ip, 2]
+        uout[7] = μ_dsgs_pnode[ip, 3]
+        uout[8] = μ_dsgs_pnode[ip, 4]
     end
 end
 
@@ -51,7 +56,9 @@ function user_uout!(ip, ::PERT, uout, u, qe; mp=nothing, μ_dsgs_pnode=nothing, 
     PhysConst = PhysicalConst{Float64}()
     uout[5] = perfectGasLaw_ρθtoP(PhysConst, ρ=u[1]+qe[1], θ=(u[4]+qe[4])/(u[1]+qe[1]))
 
-    if length(uout) >= 6 && μ_dsgs_pnode !== nothing
-        uout[6] = μ_dsgs_pnode[ip]
+    if length(uout) >= 8 && μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 2) >= 4
+        uout[6] = μ_dsgs_pnode[ip, 2]
+        uout[7] = μ_dsgs_pnode[ip, 3]
+        uout[8] = μ_dsgs_pnode[ip, 4]
     end
 end

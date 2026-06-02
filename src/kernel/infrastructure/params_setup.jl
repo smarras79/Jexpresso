@@ -310,19 +310,23 @@ function params_setup(sem,
         visc_coeff = [0.0]
     end
 
-    # Per-element DSGS viscosity buffer. Allocated to nelem when the user
-    # selects DSGS so compute_dsgs_viscosity! can fill it in place without
-    # any per-RHS allocation; otherwise a length-1 placeholder is kept so
-    # params has a homogeneously typed field.
+    # Per-element, per-equation DSGS viscosity buffer.
+    #   μ_dsgs[iel, ieq] is filled by compute_dsgs_viscosity! every RHS
+    #   call (allocation-free). For 1D E-form Marras gives a single μ
+    #   shared by all equations; the same value is written to every
+    #   column so the VTU / PNG output sees per-equation slots. For 2D
+    #   θ-form the columns carry distinct per-equation indicators:
+    #     [:,1] = ν_ρ (diagnostic, not applied)
+    #     [:,2] = μ_ρu          [:,3] = μ_ρv
+    #     [:,4] = κ_θ  (already scaled by Pr/(γ-1))
     if inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
-        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.nelem))
-        # Per-node broadcast of μ_dsgs[iel] — same value at every LGL
-        # node of the element — so the coefficient can be written to
-        # VTU / PNG via user_uout! like any other field.
-        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.npoin))
+        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
+                                                Int64(sem.mesh.nelem), Int64(qp.neqs))
+        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat,
+                                                Int64(sem.mesh.npoin), Int64(qp.neqs))
     else
-        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat, 1)
-        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat, 1)
+        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat, 1, 1)
     end
 
     # Per-equation scratch the 2D DSGS path uses to pack the
