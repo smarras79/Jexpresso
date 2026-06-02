@@ -858,72 +858,59 @@ For no spatial hanging nodes, returns (I, I) of size (n_spatial*n_angular).
 """
 function build_spatial_restriction_and_prolongation(
     spatial_amr_cache::SpatialAMRCache,
-    n_spatial_nodes::Int,
-    n_angular_nodes::Int,
+    n_spa_new::Int,
     spatial_hanging_nodes_all_angular::Set{Int},
+    point_dict_spa::Dict{NTuple{5,Float64}, Int},
     mesh, extra_mesh
 )::Tuple{SparseMatrixCSC, SparseMatrixCSC}
-    n_total_spatial_ang = n_spatial_nodes * n_angular_nodes
 
     if isempty(spatial_amr_cache.parent_weights)
-        # No hanging nodes - return identity for safe operation
-        return sparse(I, n_total_spatial_ang, n_total_spatial_ang),
-               sparse(I, n_total_spatial_ang, n_total_spatial_ang)
+        return sparse(I, n_spa_new, n_spa_new),
+               sparse(I, n_spa_new, n_spa_new)
     end
 
-    # Build full n_total × n_total matrix first
     rows_M = Int[]
     cols_M = Int[]
     vals_M = Float64[]
 
-    # Phase 1: For free DOFs, add identity rows
-    for dof_idx = 1:n_total_spatial_ang
+    # Phase 1: identity rows for free DOFs
+    for dof_idx = 1:n_spa_new
         if !(dof_idx in spatial_hanging_nodes_all_angular)
-            # This is a free DOF - add identity row
             push!(rows_M, dof_idx)
             push!(cols_M, dof_idx)
             push!(vals_M, 1.0)
         end
     end
 
-    # Phase 2: For hanging DOFs, add constraint weight rows
+    # Phase 2: constraint weight rows for interpolated hanging DOFs.
+    # Use point_dict_spa to convert (x,y,z,θ,ϕ) → dedup DOF index.
+    n_angular_nodes = extra_mesh.extra_npoin
     for (hanging_node_id, parent_list) in spatial_amr_cache.parent_weights
-        # For each angular DOF, apply the spatial constraint
+        x_child = mesh.x[hanging_node_id]
+        y_child = mesh.y[hanging_node_id]
+        z_child = mesh.z[hanging_node_id]
         for i_ang = 1:n_angular_nodes
-            # Row index for this hanging spatial-angular DOF
-            col_hanging = (hanging_node_id - 1) * n_angular_nodes + i_ang
-            x_child = mesh.x[hanging_node_id]
-            y_child = mesh.y[hanging_node_id]
-            z_child = mesh.z[hanging_node_id]
-            θ_child = extra_mesh.extra_coords[1,i_ang]
-            ϕ_child = extra_mesh.extra_coords[2,i_ang]
-            # Add weights for each parent
+            θ = extra_mesh.extra_coords[1, i_ang]
+            ϕ = extra_mesh.extra_coords[2, i_ang]
+            key_h = (round(x_child, digits=12), round(y_child, digits=12),
+                     round(z_child, digits=12), round(θ, digits=12), round(ϕ, digits=12))
+            col_hanging = get(point_dict_spa, key_h, 0)
+            col_hanging == 0 && continue
             for (parent_node_id, weight) in parent_list
-                # Column index for parent spatial-angular DOF
-                row_parent = (parent_node_id - 1) * n_angular_nodes + i_ang
-                x_parent = mesh.x[parent_node_id]
-                y_parent = mesh.y[parent_node_id]
-                z_parent = mesh.z[parent_node_id]
-                θ_parent = extra_mesh.extra_coords[1,i_ang]
-                ϕ_parent = extra_mesh.extra_coords[2,i_ang]
-                
-                #@info "child info", x_child, y_child, z_child, θ_child, ϕ_child
-                #@info "parent info", x_parent, y_parent, z_parent, θ_parent, ϕ_parent, weight
+                x_p = mesh.x[parent_node_id]; y_p = mesh.y[parent_node_id]; z_p = mesh.z[parent_node_id]
+                key_p = (round(x_p, digits=12), round(y_p, digits=12),
+                         round(z_p, digits=12), round(θ, digits=12), round(ϕ, digits=12))
+                row_parent = get(point_dict_spa, key_p, 0)
+                row_parent == 0 && continue
                 push!(rows_M, row_parent)
                 push!(cols_M, col_hanging)
                 push!(vals_M, weight)
-                #@info weight, row_parent, col_hanging
             end
         end
     end
 
-    # Construct full n_total × n_total matrix
-    R_spatial = sparse(rows_M, cols_M, vals_M, n_total_spatial_ang, n_total_spatial_ang)
-    
-
-    # Prolongation is transpose
+    R_spatial = sparse(rows_M, cols_M, vals_M, n_spa_new, n_spa_new)
     P_spatial = R_spatial'
-
     return R_spatial, P_spatial
 end
 

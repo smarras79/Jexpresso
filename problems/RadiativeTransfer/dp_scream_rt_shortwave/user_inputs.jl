@@ -39,15 +39,15 @@ function user_inputs()
         :RT_data_file       => "./DP_SCREAM_DATA/RICO_5x5/scream_dpxx_RICO_5x5/test/input/scream_dpxx_RICO_5x5.scream.INSTANT.nhours_x1.2004-12-16-00000.012.in.nc",
         :RT_shortwave   => true,
         :RT_longwave    => false,
-        :RT_μ0 => cos(deg2rad(83.0)),
+        :RT_μ0 => cos(deg2rad(45.0)),
         :RT_ϕ0 => 0.0,
         :RT_radiative_heating => true,
         :extra_dimensions    => 2,
         :adaptive_extra_meshes => false,
         :RT_amr_threshold => [0.99999],
-        :extra_dimensions_order => 3,
-        :extra_dimensions_nelemx => 3,
-        :extra_dimensions_nelemy => 3,
+        :extra_dimensions_order => 4,
+        :extra_dimensions_nelemx => 1,
+        :extra_dimensions_nelemy => 1,
         :rad_HG_g => 0.85,
         :lcubed_sphere_angular_mesh => false,
         :extra_dimensions_xmax => π,
@@ -64,7 +64,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "netcdf", #"hdf5",
+        :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

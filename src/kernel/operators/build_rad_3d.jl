@@ -641,7 +641,13 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     else  # ── Non-adaptive path ────────────────────────────────────────────────
 
         # ── Stage 2-3: Spatial Constraints with Uniform Angular Mesh ─────────────
-        
+        # Defaults used when there are no spatial hanging nodes.
+        n_spa_new = 0
+        n_non_global_nodes_spa = 0
+        connijk_spa_uniform = Vector{Array{Int,6}}()
+        point_dict_spa = Dict{NTuple{5,Float64}, Int}()
+        global_sp_ang_to_gid = Dict{Tuple{Int,Int}, Int}()
+        _all_needed_set = Set{Int}()
 
         if has_spatial_hanging_nodes
             @info "[$rank] Building spatial constraints with uniform angular mesh (Stage 2+)..."
@@ -651,6 +657,15 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_connijk_uniform = [extra_mesh.extra_connijk for _ in 1:nelem]
             extra_meshes_extra_nops_uniform = [[extra_mesh.extra_nop[1] for _ in 1:extra_mesh.extra_nelem] for _ in 1:nelem]
             extra_meshes_extra_nelems_uniform = [extra_mesh.extra_nelem for _ in 1:nelem]
+
+            # Initialize here (outside try) so they are in scope for the assembly and
+            # Stage 5 blocks below. The try block updates ip2gip_dedup for coincident
+            # nodes and populates nc_non_global_nodes_spa / gip_spa_to_local_ip / n_ang.
+            ip2gip_dedup           = Int.(mesh.ip2gip)
+            nc_non_global_nodes_spa = Int[]
+            gip_spa_to_local_ip    = Dict{Int,Int}()
+            n_ang                  = extra_mesh.extra_npoin
+            _remapped_ips          = Set{Int}()
 
             try
                 spatial_amr_cache = build_spatial_constraint_matrices(
@@ -673,12 +688,30 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 @info "[$rank] ✓ Ghost exchange complete (Stage 3)"
                 verify_spatial_ghost_exchange(spatial_amr_cache, rank)
 
+                # ── Update ip2gip_dedup BEFORE mutual-exclusivity filtering ──────────
+                # Coincident nodes (child at same (x,y,z) as parent corner) must share
+                # the parent's spatial GIP so setup_global_numbering assigns them the same
+                # compact GID on all ranks.  This must happen for ALL coincident nodes —
+                # even those that will be removed below for also acting as parents.
+                # Collect remapped_ips: passed to setup_global_numbering so Phase 2 treats
+                # remapped IPs as nonowned (preventing both ranks from claiming ownership of
+                # the same GIP, which would break sharing detection and produce duplicate GIDs).
+                _remapped_ips = Set{Int}()
+                for (child_ip, parent_ip) in spatial_amr_cache.coincident_nodes
+                    ip2gip_dedup[child_ip] = mesh.ip2gip[parent_ip]
+                    push!(_remapped_ips, child_ip)
+                end
+                for (child_ip, parent_global_spa) in spatial_amr_cache.cross_rank_coincident_nodes
+                    ip2gip_dedup[child_ip] = parent_global_spa
+                    push!(_remapped_ips, child_ip)
+                end
+
                 # ── Mutual-exclusivity post-processing ────────────────────────
                 # Corner nodes at junctions of multiple NCFs can appear simultaneously
                 # as parents of interpolated hanging nodes AND as coincident children of
-                # another NCF. Such nodes must NOT be classified as coincident, because
-                # coincident treatment zeroes their assembled rows. Collect all nodes
-                # that act as parents and remove them from the coincident sets.
+                # another NCF. Such nodes must NOT be classified as coincident for
+                # constraint purposes (coincident treatment zeroes their rows), but their
+                # ip2gip_dedup remapping above is kept so global numbering remains unique.
                 local_parent_ip_set = Set{Int}()
                 for (_, plist) in spatial_amr_cache.parent_weights
                     for (pip, _) in plist
@@ -717,44 +750,110 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 end
                 @info "[$rank] Mutual-exclusivity: removed $n_removed_local coincident + $n_removed_cross_rank cross-rank coincident nodes that were also acting as parents or interpolated children"
 
-                # Collect all spatial-angular hanging node DOF indices for BC exclusion.
-                # Includes both local-parent hanging nodes (parent_weights) and
-                # cross-rank hanging nodes (cross_rank_parent_weights).
-                spatial_hanging_nodes_all_angular = Set{Int}()
-                n_ang = extra_mesh.extra_npoin
-                for spatial_hanging_id in keys(spatial_amr_cache.parent_weights)
-                    for i_ang = 1:n_ang
-                        push!(spatial_hanging_nodes_all_angular,
-                              (spatial_hanging_id - 1) * n_ang + i_ang)
+                # ── Populate gip_spa_to_local_ip: reverse map global spatial ID → local spatial ip ──
+                # Needed to convert cross-rank parent global spatial IDs to local DOF indices.
+                # (initialized to empty Dict before this try block)
+                for ip = 1:mesh.npoin
+                    gip_spa_to_local_ip[Int(mesh.ip2gip[ip])] = ip
+                end
+
+                # ── Build connijk_spa_uniform with coordinate deduplication ──
+                # Key: (x,y,z,θ,ϕ) → unique local DOF index ip_spa.
+                # Coincident spatial nodes (same (x,y,z) but different mesh.connijk ip)
+                # naturally map to the same ip_spa — no explicit coincident handling needed.
+                # ip2gip_dedup ensures coincident nodes share the same gip signature in
+                # setup_global_numbering_adaptive_angular_scalable → same compact GID.
+                connijk_spa_uniform = [
+                    Array{Int}(undef, ngl, ngl, ngl, extra_mesh.extra_nelem,
+                               extra_mesh.extra_nop[1]+1, extra_mesh.extra_nop[1]+1)
+                    for _ in 1:nelem]
+                point_dict_spa = Dict{NTuple{5,Float64}, Int}()
+                n_spa_counter = 0
+                for iel_c = 1:nelem
+                    for kc = 1:ngl, jc = 1:ngl, ic = 1:ngl
+                        ip_c = mesh.connijk[iel_c, ic, jc, kc]
+                        x_c = mesh.x[ip_c]; y_c = mesh.y[ip_c]; z_c = mesh.z[ip_c]
+                        for e_ext_c = 1:extra_mesh.extra_nelem
+                            nop_c = extra_mesh.extra_nop[1]
+                            for jθ_c = 1:nop_c+1, iθ_c = 1:nop_c+1
+                                i_ang_c = extra_mesh.extra_connijk[e_ext_c, iθ_c, jθ_c]
+                                θ_c = extra_mesh.extra_coords[1, i_ang_c]
+                                ϕ_c = extra_mesh.extra_coords[2, i_ang_c]
+                                key = (round(x_c, digits=12), round(y_c, digits=12),
+                                       round(z_c, digits=12), round(θ_c, digits=12),
+                                       round(ϕ_c, digits=12))
+                                idx = get(point_dict_spa, key, 0)
+                                if idx == 0
+                                    n_spa_counter += 1
+                                    point_dict_spa[key] = n_spa_counter
+                                    connijk_spa_uniform[iel_c][ic, jc, kc, e_ext_c, iθ_c, jθ_c] = n_spa_counter
+                                else
+                                    connijk_spa_uniform[iel_c][ic, jc, kc, e_ext_c, iθ_c, jθ_c] = idx
+                                end
+                            end
+                        end
                     end
                 end
-                for spatial_hanging_id in keys(spatial_amr_cache.cross_rank_parent_weights)
-                    for i_ang = 1:n_ang
-                        push!(spatial_hanging_nodes_all_angular,
-                              (spatial_hanging_id - 1) * n_ang + i_ang)
+                n_spa_new = n_spa_counter
+                @info "[$rank] connijk_spa_uniform built: $n_spa_new unique DOFs (vs $(npoin * n_ang) without dedup)"
+
+                # ── Build nc_non_global_nodes_spa: ip_spa indices for interpolated hanging nodes ──
+                # Look up each hanging spatial node's (x,y,z,θ,ϕ) in point_dict_spa to get ip_spa.
+                # Coincident nodes are already transparent (same ip_spa as parent via dedup).
+                nc_non_global_nodes_spa = Int[]
+                nc_set_spa = Set{Int}()
+                for hanging_ip in keys(spatial_amr_cache.parent_weights)
+                    x_h = mesh.x[hanging_ip]; y_h = mesh.y[hanging_ip]; z_h = mesh.z[hanging_ip]
+                    for e_ext_h = 1:extra_mesh.extra_nelem
+                        nop_h = extra_mesh.extra_nop[1]
+                        for jθ_h = 1:nop_h+1, iθ_h = 1:nop_h+1
+                            i_ang_h = extra_mesh.extra_connijk[e_ext_h, iθ_h, jθ_h]
+                            θ_h = extra_mesh.extra_coords[1, i_ang_h]
+                            ϕ_h = extra_mesh.extra_coords[2, i_ang_h]
+                            key_h = (round(x_h, digits=12), round(y_h, digits=12),
+                                     round(z_h, digits=12), round(θ_h, digits=12),
+                                     round(ϕ_h, digits=12))
+                            ip_spa_h = get(point_dict_spa, key_h, 0)
+                            ip_spa_h == 0 && continue
+                            if !(ip_spa_h in nc_set_spa)
+                                push!(nc_non_global_nodes_spa, ip_spa_h)
+                                push!(nc_set_spa, ip_spa_h)
+                            end
+                        end
                     end
                 end
-                # Coincident nodes: physically at the same location as a parent node.
-                # Excluded from free-node assembly (would double-count the parent).
-                for spatial_hanging_id in keys(spatial_amr_cache.coincident_nodes)
-                    for i_ang = 1:n_ang
-                        push!(spatial_hanging_nodes_all_angular,
-                              (spatial_hanging_id - 1) * n_ang + i_ang)
+                for hanging_ip in keys(spatial_amr_cache.cross_rank_parent_weights)
+                    x_h = mesh.x[hanging_ip]; y_h = mesh.y[hanging_ip]; z_h = mesh.z[hanging_ip]
+                    for e_ext_h = 1:extra_mesh.extra_nelem
+                        nop_h = extra_mesh.extra_nop[1]
+                        for jθ_h = 1:nop_h+1, iθ_h = 1:nop_h+1
+                            i_ang_h = extra_mesh.extra_connijk[e_ext_h, iθ_h, jθ_h]
+                            θ_h = extra_mesh.extra_coords[1, i_ang_h]
+                            ϕ_h = extra_mesh.extra_coords[2, i_ang_h]
+                            key_h = (round(x_h, digits=12), round(y_h, digits=12),
+                                     round(z_h, digits=12), round(θ_h, digits=12),
+                                     round(ϕ_h, digits=12))
+                            ip_spa_h = get(point_dict_spa, key_h, 0)
+                            ip_spa_h == 0 && continue
+                            if !(ip_spa_h in nc_set_spa)
+                                push!(nc_non_global_nodes_spa, ip_spa_h)
+                                push!(nc_set_spa, ip_spa_h)
+                            end
+                        end
                     end
                 end
-                for spatial_hanging_id in keys(spatial_amr_cache.cross_rank_coincident_nodes)
-                    for i_ang = 1:n_ang
-                        push!(spatial_hanging_nodes_all_angular,
-                              (spatial_hanging_id - 1) * n_ang + i_ang)
-                    end
-                end
-                @info "[$rank] Tracked $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs for BC exclusion ($(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank + $(length(spatial_amr_cache.coincident_nodes)) coincident + $(length(spatial_amr_cache.cross_rank_coincident_nodes)) cross-rank coincident)"
+                n_non_global_nodes_spa = length(nc_non_global_nodes_spa)
+
+                # Hanging DOF set for BC exclusion — coincident nodes excluded:
+                # they are now transparent (same ip_spa as parent via coordinate dedup).
+                spatial_hanging_nodes_all_angular = Set(nc_non_global_nodes_spa)
+                @info "[$rank] Tracked $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs ($(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank); coincident nodes handled via coordinate dedup"
 
                 # ── Stage 4 prep: Build spatial constraint matrices for RHS/LHS assembly ────
                 @info "[$rank] Building spatial restriction and prolongation matrices (Stage 4 prep)..."
                 R_spatial, P_spatial = build_spatial_restriction_and_prolongation(
-                    spatial_amr_cache, npoin, extra_mesh.extra_npoin, spatial_hanging_nodes_all_angular,
-                    mesh, extra_mesh
+                    spatial_amr_cache, n_spa_new, spatial_hanging_nodes_all_angular,
+                    point_dict_spa, mesh, extra_mesh
                 )
                 @info "[$rank] ✓ Spatial matrices built: R_spatial = $(size(R_spatial)), P_spatial = $(size(P_spatial))"
 
@@ -766,28 +865,116 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
         npoin_ang_total = npoin * extra_mesh.extra_npoin
         @info "total number of points DOFs", npoin_ang_total, npoin, extra_mesh.extra_npoin
-        n_spa = npoin_ang_total
-        @rankinfo rank "Assembling LHS ($npoin_ang_total DOF)..."
-        LHS = sparse_lhs_assembly_3Dby2D(
-            ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
-            mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh.ψ,
-            extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
-            extra_mesh.extra_coords, extra_mesh.extra_nop,
-            npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
-            dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-            extra_mesh.extra_npoin, inputs[:rad_HG_g],
-            inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
 
-        Md = assemble_mass_diagonal_3Dby2D(
-            ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
-            extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
-            extra_mesh.extra_nop, npoin_ang_total, nelem, ngl,
-            extra_mesh.extra_nelem, extra_mesh.extra_npoin)
+        if has_spatial_hanging_nodes
+            # Use coordinate-dedup assembly so coincident spatial nodes accumulate
+            # into the same DOF slot (n_spa_new ≤ npoin_ang_total).
+            n_dofs = n_spa_new
+            @rankinfo rank "Assembling LHS ($n_spa_new deduplicated DOF, spatial AMR)..."
+            LHS = sparse_lhs_assembly_3Dby2D_spatial_amr(
+                ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
+                mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh.ψ,
+                extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
+                extra_mesh.extra_coords, extra_mesh.extra_nop,
+                n_spa_new, nelem, ngl, extra_mesh.extra_nelem,
+                dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                extra_mesh.extra_npoin, inputs[:rad_HG_g],
+                connijk_spa_uniform, inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
 
-        ip2gip_spa, gip2owner_extra, gnpoin =
-            setup_global_numbering_extra_dim(
-                mesh.ip2gip, mesh.gip2owner, npoin,
-                extra_mesh.extra_npoin, npoin_ang_total)
+            Md = assemble_mass_diagonal_3Dby2D_spatial_amr(
+                ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
+                extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
+                extra_mesh.extra_nop, n_spa_new, nelem, ngl,
+                extra_mesh.extra_nelem, connijk_spa_uniform)
+
+            # Compact global numbering: coincident nodes share the parent's GID (via
+            # ip2gip_dedup), interpolated hanging nodes appear after free nodes in GID space.
+            _ip2gip_spa_full, _gip2ip_spa, _gip2owner_spa_full, gnpoin =
+                setup_global_numbering_adaptive_angular_scalable(
+                    ip2gip_dedup, mesh.gip2owner, mesh, connijk_spa_uniform,
+                    extra_meshes_coords_uniform, extra_meshes_connijk_uniform,
+                    extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
+                    n_spa_new, n_non_global_nodes_spa, nc_non_global_nodes_spa;
+                    remapped_ips = _remapped_ips)
+            ip2gip_spa = _ip2gip_spa_full
+            gip2owner_extra = zeros(Int, n_spa_new)
+            for ip = 1:n_spa_new
+                gip2owner_extra[ip] = _gip2owner_spa_full[ip2gip_spa[ip]]
+            end
+
+            # ── Build global (spatial_GIP, angular_node_index) → compact_GID map ───────
+            # Cross-rank NCF parents are ghost nodes — not in this rank's local elements,
+            # so not in point_dict_spa.  Targeted two-round AllGather:
+            #   Round 1: gather all needed parent spatial GIPs (from cross_rank_parent_weights)
+            #   Round 2: each owning rank provides (sp_gip, ang_ip, compact_gid) triples
+            _needed_gips = Set{Int}()
+            for (_, _cw) in spatial_amr_cache.cross_rank_parent_weights
+                for (_pgip, _) in _cw
+                    push!(_needed_gips, _pgip)
+                end
+            end
+            _local_needed = collect(_needed_gips)
+            _nn = Int32(length(_local_needed))
+            _nn_all = MPI.Allgather([_nn], comm)
+            _all_needed = MPI.Allgatherv(_local_needed, _nn_all, comm)
+            _all_needed_set = Set(_all_needed)
+
+            # Each rank provides triples for needed GIPs it has in its local elements
+            _local_triples = Int[]
+            _seen_spa_ang = Set{Tuple{Int,Int}}()
+            for _iel = 1:nelem
+                for _kk = 1:ngl, _jj = 1:ngl, _ii = 1:ngl
+                    _ip_s = mesh.connijk[_iel, _ii, _jj, _kk]
+                    _sp_gip = ip2gip_dedup[_ip_s]
+                    _sp_gip in _all_needed_set || continue
+                    for _e = 1:extra_mesh.extra_nelem
+                        _nop = extra_mesh.extra_nop[_e]
+                        for _jt = 1:_nop+1, _it = 1:_nop+1
+                            _i_ang = extra_mesh.extra_connijk[_e, _it, _jt]
+                            _key_t = (_sp_gip, _i_ang)
+                            _key_t in _seen_spa_ang && continue
+                            push!(_seen_spa_ang, _key_t)
+                            _ip_spa = connijk_spa_uniform[_iel][_ii, _jj, _kk, _e, _it, _jt]
+                            push!(_local_triples, _sp_gip, _i_ang, ip2gip_spa[_ip_spa])
+                        end
+                    end
+                end
+            end
+            _nt = Int32(length(_local_triples) ÷ 3)
+            _nt_all = MPI.Allgather([_nt], comm)
+            _all_triples = MPI.Allgatherv(_local_triples, Int32.(_nt_all .* 3), comm)
+            global_sp_ang_to_gid = Dict{Tuple{Int,Int}, Int}()
+            sizehint!(global_sp_ang_to_gid, length(_all_triples) ÷ 3)
+            for _k = 1:length(_all_triples) ÷ 3
+                _sg = _all_triples[3_k-2]; _ai = _all_triples[3_k-1]; _cg = _all_triples[3_k]
+                get!(global_sp_ang_to_gid, (_sg, _ai), _cg)
+            end
+            @info "[$rank] cross-rank parent GID map: $(length(global_sp_ang_to_gid)) entries for $(length(_all_needed_set)) needed spatial GIPs"
+        else
+            n_dofs = npoin_ang_total
+            @rankinfo rank "Assembling LHS ($npoin_ang_total DOF)..."
+            LHS = sparse_lhs_assembly_3Dby2D(
+                ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
+                mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh.ψ,
+                extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
+                extra_mesh.extra_coords, extra_mesh.extra_nop,
+                npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
+                dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                extra_mesh.extra_npoin, inputs[:rad_HG_g],
+                inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
+
+            Md = assemble_mass_diagonal_3Dby2D(
+                ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
+                extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
+                extra_mesh.extra_nop, npoin_ang_total, nelem, ngl,
+                extra_mesh.extra_nelem, extra_mesh.extra_npoin)
+
+            ip2gip_spa, gip2owner_extra, gnpoin =
+                setup_global_numbering_extra_dim(
+                    mesh.ip2gip, mesh.gip2owner, npoin,
+                    extra_mesh.extra_npoin, npoin_ang_total)
+        end
+        n_spa = n_dofs
 
         pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
         if pM !== nothing
@@ -801,14 +988,15 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         M_inv = nothing; LHS = nothing
         GC.gc()
 
-        BDY = zeros(TFloat, npoin_ang_total)
-        RHS = zeros(TFloat, npoin_ang_total)
-        ref = zeros(TFloat, npoin_ang_total)
+        BDY = zeros(TFloat, n_dofs)
+        RHS = zeros(TFloat, n_dofs)
+        ref = zeros(TFloat, n_dofs)
 
         # Extended parent structures for spatial AMR (populated inside the constraint block)
         extended_parents_to_gid_spa = Int[]
         gid_to_extended_parents_spa = Dict{Int,Int}()
-        n_ext_spa = npoin_ang_total
+        n_ext_spa = n_dofs
+        A_with_rows_debug = nothing   # captured post-restriction, pre-prolongation for debug comparison
 
         # ── Stage 5: Apply spatial constraints to LHS matrix (uniform angular mesh) ────
         if has_spatial_hanging_nodes && R_spatial !== nothing
@@ -817,32 +1005,47 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             # Build helper data structures for MPI pattern
             # gip_to_local: global DOF ID → local DOF index
             gip_to_local_spa = Dict{Int,Int}()
-            sizehint!(gip_to_local_spa, npoin_ang_total)
-            for ip = 1:npoin_ang_total
+            sizehint!(gip_to_local_spa, n_spa_new)
+            for ip = 1:n_spa_new
                 gip_to_local_spa[ip2gip_spa[ip]] = ip
             end
 
             # gip2owner_spa_gid: global DOF ID → owner rank (for use in row/col effects functions)
             gip2owner_spa_gid = Dict{Int,Int}()
-            sizehint!(gip2owner_spa_gid, npoin_ang_total)
-            for ip = 1:npoin_ang_total
+            sizehint!(gip2owner_spa_gid, n_spa_new)
+            for ip = 1:n_spa_new
                 gip2owner_spa_gid[ip2gip_spa[ip]] = gip2owner_extra[ip]
             end
-            # Also add ghost parent DOF GIDs from cross-rank NCFs.
-            # mesh.pgip_ghost[k] = global SPATIAL IP of parent; mesh.pgip_owner[k] = its owner rank.
-            # These parents live on other ranks and are not in ip2gip_spa, so they must be
-            # inserted explicitly to avoid a KeyError in compute_hanging_row/col_effects.
+            # Add ghost parent DOF compact GIDs for cross-rank NCFs.
+            # Use global_sp_ang_to_gid (built above) — works even when the parent is not
+            # in this rank's local elements (and thus absent from point_dict_spa).
             for k = 1:length(mesh.pgip_ghost)
                 parent_gip_spa = Int(mesh.pgip_ghost[k])
                 parent_owner   = Int(mesh.pgip_owner[k])
                 parent_gip_spa <= 0 && continue
-                for i_ang = 1:n_ang
-                    parent_gid = (parent_gip_spa - 1) * n_ang + i_ang
-                    gip2owner_spa_gid[parent_gid] = parent_owner
+                parent_gip_spa in _all_needed_set || continue
+                for ip_a = 1:n_ang
+                    compact_gid = get(global_sp_ang_to_gid, (parent_gip_spa, ip_a), 0)
+                    compact_gid == 0 && continue
+                    gip2owner_spa_gid[compact_gid] = parent_owner
                 end
             end
 
-            # Find all parent spatial IPs and build parent DOF sets
+            # Build old→new DOF mapping: (spatial_ip-1)*n_ang + ang_ip → dedup ip_spa.
+            # Used to convert old-formula DOF indices to the new coordinate-dedup indices.
+            old_to_new_dof = zeros(Int, npoin * n_ang)
+            for ip_s = 1:npoin
+                x_s = mesh.x[ip_s]; y_s = mesh.y[ip_s]; z_s = mesh.z[ip_s]
+                for ip_a = 1:n_ang
+                    θ_a = extra_mesh.extra_coords[1, ip_a]
+                    ϕ_a = extra_mesh.extra_coords[2, ip_a]
+                    key_o = (round(x_s, digits=12), round(y_s, digits=12), round(z_s, digits=12),
+                             round(θ_a, digits=12), round(ϕ_a, digits=12))
+                    old_to_new_dof[(ip_s - 1) * n_ang + ip_a] = get(point_dict_spa, key_o, 0)
+                end
+            end
+
+            # Find all interpolated parent spatial IPs (coincident nodes are transparent)
             parent_spatial_ips = Set{Int}()
             for (_, weights) in spatial_amr_cache.parent_weights
                 for (parent_ip, _) in weights
@@ -853,11 +1056,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             nonowned_parent_gids_spa = Set{Int}()
             nonowned_parent_dofs_spa  = Int[]
             for spatial_ip in parent_spatial_ips
-                for i_ang_p = 1:n_ang
-                    dof = (spatial_ip - 1) * n_ang + i_ang_p
-                    if dof >= 1 && dof <= npoin_ang_total && gip2owner_extra[dof] != rank
-                        push!(nonowned_parent_dofs_spa,  dof)
-                        push!(nonowned_parent_gids_spa,  ip2gip_spa[dof])
+                for ip_a = 1:n_ang
+                    dof = old_to_new_dof[(spatial_ip - 1) * n_ang + ip_a]
+                    (dof == 0 || dof > n_spa_new) && continue
+                    if gip2owner_extra[dof] != rank
+                        push!(nonowned_parent_dofs_spa, dof)
+                        push!(nonowned_parent_gids_spa, ip2gip_spa[dof])
                     end
                 end
             end
@@ -880,52 +1084,64 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             ghost_constraint_data_spa     = Dict{Int, Vector{Tuple{Int, Float64}}}()
             ghost_constraint_data_spa_rhs = Dict{Int, Vector{Tuple{Int, Float64}}}()
 
-            # ── Source 1: fully cross-rank parents (go in BOTH dicts) ────────
+            # Pre-compute which dedup DOFs are already handled via parent_weights →
+            # R_spatial_rhs (local restriction).  With coordinate dedup, two different
+            # spatial IPs at the same (x,y,z) can map to the same hanging_dof — one in
+            # parent_weights (local, → R_spatial_rhs) and one in cross_rank_parent_weights
+            # (cross-rank, → ghost exchange).  Including such a DOF in both paths would
+            # apply the restriction twice.  Exclude from ghost_constraint_data_spa_rhs any
+            # hanging_dof already covered by R_spatial_rhs.
+            _rhs_handled_dofs = Set{Int}()
+            for (hsp, _) in spatial_amr_cache.parent_weights
+                for _ipa = 1:n_ang
+                    _d = old_to_new_dof[(hsp - 1) * n_ang + _ipa]
+                    _d == 0 && continue
+                    push!(_rhs_handled_dofs, _d)
+                end
+            end
+
+            # ── Source 1: fully cross-rank parents ─────────────────────────────
+            # hanging_dof uses old_to_new_dof for dedup index.
+            # Parent compact GID from global_sp_ang_to_gid: works for parents that are ghost
+            # nodes (not in local elements) and thus absent from point_dict_spa.
+            # ghost_constraint_data_spa_rhs gets the entry ONLY if the hanging_dof has no
+            # local representation in parent_weights (otherwise R_spatial_rhs handles it).
             for (hanging_local_spa, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
-                #@info "checking number of parents cross rank:", length(cross_weights)
-                for i_ang = 1:n_ang
-                    hanging_dof = (hanging_local_spa - 1) * n_ang + i_ang
-                    (hanging_dof < 1 || hanging_dof > npoin_ang_total) && continue
+                for ip_a = 1:n_ang
+                    hanging_dof = old_to_new_dof[(hanging_local_spa - 1) * n_ang + ip_a]
+                    (hanging_dof == 0 || hanging_dof > n_spa_new) && continue
                     parent_constraints = Tuple{Int, Float64}[]
                     for (parent_global_spa, weight) in cross_weights
-                        parent_gid = (parent_global_spa - 1) * n_ang + i_ang
+                        parent_gid = get(global_sp_ang_to_gid, (parent_global_spa, ip_a), 0)
+                        parent_gid == 0 && continue
                         push!(parent_constraints, (parent_gid, weight))
                     end
                     isempty(parent_constraints) && continue
-                    ghost_constraint_data_spa[hanging_dof]     = copy(parent_constraints)
-                    ghost_constraint_data_spa_rhs[hanging_dof] = copy(parent_constraints)
+                    ghost_constraint_data_spa[hanging_dof] = copy(parent_constraints)
+                    if !(hanging_dof in _rhs_handled_dofs)
+                        ghost_constraint_data_spa_rhs[hanging_dof] = copy(parent_constraints)
+                    end
                 end
             end
 
             # ── Source 2: local parents split by ownership ────────────────────
             # Build R_spatial_rhs (owned parents only) and populate both ghost dicts.
+            # All DOF indices use old_to_new_dof for dedup conversion.
             I_rhs_sp = Int[]; J_rhs_sp = Int[]; V_rhs_sp = Float64[]
-            for dof = 1:npoin_ang_total
+            for dof = 1:n_spa_new
                 if !(dof in spatial_hanging_nodes_all_angular)
                     push!(I_rhs_sp, dof); push!(J_rhs_sp, dof); push!(V_rhs_sp, 1.0)
                 end
             end
             n_nonowned_local_added = 0
             for (hanging_local_spa, local_weights) in spatial_amr_cache.parent_weights
-                #@info "checking number of parents local:", length(local_weights)
-                for i_ang = 1:n_ang
-                    hanging_dof = (hanging_local_spa - 1) * n_ang + i_ang
-                    (hanging_dof < 1 || hanging_dof > npoin_ang_total) && continue
+                for ip_a = 1:n_ang
+                    hanging_dof = old_to_new_dof[(hanging_local_spa - 1) * n_ang + ip_a]
+                    (hanging_dof == 0 || hanging_dof > n_spa_new) && continue
                     for (parent_local_spa, weight) in local_weights
-                        parent_dof = (parent_local_spa - 1) * n_ang + i_ang
-                        (parent_dof < 1 || parent_dof > npoin_ang_total) && continue
+                        parent_dof = old_to_new_dof[(parent_local_spa - 1) * n_ang + ip_a]
+                        (parent_dof == 0 || parent_dof > n_spa_new) && continue
                         parent_gid = ip2gip_spa[parent_dof]
-                        x_p = mesh.x[parent_local_spa]
-                        y_p = mesh.y[parent_local_spa]
-                        z_p = mesh.z[parent_local_spa]
-                        θ_p = extra_mesh.extra_coords[1,i_ang]
-                        ϕ_p = extra_mesh.extra_coords[2,i_ang]
-                        #=if (abs(x_p-2.0)<1e-3) && (abs(y_p-4/3)<1e-3) && (abs(z_p-2/3)<1e-3) && (abs(θ_p-2.951503249004322)<1e-3) && (abs(ϕ_p-1.732749272043855)<1e-3)
-                            @info "1", gip2owner_extra[parent_dof], i_ang, parent_local_spa, parent_dof, parent_gid
-                        end
-                        if (abs(x_p-2.0)<1e-3) && (abs(y_p-4/3)<1e-3) && (abs(z_p-4/3)<1e-3) && (abs(θ_p-1.0506882097005865)<1e-3) && (abs(ϕ_p-2.4560409327425354)<1e-3)
-                            @info "4", gip2owner_extra[parent_dof], i_ang, parent_local_spa, parent_dof, parent_gid
-                        end=#
                         # Matrix dict gets ALL local parents (owned ones skipped at use time)
                         mat_entry = get!(ghost_constraint_data_spa, hanging_dof, Tuple{Int,Float64}[])
                         if !any(g == parent_gid for (g, _) in mat_entry)
@@ -947,7 +1163,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     end
                 end
             end
-            R_spatial_rhs = sparse(I_rhs_sp, J_rhs_sp, V_rhs_sp, npoin_ang_total, npoin_ang_total)
+            # Sources 3 & 4 (coincident nodes) are omitted: with coordinate dedup,
+            # coincident child and parent share the same ip_spa → same compact GID →
+            # no explicit constraint row needed; they're transparent in assembly.
+
+            R_spatial_rhs = sparse(I_rhs_sp, J_rhs_sp, V_rhs_sp, n_spa_new, n_spa_new)
+
             @info "[$rank] ghost_constraint_data_spa (matrix): $(length(ghost_constraint_data_spa)) hanging DOFs"
             @info "[$rank] ghost_constraint_data_spa_rhs: $(length(ghost_constraint_data_spa_rhs)) hanging DOFs"
             @info "[$rank] non-owned local parent RHS entries: $n_nonowned_local_added"
@@ -964,23 +1185,17 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             n_ghost_ext_spa = 0
             for (_, parent_list) in ghost_constraint_data_spa
                 for (parent_gid, _) in parent_list
-                    # Only extend parents that are (a) owned by another rank AND
-                    # (b) not already present in the local DOF map.
-                    # Ghost parents (owned elsewhere but locally accessible) must NOT
-                    # get an extended slot — they go via the MPI path so that rank 0 can
-                    # add constraint contributions directly to its owned parent row.
-                    # Rank-1-interior column drops in add_hanging_row/col_effects are
-                    # corrected by the bounce-back exchange that follows each effect step.
-                    if gip2owner_spa_gid[parent_gid] != rank &&
+                    owner = get(gip2owner_spa_gid, parent_gid, rank)
+                    if owner != rank &&
                        !haskey(gid_to_extended_parents_spa, parent_gid) &&
                        !haskey(gip_to_local_spa, parent_gid)
                         n_ghost_ext_spa += 1
-                        gid_to_extended_parents_spa[parent_gid] = npoin_ang_total + n_ghost_ext_spa
+                        gid_to_extended_parents_spa[parent_gid] = n_spa_new + n_ghost_ext_spa
                         push!(extended_parents_to_gid_spa, parent_gid)
                     end
                 end
             end
-            n_ext_spa = npoin_ang_total + n_ghost_ext_spa
+            n_ext_spa = n_spa_new + n_ghost_ext_spa
             @info "[$rank] Extended parent structures: $n_ghost_ext_spa cross-rank parent GIDs → n_ext=$n_ext_spa"
 
             # Extended gip→local map that also resolves extended parent GIDs
@@ -994,7 +1209,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             if n_ghost_ext_spa > 0
                 I_re, J_re, V_re = findnz(R_spatial)
                 for k = 1:n_ghost_ext_spa
-                    ext_idx = npoin_ang_total + k
+                    ext_idx = n_spa_new + k
                     push!(I_re, ext_idx); push!(J_re, ext_idx); push!(V_re, 1.0)
                 end
                 R_spatial_ext = sparse(I_re, J_re, V_re, n_ext_spa, n_ext_spa)
@@ -1008,7 +1223,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             if nprocs > 1
                 @info "[$rank] AllReducing spatial parent-parent matrix entries..."
                 A = allreduce_parent_parent_entries(
-                    A, R_spatial_ext, gip2owner_extra, npoin_ang_total, rank, comm,
+                    A, R_spatial_ext, gip2owner_extra, n_spa_new, rank, comm,
                     ip2gip_spa, Int[], nonowned_parent_dofs_spa,
                     nonowned_parent_gids_spa, gip_to_local_spa)
                 @info "[$rank] A after AllReduce: nnz=$(nnz(A))"
@@ -1047,13 +1262,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 A_left, received_row_effects, ip2gip_spa,
                 n_ext_spa, rank, gip_to_local_spa_ext)
             @info "[$rank] A after add_row_effects: nnz=$(nnz(A_with_rows))"
+            A_with_rows_debug = A_with_rows   # snapshot for debug comparison
 
             # ── Step 3: Parallel prolongation (P from right) ─────────────────
             @info "[$rank] Applying parallel spatial prolongation (right multiply by P_ext)..."
             col_effects_to_send, A_col_eff =
                 compute_hanging_col_effects_before_prolongation(
                     ghost_constraint_data_spa, A_with_rows, ip2gip_spa, gip2owner_spa_gid,
-                    npoin_ang_total, n_ext_spa,
+                    n_spa_new, n_ext_spa,
                     spatial_hanging_nodes_all_angular, rank,
                     gid_to_extended_parents_spa, extended_parents_to_gid_spa,
                     gip_to_local_spa_ext)
@@ -1106,7 +1322,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     # ── Common setup: nc_mat row structure, free DOF count ────────────────────
     nc_rows  = size(nc_mat, 1) > 2 ? rowvals(nc_mat) : zeros(Int, 1, 1)
-    n_free   = inputs[:adaptive_extra_meshes] ? n_spa - n_non_global_nodes : npoin_ang_total
+    n_free   = inputs[:adaptive_extra_meshes] ? n_spa - n_non_global_nodes :
+               (has_spatial_hanging_nodes ? n_spa_new - n_non_global_nodes_spa : npoin_ang_total)
 
     # ── Precompute spatial factors (shared by RHS and BC loops) ──────────────
     spatial_factor = Vector{Float64}(undef, npoin)
@@ -1253,7 +1470,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         ip_ext  = extra_mesh.extra_connijk[e_ext, iϕ, iθ]
                         θ       = extra_mesh.extra_coords[1, ip_ext]
                         ϕ       = extra_mesh.extra_coords[2, ip_ext]
-                        ip_g    = (ip-1) * extra_mesh.extra_npoin + ip_ext
+                        # Use coordinate-dedup DOF index when spatial AMR is active,
+                        # old formula otherwise (gip2owner_extra size matches accordingly).
+                        ip_g = has_spatial_hanging_nodes ?
+                               connijk_spa_uniform[iel][i, j, k, e_ext, iϕ, iθ] :
+                               (ip-1) * extra_mesh.extra_npoin + ip_ext
                         is_owned = (gip2owner_extra[ip_g] == rank)
 
                         sip = exp(-((6/(2π)) * (θ - 3π/5))^2)
@@ -1321,7 +1542,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     end
 
     @info "CHECKING RHS values before and after restriction"
-    for i=1:npoin_ang_total
+    for i=1:n_dofs
         gip = ip2gip_spa[i]
         if (gip == 4181)
             @info "before 1", RHS[i]
@@ -1341,7 +1562,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
         @info "[$rank] Applying spatial constraints to RHS (Stage 4, MPI-aware)..."
         n_ang = extra_mesh.extra_npoin
-
+        RHS_original = copy(RHS)
         # Step 1: compute weighted RHS contributions from cross-rank hanging nodes
         # and route them to the owning rank of each ghost parent.
         # Uses ghost_constraint_data_spa_rhs (non-owned local + cross-rank only),
@@ -1355,7 +1576,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         # cross-rank parents were sent in Step 1 via ghost_constraint_data_spa_rhs.
         RHS = R_spatial_rhs*RHS#R_spatial_rhs * RHS
 
-        for i=1:npoin_ang_total
+        for i=1:n_dofs
             gip = ip2gip_spa[i]
             if (gip == 4181)
                 @info "restricted 1", RHS[i]
@@ -1377,9 +1598,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
         # Step 4: accumulate received effects into parent rows
         RHS = add_hanging_rhs_effects(
-            RHS, received_rhs_effects, ip2gip_spa, npoin_ang_total, rank, gip_to_local_spa)
-        
-        for i=1:npoin_ang_total
+            RHS, received_rhs_effects, ip2gip_spa, n_spa_new, rank, gip_to_local_spa)
+
+        for i=1:n_spa_new
             gip = ip2gip_spa[i]
             if (gip == 4181)
                 @info "added 1", RHS[i]
@@ -1497,39 +1718,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     # contribution. Zero their rows in A (identity diagonal) and zero their RHS;
     # after the solve, copy the parent solution into them.
     @info "maxima of A right before coicidence handling", maximum(A), minimum(A)
-    if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes
-        n_ang_c = extra_mesh.extra_npoin
-        # Build the set of all coincident DOF indices for fast lookup
-        coincident_dof_set = Set{Int}()
-        for child_spa in keys(spatial_amr_cache.coincident_nodes)
-            for i_ang = 1:n_ang_c
-                cdof = (child_spa - 1) * n_ang_c + i_ang
-                cdof >= 1 && cdof <= npoin_ang_total && push!(coincident_dof_set, cdof)
-            end
-        end
-        for child_spa in keys(spatial_amr_cache.cross_rank_coincident_nodes)
-            for i_ang = 1:n_ang_c
-                cdof = (child_spa - 1) * n_ang_c + i_ang
-                cdof >= 1 && cdof <= npoin_ang_total && push!(coincident_dof_set, cdof)
-            end
-        end
-        # Iterate over columns in CSC format to zero coincident rows (same pattern as BC loop)
-        rows_Ac = rowvals(A); vals_Ac = nonzeros(A)
-        for col = 1:size(A, 2)
-            for ptr in nzrange(A, col)
-                row = rows_Ac[ptr]
-                row in coincident_dof_set || continue
-                vals_Ac[ptr] = (row == col) ? 1.0 : 0.0
-            end
-        end
-        for cdof in coincident_dof_set
-            B[cdof] = 0.0
-        end
-        n_coin = length(spatial_amr_cache.coincident_nodes) + length(spatial_amr_cache.cross_rank_coincident_nodes)
-        @info "[$rank] Zeroed $n_coin×n_ang=$(length(coincident_dof_set)) coincident DOFs ($(length(spatial_amr_cache.coincident_nodes)) local, $(length(spatial_amr_cache.cross_rank_coincident_nodes)) cross-rank)"
-        A = dropzeros!(A)
-        @info "[$rank] A after coincident enforcement + dropzeros: nnz=$(nnz(A))"
-    end
+    # Coincident node enforcement is no longer needed: coordinate deduplication in
+    # connijk_spa_uniform ensures child and parent nodes share the same ip_spa, so
+    # their assembled contributions naturally merge into a single DOF slot. No
+    # explicit row-zeroing is required.
 
     #-Symmetrize boundary conditions:
     As  = sparse(A)
@@ -1539,22 +1731,74 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
         _outdir = "."
         _spa_amr_ref = joinpath(_outdir, "spa_amr_serial_reference.jld2")
-        if nprocs == 1
+
+        # Build coordinate array for dedup DOFs: invert point_dict_spa.
+        # dedup_coords[ip_spa, :] = (x, y, z, θ, ϕ) for DOF ip_spa.
+        _dedup_coords = Matrix{Float64}(undef, n_spa_new, 5)
+        for (key, ip_spa) in point_dict_spa
+            _dedup_coords[ip_spa, 1] = key[1]; _dedup_coords[ip_spa, 2] = key[2]
+            _dedup_coords[ip_spa, 3] = key[3]; _dedup_coords[ip_spa, 4] = key[4]
+            _dedup_coords[ip_spa, 5] = key[5]
+        end
+
+        # ── Targeted RHS diagnostic ──────────────────────────────────────────────
+        # Print B[ip_spa] for a specific (x,y,z,θ,ϕ) to diagnose serial/parallel mismatch.
+        _tgt = (1.000000000001, 1.0, 1.333333333334, 1.230305638774, 2.094395102393)
+        _tol = 1e-7
+        for (key, ip_spa) in point_dict_spa
+            if abs(key[1]-_tgt[1]) < _tol && abs(key[2]-_tgt[2]) < _tol &&
+               abs(key[3]-_tgt[3]) < _tol && abs(key[4]-_tgt[4]) < _tol &&
+               abs(key[5]-_tgt[5]) < _tol
+                is_hanging = ip_spa in spatial_hanging_nodes_all_angular
+                owner      = gip2owner_extra[ip_spa]
+                gid        = ip2gip_spa[ip_spa]
+                @info "[$rank] TARGET coord: ip_spa=$ip_spa gid=$gid owner=$owner " *
+                      "B=$(B[ip_spa]) original RHS=$(RHS_original[ip_spa]) hanging=$is_hanging"
+            end
+        end
+
+        # Build coordinate lookup for extended parent rows in A_with_rows_debug.
+        # Extended row n_spa_new+k → compact GID extended_parents_to_gid_spa[k].
+        # Invert global_sp_ang_to_gid: compact GID → (sp_gip, ang_ip) → (x,y,z,θ,ϕ).
+        _gid_to_sp_ang = Dict{Int, Tuple{Int,Int}}()
+        for ((sp_gip, ang_ip), cg) in global_sp_ang_to_gid
+            _gid_to_sp_ang[cg] = (sp_gip, ang_ip)
+        end
+        _ext_parent_coords = NTuple{5,Float64}[]
+        for gid in extended_parents_to_gid_spa
+            pair = get(_gid_to_sp_ang, gid, (0, 0))
+            local_ip = pair[1] > 0 ? get(gip_spa_to_local_ip, pair[1], 0) : 0
+            if local_ip > 0 && pair[2] > 0
+                push!(_ext_parent_coords, (
+                    Float64(mesh.x[local_ip]), Float64(mesh.y[local_ip]),
+                    Float64(mesh.z[local_ip]),
+                    Float64(extra_mesh.extra_coords[1, pair[2]]),
+                    Float64(extra_mesh.extra_coords[2, pair[2]])))
+            else
+                push!(_ext_parent_coords, (NaN, NaN, NaN, NaN, NaN))
+            end
+        end
+
+        #=if nprocs == 1
             @info "[$rank] Saving serial spatial-AMR reference → $_spa_amr_ref"
             save_serial_spatial_amr(
-                B, As, mesh, extra_mesh, n_ang, npoin_ang_total,
-                spatial_hanging_nodes_all_angular, _spa_amr_ref)
+                B, As, A_with_rows_debug, mesh, extra_mesh, n_ang, n_spa_new,
+                spatial_hanging_nodes_all_angular, _spa_amr_ref;
+                dedup_coords = _dedup_coords)
         elseif isfile(_spa_amr_ref)
             @info "[$rank] Comparing parallel spatial-AMR assembly against serial reference..."
             reduce_and_compare_parallel_spatial_amr(
-                B, As, mesh, extra_mesh, n_ang, npoin_ang_total,
+                B, As, A_with_rows_debug, mesh, extra_mesh, n_ang, n_spa_new,
                 spatial_hanging_nodes_all_angular,
                 ip2gip_spa, gnpoin, extended_parents_to_gid_spa,
-                comm, rank, _spa_amr_ref)
+                comm, rank, _spa_amr_ref;
+                dedup_coords      = _dedup_coords,
+                gip2owner_extra   = gip2owner_extra,
+                ext_parent_coords = _ext_parent_coords)
         else
             @info "[$rank] No serial reference found at $_spa_amr_ref — run with 1 rank first to generate it"
         end
-        MPI.Barrier(comm)
+        MPI.Barrier(comm)=#
     end
 
     for col in boundary_set
@@ -1644,9 +1888,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_g       = n_spa_g,
             g_ip2gip      = extended_parents_to_gid,
             g_gip2ip      = gid_to_extended_parents,
-            precond       = :none,
-            restart       = 50,
-            tol           = 1e-4,
+            precond       = :jacobi,
+            restart       = 100,
+            tol           = 1e-7,
             connijk_spa   = connijk_spa,
             extra_nelem   = extra_meshes_extra_nelems,
             extra_nops    = extra_meshes_extra_nops,
@@ -1671,7 +1915,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_g  = n_spa_g,
             g_ip2gip = extended_parents_to_gid,
             g_gip2ip = gid_to_extended_parents,
-            precond  = :ilu,
+            precond  = :none,
             restart  = 200,
             tol      = 1e-4)
 
@@ -1701,11 +1945,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         if (rt_sol_sw_available)
             x_warm = rt_sol_sw
         end
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
-            npoin_g       = npoin_ang_total, 
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
+            npoin_g       = n_dofs,
             precond       = :none,
-            restart       = 30,
-            tol           = 1e-4,
+            restart       = 100,
+            tol           = 1e-7,
             extra_nelem   = extra_mesh.extra_nelem,
             extra_nops    = extra_mesh.extra_nop,
             extra_connijk = extra_mesh.extra_connijk,
@@ -1720,11 +1964,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         if (rt_sol_lw_available)
             x_warm = rt_sol_lw
         end
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
-            npoin_g = npoin_ang_total,
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
+            npoin_g = n_dofs,
             precond = :none,
             restart = 30,
-            tol     = 1e-4)
+            tol     = 1e-7)
     else
         @info maximum(ip2gip_spa), minimum(ip2gip_spa)
         x_warm = Float64[]
@@ -1737,11 +1981,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
 
-        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+        solve_parallel_gmres(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
         npoin_g  = n_ext_spa,
         g_ip2gip = extended_parents_to_gid_spa,
         g_gip2ip = gid_to_extended_parents_spa,
-        precond  = :ilu,
+        precond  = :none,
         restart  = 50,
         tol      = 1e-5)
     end
@@ -1772,19 +2016,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
         @info "[$rank] Applying spatial prolongation to solution..."
         solution = P_spatial * solution
-        # Copy parent solution into same-rank coincident nodes.
-        # (Cross-rank coincident nodes would need a ghost exchange; left as 0 for now.)
-        n_ang_p = extra_mesh.extra_npoin
-        for (child_spa, parent_spa) in spatial_amr_cache.coincident_nodes
-            for i_ang = 1:n_ang_p
-                cdof = (child_spa  - 1) * n_ang_p + i_ang
-                pdof = (parent_spa - 1) * n_ang_p + i_ang
-                if cdof >= 1 && cdof <= length(solution) && pdof >= 1 && pdof <= length(solution)
-                    solution[cdof] = solution[pdof]
-                end
-            end
-        end
-        @info "[$rank] ✓ Spatial prolongation applied ($(length(spatial_amr_cache.coincident_nodes)) coincident nodes filled from parents)"
+        # Coincident nodes already share the same ip_spa (via coordinate dedup), so their
+        # solution values are identical — no explicit copy needed.
+        @info "[$rank] ✓ Spatial prolongation applied"
     end
     # ── Angular integration and error computation ─────────────────────────────
     @rankinfo rank "Integrating solution in angle..."
@@ -1838,7 +2072,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             ip_ext = extra_mesh.extra_connijk[e_ext, iθ, iϕ]
                             θ      = extra_mesh.extra_coords[1, ip_ext]
                             ϕ      = extra_mesh.extra_coords[2, ip_ext]
-                            ip_g   = (ip-1) * extra_mesh.extra_npoin + ip_ext
+                            ip_g   = has_spatial_hanging_nodes ?
+                                     connijk_spa_uniform[iel][i, j, k, e_ext, iθ, iϕ] :
+                                     (ip-1) * extra_mesh.extra_npoin + ip_ext
                             int_sol_accum[ip] += solution[ip_g] *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] / node_div[ip]
@@ -2390,6 +2626,169 @@ function assemble_mass_diagonal_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ,
             for e_ext = 1:nelem_ang[iel]
                 for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
                     ωJac_rad = ωθ[iθ]*ωϕ[jθ]*Je_ang[iel][e_ext,iθ,jθ]
+                    idx      = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]
+                    Md[idx] += ωJac * ωJac_rad
+                end
+            end
+        end
+    end
+    return Md
+end
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+"""
+    sparse_lhs_assembly_3Dby2D_spatial_amr(ω, Je, connijk, ωθ, ωϕ, x, y, z,
+        ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang,
+        n_spa_new, nelem, ngl, nelem_ang,
+        dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+        npoin_ang, rad_HG_g, connijk_spa, rad_data, κ_data, σ_data, lshortwave)
+
+Assemble the sparse LHS matrix for spatial AMR with **uniform** angular mesh.
+Uses coordinate-deduplicated `connijk_spa[iel][i,j,k,e_ext,iθ,jθ]` for DOF indexing.
+The angular mesh is uniform across spatial elements (same `connijk_ang`, `Je_ang`, etc.).
+Output size: `n_spa_new × n_spa_new`.
+"""
+function sparse_lhs_assembly_3Dby2D_spatial_amr(ω, Je, connijk, ωθ, ωϕ, x, y, z,
+                                    ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang,
+                                    n_spa_new, nelem, ngl, nelem_ang,
+                                    dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                                    npoin_ang, g_eff, connijk_spa, rad_data, κ_data, σ_data, lshortwave)
+
+    intΦ = zeros(Float64, npoin_ang)
+    g_table    = [0.0, 0.85]
+    intΦ_table = zeros(Float64, npoin_ang, length(g_table))
+
+    if lshortwave
+        for (ig, g_val) in enumerate(g_table)
+            for e_ext = 1:nelem_ang
+                for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                    ip_ext = connijk_ang[e_ext, iθ, jθ]
+                    θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                    val = 0.0
+                    for e_ext_s = 1:nelem_ang
+                        for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
+                            ipθ = connijk_ang[e_ext_s, mθ, nθ]
+                            Φ   = user_scattering_functions(θ, coords_ang[1,ipθ],
+                                                            ϕ, coords_ang[2,ipθ], g_val)
+                            val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+                        end
+                    end
+                    intΦ_table[ip_ext, ig] = val
+                end
+            end
+        end
+    else
+        for e_ext = 1:nelem_ang
+            for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                ip_ext = connijk_ang[e_ext, iθ, jθ]
+                θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                val = 0.0
+                for e_ext_s = 1:nelem_ang
+                    for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
+                        ipθ = connijk_ang[e_ext_s, mθ, nθ]
+                        Φ   = user_scattering_functions(θ, coords_ang[1,ipθ], ϕ, coords_ang[2,ipθ], g_eff)
+                        val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+                    end
+                end
+                intΦ[ip_ext] = val
+            end
+        end
+    end
+
+    ngl_stencil = 3 * (ngl - 1) + 1
+    estimated   = round(Int, n_spa_new * ngl_stencil * 1.2)
+    I_vec = Vector{Int}(undef, estimated)
+    J_vec = Vector{Int}(undef, estimated)
+    V_vec = Vector{Float64}(undef, estimated)
+    pos   = 1
+
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip       = connijk[iel,i,j,k]
+            ωJac     = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+            dξdx_ij  = dξdx[iel,i,j,k]; dξdy_ij = dξdy[iel,i,j,k]; dξdz_ij = dξdz[iel,i,j,k]
+            dηdx_ij  = dηdx[iel,i,j,k]; dηdy_ij = dηdy[iel,i,j,k]; dηdz_ij = dηdz[iel,i,j,k]
+            dζdx_ij  = dζdx[iel,i,j,k]; dζdy_ij = dζdy[iel,i,j,k]; dζdz_ij = dζdz[iel,i,j,k]
+            κ = rad_data ? κ_data[ip] : user_extinction(x[ip], y[ip], z[ip])
+            σ = rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
+
+            for e_ext = 1:nelem_ang
+                for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                    ip_ext     = connijk_ang[e_ext, iθ, jθ]
+                    ωJac_rad   = ωθ[iθ]*ωϕ[jθ]*Je_ang[e_ext, iθ, jθ]
+                    ωJac_full  = ωJac * ωJac_rad
+                    θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                    Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
+                    idx_ip = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]
+                    if lshortwave
+                        α = g_eff[ip] / 0.85
+                        intΦ_eff = (1 - α) * intΦ_table[ip_ext, 1] + α * intΦ_table[ip_ext, 2]
+                    else
+                        intΦ_eff = intΦ[ip_ext]
+                    end
+                    _grow_if_needed!(I_vec, J_vec, V_vec, pos)
+                    I_vec[pos] = idx_ip; J_vec[pos] = idx_ip
+                    if rad_data
+                        V_vec[pos] = (κ + σ*(1 - intΦ_eff)) * ωJac_full
+                    else
+                        V_vec[pos] = (κ - σ * intΦ_eff) * ωJac_full
+                    end
+                    pos += 1
+
+                    prop_i = (dξdx_ij*Ωx + dξdy_ij*Ωy + dξdz_ij*Ωz) * ωJac_full
+                    for m = 1:ngl
+                        abs(dψ[m,i]) < eps(Float64) && continue
+                        idx_m = connijk_spa[iel][m,j,k,e_ext,iθ,jθ]
+                        _grow_if_needed!(I_vec, J_vec, V_vec, pos)
+                        I_vec[pos] = idx_ip; J_vec[pos] = idx_m; V_vec[pos] = dψ[m,i]*prop_i
+                        pos += 1
+                    end
+
+                    prop_j = (dηdx_ij*Ωx + dηdy_ij*Ωy + dηdz_ij*Ωz) * ωJac_full
+                    for n = 1:ngl
+                        abs(dψ[n,j]) < eps(Float64) && continue
+                        idx_n = connijk_spa[iel][i,n,k,e_ext,iθ,jθ]
+                        _grow_if_needed!(I_vec, J_vec, V_vec, pos)
+                        I_vec[pos] = idx_ip; J_vec[pos] = idx_n; V_vec[pos] = dψ[n,j]*prop_j
+                        pos += 1
+                    end
+
+                    prop_k = (dζdx_ij*Ωx + dζdy_ij*Ωy + dζdz_ij*Ωz) * ωJac_full
+                    for o = 1:ngl
+                        abs(dψ[o,k]) < eps(Float64) && continue
+                        idx_o = connijk_spa[iel][i,j,o,e_ext,iθ,jθ]
+                        _grow_if_needed!(I_vec, J_vec, V_vec, pos)
+                        I_vec[pos] = idx_ip; J_vec[pos] = idx_o; V_vec[pos] = dψ[o,k]*prop_k
+                        pos += 1
+                    end
+                end
+            end
+        end
+    end
+    return sparse(view(I_vec,1:pos-1), view(J_vec,1:pos-1), view(V_vec,1:pos-1), n_spa_new, n_spa_new)
+end
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+"""
+    assemble_mass_diagonal_3Dby2D_spatial_amr(ω, Je, connijk, ωθ, ωϕ, connijk_ang,
+        Je_ang, nop_ang, n_spa_new, nelem, ngl, nelem_ang, connijk_spa)
+
+Assemble the lumped mass matrix for spatial AMR with **uniform** angular mesh.
+Uses coordinate-deduplicated `connijk_spa[iel][i,j,k,e_ext,iθ,jθ]` for DOF indexing.
+Returns a vector of length `n_spa_new`.
+"""
+function assemble_mass_diagonal_3Dby2D_spatial_amr(ω, Je, connijk, ωθ, ωϕ, connijk_ang,
+        Je_ang, nop_ang, n_spa_new, nelem, ngl, nelem_ang, connijk_spa)
+
+    Md = zeros(Float64, n_spa_new)
+    @inbounds for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+            for e_ext = 1:nelem_ang
+                for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                    ωJac_rad = ωθ[iθ]*ωϕ[jθ]*Je_ang[e_ext,iθ,jθ]
                     idx      = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]
                     Md[idx] += ωJac * ωJac_rad
                 end

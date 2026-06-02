@@ -556,7 +556,7 @@ function solve_parallel_gmres(ip2gip, gip2owner, A_local, b, gnpoin, npoin, x_pr
         if rank == 0
             @info "Building ILU preconditioner on each rank (local block)"
         end
-        ilu_factor = IncompleteLU.ilu(A_local)
+        ilu_factor = IncompleteLU.ilu(A_local, τ=0.1)
         # Apply locally: scatter global x to local, apply ILU, scatter back
         LinearOperator(Float64, gnpoin, gnpoin, true, true,
             (y, x) -> begin

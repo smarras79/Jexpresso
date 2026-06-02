@@ -201,7 +201,8 @@ function setup_global_numbering_adaptive_angular_scalable(
     ip2gip, gip2owner, mesh, connijk_spa,
     extra_meshes_coords, extra_meshes_connijk,
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
-    n_spa, n_non_global_nodes, nc_non_global_nodes,
+    n_spa, n_non_global_nodes, nc_non_global_nodes;
+    remapped_ips::Set{Int} = Set{Int}(),
 )
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -250,12 +251,19 @@ function setup_global_numbering_adaptive_angular_scalable(
     
     # ── Phase 2: Identify processor-boundary spatial nodes ───────────────────
   
-    # Build owned and non-owned sets from local mesh data only — no communication
+    # Build owned and non-owned sets from local mesh data only — no communication.
+    # For remapped IPs (ip2gip was changed from the original mesh.ip2gip to a parent's GIP
+    # for spatial-AMR coincident nodes): treat them as nonowned regardless of local partition
+    # ownership. Without this, both the remapped rank and the parent rank would claim ownership
+    # of the same GIP, breaking sharing detection and producing duplicate compact GIDs.
+    # When remapped_ips is empty (default, angular non-conforming case), this is a no-op.
     owned_spatial    = Set{Int}()
     nonowned_spatial = Set{Int}()
     for ip = 1:mesh.npoin
         gip = ip2gip[ip]
-        if gip2owner[ip] == rank
+        if ip in remapped_ips
+            push!(nonowned_spatial, gip)   # defer ownership to the parent rank
+        elseif gip2owner[ip] == rank
             push!(owned_spatial, gip)
         else
             push!(nonowned_spatial, gip)
