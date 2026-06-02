@@ -1503,50 +1503,51 @@ function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, inputs, rhs_el, iel, ieq,
                           QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal; Δ=1.0, lrichardson=false)
 
+    # Weak form  -∫(dψ_i/dx) μ (dq/dx) dx
+    #   = -Σ_k ωJac_k · (dξ/dx)_k · μ · (dq/dx)_k · (dψ_i/dξ)_k
+    # ωJac = ω · Je, Je = dx/dξ, (dξ/dx) is the metric coefficient.
     for k = 1:ngl
-        ωJac = ω[k]*Je[iel,k]
+        ωJac    = ω[k]*Je[iel,k]
+        dξdx_k  = dξdx[iel,k]
 
         dqdξ = 0.0
         @turbo for ii = 1:ngl
             dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
         end
 
-        dξdx_kl = dqdξ*dξdx[iel,k]
-        dqdx = visc_coeffieq[ieq]*dξdx_kl
+        dqdx   = dqdξ*dξdx_k
+        flux_x = visc_coeffieq[ieq]*dqdx
 
-        ∇ξ∇u_kl = dξdx_kl*dqdx*ωJac
+        integrand = ωJac*dξdx_k*flux_x
 
         @turbo for i = 1:ngl
-            dhdξ_ik = dψ[i,k]
-
-            rhs_diffξ_el[iel,i,ieq] -= dhdξ_ik * ∇ξ∇u_kl
+            rhs_diffξ_el[iel,i,ieq] -= dψ[i,k]*integrand
         end
     end
 end
 
 # Marras-style Dynamic SGS (DSGS) for 1D: viscosity coefficient is a per-element
-# scalar μ_el (computed by compute_viscosity! before the visc loop).
+# scalar μ_el (precomputed by compute_dsgs_viscosity! before the visc loop).
 function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, μ_el, ω,
                           ngl, dψ, Je, dξdx, inputs, rhs_el, iel, ieq,
                           QT::Inexact, VT::DSGS, SD::NSD_1D, ::ContGal; Δ=1.0, lrichardson=false)
 
     for k = 1:ngl
-        ωJac = ω[k]*Je[iel,k]
+        ωJac    = ω[k]*Je[iel,k]
+        dξdx_k  = dξdx[iel,k]
 
         dqdξ = 0.0
         @turbo for ii = 1:ngl
             dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
         end
 
-        dξdx_kl = dqdξ*dξdx[iel,k]
-        dqdx = μ_el*dξdx_kl
+        dqdx   = dqdξ*dξdx_k
+        flux_x = μ_el*dqdx
 
-        ∇ξ∇u_kl = dξdx_kl*dqdx*ωJac
+        integrand = ωJac*dξdx_k*flux_x
 
         @turbo for i = 1:ngl
-            dhdξ_ik = dψ[i,k]
-
-            rhs_diffξ_el[iel,i,ieq] -= dhdξ_ik * ∇ξ∇u_kl
+            rhs_diffξ_el[iel,i,ieq] -= dψ[i,k]*integrand
         end
     end
 end
