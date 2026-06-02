@@ -637,8 +637,28 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
+    # Machine-zero floor on every denominator (Marras eq. 9 prescribes
+    # ‖q − ⟨q⟩‖∞,Ω in the denominator; we add eps to guarantee a finite
+    # ratio even before any spatial variation has developed).
     denom1 += eps; denom2 += eps
     denom3 += eps; denom4 += eps
+
+    # The momentum slots need a slightly larger physical-scale floor:
+    # at t = 0 the fluid is at rest globally, so ‖ρu − ⟨ρu⟩‖∞,Ω and
+    # ‖ρv − ⟨ρv⟩‖∞,Ω literally start at zero. With only machine eps to
+    # absorb that, the R/denom ratio runs away and caps μ at the
+    # wave-speed bound C2·Δ·(|u|+c) before any flow has developed,
+    # which on this case is enough to push ρθ past zero in the very
+    # first RK substage. The floor is a tiny fraction (1e-3) of the
+    # natural momentum scale ρ_avg·c_avg — large enough to keep the
+    # cold-start ratio bounded, small enough to vanish once actual
+    # momentum perturbations have grown above it.
+    θ_avg  = ρθ_avg/max(abs(ρ_avg), eps)
+    p_avg  = C0*(max(ρ_avg*θ_avg, zero(TT)))^γ
+    c_avg  = sqrt(max(γ*p_avg/max(abs(ρ_avg), eps), zero(TT)))
+    mom_floor = TT(1.0e-3) * abs(ρ_avg) * c_avg
+    denom2 = max(denom2, mom_floor)
+    denom3 = max(denom3, mom_floor)
 
     # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] ------
     @inbounds for ie = 1:nelem
