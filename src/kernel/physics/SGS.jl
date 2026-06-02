@@ -601,6 +601,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     C2    = TT(0.5)
     γm1   = γ - one(TT)
     eps   = Base.eps(TT)
+    # Characteristic-scale floor on the denominators. The fluid starts
+    # at rest in the rising-bubble case, so ‖ρu − ⟨ρu⟩‖∞,Ω and
+    # ‖ρv − ⟨ρv⟩‖∞,Ω would otherwise be at machine precision for the
+    # first few time steps; R/denom then saturates the wave-speed cap
+    # and the integrator blows up before any real flow develops.
+    # δ_floor scales the "minimum admissible perturbation" relative to
+    # the domain-average momentum (ρ_avg · c_ref) and energy (ρθ_avg).
+    δ_floor = TT(1.0e-3)
 
     # --- Pass 1: domain averages of the conservative state q -----------
     ρ_avg  = zero(TT); ρu_avg = zero(TT)
@@ -619,6 +627,17 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     ρ_avg  *= invnp; ρu_avg *= invnp
     ρv_avg *= invnp; ρθ_avg *= invnp
 
+    # Reference sound speed from the domain-average state; used only to
+    # build the floor on the momentum denominators.
+    θ_avg  = ρθ_avg/max(ρ_avg, eps)
+    p_avg  = C0*(max(ρ_avg*θ_avg, zero(TT)))^γ
+    c_avg  = sqrt(max(γ*p_avg/max(ρ_avg, eps), zero(TT)))
+
+    floor1 = δ_floor * abs(ρ_avg)
+    floor2 = δ_floor * abs(ρ_avg)  * c_avg
+    floor3 = floor2
+    floor4 = δ_floor * abs(ρθ_avg)
+
     # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
     denom1 = zero(TT); denom2 = zero(TT)
     denom3 = zero(TT); denom4 = zero(TT)
@@ -633,8 +652,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
-    denom1 += eps; denom2 += eps
-    denom3 += eps; denom4 += eps
+    denom1 = max(denom1, floor1) + eps
+    denom2 = max(denom2, floor2) + eps
+    denom3 = max(denom3, floor3) + eps
+    denom4 = max(denom4, floor4) + eps
 
     # --- Pass 3: per-element loop, one unified μ split per equation ----
     inv2Δt = one(TT)/(2*Δt)
