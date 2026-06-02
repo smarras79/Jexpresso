@@ -24,7 +24,7 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         :nop                  => 4,
         :lsource              => false,
-        :lperiodic_1d         => false,
+        :lperiodic_1d         => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
