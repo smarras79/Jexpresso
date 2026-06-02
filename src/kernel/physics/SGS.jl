@@ -569,20 +569,29 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
 
-    # Marras et al. (JCP 2015, eq. 8-10) — one unified residual-based
-    # coefficient per element:
-    #     μ = min( C2·Δ·(|u|+c)_∞,e ,
-    #              C1·Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω )
-    # with C1 = 1, C2 = 0.5. The denominators use the FULL conservative
-    # state — switching to a perturbation form (q − qe) was tested but
-    # collapses ‖ρ − ⟨ρ⟩‖ and ‖ρθ − ⟨ρθ⟩‖ to a tiny perturbation scale,
-    # which lets the |R/denom| ratios saturate μ_max and over-diffuses
-    # the bubble. The same μ is written to every momentum slot of
-    # μ_dsgs[iel, :]; the ρθ slot is scaled by Pr/(γ-1) per eq. (10b);
-    # the ρ slot is left at zero (no mass diffusion).
+    # Marras-style Dynamic SGS, atmospheric / hydrostatic-aware variant
+    # (Marras et al. JCP 2015 + Marras / NUMA practice):
     #
-    # qe is accepted in the signature for forward compatibility / 1D
-    # symmetry but not used here.
+    #   * normalisation that EXEMPTS THE HYDROSTATIC MODE while keeping
+    #     the perturbation visible — the denominators are formed on
+    #     q − qe(z), i.e. on the deviation from the user-supplied
+    #     equilibrium / reference state.  In TOTAL mode qe(z) is the
+    #     hydrostatic background; in PERT mode qe is zero so this is
+    #     a no-op.
+    #
+    #   * the mass equation's residual is NOT included in the max.
+    #     |ρ − ρ_eq| collapses to a tiny perturbation scale (≪ |ρ|_full)
+    #     so R_ρ/denom_ρ' would saturate μ_max on its own; Marras
+    #     eq. (10) doesn't add diffusion to the continuity equation
+    #     anyway, so omitting the term is the consistent choice.
+    #
+    #   * one indicator per equation block:
+    #         μ_uv = min(μ_max, C1·Δ² · max(R_ρu/denom_ρu', R_ρv/denom_ρv'))
+    #         κ_θ  = Pr/(γ-1) · min(μ_max, C1·Δ² · R_ρθ/denom_ρθ')
+    #     and μ_dsgs[iel, :] is written as
+    #         [0, μ_uv, μ_uv, κ_θ].
+    #
+    # |u|+c is always built from the full conservative state q.
 
     invnp = one(TT)/(nelem*ngl*ngl)
     γ     = PhysConst.γ
@@ -592,59 +601,54 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     γm1   = γ - one(TT)
     eps   = TT(1.0e-16)
 
-    # --- Pass 1: domain averages of the conservative state q -----------
-    ρ_avg  = zero(TT); ρu_avg = zero(TT)
-    ρv_avg = zero(TT); ρθ_avg = zero(TT)
+    # --- Pass 1: domain averages of the perturbation (q − qe) ----------
+    ρp_avg  = zero(TT); ρup_avg = zero(TT)
+    ρvp_avg = zero(TT); ρθp_avg = zero(TT)
     @inbounds for ie = 1:nelem
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                ρ_avg  += q[ip,1]
-                ρu_avg += q[ip,2]
-                ρv_avg += q[ip,3]
-                ρθ_avg += q[ip,4]
+                ρp_avg  += q[ip,1] - qe[ip,1]
+                ρup_avg += q[ip,2] - qe[ip,2]
+                ρvp_avg += q[ip,3] - qe[ip,3]
+                ρθp_avg += q[ip,4] - qe[ip,4]
             end
         end
     end
-    ρ_avg  *= invnp; ρu_avg *= invnp
-    ρv_avg *= invnp; ρθ_avg *= invnp
+    ρp_avg  *= invnp; ρup_avg *= invnp
+    ρvp_avg *= invnp; ρθp_avg *= invnp
 
-    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
-    denom1 = zero(TT); denom2 = zero(TT)
-    denom3 = zero(TT); denom4 = zero(TT)
+    # --- Pass 2: domain L∞ of |(q − qe) − ⟨q − qe⟩| --------------------
+    denom2 = zero(TT); denom3 = zero(TT); denom4 = zero(TT)
     @inbounds for ie = 1:nelem
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
-                denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
-                denom3 = max(denom3, abs(q[ip,3] - ρv_avg))
-                denom4 = max(denom4, abs(q[ip,4] - ρθ_avg))
+                denom2 = max(denom2, abs((q[ip,2]-qe[ip,2]) - ρup_avg))
+                denom3 = max(denom3, abs((q[ip,3]-qe[ip,3]) - ρvp_avg))
+                denom4 = max(denom4, abs((q[ip,4]-qe[ip,4]) - ρθp_avg))
             end
         end
     end
-    denom1 += eps; denom2 += eps
-    denom3 += eps; denom4 += eps
+    denom2 += eps; denom3 += eps; denom4 += eps
 
-    # --- Pass 3: per-element loop, unified μ split per equation --------
+    # --- Pass 3: per-element loop --------------------------------------
     inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
         Δ  = Δelem[ie]/ngl
         Δ2 = Δ*Δ
 
-        n1 = zero(TT); n2 = zero(TT); n3 = zero(TT); n4 = zero(TT)
+        n2 = zero(TT); n3 = zero(TT); n4 = zero(TT)
         uTmx = zero(TT)
         for j = 1:ngl
             @simd for i = 1:ngl
                 ip = connijk[ie,i,j,1]
                 Mi = Minv[ip]
 
-                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
                 R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
                 R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
                 R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - Mi*rhs[ip,4])
-                n1 = max(n1, R1); n2 = max(n2, R2)
-                n3 = max(n3, R3); n4 = max(n4, R4)
+                n2 = max(n2, R2); n3 = max(n3, R3); n4 = max(n4, R4)
 
                 ρl = q[ip,1]
                 ul = q[ip,2]/ρl
@@ -657,18 +661,20 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
 
         μ_max = C2*Δ*uTmx
-        μ_res = C1*Δ2*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
-        μ     = max(zero(TT), min(μ_max, μ_res))
 
-        # ρ (mass) — Marras eq. (10) leaves the continuity equation
-        # untouched. The slot is filled with zero so the output kernel
-        # still sees a per-equation entry.
-        μ_dsgs[ie,1] = zero(TT)
-        # ρu, ρv: dynamic viscosity μ on the momentum equations.
-        μ_dsgs[ie,2] = μ
-        μ_dsgs[ie,3] = μ
-        # ρθ: κ = Pr/(γ-1) · μ per eq. (10b).
-        μ_dsgs[ie,4] = (Pr/γm1) * μ
+        # Momentum coefficient: max of the two momentum-equation ratios.
+        μ_uv  = C1*Δ2*max(n2/denom2, n3/denom3)
+        μ_uv  = max(zero(TT), min(μ_max, μ_uv))
+
+        # θ-equation coefficient: separately driven by the θ residual
+        # ("theta analogue"), then scaled by Pr/(γ-1) per eq. (10b).
+        κ_res = C1*Δ2*(n4/denom4)
+        κ_θ   = (Pr/γm1) * max(zero(TT), min(μ_max, κ_res))
+
+        μ_dsgs[ie,1] = zero(TT)   # ρ : no diffusion (Marras eq. 10)
+        μ_dsgs[ie,2] = μ_uv
+        μ_dsgs[ie,3] = μ_uv
+        μ_dsgs[ie,4] = κ_θ
     end
 
     return nothing
