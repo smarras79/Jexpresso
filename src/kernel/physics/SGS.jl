@@ -515,3 +515,124 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
 
     return nothing
 end
+
+#----------------------------------------------------------------------
+# 2D DYNAMIC SGS  (Marras et al., 2015, JCP 301:77-101)
+#
+# Conservation form  q = (ρ, ρu, ρv, ρθ) on 2D (x, y).
+# The paper writes the algorithm in primitive form (ρ, u, θ); here it
+# is rewritten in conservative form because that's what jexpresso
+# integrates. The per-element coefficient is built from the BDF2
+# residuals of all four conservation laws and is then split per
+# equation by the caller (no diffusion on ρ; μ_dsgs on ρu, ρv;
+# κ = Pr/(γ-1) · μ_dsgs on ρθ — Marras et al. eq. (10)).
+#----------------------------------------------------------------------
+
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               inputs,
+                               ::DSGS, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+
+    # DSGS is precomputed per element (see compute_dsgs_viscosity!
+    # below) and packed into visc_coeffieq by the caller:
+    #   visc_coeffieq[1] = 0                          (mass)
+    #   visc_coeffieq[2] = μ_dsgs[iel]                (ρu)
+    #   visc_coeffieq[3] = μ_dsgs[iel]                (ρv)
+    #   visc_coeffieq[4] = Pr/(γ-1) · μ_dsgs[iel]     (ρθ)
+    return visc_coeffieq[ieq]
+
+end
+
+function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
+                                 ::DSGS, ::NSD_2D,
+                                 q, q1, q2, rhs, Δt, mesh)
+
+    TT    = eltype(μ_dsgs)
+    nelem = mesh.nelem
+    ngl   = mesh.ngl
+    invnp = one(TT)/(nelem*ngl*ngl)
+
+    γ   = TT(1.4)
+    C1  = TT(1.0)
+    C2  = TT(0.5)
+    eps = TT(1.0e-16)
+
+    PhysConst = PhysicalConst{TT}()
+
+    # --- Pass 1: domain averages of (ρ, ρu, ρv, ρθ) --------------------
+    ρ_avg  = zero(TT); ρu_avg = zero(TT)
+    ρv_avg = zero(TT); ρθ_avg = zero(TT)
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = mesh.connijk[ie,i,j,1]
+                ρ_avg  += q[ip,1]
+                ρu_avg += q[ip,2]
+                ρv_avg += q[ip,3]
+                ρθ_avg += q[ip,4]
+            end
+        end
+    end
+    ρ_avg  *= invnp; ρu_avg *= invnp
+    ρv_avg *= invnp; ρθ_avg *= invnp
+
+    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    denom1 = zero(TT); denom2 = zero(TT)
+    denom3 = zero(TT); denom4 = zero(TT)
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = mesh.connijk[ie,i,j,1]
+                denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
+                denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
+                denom3 = max(denom3, abs(q[ip,3] - ρv_avg))
+                denom4 = max(denom4, abs(q[ip,4] - ρθ_avg))
+            end
+        end
+    end
+    denom1 += eps; denom2 += eps
+    denom3 += eps; denom4 += eps
+
+    # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] ------
+    @inbounds for ie = 1:nelem
+        # Marras's element size: min(Δx, Δy)/(N+1). mesh.Δelem[ie] is the
+        # min corner-to-corner distance in the element; ngl = N+1.
+        Δ = mesh.Δelem[ie]/ngl
+
+        n1   = zero(TT); n2 = zero(TT)
+        n3   = zero(TT); n4 = zero(TT)
+        uTmx = zero(TT)
+
+        for j = 1:ngl
+            @simd for i = 1:ngl
+                ip = mesh.connijk[ie,i,j,1]
+
+                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - rhs[ip,1])
+                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - rhs[ip,2])
+                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - rhs[ip,3])
+                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) - rhs[ip,4])
+                n1 = max(n1, R1); n2 = max(n2, R2)
+                n3 = max(n3, R3); n4 = max(n4, R4)
+
+                ρl = q[ip,1]
+                ul = q[ip,2]/ρl
+                vl = q[ip,3]/ρl
+                θl = q[ip,4]/ρl
+                # Equation of state p = C0·(ρθ)^γ  ⇒  c² = γp/ρ
+                pl  = PhysConst.C0 * (ρl*θl)^γ
+                c_l = sqrt(max(γ*pl/ρl, zero(TT)))
+                uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + c_l)
+            end
+        end
+
+        μ_res      = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
+        μ_max      = C2*Δ*uTmx
+        μ_dsgs[ie] = max(zero(TT), min(μ_max, μ_res))
+    end
+
+    return nothing
+end
