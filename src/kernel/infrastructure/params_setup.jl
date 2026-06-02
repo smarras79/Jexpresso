@@ -315,9 +315,14 @@ function params_setup(sem,
     # any per-RHS allocation; otherwise a length-1 placeholder is kept so
     # params has a homogeneously typed field.
     if inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
-        μ_dsgs = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.nelem))
+        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.nelem))
+        # Per-node broadcast of μ_dsgs[iel] — same value at every LGL
+        # node of the element — so the coefficient can be written to
+        # VTU / PNG via user_uout! like any other field.
+        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat, Int64(sem.mesh.npoin))
     else
-        μ_dsgs = KernelAbstractions.zeros(backend, TFloat, 1)
+        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat, 1)
+        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat, 1)
     end
 
     # Per-equation scratch the 2D DSGS path uses to pack the
@@ -368,7 +373,7 @@ function params_setup(sem,
 		  basis=sem.basis[1], basis_lag = sem.basis[2],
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
-                  inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, visc_coeff_dsgs,
+                  inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
@@ -401,7 +406,7 @@ function params_setup(sem,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
-                  thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, visc_coeff_dsgs,
+                  thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,

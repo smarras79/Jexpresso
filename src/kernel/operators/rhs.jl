@@ -920,9 +920,15 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     # The current solution is in params.uaux; the BDF2 residual uses
     # params.qp.qnm2 (qⁿ⁻¹) and params.qp.qnm1 (qⁿ⁻²).
     if params.VT == DSGS()
+        TT = eltype(params.μ_dsgs)
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                 params.uaux, params.qp.qnm2, params.qp.qnm1,
-                                params.RHS, params.Δt, params.mesh)
+                                params.RHS, params.Minv, TT(params.Δt),
+                                params.mesh.connijk, params.mesh.Δx,
+                                Int(nelem), Int(ngl))
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(nelem), Int(ngl), SD)
     end
 
     for iel=1:nelem
@@ -975,7 +981,38 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # dispatches SGS_diffusion(::DSGS, ::NSD_2D) which simply returns
     # visc_coeffieq[ieq], so the per-element value flows straight through.
     if params.VT == DSGS()
-        _viscous_rhs_el_2d_dsgs!(u, params, connijk, qe, SD)
+        TT      = eltype(params.μ_dsgs)
+        Pr_coef = TT(params.inputs[:Pr])/(PHYS_CONST.γ - one(TT))
+
+        # Step 1 — fill the per-element μ_dsgs buffer. All args concretely
+        # typed so compute_dsgs_viscosity! specialises and stays alloc-free.
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.RHS, params.Minv, TT(params.Δt),
+                                params.mesh.connijk, params.mesh.Δelem,
+                                PHYS_CONST,
+                                Int(params.mesh.nelem), Int(params.mesh.ngl))
+
+        # Step 2 — broadcast μ_dsgs[iel] onto every node for VTK output.
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(params.mesh.nelem),
+                                 Int(params.mesh.ngl), SD)
+
+        # Step 3 — assemble the viscous RHS through the typed barrier.
+        _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
+                                 params.rhs_diffξ_el, params.rhs_diffη_el,
+                                 params.rhs_diff_el,
+                                 params.visc_coeff_dsgs, params.μ_dsgs, Pr_coef,
+                                 params.ω,
+                                 params.mp.Tabs, params.mp.qn, params.mp.qsatt,
+                                 Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy,
+                                 params.metrics.dηdx, params.metrics.dηdy,
+                                 params.mesh.connijk, params.inputs, params.rhs_el,
+                                 Int64(params.mesh.nelem), Int64(params.neqs),
+                                 connijk, Float64(params.mesh.Δeffective_l),
+                                 params.QT, params.AD, params.SOL_VARS_TYPE)
         return
     end
 
@@ -997,64 +1034,62 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                         params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
 end
 
-function _viscous_rhs_el_2d_dsgs!(u, params, connijk, qe, SD::NSD_2D)
+# Function barrier for the 2D DSGS viscous assembly. Mirrors
+# _viscous_rhs_el_2d!  — every argument is a concretely typed array
+# or scalar so the per-element loop compiles fully specialised and
+# allocates nothing.
+function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
+                                  rhs_diffξ_el, rhs_diffη_el,
+                                  rhs_diff_el,
+                                  visc_coeff_dsgs, μ_dsgs, Pr_coef,
+                                  ω,
+                                  Tabs, qn_mp, qsatt,
+                                  ngl, dψ, Je,
+                                  dξdx, dξdy,
+                                  dηdx, dηdy,
+                                  connijk_mesh, inputs, rhs_el,
+                                  nelem, neqs,
+                                  connijk, Δ,
+                                  QT, AD, SOL_VARS_TYPE)
 
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    neqs  = params.neqs
-    Δ     = params.mesh.Δeffective_l
-
-    PhysConst = PhysicalConst{params.T}()
-    Pr_coef   = params.T(params.inputs[:Pr])/(PhysConst.γ - one(params.T))
-
-    # 1. Per-element coefficient. Current solution is uaux; BDF2 history
-    #    is qnm2 (qⁿ⁻¹) and qnm1 (qⁿ⁻²); params.RHS holds the just-built
-    #    inviscid RHS (post-DSS, pre-mass-matrix division).
-    compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
-                            params.uaux, params.qp.qnm2, params.qp.qnm1,
-                            params.RHS, params.Δt, params.mesh)
-
-    # 2. Element loop — pack visc_coeff_dsgs[ieq] from μ_dsgs[iel] before
-    #    each call to _expansion_visc!.  Marras et al. eq. (10):
-    #       ρ-equation : no diffusion
-    #       momentum   : μ_dsgs
-    #       energy/θ   : Pr/(γ-1) · μ_dsgs
     for iel = 1:nelem
-        μ_el = params.μ_dsgs[iel]
-        params.visc_coeff_dsgs[1]    = zero(params.T)
+        μ_el = μ_dsgs[iel]
+        # Marras et al. eq. (10): no mass diffusion, μ for momentum,
+        # Pr/(γ-1)·μ for the θ equation. Generalises to any neqs ≥ 3:
+        # equation 1 = ρ, equations 2..neqs-1 = momentum, neqs = θ.
+        visc_coeff_dsgs[1] = zero(eltype(visc_coeff_dsgs))
         for ieq = 2:(neqs - 1)
-            params.visc_coeff_dsgs[ieq] = μ_el
+            visc_coeff_dsgs[ieq] = μ_el
         end
-        params.visc_coeff_dsgs[neqs] = Pr_coef * μ_el
+        visc_coeff_dsgs[neqs] = Pr_coef * μ_el
 
         for j = 1:ngl, i = 1:ngl
             ip = connijk[iel,i,j]
-            user_primitives!(@view(params.uaux[ip,:]),
+            user_primitives!(@view(uaux[ip,:]),
                              @view(qe[ip,:]),
-                             @view(params.uprimitive[i,j,:]),
-                             params.SOL_VARS_TYPE)
+                             @view(uprimitive[i,j,:]),
+                             SOL_VARS_TYPE)
         end
 
         for ieq = 1:neqs
-            _expansion_visc!(params.rhs_diffξ_el,
-                             params.rhs_diffη_el,
-                             params.uprimitive,
-                             params.visc_coeff_dsgs,
-                             params.ω,
-                             params.mp.Tabs, params.mp.qn, params.mp.qsatt,
-                             params.uaux,
+            _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                             uprimitive,
+                             visc_coeff_dsgs,
+                             ω,
+                             Tabs, qn_mp, qsatt,
+                             uaux,
                              ngl,
-                             params.basis.dψ, params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy,
-                             params.metrics.dηdx, params.metrics.dηdy,
-                             params.mesh.connijk,
-                             params.inputs, params.rhs_el,
+                             dψ, Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             connijk_mesh,
+                             inputs, rhs_el,
                              iel, ieq,
-                             params.QT, DSGS(), SD, params.AD; Δ=Δ)
+                             QT, DSGS(), NSD_2D(), AD; Δ=Δ)
         end
     end
 
-    params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
 end
 
 function _viscous_rhs_el_2d!(uaux, qe, uprimitive,

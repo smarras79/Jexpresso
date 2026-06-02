@@ -396,24 +396,30 @@ end
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
-    
+
 end
 
 #----------------------------------------------------------------------
-# DYNAMIC SGS (Marras et al.) — residual-based artificial viscosity
+# DYNAMIC SGS (Marras et al., 2015, JCP 301:77-101) — residual-based
+# artificial viscosity, parameter free.
 #
-# The full DSGS coefficient is a per-element scalar built from
+# Per-element coefficient:
 #     μ_res = C1 · Δ² · max_i ‖R_i‖∞,Ω / ‖q_i − ⟨q_i⟩‖∞,Ω
 #     μ_max = C2 · Δ · max(|u| + c)
 #     μ_dsgs[iel] = max(0, min(μ_res, μ_max))
-# where the residual R_i is the BDF2-form inviscid residual evaluated on
-# the latest spectral-element solution.  Because both numerator and
-# denominator are global L∞ norms it must be precomputed once per RHS
-# call (compute_dsgs_viscosity! below); it cannot be inlined into the
-# (k,l) loop the way SMAG/VREM are.  SGS_diffusion(::DSGS, ::NSD_1D) is
-# the standard per-quadrature-point accessor — the caller updates
-# visc_coeffieq with the current element's μ_dsgs[iel] before entering
-# the (k,l) loop, so this returns it unchanged.
+# where R_i is the STRONG-form BDF2 residual of conservation law i —
+# (3qⁿ − 4qⁿ⁻¹ + qⁿ⁻²)/(2Δt) − M⁻¹·RHS. Since jexpresso assembles RHS
+# in weak form (post-DSS, pre-mass-matrix division), the rhs argument
+# is multiplied by Minv[ip] inline before the BDF2 minus, which makes
+# μ_dsgs dimensionally a kinematic viscosity (m²/s) regardless of SD.
+#
+# Both numerators and denominators are global L∞ norms so the
+# coefficient cannot be inlined into the (k,l) loop the way
+# SMAG/VREM are — it is precomputed once per RHS call into the
+# pre-allocated μ_dsgs[1:nelem] buffer. SGS_diffusion(::DSGS, ::SD)
+# is the standard per-quadrature-point accessor — the caller updates
+# visc_coeffieq with the current element's μ_dsgs[iel] before
+# entering the (k,l) loop, so this just returns it.
 #----------------------------------------------------------------------
 
 @inline function SGS_diffusion(visc_coeffieq, ieq,
@@ -425,108 +431,9 @@ end
                                ltheta_eqn=true,
                                lrichardson=false)
 
-    # DSGS is precomputed per element (see compute_dsgs_viscosity! below);
-    # visc_coeffieq[ieq] is set to that per-element value by the caller.
     return visc_coeffieq[ieq]
 
 end
-
-# Per-element DSGS viscosity. Writes μ_dsgs[1:nelem] in place — no
-# allocations. q is the current solution (npoin × ≥3), q1 = qⁿ⁻¹,
-# q2 = qⁿ⁻², rhs is the post-DSS inviscid RHS pre-mass-matrix division.
-# Built for the 1D CompEuler system (ρ, ρu, ρE); the algorithm uses
-# only generic conservation-law residuals so it does NOT dispatch on
-# the equations type.
-function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
-                                 ::DSGS, ::NSD_1D,
-                                 q, q1, q2, rhs, Δt, mesh)
-
-    TT    = eltype(μ_dsgs)
-    nelem = mesh.nelem
-    ngl   = mesh.ngl
-    invnp = one(TT)/(nelem*ngl)
-
-    γ   = TT(1.4)
-    C1  = TT(1.0)
-    C2  = TT(0.5)
-    eps = TT(1.0e-16)
-
-    # --- Pass 1: domain averages of the conservative variables ----------
-    ρ_avg  = zero(TT)
-    ρu_avg = zero(TT)
-    ρE_avg = zero(TT)
-    @inbounds for ie = 1:nelem
-        for i = 1:ngl
-            ip = mesh.connijk[ie,i,1,1]
-            ρ_avg  += q[ip,1]
-            ρu_avg += q[ip,2]
-            ρE_avg += q[ip,3]
-        end
-    end
-    ρ_avg  *= invnp
-    ρu_avg *= invnp
-    ρE_avg *= invnp
-
-    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩|, accumulated as scalars ---
-    denom1 = zero(TT)
-    denom2 = zero(TT)
-    denom3 = zero(TT)
-    @inbounds for ie = 1:nelem
-        for i = 1:ngl
-            ip = mesh.connijk[ie,i,1,1]
-            denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
-            denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
-            denom3 = max(denom3, abs(q[ip,3] - ρE_avg))
-        end
-    end
-    denom1 += eps
-    denom2 += eps
-    denom3 += eps
-
-    # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] -------
-    @inbounds for ie = 1:nelem
-        Δ = mesh.Δx[ie]/ngl
-
-        n1   = zero(TT)
-        n2   = zero(TT)
-        n3   = zero(TT)
-        uTmx = zero(TT)
-        @simd for i = 1:ngl
-            ip = mesh.connijk[ie,i,1,1]
-
-            R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - rhs[ip,1])
-            R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - rhs[ip,2])
-            R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - rhs[ip,3])
-            n1 = max(n1, R1)
-            n2 = max(n2, R2)
-            n3 = max(n3, R3)
-
-            ρl   = q[ip,1]
-            ul   = q[ip,2]/ρl
-            el   = q[ip,3]/ρl
-            Tl   = max(el - TT(0.5)*ul*ul, zero(TT))
-            uTmx = max(uTmx, abs(ul) + sqrt(γ*Tl))
-        end
-
-        μ_res    = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
-        μ_max    = C2*Δ*uTmx
-        μ_dsgs[ie] = max(zero(TT), min(μ_max, μ_res))
-    end
-
-    return nothing
-end
-
-#----------------------------------------------------------------------
-# 2D DYNAMIC SGS  (Marras et al., 2015, JCP 301:77-101)
-#
-# Conservation form  q = (ρ, ρu, ρv, ρθ) on 2D (x, y).
-# The paper writes the algorithm in primitive form (ρ, u, θ); here it
-# is rewritten in conservative form because that's what jexpresso
-# integrates. The per-element coefficient is built from the BDF2
-# residuals of all four conservation laws and is then split per
-# equation by the caller (no diffusion on ρ; μ_dsgs on ρu, ρv;
-# κ = Pr/(γ-1) · μ_dsgs on ρθ — Marras et al. eq. (10)).
-#----------------------------------------------------------------------
 
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
@@ -537,39 +444,128 @@ end
                                ltheta_eqn=true,
                                lrichardson=false)
 
-    # DSGS is precomputed per element (see compute_dsgs_viscosity!
-    # below) and packed into visc_coeffieq by the caller:
-    #   visc_coeffieq[1] = 0                          (mass)
-    #   visc_coeffieq[2] = μ_dsgs[iel]                (ρu)
-    #   visc_coeffieq[3] = μ_dsgs[iel]                (ρv)
-    #   visc_coeffieq[4] = Pr/(γ-1) · μ_dsgs[iel]     (ρθ)
     return visc_coeffieq[ieq]
 
 end
 
-function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
+# ---------------- 1D --------------------------------------------------
+#
+# Conservation form q = (ρ, ρu, ρE) on a 1D LGL mesh. The signature is
+# a hand-typed function barrier (concrete arrays, no params.* lookups)
+# so Julia can specialize and the inner loop is allocation-free.
+#
+function compute_dsgs_viscosity!(μ_dsgs::AbstractVector{TT},
+                                 ::DSGS, ::NSD_1D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δx::AbstractVector{TT},
+                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+
+    invnp = one(TT)/(nelem*ngl)
+    γ     = TT(1.4)
+    C1    = TT(1.0)
+    C2    = TT(0.5)
+    eps   = TT(1.0e-16)
+
+    # --- Pass 1: domain averages ---------------------------------------
+    ρ_avg  = zero(TT)
+    ρu_avg = zero(TT)
+    ρE_avg = zero(TT)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            ρ_avg  += q[ip,1]
+            ρu_avg += q[ip,2]
+            ρE_avg += q[ip,3]
+        end
+    end
+    ρ_avg  *= invnp
+    ρu_avg *= invnp
+    ρE_avg *= invnp
+
+    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    denom1 = zero(TT); denom2 = zero(TT); denom3 = zero(TT)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
+            denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
+            denom3 = max(denom3, abs(q[ip,3] - ρE_avg))
+        end
+    end
+    denom1 += eps; denom2 += eps; denom3 += eps
+
+    # --- Pass 3: per-element loop --------------------------------------
+    @inbounds for ie = 1:nelem
+        Δ = Δx[ie]/ngl
+
+        n1   = zero(TT); n2 = zero(TT); n3 = zero(TT)
+        uTmx = zero(TT)
+        @simd for i = 1:ngl
+            ip   = connijk[ie,i,1,1]
+            Mi   = Minv[ip]
+            inv2Δt = one(TT)/(2*Δt)
+
+            R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+            R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+            R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+            n1 = max(n1, R1); n2 = max(n2, R2); n3 = max(n3, R3)
+
+            ρl = q[ip,1]
+            ul = q[ip,2]/ρl
+            el = q[ip,3]/ρl
+            Tl = max(el - TT(0.5)*ul*ul, zero(TT))
+            uTmx = max(uTmx, abs(ul) + sqrt(γ*Tl))
+        end
+
+        μ_res      = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
+        μ_max      = C2*Δ*uTmx
+        μ_dsgs[ie] = max(zero(TT), min(μ_max, μ_res))
+    end
+
+    return nothing
+end
+
+# ---------------- 2D --------------------------------------------------
+#
+# Conservation form q = (ρ, ρu, ρv, ρθ) for the Euler-θ system. Δ is
+# min(Δx, Δy)/(N+1) (Marras et al. eq. 8), and c is built from the
+# perfect-gas-law for θ:  p = C0·(ρθ)^γ ⇒ c² = γp/ρ. Same
+# function-barrier discipline as the 1D variant — no params accesses,
+# no struct constructions, no allocations.
+#
+function compute_dsgs_viscosity!(μ_dsgs::AbstractVector{TT},
                                  ::DSGS, ::NSD_2D,
-                                 q, q1, q2, rhs, Δt, mesh)
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δelem::AbstractVector{TT},
+                                 PhysConst::PhysicalConst{TT},
+                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
 
-    TT    = eltype(μ_dsgs)
-    nelem = mesh.nelem
-    ngl   = mesh.ngl
     invnp = one(TT)/(nelem*ngl*ngl)
+    γ     = PhysConst.γ
+    C0    = PhysConst.C0
+    C1    = TT(1.0)
+    C2    = TT(0.5)
+    eps   = TT(1.0e-16)
 
-    γ   = TT(1.4)
-    C1  = TT(1.0)
-    C2  = TT(0.5)
-    eps = TT(1.0e-16)
-
-    PhysConst = PhysicalConst{TT}()
-
-    # --- Pass 1: domain averages of (ρ, ρu, ρv, ρθ) --------------------
+    # --- Pass 1: domain averages ---------------------------------------
     ρ_avg  = zero(TT); ρu_avg = zero(TT)
     ρv_avg = zero(TT); ρθ_avg = zero(TT)
     @inbounds for ie = 1:nelem
         for j = 1:ngl
             for i = 1:ngl
-                ip = mesh.connijk[ie,i,j,1]
+                ip = connijk[ie,i,j,1]
                 ρ_avg  += q[ip,1]
                 ρu_avg += q[ip,2]
                 ρv_avg += q[ip,3]
@@ -580,13 +576,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
     ρ_avg  *= invnp; ρu_avg *= invnp
     ρv_avg *= invnp; ρθ_avg *= invnp
 
-    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    # --- Pass 2: domain L∞ norms --------------------------------------
     denom1 = zero(TT); denom2 = zero(TT)
     denom3 = zero(TT); denom4 = zero(TT)
     @inbounds for ie = 1:nelem
         for j = 1:ngl
             for i = 1:ngl
-                ip = mesh.connijk[ie,i,j,1]
+                ip = connijk[ie,i,j,1]
                 denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
                 denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
                 denom3 = max(denom3, abs(q[ip,3] - ρv_avg))
@@ -597,24 +593,22 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
     denom1 += eps; denom2 += eps
     denom3 += eps; denom4 += eps
 
-    # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] ------
+    # --- Pass 3: per-element loop --------------------------------------
+    inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
-        # Marras's element size: min(Δx, Δy)/(N+1). mesh.Δelem[ie] is the
-        # min corner-to-corner distance in the element; ngl = N+1.
-        Δ = mesh.Δelem[ie]/ngl
+        Δ = Δelem[ie]/ngl
 
-        n1   = zero(TT); n2 = zero(TT)
-        n3   = zero(TT); n4 = zero(TT)
+        n1 = zero(TT); n2 = zero(TT); n3 = zero(TT); n4 = zero(TT)
         uTmx = zero(TT)
-
         for j = 1:ngl
             @simd for i = 1:ngl
-                ip = mesh.connijk[ie,i,j,1]
+                ip = connijk[ie,i,j,1]
+                Mi = Minv[ip]
 
-                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - rhs[ip,1])
-                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - rhs[ip,2])
-                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - rhs[ip,3])
-                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) - rhs[ip,4])
+                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - Mi*rhs[ip,4])
                 n1 = max(n1, R1); n2 = max(n2, R2)
                 n3 = max(n3, R3); n4 = max(n4, R4)
 
@@ -622,10 +616,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
                 ul = q[ip,2]/ρl
                 vl = q[ip,3]/ρl
                 θl = q[ip,4]/ρl
-                # Equation of state p = C0·(ρθ)^γ  ⇒  c² = γp/ρ
-                pl  = PhysConst.C0 * (ρl*θl)^γ
-                c_l = sqrt(max(γ*pl/ρl, zero(TT)))
-                uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + c_l)
+                pl = C0*(ρl*θl)^γ
+                cl = sqrt(max(γ*pl/ρl, zero(TT)))
+                uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + cl)
             end
         end
 
@@ -634,5 +627,44 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractVector,
         μ_dsgs[ie] = max(zero(TT), min(μ_max, μ_res))
     end
 
+    return nothing
+end
+
+# Helper: expand the per-element μ_dsgs onto every node so the value
+# can be written to PNG / VTU like any other field. Shared (DSS) nodes
+# get the value of the last element they belong to — that's fine for
+# visualization.
+function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractVector{TT},
+                                  μ_dsgs::AbstractVector{TT},
+                                  connijk::AbstractArray{TI,4},
+                                  nelem::Int, ngl::Int, SD::AbstractSpaceDimensions) where {TT,TI}
+    if SD === NSD_1D()
+        @inbounds for ie = 1:nelem
+            v = μ_dsgs[ie]
+            for i = 1:ngl
+                μ_dsgs_pnode[connijk[ie,i,1,1]] = v
+            end
+        end
+    elseif SD === NSD_2D()
+        @inbounds for ie = 1:nelem
+            v = μ_dsgs[ie]
+            for j = 1:ngl
+                for i = 1:ngl
+                    μ_dsgs_pnode[connijk[ie,i,j,1]] = v
+                end
+            end
+        end
+    elseif SD === NSD_3D()
+        @inbounds for ie = 1:nelem
+            v = μ_dsgs[ie]
+            for k = 1:ngl
+                for j = 1:ngl
+                    for i = 1:ngl
+                        μ_dsgs_pnode[connijk[ie,i,j,k]] = v
+                    end
+                end
+            end
+        end
+    end
     return nothing
 end
