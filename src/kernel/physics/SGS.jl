@@ -477,7 +477,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     γ     = TT(1.4)
     C1    = TT(1.0)
     C2    = TT(0.5)
-    eps   = TT(1.0e-16)
+    eps   = Base.eps(TT)
     neqs  = size(μ_dsgs, 2)
 
     # qe is accepted for forward compatibility with the 2D signature
@@ -599,7 +599,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     C1    = TT(1.0)
     C2    = TT(0.5)
     γm1   = γ - one(TT)
-    eps   = TT(1.0e-16)
+    eps   = Base.eps(TT)
 
     # --- Pass 1: domain averages of the perturbation (q − qe) ----------
     ρp_avg  = zero(TT); ρup_avg = zero(TT)
