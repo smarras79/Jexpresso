@@ -99,9 +99,9 @@ function compute_viscosity!(μ_SGS, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt
     ρ_avg  = zero(TT)
     ρu_avg = zero(TT)
     ρE_avg = zero(TT)
-    for e=1:mesh.nelem
+    @inbounds for ie=1:mesh.nelem
         for i=1:mesh.ngl
-            ip = mesh.conn[i,e]
+            ip = mesh.connijk[ie,i,1,1]
             ρ_avg  += q[ip,1]
             ρu_avg += q[ip,2]
             ρE_avg += q[ip,3]
@@ -112,25 +112,22 @@ function compute_viscosity!(μ_SGS, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt
     ρE_avg = ρE_avg / (mesh.nelem*mesh.ngl)
 
     #Get denominator infinity norms
-    # Fixed: removed duplicate allocation
     ρdiff  = zeros(TT, mesh.ngl,mesh.nelem)
     ρudiff = zeros(TT, mesh.ngl,mesh.nelem)
     ρEdiff = zeros(TT, mesh.ngl,mesh.nelem)
-    for e=1:mesh.nelem
+    @inbounds for ie=1:mesh.nelem
         for i=1:mesh.ngl
-            ip = mesh.conn[i,e]
+            ip = mesh.connijk[ie,i,1,1]
 
-            ρdiff[i,e]  = abs(q[ip,1] - ρ_avg)
-            ρudiff[i,e] = abs(q[ip,2] - ρu_avg)
-            ρEdiff[i,e] = abs(q[ip,3] - ρE_avg)
+            ρdiff[i,ie]  = abs(q[ip,1] - ρ_avg)
+            ρudiff[i,ie] = abs(q[ip,2] - ρu_avg)
+            ρEdiff[i,ie] = abs(q[ip,3] - ρE_avg)
         end
     end
     denom1 = maximum(ρdiff)  + TT(1.0e-16)
     denom2 = maximum(ρudiff) + TT(1.0e-16)
     denom3 = maximum(ρEdiff) + TT(1.0e-16)
 
-    # Fixed: use type parameter TT instead of hardcoded Float64
-    # Renamed T to Temp to avoid shadowing type parameter
     ρ    = @MVector zeros(TT, mesh.ngl)
     u    = @MVector zeros(TT, mesh.ngl)
     Temp = @MVector zeros(TT, mesh.ngl)
@@ -146,9 +143,9 @@ function compute_viscosity!(μ_SGS, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt
     @inbounds for ie =1:mesh.nelem
         Δ = mesh.Δx[ie]/mesh.ngl
         @simd for i=1:mesh.ngl
-            ip = mesh.conn[ie,i]
+            ip = mesh.connijk[ie,i,1,1]
 
-            Rρ[i] = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) + rhs[ip,1])
+            Rρ[i]  = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) + rhs[ip,1])
             Rρu[i] = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) + rhs[ip,2])
             RρE[i] = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) + rhs[ip,3])
 
@@ -161,7 +158,7 @@ function compute_viscosity!(μ_SGS, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt
         numer2 = maximum(Rρu)
         numer3 = maximum(RρE)
         μ_res = C1*Δ^2*denom1*max(numer1/denom1, numer2/denom2, numer3/denom3)
-        μ_max = C2*Δ*maximum(ρ)*maximum(abs.(u) .+ sqrt.(γ*Temp))
+        μ_max = C2*Δ*maximum(ρ)*maximum(abs.(u) .+ sqrt.(max.(γ*Temp, zero(TT))))
         μ_SGS[ie] = max(zero(TT), min(μ_max, μ_res))
     end
 
