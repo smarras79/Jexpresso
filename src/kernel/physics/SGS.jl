@@ -575,20 +575,18 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
 
-    # Marras et al. (JCP 2015) eq. (8-10), as written. The residual
-    # uses the strong-form quantity R_i = (BDF2 q)_i − (M⁻¹·rhs)_i so
-    # it is the consistent dq/dt for the spectral-element weak form
-    # — Minv brings the post-DSS weak-form residual back to a rate.
-    # That matches Marras / Nazarov's continuous notion of R.
+    # Marras et al. (JCP 2015) eq. (8-10), implemented exactly as in
+    # the lineage from fp/mymaster — the version that was already
+    # known to run the rising-bubble case to completion. Residual is
+    # the weak-form rhs[ip, i] directly (post-DSS, pre-mass-matrix
+    # division); attempts to "correct" it with M⁻¹·rhs (the strong-
+    # form residual) shrink the residual by ~10³ on 2D atmospheric
+    # meshes and effectively turn DSGS off, which is not what the
+    # algorithm was designed for in this lineage.
     #
     #     μ_res|e = C1 · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
     #     μ_max|e = C2 · Δ · (|u| + c)_∞,e
     #     μ|e     = max(0, min(μ_max, μ_res))
-    #
-    # μ is kinematic (m²/s); the kernel multiplies by ∂_x u to form
-    # the stress so the same numerical value plays the role of a
-    # dynamic viscosity (Pa·s) for the ρu equation — for atmospheric
-    # ρ ≈ 1 the two are numerically indistinguishable.
     #
     # Per-equation split (Marras eq. 10), with the user-supplied
     # inputs[:μ] multiplier on each slot:
@@ -597,8 +595,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     #     μ_dsgs[iel, 3] = visc_coeff[3] · μ              (ρv)
     #     μ_dsgs[iel, 4] = visc_coeff[4] · Pr/(γ-1) · μ   (ρθ)
     #
-    # qe is accepted in the signature for forward compatibility / 1D
-    # symmetry but the body uses the full conservative state.
+    # Minv and qe stay in the function-barrier signature so the rhs.jl
+    # call site doesn't have to change, but they are unused here.
 
     invnp = one(TT)/(nelem*ngl*ngl)
     γ     = PhysConst.γ
@@ -606,9 +604,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     C1    = TT(1.0)
     C2    = TT(0.5)
     γm1   = γ - one(TT)
-    eps   = Base.eps(TT)
+    eps   = TT(1.0e-16)
 
-    # --- Pass 1: domain averages of the conservative state q -----------
+    # --- Pass 1: domain averages of (ρ, ρu, ρv, ρθ) --------------------
     ρ_avg  = zero(TT); ρu_avg = zero(TT)
     ρv_avg = zero(TT); ρθ_avg = zero(TT)
     @inbounds for ie = 1:nelem
@@ -642,26 +640,24 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     denom1 += eps; denom2 += eps
     denom3 += eps; denom4 += eps
 
-    # --- Pass 3: per-element loop --------------------------------------
-    inv2Δt = one(TT)/(2*Δt)
+    # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] ------
     @inbounds for ie = 1:nelem
-        Δ  = Δelem[ie]/ngl
-        Δ2 = Δ*Δ
+        # Marras's element size: min(Δx, Δy)/(N+1). Δelem[ie] is the
+        # min corner-to-corner distance in the element; ngl = N+1.
+        Δ = Δelem[ie]/ngl
 
-        n1 = zero(TT); n2 = zero(TT); n3 = zero(TT); n4 = zero(TT)
+        n1   = zero(TT); n2 = zero(TT)
+        n3   = zero(TT); n4 = zero(TT)
         uTmx = zero(TT)
+
         for j = 1:ngl
             @simd for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                Mi = Minv[ip]
 
-                # Strong-form BDF2 residual: (BDF2 q) − M⁻¹·rhs gives a
-                # dq/dt-like quantity, consistent with the continuous
-                # R_i in Marras eq. (7).
-                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
-                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
-                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
-                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - Mi*rhs[ip,4])
+                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - rhs[ip,1])
+                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - rhs[ip,2])
+                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - rhs[ip,3])
+                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) - rhs[ip,4])
                 n1 = max(n1, R1); n2 = max(n2, R2)
                 n3 = max(n3, R3); n4 = max(n4, R4)
 
@@ -669,16 +665,15 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 ul = q[ip,2]/ρl
                 vl = q[ip,3]/ρl
                 θl = q[ip,4]/ρl
-                pl = C0*(ρl*θl)^γ
-                cl = sqrt(max(γ*pl/ρl, zero(TT)))
-                uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + cl)
+                # Equation of state p = C0·(ρθ)^γ  ⇒  c² = γp/ρ
+                pl  = C0 * (ρl*θl)^γ
+                c_l = sqrt(max(γ*pl/ρl, zero(TT)))
+                uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + c_l)
             end
         end
 
-        # Kinematic μ_max from Marras eq. (8):
+        μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
         μ_max = C2*Δ*uTmx
-        # Kinematic μ_res from Marras eq. (9):
-        μ_res = C1*Δ2*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
         μ     = max(zero(TT), min(μ_max, μ_res))
 
         μ_dsgs[ie,1] = zero(TT)
