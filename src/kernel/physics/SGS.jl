@@ -676,10 +676,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_max = C2*Δ*uTmx
         μ     = max(zero(TT), min(μ_max, μ_res))
 
-        μ_dsgs[ie,1] = zero(TT)
-        μ_dsgs[ie,2] = visc_coeff[2] * μ
-        μ_dsgs[ie,3] = visc_coeff[3] * μ
-        μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ
+        # Per-equation split — matches commit a65553f's kernel-level
+        # packing byte-for-byte (the inputs[:μ] / visc_coeff multiplier
+        # is intentionally NOT applied in 2D; reintroduce it here only
+        # after confirming theta_dsgs is back to its working baseline).
+        μ_dsgs[ie,1] = zero(TT)           # ρ : no mass diffusion
+        μ_dsgs[ie,2] = μ                  # ρu
+        μ_dsgs[ie,3] = μ                  # ρv
+        μ_dsgs[ie,4] = (Pr/γm1) * μ       # ρθ (Marras eq. 10b)
     end
 
     return nothing
