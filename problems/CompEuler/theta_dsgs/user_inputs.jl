@@ -35,15 +35,14 @@ function user_inputs()
         :energy_equation      => "theta",
         # Per-equation multiplier on the DSGS coefficient. The Marras
         # paper value is 1.0; turn an equation off with 0.0; throttle a
-        # too-aggressive coefficient with a value in (0, 1). The ρ
-        # entry must stay at 0.0 because the mass equation is left
-        # conservative (Marras eq. 10).
+        # too-aggressive coefficient with a value in (0, 1).
         #
-        # 1.0 is the historical baseline that runs to completion (the
-        # bubble diffuses noticeably but the simulation finishes). Dial
-        # it down to e.g. 0.1 if you want the bubble shape preserved
-        # at the cost of less shock-style damping.
-        :μ                    => [0.0, 1.0, 1.0, 1.0],
+        # Default is [0,0,0,0] — DSGS effectively OFF — so you can
+        # confirm the bubble runs cleanly without any DSGS. Then dial
+        # up: [0, 1, 1, 1] gives Marras's full coefficient; values in
+        # (0, 1) throttle. The ρ entry stays at 0.0 to keep the mass
+        # equation conservative (Marras eq. 10).
+        :μ                    => [0.0, 0.0, 0.0, 0.0],
         :Pr                   => 0.1,        # artificial Prandtl number (Marras eq. 10b)
         #---------------------------------------------------------------------------
         # Mesh
