@@ -35,14 +35,19 @@ function user_inputs()
         :energy_equation      => "theta",
         # Per-equation multiplier on the DSGS coefficient. The Marras
         # paper value is 1.0; turn an equation off with 0.0; throttle a
-        # too-aggressive coefficient with a value in (0, 1).
+        # too-aggressive coefficient with a value in (0, 1). The ρ
+        # entry stays at 0.0 to keep the mass equation conservative
+        # (Marras eq. 10).
         #
-        # Default is [0,0,0,0] — DSGS effectively OFF — so you can
-        # confirm the bubble runs cleanly without any DSGS. Then dial
-        # up: [0, 1, 1, 1] gives Marras's full coefficient; values in
-        # (0, 1) throttle. The ρ entry stays at 0.0 to keep the mass
-        # equation conservative (Marras eq. 10).
-        :μ                    => [0.0, 0.0, 0.0, 0.0],
+        # The full-Marras value [0, 1, 1, 1] saturates μ_max at start-up
+        # for this case (u = v = 0 everywhere, so the L∞ denominators
+        # for ρu/ρv collapse to eps and the R/denom ratio caps at the
+        # wave-speed bound C2·Δ·(|u|+c) ≈ 1.6·10⁴ m²/s before any flow
+        # develops; that's enough to drive ρθ past zero on the first
+        # RK substage). A 10% throttle gives a clean run on the
+        # default 10×10 mesh and behaves like a mild shock-capturing
+        # viscosity — adjust to taste:
+        :μ                    => [0.0, 0.1, 0.1, 0.1],
         :Pr                   => 0.1,        # artificial Prandtl number (Marras eq. 10b)
         #---------------------------------------------------------------------------
         # Mesh
