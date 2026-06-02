@@ -575,27 +575,27 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
 
-    # Nazarov (Int. J. Numer. Meth. Fluids 2013) eq. (3.5)
-    # (the FE-spectral-element-friendly DYNAMIC-viscosity form of the
-    # Marras et al. DSGS coefficient):
+    # Marras et al. (JCP 2015) eq. (8-10), as written. The residual
+    # uses the strong-form quantity R_i = (BDF2 q)_i − (M⁻¹·rhs)_i so
+    # it is the consistent dq/dt for the spectral-element weak form
+    # — Minv brings the post-DSS weak-form residual back to a rate.
+    # That matches Marras / Nazarov's continuous notion of R.
     #
-    #     μ_res|e = C1 · Δ² · ‖ρ − ⟨ρ⟩‖∞,Ω
-    #               · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
-    #     μ_max|e = C2 · Δ · ‖ρ‖∞,e · (|u| + c)_∞,e
+    #     μ_res|e = C1 · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
+    #     μ_max|e = C2 · Δ · (|u| + c)_∞,e
     #     μ|e     = max(0, min(μ_max, μ_res))
     #
-    # The strong-form residual R_i = (BDF2 q)_i − (M⁻¹·rhs)_i is the
-    # one consistent with the spectral-element weak form (Minv brings
-    # the post-DSS weak-form residual back to a dq/dt), and the outer
-    # ‖ρ − ⟨ρ⟩‖∞,Ω (resp. ‖ρ‖∞,e) restores the dynamic-viscosity
-    # scale [kg/(m·s)] that the 2D _expansion_visc! kernel expects
-    # when it multiplies by ∂_x u to form the stress.
+    # μ is kinematic (m²/s); the kernel multiplies by ∂_x u to form
+    # the stress so the same numerical value plays the role of a
+    # dynamic viscosity (Pa·s) for the ρu equation — for atmospheric
+    # ρ ≈ 1 the two are numerically indistinguishable.
     #
-    # Per-equation split (Marras eq. 10):
+    # Per-equation split (Marras eq. 10), with the user-supplied
+    # inputs[:μ] multiplier on each slot:
     #     μ_dsgs[iel, 1] = 0                              (no mass diffusion)
     #     μ_dsgs[iel, 2] = visc_coeff[2] · μ              (ρu)
     #     μ_dsgs[iel, 3] = visc_coeff[3] · μ              (ρv)
-    #     μ_dsgs[iel, 4] = visc_coeff[4] · Pr/(γ-1) · μ   (ρθ — eq. 10b)
+    #     μ_dsgs[iel, 4] = visc_coeff[4] · Pr/(γ-1) · μ   (ρθ)
     #
     # qe is accepted in the signature for forward compatibility / 1D
     # symmetry but the body uses the full conservative state.
@@ -642,14 +642,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     denom1 += eps; denom2 += eps
     denom3 += eps; denom4 += eps
 
-    # Nazarov's dynamic-viscosity scale factor [kg/m³] — the outer
-    # ‖ρ − ⟨ρ⟩‖∞,Ω in eq. (3.5). Promoting the otherwise kinematic
-    # μ_res to a dynamic viscosity is what the Jexpresso 2D
-    # _expansion_visc! kernel expects (it multiplies by ∂_x u and
-    # forms a stress that the conservation-form ρu equation
-    # consumes directly).
-    ρ_scale = denom1
-
     # --- Pass 3: per-element loop --------------------------------------
     inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
@@ -658,15 +650,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
         n1 = zero(TT); n2 = zero(TT); n3 = zero(TT); n4 = zero(TT)
         uTmx = zero(TT)
-        ρmx  = zero(TT)
         for j = 1:ngl
             @simd for i = 1:ngl
                 ip = connijk[ie,i,j,1]
                 Mi = Minv[ip]
 
                 # Strong-form BDF2 residual: (BDF2 q) − M⁻¹·rhs gives a
-                # dq/dt-like quantity, the right thing to compare with
-                # ‖q − ⟨q⟩‖∞,Ω on the denominator (cf. Nazarov 3.4–3.5).
+                # dq/dt-like quantity, consistent with the continuous
+                # R_i in Marras eq. (7).
                 R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
                 R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
                 R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
@@ -681,16 +672,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 pl = C0*(ρl*θl)^γ
                 cl = sqrt(max(γ*pl/ρl, zero(TT)))
                 uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + cl)
-                ρmx  = max(ρmx, ρl)
             end
         end
 
-        # Dynamic-viscosity μ_max from Nazarov eq. (3.6):
-        #   μ_max = C2 · Δ · ‖ρ‖∞,e · (|u| + c)_∞,e
-        μ_max = C2*Δ*ρmx*uTmx
-        # Dynamic-viscosity μ_res from Nazarov eq. (3.5):
-        #   μ_res = C1 · Δ² · ‖ρ − ⟨ρ⟩‖∞,Ω · max_i (R_i / denom_i)
-        μ_res = C1*Δ2*ρ_scale*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
+        # Kinematic μ_max from Marras eq. (8):
+        μ_max = C2*Δ*uTmx
+        # Kinematic μ_res from Marras eq. (9):
+        μ_res = C1*Δ2*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
         μ     = max(zero(TT), min(μ_max, μ_res))
 
         μ_dsgs[ie,1] = zero(TT)
