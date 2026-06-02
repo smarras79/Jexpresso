@@ -32,9 +32,10 @@ function user_inputs()
         :visc_model           => DSGS(),     # Marras et al. Dynamic SGS
         # Per-equation multiplier applied to the DSGS coefficient:
         # 1.0 reproduces Marras, 0.0 turns DSGS off on that equation,
-        # values in (0, 1) throttle the diffusion. ρ stays at 0 (mass
-        # equation is conservative).
-        :μ                    => [0.0, 1.0, 1.0],
+        # values in (0, 1) throttle the diffusion. Mass diffusion is
+        # kept on for the 1D Euler test (Marras's 1D analysis applies
+        # the same μ to every conservation law).
+        :μ                    => [1.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         # Mesh parameters and files:
         #---------------------------------------------------------------------------

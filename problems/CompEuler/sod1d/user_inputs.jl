@@ -30,8 +30,11 @@ function user_inputs()
         :lvisc                => true,
         :visc_model           => DSGS(),
         # Per-equation multiplier on the DSGS coefficient: 1.0 = Marras
-        # value, 0.0 turns it off on that equation, in (0,1) throttles.
-        :μ                    => [0.0, 1.0, 1.0],
+        # value, 0.0 turns it off on that equation, in (0, 1) throttles.
+        # Mass diffusion is kept on for 1D shock stabilization (Marras's
+        # 1D analysis includes it; switching it off lets the Sod shock
+        # ring).
+        :μ                    => [1.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         # Mesh parameters and files
         #---------------------------------------------------------------------------
