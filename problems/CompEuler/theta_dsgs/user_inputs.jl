@@ -33,10 +33,12 @@ function user_inputs()
         :lvisc                => true,
         :visc_model           => DSGS(),     # Marras et al. Dynamic SGS
         :energy_equation      => "theta",
-        # μ is ignored by DSGS (the per-element coefficient is built from
-        # the BDF2 residual), but we still need a length-neqs vector so
-        # params_setup's bookkeeping is happy.
-        :μ                    => [0.0, 0.0, 0.0, 0.0],
+        # Per-equation multiplier on the DSGS coefficient. The Marras
+        # value is 1.0; turn an equation off with 0.0; throttle a
+        # too-aggressive coefficient with a value in (0, 1). The ρ
+        # entry must stay at 0.0 because the mass equation is left
+        # conservative.
+        :μ                    => [0.0, 1.0, 1.0, 1.0],
         :Pr                   => 0.1,        # artificial Prandtl number (Marras eq. 10b)
         #---------------------------------------------------------------------------
         # Mesh

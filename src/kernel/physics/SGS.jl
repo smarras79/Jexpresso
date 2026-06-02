@@ -462,6 +462,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  qe::AbstractMatrix{TT},
                                  rhs::AbstractMatrix{TT},
                                  Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
                                  Δt::TT,
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
@@ -471,7 +472,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     # unified formula gives ONE residual-based coefficient per element;
     # for visualisation parity with the 2D version we replicate it into
     # every column of μ_dsgs[iel, :] so the caller / VTU sees per-
-    # equation slots even when they are identical.
+    # equation slots even when they are identical. The user-supplied
+    # inputs[:μ] vector enters as a per-equation multiplicative
+    # factor so the user can scale the DSGS contribution down (or off)
+    # equation by equation.
 
     invnp = one(TT)/(nelem*ngl)
     γ     = TT(1.4)
@@ -537,9 +541,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_max = C2*Δ*uTmx
         μ     = max(zero(TT), min(μ_max, μ_res))
 
-        # Same coefficient on every equation (1D E-form, Marras eq. 10).
+        # Same coefficient on every equation (1D E-form, Marras eq. 10),
+        # scaled per equation by the user-supplied inputs[:μ] vector.
         for ieq = 1:neqs
-            μ_dsgs[ie, ieq] = μ
+            μ_dsgs[ie, ieq] = visc_coeff[ieq] * μ
         end
     end
 
@@ -562,6 +567,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  qe::AbstractMatrix{TT},
                                  rhs::AbstractMatrix{TT},
                                  Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
                                  Δt::TT,
                                  connijk::AbstractArray{TI,4},
                                  Δelem::AbstractVector{TT},
@@ -570,7 +576,11 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
 
     # Marras-style Dynamic SGS, atmospheric / hydrostatic-aware variant
-    # (Marras et al. JCP 2015 + Marras / NUMA practice):
+    # (Marras et al. JCP 2015 + Marras / NUMA practice). The user-
+    # supplied inputs[:μ] vector enters via visc_coeff as a PER-
+    # EQUATION multiplicative factor on the DSGS coefficient — a 0.0
+    # entry turns DSGS off on that equation, a value < 1 throttles it,
+    # 1.0 reproduces the un-scaled Marras value.
     #
     #   * normalisation that EXEMPTS THE HYDROSTATIC MODE while keeping
     #     the perturbation visible — the denominators are formed on
@@ -671,10 +681,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         κ_res = C1*Δ2*(n4/denom4)
         κ_θ   = (Pr/γm1) * max(zero(TT), min(μ_max, κ_res))
 
-        μ_dsgs[ie,1] = zero(TT)   # ρ : no diffusion (Marras eq. 10)
-        μ_dsgs[ie,2] = μ_uv
-        μ_dsgs[ie,3] = μ_uv
-        μ_dsgs[ie,4] = κ_θ
+        # User-supplied per-equation multiplier (inputs[:μ]) scales the
+        # DSGS contribution on each equation independently. A 0.0 entry
+        # turns DSGS off on that equation, a value < 1 throttles it.
+        μ_dsgs[ie,1] = zero(TT)             # ρ : no diffusion (Marras eq. 10)
+        μ_dsgs[ie,2] = visc_coeff[2] * μ_uv
+        μ_dsgs[ie,3] = visc_coeff[3] * μ_uv
+        μ_dsgs[ie,4] = visc_coeff[4] * κ_θ
     end
 
     return nothing

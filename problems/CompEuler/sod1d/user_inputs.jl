@@ -29,7 +29,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :visc_model           => DSGS(),
-        :μ                    => [0.0, 0.0, 0.0],
+        # Per-equation multiplier on the DSGS coefficient: 1.0 = Marras
+        # value, 0.0 turns it off on that equation, in (0,1) throttles.
+        :μ                    => [0.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         # Mesh parameters and files
         #---------------------------------------------------------------------------

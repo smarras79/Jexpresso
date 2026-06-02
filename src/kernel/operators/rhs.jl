@@ -927,7 +927,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                 params.uaux, params.qp.qnm2, params.qp.qnm1,
                                 params.qp.qe,
-                                params.RHS, params.Minv, TT(params.Δt),
+                                params.RHS, params.Minv, params.visc_coeff,
+                                TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δx,
                                 Int(nelem), Int(ngl))
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
@@ -996,7 +997,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                 params.uaux, params.qp.qnm2, params.qp.qnm1,
                                 params.qp.qe,
-                                params.RHS, params.Minv, TT(params.Δt),
+                                params.RHS, params.Minv, params.visc_coeff,
+                                TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δelem,
                                 PHYS_CONST, Pr_TT,
                                 Int(params.mesh.nelem), Int(params.mesh.ngl))
