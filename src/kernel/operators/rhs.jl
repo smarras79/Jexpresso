@@ -1711,6 +1711,11 @@ end
                           iel, ieq,
                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
 
+    # Total-energy form: the energy slot also needs the viscous-work term
+    # ∂(τ_ij u_j)/∂x_i so momentum dissipation is returned to the energy
+    # budget. ρθ has no such term, so the augmentation is gated off for it.
+    add_tau_u = (ieq == 4) && (inputs[:energy_equation] != "theta")
+
     for l = 1:ngl
         ωl = ω[l]
         for k = 1:ngl
@@ -1736,8 +1741,36 @@ end
                 auxi = dqdξ*dξdy_kl + dqdη*dηdy_kl
                 dqdy = visc_coeffieq[ieq]*auxi
 
-                ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
-                ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac
+                flux_x = dqdx
+                flux_y = dqdy
+
+                if add_tau_u
+                    dudξ = 0.0; dudη = 0.0
+                    dvdξ = 0.0; dvdη = 0.0
+                    @turbo for ii = 1:ngl
+                        dudξ += dψ[ii,k]*uprimitiveieq[2,ii,l]
+                        dudη += dψ[ii,l]*uprimitiveieq[2,k,ii]
+                        dvdξ += dψ[ii,k]*uprimitiveieq[3,ii,l]
+                        dvdη += dψ[ii,l]*uprimitiveieq[3,k,ii]
+                    end
+                    dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+                    dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+                    dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+                    dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+                    div_u = dudx + dvdy
+
+                    μ     = visc_coeffieq[2]
+                    τ_xx  = 2.0*μ*dudx - (2.0/3.0)*μ*div_u
+                    τ_yy  = 2.0*μ*dvdy - (2.0/3.0)*μ*div_u
+                    τ_xy  = μ*(dudy + dvdx)
+                    u_loc = uprimitiveieq[2,k,l]
+                    v_loc = uprimitiveieq[3,k,l]
+                    flux_x += τ_xx*u_loc + τ_xy*v_loc
+                    flux_y += τ_xy*u_loc + τ_yy*v_loc
+                end
+
+                ∇ξ∇u_kl = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
+                ∇η∇u_kl = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
 
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]
@@ -1990,6 +2023,9 @@ end
     conn_el = @view connijk[iel,:,:,:]
     lsponge = inputs[:lsponge]
     zs      = inputs[:zsponge]
+    # Total-energy form: add ∂(τ_ij u_j)/∂x_i to the energy equation. Gated
+    # off for the ρθ form, which carries no such term.
+    add_tau_u = (ieq == 5) && (inputs[:energy_equation] != "theta")
     for m = 1:ngl
         for l = 1:ngl
 
@@ -2041,9 +2077,54 @@ end
                     auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
                     dqdz = visc_coeffieq[ieq]*auxi
 
-                    ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac * σμ
-                    ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac * σμ
-                    ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac * σμ
+                    flux_x = dqdx
+                    flux_y = dqdy
+                    flux_z = dqdz
+
+                    if add_tau_u
+                        dudξ = 0.0; dudη = 0.0; dudζ = 0.0
+                        dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
+                        dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
+                        @turbo for ii = 1:ngl
+                            dudξ += dψ[ii,k]*uprimitiveieq[2,ii,l,m]
+                            dudη += dψ[ii,l]*uprimitiveieq[2,k,ii,m]
+                            dudζ += dψ[ii,m]*uprimitiveieq[2,k,l,ii]
+                            dvdξ += dψ[ii,k]*uprimitiveieq[3,ii,l,m]
+                            dvdη += dψ[ii,l]*uprimitiveieq[3,k,ii,m]
+                            dvdζ += dψ[ii,m]*uprimitiveieq[3,k,l,ii]
+                            dwdξ += dψ[ii,k]*uprimitiveieq[4,ii,l,m]
+                            dwdη += dψ[ii,l]*uprimitiveieq[4,k,ii,m]
+                            dwdζ += dψ[ii,m]*uprimitiveieq[4,k,l,ii]
+                        end
+                        dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
+                        dudy = dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm
+                        dudz = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm
+                        dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
+                        dvdy = dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm
+                        dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
+                        dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
+                        dwdy = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm
+                        dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
+                        div_u = dudx + dvdy + dwdz
+
+                        μ    = visc_coeffieq[2]
+                        τ_xx = 2.0*μ*dudx - (2.0/3.0)*μ*div_u
+                        τ_yy = 2.0*μ*dvdy - (2.0/3.0)*μ*div_u
+                        τ_zz = 2.0*μ*dwdz - (2.0/3.0)*μ*div_u
+                        τ_xy = μ*(dudy + dvdx)
+                        τ_xz = μ*(dudz + dwdx)
+                        τ_yz = μ*(dvdz + dwdy)
+                        u_loc = uprimitiveieq[2,k,l,m]
+                        v_loc = uprimitiveieq[3,k,l,m]
+                        w_loc = uprimitiveieq[4,k,l,m]
+                        flux_x += τ_xx*u_loc + τ_xy*v_loc + τ_xz*w_loc
+                        flux_y += τ_xy*u_loc + τ_yy*v_loc + τ_yz*w_loc
+                        flux_z += τ_xz*u_loc + τ_yz*v_loc + τ_zz*w_loc
+                    end
+
+                    ∇ξ∇u_klm = (dξdx_klm*flux_x + dξdy_klm*flux_y + dξdz_klm*flux_z)*ωJac * σμ
+                    ∇η∇u_klm = (dηdx_klm*flux_x + dηdy_klm*flux_y + dηdz_klm*flux_z)*ωJac * σμ
+                    ∇ζ∇u_klm = (dζdx_klm*flux_x + dζdy_klm*flux_y + dζdz_klm*flux_z)*ωJac * σμ
 
                     @turbo for i = 1:ngl
                         dhdξ_ik = dψ[i,k]
