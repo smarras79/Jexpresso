@@ -255,7 +255,7 @@ To add your own new problem, see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
 
 
 
-## Example 1a: Shock tube with dynamic SGS for shock capturing: Fig (a) below.
+## Example 1a: Shock tube with dynamic SGS for shock capturing:
 DynSGS by Marras et al. 2015 and later.
 ```bash
 push!(empty!(ARGS), "CompEuler", "sod1d");
@@ -266,9 +266,9 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-## Example 1b: 1D acoustic wave: Fig (b) below.
+## Example 1b: 1D acoustic wave:
 ```bash
-push!(empty!(ARGS), "CompEuler", "case");
+push!(empty!(ARGS), "CompEuler", "case1");
 include("./src/Jexpresso.jl")
 ```
 
