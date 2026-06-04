@@ -32,13 +32,18 @@ by1 = 100.0;        // top         (height = 100)
 // Element-count "knobs" on each perimeter segment.
 // Left/right walls are split at y = by1 so that the periodic counts
 // (lines 6 ↔ 10 lower, lines 7 ↔ 9 upper) match by construction.
-// Coarse mesh: smallest element ~20 m near the building, ~36 m in the
+// Coarse mesh: smallest element ~17 m near the building, ~37 m in the
 // far field (well above the requested 5 m floor).
+//
+// IMPORTANT: with Mesh.RecombinationAlgorithm = 3 (Blossom Full-Quad)
+// each Transfinite Line MUST have an even number of segments,
+// otherwise gmsh emits "1D mesh cannot be divided by 2" and the
+// boundary loop fails to close.  Every count below is even.
 nx_A    = 18;   // bottom strip 0   ... 350   (Δx ≈ 19.4 m)
-nx_C    = 5;    // building top   350 ... 450   (Δx = 20 m)
+nx_C    = 6;    // building top   350 ... 450   (Δx ≈ 16.7 m)
 nx_E    = 28;   // bottom strip 450 ... 1000  (Δx ≈ 19.6 m)
-ny_low  = 5;    // y in [0,   100]              (Δy = 20 m)
-ny_high = 25;   // y in [100, 1000]             (Δy = 36 m)
+ny_low  = 6;    // y in [0,   100]              (Δy ≈ 16.7 m)
+ny_high = 24;   // y in [100, 1000]             (Δy = 37.5 m)
 
 // Point size only used as a fallback away from transfinite lines
 lc = (xmax - xmin) / (nx_A + nx_C + nx_E);
