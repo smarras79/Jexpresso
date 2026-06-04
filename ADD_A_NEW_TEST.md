@@ -12,8 +12,8 @@ problems/
     └── your_case/            ← This name is arbitrary
         ├── user_inputs.jl     ← solver parameters (time step, mesh, output, …)
         ├── initialize.jl      ← initial conditions
-        ├── user_flux.jl       ← flux vectors F and G
-        ├── user_source.jl     ← source terms
+        ├── user_flux.jl       ← flux vectors F, G, H or whichever you define in your Eqs.
+        ├── user_source.jl     ← sources
         ├── user_bc.jl         ← boundary conditions
         └── user_primitives.jl ← conversion from conserved to output variables
 ```
