@@ -310,6 +310,32 @@ function params_setup(sem,
         visc_coeff = [0.0]
     end
 
+    # Per-element, per-equation DSGS viscosity buffer.
+    #   μ_dsgs[iel, ieq] is filled by compute_dsgs_viscosity! every RHS
+    #   call (allocation-free). For 1D E-form Marras gives a single μ
+    #   shared by all equations; the same value is written to every
+    #   column so the VTU / PNG output sees per-equation slots. For 2D
+    #   θ-form the columns carry distinct per-equation indicators:
+    #     [:,1] = ν_ρ (diagnostic, not applied)
+    #     [:,2] = μ_ρu          [:,3] = μ_ρv
+    #     [:,4] = κ_θ  (already scaled by Pr/(γ-1))
+    if inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
+        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
+                                                Int64(sem.mesh.nelem), Int64(qp.neqs))
+        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat,
+                                                Int64(sem.mesh.npoin), Int64(qp.neqs))
+    else
+        μ_dsgs       = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+    end
+
+    # Per-equation scratch the 2D DSGS path uses to pack the
+    # per-element coefficient before calling _expansion_visc!:
+    #   visc_coeff_dsgs[1] = 0                          (mass)
+    #   visc_coeff_dsgs[2..end-1] = μ_dsgs[iel]         (momentum)
+    #   visc_coeff_dsgs[end]      = Pr/(γ-1)·μ_dsgs[iel] (energy/θ)
+    visc_coeff_dsgs = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+
     # setup timer
     timers = Dict{String, MPIFunctionTimer}()
 
@@ -351,7 +377,7 @@ function params_setup(sem,
 		  basis=sem.basis[1], basis_lag = sem.basis[2],
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
-                  inputs, VT = inputs[:visc_model], visc_coeff,
+                  inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
@@ -384,7 +410,7 @@ function params_setup(sem,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
-                  thermo_params, VT = inputs[:visc_model], visc_coeff,
+                  thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,

@@ -118,6 +118,49 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
     end
 end
 
+#
+# Plot the per-element DSGS viscosity as a piecewise-constant staircase
+# against x.  μ_dsgs[1:nelem, 1:neqs] is filled by compute_dsgs_viscosity!
+# (one column per equation).  By default we draw column ieq=2 (the
+# momentum equation) since for 1D E-form Marras gives a single μ shared
+# by every equation. Every node of an element gets that element's
+# value so the staircase is rendered cleanly.
+#
+function plot_dsgs_1d(mesh::St_mesh, μ_dsgs::AbstractMatrix, t, OUTPUT_DIR::String, inputs;
+                      iout = 1, varname = "μ_dsgs", ieq = min(2, size(μ_dsgs, 2)))
+
+    nelem = mesh.nelem
+    ngl   = mesh.ngl
+
+    xs = Vector{Float64}(undef, nelem*ngl)
+    ys = Vector{Float64}(undef, nelem*ngl)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = mesh.connijk[ie, i, 1, 1]
+            xs[(ie-1)*ngl + i] = mesh.coords[ip, 1]
+            ys[(ie-1)*ngl + i] = μ_dsgs[ie, ieq]
+        end
+    end
+    sort_idx = sortperm(xs)
+
+    plt = Plots.plot(xs[sort_idx], ys[sort_idx];
+                     line = (:red, 2),
+                     marker = (:circle, 3, :red),
+                     title = string(varname, " (DSGS)  t = ", round(t, digits=4)),
+                     xlabel = "x",
+                     ylabel = varname,
+                     titlefontsize = 18,
+                     guidefontsize = 14,
+                     legendfontsize = 12,
+                     tickfontsize = 12,
+                     legend = false,
+                     size = (600, 400))
+
+    fout_name = string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".png")
+    Plots.savefig(plt, fout_name)
+    plt
+end
+
 function plot_1d_grid(mesh::St_mesh)
 
     plt = Plots.plot() #Clear plot
