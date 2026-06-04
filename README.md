@@ -250,6 +250,8 @@ Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected
      style="float: left; margin-right: 5px;" />
 
 # Examples available in this branch:
+Below are just a few pre-packaged examples available in Jexpresso.
+To add your own new problem, see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
 
 ## Example 1: Shock tube with dynamic SGS for shock capturing: Fig (a) below.
 DynSGS by Marras et al. 2015 and later.
