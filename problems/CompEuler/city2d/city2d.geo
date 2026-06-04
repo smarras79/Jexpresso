@@ -100,7 +100,15 @@ Physical Curve("top")         = {8};
 Physical Curve("periodicx")   = {6, 7, 9, 10};
 
 Mesh.ElementOrder           = 1;
-Mesh.Algorithm              = 8;   // Frontal-Delaunay for Quads
-Mesh.RecombinationAlgorithm = 3;   // Blossom Full-Quad: guarantees only quads
+Mesh.Algorithm              = 8;   // Frontal-Delaunay for Quads (quad-friendly triangulation)
+Mesh.RecombinationAlgorithm = 1;   // Blossom (NOT Full-Quad).
+// Full-Quad (= 3) is incompatible with Transfinite Line: gmsh issues
+// "Full-quad recombination only compatible with transfinite meshes if
+// those are performed first" and leaves stubborn boundary triangles in
+// the .msh even when the summary reports "0 triangles", which trips
+// GridapGmsh's "only one element type per dimension" check.
+// Plain Blossom (= 1) pairs every triangle as long as the closed-loop
+// boundary has an even total segment count (it does: 176).
+//
 // NB: do NOT set Mesh.SubdivisionAlgorithm here — that one produced a
 // non-conforming mesh (the earlier "wedges from the origin" artefact).
