@@ -29,25 +29,9 @@ A CPU and GPU research software for the numerical solution of a system of arbitr
 Suggested Julia version: 1.11.2 or higher.
 
 # Installation:
-Use the installer as described in [INSTALLATION.md](INSTALLATION.md)
+Use the installer as described in [INSTALL.md](INSTALL.md)
 
 The installer will install all the necessary packages with the correct versions.
-
-Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
-
-```
-MPI 0.20.22
-MPIPreferences 0.1.11
-PackageCompiler 2.2.1
-Thermodynamics 0.12.7
-PrettyTables 2.4.0
-Crayons 4.1.1
-UnicodePlots 3.7.2
-Gridap v0.18.12
-GridapDistributed v0.4.7
-GridapGmsh v0.7.2
-GridapP4est v0.3.11
-```
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
@@ -278,7 +262,7 @@ Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
 
-Examples available in this branch:
+# Examples available in this branch:
 
 Example 1: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
@@ -311,8 +295,6 @@ include("./src/Jexpresso.jl")
 <img src="assets/wave1d-v.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
-
-
 
 For ready to run tests, there are the currently available equations names:
 
