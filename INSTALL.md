@@ -84,3 +84,6 @@ include("./src/Jexpresso.jl")
 ```
 
 If the test runs to completion, your Jexpresso installation is ready to go. 🎉
+
+# To run other tests that are already in Jexpresso or to add your own new problem,
+see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md) 
