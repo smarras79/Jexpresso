@@ -1,14 +1,5 @@
 # ANNOUNCEMENT:
 
-Dear all, 
-
-as we have noticed an increased interest in Jexpresso (this is amazing, thank you for this!), we added a script to [automate the installation](INSTALLATION.md) of Jexpresso.
-
-Moreover, we have added **ERA5** reading capabilities and the branch for that will be merged soon into master, as well as an improved handling of boundary conditions from the user's perspective.
-
-Thank you your interest in the Jexpresso!
-
-
 # <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
@@ -29,25 +20,13 @@ A CPU and GPU research software for the numerical solution of a system of arbitr
 Suggested Julia version: 1.11.2 or higher.
 
 # Installation:
-Use the installer as described in [INSTALL.md](INSTALL.md)
-
-The installer will install all the necessary packages with the correct versions.
+Follow the instructins in [INSTALL.md](INSTALL.md)
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
 Please cite Jexpresso using:
 
 ```
-@inproceedings{marrasJexpresso,
-  author    = {S. Marras and Y. Tissaoui and H. Wang and S. Stechmann}
-  title     = {JEXPRESSO V0. 1: A JULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON CPUs AND GPUs.},
-  booktitle = {Proceedings of the 36th Parallel CFD international conference 2025},
-  year      = {2025},
-  address   = {Merida, Yucatan, Mexico},
-  month     = {November},
-  organization = {UNAM},
-}
-
 @article{tissaoui2024,
   author = {Y. Tissaoui and J. F. Kelly and S. Marras}
   title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
@@ -56,14 +35,24 @@ Please cite Jexpresso using:
   year = {2024},
   journal = {App. Math. Comput.},
 }
+
+@inproceedings{marrasJexpresso,
+  author    = {S. Marras and Y. Tissaoui and H. Wang and S. Stechmann}
+  title     = {Jexpresso V0.1.0: a Julia-language, user-friendly, multi-physics parallel solver for the solution of conservation laws on CPUs and GPUs},
+  booktitle = {Proceedings of the 36th Parallel CFD international conference 2025},
+  year      = {2025},
+  address   = {Merida, Yucatan, Mexico},
+  month     = {November},
+  organization = {UNAM},
+}
 ```
 
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
-$$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf q} + {\bf S}({\bf q}) + ~{\rm b.c.}$$
+$$\delta\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf q} + {\bf S}({\bf q}) + ~{\rm b.c.}$$
 
-where the vectors ${\bf q}$, ${\bf F}$, and ${\bf S}$ are problem-dependent as shown below,
+where $\delta = 0,1$ simply indicates time-independent equations the vectors ${\bf q}$, ${\bf F}$, and ${\bf S}$ are problem-dependent as shown below,
 and are taken to be zero vectors of the appropriate size when not explicitly stated otherwise.
 
 The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/stable/) is used for time discretization and stepping.
