@@ -32,11 +32,13 @@ by1 = 100.0;        // top         (height = 100)
 // Element-count "knobs" on each perimeter segment.
 // Left/right walls are split at y = by1 so that the periodic counts
 // (lines 6 ↔ 10 lower, lines 7 ↔ 9 upper) match by construction.
-nx_A    = 35;   // bottom strip 0   ... 350
-nx_C    = 10;   // building top   350 ... 450
-nx_E    = 55;   // bottom strip 450 ... 1000
-ny_low  = 10;   // y in [0,   100]
-ny_high = 45;   // y in [100, 1000]
+// Coarse mesh: smallest element ~20 m near the building, ~36 m in the
+// far field (well above the requested 5 m floor).
+nx_A    = 18;   // bottom strip 0   ... 350   (Δx ≈ 19.4 m)
+nx_C    = 5;    // building top   350 ... 450   (Δx = 20 m)
+nx_E    = 28;   // bottom strip 450 ... 1000  (Δx ≈ 19.6 m)
+ny_low  = 5;    // y in [0,   100]              (Δy = 20 m)
+ny_high = 25;   // y in [100, 1000]             (Δy = 36 m)
 
 // Point size only used as a fallback away from transfinite lines
 lc = (xmax - xmin) / (nx_A + nx_C + nx_E);
@@ -92,4 +94,8 @@ Physical Curve("bottom")      = {1, 2, 3, 4, 5};
 Physical Curve("top")         = {8};
 Physical Curve("periodicx")   = {6, 7, 9, 10};
 
-Mesh.ElementOrder = 1;
+Mesh.ElementOrder           = 1;
+Mesh.Algorithm              = 8;   // Frontal-Delaunay for Quads
+Mesh.RecombinationAlgorithm = 3;   // Blossom Full-Quad: guarantees only quads
+// NB: do NOT set Mesh.SubdivisionAlgorithm here — that one produced a
+// non-conforming mesh (the earlier "wedges from the origin" artefact).
