@@ -99,16 +99,21 @@ Physical Curve("bottom")      = {1, 2, 3, 4, 5};
 Physical Curve("top")         = {8};
 Physical Curve("periodicx")   = {6, 7, 9, 10};
 
-Mesh.ElementOrder           = 1;
-Mesh.Algorithm              = 8;   // Frontal-Delaunay for Quads (quad-friendly triangulation)
-Mesh.RecombinationAlgorithm = 1;   // Blossom (NOT Full-Quad).
-// Full-Quad (= 3) is incompatible with Transfinite Line: gmsh issues
-// "Full-quad recombination only compatible with transfinite meshes if
-// those are performed first" and leaves stubborn boundary triangles in
-// the .msh even when the summary reports "0 triangles", which trips
-// GridapGmsh's "only one element type per dimension" check.
-// Plain Blossom (= 1) pairs every triangle as long as the closed-loop
-// boundary has an even total segment count (it does: 176).
+Mesh.ElementOrder         = 1;
+Mesh.SubdivisionAlgorithm = 1;     // Guarantees 100% quads (splits any
+                                   // surviving triangle into 3 quads, each
+                                   // existing quad into 4, all conforming
+                                   // via shared edge-midpoint nodes).
 //
-// NB: do NOT set Mesh.SubdivisionAlgorithm here — that one produced a
-// non-conforming mesh (the earlier "wedges from the origin" artefact).
+// Why not RecombinationAlgorithm = 1 or 3?  Plain Blossom (= 1) can
+// strand triangles in interior sub-regions around the building cutout,
+// and Full-Quad (= 3) is incompatible with our Transfinite Line setup —
+// either way GridapGmsh sees mixed element types and rejects the mesh.
+// SubdivisionAlgorithm is the only path that guarantees a homogeneous
+// all-quad output for this topology.
+//
+// Why no "wedges from the origin" this time?  That earlier artefact was
+// caused by the explicit `Periodic Curve{...}` directive interacting
+// with subdivision (slave-node remapping leaked to node 1).  Periodicity
+// here is now handled by Jexpresso via the "periodicx" physical tag, so
+// no gmsh-level periodic directive is needed.
