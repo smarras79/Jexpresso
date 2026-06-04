@@ -1,5 +1,3 @@
-# ANNOUNCEMENT:
-
 # <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
