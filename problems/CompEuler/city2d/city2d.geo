@@ -4,16 +4,33 @@
 // Domain:   [0, 1000] x [0, 1000] m
 // Building: 100 x 100 m, lower-left at (x,y) = (350, 0)
 //
-// Single unstructured surface, all-quad via Recombine, with
-// Transfinite Line on the perimeter to (a) control element size,
-// and (b) force matching node counts on the two periodic vertical
-// walls — required by Jexpresso's "periodicx" pairing.
+// Five conforming quad blocks fitted around the building.  Locally
+// each block is meshed transfinitely + recombined, so every element
+// is a plain 4-node quad and the whole mesh has exactly one element
+// type in dimension 2 (which is what GridapGmsh requires).  Globally
+// the mesh is multi-region with different element densities, i.e. the
+// usual "unstructured" pattern for an obstacle problem — the previous
+// single-surface attempts all tripped GridapGmsh's
+// "Only one element type per dimension allowed" check.
+//
+//     P9 ------- P8 ----- P7 -------- P6   y = 1000
+//     |    B     |   C    |     E     |
+//     |          |        |           |
+//     P10 ----- P11 ---- P12 -------- P5   y = 100
+//     |    A     | bldg.  |     D     |
+//     |          |(solid) |           |
+//     P1 ------- P2 ----- P3 -------- P4   y = 0
+//     x = 0    x=350    x=450        x = 1000
 //
 // Physical groups:
 //   "bottom"    : full bottom of the domain including the building profile
 //   "top"       : top wall
 //   "periodicx" : both vertical walls (left and right)
-//   "domain"    : interior surface
+//   "domain"    : interior
+//
+// Node counts on the left and right periodic walls match by
+// construction (ny_low on the lower segment, ny_high on the upper),
+// which is required by Jexpresso's "periodicx" pairing.
 //
 // Generate with:
 //   gmsh -2 city2d.geo -o ../../../meshes/gmsh_grids/city2d.msh
@@ -25,95 +42,99 @@ ymin = 0.0;
 ymax = 1000.0;
 
 // Building extent
-bx0 = 350.0;        // left foot
-bx1 = 450.0;        // right foot  (length = 100)
-by1 = 100.0;        // top         (height = 100)
+bx0 = 350.0;
+bx1 = 450.0;
+by1 = 100.0;
 
-// Element-count "knobs" on each perimeter segment.
-// Left/right walls are split at y = by1 so that the periodic counts
-// (lines 6 ↔ 10 lower, lines 7 ↔ 9 upper) match by construction.
 // Coarse mesh: smallest element ~17 m near the building, ~37 m in the
 // far field (well above the requested 5 m floor).
-//
-// IMPORTANT: with Mesh.RecombinationAlgorithm = 3 (Blossom Full-Quad)
-// each Transfinite Line MUST have an even number of segments,
-// otherwise gmsh emits "1D mesh cannot be divided by 2" and the
-// boundary loop fails to close.  Every count below is even.
-nx_A    = 18;   // bottom strip 0   ... 350   (Δx ≈ 19.4 m)
-nx_C    = 6;    // building top   350 ... 450   (Δx ≈ 16.7 m)
-nx_E    = 28;   // bottom strip 450 ... 1000  (Δx ≈ 19.6 m)
-ny_low  = 6;    // y in [0,   100]              (Δy ≈ 16.7 m)
-ny_high = 24;   // y in [100, 1000]             (Δy = 37.5 m)
+nx_A    = 18;   // x in [0,   350]   (Δx ≈ 19.4 m)
+nx_C    = 6;    // x in [350, 450]   (Δx ≈ 16.7 m)
+nx_E    = 28;   // x in [450, 1000]  (Δx ≈ 19.6 m)
+ny_low  = 6;    // y in [0,   100]    (Δy ≈ 16.7 m)
+ny_high = 24;   // y in [100, 1000]   (Δy = 37.5 m)
 
-// Point size only used as a fallback away from transfinite lines
-lc = (xmax - xmin) / (nx_A + nx_C + nx_E);
+// -------- Points --------
+Point(1)  = {xmin, ymin, 0};
+Point(2)  = {bx0,  ymin, 0};
+Point(3)  = {bx1,  ymin, 0};
+Point(4)  = {xmax, ymin, 0};
+Point(5)  = {xmax, by1,  0};
+Point(6)  = {xmax, ymax, 0};
+Point(7)  = {bx1,  ymax, 0};
+Point(8)  = {bx0,  ymax, 0};
+Point(9)  = {xmin, ymax, 0};
+Point(10) = {xmin, by1,  0};
+Point(11) = {bx0,  by1,  0};   // building top-left
+Point(12) = {bx1,  by1,  0};   // building top-right
 
-Point(1)  = {xmin, ymin, 0, lc};   // bottom-left
-Point(2)  = {bx0,  ymin, 0, lc};   // building left foot
-Point(3)  = {bx0,  by1,  0, lc};   // building top-left
-Point(4)  = {bx1,  by1,  0, lc};   // building top-right
-Point(5)  = {bx1,  ymin, 0, lc};   // building right foot
-Point(6)  = {xmax, ymin, 0, lc};   // bottom-right
-Point(7)  = {xmax, by1,  0, lc};   // right-wall split
-Point(8)  = {xmax, ymax, 0, lc};   // top-right
-Point(9)  = {xmin, ymax, 0, lc};   // top-left
-Point(10) = {xmin, by1,  0, lc};   // left-wall split
+// -------- Outer boundary lines --------
+Line(1)  = {1,  2};   // bottom, A-strip
+Line(2)  = {2, 11};   // building, left wall
+Line(3)  = {11,12};   // building, top
+Line(4)  = {12, 3};   // building, right wall
+Line(5)  = {3,  4};   // bottom, D-strip
+Line(6)  = {4,  5};   // right wall, lower  (periodicx)
+Line(7)  = {5,  6};   // right wall, upper  (periodicx)
+Line(8)  = {6,  7};   // top, E-strip
+Line(9)  = {7,  8};   // top, C-strip
+Line(10) = {8,  9};   // top, B-strip
+Line(11) = {9, 10};   // left wall, upper   (periodicx)
+Line(12) = {10, 1};   // left wall, lower   (periodicx)
 
-Line(1)  = {1,  2};    // bottom, A-strip
-Line(2)  = {2,  3};    // building, left wall
-Line(3)  = {3,  4};    // building, top
-Line(4)  = {4,  5};    // building, right wall
-Line(5)  = {5,  6};    // bottom, D-strip
-Line(6)  = {6,  7};    // right wall, lower  (periodicx)
-Line(7)  = {7,  8};    // right wall, upper  (periodicx)
-Line(8)  = {8,  9};    // top
-Line(9)  = {9, 10};    // left wall, upper   (periodicx)
-Line(10) = {10, 1};    // left wall, lower   (periodicx)
+// -------- Interior (block-interface) lines --------
+Line(13) = {10, 11};   // horizontal A | B interface
+Line(14) = {11,  8};   // vertical   AB | C interface (left of building, above)
+Line(15) = {12,  7};   // vertical   C  | DE interface (right of building, above)
+Line(16) = {12,  5};   // horizontal D | E interface
 
-Curve Loop(1) = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+// -------- Curve loops (CCW) --------
+Curve Loop(1) = { 1,  2, -13,  12};  // A : lower-left
+Curve Loop(2) = {13, 14,  10,  11};  // B : upper-left
+Curve Loop(3) = { 3, 15,   9, -14};  // C : above the building
+Curve Loop(4) = { 5,  6, -16,   4};  // D : lower-right
+Curve Loop(5) = {16,  7,   8, -15};  // E : upper-right
+
 Plane Surface(1) = {1};
-Recombine Surface{1};
+Plane Surface(2) = {2};
+Plane Surface(3) = {3};
+Plane Surface(4) = {4};
+Plane Surface(5) = {5};
 
-// -------- Transfinite Line: boundary node distribution --------
-// Bottom + building profile
-Transfinite Line{1}  = nx_A    + 1;
-Transfinite Line{2}  = ny_low  + 1;
-Transfinite Line{3}  = nx_C    + 1;
-Transfinite Line{4}  = ny_low  + 1;
-Transfinite Line{5}  = nx_E    + 1;
+// -------- Transfinite Line distributions --------
+// Lower strips (y in [0, 100])
+Transfinite Curve{ 1} = nx_A   + 1;
+Transfinite Curve{ 5} = nx_E   + 1;
+Transfinite Curve{ 2} = ny_low + 1;   // building left wall
+Transfinite Curve{ 4} = ny_low + 1;   // building right wall
+Transfinite Curve{12} = ny_low + 1;   // left  wall, lower
+Transfinite Curve{ 6} = ny_low + 1;   // right wall, lower  (= Line 12)
+Transfinite Curve{13} = nx_A   + 1;   // A | B interface
+Transfinite Curve{16} = nx_E   + 1;   // D | E interface
 
-// Periodic right wall (lower + upper)
-Transfinite Line{6}  = ny_low  + 1;
-Transfinite Line{7}  = ny_high + 1;
+// Upper strips (y in [100, 1000])
+Transfinite Curve{10} = nx_A   + 1;
+Transfinite Curve{ 9} = nx_C   + 1;
+Transfinite Curve{ 8} = nx_E   + 1;
+Transfinite Curve{ 3} = nx_C   + 1;   // building top
+Transfinite Curve{11} = ny_high + 1;  // left  wall, upper
+Transfinite Curve{ 7} = ny_high + 1;  // right wall, upper  (= Line 11)
+Transfinite Curve{14} = ny_high + 1;  // AB | C interface
+Transfinite Curve{15} = ny_high + 1;  // C  | DE interface
 
-// Top
-Transfinite Line{8}  = (nx_A + nx_C + nx_E) + 1;
+// -------- Transfinite Surfaces + Recombine --------
+Transfinite Surface{1};
+Transfinite Surface{2};
+Transfinite Surface{3};
+Transfinite Surface{4};
+Transfinite Surface{5};
 
-// Periodic left wall (upper + lower) — match the right wall
-Transfinite Line{9}  = ny_high + 1;
-Transfinite Line{10} = ny_low  + 1;
+Recombine Surface{1, 2, 3, 4, 5};
 
 // -------- Physical groups --------
-Physical Surface("domain")    = {1};
-Physical Curve("bottom")      = {1, 2, 3, 4, 5};
-Physical Curve("top")         = {8};
-Physical Curve("periodicx")   = {6, 7, 9, 10};
+Physical Surface("domain")    = {1, 2, 3, 4, 5};
+Physical Curve("bottom")      = {1, 2, 3, 4, 5};    // bottom + building profile
+Physical Curve("top")         = {8, 9, 10};
+Physical Curve("periodicx")   = {6, 7, 11, 12};
 
-Mesh.ElementOrder         = 1;
-Mesh.SubdivisionAlgorithm = 1;     // Guarantees 100% quads (splits any
-                                   // surviving triangle into 3 quads, each
-                                   // existing quad into 4, all conforming
-                                   // via shared edge-midpoint nodes).
-//
-// Why not RecombinationAlgorithm = 1 or 3?  Plain Blossom (= 1) can
-// strand triangles in interior sub-regions around the building cutout,
-// and Full-Quad (= 3) is incompatible with our Transfinite Line setup —
-// either way GridapGmsh sees mixed element types and rejects the mesh.
-// SubdivisionAlgorithm is the only path that guarantees a homogeneous
-// all-quad output for this topology.
-//
-// Why no "wedges from the origin" this time?  That earlier artefact was
-// caused by the explicit `Periodic Curve{...}` directive interacting
-// with subdivision (slave-node remapping leaked to node 1).  Periodicity
-// here is now handled by Jexpresso via the "periodicx" physical tag, so
-// no gmsh-level periodic directive is needed.
+Mesh.ElementOrder = 1;
