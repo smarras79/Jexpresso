@@ -37,13 +37,32 @@ If you are not already inside the project directory, move into it first:
 cd PATH/TO/Jexpresso
 ```
 
-Then instantiate the project and precompile its dependencies:
+Then build the project in three steps.
+
+**3a. Instantiate the dependencies** (with automatic precompilation disabled so
+it can be controlled explicitly below):
 
 ```bash
-julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
 ```
 
-This step may take a while the first time as Julia downloads and compiles all
+**3b. Point MPI at your system binary**, replacing the path with the location of
+your MPI library:
+
+```bash
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/PATH/TO/MPILIB/lib"])'
+```
+
+> For example, if you use OpenMPI installed with Homebrew, the path is likely
+> `/opt/homebrew/lib`.
+
+**3c. Precompile everything:**
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+This last step may take a while the first time as Julia compiles all
 dependencies.
 
 ## 4. Test the installation

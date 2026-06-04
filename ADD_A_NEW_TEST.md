@@ -8,8 +8,8 @@ need to create a folder and populate it with six Julia files.
 
 ```
 problems/
-└── YourEquationSet/          ← name must match what you pass to the solver
-    └── your_case/            ← name must match what you pass to the solver
+└── YourEquationSet/          ← This name is arbitrary
+    └── your_case/            ← This name is arbitrary
         ├── user_inputs.jl     ← solver parameters (time step, mesh, output, …)
         ├── initialize.jl      ← initial conditions
         ├── user_flux.jl       ← flux vectors F and G
