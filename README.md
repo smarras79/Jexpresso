@@ -251,7 +251,26 @@ Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected
 
 # Examples available in this branch:
 
-Example 1: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
+
+## Example 1: Shock tube with dynamic SGS for shock capturing: Fig (a) below.
+DynSGS by Marras et al. 2015 and later.
+```bash
+push!(empty!(ARGS), "CompEuler", "sod1d");
+include("./src/Jexpresso.jl")
+```
+
+## Example 2: 1D acoustic wave: Fig (b) below.
+```bash
+push!(empty!(ARGS), "CompEuler", "case");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/1dtests.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
+Example 2: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
 push!(empty!(ARGS), "CompEuler", "thetaTracers");
 include("./src/Jexpresso.jl")
@@ -262,7 +281,7 @@ include("./src/Jexpresso.jl")
      style="float: left; margin-right: 5px;" />
 
 
-Example 2: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
+Example 3: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
 ```bash
 push!(empty!(ARGS), "CompEuler", "3d");
 include("./src/Jexpresso.jl")
@@ -272,18 +291,7 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
 
-
-Example 3: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "wave1d");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wave1d-v.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-For ready to run tests, there are the currently available equations names:
+For ready to run tests, there are the available equations names:
 
 * CompEuler (option with total energy and theta formulation)
 
