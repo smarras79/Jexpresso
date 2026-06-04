@@ -190,50 +190,12 @@ w_{xx} + w_{yy} + w_{zz}\\
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)
 
-
-# Some notes on using JEXPRESSO
-
-To install and run the code assume Julia 1.11.2
-
-Start by cloning Jexpresso and JexpressoMeshes:
-
-```bash
-git clone https://github.com/smarras79/Jexpresso.git
-```
-
-```bash
-git clone https://github.com/smarras79/JexpressoMeshes.git
-```
-    
-```bash
-cd Jexpresso
-```
-
-```bash
-ln -s ../JexpressoMeshes/meshes .
-```
-
-
-## Setup with CPUs
-
-```bash
->> cd $JEXPRESSO_HOME
->> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
-```
-followed by the following:
-
-Push problem name to ARGS
-You need to do this only when you run a new problem
-```bash
-push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
-include("./src/Jexpresso.jl")
-```
-
-* PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/problems/equations/problem_name
-* PROBLEM_CASE_NAME is the name of the subdirectory containing the specific setup that you want to run: 
-
-The path would look like 
-```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
+## Turbulent ABL:
+Example of coarse simulation of the turbulent atmospheric boundary layer. Domain size: 10240m X 10240m X 3000m using 64x64x24 spectral elements of order 4.
+Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smagorinsky.
+<img src="assets/ABLfullDomain.gif"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
 
 ## Shallow cumuli:
 Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
@@ -242,17 +204,9 @@ Example of shallow cumuli simulations (right) for the type of Barbados clouds sh
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
-## Turbulent ABL
-Example of coarse simulation of the turbulent atmospheric boundary layer. Domain size: 10240m X 10240m X 3000m using 64x64x24 spectral elements of order 4.
-Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smagorinsky.
-<img src="assets/ABLfullDomain.gif"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
 # Examples available in this branch:
 Below are just a few pre-packaged examples available in Jexpresso.
 To add your own new problem, see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
-
 
 
 ## Example 1a: Shock tube with dynamic SGS for shock capturing:
