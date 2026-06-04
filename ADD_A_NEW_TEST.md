@@ -253,20 +253,25 @@ This is **not** required for the solver to find and run your case.
 
 # Some examples of existing tests:
 
-## Example 1: Shock tube with dynamic SGS for shock capturing: Fig (a) below.
+## Example 1: Shock tube with dynamic SGS for shock capturing:
 DynSGS by Marras et al. 2015 and later.
 ```bash
 push!(empty!(ARGS), "CompEuler", "sod1d");
 include("./src/Jexpresso.jl")
-```
+``
 
-## Example 2: 1D acoustic wave: Fig (b) below.
+<img src="assets/sod1d.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
+## Example 2: 1D acoustic wave:
 ```bash
-push!(empty!(ARGS), "CompEuler", "case");
+push!(empty!(ARGS), "CompEuler", "case1");
 include("./src/Jexpresso.jl")
 ```
 
-<img src="assets/1dtests.png"
+<img src="assets/1dacoustic.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
