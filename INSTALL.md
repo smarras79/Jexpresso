@@ -86,4 +86,40 @@ include("./src/Jexpresso.jl")
 If the test runs to completion, your Jexpresso installation is ready to go. 🎉
 
 # To run other tests that are already in Jexpresso or to add your own new problem,
-see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md) 
+see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md)
+
+# NOTES ON PACKAGE LIST:
+
+
+Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
+
+```
+[compat]
+BenchmarkTools = "1.8.0"
+CSV = "0.10.16"
+Crayons = "=4.1.1"
+Gridap = "=0.18.12"
+GridapDistributed = "=0.4.7"
+GridapGmsh = "=0.7.2"
+GridapP4est = "=0.3.11"
+JACC = "1.0.0"
+JLD2 = "0.5.15"
+KrylovPreconditioners = "0.3.5"
+LinearOperators = "2.11.0"
+MPI = "=0.20.22"
+MPIPreferences = "=0.1.11"
+ONNXRunTime = "1.3.1"
+PProf = "3.2.0"
+Preferences = "1.5.2"
+PrettyTables = "=2.4.0"
+Profile = "1.11.0"
+QuadGK = "2.11.2"
+Roots = "2.2.13"
+SciMLBase = "2.148.0"
+Serialization = "1.11.0"
+Thermodynamics = "=0.12.7"
+TimerOutputs = "0.5.29"
+TrixiBase = "0.1.8"
+UUIDs = "1.11.0"
+UnicodePlots = "=3.7.2"
+```
