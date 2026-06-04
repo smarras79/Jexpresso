@@ -1,5 +1,5 @@
 # Adding a New Test (Equation Set + Case)
-(To run an existing test already packaged with Jexpresso, see [below](#Some-examples-of-existing-tests:)).
+Instructions to add a new problem are given below. To run an existing test already packaged with Jexpresso, see [below](https://github.com/smarras79/Jexpresso/blob/sm/newmaster/ADD_A_NEW_TEST.md#some-examples-of-existing-tests).
 
 Jexpresso discovers equation sets and cases purely by **directory structure** —
 there is no registration file or config to update. To add a new test you only
