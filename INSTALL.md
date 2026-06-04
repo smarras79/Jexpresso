@@ -47,7 +47,8 @@ julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instant
 ```
 
 **3b. Point MPI at your system binary**, replacing the path with the location of
-your MPI library:
+your MPI library: You only need this step if you are planning to run Jexpresso in parallel and must 
+have some version of MPI installed first:
 
 ```bash
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/PATH/TO/MPILIB/lib"])'

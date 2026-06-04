@@ -1,4 +1,5 @@
 # Adding a New Test (Equation Set + Case)
+Instructions to add a new problem are given below. To run an existing test already packaged with Jexpresso, see [below](https://github.com/smarras79/Jexpresso/blob/sm/newmaster/ADD_A_NEW_TEST.md#some-examples-of-existing-tests).
 
 Jexpresso discovers equation sets and cases purely by **directory structure** —
 there is no registration file or config to update. To add a new test you only
@@ -249,3 +250,48 @@ This is **not** required for the solver to find and run your case.
 | `user_source.jl` | Source term S(q) |
 | `user_bc.jl` | Boundary conditions |
 | `user_primitives.jl` | Conversion from conserved to output variables |
+
+# Some examples of existing tests:
+
+## Example 1: Shock tube with dynamic SGS for shock capturing:
+DynSGS by Marras et al. 2015 and later.
+```bash
+push!(empty!(ARGS), "CompEuler", "sod1d");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/sod1d.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+## Example 2: 1D acoustic wave:
+```bash
+push!(empty!(ARGS), "CompEuler", "case1");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/1dacoustic.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
+## Example 3: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
+```bash
+push!(empty!(ARGS), "CompEuler", "thetaTracers");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/thetaTracersMeshUnstr.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
+
+## Example 4: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
+```bash
+push!(empty!(ARGS), "CompEuler", "3d");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/rtb3d.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
