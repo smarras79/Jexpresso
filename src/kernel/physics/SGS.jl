@@ -396,5 +396,366 @@ end
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
-    
+
+end
+
+#----------------------------------------------------------------------
+# DYNAMIC SGS (Marras et al., 2015, JCP 301:77-101) — residual-based
+# artificial viscosity, parameter free.
+#
+# Per-element coefficient:
+#     μ_res = C1 · Δ² · max_i ‖R_i‖∞,Ω / ‖q_i − ⟨q_i⟩‖∞,Ω
+#     μ_max = C2 · Δ · max(|u| + c)
+#     μ_dsgs[iel] = max(0, min(μ_res, μ_max))
+# where R_i is the STRONG-form BDF2 residual of conservation law i —
+# (3qⁿ − 4qⁿ⁻¹ + qⁿ⁻²)/(2Δt) − M⁻¹·RHS. Since jexpresso assembles RHS
+# in weak form (post-DSS, pre-mass-matrix division), the rhs argument
+# is multiplied by Minv[ip] inline before the BDF2 minus, which makes
+# μ_dsgs dimensionally a kinematic viscosity (m²/s) regardless of SD.
+#
+# Both numerators and denominators are global L∞ norms so the
+# coefficient cannot be inlined into the (k,l) loop the way
+# SMAG/VREM are — it is precomputed once per RHS call into the
+# pre-allocated μ_dsgs[1:nelem] buffer. SGS_diffusion(::DSGS, ::SD)
+# is the standard per-quadrature-point accessor — the caller updates
+# visc_coeffieq with the current element's μ_dsgs[iel] before
+# entering the (k,l) loop, so this just returns it.
+#----------------------------------------------------------------------
+
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               inputs,
+                               ::DSGS, ::NSD_1D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+
+    return visc_coeffieq[ieq]
+
+end
+
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               inputs,
+                               ::DSGS, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+
+    return visc_coeffieq[ieq]
+
+end
+
+# ---------------- 1D --------------------------------------------------
+#
+# Conservation form q = (ρ, ρu, ρE) on a 1D LGL mesh. The signature is
+# a hand-typed function barrier (concrete arrays, no params.* lookups)
+# so Julia can specialize and the inner loop is allocation-free.
+#
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
+                                 ::DSGS, ::NSD_1D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δx::AbstractVector{TT},
+                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+
+    # 1D CompEuler in total-energy form q = (ρ, ρu, ρE). Marras's
+    # unified formula gives ONE residual-based coefficient per element;
+    # for visualisation parity with the 2D version we replicate it into
+    # every column of μ_dsgs[iel, :] so the caller / VTU sees per-
+    # equation slots even when they are identical. The user-supplied
+    # inputs[:μ] vector enters as a per-equation multiplicative
+    # factor so the user can scale the DSGS contribution down (or off)
+    # equation by equation.
+
+    invnp = one(TT)/(nelem*ngl)
+    γ     = TT(1.4)
+    C1    = TT(1.0)
+    C2    = TT(0.5)
+    eps   = Base.eps(TT)
+    neqs  = size(μ_dsgs, 2)
+
+    # qe is accepted for forward compatibility with the 2D signature
+    # but the 1D test cases (case1, sod1d) have qe ≈ 0 so subtracting
+    # it would not change the denominators meaningfully.
+
+    # --- Pass 1: domain averages of q ----------------------------------
+    ρ_avg  = zero(TT); ρu_avg = zero(TT); ρE_avg = zero(TT)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            ρ_avg  += q[ip,1]
+            ρu_avg += q[ip,2]
+            ρE_avg += q[ip,3]
+        end
+    end
+    ρ_avg  *= invnp
+    ρu_avg *= invnp
+    ρE_avg *= invnp
+
+    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    denom1 = zero(TT); denom2 = zero(TT); denom3 = zero(TT)
+    @inbounds for ie = 1:nelem
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
+            denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
+            denom3 = max(denom3, abs(q[ip,3] - ρE_avg))
+        end
+    end
+    denom1 += eps; denom2 += eps; denom3 += eps
+
+    # --- Pass 3: per-element loop --------------------------------------
+    inv2Δt = one(TT)/(2*Δt)
+    @inbounds for ie = 1:nelem
+        Δ = Δx[ie]/ngl
+
+        n1   = zero(TT); n2 = zero(TT); n3 = zero(TT)
+        uTmx = zero(TT)
+        @simd for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+
+            R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+            R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
+            R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+            n1 = max(n1, R1); n2 = max(n2, R2); n3 = max(n3, R3)
+
+            ρl = q[ip,1]
+            ul = q[ip,2]/ρl
+            el = q[ip,3]/ρl
+            Tl = max(el - TT(0.5)*ul*ul, zero(TT))
+            uTmx = max(uTmx, abs(ul) + sqrt(γ*Tl))
+        end
+
+        μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
+        μ_max = C2*Δ*uTmx
+        μ     = max(zero(TT), min(μ_max, μ_res))
+
+        # Same coefficient on every equation (1D E-form, Marras eq. 10),
+        # scaled per equation by the user-supplied inputs[:μ] vector.
+        for ieq = 1:neqs
+            μ_dsgs[ie, ieq] = visc_coeff[ieq] * μ
+        end
+    end
+
+    return nothing
+end
+
+# ---------------- 2D --------------------------------------------------
+#
+# Conservation form q = (ρ, ρu, ρv, ρθ) for the Euler-θ system. Δ is
+# min(Δx, Δy)/(N+1) (Marras et al. eq. 8), and c is built from the
+# perfect-gas-law for θ:  p = C0·(ρθ)^γ ⇒ c² = γp/ρ. Same
+# function-barrier discipline as the 1D variant — no params accesses,
+# no struct constructions, no allocations.
+#
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
+                                 ::DSGS, ::NSD_2D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δelem::AbstractVector{TT},
+                                 PhysConst::PhysicalConst{TT},
+                                 Pr::TT,
+                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+
+    # Marras et al. (JCP 2015) eq. (8-10), implemented exactly as in
+    # the lineage from fp/mymaster — the version that was already
+    # known to run the rising-bubble case to completion. Residual is
+    # the weak-form rhs[ip, i] directly (post-DSS, pre-mass-matrix
+    # division); attempts to "correct" it with M⁻¹·rhs (the strong-
+    # form residual) shrink the residual by ~10³ on 2D atmospheric
+    # meshes and effectively turn DSGS off, which is not what the
+    # algorithm was designed for in this lineage.
+    #
+    #     μ_res|e = C1 · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
+    #     μ_max|e = C2 · Δ · (|u| + c)_∞,e
+    #     μ|e     = max(0, min(μ_max, μ_res))
+    #
+    # Per-equation split (Marras eq. 10), with the user-supplied
+    # inputs[:μ] multiplier on each slot:
+    #     μ_dsgs[iel, 1] = 0                              (no mass diffusion)
+    #     μ_dsgs[iel, 2] = visc_coeff[2] · μ              (ρu)
+    #     μ_dsgs[iel, 3] = visc_coeff[3] · μ              (ρv)
+    #     μ_dsgs[iel, 4] = visc_coeff[4] · Pr/(γ-1) · μ   (ρθ)
+    #
+    # Minv and qe stay in the function-barrier signature so the rhs.jl
+    # call site doesn't have to change, but they are unused here.
+
+    invnp = one(TT)/(nelem*ngl*ngl)
+    γ     = PhysConst.γ
+    C0    = PhysConst.C0
+    C1    = TT(1.0)
+    C2    = TT(0.5)
+    γm1   = γ - one(TT)
+    eps   = TT(1.0e-16)
+
+    # --- Pass 1: domain averages of (ρ, ρu, ρv, ρθ) --------------------
+    ρ_avg  = zero(TT); ρu_avg = zero(TT)
+    ρv_avg = zero(TT); ρθ_avg = zero(TT)
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                ρ_avg  += q[ip,1]
+                ρu_avg += q[ip,2]
+                ρv_avg += q[ip,3]
+                ρθ_avg += q[ip,4]
+            end
+        end
+    end
+    ρ_avg  *= invnp; ρu_avg *= invnp
+    ρv_avg *= invnp; ρθ_avg *= invnp
+
+    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    denom1 = zero(TT); denom2 = zero(TT)
+    denom3 = zero(TT); denom4 = zero(TT)
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
+                denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
+                denom3 = max(denom3, abs(q[ip,3] - ρv_avg))
+                denom4 = max(denom4, abs(q[ip,4] - ρθ_avg))
+            end
+        end
+    end
+    # Machine-zero floor on every denominator (Marras eq. 9 prescribes
+    # ‖q − ⟨q⟩‖∞,Ω in the denominator; we add eps to guarantee a finite
+    # ratio even before any spatial variation has developed).
+    denom1 += eps; denom2 += eps
+    denom3 += eps; denom4 += eps
+
+    # The momentum slots need a slightly larger physical-scale floor:
+    # at t = 0 the fluid is at rest globally, so ‖ρu − ⟨ρu⟩‖∞,Ω and
+    # ‖ρv − ⟨ρv⟩‖∞,Ω literally start at zero. With only machine eps to
+    # absorb that, the R/denom ratio runs away and caps μ at the
+    # wave-speed bound C2·Δ·(|u|+c) before any flow has developed,
+    # which on this case is enough to push ρθ past zero in the very
+    # first RK substage. The floor is a tiny fraction (1e-3) of the
+    # natural momentum scale ρ_avg·c_avg — large enough to keep the
+    # cold-start ratio bounded, small enough to vanish once actual
+    # momentum perturbations have grown above it.
+    θ_avg  = ρθ_avg/max(abs(ρ_avg), eps)
+    p_avg  = C0*(max(ρ_avg*θ_avg, zero(TT)))^γ
+    c_avg  = sqrt(max(γ*p_avg/max(abs(ρ_avg), eps), zero(TT)))
+    mom_floor = TT(1.0e-3) * abs(ρ_avg) * c_avg
+    denom2 = max(denom2, mom_floor)
+    denom3 = max(denom3, mom_floor)
+
+    # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] ------
+    @inbounds for ie = 1:nelem
+        # Marras's element size: min(Δx, Δy)/(N+1). Δelem[ie] is the
+        # min corner-to-corner distance in the element; ngl = N+1.
+        Δ = Δelem[ie]/ngl
+
+        n1   = zero(TT); n2 = zero(TT)
+        n3   = zero(TT); n4 = zero(TT)
+        uTmx = zero(TT)
+
+        for j = 1:ngl
+            @simd for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+
+                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - rhs[ip,1])
+                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - rhs[ip,2])
+                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - rhs[ip,3])
+                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) - rhs[ip,4])
+                n1 = max(n1, R1); n2 = max(n2, R2)
+                n3 = max(n3, R3); n4 = max(n4, R4)
+
+                ρl = q[ip,1]
+                ul = q[ip,2]/ρl
+                vl = q[ip,3]/ρl
+                θl = q[ip,4]/ρl
+                # Equation of state p = C0·(ρθ)^γ  ⇒  c² = γp/ρ
+                pl  = C0 * (ρl*θl)^γ
+                c_l = sqrt(max(γ*pl/ρl, zero(TT)))
+                uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + c_l)
+            end
+        end
+
+        μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
+        μ_max = C2*Δ*uTmx
+        μ     = max(zero(TT), min(μ_max, μ_res))
+
+        # Per-equation split (Marras eq. 10), scaled by the user-
+        # supplied inputs[:μ] multiplier so the case can be run with
+        # DSGS off (visc_coeff = [0,…]) to confirm whether DSGS itself
+        # is the cause of any instability.
+        μ_dsgs[ie,1] = zero(TT)                             # ρ : no mass diffusion
+        # DIAGNOSTIC: momentum DSGS forced to zero to isolate whether
+        # μ·∇²u/μ·∇²v on the LGL-discretized velocity field (u = ρu/ρ)
+        # is the cold-start blow-up source. Restore
+        # `visc_coeff[2:3] * μ` once the bad actor is identified.
+        μ_dsgs[ie,2] = zero(TT)                             # ρu (DIAG: disabled)
+        μ_dsgs[ie,3] = zero(TT)                             # ρv (DIAG: disabled)
+        μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ         # ρθ (eq. 10b)
+    end
+
+    return nothing
+end
+
+# Helper: expand the per-element, per-equation μ_dsgs[1:nelem,1:neqs]
+# onto every node so the per-equation coefficients can be written to
+# PNG / VTU like any other field. Shared (DSS) nodes get the value of
+# the last element they belong to — that's fine for visualization.
+function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
+                                  μ_dsgs::AbstractMatrix{TT},
+                                  connijk::AbstractArray{TI,4},
+                                  nelem::Int, ngl::Int,
+                                  SD::AbstractSpaceDimensions) where {TT,TI}
+    neqs = size(μ_dsgs, 2)
+    if SD === NSD_1D()
+        @inbounds for ie = 1:nelem
+            for i = 1:ngl
+                ip = connijk[ie,i,1,1]
+                for ieq = 1:neqs
+                    μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                end
+            end
+        end
+    elseif SD === NSD_2D()
+        @inbounds for ie = 1:nelem
+            for j = 1:ngl
+                for i = 1:ngl
+                    ip = connijk[ie,i,j,1]
+                    for ieq = 1:neqs
+                        μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                    end
+                end
+            end
+        end
+    elseif SD === NSD_3D()
+        @inbounds for ie = 1:nelem
+            for k = 1:ngl
+                for j = 1:ngl
+                    for i = 1:ngl
+                        ip = connijk[ie,i,j,k]
+                        for ieq = 1:neqs
+                            μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nothing
 end

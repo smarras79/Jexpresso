@@ -29,11 +29,12 @@ end
 #------------------------------------------------------------------
 # Callback for missing user_uout!()
 #------------------------------------------------------------------
-function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar)
-    
+function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar; μ_dsgs_pnode=nothing)
+
     if function_exists(@__MODULE__, :user_uout!)
         for ip=1:npoin
-            user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,:]), @view(qe[ip,:]); mp=mp)
+            user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,:]), @view(qe[ip,:]);
+                       mp=mp, μ_dsgs_pnode=μ_dsgs_pnode)
         end
     else
         for ip=1:npoin
@@ -61,12 +62,13 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::PNG;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -145,23 +147,25 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
 end
 
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
 
-        write_vtk(SD, mesh, sol, uaux, mp, 
+        write_vtk(SD, mesh, sol, uaux, mp,
                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
-                  iout=iout, nvar=nvar, qexact=qexact, case=case) 
+                  iout=iout, nvar=nvar, qexact=qexact, case=case,
+                  μ_dsgs_pnode=μ_dsgs_pnode)
         
     else
         #VERIFY THIS on GPU
@@ -177,12 +181,13 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
 
 end
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                     OUTPUT_DIR::String, inputs,
                     varnames, outvarnames,
                     outformat::NETCDF;
-                    nvar=1, qexact=zeros(1,nvar), case="")
+                    nvar=1, qexact=zeros(1,nvar), case="",
+                    μ_dsgs_pnode=nothing)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -216,10 +221,11 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
-                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="",
+                   μ_dsgs_pnode=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -286,9 +292,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                   μ_dsgs_pnode=μ_dsgs_pnode)
 
-    
+
     #
     # Write solution to vtk:
     #
@@ -320,7 +327,8 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs,
                    varnames, outvarnames;
-                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="",
+                   μ_dsgs_pnode=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -369,9 +377,10 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
-    
-    
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                   μ_dsgs_pnode=μ_dsgs_pnode)
+
+
     #
     # Write solution:
     #
@@ -514,12 +523,13 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::HDF5;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
