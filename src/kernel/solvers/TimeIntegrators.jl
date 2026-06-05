@@ -32,10 +32,12 @@ function time_loop!(inputs, params, u, args...)
     end
 
     function two_stream_condition(u, t, integrator)
+        @trixi_timeit timer() "cb:two_stream_condition" begin
         if (rem(t,rad_time) < 1e-3)
             return true
         else
             return false
+        end
         end
     end
 
@@ -46,10 +48,12 @@ function time_loop!(inputs, params, u, args...)
     end
 
     function restart_condition(u, t, integrator)
+        @trixi_timeit timer() "cb:restart_condition" begin
         if restart_time ≠ 0.0 && (rem(t,restart_time) < 1e-3)
             return true
         else
             return false
+        end
         end
     end
     function do_restart!(integrator)
@@ -85,6 +89,7 @@ function time_loop!(inputs, params, u, args...)
     # #------------------------------------------------------------------------
     ret_dosetime_ref  = Ref{Bool}(false)
     function condition(u, t, integrator)
+        @trixi_timeit timer() "cb:condition" begin
         idx  = findfirst(x -> x == t, dosetimes)
         if idx !== nothing
             idx_ref[] = idx
@@ -97,8 +102,10 @@ function time_loop!(inputs, params, u, args...)
         # ret_amrtime_ref = abs(mod(t, Δt_amr)) < tol
         # return (ret_dosetime_ref[] || ret_amrtime_ref[])
         return ret_dosetime_ref[]
+        end
     end
     function affect!(integrator)
+        @trixi_timeit timer() "cb:affect!" begin
         idx          = idx_ref[]
         ret_dosetime = ret_dosetime_ref[]
         if ret_dosetime == true
@@ -106,13 +113,13 @@ function time_loop!(inputs, params, u, args...)
 
             #CFL
             if inputs[:ladapt] == false
-                computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
+                @trixi_timeit timer() "cb:computeCFL" computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
                         integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
                         integrator.p.mesh.Δeffective_s,
                         integrator,
                         integrator.p.SD; visc=inputs[:μ])
             end
-            write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
+            @trixi_timeit timer() "cb:write_output" write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                          integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
@@ -124,6 +131,7 @@ function time_loop!(inputs, params, u, args...)
             if (lwrite_time == true)
                 append_pvd_entry(pvd_path, integrator.t, "iter_$(idx).pvtu")
             end
+        end
         end
     end
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
@@ -174,7 +182,7 @@ function time_loop!(inputs, params, u, args...)
         println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
         @mystop()
     else
-        solution = solve(prob,
+        solution = @trixi_timeit timer() "solve()" solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                          callback = CallbackSet(cb, cb_restart), tstops = dosetimes,

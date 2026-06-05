@@ -141,11 +141,11 @@ function rhs!(du, u, params, time)
         _build_rhs!(params.RHS, u, params, time)
 
         if (params.laguerre)
-            build_rhs_laguerre!(params.RHS_lag, u, params, time)
-            params.RHS .+= params.RHS_lag
+            @trixi_timeit timer() "build_rhs_laguerre!" build_rhs_laguerre!(params.RHS_lag, u, params, time)
+            @trixi_timeit timer() "RHS+=RHS_lag" params.RHS .+= params.RHS_lag
         end
 
-        RHStoDU!(du, params.RHS, params.neqs, params.mesh.npoin)
+        @trixi_timeit timer() "RHStoDU!" RHStoDU!(du, params.RHS, params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
             lpert = true
@@ -539,17 +539,19 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     @trixi_timeit timer() " RESETRHSTOZERO "  resetRHSToZero_inviscid!(params)
     if (params.inputs[:lfilter])
-        reset_filters!(params)
-        if (params.laguerre)
-            reset_laguerre_filters!(params)
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
-                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
-        else
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
+        @trixi_timeit timer() "filter!" begin
+            reset_filters!(params)
+            if (params.laguerre)
+                reset_laguerre_filters!(params)
+                filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
+                        connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
+            else
+                filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
+            end
         end
     end
 
-    u2uaux!(params.uaux, u, params.neqs, params.mesh.npoin)
+    @trixi_timeit timer() "u2uaux!" u2uaux!(params.uaux, u, params.neqs, params.mesh.npoin)
 
     if inputs[:ladapt] == true
         conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
@@ -565,11 +567,10 @@ function _build_rhs!(RHS, u, params, time)
                           params.interp)
     end
 
-    resetbdyfluxToZero!(params)
-    
+    @trixi_timeit timer() "resetbdyfluxToZero!" resetbdyfluxToZero!(params)
+
     #@code_warntype apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-    #@trixi_timeit timer() "apply DC boundary" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
-    apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+    @trixi_timeit timer() "BC dirichlet!" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
                                          params.mesh.coords,
                                          params.metrics.nx, params.metrics.ny, params.metrics.nz,
                                          params.mesh.npoin, params.mesh.npoin_linear,
@@ -633,12 +634,12 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     if (params.inputs[:lvisc] == true)
 
-        resetRHSToZero_viscous!(params, SD)
-        
+        @trixi_timeit timer() "resetRHSToZero_viscous!" resetRHSToZero_viscous!(params, SD)
+
         #Main.debug[] = (; u, params, connijk = params.mesh.connijk, qe = params.qp.qe, SD)
         #error()
         @trixi_timeit timer() "viscous_rhs_el!" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
-        
+
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
                                params.mesh.non_conforming_facets,
@@ -649,10 +650,10 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.pgip_local, ngl-1, neqs, params.interp)
         end
 
-        DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-        params.RHS .+= params.RHS_visc
+        @trixi_timeit timer() "DSS_rhs!visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+        @trixi_timeit timer() "RHS+=RHS_visc" params.RHS .+= params.RHS_visc
     end
-    apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
+    @trixi_timeit timer() "BC neumann!" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
                                        params.metrics.nx, params.metrics.ny, params.metrics.nz,
                                        params.mesh.npoin, params.mesh.npoin_linear,
@@ -668,14 +669,17 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD)
 
-    DSS_global_RHS!(params.RHS, params.g_dss_cache, params.neqs)
+    @trixi_timeit timer() "DSS_global_RHS!" DSS_global_RHS!(params.RHS, params.g_dss_cache, params.neqs)
 
     #if (rem(time, Δt) == 0 && time > 0.0)
+    @trixi_timeit timer() "qnm copy" begin
     if (time > 0.0)
         params.qp.qnm1 .= params.qp.qnm2
         params.qp.qnm2 .= params.uaux
     end
+    end
 
+    @trixi_timeit timer() "divide_by_mass_matrix!" begin
     Minv = params.Minv
     if Minv isa AbstractVector
         for ieq = 1:neqs
@@ -701,6 +705,7 @@ function _build_rhs!(RHS, u, params, time)
                                     params.mesh.gip2ip, params.mesh.cgip_local, ngl-1, params.interp)
             end
         end
+    end
     end
     end
 end
