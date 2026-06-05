@@ -3113,7 +3113,7 @@ function amr_strategy!(args...)
     sem, partitioned_model_new, uaux_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, params.uaux)
 
     
-    qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     amr_freq = inputs[:amr_freq]
     Δt_amr   = amr_freq * inputs[:Δt]
