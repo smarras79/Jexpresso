@@ -9,13 +9,13 @@ function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::TOTAL)
         pos = 4
     end
     # Initialize arrays
-    ρ = integrator.u[1:npoin]
+    ρ = @view integrator.u[1:npoin]
     if (size(mp.Tabs,1)>1)
         pos_p = neqs+1
-        Tabs = mp.Tabs[1:npoin]
+        Tabs = @view mp.Tabs[1:npoin]
         p = p_m
     else
-        θ = integrator.u[pos*npoin+1:(pos+1)*npoin]
+        θ = @view integrator.u[pos*npoin+1:(pos+1)*npoin]
         # Compute pressure using vectorized operation
         p = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     end
@@ -41,13 +41,13 @@ function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::PERT)
         pos = 4
     end
     # Initialize arrays
-    ρ = integrator.u[1:npoin] + integrator.p.qp.qe[1:npoin]
+    ρ = @views integrator.u[1:npoin] + integrator.p.qp.qe[1:npoin]
     if (size(mp.Tabs,1)>1)
         pos_p = neqs+1
-        Tabs = mp.Tabs[1:npoin]
+        Tabs = @view mp.Tabs[1:npoin]
         p = p_m
     else
-        θ = (integrator.u[pos*npoin+1:(pos+1)*npoin] + integrator.p.qp.qe[pos*npoin+1:(pos+1)*npoin])./ρ
+        θ = @views (integrator.u[pos*npoin+1:(pos+1)*npoin] + integrator.p.qp.qe[pos*npoin+1:(pos+1)*npoin])./ρ
         # Compute pressure using vectorized operation
         p = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     end
@@ -76,16 +76,16 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_2D; visc=[0
         #u
         if (integrator.p.SOL_VARS_TYPE == PERT())
             idx  = npoin
-            umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin] + integrator.p.qp.qe[idx+1:2*npoin]), MPI.MAX, comm)
+            umax = MPI.Allreduce(@views(maximum(integrator.u[idx+1:2*npoin] + integrator.p.qp.qe[idx+1:2*npoin])), MPI.MAX, comm)
 
             idx  = 2*npoin
-            vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin] + integrator.p.qp.qe[idx+1:3*npoin]), MPI.MAX, comm)
+            vmax = MPI.Allreduce(@views(maximum(integrator.u[idx+1:3*npoin] + integrator.p.qp.qe[idx+1:3*npoin])), MPI.MAX, comm)
         else
             idx  = npoin
-            umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
-        
+            umax = MPI.Allreduce(maximum(@view(integrator.u[idx+1:2*npoin])), MPI.MAX, comm)
+
             idx  = 2*npoin
-            vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
+            vmax = MPI.Allreduce(maximum(@view(integrator.u[idx+1:3*npoin])), MPI.MAX, comm)
         end
         velomax = max(umax, vmax)
         
@@ -117,22 +117,22 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_3D; visc=[0
         #u
         if (integrator.p.SOL_VARS_TYPE == PERT())
             idx  = npoin
-            umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin] + integrator.p.qp.qe[idx+1:2*npoin]), MPI.MAX, comm)
+            umax = MPI.Allreduce(@views(maximum(integrator.u[idx+1:2*npoin] + integrator.p.qp.qe[idx+1:2*npoin])), MPI.MAX, comm)
 
             idx  = 2*npoin
-            vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin] + integrator.p.qp.qe[idx+1:3*npoin]), MPI.MAX, comm)
-            
+            vmax = MPI.Allreduce(@views(maximum(integrator.u[idx+1:3*npoin] + integrator.p.qp.qe[idx+1:3*npoin])), MPI.MAX, comm)
+
             idx  = 3*npoin
-            wmax = MPI.Allreduce(maximum(integrator.u[idx+1:4*npoin] + integrator.p.qp.qe[idx+1:4*npoin]), MPI.MAX, comm)
+            wmax = MPI.Allreduce(@views(maximum(integrator.u[idx+1:4*npoin] + integrator.p.qp.qe[idx+1:4*npoin])), MPI.MAX, comm)
         else
             idx  = npoin
-            umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
+            umax = MPI.Allreduce(maximum(@view(integrator.u[idx+1:2*npoin])), MPI.MAX, comm)
 
             idx  = 2*npoin
-            vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
-            
+            vmax = MPI.Allreduce(maximum(@view(integrator.u[idx+1:3*npoin])), MPI.MAX, comm)
+
             idx  = 3*npoin
-            wmax = MPI.Allreduce(maximum(integrator.u[idx+1:4*npoin]), MPI.MAX, comm)
+            wmax = MPI.Allreduce(maximum(@view(integrator.u[idx+1:4*npoin])), MPI.MAX, comm)
         end
         
         velomax = max(umax, vmax, wmax)

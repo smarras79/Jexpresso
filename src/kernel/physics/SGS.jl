@@ -382,9 +382,9 @@ end
         μ_turb = 0.0
     end
     
-    if is_u_momentum || is_v_momentum
+    if is_u_momentum || is_v_momentum || is_w_momentum
         return (μ_mol + μ_turb) * visc_coeffieq[ieq] # effective viscosity
-    elseif  is_temperature # Assuming potential temperature equation is at index 4
+    elseif  is_temperature # potential temperature / energy equation is at index 5 in 3D
 
         κ_turb = μ_turb / (ρ * Pr_t)
 

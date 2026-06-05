@@ -49,6 +49,107 @@ end
 function function_exists(module_name::Module, function_name::Symbol)
     return isdefined(module_name, function_name) && isa(getfield(module_name, function_name), Function)
 end
+
+#------------------------------------------------------------------
+# VTK cell-topology cache
+#
+# The VTK connectivity (the `cells` vector of MeshCell objects) is a pure
+# function of the mesh and never changes between output writes for a fixed
+# mesh. Rebuilding it on every write_vtk call re-allocated ~nelem*(ngl-1)^d
+# MeshCell objects plus a slice copy each (~10s of MiB and ~10^5 allocations
+# for a moderate 2D mesh, paid at every diagnostic output). We build it once
+# per mesh and cache it, keyed by mesh identity, validating against a size
+# signature so that a remeshing (e.g. AMR) transparently triggers a rebuild.
+#------------------------------------------------------------------
+const _VTK_TOPOLOGY_CACHE = IdDict{Any,Any}()
+
+const _VTK_QOUT_CACHE = IdDict{Any,Any}()
+
+# Reusable output buffer for write_vtk/write_NetCDF. The qout diagnostic array
+# is (npoin × noutvar) and is fully overwritten by call_user_uout on every
+# write, so we keep one buffer per mesh instead of re-allocating it each output.
+function get_vtk_qout(mesh, npoin, noutvar)
+    buf = get(_VTK_QOUT_CACHE, mesh, nothing)
+    if buf === nothing || size(buf, 1) != npoin || size(buf, 2) != noutvar
+        buf = zeros(Float64, npoin, noutvar)
+        _VTK_QOUT_CACHE[mesh] = buf
+    else
+        fill!(buf, 0.0)
+    end
+    return buf
+end
+
+function get_vtk_cells_2d(mesh)
+    nelem          = mesh.nelem
+    nelem_semi_inf = mesh.nelem_semi_inf
+    ngl            = mesh.ngl
+    ngr            = mesh.ngr
+    ncells = nelem*(ngl-1)^2 + (nelem_semi_inf > 0 ? nelem_semi_inf*(ngl-1)*(ngr-1) : 0)
+    sig    = (:vtk2d, ncells, nelem, nelem_semi_inf, ngl, ngr)
+
+    cached = get(_VTK_TOPOLOGY_CACHE, mesh, nothing)
+    if cached !== nothing && cached.sig == sig
+        return cached.cells
+    end
+
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 4, 3]))}(undef, ncells)
+    isel = 1
+    for iel = 1:nelem
+        for i = 1:ngl-1
+            for j = 1:ngl-1
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD,
+                                       Int64[mesh.connijk[iel,i,j],   mesh.connijk[iel,i+1,j],
+                                             mesh.connijk[iel,i+1,j+1], mesh.connijk[iel,i,j+1]])
+                isel += 1
+            end
+        end
+    end
+    for iel = 1:nelem_semi_inf
+        for i = 1:ngl-1
+            for j = 1:ngr-1
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD,
+                                       Int64[mesh.connijk_lag[iel,i,j],   mesh.connijk_lag[iel,i+1,j],
+                                             mesh.connijk_lag[iel,i+1,j+1], mesh.connijk_lag[iel,i,j+1]])
+                isel += 1
+            end
+        end
+    end
+
+    _VTK_TOPOLOGY_CACHE[mesh] = (sig = sig, cells = cells)
+    return cells
+end
+
+function get_vtk_cells_3d(mesh)
+    nelem = mesh.nelem
+    ngl   = mesh.ngl
+    ncells = nelem*(ngl-1)^3
+    sig    = (:vtk3d, ncells, nelem, ngl)
+
+    cached = get(_VTK_TOPOLOGY_CACHE, mesh, nothing)
+    if cached !== nothing && cached.sig == sig
+        return cached.cells
+    end
+
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[1, 2, 3, 4, 5, 6, 7, 8]))}(undef, ncells)
+    isel = 1
+    for iel = 1:nelem
+        for i = 1:ngl-1
+            for j = 1:ngl-1
+                for k = 1:ngl-1
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON,
+                                           Int64[mesh.connijk[iel,i,j,k],     mesh.connijk[iel,i+1,j,k],
+                                                 mesh.connijk[iel,i+1,j+1,k], mesh.connijk[iel,i,j+1,k],
+                                                 mesh.connijk[iel,i,j,k+1],   mesh.connijk[iel,i+1,j,k+1],
+                                                 mesh.connijk[iel,i+1,j+1,k+1], mesh.connijk[iel,i,j+1,k+1]])
+                    isel += 1
+                end
+            end
+        end
+    end
+
+    _VTK_TOPOLOGY_CACHE[mesh] = (sig = sig, cells = cells)
+    return cells
+end
 #------------------------------------------------------------------
 # END Callback for missing user_uout!()
 #------------------------------------------------------------------
@@ -234,57 +335,14 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     ngl            = mesh.ngl
     ngr            = mesh.ngr
 
-    if (nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1)]
-    else
-        subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(ngl-1)^2]
-    end
-
-    isel = 1
-    for iel = 1:nelem
-        for i = 1:ngl-1
-            for j = 1:ngl-1
-                ip1 = mesh.connijk[iel,i,j]
-                ip2 = mesh.connijk[iel,i+1,j]
-                ip3 = mesh.connijk[iel,i+1,j+1]
-                ip4 = mesh.connijk[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-
-                isel = isel + 1
-            end
-        end
-    end
-
-    for iel = 1:nelem_semi_inf
-        for i = 1:ngl-1
-            for j = 1:ngr-1
-                ip1 = mesh.connijk_lag[iel,i,j]
-                ip2 = mesh.connijk_lag[iel,i+1,j]
-                ip3 = mesh.connijk_lag[iel,i+1,j+1]
-                ip4 = mesh.connijk_lag[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-
-                isel = isel + 1
-            end
-        end
-    end
+    # Cell connectivity is fixed for a given mesh: build once, reuse on every write.
+    cells = get_vtk_cells_2d(mesh)
+    ncells = length(cells)
 
     #
     # Fetch user-defined diagnostic vars or take them from the solution vars:
     #
-    qout = zeros(Float64, npoin, noutvar)
+    qout = get_vtk_qout(mesh, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 
@@ -295,13 +353,13 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.coords[1:mesh.npoin,1],
-                         mesh.coords[1:mesh.npoin,2],
-                         mesh.coords[1:mesh.npoin,2]*TFloat(0.0),
+                         @view(mesh.coords[1:mesh.npoin,1]),
+                         @view(mesh.coords[1:mesh.npoin,2]),
+                         zeros(TFloat, mesh.npoin),
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
-        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf["part", VTKCellData()] = fill(Float64(part), ncells)
 
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
@@ -329,45 +387,14 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     noutvar = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
 
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
-    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
-
-    isel = 1
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
-                for k = 1:mesh.ngl-1
-                    ip1 = mesh.connijk[iel,i,j,k]
-                    ip2 = mesh.connijk[iel,i+1,j,k]
-                    ip3 = mesh.connijk[iel,i+1,j+1,k]
-                    ip4 = mesh.connijk[iel,i,j+1,k]
-
-                    ip5 = mesh.connijk[iel,i,j,k+1]
-                    ip6 = mesh.connijk[iel,i+1,j,k+1]
-                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
-                    ip8 = mesh.connijk[iel,i,j+1,k+1]
-
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
-
-                    isel = isel + 1
-                end
-            end
-        end
-    end
+    # Cell connectivity is fixed for a given mesh: build once, reuse on every write.
+    cells = get_vtk_cells_3d(mesh)
+    ncells = length(cells)
 
     #
     # Fetch user-defined diagnostic vars or take them from the solution vars:
     #
-    qout = zeros(Float64, npoin, noutvar)
+    qout = get_vtk_qout(mesh, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 
@@ -378,13 +405,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.coords[1:mesh.npoin,1],
-                         mesh.coords[1:mesh.npoin,2],
-                         mesh.coords[1:mesh.npoin,3],
+                         @view(mesh.coords[1:mesh.npoin,1]),
+                         @view(mesh.coords[1:mesh.npoin,2]),
+                         @view(mesh.coords[1:mesh.npoin,3]),
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
-        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf["part", VTKCellData()] = fill(Float64(part), ncells)
 
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
@@ -689,7 +716,7 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     # Fetch user-defined diagnostic vars or take them from the solution vars:
     #
-    qout = zeros(Float64, npoin, noutvar)
+    qout = get_vtk_qout(mesh, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 
@@ -832,7 +859,7 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     # Fetch user-defined diagnostic vars or take them from the solution vars:
     #
-    qout = zeros(Float64, npoin, noutvar)
+    qout = get_vtk_qout(mesh, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 

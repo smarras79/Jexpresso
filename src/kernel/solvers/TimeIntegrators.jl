@@ -107,7 +107,7 @@ function time_loop!(inputs, params, u, args...)
             #CFL
             if inputs[:ladapt] == false
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
-                        integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
+                        integrator.p.mp, @view(integrator.p.uaux[:,end]), inputs[:Δt],
                         integrator.p.mesh.Δeffective_s,
                         integrator,
                         integrator.p.SD; visc=inputs[:μ])
