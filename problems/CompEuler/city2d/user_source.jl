@@ -1,93 +1,100 @@
 function user_source!(S,
-                      q, 
+                      q,
                       qe,
-                      npoin::Int64,
+                      npoin::TInt,
                       ::CL, ::TOTAL;
-                      neqs=1,
-                      x=0.0,
-                      y=0.0,
-                      z=0.0,
-                      xmin=0.0, xmax=0.0,
-                      ymin=0.0, ymax=0.0,
-                      zmin=0.0, zmax=0.0)
+                      neqs=1, x=0.0, y=0.0, ymin=0.0, ymax=1000.0, xmin=0.0, xmax=1000.0)
 
     PhysConst = PhysicalConst{Float64}()
-    
-    #--------------
+
+    #
     # S(q(x)) = -ρg
-    #--------------
-    ρ  = q[1]
-    
+    #
+    ρ = q[1]
+
     S[1] = 0.0
     S[2] = 0.0
-    S[3] = 0.0
-    S[4] = -ρ*PhysConst.g
-    S[5] = 0.0
+    S[3] = -ρ*PhysConst.g
+    S[4] = 0.0
 
     #--------------
-    # Coriolis
-    #--------------
-    lcoriolis = true
-    lgeostrophic = true
-    
-    #--------------
-    # SPONGE
+    # SPONGE (weak, top of domain, thickness = ymax - zsponge)
+    # Adapted to 2D from problems/CompEuler/LESICP2/user_source.jl
+    # where the sponge acts along the vertical (z in 3D, y here).
     #--------------
     if inputs[:lsponge] == true
-        zs = inputs[:zsponge]
-    	xr = 0.0
-    	xl = 0.0
-    	α  = 0.5
-	if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-            betay_coe = α*sinpi(0.5*(z - zs)/(zmax - zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-	else
-		betay_coe = 0.0
-	end
-    	ctop= 1.0*betay_coe
-
-	#if (x >= xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-	        #    betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    	#else
-    	betaxr_coe = 0.0
-    	#end
-    
-       #if (x <= xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-       #    betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-        #else
-         betaxl_coe = 0.0
-        #end
-    
-        cxr = 0.0*betaxr_coe
-        cxl = 0.0*betaxl_coe
-        cyr = 0.0
-        cyl = 0.0
-        cs  = 1.0 - (1.0 - ctop)*(1.0 - cxr)*(1.0 - cxl)*(1.0 - cyr)*(1.0 - cyl)
-
-        #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
-        #S[1] -= (cs)*(q[1]-qe[1])
-        S[2] -= cs*(q[2]-qe[2])
-    	S[3] -= cs*(q[3]-qe[3])
-        S[4] -= cs*(q[4]-qe[4])
-        #S[5] -= cs*(q[5]-qe[5])
-    end	 #sponge
-
-    
-    #Coriolis & geostrophic wind    
-    if lcoriolis == true
-        f = 1.0e-4
-        u_vel = q[2]
-        v_vel = q[3]
-        S[2] += f * v_vel
-        S[3] -= f * u_vel
-
-        if lgeostrophic == true
-            U_geo = qe[2]/qe[1] #10.0
-            V_geo = qe[3]/qe[1] #0.0
-
-            S[2] -= q[1] * f * V_geo
-            S[3] += q[1] * f * U_geo
+        ys = inputs[:zsponge]
+        α  = 0.05   # weak sponge strength
+        if y >= ys
+            betay_coe = α*sinpi(0.5*(y - ys)/(ymax - ys))
+        else
+            betay_coe = 0.0
         end
+        cs = betay_coe
+
+        S[2] -= cs*(q[2] - qe[2])
+        S[3] -= cs*(q[3] - qe[3])
+        S[4] -= cs*(q[4] - qe[4])
     end
-        
-    return  S
+
+end
+
+function user_source!(S,
+                      q,
+                      qe,
+                      npoin::Int64,
+                      ::CL, ::PERT;
+                      neqs=1, x=0.0, y=0.0, ymin=0.0, ymax=1000.0, xmin=0.0, xmax=1000.0)
+
+    PhysConst = PhysicalConst{Float64}()
+
+    #
+    # S(q(x)) = -ρg
+    #
+    ρ = q[1]
+
+    S[1] = 0.0
+    S[2] = 0.0
+    S[3] = -ρ*PhysConst.g
+    S[4] = 0.0
+
+    if inputs[:lsponge] == true
+        ys = inputs[:zsponge]
+        α  = 0.05
+        if y >= ys
+            betay_coe = α*sinpi(0.5*(y - ys)/(ymax - ys))
+        else
+            betay_coe = 0.0
+        end
+        cs = betay_coe
+
+        S[2] -= cs*(q[2] - qe[2])
+        S[3] -= cs*(q[3] - qe[3])
+        S[4] -= cs*(q[4] - qe[4])
+    end
+
+end
+
+function user_source!(S,
+                      q,
+                      qe,
+                      npoin::Int64,
+                      ::NCL,
+                      ::AbstractPert;
+                      neqs=1, x=0.0, y=0.0, ymin=0.0, ymax=1000.0, xmin=0.0, xmax=1000.0)
+
+    PhysConst = PhysicalConst{Float64}()
+
+    S[1] = 0.0
+    S[2] = 0.0
+    S[3] = -PhysConst.g
+    S[4] = 0.0
+
+end
+
+function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
+
+    T = eltype(q)
+    ρ = q[1]
+    return T(0.0), T(0.0), T(-ρ*PhysConst.g), T(0.0)
 end
