@@ -47,7 +47,7 @@ function parse_commandline()
 
         "eqs_case"
         help = "case name in equations directory"
-        default = "wave1d"
+        default = "kelvinHelmholtzChan2022"
         required = false
 
         "CI_MODE"

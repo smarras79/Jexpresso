@@ -5,9 +5,9 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
 	:ode_solver           => CarpenterKennedy2N54(),
-        :Δt                   => 1e-2,
+        :Δt                   => 1e-3,
         :tinit                => 0.0,
-        :tend                 => 10.0,
+        :tend                 => 2.0,
         :diagnostics_at_times => (0.0:1.0:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
@@ -26,14 +26,14 @@ function user_inputs()
         :lvisc            => true, #false by default NOTICE: works only for Inexact
         :μ                => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
         #:μ                => [0.0, 1e-4, 1e-4, 1e-4], #horizontal viscosity constant for momentum
-        #:visc_model       => SMAG(),
-        :visc_model       => VREM(),
+        :visc_model       => SMAG(),
+        #:visc_model       => VREM(),
         #:energy_equation  => "theta",
         :energy_equation  => "energy",
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
-        :lkep        => true,
+        :lkep        => false,
         :entropy_variables => false,
         :volume_flux => ranocha(),
         #:volume_flux => artiano_tec(),
