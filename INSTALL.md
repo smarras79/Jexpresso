@@ -57,6 +57,10 @@ julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(ext
 > For example, if you use OpenMPI installed with Homebrew, the path is likely
 > `/opt/homebrew/lib`.
 
+```bash
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])'
+```
+
 **3c. Precompile everything:**
 
 ```bash

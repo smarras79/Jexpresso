@@ -1,86 +1,61 @@
 function user_inputs()
+
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.001,
-        :tinit                => 0,
-        :tend                 => 10,
-	:lrestart             => false,
-	:restart_time         => 500,
-	:diagnostics_at_times => (0:1:10),
+        :ode_solver           => CarpenterKennedy2N54(),
+        :Δt                   => 0.004,
+        :tinit                => 0.0,
+        :tend                 => 600.0,
+        :diagnostics_at_times => (0:10:600),
+        :restart_time         => 50000,
+        :lrestart             => false,
+        :case                 => "city2d",
         :lsource              => true,
-	#:lsponge              => true,
-	:zsponge              => 2500.0,
-        #:sounding_file        =>"./data_files/input_sounding_teamx_u10_flat_noheader.dat",
+        :SOL_VARS_TYPE        => TOTAL(),
+        #---------------------------------------------------------------------------
+        # Sponge: weak top sponge of thickness 500 m (ymax=1000 -> zsponge=500)
+        #---------------------------------------------------------------------------
+        :lsponge              => true,
+        :zsponge              => 500.0,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes  =>"lgl",
-        :nop                  => 4,      # Polynomial order
+        :interpolation_nodes => "lgl",
+        :nop                 => 4,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lwall_model          => false,
-        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
-        :bdy_fluxes           => true,
-        :lvisc                => true, #false by default
-        :visc_model           => SMAG(),
-        #:visc_model           => AV(),
-        #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 5, 5, 5, 5], #horizontal viscosity constant for momentum
+        :lvisc           => true,
+        :visc_model      => SMAG(),
+        :energy_equation => "theta",
+        :μ               => [0.0, 5.0, 5.0, 5.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-	:lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename    => "./meshes/gmsh_grids/building.msh",
-	
-        # Warping:
-        :lwarp => false,
-        :mount_type => "LESICP",
-        :h_mount => 1000.0,
-        :a_mount => 10240.0,
-	:z_transition_start => -1000.0,
-	:z_transition_end => 2200.0,
-
-        # Stretching factors:
-        :lstretch => false,
-        :stretch_factor => 1.15,
-        :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
-        :first_zelement_size => 10.0,
-        :zlevel_transition => 2000.0,
-        
-        #---------------------------------------------------------------------------
-        # Filter parameters
-        #---------------------------------------------------------------------------
-        :lfilter             => false,
-        :mu_x                => 0.5,
-        :mu_y                => 0.5,
-	:mu_z                => 0.5,
-        :filter_type         => "erf",
+        :lread_gmsh    => true,
+        #:gmsh_filename => "./meshes/gmsh_grids/city2d.msh",
+        :gmsh_filename => "./meshes/gmsh_grids/city2d_transfinite.msh",
+        #:gmsh_filename => "./meshes/gmsh_grids/city2d_TFI.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-        :output_dir          => "./output",
-        :loverwrite_output   => true,  #this is only implemented for VTK for now
-        :lwrite_initial      => true,
+        :outformat         => "vtk",
+        :loverwrite_output => true,
+        :lwrite_initial    => true,
+        :output_dir        => "./output",
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
-        :init_refine_lvl     => 1,
+        :linitial_refine => false,
+        :init_refine_lvl => 1,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
-        :ladapt              => false,
-        :amr                 => true,
-        #---------------------------------------------------------------------------
-        # AMR parameters
-        #---------------------------------------------------------------------------
-        :amr_freq            => 20,
-        :amr_max_level       => 1,
+        :ladapt    => false,
+        :amr_freq  => 200,
+        :amr_max_level => 2,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
@@ -88,5 +63,5 @@ function user_inputs()
     #---------------------------------------------------------------------------
 
     return inputs
-    
+
 end
