@@ -1299,14 +1299,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 for igl = 1:mesh.ngl
                     mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
                     mesh.bdy_edge_type[iedge_bdy]         = mesh.edge_type[iedge]
+                    # 2D treats "periodicy" and "periodicz" as synonyms for the
+                    # second periodic direction. The legacy code paths
+                    # (restructure4periodicity_2D, BCs.jl, …) only recognise
+                    # "periodicz" — gmsh meshes that label y-edges as
+                    # "periodicy" were silently skipped, showing up as a
+                    # broken top/bottom periodicity in 2D KH. Remap at the
+                    # source so every downstream check still sees just
+                    # "periodicz".
+                    if mesh.nsd == 2 && mesh.bdy_edge_type[iedge_bdy] == "periodicy"
+                        mesh.bdy_edge_type[iedge_bdy] = "periodicz"
+                    end
                     mesh.bdy_edge_in_elem[iedge_bdy]      = mesh.facet_cell_ids[iedge][1]
-                    # if (size(mesh.facet_cell_ids[iedge],1) ≠ 1)
-                    #     s = """
-                    #     Check boundary elements! size(mesh.facet_cell_ids[iedge],1) ≠ 1 
-                    #         """
-                
-                    #     @error s
-                    # end
                 end
                 if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
                     n_semi_inf += 1
