@@ -61,7 +61,97 @@ julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(ext
 julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])'
 ```
 
-**3c. Precompile everything:**
+**3c. Alternative: use MPI.jl's bundled MPI (MPICH-based JLL).**
+
+Use this route if step 3b deadlocks on `MPI.Init` (a known sharp edge
+with Open MPI 5 + macOS + MPI.jl, where the PMIx handshake never
+completes), or if you don't want to install a system MPI at all. With
+this route MPI ships *with* Julia's package environment — no system
+MPI is needed.
+
+```bash
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary()'
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
+```
+
+Verify the bind:
+
+```bash
+julia --project=. -e '
+  using MPIPreferences; println("binary = ", MPIPreferences.binary)
+  using MPI;            println(MPI.identify_implementation())'
+```
+
+`binary` should now print `"MPItrampoline_jll"` (which defaults to
+MPICH on macOS).
+
+> **Important — launch with the bundled `mpiexec`, NOT system `mpirun`.**
+> After switching to the JLL binary, the system `mpirun` will not work
+> because it belongs to a different MPI. Use the launcher MPI.jl ships:
+
+```bash
+julia --project=. -e '
+  using MPI
+  run(`$(mpiexec()) -n 4 $(Base.julia_cmd()) --project=. src/Jexpresso.jl CompEuler city2d`)'
+```
+
+For daily use you can wrap the launcher in a small shell file `jexp_mpich.sh`:
+
+```bash
+#!/bin/bash
+
+# USER: change to your julia path: ---------------------------------------
+JULIA=/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia
+# END USER ---------------------------------------------------------------
+
+
+jexp_mpich() {
+
+    local msg="I am starting Julia; please be patient. Jexpresso hasn't started yet!"
+    local border
+    border=$(printf '═%.0s' $(seq 1 $(( ${#msg} + 2 ))))
+    printf '\033[1;31m╔%s╗\n║ %s ║\n╚%s╝\033[0m\n' "$border" "$msg" "$border"
+    
+    $JULIA --project=. -e "
+      using MPI
+      run(\`\$(mpiexec()) -n $1 \$(Base.julia_cmd()) --project=. src/Jexpresso.jl $2 $3\`)"
+}
+jexp_mpich "$@"
+}
+# Usage:
+jexp_mpich 4 CompEuler city2d
+```
+
+**3d. macOS-specific: register your hostname in `/etc/hosts`.**
+
+Required for *any* MPICH-based MPI on macOS (so: required if you took
+step 3c, optional otherwise). MPICH's TCP channel resolves the machine
+hostname via the C `gethostbyname()` call, which on macOS only returns
+mDNS names (`*.local`) and fails on the bare hostname, producing
+`MPI_Init` errors of the form:
+
+```
+GetSockInterfaceAddr ... gethostbyname failed, <your-hostname> (errno 0)
+```
+
+Fix once, permanently:
+
+```bash
+echo "127.0.0.1   $(hostname -s)" | sudo tee -a /etc/hosts
+echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
+```
+
+Verify:
+
+```bash
+ping -c 1 $(hostname -s)     # should respond from 127.0.0.1
+```
+
+If you cannot sudo, the equivalent env-var workaround is to export
+`MPICH_INTERFACE_HOSTNAME=127.0.0.1` in every shell session before
+launching MPI jobs (or add it to `~/.zshrc`).
+
+**3e. Precompile everything:**
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.precompile()'
