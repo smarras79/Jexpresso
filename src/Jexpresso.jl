@@ -78,6 +78,9 @@ using PartitionedArrays
 using GridapGmsh
 using GridapP4est
 
+using PrecompileTools
+
+
 TInt   = Int64
 TFloat = Float64
 cpu    = true
@@ -222,4 +225,14 @@ export @timers
 
 # Run the test
 # test_create_2d_projection_matrices_numa2d()
+
+
+@setup_workload begin
+    # tiny representative case, only run during package precompile
+    case_dir = joinpath(dirname(@__DIR__), "test", "CI-runs", "CompEuler", "sod1d")  # smallest existing case
+    @compile_workload begin
+        push!(empty!(ARGS), "CompEuler", "sod1d", "true")
+        include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
+    end
+end
 end
