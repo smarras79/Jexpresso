@@ -1,0 +1,7 @@
+jexp_mpi() {
+    julia --project=. -e "
+      using MPI
+      run(\`\$(mpiexec()) -n $1 \$(Base.julia_cmd()) --project=. src/Jexpresso.jl \$2 \$3\`)"
+}
+# Usage:
+# jexp_mpi 4 CompEuler city2d
