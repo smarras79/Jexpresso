@@ -197,6 +197,71 @@ include("./src/Jexpresso.jl")
 
 If the test runs to completion, your Jexpresso installation is ready to go. 🎉
 
+## 5. Daily workflow — interactive REPL for fast iteration
+
+Every Julia process pays a one-time JIT compilation cost on first use of
+`sem_setup`, the `with_mpi` closure, the SciML integrator, the VTK
+writer, etc. Cold starts (a fresh `mpirun`, a fresh `julia src/Jexpresso.jl ...`)
+re-pay this cost every time — typically ~30–60 s of silent wall time
+between `# Read inputs dict ... DONE` and the time loop visibly
+advancing.
+
+**The cheapest way to escape that is the REPL workflow**: launch Julia
+once, run the same case (or different cases) repeatedly inside the same
+process. The first invocation in a session is slow; every subsequent
+invocation is essentially instant for the JIT-related work — only your
+actual integration time remains.
+
+### Single-rank (serial) workflow
+
+This is the recommended development workflow:
+
+```bash
+julia --project=.
+```
+
+Then at the prompt, run a case:
+
+```julia
+julia> push!(empty!(ARGS), "CompEuler", "theta");
+julia> include("./src/Jexpresso.jl")
+# ... lots of JIT on the first run; the simulation completes ...
+```
+
+Edit your code, then re-run in the SAME session:
+
+```julia
+julia> include("./src/Jexpresso.jl")
+# ... starts almost immediately; only your edits get JIT-compiled ...
+```
+
+For source files outside `user_inputs.jl` etc., use `Revise.jl` so edits
+are picked up without restarting the REPL.
+
+### MPI runs from the same Julia process
+
+You can also drive parallel `mpiexec` runs from within an interactive
+Julia session — Julia's `run(...)` keeps the bundled `mpiexec` happy
+and you can re-run as many times as you like without restart:
+
+```julia
+julia> using MPI
+julia> JULIA = Base.julia_cmd()
+julia> run(`$(mpiexec()) -n 4 $JULIA --project=. src/Jexpresso.jl CompEuler city2d`)
+```
+
+Each `run(...)` invocation still spawns FRESH MPI ranks, so each
+parallel run pays the cold-JIT cost again. The REPL-resident Julia
+process does not save you here — the JIT cost lives in the child
+processes that mpiexec spawns.
+
+In short: **interactive REPL eliminates cold-start cost for serial
+development**, but every `mpirun` is its own cold start. The next-tier
+win for parallel cold starts is `PackageCompiler.create_sysimage` — a
+larger one-time investment that ships a pre-compiled `.dylib` and
+makes every cold `mpiexec` rank skip JIT too — but that is out of
+scope for this guide.
+
 # To run other tests that are already in Jexpresso or to add your own new problem,
 see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md)
 
