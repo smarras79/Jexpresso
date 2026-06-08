@@ -764,75 +764,40 @@ function save_serial_spatial_amr(RHS, As, A_with_rows, mesh, extra_mesh, n_ang::
 
     rhs_vec = vec(collect(Float64, RHS))
 
-    # Row-nnz vector for A_with_rows (post-restriction, pre-prolongation).
-    # For each DOF row i, count the number of structurally nonzero columns.
-    # This is stored so the parallel run can compare structural sparsity patterns.
-    row_nnz_restricted = zeros(Int, n)
+    # A_with_rows: store every non-zero as (row_ip, col_ip, val) so the parallel
+    # run can do a value-based, coordinate-keyed comparison.
+    # In serial all ip_spa indices are in [1,n] with valid dedup_coords entries.
+    ar_row_ip = Int32[]
+    ar_col_ip = Int32[]
+    ar_val    = Float64[]
     if A_with_rows !== nothing
-        Ar = sparse(A_with_rows)
-        # A_with_rows may be n_ext × n_ext; we only care about rows 1:n
-        n_rows = min(size(Ar, 1), n)
-        # Build row nnz by scanning the CSC structure
-        for col = 1:size(Ar, 2)
-            for ptr in nzrange(Ar, col)
-                row = rowvals(Ar)[ptr]
-                row <= n && (row_nnz_restricted[row] += 1)
+        Ar   = sparse(A_with_rows)
+        Arvl = nonzeros(Ar)
+        Arrv = rowvals(Ar)
+        for col_ip = 1:min(size(Ar, 2), n)
+            for ptr in nzrange(Ar, col_ip)
+                row_ip = Arrv[ptr]
+                row_ip > n && continue
+                v = Arvl[ptr]
+                abs(v) < 1e-20 && continue
+                push!(ar_row_ip, Int32(row_ip))
+                push!(ar_col_ip, Int32(col_ip))
+                push!(ar_val,    v)
             end
         end
-    end
-
-    # Save matrix entries for "parent rows" — rows where the restriction added
-    # off-diagonal entries from hanging children (identified by nnz > stencil baseline).
-    # The stencil for a p=4 3D transport problem is 3*(ngl-1)+1 = 13 per angular node.
-    # Rows above this threshold have received row-effect contributions.
-    # Stored as flat arrays: [row_coord(5 floats), col_coord(5 floats), value] per entry.
-    parent_row_threshold = 20   # above standard 3D p=4 stencil
-    parent_mat_row  = Float64[]   # row coordinate, 5 values each
-    parent_mat_col  = Float64[]   # col coordinate, 5 values each
-    parent_mat_val  = Float64[]   # matrix entry value
-    if A_with_rows !== nothing && dedup_coords !== nothing
-        Ar = sparse(A_with_rows)
-        n_rows = min(size(Ar, 1), n)
-        # Build row → column list using CSC structure
-        row_cols = [Tuple{Int,Float64}[] for _ = 1:n_rows]
-        for col = 1:min(size(Ar, 2), n)
-            for ptr in nzrange(Ar, col)
-                row = rowvals(Ar)[ptr]
-                row <= n_rows || continue
-                push!(row_cols[row], (col, nonzeros(Ar)[ptr]))
-            end
-        end
-        for row = 1:n_rows
-            row_nnz_restricted[row] < parent_row_threshold && continue
-            rc = (dedup_coords[row,1], dedup_coords[row,2], dedup_coords[row,3],
-                  dedup_coords[row,4], dedup_coords[row,5])
-            for (col, val) in row_cols[row]
-                col > n && continue
-                cc = (dedup_coords[col,1], dedup_coords[col,2], dedup_coords[col,3],
-                      dedup_coords[col,4], dedup_coords[col,5])
-                append!(parent_mat_row, [rc[1], rc[2], rc[3], rc[4], rc[5]])
-                append!(parent_mat_col, [cc[1], cc[2], cc[3], cc[4], cc[5]])
-                push!(parent_mat_val, val)
-            end
-        end
+        @info "  A_with_rows: $(length(ar_val)) entries stored"
     end
 
     JLD2.jldopen(filename, "w") do f
-        f["RHS"]                  = rhs_vec
-        f["coords"]               = coords
-        f["n"]                    = n
-        f["hanging_nodes"]        = collect(Set(hanging_nodes))
-        f["row_nnz_restricted"]   = row_nnz_restricted
-        f["parent_mat_row"]       = parent_mat_row
-        f["parent_mat_col"]       = parent_mat_col
-        f["parent_mat_val"]       = parent_mat_val
-        f["parent_row_threshold"] = parent_row_threshold
+        f["RHS"]           = rhs_vec
+        f["coords"]        = coords
+        f["n"]             = n
+        f["hanging_nodes"] = collect(Set(hanging_nodes))
+        f["ar_row_ip"]     = ar_row_ip
+        f["ar_col_ip"]     = ar_col_ip
+        f["ar_val"]        = ar_val
     end
-    @info "Saved serial spatial-AMR reference to $filename: n=$n"
-    @info "  parent mat entries saved: $(length(parent_mat_val)) (rows with nnz>=$parent_row_threshold)"
-    if A_with_rows !== nothing
-        @info "  row_nnz_restricted: total_nnz=$(sum(row_nnz_restricted)), max_per_row=$(maximum(row_nnz_restricted))"
-    end
+    @info "Saved serial spatial-AMR reference to $filename: n=$n, A_with_rows entries=$(length(ar_val))"
 end
 
 """
@@ -854,7 +819,8 @@ function reduce_and_compare_parallel_spatial_amr(
     extended_parents_to_gid_spa::Vector{Int},
     comm, rank::Int, filename::String;
     dedup_coords::Union{Matrix{Float64},Nothing}=nothing,
-    gip2owner_extra::Union{Vector{Int},Nothing}=nothing
+    gip2owner_extra::Union{Vector{Int},Nothing}=nothing,
+    ext_parent_coords::Union{Vector{NTuple{5,Float64}},Nothing}=nothing
 )
     nproc       = MPI.Comm_size(comm)
     hanging_set = Set(hanging_nodes)
@@ -894,23 +860,47 @@ function reduce_and_compare_parallel_spatial_amr(
     # global nnz structure with serial. Shared DOFs (in both ranks' local meshes via
     # coordinate dedup) are counted on every rank that has them; the sum may therefore
     # overcount shared column entries, but if par_sum < serial any rank is missing entries.
-    local_row_nnz = Tuple{NTuple{5,Float64}, Int}[]
-    if A_with_rows !== nothing
-        Ar = sparse(A_with_rows)
-        n_rows = min(size(Ar, 1), n)
-        row_nnz_local = zeros(Int, n_rows)
-        for col = 1:size(Ar, 2)
-            for ptr in nzrange(Ar, col)
-                row = rowvals(Ar)[ptr]
-                row <= n_rows && (row_nnz_local[row] += 1)
+    # ── Step 1b: A_with_rows entries (value-based, coordinate-keyed) ────────────
+    # Pack each non-zero as 11 Float64: [row_x,y,z,θ,ϕ, col_x,y,z,θ,ϕ, val].
+    # Regular indices (≤ n) use dedup_coords; extended parent indices (> n) use
+    # ext_parent_coords[i-n].  Entries with NaN coords (unknown GID) are counted.
+    local_ar_flat = Float64[]
+    local_ar_nan  = 0
+    if A_with_rows !== nothing && dedup_coords !== nothing
+        function _coord_ar(ip)
+            if ip <= n
+                return (dedup_coords[ip,1], dedup_coords[ip,2],
+                        dedup_coords[ip,3], dedup_coords[ip,4], dedup_coords[ip,5])
+            elseif ext_parent_coords !== nothing && (ip - n) <= length(ext_parent_coords)
+                return ext_parent_coords[ip - n]
+            else
+                return (NaN, NaN, NaN, NaN, NaN)
             end
         end
-        for ip = 1:n_rows
-            row_nnz_local[ip] == 0 && continue   # skip structurally empty rows
-            push!(local_row_nnz, (get_coord(ip), row_nnz_local[ip]))
+        Ar   = sparse(A_with_rows)
+        Arvl = nonzeros(Ar)
+        Arrv = rowvals(Ar)
+        for col_ip = 1:size(Ar, 2)   # include extended cols (> n)
+            col_coord = _coord_ar(col_ip)
+            col_ok = !any(isnan, col_coord)
+            for ptr in nzrange(Ar, col_ip)
+                row_ip = Arrv[ptr]
+                v = Arvl[ptr]
+                abs(v) < 1e-20 && continue
+                row_coord = _coord_ar(row_ip)
+                row_ok = !any(isnan, row_coord)
+                if !row_ok || !col_ok
+                    local_ar_nan += 1
+                    continue
+                end
+                push!(local_ar_flat,
+                    row_coord[1], row_coord[2], row_coord[3], row_coord[4], row_coord[5],
+                    col_coord[1], col_coord[2], col_coord[3], col_coord[4], col_coord[5], v)
+            end
         end
     end
-    @info "[$rank] Collected $(length(local_row_nnz)) local row-nnz entries from A_with_rows (all ranks)"
+    n_ar_nan_g = MPI.Allreduce(local_ar_nan, +, comm)
+    @info "[$rank] A_with_rows: $(length(local_ar_flat) ÷ 11) coord-matched entries (incl. extended), $local_ar_nan NaN-coord entries skipped (global=$n_ar_nan_g)"
 
     # ── Step 2: Gather to rank 0 ─────────────────────────────────────────────
     function gather_to_rank0(local_entries, tag::Int)
@@ -934,25 +924,33 @@ function reduce_and_compare_parallel_spatial_amr(
         end
     end
 
-    all_rhs_entries  = gather_to_rank0(local_rhs,     42)
-    all_row_nnz      = gather_to_rank0(local_row_nnz, 44)
+    all_rhs_entries = gather_to_rank0(local_rhs, 42)
+
+    # Gather A_with_rows entry counts (tiny collective) then use point-to-point
+    # so rank 0 processes one rank's data at a time and frees it immediately,
+    # avoiding the peak memory of holding all ranks' data simultaneously.
+    n_ar_counts = MPI.Allgather([Int32(length(local_ar_flat))], comm)
+    if rank != 0
+        MPI.Send(local_ar_flat, 0, 55, comm)
+        local_ar_flat = nothing; GC.gc()
+    end
 
     # ── Step 3: Compare on rank 0 ────────────────────────────────────────────
     if rank == 0
         ref = JLD2.jldopen(filename, "r") do f
-            (RHS              = f["RHS"],
-             coords           = f["coords"],
-             n                = f["n"],
-             row_nnz_restricted = haskey(f, "row_nnz_restricted") ?
-                                  f["row_nnz_restricted"] : nothing)
+            (coords    = f["coords"],
+             n         = f["n"],
+             RHS       = f["RHS"],
+             ar_row_ip = haskey(f, "ar_row_ip") ? f["ar_row_ip"] : nothing,
+             ar_col_ip = haskey(f, "ar_col_ip") ? f["ar_col_ip"] : nothing,
+             ar_val    = haskey(f, "ar_val")    ? f["ar_val"]    : nothing)
         end
         ref_n = ref.n
         @info "Loaded serial reference: n=$ref_n"
 
-        # ── Build serial coord dicts ──────────────────────────────────────────
-        ref_rhs_dict     = Dict{NTuple{5,Float64}, Float64}()
-        ref_row_nnz_dict = Dict{NTuple{5,Float64}, Int}()
-        n_serial_coll    = 0
+        # ── Build serial RHS dict ─────────────────────────────────────────────
+        ref_rhs_dict  = Dict{NTuple{5,Float64}, Float64}()
+        n_serial_coll = 0
         for i = 1:ref_n
             c = (ref.coords[i,1], ref.coords[i,2], ref.coords[i,3],
                  ref.coords[i,4], ref.coords[i,5])
@@ -960,13 +958,10 @@ function reduce_and_compare_parallel_spatial_amr(
                 n_serial_coll += 1
             else
                 ref_rhs_dict[c] = ref.RHS[i]
-                if ref.row_nnz_restricted !== nothing
-                    ref_row_nnz_dict[c] = ref.row_nnz_restricted[i]
-                end
             end
         end
         n_serial_coll > 0 && @warn "serial reference: $n_serial_coll coord collisions (skipped)"
-        ref = nothing; GC.gc()
+        # ref kept alive until after A_with_rows comparison (needs ref.ar_row_ip etc.)
 
         # ── RHS comparison ────────────────────────────────────────────────────
         par_rhs_dict  = Dict{NTuple{5,Float64}, Float64}()
@@ -999,78 +994,206 @@ function reduce_and_compare_parallel_spatial_amr(
         par_rhs_dict = nothing; par_rhs_count = nothing
         all_rhs_entries = nothing; GC.gc()
 
-        # ── Row-nnz comparison for A_with_rows ───────────────────────────────
+        # ── A_with_rows value comparison (coordinate-keyed) ──────────────────
         mat_ok = true
-        if isempty(ref_row_nnz_dict)
-            @warn "=== ROW-NNZ COMPARISON SKIPPED: no row_nnz_restricted in reference (re-run serial) ==="
-        elseif isempty(all_row_nnz)
-            @warn "=== ROW-NNZ COMPARISON SKIPPED: parallel sent no row-nnz data ==="
+        if ref.ar_row_ip === nothing
+            @warn "=== A_WITH_ROWS COMPARISON SKIPPED: no ar_row_ip in reference — delete .jld2 and re-run with 1 rank ==="
+        elseif sum(n_ar_counts) == 0
+            @warn "=== A_WITH_ROWS COMPARISON SKIPPED: parallel sent no entries ==="
         else
-            @info "=== SPATIAL-AMR ROW-NNZ COMPARISON (A_with_rows, post-restriction) ==="
-
-            # Build parallel coord → row-nnz dict (each owned DOF appears once)
-            par_nnz_dict  = Dict{NTuple{5,Float64}, Int}()
-            par_nnz_count = Dict{NTuple{5,Float64}, Int}()
-            for (coord, cnt) in all_row_nnz
-                par_nnz_dict[coord]  = get(par_nnz_dict, coord, 0) + cnt
-                par_nnz_count[coord] = get(par_nnz_count, coord, 0) + 1
+            @info "=== A_WITH_ROWS VALUE COMPARISON (all-reduced post-restriction, coord-keyed) ==="
+            if n_ar_nan_g > 0
+                @warn "  $n_ar_nan_g parallel entries skipped due to NaN dedup_coords — these represent a parallel assembly error"
             end
-            n_dup_nnz = count(v -> v > 1, values(par_nnz_count))
-            n_dup_nnz > 0 && @warn "parallel row-nnz: $n_dup_nnz coords with >1 contribution (summed)"
 
-            all_nnz_coords = union(keys(ref_row_nnz_dict), keys(par_nnz_dict))
-            nnz_ndiff = 0
-            nnz_par_lt  = 0   # parallel has FEWER nonzeros (missing contributions)
-            nnz_par_gt  = 0   # parallel has MORE nonzeros (extra contributions)
-            nnz_miss    = 0   # coord in serial but not in parallel
-            nnz_extra   = 0   # coord in parallel but not in serial
+            # Build serial dict: key = NTuple{10,Float16} (row+col coords, 20 bytes),
+            # value = Float32 (4 bytes). Total ~24 bytes/entry vs 88 bytes for Float64.
+            ser_coords = ref.coords
+            ser_rip = ref.ar_row_ip; ser_cip = ref.ar_col_ip; ser_av = ref.ar_val
+            ser_ar = Dict{NTuple{10,Float16}, Float32}()
+            sizehint!(ser_ar, length(ser_av))
+            for k in eachindex(ser_av)
+                r = Int(ser_rip[k]); c = Int(ser_cip[k])
+                key = (Float16(ser_coords[r,1]), Float16(ser_coords[r,2]),
+                       Float16(ser_coords[r,3]), Float16(ser_coords[r,4]),
+                       Float16(ser_coords[r,5]),
+                       Float16(ser_coords[c,1]), Float16(ser_coords[c,2]),
+                       Float16(ser_coords[c,3]), Float16(ser_coords[c,4]),
+                       Float16(ser_coords[c,5]))
+                ser_ar[key] = Float32(ser_av[k])
+            end
+            ser_rip = nothing; ser_cip = nothing; ser_av = nothing
+            ser_coords = nothing; ref = nothing; GC.gc()
 
-            # Distribution of differences
-            diff_histogram = Dict{Int,Int}()  # (par_nnz - ser_nnz) → count
+            # Build parallel dict by receiving one rank's data at a time.
+            function _add_flat_to_dict!(data, d)
+                n = length(data) ÷ 11
+                sizehint!(d, length(d) + n)
+                for k = 1:n
+                    s = 11*(k-1)
+                    key = ntuple(j -> Float16(data[s+j]), Val(10))
+                    d[key] = get(d, key, Float32(0)) + Float32(data[s+11])
+                end
+            end
+            par_ar = Dict{NTuple{10,Float16}, Float32}()
+            _add_flat_to_dict!(local_ar_flat, par_ar)
+            local_ar_flat = nothing; GC.gc()
+            for r = 1:nproc-1
+                n_recv = Int(n_ar_counts[r+1])
+                if n_recv > 0
+                    recv_buf = Vector{Float64}(undef, n_recv)
+                    MPI.Recv!(recv_buf, r, 55, comm)
+                    _add_flat_to_dict!(recv_buf, par_ar)
+                    recv_buf = nothing; GC.gc()
+                end
+            end
 
-            for coord in all_nnz_coords
-                sv = get(ref_row_nnz_dict, coord, -1)
-                pv = get(par_nnz_dict,     coord, -1)
-                if sv == -1
-                    nnz_extra += 1
+            # Compare — key is NTuple{10,Float16} so coords are printed directly.
+            tol = 1e-3   # relaxed to account for Float16 coord precision
+            all_ar_keys = union(keys(ser_ar), keys(par_ar))
+            ar_ndiff = 0; ar_nmiss = 0; ar_nextra = 0; ar_max_err = 0.0f0
+            for key in all_ar_keys
+                in_ser = haskey(ser_ar, key)
+                in_par = haskey(par_ar, key)
+                if !in_par
+                    ar_nmiss += 1
+                    if ar_nmiss <= 20
+                        rk = key[1:5]; ck = key[6:10]
+                        sv = ser_ar[key]
+                        @info "  MISSING_PAR row=$rk col=$ck ser=$sv"
+                    end
                     continue
                 end
-                if pv == -1
-                    nnz_miss  += 1
-                    continue
-                end
-                if sv != pv
-                    nnz_ndiff += 1
-                    d = pv - sv
-                    diff_histogram[d] = get(diff_histogram, d, 0) + 1
-                    if pv < sv; nnz_par_lt += 1
-                    else;        nnz_par_gt += 1; end
-                    if nnz_ndiff <= 30
-                        @info "  row-nnz diff at $coord: serial=$sv parallel=$pv Δ=$(pv-sv)"
+                if !in_ser; ar_nextra += 1; continue; end
+                sv = ser_ar[key]; pv = par_ar[key]
+                err = abs(pv - sv) / max(abs(sv), Float32(1e-10))
+                if err > tol
+                    ar_ndiff += 1
+                    ar_max_err = max(ar_max_err, err)
+                    if ar_ndiff <= 20
+                        rk = key[1:5]; ck = key[6:10]
+                        @info "  DIFF row=$rk col=$ck ser=$sv par=$pv rel_err=$(round(err,sigdigits=3))"
                     end
                 end
             end
-
-            @info "Row-nnz totals: serial_dofs=$(length(ref_row_nnz_dict)), parallel_dofs=$(length(par_nnz_dict))"
-            @info "Row-nnz mismatches: total=$nnz_ndiff, par<ser=$nnz_par_lt (missing entries), par>ser=$nnz_par_gt (extra entries)"
-            @info "Row-nnz: missing_from_par=$nnz_miss, extra_in_par=$nnz_extra"
-            if !isempty(diff_histogram)
-                sorted_diffs = sort(collect(diff_histogram), by=x->x[1])
-                @info "Row-nnz difference histogram (Δ=par-ser → count):"
-                for (d, cnt) in sorted_diffs
-                    @info "  Δ=$d → $cnt rows"
-                end
-            end
-
-            mat_ok = (nnz_ndiff == 0 && nnz_miss == 0 && nnz_extra == 0)
-            mat_ok ? @info("✓ ROW-NNZ MATCHES SERIAL") : @warn("✗ ROW-NNZ DOES NOT MATCH SERIAL")
-
-            ref_row_nnz_dict = nothing; par_nnz_dict = nothing
-            par_nnz_count = nothing; all_row_nnz = nothing; GC.gc()
+            @info "A_with_rows: entries_ser=$(length(ser_ar)) entries_par=$(length(par_ar))"
+            @info "A_with_rows: value_diffs=$ar_ndiff missing_par=$ar_nmiss extra_par=$ar_nextra max_rel_err=$ar_max_err"
+            mat_ok = (ar_ndiff == 0 && ar_nmiss == 0 && ar_nextra == 0)
+            mat_ok ? @info("✓ A_WITH_ROWS MATCHES SERIAL") : @warn("✗ A_WITH_ROWS DOES NOT MATCH SERIAL")
+            ser_ar = nothing; par_ar = nothing; GC.gc()
         end
+        ref = nothing; GC.gc()
 
         return rhs_ok && mat_ok
     end
 
     return nothing
+end
+
+"""
+    diagnose_row(As, target_coord, dedup_coords, n, ext_parent_coords,
+                 ip2gip_spa, rank, comm, label; tol)
+
+Gather and print all non-zero column entries of `As` for the row whose
+(x,y,z,θ,ϕ) coordinates match `target_coord`.  Works in both serial and
+parallel: each rank searches its local DOFs (and extended parent rows), collects
+entries, sends to rank 0 which prints the merged list.
+
+Usage: call once in serial and once in parallel with the same target_coord
+(taken from the nnz-comparison output), then compare the printed column lists
+to find exactly which relationships are missing.
+"""
+function diagnose_row(
+    As, target_coord::NTuple{5,Float64},
+    dedup_coords::Matrix{Float64}, n::Int,
+    ext_parent_coords::Union{Vector{NTuple{5,Float64}},Nothing},
+    ip2gip_spa::Vector{Int},
+    rank::Int, comm, label::String;
+    tol::Float64 = 1e-2
+)
+    nproc = MPI.Comm_size(comm)
+    n_ext = ext_parent_coords !== nothing ? length(ext_parent_coords) : 0
+
+    # ── Locate target row ────────────────────────────────────────────────────
+    target_row = 0
+    for i = 1:n
+        if abs(dedup_coords[i,1]-target_coord[1]) < tol &&
+           abs(dedup_coords[i,2]-target_coord[2]) < tol &&
+           abs(dedup_coords[i,3]-target_coord[3]) < tol &&
+           abs(dedup_coords[i,4]-target_coord[4]) < tol &&
+           abs(dedup_coords[i,5]-target_coord[5]) < tol
+            target_row = i; break
+        end
+    end
+    if target_row == 0 && ext_parent_coords !== nothing
+        for k = 1:n_ext
+            c = ext_parent_coords[k]
+            if abs(c[1]-target_coord[1]) < tol && abs(c[2]-target_coord[2]) < tol &&
+               abs(c[3]-target_coord[3]) < tol && abs(c[4]-target_coord[4]) < tol &&
+               abs(c[5]-target_coord[5]) < tol
+                target_row = n + k; break
+            end
+        end
+    end
+
+    # ── Collect local non-zeros for target row ───────────────────────────────
+    local_entries = Tuple{NTuple{5,Float64}, Int, Float64}[]  # (col_coord, col_gid, value)
+    if target_row > 0
+        As_rvals  = rowvals(As)
+        As_nzvals = nonzeros(As)
+        for col = 1:size(As, 2)
+            for ptr in nzrange(As, col)
+                As_rvals[ptr] == target_row || continue
+                val = As_nzvals[ptr]
+                abs(val) < 1e-20 && continue
+                col_coord = if col <= n
+                    (dedup_coords[col,1], dedup_coords[col,2], dedup_coords[col,3],
+                     dedup_coords[col,4], dedup_coords[col,5])
+                elseif ext_parent_coords !== nothing && col-n <= n_ext
+                    ext_parent_coords[col-n]
+                else
+                    continue
+                end
+                if any(isnan, col_coord)
+                    col_gid_nan = col <= length(ip2gip_spa) ? ip2gip_spa[col] : -1
+                    @info "[$rank] $label: SKIPPED col=$col gid=$col_gid_nan val=$val (NaN in dedup_coords — ip_spa exists in As but has no entry in _dedup_coords)"
+                    continue
+                end
+                col_gid = col <= n ? ip2gip_spa[col] : -1
+                push!(local_entries, (col_coord, col_gid, val))
+            end
+        end
+        row_gid = target_row <= n ? ip2gip_spa[target_row] : -1
+        @info "[$rank] $label: target found local_idx=$target_row gid=$row_gid $(length(local_entries)) local non-zeros"
+    else
+        @info "[$rank] $label: target coord not in local dedup_coords"
+    end
+
+    # ── Gather all entries to rank 0 ─────────────────────────────────────────
+    buf = IOBuffer(); serialize(buf, local_entries); data = take!(buf)
+    sz  = Int32(length(data))
+    all_sz = MPI.Allgather([sz], comm)
+
+    if rank == 0
+        all_entries = collect(local_entries)
+        for r = 1:nproc-1
+            s = all_sz[r+1]
+            if s > 0
+                rbuf = Vector{UInt8}(undef, s)
+                MPI.Recv!(rbuf, r, 99, comm)
+                append!(all_entries, deserialize(IOBuffer(rbuf)))
+            end
+        end
+        # Sum values for same col_coord (handles extended+regular rows for same parent)
+        combined = Dict{NTuple{5,Float64}, Tuple{Int,Float64}}()
+        for (cc, cg, v) in all_entries
+            combined[cc] = haskey(combined, cc) ? (cg, combined[cc][2]+v) : (cg, v)
+        end
+        @info "[0] $label: $(length(combined)) unique column entries for target=$target_coord"
+        for (cc, (cg, v)) in sort(collect(combined), by=x->x[1])
+            @info "[0]   col=$cc  gid=$cg  val=$v"
+        end
+    else
+        MPI.Send(data, 0, 99, comm)
+    end
 end

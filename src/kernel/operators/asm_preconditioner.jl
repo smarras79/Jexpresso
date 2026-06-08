@@ -35,7 +35,7 @@
 #  Distributed:    :mumps_dist
 #  Other:          :jacobi :inner_gmres :none
 # ═════════════════════════════════════════════════════════════════════════════
-import ParU_jll
+
 using SparseArrays
 using LinearAlgebra
 using KLU
@@ -44,9 +44,7 @@ using IncompleteLU
 using Krylov
 using LinearOperators
 using AMD
-using LinearSolve
-using Pardiso
-using MUMPS
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ASMPreconditioner

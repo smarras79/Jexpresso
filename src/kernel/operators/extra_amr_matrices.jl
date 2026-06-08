@@ -1303,7 +1303,11 @@ function compute_hanging_row_effects_before_restriction(
 
         for (parent_gid, weight) in parent_constraints
             owner = gip2owner_spa[parent_gid]
-            owner == rank && continue
+            # Skip owned parents — handled by R_spatial_ext * A_eff.                                                         
+            # Skip locally-present non-owned parents — Phase 3 added them to R_spatial,                                      
+            # so R_spatial_ext already covers them.                                                                          
+            is_locally_present = haskey(gip_to_local, parent_gid) && !(parent_gid in extended_gid_set)                       
+            (owner == rank || is_locally_present) && continue     
 
             if parent_gid in extended_gid_set
                 ip_parent = gid_to_extended_parents[parent_gid]
@@ -1375,7 +1379,12 @@ function compute_hanging_col_effects_before_prolongation(
 
         for (parent_gid, weight) in parent_constraints
             owner = gip2owner_spa[parent_gid]
-            owner == rank && continue
+            # Skip owned parents — handled by A_col_eff * P_spatial_ext.
+            # Skip locally-present non-owned parents — Phase 3 added them to R_spatial,
+            # so P_spatial_ext already covers them. Only truly cross-rank parents
+            # (not locally present and not owned) need explicit treatment here.
+            is_locally_present = haskey(gip_to_local, parent_gid) && !(parent_gid in extended_gid_set)
+            (owner == rank || is_locally_present) && continue
 
             if parent_gid in extended_gid_set
                 ip_parent = gid_to_extended_parents[parent_gid]

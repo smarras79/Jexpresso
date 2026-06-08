@@ -909,6 +909,39 @@ function build_spatial_restriction_and_prolongation(
         end
     end
 
+    # Phase 3: cross-rank parents that are locally present.
+    # A cross-rank NCF child's parents are stored by global spatial IP in
+    # cross_rank_parent_weights. If a parent's GIP maps to a local IP on this
+    # rank, its contribution to R_spatial is missing: the ghost effects step
+    # skips it (owner == rank → continue) while R_spatial also has no entry.
+    # Adding it here closes that gap without touching the ghost effects path.
+    gip_to_local_r = Dict{Int,Int}(Int(mesh.ip2gip[ip]) => ip for ip = 1:mesh.npoin)
+    for (hanging_node_id, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
+        x_child = mesh.x[hanging_node_id]
+        y_child = mesh.y[hanging_node_id]
+        z_child = mesh.z[hanging_node_id]
+        for i_ang = 1:n_angular_nodes
+            θ = extra_mesh.extra_coords[1, i_ang]
+            ϕ = extra_mesh.extra_coords[2, i_ang]
+            key_h = (round(x_child, digits=12), round(y_child, digits=12),
+                     round(z_child, digits=12), round(θ, digits=12), round(ϕ, digits=12))
+            col_hanging = get(point_dict_spa, key_h, 0)
+            col_hanging == 0 && continue
+            for (parent_gip, weight) in cross_weights
+                local_ip = get(gip_to_local_r, parent_gip, 0)
+                local_ip == 0 && continue
+                x_p = mesh.x[local_ip]; y_p = mesh.y[local_ip]; z_p = mesh.z[local_ip]
+                key_p = (round(x_p, digits=12), round(y_p, digits=12),
+                         round(z_p, digits=12), round(θ, digits=12), round(ϕ, digits=12))
+                row_parent = get(point_dict_spa, key_p, 0)
+                row_parent == 0 && continue
+                push!(rows_M, row_parent)
+                push!(cols_M, col_hanging)
+                push!(vals_M, weight)
+            end
+        end
+    end
+
     R_spatial = sparse(rows_M, cols_M, vals_M, n_spa_new, n_spa_new)
     P_spatial = R_spatial'
     return R_spatial, P_spatial
