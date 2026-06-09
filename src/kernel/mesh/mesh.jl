@@ -1,4 +1,9 @@
-using .JeGeometry
+# PERF: `using .JeGeometry` was dropped — the JeGeometry submodule
+# wrapper in Geom.jl was flattened into the top-level Jexpresso module
+# so the package as a whole can precompile (the wrapper had carried
+# `__precompile__(false)`, which disabled the entire package's cache).
+# All names that `using .JeGeometry` brought in are now defined
+# directly in Jexpresso, so nothing further is needed here.
 
 export St_mesh
 export mod_mesh_mesh_driver

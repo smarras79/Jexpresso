@@ -1,25 +1,23 @@
-module JeGeometry
-__precompile__(false)
-using Gridap
-using Gridap.Arrays
-using Gridap.Arrays: Table
-using Gridap.Geometry
-using Gridap.Fields
-using Gridap.ReferenceFEs
-using Gridap.CellData
+# PERF: this file used to be wrapped in `module JeGeometry … end` with
+# `__precompile__(false)` at the top, which disabled precompilation
+# for the ENTIRE Jexpresso package (the toplevel `using Jexpresso`
+# then fell through to "Skipping precompilation due to precompilable
+# error" and re-loaded all 80+ source files at REPL launch). The
+# wrapper bought us nothing — every name defined below is either a
+# method on an external type (Gridap.Geometry.DiscreteModel,
+# GridapGmsh.GmshDiscreteModel, Visualization.visualization_data) or
+# a global const for a Gridap internal — none of them needed
+# namespace isolation, and no caller outside this file referenced
+# `JeGeometry.<x>` qualified. Flattening lets the rest of Jexpresso
+# precompile cleanly while preserving the method definitions.
+#
+# Most of the symbols needed below are already in scope in the
+# top-level Jexpresso module. The two extras pulled in here are
+# Gridap.Visualization and the GridapDistributed internals
+# (GenericDistributedDiscreteModel, compute_cell_graph) that aren't
+# at the top of src/Jexpresso.jl yet.
 using Gridap.Visualization
-# PERF: `using Gridap.Geometry: GridMock` was unused — no GridMock
-# reference anywhere in JeGeometry. Removed.
-using GridapDistributed
 using GridapDistributed: GenericDistributedDiscreteModel, compute_cell_graph
-using PartitionedArrays
-using GridapGmsh
-# PERF: dropped `using GridapP4est` and `using P4est_wrapper` from
-# JeGeometry — neither was referenced anywhere in this submodule.
-# AMR runs reach those packages via Jexpresso._ensure_amr_loaded!()
-# in src/Jexpresso.jl, which imports them into Jexpresso's namespace
-# (the only place that actually uses their symbols).
-using SparseArrays
 
 # Define your custom version of DiscreteModel function
 function Gridap.Geometry.DiscreteModel(
@@ -138,7 +136,9 @@ end
 
 
 
-end  # End of module JeGeometry
+# (no `end` here — the former `module JeGeometry … end` wrapper was
+# removed; everything below now lives in the top-level Jexpresso
+# module.)
 
 
 function get_boundary_cells(model,nsd)
