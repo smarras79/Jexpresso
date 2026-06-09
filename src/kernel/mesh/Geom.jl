@@ -19,13 +19,28 @@
 using Gridap.Visualization
 using GridapDistributed: GenericDistributedDiscreteModel, compute_cell_graph
 
-# Define your custom version of DiscreteModel function
-function Gridap.Geometry.DiscreteModel(
+# Jexpresso's parallel-partition constructor for a
+# `Gridap.Geometry.DiscreteModel`.  This used to be defined as a
+# method on the imported `Gridap.Geometry.DiscreteModel` constructor
+# itself (type piracy), and it had EXACTLY the same 3-arg positional
+# signature as GridapDistributed's own
+# `DiscreteModel(::AbstractArray, ::DiscreteModel, ::AbstractArray)`
+# (RrOp1/src/Geometry.jl:377). Julia ≥ 1.10 refuses to precompile a
+# module that overwrites an existing method, so the only way to keep
+# the override was `__precompile__(false)` at the top of the (former)
+# JeGeometry submodule — which killed precompilation of the entire
+# Jexpresso package.
+#
+# Rename to a Jexpresso-local function (`je_DiscreteModel`) so it no
+# longer collides with GridapDistributed's method table. The two call
+# sites in src/kernel/mesh/mesh.jl that previously relied on dispatch
+# now invoke `je_DiscreteModel(...)` explicitly.
+function je_DiscreteModel(
     parts::AbstractArray,
     model::Geometry.DiscreteModel,
     cell_to_part::AbstractArray,
     cell_graph::SparseMatrixCSC = compute_cell_graph(model),
-    new_param::Int = 1  # Add your new parameter here with a default value
+    new_param::Int = 1  # kept for caller-side compat; not used below
 )
     ncells = num_cells(model)
     @assert length(cell_to_part) == ncells

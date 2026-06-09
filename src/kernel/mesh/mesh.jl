@@ -276,7 +276,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 end
 
                 cell_to_part = _compute_xy_partition(smodel, nparts)
-                DiscreteModel(parts, smodel, cell_to_part)
+                # Renamed from `DiscreteModel(parts, smodel,
+                # cell_to_part)` to `je_DiscreteModel(...)` — see
+                # Geom.jl for why we no longer pirate
+                # `Gridap.Geometry.DiscreteModel`.
+                je_DiscreteModel(parts, smodel, cell_to_part)
             else
                 # CAVEAT: GmshDiscreteModel(parts, …) is the
                 # distributed-Gridap constructor; whether it actually
