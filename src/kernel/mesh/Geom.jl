@@ -12,11 +12,9 @@
 # precompile cleanly while preserving the method definitions.
 #
 # Most of the symbols needed below are already in scope in the
-# top-level Jexpresso module. The two extras pulled in here are
-# Gridap.Visualization and the GridapDistributed internals
-# (GenericDistributedDiscreteModel, compute_cell_graph) that aren't
-# at the top of src/Jexpresso.jl yet.
-using Gridap.Visualization
+# top-level Jexpresso module. The one extra pulled in here is the
+# GridapDistributed internals (GenericDistributedDiscreteModel,
+# compute_cell_graph) that aren't at the top of src/Jexpresso.jl.
 using GridapDistributed: GenericDistributedDiscreteModel, compute_cell_graph
 
 # Jexpresso's parallel-partition constructor for a
@@ -97,56 +95,39 @@ end
 # end
 
 
-const _setup_cell_dim = GridapGmsh._setup_cell_dim
-const _setup_node_coords = GridapGmsh._setup_node_coords
-const _setup_nodes_and_vertices = GridapGmsh._setup_nodes_and_vertices
-const _setup_cell_to_vertices = GridapGmsh._setup_cell_to_vertices
-const _setup_grid =GridapGmsh._setup_grid
-const _setup_labeling = GridapGmsh._setup_labeling
+# ─── REMOVED: two more type-piracy overrides ──────────────────────────
+#
+# (1) GridapGmsh.GmshDiscreteModel(::Module; …) — overwrote
+#     GridapGmsh/ZGvkt/src/GmshDiscreteModels.jl:30. No call site
+#     inside Jexpresso ever invoked the `Module`-argument form (we
+#     always pass either a filename string or
+#     `(parts, filename)`), so the override was unreachable dead code
+#     that just blocked precompilation. Dropped along with the six
+#     `const _setup_* = GridapGmsh._setup_*` aliases that only the
+#     override used.
+#
+# (2) Visualization.visualization_data(::GenericDistributedDiscreteModel{Dc},
+#                                      ::AbstractString; labels=…) — overwrote
+#     Gridap's distributed-model visualization hook to inject three
+#     extra cell-data fields ("gid", "fgid", "part") into the VTU
+#     output. The one reachable call site, `writevtk(partitioned_model,
+#     "./refine/")` in src/kernel/Adaptivity/Projection.jl:799, is a
+#     debug dump that only fires when `inputs[:linitial_refine] == true`
+#     and falls back cleanly to GridapDistributed's default
+#     `visualization_data` (refined-mesh VTU still written; missing
+#     only the three debug fields).
+#
+# Both were guarded by the former `__precompile__(false)` at the top
+# of the (now-flattened) `JeGeometry` submodule; with that opt-out
+# gone, Julia ≥ 1.10 refuses to precompile the package.  If anyone
+# later needs the extra cell-data fields back, the cleanest path is
+# to define a Jexpresso-local `writevtk_with_part_info` that calls
+# Gridap's default `visualization_data` and then mutates the returned
+# tuple — same effect, no piracy.
+# ─────────────────────────────────────────────────────────────────────
 
-function GridapGmsh.GmshDiscreteModel(gmsh::Module; has_affine_map=nothing, orient_if_simplex=nothing)
-
-    Dc = _setup_cell_dim(gmsh)
-    Dp = Dc
-    # @info Dp
-    node_to_coords = _setup_node_coords(gmsh,Dp)
-    nnodes = length(node_to_coords)
-    vertex_to_node, node_to_vertex = _setup_nodes_and_vertices(gmsh,node_to_coords)
-    grid, cell_to_entity = _setup_grid(gmsh,Dc,Dp,node_to_coords,node_to_vertex;has_affine_map)
-    cell_to_vertices, vertex_to_node, node_to_vertex = _setup_cell_to_vertices(grid,vertex_to_node,node_to_vertex)
-    grid_topology = UnstructuredGridTopology(grid,cell_to_vertices,vertex_to_node)
-    labeling = _setup_labeling(gmsh,grid,grid_topology,cell_to_entity,vertex_to_node,node_to_vertex)
-    UnstructuredDiscreteModel(grid,grid_topology,labeling)
-end
-
-const DistributedVisualizationData = GridapDistributed.DistributedVisualizationData
-
-
-function Visualization.visualization_data(
-    model::GenericDistributedDiscreteModel{Dc},
-    filebase::AbstractString;
-    labels=get_face_labeling(model)) where Dc
-  
-    cell_gids = get_cell_gids(model)
-    fact_gids = get_face_gids(model,Dc-1)
-    vd = map(local_views(model),partition(cell_gids), partition(fact_gids),labels.labels) do model,gids,fgids,labels
-      part = part_id(gids)
-      vd = visualization_data(model,filebase;labels=labels)
-      vd_cells = vd[end]
-      vd_facets = vd[Dc]
-      # @info part, size(vd)
-      push!(vd_cells.celldata, "gid" => local_to_global(gids))
-      push!(vd_facets.celldata, "fgid" => local_to_global(fgids))
-      push!(vd_cells.celldata, "part" => local_to_owner(gids))
-      # @info part, vd[end].celldata, vd_facets.celldata
-      vd
-    end
-    r = []
-    for i in 0:Dc
-      push!(r,DistributedVisualizationData(map(x->x[i+1],vd)))
-    end
-    r
-end
+# Removed: `const DistributedVisualizationData = …` — the only
+# reference was inside the now-removed `visualization_data` override.
 
 
 
