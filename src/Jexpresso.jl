@@ -382,6 +382,57 @@ end
 # test_create_2d_projection_matrices_numa2d()
 
 
+# ──────────────────────────────────────────────────────────────────────
+# REPL entry point.
+#
+# Lets the user run a case after a single `using Jexpresso`:
+#
+#     julia> using Jexpresso                       # ← once, hits precompile cache
+#     julia> Jexpresso.run_case("CompEuler", "3d") # ← every subsequent run, fast
+#
+# This replaces the older `include("./src/Jexpresso.jl")` pattern which
+# evaluated the whole `module Jexpresso ... end` body again and
+# triggered `WARNING: replacing module Jexpresso` on every iteration —
+# along with throwing away the precompile cache for the orchestration
+# layer.
+#
+# What's actually cheap on the second call: every dependency is already
+# loaded, every Jexpresso source file is already compiled, and the
+# typed-barrier RHS specialisations from the previous call stay hot in
+# the method cache. The only re-evaluated code is the case-specific
+# `user_inputs.jl` / `user_flux.jl` / … plus the per-call orchestration
+# in `run.jl` (no module redefinition, so no warning).
+#
+# CI_MODE=true points the case loader at test/CI-runs/<eqs>/<eqs_case>
+# instead of problems/<eqs>/<eqs_case>; matches the third positional
+# arg of the historical command-line form.
+# ──────────────────────────────────────────────────────────────────────
+"""
+    Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
+
+Run a single Jexpresso case from the REPL. `eqs` and `eqs_case` are
+the directory names under `problems/<eqs>/<eqs_case>/` (e.g.
+`run_case("CompEuler", "3d")`). Returns `nothing`.
+
+Prefer this to `include("./src/Jexpresso.jl")` — the include path
+re-defines the module on every call (the `WARNING: replacing module
+Jexpresso` you see) and discards the precompile cache for the
+orchestration layer. With `run_case`, `using Jexpresso` happens
+exactly once per session and the second case onward is launch-cost-only.
+"""
+function run_case(eqs::AbstractString, eqs_case::AbstractString;
+                  CI_MODE::Bool=false)
+    push!(empty!(ARGS), String(eqs), String(eqs_case), string(CI_MODE))
+    # run.jl is a script — no `module …` declaration — so re-`include`ing
+    # it from inside the already-loaded Jexpresso module just re-runs
+    # the orchestration top-to-bottom in this module's scope. The
+    # function/case-file redefinitions it performs are silent (only
+    # module redefinitions print the WARNING).
+    Base.include(@__MODULE__, joinpath(@__DIR__, "run.jl"))
+    return nothing
+end
+
+
 @setup_workload begin
     # tiny representative case, only run during package precompile
     case_dir = joinpath(dirname(@__DIR__), "test", "CI-runs", "CompEuler", "sod1d")  # smallest existing case
