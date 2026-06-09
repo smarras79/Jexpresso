@@ -1,5 +1,6 @@
 rm -rf output
 
+./runjexpresso 1 CompEuler sod1d
 ./runjexpresso 1 CompEuler wave1d
 ./runjexpresso 1 CompEuler wave1d_lag
 ./runjexpresso 1 AdvDiff Wave_Train
