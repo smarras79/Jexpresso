@@ -460,12 +460,37 @@ function run_case(eqs::AbstractString, eqs_case::AbstractString;
 end
 
 
-@setup_workload begin
-    # tiny representative case, only run during package precompile
-    case_dir = joinpath(dirname(@__DIR__), "test", "CI-runs", "CompEuler", "sod1d")  # smallest existing case
-    @compile_workload begin
-        push!(empty!(ARGS), "CompEuler", "sod1d", "true")
-        include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
-    end
-end
+# PERF: precompile workload temporarily disabled.
+#
+# The block below used to call `include("./run.jl")` with ARGS set to
+#   ["CompEuler", "sod1d", "true"]
+# so PrecompileTools would bake one full driver pass through the
+# integrator + RHS chain into the package cache. That speeds the
+# user's first real run after `using Jexpresso`.
+#
+# The problem: `test/CI-runs/CompEuler/sod1d/` was removed from the
+# tree at some point (current CI-runs cases are 3d, theta,
+# thetaTracers, theta_laguerre, wave1d, wave1d_lag), so the workload
+# can't find user_inputs.jl and precompile fails outright:
+#
+#   ERROR: LoadError: SystemError: opening file ".../test/CI-runs/
+#   CompEuler/sod1d/user_inputs.jl": No such file or directory
+#
+# Until a verified-working tiny case is wired up (wave1d looks
+# promising but it's missing user_primitives.jl, which run.jl
+# `include`s unconditionally), keep the workload off. Cost: the
+# first call to `Jexpresso.run_case(...)` pays the integrator-/
+# callback-specialised JIT — but `precompile_warmup_run!` in
+# drivers.jl + the integrator warm-up in time_loop! already cover
+# most of it, so the user-visible regression is small.
+#
+# To re-enable once a workload case is in place, uncomment and point
+# at the new <case_dir>:
+#
+# @setup_workload begin
+#     @compile_workload begin
+#         push!(empty!(ARGS), "CompEuler", "<workload_case>", "true")
+#         include(joinpath(@__DIR__, "run.jl"))
+#     end
+# end
 end
