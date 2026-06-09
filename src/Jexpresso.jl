@@ -460,37 +460,30 @@ function run_case(eqs::AbstractString, eqs_case::AbstractString;
 end
 
 
-# PERF: precompile workload temporarily disabled.
+# PERF: precompile workload — runs `test/CI-runs/CompEuler/sod1d`
+# one driver pass through during `Pkg.precompile()` so PrecompileTools
+# records every method that fires inside the integrator + RHS chain
+# and bakes it into the package cache. Without this the very first
+# `Jexpresso.run_case(...)` in a fresh REPL pays the full JIT cost
+# for the integrator step + callback-specialised RHS — tens of
+# seconds. With it, the first call is launch-cost-only.
 #
-# The block below used to call `include("./run.jl")` with ARGS set to
-#   ["CompEuler", "sod1d", "true"]
-# so PrecompileTools would bake one full driver pass through the
-# integrator + RHS chain into the package cache. That speeds the
-# user's first real run after `using Jexpresso`.
+# Why sod1d: it's the smallest case in the tree that exercises the
+# full pipeline (1D mesh built by Jexpresso so no GMSH dependency,
+# `nelx=100`, `nop=4`, `lvisc=true`, `tend=0.2` with `Δt=1e-4` →
+# 2000 timesteps). Trades a few seconds of precompile time for
+# baked-in code for every downstream case that uses the same RHS
+# kernels.
 #
-# The problem: `test/CI-runs/CompEuler/sod1d/` was removed from the
-# tree at some point (current CI-runs cases are 3d, theta,
-# thetaTracers, theta_laguerre, wave1d, wave1d_lag), so the workload
-# can't find user_inputs.jl and precompile fails outright:
-#
-#   ERROR: LoadError: SystemError: opening file ".../test/CI-runs/
-#   CompEuler/sod1d/user_inputs.jl": No such file or directory
-#
-# Until a verified-working tiny case is wired up (wave1d looks
-# promising but it's missing user_primitives.jl, which run.jl
-# `include`s unconditionally), keep the workload off. Cost: the
-# first call to `Jexpresso.run_case(...)` pays the integrator-/
-# callback-specialised JIT — but `precompile_warmup_run!` in
-# drivers.jl + the integrator warm-up in time_loop! already cover
-# most of it, so the user-visible regression is small.
-#
-# To re-enable once a workload case is in place, uncomment and point
-# at the new <case_dir>:
-#
-# @setup_workload begin
-#     @compile_workload begin
-#         push!(empty!(ARGS), "CompEuler", "<workload_case>", "true")
-#         include(joinpath(@__DIR__, "run.jl"))
-#     end
-# end
+# Files exercised: test/CI-runs/CompEuler/sod1d/user_inputs.jl plus
+# the five sibling user_*.jl + initialize.jl files (all six are
+# included unconditionally by src/run.jl, so all six must exist for
+# the workload to succeed — this is what tripped us up before sod1d
+# was added back).
+@setup_workload begin
+    @compile_workload begin
+        push!(empty!(ARGS), "CompEuler", "sod1d", "true")
+        include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
+    end
+end
 end
