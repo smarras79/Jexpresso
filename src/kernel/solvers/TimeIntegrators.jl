@@ -486,9 +486,10 @@ function time_loop!(inputs, params, u, args...)
         #
         # Throttled: every step for the first 5, then every 100. With
         # 150 000-step runs that's ~1 500 lines of output instead of
-        # 150 000. Set :lstep_heartbeat => false in user_inputs.jl (or
-        # the env JEXPRESSO_STEP_HEARTBEAT=0) to silence it once the
-        # debugging is done.
+        # 150 000. DEFAULT IS OFF (debugging-only); opt in with
+        # `:lstep_heartbeat => true` in user_inputs.jl or via env
+        # `JEXPRESSO_STEP_HEARTBEAT=1`. The env var, if set, takes
+        # precedence over the user_inputs.jl flag.
         _step_count = Ref{Int}(0)
         function step_heartbeat_condition(u, t, integrator)
             _step_count[] += 1
@@ -498,8 +499,15 @@ function time_loop!(inputs, params, u, args...)
         function step_heartbeat_affect!(integrator)
             rank == 0 && (@printf(" #   step %d   t = %.6f\n", _step_count[], integrator.t); flush(stdout))
         end
-        _heartbeat_on = get(inputs, :lstep_heartbeat, true) &&
-                         lowercase(get(ENV, "JEXPRESSO_STEP_HEARTBEAT", "1")) ∉ ("0", "false", "no", "off")
+        # Default OFF. Env var, if set, wins over user_inputs.jl.
+        _env_hb = lowercase(strip(get(ENV, "JEXPRESSO_STEP_HEARTBEAT", "")))
+        _heartbeat_on = if _env_hb in ("1", "true", "yes", "on")
+            true
+        elseif _env_hb in ("0", "false", "no", "off")
+            false
+        else
+            get(inputs, :lstep_heartbeat, false) == true
+        end
         cb_heartbeat = _heartbeat_on ?
             DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
             nothing

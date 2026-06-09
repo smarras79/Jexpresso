@@ -115,15 +115,15 @@ silent steps between user-visible writes — hard to tell from a hang).
 Throttled: prints every step for the first 5, then every 100.
 
 - **Type:** boolean
-- **Default:** `true` (on)
+- **Default:** `false` (off)
 - **Read in:** `src/kernel/solvers/TimeIntegrators.jl`
 - **Precedence (highest first):**
   1. `JEXPRESSO_STEP_HEARTBEAT` env var
   2. `:lstep_heartbeat => true/false` in `user_inputs.jl`
-  3. Default (`true`)
-- **Example — silence the heartbeat for production:**
+  3. Default (`false`)
+- **Example — enable the heartbeat for a debugging run:**
   ```bash
-  JEXPRESSO_STEP_HEARTBEAT=0 mpirun -np 4 julia --project=. src/Jexpresso.jl CompEuler theta
+  JEXPRESSO_STEP_HEARTBEAT=1 mpirun -np 4 julia --project=. src/Jexpresso.jl CompEuler theta
   ```
 
 ---
@@ -219,7 +219,7 @@ so the user's shell settings stand.
 | `APPID`                        | int    | `2`         | Coupling app identifier (only with COUPLED=1)    |
 | `JEXPRESSO_ALLOC_SUMMARY`      | bool   | `false`     | End-of-run timing/allocation table               |
 | `JEXPRESSO_PRECOMPILE_WARMUP`  | bool   | `true`      | One-step JIT warm-up before real solve           |
-| `JEXPRESSO_STEP_HEARTBEAT`     | bool   | `true`      | Per-step progress prints during solve            |
+| `JEXPRESSO_STEP_HEARTBEAT`     | bool   | `false`     | Per-step progress prints during solve            |
 | `JULIA_PKG_PRECOMPILE_AUTO`    | bool   | `1`         | Auto-precompile in `Pkg.instantiate()`           |
 | `JULIA_NUM_PRECOMPILE_TASKS`   | int    | auto        | Parallelism cap for Julia's precompile pass      |
 | `MPICH_INTERFACE_HOSTNAME`     | string | (system)    | macOS hostname workaround for MPICH/JLL binary   |
