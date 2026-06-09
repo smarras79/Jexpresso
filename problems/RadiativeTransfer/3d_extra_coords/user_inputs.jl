@@ -36,7 +36,7 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         
         :extra_dimensions    => 2,
-        :RT_amr_threshold   => [0.2],
+        :RT_amr_threshold   => [0.8],
         :lRT_problem        => true,
         :lmanufactured_solution => true,
         :adaptive_extra_meshes => true,

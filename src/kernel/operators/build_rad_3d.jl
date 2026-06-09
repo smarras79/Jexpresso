@@ -492,10 +492,40 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     ip2gip_spa, gip2owner_extra, gid_to_extended_local,
                     extended_local_to_gid, rank)
 
-            # Precompute reverse ghost map (reused for solution prolongation)
+            # Build reverse ghost map via AllGather so every rank learns about
+            # hanging nodes on OTHER ranks that depend on parents it owns locally.
+            # The local-only approach misses: rank B has hanging node H depending on
+            # parent P owned by rank A; A's ghost_constraint_data never mentions H,
+            # so A never sends its contribution → H stays at P * solution locally only.
             @rankinfo rank "Building reverse ghost constraint map..."
-            reverse_ghost_map = build_reverse_ghost_constraint_map(
-                ghost_constraint_data, ip2gip_spa, gip2owner_spa, rank, gip_to_local)
+            _ext_gid_set_ang = Set(extended_parents_to_gid)
+            _local_rev_ang = Float64[]
+            for (ip_hanging, parent_constraints) in ghost_constraint_data
+                hanging_gid   = ip2gip_spa[ip_hanging]
+                owner_hanging = get(gip2owner_spa, hanging_gid, rank)
+                for (parent_gid, weight) in parent_constraints
+                    parent_gid in _ext_gid_set_ang || continue
+                    push!(_local_rev_ang, Float64(parent_gid), Float64(hanging_gid),
+                          Float64(owner_hanging), weight)
+                end
+            end
+            _n_rev_loc_ang = Int32(length(_local_rev_ang) ÷ 4)
+            _n_rev_all_ang = MPI.Allgather([_n_rev_loc_ang], comm)
+            _all_rev_ang   = MPI.Allgatherv(_local_rev_ang, Int32.(_n_rev_all_ang .* 4), comm)
+
+            reverse_ghost_map = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+            for k = 1:length(_all_rev_ang) ÷ 4
+                s = 4*(k-1)
+                parent_gid    = Int(round(_all_rev_ang[s+1]))
+                hanging_gid   = Int(round(_all_rev_ang[s+2]))
+                owner_hanging = Int(round(_all_rev_ang[s+3]))
+                weight        = _all_rev_ang[s+4]
+                local_parent  = get(gip_to_local, parent_gid, 0)
+                local_parent == 0 && continue
+                get(gip2owner_spa, parent_gid, -1) != rank && continue
+                push!(get!(reverse_ghost_map, local_parent, Tuple{Int,Int,Float64}[]),
+                      (hanging_gid, owner_hanging, weight))
+            end
 
             # ── LHS and mass matrix on adapted mesh ───────────────────────────
             @rankinfo rank "Assembling LHS on adapted mesh..."
@@ -572,10 +602,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         # of M⁻¹LHS are globally consistent before restriction/prolongation.
         if nprocs > 1
             @rankinfo rank "All-reducing parent-parent matrix entries..."
-            MLHS = allreduce_parent_parent_entries(
+            #=MLHS = allreduce_parent_parent_entries(
                 MLHS, nc_mat, gip2owner_extra, n_spa, rank, comm,
                 ip2gip_spa, local_parent_indices, nonowned_parent_indices,
-                nonowned_parent_gids, gip_to_local)
+                nonowned_parent_gids, gip_to_local)=#
         end
 
         # ── Parallel restriction: apply R from the left ───────────────────────
@@ -627,7 +657,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         for i in nonowned_parent_indices
             for j in nonowned_parent_indices
                 if abs(A[i,j]) > 0.0
-                    A[i,j] = 0.0
+                    #A[i,j] = 0.0
                 end
             end
         end
@@ -1598,15 +1628,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
 
-    @info "CHECKING RHS values before and after restriction"
-    for i=1:n_dofs
-        gip = ip2gip_spa[i]
-        if (gip == 4181)
-            @info "before 1", RHS[i]
-        elseif (gip == 4417)
-            @info "before 4", RHS[i]
-        end
-    end
     #=for i=1:npoin_ang_total
         gip = ip2gip_spa[i]
         if (gip == 56710)
@@ -2052,7 +2073,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin,
             n_spa, x_warm;
-            precond     = :mumps_dist,
+            precond     = :global_ilu,
             asm_solver  = :rcmilu,
             asm_ilu_tau = 0.1,
             npoin_g     = n_spa_g,
@@ -2158,7 +2179,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             compute_solution_prolongation_contributions(
                 reverse_ghost_map, solution, ip2gip_spa, n_free, rank)
 
-        solution_local = P_vec * solution
+        solution_local = P * solution
 
         received_solution_contributions =
             exchange_hanging_effects_vector(solution_contributions_to_send, rank, comm)
@@ -2168,6 +2189,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             ip2gip_spa, n_spa, rank, gip_to_local)
         @info "prolonged solution maxima"
         @info maximum(solution_new), minimum(solution_new)
+        @info maximum(P_vec), minimum(P_vec), maximum(nc_mat_rhs), minimum(nc_mat_rhs)
     end
     
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
@@ -2230,20 +2252,42 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     L2_err = 0.0
     L2_ref = 0.0
 
-    # Compute node sharing divisors for correct accumulation at shared nodes
-    node_div = zeros(Int, npoin)
-    
-        for iel = 1:nelem
-            for k = 1:ngl, j = 1:ngl, i = 1:ngl
-                ip    = mesh.connijk[iel, i, j, k]
-                
-                node_div[ip] += 1
-            end
+    # Compute node sharing divisors for correct accumulation at shared nodes.
+    # Local count: how many local elements reference each spatial node.
+    node_div_local = zeros(Int, npoin)
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j, k]
+            node_div_local[ip] += 1
         end
+    end
+
+    # For spatial AMR, parent nodes at the coarse-fine interface appear in local
+    # elements on MULTIPLE ranks (fine-element owner and coarse-element owner).
+    # We need the GLOBAL total of contributions so that all ranks' shares sum to
+    # exactly one angular integral per spatial node. Use spatial GIDs (mesh.ip2gip)
+    # which are consistent with the g_int_sol AllReduce below.
+    #==# 
+    #if has_spatial_hanging_nodes
+        g_count = zeros(Int, mesh.gnpoin)
+        for ip = 1:npoin
+            g_count[mesh.ip2gip[ip]] += node_div_local[ip]
+        end
+        MPI.Allreduce!(g_count, MPI.SUM, comm)
+        node_div_global = zeros(Int, npoin)
+        for ip = 1:npoin
+            node_div_global[ip] = g_count[mesh.ip2gip[ip]]
+        end
+        node_div_global
+    #else
+    #    node_div_local
+    #end
+    node_div = node_div_global
 
         if inputs[:adaptive_extra_meshes]
             for iel = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
                 ip = mesh.connijk[iel, i, j, k]
+                x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
                 for e_ext = 1:extra_meshes_extra_nelems[iel]
                     for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
                         for iϕ = 1:extra_meshes_extra_nops[iel][e_ext]+1
@@ -2254,6 +2298,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             weight = extra_meshes_extra_Je[iel][e_ext, iθ, iϕ] *
                                      extra_mesh[iel].ωθ[iθ] * extra_mesh[iel].ωθ[iϕ]
                             int_sol_accum[ip] += solution_new[ip_g] * weight / node_div[ip]
+                            if (abs(x -1.5) < 1e-3 && abs(y - 4/3) < 1e-3 && abs(z - 0.0) < 1e-2)
+                                @info "1", rank, solution_new[ip_g], int_sol_accum[ip], e_ext, solution[ip_g], solution_local[ip_g]
+                            end
                             if (inputs[:lmanufactured_solution])
                                 int_ref_accum[ip] += ref[ip_g] * weight / node_div[ip]
                                 L2_ref += ref[ip_g]^2 * weight * ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
@@ -2279,8 +2326,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             int_sol_accum[ip] += solution[ip_g] *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] / node_div[ip]
-                            if (inputs[:lmanufactured_solution])    
-                                int_ref_accum[ip] += (ref[ip_g] - solution[ip_g]) *
+                            
+                            if (inputs[:lmanufactured_solution])
+                                int_ref_accum[ip] += ref[ip_g] *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] / node_div[ip]
                                 L2_ref += ref[ip_g]^2 *
@@ -2302,11 +2350,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             for i = 1:ngl, j = 1:ngl, k = 1:ngl
                 ip  = mesh.connijk[iel, i, j, k]
                 x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
-                if (abs(x -1.5) < 1e-3 && abs(y - 2/3) < 1e-3 && abs(z - 2/3) < 1e-3)
-                    @info "1", ip, int_sol_accum[ip], node_div[ip], int_sol_accum[ip] * node_div[ip]
+                if (abs(x -1.5) < 1e-3 && abs(y - 4/3) < 1e-3 && abs(z - 0.0) < 1e-2)
+                    @info "1", mesh.ip2gip[ip], ip, int_sol_accum[ip], node_div[ip], int_sol_accum[ip] * node_div[ip]
                 end
-                if (abs(x -1.5) < 1e-3 && abs(y - 2/3) < 1e-2 && abs(z - 0.55) < 1e-2)
-                    @info "2", ip, int_sol_accum[ip], node_div[ip], int_sol_accum[ip] * node_div[ip]
+                if (abs(x -0.0) < 1e-3 && abs(y - 4/3) < 1e-2 && abs(z - 0.0) < 1e-2)
+                    @info "2", mesh.ip2gip[ip], ip, int_sol_accum[ip], node_div[ip], int_sol_accum[ip] * node_div[ip]
                 end
             end
         end
@@ -2327,6 +2375,13 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             gip = mesh.ip2gip[ip]
             int_sol[ip] = g_int_sol[gip]
             int_ref[ip] = g_int_ref[gip]
+            x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
+            if (abs(x -1.5) < 1e-3 && abs(y - 4/3) < 1e-3 && abs(z - 0.0) < 1e-2)
+                @info "1", gip, ip, int_sol[ip], g_int_sol[gip]
+            end
+            if (abs(x -0.0) < 1e-3 && abs(y - 4/3) < 1e-2 && abs(z - 0.0) < 1e-2)
+                @info "2", gip, ip, int_sol[ip], g_int_sol[gip]
+            end
         end
         if (inputs[:lmanufactured_solution])
             L2_ref_g = MPI.Allreduce(L2_ref, MPI.SUM, comm)

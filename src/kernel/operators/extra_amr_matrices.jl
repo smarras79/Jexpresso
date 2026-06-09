@@ -384,8 +384,8 @@ function build_restriction_matrices_local_and_ghost(
     end
 
     @info "maximum of nc_mat after column normalization", rank, maximum(nc_mat)
-    P = nc_mat'
-    P_vec = nc_mat_rhs'
+    P = sparse(nc_mat')
+    P_vec = sparse(nc_mat_rhs')
     @info "[Rank $rank] nc_mat: $(size(nc_mat)), nnz=$(nnz(nc_mat))"
     #Separate matrix to used for rhs restriction from one used for matrix restriction
     return nc_mat, P, nc_mat_rhs, P_vec, ghost_constraint_data, ghost_constraint_data_rhs,

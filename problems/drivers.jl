@@ -67,7 +67,7 @@ function driver(nparts,
         if sem.mesh.nelem > 0
             # Mark element 1 for refinement (simplest test)
             #if rank == 1
-                adapt_flags[1:3] .= 1
+                adapt_flags[1] = 1
                 for i=1:sem.mesh.ngl
                     for j=1:sem.mesh.ngl
                         for k=1:sem.mesh.ngl
