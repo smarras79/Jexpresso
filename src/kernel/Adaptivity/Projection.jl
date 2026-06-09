@@ -951,11 +951,14 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     
         mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl),1)
     
+        # PERF: cache cell_node_ids Table row (8 accesses per element).
+        _cache_node_ids = array_cache(mesh.cell_node_ids)
         for iel = 1:mesh.nelem
-            mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
-            mesh.conn[iel, 2] = mesh.cell_node_ids[iel][2]
-            mesh.conn[iel, 3] = mesh.cell_node_ids[iel][4]
-            mesh.conn[iel, 4] = mesh.cell_node_ids[iel][3]
+            node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
+            mesh.conn[iel, 1] = node_ids[1]
+            mesh.conn[iel, 2] = node_ids[2]
+            mesh.conn[iel, 3] = node_ids[4]
+            mesh.conn[iel, 4] = node_ids[3]
 
             #
             # 3-----4
@@ -963,11 +966,11 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             # |     |
             # 1-----2
             #
-            mesh.connijk[iel, 1,      1] = mesh.cell_node_ids[iel][2]
-            mesh.connijk[iel, 1,    ngl] = mesh.cell_node_ids[iel][1]
-            mesh.connijk[iel, ngl,  ngl] = mesh.cell_node_ids[iel][3]
-            mesh.connijk[iel, ngl,    1] = mesh.cell_node_ids[iel][4]
-            
+            mesh.connijk[iel, 1,      1] = node_ids[2]
+            mesh.connijk[iel, 1,    ngl] = node_ids[1]
+            mesh.connijk[iel, ngl,  ngl] = node_ids[3]
+            mesh.connijk[iel, ngl,    1] = node_ids[4]
+
             # @printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[iel, 1, 1], mesh.connijk[iel, ngl, 1] , mesh.connijk[iel, 1,ngl], mesh.connijk[iel, ngl, ngl] )
         end
         #
@@ -985,11 +988,13 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         #
         # filename = "./COORDS_LO_" + rank + ".dat" 
         open("./COORDS_LO_$rank.dat", "w") do f
+            # PERF: hoist Gridap accessor once instead of per-node.
+            node_coords = get_node_coordinates(get_grid(model))
             for ip = 1:mesh.npoin_linear
-                
-                mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
-                mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
-                
+
+                mesh.x[ip] = node_coords[ip][1]
+                mesh.y[ip] = node_coords[ip][2]
+
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
                 @printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
@@ -1001,27 +1006,30 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl))
         mesh.conn_edgesijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.NEDGES_EL))
 
+        # PERF: cache cell_node_ids Table row (16 accesses per element).
+        _cache_node_ids = array_cache(mesh.cell_node_ids)
         for iel = 1:mesh.nelem
+            node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
             #CGNS numbering: OK ref: HEXA...
-            mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]#9
-            mesh.conn[iel, 2] = mesh.cell_node_ids[iel][5]#11
-            mesh.conn[iel, 3] = mesh.cell_node_ids[iel][6]#6
-            mesh.conn[iel, 4] = mesh.cell_node_ids[iel][2]#1
-            mesh.conn[iel, 5] = mesh.cell_node_ids[iel][3]#10
-            mesh.conn[iel, 6] = mesh.cell_node_ids[iel][7]#12
-            mesh.conn[iel, 7] = mesh.cell_node_ids[iel][8]#5
-            mesh.conn[iel, 8] = mesh.cell_node_ids[iel][4]#4
+            mesh.conn[iel, 1] = node_ids[1]#9
+            mesh.conn[iel, 2] = node_ids[5]#11
+            mesh.conn[iel, 3] = node_ids[6]#6
+            mesh.conn[iel, 4] = node_ids[2]#1
+            mesh.conn[iel, 5] = node_ids[3]#10
+            mesh.conn[iel, 6] = node_ids[7]#12
+            mesh.conn[iel, 7] = node_ids[8]#5
+            mesh.conn[iel, 8] = node_ids[4]#4
 
             #OK
-            mesh.connijk[iel, 1, 1, 1]       = mesh.cell_node_ids[iel][2]
-            mesh.connijk[iel, ngl, 1, 1]     = mesh.cell_node_ids[iel][1]
-            mesh.connijk[iel, ngl, ngl, 1]   = mesh.cell_node_ids[iel][5]
-            mesh.connijk[iel, 1, ngl, 1]     = mesh.cell_node_ids[iel][6]
-            mesh.connijk[iel, 1, 1, ngl]     = mesh.cell_node_ids[iel][4]
-            mesh.connijk[iel, ngl, 1, ngl]   = mesh.cell_node_ids[iel][3]
-            mesh.connijk[iel, ngl, ngl, ngl] = mesh.cell_node_ids[iel][7]
-            mesh.connijk[iel, 1, ngl, ngl]   = mesh.cell_node_ids[iel][8]
-            
+            mesh.connijk[iel, 1, 1, 1]       = node_ids[2]
+            mesh.connijk[iel, ngl, 1, 1]     = node_ids[1]
+            mesh.connijk[iel, ngl, ngl, 1]   = node_ids[5]
+            mesh.connijk[iel, 1, ngl, 1]     = node_ids[6]
+            mesh.connijk[iel, 1, 1, ngl]     = node_ids[4]
+            mesh.connijk[iel, ngl, 1, ngl]   = node_ids[3]
+            mesh.connijk[iel, ngl, ngl, ngl] = node_ids[7]
+            mesh.connijk[iel, 1, ngl, ngl]   = node_ids[8]
+
         end
         
         #
@@ -1051,10 +1059,12 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         #
         open("./COORDS_LO_$rank.dat", "w") do f
             #open("./COORDS_LO.dat", "w") do f
+            # PERF: hoist Gridap accessor once instead of per-node.
+            node_coords = get_node_coordinates(get_grid(model))
             for ip = 1:mesh.npoin_linear
-                mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
-                mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
-                mesh.z[ip] = get_node_coordinates(get_grid(model))[ip][3]
+                mesh.x[ip] = node_coords[ip][1]
+                mesh.y[ip] = node_coords[ip][2]
+                mesh.z[ip] = node_coords[ip][3]
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
                 @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, point2ppoint[ip])

@@ -136,8 +136,11 @@ end
 
 
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
-const Finalize = GridapP4est.Finalize
-const pXest_copy = GridapP4est.pXest_copy
+# PERF: dropped `const Finalize = GridapP4est.Finalize` — never
+# referenced anywhere in src/, and `const pXest_copy = ...` is now
+# resolved at call time via `GridapP4est.pXest_copy(...)` so that the
+# top-level `using GridapP4est` can be deferred to AMR runs (see
+# Jexpresso._ensure_amr_loaded!()).
 const get_glue_components = GridapDistributed.get_glue_components
 
 
@@ -221,16 +224,80 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     if isnothing(adapt_flags)
 
         if ladaptive == false && linitial_refine == false
-            smodel = @outputrootonly GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+            # PERF: read the serial GmshDiscreteModel once on rank 0 and
+            # broadcast it to the other ranks instead of having every rank
+            # parse the .msh file. Two wins rolled into one:
+            #
+            #   (a) The pre-fix code wrapped GmshDiscreteModel(filename, ...)
+            #       in @outputrootonly, which only silences stdout on non-root
+            #       ranks (verified in src/macros/je_macros.jl). The constructor
+            #       itself still ran on every rank → nparts × file I/O,
+            #       nparts × gmsh parses, nparts × peak GMSH memory.
+            #
+            #   (b) The serial smodel was also being built when lxy_partition
+            #       is false, only to be discarded — pure waste in that branch.
+            #
+            # MPI.bcast on a non-bitstype object goes through Julia's
+            # Serialization machinery: root serializes, the byte buffer is
+            # broadcast, receivers deserialize. UnstructuredDiscreteModel is
+            # a plain Julia struct so this works; for city2d-sized meshes the
+            # serialized payload is small enough that the bcast is far cheaper
+            # than three extra GMSH parses.
+            #
+            # The lxy_partition=false branch is left alone: that path already
+            # uses the distributed-Gridap constructor GmshDiscreteModel(parts,
+            # ...), which is collective and reads through its own MPI-aware
+            # path.
             partitioned_model = if inputs[:lxy_partition]
+                # Visible marker for the Gridap mesh-read window (the
+                # silent-wall first-call-JIT phase that previously looked
+                # like a hang). YELLOW_FG is from Crayons.Box, already in
+                # scope via mod_inputs.jl. rank 0 only — the other ranks
+                # are waiting on MPI.bcast and don't need to narrate it.
+                if rank == 0
+                    print(YELLOW_FG(" #   ↳ Gridap GmshDiscreteModel (rank-0-only read + MPI.bcast) ......... "))
+                    flush(stdout)
+                end
+                _t_gmsh = time_ns()
+
+                smodel_root = rank == 0 ?
+                    GmshDiscreteModel(inputs[:gmsh_filename], renumber=true) :
+                    nothing
+                smodel = MPI.bcast(smodel_root, 0, comm)
+
+                if rank == 0
+                    print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
+                    flush(stdout)
+                end
+
                 cell_to_part = _compute_xy_partition(smodel, nparts)
                 DiscreteModel(parts, smodel, cell_to_part)
             else
-                @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+                # CAVEAT: GmshDiscreteModel(parts, …) is the
+                # distributed-Gridap constructor; whether it actually
+                # reads on rank 0 only or on every rank depends on the
+                # GridapGmsh release. To guarantee a single-rank read on
+                # this branch too, swap it for the same rank-0 +
+                # MPI.bcast pattern above, with a non-xy default cell
+                # partition. Left as a follow-up because city2d on macOS
+                # always takes the lxy_partition=true branch.
+                if rank == 0
+                    print(YELLOW_FG(" #   ↳ Gridap GmshDiscreteModel(parts, …) — distributed constructor ......... "))
+                    flush(stdout)
+                end
+                _t_gmsh = time_ns()
+                pm = @outputrootonly GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+                if rank == 0
+                    print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
+                    flush(stdout)
+                end
+                pm
             end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
-
+            # PERF: GridapP4est is `using`-d lazily; load it before the
+            # first call to UniformlyRefinedForestOfOctreesDiscreteModel.
+            _ensure_amr_loaded!()
             @outputrootonly begin
                 gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
@@ -239,7 +306,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             dmodel = local_views(partitioned_model).item_ref[]
             model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
         elseif ladaptive == true && linitial_refine == false
-
+            _ensure_amr_loaded!()
             @outputrootonly begin
                 gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
@@ -280,6 +347,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             dtopology      = get_grid_topology(dmodel)
         end
     else
+        # AMR re-adapt path: caller passed `adapt_flags`. All of the
+        # GridapP4est constructors below need the package in scope.
+        _ensure_amr_loaded!()
         if (omesh.lneed_redistribute)
             @outputrootonly begin
                 partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
@@ -301,7 +371,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                                             partitioned_model_coarse.non_conforming_glue,
                                             partitioned_model_coarse.coarse_model,
                                             partitioned_model_coarse.ptr_pXest_connectivity,
-                                            pXest_copy(partitioned_model_coarse.pXest_type, partitioned_model_coarse.ptr_pXest),
+                                            GridapP4est.pXest_copy(partitioned_model_coarse.pXest_type, partitioned_model_coarse.ptr_pXest),
                                             partitioned_model_coarse.pXest_type,
                                             partitioned_model_coarse.pXest_refinement_rule_type,
                                             partitioned_model_coarse.owns_ptr_pXest_connectivity,
@@ -654,11 +724,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
         mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl),1)
     
+        # PERF: 8 bare `mesh.cell_node_ids[iel][k]` accesses per element ->
+        # 8*nelem fresh SubArray allocations from the Gridap Table. Using
+        # array_cache + getindex! reuses a single buffer (same pattern the
+        # code already uses for cell_edge_ids).
+        _cache_node_ids = array_cache(mesh.cell_node_ids)
         for iel = 1:mesh.nelem
-            mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
-            mesh.conn[iel, 2] = mesh.cell_node_ids[iel][2]
-            mesh.conn[iel, 3] = mesh.cell_node_ids[iel][4]
-            mesh.conn[iel, 4] = mesh.cell_node_ids[iel][3]
+            node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
+            mesh.conn[iel, 1] = node_ids[1]
+            mesh.conn[iel, 2] = node_ids[2]
+            mesh.conn[iel, 3] = node_ids[4]
+            mesh.conn[iel, 4] = node_ids[3]
 
             #
             # 1-----3
@@ -666,11 +742,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # |     |
             # 2-----4
             #
-            mesh.connijk[iel, 1,      1] = mesh.cell_node_ids[iel][2]
-            mesh.connijk[iel, 1,    ngl] = mesh.cell_node_ids[iel][1]
-            mesh.connijk[iel, ngl,  ngl] = mesh.cell_node_ids[iel][3]
-            mesh.connijk[iel, ngl,    1] = mesh.cell_node_ids[iel][4]
-            
+            mesh.connijk[iel, 1,      1] = node_ids[2]
+            mesh.connijk[iel, 1,    ngl] = node_ids[1]
+            mesh.connijk[iel, ngl,  ngl] = node_ids[3]
+            mesh.connijk[iel, ngl,    1] = node_ids[4]
+
             # @printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[iel, 1, 1], mesh.connijk[iel, ngl, 1] , mesh.connijk[iel, 1,ngl], mesh.connijk[iel, ngl, ngl] )
         end
         #
@@ -686,14 +762,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         #
         # Rewrite coordinates in RCM order:
         #
-        #filename = "./COORDS_LO.dat" 
-        #filename = "./COORDS_LO_" + rank + ".dat" 
+        #filename = "./COORDS_LO.dat"
+        #filename = "./COORDS_LO_" + rank + ".dat"
         #open("./COORDS_LO_$rank.dat", "w") do f
+            # PERF: hoist Gridap accessor out of the per-node loop. Each call
+            # to get_node_coordinates(get_grid(model)) walks the Gridap
+            # accessor chain; doing it once per node turned this into an
+            # O(npoin_linear) chain-walk for nothing.
+            node_coords = get_node_coordinates(get_grid(model))
             for ip = 1:mesh.npoin_linear
-                
-                mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
-                mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
-                
+
+                mesh.x[ip] = node_coords[ip][1]
+                mesh.y[ip] = node_coords[ip][2]
+
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
                 #@printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
@@ -705,27 +786,31 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl))
         mesh.conn_edgesijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.NEDGES_EL))
 
+        # PERF: 16 bare cell_node_ids accesses per element; use array_cache
+        # like the 2D branch above (saves 16*nelem SubArray allocations).
+        _cache_node_ids = array_cache(mesh.cell_node_ids)
         for iel = 1:mesh.nelem
+            node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
             #CGNS numbering: OK ref: HEXA...
-            mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]#9
-            mesh.conn[iel, 2] = mesh.cell_node_ids[iel][5]#11
-            mesh.conn[iel, 3] = mesh.cell_node_ids[iel][6]#6
-            mesh.conn[iel, 4] = mesh.cell_node_ids[iel][2]#1
-            mesh.conn[iel, 5] = mesh.cell_node_ids[iel][3]#10
-            mesh.conn[iel, 6] = mesh.cell_node_ids[iel][7]#12
-            mesh.conn[iel, 7] = mesh.cell_node_ids[iel][8]#5
-            mesh.conn[iel, 8] = mesh.cell_node_ids[iel][4]#4
+            mesh.conn[iel, 1] = node_ids[1]#9
+            mesh.conn[iel, 2] = node_ids[5]#11
+            mesh.conn[iel, 3] = node_ids[6]#6
+            mesh.conn[iel, 4] = node_ids[2]#1
+            mesh.conn[iel, 5] = node_ids[3]#10
+            mesh.conn[iel, 6] = node_ids[7]#12
+            mesh.conn[iel, 7] = node_ids[8]#5
+            mesh.conn[iel, 8] = node_ids[4]#4
 
             #OK
-            mesh.connijk[iel, 1, 1, 1]       = mesh.cell_node_ids[iel][2]
-            mesh.connijk[iel, ngl, 1, 1]     = mesh.cell_node_ids[iel][1]
-            mesh.connijk[iel, ngl, ngl, 1]   = mesh.cell_node_ids[iel][5]
-            mesh.connijk[iel, 1, ngl, 1]     = mesh.cell_node_ids[iel][6]
-            mesh.connijk[iel, 1, 1, ngl]     = mesh.cell_node_ids[iel][4]
-            mesh.connijk[iel, ngl, 1, ngl]   = mesh.cell_node_ids[iel][3]
-            mesh.connijk[iel, ngl, ngl, ngl] = mesh.cell_node_ids[iel][7]
-            mesh.connijk[iel, 1, ngl, ngl]   = mesh.cell_node_ids[iel][8]
-            
+            mesh.connijk[iel, 1, 1, 1]       = node_ids[2]
+            mesh.connijk[iel, ngl, 1, 1]     = node_ids[1]
+            mesh.connijk[iel, ngl, ngl, 1]   = node_ids[5]
+            mesh.connijk[iel, 1, ngl, 1]     = node_ids[6]
+            mesh.connijk[iel, 1, 1, ngl]     = node_ids[4]
+            mesh.connijk[iel, ngl, 1, ngl]   = node_ids[3]
+            mesh.connijk[iel, ngl, ngl, ngl] = node_ids[7]
+            mesh.connijk[iel, 1, ngl, ngl]   = node_ids[8]
+
         end
         
         #
@@ -743,10 +828,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         #
         #open("./COORDS_LO_$rank.dat", "w") do f
             #open("./COORDS_LO.dat", "w") do f
+            # PERF: same hoist as the 2D branch — node_coords is fixed
+            # across all per-node iterations, no point re-fetching it.
+            node_coords = get_node_coordinates(get_grid(model))
             for ip = 1:mesh.npoin_linear
-                mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
-                mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
-                mesh.z[ip] = get_node_coordinates(get_grid(model))[ip][3]
+                mesh.x[ip] = node_coords[ip][1]
+                mesh.y[ip] = node_coords[ip][2]
+                mesh.z[ip] = node_coords[ip][3]
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
                 #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, point2ppoint[ip])
@@ -2076,16 +2164,20 @@ function determine_colinearity(vec1, vec2)
 end
 
 function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_2D)
-    
+
+    # PERF: 4 cell_node_ids accesses per element -> cache the Table row
+    # (saves 4*nelem SubArray allocations from the Gridap Table).
+    _cache_node_ids = array_cache(mesh.cell_node_ids)
     for iel = 1:mesh.nelem
+        node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
         #
         # CGNS numbering
         #
-        ip1 = mesh.cell_node_ids[iel][4]
-        ip2 = mesh.cell_node_ids[iel][3]
-        ip3 = mesh.cell_node_ids[iel][1]
-        ip4 = mesh.cell_node_ids[iel][2]
-        
+        ip1 = node_ids[4]
+        ip2 = node_ids[3]
+        ip3 = node_ids[1]
+        ip4 = node_ids[2]
+
 	    # Edges bottom face:
 	    iedg_el = 1
         mesh.conn_edge_el[1, iedg_el, iel] = ip1
@@ -2128,15 +2220,19 @@ function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
 end #populate_edge_el!
 
 function populate_conn_face_el!(mesh::St_mesh, SD::NSD_2D)
-    
+
+    # PERF: see populate_conn_edge_el! above — same array_cache pattern
+    # to avoid 4*nelem fresh SubArray allocations from the Gridap Table.
+    _cache_node_ids = array_cache(mesh.cell_node_ids)
     for iel = 1:mesh.nelem
+        node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
         #
         # CGNS numbering
         #
-        ip1 = mesh.cell_node_ids[iel][4]
-        ip2 = mesh.cell_node_ids[iel][3]
-        ip3 = mesh.cell_node_ids[iel][1]
-        ip4 = mesh.cell_node_ids[iel][2]
+        ip1 = node_ids[4]
+        ip2 = node_ids[3]
+        ip3 = node_ids[1]
+        ip4 = node_ids[2]
         
         #
         # Local faces node connectivity:
@@ -2828,14 +2924,18 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
         #
         ip  = tot_linear_poin + tot_edges_internal_nodes + 1
         gip::Int64  = 0
+        # PERF: cache the cell_node_ids Table row to avoid 4*nelem fresh
+        # SubArray allocations from Gridap on each access.
+        _cache_node_ids = array_cache(mesh.cell_node_ids)
         for iface_g = 1:mesh.nelem #NOTICE: in 2D the faces are the elements themselves
             iel = iface_g
             gip = gtot_linear_poin + gtot_edges_internal_nodes + 1 + (face2pface[iel] - 1) * (ngl-2) * (ngl - 2)
             #GGNS numbering
-            ip1 = mesh.cell_node_ids[iel][1]
-            ip2 = mesh.cell_node_ids[iel][2]
-            ip3 = mesh.cell_node_ids[iel][4]
-            ip4 = mesh.cell_node_ids[iel][3]
+            node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
+            ip1 = node_ids[1]
+            ip2 = node_ids[2]
+            ip3 = node_ids[4]
+            ip4 = node_ids[3]
 
             mesh.poin_in_face[iface_g, 1, 1]     = ip1
             mesh.poin_in_face[iface_g, ngl, 1]   = ip2
@@ -3394,21 +3494,25 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
     #open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_vol.dat", "w") do f
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
+        # PERF: cache the cell_node_ids Table row — 8*nelem accesses per
+        # element otherwise each allocate a fresh SubArray from Gridap.
+        _cache_node_ids = array_cache(mesh.cell_node_ids)
         for iel = 1:mesh.nelem
             gip = gtot_linear_poin + gtot_edges_internal_nodes + gtot_faces_internal_nodes + 1 + (elm2pelm[iel] - 1) * (ngl-2) * (ngl - 2) * (ngl - 2)
             iconn = 1
-            
+
             #
             # CGNS numbering
             #
-            ip1 = mesh.cell_node_ids[iel][2]
-            ip2 = mesh.cell_node_ids[iel][6]
-            ip3 = mesh.cell_node_ids[iel][8]
-            ip4 = mesh.cell_node_ids[iel][4]
-            ip5 = mesh.cell_node_ids[iel][1]
-            ip6 = mesh.cell_node_ids[iel][5]
-            ip7 = mesh.cell_node_ids[iel][7]
-            ip8 = mesh.cell_node_ids[iel][3]
+            node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
+            ip1 = node_ids[2]
+            ip2 = node_ids[6]
+            ip3 = node_ids[8]
+            ip4 = node_ids[4]
+            ip5 = node_ids[1]
+            ip6 = node_ids[5]
+            ip7 = node_ids[7]
+            ip8 = node_ids[3]
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
@@ -3681,7 +3785,15 @@ Load a p4est forest checkpoint saved by `write_p4est_checkpoint` and build a ful
 built from the original .msh file — its `coarse_model` and `ptr_pXest_connectivity`
 provide the geometric context for the loaded forest.  All MPI ranks call collectively.
 """
-function load_p4est_checkpoint_model(base_model::OctreeDistributedDiscreteModel, forest_file::String)
+function load_p4est_checkpoint_model(base_model, forest_file::String)
+    # PERF: the `::OctreeDistributedDiscreteModel` annotation was
+    # dropped from the signature so this function parses without
+    # `using GridapP4est`. The lazy load below guarantees the package
+    # is available for the `OctreeDistributedDiscreteModel(...)` and
+    # `P4est_wrapper.p8est_*` references in the body. Callers always
+    # pass a real OctreeDistributedDiscreteModel — there is only one
+    # method, so dispatch behaviour is unchanged.
+    _ensure_amr_loaded!()
     pXest_type = base_model.pXest_type
     parts      = base_model.parts
 

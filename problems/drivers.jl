@@ -1,5 +1,12 @@
-using Distributions
-using ONNXRunTime
+# PERF: `using Distributions` removed — the file never references
+# Distributions.* (the EL sample loop uses Base.rand). Distributions
+# pulls in StatsBase / StatsFuns / SpecialFunctions for nothing.
+#
+# `using ONNXRunTime` is kept inside `elementLearningStructs.jl`,
+# which is the only place that actually calls into it. drivers.jl
+# itself never references the symbol, so we don't need to pay for
+# the ~150 MB ONNX runtime binary on every rank just to import this
+# file for non-EL runs (city2d, etc).
 
 function driver(nparts,
                 distribute,
@@ -11,6 +18,17 @@ function driver(nparts,
 
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
+
+    # PERF/UX: narrow progress prints so the user can see where the
+    # silent-wall first-call JIT time is going (sem_setup, mesh read,
+    # metric build, …). This prints every phase boundary on rank 0; if
+    # one of them takes obviously longer than the others, that's the
+    # JIT hotspot. Cheap: just five flushed prints + a counter.
+    if rank == 0
+        print(" # driver() entered, calling sem_setup ......... ")
+        flush(stdout)
+    end
+    _t_sem = time_ns()
 
     #---------------------------------------------------------
     # Time span (shared by both standalone and coupled paths).
@@ -62,6 +80,13 @@ function driver(nparts,
 
         sem, partitioned_model = sem_setup(inputs, nparts, distribute)
 
+        if rank == 0
+            @printf("DONE (%.2f s)\n", (time_ns() - _t_sem) / 1e9)
+            print(" # initialize() ......... ")
+            flush(stdout)
+        end
+        _t_init = time_ns()
+
         if inputs[:backend] != CPU()
             convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
         end
@@ -69,6 +94,13 @@ function driver(nparts,
         # lRT_problem builds its own problem and exits early — it does not
         # use params_setup or time_loop!. Standalone-only branch.
         if inputs[:lRT_problem]
+            # PERF: bring RRTMGP + ClimaComms + LinearOperators +
+            # NCDatasets into scope. These were eagerly
+            # loaded at the top of src/Jexpresso.jl, costing every
+            # non-RT run (city2d, sod1d, …) ~tens of seconds of load
+            # time for code they never call. _ensure_rt_loaded!() is a
+            # cheap no-op once the first RT run has triggered it.
+            Jexpresso._ensure_rt_loaded!()
             if sem.mesh.SD == NSD_2D()
                 build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
                                                  sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy,
@@ -95,6 +127,10 @@ function driver(nparts,
         end
 
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+        if rank == 0
+            @printf("DONE (%.2f s)\n", (time_ns() - _t_init) / 1e9)
+            flush(stdout)
+        end
     end
 
     #---------------------------------------------------------

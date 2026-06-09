@@ -500,11 +500,17 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                                avisc, EL, A_∂τ∂τ, ∂τ_pos, gΓ, wbuf.infer,
                                nelintpoints, elnbdypoints)
 
-        @btime elementLearning_infer!($u, $mesh,
-                                      $wbuf.model, $wbuf.model_type,
-                                      $wbuf.input_name, $wbuf.output_name,
-                                      $avisc, $EL, $A_∂τ∂τ, $∂τ_pos, $gΓ, $wbuf.infer,
-                                      $nelintpoints, $elnbdypoints)
+        # PERF: ad-hoc @btime instrumentation removed. The line below was a
+        # *duplicate* call of elementLearning_infer! for timing during
+        # development; it forced `using BenchmarkTools` at the top of
+        # src/Jexpresso.jl just so the @btime macro could be expanded at
+        # module load. BenchmarkTools adds ~50 MB to the per-rank load
+        # baseline. The real inference call above is unchanged.
+        # @btime elementLearning_infer!($u, $mesh,
+        #                               $wbuf.model, $wbuf.model_type,
+        #                               $wbuf.input_name, $wbuf.output_name,
+        #                               $avisc, $EL, $A_∂τ∂τ, $∂τ_pos, $gΓ, $wbuf.infer,
+        #                               $nelintpoints, $elnbdypoints)
         println(YELLOW_FG(string(" # --- INFERENCE — solution stored in u .......... DONE")))
     end
 

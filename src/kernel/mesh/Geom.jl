@@ -8,13 +8,17 @@ using Gridap.Fields
 using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.Visualization
-using Gridap.Geometry: GridMock
+# PERF: `using Gridap.Geometry: GridMock` was unused — no GridMock
+# reference anywhere in JeGeometry. Removed.
 using GridapDistributed
 using GridapDistributed: GenericDistributedDiscreteModel, compute_cell_graph
 using PartitionedArrays
 using GridapGmsh
-using GridapP4est
-using P4est_wrapper
+# PERF: dropped `using GridapP4est` and `using P4est_wrapper` from
+# JeGeometry — neither was referenced anywhere in this submodule.
+# AMR runs reach those packages via Jexpresso._ensure_amr_loaded!()
+# in src/Jexpresso.jl, which imports them into Jexpresso's namespace
+# (the only place that actually uses their symbols).
 using SparseArrays
 
 # Define your custom version of DiscreteModel function

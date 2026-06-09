@@ -161,6 +161,52 @@ function precompile_warmup_run!(inputs, params, u,
     params.qp.qnm1 .= qnm1_snapshot
     params.qp.qnm2 .= qnm2_snapshot
 
+    # PERF: also pre-JIT the diagnostic-VTK write path.
+    #
+    # The 1-step solve above warms `rhs!` + the SciML integrator's `step!`,
+    # but the warmup uses `CallbackSet()` (empty) so it does NOT compile
+    # the bodies of the real callbacks. The diagnostic callback's `affect!`
+    # closure ends up calling write_output → write_vtk → pvtk_grid →
+    # vtk_save, and the first time it fires inside the real solve
+    # (typically at the very first tstop, immediately after the initial
+    # condition is written) tens of seconds of JIT happen before the time
+    # loop appears to make any progress. This block forces that compile
+    # to happen here, inside the warmup print region, so users see
+    #
+    #     # Precompile warm-up (1 step solve) ......... 18.42 s
+    #     # Solving ODE ......
+    #     # ... 1   t = 0.004 ...
+    #
+    # instead of a multi-tens-of-seconds wall after the initial VTK write.
+    #
+    # Output is redirected to a per-rank temp dir that is removed
+    # immediately after; the JIT artifacts persist, the throw-away VTU
+    # files do not. Wrapped in try/catch on the same principle as the
+    # solve warmup: a failure must not prevent the real run.
+    if precompile_warmup_enabled(inputs) && inputs[:outformat] == VTK()
+        with_logger(NullLogger()) do
+            try
+                tmpdir = mktempdir(; prefix = "jexpresso_warmup_")
+                write_output(params.SD, u, params.uaux,
+                             params.tspan[1], 0,
+                             params.mesh, params.mp,
+                             params.connijk_original,
+                             params.poin_in_bdy_face_original,
+                             params.x_original, params.y_original, params.z_original,
+                             tmpdir, inputs,
+                             params.qp.qvars, params.qp.qoutvars,
+                             inputs[:outformat];
+                             nvar = params.qp.neqs,
+                             qexact = params.qp.qe,
+                             μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
+                # Best-effort cleanup; never fatal.
+                try; rm(tmpdir; recursive = true, force = true); catch; end
+            catch e
+                rank == 0 && @warn "VTK-write warmup failed; continuing without it" exception=e
+            end
+        end
+    end
+
     MPI.Barrier(comm)
     rank == 0 && @printf("%.2f s\n", (time_ns() - t0) / 1e9)
 
@@ -366,6 +412,9 @@ function time_loop!(inputs, params, u, args...)
             # Julia closures capture `partitioned_model` by binding — it always
             # reflects the current forest after each AMR iteration.
             if get(inputs, :lamr, false)
+                # PERF: GridapP4est is lazy-loaded; ensure it's in
+                # scope before the p8est_save underlying this call.
+                _ensure_amr_loaded!()
                 write_p4est_checkpoint(inputs[:output_dir], idx, partitioned_model)
             end
         end
@@ -392,24 +441,19 @@ function time_loop!(inputs, params, u, args...)
     # Skipped on VTK restart — the snapshot already exists in the output dir
     # and its entry is already in simulation.pvd from the previous run.
     #
+    # NOTE: the actual write_output call has been moved to AFTER the
+    # integrator warm-up below, so the user-perceived sequence is
+    #   # Integrator warm-up ... DONE
+    #   # Write initial condition ... END
+    #   # step 1 t = ...
+    # with no apparent gap between "Write initial condition END" and the
+    # first time step. The previous order printed "Write initial
+    # condition END" then sat silently for tens of seconds while the
+    # warm-up JIT-compiled the callback-specialized integrator step,
+    # which the user reported as a deadlock.
+    #
     idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
-    if idx ≠ nothing && lwrite_init
-        if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
-        write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
-                     params.mesh, params.mp,
-                     params.connijk_original, params.poin_in_bdy_face_original,
-                     params.x_original, params.y_original, params.z_original,
-                     inputs[:output_dir], inputs,
-                     params.qp.qvars, params.qp.qoutvars,
-                     inputs[:outformat];
-                     nvar=params.qp.neqs, qexact=params.qp.qe,
-                     μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
-        if (lwrite_time == true)
-            append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
-        end
-        if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
-    end
-    
+
     #
     # Simulation
     #
@@ -433,15 +477,138 @@ function time_loop!(inputs, params, u, args...)
         # Include cb_coupling in coupled mode so Julia's per-timestep
         # send to Alya actually fires; without it Alya's MPI.Waitall
         # blocks and its VTS output never gets written.
-        callbacks_main = (is_coupled && cb_coupling !== nothing) ?
-            CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling) :
-            CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online)
+        # DEBUG: per-step heartbeat so the user can tell whether solve()
+        # is making progress between diagnostic writes. Diagnostic
+        # writes only fire at dosetimes (e.g. every 10 time units for
+        # city2d), so for Δt=0.004 the integrator can be silently doing
+        # 2500 steps between two user-visible prints — looks identical
+        # to a hang.
+        #
+        # Throttled: every step for the first 5, then every 100. With
+        # 150 000-step runs that's ~1 500 lines of output instead of
+        # 150 000. Set :lstep_heartbeat => false in user_inputs.jl (or
+        # the env JEXPRESSO_STEP_HEARTBEAT=0) to silence it once the
+        # debugging is done.
+        _step_count = Ref{Int}(0)
+        function step_heartbeat_condition(u, t, integrator)
+            _step_count[] += 1
+            n = _step_count[]
+            return n <= 5 || (n % 100 == 0)
+        end
+        function step_heartbeat_affect!(integrator)
+            rank == 0 && (@printf(" #   step %d   t = %.6f\n", _step_count[], integrator.t); flush(stdout))
+        end
+        _heartbeat_on = get(inputs, :lstep_heartbeat, true) &&
+                         lowercase(get(ENV, "JEXPRESSO_STEP_HEARTBEAT", "1")) ∉ ("0", "false", "no", "off")
+        cb_heartbeat = _heartbeat_on ?
+            DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
+            nothing
 
-        # Note: precompile warm-up moved OUT of time_loop! so its JIT
-        # cost is not counted by the `@time` wrapper in drivers.jl.
-        # See `precompile_warmup_run!` (called from drivers.jl before
-        # `@time time_loop!(...)`). If the alloc summary is enabled,
-        # JEXPRESSO_TIMER is reset there too.
+        callbacks_main = if is_coupled && cb_coupling !== nothing
+            cb_heartbeat === nothing ?
+                CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling) :
+                CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling, cb_heartbeat)
+        else
+            cb_heartbeat === nothing ?
+                CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online) :
+                CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_heartbeat)
+        end
+
+        # PERF: SciML integrator warmup with the REAL callback set.
+        #
+        # The outer precompile_warmup_run! (called from drivers.jl) uses
+        # `CallbackSet()` because it does not have access to `cb`, `cb_restart`,
+        # … which are constructed inside time_loop!. That warmup pre-JITs
+        # `rhs!` but the integrator's `step!` is specialised on the
+        # CallbackSet *type*, and CallbackSet{Tuple{…}} ≠ CallbackSet{}, so
+        # the first real `solve(…)` below was recompiling the entire
+        # integrator on first hit — the user's "long wait after initial-VTK
+        # END" wall.
+        #
+        # Run one throw-away step here with the same prob/callbacks_main type
+        # the real solve uses, then snapshot/restore u and qnm1/qnm2 so the
+        # production run sees the original IC. The throw-away step's
+        # diagnostic-VTK output, if any, goes to a per-rank mktempdir that's
+        # removed right after.
+        if precompile_warmup_enabled(inputs)
+            rank == 0 && (print(YELLOW_FG(" # Integrator warm-up with real callbacks ......... ")); flush(stdout))
+            _t_wm = time_ns()
+            u_snap    = copy(u)
+            qnm1_snap = copy(params.qp.qnm1)
+            qnm2_snap = copy(params.qp.qnm2)
+            # If a callback ends up actually writing during the warmup
+            # (only possible for cases whose first dosetime falls inside
+            # [t0, t0+Δt]), redirect that output to a per-rank tempdir.
+            # When `inputs` is a NamedTuple (rare; user_inputs flag
+            # :use_named_tuples) we can't mutate it — that's fine, only
+            # a few cases hit the affect!() inside this single step,
+            # and the temp redirect is best-effort anyway.
+            warm_outdir  = mktempdir(; prefix = "jexpresso_intwarmup_")
+            saved_outdir = inputs isa Dict ? inputs[:output_dir] : nothing
+            inputs isa Dict && (inputs[:output_dir] = warm_outdir)
+            t0_w = params.tspan[1]
+            Δt_w = Float32(inputs[:Δt])
+            # PERF: build the warmup problem with `remake(prob, …)` so it
+            # has the IDENTICAL Julia type as `prob` — same `tspan`
+            # container type (Vector vs Tuple was the previous mismatch),
+            # same `u0` field type, same params type. SciML specialises
+            # the integrator on the prob type + kwarg types, so any
+            # type-level difference (even Vector vs Tuple for tspan) makes
+            # the real solve recompile from scratch despite the warmup.
+            warmup_prob = remake(prob; tspan = [t0_w, t0_w + Δt_w])
+            # PERF: kwargs also match the real `solve(...)` exactly. The
+            # only deviation is `tstops = [t0_w + Δt_w]` (just one point)
+            # to keep the warmup cheap.
+            warm_saveat = range(t0_w, t0_w + Δt_w, length = inputs[:ndiagnostics_outputs])
+            with_logger(NullLogger()) do
+                try
+                    solve(warmup_prob,
+                          inputs[:ode_solver], dt = dt,
+                          callback = callbacks_main,
+                          tstops = [t0_w + Δt_w],
+                          save_everystep = false,
+                          adaptive = inputs[:ode_adaptive_solver],
+                          saveat = warm_saveat)
+                catch e
+                    rank == 0 && @warn "integrator warm-up failed; continuing without it" exception=e
+                end
+            end
+            u .= u_snap
+            params.qp.qnm1 .= qnm1_snap
+            params.qp.qnm2 .= qnm2_snap
+            inputs isa Dict && saved_outdir !== nothing && (inputs[:output_dir] = saved_outdir)
+            try; rm(warm_outdir; recursive = true, force = true); catch; end
+            # Reset the heartbeat counter so the real solve gets its
+            # own first-5-steps detail (the warmup just consumed one).
+            _step_count[] = 0
+            MPI.Barrier(comm)
+            rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
+        end
+
+        # Write initial conditions HERE (moved from before the warm-up).
+        # All collective dependencies (`u`, qnm1/qnm2, params.uaux) are
+        # untouched by the warm-up — it snapshots and restores them — so
+        # the IC written here is bit-identical to what would have been
+        # written before the warm-up. Doing it here closes the silent
+        # gap between "Write initial condition END" and the first real
+        # time-step that the user saw as a deadlock.
+        if idx ≠ nothing && lwrite_init
+            if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
+            write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
+                         params.mesh, params.mp,
+                         params.connijk_original, params.poin_in_bdy_face_original,
+                         params.x_original, params.y_original, params.z_original,
+                         inputs[:output_dir], inputs,
+                         params.qp.qvars, params.qp.qoutvars,
+                         inputs[:outformat];
+                         nvar=params.qp.neqs, qexact=params.qp.qe,
+                         μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
+            if (lwrite_time == true)
+                append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
+            end
+            if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
+        end
+
         if alloc_summary_enabled(inputs)
             rank == 0 && println(" # Simulation timing and allocations (steady state; compile warm-up excluded):")
         end

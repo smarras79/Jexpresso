@@ -9,31 +9,43 @@ module Jexpresso
 using QuadGK
 using MPI
 using KernelAbstractions
-using Revise
-using BenchmarkTools
+# PERF: the following five `using`s eagerly load big package binaries
+# on every MPI rank (Revise ~150 MB, BenchmarkTools, SnoopCompile,
+# UnicodePlots, Geodesy) and were not referenced anywhere in the source
+# tree. Removed to cut the per-rank baseline. Re-add at the REPL if
+# you need them interactively.
+# using Revise
+# using BenchmarkTools
 using Dates
-using DelimitedFiles
 using CSV, DataFrames
-using DataStructures
+# PERF: removed `using DataStructures`, `using DelimitedFiles`,
+# `using InternedStrings`, `using ElasticArrays` — none of these
+# packages were actually referenced anywhere in src/. They each cost
+# load time on every Julia start; re-add only when an actual user
+# turns up.
 using LoopVectorization
-using ElasticArrays
-using Geodesy
-using InternedStrings
+# using Geodesy
 using LinearAlgebra
-using LinearOperators
+# PERF: `using LinearOperators` moved into _ensure_rt_loaded!() —
+# the only call site is src/kernel/operators/Axb_rad_mpi.jl, which is
+# part of the radiative-transfer code path.
 using SpecialFunctions
 using SparseArrays
 using StaticArrays
 using StaticArrays: SVector, MVector
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
-using SnoopCompile
+# using SnoopCompile
 using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem, FullSpecialize
-using HDF5
+# PERF: `using HDF5` moved into Jexpresso._ensure_hdf5_loaded!() —
+# only `write_hdf5`/`read_hdf5` in src/io/write_output.jl reference
+# h5* functions, and both call the loader before touching them. The
+# local sentinel `HDF5()` (abstractTypes.jl) is just a dispatch tag
+# and does not need the package.
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
@@ -42,26 +54,28 @@ import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
 
-
-import ClimaComms
-@static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
-
-using RRTMGP
-using RRTMGP.Vmrs
-using RRTMGP.LookUpTables
-using RRTMGP.AtmosphericStates
-using RRTMGP.Optics
-using RRTMGP.Sources
-using RRTMGP.BCs
-using RRTMGP.Fluxes
-using RRTMGP.AngularDiscretizations
-using RRTMGP.RTE
-using RRTMGP.RTESolver
-import RRTMGP.Parameters.RRTMGPParameters
-using RRTMGP.ArtifactPaths
+# PERF: the radiative-transfer dependency tree (RRTMGP + 11
+# submodules, ClimaComms with its MPI-backend macro, NCDatasets) used
+# to be `using`-d at the top of this file. They are
+# only referenced from:
+#
+#   * src/kernel/mesh/phys_grid.jl :: compute_radiative_fluxes!(...)
+#   * src/io/read_dp_scream.jl     :: read_atmospheric_data + helpers
+#   * src/kernel/operators/Axb_rad_mpi.jl :: LinearOperators
+#
+# All three are gated by `inputs[:lRT_problem]` (set in user_inputs.jl).
+# city2d and every other non-RT case pays the load cost for nothing.
+#
+# Defer to `_ensure_rt_loaded!()` (see bottom of this file) which is
+# called from drivers.jl when an RT run is detected. Function bodies
+# parse fine without the names in scope — Julia resolves them at first
+# call, by which time the lazy loader will have run.
 using Serialization
 
-using UnicodePlots
+# PERF: UnicodePlots was only referenced from a commented-out
+# `UnicodePlots.heatmap` debug call in Projection.jl. Removed from the
+# eager load path — the import alone adds ~50 MB per rank.
+# using UnicodePlots
 using Printf
 
 using Gridap
@@ -72,11 +86,16 @@ using Gridap.Fields
 using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.Adaptivity
-using Gridap.Geometry: GridMock
+# PERF: `using Gridap.Geometry: GridMock` was unused (only re-imported
+# in src/kernel/mesh/Geom.jl, never referenced). Removed.
 using GridapDistributed
 using PartitionedArrays
 using GridapGmsh
-using GridapP4est
+# PERF: `using GridapP4est` (and its companion P4est_wrapper) moved
+# into Jexpresso._ensure_amr_loaded!(). They are only touched by AMR
+# / initial-refinement / restart-AMR code paths, all gated by
+# `inputs[:ladapt]`, `inputs[:linitial_refine]`, `inputs[:lamr]` or
+# `inputs[:lrestart_amr]`. city2d and other plain runs skip the load.
 
 using PrecompileTools
 
@@ -222,6 +241,142 @@ include(joinpath( "auxiliary", "checks.jl"))
 include("./run.jl")
 
 export @timers
+
+# ──────────────────────────────────────────────────────────────────────
+# Lazy dependency loaders.
+#
+# Heavy packages whose symbols are only touched by a specific feature
+# (radiative transfer, HDF5 I/O, NetCDF I/O, AMR) are kept out of the
+# top-level `using` block and brought into Jexpresso's namespace on
+# demand by these helpers. The contract is that each `_ensure_*!()`
+# call MUST happen before any code that references the corresponding
+# package symbols — i.e. at the top of the entry-point function for
+# that feature. Function bodies parse fine without the names in scope:
+# Julia resolves them at the first call, by which time the loader has
+# run.
+#
+# Why this design (as opposed to Julia 1.9 package extensions): the
+# feature code already lives inside Jexpresso (phys_grid.jl,
+# Axb_rad_mpi.jl, write_output.jl, mesh.jl). Splitting them into ext/
+# would require moving those files and re-wiring the include chain.
+# Deferred `@eval using` keeps the source layout intact and saves the
+# same load time for the common non-feature run (city2d et al.).
+#
+# Macros are an exception: macroexpansion happens at parse time, so any
+# `Package.@macro` reference in a function body would fail to expand
+# even if the call site is dead code. None of the deferred packages
+# are referenced this way at present; if a future caller needs e.g.
+# `Infiltrator.@exfiltrate` they must either eager-load it or wrap the
+# call in `@eval`.
+# ──────────────────────────────────────────────────────────────────────
+
+# ─── Radiative-transfer dependency tree ───────────────────────────────
+# Touched only by:
+#   * src/kernel/mesh/phys_grid.jl  :: compute_radiative_fluxes!
+#   * src/kernel/operators/Axb_rad_mpi.jl :: LinearOperators wrappers
+#   * src/kernel/operators/build_rad_*.jl
+# All gated by `inputs[:lRT_problem]` (drivers.jl).
+const _RT_LOADED = Ref(false)
+"""
+    Jexpresso._ensure_rt_loaded!()
+
+Lazily bring RRTMGP + its submodules, ClimaComms and LinearOperators
+into Jexpresso's namespace. No-op after the first call.
+"""
+function _ensure_rt_loaded!()
+    _RT_LOADED[] && return nothing
+    @eval Jexpresso begin
+        import ClimaComms
+        @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
+        using RRTMGP
+        using RRTMGP.Vmrs
+        using RRTMGP.LookUpTables
+        using RRTMGP.AtmosphericStates
+        using RRTMGP.Optics
+        using RRTMGP.Sources
+        using RRTMGP.BCs
+        using RRTMGP.Fluxes
+        using RRTMGP.AngularDiscretizations
+        using RRTMGP.RTE
+        using RRTMGP.RTESolver
+        using RRTMGP.ArtifactPaths
+        import RRTMGP.Parameters.RRTMGPParameters
+        import RRTMGP: get_artifact_path
+        using LinearOperators
+    end
+    # NCDatasets is also touched from this code path (Dataset(...) in
+    # compute_radiative_fluxes!), so pull it in via its dedicated loader.
+    _ensure_netcdf_loaded!()
+    _RT_LOADED[] = true
+    return nothing
+end
+
+# ─── NetCDF I/O (via NCDatasets) ──────────────────────────────────────
+# Touched only by:
+#   * src/io/write_output.jl     :: write_NetCDF (outformat=NETCDF())
+#   * src/io/read_dp_scream.jl   :: read_atmospheric_data (RT data)
+#   * src/kernel/mesh/phys_grid.jl :: compute_radiative_fluxes! (RT)
+const _NETCDF_LOADED = Ref(false)
+"""
+    Jexpresso._ensure_netcdf_loaded!()
+
+Lazily `using NCDatasets`. Safe to call from any NetCDF entry point
+(write_NetCDF, read_atmospheric_data, compute_radiative_fluxes!).
+"""
+function _ensure_netcdf_loaded!()
+    _NETCDF_LOADED[] && return nothing
+    @eval Jexpresso using NCDatasets
+    _NETCDF_LOADED[] = true
+    return nothing
+end
+
+# ─── HDF5 I/O ─────────────────────────────────────────────────────────
+# Touched only by:
+#   * src/io/write_output.jl :: write_hdf5, read_hdf5
+# Reached when `outformat::HDF5` dispatch fires (diagnostic write or
+# restart). The local sentinel `HDF5()` (abstractTypes.jl) is unrelated
+# to the package import — it's just a dispatch tag — so it stays even
+# without `using HDF5`.
+const _HDF5_LOADED = Ref(false)
+"""
+    Jexpresso._ensure_hdf5_loaded!()
+
+Lazily `using HDF5`. Called from write_hdf5/read_hdf5 before the first
+`h5open`/`h5read`.
+"""
+function _ensure_hdf5_loaded!()
+    _HDF5_LOADED[] && return nothing
+    @eval Jexpresso using HDF5
+    _HDF5_LOADED[] = true
+    return nothing
+end
+
+# ─── AMR / p4est forest ──────────────────────────────────────────────
+# GridapP4est + P4est_wrapper are touched only by the AMR-style paths:
+#   * mesh.jl  :: UniformlyRefinedForestOfOctreesDiscreteModel,
+#                 OctreeDistributedDiscreteModel, GridapP4est.pXest_copy
+#   * mesh.jl  :: load_p4est_checkpoint_model (uses P4est_wrapper.p8est_*)
+#   * sem_setup.jl :: AMR restart branch
+#   * TimeIntegrators.jl :: write_p4est_checkpoint
+# All gated by `inputs[:ladapt]`, `inputs[:linitial_refine]`,
+# `inputs[:lamr]`, or `inputs[:lrestart_amr]`.
+const _AMR_LOADED = Ref(false)
+"""
+    Jexpresso._ensure_amr_loaded!()
+
+Lazily bring GridapP4est and P4est_wrapper into Jexpresso's namespace.
+Called from every entry point that touches the p4est forest. No-op
+after the first call.
+"""
+function _ensure_amr_loaded!()
+    _AMR_LOADED[] && return nothing
+    @eval Jexpresso begin
+        using GridapP4est
+        using P4est_wrapper
+    end
+    _AMR_LOADED[] = true
+    return nothing
+end
 
 # Run the test
 # test_create_2d_projection_matrices_numa2d()
