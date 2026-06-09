@@ -224,14 +224,14 @@ copy them through unchanged.
 ## Running your new case
 
 ```bash
-julia --project=. -e 'push!(empty!(ARGS), "YourEquationSet", "your_case"); include("./src/Jexpresso.jl")'
+julia --project=. src/Jexpresso.jl YourEquationSet your_case
 ```
 
 Or interactively:
 
 ```julia
-julia> push!(empty!(ARGS), "YourEquationSet", "your_case")
-julia> include("./src/Jexpresso.jl")
+julia> using Jexpresso
+julia> Jexpresso.run_case("YourEquationSet", "your_case")
 ```
 
 No other changes to the codebase are needed.
@@ -256,8 +256,8 @@ This is **not** required for the solver to find and run your case.
 ## Example 1: Shock tube with dynamic SGS for shock capturing:
 DynSGS by Marras et al. 2015 and later.
 ```bash
-push!(empty!(ARGS), "CompEuler", "sod1d");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "sod1d")
 ```
 
 <img src="assets/sod1d.png"
@@ -266,8 +266,8 @@ include("./src/Jexpresso.jl")
 
 ## Example 2: 1D acoustic wave:
 ```bash
-push!(empty!(ARGS), "CompEuler", "case1");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "case1")
 ```
 
 <img src="assets/1dacoustic.png"
@@ -277,8 +277,8 @@ include("./src/Jexpresso.jl")
 
 ## Example 3: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
-push!(empty!(ARGS), "CompEuler", "thetaTracers");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "thetaTracers")
 ```
 
 <img src="assets/thetaTracersMeshUnstr.png"
@@ -288,8 +288,8 @@ include("./src/Jexpresso.jl")
 
 ## Example 4: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
 ```bash
-push!(empty!(ARGS), "CompEuler", "3d");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "3d")
 ```
 
 <img src="assets/rtb3d.png"

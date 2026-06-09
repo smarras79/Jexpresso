@@ -12,7 +12,7 @@ This guide walks you through downloading, building, and testing **Jexpresso**.
 
 Clone Jexpresso and the companion mesh repository:
 
-```bash
+```julia
 git clone git@github.com:smarras79/Jexpresso.git
 git clone git@github.com:smarras79/JexpressoMeshes.git
 ```
@@ -191,8 +191,8 @@ julia --project=.
 Then, at the Julia prompt, run the `CompEuler` / `sod1d` test:
 
 ```julia
-push!(empty!(ARGS), "CompEuler", "sod1d");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "sod1d")
 ```
 
 If the test runs to completion, your Jexpresso installation is ready to go. 🎉
@@ -223,15 +223,15 @@ julia --project=.
 Then at the prompt, run a case:
 
 ```julia
-julia> push!(empty!(ARGS), "CompEuler", "theta");
-julia> include("./src/Jexpresso.jl")
+julia> using Jexpresso
+julia> Jexpresso.run_case("CompEuler", "theta")
 # ... lots of JIT on the first run; the simulation completes ...
 ```
 
 Edit your code, then re-run in the SAME session:
 
 ```julia
-julia> include("./src/Jexpresso.jl")
+julia> Jexpresso.run_case("CompEuler", "theta")
 # ... starts almost immediately; only your edits get JIT-compiled ...
 ```
 

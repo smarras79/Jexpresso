@@ -1,13 +1,13 @@
 # Steps to run the element learning case
 
-julia> push!(empty!(ARGS), "Elliptic", "ElementLearning")
+julia> using Jexpresso
 
 1)
 1st run:
 lEL_Train      => true,
 :gmsh_filename => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
 
-julia> include("./src/Jexpresso.jl")
+julia> Jexpresso.run_case("Elliptic", "ElementLearning")
 
 2)
 cd EL_Jexpresso
