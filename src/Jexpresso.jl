@@ -238,7 +238,34 @@ include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 
-include("./run.jl")
+# PERF: only evaluate run.jl at module-body time when this file was
+# invoked as a Julia SCRIPT (`julia src/Jexpresso.jl CompEuler 3d`).
+# When the package is being precompiled the @compile_workload block at
+# the bottom of this file already includes run.jl with sod1d args, and
+# including it from here too would define `parse_commandline` twice
+# during precompile and violate Julia ≥ 1.10's no-method-overwrite
+# rule:
+#
+#   WARNING: Method definition parse_commandline() in module Jexpresso
+#   ... overwritten on the same line (check for duplicate calls to
+#   `include`).
+#   ERROR: Method overwriting is not permitted during Module
+#   precompilation.
+#
+# When the package is loaded via `using Jexpresso` (precompile cache
+# hit) the module body doesn't re-evaluate at all, so this branch is
+# moot — REPL users invoke `Jexpresso.run_case(eqs, eqs_case)` to
+# start a case (defined further down).
+#
+# The script-form `julia src/Jexpresso.jl CompEuler 3d` still works:
+# `abspath(PROGRAM_FILE)` matches this file's path AND
+# `jl_generating_output` returns 0 (we're not generating precompile
+# output), so the include fires and the historic auto-run path is
+# preserved.
+if abspath(PROGRAM_FILE) == abspath(@__FILE__) &&
+   ccall(:jl_generating_output, Cint, ()) == 0
+    include("./run.jl")
+end
 
 export @timers
 
