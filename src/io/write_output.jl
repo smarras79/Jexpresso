@@ -94,14 +94,17 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         #end
     else
         #for iout = 1:size(sol.t[:], 1)
-        title = string("sol at time ", t)
+        title = @sprintf "t = %.4f" t
+        # DSGS runs render the viscosity staircase as one more panel of
+        # the same output time (the per-node broadcast is in μ_dsgs_pnode)
+        μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
             if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
                 KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
             end
         #end
     end

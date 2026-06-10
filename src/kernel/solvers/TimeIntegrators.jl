@@ -393,14 +393,12 @@ function time_loop!(inputs, params, u, args...)
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe,
                          μ_dsgs_pnode = (integrator.p.VT == DSGS()) ? integrator.p.μ_dsgs_pnode : nothing)
-            # Plot the DSGS viscosity coefficient alongside the solution.
-            # μ_dsgs[1:nelem] reflects the value computed at the last rhs!
-            # call before this diagnostic checkpoint.
-            if integrator.p.VT == DSGS() && integrator.p.SD == NSD_1D() &&
-               isa(inputs[:outformat], PNG)
-                plot_dsgs_1d(integrator.p.mesh, integrator.p.μ_dsgs,
-                             integrator.t, inputs[:output_dir], inputs; iout=idx)
-            end
+            # The DSGS viscosity panel is rendered by the 1D PNG writer
+            # itself (write_output -> plot_results, fed by μ_dsgs_pnode
+            # above) so that the whole output time is a single GR render:
+            # a separate plot_dsgs_1d call here would either flash its own
+            # gksqt window or, via the silent export path, close the GKS
+            # session and with it the live plot-matrix window.
             if (lwrite_time == true)
                 append_pvd_entry(pvd_path, integrator.t, "iter_$(idx).pvtu")
             end
