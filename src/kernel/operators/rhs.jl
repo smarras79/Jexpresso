@@ -1,4 +1,7 @@
-using Distributions
+# PERF: `using Distributions` removed — the file never references
+# Distributions.* (the few random draws use Base.rand directly).
+# Distributions pulls in StatsBase / StatsFuns / SpecialFunctions and
+# adds ~100 MB to the per-rank startup baseline for nothing.
 using StaticArrays
 
 # Float64 to match the Float64 arithmetic inside user_source! / user_flux! /
@@ -1192,10 +1195,23 @@ function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
                              μ_max, nelem, neqs,
                              ad_lvl, connijk, Δ,
                              QT, VT, SD, AD, SOL_VARS_TYPE)
-    # TODO: route lrichardson through inputs (was hardcoded `true` in the
-    # un-barriered version; keep that behaviour for now to preserve
-    # numerical results).
-    lrichardson = true
+    # BUGFIX: `lrichardson` used to be hardcoded to `true` here, with a
+    # comment claiming the pre-barrier code did the same. That's wrong —
+    # at the last-known-good commit (sm/newmaster e95cb259) the
+    # un-barriered `_expansion_visc!(NSD_3D)` read `inputs[:lrichardson]`
+    # directly (line `if inputs[:lrichardson]`), defaulting to `false`
+    # via mod_inputs.jl. The hardcoded `true` flipped Richardson on for
+    # every 3D run: under stable stratification (the typical
+    # `:energy_equation => "theta"` CompEuler/3d setup) `Ri` quickly
+    # exceeds `Ri_crit = 0.25`, the `f_Ri` factor collapses to 0, and
+    # `μ_turb` for the theta diffusion is multiplied by zero — VREM and
+    # SMAG both lose their theta dissipation, the simulation diverges,
+    # and the symptom is "viscosity not being added correctly." Reading
+    # the flag back through `inputs[:lrichardson]` restores the
+    # e95cb259 behaviour and lets `:lrichardson => true` in
+    # user_inputs.jl re-enable the correction when the user actually
+    # wants it.
+    lrichardson = get(inputs, :lrichardson, false)
     Δ_effective = Δ
 
     for iel = 1:nelem

@@ -134,7 +134,16 @@ inputs[:_case_dir]            = case_name_dir
 inputs[:_parsed_equations]    = parsed_equations
 inputs[:_parsed_case_name]    = parsed_equations_case_name
 inputs[:_user_input_file]     = user_input_file
+if rank == 0
+    print(" # mod_inputs_user_inputs! (filling defaults) ......... ")
+    flush(stdout)
+end
+_t_defaults = time_ns()
 mod_inputs_user_inputs!(inputs, rank)
+if rank == 0
+    @printf("DONE (%.2f s)\n", (time_ns() - _t_defaults) / 1e9)
+    flush(stdout)
+end
 
 #--------------------------------------------------------
 # Create output directory if it doesn't exist:
@@ -226,8 +235,23 @@ end
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
+# UX: this is the boundary where PartitionedArrays' with_mpi block
+# JIT-compiles its closure on first call (cold mpirun). Tens of
+# seconds is expected here on cold start; subsequent runs in the
+# SAME Julia session are instant. Pre-baking this JIT into the
+# package precompile cache is what PrecompileTools.@compile_workload
+# would do — see the note at the end of this file's output.
+if rank == 0
+    print(" # Entering with_mpi block (PartitionedArrays JIT on first call) ......... ")
+    flush(stdout)
+end
+_t_withmpi = time_ns()
 if JEXPRESSO_COUPLING_ENABLED
     with_mpi(; comm = _local_comm) do distribute
+        if rank == 0
+            @printf("DONE (%.2f s) → calling driver()\n", (time_ns() - _t_withmpi) / 1e9)
+            flush(stdout)
+        end
         driver(nparts,
                distribute,
                inputs,
@@ -246,6 +270,10 @@ if JEXPRESSO_COUPLING_ENABLED
     end
 else
     with_mpi() do distribute
+        if rank == 0
+            @printf("DONE (%.2f s) → calling driver()\n", (time_ns() - _t_withmpi) / 1e9)
+            flush(stdout)
+        end
         driver(nparts,
                distribute,
                inputs,

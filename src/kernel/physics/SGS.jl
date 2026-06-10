@@ -289,7 +289,7 @@ end
 
 
 @inline function SGS_diffusion(visc_coeffieq, ieq,
-                               ρ, 
+                               ρ,
                                u11, u12, u13,
                                u21, u22, u23,
                                u31, u32, u33,
@@ -299,6 +299,22 @@ end
                                ::VREM, ::NSD_3D;
                                ltheta_eqn=true,
                                lrichardson=false)
+
+    # NOTE: this row-wise parameter list (u11, u12, u13, u21, …) does
+    # NOT match the diagonals-then-off-diagonals order that the call
+    # sites in src/kernel/operators/rhs.jl pass — which is what the
+    # SMAG 3D signature above expects. So `u12` here actually receives
+    # `dvdy`, `u13` receives `dwdz`, etc.
+    #
+    # Because the user's `e95cb259` reference (last commit where
+    # CompEuler/3d worked) had exactly this mismatch and was treated
+    # as the correct numerical baseline, we keep the parameter order
+    # as-is. The Vreman β below is consequently *not* the textbook
+    # formula but the de-facto formula this code has been calibrated
+    # against. If the textbook β is what you want, reorder the
+    # parameter list to `u11, u22, u33, u12, u21, u13, u31, u23, u32`
+    # (matching SMAG) — the body uses u_ij as ∂u_i/∂x_j and will then
+    # compute the standard β_ij = Σ_m Δ² u_im u_jm.
 
     is_u_momentum  = (ieq == 2)
     is_v_momentum  = (ieq == 3)

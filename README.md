@@ -211,9 +211,9 @@ To add your own new problem, see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
 
 ## Example 1a: Shock tube with dynamic SGS for shock capturing:
 DynSGS by Marras et al. 2015 and later.
-```bash
-push!(empty!(ARGS), "CompEuler", "sod1d");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "sod1d")
 ```
 
 <img src="assets/sod1d.png"
@@ -221,9 +221,9 @@ include("./src/Jexpresso.jl")
      style="float: left; margin-right: 7px;" />
 
 ## Example 1b: 1D acoustic wave:
-```bash
-push!(empty!(ARGS), "CompEuler", "case1");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "case1")
 ```
 
 <img src="assets/1dacoustic.png"
@@ -233,9 +233,9 @@ include("./src/Jexpresso.jl")
 
 
 Example 2: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "thetaTracers");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "thetaTracers")
 ```
 
 <img src="assets/thetaTracersMeshUnstr.png"
@@ -244,9 +244,9 @@ include("./src/Jexpresso.jl")
 
 
 Example 3: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "3d");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "3d")
 ```
 
 <img src="assets/rtb3d.png"
@@ -280,9 +280,9 @@ Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
 
 The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
 
-```bash
-push!(empty!(ARGS), "CompEuler", "wave1d_lag");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "wave1d_lag")
 ```
 
 <img src="assets/wave_v_4.png"
@@ -293,9 +293,9 @@ Test 2: 1D wave train for linearized shallow water equations
 
 The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
 
-```bash
-push!(empty!(ARGS), "AdvDiff", "Wave_Train");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("AdvDiff", "Wave_Train")
 ```
 
 <img src="assets/Wave_Train_final.png"
@@ -307,9 +307,9 @@ Test 3: 2D advection-diffusion equation
 
 The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
 
-```bash
-push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("AdvDiff", "2D_laguerre")
 ```
 
 <img src="assets/ad2d-4s-line.png"
@@ -320,9 +320,9 @@ Test 4: 2D Helmholtz equation
 
 The problem is defined in [`problems/equations/Helmholtz/case1_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1_laguerre) and by default output will be written to `output/Helmholtz/case1_laguerre`. To solve this problem run the following commands from the Julia command line:
 
-```bash
-push!(empty!(ARGS), "Helmholtz", "case1_laguerre");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("Helmholtz", "case1_laguerre")
 ```
 
 <img src="assets/Helmholtz_from_jexpresso-line.png"
@@ -333,9 +333,9 @@ Test 5: Rising thermal bubble with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
 
-```bash
-push!(empty!(ARGS), "CompEuler", "theta_laguerre");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "theta_laguerre")
 ```
 
 <img src="assets/48.png"
@@ -347,8 +347,8 @@ Test 6a: Hydrostatic linear mountain waves with semi-infinite Laguerre elements 
 The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
 
 ```bash      
-push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "HSmount_Lag")
 ```
 
 <img src="assets/wvelo.png"
@@ -364,9 +364,9 @@ Test 6b: Non-hydrostatic mountain waves: comparison against WRF
 
 Test 7: Shallow cumuli simulation with BOMEX conditions:
 
-```bash
-push!(empty!(ARGS), "CompEuler", "3d_bomex");
-include("./src/Jexpresso.jl")
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "3d_bomex")
 ```
 <img src="assets/bomex.png"
      alt="Markdown icon"

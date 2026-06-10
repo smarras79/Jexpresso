@@ -117,18 +117,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
        inputs[:lwall_model] = false
     end
 
-    # On macOS (Apple Silicon in particular) the parallel
-    # `GmshDiscreteModel(parts, file)` collective in GridapGmsh + Open MPI
-    # SIGBUSes / SIGABRTs right after "Done reading *.msh" - reproducible on
-    # >=2 ranks. The `lxy_partition` path avoids the parallel collective:
-    # rank 0 reads the mesh serially, then `_compute_xy_partition` +
-    # `DiscreteModel(parts, smodel, cell_to_part)` broadcasts the chunks.
-    # Default to that path on macOS so multi-rank runs Just Work without
-    # the user having to set this flag per problem. Linux keeps the
-    # original behaviour (only enable for wall-model runs, which need
-    # the xy partition for other reasons).
+    # Default to the rank-0-read + MPI.bcast mesh path on every platform.
+    # The alternative — `GmshDiscreteModel(parts, file)` in the
+    # `lxy_partition=false` branch of `mod_mesh_read_gmsh!` — goes
+    # through GridapGmsh's "distributed" constructor, which (depending
+    # on the release) parses the .msh file on every rank: nparts × file
+    # I/O, nparts × gmsh parses, nparts × peak GMSH memory. On a laptop
+    # with a non-trivial mesh that adds minutes to pre-processing
+    # before the time-loop even starts.
+    #
+    # Originally this was macOS-only because the parallel constructor
+    # SIGBUSes on Apple Silicon + Open MPI. The serial-read + bcast
+    # path has since been the macOS default with no issues, so make it
+    # the default on Linux too. Users who need a different partition
+    # strategy can still opt out by setting `:lxy_partition => false`
+    # in their user_inputs.jl.
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = Sys.isapple() ? true : inputs[:lwall_model]
+        inputs[:lxy_partition] = true
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))

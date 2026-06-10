@@ -1257,30 +1257,31 @@ function restructure4periodicity_2D(mesh, norm, periodic_direction)
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
     
+    # PERF: amortised-O(1) push! instead of `per_ip = [per_ip; ip]`, which
+    # reallocates and copies the whole array on every iteration (O(N²) in
+    # both time and garbage). For meshes with many periodic-boundary
+    # nodes this dominates the entire pre-processing wall time.
     per_ip = Int[]
     ngl = mesh.ngl
-    for iedge_bdy =1:size(mesh.bdy_edge_type,1)
-        for k=1:ngl
-            ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
-            if (mesh.bdy_edge_type[iedge_bdy] == periodic_direction)
-                per_ip = [per_ip; ip]
-            end
+    for iedge_bdy = 1:size(mesh.bdy_edge_type, 1)
+        mesh.bdy_edge_type[iedge_bdy] == periodic_direction || continue
+        for k = 1:ngl
+            push!(per_ip, mesh.poin_in_bdy_edge[iedge_bdy, k])
         end
     end
 
     if (mesh.lLaguerre)
+        per_ip_set = Set(per_ip)   # O(1) membership instead of O(N) `in per_ip`
         e_iter = 1
-        for iedge_bdy =1:size(mesh.bdy_edge_type,1)
+        for iedge_bdy = 1:size(mesh.bdy_edge_type, 1)
             if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
-                if (mesh.poin_in_bdy_edge[iedge_bdy,1] in per_ip)
+                if (mesh.poin_in_bdy_edge[iedge_bdy, 1] in per_ip_set)
                     for k = 2:mesh.ngr
-                        ip = mesh.connijk_lag[e_iter,1,k]
-                        per_ip = [per_ip; ip]
+                        push!(per_ip, mesh.connijk_lag[e_iter, 1, k])
                     end
-                elseif (mesh.poin_in_bdy_edge[iedge_bdy,mesh.ngl] in per_ip)
+                elseif (mesh.poin_in_bdy_edge[iedge_bdy, mesh.ngl] in per_ip_set)
                     for k = 2:mesh.ngr
-                        ip = mesh.connijk_lag[e_iter,mesh.ngl,k]
-                        per_ip = [per_ip; ip]
+                        push!(per_ip, mesh.connijk_lag[e_iter, mesh.ngl, k])
                     end
                 end
                 e_iter += 1

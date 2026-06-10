@@ -234,90 +234,29 @@ function setup_assembler(SD, a, index_a, owner_a)
 end
 
 
-function assemble_mpi!(a, cache::AssemblerCache)
-    comm    = cache.comm
-    T = eltype(a)
-
-    is1D = ndims(a) == 1
-    m = is1D ? 1 : size(a, 2)
-
-    # Pack send buffers (outer j for cache-friendly column access in a)
-    @inbounds for owner in cache.active_send_ranks
-        buf_data     = cache.send_data_buffers[owner+1]
-        send_i_local = cache.send_i[owner+1]
-        for j = 1:m
-            for (i, idx) in enumerate(send_i_local)
-                buf_data[(i-1)*m + j] = a[idx, j]
-            end
-        end
-    end
-
-    # Communicate data (non-owner → owner)
-    req_idx = 1
-    @inbounds for i in cache.active_send_ranks
-        MPI.Isend(cache.send_data_buffers[i+1], comm, cache.requests[req_idx]; dest=i, tag=0)
-        req_idx += 1
-    end
-    @inbounds for i in cache.active_recv_ranks
-        MPI.Irecv!(cache.recv_data_buffers[i+1], comm, cache.requests[req_idx]; source=i, tag=0)
-        req_idx += 1
-    end
-
-    MPI.Waitall(cache.requests)
-
-    # Accumulate received contributions
-    @inbounds for rk in cache.active_recv_ranks
-        buffer   = cache.recv_data_buffers[rk+1]
-        recv_idx = cache.recv_idx_buffers[rk+1]
-        for j = 1:m
-            for (i, local_idx) in enumerate(recv_idx)
-                a[local_idx, j] += buffer[(i-1)*m+j]
-            end
-        end
-    end
-
-    # Pack sendback buffers (reuse recv_data_buffers)
-    sendback_data_buffers = cache.recv_data_buffers
-    @inbounds for rk in cache.active_recv_ranks
-        buf_data = sendback_data_buffers[rk+1]
-        recv_idx = cache.recv_idx_buffers[rk+1]
-        for j = 1:m
-            for (i, local_idx) in enumerate(recv_idx)
-                buf_data[(i-1)*m+j] = a[local_idx, j]
-            end
-        end
-    end
-
-    recvback_data_buffers = cache.send_data_buffers
-
-    # Communicate back (owner → non-owner)
-    req_idx = 1
-    @inbounds for i in cache.active_recv_ranks
-        MPI.Isend(sendback_data_buffers[i+1], comm, cache.requests_back[req_idx]; dest=i, tag=2)
-        req_idx += 1
-    end
-    @inbounds for i in cache.active_send_ranks
-        MPI.Irecv!(recvback_data_buffers[i+1], comm, cache.requests_back[req_idx]; source=i, tag=2)
-        req_idx += 1
-    end
-
-    MPI.Waitall(cache.requests_back)
-
-    # Unpack recvback data
-    @inbounds for rk in cache.active_send_ranks
-        buffer = recvback_data_buffers[rk+1]
-        for j = 1:m
-            for (i, local_idx) in enumerate(cache.recvback_idx_buffers[rk+1])
-                a[local_idx, j] = buffer[(i-1)*m+j]
-            end
-        end
-    end
-end
-
-
-```
-efficiency needs to be tested
-```
+# PERF: there used to be a second `assemble_mpi!(a, cache::AssemblerCache)`
+# at this location (no kwargs, hardcoded `+` accumulation). Julia treats
+# the no-kwarg form and the `; operator = +` form below as the SAME
+# method signature (kwargs don't differentiate methods), so the kwarg
+# version below was overwriting the no-kwarg version on every package
+# load — silent before Julia 1.10, a hard precompile error after:
+#
+#   WARNING: Method definition assemble_mpi!(Any, Jexpresso.AssemblerCache)
+#   in module Jexpresso ... overwritten at .../mpi_communications.jl:321.
+#   ERROR: Method overwriting is not permitted during Module precompilation.
+#
+# All ~7 callers invoke `assemble_mpi!(a, cache)` with no `operator=`
+# kwarg (grep src/kernel/infrastructure/element_matrices.jl), so they
+# all relied on the kwarg version's `+` default — identical behaviour
+# to the deleted no-kwarg version. Dropping the duplicate is a no-op
+# for the caller and unblocks precompilation.
+#
+# (The old code had a stray triple-backtick "efficiency needs to be
+# tested" block between the two definitions. In Julia source `` ``` ``
+# is the `Cmd` literal syntax, not a Markdown comment — that block
+# parsed to a discarded `Cmd("efficiency needs to be tested\n")`
+# expression at module top level. Removed along with the dead
+# definition.)
 function assemble_mpi!(a, cache::AssemblerCache; operator = +)
     comm = cache.comm
     T = eltype(a)

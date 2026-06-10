@@ -167,8 +167,8 @@ in the report and fail-gate:
   timeout-minutes: 20
   run: |
     julia --project=. -e '
-      push!(empty!(ARGS), "MyEquations", "mycase", "true")
-      include("src/Jexpresso.jl")
+      using Jexpresso
+      Jexpresso.run_case("MyEquations", "mycase", CI_MODE=true)
     '
 ```
 

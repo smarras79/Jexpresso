@@ -587,6 +587,10 @@ end
 
 
 function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs, varnames; iout=1, nvar=1, case="")
+    # PERF: pull HDF5 into Jexpresso's namespace on first use; no-op
+    # after that. Eager-loading HDF5 in src/Jexpresso.jl cost every
+    # non-HDF5 run (city2d uses VTK output) tens of MB and seconds.
+    _ensure_hdf5_loaded!()
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -612,6 +616,7 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
 end
 
 function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
+    _ensure_hdf5_loaded!()
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
@@ -641,10 +646,12 @@ function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
     return q, qe
 end
 
-function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+    # PERF: pull NCDatasets into Jexpresso's namespace on first use.
+    _ensure_netcdf_loaded!()
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -798,10 +805,11 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
 end
 
-function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                       iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+    _ensure_netcdf_loaded!()
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end

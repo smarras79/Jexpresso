@@ -1,16 +1,29 @@
-rm -rf output
+julia>]
+pkg> precompile
+julia>
+using Jexpresso
+using MPI
+JULIA = Base.julia_cmd()
 
-./runjexpresso 1 CompEuler wave1d
-./runjexpresso 1 CompEuler wave1d_lag
-./runjexpresso 1 AdvDiff Wave_Train
-./runjexpresso 1 AdvDiff kopriva
-./runjexpresso 1 AdvDiff 2d_Laguerre
-./runjexpresso 2 CompEuler thetaTracers
-./runjexpresso 2 CompEuler theta_laguerre
-./runjexpresso 3 CompEuler 3d
-./runjexpresso 1 Elliptic case1
-./runjexpresso 1 Helmholtz case1
-./runjexpresso 1 Helmholtz case1_laguerre
-./runjexpresso 4 CompEuler LESICP2-coarse
-./runjexpresso 2 RadiativeTransfer 2d_extra_coords
-./runjexpresso 2 RadiativeTransfer 3d_extra_coords
+#Serial:
+Jexpresso.run_case("CompEuler", "sod1d")
+Jexpresso.run_case("CompEuler", "wave1d")
+Jexpresso.run_case("CompEuler", "wave1d_lag")
+Jexpresso.run_case("CompEuler", "theta")
+Jexpresso.run_case("CompEuler", "theta_laguerre")
+
+Jexpresso.run_case("Elliptic", "case1")
+Jexpresso.run_case("Helmholtz", "case1")
+Jexpresso.run_case("Helmholtz", "case1_laguerre")
+Jexpresso.run_case("AdvDiff", "Wave_Train")
+Jexpresso.run_case("AdvDiff", "kopriva")
+Jexpresso.run_case("AdvDiff", "2d_Laguerre")
+
+#Parallel
+using MPI
+JULIA = Base.julia_cmd()
+run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler thetaTracers`)
+run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler 3d`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. src/Jexpresso.jl CompEuler city2d`)
+
+NOTICE: replace mpiexec with mpirun if that's what you use.
