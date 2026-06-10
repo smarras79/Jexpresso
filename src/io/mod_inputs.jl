@@ -592,7 +592,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:loutput_pert] = false
     end
     if(!haskey(inputs, :lwrite_initial))
-        inputs[:lwrite_initial] = false
+        inputs[:lwrite_initial] = true
     end
 
     if (!haskey(inputs, :gmsh_filename_c))

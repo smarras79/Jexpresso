@@ -161,60 +161,9 @@ function precompile_warmup_run!(inputs, params, u,
     params.qp.qnm1 .= qnm1_snapshot
     params.qp.qnm2 .= qnm2_snapshot
 
-    # PERF: also pre-JIT the diagnostic-VTK write path.
-    #
-    # The 1-step solve above warms `rhs!` + the SciML integrator's `step!`,
-    # but the warmup uses `CallbackSet()` (empty) so it does NOT compile
-    # the bodies of the real callbacks. The diagnostic callback's `affect!`
-    # closure ends up calling write_output → write_vtk → pvtk_grid →
-    # vtk_save, and the first time it fires inside the real solve
-    # (typically at the very first tstop, immediately after the initial
-    # condition is written) tens of seconds of JIT happen before the time
-    # loop appears to make any progress. This block forces that compile
-    # to happen here, inside the warmup print region, so users see
-    #
-    #     # Precompile warm-up (1 step solve) ......... 18.42 s
-    #     # Solving ODE ......
-    #     # ... 1   t = 0.004 ...
-    #
-    # instead of a multi-tens-of-seconds wall after the initial VTK write.
-    #
-    # Output is redirected to a per-rank temp dir that is removed
-    # immediately after; the JIT artifacts persist, the throw-away VTU
-    # files do not. Wrapped in try/catch on the same principle as the
-    # solve warmup: a failure must not prevent the real run.
-    if precompile_warmup_enabled(inputs) && inputs[:outformat] == VTK()
-        warmup_err = Ref{Any}(nothing)
-        with_logger(NullLogger()) do
-            tmpdir = mktempdir(; prefix = "jexpresso_warmup_")
-            # Redirect stdout so the inner write_output's `println_rank`
-            # (raw println, bypasses NullLogger) doesn't leak the
-            # throw-away tmpdir path into the user-visible log.
-            try
-                redirect_stdout(devnull) do
-                    write_output(params.SD, u, params.uaux,
-                                 params.tspan[1], 0,
-                                 params.mesh, params.mp,
-                                 params.connijk_original,
-                                 params.poin_in_bdy_face_original,
-                                 params.x_original, params.y_original, params.z_original,
-                                 tmpdir, inputs,
-                                 params.qp.qvars, params.qp.qoutvars,
-                                 inputs[:outformat];
-                                 nvar = params.qp.neqs,
-                                 qexact = params.qp.qe,
-                                 μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
-                end
-            catch e
-                warmup_err[] = e
-            end
-            # Best-effort cleanup; never fatal.
-            try; rm(tmpdir; recursive = true, force = true); catch; end
-        end
-        if warmup_err[] !== nothing && rank == 0
-            @warn "VTK-write warmup failed; continuing without it" exception=warmup_err[]
-        end
-    end
+    # The VTK write path is JIT-compiled on first use by the IC write in
+    # time_loop! (when :lwrite_initial is true) or by the first diagnostic
+    # callback (when false). No need for a separate throw-away write here.
 
     MPI.Barrier(comm)
     rank == 0 && @printf("%.2f s\n", (time_ns() - t0) / 1e9)
@@ -277,6 +226,45 @@ function time_loop!(inputs, params, u, args...)
         else
             init_pvd_file(pvd_path)
         end
+    end
+
+    #------------------------------------------------------------------------
+    # Write the initial condition.
+    #
+    # This runs FIRST, before the integrator warm-up below: the warm-up
+    # temporarily swaps inputs[:output_dir] to a throw-away tempdir, and the
+    # IC write must never interact with that. It also doubles as the JIT
+    # warm-up of the write_output/write_vtk path.
+    #
+    # File number: the slot of tinit in dosetimes (1 for a t=0 start). The
+    # diagnostic callback never fires at the initial time, so this slot is
+    # otherwise unused and the sequence is contiguous: iter_1 (IC), iter_2
+    # (first diagnostic hit), ...
+    #
+    # When skipped, say so and why — never silently.
+    #------------------------------------------------------------------------
+    idx = something(findfirst(x -> x == inputs[:tinit], dosetimes), 1)
+    if !lwrite_init
+        println_rank(" # Skipping initial-condition write (restart run)"; msg_rank = rank)
+    elseif get(inputs, :lwrite_initial, true) != true
+        println_rank(" # Skipping initial-condition write (:lwrite_initial => false)"; msg_rank = rank)
+    else
+        println_rank(" # Write initial condition to ", typeof(inputs[:outformat]),
+                     " in ", inputs[:output_dir], " ........."; msg_rank = rank)
+        write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
+                     params.mesh, params.mp,
+                     params.connijk_original, params.poin_in_bdy_face_original,
+                     params.x_original, params.y_original, params.z_original,
+                     inputs[:output_dir], inputs,
+                     params.qp.qvars, params.qp.qoutvars,
+                     inputs[:outformat];
+                     nvar=params.qp.neqs, qexact=params.qp.qe,
+                     μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
+        if (lwrite_time == true)
+            append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
+        end
+        println_rank(" # Write initial condition to ", typeof(inputs[:outformat]),
+                     " ......... END"; msg_rank = rank)
     end
 
     function two_stream_condition(u, t, integrator)
@@ -446,24 +434,6 @@ function time_loop!(inputs, params, u, args...)
     #------------------------------------------------------------------------
 
     #
-    # Write initial conditions:
-    # Skipped on VTK restart — the snapshot already exists in the output dir
-    # and its entry is already in simulation.pvd from the previous run.
-    #
-    # NOTE: the actual write_output call has been moved to AFTER the
-    # integrator warm-up below, so the user-perceived sequence is
-    #   # Integrator warm-up ... DONE
-    #   # Write initial condition ... END
-    #   # step 1 t = ...
-    # with no apparent gap between "Write initial condition END" and the
-    # first time step. The previous order printed "Write initial
-    # condition END" then sat silently for tens of seconds while the
-    # warm-up JIT-compiled the callback-specialized integrator step,
-    # which the user reported as a deadlock.
-    #
-    idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
-
-    #
     # Simulation
     #
     limex = false
@@ -599,31 +569,7 @@ function time_loop!(inputs, params, u, args...)
             # own first-5-steps detail (the warmup just consumed one).
             _step_count[] = 0
             MPI.Barrier(comm)
-            rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
-        end
-
-        # Write initial conditions HERE (moved from before the warm-up).
-        # All collective dependencies (`u`, qnm1/qnm2, params.uaux) are
-        # untouched by the warm-up — it snapshots and restores them — so
-        # the IC written here is bit-identical to what would have been
-        # written before the warm-up. Doing it here closes the silent
-        # gap between "Write initial condition END" and the first real
-        # time-step that the user saw as a deadlock.
-        if idx ≠ nothing && lwrite_init && get(inputs, :lwrite_initial, false)
-            if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
-            write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
-                         params.mesh, params.mp,
-                         params.connijk_original, params.poin_in_bdy_face_original,
-                         params.x_original, params.y_original, params.z_original,
-                         inputs[:output_dir], inputs,
-                         params.qp.qvars, params.qp.qoutvars,
-                         inputs[:outformat];
-                         nvar=params.qp.neqs, qexact=params.qp.qe,
-                         μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
-            if (lwrite_time == true)
-                append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
-            end
-            if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
+            #rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
         end
 
         if alloc_summary_enabled(inputs)
