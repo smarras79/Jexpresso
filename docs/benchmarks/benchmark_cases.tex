@@ -1,0 +1,975 @@
+%=====================================================================
+% Jexpresso benchmark suite — description of the test cases listed in
+% run_benchmark_list. Compile with pdflatex.
+%
+% Figure placeholders are provided for each case: replace the
+% \figplaceholder{...} boxes with \includegraphics{...} once the
+% result figures are available.
+%=====================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+% ---------------------------------------------------------------
+% Placeholder box for result figures. Replace with
+% \includegraphics[width=0.8\textwidth]{<figure file>} when ready.
+% ---------------------------------------------------------------
+\newcommand{\figplaceholder}[1]{%
+  \fbox{\parbox[c][7cm][c]{0.85\textwidth}{\centering\itshape #1}}}
+
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\bU}{\bm{u}}
+
+\title{The Jexpresso Benchmark Suite:\\
+       Governing Equations, Setup, and Results of the Test Cases in
+       \texttt{run\_benchmark\_list}}
+\author{Jexpresso}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document describes the benchmark test cases executed by the script
+\texttt{run\_benchmark\_list} of the Jexpresso spectral-element code.
+For each case we report the governing equations, the initial and boundary
+conditions, the source terms, and the numerical setup (grid, polynomial
+order, time integrator, dissipation model). Placeholder figures are left
+for the results of each benchmark. The suite comprises twelve serial cases
+(compressible Euler, wave equation, elliptic/Helmholtz problems,
+advection--diffusion, and shallow water) and three MPI-parallel cases
+(rising thermal with tracers, a 3D rising thermal, and 2D flow over an
+idealized city).
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+%=====================================================================
+\section{Introduction}
+%=====================================================================
+Jexpresso is a research spectral-element-method (SEM) code for the
+numerical solution of one-, two-, and three-dimensional partial
+differential equations on quadrilateral and hexahedral grids, with
+optional semi-infinite element extensions built from scaled Laguerre
+functions. The benchmark suite collected in \texttt{run\_benchmark\_list}
+exercises the main equation sets of the code:
+
+\begin{itemize}
+  \item \textbf{CompEuler}: compressible Euler equations in total-energy
+        or potential-temperature form (plus a linear wave system used as
+        a smoke test);
+  \item \textbf{Elliptic} and \textbf{Helmholtz}: steady second-order
+        problems solved with the assembled SEM Laplacian and an iterative
+        Krylov solver;
+  \item \textbf{AdvDiff}: linear advection--diffusion of passive scalars
+        and a linearized wave-train problem;
+  \item \textbf{ShallowWater}: the nonlinear shallow-water equations with
+        bathymetry and wetting/drying.
+\end{itemize}
+
+The serial cases are run as
+\verb|Jexpresso.run_case("<EquationSet>", "<case>")|, while the parallel
+cases are launched under MPI, e.g.
+\begin{verbatim}
+mpiexec -n 2 julia --project=. src/Jexpresso.jl CompEuler thetaTracers
+mpiexec -n 2 julia --project=. src/Jexpresso.jl CompEuler 3d
+mpiexec -n 3 julia --project=. src/Jexpresso.jl CompEuler city2d
+\end{verbatim}
+
+All cases use Legendre--Gauss--Lobatto (LGL) nodal basis functions of
+order $N$ ($\texttt{nop}$) within each element. Cases labelled
+\emph{Laguerre} append a semi-infinite element layer discretized with
+scaled Laguerre functions of order $N_{\rm Lag}$
+($\texttt{nop\_laguerre}$) to absorb outgoing waves or to represent
+unbounded directions.
+
+%=====================================================================
+\section{Compressible Euler equations (\texttt{CompEuler})}
+%=====================================================================
+
+\subsection{Governing equations}
+Two formulations of the compressible Euler equations are used in the
+suite. The \emph{total energy} form, used by the Sod shock-tube problem,
+reads
+\begin{equation}
+  \frac{\partial}{\partial t}
+  \begin{bmatrix} \rho \\ \rho u \\ \rho E \end{bmatrix}
+  +
+  \frac{\partial}{\partial x}
+  \begin{bmatrix} \rho u \\ \rho u^2 + p \\ (\rho E + p)\,u \end{bmatrix}
+  = \bm{0},
+  \qquad
+  p = (\gamma - 1)\,\rho\!\left(E - \tfrac{1}{2}u^2\right),
+  \label{eq:euler-totalenergy}
+\end{equation}
+with $\gamma = c_p/c_v = 1.4$.
+
+The atmospheric cases use the \emph{potential temperature}
+(conservative $\rho\theta$) form. In two dimensions, with $\bm{q} =
+(\rho,\, \rho u,\, \rho w,\, \rho\theta)^{T}$,
+\begin{equation}
+  \frac{\partial \bm{q}}{\partial t}
+  + \frac{\partial \bm{F}}{\partial x}
+  + \frac{\partial \bm{G}}{\partial z}
+  = \bm{S} + \nabla\cdot(\mu \nabla \bm{q}),
+  \label{eq:euler-theta}
+\end{equation}
+\begin{equation}
+  \bm{F} =
+  \begin{bmatrix} \rho u \\ \rho u^2 + p \\ \rho u w \\ \rho \theta u
+  \end{bmatrix},
+  \qquad
+  \bm{G} =
+  \begin{bmatrix} \rho w \\ \rho u w \\ \rho w^2 + p \\ \rho \theta w
+  \end{bmatrix},
+  \qquad
+  \bm{S} =
+  \begin{bmatrix} 0 \\ 0 \\ -\rho g \\ 0 \end{bmatrix},
+\end{equation}
+closed by the perfect-gas equation of state written in terms of
+$\rho\theta$,
+\begin{equation}
+  p = p_{\rm ref}\left( \frac{\rho R \theta}{p_{\rm ref}}
+      \right)^{c_p/c_v},
+  \label{eq:eos-theta}
+\end{equation}
+where $R = c_p - c_v$ is the gas constant of dry air, $g =
+\SI{9.81}{m.s^{-2}}$, and $p_{\rm ref} = \SI{e5}{Pa}$. The right-hand
+side dissipation $\nabla\cdot(\mu\nabla\bm{q})$ stands for the selected
+artificial viscosity / subgrid-scale (SGS) model (constant-coefficient
+AV, dynamic SGS, Smagorinsky, or Vreman, depending on the case).
+The hydrostatically balanced background used by the atmospheric cases is
+\begin{equation}
+  \theta_e = \theta_{\rm ref},
+  \qquad
+  p_e(z) = p_{\rm ref}\left( 1 - \frac{g z}{c_p\,\theta_{\rm ref}}
+           \right)^{c_p/R},
+  \qquad
+  \rho_e = \rho(p_e, \theta_e),
+  \label{eq:hydrostatic}
+\end{equation}
+and the perturbation variables $\bm{q}' = \bm{q} - \bm{q}_e$ are evolved
+when the case is configured in perturbation (\texttt{PERT}) form.
+
+%---------------------------------------------------------------------
+\subsection{\texttt{sod1d}: Sod shock tube}
+%---------------------------------------------------------------------
+The classical Riemann problem of Sod for the 1D Euler equations in total
+energy form~\eqref{eq:euler-totalenergy}. The initial condition is the
+piecewise-constant state
+\begin{equation}
+  (\rho, u, p)(x, 0) =
+  \begin{cases}
+    (1.0,\ 0,\ 1.0)     & x < 0.5,\\[2pt]
+    (0.125,\ 0,\ 0.1)   & x \ge 0.5,
+  \end{cases}
+  \qquad
+  \rho E = \frac{p}{\gamma - 1} + \frac{1}{2}\rho u^2 .
+\end{equation}
+The exact solution consists of a right-moving shock, a contact
+discontinuity, and a left-moving rarefaction wave.
+
+\paragraph{Boundary conditions.} Dirichlet conditions holding the left
+and right initial states at $x = 0$ and $x = 1$.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Domain                & $x \in [0, 1]$ \\
+Elements              & $n_{\rm el} = 100$ \\
+Polynomial order      & $N = 4$ (LGL) \\
+Time integrator       & SSPRK53 \\
+Time step             & $\Delta t = 10^{-4}$ \\
+Final time            & $t_{\rm end} = 0.2$ \\
+Stabilization         & Dynamic SGS (DSGS), $\mu = (1, 1, 1)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{sod1d} --- density, velocity, and
+  pressure at $t = 0.2$ compared with the exact Riemann solution.}
+  \caption{Sod shock tube: numerical solution at $t=0.2$.}
+  \label{fig:sod1d}
+\end{figure}
+
+%---------------------------------------------------------------------
+\subsection{\texttt{wave1d}: 1D linear wave system}
+%---------------------------------------------------------------------
+A first-order linear wave system for $(u, v)$,
+\begin{equation}
+  \frac{\partial u}{\partial t} + \frac{\partial v}{\partial x} = 0,
+  \qquad
+  \frac{\partial v}{\partial t} + \frac{\partial u}{\partial x} = 0,
+  \label{eq:wave1d}
+\end{equation}
+equivalent to the second-order wave equation $u_{tt} = u_{xx}$ with unit
+wave speed. The initial condition is a Gaussian-like pulse,
+\begin{equation}
+  u(x, 0) = 2^{-(x - 1)^2/\sigma^2},
+  \qquad
+  v(x, 0) = 0,
+  \qquad \sigma = 0.15,
+\end{equation}
+which splits into left- and right-travelling pulses of half amplitude.
+
+\paragraph{Boundary conditions.} Periodic in $x$.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Domain                & $x \in [0, 5]$, periodic \\
+Elements              & $n_{\rm el} = 50$ \\
+Polynomial order      & $N = 6$ (LGL) \\
+Time integrator       & SSPRK33 \\
+Time step             & $\Delta t = 10^{-3}$ \\
+Final time            & $t_{\rm end} = 3.0$ \\
+Dissipation           & none ($\texttt{lvisc} = \texttt{false}$) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{wave1d} --- $u(x,t)$ at selected
+  times showing the counter-propagating pulses on the periodic domain.}
+  \caption{1D wave system: evolution of the initial Gaussian pulse.}
+  \label{fig:wave1d}
+\end{figure}
+
+%---------------------------------------------------------------------
+\subsection{\texttt{wave1d\_lag}: 1D wave system with semi-infinite
+Laguerre layers}
+%---------------------------------------------------------------------
+The same wave system~\eqref{eq:wave1d}, but on a finite domain
+$x \in [-2.5, 2.5]$ extended on \emph{both} sides by semi-infinite
+Laguerre elements that act as absorbing layers for outgoing waves. The
+initial pulse is centered at the origin,
+\begin{equation}
+  u(x, 0) = 2^{-x^2/\sigma^2},
+  \qquad
+  v(x, 0) = 0,
+  \qquad \sigma = 0.15 .
+\end{equation}
+In the absorbing layers, Rayleigh-type sponge terms are added,
+\begin{equation}
+  S_u = -c_s(x)\, u,
+  \qquad
+  S_v = -c_s(x)\, v,
+  \qquad
+  c_s(x) = \min\!\bigl(\beta(x),\, 1\bigr),
+\end{equation}
+where $\beta(x)$ is a smooth sigmoid ramp activated for $|x| \gtrsim
+2.49$ (i.e., inside the Laguerre extensions only). The exact solution of
+the truncated problem is a pair of pulses that leave the physical domain
+without reflection; at long times the physical domain should return to
+rest.
+
+\paragraph{Boundary conditions.} Homogeneous Dirichlet ($u = 0$) at the
+far ends of the Laguerre layers.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Physical domain       & $x \in [-2.5, 2.5]$ \\
+Elements              & $n_{\rm el} = 50$ \\
+Polynomial order      & $N = 6$ (LGL) \\
+Laguerre extension    & both sides, $N_{\rm Lag} = 24$,
+                        $\beta_{\rm Lag} = 1.0$ \\
+Time integrator       & SSPRK33 \\
+Time step             & $\Delta t = 10^{-3}$ \\
+Final time            & $t_{\rm end} = 9.0$ \\
+Dissipation           & none (sponge only) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{wave1d\_lag} --- $u(x,t)$ at
+  selected times showing the pulses absorbed by the Laguerre layers
+  without spurious reflection.}
+  \caption{1D wave system with Laguerre absorbing layers.}
+  \label{fig:wave1d-lag}
+\end{figure}
+
+%---------------------------------------------------------------------
+\subsection{\texttt{theta}: 2D rising thermal bubble}
+%---------------------------------------------------------------------
+The classical warm-bubble benchmark for the potential-temperature Euler
+equations~\eqref{eq:euler-theta}. A cone-shaped potential temperature
+anomaly is superposed on the hydrostatically balanced, neutrally
+stratified background~\eqref{eq:hydrostatic} with
+$\theta_{\rm ref} = \SI{300}{K}$:
+\begin{equation}
+  \theta'(x, z, 0) =
+  \begin{cases}
+    \theta_c \left( 1 - \dfrac{r}{r_0} \right) & r < r_0,\\[6pt]
+    0 & \text{otherwise},
+  \end{cases}
+  \qquad
+  r = \sqrt{(x - x_c)^2 + (z - z_c)^2},
+  \label{eq:bubble}
+\end{equation}
+with $\theta_c = \SI{2}{K}$, $r_0 = \SI{2000}{m}$, the bubble centered at
+mid-domain horizontally and at $z_c = \SI{2500}{m}$, and $u = w = 0$
+initially. Buoyancy lifts the bubble, which deforms into the
+characteristic mushroom shape by $t \approx \SI{1000}{s}$.
+
+\paragraph{Boundary conditions.} Free-slip (zero normal momentum) on all
+boundaries:
+$\;\rho\bU\cdot\bm{n} = 0$.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & Gmsh TFI grid $10\times10$ elements
+                        (\texttt{hexa\_TFI\_10x10.msh}) \\
+Polynomial order      & $N = 4$ (LGL) \\
+Form                  & perturbation (\texttt{PERT}) \\
+Time integrator       & Carpenter--Kennedy LSRK(5,4) \\
+Time step             & $\Delta t = \SI{0.5}{s}$ \\
+Final time            & $t_{\rm end} = \SI{1000}{s}$ \\
+Stabilization         & constant artificial viscosity,
+                        $\mu = (0, 125, 125, 125)\,\si{m^2.s^{-1}}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{theta} --- potential temperature
+  perturbation $\theta'$ at $t = \SI{1000}{s}$ (mushroom-shaped rising
+  thermal).}
+  \caption{2D rising thermal bubble: $\theta'$ at the final time.}
+  \label{fig:theta}
+\end{figure}
+
+%---------------------------------------------------------------------
+\subsection{\texttt{theta\_laguerre}: rising thermal bubble with
+Laguerre top layer}
+%---------------------------------------------------------------------
+The same rising-bubble configuration as \texttt{theta}
+(Eq.~\eqref{eq:bubble}, $\theta_c = \SI{2}{K}$, $r_0 = \SI{2000}{m}$,
+$z_c = \SI{2500}{m}$, $\theta_{\rm ref} = \SI{300}{K}$), but the upper
+boundary of the domain is replaced by a semi-infinite layer of scaled
+Laguerre elements so that vertically propagating waves leave the domain
+without reflection. In addition, a weak sponge is active above
+$z_s = \SI{8000}{m}$:
+\begin{equation}
+  S_i \mathrel{-}= c_s\, q_i,
+  \qquad
+  c_s = \min\!\left( \sin^2\!\frac{\pi}{2}
+        \frac{(z - z_s)}{z_{\rm max} - z_s},\, 1 \right),
+  \qquad z \ge z_s .
+\end{equation}
+
+\paragraph{Boundary conditions.} Free-slip on the physical boundaries;
+the Laguerre layer is attached at the boundary tagged
+\texttt{free\_slip}.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & Gmsh TFI grid $20\times20$
+                        (\texttt{hexa\_TFI\_RTB20x20\_Lag.msh}) \\
+Polynomial order      & $N = 4$ (LGL),
+                        $N_{\rm Lag} = 16$ (vertical Laguerre) \\
+Laguerre scaling      & $y_{\rm fac} = 110$ \\
+Form                  & perturbation (\texttt{PERT}) \\
+Time integrator       & Carpenter--Kennedy LSRK(5,4) \\
+Time step             & $\Delta t = \SI{0.2}{s}$ \\
+Final time            & $t_{\rm end} = \SI{1000}{s}$ \\
+Stabilization         & $\mu = (0, 125, 125, 125)\,\si{m^2.s^{-1}}$;
+                        erf-based filter, $\mu_x = \mu_y = 0.01$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{theta\_laguerre} --- $\theta'$ at
+  $t = \SI{1000}{s}$ with the semi-infinite Laguerre layer at the top of
+  the domain.}
+  \caption{Rising thermal bubble with Laguerre absorbing top layer.}
+  \label{fig:theta-laguerre}
+\end{figure}
+
+%---------------------------------------------------------------------
+\subsection{\texttt{thetaTracers}: rising thermal bubble with passive
+tracers (MPI, 2 ranks)}
+%---------------------------------------------------------------------
+The potential-temperature system~\eqref{eq:euler-theta} augmented with
+two passively advected tracers $q_{\rm tr}$ and $q_{\rm tr,2}$,
+\begin{equation}
+  \frac{\partial q_{\rm tr}}{\partial t}
+  + \frac{\partial (q_{\rm tr} u)}{\partial x}
+  + \frac{\partial (q_{\rm tr} w)}{\partial z} = 0,
+\end{equation}
+for a total of six unknowns
+$(\rho, \rho u, \rho w, \rho\theta, q_{\rm tr}, q_{\rm tr,2})$.
+The thermal anomaly is the cone~\eqref{eq:bubble} with
+$\theta_c = \SI{2}{K}$, $r_0 = \SI{2000}{m}$, $z_c = \SI{2500}{m}$.
+Tracer~1 is set to $1$ inside the bubble radius ($r < r_0$) and $0$
+outside; tracer~2 is set to $1$ inside a second, smaller circle of
+radius $r_{0,2} = \SI{1000}{m}$ centered at
+$(x_{c,2}, z_{c,2}) = (-2000, 4000)\,\si{m}$. The case is run on an
+\emph{unstructured} quadrilateral grid distributed over two MPI ranks.
+
+\paragraph{Boundary conditions.} Free-slip on all boundaries.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & unstructured Gmsh grid
+                        (\texttt{square\_UNSTR\_20el.msh}), 2 MPI ranks \\
+Polynomial order      & $N = 4$ (LGL) \\
+Time integrator       & Carpenter--Kennedy LSRK(5,4) \\
+Time step             & $\Delta t = \SI{0.2}{s}$ \\
+Final time            & $t_{\rm end} = \SI{1000}{s}$ \\
+Stabilization         & Smagorinsky SGS,
+                        $\mu = (0, 1, 1, 2, 3, 1)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{thetaTracers} --- $\theta'$ and
+  tracer concentrations $q_{\rm tr}$, $q_{\rm tr,2}$ at
+  $t = \SI{1000}{s}$ on the unstructured grid (2 MPI ranks).}
+  \caption{Rising thermal with two passive tracers.}
+  \label{fig:thetaTracers}
+\end{figure}
+
+%---------------------------------------------------------------------
+\subsection{\texttt{3d}: 3D rising thermal bubble (MPI, 2 ranks)}
+%---------------------------------------------------------------------
+The three-dimensional extension of the rising-bubble problem, with
+unknowns $(\rho, \rho u, \rho v, \rho w, \rho\theta)$ and fluxes
+\begin{equation}
+  \bm{F} =
+  \begin{bmatrix} \rho u \\ \rho u^2 + p \\ \rho u v \\ \rho u w \\
+                  \rho\theta u \end{bmatrix},
+  \quad
+  \bm{G} =
+  \begin{bmatrix} \rho v \\ \rho u v \\ \rho v^2 + p \\ \rho v w \\
+                  \rho\theta v \end{bmatrix},
+  \quad
+  \bm{H} =
+  \begin{bmatrix} \rho w \\ \rho u w \\ \rho v w \\ \rho w^2 + p \\
+                  \rho\theta w \end{bmatrix},
+  \quad
+  \bm{S} =
+  \begin{bmatrix} 0 \\ 0 \\ 0 \\ -\rho g \\ 0 \end{bmatrix}.
+\end{equation}
+The thermal anomaly is again Eq.~\eqref{eq:bubble} with
+$\theta_c = \SI{2}{K}$, $r_0 = \SI{2000}{m}$, applied in the $x$--$z$
+plane with bubble center height $z_c = \SI{2500}{m}$ (the domain is one
+element thick in $y$, making this a quasi-2D verification of the 3D MPI
+infrastructure).
+
+\paragraph{Boundary conditions.} Free-slip on all boundaries.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & Gmsh TFI grid $10\times1\times10$
+                        (\texttt{hexa\_TFI\_10x1x10.msh}), 2 MPI ranks \\
+Polynomial order      & $N = 4$ (LGL) \\
+Time integrator       & Carpenter--Kennedy LSRK(5,4) \\
+Time step             & $\Delta t = \SI{0.5}{s}$ \\
+Final time            & $t_{\rm end} = \SI{1000}{s}$ \\
+Stabilization         & Vreman SGS model, $\mu = (0, 1, 1, 1, 2)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{3d} --- iso-surfaces / mid-plane
+  slice of $\theta'$ at $t = \SI{1000}{s}$ from the 3D MPI run.}
+  \caption{3D rising thermal bubble.}
+  \label{fig:3d}
+\end{figure}
+
+%---------------------------------------------------------------------
+\subsection{\texttt{city2d}: 2D flow over an idealized city (MPI, 3
+ranks)}
+%---------------------------------------------------------------------
+Neutral atmospheric flow past a set of rectangular building obstacles in
+a $\SI{1000}{m} \times \SI{1000}{m}$ vertical slice, governed by the
+potential-temperature Euler equations~\eqref{eq:euler-theta} in
+\emph{total} form. The atmosphere is initialized as the neutrally
+stratified hydrostatic state~\eqref{eq:hydrostatic} with
+$\theta_{\rm ref} = \SI{300}{K}$ and a uniform horizontal wind
+\begin{equation}
+  u(x, z, 0) = \SI{10}{m.s^{-1}},
+  \qquad
+  w(x, z, 0) = 0 .
+\end{equation}
+A Rayleigh sponge relaxing the solution toward the background state
+$\bm{q}_e$ is active above $z_s = \SI{500}{m}$,
+\begin{equation}
+  S_i \mathrel{-}= c_s\,(q_i - q_{e,i}),
+  \qquad
+  c_s = \alpha \sin\!\frac{\pi}{2}\frac{z - z_s}{z_{\rm max} - z_s},
+  \qquad \alpha = 0.05,
+  \quad z \ge z_s,
+\end{equation}
+for the momentum and $\rho\theta$ equations. The flow separates at the
+building rooftops and produces unsteady recirculation in the street
+canyons.
+
+\paragraph{Boundary conditions.} Free-slip on the ground, on the
+building walls, and on the outer boundaries.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & Gmsh transfinite grid with embedded buildings
+                        (\texttt{city2d\_transfinite.msh}), 3 MPI ranks \\
+Polynomial order      & $N = 4$ (LGL) \\
+Form                  & total (\texttt{TOTAL}) \\
+Time integrator       & Carpenter--Kennedy LSRK(5,4) \\
+Time step             & $\Delta t = \SI{0.004}{s}$ \\
+Final time            & $t_{\rm end} = \SI{600}{s}$ \\
+Stabilization         & Smagorinsky SGS, $\mu = (0, 5, 5, 5)$ \\
+Sponge                & $z_s = \SI{500}{m}$, $\alpha = 0.05$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{city2d} --- horizontal velocity
+  $u$ (and/or vorticity) around the buildings at $t = \SI{600}{s}$ from
+  the 3-rank MPI run.}
+  \caption{2D flow over an idealized city.}
+  \label{fig:city2d}
+\end{figure}
+
+\clearpage
+%=====================================================================
+\section{Elliptic problem (\texttt{Elliptic/case1})}
+%=====================================================================
+A steady Poisson/Laplace problem for a scalar $u(x, y)$,
+\begin{equation}
+  \nabla^2 u = f \quad \text{in } \Omega,
+  \qquad f = 0,
+\end{equation}
+on the rectangle $\Omega = [1, 6] \times [0, 3.14]$ (a unit square mesh
+scaled by $(L_x, L_y) = (5.0,\, 3.14)$ and displaced by $1$ in $x$).
+With $f = 0$ this is the Laplace equation driven entirely by the
+Dirichlet data:
+\begin{equation}
+  u = 100 \ \text{on the left, right, and bottom boundaries},
+  \qquad
+  u = 100 + 20 \sin\!\frac{\pi x}{L_x} \ \text{on the top boundary}.
+\end{equation}
+The SEM stiffness (Laplacian) matrix is assembled in weak form,
+$\int_\Omega \nabla\phi_i \cdot \nabla\phi_j \,\dd\Omega$, with
+continuity imposed by direct stiffness summation (DSS), and the linear
+system is solved with the BiCGStab Krylov method.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & Gmsh grid \texttt{square\_dirichletT.msh},
+                        scaled to $[1,6]\times[0,3.14]$ \\
+Polynomial order      & $N = 4$ (LGL) \\
+Linear solver         & BiCGStab (\texttt{BICGSTABLE}) \\
+Initial guess         & $u = 0$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{Elliptic/case1} --- steady
+  solution $u(x,y)$ of the Laplace problem with the sinusoidally heated
+  top boundary.}
+  \caption{Elliptic (Laplace) problem: converged solution.}
+  \label{fig:elliptic-case1}
+\end{figure}
+
+%=====================================================================
+\section{Helmholtz problems (\texttt{Helmholtz})}
+%=====================================================================
+
+\subsection{\texttt{case1}: Helmholtz equation with manufactured
+solution}
+A Helmholtz problem with reaction coefficient $\alpha = 10$,
+\begin{equation}
+  \nabla^2 u + \alpha\, u = f \quad \text{in } \Omega
+  = [1, 6] \times [0, 3.14],
+  \qquad u = 0 \ \text{on } \partial\Omega,
+  \label{eq:helmholtz}
+\end{equation}
+where the right-hand side is manufactured from the exact solution
+\begin{equation}
+  u_e(x, y) = -\sin\!\frac{x}{2}\; e^{-x/2} \cos y,
+\end{equation}
+so that the discrete source assembled by the code is
+\begin{equation}
+  S(x, y) = \frac{1}{2}\cos\!\frac{x}{2}\, e^{-x/2}\cos y
+            + (1 + \alpha) \sin\!\frac{x}{2}\, e^{-x/2}\cos y .
+\end{equation}
+The error against $u_e$ measures the spectral accuracy of the assembled
+SEM Helmholtz operator.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & Gmsh TFI grid \texttt{hexa\_TFI\_helmholtz.msh},
+                        scaled to $[1,6]\times[0,3.14]$ \\
+Polynomial order      & $N = 10$ (LGL) \\
+Helmholtz coefficient & $\alpha = 10$ \\
+Linear solver         & BiCGStab (\texttt{BICGSTABLE}) \\
+Boundary conditions   & homogeneous Dirichlet \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{Helmholtz/case1} --- computed
+  $u(x,y)$ and pointwise error against the exact solution
+  $u_e = -\sin(x/2)\,e^{-x/2}\cos y$.}
+  \caption{Helmholtz problem on the bounded domain.}
+  \label{fig:helmholtz-case1}
+\end{figure}
+
+\subsection{\texttt{case1\_laguerre}: Helmholtz equation on a
+semi-infinite domain}
+The same manufactured Helmholtz problem~\eqref{eq:helmholtz}
+($\alpha = 10$, same $u_e$, $f$, and homogeneous Dirichlet data), but
+the domain is extended to a semi-infinite strip in the $x$-direction by
+a layer of scaled Laguerre functions appended to the LGL grid. Since
+$u_e \propto e^{-x/2}$ decays exponentially, the Laguerre basis
+(which embeds exponential decay) is the natural discretization of the
+unbounded direction; the case verifies the coupled LGL--Laguerre
+assembly of the Helmholtz operator.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & Gmsh grid
+                        \texttt{hexa\_TFI\_helmholtz\_laguerre.msh}
+                        + Laguerre extension in $x$ \\
+Polynomial order      & $N = 10$ (LGL), $N_{\rm Lag} = 14$ (Laguerre) \\
+Laguerre scaling      & $x_{\rm fac} = 0.25$, $\beta_{\rm Lag} = 1.0$ \\
+Helmholtz coefficient & $\alpha = 10$ \\
+Linear solver         & BiCGStab (\texttt{BICGSTABLE}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{Helmholtz/case1\_laguerre} ---
+  computed $u(x,y)$ on the LGL grid + Laguerre semi-infinite extension,
+  and error against $u_e$.}
+  \caption{Helmholtz problem with a semi-infinite Laguerre extension.}
+  \label{fig:helmholtz-laguerre}
+\end{figure}
+
+\clearpage
+%=====================================================================
+\section{Advection--diffusion problems (\texttt{AdvDiff})}
+%=====================================================================
+
+\subsection{\texttt{Wave\_Train}: 1D linearized wave train with Laguerre
+outflow}
+A 1D linearized shallow-water (wave) system for the free-surface
+perturbation $h$ and velocity $u$ over a still background of depth
+$H = \SI{10}{m}$,
+\begin{equation}
+  \frac{\partial h}{\partial t}
+  + \frac{\partial (H u)}{\partial x} = 0,
+  \qquad
+  \frac{\partial u}{\partial t}
+  + \frac{\partial (g h)}{\partial x} = 0,
+  \qquad g = \SI{9.81}{m.s^{-2}},
+\end{equation}
+(the general fluxes are $F_h = U h + H u$ and $F_u = g h + U u$ with
+background current $U = 0$ here). The fluid starts at rest,
+$h = u = 0$, and a monochromatic wave train is injected by the
+time-dependent Dirichlet condition at the left boundary,
+\begin{equation}
+  u(0, t) = 0.025 \sin\!\left( \frac{2\pi\, 30\, t}{5000} \right)
+  \,\si{m.s^{-1}},
+\end{equation}
+i.e., amplitude $\SI{0.025}{m.s^{-1}}$ and period
+$T = 5000/30 \approx \SI{166.7}{s}$. The right end of the domain is
+extended with a semi-infinite layer of Laguerre elements so that the
+wave train exits without reflection.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Domain                & $x \in [0, 5000]\,\si{m}$ \\
+Elements              & $n_{\rm el} = 300$ \\
+Polynomial order      & $N = 4$ (LGL) \\
+Laguerre extension    & right side, $N_{\rm Lag} = 20$,
+                        $\beta_{\rm Lag} = 1.0$, $y_{\rm fac} = 100$ \\
+Time integrator       & SSPRK33 \\
+Time step             & $\Delta t = \SI{0.02}{s}$ \\
+Final time            & $t_{\rm end} = \SI{5000}{s}$ \\
+Dissipation           & none \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{Wave\_Train} --- free-surface
+  perturbation $h(x)$ at selected times showing the wave train
+  propagating into the Laguerre outflow layer without reflection.}
+  \caption{1D wave train with Laguerre radiation layer.}
+  \label{fig:wavetrain}
+\end{figure}
+
+\subsection{\texttt{kopriva}: 2D advection--diffusion of a Gaussian
+(Kopriva benchmark)}
+The linear advection--diffusion equation for a scalar $q(x, y, t)$,
+\begin{equation}
+  \frac{\partial q}{\partial t}
+  + \nabla\cdot(\bU q)
+  = \nu \nabla^2 q,
+  \qquad
+  \bU = (u, v) = (0.5,\ 1.0),
+  \qquad \nu = 0.1,
+  \label{eq:advdiff}
+\end{equation}
+following the classical test of Kopriva for spectral element methods,
+for which the exact solution is an advecting, spreading Gaussian. The
+initial condition is
+\begin{equation}
+  q(x, y, 0) = \exp\!\left[ -\frac{(x - x_c)^2}{\sigma_x^2}
+                            -\frac{(y - y_c)^2}{\sigma_y^2} \right],
+  \qquad \sigma_x = \sigma_y = 1,
+\end{equation}
+centered at mid-domain in $x$ and at $y_c = 3$, on a periodic Gmsh grid.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & periodic Gmsh grid
+                        (\texttt{kopriva\_periodic.msh}) \\
+Polynomial order      & $N = 4$ (LGL) \\
+Time integrator       & SSPRK54 \\
+Time step             & $\Delta t = \SI{0.005}{s}$ \\
+Final time            & $t_{\rm end} = \SI{10}{s}$ \\
+Diffusivity           & $\nu_x = \nu_y = 0.1$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{kopriva} --- contours of $q$ at
+  $t = 0.5, 1, 2, 4$ compared with the exact advecting--diffusing
+  Gaussian.}
+  \caption{Kopriva advection--diffusion benchmark.}
+  \label{fig:kopriva}
+\end{figure}
+
+\subsection{\texttt{2d\_Laguerre}: 2D advection--diffusion with Laguerre
+absorbing layers}
+The same advection--diffusion equation~\eqref{eq:advdiff} with
+$\bU = (0.5, 1.0)$ and $\nu = 0.1$, but on a bounded grid augmented with
+Laguerre semi-infinite layers (in $y$) acting as an absorbing outflow
+for the scalar. The initial condition is the Gaussian
+\begin{equation}
+  q(x, y, 0) = \exp\!\left[ -\frac{(x - x_c)^2}{\sigma_x^2}
+                            -\frac{(y - y_c)^2}{\sigma_y^2} \right],
+  \qquad \sigma_x = \sigma_y = 1,
+\end{equation}
+centered at mid-domain in $x$ and $y_c = 8$. Homogeneous Dirichlet
+values are imposed on the physical inflow boundaries.
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Grid                  & Gmsh grid \texttt{Wave\_Train.msh}
+                        (scaled by $10\times10$) + Laguerre layer \\
+Polynomial order      & $N = 4$ (LGL), $N_{\rm Lag} = 30$ \\
+Laguerre scaling      & $y_{\rm fac} = 0.07$ \\
+Time integrator       & SSPRK54 \\
+Time step             & $\Delta t = \SI{5e-4}{s}$ \\
+Final time            & $t_{\rm end} = \SI{4}{s}$ \\
+Diffusivity           & $\nu = 0.1$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{2d\_Laguerre} --- contours of $q$
+  at $t = 0.5, 1, 2, 4$ showing the Gaussian advected into the Laguerre
+  layer.}
+  \caption{2D advection--diffusion with Laguerre absorbing layer.}
+  \label{fig:2dlaguerre}
+\end{figure}
+
+\clearpage
+%=====================================================================
+\section{Shallow-water equations
+(\texttt{ShallowWater/SoliWaveIsland})}
+%=====================================================================
+The nonlinear shallow-water equations in conservative form with
+bathymetry source terms,
+\begin{align}
+  \frac{\partial H}{\partial t}
+  + \frac{\partial (Hu)}{\partial x}
+  + \frac{\partial (Hv)}{\partial y} &= 0, \\
+  \frac{\partial (Hu)}{\partial t}
+  + \frac{\partial}{\partial x}\!\left( Hu^2 + \tfrac{1}{2} g H^2 \right)
+  + \frac{\partial (Huv)}{\partial y}
+  &= -g H \frac{\partial H_b}{\partial x}, \\
+  \frac{\partial (Hv)}{\partial t}
+  + \frac{\partial (Huv)}{\partial x}
+  + \frac{\partial}{\partial y}\!\left( Hv^2 + \tfrac{1}{2} g H^2 \right)
+  &= -g H \frac{\partial H_b}{\partial y},
+\end{align}
+where $H$ is the water depth, $H_b(x,y)$ the bathymetry (bottom
+elevation), and $g = \SI{9.81}{m.s^{-2}}$. The implementation uses a
+well-balanced perturbation splitting about the lake-at-rest state
+$H_e = \max(H_{\rm dry},\ h_0 - H_b)$: the pressure flux carries
+$\tfrac{1}{2} g (H^2 - H_e^2)$ and the bathymetry source carries
+$-g (H - H_e)\nabla H_b$, so that the lake at rest is preserved exactly.
+Velocities are recovered from the momenta with the desingularization of
+Kurganov \& Petrova,
+\begin{equation}
+  u = \frac{\sqrt{2}\, H\, (Hu)}{\sqrt{H^4 + \max(H, H_{\rm wet})^4}},
+  \qquad H_{\rm wet} = 10^{-3}\,\si{m},
+\end{equation}
+and momentum in dry cells ($H < H_{\rm wet}$) is relaxed to zero at rate
+$\sigma_{\rm dry} = \SI{25}{s^{-1}}$.
+
+\paragraph{Setup: solitary wave impinging on a conical island.}
+Following the laboratory configuration of a solitary wave interacting
+with a conical island (cf.\ Synolakis-type solitary-wave initialization),
+the bathymetry is the cone
+\begin{equation}
+  H_b(x, y) = h_c \max\!\left( 0,\ 1 - \frac{r}{r_c} \right),
+  \qquad
+  r = \sqrt{(x - x_{c})^2 + y^2},
+  \qquad
+  h_c = \SI{0.93}{m}, \quad r_c = \SI{3.6}{m},
+\end{equation}
+centered at $(x_c, y_c) = (12.5, 0)\,\si{m}$ in a basin of still-water
+depth $h_0 = \SI{0.32}{m}$ (the cone pierces the free surface near its
+center). The initial condition is the solitary wave
+\begin{equation}
+  \eta(x) = A\,\mathrm{sech}^2\!\bigl[\gamma (x - x_w)\bigr],
+  \qquad
+  \gamma = \sqrt{\frac{3A}{4 h_0^3}},
+  \qquad
+  A = \SI{0.064}{m}, \quad x_w = \SI{2.5}{m},
+\end{equation}
+with the associated velocity field
+\begin{equation}
+  u(x) = \frac{c\,\eta}{h_0 + \eta},
+  \qquad
+  c = \sqrt{g (h_0 + \eta)},
+  \qquad v = 0,
+\end{equation}
+and depth $H(x, y, 0) = \max\bigl(H_{\rm dry},\ h_0 + \eta(x) -
+H_b(x,y)\bigr)$, $H_{\rm dry} = 10^{-3}\,\si{m}$. The wave shoals on the
+island flank, partially runs up, wraps around the island, and the two
+wave fronts collide on the lee side.
+
+\paragraph{Boundary conditions.} Free-slip reflective walls on all four
+boundaries (normal momentum removed:
+$(Hu, Hv) \leftarrow (Hu, Hv) - [(Hu, Hv)\cdot\bm{n}]\,\bm{n}$).
+
+\paragraph{Numerical setup.}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Domain                & $[0, 25] \times [-15, 15]\,\si{m}$ \\
+Grid                  & Gmsh transfinite grid, $25 \times 30 = 750$
+                        quadrilaterals (\texttt{SoliWaveIsland.msh}) \\
+Polynomial order      & $N = 4$ (LGL) \\
+Time integrator       & SSPRK54 \\
+Time step             & $\Delta t = \SI{0.01}{s}$ \\
+Final time            & $t_{\rm end} = \SI{25}{s}$ \\
+Stabilization         & constant artificial viscosity,
+                        $\mu = (0.05, 0.05, 0.05)\,\si{m^2.s^{-1}}$,
+                        applied to $(H - H_e, Hu, Hv)$ \\
+Wet/dry treatment     & $H_{\rm wet} = 10^{-3}\,\si{m}$,
+                        $\sigma_{\rm dry} = \SI{25}{s^{-1}}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb!]
+  \centering
+  \figplaceholder{Placeholder: \texttt{SoliWaveIsland} --- free-surface
+  elevation snapshots at selected times ($t \approx 4, 8, 12, 16, 20$
+  \si{s}) showing the solitary wave running up and wrapping around the
+  conical island.}
+  \caption{Solitary wave interacting with a conical island.}
+  \label{fig:soliwave}
+\end{figure}
+
+\clearpage
+%=====================================================================
+\section{Summary}
+%=====================================================================
+\begin{table}[htb!]
+\centering
+\small
+\caption{Overview of the benchmark cases in
+\texttt{run\_benchmark\_list}.}
+\label{tab:summary}
+\begin{tabular}{llllll}
+\toprule
+Case & Equations & Dim. & $N$ & Integrator & $t_{\rm end}$ \\
+\midrule
+\texttt{CompEuler/sod1d}          & Euler ($\rho E$)        & 1D & 4  & SSPRK53 & 0.2 \\
+\texttt{CompEuler/wave1d}         & linear wave             & 1D & 6  & SSPRK33 & 3 \\
+\texttt{CompEuler/wave1d\_lag}    & linear wave + Laguerre  & 1D & 6  & SSPRK33 & 9 \\
+\texttt{CompEuler/theta}          & Euler ($\rho\theta$)    & 2D & 4  & LSRK(5,4) & 1000 \\
+\texttt{CompEuler/theta\_laguerre}& Euler ($\rho\theta$) + Laguerre & 2D & 4 & LSRK(5,4) & 1000 \\
+\texttt{Elliptic/case1}           & $\nabla^2 u = 0$        & 2D & 4  & BiCGStab & --- \\
+\texttt{Helmholtz/case1}          & $\nabla^2 u + 10u = f$  & 2D & 10 & BiCGStab & --- \\
+\texttt{Helmholtz/case1\_laguerre}& Helmholtz + Laguerre    & 2D & 10/14 & BiCGStab & --- \\
+\texttt{AdvDiff/Wave\_Train}      & linear wave system      & 1D & 4  & SSPRK33 & 5000 \\
+\texttt{AdvDiff/kopriva}          & advection--diffusion    & 2D & 4  & SSPRK54 & 10 \\
+\texttt{AdvDiff/2d\_Laguerre}     & adv--diff + Laguerre    & 2D & 4/30 & SSPRK54 & 4 \\
+\texttt{ShallowWater/SoliWaveIsland} & shallow water        & 2D & 4  & SSPRK54 & 25 \\
+\midrule
+\texttt{CompEuler/thetaTracers} (2 ranks) & Euler ($\rho\theta$) + 2 tracers & 2D & 4 & LSRK(5,4) & 1000 \\
+\texttt{CompEuler/3d} (2 ranks)           & Euler ($\rho\theta$)             & 3D & 4 & LSRK(5,4) & 1000 \\
+\texttt{CompEuler/city2d} (3 ranks)       & Euler ($\rho\theta$)             & 2D & 4 & LSRK(5,4) & 600 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}
