@@ -4,6 +4,12 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
     Sec. 5.5 of Marras, Kopera, Constantinescu, Suckale, Giraldo (2018).
 
+    Conventions (see user_flux.jl): z = 0 is the flat bottom, Hb(x,y) >= 0 is
+    the bathymetry (cone) measured up from z = 0, q[1] = H is the water depth
+    measured from the top of the bathymetry, and the free surface sits at
+    z = Hb + H. A lake at rest therefore has Hb + H = h0 wherever the cone is
+    submerged.
+
     Initial state:
       Synolakis (1987) solitary surface profile centred at xc_wave, propagating
       rightward over a still water layer of depth h0:
@@ -17,16 +23,25 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
       Bathymetry (cone):
           Hb(x,y) = 0.93 · max(0, 1 - r/rc),   r = √((x-xc_cone)² + (y-yc_cone)²)
 
-      State vector q = [H, Hu, Hv] where H is the local water depth above the
-      bathymetry, so that
+      State vector q = [H, Hu, Hv] with
 
           H(x, y, 0) = max(H_dry, h0 + η - Hb)
+
+      where H_dry = 1e-3 m is the thin layer of water at rest that covers the
+      regions that should be dry (the paper's threshold water layer, Sec. 5.5);
+      dry nodes carry zero velocity.
+
+      The reference state qe = [He, 0, 0], He = max(H_dry, h0 - Hb), stores the
+      lake at rest. user_flux.jl/user_source.jl advance the perturbation about
+      it (pressure flux g(H² - He²)/2, source -g(H - He)∇Hb) so that qe is an
+      exact equilibrium of the discrete operators: this is what keeps the
+      wet/dry ring around the island quiet at start-up.
     """
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize fields for 2D NLSWE solitary-wave-on-island (Marras et al. 2018, Sec. 5.5) ..."
+        println(" Initialize fields for 2D NLSWE solitary-wave-on-island (Marras et al. 2018, Sec. 5.5) ...")
     end
 
     qvars    = ["H", "Hu", "Hv"]
@@ -51,12 +66,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         rc_cone  = 3.6
         hc_cone  = 0.93
 
-        # --- wet/dry safety floor ------------------------------------------------
-        H_dry    = 1.0e-4
+        # --- wet/dry thin film: keep equal to _H_WET_SWE in user_flux.jl ----------
+        H_dry    = 1.0e-3
 
         if rank == 0
-            @info "  h0   = $(h0) m,   A = $(A) m,  γ = $(γ) 1/m"
-            @info "  cone: centre=($xc_cone, $yc_cone),  rc=$rc_cone,  hmax=$hc_cone"
+            println("  h0   = $(h0) m,   A = $(A) m,  γ = $(γ) 1/m")
+            println("  cone: centre=($xc_cone, $yc_cone),  rc=$rc_cone,  hmax=$hc_cone")
+            println("  wet/dry thin film: H_dry = $(H_dry) m")
         end
 
         for ip = 1:mesh.npoin
@@ -77,20 +93,21 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             H_water = h0 + η - Hb
             H_water = max(H_water, H_dry)
 
-            # rightward-propagating solitary wave: u = c η / (h0 + η)
-            if r < rc_cone
-                # over the island, suppress incident velocity to avoid initial impulse
-                u_x = 0.0
-            else
+            # rightward-propagating solitary wave: u = c η / (h0 + η).
+            # Dry (thin-film) nodes are at rest; the wave starts ~10 m from
+            # the island so this only zeroes the emerged part of the cone.
+            if H_water > H_dry
                 c   = sqrt(g * (h0 + η))
                 u_x = c * η / (h0 + η)
+            else
+                u_x = 0.0
             end
 
             q.qn[ip, 1] = H_water
             q.qn[ip, 2] = H_water * u_x
             q.qn[ip, 3] = 0.0
 
-            # reference / "exact" state used by the kernel: still water at rest
+            # reference state used by the kernels: lake at rest (well-balanced split)
             H_eq = max(h0 - Hb, H_dry)
             q.qe[ip, 1] = H_eq
             q.qe[ip, 2] = 0.0
@@ -99,7 +116,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
 
     if rank == 0
-        @info " Initialize fields for 2D NLSWE solitary-wave-on-island ... DONE"
+        println(" Initialize fields for 2D NLSWE solitary-wave-on-island ... DONE")
     end
 
     return q

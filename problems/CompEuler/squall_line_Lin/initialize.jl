@@ -2,7 +2,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     """
 
             """
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 3D CompEuler with θ equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -52,7 +52,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             data = read_sounding(inputs[:sounding_file])
             background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data) 
             balanced = zeros(mesh.npoin,1)
-            @info minimum(background[:,3]), maximum(background[:,3])           
+            println(minimum(background[:,3]), maximum(background[:,3]))
             for ip = 1:mesh.npoin
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
@@ -97,7 +97,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                     ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θv_ref, Press=pref_m)
                     pref_m = ρref*PhysConst.Rair*T_ref + ρref*qv_ref*PhysConst.Rvap*T_ref
                     p_m = ρ*PhysConst.Rair*T + ρ*qv_ref*PhysConst.Rvap*T
-                    #@info θ_ref, θv_ref, ρref, pref_m
+                    #println(θ_ref, θv_ref, ρref, pref_m)
                 end=#
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip,1] = ρ - ρref
@@ -142,7 +142,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 #end
             end
         end
-        @info maximum(q.qn[:,end]), minimum(q.qn[:,end]), maximum(q.qn[:,2]), minimum(q.qn[:,2]), maximum(q.qn[:,6]), minimum(q.qn[:,6]), maximum(q.qn[:,1]), minimum(q.qn[:,1])    
+        println(maximum(q.qn[:,end]), minimum(q.qn[:,end]), maximum(q.qn[:,2]), minimum(q.qn[:,2]), maximum(q.qn[:,6]), minimum(q.qn[:,6]), maximum(q.qn[:,1]), minimum(q.qn[:,1]))
         if inputs[:CL] == NCL()
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[:,2] .= q.qn[:,2]./(q.qn[:,1] + q.qe[:,1])
@@ -181,8 +181,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, background, mesh.x, mesh.y, mesh.z, xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    @info maximum(q.qe[:,end]), minimum(q.qe[:,end])
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    println(maximum(q.qe[:,end]), minimum(q.qe[:,end]))
+    println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")
     return q
 end
 

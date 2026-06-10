@@ -6,7 +6,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+        println(" Initialize fields for 2D CompEuler with θ equation ........................ ")
     end
     
     #---------------------------------------------------------------------------------
@@ -139,7 +139,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
     end
     if rank == 0
-        @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+        println(" Initialize fields for 2D CompEuler with θ equation ........................ DONE ")
     end
     
     return q
@@ -201,11 +201,11 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, 
                 m += 1
             end
         end
-        # @info q[ips,4] - qe[ips,4]
+        # println(q[ips,4] - qe[ips,4])
         theta      = q[ips, 4] ./ q[ips, 1]
         theta_ref  = qe[ips, 4] ./ qe[ips, 1]
         dtheta     = theta - theta_ref
-        # @info dtheta
+        # println(dtheta)
         if any(dtheta .> tol) && (old_ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
         end

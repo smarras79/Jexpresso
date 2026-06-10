@@ -13,7 +13,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize fields for 2D Shallow Water TC3 (Planetary Rossby Wave) ..."
+        println(" Initialize fields for 2D Shallow Water TC3 (Planetary Rossby Wave) ...")
     end
 
     #---------------------------------------------------------------------------------
@@ -35,7 +35,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         Ly = ymax_g - ymin_g
 
         if rank == 0
-            @info "  Domain size: Lx = $Lx m, Ly = $Ly m"
+            println("  Domain size: Lx = $Lx m, Ly = $Ly m")
         end
 
         #---------------------------------------------------------------------------------
@@ -79,7 +79,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
 
     if rank == 0
-        @info " Initialize fields for 2D Shallow Water TC3 (Planetary Rossby Wave) ... DONE"
+        println(" Initialize fields for 2D Shallow Water TC3 (Planetary Rossby Wave) ... DONE")
     end
 
     return q

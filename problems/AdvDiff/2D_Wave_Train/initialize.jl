@@ -2,7 +2,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
 
     """
-    @info " Initialize fields for 1D adv diff ........................ "
+    println(" Initialize fields for 1D adv diff ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -30,7 +30,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     varnames = ["h","u"]
     write_output(NSD_1D(), q.qn, mesh, OUTPUT_DIR, inputs, varnames, PNG())
     
-    @info " Initialize fields for 1D adv diff ........................ DONE "
+    println(" Initialize fields for 1D adv diff ........................ DONE ")
     
     return q
 end

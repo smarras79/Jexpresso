@@ -2,7 +2,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
 
                         """
-    @info " Initialize fields for 1D Sod tube ........................ "
+    println(" Initialize fields for 1D Sod tube ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -16,7 +16,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
-    @info " Initialize fields for 1D Trixi wave  ........................ "
+    println(" Initialize fields for 1D Trixi wave  ........................ ")
 
     PhysConst = PhysicalConst{Float64}()
     if (inputs[:backend] == CPU()) 
@@ -44,7 +44,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         @mystop(" Error: no GPU yet for this case")
     end
 
-    @info " Initialize fields for 1D Trixi wave  ........................ DONE "
+    println(" Initialize fields for 1D Trixi wave  ........................ DONE ")
 
     return q
 end

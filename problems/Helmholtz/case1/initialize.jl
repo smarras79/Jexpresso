@@ -2,7 +2,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     """
 
     """
-    @info " Initialize fields for 2D Helmholtz equation ........................ "
+    println(" Initialize fields for 2D Helmholtz equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -31,7 +31,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     
     outvarsref = ("u_ref")    
 
-    @info " Initialize fields for 2D Helmholtz equation ........................ DONE "
+    println(" Initialize fields for 2D Helmholtz equation ........................ DONE ")
     
     return q
 end

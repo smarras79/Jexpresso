@@ -2,7 +2,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     """
 
             """
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 3D CompEuler with θ equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -137,7 +137,7 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, 
         u      = q[ips, 1]
         u_ref  = qe[ips, 1]
         du     = u - u_ref
-        # @info du
+        # println(du)
         if any(du .> tol) && (old_ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
         end

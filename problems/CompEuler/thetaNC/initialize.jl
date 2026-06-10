@@ -2,7 +2,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
     """
 
     """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 2D CompEuler with θ equation ........................ ")
     
     PhysConst = PhysicalConst{Float64}()
     
@@ -63,7 +63,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
     end
     
 
-    @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
+    println("Initialize fields for system of 2D CompEuler with θ equation ........................ DONE")
 
     return q
 end
