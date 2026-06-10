@@ -9,3 +9,4 @@ LocalPreferences.toml
 *.vtu
 meshes
 mesh.log
+.jexpresso_cache/
