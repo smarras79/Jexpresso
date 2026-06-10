@@ -1,17 +1,26 @@
 rm -rf output
 
-./runjexpresso 1 CompEuler sod1d
-./runjexpresso 1 CompEuler wave1d
-./runjexpresso 1 CompEuler wave1d_lag
-./runjexpresso 1 AdvDiff Wave_Train
-./runjexpresso 1 AdvDiff kopriva
-./runjexpresso 1 AdvDiff 2d_Laguerre
-./runjexpresso 2 CompEuler thetaTracers
-./runjexpresso 2 CompEuler theta_laguerre
-./runjexpresso 3 CompEuler 3d
-./runjexpresso 1 Elliptic case1
-./runjexpresso 1 Helmholtz case1
-./runjexpresso 1 Helmholtz case1_laguerre
-./runjexpresso 4 CompEuler LESICP2-coarse
-./runjexpresso 2 RadiativeTransfer 2d_extra_coords
-./runjexpresso 2 RadiativeTransfer 3d_extra_coords
+julia --project=.
+julia>
+using Jexpresso
+using MPI
+JULIA = Base.julia_cmd()
+
+#Serial:
+Jexpresso.run_case("CompEuler", "sod1d")
+Jexpresso.run_case("CompEuler", "wave1d")
+Jexpresso.run_case("CompEuler", "wave1d_lag")
+Jexpresso.run_case("CompEuler", "theta")
+Jexpresso.run_case("CompEuler", "theta_laguerre")
+
+Jexpresso.run_case("Elliptic", "case1")
+Jexpresso.run_case("Helmholtz", "case1")
+Jexpresso.run_case("Helmholtz", "case1_laguerre")
+Jexpresso.run_case("AdvDiff", "Wave_Train")
+Jexpresso.run_case("AdvDiff", "kopriva")
+Jexpresso.run_case("AdvDiff", "2d_Laguerre")
+
+#Parallel:
+run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler thetaTracers`)
+run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler 3d`)
+run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler LESICP2-coarse`)
