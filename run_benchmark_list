@@ -1,6 +1,5 @@
-rm -rf output
-
-julia --project=.
+julia>]
+pkg> precompile
 julia>
 using Jexpresso
 using MPI
@@ -24,3 +23,6 @@ Jexpresso.run_case("AdvDiff", "2d_Laguerre")
 run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler thetaTracers`)
 run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler 3d`)
 run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler LESICP2-coarse`)
+run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler city2d`)
+
+NOTICE: replace mpiexec with mpirun if that's what you use.
