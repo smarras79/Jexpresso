@@ -184,26 +184,35 @@ function precompile_warmup_run!(inputs, params, u,
     # files do not. Wrapped in try/catch on the same principle as the
     # solve warmup: a failure must not prevent the real run.
     if precompile_warmup_enabled(inputs) && inputs[:outformat] == VTK()
+        warmup_err = Ref{Any}(nothing)
         with_logger(NullLogger()) do
+            tmpdir = mktempdir(; prefix = "jexpresso_warmup_")
+            # Redirect stdout so the inner write_output's `println_rank`
+            # (raw println, bypasses NullLogger) doesn't leak the
+            # throw-away tmpdir path into the user-visible log.
             try
-                tmpdir = mktempdir(; prefix = "jexpresso_warmup_")
-                write_output(params.SD, u, params.uaux,
-                             params.tspan[1], 0,
-                             params.mesh, params.mp,
-                             params.connijk_original,
-                             params.poin_in_bdy_face_original,
-                             params.x_original, params.y_original, params.z_original,
-                             tmpdir, inputs,
-                             params.qp.qvars, params.qp.qoutvars,
-                             inputs[:outformat];
-                             nvar = params.qp.neqs,
-                             qexact = params.qp.qe,
-                             μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
-                # Best-effort cleanup; never fatal.
-                try; rm(tmpdir; recursive = true, force = true); catch; end
+                redirect_stdout(devnull) do
+                    write_output(params.SD, u, params.uaux,
+                                 params.tspan[1], 0,
+                                 params.mesh, params.mp,
+                                 params.connijk_original,
+                                 params.poin_in_bdy_face_original,
+                                 params.x_original, params.y_original, params.z_original,
+                                 tmpdir, inputs,
+                                 params.qp.qvars, params.qp.qoutvars,
+                                 inputs[:outformat];
+                                 nvar = params.qp.neqs,
+                                 qexact = params.qp.qe,
+                                 μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
+                end
             catch e
-                rank == 0 && @warn "VTK-write warmup failed; continuing without it" exception=e
+                warmup_err[] = e
             end
+            # Best-effort cleanup; never fatal.
+            try; rm(tmpdir; recursive = true, force = true); catch; end
+        end
+        if warmup_err[] !== nothing && rank == 0
+            @warn "VTK-write warmup failed; continuing without it" exception=warmup_err[]
         end
     end
 
@@ -600,7 +609,7 @@ function time_loop!(inputs, params, u, args...)
         # written before the warm-up. Doing it here closes the silent
         # gap between "Write initial condition END" and the first real
         # time-step that the user saw as a deadlock.
-        if idx ≠ nothing && lwrite_init
+        if idx ≠ nothing && lwrite_init && get(inputs, :lwrite_initial, false)
             if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
             write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
                          params.mesh, params.mp,
