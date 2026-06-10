@@ -19,6 +19,8 @@ Jexpresso.run_case("AdvDiff", "Wave_Train")
 Jexpresso.run_case("AdvDiff", "kopriva")
 Jexpresso.run_case("AdvDiff", "2d_Laguerre")
 
+Jexpresso.run_case("ShallowWater", "SoliWaveIsland")
+
 #Parallel
 using MPI
 JULIA = Base.julia_cmd()
