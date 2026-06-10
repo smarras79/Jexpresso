@@ -19,7 +19,7 @@ function user_inputs()
         # bathymetry, and the still-water depth far from the island is h0.
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(),
-        :Δt                   => 0.02,
+        :Δt                   => 0.01,
         :tinit                => 0.0,
         :tend                 => 25.0,
         :diagnostics_at_times => (0:1.0:25.0),

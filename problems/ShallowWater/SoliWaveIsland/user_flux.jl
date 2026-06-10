@@ -39,34 +39,43 @@
 const _G_SWE      = 9.81
 const _H_WET_SWE  = 1.0e-3   # thin-film depth = wet/dry threshold (paper Sec. 5.4-5.5)
 
-@inline function _swe_uvel(H, Hu)
-    # Dry nodes carry no velocity (Marras et al. 2018: "the velocity in such
-    # elements is forced to zero only on the dry nodes"); never divide
-    # momentum noise by the thin-film depth.
-    return H > _H_WET_SWE ? Hu / H : zero(H)
+@inline function _swe_uvel(Hc, Hu)
+    # Desingularized velocity (Kurganov & Petrova 2007): equals Hu/Hc for
+    # Hc >= threshold and decays smoothly to zero on thinner layers instead
+    # of switching off discontinuously -- the moving wet/dry front crosses
+    # the threshold every step and a hard switch lets u jump to |Hu|/ε.
+    # Combined with the dry-node momentum relaxation in user_source.jl this
+    # realises the paper's "velocity forced to zero on the dry nodes".
+    ε  = _H_WET_SWE
+    H4 = max(Hc, ε)
+    return sqrt(2.0) * Hc * Hu / sqrt(Hc^4 + H4^4)
 end
 
 function user_flux!(F, G, SD::NSD_2D, q, qe,
                     mesh::St_mesh, ::CL, ::TOTAL; neqs=3, ip=1)
 
-    H  = q[1]
+    # The CG path has no positivity limiter (cf. Xing et al. 2010 used in
+    # the paper), so H can undershoot below zero at the receding front:
+    # clamp the depth used by the fluxes -- a negative layer must neither
+    # carry mass nor exert pressure.
+    Hc = max(q[1], 0.0)
     He = qe[1]
 
-    u = _swe_uvel(H, q[2])
-    v = _swe_uvel(H, q[3])
+    u = _swe_uvel(Hc, q[2])
+    v = _swe_uvel(Hc, q[3])
 
     # perturbation pressure: zero at lake-at-rest by construction
-    p = 0.5 * _G_SWE * (H * H - He * He)
+    p = 0.5 * _G_SWE * (Hc * Hc - He * He)
 
     # x-flux
-    F[1] = H * u
-    F[2] = H * u * u + p
-    F[3] = H * u * v
+    F[1] = Hc * u
+    F[2] = Hc * u * u + p
+    F[3] = Hc * u * v
 
     # y-flux
-    G[1] = H * v
-    G[2] = H * v * u
-    G[3] = H * v * v + p
+    G[1] = Hc * v
+    G[2] = Hc * v * u
+    G[3] = Hc * v * v + p
 end
 
 function user_flux!(F, G, SD::NSD_2D, q, qe,
@@ -76,12 +85,15 @@ end
 
 function user_flux_gpu(q, qe, PhysConst, lpert)
     T  = eltype(q)
-    H  = q[1]
+    Hc = max(q[1], T(0.0))
     He = qe[1]
-    u  = H > T(_H_WET_SWE) ? q[2] / H : T(0.0)
-    v  = H > T(_H_WET_SWE) ? q[3] / H : T(0.0)
-    p  = T(0.5) * T(_G_SWE) * (H * H - He * He)
+    ε  = T(_H_WET_SWE)
+    H4 = max(Hc, ε)
+    de = sqrt(T(2.0)) * Hc / sqrt(Hc^4 + H4^4)
+    u  = de * q[2]
+    v  = de * q[3]
+    p  = T(0.5) * T(_G_SWE) * (Hc * Hc - He * He)
 
-    return T(H*u),       T(H*u*u + p),  T(H*u*v),
-           T(H*v),       T(H*v*u),      T(H*v*v + p)
+    return T(Hc*u),      T(Hc*u*u + p), T(Hc*u*v),
+           T(Hc*v),      T(Hc*v*u),     T(Hc*v*v + p)
 end

@@ -23,6 +23,12 @@ const _YC_CONE_SWE =   0.0
 const _RC_CONE_SWE =   3.6
 const _HC_CONE_SWE =   0.93
 
+# Dry-node momentum relaxation rate [1/s]. On layers thinner than the
+# wet/dry threshold the momentum is relaxed to zero (the paper forces the
+# velocity to zero on dry nodes); σΔt ≈ 0.25 keeps the term well inside
+# the explicit SSPRK54 stability region.
+const _SIGMA_DRY_SWE = 25.0
+
 @inline function _swe_bathy_grad(x, y)
     dx = x - _XC_CONE_SWE
     dy = y - _YC_CONE_SWE
@@ -42,12 +48,19 @@ function user_source!(S,
                       ::CL, ::TOTAL;
                       neqs=3, x=0.0, y=0.0, ymin=0.0, ymax=0.0, xmin=0.0, xmax=0.0)
 
-    dH = q[1] - qe[1]   # depth perturbation w.r.t. lake at rest
+    H  = q[1]
+    dH = max(H, 0.0) - qe[1]   # clamped depth perturbation w.r.t. lake at rest
     dHbdx, dHbdy = _swe_bathy_grad(x, y)
 
     S[1] = 0.0
     S[2] = -_G_SWE * dH * dHbdx
     S[3] = -_G_SWE * dH * dHbdy
+
+    # dry-node momentum relaxation (see _SIGMA_DRY_SWE)
+    if H < _H_WET_SWE
+        S[2] -= _SIGMA_DRY_SWE * q[2]
+        S[3] -= _SIGMA_DRY_SWE * q[3]
+    end
 end
 
 function user_source!(S,
@@ -62,7 +75,8 @@ end
 
 function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
     T  = eltype(q)
-    dH = q[1] - qe[1]
+    H  = q[1]
+    dH = max(H, T(0.0)) - qe[1]
 
     dx = x - T(_XC_CONE_SWE)
     dy = y - T(_YC_CONE_SWE)
@@ -77,5 +91,6 @@ function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
     end
 
     g = T(_G_SWE)
-    return T(0.0), T(-g * dH * dHbdx), T(-g * dH * dHbdy)
+    σ = H < T(_H_WET_SWE) ? T(_SIGMA_DRY_SWE) : T(0.0)
+    return T(0.0), T(-g * dH * dHbdx - σ * q[2]), T(-g * dH * dHbdy - σ * q[3])
 end
