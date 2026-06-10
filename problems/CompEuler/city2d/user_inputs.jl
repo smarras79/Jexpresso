@@ -41,6 +41,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
+        :lstep_heartbeat   => true, #comment it if you don't want the steps printing
         :outformat         => "vtk",
         :loverwrite_output => true,
         :lwrite_initial    => true,
