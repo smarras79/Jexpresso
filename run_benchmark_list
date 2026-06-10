@@ -24,7 +24,6 @@ using MPI
 JULIA = Base.julia_cmd()
 run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler thetaTracers`)
 run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler 3d`)
-run(`$(mpiexec()) -n 4 $JULIA --project=. src/Jexpresso.jl CompEuler LESICP2-coarse`)
 run(`$(mpiexec()) -n 3 $JULIA --project=. src/Jexpresso.jl CompEuler city2d`)
 
 NOTICE: replace mpiexec with mpirun if that's what you use.
