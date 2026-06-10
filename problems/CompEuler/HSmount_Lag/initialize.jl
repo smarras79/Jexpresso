@@ -4,7 +4,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     """
 
                 """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 2D CompEuler with θ equation ........................ ")
     
 
     
@@ -130,8 +130,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, θref, θ0, T0, p0, N, N2, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
-    @info maximum(q.qn[:,1:4]), minimum(q.qn[:,1:4]) 
+    println("Initialize fields for system of 2D CompEuler with θ equation ........................ DONE")
+    println(maximum(q.qn[:,1:4]), minimum(q.qn[:,1:4]))
     return q
 end
 

@@ -1,5 +1,5 @@
 function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
-    @info " Initialize fields for 1D CompEuler (case1: DSGS sound pulse) ........ "
+    println(" Initialize fields for 1D CompEuler (case1: DSGS sound pulse) ........ ")
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -34,7 +34,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         end
     end
 
-    @info " Initialize fields for 1D CompEuler (case1: DSGS sound pulse) ........ DONE "
+    println(" Initialize fields for 1D CompEuler (case1: DSGS sound pulse) ........ DONE ")
 
     return q
 end

@@ -2,7 +2,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    if rank == 0 @info " Initialize fields for 2D Helmholtz equation ........................ " end    
+    if rank == 0 println(" Initialize fields for 2D Helmholtz equation ........................ ") end
     #---------------------------------------------------------------------------------
     # Solution variables:
     #
@@ -26,7 +26,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         k(q.qn, q.qe, mesh.x, mesh.y; ndrange = mesh.npoin)
     end
     
-    @info " Initialize fields for 2D Helmholtz equation ........................ DONE "
+    println(" Initialize fields for 2D Helmholtz equation ........................ DONE ")
     
     return q
 end

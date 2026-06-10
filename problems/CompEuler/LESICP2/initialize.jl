@@ -3,7 +3,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize analytic neutral ABL ........................ "
+        println(" Initialize analytic neutral ABL ........................ ")
     end
     
     #---------------------------------------------------------------------------------
@@ -189,7 +189,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             converged      = false
             
             if rank == 0
-                @info "Starting iterative hydrostatic balance correction..."
+                println("Starting iterative hydrostatic balance correction...")
             end
 
             for iter = 1:max_iterations
@@ -238,13 +238,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 if max_correction < tolerance
                     converged = true
                     if rank == 0
-                        @info "Hydrostatic balance converged after $iter iterations (max correction: $(max_correction) Pa)"
+                        println("Hydrostatic balance converged after $iter iterations (max correction: $(max_correction) Pa)")
                     end
                     break
                 end
                 
                 if rank == 0 && iter % 3 == 0
-                    @info "Iteration $iter: max pressure correction = $(max_correction) Pa"
+                    println("Iteration $iter: max pressure correction = $(max_correction) Pa")
                 end
             end
 
@@ -282,9 +282,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             end
             
             if rank == 0
-                @info "Final hydrostatic balance verification: max imbalance = $(max_imbalance) Pa"
+                println("Final hydrostatic balance verification: max imbalance = $(max_imbalance) Pa")
                 relative_imbalance = max_imbalance / p_surface * 100.0
-                @info "Relative imbalance: $(relative_imbalance)%"
+                println("Relative imbalance: $(relative_imbalance)%")
             end
             
             # Store calculated pressures
@@ -326,7 +326,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
     
     if rank == 0
-        @info " Initialize analytic neutral ABL ........................ DONE "
+        println(" Initialize analytic neutral ABL ........................ DONE ")
     end
     
     return q
@@ -347,11 +347,11 @@ function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
                 m += 1
             end
         end
-        # @info q[ips,4] - qe[ips,4]
+        # println(q[ips,4] - qe[ips,4])
         theta      = q[ips, 4] ./ q[ips, 1]
         theta_ref  = qe[ips, 4] ./ qe[ips, 1]
         dtheta     = theta - theta_ref
-        # @info dtheta
+        # println(dtheta)
         if any(dtheta .> tol) && (old_ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
         end

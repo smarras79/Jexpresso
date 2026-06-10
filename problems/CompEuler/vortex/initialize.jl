@@ -2,7 +2,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     """
 
                 """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 2D CompEuler with θ equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -179,7 +179,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
     end
 
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+    println(" Initialize fields for 2D CompEuler with θ equation ........................ DONE ")
 
     return q
 end

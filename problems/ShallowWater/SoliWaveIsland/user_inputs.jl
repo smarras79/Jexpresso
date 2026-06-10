@@ -37,17 +37,22 @@ function user_inputs()
         # to keep the CG solution stable around the wave front. This is a
         # placeholder for the Dyn-SGS scheme of Marras et al. (2018), which
         # would replace the constant μ with a residual-based coefficient.
+        # Note: the continuity equation diffuses the depth perturbation
+        # H - He (see user_primitives.jl), not the full cone-shaped depth,
+        # so the lake at rest stays an exact equilibrium.
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :visc_model           => AV(),
         :μ                    => [0.05, 0.05, 0.05],
         #---------------------------------------------------------------------------
-        # CG filter for additional stabilisation.
+        # CG filter: OFF. The filter acts on the full depth H (it only
+        # subtracts qe from the momentum components), and at rest H is
+        # cone-shaped with a kink at the wet/dry ring: re-projecting it
+        # every step perturbs the lake-at-rest equilibrium that the
+        # well-balanced flux/source split preserves. The constant
+        # artificial viscosity above is enough to stabilise the fronts.
         #---------------------------------------------------------------------------
-        :lfilter              => true,
-        :mu_x                 => 0.05,
-        :mu_y                 => 0.05,
-        :filter_type          => "erf",
+        :lfilter              => false,
         #---------------------------------------------------------------------------
         # Mesh
         # Generate with:

@@ -1,12 +1,19 @@
 #
-# Bathymetry source term for the non-linear shallow water equations.
+# Bathymetry source term for the non-linear shallow water equations,
+# in the well-balanced perturbation split documented in user_flux.jl:
 #
-#   S = (0, -g H ∂Hb/∂x, -g H ∂Hb/∂y)
+#   S = (0, -g (H - He) ∂Hb/∂x, -g (H - He) ∂Hb/∂y)
+#
+# where H = q[1] is the water depth above the bathymetry and He = qe[1]
+# is the lake-at-rest depth. At rest H = He, so S vanishes node-by-node
+# exactly as the perturbation pressure flux g(H² - He²)/2 does: the
+# discrete equilibrium leaves nothing for the wet/dry 1/H division to
+# amplify.
 #
 # Hb(x,y) is the conical island of Marras et al. 2018, Sec. 5.5:
 #
 #   Hb(x,y) = 0.93 * (1 - r/rc)     if r ≤ rc
-#           = 0                       otherwise
+#           = 0                     otherwise
 #
 # with rc = 3.6 m and r = sqrt((x - xc_cone)² + (y - yc_cone)²).
 # We place the cone in the middle of the basin at (xc_cone, yc_cone) = (12.5, 0).
@@ -35,12 +42,12 @@ function user_source!(S,
                       ::CL, ::TOTAL;
                       neqs=3, x=0.0, y=0.0, ymin=0.0, ymax=0.0, xmin=0.0, xmax=0.0)
 
-    H = q[1]
+    dH = q[1] - qe[1]   # depth perturbation w.r.t. lake at rest
     dHbdx, dHbdy = _swe_bathy_grad(x, y)
 
     S[1] = 0.0
-    S[2] = -_G_SWE * H * dHbdx
-    S[3] = -_G_SWE * H * dHbdy
+    S[2] = -_G_SWE * dH * dHbdx
+    S[3] = -_G_SWE * dH * dHbdy
 end
 
 function user_source!(S,
@@ -54,8 +61,8 @@ function user_source!(S,
 end
 
 function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
-    T = eltype(q)
-    H  = q[1]
+    T  = eltype(q)
+    dH = q[1] - qe[1]
 
     dx = x - T(_XC_CONE_SWE)
     dy = y - T(_YC_CONE_SWE)
@@ -70,5 +77,5 @@ function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
     end
 
     g = T(_G_SWE)
-    return T(0.0), T(-g * H * dHbdx), T(-g * H * dHbdy)
+    return T(0.0), T(-g * dH * dHbdx), T(-g * dH * dHbdy)
 end

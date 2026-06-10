@@ -19,7 +19,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
        the purely inviscid problem from the paper, or leave a small ν
        to get a vanishing-viscosity regularized front.
     """
-    @info " Initialize fields for 2D Burgers Riemann (IMEX) ................ "
+    println(" Initialize fields for 2D Burgers Riemann (IMEX) ................ ")
 
     qvars = ["q"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
@@ -50,7 +50,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
     end
 
-    @info " Initialize fields for 2D Burgers Riemann (IMEX) ................ DONE "
+    println(" Initialize fields for 2D Burgers Riemann (IMEX) ................ DONE ")
 
     return q
 end

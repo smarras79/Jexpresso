@@ -2,7 +2,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
 
     """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 2D CompEuler with θ equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -108,7 +108,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         plot_initial(SD, mesh.x, qout[:,ivar], ivarname, OUTPUT_DIR)
     end
     
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+    println(" Initialize fields for 2D CompEuler with θ equation ........................ DONE ")
     
     return q
 end
