@@ -254,6 +254,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
       inputs[:plot_overlap] = false
     end
 
+    # Colormap for the 2D PNG writer (any ColorSchemes.jl name). The
+    # default is cmocean's desaturated diverging "balance", which renders
+    # wave fields better than highly saturated maps like viridis.
+    if(!haskey(inputs, :plot_colormap))
+      inputs[:plot_colormap] = :balance
+    end
+    
     if(!haskey(inputs, :lperiodic_1d))
       inputs[:lperiodic_1d] = false
     end

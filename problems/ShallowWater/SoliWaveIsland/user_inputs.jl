@@ -62,9 +62,12 @@ function user_inputs()
         :lread_gmsh           => true,
         :gmsh_filename        => "./meshes/gmsh_grids/SoliWaveIsland.msh",
         #---------------------------------------------------------------------------
-        # Plotting / output
+        # Plotting / output: one PNG per variable at every diagnostic time
+        # (H-it<n>.png, Hu-it<n>.png, Hv-it<n>.png). Set :lplot_surf3d to
+        # true for the Spline2D surface rendering instead of the nodal map,
+        # or switch back to "vtk" for ParaView output.
         #---------------------------------------------------------------------------
-        :outformat            => "vtk",
+        :outformat            => "png",
         :loverwrite_output    => true,
         :lwrite_initial       => true,
         :output_dir           => "./output",
