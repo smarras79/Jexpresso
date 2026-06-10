@@ -19,8 +19,9 @@ Jexpresso.run_case("AdvDiff", "Wave_Train")
 Jexpresso.run_case("AdvDiff", "kopriva")
 Jexpresso.run_case("AdvDiff", "2d_Laguerre")
 
-#Parallel:
+#Parallel
 using MPI
+JULIA = Base.julia_cmd()
 run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler thetaTracers`)
 run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler 3d`)
 run(`$(mpiexec()) -n 4 $JULIA --project=. src/Jexpresso.jl CompEuler LESICP2-coarse`)
