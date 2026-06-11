@@ -380,6 +380,19 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         thresholds = [crit_max * inputs[:RT_amr_threshold][1]]
         # ── Angular grid refinement ───────────────────────────────────────────
         @rankinfo rank "Adapting angular grid..."
+
+        # Build per-element refinement records and compute which elements are
+        # eligible for angular refinement.  An element that is already spatially
+        # non-conforming with any neighbor (local or cross-rank) must not also
+        # become angularly non-conforming with that same neighbor.
+        ang_refine_records = build_element_refinement_records(
+            mesh, extra_meshes_ref_level, nelem, ngl, comm)
+        verify_element_refinement_records(
+            ang_refine_records, nelem, comm, rank;
+            uniform_spatial = !has_spatial_hanging_nodes)
+        ang_refine_mask = build_angular_refinement_mask(ang_refine_records)
+        @rankinfo rank "Angular refinement eligible: $(count(ang_refine_mask))/$nelem elements"
+
         #Force periodic angular elements on the same spatial element to conform after refinement
         max_conformity_iters = 2
         for _ = 1:max_conformity_iters
@@ -407,7 +420,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             mesh.connijk, mesh.x, mesh.y, mesh.z,
             mesh.xmin, mesh.ymin, mesh.zmin,
             mesh.xmax, mesh.ymax, mesh.zmax,
-            extra_mesh[1].ψ, extra_mesh[1].dψ)
+            extra_mesh[1].ψ, extra_mesh[1].dψ, ang_refine_mask)
 
             nonowned_parent_indices = Set{Int}()
             nc_mat = sparse(I,n_spa,n_spa)
@@ -1636,6 +1649,19 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @info "before 4", RHS[i]
         end
     end=#
+    # Verify neighbour / NCF consistency for the purely-spatial-AMR path
+    # (adaptive_extra_meshes=false, uniform angular mesh).
+    # extra_meshes_ref_level is not available here; pass nothing → all angular levels = 0.
+    if !inputs[:adaptive_extra_meshes]
+        begin
+            _ang_ref_records_spa_only = build_element_refinement_records(
+                mesh, nothing, nelem, ngl, comm)
+            verify_element_refinement_records(
+                _ang_ref_records_spa_only, nelem, comm, rank;
+                uniform_spatial = !has_spatial_hanging_nodes)
+        end
+    end
+
     # ── Stage 4: Apply spatial constraints to RHS (uniform angular mesh, MPI-aware) ──
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
         @info "[$rank] Applying spatial constraints to RHS (Stage 4, MPI-aware)..."
@@ -3162,17 +3188,23 @@ in `build_restriction_matrices_local_and_ghost`.
 """
 function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl, nelem_ang, nop_ang, neighbors, npoin_ang,
         connijk_ang, coords_ang, Je_ang, dξdx_ang, dxdξ_ang, dξdy_ang, dydξ_ang, dηdy_ang, dydη_ang, dηdx_ang, dxdη_ang, connijk,
-        x, y, z, xmin_grid, ymin_grid, zmin_grid, xmax_grid, ymax_grid, zmax_grid, ψ, dψ)
+        x, y, z, xmin_grid, ymin_grid, zmin_grid, xmax_grid, ymax_grid, zmax_grid, ψ, dψ,
+        can_refine::Union{BitVector,Nothing}=nothing)
 
     lgl = basis_structs_ξ_ω!(LGL(), ngl-1, CPU())
     adapted_ang = zeros(Int, nelem)
     ang_adapted  = zeros(Int, nelem)
 
     for iel = 1:nelem
+        # Skip angular refinement for elements that are spatially non-conforming
+        # with at least one neighbor.  Allowing both types of non-conformity at
+        # the same interface is not supported.
+        can_refine !== nothing && !can_refine[iel] && continue
+
         e_ext = 1
-       
+
         while e_ext <= nelem_ang[iel]
-          
+
             if (abs(criterion[iel][e_ext]) > thresholds[1])
                #@info iel, e_ext
                #@info rank, criterion[iel][e_ext], thresholds[1], e_ext, iel

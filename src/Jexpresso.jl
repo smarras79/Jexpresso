@@ -207,6 +207,8 @@ include(joinpath( "kernel", "operators", "spatial_ghost_comms.jl"))
 
 include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
 
+include(joinpath( "kernel", "operators", "element_refinement_tracking.jl"))
+
 include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
 
 include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
