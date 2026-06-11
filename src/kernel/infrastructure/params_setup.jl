@@ -77,6 +77,7 @@ function params_setup(sem,
     uaux         = uODE.uaux
     vaux         = uODE.vaux
     utmp         = uODE.utmp
+    fluxaux      = uODE.fluxaux
     F            = fluxes.F
     G            = fluxes.G
     H            = fluxes.H
@@ -352,7 +353,7 @@ function params_setup(sem,
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
-                  uaux, vaux, utmp,
+                  uaux, vaux, utmp, fluxaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el, rhs_el_tmp,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el, μ_max,
@@ -370,7 +371,7 @@ function params_setup(sem,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
                   RHS_lag, RHS_visc_lag, uprimitive_lag, 
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD,
-                  sem.SOL_VARS_TYPE,
+                  sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
                   sem.mesh,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
@@ -391,8 +392,8 @@ function params_setup(sem,
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
                   T, inputs,
-                  uaux, vaux, utmp,
-                  ubdy, gradu, bdy_flux,                   
+                  uaux, vaux, utmp, fluxaux,
+                  ubdy, gradu, bdy_flux,
                   RHS, RHS_visc,
                   fijk, ∇f_el,
                   rhs_el, rhs_diff_el, rhs_el_tmp,
@@ -405,8 +406,8 @@ function params_setup(sem,
                   q_el, q_el_pro, q_ghost_p, q_ghost_c,
                   cache_ghost_p, cache_ghost_c,
                   q_t, q_ti, q_tij, fqf, b, B,
-                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD, 
-                  sem.SOL_VARS_TYPE, 
+                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD,
+                  sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,

@@ -718,14 +718,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     if inputs[:lkep] == true
         if(!haskey(inputs, :volume_flux))
-            inputs[:volume_flux] = "ranocha"
+            inputs[:volume_flux] = ranocha()
         end
     else
         if(!haskey(inputs, :volume_flux))
             inputs[:volume_flux] = nothing
         end
     end
-    
+
+    if(!haskey(inputs, :entropy_variables))
+        inputs[:entropy_variables] = false
+    end
+
     #
     # saturation adjustment:
     #
