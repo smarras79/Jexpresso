@@ -1870,7 +1870,12 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           inputs, rhs_el,
                           iel, ieq,
                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
-    
+
+    # Total-energy form: the energy slot also needs the viscous-work term
+    # ∂(τ_ij u_j)/∂x_i so momentum dissipation is returned to the energy
+    # budget. ρθ has no such term, so the augmentation is gated off for it.
+    add_tau_u = (ieq == 4) && (inputs[:energy_equation] != "theta")
+
     for l = 1:ngl
         ωl = ω[l]
         for k = 1:ngl
@@ -1878,7 +1883,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             @inbounds begin
                 Jekl = Je[iel,k,l]
                 ωJac = ω[k]*ωl*Jekl
-                
+
                 dqdξ = 0.0
                 dqdη = 0.0
                 @turbo for ii = 1:ngl
@@ -1889,16 +1894,44 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 dξdy_kl = dξdy[iel,k,l]
                 dηdx_kl = dηdx[iel,k,l]
                 dηdy_kl = dηdy[iel,k,l]
-                
+
                 auxi = dqdξ*dξdx_kl + dqdη*dηdx_kl
                 dqdx = visc_coeffieq[ieq]*auxi
-                
+
                 auxi = dqdξ*dξdy_kl + dqdη*dηdy_kl
                 dqdy = visc_coeffieq[ieq]*auxi
-                
-                ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
-                ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
-                
+
+                flux_x = dqdx
+                flux_y = dqdy
+
+                if add_tau_u
+                    dudξ = 0.0; dudη = 0.0
+                    dvdξ = 0.0; dvdη = 0.0
+                    @turbo for ii = 1:ngl
+                        dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                        dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+                        dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                        dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+                    end
+                    dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+                    dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+                    dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+                    dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+                    div_u = dudx + dvdy
+
+                    μ     = visc_coeffieq[2]
+                    τ_xx  = 2.0*μ*dudx - (2.0/3.0)*μ*div_u
+                    τ_yy  = 2.0*μ*dvdy - (2.0/3.0)*μ*div_u
+                    τ_xy  = μ*(dudy + dvdx)
+                    u_loc = uprimitiveieq[k,l,2]
+                    v_loc = uprimitiveieq[k,l,3]
+                    flux_x += τ_xx*u_loc + τ_xy*v_loc
+                    flux_y += τ_xy*u_loc + τ_yy*v_loc
+                end
+
+                ∇ξ∇u_kl = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
+                ∇η∇u_kl = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
+
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]
                     dhdη_il = dψ[i,l]
@@ -2016,6 +2049,25 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                               inputs, VT, SD)
                         flux_x = effective_diffusivity * dθdx
                         flux_y = effective_diffusivity * dθdy
+
+                        # Total-energy equation: also add the viscous-work term τ·u so that
+                        # the SGS-momentum dissipation is consistently returned to the energy
+                        # budget. Skip for the θ form where the ρθ equation has no τ·u term.
+                        if inputs[:energy_equation] != "theta"
+                            effective_viscosity = SGS_diffusion(visc_coeffieq, 2,
+                                                                uprimitiveieq[k,l,1],
+                                                                dudx, dvdy, dudy, dvdx,
+                                                                PHYS_CONST, Δ2,
+                                                                inputs,
+                                                                VT, SD)
+                            τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
+                            τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
+                            τ_xy = effective_viscosity * (dudy + dvdx)
+                            u_loc = uprimitiveieq[k,l,2]
+                            v_loc = uprimitiveieq[k,l,3]
+                            flux_x += τ_xx * u_loc + τ_xy * v_loc
+                            flux_y += τ_xy * u_loc + τ_yy * v_loc
+                        end
 
                     elseif (micro > 1)
                         # Moist: gradient of liquid-water static energy hl
