@@ -25,40 +25,46 @@
     κ_mol = PhysConst.κ_mol  # Molecular thermal diffusivity [m²/s]
     C_s   = PhysConst.C_s    # Smagorinsky constant
     C_s2  = C_s*C_s
+    # EOS-consistent cp = γ·R/(γ-1). Using PhysConst.cp directly is unsafe
+    # for non-dimensional setups where Rair is rescaled but cp is left at its
+    # SI value, which would over-estimate k_eff by orders of magnitude.
+    cp    = PhysConst.γ * PhysConst.Rair / PhysConst.γm1
 
-    
+
     # Smagorinsky
     # Strain rate tensor (symmetric part of velocity gradient)
     S11 = u11
     S22 = u22
     S12 = 0.5 * (u12 + u21)
     S21 = S12
-    
+
     # Strain rate magnitude
     # |S| = sqrt(2 * S_ij * S_ij)
     S_ij_S_ij = S11*S11 + S22*S22 + 2.0*S12*S12
     Sij       = sqrt(2.0 * S_ij_S_ij)
-    
+
     # Turbulent viscosity (same for all equations)
     μ_turb = ρ * C_s2 * Δ2 * Sij
     if is_u_momentum || is_v_momentum
-        
+
         return (μ_mol + μ_turb) * visc_coeffieq[ieq] # effective viscosity
-        
+
     elseif is_temperature
         κ_turb = μ_turb / (ρ * Pr_t)
 
-        if ltheta_eqn
+        if inputs[:energy_equation] == "theta"
             return κ_turb * visc_coeffieq[ieq]
         else
-            return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            # Total-energy / enthalpy form: need thermal conductivity k [W/(m·K)]
+            # k_eff = cp * μ_eff / Pr_t  (NOT cp * κ_eff, which would be off by ρ)
+            return cp * (μ_mol + μ_turb) / Pr_t * visc_coeffieq[ieq]
         end
-        
+
     else
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
-    
+
 end
 
 
@@ -244,10 +250,11 @@ end
     κ_mol      = PhysConst.κ_mol  # Molecular thermal diffusivity [m²/s]
     C_s        = PhysConst.C_s    # Smagorinsky constant
     C_s2       = C_s*C_s
-    cp         = PhysConst.cp
+    # EOS-consistent cp = γ·R/(γ-1); see 2D-SMAG comment for rationale.
+    cp         = PhysConst.γ * PhysConst.Rair / PhysConst.γm1
     C_vrem     = 2.5 * C_s2  # Vreman coefficient
     eps_vreman = eps(1.0)    # Safety epsilon
-    
+
     # Vreman β tensor
     β11 = Δ2 * (u11*u11 + u12*u12)
     β12 = Δ2 * (u11*u21 + u12*u22)
@@ -268,22 +275,23 @@ end
     
     if is_u_momentum || is_v_momentum
         return (μ_mol + μ_turb) * visc_coeffieq[ieq] # effective viscosity
-        
+
     elseif  is_temperature # Assuming potential temperature equation is at index 4
 
         κ_turb = μ_turb / (ρ * Pr_t)
 
-        if ltheta_eqn
+        if inputs[:energy_equation] == "theta"
             return κ_turb * visc_coeffieq[ieq]
         else
-            return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            # Total-energy / enthalpy form: thermal conductivity k_eff = cp * μ_eff / Pr_t
+            return cp * (μ_mol + μ_turb) / Pr_t * visc_coeffieq[ieq]
         end
 
     else
         κ_turb_scalar = μ_turb / (ρ * Sc_t)
         return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
-    
+
 end
 
 

@@ -37,5 +37,7 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[3] = u[3]/u[1]
     uout[4] = u[4]/u[1]
     uout[5] = u[5]/u[1]
+    uout[6] = u[5]/u[1] - qe[5]/qe[1]
+#    uout[end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uout[1], θ=uout[5])
     
 end
