@@ -747,17 +747,32 @@ function inviscid_rhs_el!(u, params,
 
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
 
+    # Kinetic-energy/entropy preserving flux differencing (M. Artiano,
+    # ported from ma/ab_dev): instead of the pointwise flux F,G we
+    # precompute per-node auxiliary states (primitive variables plus the
+    # log/power terms needed by the non-linear means) in params.fluxaux
+    # and assemble the RHS from symmetric two-point volume fluxes in
+    # _expansion_inviscid_KEP!.
+    lkep = params.inputs[:lkep]::Bool
+
     for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
 
             ip = connijk[iel,i,j]
 
-            user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
-                       @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
+            if lkep
+                user_fluxaux!(@view(params.fluxaux[ip,:]), SD,
+                              @view(params.uaux[ip,:]),
+                              params.SOL_VARS_TYPE,
+                              params.volume_flux)
+            else
+                user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
+                           @view(params.uaux[ip,:]),
+                           @view(qe[ip,:]),
+                           params.mesh,
+                           params.CL, params.SOL_VARS_TYPE;
+                           neqs=params.neqs, ip=ip)
+            end
 
             if lsource
                 user_source!(@view(params.S[i,j,:]),
@@ -781,15 +796,28 @@ function inviscid_rhs_el!(u, params,
             end
         end
 
-        _expansion_inviscid!(u,
-                             params.neqs, params.mesh.ngl,
-                             params.basis.dψ, params.ω,
-                             params.F, params.G, params.S,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy,
-                             params.metrics.dηdx, params.metrics.dηdy,
-                             params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
-
+        if lkep
+            _expansion_inviscid_KEP!(u,
+                                     params.neqs, params.mesh.ngl,
+                                     params.basis.dψ, params.ω,
+                                     params.S,
+                                     params.metrics.Je,
+                                     params.metrics.dξdx, params.metrics.dξdy,
+                                     params.metrics.dηdx, params.metrics.dηdy,
+                                     params.rhs_el, iel,
+                                     params.fluxaux, connijk,
+                                     params.volume_flux,
+                                     params.CL, params.QT, SD, params.AD)
+        else
+            _expansion_inviscid!(u,
+                                 params.neqs, params.mesh.ngl,
+                                 params.basis.dψ, params.ω,
+                                 params.F, params.G, params.S,
+                                 params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy,
+                                 params.metrics.dηdx, params.metrics.dηdy,
+                                 params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+        end
 
     end
 end
@@ -1331,8 +1359,79 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                     
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
                     dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-                    
+
                     rhs_el[iel,i,j,ieq] -=  ωJac*((dFdx + dGdy) - S[i,j,ieq])
+                end
+            end
+        end
+    end
+end
+
+#
+# Kinetic-energy/entropy preserving (KEP) flux-differencing expansion
+# (M. Artiano, ported from ma/ab_dev).
+#
+# fluxaux[ip,:] holds the per-node auxiliary state written by
+# user_fluxaux! (primitive variables plus e.g. log(ρ), log(p), ρθ^(γ-1)
+# whenever the two-point flux needs logarithmic/Stolarsky means), and
+# flux_turbo(aux_l, aux_r, volume_flux_type) evaluates the symmetric
+# two-point volume flux (kennedy_gruber, ranocha, artiano_*, central_*).
+#
+# The accumulators are local SVectors (flux_turbo returns SVectors), so
+# the hot loop is fully type-stable and allocation-free — the scratch
+# arrays (dFdξ/dFdη/...) of the original ma/ab_dev implementation are
+# not needed here.
+#
+function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
+                                  S,
+                                  Je,
+                                  dξdx, dξdy,
+                                  dηdx, dηdy,
+                                  rhs_el, iel,
+                                  fluxaux, connijk,
+                                  volume_flux_type,
+                                  ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+
+    for j=1:ngl
+        ωj = ω[j]
+        for i=1:ngl
+
+            @inbounds begin
+                ip   = connijk[iel,i,j]
+                ωJac = ω[i]*ωj*Je[iel,i,j]
+
+                aux_ij = @view(fluxaux[ip,:])
+
+                # k = 1 seeds the SVector accumulators, k = 2:ngl accumulates:
+                kjp = connijk[iel,1,j]
+                ikp = connijk[iel,i,1]
+                F_kj, G_kj = flux_turbo(aux_ij, @view(fluxaux[kjp,:]), volume_flux_type)
+                F_ik, G_ik = flux_turbo(aux_ij, @view(fluxaux[ikp,:]), volume_flux_type)
+                dFdξ = (2.0*dψ[1,i])*F_kj
+                dGdξ = (2.0*dψ[1,i])*G_kj
+                dFdη = (2.0*dψ[1,j])*F_ik
+                dGdη = (2.0*dψ[1,j])*G_ik
+                for k = 2:ngl
+                    kjp = connijk[iel,k,j]
+                    ikp = connijk[iel,i,k]
+                    F_kj, G_kj = flux_turbo(aux_ij, @view(fluxaux[kjp,:]), volume_flux_type)
+                    F_ik, G_ik = flux_turbo(aux_ij, @view(fluxaux[ikp,:]), volume_flux_type)
+                    dFdξ += (2.0*dψ[k,i])*F_kj
+                    dGdξ += (2.0*dψ[k,i])*G_kj
+                    dFdη += (2.0*dψ[k,j])*F_ik
+                    dGdη += (2.0*dψ[k,j])*G_ik
+                end
+
+                dξdx_ij = dξdx[iel,i,j]
+                dξdy_ij = dξdy[iel,i,j]
+                dηdx_ij = dηdx[iel,i,j]
+                dηdy_ij = dηdy[iel,i,j]
+
+                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+
+                for ieq=1:neqs
+                    rhs_el[iel,i,j,ieq] -= ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
                 end
             end
         end
