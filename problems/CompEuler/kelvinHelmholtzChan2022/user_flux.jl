@@ -545,3 +545,80 @@ end
         return (gamma - 1) * (yg * y - xg * x) / (gamma * (yg - xg))
     end
 end
+
+@inline function convert_transformed_to_primitive(u_transformed) 
+    return u_transformed
+end
+
+@inline function convert_derivative_to_primitive(u, gradient) 
+    return gradient
+end
+
+function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, inputs, delta2)
+	# Here, `u` is assumed to be the "transformed" variables specified by `gradient_variable_transformation`.
+    rho, v1, v2, _ = convert_transformed_to_primitive(u)
+    # Here `gradients` is assumed to contain the gradients of the primitive variables (rho, v1, v2, T)
+    # either computed directly or reverse engineered from the gradient of the entropy variables
+    # by way of the `convert_gradient_variables` function.
+    _, dv1dx, dv2dx, dTdx = convert_derivative_to_primitive(u, gradients[1])
+    _, dv1dy, dv2dy, dTdy = convert_derivative_to_primitive(u, gradients[2])
+
+    # Components of viscous stress tensor
+
+    # (4 * (v1)_x / 3 - 2 * (v2)_y / 3)
+    tau_11 = (4 * dv1dx - 2 * dv2dy) / 3
+    # ((v1)_y + (v2)_x)
+    # stress tensor is symmetric
+    tau_12 = dv1dy + dv2dx # = tau_21
+    # (4/3 * (v2)_y - 2/3 * (v1)_x)
+    tau_22 = (4 * dv2dy - 2 * dv1dx) / 3
+
+    PhysConst = PhysicalConst{Float64}()
+
+    mu_eff_momentum = SGS_diffusion(visc_coeffieq, 2,  # ieq=2 for u-momentum
+                                    rho, dv1dx, dv2dy, dv1dy, dv2dx,
+                                    PhysConst, delta2, inputs, SMAG(), NSD_2D())
+    
+    kappa_eff_temp = SGS_diffusion(visc_coeffieq, 4,  # ieq=4 for temperature
+                                    rho, dv1dx, dv2dy, dv1dy, dv2dx,
+                                   PhysConst, delta2, inputs, SMAG(), NSD_2D())
+    
+    mu_total = mu_eff_momentum 
+    mu_total = 1e-4
+    
+        cp = PhysConst.cp
+        kappa = kappa_eff_temp / cp 
+	Pr = 0.72
+	gamma =  PhysConst.γ
+	kappa = gamma /(gamma-1)/ Pr
+        q1 = kappa * dTdx
+        q2 = kappa * dTdy
+
+    # In the simplest cases, the user passed in `mu` or `mu()`
+    # (which returns just a constant) but
+    # more complex functions like Sutherland's law are possible.
+    # `dynamic_viscosity` is a helper function that handles both cases
+    # by dispatching on the type of `equations.mu`.
+    #mu = dynamic_viscosity(u, equations)
+    #mu = 1e-4 
+    mu = mu_total
+
+    if orientation == 1
+        # parabolic flux components in the x-direction
+        f1 = 0
+        f2 = tau_11 * mu
+        f3 = tau_12 * mu
+        f4 = (v1 * tau_11 + v2 * tau_12 + q1) * mu 
+
+        return SVector(f1, f2, f3, f4)
+    else # if orientation == 2
+        # parabolic flux components in the y-direction
+        # Note, symmetry is exploited for tau_12 = tau_21
+        g1 = 0
+        g2 = tau_12 * mu # tau_21 * mu
+        g3 = tau_22 * mu
+        g4 = (v1 * tau_12 + v2 * tau_22 + q2) * mu 
+
+        return SVector(g1, g2, g3, g4)
+    end
+end

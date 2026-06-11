@@ -1010,6 +1010,28 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
 end
 
 function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_2D)
+    # Entropy-stable Navier-Stokes parabolic path (M. Artiano, ported
+    # from ma/ab_dev): instead of the per-equation Laplacian of
+    # _expansion_visc!, assemble the full viscous flux (deviatoric
+    # stress tensor + heat flux, via the problem-side flux_parabolic)
+    # for all equations at once from the gradients of the primitive
+    # variables (rho, u, v, T). Only valid for the 4-equation
+    # total-energy formulation (SOL_VARS_TYPE = TOTAL()); potential
+    # temperature is not supported by flux_parabolic yet.
+    if params.inputs[:entropy_variables]::Bool
+        _viscous_rhs_el_2d_navierstokes!(params.uaux, qe, params.uprimitive,
+                            params.rhs_diffξ_el, params.rhs_diffη_el,
+                            params.rhs_diff_el, params.visc_coeff, params.ω,
+                            Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                            params.metrics.dξdx, params.metrics.dξdy,
+                            params.metrics.dηdx, params.metrics.dηdy,
+                            params.inputs, params.rhs_el,
+                            Int64(params.mesh.nelem), Int64(params.neqs),
+                            connijk, Float64(params.mesh.Δeffective_l),
+                            params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+        return
+    end
+
     # Marras-style Dynamic SGS (DSGS) takes a separate path: the per-
     # element coefficient is precomputed by compute_dsgs_viscosity! and
     # then packed into visc_coeff_dsgs (one entry per equation) before
@@ -1179,6 +1201,47 @@ function _viscous_rhs_el_2d!(uaux, qe, uprimitive,
                              iel, ieq,
                              QT, VT, SD, AD; Δ=Δ)
         end
+    end
+
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
+end
+
+# Typed function barrier for the entropy-stable Navier-Stokes parabolic
+# assembly (mirrors _viscous_rhs_el_2d!): fills uprimitive with
+# (rho, u, v, T) per node and calls the all-equations-at-once
+# _expansion_visc_navierstokes! per element.
+function _viscous_rhs_el_2d_navierstokes!(uaux, qe, uprimitive,
+                             rhs_diffξ_el, rhs_diffη_el,
+                             rhs_diff_el, visc_coeff, ω,
+                             ngl, dψ, Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             inputs, rhs_el,
+                             nelem, neqs,
+                             connijk, Δ,
+                             QT, VT, SD, AD, SOL_VARS_TYPE)
+    for iel = 1:nelem
+        for j = 1:ngl, i=1:ngl
+            ip = connijk[iel,i,j]
+            user_primitives!(@view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(uprimitive[i,j,:]),
+                             SOL_VARS_TYPE)
+        end
+
+        _expansion_visc_navierstokes!(rhs_diffξ_el,
+                                      rhs_diffη_el,
+                                      uprimitive,
+                                      visc_coeff,
+                                      ω,
+                                      ngl,
+                                      dψ,
+                                      Je,
+                                      dξdx, dξdy,
+                                      dηdx, dηdy,
+                                      inputs, rhs_el,
+                                      iel, neqs,
+                                      QT, VT, SD, AD; Δ=Δ)
     end
 
     rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
@@ -2039,7 +2102,90 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                     rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η_flux_kl
                 end
             end
-        end  
+        end
+    end
+end
+
+#
+# Entropy-stable Navier-Stokes parabolic expansion (2D), ported from
+# M. Artiano's ma/ab_dev _expansion_visc_navierstokes!.
+#
+# Computes the gradients of the primitive variables (rho, u, v, T) held
+# in uprimitive and assembles the full viscous flux for all equations
+# at once through the problem-side flux_parabolic (deviatoric stress
+# tensor + heat flux), instead of the per-equation Laplacian of
+# _expansion_visc!. Only defined for the 4-equation total-energy
+# formulation. The gradients/fluxes are local SVectors so the loop is
+# allocation-free (no gradient_dxi/dx_flux scratch arrays needed).
+#
+function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
+                                       uprimitiveieq, visc_coeffieq, ω,
+                                       ngl, dψ, Je,
+                                       dξdx, dξdy,
+                                       dηdx, dηdy,
+                                       inputs, rhs_el,
+                                       iel, neqs,
+                                       QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0)
+
+    Δ2 = Δ^2
+
+    for l = 1:ngl
+        ωl = ω[l]
+        for k = 1:ngl
+
+            @inbounds begin
+                Je_kl = Je[iel,k,l]
+                ωJac  = ω[k]*ωl*Je_kl
+
+                # Gradients of (rho, u, v, T) in reference space:
+                dρdξ = 0.0; dudξ = 0.0; dvdξ = 0.0; dTdξ = 0.0
+                dρdη = 0.0; dudη = 0.0; dvdη = 0.0; dTdη = 0.0
+                @turbo for ii = 1:ngl
+                    dρdξ += dψ[ii,k]*uprimitiveieq[ii,l,1]
+                    dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                    dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                    dTdξ += dψ[ii,k]*uprimitiveieq[ii,l,4]
+
+                    dρdη += dψ[ii,l]*uprimitiveieq[k,ii,1]
+                    dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+                    dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+                    dTdη += dψ[ii,l]*uprimitiveieq[k,ii,4]
+                end
+                dξdx_kl = dξdx[iel,k,l]
+                dξdy_kl = dξdy[iel,k,l]
+                dηdx_kl = dηdx[iel,k,l]
+                dηdy_kl = dηdy[iel,k,l]
+
+                gradient_dx = SVector(dρdξ*dξdx_kl + dρdη*dηdx_kl,
+                                      dudξ*dξdx_kl + dudη*dηdx_kl,
+                                      dvdξ*dξdx_kl + dvdη*dηdx_kl,
+                                      dTdξ*dξdx_kl + dTdη*dηdx_kl)
+                gradient_dy = SVector(dρdξ*dξdy_kl + dρdη*dηdy_kl,
+                                      dudξ*dξdy_kl + dudη*dηdy_kl,
+                                      dvdξ*dξdy_kl + dvdη*dηdy_kl,
+                                      dTdξ*dξdy_kl + dTdη*dηdy_kl)
+
+                u_kl = SVector(uprimitiveieq[k,l,1],
+                               uprimitiveieq[k,l,2],
+                               uprimitiveieq[k,l,3],
+                               uprimitiveieq[k,l,4])
+
+                flux_x = flux_parabolic(u_kl, (gradient_dx, gradient_dy), 1, visc_coeffieq, inputs, Δ2)
+                flux_y = flux_parabolic(u_kl, (gradient_dx, gradient_dy), 2, visc_coeffieq, inputs, Δ2)
+
+                dx_flux = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
+                dy_flux = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
+
+                for i = 1:ngl
+                    dhdξ_ik = dψ[i,k]
+                    dhdη_il = dψ[i,l]
+                    for ieq = 1:4
+                        rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * dx_flux[ieq]
+                        rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * dy_flux[ieq]
+                    end
+                end
+            end
+        end
     end
 end
 
