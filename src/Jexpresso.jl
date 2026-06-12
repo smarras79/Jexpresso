@@ -481,6 +481,26 @@ end
 # the workload to succeed — this is what tripped us up before sod1d
 # was added back).
 @setup_workload begin
+    # The workload below calls MPI.Init() (via run.jl). If precompilation
+    # is triggered from a process that was itself launched by mpiexec —
+    # e.g. a cold-cache `mpiexec -n 3 julia -e 'using Jexpresso; ...'` —
+    # the precompile worker inherits the launcher's PMI/hydra environment
+    # variables (PMI_FD, PMI_RANK, ...). MPICH then attempts a full PMI
+    # handshake against a socket it doesn't own and aborts with
+    # `PMI_Get_appnum returned -1`, failing precompilation on every rank.
+    # Scrub those variables so MPI.Init falls back to singleton init
+    # inside the precompile sandbox, exactly as it does when
+    # `Pkg.precompile()` runs from a plain serial REPL. This only runs
+    # during precompilation (@setup_workload is a no-op otherwise), so
+    # the actual mpiexec-launched compute processes are unaffected.
+    for k in collect(keys(ENV))
+        if startswith(k, "PMI_")    || startswith(k, "PMIX_")  ||
+           startswith(k, "HYDRA_")  || startswith(k, "HYDI_")  ||
+           startswith(k, "MPIEXEC_")|| startswith(k, "OMPI_")  ||
+           startswith(k, "MPI_LOCALRANKID") || startswith(k, "MPI_LOCALNRANKS")
+            delete!(ENV, k)
+        end
+    end
     @compile_workload begin
         push!(empty!(ARGS), "CompEuler", "sod1d", "true")
         include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
