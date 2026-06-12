@@ -18,3 +18,9 @@ mpirun -np 2 ./AlyaProxy/Alya.x \
      : -np 2 -x JEXPRESSO_COUPLED=1 "$JULIA_BIN" --project=. ./src/Jexpresso.jl CompEuler 3dAlya
 
 
+#
+# WITH MPICH on OSX
+#
+julia --project=. -e '
+  using MPI
+  run(`$(mpiexec()) -n 2 ./AlyaProxy/Alya.x : -n 2 -env JEXPRESSO_COUPLED 1 $(Base.julia_cmd()) --project=. src/Jexpresso.jl CompEuler 3dAlya`)'
