@@ -190,6 +190,18 @@ if rank == 0
 end
 
 #--------------------------------------------------------
+# Typed cache of :energy_equation for hot-path callers (user_flux!,
+# user_primitives!, user_uout!). Reading the non-const module-global
+# `inputs` from inside per-quadrature-point loops costs ~38 ns per
+# access and inhibits inlining; a Ref{Bool} const reads in ~2 ns and
+# is type-stable.
+#--------------------------------------------------------
+if !@isdefined(ENERGY_EQUATION_THETA)
+    const ENERGY_EQUATION_THETA = Ref{Bool}(false)
+end
+ENERGY_EQUATION_THETA[] = (inputs[:energy_equation] == "theta")
+
+#--------------------------------------------------------
 # Convert inputs Dict → NamedTuple if the user opted in.
 #
 # Carrying inputs as a NamedTuple removes the per-call dictionary lookups

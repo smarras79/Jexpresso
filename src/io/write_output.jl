@@ -94,18 +94,60 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         #end
     else
         #for iout = 1:size(sol.t[:], 1)
-        title = string("sol at time ", t)
+        title = @sprintf "t = %.4f" t
+        # DSGS runs render the viscosity staircase as one more panel of
+        # the same output time (the per-node broadcast is in μ_dsgs_pnode)
+        μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
             if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
                 KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
             end
         #end
     end
     MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
+end
+
+function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::PNG;
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
+
+    #
+    # 2D PNG of q(t): one colored map per variable and output time.
+    # inputs[:lplot_surf3d] selects the Spline2D-interpolated surface view
+    # (plot_surf3d), otherwise the nodal point map (plot_triangulation) is
+    # used -- the latter is the safer choice for solutions with kinks such
+    # as the shallow water wet/dry front, where a global spline overshoots.
+    #
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+
+    if (inputs[:backend] == CPU())
+        q = sol
+    else
+        q = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
+        KernelAbstractions.copyto!(CPU(), q, sol)
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+    end
+
+    title = @sprintf "t = %.4f s" t
+    if (inputs[:lplot_surf3d])
+        plot_surf3d(SD, mesh, q, title, OUTPUT_DIR;
+                    iout=iout, nvar=nvar,
+                    smoothing_factor=inputs[:smoothing_factor], varnames=varnames)
+    else
+        plot_triangulation(SD, mesh, q, title, OUTPUT_DIR, inputs;
+                           iout=iout, nvar=nvar, varnames=varnames)
+    end
+
+    println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)
 end
 
 

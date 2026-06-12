@@ -2,7 +2,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
 
     """
-    @info " Initialize fields for 1D adv diff ........................ "
+    println(" Initialize fields for 1D adv diff ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -38,7 +38,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         plot_initial(SD, mesh.x, q.qn[:,ivar], ivar, OUTPUT_DIR)
     end
     
-    @info " Initialize fields for 1D adv diff ........................ DONE "
+    println(" Initialize fields for 1D adv diff ........................ DONE ")
     
     return q
 end

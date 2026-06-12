@@ -5,7 +5,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     """
 
             """
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 3D CompEuler with θ equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -52,7 +52,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
             
             
-                # @info param_set
+                # println(param_set)
                 Δθ = 0.0 #K
                 Δqt = 0.0
     
@@ -158,7 +158,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, PhysConst, new_param_set, lpert; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")
     
     return q
 end
@@ -294,7 +294,7 @@ function initialize_bomex!(z, param_set)
         e_pot::FT = _grav * z
         e_tot = TD.total_energy(param_set, TS, e_kin, e_pot)
         bhasCondense = TD.has_condensate(param_set, TS)
-        # @info TS
+        # println(TS)
         Δθ = FT(0.0)
         Δqt = FT(0.0)
         if z < FT(400)
@@ -304,7 +304,7 @@ function initialize_bomex!(z, param_set)
     end
     return ρ, u, v, w, e_tot, Δθ, P, q_tot, Δqt, q_pt.liq
     # if bhasCondense
-    #     @info z, ρ, u, T, θ_liq, θ, q_tot, q_pt.liq, P, bhasCondense
+    #     println(z, ρ, u, T, θ_liq, θ, q_tot, q_pt.liq, P, bhasCondense)
     # end
 end
 

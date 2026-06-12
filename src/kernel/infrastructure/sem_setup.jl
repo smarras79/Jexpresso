@@ -112,7 +112,8 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     
     lexact_integration = inputs[:lexact_integration]
     SOL_VARS_TYPE      = inputs[:SOL_VARS_TYPE]
-    
+    volume_flux        = inputs[:volume_flux]
+
     connijk_original          = zeros(TInt,1,1,1,1)
     poin_in_bdy_face_original = zeros(TInt,1,1,1)
     
@@ -488,10 +489,10 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid,
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid,
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
-        return (; QT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid,
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ξ, ω, matrix, fx, fy, fy_lag, fz, phys_grid,
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     

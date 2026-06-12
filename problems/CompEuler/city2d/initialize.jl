@@ -3,7 +3,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize fields for 2D city2d (flow around buildings) ........................ "
+        println(" Initialize fields for 2D city2d (flow around buildings) ........................ ")
     end
 
     #---------------------------------------------------------------------------------
@@ -90,7 +90,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
 
     if rank == 0
-        @info " Initialize fields for 2D city2d (flow around buildings) ........................ DONE "
+        println(" Initialize fields for 2D city2d (flow around buildings) ........................ DONE ")
     end
 
     return q

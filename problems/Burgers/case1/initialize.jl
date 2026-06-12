@@ -6,7 +6,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
 
         which steepens and forms a (viscosity-smoothed) shock.
     """
-    @info " Initialize fields for 1D viscous Burgers ................... "
+    println(" Initialize fields for 1D viscous Burgers ................... ")
 
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -37,7 +37,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         end
     end
 
-    @info " Initialize fields for 1D viscous Burgers ................... DONE "
+    println(" Initialize fields for 1D viscous Burgers ................... DONE ")
 
     return q
 end

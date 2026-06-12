@@ -13,7 +13,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize fields for 2D Shallow Water TC2 (Inertia-Gravity Wave) ..."
+        println(" Initialize fields for 2D Shallow Water TC2 (Inertia-Gravity Wave) ...")
     end
 
     #---------------------------------------------------------------------------------
@@ -31,7 +31,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         Ly = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm) - MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
 
         if rank == 0
-            @info "  Domain size: Lx = $Lx m, Ly = $Ly m"
+            println("  Domain size: Lx = $Lx m, Ly = $Ly m")
         end
 
         #---------------------------------------------------------------------------------
@@ -62,8 +62,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         if rank == 0
             T1 = 2π / ω1
             T2 = 2π / ω2
-            @info "  Mode 1: kx=$(kx1), ky=$(ky1), ω=$(ω1), T=$(T1/3600) h"
-            @info "  Mode 2: kx=$(kx2), ky=$(ky2), ω=$(ω2), T=$(T2/3600) h"
+            println("  Mode 1: kx=$(kx1), ky=$(ky1), ω=$(ω1), T=$(T1/3600) h")
+            println("  Mode 2: kx=$(kx2), ky=$(ky2), ω=$(ω2), T=$(T2/3600) h")
         end
 
         for ip = 1:mesh.npoin
@@ -97,7 +97,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
 
     if rank == 0
-        @info " Initialize fields for 2D Shallow Water TC2 (Inertia-Gravity Wave) ... DONE"
+        println(" Initialize fields for 2D Shallow Water TC2 (Inertia-Gravity Wave) ... DONE")
     end
 
     return q

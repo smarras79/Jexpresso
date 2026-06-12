@@ -2,7 +2,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     """
 
             """
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 3D CompEuler with θ equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -167,8 +167,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, background, mesh.x, mesh.y, mesh.z, xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    @info maximum(q.qe[:,end]), minimum(q.qe[:,end])
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    println(maximum(q.qe[:,end]), minimum(q.qe[:,end]))
+    println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")
     return q
 end
 

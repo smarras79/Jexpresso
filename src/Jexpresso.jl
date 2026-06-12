@@ -14,7 +14,7 @@ using KernelAbstractions
 # UnicodePlots, Geodesy) and were not referenced anywhere in the source
 # tree. Removed to cut the per-rank baseline. Re-add at the REPL if
 # you need them interactively.
-# using Revise
+ using Revise
 # using BenchmarkTools
 using Dates
 using CSV, DataFrames

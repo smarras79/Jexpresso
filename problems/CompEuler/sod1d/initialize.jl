@@ -1,5 +1,5 @@
 function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
-    @info " Initialize fields for 1D CompEuler (sod1d: shock tube) ............ "
+    println(" Initialize fields for 1D CompEuler (sod1d: shock tube) ............ ")
 
     PhysConst = PhysicalConst{Float64}()
     γ = PhysConst.γ
@@ -39,7 +39,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         end
     end
 
-    @info " Initialize fields for 1D CompEuler (sod1d: shock tube) ............ DONE "
+    println(" Initialize fields for 1D CompEuler (sod1d: shock tube) ............ DONE ")
 
     return q
 end

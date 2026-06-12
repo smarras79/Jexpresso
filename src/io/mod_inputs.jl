@@ -245,7 +245,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :plot_hlines))
       inputs[:plot_hlines] = "empty"
     end
-    
+
+    # Colormap for the 2D PNG writer (any ColorSchemes.jl name). The
+    # default is cmocean's desaturated diverging "balance", which renders
+    # wave fields better than highly saturated maps like viridis.
+    if(!haskey(inputs, :plot_colormap))
+      inputs[:plot_colormap] = :balance
+    end
+
+    # PNG writers: true (default) renders all variables of an output time
+    # as ONE plot-matrix figure -- the gksqt window is updated in place and
+    # fields-it<n>.png is written. false writes one silent PNG per variable
+    # instead (<var>-it<n>.png) and opens no window; see render_plot_matrix
+    # in jeplots.jl for why the two modes are mutually exclusive under GR.
+    if(!haskey(inputs, :plot_matrix))
+      inputs[:plot_matrix] = true
+    end
+
     if(!haskey(inputs, :plot_axis))
       inputs[:plot_axis] = "empty"
     end
@@ -702,14 +718,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     if inputs[:lkep] == true
         if(!haskey(inputs, :volume_flux))
-            inputs[:volume_flux] = "ranocha"
+            inputs[:volume_flux] = ranocha()
         end
     else
         if(!haskey(inputs, :volume_flux))
             inputs[:volume_flux] = nothing
         end
     end
-    
+
+    if(!haskey(inputs, :entropy_variables))
+        inputs[:entropy_variables] = false
+    end
+
     #
     # saturation adjustment:
     #
