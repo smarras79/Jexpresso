@@ -124,6 +124,8 @@ include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
 
 include(joinpath( "kernel", "physics", "turbul.jl"))
 
+include(joinpath( "kernel", "physics", "sgsStructs.jl"))
+
 include(joinpath( "kernel", "physics", "SGS.jl"))
 
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))

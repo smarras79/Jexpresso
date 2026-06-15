@@ -1027,7 +1027,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                         params.mesh.elem_to_face, params.mesh.bdy_face_type,
                         params.μ_max, Int64(params.mesh.nelem), Int64(params.neqs),
                         params.mesh.ad_lvl, connijk, Float64(params.mesh.Δeffective_l),
-                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE,
+                        params.sgs, params.mp)
 end
 
 function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
@@ -1043,12 +1044,14 @@ function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
                              elem_to_face, bdy_face_type,
                              μ_max, nelem, neqs,
                              ad_lvl, connijk, Δ,
-                             QT, VT, SD, AD, SOL_VARS_TYPE)
+                             QT, VT, SD, AD, SOL_VARS_TYPE,
+                             sgs, mp)
     # TODO: route lrichardson through inputs (was hardcoded `true` in the
     # un-barriered version; keep that behaviour for now to preserve
     # numerical results).
     lrichardson = true
     Δ_effective = Δ
+    micro = size(mp.Tabs, 1)
 
     for iel = 1:nelem
         Δ_effective = calculate_effective_delta(Δ, ad_lvl[iel])
@@ -1059,6 +1062,16 @@ function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
                              @view(qe[ip,:]),
                              @view(uprimitive[i,j,k,:]),
                              SOL_VARS_TYPE)
+        end
+
+        if sgs isa AbstractSGSModel
+            compute_sgs_cache!(sgs, uprimitive, mp, uaux,
+                               ngl, dψ,
+                               dξdx, dξdy, dξdz,
+                               dηdx, dηdy, dηdz,
+                               dζdx, dζdy, dζdz,
+                               connijk_mesh, iel, Δ_effective^2,
+                               micro, lrichardson, SD)
         end
 
         for ieq = 1:neqs

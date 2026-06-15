@@ -245,6 +245,8 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     PhysConst = PhysicalConst{TFloat}()
     thermo_params = create_updated_TD_Parameters(PhysConst.potential_temperature_reference_pressure)
+    sgs        = allocate_SGS(sem.mesh.npoin, TFloat, backend, PhysConst, inputs[:visc_model])
+    sgs_stress = zeros(TFloat, Int64(sem.mesh.npoin), 12)
     
     #------------------------------------------------------------------------------------
     # Populate solution arrays
@@ -316,8 +318,9 @@ function params_setup(sem,
     # LES statistics z-level cache (computed once, shared across timesteps)
     nprofiles        = length(inputs[:lesprofile_vars])
     nstress          = length(inputs[:lesstress_vars])
-    les_stat_cache   = build_les_stat_cache(sem.mesh, nprofiles, nstress, TFloat, backend)
-    les_cross_section = build_les_cross_section(sem.mesh, sem.basis, nprofiles, nstress, TFloat)
+    les_stat_cache    = build_les_stat_cache(sem.mesh, nprofiles, nstress, TFloat, backend)
+    les_cross_section = build_les_cross_section(sem.mesh, nprofiles, nstress, TFloat)
+    les_bottom_cache  = build_les_bottom_cache(sem.mesh, sem.metrics, inputs)
 
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
@@ -358,6 +361,9 @@ function params_setup(sem,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
                   les_stat_cache,
                   les_cross_section,
+                  les_bottom_cache,
+                  sgs,
+                  sgs_stress,
                   timers,
                   coupling = coupling)
 
@@ -392,6 +398,9 @@ function params_setup(sem,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   les_stat_cache,
                   les_cross_section,
+                  les_bottom_cache,
+                  sgs,
+                  sgs_stress,
                   OUTPUT_DIR,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute,

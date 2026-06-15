@@ -18,8 +18,129 @@ Base.@kwdef mutable struct LESStatCache{T <: AbstractFloat, nz, dims_buf, dims_s
     local_online_stress  ::VT2  = KernelAbstractions.zeros(backend, T, dims_stress...)
     global_online_sum    ::VT2  = KernelAbstractions.zeros(backend, T, dims_buf...)
     global_online_stress ::VT2  = KernelAbstractions.zeros(backend, T, dims_stress...)
+    # scratch buffers for fill_sgs_cache! — pre-allocated to avoid per-call heap allocation
+    sgs_uprim  ::Array{Float64,4} = zeros(Float64, 1, 1, 1, 1)
+    sgs_ncount ::Vector{Int32}    = Int32[]
 end
 
+
+# ---- Bottom-wall u* cache ----
+mutable struct LESBottomCache
+    x_coords           ::Vector{Float64}       # nx sorted x-positions at bottom wall
+    wall_groups        ::Vector{Vector{Int64}} # local owned ip1 (first-wall-node) indices per x
+    z_inside           ::Dict{Int64,Float64}   # ip1 → normal distance from surface (|Δcoords·n̂|)
+    npts_per_x         ::Vector{Int64}         # global y-count per x
+    z0_m               ::Float64               # aerodynamic roughness length [m]
+    κ_v                ::Float64               # von Kármán constant
+    # explicit-path accumulation (Allreduce per step, consistent with horizontal_mean!)
+    sum_ustar          ::Vector{Float64}       # time-accumulated y-mean u*(x), rank-0 valid
+    n_samples          ::Int
+    # online-path accumulation (local only; Allreduce at finalization)
+    local_ustar_online ::Vector{Float64}       # local accumulated sum over all steps and y-nodes
+    n_online_samples   ::Int
+    # scratch buffers — pre-allocated to avoid per-call heap allocation
+    local_step         ::Vector{Float64}
+    global_step        ::Vector{Float64}
+end
+
+"""
+    build_les_bottom_cache(mesh, inputs)
+
+Build `LESBottomCache` by scanning boundary faces tagged "MOST" to identify
+first-wall-layer nodes above the surface, exactly as `BCs.jl` does.
+
+`z_inside` per node mirrors the `z_inside` in `BCs.jl` (line 761):
+    z_inside = |Δcoords · n̂|   (normal distance from surface node to first-wall node)
+
+Returns `nothing` if `:lwall_model` is false or no MOST faces are found.
+"""
+function build_les_bottom_cache(mesh, metrics, inputs)
+    get(inputs, :lwall_model, false) || return nothing
+
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+
+    ifirst_wall_node = get(inputs, :ifirst_wall_node_index, 2)::Int
+    z0_m = Float64(get(inputs, :z0_m, 0.1))
+    PhysConst_b = PhysicalConst{Float64}()
+    κ_v = PhysConst_b.karman
+
+    coords       = Array(mesh.coords)      # (npoin, 3)
+    gip2owner    = Array(mesh.gip2owner)
+    connijk_arr  = Array(mesh.connijk)
+    poin_bdy     = Array(mesh.poin_in_bdy_face)
+    face_in_elem = Array(mesh.bdy_face_in_elem)
+    face_type    = mesh.bdy_face_type
+    # For Laguerre meshes sem.metrics is a tuple; take first element
+    met          = metrics isa Tuple ? metrics[1] : metrics
+    metrics_nx   = Array(met.nx)           # (nfaces_bdy, ngl, ngl)
+    metrics_ny   = Array(met.ny)
+    metrics_nz   = Array(met.nz)
+    nfaces_bdy   = mesh.nfaces_bdy
+    ngl          = mesh.ngl
+
+    xr = round.(coords[:, 1]; digits=6)
+
+    # Scan MOST faces; mirror BCs.jl exactly:
+    #   ip_sfc = bottom surface node (connijk[e,i,j,1])
+    #   ip1    = first-wall-layer node (connijk[e,i,j,ifirst_wall_node])
+    #   z_inside[ip1] = |Δcoords · n̂|  (same formula as BCs.jl line 761)
+    x_to_ip1   = Dict{Float64, Vector{Int64}}()
+    ip1_zin    = Dict{Int64,   Float64}()      # ip1 → z_inside
+
+    for iface in 1:nfaces_bdy
+        face_type[iface] == "MOST" || continue
+        e = face_in_elem[iface]
+        for i in 1:ngl, j in 1:ngl
+            ip_sfc = poin_bdy[iface, i, j]
+            gip2owner[ip_sfc] == rank || continue
+            ip1 = connijk_arr[e, i, j, ifirst_wall_node]
+            nx_f = metrics_nx[iface, i, j]
+            ny_f = metrics_ny[iface, i, j]
+            nz_f = metrics_nz[iface, i, j]
+            Δx = coords[ip1, 1] - coords[ip_sfc, 1]
+            Δy = coords[ip1, 2] - coords[ip_sfc, 2]
+            Δz = coords[ip1, 3] - coords[ip_sfc, 3]
+            z_in = abs(Δx*nx_f + Δy*ny_f + Δz*nz_f)
+            ip1_zin[ip1] = z_in
+            xk = xr[ip_sfc]
+            push!(get!(x_to_ip1, xk, Int64[]), ip1)
+        end
+    end
+
+    # Gather unique x-coords globally
+    local_xs  = sort(collect(keys(x_to_ip1)))
+    all_xs    = MPI.gather(local_xs, comm)
+    if rank == 0
+        x_flat = sort(unique(vcat(all_xs...)))
+    else
+        x_flat = Float64[]
+    end
+    nx_global = MPI.bcast(rank == 0 ? length(x_flat) : 0, 0, comm)
+    rank != 0 && resize!(x_flat, nx_global)
+    MPI.Bcast!(x_flat, 0, comm)
+
+    nx       = nx_global
+    x_coords = x_flat
+
+    wall_groups  = Vector{Vector{Int64}}(undef, nx)
+    local_counts = zeros(Int64, nx)
+    for ix in 1:nx
+        ids = get(x_to_ip1, x_coords[ix], Int64[])
+        wall_groups[ix]  = ids
+        local_counts[ix] = length(ids)
+    end
+    npts_per_x = zeros(Int64, nx)
+    MPI.Allreduce!(local_counts, npts_per_x, MPI.SUM, comm)
+
+    return LESBottomCache(
+        x_coords, wall_groups, ip1_zin, npts_per_x,
+        z0_m, κ_v,
+        zeros(Float64, nx), 0,
+        zeros(Float64, nx), 0,
+        zeros(Float64, nx), zeros(Float64, nx)
+    )
+end
 
 # ---- Spectral cache: element-wise Lagrange interpolation GLL → uniform y-grid ----
 mutable struct LESSpectralCache
@@ -47,6 +168,10 @@ Base.@kwdef mutable struct LESCrossSection{T <: AbstractFloat}
     xz_cells     ::Vector{NTuple{4,Int64}}          # quad corner indices (into xz_coords)
     # spectral cache (built once; nothing if spectra disabled)
     spec_cache   ::Union{Nothing, LESSpectralCache}
+    # temporal accumulation of spectra (rank-0 only; nothing until spec_cache is built)
+    n_spec_samples::Int
+    sum_spectra  ::Union{Nothing, Array{Float64,3}}  # (nxz, nk, 4), rank-0 only
+    kappa_global ::Union{Nothing, Vector{Float64}}   # (nk,), filled on first call
     # online accumulation (Approach 2): local running sums per time step, Allreduce only at end
     n_online_samples     ::Int
     local_online_mean    ::Matrix{T}
@@ -105,17 +230,172 @@ function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
     copyto!(cache.z_levels,   z_levels)
     copyto!(cache.z_groups,   z_groups)
     copyto!(cache.npts_per_z, npts_per_z)
+    cache.sgs_uprim  = zeros(Float64, mesh.ngl, mesh.ngl, mesh.ngl, 5)
+    cache.sgs_ncount = zeros(Int32, mesh.npoin)
     return cache
 end
 
 """
-    horizontal_mean!(cache, uaux, qe, ET, comm)
+    fill_sgs_cache!(params)
+
+Loop over all elements, compute velocity and temperature gradients at each GLL
+point, call `compute_sij_and_mu_turb` (dispatches on SMAG/VREM), and fill
+`params.sgs_stress[ip, 1:12]`:
+  [1:6]  → kinematic SGS momentum stress components −2ν_t Sij  (m²/s²)
+  [7]    → 0 (tptp_sfs, not modeled in Smagorinsky/Vreman)
+  [8:10] → SGS heat-flux components −κ_t ∂θ/∂xᵢ  (K·m/s)
+  [11]   → TKE dissipation rate ε = 2ν_eff Sij Sij  (m²/s³)
+  [12]   → scalar-variance dissipation rate εθ = κ_eff |∇θ|²  (K²/s)
+Called once per statistics output step (Approach 1), not every time step.
+"""
+function fill_sgs_cache!(params)
+    isnothing(params.les_stat_cache) && return
+    VT = params.VT
+    (VT isa SMAG || VT isa VREM) || return
+
+    sgs_stress = params.sgs_stress
+    uaux       = params.uaux
+    qe         = params.qp.qe
+    mesh       = params.mesh
+    connijk    = mesh.connijk
+    ngl        = mesh.ngl
+    nelem      = mesh.nelem
+    npoin      = mesh.npoin
+    dψ         = params.basis.dψ
+    dξdx = params.metrics.dξdx;  dξdy = params.metrics.dξdy;  dξdz = params.metrics.dξdz
+    dηdx = params.metrics.dηdx;  dηdy = params.metrics.dηdy;  dηdz = params.metrics.dηdz
+    dζdx = params.metrics.dζdx;  dζdy = params.metrics.dζdy;  dζdz = params.metrics.dζdz
+    Δ        = Float64(mesh.Δeffective_l)
+    ad_lvl   = mesh.ad_lvl
+    PhysConst = PhysicalConst{Float64}()
+    Pr_t = PhysConst.Pr_t;  μ_mol = PhysConst.μ_mol;  κ_mol = PhysConst.κ_mol
+    ET   = params.SOL_VARS_TYPE
+
+    uprim  = params.les_stat_cache.sgs_uprim
+    # Track how many elements contribute to each node's gradient estimate.
+    # At shared boundary nodes, adjacent elements give different gradient values
+    # (CG continuity guarantees continuous solution but not continuous derivative).
+    # We average all element contributions so that boundary nodes get the
+    # mean gradient from both sides rather than the last-writer's value.
+    ncount = params.les_stat_cache.sgs_ncount
+
+    _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
+                     dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                     ad_lvl, Δ, PhysConst, Pr_t, μ_mol, κ_mol,
+                     ngl, nelem, npoin, VT, ET)
+end
+
+function _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
+                           dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                           ad_lvl, Δ, PhysConst, Pr_t, μ_mol, κ_mol,
+                           ngl, nelem, npoin, VT, ET)
+    fill!(sgs_stress, 0.0)
+    fill!(ncount, Int32(0))
+
+    for iel in 1:nelem
+        Δ2 = (ldexp(Δ, -ad_lvl[iel]))^2
+
+        for k in 1:ngl, j in 1:ngl, i in 1:ngl
+            ip = connijk[iel,i,j,k]
+            if ET == PERT()
+                ρ = uaux[ip,1] + qe[ip,1]
+                uprim[i,j,k,1] = ρ
+                uprim[i,j,k,2] = uaux[ip,2] / ρ
+                uprim[i,j,k,3] = uaux[ip,3] / ρ
+                uprim[i,j,k,4] = uaux[ip,4] / ρ
+                uprim[i,j,k,5] = (uaux[ip,5]+qe[ip,5])/ρ - qe[ip,5]/qe[ip,1]
+            else
+                ρ = uaux[ip,1]
+                uprim[i,j,k,1] = ρ
+                uprim[i,j,k,2] = uaux[ip,2] / ρ
+                uprim[i,j,k,3] = uaux[ip,3] / ρ
+                uprim[i,j,k,4] = uaux[ip,4] / ρ
+                uprim[i,j,k,5] = uaux[ip,5] / ρ
+            end
+        end
+
+        for k in 1:ngl, j in 1:ngl, i in 1:ngl
+            ip = connijk[iel,i,j,k]
+            ρ  = uprim[i,j,k,1]
+
+            dudξ=0.0; dudη=0.0; dudζ=0.0
+            dvdξ=0.0; dvdη=0.0; dvdζ=0.0
+            dwdξ=0.0; dwdη=0.0; dwdζ=0.0
+            dθdξ=0.0; dθdη=0.0; dθdζ=0.0
+            for ii in 1:ngl
+                dudξ += dψ[ii,i]*uprim[ii,j,k,2];  dudη += dψ[ii,j]*uprim[i,ii,k,2];  dudζ += dψ[ii,k]*uprim[i,j,ii,2]
+                dvdξ += dψ[ii,i]*uprim[ii,j,k,3];  dvdη += dψ[ii,j]*uprim[i,ii,k,3];  dvdζ += dψ[ii,k]*uprim[i,j,ii,3]
+                dwdξ += dψ[ii,i]*uprim[ii,j,k,4];  dwdη += dψ[ii,j]*uprim[i,ii,k,4];  dwdζ += dψ[ii,k]*uprim[i,j,ii,4]
+                dθdξ += dψ[ii,i]*uprim[ii,j,k,5];  dθdη += dψ[ii,j]*uprim[i,ii,k,5];  dθdζ += dψ[ii,k]*uprim[i,j,ii,5]
+            end
+
+            Jdξdx=dξdx[iel,i,j,k]; Jdξdy=dξdy[iel,i,j,k]; Jdξdz=dξdz[iel,i,j,k]
+            Jdηdx=dηdx[iel,i,j,k]; Jdηdy=dηdy[iel,i,j,k]; Jdηdz=dηdz[iel,i,j,k]
+            Jdζdx=dζdx[iel,i,j,k]; Jdζdy=dζdy[iel,i,j,k]; Jdζdz=dζdz[iel,i,j,k]
+
+            dudx = dudξ*Jdξdx + dudη*Jdηdx + dudζ*Jdζdx
+            dudy = dudξ*Jdξdy + dudη*Jdηdy + dudζ*Jdζdy
+            dudz = dudξ*Jdξdz + dudη*Jdηdz + dudζ*Jdζdz
+            dvdx = dvdξ*Jdξdx + dvdη*Jdηdx + dvdζ*Jdζdx
+            dvdy = dvdξ*Jdξdy + dvdη*Jdηdy + dvdζ*Jdζdy
+            dvdz = dvdξ*Jdξdz + dvdη*Jdηdz + dvdζ*Jdζdz
+            dwdx = dwdξ*Jdξdx + dwdη*Jdηdx + dwdζ*Jdζdx
+            dwdy = dwdξ*Jdξdy + dwdη*Jdηdy + dwdζ*Jdζdy
+            dwdz = dwdξ*Jdξdz + dwdη*Jdηdz + dwdζ*Jdζdz
+            dθdx = dθdξ*Jdξdx + dθdη*Jdηdx + dθdζ*Jdζdx
+            dθdy = dθdξ*Jdξdy + dθdη*Jdηdy + dθdζ*Jdζdy
+            dθdz = dθdξ*Jdξdz + dθdη*Jdηdz + dθdζ*Jdζdz
+
+            μ_t, S11, S22, S33, S12, S13, S23, SijSij =
+                compute_sij_and_mu_turb(ρ, dudx, dudy, dudz,
+                                        dvdx, dvdy, dvdz,
+                                        dwdx, dwdy, dwdz,
+                                        PhysConst, Δ2, VT)
+
+            ν_t   = μ_t / ρ
+            κ_t   = μ_t / (ρ * Pr_t)
+            ν_eff = μ_mol/ρ + ν_t
+            κ_eff = κ_mol + κ_t
+
+            sgs_stress[ip, 1]  += -2 * ν_t * S11
+            sgs_stress[ip, 2]  += -2 * ν_t * S12
+            sgs_stress[ip, 3]  += -2 * ν_t * S13
+            sgs_stress[ip, 4]  += -2 * ν_t * S22
+            sgs_stress[ip, 5]  += -2 * ν_t * S23
+            sgs_stress[ip, 6]  += -2 * ν_t * S33
+            # sgs_stress[ip, 7] stays 0 (θθ sfs not modeled in Smagorinsky/Vreman)
+            sgs_stress[ip, 8]  += -κ_t * dθdx
+            sgs_stress[ip, 9]  += -κ_t * dθdy
+            sgs_stress[ip, 10] += -κ_t * dθdz
+            sgs_stress[ip, 11] += 2 * ν_eff * SijSij
+            sgs_stress[ip, 12] += κ_eff * (dθdx*dθdx + dθdy*dθdy + dθdz*dθdz)
+            ncount[ip] += one(Int32)
+        end
+    end
+
+    # Average contributions at shared element-boundary nodes so that
+    # gradient-derived SGS quantities are the mean of all adjacent elements
+    # rather than the last writer's value.
+    @inbounds for ip in 1:npoin
+        n = ncount[ip]
+        n < 2 && continue
+        inv_n = 1.0 / n
+        for c in 1:12
+            sgs_stress[ip, c] *= inv_n
+        end
+    end
+end
+
+"""
+    horizontal_mean!(cache, uaux, qe, sgs_stress, ET, comm)
 
 For each z-level, call `user_les_profiles!` at every local point to accumulate
 all profile sums into `cache.local_sum` (nz × nprofiles), then perform a single
 `MPI.Allreduce!` and divide by `npts_per_z`. Results are stored in `cache.global_sum`.
+SFS stress components (prof[11:20]) and dissipation rates (prof[24:25]) are
+overridden from the pre-computed `sgs_stress` array after the user callback.
 """
-function horizontal_mean!(cache, uaux, qe, ET, comm)
+function horizontal_mean!(cache, uaux, qe, sgs_stress, ET, comm)
     nz        = length(cache.z_levels)
     nprofiles = size(cache.local_sum,    2)
     nstress   = size(cache.local_stress, 2)
@@ -127,7 +407,7 @@ function horizontal_mean!(cache, uaux, qe, ET, comm)
 
     for iz in 1:nz
         for ip in cache.z_groups[iz]
-            user_les_profiles!(means_buf, prof_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
+            user_les_profiles!(means_buf, prof_buf, @view(uaux[ip,:]), @view(qe[ip,:]), @view(sgs_stress[ip,:]), ET)
             for k in 1:nprofiles
                 cache.local_sum[iz, k] += means_buf[k]
             end
@@ -180,31 +460,80 @@ function les_statistics(u, params, ::Any)
     npoin = mesh.npoin
     neqs  = params.neqs
     cache = params.les_stat_cache
-    ET    = params.inputs[:SOL_VARS_TYPE]
-    comm = get_mpi_comm()
+    ET    = params.SOL_VARS_TYPE
+    comm  = get_mpi_comm()
 
     uaux = params.uaux
     qe   = params.qp.qe
     u2uaux!(@view(uaux[:,:]), u, neqs, npoin)
 
-    # Single pass: accumulate means + raw products, two Allreduces
-    horizontal_mean!(cache, uaux, qe, ET, comm)
-    # Post-reduction: convert raw products → fluctuation statistics (no MPI)
-    horizontal_stress!(cache)
+    # Fill SGS stress/dissipation cache (gradient computation at statistics time)
+    fill_sgs_cache!(params)
+    sgs_stress = params.sgs_stress
 
-    # Temporal accumulation for 1D profiles
+    # Single pass: accumulate means + raw products, two Allreduces
+    horizontal_mean!(cache, uaux, qe, sgs_stress, ET, comm)
+    # Accumulate raw products (NOT yet fluctuations) so that Reynolds decomposition
+    # can be applied once at finalization using the long-time mean as reference.
+    # Applying decomposition per-snapshot and then time-averaging gives
+    # <u²>_{t,y} - <<u>_y²>_t  ≠  <u²>_{t,y} - <u>_{t,y}²  (wrong for coarse meshes).
     cache.sum_global_sum    .+= cache.global_sum
     cache.sum_global_stress .+= cache.global_stress
     cache.n_samples         += 1
 
     # XZ cross section (y-averaged 2D fields)
+    # Bottom-wall u*(x): replicate BCs.jl/CM_MOST! — wall-normal velocity is projected
+    # out before computing speed, then u* = κ_v * |u_tangential| / ln(z_inside/z0_m).
+    # For flat terrain (n = (0,0,1)) the tangential speed reduces to sqrt(u²+v²).
+    bc = params.les_bottom_cache
+    if !isnothing(bc)
+        nx_bc       = length(bc.x_coords)
+        local_step  = bc.local_step
+        global_step = bc.global_step
+        fill!(local_step,  0.0)
+        fill!(global_step, 0.0)
+        for ix in 1:nx_bc
+            for ip1 in bc.wall_groups[ix]
+                z_in = get(bc.z_inside, ip1, bc.z0_m * 10.0)
+                z_in <= bc.z0_m && continue
+                if ET == PERT()
+                    ρ = uaux[ip1,1] + qe[ip1,1]
+                    u = (uaux[ip1,2] + qe[ip1,2]) / ρ
+                    v = (uaux[ip1,3] + qe[ip1,3]) / ρ
+                else
+                    ρ = uaux[ip1,1]
+                    u = uaux[ip1,2] / ρ
+                    v = uaux[ip1,3] / ρ
+                end
+                local_step[ix] += bc.κ_v * sqrt(u*u + v*v) / log(z_in / bc.z0_m)
+            end
+        end
+        MPI.Allreduce!(local_step, global_step, MPI.SUM, comm)
+        if MPI.Comm_rank(comm) == 0
+            for ix in 1:nx_bc
+                npts = bc.npts_per_x[ix]
+                npts > 0 && (bc.sum_ustar[ix] += global_step[ix] / npts)
+            end
+        end
+        bc.n_samples += 1
+    end
+
     cs = params.les_cross_section
     if !isnothing(cs)
-        compute_xz_cross_section!(cs, uaux, qe, ET, comm)
+        compute_xz_cross_section!(cs, uaux, qe, sgs_stress, ET, comm)
         # Temporal accumulation for xz cross-sections
         cs.sum_mean   .+= cs.global_mean
         cs.sum_stress .+= cs.global_stress
         cs.n_samples  += 1
+
+        # Spectra disabled — uncomment when FFTW is loaded
+        # spec_result = compute_les_spectra!(cs, uaux, qe, mesh, ET, comm, params)
+        # if spec_result isa Tuple && !isnothing(spec_result[1]) && !isnothing(cs.sum_spectra)
+        #     all_spec, kappa = spec_result
+        #     cs.sum_spectra .+= all_spec
+        #     cs.n_spec_samples == 0 && (cs.kappa_global .= kappa)
+        #     cs.n_spec_samples += 1
+        # end
     end
 end
 
@@ -213,7 +542,7 @@ end
 # ================================================================================
 
 """
-    build_les_spectral_cache(cs, mesh, basis)
+    build_les_spectral_cache(cs, mesh)
 
 Build a `LESSpectralCache`:
   - Uses global point count from `cs.npts_per_xz` (set by Allreduce in
@@ -222,7 +551,7 @@ Build a `LESSpectralCache`:
   - Precomputes the Lagrange interpolation matrix from GLL points to
     equally-spaced points (dy = dy_el/(ngl-1)) within each element.
 """
-function build_les_spectral_cache(cs::LESCrossSection, mesh, basis)
+function build_les_spectral_cache(cs::LESCrossSection, mesh)
     ngl = mesh.ngl
 
     # Use global count — npts_per_xz is already Allreduced across all ranks
@@ -231,8 +560,9 @@ function build_les_spectral_cache(cs::LESCrossSection, mesh, basis)
     N_unif = nel_y * (ngl - 1) + 1
     nk     = N_unif ÷ 2 + 1
 
-    # GLL reference points ξ ∈ [-1,1] from the SEM basis
-    ξ_gll  = Array(basis.ξ)  # length ngl
+    # GLL reference points ξ ∈ [-1,1]: St_Lagrange only stores ψ/dψ, not ξ.
+    # Recompute the LGL nodes from ngl — same nodes used to build the basis.
+    ξ_gll = Array(basis_structs_ξ_ω!(LGL(), ngl - 1, CPU()).ξ)
 
     # Uniformly spaced reference points: η_i = -1 + 2(i-1)/(ngl-1)
     η_unif = [-1.0 + 2.0*(i-1)/(ngl-1) for i in 1:ngl]
@@ -388,7 +718,7 @@ function compute_les_spectra!(cs, uaux, qe, mesh, ET, comm, params)
 end
 
 
-function build_les_cross_section(mesh, basis, nprofiles::Int, nstress::Int, T)
+function build_les_cross_section(mesh, nprofiles::Int, nstress::Int, T)
     nprofiles == 0 && return nothing
 
     comm = get_mpi_comm()
@@ -515,22 +845,30 @@ function build_les_cross_section(mesh, basis, nprofiles::Int, nstress::Int, T)
         zeros(T, nxz, nprofiles), zeros(T, nxz, nstress),
         xz_cells,
         nothing,
+        0, nothing, nothing,
         0,
         zeros(T, nxz, nprofiles), zeros(T, nxz, nstress),
         zeros(T, nxz, nprofiles), zeros(T, nxz, nstress)
     )
-    # cs.spec_cache = build_les_spectral_cache(cs, mesh, basis)
+    cs.spec_cache = build_les_spectral_cache(cs, mesh)
+    if !isnothing(cs.spec_cache) && MPI.Comm_rank(get_mpi_comm()) == 0
+        nk = cs.spec_cache.nk
+        cs.sum_spectra  = zeros(Float64, nxz, nk, 4)
+        cs.kappa_global = zeros(Float64, nk)
+    end
     return cs
 end
 
 """
-    compute_xz_cross_section!(cs, uaux, qe, ET, comm)
+    compute_xz_cross_section!(cs, uaux, qe, sgs_stress, ET, comm)
 
 Two-pass y-averaging on the xz plane:
   Pass 1 — y-average of profiles via `user_les_profiles!` → `cs.global_mean`
   Pass 2 — y-average of stress products via `user_les_stress!` → `cs.global_stress`
+SFS stress components (stress_buf[11:20]) and dissipation rates ([24:25]) are
+overridden from `sgs_stress` after the user callback.
 """
-function compute_xz_cross_section!(cs, uaux, qe, ET, comm)
+function compute_xz_cross_section!(cs, uaux, qe, sgs_stress, ET, comm)
     nxz       = length(cs.xz_coords)
     nprofiles = size(cs.local_mean,   2)
     nstress   = size(cs.local_stress, 2)
@@ -540,7 +878,7 @@ function compute_xz_cross_section!(cs, uaux, qe, ET, comm)
     fill!(cs.local_stress, 0.0)
     for ixz in 1:nxz
         for ip in cs.xz_groups[ixz]
-            user_les_profiles!(cs.prof_buf, cs.stress_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
+            user_les_profiles!(cs.prof_buf, cs.stress_buf, @view(uaux[ip,:]), @view(qe[ip,:]), @view(sgs_stress[ip,:]), ET)
             for k in 1:nprofiles
                 cs.local_mean[ixz, k] += cs.prof_buf[k]
             end
@@ -561,16 +899,9 @@ function compute_xz_cross_section!(cs, uaux, qe, ET, comm)
         end
     end
 
-    # Post-process: convert averaged raw products → fluctuation statistics in-place
-    profp = cs.stress_buf  # scratch (length nstress)
-    for ixz in 1:nxz
-        means = @view cs.global_mean[ixz, :]
-        prof  = @view cs.global_stress[ixz, :]
-        user_les_stress!(profp, prof, means)
-        for k in 1:nstress
-            cs.global_stress[ixz, k] = profp[k]
-        end
-    end
+    # Do NOT apply user_les_stress! here: raw products are left in cs.global_stress
+    # so that les_finalize! can apply Reynolds decomposition once using the
+    # long-time mean (sum_mean/ns) rather than per-snapshot y-means.
 end
 
 function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing, kappa_global=nothing)
@@ -610,14 +941,24 @@ function write_xz_cross_section_vtk(cs, params, time, iout, all_spectra=nothing,
     # append_pvd_entry(pvd_path, time, basename(outfiles[1]))
 
     # ---- time-averaged xz (running average, overwritten each call) ----
+    # Apply Reynolds decomposition using long-time y-mean to avoid per-snapshot
+    # y-mean noise that creates element-boundary artifacts.
     ns = cs.n_samples
+    profp = zeros(Float64, nstress)
+    stress_xz = zeros(Float64, nxz, nstress)
+    for ixz in 1:nxz
+        means_tavg = cs.sum_mean[ixz, :] ./ ns
+        prof_raw   = cs.sum_stress[ixz, :] ./ ns
+        user_les_stress!(profp, prof_raw, means_tavg)
+        stress_xz[ixz, :] .= profp
+    end
     fout_tavg = joinpath(params.inputs[:output_dir], "les_xz_tavg")
     vtk_tavg  = vtk_grid(fout_tavg, x_pts, y_pts, z_pts, xz_cells_vtk)
     for k in 1:nprofiles
         vtk_tavg[lesprofile_vars[k], VTKPointData()] = cs.sum_mean[:, k] ./ ns
     end
     for k in 1:nstress
-        vtk_tavg[lesstress_vars[k], VTKPointData()] = cs.sum_stress[:, k] ./ ns
+        vtk_tavg[lesstress_vars[k], VTKPointData()] = stress_xz[:, k]
     end
     vtk_save(vtk_tavg)
 
@@ -707,19 +1048,28 @@ function les_finalize!(params, t)
         end
     end
 
-    outfile_stress_tavg = joinpath(params.inputs[:output_dir], "les_stress_tavg.dat")
-    open(outfile_stress_tavg, "w") do io
-        print(io, "# time_end=", @sprintf("%.6e", t), "  n_samples=", ns, "  z")
-        for k in 1:nstress
-            print(io, "  ", lesstress_vars[k])
-        end
-        println(io)
+    # Apply Reynolds decomposition using time-averaged means as reference.
+    # sum_global_stress / ns = <u²>_{t,x,y}  (time-mean of raw products)
+    # sum_global_sum   / ns = <u>_{t,x,y}    (time-mean)
+    # Correct: <u'u'> = <u²>_{t,x,y} - <u>_{t,x,y}²
+    let profp = zeros(Float64, nstress)
+        stress_out = zeros(Float64, nz, nstress)
         for iz in 1:nz
-            @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
-            for k in 1:nstress
-                @printf(io, "  %.6e", cache.sum_global_stress[iz, k] / ns)
-            end
+            means_tavg = cache.sum_global_sum[iz, :] ./ ns
+            prof_raw   = cache.sum_global_stress[iz, :] ./ ns
+            user_les_stress!(profp, prof_raw, means_tavg)
+            stress_out[iz, :] .= profp
+        end
+        outfile_stress_tavg = joinpath(params.inputs[:output_dir], "les_stress_tavg.dat")
+        open(outfile_stress_tavg, "w") do io
+            print(io, "# time_end=", @sprintf("%.6e", t), "  n_samples=", ns, "  z")
+            for k in 1:nstress; print(io, "  ", lesstress_vars[k]); end
             println(io)
+            for iz in 1:nz
+                @printf(io, "%.6e  %.6e", t, cache.z_levels[iz])
+                for k in 1:nstress; @printf(io, "  %.6e", stress_out[iz, k]); end
+                println(io)
+            end
         end
     end
 
@@ -738,15 +1088,78 @@ function les_finalize!(params, t)
     y_pts = zeros(Float64, nxz)
     z_pts = [p[2] for p in cs.xz_coords]
 
-    fout_tavg = joinpath(params.inputs[:output_dir], "les_xz_tavg")
-    vtk_tavg  = vtk_grid(fout_tavg, x_pts, y_pts, z_pts, xz_cells_vtk)
-    for k in 1:nprofiles_cs
-        vtk_tavg[lesprofile_vars[k], VTKPointData()] = cs.sum_mean[:, k] ./ ns_cs
+    # Apply Reynolds decomposition once using long-time y-mean as reference.
+    # Correct: <u'u'>(x,z) = <u²>_{t,y}(x,z) - <u>_{t,y}(x,z)²
+    let profp_cs = zeros(Float64, nstress_cs), stress_xz = zeros(Float64, nxz, nstress_cs)
+        for ixz in 1:nxz
+            means_tavg = cs.sum_mean[ixz, :] ./ ns_cs
+            prof_raw   = cs.sum_stress[ixz, :] ./ ns_cs
+            user_les_stress!(profp_cs, prof_raw, means_tavg)
+            stress_xz[ixz, :] .= profp_cs
+        end
+        fout_tavg = joinpath(params.inputs[:output_dir], "les_xz_tavg")
+        vtk_tavg  = vtk_grid(fout_tavg, x_pts, y_pts, z_pts, xz_cells_vtk)
+        for k in 1:nprofiles_cs
+            vtk_tavg[lesprofile_vars[k], VTKPointData()] = cs.sum_mean[:, k] ./ ns_cs
+        end
+        for k in 1:nstress_cs
+            vtk_tavg[lesstress_vars[k], VTKPointData()] = stress_xz[:, k]
+        end
+        vtk_save(vtk_tavg)
     end
-    for k in 1:nstress_cs
-        vtk_tavg[lesstress_vars[k], VTKPointData()] = cs.sum_stress[:, k] ./ ns_cs
+
+    # ---- time-averaged spanwise spectra: les_xz_spectra_tavg.vtu ----
+    ns_spec = cs.n_spec_samples
+    if ns_spec > 0 && !isnothing(cs.sum_spectra) && !isnothing(cs.kappa_global)
+        lesspectra_vars = get(params.inputs, :lesspectra_vars, String[])
+        if !isempty(lesspectra_vars)
+            nk       = length(cs.kappa_global)
+            n_pts    = nxz * nk
+            xs_pts   = zeros(Float64, n_pts)
+            yk_pts   = zeros(Float64, n_pts)
+            zs_pts   = zeros(Float64, n_pts)
+            for ik in 1:nk, ixz in 1:nxz
+                idx         = (ik-1)*nxz + ixz
+                xs_pts[idx] = cs.xz_coords[ixz][1]
+                yk_pts[idx] = cs.kappa_global[ik]
+                zs_pts[idx] = cs.xz_coords[ixz][2]
+            end
+
+            spec_cells = MeshCell[]
+            for ik in 1:nk-1
+                for (i1, i2, i3, i4) in cs.xz_cells
+                    b1=(ik-1)*nxz+i1; b2=(ik-1)*nxz+i2; b3=(ik-1)*nxz+i3; b4=(ik-1)*nxz+i4
+                    t1= ik   *nxz+i1; t2= ik   *nxz+i2; t3= ik   *nxz+i3; t4= ik   *nxz+i4
+                    push!(spec_cells, MeshCell(VTKCellTypes.VTK_HEXAHEDRON,
+                                               [b1, b2, b3, b4, t1, t2, t3, t4]))
+                end
+            end
+
+            fout_spec = joinpath(params.inputs[:output_dir], "les_xz_spectra_tavg")
+            vtk_spec  = vtk_grid(fout_spec, xs_pts, yk_pts, zs_pts, spec_cells)
+            for (ivar, vname) in enumerate(lesspectra_vars)
+                data = [cs.sum_spectra[ixz, ik, ivar] / ns_spec
+                        for ik in 1:nk for ixz in 1:nxz]
+                vtk_spec[vname, VTKPointData()] = data
+            end
+            vtk_save(vtk_spec)
+        end
     end
-    vtk_save(vtk_tavg)
+
+    # ---- time-averaged surface friction velocity: les_ustar_tavg.dat ----
+    bc = params.les_bottom_cache
+    if !isnothing(bc) && bc.n_samples > 0
+        ns_bc = bc.n_samples
+        outfile_ustar = joinpath(params.inputs[:output_dir], "les_ustar_tavg.dat")
+        open(outfile_ustar, "w") do io
+            println(io, "# time_end=", @sprintf("%.6e", t),
+                    "  n_samples=", ns_bc, "  x  ustar")
+            for ix in 1:length(bc.x_coords)
+                @printf(io, "%.6e  %.6e\n", bc.x_coords[ix], bc.sum_ustar[ix] / ns_bc)
+            end
+        end
+    end
+
 end
 
 # ================================================================================
@@ -769,10 +1182,12 @@ function les_accumulate_online!(u, params)
     npoin  = mesh.npoin
     neqs   = params.neqs
     ET     = params.SOL_VARS_TYPE
-    uaux   = params.uaux
-    qe     = params.qp.qe
+    uaux       = params.uaux
+    qe         = params.qp.qe
+    sgs_stress = params.sgs_stress
 
     u2uaux!(@view(uaux[:,:]), u, neqs, npoin)
+    fill_sgs_cache!(params)
 
     local_online_sum    = cache.local_online_sum
     local_online_stress = cache.local_online_stress
@@ -786,7 +1201,7 @@ function les_accumulate_online!(u, params)
 
     for iz in 1:nz
         for ip in z_groups[iz]
-            user_les_profiles!(means_buf, prof_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
+            user_les_profiles!(means_buf, prof_buf, @view(uaux[ip,:]), @view(qe[ip,:]), @view(sgs_stress[ip,:]), ET)
             for k in 1:nprofiles
                 local_online_sum[iz, k] += means_buf[k]
             end
@@ -811,7 +1226,7 @@ function les_accumulate_online!(u, params)
 
     for ixz in 1:nxz
         for ip in csxz_groups[ixz]
-            user_les_profiles!(csprof_buf, csstress_buf, @view(uaux[ip,:]), @view(qe[ip,:]), ET)
+            user_les_profiles!(csprof_buf, csstress_buf, @view(uaux[ip,:]), @view(qe[ip,:]), @view(sgs_stress[ip,:]), ET)
             for k in 1:nprofiles_cs
                 cslocal_online_mean[ixz, k] += csprof_buf[k]
             end
@@ -821,6 +1236,28 @@ function les_accumulate_online!(u, params)
         end
     end
     cs.n_online_samples += 1
+
+    # Bottom-wall u* online accumulation (local sum; no Allreduce per step)
+    bc = params.les_bottom_cache
+    if !isnothing(bc)
+        for ix in 1:length(bc.x_coords)
+            for ip1 in bc.wall_groups[ix]
+                z_in = get(bc.z_inside, ip1, bc.z0_m * 10.0)
+                z_in <= bc.z0_m && continue
+                if ET == PERT()
+                    ρ = uaux[ip1,1] + qe[ip1,1]
+                    u = (uaux[ip1,2] + qe[ip1,2]) / ρ
+                    v = (uaux[ip1,3] + qe[ip1,3]) / ρ
+                else
+                    ρ = uaux[ip1,1]
+                    u = uaux[ip1,2] / ρ
+                    v = uaux[ip1,3] / ρ
+                end
+                bc.local_ustar_online[ix] += bc.κ_v * sqrt(u*u + v*v) / log(z_in / bc.z0_m)
+            end
+        end
+        bc.n_online_samples += 1
+    end
 end
 
 """
@@ -953,4 +1390,23 @@ function les_finalize_online!(params, t)
         vtk[lesstress_vars[k], VTKPointData()] = cs.global_online_stress[:, k]
     end
     vtk_save(vtk)
+
+    # Bottom-wall u* online finalization
+    bc = params.les_bottom_cache
+    if !isnothing(bc) && bc.n_online_samples > 0
+        nx_bc   = length(bc.x_coords)
+        ns_bc   = bc.n_online_samples
+        global_ustar = zeros(Float64, nx_bc)
+        MPI.Allreduce!(bc.local_ustar_online, global_ustar, MPI.SUM, comm)
+        rank != 0 && return
+        outfile_ustar = joinpath(params.inputs[:output_dir], "les_ustar_online.dat")
+        open(outfile_ustar, "w") do io
+            println(io, "# online_tavg  time_end=", @sprintf("%.6e", t),
+                    "  n_samples=", ns_bc, "  x  ustar")
+            for ix in 1:nx_bc
+                denom = Float64(bc.npts_per_x[ix]) * ns_bc
+                @printf(io, "%.6e  %.6e\n", bc.x_coords[ix], global_ustar[ix] / denom)
+            end
+        end
+    end
 end

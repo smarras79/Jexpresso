@@ -398,3 +398,385 @@ end
     end
     
 end
+# ================================================================================
+# Cache-reading SGS_diffusion — NSD_3D
+# Called inside the ieq loop after compute_sgs_cache! has run for the element.
+# Reads pre-computed μ_turb[ip] from the sgs struct; no Sij recomputation.
+# Dispatches on AbstractSGSModel so one method covers SMAG and VREM.
+# ================================================================================
+@inline function SGS_diffusion(visc_coeffieq, ieq, ρ, ip,
+                                sgs::AbstractSGSModel,
+                                ltheta_eqn, ::NSD_3D)
+    μ_turb = sgs.μ_turb[ip]
+    Pr_t   = sgs.Pr_t
+    Sc_t   = sgs.Sc_t
+    μ_mol  = sgs.μ_mol
+    κ_mol  = sgs.κ_mol
+
+    if ieq == 2 || ieq == 3 || ieq == 4  # momentum
+        return (μ_mol + μ_turb) * visc_coeffieq[ieq]
+    elseif ieq == 5                        # temperature / energy
+        κ_turb = μ_turb / (ρ * Pr_t)
+        if ltheta_eqn
+            return κ_turb * visc_coeffieq[ieq]
+        else
+            return (κ_mol + κ_turb) * visc_coeffieq[ieq]
+        end
+    else                                   # other scalars (moisture, species)
+        κ_turb_scalar = μ_turb / (ρ * Sc_t)
+        return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
+    end
+end
+
+# ================================================================================
+# compute_sgs_cache!
+# One pass over all GLL points of element iel — fills sgs cache arrays.
+# Called once per element before the ieq loop in viscous_rhs_el!, replacing
+# the redundant per-equation Sij recomputation.
+# ================================================================================
+
+function compute_sgs_cache!(sgs::SGS_SMAG,
+                             uprimitive,
+                             mp, uaux,
+                             ngl, dψ,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             connijk, iel, Δ2,
+                             micro, lrichardson, ::NSD_3D)
+
+    g       = sgs.g
+    cp      = sgs.cp
+    Lc      = sgs.Lc
+    Ls      = sgs.Ls
+    Rvap    = sgs.Rvap
+    Rair    = sgs.Rair
+    ε_ratio = sgs.ε_ratio
+    Ri_crit = sgs.Ri_crit
+    C_s2    = sgs.C_s2
+
+    for m = 1:ngl, l = 1:ngl, k = 1:ngl
+        ip = connijk[iel, k, l, m]
+
+        dudξ = 0.0; dudη = 0.0; dudζ = 0.0
+        dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
+        dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
+        dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
+        dTdξ = 0.0; dTdη = 0.0; dTdζ = 0.0
+        dqndξ = 0.0; dqndη = 0.0; dqndζ = 0.0
+
+        for ii = 1:ngl
+            dudξ  += dψ[ii,k] * uprimitive[ii,l,m,2]
+            dudη  += dψ[ii,l] * uprimitive[k,ii,m,2]
+            dudζ  += dψ[ii,m] * uprimitive[k,l,ii,2]
+            dvdξ  += dψ[ii,k] * uprimitive[ii,l,m,3]
+            dvdη  += dψ[ii,l] * uprimitive[k,ii,m,3]
+            dvdζ  += dψ[ii,m] * uprimitive[k,l,ii,3]
+            dwdξ  += dψ[ii,k] * uprimitive[ii,l,m,4]
+            dwdη  += dψ[ii,l] * uprimitive[k,ii,m,4]
+            dwdζ  += dψ[ii,m] * uprimitive[k,l,ii,4]
+            dθdξ  += dψ[ii,k] * uprimitive[ii,l,m,5]
+            dθdη  += dψ[ii,l] * uprimitive[k,ii,m,5]
+            dθdζ  += dψ[ii,m] * uprimitive[k,l,ii,5]
+            if micro > 1
+                ip_ii = connijk[iel,ii,l,m]
+                ip_il = connijk[iel,k,ii,m]
+                ip_im = connijk[iel,k,l,ii]
+                dTdξ  += dψ[ii,k] * mp.Tabs[ip_ii]
+                dTdη  += dψ[ii,l] * mp.Tabs[ip_il]
+                dTdζ  += dψ[ii,m] * mp.Tabs[ip_im]
+                dqndξ += dψ[ii,k] * mp.qn[ip_ii]
+                dqndη += dψ[ii,l] * mp.qn[ip_il]
+                dqndζ += dψ[ii,m] * mp.qn[ip_im]
+            end
+        end
+
+        dξdx_klm = dξdx[iel,k,l,m];  dξdy_klm = dξdy[iel,k,l,m];  dξdz_klm = dξdz[iel,k,l,m]
+        dηdx_klm = dηdx[iel,k,l,m];  dηdy_klm = dηdy[iel,k,l,m];  dηdz_klm = dηdz[iel,k,l,m]
+        dζdx_klm = dζdx[iel,k,l,m];  dζdy_klm = dζdy[iel,k,l,m];  dζdz_klm = dζdz[iel,k,l,m]
+
+        dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
+        dudy = dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm
+        dudz = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm
+        dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
+        dvdy = dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm
+        dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
+        dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
+        dwdy = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm
+        dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
+
+        S11 = dudx
+        S22 = dvdy
+        S33 = dwdz
+        S12 = 0.5*(dudy + dvdx)
+        S13 = 0.5*(dudz + dwdx)
+        S23 = 0.5*(dvdz + dwdy)
+
+        S_ij_S_ij = S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)
+        Sij2_val  = 2.0 * S_ij_S_ij
+        Sij_val   = sqrt(Sij2_val)
+
+        sgs.S11[ip] = S11;  sgs.S22[ip] = S22;  sgs.S33[ip] = S33
+        sgs.S12[ip] = S12;  sgs.S13[ip] = S13;  sgs.S23[ip] = S23
+
+        # N² — dry or moist (Shi et al. 2019 eqs. 17–22)
+        N2_val = 0.0
+        if lrichardson
+            if micro == 1
+                θ_ref  = uprimitive[k,l,m,5]
+                dθdz   = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
+                N2_val = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+            else
+                T_ref = mp.Tabs[ip]
+                p_ref = uaux[ip, end]
+                dTdz  = dTdξ*dξdz_klm + dTdη*dηdz_klm + dTdζ*dζdz_klm
+                dqndz = dqndξ*dξdz_klm + dqndη*dηdz_klm + dqndζ*dζdz_klm
+
+                # eq. (21): phase fraction β
+                β     = T_ref >= 273.15 ? 1.0 :
+                        T_ref >  233.15 ? (T_ref - 233.15)/40.0 : 0.0
+
+                qs_w  = qsatw(T_ref, p_ref)
+                qs_i  = qsati(T_ref, p_ref)
+                qs_bl = β * qs_w + (1.0 - β) * qs_i  # eq. (20)
+
+                if mp.qn[ip] > qs_bl  # eq. (22): saturated
+                    dqsdT = β * dtqsatw(T_ref, p_ref) + (1.0 - β) * dtqsati(T_ref, p_ref)
+                    Γ_m_w = (g/cp) * (1.0 + Lc*qs_w/(Rair*T_ref)) /
+                                     (1.0 + Lc^2*qs_w/(cp*Rvap*T_ref^2))
+                    Γ_m_i = (g/cp) * (1.0 + Ls*qs_i/(Rair*T_ref)) /
+                                     (1.0 + Ls^2*qs_i/(cp*Rvap*T_ref^2))
+                    Γ_m   = β * Γ_m_w + (1.0 - β) * Γ_m_i
+                    N2_val = (g/T_ref) * (dTdz + Γ_m) *
+                             (1.0 + T_ref/(ε_ratio + qs_bl) * dqsdT) -
+                             g/(1.0 + mp.qn[ip]) * dqndz
+                else  # subsaturated: dry N² using T
+                    N2_val = (g/T_ref) * (dTdz + g/cp)
+                end
+            end
+        end
+        sgs.N2[ip] = N2_val
+
+        # Richardson stability function
+        f_Ri_val = 1.0
+        if lrichardson
+            Ri = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
+            f_Ri_val = if Ri >= Ri_crit
+                0.0
+            elseif Ri >= 0.0
+                ratio = Ri / Ri_crit
+                (1.0 - ratio) * (1.0 - ratio)
+            else
+                min(sqrt(1.0 - 16.0*Ri), 3.0)
+            end
+        end
+        sgs.f_Ri[ip] = f_Ri_val
+
+        ρ = uprimitive[k,l,m,1]
+        sgs.μ_turb[ip] = ρ * C_s2 * Δ2 * Sij_val * f_Ri_val
+    end
+    return
+end
+
+function compute_sgs_cache!(sgs::SGS_VREM,
+                             uprimitive,
+                             mp, uaux,
+                             ngl, dψ,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             connijk, iel, Δ2,
+                             micro, lrichardson, ::NSD_3D)
+
+    g       = sgs.g
+    cp      = sgs.cp
+    Lc      = sgs.Lc
+    Ls      = sgs.Ls
+    Rvap    = sgs.Rvap
+    Rair    = sgs.Rair
+    ε_ratio = sgs.ε_ratio
+    Ri_crit = sgs.Ri_crit
+    C_vrem  = sgs.C_vrem
+    eps_v   = eps(1.0)
+
+    for m = 1:ngl, l = 1:ngl, k = 1:ngl
+        ip = connijk[iel, k, l, m]
+
+        dudξ = 0.0; dudη = 0.0; dudζ = 0.0
+        dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
+        dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
+        dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
+        dTdξ = 0.0; dTdη = 0.0; dTdζ = 0.0
+        dqndξ = 0.0; dqndη = 0.0; dqndζ = 0.0
+
+        for ii = 1:ngl
+            dudξ  += dψ[ii,k] * uprimitive[ii,l,m,2]
+            dudη  += dψ[ii,l] * uprimitive[k,ii,m,2]
+            dudζ  += dψ[ii,m] * uprimitive[k,l,ii,2]
+            dvdξ  += dψ[ii,k] * uprimitive[ii,l,m,3]
+            dvdη  += dψ[ii,l] * uprimitive[k,ii,m,3]
+            dvdζ  += dψ[ii,m] * uprimitive[k,l,ii,3]
+            dwdξ  += dψ[ii,k] * uprimitive[ii,l,m,4]
+            dwdη  += dψ[ii,l] * uprimitive[k,ii,m,4]
+            dwdζ  += dψ[ii,m] * uprimitive[k,l,ii,4]
+            dθdξ  += dψ[ii,k] * uprimitive[ii,l,m,5]
+            dθdη  += dψ[ii,l] * uprimitive[k,ii,m,5]
+            dθdζ  += dψ[ii,m] * uprimitive[k,l,ii,5]
+            if micro > 1
+                ip_ii = connijk[iel,ii,l,m]
+                ip_il = connijk[iel,k,ii,m]
+                ip_im = connijk[iel,k,l,ii]
+                dTdξ  += dψ[ii,k] * mp.Tabs[ip_ii]
+                dTdη  += dψ[ii,l] * mp.Tabs[ip_il]
+                dTdζ  += dψ[ii,m] * mp.Tabs[ip_im]
+                dqndξ += dψ[ii,k] * mp.qn[ip_ii]
+                dqndη += dψ[ii,l] * mp.qn[ip_il]
+                dqndζ += dψ[ii,m] * mp.qn[ip_im]
+            end
+        end
+
+        dξdx_klm = dξdx[iel,k,l,m];  dξdy_klm = dξdy[iel,k,l,m];  dξdz_klm = dξdz[iel,k,l,m]
+        dηdx_klm = dηdx[iel,k,l,m];  dηdy_klm = dηdy[iel,k,l,m];  dηdz_klm = dηdz[iel,k,l,m]
+        dζdx_klm = dζdx[iel,k,l,m];  dζdy_klm = dζdy[iel,k,l,m];  dζdz_klm = dζdz[iel,k,l,m]
+
+        dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
+        dudy = dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm
+        dudz = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm
+        dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
+        dvdy = dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm
+        dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
+        dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
+        dwdy = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm
+        dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
+
+        # Vreman β tensor (uses full velocity gradient, not symmetrized)
+        β11 = Δ2*(dudx*dudx + dudy*dudy + dudz*dudz)
+        β12 = Δ2*(dudx*dvdx + dudy*dvdy + dudz*dvdz)
+        β13 = Δ2*(dudx*dwdx + dudy*dwdy + dudz*dwdz)
+        β22 = Δ2*(dvdx*dvdx + dvdy*dvdy + dvdz*dvdz)
+        β23 = Δ2*(dvdx*dwdx + dvdy*dwdy + dvdz*dwdz)
+        β33 = Δ2*(dwdx*dwdx + dwdy*dwdy + dwdz*dwdz)
+        B_β = β11*β22 + β11*β33 + β22*β33 - (β12*β12 + β13*β13 + β23*β23)
+        u_ij_u_ij = dudx*dudx + dudy*dudy + dudz*dudz +
+                    dvdx*dvdx + dvdy*dvdy + dvdz*dvdz +
+                    dwdx*dwdx + dwdy*dwdy + dwdz*dwdz
+
+        # N² (same logic as SGS_SMAG)
+        N2_val = 0.0
+        if lrichardson
+            if micro == 1
+                θ_ref  = uprimitive[k,l,m,5]
+                dθdz   = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
+                N2_val = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+            else
+                T_ref = mp.Tabs[ip]
+                p_ref = uaux[ip, end]
+                dTdz  = dTdξ*dξdz_klm + dTdη*dηdz_klm + dTdζ*dζdz_klm
+                dqndz = dqndξ*dξdz_klm + dqndη*dηdz_klm + dqndζ*dζdz_klm
+
+                β     = T_ref >= 273.15 ? 1.0 :
+                        T_ref >  233.15 ? (T_ref - 233.15)/40.0 : 0.0
+                qs_w  = qsatw(T_ref, p_ref)
+                qs_i  = qsati(T_ref, p_ref)
+                qs_bl = β * qs_w + (1.0 - β) * qs_i
+
+                if mp.qn[ip] > qs_bl
+                    dqsdT = β * dtqsatw(T_ref, p_ref) + (1.0 - β) * dtqsati(T_ref, p_ref)
+                    Γ_m_w = (g/cp) * (1.0 + Lc*qs_w/(Rair*T_ref)) /
+                                     (1.0 + Lc^2*qs_w/(cp*Rvap*T_ref^2))
+                    Γ_m_i = (g/cp) * (1.0 + Ls*qs_i/(Rair*T_ref)) /
+                                     (1.0 + Ls^2*qs_i/(cp*Rvap*T_ref^2))
+                    Γ_m   = β * Γ_m_w + (1.0 - β) * Γ_m_i
+                    N2_val = (g/T_ref) * (dTdz + Γ_m) *
+                             (1.0 + T_ref/(ε_ratio + qs_bl) * dqsdT) -
+                             g/(1.0 + mp.qn[ip]) * dqndz
+                else
+                    N2_val = (g/T_ref) * (dTdz + g/cp)
+                end
+            end
+        end
+        sgs.N2[ip] = N2_val
+
+        f_Ri_val = 1.0
+        if lrichardson
+            S11 = dudx;  S22 = dvdy;  S33 = dwdz
+            S12 = 0.5*(dudy + dvdx)
+            S13 = 0.5*(dudz + dwdx)
+            S23 = 0.5*(dvdz + dwdy)
+            S_ij_S_ij = S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)
+            Sij2_val  = 2.0 * S_ij_S_ij
+            Ri = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
+            f_Ri_val = if Ri >= Ri_crit
+                0.0
+            elseif Ri >= 0.0
+                ratio = Ri / Ri_crit
+                (1.0 - ratio) * (1.0 - ratio)
+            else
+                min(sqrt(1.0 - 16.0*Ri), 3.0)
+            end
+        end
+        sgs.f_Ri[ip] = f_Ri_val
+
+        ρ = uprimitive[k,l,m,1]
+        μ_base = (u_ij_u_ij > eps_v && B_β > 0.0) ?
+                 ρ * C_vrem * sqrt(B_β / u_ij_u_ij) : 0.0
+        sgs.μ_turb[ip] = μ_base * f_Ri_val
+    end
+    return
+end
+
+# ================================================================================
+# Helpers for LES statistics: compute S_ij and μ_turb at a single GLL point.
+# Returns (μ_turb, S11, S22, S33, S12, S13, S23, S_ij_S_ij).
+# Called only at statistics output time (not on the hot RHS path).
+# ================================================================================
+@inline function compute_sij_and_mu_turb(ρ,
+                                          dudx, dudy, dudz,
+                                          dvdx, dvdy, dvdz,
+                                          dwdx, dwdy, dwdz,
+                                          PhysConst, Δ2, ::SMAG)
+    C_s2 = PhysConst.C_s * PhysConst.C_s
+    S11  = dudx;  S22 = dvdy;  S33 = dwdz
+    S12  = 0.5 * (dudy + dvdx)
+    S13  = 0.5 * (dudz + dwdx)
+    S23  = 0.5 * (dvdz + dwdy)
+    S_ij_S_ij = S11*S11 + S22*S22 + S33*S33 + 2*(S12*S12 + S13*S13 + S23*S23)
+    μ_turb = ρ * C_s2 * Δ2 * sqrt(2 * S_ij_S_ij)
+    return μ_turb, S11, S22, S33, S12, S13, S23, S_ij_S_ij
+end
+
+@inline function compute_sij_and_mu_turb(ρ,
+                                          dudx, dudy, dudz,
+                                          dvdx, dvdy, dvdz,
+                                          dwdx, dwdy, dwdz,
+                                          PhysConst, Δ2, ::VREM)
+    C_s2   = PhysConst.C_s * PhysConst.C_s
+    C_vrem = 2.5 * C_s2
+    eps_v  = eps(1.0)
+    β11 = Δ2 * (dudx*dudx + dudy*dudy + dudz*dudz)
+    β12 = Δ2 * (dudx*dvdx + dudy*dvdy + dudz*dvdz)
+    β13 = Δ2 * (dudx*dwdx + dudy*dwdy + dudz*dwdz)
+    β22 = Δ2 * (dvdx*dvdx + dvdy*dvdy + dvdz*dvdz)
+    β23 = Δ2 * (dvdx*dwdx + dvdy*dwdy + dvdz*dwdz)
+    β33 = Δ2 * (dwdx*dwdx + dwdy*dwdy + dwdz*dwdz)
+    B_β = β11*β22 + β11*β33 + β22*β33 - (β12*β12 + β13*β13 + β23*β23)
+    u_ij_u_ij = dudx*dudx + dudy*dudy + dudz*dudz +
+                dvdx*dvdx + dvdy*dvdy + dvdz*dvdz +
+                dwdx*dwdx + dwdy*dwdy + dwdz*dwdz
+    μ_turb = (u_ij_u_ij > eps_v && B_β > 0.0) ?
+             ρ * C_vrem * sqrt(B_β / u_ij_u_ij) : 0.0
+    S11  = dudx;  S22 = dvdy;  S33 = dwdz
+    S12  = 0.5 * (dudy + dvdx)
+    S13  = 0.5 * (dudz + dwdx)
+    S23  = 0.5 * (dvdz + dwdy)
+    S_ij_S_ij = S11*S11 + S22*S22 + S33*S33 + 2*(S12*S12 + S13*S13 + S23*S23)
+    return μ_turb, S11, S22, S33, S12, S13, S23, S_ij_S_ij
+end
+
+@inline function compute_sij_and_mu_turb(ρ,
+                                          dudx, dudy, dudz,
+                                          dvdx, dvdy, dvdz,
+                                          dwdx, dwdy, dwdz,
+                                          PhysConst, Δ2, ::Any)
+    return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+end

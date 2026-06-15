@@ -16,57 +16,6 @@ macro mystop(message=" MY STOP HERE")
 end
 
 
-"""
-    @outputrootonly expr
-
-Macro that runs `expr` normally on MPI rank 0, and silences stdout on all other ranks.
-Requires a variable named `rank` (integer MPI rank) to be in scope at the call site.
-
-# Example
-```julia
-model = @outputrootonly GmshDiscreteModel(parts, filename, renumber=true)
-```
-"""
-macro outputrootonly(expr)
-    quote
-        if $(esc(:rank)) != 0
-            # Use a fresh per-call sink instead of the global Base.devnull:
-            # 88438d9 swapped open("/dev/null","w") -> devnull for
-            # portability, but on macOS arm64 with Open MPI 5 + Gridap +
-            # GridapGmsh the shared devnull stream interacts badly with
-            # Gmsh's C-level stdout buffering inside the parallel
-            # GmshDiscreteModel collective, triggering a Bus error 10
-            # in _platform_memmove right after "Done reading *.msh". Going
-            # back to a fresh IOStream sink avoids the shared-handle issue.
-            local _sink = open("/dev/null", "w")
-            try
-                redirect_stdout(_sink) do
-                    $(esc(expr))
-                end
-            finally
-                close(_sink)
-            end
-        else
-            $(esc(expr))
-        end
-    end
-end
-
-
-macro mpi_time(expr)
-    label = string(expr)
-    quote
-        local _stats = @timed $(esc(expr))
-        local _t_max = MPI.Allreduce(_stats.time, MPI.MAX, $(esc(:comm)))
-        if $(esc(:rank)) == 0
-            local _allocs = _stats.gcstats.poolalloc + _stats.gcstats.malloc
-            @printf("  %s\n  %.6f seconds (max across ranks, %d allocs, %.3f MiB)\n",
-                    $label, _t_max, _allocs, _stats.bytes / 1024^2)
-        end
-        _stats.value
-    end
-end
-
 
 """
     @outputrootonly expr
