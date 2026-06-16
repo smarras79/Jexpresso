@@ -37,6 +37,56 @@ small `μ` diffuses it slightly. The solver prints the parsed terms, the chosen
 `Δt`, mass/peak diagnostics, writes `output/solution.csv` (`x, q_initial,
 q_final`) and draws a terminal ASCII plot of the initial and final fields.
 
+## Running it
+
+```bash
+cd tools/SymbolicFD.jl
+julia run_gaussian_1d.jl
+```
+
+No package installation is needed — the engine uses only the `Printf` standard
+library. Output goes to the terminal (parsed terms, `Δt`, diagnostics, two ASCII
+plots) and to `tools/SymbolicFD.jl/output/solution.csv`.
+
+You can also drive it from the Julia REPL:
+
+```julia
+include("tools/SymbolicFD.jl/src/SymbolicFD.jl"); using .SymbolicFD
+SymbolicFD.solve("∂q/∂t + ∇⋅(u q) = μ∇²q",
+                 Dict(:u => 1.0, :μ => 1e-3, :tend => 2.0))   # other keys take defaults
+```
+
+## Changing the equation
+
+Open `run_gaussian_1d.jl` and edit **two** things — the `equation` string and the
+matching parameters/grid inside `user_inputs()`:
+
+1. **The equation** (line `equation = "…"`). Write it in unicode or LaTeX. Every
+   parameter symbol you use (e.g. `μ`, `u`, `k`) must have a matching entry in
+   the inputs Dict, otherwise the solver stops with a clear error telling you
+   which `:symbol` to add.
+
+2. **The inputs** — grid (`:npoin`, `:xmin`, `:xmax`), parameter values, the
+   initial condition `:q0`, and the run length `:tend`.
+
+Worked examples (drop the string into `equation` and adjust inputs):
+
+| What you want                       | `equation =` …                              | extra inputs            |
+|-------------------------------------|---------------------------------------------|-------------------------|
+| Pure advection (no diffusion)       | `"∂q/∂t + ∇⋅(u q) = 0"`                      | `:u => 1.0`             |
+| Stronger diffusion                  | `"∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)"`    | `:μ => 1e-2`            |
+| Pure diffusion (heat equation)      | `"∂q/∂t = μ∇²q"`                             | `:μ => 0.01`            |
+| Advection–diffusion–decay           | `"∂q/∂t + ∇⋅(u q) = μ∇²q - k q"`             | `:u,:μ,:k`              |
+| Faster flow on a finer grid         | `"∂q/∂t + ∇⋅(u q) = μ∇²q"`                   | `:u => 2.0, :npoin => 400` |
+
+Change the initial shape by editing `:q0`, e.g. a narrower gaussian
+`x -> exp(-(x^2)/(2*0.05^2))` or a square pulse `x -> abs(x) < 0.3 ? 1.0 : 0.0`.
+
+Accepted notation for each operator: `∂q/∂t`; advection `∇⋅(u q)` /
+`∇⋅(\mathbf{u}q)`; diffusion `μ∇⋅∇(q)` / `μ∇²q` / `μΔq`; linear reaction `k q`.
+LaTeX spellings (`\nabla`, `\cdot`, `\mu`, `\Delta`, `\mathbf{...}`) are translated
+automatically. See the pattern table below.
+
 ## How it works
 
 1. **Normalization** — `\mathbf{u}`/`\vec{u}` decorations are stripped, LaTeX
