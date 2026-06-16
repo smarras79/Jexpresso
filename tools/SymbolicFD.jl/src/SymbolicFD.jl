@@ -1,65 +1,39 @@
 #=---------------------------------------------------------------------------------
 # SymbolicFD.jl
 #
-# A small, self-contained "write-the-equation-and-solve-it" engine.
-#
-# The user writes a PDE using Julia's unicode characters (and a few common
-# LaTeX shortcuts), e.g.
+# Write a PDE with Julia's unicode characters (a few LaTeX spellings are accepted
+# too) and have it discretized and solved automatically. For example
 #
 #       ∂q/∂t + ∇⋅(\mathbf{u}q) = \mu∇⋅∇(q)
 #
-# defines a grid (number of points and the spatial dimension, exactly like
-# in Jexpresso through a `user_inputs`-style Dict), and the equation is parsed,
-# discretized with a simple finite-difference scheme and integrated in time
-# in the background.
+# is read, each differential operator is replaced by its own numerical
+# discretization (finite differences for now), the right-hand side ∂q/∂t = …
+# is assembled by composing those operators, and the solution is integrated in
+# time. PNG/on-the-fly output mirrors Jexpresso's problems/CompEuler/sod1d.
 #
-# This module has NO external dependencies (only LinearAlgebra/Printf from the
-# Julia standard library) so it can be dropped into any environment and later
-# folded into Jexpresso. The public entry point is `solve(eqn, inputs)`.
+# This is NOT a string-to-equation lookup and uses NO AI: ∇, ∇⋅ and ∇² are
+# *standalone, composable operators* acting on discrete `Field`s, exactly the
+# spirit of Gridap.jl's differential operators (here in strong form, by finite
+# differences, rather than weak form). The equation is parsed into an expression
+# tree whose nodes are operators and fields; evaluating that tree on the current
+# state field produces ∂q/∂t. Because the operators are generic, ANY composition
+# works -- ∇⋅(u q), ∇⋅(D∇q), u⋅∇q, ∇²q, … -- not just advection-diffusion.
 #
-# Currently supported (1D): conservative advection-diffusion-reaction of a
-# single scalar on a periodic grid:
-#
-#       ∂q/∂t + ∇⋅(u q) = μ ∇⋅∇(q) ( + reaction/source terms )
-#
-# The design (a list of typed `PDETerm`s assembled into a right-hand-side
-# operator) is meant to be extended to 2D/3D and to the Jexpresso
-# CL()/PERT() conventions later on.
+# Only dependency is Plots.jl (already in Jexpresso's Project.toml). Designed so
+# the operator layer extends to 2D/3D: fields carry a tensor rank and operators
+# loop over `nsd` directions through a single directional-derivative primitive;
+# only a multi-dimensional mesh + that primitive need to be added.
 #---------------------------------------------------------------------------------=#
 module SymbolicFD
 
 using Printf
 using Plots          # PNG output + on-the-fly window, exactly as in Jexpresso
 
-export solve, parse_equation, FDMesh1D, PDETerm, ascii_plot
+export solve, parse_equation, FDMesh1D, Field, ascii_plot
 
 #---------------------------------------------------------------------------------
-# 1. Symbolic representation of a parsed PDE
+# 1. Normalization: turn LaTeX shortcuts into the unicode the parser expects
 #---------------------------------------------------------------------------------
-"""
-    PDETerm
-
-One additive term of a PDE, already moved to the right-hand side of
-
-    ∂q/∂t = Σ_i  coeff_i * Op_i(q).
-
-Fields
-- `kind`   : `:advection`, `:diffusion`, `:reaction` or `:source`.
-- `coeff`  : signed scalar multiplier (includes the sign coming from moving the
-             term across the `=`, and any numeric/parameter factor such as μ).
-- `params` : extra per-term data (e.g. the advecting velocity `u`).
-"""
-struct PDETerm
-    kind::Symbol
-    coeff::Float64
-    params::Dict{Symbol,Float64}
-end
-
-#---------------------------------------------------------------------------------
-# 2. Normalization: turn LaTeX shortcuts into the unicode the parser expects
-#---------------------------------------------------------------------------------
-# We accept a mix of unicode (∂ ∇ ⋅ ∇² Δ μ ν …) and the most common LaTeX
-# spellings so the user can copy/paste straight from a paper.
 const LATEX2UNICODE = Dict(
     "\\nabla"   => "∇",
     "\\partial" => "∂",
@@ -80,181 +54,43 @@ const LATEX2UNICODE = Dict(
     normalize_equation(eqn) -> String
 
 Strip LaTeX decorations (`\\mathbf{u}` → `u`, `\\vec{u}` → `u`, …), translate
-LaTeX greek/operator commands to unicode, collapse `∇⋅∇`, `Δ`, `∇^2` to a single
-canonical Laplacian token `∇²`, and remove all whitespace.
+LaTeX greek/operator commands to unicode, collapse the contiguous Laplacian
+spellings `∇⋅∇`, `∇^2`, `Δ` to the single token `∇²`, and remove whitespace.
+
+Note: only the *contiguous* `∇⋅∇` becomes the compact Laplacian operator. An
+explicit composition such as `∇⋅(∇q)` is left as `divergence(gradient(...))`
+and discretized as the genuine composition of the two first-difference
+operators (a deliberately honest, if wider, stencil).
 """
 function normalize_equation(eqn::AbstractString)
     s = String(eqn)
-
-    # \mathbf{u}, \vec{u}, \mathrm{u}, \boldsymbol{u}  ->  u
     for cmd in ("mathbf", "vec", "mathrm", "boldsymbol", "mathbb", "mathcal")
         s = replace(s, Regex("\\\\$cmd\\{([^}]*)\\}") => s"\1")
     end
-
-    # LaTeX greek/operators -> unicode
     for (k, v) in LATEX2UNICODE
         s = replace(s, k => v)
     end
-
-    # spacing / sizing helpers that carry no meaning
     for junk in ("\\left", "\\right", "\\,", "\\;", "\\!", "\\ ", " ", "\t", "\n")
         s = replace(s, junk => "")
     end
-
-    # Canonicalize every spelling of the Laplacian to "∇²"
     s = replace(s, "∇⋅∇" => "∇²")
     s = replace(s, "∇^2" => "∇²")
-    s = replace(s, "∇2"  => "∇²")   # tolerate a missing caret
     s = replace(s, "Δ"   => "∇²")
-
     return s
 end
 
 #---------------------------------------------------------------------------------
-# 3. Tiny scalar-coefficient evaluator
-#---------------------------------------------------------------------------------
-# Resolves a leading factor such as "", "-", "μ", "0.1", "2μ", "u" into a number,
-# looking parameters up in the `inputs` Dict (e.g. inputs[:μ], inputs[:u]).
-const TOKEN_RE = r"[0-9]+\.?[0-9]*|[A-Za-zμνρκαβγλσ_][A-Za-zμνρκαβγλσ_0-9]*"
-
-function eval_scalar(str::AbstractString, inputs::Dict)
-    s = strip(String(str))
-    s = replace(s, "*" => "")
-    isempty(s) && return 1.0
-
-    sign = 1.0
-    while !isempty(s) && (s[1] == '+' || s[1] == '-')
-        s[1] == '-' && (sign = -sign)
-        s = s[2:end]
-    end
-    isempty(s) && return sign
-
-    val = sign
-    for m in eachmatch(TOKEN_RE, s)
-        tok = m.match
-        if occursin(r"^[0-9]", tok)
-            val *= parse(Float64, tok)
-        else
-            key = Symbol(tok)
-            haskey(inputs, key) ||
-                error("SymbolicFD: unknown parameter `$tok` in the equation. " *
-                      "Add `:$tok => value` to your inputs Dict.")
-            val *= Float64(inputs[key])
-        end
-    end
-    return val
-end
-
-#---------------------------------------------------------------------------------
-# 4. The parser:  equation string  ->  (variable name, Vector{PDETerm})
-#---------------------------------------------------------------------------------
-# Split a side of the equation into signed top-level additive terms, honouring
-# parentheses so that "∇⋅(uq)" is not chopped at an inner sign.
-function split_terms(side::AbstractString)
-    terms = Tuple{Float64,String}[]
-    depth = 0
-    sign  = 1.0
-    buf   = IOBuffer()
-    flush_term!() = begin
-        t = String(take!(buf))
-        isempty(t) || push!(terms, (sign, t))
-    end
-    for c in side
-        if c == '(' ; depth += 1; print(buf, c)
-        elseif c == ')' ; depth -= 1; print(buf, c)
-        elseif depth == 0 && (c == '+' || c == '-')
-            flush_term!()
-            sign = (c == '-') ? -1.0 : 1.0
-        else
-            print(buf, c)
-        end
-    end
-    flush_term!()
-    return terms
-end
-
-# Regexes evaluated on the normalized, whitespace-free string.
-const TIME_RE = r"^∂(\w+)/∂t$"                 # ∂q/∂t
-const DIFF_RE = r"^(.*?)∇²\(?(\w+)\)?$"        # μ∇²(q)  or  μ∇²q
-const ADV_RE  = r"^(.*?)∇⋅\((.+)\)$"           # ∇⋅(uq)
-
-"""
-    parse_equation(eqn, inputs) -> (var::String, terms::Vector{PDETerm})
-
-Parse a unicode/LaTeX PDE into the unknown variable name and the list of
-right-hand-side terms of `∂var/∂t = Σ coeff_i Op_i(var)`.
-"""
-function parse_equation(eqn::AbstractString, inputs::Dict)
-    s = normalize_equation(eqn)
-    occursin("=", s) ||
-        error("SymbolicFD: the equation must contain `=` (e.g. `∂q/∂t + ∇⋅(uq) = μ∇²q`).")
-    lhs, rhs = split(s, "=", limit = 2)
-
-    var   = ""
-    terms = PDETerm[]
-
-    # A term is parsed once; `to_rhs` carries the sign needed to move it to the
-    # right-hand side of ∂q/∂t = …  (LHS terms flip, RHS terms keep their sign).
-    function classify!(sign::Float64, body::String, to_rhs::Float64)
-        # --- time derivative: defines the unknown, not added to the RHS ---
-        m = match(TIME_RE, body)
-        if m !== nothing
-            var == "" || var == m.captures[1] ||
-                error("SymbolicFD: more than one time-derivative variable found.")
-            var = m.captures[1]
-            return
-        end
-
-        # --- diffusion:  c ∇²q ---
-        m = match(DIFF_RE, body)
-        if m !== nothing
-            c = eval_scalar(m.captures[1], inputs)
-            push!(terms, PDETerm(:diffusion, to_rhs * sign * c, Dict{Symbol,Float64}()))
-            return
-        end
-
-        # --- advection (flux divergence):  c ∇⋅(u q) ---
-        m = match(ADV_RE, body)
-        if m !== nothing
-            lead  = eval_scalar(m.captures[1], inputs)
-            inner = m.captures[2]
-            # the flux is velocity * var; peel the var out to read the velocity
-            velstr = replace(inner, string(var) => "")
-            u = eval_scalar(velstr, inputs)
-            push!(terms, PDETerm(:advection, to_rhs * sign * lead, Dict(:u => u)))
-            return
-        end
-
-        # --- linear reaction (c·var) vs. spatially constant source (c) ---
-        if endswith(body, var)
-            coeffstr = chop(body; tail = length(var))
-            c = eval_scalar(coeffstr, inputs)
-            push!(terms, PDETerm(:reaction, to_rhs * sign * c, Dict{Symbol,Float64}()))
-            return
-        end
-        c = eval_scalar(body, inputs)
-        push!(terms, PDETerm(:source, to_rhs * sign * c, Dict{Symbol,Float64}()))
-        return
-    end
-
-    for (sgn, body) in split_terms(lhs); classify!(sgn, body, -1.0); end   # LHS flips
-    for (sgn, body) in split_terms(rhs); classify!(sgn, body, +1.0); end   # RHS keeps
-
-    var == "" && error("SymbolicFD: no `∂q/∂t`-type time derivative found in the equation.")
-    return var, terms
-end
-
-#---------------------------------------------------------------------------------
-# 5. Finite-difference mesh (1D, Jexpresso-style inputs)
+# 2. Finite-difference mesh (1D now; ND-ready: operators ask the mesh for
+#    a directional derivative, so a 2D/3D mesh only needs to add directions).
 #---------------------------------------------------------------------------------
 """
     FDMesh1D
 
 Uniform 1D finite-difference grid with `npoin` nodes on `[xmin, xmax]`.
-For a periodic grid the right boundary node is identified with the left one, so
-the nodes are `x_i = xmin + i*Δx`, `i = 0 … npoin-1`, with `Δx = (xmax-xmin)/npoin`.
+For a periodic grid `x_i = xmin + i*Δx`, `i = 0 … npoin-1`, `Δx = (xmax-xmin)/npoin`.
 """
 struct FDMesh1D
+    nsd::Int
     npoin::Int
     xmin::Float64
     xmax::Float64
@@ -275,88 +111,419 @@ function FDMesh1D(inputs::Dict)
         Δx = (xmax - xmin) / (npoin - 1)
         x  = [xmin + i * Δx for i in 0:npoin-1]
     end
-    return FDMesh1D(npoin, xmin, xmax, Δx, x, periodic)
+    return FDMesh1D(1, npoin, xmin, xmax, Δx, x, periodic)
 end
 
-#---------------------------------------------------------------------------------
-# 6. Finite-difference spatial operators (2nd order central, periodic)
-#---------------------------------------------------------------------------------
-@inline ip1(i, n) = i == n ? 1 : i + 1
-@inline im1(i, n) = i == 1 ? n : i - 1
+nsd(m::FDMesh1D) = m.nsd
 
-"central first derivative  d(f)/dx"
-function ddx!(out, f, m::FDMesh1D)
+@inline _ip(i, m::FDMesh1D) = i == m.npoin ? (m.periodic ? 1 : m.npoin) : i + 1
+@inline _im(i, m::FDMesh1D) = i == 1       ? (m.periodic ? m.npoin : 1) : i - 1
+
+# --- the directional-derivative primitives (the ONLY mesh-specific numerics) ---
+"first derivative ∂f/∂x_dir at every node (2nd-order central; periodic wrap)."
+function deriv1(f::Vector{Float64}, m::FDMesh1D, dir::Int)
+    dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
     n, h = m.npoin, m.Δx
+    out = similar(f)
     @inbounds for i in 1:n
-        out[i] = (f[ip1(i,n)] - f[im1(i,n)]) / (2h)
+        out[i] = (f[_ip(i,m)] - f[_im(i,m)]) / (2h)
     end
     return out
 end
 
-"central second derivative  d²(f)/dx²"
-function d2dx2!(out, f, m::FDMesh1D)
+"second derivative ∂²f/∂x_dir² at every node (compact 3-point central)."
+function deriv2(f::Vector{Float64}, m::FDMesh1D, dir::Int)
+    dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
     n, h = m.npoin, m.Δx
+    out = similar(f)
     @inbounds for i in 1:n
-        out[i] = (f[ip1(i,n)] - 2f[i] + f[im1(i,n)]) / (h*h)
+        out[i] = (f[_ip(i,m)] - 2f[i] + f[_im(i,m)]) / (h*h)
     end
     return out
 end
 
 #---------------------------------------------------------------------------------
-# 7. Assemble the right-hand side  ∂q/∂t = rhs(q)
+# 3. Discrete fields and the differential operators that act on them
+#
+# A `Field` of tensor `rank` r stores nsd^r nodal-value components. Operators
+# raise/lower the rank and are written generically over `nsd`, so they already
+# read as the textbook vector-calculus identities:
+#
+#     ∇f        (gradient)   : rank r -> r+1
+#     ∇⋅F       (divergence) : rank r -> r-1
+#     ∇²f = Δf  (Laplacian)  : rank r -> r   (Σ_d ∂²/∂x_d², compact stencil)
+#
+# This is the "each symbol has its own numerical counterpart" layer: the
+# discretization lives here, in the operator, independent of any equation.
 #---------------------------------------------------------------------------------
-function build_rhs(terms::Vector{PDETerm}, m::FDMesh1D)
-    n    = m.npoin
-    flux = zeros(n)
-    tmp  = zeros(n)
-    function rhs!(dq, q)
-        fill!(dq, 0.0)
-        for t in terms
-            if t.kind == :advection
-                u = t.params[:u]
-                @inbounds @. flux = u * q          # conservative flux F = u q
-                ddx!(tmp, flux, m)                  # ∇⋅(u q)
-            elseif t.kind == :diffusion
-                d2dx2!(tmp, q, m)                   # ∇²q
-            elseif t.kind == :reaction
-                @inbounds @. tmp = q
-            else # :source (spatially constant)
-                fill!(tmp, 1.0)
-            end
-            @inbounds @. dq += t.coeff * tmp
+"""
+    Field(mesh, rank, comp)
+
+Discrete tensor field. `comp` holds `nsd^rank` component vectors (each of length
+`npoin`); component `c-1` decodes to a base-`nsd` multi-index of length `rank`.
+"""
+struct Field
+    mesh::FDMesh1D
+    rank::Int
+    comp::Vector{Vector{Float64}}
+end
+
+scalar_field(m::FDMesh1D, v::Vector{Float64}) = Field(m, 0, [v])
+const_field(m::FDMesh1D, c::Real)             = Field(m, 0, [fill(Float64(c), m.npoin)])
+function vec_const_field(m::FDMesh1D, v::AbstractVector)
+    length(v) == nsd(m) ||
+        error("SymbolicFD: a vector constant needs nsd = $(nsd(m)) components, got $(length(v)).")
+    return Field(m, 1, [fill(Float64(v[d]), m.npoin) for d in 1:nsd(m)])
+end
+
+# --- gradient: ∇ ---------------------------------------------------------------
+function gradient(f::Field)
+    m, d, nc = f.mesh, nsd(f.mesh), length(f.comp)
+    out = Vector{Vector{Float64}}(undef, d * nc)
+    for dir in 1:d, c in 1:nc           # new (leading) index = derivative direction
+        out[(dir-1)*nc + c] = deriv1(f.comp[c], m, dir)
+    end
+    return Field(m, f.rank + 1, out)
+end
+
+# --- divergence: ∇⋅  (contracts the leading index with its derivative dir) -----
+function divergence(f::Field)
+    m, d = f.mesh, nsd(f.mesh)
+    if f.rank == 0
+        # 1D convenience: ∇⋅ of a scalar flux is just ∂/∂x (the single direction).
+        d == 1 || error("SymbolicFD: ∇⋅ needs a vector (rank ≥ 1) field when nsd > 1.")
+        return Field(m, 0, [deriv1(f.comp[1], m, 1)])
+    end
+    nc_out = length(f.comp) ÷ d
+    out = [zeros(m.npoin) for _ in 1:nc_out]
+    for c in 1:nc_out, dir in 1:d
+        out[c] .+= deriv1(f.comp[(dir-1)*nc_out + c], m, dir)
+    end
+    return Field(m, f.rank - 1, out)
+end
+
+# --- Laplacian: ∇² = Δ  (compact, per component, summed over directions) -------
+function laplacian(f::Field)
+    m, d = f.mesh, nsd(f.mesh)
+    out = [zeros(m.npoin) for _ in 1:length(f.comp)]
+    for c in 1:length(f.comp), dir in 1:d
+        out[c] .+= deriv2(f.comp[c], m, dir)
+    end
+    return Field(m, f.rank, out)
+end
+
+# --- field algebra -------------------------------------------------------------
+"scalar × field (or field × scalar): scales every component."
+function fmul(a::Field, b::Field)
+    if a.rank == 0
+        return Field(b.mesh, b.rank, [a.comp[1] .* bc for bc in b.comp])
+    elseif b.rank == 0
+        return Field(a.mesh, a.rank, [b.comp[1] .* ac for ac in a.comp])
+    end
+    error("SymbolicFD: `*` is scalar×field; use `⋅` for a vector·vector contraction.")
+end
+
+"inner product `⋅` : equal-rank fields contracted to a scalar (rank 0 = product)."
+function fdot(a::Field, b::Field)
+    a.rank == b.rank || error("SymbolicFD: `⋅` needs equal-rank operands.")
+    a.rank == 0 && return Field(a.mesh, 0, [a.comp[1] .* b.comp[1]])
+    out = zeros(a.mesh.npoin)
+    for c in 1:length(a.comp)
+        out .+= a.comp[c] .* b.comp[c]
+    end
+    return Field(a.mesh, 0, [out])
+end
+
+function fadd(a::Field, b::Field, s::Float64)
+    a.rank == b.rank ||
+        error("SymbolicFD: cannot add a rank-$(a.rank) and a rank-$(b.rank) field " *
+              "(the equation is dimensionally inconsistent).")
+    return Field(a.mesh, a.rank, [a.comp[c] .+ s .* b.comp[c] for c in 1:length(a.comp)])
+end
+
+fneg(a::Field) = Field(a.mesh, a.rank, [-ac for ac in a.comp])
+
+#---------------------------------------------------------------------------------
+# 4. The expression tree (AST) and the recursive-descent parser
+#
+# Grammar (on the normalized, whitespace-free string; identifiers are single
+# characters so juxtaposition `uq` means u*q, as in handwritten maths):
+#
+#   expr   := term (('+'|'-') term)*
+#   term   := factor ( ('*'|'⋅'|<juxtaposition>) factor )*
+#   factor := '∇⋅' factor | '∇²' factor | '∇' factor | '∂' id '/∂t' | atom
+#   atom   := '(' expr ')' | number | id
+#---------------------------------------------------------------------------------
+struct Node
+    op::Symbol                  # :const :vecconst :var :grad :div :lap :dt :mul :dot :add :sub :neg
+    val::Float64
+    vec::Vector{Float64}
+    name::String
+    args::Vector{Node}
+end
+Node(op::Symbol; val = 0.0, vec = Float64[], name = "", args = Node[]) =
+    Node(op, val, vec, name, args)
+
+mutable struct PState
+    chars::Vector{Char}
+    pos::Int
+    var::String
+    inputs::Dict
+end
+
+_peek(p::PState)  = p.pos <= length(p.chars) ? p.chars[p.pos]     : '\0'
+_peek2(p::PState) = p.pos+1 <= length(p.chars) ? p.chars[p.pos+1] : '\0'
+_adv!(p::PState)  = (c = _peek(p); p.pos += 1; c)
+_expect!(p::PState, c::Char) = _adv!(p) == c ||
+    error("SymbolicFD: expected `$c` near position $(p.pos) in the equation.")
+
+_isidchar(c::Char) = isletter(c) || c == '_'
+function _is_factor_start(c::Char)
+    c == '\0' && return false
+    c in ('+', '-', '*', '⋅', ')', '=', '/', '²') && return false
+    return true
+end
+
+function _read_number(p::PState)
+    a = p.pos
+    while isdigit(_peek(p)) || _peek(p) == '.'; _adv!(p); end
+    if _peek(p) == 'e' || _peek(p) == 'E'
+        _adv!(p)
+        (_peek(p) == '+' || _peek(p) == '-') && _adv!(p)
+        while isdigit(_peek(p)); _adv!(p); end
+    end
+    return parse(Float64, String(p.chars[a:p.pos-1]))
+end
+
+# resolve a single-character identifier to a leaf node
+function _leaf(p::PState, name::String)
+    if name == p.var
+        return Node(:var; name = name)
+    elseif haskey(p.inputs, Symbol(name))
+        v = p.inputs[Symbol(name)]
+        return v isa AbstractVector ? Node(:vecconst; vec = Float64.(v)) :
+                                      Node(:const;    val = Float64(v))
+    end
+    error("SymbolicFD: unknown symbol `$name` in the equation. " *
+          "Add `:$name => value` to your inputs Dict (a vector for a vector quantity).")
+end
+
+function parse_atom(p::PState)
+    c = _peek(p)
+    if c == '('
+        _adv!(p)
+        node = parse_expr(p)
+        _expect!(p, ')')
+        return node
+    elseif isdigit(c) || c == '.'
+        return Node(:const; val = _read_number(p))
+    elseif _isidchar(c)
+        return _leaf(p, string(_adv!(p)))     # single-character identifier
+    end
+    error("SymbolicFD: unexpected character `$c` near position $(p.pos).")
+end
+
+function parse_timederiv(p::PState)
+    _expect!(p, '∂')
+    _isidchar(_peek(p)) || error("SymbolicFD: expected a variable name after ∂.")
+    name = string(_adv!(p))
+    _expect!(p, '/'); _expect!(p, '∂'); _expect!(p, 't')
+    return Node(:dt; name = name)
+end
+
+function parse_factor(p::PState)
+    c = _peek(p)
+    if c == '∇'
+        _adv!(p)
+        n = _peek(p)
+        if n == '⋅'
+            _adv!(p); return Node(:div; args = [parse_factor(p)])
+        elseif n == '²'
+            _adv!(p); return Node(:lap; args = [parse_factor(p)])
+        else
+            return Node(:grad; args = [parse_factor(p)])
         end
+    elseif c == '∂'
+        return parse_timederiv(p)
+    else
+        return parse_atom(p)
+    end
+end
+
+function parse_term(p::PState)
+    node = parse_factor(p)
+    while true
+        c = _peek(p)
+        if c == '*'
+            _adv!(p); node = Node(:mul; args = [node, parse_factor(p)])
+        elseif c == '⋅'
+            _adv!(p); node = Node(:dot; args = [node, parse_factor(p)])
+        elseif _is_factor_start(c)
+            node = Node(:mul; args = [node, parse_factor(p)])   # juxtaposition
+        else
+            break
+        end
+    end
+    return node
+end
+
+function parse_expr(p::PState)
+    node = parse_term(p)
+    while _peek(p) == '+' || _peek(p) == '-'
+        opc = _adv!(p)
+        node = Node(opc == '+' ? :add : :sub; args = [node, parse_term(p)])
+    end
+    return node
+end
+
+parse_side(s::AbstractString, var, inputs) =
+    parse_expr(PState(collect(s), 1, var, inputs))
+
+# flatten an expression into signed additive leaves
+function flatten!(acc::Vector{Tuple{Float64,Node}}, n::Node, s::Float64)
+    if n.op == :add
+        flatten!(acc, n.args[1], s); flatten!(acc, n.args[2], s)
+    elseif n.op == :sub
+        flatten!(acc, n.args[1], s); flatten!(acc, n.args[2], -s)
+    elseif n.op == :neg
+        flatten!(acc, n.args[1], -s)
+    else
+        push!(acc, (s, n))
+    end
+    return acc
+end
+
+"""
+    parse_equation(eqn, inputs) -> (var::String, dqdt::Node)
+
+Parse a unicode/LaTeX PDE into the unknown variable name and the expression
+tree for the right-hand side of `∂var/∂t = dqdt`. The time-derivative term is
+identified and removed; every other term is moved across the `=` with the
+appropriate sign. No operator is tied to a specific equation: `dqdt` is just a
+composition of the `∇/∇⋅/∇²` operators and field algebra defined above.
+"""
+function parse_equation(eqn::AbstractString, inputs::Dict)
+    s = normalize_equation(eqn)
+    occursin("=", s) ||
+        error("SymbolicFD: the equation must contain `=` (e.g. `∂q/∂t + ∇⋅(uq) = μ∇²q`).")
+    m = match(r"∂([^/]+)/∂t", s)
+    m === nothing &&
+        error("SymbolicFD: no `∂q/∂t`-type time derivative found in the equation.")
+    var = String(m.captures[1])
+    length(var) == 1 ||
+        error("SymbolicFD: use single-character variable/parameter names (got `$var`); " *
+              "juxtaposition like `uq` is read as u*q.")
+
+    lhs, rhs = split(s, "=", limit = 2)
+    lhs_terms = flatten!(Tuple{Float64,Node}[], parse_side(lhs, var, inputs), 1.0)
+    rhs_terms = flatten!(Tuple{Float64,Node}[], parse_side(rhs, var, inputs), 1.0)
+
+    # collect the dq/dt right-hand-side terms (rhs keep sign, lhs flip)
+    signed = Tuple{Float64,Node}[]
+    dt_found = false
+    for (sg, nd) in rhs_terms
+        nd.op == :dt ? error("SymbolicFD: the ∂q/∂t term must be on the left of `=`.") :
+                       push!(signed, (sg, nd))
+    end
+    for (sg, nd) in lhs_terms
+        if nd.op == :dt
+            sg == 1.0 || error("SymbolicFD: the ∂q/∂t term must appear with a + sign.")
+            nd.name == var || error("SymbolicFD: time-derivative variable mismatch.")
+            dt_found = true
+        else
+            push!(signed, (-sg, nd))
+        end
+    end
+    dt_found || error("SymbolicFD: no `∂$var/∂t` term found.")
+
+    # build the dqdt tree
+    isempty(signed) && return var, Node(:const; val = 0.0)
+    s1, n1 = signed[1]
+    dqdt = s1 == 1.0 ? n1 : Node(:neg; args = [n1])
+    for (sg, nd) in signed[2:end]
+        dqdt = Node(sg == 1.0 ? :add : :sub; args = [dqdt, nd])
+    end
+    return var, dqdt
+end
+
+#---------------------------------------------------------------------------------
+# 5. Evaluate the expression tree on the current state field -> ∂q/∂t
+#---------------------------------------------------------------------------------
+function eval_node(n::Node, qf::Field)
+    op = n.op
+    op == :const    && return const_field(qf.mesh, n.val)
+    op == :vecconst && return vec_const_field(qf.mesh, n.vec)
+    op == :var      && return qf
+    op == :grad     && return gradient(eval_node(n.args[1], qf))
+    op == :div      && return divergence(eval_node(n.args[1], qf))
+    op == :lap      && return laplacian(eval_node(n.args[1], qf))
+    op == :mul      && return fmul(eval_node(n.args[1], qf), eval_node(n.args[2], qf))
+    op == :dot      && return fdot(eval_node(n.args[1], qf), eval_node(n.args[2], qf))
+    op == :add      && return fadd(eval_node(n.args[1], qf), eval_node(n.args[2], qf),  1.0)
+    op == :sub      && return fadd(eval_node(n.args[1], qf), eval_node(n.args[2], qf), -1.0)
+    op == :neg      && return fneg(eval_node(n.args[1], qf))
+    error("SymbolicFD: cannot evaluate node $(op).")
+end
+
+"pretty-print an AST node back to unicode, for the run banner."
+function ast_str(n::Node)
+    op = n.op
+    op == :const    && return @sprintf("%.4g", n.val)
+    op == :vecconst && return string("[", join(map(x -> @sprintf("%.4g", x), n.vec), ","), "]")
+    op == :var      && return n.name
+    op == :grad     && return string("∇(", ast_str(n.args[1]), ")")
+    op == :div      && return string("∇⋅(", ast_str(n.args[1]), ")")
+    op == :lap      && return string("∇²(", ast_str(n.args[1]), ")")
+    op == :mul      && return string(ast_str(n.args[1]), "·", ast_str(n.args[2]))
+    op == :dot      && return string(ast_str(n.args[1]), "⋅", ast_str(n.args[2]))
+    op == :add      && return string(ast_str(n.args[1]), " + ", ast_str(n.args[2]))
+    op == :sub      && return string(ast_str(n.args[1]), " - ", ast_str(n.args[2]))
+    op == :neg      && return string("-", ast_str(n.args[1]))
+    return string(op)
+end
+
+#---------------------------------------------------------------------------------
+# 6. Right-hand side closure: wrap q in a Field, evaluate the tree, return ∂q/∂t
+#---------------------------------------------------------------------------------
+function build_rhs(dqdt::Node, mesh::FDMesh1D)
+    function rhs!(dq, q)
+        qf = scalar_field(mesh, q)        # alias q; operators allocate, never mutate q
+        r  = eval_node(dqdt, qf)
+        r.rank == 0 || error("SymbolicFD: ∂$("q")/∂t evaluated to a rank-$(r.rank) field; " *
+                             "the equation is not a scalar balance.")
+        copyto!(dq, r.comp[1])
         return dq
     end
     return rhs!
 end
 
 #---------------------------------------------------------------------------------
-# 8. Explicit RK4 time integration with an automatic stable Δt
+# 7. Explicit RK4 time integration with an automatic stable Δt
 #---------------------------------------------------------------------------------
-function stable_dt(terms::Vector{PDETerm}, m::FDMesh1D, cfl::Float64)
-    h = m.Δx
-    dt = Inf
-    for t in terms
-        if t.kind == :advection
-            a = abs(t.coeff * t.params[:u])
-            a > 0 && (dt = min(dt, cfl * h / a))
-        elseif t.kind == :diffusion
-            μ = abs(t.coeff)
-            μ > 0 && (dt = min(dt, cfl * 0.5 * h*h / μ))
-        end
+# Auto Δt from the advective (:u) and diffusive (:μ) scales when present; the
+# user can always override with :Δt. (RK4 stays stable while dt·max|λ| ≲ 2.8.)
+function stable_dt(inputs::Dict, m::FDMesh1D, cfl::Float64)
+    h, dt = m.Δx, Inf
+    if haskey(inputs, :u)
+        uv = inputs[:u]
+        umax = uv isa AbstractVector ? maximum(abs, uv) : abs(Float64(uv))
+        umax > 0 && (dt = min(dt, cfl * h / umax))
     end
-    isfinite(dt) || (dt = cfl * h)   # fallback (pure reaction/source)
+    if haskey(inputs, :μ)
+        μv = inputs[:μ]
+        μmax = μv isa AbstractVector ? maximum(abs, μv) : abs(Float64(μv))
+        μmax > 0 && (dt = min(dt, cfl * 0.5 * h * h / μmax))
+    end
+    isfinite(dt) || (dt = cfl * h)
     return dt
 end
 
-# RK4 work arrays, allocated once and reused across steps.
 struct RK4Work
     k1::Vector{Float64}; k2::Vector{Float64}
     k3::Vector{Float64}; k4::Vector{Float64}; qt::Vector{Float64}
 end
 RK4Work(n::Int) = RK4Work(zeros(n), zeros(n), zeros(n), zeros(n), zeros(n))
 
-"advance `q` by one explicit RK4 step of size `dt`."
 function rk4_step!(q, rhs!, dt, w::RK4Work)
     rhs!(w.k1, q)
     @. w.qt = q + 0.5dt*w.k1 ; rhs!(w.k2, w.qt)
@@ -367,67 +534,41 @@ function rk4_step!(q, rhs!, dt, w::RK4Work)
 end
 
 #---------------------------------------------------------------------------------
-# 9. Output helpers
-#
-# PNG figures and the on-the-fly window are produced with Plots.jl in exactly
-# the same way as Jexpresso's src/io/plotting/jeplots.jl (used e.g. by
-# problems/CompEuler/sod1d): an `INIT-<var>.png` at t = 0 and a `fields-it<iout>.png`
-# at every diagnostic output. A CSV is always written and a terminal ASCII plot
-# is kept as a display-free fallback (:outformat => "ascii").
+# 8. Output: PNG + on-the-fly plotting, exactly as in Jexpresso's
+#    src/io/plotting/jeplots.jl (used by problems/CompEuler/sod1d). CSV is always
+#    written; a terminal ASCII plot is a display-free fallback (:outformat="ascii").
 #---------------------------------------------------------------------------------
-# Write a figure to file without flashing a window (mirrors jeplots._savefig_silent):
-# with the GR backend, :overwrite_figure = false routes the export through a
-# dedicated file workstation instead of the active (on-screen) one.
 function _savefig_silent(plt, fout_name)
     plt[:overwrite_figure] = false
     Plots.savefig(plt, string(fout_name))
     return nothing
 end
 
-# Initial condition figure, same look as jeplots.plot_initial(NSD_1D, …).
 function plot_initial_png(x, q, var, OUTPUT_DIR::String)
     npoin = length(q)
     plt = Plots.scatter(x[1:npoin], q[1:npoin];
-                        markersize = 5,
-                        color = :blue,
-                        xlabel = "x",
-                        ylabel = "$var(x)",
-                        title = "$var",
-                        titlefontsize = 24,
-                        guidefontsize = 18,
-                        legendfontsize = 14,
-                        tickfontsize = 14,
-                        legend = false,
-                        size = (800, 600))
+                        markersize = 5, color = :blue,
+                        xlabel = "x", ylabel = "$var(x)", title = "$var",
+                        titlefontsize = 24, guidefontsize = 18,
+                        legendfontsize = 14, tickfontsize = 14,
+                        legend = false, size = (800, 600))
     _savefig_silent(plt, string(OUTPUT_DIR, "/INIT-", var, ".png"))
     return plt
 end
 
-# One diagnostic output: build the per-variable curve (same style as
-# jeplots.plot_results), save it as `fields-it<iout>.png` and, when `live` is
-# true, paint the active GR workstation so the window updates on the fly --
-# this is the very mechanism jeplots.render_plot_matrix relies on.
 function plot_results_png(x, q, var, ttl::String, OUTPUT_DIR::String, iout::Int;
                           live::Bool = true, wfig = 600, hfig = 400)
     sort_idx = sortperm(x)
     plt = Plots.plot(x[sort_idx], q[sort_idx];
-                     line = (:blue, 2),
-                     marker = (:circle, 5, :blue),
-                     title = string(var, "  ", ttl),
-                     xlabel = "x",
-                     titlefontsize = 22,
-                     guidefontsize = 18,
-                     legendfontsize = 14,
-                     tickfontsize = 14,
-                     legend = false,
-                     show = false,
-                     size = (wfig, hfig))
+                     line = (:blue, 2), marker = (:circle, 5, :blue),
+                     title = string(var, "  ", ttl), xlabel = "x",
+                     titlefontsize = 22, guidefontsize = 18,
+                     legendfontsize = 14, tickfontsize = 14,
+                     legend = false, show = false, size = (wfig, hfig))
     fout = string(OUTPUT_DIR, "/fields-it", iout, ".png")
     if live
-        # plain savefig on the GR backend repaints the on-screen workstation
-        # (live window) AND prints the same canvas to file -- no flicker.
-        try; Plots.savefig(plt, fout); catch; end
-        try; display(plt); catch; end
+        try; Plots.savefig(plt, fout); catch; end   # GR: repaints live window AND writes file
+        try; display(plt);             catch; end
     else
         _savefig_silent(plt, fout)
     end
@@ -447,78 +588,66 @@ end
 """
     ascii_plot(x, q; rows=15, cols=70, label="q")
 
-Render a quick line plot of `q(x)` to the terminal, no plotting package needed.
+Render a quick line plot of `q(x)` to the terminal (display-free fallback).
 """
 function ascii_plot(x, q; rows = 15, cols = 70, label = "q")
-    n  = length(q)
+    n = length(q)
     qmin, qmax = minimum(q), maximum(q)
-    span = qmax - qmin
-    span == 0 && (span = 1.0)
+    span = qmax - qmin; span == 0 && (span = 1.0)
     grid = fill(' ', rows, cols)
     for c in 1:cols
-        # nearest sample for this column
         idx = round(Int, 1 + (c-1) * (n-1) / (cols-1))
-        r   = rows - round(Int, (q[idx] - qmin) / span * (rows-1))
-        r   = clamp(r, 1, rows)
+        r   = clamp(rows - round(Int, (q[idx] - qmin) / span * (rows-1)), 1, rows)
         grid[r, c] = '*'
     end
     println()
     @printf("  %s   [min = %.4g, max = %.4g]\n", label, qmin, qmax)
-    for r in 1:rows
-        println("  |", String(grid[r, :]))
-    end
+    for r in 1:rows; println("  |", String(grid[r, :])); end
     println("  +", repeat("-", cols))
     @printf("   x = %.3g %s x = %.3g\n", x[1], repeat(" ", cols-12), x[end])
     return nothing
 end
 
 #---------------------------------------------------------------------------------
-# 10. Top-level driver
+# 9. Top-level driver
 #---------------------------------------------------------------------------------
 """
     solve(eqn, inputs) -> (mesh, q0, q)
 
-Parse the unicode/LaTeX PDE string `eqn`, build a 1D finite-difference
-discretization from the `user_inputs`-style `inputs` Dict, integrate in time
-and return the mesh together with the initial and final solution vectors.
+Parse the unicode/LaTeX PDE string `eqn` into composed finite-difference
+operators, build the right-hand side `∂q/∂t = …`, integrate in time and return
+the mesh together with the initial and final solution vectors.
 
-Required / recognised `inputs` keys
+Recognised `inputs` keys
 - `:xmin`, `:xmax`            domain (default [-1, 1])
 - `:npoin` (or `:nelx`)       number of grid points (default 100)
 - `:periodic`                 true/false (default true)
-- `:nsd`                      spatial dimension (only 1 supported for now)
-- `:u`, `:μ`, …               any parameter symbol appearing in the equation
-- `:q0`                       function `x -> value` for the initial condition
+- `:nsd`                      spatial dimension (only 1 implemented so far)
+- `:u`, `:μ`, …               parameter symbols in the equation (vector for a
+                              vector quantity, e.g. a velocity `:u => [1.0]`)
+- `:q0`                       initial condition `x -> value`
 - `:tend`                     final time
 - `:Δt`                       time step (optional; otherwise CFL-derived)
-- `:CFL`                      CFL number used for the automatic Δt (default 0.5)
-- `:output_dir`              where to write the figures / `solution.csv` (default ".")
-- `:outformat`               "png" (Plots.jl, like sod1d) or "ascii" (default "png")
+- `:CFL`                      CFL number for the automatic Δt (default 0.5)
+- `:output_dir`               where to write figures / `solution.csv` (default ".")
+- `:outformat`                "png" (Plots.jl, like sod1d) or "ascii" (default "png")
 - `:ndiagnostics_outputs`     number of on-the-fly plot snapshots (default 10)
 - `:plot_live`                update an on-screen window on the fly (default true)
 """
 function solve(eqn::AbstractString, inputs::Dict)
-    nsd = Int(get(inputs, :nsd, 1))
-    nsd == 1 || error("SymbolicFD: only nsd = 1 is implemented so far (got nsd = $nsd).")
+    nsd_in = Int(get(inputs, :nsd, 1))
+    nsd_in == 1 || error("SymbolicFD: only nsd = 1 is implemented so far (got nsd = $nsd_in).")
 
-    var, terms = parse_equation(eqn, inputs)
+    var, dqdt = parse_equation(eqn, inputs)
     mesh = FDMesh1D(inputs)
 
     println("="^72)
-    println(" SymbolicFD : solving the user-written equation")
+    println(" SymbolicFD : composing finite-difference operators for")
     println("   ", eqn)
-    println("   normalized form : ", normalize_equation(eqn))
-    println("   unknown         : ", var)
-    println("   nsd = $nsd, npoin = $(mesh.npoin), domain = [$(mesh.xmin), $(mesh.xmax)], ",
+    println("   normalized      : ", normalize_equation(eqn))
+    println("   discretized RHS : ∂$var/∂t = ", ast_str(dqdt))
+    println("   nsd = $nsd_in, npoin = $(mesh.npoin), domain = [$(mesh.xmin), $(mesh.xmax)], ",
             mesh.periodic ? "periodic" : "non-periodic")
-    print("   detected terms  : ∂$var/∂t =")
-    for (k, t) in enumerate(terms)
-        op = t.kind == :advection ? "∇⋅(u q)" :
-             t.kind == :diffusion ? "∇²q"     :
-             t.kind == :reaction  ? "q"       : "1"
-        @printf(" %s%.4g·%s", t.coeff ≥ 0 ? (k==1 ? "" : "+ ") : "- ", abs(t.coeff), op)
-    end
-    println()
     println("="^72)
 
     # initial condition
@@ -529,57 +658,44 @@ function solve(eqn::AbstractString, inputs::Dict)
     # time stepping
     cfl  = Float64(get(inputs, :CFL, 0.5))
     tend = Float64(get(inputs, :tend, 1.0))
-    dt   = haskey(inputs, :Δt) ? Float64(inputs[:Δt]) : stable_dt(terms, mesh, cfl)
+    dt   = haskey(inputs, :Δt) ? Float64(inputs[:Δt]) : stable_dt(inputs, mesh, cfl)
     nsteps = max(1, ceil(Int, tend / dt))
-    dt     = tend / nsteps   # land exactly on tend
-
-    rhs! = build_rhs(terms, mesh)
+    dt     = tend / nsteps
+    rhs! = build_rhs(dqdt, mesh)
     @printf("   Δt = %.3e, nsteps = %d, t_end = %.4g\n", dt, nsteps, tend)
 
-    # ---- output set-up -------------------------------------------------------
+    # output set-up
     outdir = String(get(inputs, :output_dir, "."))
     isdir(outdir) || mkpath(outdir)
-    outformat = String(get(inputs, :outformat, "png"))
-    usepng    = lowercase(outformat) == "png"
-    live      = Bool(get(inputs, :plot_live, true))
-    nout      = max(1, Int(get(inputs, :ndiagnostics_outputs, 10)))
+    usepng = lowercase(String(get(inputs, :outformat, "png"))) == "png"
+    live   = Bool(get(inputs, :plot_live, true))
+    nout   = max(1, Int(get(inputs, :ndiagnostics_outputs, 10)))
     out_every = max(1, cld(nsteps, nout))
-
-    # initial snapshot
     if usepng
         plot_initial_png(mesh.x, q0, var, outdir)
         plot_results_png(mesh.x, q0, var, @sprintf("t=%.4g", 0.0), outdir, 0; live = live)
     end
 
-    # ---- time loop with on-the-fly diagnostics ------------------------------
-    w    = RK4Work(mesh.npoin)
-    iout = 0
-    for s in 1:nsteps
+    # time loop with on-the-fly diagnostics
+    w, iout = RK4Work(mesh.npoin), 0
+    for sstep in 1:nsteps
         rk4_step!(q, rhs!, dt, w)
-        if s % out_every == 0 || s == nsteps
+        if sstep % out_every == 0 || sstep == nsteps
             iout += 1
-            t = s * dt
-            if usepng
-                plot_results_png(mesh.x, q, var, @sprintf("t=%.4g", t), outdir, iout;
-                                 live = live)
-            end
+            t = sstep * dt
+            usepng && plot_results_png(mesh.x, q, var, @sprintf("t=%.4g", t), outdir, iout; live = live)
             @printf("   output %3d : t = %.4g, peak = %.6g\n", iout, t, maximum(q))
         end
     end
 
-    # ---- diagnostics & data dump --------------------------------------------
-    mass0 = sum(q0) * mesh.Δx
-    mass1 = sum(q)  * mesh.Δx
-    @printf("   mass: initial = %.6g, final = %.6g  (Δ = %.3e)\n",
-            mass0, mass1, mass1 - mass0)
+    # diagnostics & data dump
+    mass0, mass1 = sum(q0)*mesh.Δx, sum(q)*mesh.Δx
+    @printf("   mass: initial = %.6g, final = %.6g  (Δ = %.3e)\n", mass0, mass1, mass1-mass0)
     @printf("   peak: initial = %.6g, final = %.6g\n", maximum(q0), maximum(q))
-
     csv = save_csv(joinpath(outdir, "solution.csv"), mesh, q0, q)
     println("   wrote ", csv)
     usepng && println("   wrote ", outdir, "/INIT-", var, ".png and ",
                       outdir, "/fields-it{0..", iout, "}.png")
-
-    # terminal ASCII fallback (kept for headless / dependency-free use)
     if !usepng
         ascii_plot(mesh.x, q0; label = "$var(x, t=0)")
         ascii_plot(mesh.x, q;  label = "$var(x, t=$(round(tend, digits=3)))")

@@ -40,8 +40,8 @@ function user_inputs()
         #-------------------------------------------------------------------
         # Physical parameters referenced by the equation string
         #-------------------------------------------------------------------
-        :u         => 1.0,        # advecting velocity in ∇⋅(u q)
-        :μ         => 1.0e-3,     # small diffusion in μ∇⋅∇(q)
+        :u         => [1.0],      # advecting velocity (a vector; ∇⋅ contracts it)
+        :μ         => 1.0e-3,     # small diffusion coefficient in μ∇⋅∇(q)
         #-------------------------------------------------------------------
         # Initial condition: a gaussian wave centred at x = 0
         #-------------------------------------------------------------------
