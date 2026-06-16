@@ -1,0 +1,67 @@
+<?xml version='1.0'?>
+<!--
+  extrae.xml  -  Extrae runtime configuration for the Jexpresso examples.
+
+  Used ONLY on Linux/HPC, where the native Extrae library is available.
+  Point Extrae at this file before launching:
+
+      export EXTRAE_CONFIG_FILE=$PWD/tools/Extrae/extrae.xml
+
+  See section 4 ("Extrae XML configuration file") of the Extrae user guide:
+  https://tools.bsc.es/doc/html/extrae/
+-->
+<trace enabled="yes"
+       home="$EXTRAE_HOME"
+       initial-mode="detail"
+       type="paraver">
+
+  <!-- MPI calls are auto-instrumented when the MPI library is preloaded.   -->
+  <mpi enabled="yes">
+    <counters enabled="yes" />
+  </mpi>
+
+  <!-- pthreads / OpenMP (Julia threads map to THREAD objects).             -->
+  <pthread enabled="no" />
+  <openmp enabled="no" />
+
+  <!-- User-coded regions emitted via Extrae.user_function / @user_function. -->
+  <user-functions enabled="yes" list="" exclude-automatic-functions="no" />
+
+  <!-- PAPI hardware counters.  Disabled by default: laptops rarely expose
+       PAPI, and Jexpresso's MacBook-Air use case has no PAPI. Enable on a
+       cluster node that has PAPI configured.                               -->
+  <counters enabled="yes">
+    <cpu enabled="no" starting-set-distribution="1" />
+    <network enabled="no" />
+    <resource-usage enabled="no" />
+  </counters>
+
+  <!-- Statistical call-stack sampling (low overhead). Off by default so the
+       trace only contains the explicit instrumentation from the examples.  -->
+  <sampling enabled="no" type="default" period="50m" variability="10m" />
+
+  <storage enabled="no">
+    <trace-prefix enabled="yes">TRACE</trace-prefix>
+    <size enabled="no">5</size>
+    <temporal-directory enabled="yes">/tmp</temporal-directory>
+    <final-directory enabled="yes">/tmp</final-directory>
+  </storage>
+
+  <buffer enabled="yes">
+    <size enabled="yes">5000000</size>
+    <circular enabled="no" />
+  </buffer>
+
+  <!-- Merge the per-process .mpit files into a single .prv at the end.      -->
+  <merge enabled="yes"
+         synchronization="default"
+         tree-fan-out="16"
+         max-memory="512"
+         joint-states="yes"
+         keep-mpits="yes"
+         sort-addresses="yes"
+         overwrite="yes">
+    jexpresso-extrae.prv
+  </merge>
+
+</trace>
