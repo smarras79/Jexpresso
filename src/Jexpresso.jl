@@ -527,15 +527,21 @@ end
     # restore the previous state afterwards so nothing leaks past
     # precompilation.
     #
-    # The workload runs by default. If MPI.Init still can't come up on a
-    # particular node (no working fabric provider at all), disable it with
+    # The workload is OFF by default: on an InfiniBand login node MPI.Init
+    # cannot reliably bring up a fabric (verbs aborts, tcp/shm can stall for
+    # many minutes), and we will not let precompilation hang on that. The
+    # package still precompiles fully without it; you only lose the warm-up,
+    # so the first solve of a given problem shape pays its JIT at runtime.
     #
-    #     JEXPRESSO_PRECOMPILE_WORKLOAD=0   (also: false / no / off)
+    # Opt in — only on a compute node where the fabric is healthy, or any
+    # machine where MPI.Init is cheap (e.g. a laptop) — with:
     #
-    # before precompiling — the package still precompiles fully, you just
-    # lose the warm-up and the first run pays more JIT. Alternatively
-    # precompile inside a compute-node allocation where the fabric is healthy.
-    _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "1")) in
+    #     JEXPRESSO_PRECOMPILE_WORKLOAD=1   (also: true / yes / on)
+    #
+    # When opted in the run is lean (drivers.jl caps it to 3 steps while
+    # generating precompile output) and uses FI_PROVIDER=shm for the
+    # single-process worker.
+    _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "0")) in
                     ("1", "true", "yes", "on")
     _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
     _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
