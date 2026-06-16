@@ -1,4 +1,6 @@
-using NCDatasets
+# PERF: `using NCDatasets` moved into Jexpresso._ensure_netcdf_loaded!().
+# read_atmospheric_data and friends call the loader on entry; the
+# names below (Dataset, NCDataset, …) are resolved at call time.
 
 """
     read_atmospheric_data(filename::String)
@@ -14,6 +16,7 @@ Returns a named tuple containing:
 - rho: moist air density (kg/m³)
 """
 function read_atmospheric_data(filename::String)
+    _ensure_netcdf_loaded!()
     # Open the NetCDF file
     @info filename
     ds = NCDataset(filename, "r")

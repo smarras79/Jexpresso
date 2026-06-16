@@ -10,7 +10,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
     if rank == 0
-        pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
+        # Wrap long values across multiple lines so nothing is cropped — the
+        # default pretty_table truncates wide cells with "…" and hides the
+        # tail of long paths / vectors / NamedTuples that users need to see.
+        term_cols = try displaysize(stdout)[2] catch; 120 end
+        key_w     = 32
+        # Leave room for the two outer borders, the column separator, and the
+        # padding PrettyTables adds around each cell (≈ 7 chars total).
+        val_w     = max(40, term_cols - key_w - 7)
+        pretty_table(inputs;
+                     sortkeys       = true,
+                     border_crayon  = crayon"yellow",
+                     linebreaks     = true,
+                     autowrap       = true,
+                     columns_width  = [key_w, val_w],
+                     crop           = :none)
     end
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
@@ -101,6 +115,25 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
     if(!haskey(inputs, :lwall_model))
        inputs[:lwall_model] = false
+    end
+
+    # Default to the rank-0-read + MPI.bcast mesh path on every platform.
+    # The alternative — `GmshDiscreteModel(parts, file)` in the
+    # `lxy_partition=false` branch of `mod_mesh_read_gmsh!` — goes
+    # through GridapGmsh's "distributed" constructor, which (depending
+    # on the release) parses the .msh file on every rank: nparts × file
+    # I/O, nparts × gmsh parses, nparts × peak GMSH memory. On a laptop
+    # with a non-trivial mesh that adds minutes to pre-processing
+    # before the time-loop even starts.
+    #
+    # Originally this was macOS-only because the parallel constructor
+    # SIGBUSes on Apple Silicon + Open MPI. The serial-read + bcast
+    # path has since been the macOS default with no issues, so make it
+    # the default on Linux too. Users who need a different partition
+    # strategy can still opt out by setting `:lxy_partition => false`
+    # in their user_inputs.jl.
+    if(!haskey(inputs, :lxy_partition))
+        inputs[:lxy_partition] = true
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))
@@ -199,6 +232,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             #inputs[:lsparse] = false
         end
     end
+    
+    if(!haskey(inputs, :NNfile))
+      inputs[:NNfile] = nothing
+    end
+
 
     if(!haskey(inputs, :plot_vlines))
       inputs[:plot_vlines] = "empty"
@@ -207,7 +245,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :plot_hlines))
       inputs[:plot_hlines] = "empty"
     end
-    
+
+    # Colormap for the 2D PNG writer (any ColorSchemes.jl name). The
+    # default is cmocean's desaturated diverging "balance", which renders
+    # wave fields better than highly saturated maps like viridis.
+    if(!haskey(inputs, :plot_colormap))
+      inputs[:plot_colormap] = :balance
+    end
+
+    # PNG writers: true (default) renders all variables of an output time
+    # as ONE plot-matrix figure -- the gksqt window is updated in place and
+    # fields-it<n>.png is written. false writes one silent PNG per variable
+    # instead (<var>-it<n>.png) and opens no window; see render_plot_matrix
+    # in jeplots.jl for why the two modes are mutually exclusive under GR.
+    if(!haskey(inputs, :plot_matrix))
+      inputs[:plot_matrix] = true
+    end
+
     if(!haskey(inputs, :plot_axis))
       inputs[:plot_axis] = "empty"
     end
@@ -554,7 +608,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:loutput_pert] = false
     end
     if(!haskey(inputs, :lwrite_initial))
-        inputs[:lwrite_initial] = false
+        inputs[:lwrite_initial] = true
     end
 
     if (!haskey(inputs, :gmsh_filename_c))
@@ -664,14 +718,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     if inputs[:lkep] == true
         if(!haskey(inputs, :volume_flux))
-            inputs[:volume_flux] = "ranocha"
+            inputs[:volume_flux] = ranocha()
         end
     else
         if(!haskey(inputs, :volume_flux))
             inputs[:volume_flux] = nothing
         end
     end
-    
+
+    if(!haskey(inputs, :entropy_variables))
+        inputs[:entropy_variables] = false
+    end
+
     #
     # saturation adjustment:
     #
@@ -832,6 +890,33 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lamr] = false
     end
 
+    # LES statistics defaults (used by giga_les TimeIntegrators.jl callbacks).
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = Float64[]
+    end
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+    if(!haskey(inputs, :statistics_online_interval))
+        inputs[:statistics_online_interval] = Float32(inputs[:Δt])
+    end
+
+    # VTK / AMR restart defaults (used by giga_les TimeIntegrators.jl).
+    if(!haskey(inputs, :lrestart_vtk))
+        inputs[:lrestart_vtk] = false
+    end
+    if(!haskey(inputs, :lrestart_amr))
+        inputs[:lrestart_amr] = false
+    end
+
+    # LES profile/stress var defaults (used by giga_les params_setup.jl).
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
     if(!haskey(inputs, :amr_freq))
         inputs[:amr_freq] = 0
     end
@@ -864,6 +949,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lpreadapt] = false
     end
 
+    if(!haskey(inputs, :preadapt_max_level))
+        inputs[:preadapt_max_level] = 0
+    end
+
+    if(!haskey(inputs, :amr_start_time))
+        inputs[:amr_start_time] = Float32(0.0)
+    end
+
+    if(!haskey(inputs, :user_heatflux))
+        inputs[:user_heatflux] = 0.0
+        inputs[:δhf] = 0.0
+    else
+        inputs[:δhf] = 1.0
+    end
+
     if inputs[:lpreadapt] == true
         inputs[:ladapt] = true
     end
@@ -891,7 +991,7 @@ function _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
+function mod_inputs_check(inputs, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
@@ -908,7 +1008,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
+function mod_inputs_check(inputs, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """

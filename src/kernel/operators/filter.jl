@@ -4,9 +4,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
 
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    ## Subtract background velocity
-    #qv = copy(q)
-    @views uaux[:,2:3] .= uaux[:,2:3] .- params.qp.qe[:,2:3]
+    ## Subtract reference state from ALL prognostic variables (ρ, ρu, ρv, ρE
+    ## for TOTAL) before filtering, so the modal filter acts only on the
+    ## perturbation from the IC. Otherwise the filter slowly smooths the
+    ## reference state itself and leaks ringing near sharp ICs (e.g. KH shear
+    ## layer in ρE). This now matches the behaviour of filter_gpu_2d!.
+    @views uaux[:,1:params.neqs] .-= params.qp.qe[:,1:params.neqs]
     ## store Dimension of MxM object
 
     ## Loop through the elements
@@ -82,7 +85,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
     end
     
     @views uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
-    @views uaux[:,2:3] .+= params.qp.qe[:,2:3]
+    @views uaux[:,1:params.neqs] .+= params.qp.qe[:,1:params.neqs]
 
     uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
@@ -348,12 +351,13 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
     end
 
     if ladapt == true
-        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
-                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
-                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+         DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b,
+                           params.mesh.non_conforming_facets,
+                           params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
+                           params.q_el, params.q_el_pro, params.q_ghost_p,
                            params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
-                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost,
+                           params.mesh.pgip_local, 
                            params.mesh.ngl-1, params.neqs, params.interp)
     end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, ngl, params.neqs, SD, params.AD)
@@ -362,13 +366,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
         if ladapt == true
-            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT, selectdim(params.b, ndims(params.b), ieq), 
-                                connijk, params.mesh.poin_in_edge, 
-                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
-                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT,
+                                params.mesh.non_conforming_facets,
+                                params.mesh.non_conforming_facets_children_ghost, params.cache_ghost_c,
+                                params.q_el, params.q_el_pro, params.q_ghost_c,
                                 params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
-                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                params.mesh.gip2ip, params.mesh.cgip_local,
                                 params.mesh.ngl-1, params.interp)
         end
     end
@@ -394,8 +397,9 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     #params.uaux[:,2:4] .= params.uaux[:,2:4] .- params.qe[:,2:4]
     ## store Dimension of MxM object
     
-    ## Loop through the elements
-    @views uaux[:,2:4] .= uaux[:,2:4] .- params.qp.qe[:,2:4]
+    ## Subtract reference state from ALL prognostic variables (ρ, ρu, ρv, ρw,
+    ## ρE for TOTAL) before filtering — see 2D ::TOTAL comment for rationale.
+    @views uaux[:,1:params.neqs] .-= params.qp.qe[:,1:params.neqs]
 
     for e=1:params.mesh.nelem
         for k=1:params.mesh.ngl
@@ -466,12 +470,13 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     end
 
     if ladapt == true
-        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
-                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
-                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b,
+                           params.mesh.non_conforming_facets,
+                           params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
+                           params.q_el, params.q_el_pro, params.q_ghost_p,
                            params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
-                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost,
+                           params.mesh.pgip_local, 
                            params.mesh.ngl-1, params.neqs, params.interp)
     end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
@@ -479,19 +484,18 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
         if ladapt == true
-            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT, selectdim(params.b, ndims(params.b), ieq), 
-                                connijk, params.mesh.poin_in_edge, 
-                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
-                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT,
+                                params.mesh.non_conforming_facets,
+                                params.mesh.non_conforming_facets_children_ghost, params.cache_ghost_c,
+                                params.q_el, params.q_el_pro, params.q_ghost_c,
                                 params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
-                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                params.mesh.gip2ip, params.mesh.cgip_local,
                                 params.mesh.ngl-1, params.interp)
         end
     end
 
     uaux[:,1:params.neqs] .= @view params.B[:,1:params.neqs]
-    @views uaux[:,2:4] .= uaux[:,2:4] .+ params.qp.qe[:,2:4]
+    @views uaux[:,1:params.neqs] .+= params.qp.qe[:,1:params.neqs]
     #=if (params.laguerre)
 
     @time uaux .= params.B
@@ -587,7 +591,7 @@ end
 function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     
     if rank == 0
-        @info "Legendre filter"
+        println(" # Legendre filter")
     end
     
     f = zeros(TFloat,nop+1,nop+1)
@@ -657,7 +661,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     ierr = 0
     gaujordf!(leg_inv,nop+1,ierr)
     if (ierr != 0)
-        @info "Error in GAUJORDF in FILTER INIT"
+        println(" # Error in GAUJORDF in FILTER INIT")
         @info "ierr", ierr
         exit
     end
@@ -666,7 +670,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     filter_type = inputs[:filter_type]
     if (filter_type == "erf")   
         if rank == 0
-            @info "erf filtering on"
+            println(" # erf filtering on")
         end
         
         for k=1:nop+1
@@ -675,7 +679,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         end
     elseif (filter_type == "quad")
         if rank == 0
-            @info "quadratic filtering on"
+            println(" # quadratic filtering on")
         end
         mode_filter = floor(quad_order)   
         k0 = Int64(nop+1 - mode_filter)
@@ -687,7 +691,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
         end
     elseif (filter_type == "exp")
         if rank == 0
-            @info "exponential filtering on"
+            println(" # exponential filtering on")
         end
         for k=1:nop+1
             weight[k] = exp(-exp_alpha*(Float64(k-1)/nop)^exp_order)
@@ -848,7 +852,7 @@ function vandeven_modal(kk,ngl,p)
         x=1
         return 0.0
     else
-        @info "problem in Vandeven_modal"
+        println(" # problem in Vandeven_modal")
         exit
     end
 end

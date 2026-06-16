@@ -9,8 +9,8 @@ followed by the following:
 Push problem name to ARGS
 You need to do this only when you run a new problem
 ```bash
-push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case(EQUATIONS, EQUATIONS_CASE_NAME)
 ```
 
 * PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/problems/equations/problem_name
@@ -23,15 +23,15 @@ Some examples available in this branch:
 
 Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in [`problems/equations/CompEuler/thetaTracers`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/thetaTracers)  you would do the following:
 ```bash
-push!(empty!(ARGS), "CompEuler", "thetaTracers");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "thetaTracers")
 ```
 
 
 Example 2: to solve the 3D Euler equations with buyoancy defined in [`problems/equations/CompEuler/3d`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/thetaTracers) you would do the following:
 ```bash
-push!(empty!(ARGS), "CompEuler", "3d");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "3d")
 ```
 
 
@@ -89,12 +89,12 @@ If MPI is installed via homebrew on macOS, the MPI lib path is:
 
 #### Basic Execution
 ```bash
-mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
+mpiexec -n <NPROCS> julia --project=. src/Jexpresso.jl <EQUATIONS> <CASE_NAME>
 ```
 
 #### Implementation-Specific Examples
 ```bash
-mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
+mpiexec -n 4 julia --project=. src/Jexpresso.jl CompEuler 3d
 ```
 
 
@@ -111,7 +111,7 @@ mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); inclu
   ```
   You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary:
   ```
-  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
+  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. src/Jexpresso.jl CompEuler theta
   ```
 
 

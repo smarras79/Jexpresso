@@ -22,6 +22,13 @@ function perfectGasLaw_ρθtoP(PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
     return PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
 end
 
+# Positional, scalar, @inline overload — hot-path callers (user_flux!,
+# user_primitives!, diagnostics, DynSGS, fallbacks) should prefer this form
+# to avoid the keyword-argument dispatch overhead, which is significant
+# inside per-quadrature-point loops.
+@inline perfectGasLaw_ρθtoP(PhysConst::PhysicalConst, ρ::Real, θ::Real) =
+    PhysConst.C0 * (ρ * θ)^PhysConst.γ
+
 function perfectGasLaw_ρθtoP!(Press::Float64, PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
     Press = PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
 end

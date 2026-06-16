@@ -24,7 +24,7 @@ struct INTEGRATION   <: AbstractProblem end
 
 function test_driver(SD::NSD_1D,        #Space Dimensions
                      PT::INTERPOLATION, #Problem Type
-                     inputs::Dict,      #input parameters from src/user_input.jl
+                     inputs,      #input parameters from src/user_input.jl
                      TFloat) 
     
     Nξ = inputs[:nop]
@@ -97,7 +97,7 @@ end
 
 function test_driver(SD::NSD_1D,        #Space Dimensions
                      PT::INTEGRATION,   #Problem Type
-                     inputs::Dict,      #input parameters from src/user_input.jl
+                     inputs,      #input parameters from src/user_input.jl
                      TFloat) 
     
     Nξ = inputs[:nop]

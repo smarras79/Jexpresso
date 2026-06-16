@@ -202,8 +202,8 @@ Follow the output tutorial [here](./define_output_variables.md)
 ### Now run the new case:
 
 ```bash
-push!(empty!(ARGS), "CompEuler", "Hello");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "Hello")
 ```
 
 

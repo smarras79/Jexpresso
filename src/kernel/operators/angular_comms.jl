@@ -50,14 +50,14 @@ function build_nonconforming_ghost_layer(
     extra_meshes_ref_level,
     n_spa, neighbors
 )
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     nproc = MPI.Comm_size(comm)
     
     nelem = mesh.nelem  # Only locally owned elements
     ngl = mesh.ngl
     
-    @info "[Rank $rank] Building non-conforming ghost layer (corrected)..."
+    println(" # [Rank $rank] Building non-conforming ghost layer (corrected)...")
     
     # =========================================================================
     # PHASE 1: Identify partition boundary nodes
@@ -85,7 +85,7 @@ function build_nonconforming_ghost_layer(
     owned_boundary_nodes = find_owned_nodes_on_boundary(mesh, ip2gip, rank, comm)
     union!(partition_boundary_nodes, owned_boundary_nodes)
     
-    @info "[Rank $rank] Found $(length(partition_boundary_nodes)) nodes on partition boundary"
+    println(" # [Rank $rank] Found $(length(partition_boundary_nodes)) nodes on partition boundary")
 
     # =========================================================================
     # PHASE 2: Identify locally owned elements that touch partition boundary
@@ -112,7 +112,7 @@ function build_nonconforming_ghost_layer(
         end
     end
     
-    @info "[Rank $rank] $(length(boundary_elements)) locally owned elements touch partition boundary"
+    println(" # [Rank $rank] $(length(boundary_elements)) locally owned elements touch partition boundary")
     
     # =========================================================================
     # PHASE 3: Exchange ghost neighbor information
@@ -122,7 +122,7 @@ function build_nonconforming_ghost_layer(
         boundary_elements, elem_boundary_nodes, ip2gip, rank, comm
     )
     
-    #@info "[Rank $rank] Found $(sum(length(v) for v in values(ghost_neighbor_map))) ghost neighbor relationships"
+    #println(" # [Rank $rank] Found $(sum(length(v) for v in values(ghost_neighbor_map))) ghost neighbor relationships")
     
     # =========================================================================
     # PHASE 3.5: Exchange interface node requests (NEW)
@@ -134,14 +134,14 @@ function build_nonconforming_ghost_layer(
     
     interface_to_send = exchange_interface_requests(interface_requests, rank, comm)
     
-    @info "[Rank $rank] Received interface requests from $(length(interface_to_send)) ranks"
+    println(" # [Rank $rank] Received interface requests from $(length(interface_to_send)) ranks")
     
     # Log interface sizes for verification
-    @info "[Rank $rank] interface_to_send has $(length(interface_to_send)) destination ranks"
+    println(" # [Rank $rank] interface_to_send has $(length(interface_to_send)) destination ranks")
     for (dest_rank, elem_dict) in interface_to_send
-        @info "[Rank $rank] Will send interface nodes to rank $dest_rank for $(length(elem_dict)) elements"
+        println(" # [Rank $rank] Will send interface nodes to rank $dest_rank for $(length(elem_dict)) elements")
         for (elem_id, node_set) in elem_dict
-            @info "[Rank $rank]   Element $elem_id: $(length(node_set)) interface nodes"
+            println(" # [Rank $rank]   Element $elem_id: $(length(node_set)) interface nodes")
             # Should be 1, 5, or 25 for 4th order elements
         end
     end
@@ -167,7 +167,7 @@ function build_nonconforming_ghost_layer(
         push!(requests_by_rank[ghost_owner], ghost_iel)
     end
     
-    @info "[Rank $rank] Requesting angular data from $(length(requests_by_rank)) ranks"
+    println(" # [Rank $rank] Requesting angular data from $(length(requests_by_rank)) ranks")
     
     # =========================================================================
     # PHASE 5: Exchange element requests
@@ -204,38 +204,38 @@ function build_nonconforming_ghost_layer(
         send_buffers[dest_rank] = buffer
     end
 
-    @info "[Rank $rank] has packed data for sending"
+    println(" # [Rank $rank] has packed data for sending")
     # =========================================================================
     # PHASE 7: Receive angular element data
     # =========================================================================
-    @info "[Rank $rank] is exchanging buffers"
+    println(" # [Rank $rank] is exchanging buffers")
     recv_buffers = exchange_buffers(send_buffers, requests_by_rank, comm)
-    @info "[Rank $rank] finished exchanging buffers"
+    println(" # [Rank $rank] finished exchanging buffers")
     # =========================================================================
     # PHASE 8: Unpack received data into ghost element structures
     # =========================================================================
-    @info "[Rank $rank] is unpacking data after receiving"
+    println(" # [Rank $rank] is unpacking data after receiving")
     ghost_elements = Dict{Tuple{Int,Int}, AngularElementGhostInfo}()  # (ghost_iel, owner) -> info
     ghost_node_counter = 0
     
     for (src_rank, buffer) in recv_buffers
         elem_infos = unpack_angular_element_data_optimized(buffer, src_rank)
 
-        @info "[Rank $rank] Unpacked $(length(elem_infos)) element infos from rank $src_rank"
+        println(" # [Rank $rank] Unpacked $(length(elem_infos)) element infos from rank $src_rank")
 
         for elem_info in elem_infos
             key = (elem_info.spatial_elem_id, elem_info.owner_rank)
             n_interface_nodes = length(elem_info.interface_node_gids)
-            @info "[Rank $rank]   Element $(elem_info.spatial_elem_id) from rank $(elem_info.owner_rank): $(n_interface_nodes) interface nodes"
+            println(" # [Rank $rank]   Element $(elem_info.spatial_elem_id) from rank $(elem_info.owner_rank): $(n_interface_nodes) interface nodes")
             ghost_elements[key] = elem_info
             ghost_node_counter += count_ghost_nodes_in_element(elem_info, ngl)
         end
     end
 
-    @info "[Rank $rank] Received $(length(ghost_elements)) ghost elements with ~$ghost_node_counter ghost nodes"
-    @info "[Rank $rank] Total interface node mappings across ghost elements:"
+    println(" # [Rank $rank] Received $(length(ghost_elements)) ghost elements with ~$ghost_node_counter ghost nodes")
+    println(" # [Rank $rank] Total interface node mappings across ghost elements:")
     for ((elem_id, owner_rank), elem_info) in ghost_elements
-        @info "[Rank $rank]   Element $elem_id from rank $owner_rank: $(length(elem_info.interface_node_gids)) interface mappings"
+        println(" # [Rank $rank]   Element $elem_id from rank $owner_rank: $(length(elem_info.interface_node_gids)) interface mappings")
     end
 
     # =========================================================================
@@ -258,7 +258,7 @@ function build_nonconforming_ghost_layer(
         ip2gip_spa, ngl, rank
     )
     
-    @info "[Rank $rank] Found $(length(interface_hanging_nodes)) hanging nodes on processor interfaces"
+    println(" # [Rank $rank] Found $(length(interface_hanging_nodes)) hanging nodes on processor interfaces")
     
     ghost_layer = NonConformingGhostLayer(
         ghost_elements, 
@@ -363,7 +363,7 @@ function find_owned_nodes_on_boundary(mesh, ip2gip, rank, comm)
         union!(boundary_owned_global, shared)
     end
     
-    @info "[Rank $rank] Found $(length(boundary_owned_global)) owned nodes on partition boundary"
+    println(" # [Rank $rank] Found $(length(boundary_owned_global)) owned nodes on partition boundary")
     
     # Convert to local IDs
     boundary_owned_local = Set{Int}()
@@ -605,14 +605,14 @@ function mark_hanging_nodes_in_element_advanced!(
 
                 # DEBUG: Check if parent node gids are in interface_node_gids
                 if length(interface_hanging) <= 10  # Only print first 10
-                    @info "[Rank $rank] Hanging node found: ip_spa=$ip_spa, (iθ=$iθ, jθ=$jθ, e_ext=$e_ext_owned)"
+                    println(" # [Rank $rank] Hanging node found: ip_spa=$ip_spa, (iθ=$iθ, jθ=$jθ, e_ext=$e_ext_owned)")
 
                     # Get expected parent node gids from interpolation
                     nop_parent = ghost_info.nop_ang[e_ext_ghost]
                     interface_spatial_idx = findfirst(x -> x == gip_spatial, ghost_info.interface_spatial_global_ids)
 
                     if interface_spatial_idx !== nothing
-                        @info "[Rank $rank]   Spatial node gip=$gip_spatial found at interface index $interface_spatial_idx"
+                        println(" # [Rank $rank]   Spatial node gip=$gip_spatial found at interface index $interface_spatial_idx")
                         expected_parent_gids = Int[]
                         for jθ_p = 1:(nop_parent+1)
                             for iθ_p = 1:(nop_parent+1)
@@ -622,7 +622,7 @@ function mark_hanging_nodes_in_element_advanced!(
                                 end
                             end
                         end
-                        @info "[Rank $rank]   Expected parent gids in interface_node_gids: $expected_parent_gids"
+                        println(" # [Rank $rank]   Expected parent gids in interface_node_gids: $expected_parent_gids")
                     else
                         @warn "[Rank $rank]   Spatial node gip=$gip_spatial NOT found in interface_spatial_global_ids"
                         @warn "[Rank $rank]   Available spatial gids: $(ghost_info.interface_spatial_global_ids)"

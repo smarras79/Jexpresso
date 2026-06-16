@@ -58,12 +58,12 @@ if (y<=14950) #(abs(x) < 119500.0 && y<= 19950.0)
     
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs)
     flux = zeros(size(q,2),1)
     return flux
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs)
     flux = zeros(size(q,2),1)
     return flux
 end

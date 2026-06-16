@@ -1,8 +1,8 @@
-function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
 
             """
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    println(" Initialize fields for 3D CompEuler with θ equation ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:

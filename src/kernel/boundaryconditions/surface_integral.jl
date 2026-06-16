@@ -1,13 +1,12 @@
-function compute_surface_integral!(S_face, F_surf, ω, Jac_face, iface, ngl)
+function compute_surface_integral!(S_face, F_surf, ω, Jac_face, ngl, neqs)
     for i = 1:ngl
         for j = 1:ngl
-
-            ωJac = ω[i]*ω[j]*Jac_face[iface,i,j]
-            #@info  ωJac*F_surf[i,j,:], ω[i], ω[j], Jac_face[iface,i,j], F_surf[i,j,:]
-            S_face[iface,i,j,:] .+= ωJac*F_surf[i,j,:]
+            ωJac = ω[i]*ω[j]*Jac_face[i,j]
+            for k = 1:neqs
+                S_face[i,j,k] += ωJac * F_surf[i,j,k]
+            end
         end
     end
-
 end
 
 function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
@@ -19,6 +18,7 @@ function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin,
                     e = bdy_face_in_elem[iface]
                     ip = poin_in_bdy_face[iface,i,j]
                     for ieq = 1:neqs
+                        # S_flux[ip,ieq] += S_face[iface,i,j,ieq]*M_surf_inv[ip]
                         S_flux[ip,ieq] += S_face[iface,i,j,ieq]
                     end
                 end
@@ -55,15 +55,15 @@ function DSS_segment_integral!(S_flux, S_edge, M_seg_inv, nedges, ngl, connijk, 
 
     for iedge = 1:nedges
         for i = 1:ngl
-            e = bdy_edge_in_elem[iedge]
+            # e = bdy_edge_in_elem[iedge]
             ip = poin_in_bdy_edge[iedge,i]
-            ip1 = connijk[e,i,2]
+            # ip1 = connijk[e,i,2]
             for ieq = 1:neqs
-                if (ieq == 2)
-                    S_flux[ip,ieq] .+= S_edge[iedge,i,ieq]
-                else
-                    S_flux[ip1,ieq] .+= S_edge[iedge,i,ieq]
-                end
+                # if (ieq == 2)
+                    S_flux[ip,ieq] += S_edge[iedge,i,ieq]
+                # else
+                    # S_flux[ip1,ieq] .+= S_edge[iedge,i,ieq]
+                # end
             end
         end
     end

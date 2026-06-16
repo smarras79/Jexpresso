@@ -14,7 +14,7 @@ function user_inputs()
         # restart options
         #---------------------------------------------------------------------------
         # set restart_time to enable write restart files every [restart_time] seconds 
-        :restart_time         => 100.0, 
+        :restart_time         => 10000000.0, 
         # the default restart output dir is $(your_output_dir)/restart but you can always specify
         # :restart_output_file_path => "./output/CompEuler/3d/output/restart",
         :lrestart             => false,
@@ -31,10 +31,11 @@ function user_inputs()
         #:lwall_model          => true,
         :lvisc                => true, #false by default
         :visc_model           => VREM(),
+        #:visc_model           => AV(),
         #:visc_model           => SMAG(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
-        #:μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
+        #:μ                    => [0.0, 125.0, 125.0, 125.0, 125.0],
         :μ                    => [0.0, 1.0, 1.0, 1.0, 2.0],
         :energy_equation     => "theta",
         #:lrichardson => true,

@@ -1,0 +1,198 @@
+name: Generate CI Reference Solutions
+
+# Run this workflow ONCE (manually) to populate test/CI-ref/ with golden .h5
+# files.  Re-run it whenever you intentionally change a benchmark's expected
+# output (e.g. after a physics or numerics change).
+#
+# What it does:
+#   1. Runs each benchmark with CI_MODE=true so the reduced CI-runs
+#      user_inputs.jl is used (short tend, hdf5 output).
+#   2. The .h5 files land in test/CI-runs/<EQ>/<CASE>/output/.
+#   3. They are copied to   test/CI-ref/<EQ>/<CASE>/output/.
+#   4. The CI-ref tree is committed and pushed to the triggering branch.
+#
+# After this workflow completes, the benchmarks workflow will compare future
+# runs against these committed reference files.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_message:
+        description: 'Commit message for the reference update'
+        required: false
+        default: 'Update CI reference solutions'
+
+jobs:
+  generate-references:
+    name: Generate reference solutions
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    # Grant write permission so the bot can push the reference files.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Use a PAT or the default GITHUB_TOKEN; push works with write perms.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: '1.11.2'
+          arch: x64
+
+      - uses: actions/cache@v3
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-benchmarks-${{ hashFiles('**/Project.toml', '**/Manifest.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-benchmarks-
+            ${{ runner.os }}-
+
+      - uses: julia-actions/julia-buildpkg@v1
+
+      # -----------------------------------------------------------------------
+      # Run each benchmark separately so a crash in one does not block others.
+      # continue-on-error keeps the workflow going; missing .h5 files for a
+      # failed benchmark are simply not committed (no reference is created).
+      # -----------------------------------------------------------------------
+
+      - name: "Generate: CompEuler/theta"
+        id: gen_compeuler_theta
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "CompEuler", "theta", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Generate: CompEuler/3d"
+        id: gen_compeuler_3d
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "CompEuler", "3d", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Generate: CompEuler/wave1d"
+        id: gen_compeuler_wave1d
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "CompEuler", "wave1d", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Generate: Burgers/case1"
+        id: gen_burgers_case1
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "Burgers", "case1", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Generate: Burgers/case2d"
+        id: gen_burgers_case2d
+        continue-on-error: true
+        timeout-minutes: 30
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "Burgers", "case2d", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Generate: Elliptic/2dlaplace"
+        id: gen_elliptic_2dlaplace
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "Elliptic", "2dlaplace", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      - name: "Generate: ShallowWater/TC2"
+        id: gen_shallowwater_tc2
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          julia --project=. -e '
+            push!(empty!(ARGS), "ShallowWater", "TC2", "true")
+            include("src/Jexpresso.jl")
+          '
+
+      # -----------------------------------------------------------------------
+      # Copy .h5 files from CI-runs output directories to CI-ref.
+      # Each copy is silent if the source directory doesn't exist (benchmark
+      # failed above), so partial reference sets are handled gracefully.
+      # -----------------------------------------------------------------------
+      - name: Collect reference files
+        if: always()
+        run: |
+          copy_ref() {
+            local eqs="$1" case="$2"
+            local src="test/CI-runs/${eqs}/${case}/output"
+            local dst="test/CI-ref/${eqs}/${case}/output"
+            if compgen -G "${src}/*.h5" > /dev/null 2>&1; then
+              mkdir -p "$dst"
+              cp "${src}"/*.h5 "$dst"/
+              echo "Copied $(ls ${src}/*.h5 | wc -l) file(s) → ${dst}"
+            else
+              echo "WARNING: no .h5 files found in ${src} — skipping ${eqs}/${case}"
+            fi
+          }
+
+          copy_ref CompEuler    theta
+          copy_ref CompEuler    3d
+          copy_ref CompEuler    wave1d
+          copy_ref Burgers      case1
+          copy_ref Burgers      case2d
+          copy_ref Elliptic     2dlaplace
+          copy_ref ShallowWater TC2
+
+      # -----------------------------------------------------------------------
+      # Commit and push.  If nothing changed (all benchmarks failed or ref
+      # files are identical), the commit is skipped cleanly.
+      # -----------------------------------------------------------------------
+      - name: Commit and push reference files
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add test/CI-ref/
+          if git diff --staged --quiet; then
+            echo "No changes to reference files — nothing to commit."
+          else
+            git commit -m "${{ github.event.inputs.commit_message }} [skip ci]"
+            git push
+            echo "Reference files committed and pushed."
+          fi
+
+      # -----------------------------------------------------------------------
+      # Summary
+      # -----------------------------------------------------------------------
+      - name: Generation report
+        if: always()
+        run: |
+          icon() { [ "$1" = "success" ] && echo "✅" || echo "❌"; }
+          {
+            echo "## Reference Generation Results"
+            echo ""
+            echo "| Benchmark | Generated |"
+            echo "|-----------|-----------|"
+            echo "| CompEuler/theta    | $(icon '${{ steps.gen_compeuler_theta.outcome }}') |"
+            echo "| CompEuler/3d       | $(icon '${{ steps.gen_compeuler_3d.outcome }}') |"
+            echo "| CompEuler/wave1d   | $(icon '${{ steps.gen_compeuler_wave1d.outcome }}') |"
+            echo "| Burgers/case1      | $(icon '${{ steps.gen_burgers_case1.outcome }}') |"
+            echo "| Burgers/case2d     | $(icon '${{ steps.gen_burgers_case2d.outcome }}') |"
+            echo "| Elliptic/2dlaplace | $(icon '${{ steps.gen_elliptic_2dlaplace.outcome }}') |"
+            echo "| ShallowWater/TC2   | $(icon '${{ steps.gen_shallowwater_tc2.outcome }}') |"
+          } >> "$GITHUB_STEP_SUMMARY"

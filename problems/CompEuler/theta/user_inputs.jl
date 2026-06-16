@@ -9,7 +9,7 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => 1000.0,
         :diagnostics_at_times => (0:100:1000),
-        :restart_time         => 500,
+        :restart_time         => 50000,
         :lrestart             => false,
         #:CL                   => NCL(),
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
@@ -46,7 +46,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "png",
         :loverwrite_output   => true,
         :lwrite_initial      => true,
         :output_dir          => "./output",

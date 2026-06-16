@@ -413,9 +413,9 @@ function imex_time_step_simple_2d!(u, params, connij, qe, coords, Δt, lsource=t
         println("   ✓ Linear system solved successfully")
     catch e
         @error "Linear system solve failed: $e"
-        @info "Matrix size: $(size(LHS_matrix))"
-        @info "RHS size: $(length(RHS_final))"
-        @info "Matrix condition number estimate: $(cond(Matrix(LHS_matrix[1:min(100,end), 1:min(100,end)])))"
+        println(" # Matrix size: $(size(LHS_matrix))")
+        println(" # RHS size: $(length(RHS_final))")
+        println(" # Matrix condition number estimate: $(cond(Matrix(LHS_matrix[1:min(100,end), 1:min(100,end)])))")
         rethrow(e)
     end
     
@@ -455,14 +455,14 @@ function imex_integration_simple_2d!(u, params, connij, qe, coords, Δt, ntime_s
                 # Check for blow-up
                 if u_max > 1e6 || isnan(u_max) || isinf(u_max)
                     @error "Solution appears to be unstable at time step $n"
-                    @info "Consider reducing time step size or checking initial conditions"
+                    println(" # Consider reducing time step size or checking initial conditions")
                     break
                 end
             end
             
         catch e
             @error "IMEX integration failed at time step $n: $e"
-            @info "Last successful solution max: $(maximum(abs.(u)))"
+            println(" # Last successful solution max: $(maximum(abs.(u)))")
             rethrow(e)
         end
     end

@@ -1,8 +1,8 @@
-function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
     """
 
     """
-    @info " Initialize fields for 1D adv diff ........................ "
+    println(" Initialize fields for 1D adv diff ........................ ")
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -34,7 +34,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, z0, sigma; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 1D adv diff ........................ DONE "
+    println(" Initialize fields for 1D adv diff ........................ DONE ")
     
     return q
 end

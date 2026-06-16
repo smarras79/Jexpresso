@@ -1,5 +1,10 @@
 function check_memory(label)
-    rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    # Use the coupling-aware comm: in coupled mode rank 0 of COMM_WORLD
+    # is Alya, so any rank-0 print or Allreduce keyed on COMM_WORLD
+    # would silently miss / hang on Julia's side. get_mpi_comm() returns
+    # Julia's local sub-comm in coupled mode and COMM_WORLD otherwise.
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
     free_gb = Sys.free_memory() / 2^30
     
     # Get total system memory

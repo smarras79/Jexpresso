@@ -57,10 +57,35 @@ function parse_commandline()
 end
 
 
-MPI.Init()
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-nparts = MPI.Comm_size(comm)
+#--------------------------------------------------------
+# MPI initialisation.
+#
+# By default this is the same one-shot init used historically: a single
+# COMM_WORLD shared with no other code. When the env var JEXPRESSO_COUPLED
+# is set (1 / true / yes), we instead use je_init_mpi_and_split_comm()
+# which splits COMM_WORLD by APPID and lets us detect a coupled run with
+# another MPI code such as Alya. In standalone runs the two paths are
+# functionally equivalent; the env-gated path is opt-in to guarantee no
+# behavioural drift when JEXPRESSO_COUPLED is unset.
+#--------------------------------------------------------
+const _JEXPRESSO_COUPLED_ENV = lowercase(get(ENV, "JEXPRESSO_COUPLED", ""))
+const JEXPRESSO_COUPLING_ENABLED = _JEXPRESSO_COUPLED_ENV in ("1", "true", "yes", "on")
+
+if JEXPRESSO_COUPLING_ENABLED
+    _world, _local_comm, _wsize, _wrank, _lsize, _lrank, _is_coupled =
+        je_init_mpi_and_split_comm()
+    comm   = _local_comm
+    rank   = _lrank
+    nparts = _lsize
+else
+    MPI.Init()
+    _world      = MPI.COMM_WORLD
+    _local_comm = MPI.COMM_WORLD
+    _is_coupled = false
+    comm   = MPI.COMM_WORLD
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+end
 
 #--------------------------------------------------------
 # Parse command line args:
@@ -100,7 +125,25 @@ mod_inputs_print_welcome(rank)
 inputs = Dict{}()
 
 inputs = user_inputs()
+# Make the case directory available to the mesh/SEM cache helpers so cache
+# files live next to user_inputs.jl (per-case), not next to the shared
+# *.msh file.  This is what lets two cases that happen to point at the same
+# gmsh file keep separate caches and what makes "running a new case"
+# automatically miss the cache without any user-visible flag.
+inputs[:_case_dir]            = case_name_dir
+inputs[:_parsed_equations]    = parsed_equations
+inputs[:_parsed_case_name]    = parsed_equations_case_name
+inputs[:_user_input_file]     = user_input_file
+if rank == 0
+    print(" # mod_inputs_user_inputs! (filling defaults) ......... ")
+    flush(stdout)
+end
+_t_defaults = time_ns()
 mod_inputs_user_inputs!(inputs, rank)
+if rank == 0
+    @printf("DONE (%.2f s)\n", (time_ns() - _t_defaults) / 1e9)
+    flush(stdout)
+end
 
 #--------------------------------------------------------
 # Create output directory if it doesn't exist:
@@ -140,21 +183,113 @@ else
 end
 
 #--------------------------------------------------------
-# Save a copy of user_inputs.jl for the case being run 
+# Save a copy of user_inputs.jl for the case being run
 #--------------------------------------------------------
-if rank == 0 
+if rank == 0
     cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
+end
+
+#--------------------------------------------------------
+# Typed cache of :energy_equation for hot-path callers (user_flux!,
+# user_primitives!, user_uout!). Reading the non-const module-global
+# `inputs` from inside per-quadrature-point loops costs ~38 ns per
+# access and inhibits inlining; a Ref{Bool} const reads in ~2 ns and
+# is type-stable.
+#--------------------------------------------------------
+if !@isdefined(ENERGY_EQUATION_THETA)
+    const ENERGY_EQUATION_THETA = Ref{Bool}(false)
+end
+ENERGY_EQUATION_THETA[] = (inputs[:energy_equation] == "theta")
+
+#--------------------------------------------------------
+# Convert inputs Dict → NamedTuple if the user opted in.
+#
+# Carrying inputs as a NamedTuple removes the per-call dictionary lookups
+# from hot paths (RHS, time loop, BCs) and lets the compiler specialise on
+# the concrete field types.  All historical `inputs[:key]` reads continue
+# to work; only WRITES (which would mutate the container) are forbidden,
+# so any `inputs[:key] = value` left in downstream code must be expressed
+# as a rebind `inputs = (; inputs..., key = value)` (see drivers.jl).
+#
+# All inputs mutations above this point operate on the Dict, so they are
+# safe; the conversion happens here, just before the coupling handshake
+# and the with_mpi block.
+#
+# val_lsaturation is a Val-wrapped boolean made available so RHS kernels
+# can dispatch on it without paying a runtime branch + dictionary lookup
+# on every step (matches the ab/hacky pattern).
+#--------------------------------------------------------
+if get(inputs, :use_named_tuples, false) == true
+    inputs = NamedTuple(inputs)
+end
+
+val_lsaturation = Val(get(inputs, :lsaturation, false))
+inputs = inputs isa NamedTuple ?
+    (; inputs..., comm = MPI.COMM_WORLD, val_lsaturation = val_lsaturation) :
+    inputs
+
+#--------------------------------------------------------
+# Coupling handshake (must happen OUTSIDE the with_mpi block so the
+# coupling MPI calls execute before with_mpi's closure JIT begins; see
+# couplingStructs.jl for the rationale). When JEXPRESSO_COUPLED is unset
+# this branch is skipped entirely and the standalone code path is
+# byte-for-byte the historical one.
+#--------------------------------------------------------
+if JEXPRESSO_COUPLING_ENABLED
+    _is_coupled = je_perform_coupling_handshake(_world, nparts)
+    if _is_coupled
+        je_receive_alya_data(_world, nparts)
+        je_prefetch_caches!(inputs, nparts, _local_comm, _world)
+        je_early_coupling_sync!(_local_comm, _world)
+    end
 end
 
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
-with_mpi() do distribute
-    
-    driver(nparts,
-           distribute, 
-           inputs,
-           OUTPUT_DIR,
-           TFloat)
-    
+# UX: this is the boundary where PartitionedArrays' with_mpi block
+# JIT-compiles its closure on first call (cold mpirun). Tens of
+# seconds is expected here on cold start; subsequent runs in the
+# SAME Julia session are instant. Pre-baking this JIT into the
+# package precompile cache is what PrecompileTools.@compile_workload
+# would do — see the note at the end of this file's output.
+if rank == 0
+    print(" # Entering with_mpi block (PartitionedArrays JIT on first call) ......... ")
+    flush(stdout)
+end
+_t_withmpi = time_ns()
+if JEXPRESSO_COUPLING_ENABLED
+    with_mpi(; comm = _local_comm) do distribute
+        if rank == 0
+            @printf("DONE (%.2f s) → calling driver()\n", (time_ns() - _t_withmpi) / 1e9)
+            flush(stdout)
+        end
+        driver(nparts,
+               distribute,
+               inputs,
+               OUTPUT_DIR,
+               TFloat;
+               world      = _world,
+               is_coupled = _is_coupled)
+
+        # In coupled (MPMD) mode Fortran waits on a final
+        # MPI_Barrier(MPI_COMM_WORLD) for clean shutdown. The matching
+        # Julia barrier must be issued from inside the with_mpi block
+        # while `_world` is still in scope.
+        if _is_coupled
+            MPI.Barrier(_world)
+        end
+    end
+else
+    with_mpi() do distribute
+        if rank == 0
+            @printf("DONE (%.2f s) → calling driver()\n", (time_ns() - _t_withmpi) / 1e9)
+            flush(stdout)
+        end
+        driver(nparts,
+               distribute,
+               inputs,
+               OUTPUT_DIR,
+               TFloat)
+    end
 end

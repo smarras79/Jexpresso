@@ -331,7 +331,7 @@ end
 
 function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T, MT::COVAR, SD::NSD_3D; backend = CPU())
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     
@@ -867,7 +867,7 @@ end
 
 function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange,N, Q, NGR, QGR, ξ, T, MT::COVAR, SD::NSD_3D; dir="x",side ="min")
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
     
@@ -953,7 +953,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
         end
     end
 
-    #@info " COVARIANT metric terms WIP"
+    #println(" # COVARIANT metric terms WIP")
     @inbounds for iel = 1:nelem  # PERF: Added @inbounds for 6 nested loops
         for n = 1:Q3+1
             for m = 1:Q2+1

@@ -2,30 +2,52 @@ function user_flux!(F, G, SD::NSD_2D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::CL, ::THETA; neqs=4, ip=1)
-    
+                    ::CL, ::TOTAL; neqs=4, ip=1)
+
     PhysConst = PhysicalConst{Float64}()
-                
-    ρ  = q[1] 
+    ρ  = q[1]
     ρu = q[2]
     ρv = q[3]
-    ρθ = q[4] 
-    
-    θ  = ρθ/ρ
+
     u  = ρu/ρ
     v  = ρv/ρ
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    
-    F[1] = ρu
-    F[2] = ρu*u + Press
-    F[3] = ρv*u
-    F[4] = ρθ*u
-    
-    G[1] = ρv
-    G[2] = ρu*v
-    G[3] = ρv*v + Press
-    G[4] = ρθ*v
+
+    if ENERGY_EQUATION_THETA[]
+        # Slot 4 carries ρθ; pressure from the perfect-gas law in (ρ, θ).
+        ρθ = q[4]
+        θ  = ρθ/ρ
+        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
+
+        F[1] = ρu
+        F[2] = ρu*u + Pressure
+        F[3] = ρv*u
+        F[4] = ρθ*u
+
+        G[1] = ρv
+        G[2] = ρu*v
+        G[3] = ρv*v + Pressure
+        G[4] = ρθ*v
+    else
+        # Slot 4 carries ρE; total-energy form.
+        ρe        = q[4]
+        γ         = PhysConst.γ
+        γm1       = γ - 1.0
+        velomagsq = (u*u + v*v)
+        ke        = 0.5*ρ*velomagsq
+        Pressure  = γm1*(ρe - ke)
+
+        F[1] = ρu
+        F[2] = ρu*u + Pressure
+        F[3] = ρv*u
+        F[4] = u*(ke + γ*Pressure/γm1)
+
+        G[1] = ρv
+        G[2] = ρu*v
+        G[3] = ρv*v + Pressure
+        G[4] = v*(ke + γ*Pressure/γm1)
+    end
 end
+
 
 @inline function flux(q, ::central_euler)
     PhysConst = PhysicalConst{Float64}()
@@ -70,7 +92,7 @@ end
     θ  = ρθ/ρ
     u  = ρu/ρ
     v  = ρv/ρ
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     
     f1 = ρu
     f2 = ρu*u + Press
@@ -84,17 +106,6 @@ end
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 
 end
-
-function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::central_theta)
-    
-    PhysConst = PhysicalConst{Float64}()
-
-    aux[1] = q[1]
-    aux[2] = q[2]
-    aux[3] = q[3]
-    aux[4] = q[4]
-end
-
 
 function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::central_euler)
     
@@ -154,20 +165,37 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::ranocha)
     aux[7] = log(p)
 end
 
-function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_ec)
-    
+# ──────────────────────────────────────────────────────────────────────
+# θ-form aux methods (slot 4 = ρθ). These dispatch on ::TOTAL because
+# SOL_VARS_TYPE = TOTAL() is the balance choice; what slot 4 holds is
+# decided by :energy_equation. Pairing one of these volume fluxes
+# (central_theta / artiano_*) with :energy_equation => "theta" gives
+# ρθ in slot 4 and the math matches.
+# ──────────────────────────────────────────────────────────────────────
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::central_theta)
+
     PhysConst = PhysicalConst{Float64}()
-                
-    rho  = q[1] 
-    rho_u = q[2]
-    rho_v = q[3]
+
+    aux[1] = q[1]
+    aux[2] = q[2]
+    aux[3] = q[3]
+    aux[4] = q[4]
+end
+
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::artiano_ec)
+
+    PhysConst = PhysicalConst{Float64}()
+
+    rho       = q[1]
+    rho_u     = q[2]
+    rho_v     = q[3]
     rho_theta = q[4]
 
-    theta  = rho_theta/rho
-    u  = rho_u/rho
-    v  = rho_v/rho
+    theta = rho_theta/rho
+    u     = rho_u/rho
+    v     = rho_v/rho
 
-    p = perfectGasLaw_ρθtoP(PhysConst, ρ=rho, θ=theta)
+    p = perfectGasLaw_ρθtoP(PhysConst, rho, theta)
 
     aux[1] = rho
     aux[2] = u
@@ -178,22 +206,22 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_ec)
     aux[7] = log(rho_theta)
 end
 
-function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_tec)
-    
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::artiano_tec)
+
     PhysConst = PhysicalConst{Float64}()
-                
-    rho  = q[1] 
-    rho_u = q[2]
-    rho_v = q[3]
+
+    rho       = q[1]
+    rho_u     = q[2]
+    rho_v     = q[3]
     rho_theta = q[4]
 
-    γ   = PhysConst.γ
+    γ       = PhysConst.γ
     gammam1 = γ - 1.0
-    theta  = rho_theta/rho
-    u  = rho_u/rho
-    v  = rho_v/rho
+    theta   = rho_theta/rho
+    u       = rho_u/rho
+    v       = rho_v/rho
 
-    p = perfectGasLaw_ρθtoP(PhysConst, ρ=rho, θ=theta)
+    p = perfectGasLaw_ρθtoP(PhysConst, rho, theta)
 
     aux[1] = rho
     aux[2] = u
@@ -203,22 +231,23 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_tec)
     aux[6] = log(rho)
     aux[7] = rho_theta^gammam1
 end
-function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_etec)
-    
+
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::artiano_etec)
+
     PhysConst = PhysicalConst{Float64}()
-                
-    rho  = q[1] 
-    rho_u = q[2]
-    rho_v = q[3]
+
+    rho       = q[1]
+    rho_u     = q[2]
+    rho_v     = q[3]
     rho_theta = q[4]
 
-    γ   = PhysConst.γ
+    γ       = PhysConst.γ
     gammam1 = γ - 1.0
-    theta  = rho_theta/rho
-    u  = rho_u/rho
-    v  = rho_v/rho
+    theta   = rho_theta/rho
+    u       = rho_u/rho
+    v       = rho_v/rho
 
-    p = perfectGasLaw_ρθtoP(PhysConst, ρ=rho, θ=theta)
+    p = perfectGasLaw_ρθtoP(PhysConst, rho, theta)
 
     aux[1] = rho
     aux[2] = u
@@ -270,14 +299,12 @@ end
             f1 = rho_mean * v1_avg
             f2 = f1 * v1_avg + p_avg
             f3 = f1 * v2_avg
-            f4 = f1 *
-		(velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) +
-                 0.5 * (p_ll * v1_rr + p_rr * v1_ll)
+            f4 = f1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5 * (p_ll * v1_rr + p_rr * v1_ll)
 
             g1 = rho_mean * v2_avg
             g2 = g1 * v1_avg 
 	    g3 = g1 * v2_avg + p_avg
-            g4 = g1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5f0 * (p_ll * v2_rr + p_rr * v2_ll)
+            g4 = g1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5 * (p_ll * v2_rr + p_rr * v2_ll)
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 
@@ -543,5 +570,82 @@ end
             xg = exp((gamma - 1) * log(x)) # equivalent to x^gamma but faster for non-integers
         end
         return (gamma - 1) * (yg * y - xg * x) / (gamma * (yg - xg))
+    end
+end
+
+@inline function convert_transformed_to_primitive(u_transformed) 
+    return u_transformed
+end
+
+@inline function convert_derivative_to_primitive(u, gradient) 
+    return gradient
+end
+
+function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, inputs, delta2)
+	# Here, `u` is assumed to be the "transformed" variables specified by `gradient_variable_transformation`.
+    rho, v1, v2, _ = convert_transformed_to_primitive(u)
+    # Here `gradients` is assumed to contain the gradients of the primitive variables (rho, v1, v2, T)
+    # either computed directly or reverse engineered from the gradient of the entropy variables
+    # by way of the `convert_gradient_variables` function.
+    _, dv1dx, dv2dx, dTdx = convert_derivative_to_primitive(u, gradients[1])
+    _, dv1dy, dv2dy, dTdy = convert_derivative_to_primitive(u, gradients[2])
+
+    # Components of viscous stress tensor
+
+    # (4 * (v1)_x / 3 - 2 * (v2)_y / 3)
+    tau_11 = (4 * dv1dx - 2 * dv2dy) / 3
+    # ((v1)_y + (v2)_x)
+    # stress tensor is symmetric
+    tau_12 = dv1dy + dv2dx # = tau_21
+    # (4/3 * (v2)_y - 2/3 * (v1)_x)
+    tau_22 = (4 * dv2dy - 2 * dv1dx) / 3
+
+    PhysConst = PhysicalConst{Float64}()
+
+    mu_eff_momentum = SGS_diffusion(visc_coeffieq, 2,  # ieq=2 for u-momentum
+                                    rho, dv1dx, dv2dy, dv1dy, dv2dx,
+                                    PhysConst, delta2, inputs, SMAG(), NSD_2D())
+    
+    kappa_eff_temp = SGS_diffusion(visc_coeffieq, 4,  # ieq=4 for temperature
+                                    rho, dv1dx, dv2dy, dv1dy, dv2dx,
+                                   PhysConst, delta2, inputs, SMAG(), NSD_2D())
+    
+    mu_total = mu_eff_momentum 
+    mu_total = 1e-4
+    
+        cp = PhysConst.cp
+        kappa = kappa_eff_temp / cp 
+	Pr = 0.72
+	gamma =  PhysConst.γ
+	kappa = gamma /(gamma-1)/ Pr
+        q1 = kappa * dTdx
+        q2 = kappa * dTdy
+
+    # In the simplest cases, the user passed in `mu` or `mu()`
+    # (which returns just a constant) but
+    # more complex functions like Sutherland's law are possible.
+    # `dynamic_viscosity` is a helper function that handles both cases
+    # by dispatching on the type of `equations.mu`.
+    #mu = dynamic_viscosity(u, equations)
+    #mu = 1e-4 
+    mu = mu_total
+
+    if orientation == 1
+        # parabolic flux components in the x-direction
+        f1 = 0
+        f2 = tau_11 * mu
+        f3 = tau_12 * mu
+        f4 = (v1 * tau_11 + v2 * tau_12 + q1) * mu 
+
+        return SVector(f1, f2, f3, f4)
+    else # if orientation == 2
+        # parabolic flux components in the y-direction
+        # Note, symmetry is exploited for tau_12 = tau_21
+        g1 = 0
+        g2 = tau_12 * mu # tau_21 * mu
+        g3 = tau_22 * mu
+        g4 = (v1 * tau_12 + v2 * tau_22 + q2) * mu 
+
+        return SVector(g1, g2, g3, g4)
     end
 end

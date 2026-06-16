@@ -51,7 +51,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat         => "vtk",
+        :outformat         => "png",
         :loverwrite_output => true,
         :loutput_pert      => true,  #this is only implemented for VTK for now
         :output_dir        => "./output/",

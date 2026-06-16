@@ -39,7 +39,7 @@ function user_bc_dirichlet!(q,
     qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, z::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, z::AbstractFloat, t::AbstractFloat, tag::String, inputs)
     flux = zeros(size(q,2),1)
     return flux
 end

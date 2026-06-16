@@ -26,7 +26,7 @@ end
 function user_source_gpu(q, qe, x, y)
     T = eltype(q)
     L = 2
-    alpha = 10 
+    alpha = 10
     f   = T(0.0) #T(- (cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y))
     u_e = T(0.0) #T(sin(x/L)*exp(-x/L)*cos(y))
 

@@ -29,11 +29,12 @@ end
 #------------------------------------------------------------------
 # Callback for missing user_uout!()
 #------------------------------------------------------------------
-function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar)
-    
+function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar; μ_dsgs_pnode=nothing)
+
     if function_exists(@__MODULE__, :user_uout!)
         for ip=1:npoin
-            user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,:]), @view(qe[ip,:]); mp=mp)
+            user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,:]), @view(qe[ip,:]);
+                       mp=mp, μ_dsgs_pnode=μ_dsgs_pnode)
         end
     else
         for ip=1:npoin
@@ -53,7 +54,7 @@ end
 # END Callback for missing user_uout!()
 #------------------------------------------------------------------
 
-function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
     qout = zeros(mesh.npoin)
@@ -61,12 +62,13 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::PNG;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -92,28 +94,70 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         #end
     else
         #for iout = 1:size(sol.t[:], 1)
-        title = string("sol at time ", t)
+        title = @sprintf "t = %.4f" t
+        # DSGS runs render the viscosity staircase as one more panel of
+        # the same output time (the per-node broadcast is in μ_dsgs_pnode)
+        μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
             if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
                 KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
             end
         #end
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
+end
+
+function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::PNG;
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
+
+    #
+    # 2D PNG of q(t): one colored map per variable and output time.
+    # inputs[:lplot_surf3d] selects the Spline2D-interpolated surface view
+    # (plot_surf3d), otherwise the nodal point map (plot_triangulation) is
+    # used -- the latter is the safer choice for solutions with kinks such
+    # as the shallow water wet/dry front, where a global spline overshoots.
+    #
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+
+    if (inputs[:backend] == CPU())
+        q = sol
+    else
+        q = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
+        KernelAbstractions.copyto!(CPU(), q, sol)
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+    end
+
+    title = @sprintf "t = %.4f s" t
+    if (inputs[:lplot_surf3d])
+        plot_surf3d(SD, mesh, q, title, OUTPUT_DIR;
+                    iout=iout, nvar=nvar,
+                    smoothing_factor=inputs[:smoothing_factor], varnames=varnames)
+    else
+        plot_triangulation(SD, mesh, q, title, OUTPUT_DIR, inputs;
+                           iout=iout, nvar=nvar, varnames=varnames)
+    end
+
+    println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)
 end
 
 
 function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     #
@@ -140,28 +184,30 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
         write_vtk(SD, mesh, u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=u_exact, case=case)
     end
     
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
-    
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
+
 end
 
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
-                      nvar=1, qexact=zeros(1,nvar), case="")
-    
-    comm = MPI.COMM_WORLD
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
+
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
 
-        write_vtk(SD, mesh, sol, uaux, mp, 
+        write_vtk(SD, mesh, sol, uaux, mp,
                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
-                  iout=iout, nvar=nvar, qexact=qexact, case=case) 
+                  iout=iout, nvar=nvar, qexact=qexact, case=case,
+                  μ_dsgs_pnode=μ_dsgs_pnode)
         
     else
         #VERIFY THIS on GPU
@@ -173,18 +219,19 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
         write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                    OUTPUT_DIR::String, inputs::Dict,
+                    OUTPUT_DIR::String, inputs,
                     varnames, outvarnames,
                     outformat::NETCDF;
-                    nvar=1, qexact=zeros(1,nvar), case="")
+                    nvar=1, qexact=zeros(1,nvar), case="",
+                    μ_dsgs_pnode=nothing)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
@@ -209,17 +256,18 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                      iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
-                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="",
+                   μ_dsgs_pnode=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -286,9 +334,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                   μ_dsgs_pnode=μ_dsgs_pnode)
 
-    
+
     #
     # Write solution to vtk:
     #
@@ -318,9 +367,10 @@ end
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict,
+                   t, title::String, OUTPUT_DIR::String, inputs,
                    varnames, outvarnames;
-                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="",
+                   μ_dsgs_pnode=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -369,9 +419,10 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
-    
-    
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                   μ_dsgs_pnode=μ_dsgs_pnode)
+
+
     #
     # Write solution:
     #
@@ -514,12 +565,13 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::HDF5;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
@@ -544,7 +596,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
 end
-function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     #println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     
@@ -563,10 +615,10 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
     end
     
-    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
-    
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
+
 end
-function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5; nvar=1)
+function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5; nvar=1)
     
     #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
@@ -576,9 +628,13 @@ function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5
 end
 
 
-function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
-    
-    comm = MPI.COMM_WORLD
+function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs, varnames; iout=1, nvar=1, case="")
+    # PERF: pull HDF5 into Jexpresso's namespace on first use; no-op
+    # after that. Eager-loading HDF5 in src/Jexpresso.jl cost every
+    # non-HDF5 run (city2d uses VTK output) tens of MB and seconds.
+    _ensure_hdf5_loaded!()
+
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     #Write one HDF5 file timestep
@@ -601,8 +657,9 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
     end
 end
 
-function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
-    comm = MPI.COMM_WORLD
+function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
+    _ensure_hdf5_loaded!()
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
 
@@ -613,7 +670,13 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     fout_name = string(INPUT_DIR, "/t.h5")
     time = rank == 0 ? convert(Float64, h5read(fout_name, "time")) : 0.0
     time = MPI.bcast(time, 0, comm)
-    inputs[:tinit] = time
+    if inputs isa AbstractDict
+        inputs[:tinit] = time
+    else
+        @warn "read_hdf5: cannot write :tinit into a NamedTuple inputs; " *
+              "restart time = $time will be ignored unless you rebind " *
+              "inputs in the caller."
+    end
     #Write one HDF5 file per variable
     for ivar = 1:nvar
         fout_name   = string(INPUT_DIR, "/var_", ivar,"_",rank, ".h5")
@@ -625,10 +688,12 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     return q, qe
 end
 
-function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+    # PERF: pull NCDatasets into Jexpresso's namespace on first use.
+    _ensure_netcdf_loaded!()
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -693,10 +758,10 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
     
-    comm   = MPI.COMM_WORLD
+    comm   = get_mpi_comm()
     rank   = MPI.Comm_rank(comm)
     nprocs = MPI.Comm_size(comm)
-    
+
     local_list = findall(x->x == rank, mesh.gip2owner)
     # Gather data from all processes
     all_ip2gip  = MPI.gather(mesh.ip2gip[local_list], comm)
@@ -782,10 +847,11 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
 end
 
-function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                      t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                      t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                       iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+    _ensure_netcdf_loaded!()
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end

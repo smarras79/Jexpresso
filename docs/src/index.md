@@ -188,8 +188,8 @@ followed by the following:
 Push problem name to ARGS
 You need to do this only when you run a new problem
 ```bash
-push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case(EQUATIONS, EQUATIONS_CASE_NAME)
 ```
 
 * PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/problems/equations/problem_name
@@ -202,12 +202,12 @@ The path would look like
 
 1. Basic Execution
 ```bash
-mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
+mpiexec -n <NPROCS> julia --project=. src/Jexpresso.jl <EQUATIONS> <CASE_NAME>
 ```
 
 2. Implementation-Specific Examples
 ```bash
-mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
+mpiexec -n 4 julia --project=. src/Jexpresso.jl CompEuler 3d
 ```
 
 ### Troubleshooting
@@ -224,7 +224,7 @@ mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); inclu
   You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary. For example, if your `mpirun` lives in `/opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun`, then you may want to run the code with the full path like this:
 
   ```
-  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
+  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. src/Jexpresso.jl CompEuler theta
   ```
 
   Important notice: you need to use the Julia version that is correctly linked to the same MPI installation.

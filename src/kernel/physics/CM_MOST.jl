@@ -40,31 +40,23 @@ const a_h = 16.0              # heat stability parameter (unstable)
 const b_m = 5.0               # momentum stability parameter (stable)
 const b_h = 5.0               # heat stability parameter (stable)
 
-function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref)
-    
-    #println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
-    
-    # Example atmospheric conditions
-    #u_ref = 10.0      # wind speed at 10m [m/s]
-    #v_ref = 0.0
-    #theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
-    #theta_s = 302.0   # 288.0    # surface potential temperature [K]
-    #z_ref = 10.0      # reference height [m]
-
-    z0_m = 0.1        # momentum roughness length [m]
-    z0_h = 0.01       # thermal roughness length [m]
+function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref,
+                  PhysConst, z0_m, z0_h)
 
     u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
-    
+
     # Calculate surface conditions
-    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h)
-    
+    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h; rho=ρ)
+
     # Momentum flux
     τ_magnitude = momentum_flux(result.u_star, ρ)
-    
+
     τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
     τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
     τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
+
+    # Sensible heat flux
+    wθ[1] = result.Q_H
     
     #sensible heat flux
     #wθ[iface_bdy, idx1, idx2, 1]  = result_x.Q_H
@@ -100,6 +92,20 @@ function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref)
     println("Plotting failed: $e")
     println("Install Plots.jl with: using Pkg; Pkg.add(\"Plots\")")
     end=#
+    return
+end
+
+function CM_MOST!(τ_f, wθ, wqv, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref,
+                  PhysConst, qv_in, qv_sfc, z0_m, z0_h)
+
+    CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref,
+             PhysConst, z0_m, z0_h)
+
+    # Latent / moisture flux (bulk aerodynamic form using the heat transfer coefficient)
+    u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
+    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h; rho=ρ)
+    wqv[1] = -result.C_H * u_magnitude * (qv_in - qv_sfc)
+
     return
 end
 

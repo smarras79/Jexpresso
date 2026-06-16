@@ -1,13 +1,28 @@
-using Distributions
+# PERF: `using Distributions` removed — the file never references
+# Distributions.* (the few random draws use Base.rand directly).
+# Distributions pulls in StatsBase / StatsFuns / SpecialFunctions and
+# adds ~100 MB to the per-rank startup baseline for nothing.
 using StaticArrays
 
+# Float64 to match the Float64 arithmetic inside user_source! / user_flux! /
+# add_micro_precip_sources!. With Float32 here, every const-field access
+# inside those callbacks triggered Float32->Float64 promotion in the inner
+# loop, breaking inference in a few spots. sm/alyacouple-merge uses Float64.
 const PHYS_CONST = PhysicalConst{Float64}()
 const MicroConst = MicrophysicalConst{Float64}()
 
 function RHStoDU!(du, RHS, neqs, npoin)
+    # Scalar (not range/@view) assignment so `du` can be an
+    # OrdinaryDiffEq low-storage RK ArrayFuse, which only supports
+    # setindex!(::ArrayFuse, v, ::Int) - not range setindex!. Range
+    # form was incompatible with FullSpecialize'd ODEProblem and also
+    # less cache-friendly than the straight scalar loop. RHS keeps
+    # its [npoin, neqs] layout.
     for i=1:neqs
         idx = (i-1)*npoin
-        du[idx+1:i*npoin] = @view RHS[:,i]
+        for j=1:npoin
+            du[idx+j] = RHS[j,i]
+        end
     end
 end
 
@@ -107,15 +122,16 @@ function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
     # for @timers, do not delete
     timers = params.timers
-    if (backend == CPU())
-        _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
-        if (params.laguerre) 
-            build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+    if (backend == CPU())
+        @timeit_debug JEXPRESSO_TIMER "build_rhs" _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+
+        if (params.laguerre)
+            @timeit_debug JEXPRESSO_TIMER "build_rhs_laguerre" build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
-        
-        RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+
+        @timeit_debug JEXPRESSO_TIMER "RHStoDU" RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
             lpert = true
@@ -125,6 +141,8 @@ function rhs!(du, u, params, time)
 
         if (params.SD == NSD_1D())
             params.RHS .= TFloat(0.0)
+            #PhysConst = PhysicalConst{Float32}()
+
             k1 = utouaux_gpu!(backend)
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
                workgroupsize = (params.neqs))
@@ -318,6 +336,8 @@ function rhs!(du, u, params, time)
         elseif (params.SD == NSD_2D())
             params.RHS .= TFloat(0.0)
 
+            #PhysConst = PhysicalConst{Float32}()
+            
             k1 = utouaux_gpu!(backend)
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
                workgroupsize = (params.mesh.ngl, params.neqs))
@@ -497,47 +517,45 @@ function _build_rhs!(RHS, u, params, time)
     Δt      = params.Δt
     # for @timers, do not delete
     timers  = params.timers
-
+# @time begin
     if SD == NSD_1D()
-        comm = MPI.COMM_WORLD
+        comm = get_mpi_comm()
     else
         comm = params.mesh.parts.comm
     end
     mpisize = MPI.Comm_size(comm)
-    
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
-    resetRHSToZero_inviscid!(params)
+    @timeit_debug JEXPRESSO_TIMER "resetRHS_inv" resetRHSToZero_inviscid!(params)
     if (params.inputs[:lfilter])
         reset_filters!(params)
         if (params.laguerre)
             reset_laguerre_filters!(params)
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
+            @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
                     connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
         else
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
+            @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
         end
     end
 
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    
+    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
     if inputs[:ladapt] == true
-        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
+        @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
                           params.g_dss_cache,
-                          params.mesh.SD, 
+                          params.mesh.SD,
                           params.QT, params.mesh.connijk,
-                          params.mesh, params.Minv, 
-                          params.metrics.Je, params.ω, params.AD, 
-                          params.neqs,
+                          params.mesh, params.Minv,
+                          params.metrics.Je, params.ω, params.AD,
                           params.q_el, params.q_el_pro,
                           params.cache_ghost_p, params.q_ghost_p,
                           params.cache_ghost_c, params.q_ghost_c,
                           params.interp)
     end
     
-    resetbdyfluxToZero!(params)
-    apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+    @timeit_debug JEXPRESSO_TIMER "reset_bdyflux" resetbdyfluxToZero!(params)
+    @timeit_debug JEXPRESSO_TIMER "BC_dirichlet" apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
                                          params.mesh.coords,
                                          params.metrics.nx, params.metrics.ny, params.metrics.nz,
                                          params.mesh.npoin, params.mesh.npoin_linear, 
@@ -551,38 +569,48 @@ function _build_rhs!(RHS, u, params, time)
                                          params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                          params.mp.Tabs, params.mp.qn,
                                          params.ω, neqs, params.inputs, AD, SD)
-    
+
     if (params.inputs[:lmoist])
         
-        do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+        @timeit_debug JEXPRESSO_TIMER "do_micro_physics" do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
                           params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
                           params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
                           params.uaux, @view(params.mesh.coords[:,end]),
                           params.qp.qe, SD, params.SOL_VARS_TYPE)
-        
+
+        # if inputs[:ladapt] == true
+        #     conformity4ncf_mp!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+        #                     params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
+        #                     params.mp.S_micro, params.mp.qsatt,
+        #                     @view(params.uaux[:,end]), params.rhs_el_tmp, @view(params.utmp[:,1]), params.vaux,
+        #                     params.g_dss_cache,
+        #                     params.mesh.SD,
+        #                     params.QT, params.mesh.connijk,
+        #                     params.mesh, params.Minv,
+        #                     params.metrics.Je, params.ω, params.AD,
+        #                     params.neqs,
+        #                     params.q_el, params.q_el_pro,
+        #                     params.cache_ghost_p, params.q_ghost_p,
+        #                     params.cache_ghost_c, params.q_ghost_c,
+        #                     params.interp)
+        # end
+            
         if (params.inputs[:lprecip])
-            compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
+            @timeit_debug JEXPRESSO_TIMER "precip_derivs" compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
                                                params.mp.Pg, params.mp.Tabs, params.mp.qi,
                                                @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
                                                params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
                                                params.metrics, params.ω, params.basis.dψ, SD, params.SOL_VARS_TYPE)
             
-            micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
+            @timeit_debug JEXPRESSO_TIMER "micro2rhs" micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
         end
-        uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
+        @timeit_debug JEXPRESSO_TIMER "uaux2u" uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
-    
-    if(params.inputs[:lsaturation])
-        saturation_adjustment(params.uaux, params.qp.qe, params.mesh.z, params.mesh.connijk,
-                              params.mesh.nelem, params.mesh.ngl, neqs, params.thermo_params)
-        
-        uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
-    end
-    
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
-                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD,
-                     Val(params.inputs[:lsaturation]))
-    
+
+     
+    @timeit_debug JEXPRESSO_TIMER "inviscid_rhs_el" inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
+
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
                            params.mesh.non_conforming_facets,
@@ -593,16 +621,16 @@ function _build_rhs!(RHS, u, params, time)
                            params.mesh.pgip_local, ngl-1, neqs, params.interp)
 
     end
-    DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+    @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
     if (params.inputs[:lvisc] == true)
         
-        resetRHSToZero_viscous!(params, SD)
+        @timeit_debug JEXPRESSO_TIMER "resetRHS_visc" resetRHSToZero_viscous!(params, SD)
         
-        viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+        @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
@@ -614,10 +642,10 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.pgip_local, ngl-1, neqs, params.interp)
         end
         
-        DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+        @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
+    @timeit_debug JEXPRESSO_TIMER "BC_neumann" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
                                        params.metrics.nx, params.metrics.ny, params.metrics.nz,
                                        params.mesh.npoin, params.mesh.npoin_linear,
@@ -629,11 +657,11 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
                                        params.mesh.connijk, params.metrics.Jef, params.S_face, 
                                        params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                       params.WM.τ_f, params.WM.wθ,
+                                       params.WM.τ_f, params.WM.wθ, params.WM.wqv,
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
-    
-    DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+
+    @timeit_debug JEXPRESSO_TIMER "DSS_global_RHS" DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)
@@ -655,16 +683,11 @@ function _build_rhs!(RHS, u, params, time)
         end
     end
 end
+# end
 
-function inviscid_rhs_el!(u, params,
-                          connijk,
-                          qe,
-                          coords,
-                          lsource, S_micro_vec, qn_vec,
-                          flux_lw_vec, flux_sw_vec,
-                          SD::NSD_1D, ::Val{false})
+function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
     
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     ngl   = params.mesh.ngl
     npoin = params.mesh.npoin
@@ -701,7 +724,6 @@ function inviscid_rhs_el!(u, params,
 
         _expansion_inviscid!(u, params.neqs, ngl,
                              params.basis.dψ, params.ω,
-                             params.uprimitive,
                              params.F, params.S,
                              params.rhs_el,
                              iel, params.CL, params.QT, SD, params.AD)
@@ -709,112 +731,37 @@ function inviscid_rhs_el!(u, params,
     end
 end
 
-
-function _expansion_inviscid_KEP!(u, neqs, ngl,
-                                  dψ, ω,
-                                  F, S, D,
-                                  rhs_el, uilgl, iel,
-                                  ::CL, QT::Inexact,
-                                  SD::NSD_1D, AD::ContGal,
-                                  uaux, connijk, el,
-                                  volume_flux_type)
-
-    for i = 1:ngl
-        ip = connijk[el,i,1]
-        du_i = zeros(neqs)
-        
-        for j = 1:ngl 
-            jp = connijk[el,j,1]
-            f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:], volume_flux_type)
-            for ieq = 1:neqs
-                du_i[ieq] += 2.0 *  dψ[j, i] * f_ij[ieq]
-            end
-        end
-        
-        for ieq = 1:neqs
-            rhs_el[iel, i, ieq] -=  ω[i] *du_i[ieq] - ω[i] * S[i, ieq]
-        end
-    end
-end
-
-
-function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
-                                  F, G, S,
-                                  Je,
-                                  dξdx, dξdy,
-                                  dηdx, dηdy,
-                                  rhs_el, iel,
-                                  ::CL, QT::Inexact,
-                                  SD::NSD_2D, AD::ContGal,
-                                  uaux, fluxaux, connijk, volume_flux_type)
-    
-    dFdx = zeros(length(neqs),1)
-    dGdy = zeros(length(neqs),1)
-
-    for j=1:ngl
-        for i=1:ngl
-            ip = connijk[iel,i,j]
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
-            
-            dFdξ = zeros(neqs,1)
-            dFdx = zeros(neqs,1)
-            dFdη = zeros(neqs,1)
-            dGdξ = zeros(neqs,1)
-            dGdy = zeros(neqs,1)
-            dGdη = zeros(neqs,1)
-            for k = 1:ngl
-                kjp = connijk[iel,k, j]
-        	ikp = connijk[iel,i, k]
-                
-		F_ik, G_ik = flux_turbo(@view(fluxaux[ip,:]), @view(fluxaux[ikp,:]), volume_flux_type)
-		F_kj, G_kj = flux_turbo(@view(fluxaux[ip,:]), @view(fluxaux[kjp,:]), volume_flux_type)
-                
-                @. dFdξ = dFdξ + 2 * dψ[k,i]*F_kj 
-                @. dFdη = dFdη + 2 * dψ[k,j]*F_ik
-                
-                @. dGdξ = dGdξ + 2 * dψ[k,i]*G_kj
-                @. dGdη = dGdη + 2 * dψ[k,j]*G_ik
-            end
-            dξdx_ij = dξdx[iel,i,j]
-            dξdy_ij = dξdy[iel,i,j]
-            dηdx_ij = dηdx[iel,i,j]
-            dηdy_ij = dηdy[iel,i,j]
-            
-            @. dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-            
-            @. dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-            for ieq=1:neqs    
-                rhs_el[iel,i,j,ieq] -=  ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
-            end
-        end
-    end
-end
-
 function inviscid_rhs_el!(u, params,
                           connijk::Array{Int64,4},
                           qe::Matrix{Float64},
-                          coords, 
+                          coords,
                           lsource, S_micro_vec, qn_vec, flux_lw_vec,
-                          flux_sw_vec, SD::NSD_2D, ::Val)
-    
+                          flux_sw_vec, SD::NSD_2D)
+    # NOTE: typed function barrier (_inviscid_rhs_el_2d!) reverted -
+    # the wider arg list was tripping LLVM codegen / inference setup on
+    # theta builds (compile-time crash, no Julia traceback). The 2D
+    # path runs fine with FullSpecialize alone; the barrier's
+    # incremental ~10-20% wasn't worth losing theta.
     ngl   = params.mesh.ngl
     nelem = params.mesh.nelem
-    
+
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
 
-    lkep = inputs[:lkep]
-    
+    # Kinetic-energy/entropy preserving flux differencing (M. Artiano,
+    # ported from ma/ab_dev): instead of the pointwise flux F,G we
+    # precompute per-node auxiliary states (primitive variables plus the
+    # log/power terms needed by the non-linear means) in params.fluxaux
+    # and assemble the RHS from symmetric two-point volume fluxes in
+    # _expansion_inviscid_KEP!.
+    lkep = params.inputs[:lkep]::Bool
+
     for iel = 1:nelem
-        
         for j = 1:ngl, i=1:ngl
-            
+
             ip = connijk[iel,i,j]
 
-            
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
             if lkep
-                user_fluxaux!(@view(params.fluxaux[ip,:]),
-                              SD,
+                user_fluxaux!(@view(params.fluxaux[ip,:]), SD,
                               @view(params.uaux[ip,:]),
                               params.SOL_VARS_TYPE,
                               params.volume_flux)
@@ -826,7 +773,7 @@ function inviscid_rhs_el!(u, params,
                            params.CL, params.SOL_VARS_TYPE;
                            neqs=params.neqs, ip=ip)
             end
-            
+
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
@@ -834,7 +781,7 @@ function inviscid_rhs_el!(u, params,
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
                              x=coords[ip,1], y=coords[ip,2], ymax=ymax)
-                
+
                 if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
                     flux_lw::Float64 = @inbounds flux_lw_vec[ip]
@@ -853,314 +800,552 @@ function inviscid_rhs_el!(u, params,
             _expansion_inviscid_KEP!(u,
                                      params.neqs, params.mesh.ngl,
                                      params.basis.dψ, params.ω,
-                                     params.F, params.G, params.S,
+                                     params.S,
                                      params.metrics.Je,
                                      params.metrics.dξdx, params.metrics.dξdy,
                                      params.metrics.dηdx, params.metrics.dηdy,
-                                     params.rhs_el, iel, params.CL, params.QT, SD,
-                                     params.AD, params.uaux, params.fluxaux, connijk,
-                                     params.volume_flux)           
+                                     params.rhs_el, iel,
+                                     params.fluxaux, connijk,
+                                     params.volume_flux,
+                                     params.CL, params.QT, SD, params.AD)
         else
             _expansion_inviscid!(u,
                                  params.neqs, params.mesh.ngl,
                                  params.basis.dψ, params.ω,
-                                 params.uprimitive,
                                  params.F, params.G, params.S,
                                  params.metrics.Je,
                                  params.metrics.dξdx, params.metrics.dξdy,
                                  params.metrics.dηdx, params.metrics.dηdy,
                                  params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
         end
-        
 
     end
 end
 
 function inviscid_rhs_el!(u, params,
-                          connijk,
-                          qe,
-                          coords,
-                          lsource, S_micro_vec, qn_vec,
-                          flux_lw_vec, flux_sw_vec,
-                          SD::NSD_3D, ::Val{false})
-    
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
-    for iel = 1:nelem
-        for k = 1:ngl, j = 1:ngl, i=1:ngl
-            
-            ip = connijk[iel,i,j,k]
-            
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,k,:]), params.SOL_VARS_TYPE)
-            
-            
-            user_flux!(@view(params.F[i,j,k,:]),
-                       @view(params.G[i,j,k,:]),
-                       @view(params.H[i,j,k,:]),
-                       @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
-            
-            if lsource
-                user_source!(@view(params.S[i,j,k,:]),
-                             @view(params.uaux[ip,:]),
-                             @view(qe[ip,:]),
-                             params.mesh.npoin,
-                             params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs,
-                             x=coords[ip,1], y=coords[ip,2], z=coords[ip,3],
-                             xmax=xmax, xmin=xmin, zmax=zmax)
-                
-                if (params.inputs[:lmoist])
-                    S_micro::Float64 = @inbounds S_micro_vec[ip]
-                    flux_lw::Float64 = @inbounds flux_lw_vec[ip]
-                    flux_sw::Float64 = @inbounds flux_sw_vec[ip]
-                    qn::Float64 = @inbounds qn_vec[ip]
-                    add_micro_precip_sources!(@view(params.S[i,j,k,:]),
-                                              @view(params.uaux[ip,:]),
-                                              @view(qe[ip,:]),
-                                              S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
-                                              SD, params.SOL_VARS_TYPE)
-                    if (params.inputs[:LST])
-                        large_scale_source!(@view(params.uaux[ip,:]),
-                                            @view(qe[ip,:]),
-                                            @view(params.S[i,j,k,:]), 
-                                            params.LST.Rad_cool[ip],
-                                            params.LST.T_adv[ip],
-                                            params.LST.q_adv[ip],
-                                            params.SOL_VARS_TYPE)
-                    end
-                end
-            end
-        end
-        
-        _expansion_inviscid!(u,
-                             params.neqs, params.mesh.ngl,
-                             params.basis.dψ, params.ω,
-                             params.uprimitive,
-                             params.F, params.G, params.H, params.S,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
-                             params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
-                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
-                             params.rhs_el, iel, 
-                             params.mesh.connijk,
-                             params.mesh.coords,
-                             params.mesh.poin_in_bdy_face,
-                             params.mesh.elem_to_face,
-                             params.mesh.bdy_face_type,
-                             params.CL, params.QT, SD, params.AD)
-    end
+                          connijk::Array{Int64,4},
+                          qe::Matrix{Float64},
+                          coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
+                          SD::NSD_3D)
+
+    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
+    # Typed function barrier (paired with FullSpecialize at the
+    # ODEProblem construction site in TimeIntegrators.jl): pull every
+    # params.* field out into concretely-typed positional arguments so
+    # the hot per-element loop in _inviscid_rhs_el_3d! compiles
+    # specialized and non-allocating. Without this barrier the inner
+    # loop dereferences `params.F`, `params.G`, etc. directly, which
+    # boxes when FullSpecialize ISN'T active and forces extra dispatch
+    # work even when it is.
+    _inviscid_rhs_el_3d!(u, params.uaux, qe,
+                         params.F, params.G, params.H, params.S,
+                         params.basis.dψ, params.ω, params.metrics.Je,
+                         params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                         params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                         params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                         params.rhs_el, connijk, coords,
+                         Int64(params.mesh.ngl), Int64(params.mesh.nelem),
+                         Int64(params.neqs), Int64(params.mesh.npoin),
+                         params.CL, params.QT, SD, params.AD, params.SOL_VARS_TYPE,
+                         params.mesh, params.LST,
+                         lsource, params.inputs[:lmoist]::Bool, params.inputs[:LST]::Bool,
+                         S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
+                         params.mesh.connijk, params.mesh.poin_in_bdy_face,
+                         params.mesh.elem_to_face, params.mesh.bdy_face_type,
+                         Float64(params.xmin), Float64(params.xmax), Float64(params.zmax))
 end
 
-
-
-
-
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D, ::Val{true})    
-    
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    xmin = params.xmin; xmax = params.xmax; zmax = params.zmax
-    
+function _inviscid_rhs_el_3d!(u, uaux, qe,
+                              F, G, H, S,
+                              dψ, ω, Je,
+                              dξdx, dξdy, dξdz,
+                              dηdx, dηdy, dηdz,
+                              dζdx, dζdy, dζdz,
+                              rhs_el, connijk, coords,
+                              ngl, nelem, neqs, npoin,
+                              CL, QT, SD, AD, SOL_VARS_TYPE,
+                              mesh, LST,
+                              lsource, lmoist, lLST,
+                              S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
+                              connijk_mesh, poin_in_bdy_face,
+                              elem_to_face, bdy_face_type,
+                              xmin, xmax, zmax)
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i=1:ngl
-            
+
             ip = connijk[iel,i,j,k]
-            
-            user_flux!(@view(params.F[i,j,k,:]),
-                       @view(params.G[i,j,k,:]),
-                       @view(params.H[i,j,k,:]),
-                       @view(params.uaux[ip,:]),
+
+            user_flux!(@view(F[i,j,k,:]),
+                       @view(G[i,j,k,:]),
+                       @view(H[i,j,k,:]),
+                       @view(uaux[ip,:]),
                        @view(qe[ip,:]),
-                       params.mesh, params.thermo_params,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip,
-                       x=coords[ip,1], y=coords[ip,2], z=coords[ip,3])
-            
+                       mesh,
+                       CL, SOL_VARS_TYPE;
+                       neqs=neqs, ip=ip)
+
             if lsource
-                user_source!(@view(params.S[i,j,k,:]),
-                             @view(params.uaux[ip,:]),
-                             @view(qe[ip,:]),          #ρref 
-                             params.mesh.npoin,
-                             params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs,
+                user_source!(@view(S[i,j,k,:]),
+                             @view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             npoin,
+                             CL, SOL_VARS_TYPE;
+                             neqs=neqs,
                              x=coords[ip,1], y=coords[ip,2], z=coords[ip,3],
                              xmax=xmax, xmin=xmin, zmax=zmax)
-                
-                if (params.inputs[:lmoist])
+
+                if (lmoist)
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
                     flux_lw::Float64 = @inbounds flux_lw_vec[ip]
                     flux_sw::Float64 = @inbounds flux_sw_vec[ip]
                     qn::Float64 = @inbounds qn_vec[ip]
-                    add_micro_precip_sources!(@view(params.S[i,j,k,:]),
-                                              @view(params.uaux[ip,:]),
+                    add_micro_precip_sources!(@view(S[i,j,k,:]),
+                                              @view(uaux[ip,:]),
                                               @view(qe[ip,:]),
                                               S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
-                                              SD, params.SOL_VARS_TYPE)
-                    if (params.inputs[:LST])
-                        large_scale_source!(@view(params.uaux[ip,:]),
+                                              SD, SOL_VARS_TYPE)
+                    if (lLST)
+                        large_scale_source!(@view(uaux[ip,:]),
                                             @view(qe[ip,:]),
-                                            @view(params.S[i,j,k,:]), 
-                                            params.LST.Rad_cool[ip],
-                                            params.LST.T_adv[ip],
-                                            params.LST.q_adv[ip],
-                                            params.SOL_VARS_TYPE)
+                                            @view(S[i,j,k,:]),
+                                            LST.Rad_cool[ip],
+                                            LST.T_adv[ip],
+                                            LST.q_adv[ip],
+                                            SOL_VARS_TYPE)
                     end
                 end
             end
         end
 
         _expansion_inviscid!(u,
-                             params.neqs, params.mesh.ngl,
-                             params.basis.dψ, params.ω,
-                             params.F, params.G, params.H, params.S,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
-                             params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
-                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
-                             params.rhs_el, iel, 
-                             params.mesh.connijk,
-                             params.mesh.coords,
-                             params.mesh.poin_in_bdy_face,
-                             params.mesh.elem_to_face,
-                             params.mesh.bdy_face_type,
-                             params.CL, params.QT, SD, params.AD) 
-    end    
+                             neqs, ngl,
+                             dψ, ω,
+                             F, G, H, S,
+                             Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             rhs_el, iel,
+                             connijk_mesh,
+                             coords,
+                             poin_in_bdy_face,
+                             elem_to_face,
+                             bdy_face_type,
+                             CL, QT, SD, AD)
+    end
 end
 
 
 
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
-    
+
     Δ = params.mesh.Δeffective_l
 
     nelem = params.mesh.nelem
     ngl   = params.mesh.ngl
     neqs  = params.neqs
-    
+
+    # Marras-style Dynamic SGS: fill the pre-allocated per-element
+    # μ_dsgs[1:nelem, 1:neqs] buffer (sized in params_setup.jl) before
+    # the visc-expansion loop. Current solution is uaux; BDF2 history
+    # is qnm2 (qⁿ⁻¹) and qnm1 (qⁿ⁻²); qe is the equilibrium / reference
+    # state — subtracted inside compute_dsgs_viscosity! so the L∞
+    # denominators measure perturbations, not the hydrostatic
+    # background.
+    if params.VT == DSGS()
+        TT = eltype(params.μ_dsgs)
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.qp.qe,
+                                params.RHS, params.Minv, params.visc_coeff,
+                                TT(params.Δt),
+                                params.mesh.connijk, params.mesh.Δx,
+                                Int(nelem), Int(ngl))
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(nelem), Int(ngl), SD)
+    end
+
     for iel=1:nelem
-        
+
         for i=1:ngl
             ip = connijk[iel,i]
             user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
         end
 
-        for ieq = 1:neqs
-            _expansion_visc!(params.rhs_diffξ_el,
-                             params.uprimitive,
-                             params.visc_coeff,
-                             params.ω,
-                             params.mesh.ngl,
-                             params.basis.dψ,
-                             params.metrics.Je,
-                             params.metrics.dξdx,
-                             params.inputs, params.rhs_el,
-                             iel, ieq, params.QT, params.VT, SD, params.AD; Δ=Δ)
+        if params.VT == DSGS()
+            for ieq = 1:neqs
+                μ_el = params.μ_dsgs[iel, ieq]
+                _expansion_visc!(params.rhs_diffξ_el,
+                                 params.uprimitive,
+                                 μ_el,
+                                 params.ω,
+                                 params.mesh.ngl,
+                                 params.basis.dψ,
+                                 params.metrics.Je,
+                                 params.metrics.dξdx,
+                                 params.inputs, params.rhs_el,
+                                 iel, ieq, params.QT, DSGS(), SD, params.AD; Δ=Δ)
+            end
+        else
+            for ieq = 1:neqs
+                _expansion_visc!(params.rhs_diffξ_el,
+                                 params.uprimitive,
+                                 params.visc_coeff,
+                                 params.ω,
+                                 params.mesh.ngl,
+                                 params.basis.dψ,
+                                 params.metrics.Je,
+                                 params.metrics.dξdx,
+                                 params.inputs, params.rhs_el,
+                                 iel, ieq, params.QT, params.VT, SD, params.AD; Δ=Δ)
+            end
         end
-        
+
     end
-    
+
     params.rhs_diff_el .= @views (params.rhs_diffξ_el)
-    
+
 end
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
-    
-    Δ = params.mesh.Δeffective_l
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_2D)
+    # Entropy-stable Navier-Stokes parabolic path (M. Artiano, ported
+    # from ma/ab_dev): instead of the per-equation Laplacian of
+    # _expansion_visc!, assemble the full viscous flux (deviatoric
+    # stress tensor + heat flux, via the problem-side flux_parabolic)
+    # for all equations at once from the gradients of the primitive
+    # variables (rho, u, v, T). Only valid for the 4-equation
+    # total-energy formulation (SOL_VARS_TYPE = TOTAL()); potential
+    # temperature is not supported by flux_parabolic yet.
+    if params.inputs[:entropy_variables]::Bool
+        _viscous_rhs_el_2d_navierstokes!(params.uaux, qe, params.uprimitive,
+                            params.rhs_diffξ_el, params.rhs_diffη_el,
+                            params.rhs_diff_el, params.visc_coeff, params.ω,
+                            Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                            params.metrics.dξdx, params.metrics.dξdy,
+                            params.metrics.dηdx, params.metrics.dηdy,
+                            params.inputs, params.rhs_el,
+                            Int64(params.mesh.nelem), Int64(params.neqs),
+                            connijk, Float64(params.mesh.Δeffective_l),
+                            params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+        return
+    end
 
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    neqs  = params.neqs
-    
-    for iel=1:nelem
-        
+    # Marras-style Dynamic SGS (DSGS) takes a separate path: the per-
+    # element coefficient is precomputed by compute_dsgs_viscosity! and
+    # then packed into visc_coeff_dsgs (one entry per equation) before
+    # _expansion_visc! is called for each element. The 2D _expansion_visc!
+    # dispatches SGS_diffusion(::DSGS, ::NSD_2D) which simply returns
+    # visc_coeffieq[ieq], so the per-element value flows straight through.
+    if params.VT == DSGS()
+        TT = eltype(params.μ_dsgs)
+
+        # Step 1 — fill the per-equation per-element μ_dsgs buffer. All
+        # arguments are concretely typed so compute_dsgs_viscosity!
+        # specialises and stays allocation-free.  Subtracting qe inside
+        # keeps the L∞ denominators measuring perturbations, not the
+        # hydrostatic background.
+        Pr_TT = TT(params.inputs[:Pr])
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.qp.qe,
+                                params.RHS, params.Minv, params.visc_coeff,
+                                TT(params.Δt),
+                                params.mesh.connijk, params.mesh.Δelem,
+                                PHYS_CONST, Pr_TT,
+                                Int(params.mesh.nelem), Int(params.mesh.ngl))
+
+        # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(params.mesh.nelem),
+                                 Int(params.mesh.ngl), SD)
+
+        # Step 3 — assemble the viscous RHS through the typed barrier.
+        _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
+                                 params.rhs_diffξ_el, params.rhs_diffη_el,
+                                 params.rhs_diff_el,
+                                 params.visc_coeff_dsgs, params.μ_dsgs,
+                                 params.ω,
+                                 params.mp.Tabs, params.mp.qn, params.mp.qsatt,
+                                 Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy,
+                                 params.metrics.dηdx, params.metrics.dηdy,
+                                 params.mesh.connijk, params.inputs, params.rhs_el,
+                                 Int64(params.mesh.nelem), Int64(params.neqs),
+                                 connijk, Float64(params.mesh.Δeffective_l),
+                                 params.QT, params.AD, params.SOL_VARS_TYPE)
+        return
+    end
+
+    # 2D typed function barrier (mirrors the 3D pattern at
+    # viscous_rhs_el!(NSD_3D) and inviscid_rhs_el!(NSD_3D)). Hoists
+    # every params.* field used in the hot loop out into concretely-
+    # typed positional arguments so the inner _viscous_rhs_el_2d!
+    # compiles fully specialized.
+    _viscous_rhs_el_2d!(params.uaux, qe, params.uprimitive,
+                        params.rhs_diffξ_el, params.rhs_diffη_el,
+                        params.rhs_diff_el, params.visc_coeff, params.ω,
+                        params.mp.Tabs, params.mp.qn, params.mp.qsatt,
+                        Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                        params.metrics.dξdx, params.metrics.dξdy,
+                        params.metrics.dηdx, params.metrics.dηdy,
+                        params.mesh.connijk, params.inputs, params.rhs_el,
+                        Int64(params.mesh.nelem), Int64(params.neqs),
+                        connijk, Float64(params.mesh.Δeffective_l),
+                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+end
+
+# Function barrier for the 2D DSGS viscous assembly. Mirrors
+# _viscous_rhs_el_2d!  — every argument is a concretely typed array
+# or scalar so the per-element loop compiles fully specialised and
+# allocates nothing.
+#
+# μ_dsgs[iel, ieq] already carries the per-equation coefficient set
+# by compute_dsgs_viscosity!:
+#   ieq = 1 : diagnostic ν_ρ (NOT applied — Marras drops mass diffusion)
+#   ieq = 2 : μ on the x-momentum
+#   ieq = 3 : μ on the y-momentum
+#   ieq = 4 : κ on the θ-equation (already scaled by Pr/(γ-1))
+# All this loop needs to do is unpack μ_dsgs[iel, :] into the per-
+# element visc_coeff_dsgs scratch (zeroing ieq=1 so ρ stays
+# conservative) and pass it to the generic 2D _expansion_visc!.
+function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
+                                  rhs_diffξ_el, rhs_diffη_el,
+                                  rhs_diff_el,
+                                  visc_coeff_dsgs, μ_dsgs,
+                                  ω,
+                                  Tabs, qn_mp, qsatt,
+                                  ngl, dψ, Je,
+                                  dξdx, dξdy,
+                                  dηdx, dηdy,
+                                  connijk_mesh, inputs, rhs_el,
+                                  nelem, neqs,
+                                  connijk, Δ,
+                                  QT, AD, SOL_VARS_TYPE)
+
+    for iel = 1:nelem
+        # Marras (10): mass conservation untouched.
+        visc_coeff_dsgs[1] = zero(eltype(visc_coeff_dsgs))
+        for ieq = 2:neqs
+            visc_coeff_dsgs[ieq] = μ_dsgs[iel, ieq]
+        end
+
+        for j = 1:ngl, i = 1:ngl
+            ip = connijk[iel,i,j]
+            user_primitives!(@view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(uprimitive[i,j,:]),
+                             SOL_VARS_TYPE)
+        end
+
+        for ieq = 1:neqs
+            _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                             uprimitive,
+                             visc_coeff_dsgs,
+                             ω,
+                             Tabs, qn_mp, qsatt,
+                             uaux,
+                             ngl,
+                             dψ, Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             connijk_mesh,
+                             inputs, rhs_el,
+                             iel, ieq,
+                             QT, DSGS(), NSD_2D(), AD; Δ=Δ)
+        end
+    end
+
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
+end
+
+function _viscous_rhs_el_2d!(uaux, qe, uprimitive,
+                             rhs_diffξ_el, rhs_diffη_el,
+                             rhs_diff_el, visc_coeff, ω,
+                             Tabs, qn_mp, qsatt,
+                             ngl, dψ, Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             connijk_mesh, inputs, rhs_el,
+                             nelem, neqs,
+                             connijk, Δ,
+                             QT, VT, SD, AD, SOL_VARS_TYPE)
+    for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j]
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            user_primitives!(@view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(uprimitive[i,j,:]),
+                             SOL_VARS_TYPE)
         end
-        
+
         for ieq = 1:neqs
-            _expansion_visc!(params.rhs_diffξ_el,
-                             params.rhs_diffη_el,
-                             params.uprimitive,
-                             params.visc_coeff,
-                             params.ω,
-                             params.mesh.ngl,
-                             params.basis.dψ,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy,
-                             params.metrics.dηdx, params.metrics.dηdy,
-                             params.inputs, params.rhs_el,
+            _expansion_visc!(rhs_diffξ_el,
+                             rhs_diffη_el,
+                             uprimitive,
+                             visc_coeff,
+                             ω,
+                             Tabs,
+                             qn_mp,
+                             qsatt,
+                             uaux,
+                             ngl,
+                             dψ,
+                             Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             connijk_mesh,
+                             inputs, rhs_el,
                              iel, ieq,
-                             params.QT, params.VT, SD, params.AD; Δ=Δ)
+                             QT, VT, SD, AD; Δ=Δ)
         end
-        
     end
-    
-    params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
-    
+
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
+end
+
+# Typed function barrier for the entropy-stable Navier-Stokes parabolic
+# assembly (mirrors _viscous_rhs_el_2d!): fills uprimitive with
+# (rho, u, v, T) per node and calls the all-equations-at-once
+# _expansion_visc_navierstokes! per element.
+function _viscous_rhs_el_2d_navierstokes!(uaux, qe, uprimitive,
+                             rhs_diffξ_el, rhs_diffη_el,
+                             rhs_diff_el, visc_coeff, ω,
+                             ngl, dψ, Je,
+                             dξdx, dξdy,
+                             dηdx, dηdy,
+                             inputs, rhs_el,
+                             nelem, neqs,
+                             connijk, Δ,
+                             QT, VT, SD, AD, SOL_VARS_TYPE)
+    for iel = 1:nelem
+        for j = 1:ngl, i=1:ngl
+            ip = connijk[iel,i,j]
+            user_primitives!(@view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(uprimitive[i,j,:]),
+                             SOL_VARS_TYPE)
+        end
+
+        _expansion_visc_navierstokes!(rhs_diffξ_el,
+                                      rhs_diffη_el,
+                                      uprimitive,
+                                      visc_coeff,
+                                      ω,
+                                      ngl,
+                                      dψ,
+                                      Je,
+                                      dξdx, dξdy,
+                                      dηdx, dηdy,
+                                      inputs, rhs_el,
+                                      iel, neqs,
+                                      QT, VT, SD, AD; Δ=Δ)
+    end
+
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
 end
 
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
-    
-    Δ = params.mesh.Δeffective_l
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
+    # Typed function barrier (paired with FullSpecialize at the
+    # ODEProblem construction site in TimeIntegrators.jl): pull every
+    # params.* field used in the hot loop out into concretely-typed
+    # positional arguments so the inner _viscous_rhs_el_3d! compiles
+    # fully specialized and non-allocating. The VREM/Smagorinsky hot
+    # loop accesses ~20 params.* fields per element and dominated the
+    # per-step cost without this barrier.
+    _viscous_rhs_el_3d!(params.uaux, qe, params.uprimitive,
+                        params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
+                        params.rhs_diff_el, params.visc_coeff, params.ω,
+                        params.mp.Tabs, params.mp.qn, params.mp.qsatt, params.uaux,
+                        Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                        params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                        params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                        params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                        params.inputs, params.rhs_el, params.mesh.connijk,
+                        params.mesh.coords, params.mesh.poin_in_bdy_face,
+                        params.mesh.elem_to_face, params.mesh.bdy_face_type,
+                        params.μ_max, Int64(params.mesh.nelem), Int64(params.neqs),
+                        params.mesh.ad_lvl, connijk, Float64(params.mesh.Δeffective_l),
+                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+end
 
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    neqs  = params.neqs
+function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
+                             rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                             rhs_diff_el, visc_coeff, ω,
+                             Tabs, qn_mp, qsatt, uaux_e,
+                             ngl, dψ, Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             inputs, rhs_el, connijk_mesh,
+                             coords, poin_in_bdy_face,
+                             elem_to_face, bdy_face_type,
+                             μ_max, nelem, neqs,
+                             ad_lvl, connijk, Δ,
+                             QT, VT, SD, AD, SOL_VARS_TYPE)
+    # BUGFIX: `lrichardson` used to be hardcoded to `true` here, with a
+    # comment claiming the pre-barrier code did the same. That's wrong —
+    # at the last-known-good commit (sm/newmaster e95cb259) the
+    # un-barriered `_expansion_visc!(NSD_3D)` read `inputs[:lrichardson]`
+    # directly (line `if inputs[:lrichardson]`), defaulting to `false`
+    # via mod_inputs.jl. The hardcoded `true` flipped Richardson on for
+    # every 3D run: under stable stratification (the typical
+    # `:energy_equation => "theta"` CompEuler/3d setup) `Ri` quickly
+    # exceeds `Ri_crit = 0.25`, the `f_Ri` factor collapses to 0, and
+    # `μ_turb` for the theta diffusion is multiplied by zero — VREM and
+    # SMAG both lose their theta dissipation, the simulation diverges,
+    # and the symptom is "viscosity not being added correctly." Reading
+    # the flag back through `inputs[:lrichardson]` restores the
+    # e95cb259 behaviour and lets `:lrichardson => true` in
+    # user_inputs.jl re-enable the correction when the user actually
+    # wants it.
+    lrichardson = get(inputs, :lrichardson, false)
+    Δ_effective = Δ
 
-    fill!(params.μ_max,    zero(params.T))
-    
-    for iel=1:nelem        
-        
+    for iel = 1:nelem
+        Δ_effective = calculate_effective_delta(Δ, ad_lvl[iel])
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j,k]
 
-            user_primitives!(@view(params.uaux[ip,:]),
+            user_primitives!(@view(uaux[ip,:]),
                              @view(qe[ip,:]),
-                             @view(params.uprimitive[i,j,k,:]),
-                             params.SOL_VARS_TYPE)
+                             @view(uprimitive[i,j,k,:]),
+                             SOL_VARS_TYPE)
         end
 
-        
         for ieq = 1:neqs
-            _expansion_visc!(params.rhs_diffξ_el,
-                             params.rhs_diffη_el,
-                             params.rhs_diffζ_el,
-                             params.uprimitive,
-                             params.visc_coeff,
-                             params.ω,
-                             params.mp.Tabs,
-                             params.mp.qn,
-                             params.mp.qsatt,
-                             params.uaux,
-                             params.mesh.ngl,
-                             params.basis.dψ,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, 
-                             params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
-                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
-                             params.inputs, params.rhs_el, iel, ieq, params.mesh.connijk,
-                             params.mesh.coords,                             
-                             params.mesh.poin_in_bdy_face, params.mesh.elem_to_face,
-                             params.mesh.bdy_face_type, 
-                             params.μ_max,
-                             params.QT, params.VT, SD, params.AD; Δ=Δ)
-            
+            _expansion_visc!(rhs_diffξ_el,
+                             rhs_diffη_el,
+                             rhs_diffζ_el,
+                             uprimitive,
+                             visc_coeff,
+                             ω,
+                             Tabs,
+                             qn_mp,
+                             qsatt,
+                             uaux_e,
+                             ngl,
+                             dψ,
+                             Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             inputs, rhs_el, iel, ieq,
+                             connijk_mesh,
+                             coords,
+                             poin_in_bdy_face, elem_to_face,
+                             bdy_face_type,
+                             QT, VT, SD, AD,
+                             Δ_effective,
+                             lrichardson
+                             )
+
         end
     end
-    
-    params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el .+ params.rhs_diffζ_el)
-    
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el .+ rhs_diffζ_el)
 end
 
 
@@ -1184,7 +1369,6 @@ end
 
 function _expansion_inviscid!(u, neqs, ngl,
                               dψ, ω,
-                              uprimitive,
                               F, S,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
@@ -1203,9 +1387,7 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(u, neqs, ngl,
-                              dψ, ω,
-                              uprimitive,
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                               F, G, S,
                               Je,
                               dξdx, dξdy,
@@ -1240,7 +1422,7 @@ function _expansion_inviscid!(u, neqs, ngl,
                     
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
                     dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-                    
+
                     rhs_el[iel,i,j,ieq] -=  ωJac*((dFdx + dGdy) - S[i,j,ieq])
                 end
             end
@@ -1248,9 +1430,78 @@ function _expansion_inviscid!(u, neqs, ngl,
     end
 end
 
-function _expansion_inviscid!(u, neqs, ngl,
-                              dψ, ω,
-                              uprimitive,
+#
+# Kinetic-energy/entropy preserving (KEP) flux-differencing expansion
+# (M. Artiano, ported from ma/ab_dev).
+#
+# fluxaux[ip,:] holds the per-node auxiliary state written by
+# user_fluxaux! (primitive variables plus e.g. log(ρ), log(p), ρθ^(γ-1)
+# whenever the two-point flux needs logarithmic/Stolarsky means), and
+# flux_turbo(aux_l, aux_r, volume_flux_type) evaluates the symmetric
+# two-point volume flux (kennedy_gruber, ranocha, artiano_*, central_*).
+#
+# The accumulators are local SVectors (flux_turbo returns SVectors), so
+# the hot loop is fully type-stable and allocation-free — the scratch
+# arrays (dFdξ/dFdη/...) of the original ma/ab_dev implementation are
+# not needed here.
+#
+function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
+                                  S,
+                                  Je,
+                                  dξdx, dξdy,
+                                  dηdx, dηdy,
+                                  rhs_el, iel,
+                                  fluxaux, connijk,
+                                  volume_flux_type,
+                                  ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+
+    for j=1:ngl
+        ωj = ω[j]
+        for i=1:ngl
+
+            @inbounds begin
+                ip   = connijk[iel,i,j]
+                ωJac = ω[i]*ωj*Je[iel,i,j]
+
+                aux_ij = @view(fluxaux[ip,:])
+
+                # k = 1 seeds the SVector accumulators, k = 2:ngl accumulates:
+                kjp = connijk[iel,1,j]
+                ikp = connijk[iel,i,1]
+                F_kj, G_kj = flux_turbo(aux_ij, @view(fluxaux[kjp,:]), volume_flux_type)
+                F_ik, G_ik = flux_turbo(aux_ij, @view(fluxaux[ikp,:]), volume_flux_type)
+                dFdξ = (2.0*dψ[1,i])*F_kj
+                dGdξ = (2.0*dψ[1,i])*G_kj
+                dFdη = (2.0*dψ[1,j])*F_ik
+                dGdη = (2.0*dψ[1,j])*G_ik
+                for k = 2:ngl
+                    kjp = connijk[iel,k,j]
+                    ikp = connijk[iel,i,k]
+                    F_kj, G_kj = flux_turbo(aux_ij, @view(fluxaux[kjp,:]), volume_flux_type)
+                    F_ik, G_ik = flux_turbo(aux_ij, @view(fluxaux[ikp,:]), volume_flux_type)
+                    dFdξ += (2.0*dψ[k,i])*F_kj
+                    dGdξ += (2.0*dψ[k,i])*G_kj
+                    dFdη += (2.0*dψ[k,j])*F_ik
+                    dGdη += (2.0*dψ[k,j])*G_ik
+                end
+
+                dξdx_ij = dξdx[iel,i,j]
+                dξdy_ij = dξdy[iel,i,j]
+                dηdx_ij = dηdx[iel,i,j]
+                dηdy_ij = dηdy[iel,i,j]
+
+                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+
+                for ieq=1:neqs
+                    rhs_el[iel,i,j,ieq] -= ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
+                end
+            end
+        end
+    end
+end
+
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                               F, G, H, S,
                               Je,
                               dξdx, dξdy, dξdz,
@@ -1337,18 +1588,11 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(u, neqs, ngl,
-                              dψ, ω,
-                              uprimitive,
-                              F, G, S,
-                              Je,
-                              dξdx, dξdy,
-                              dηdx, dηdy,
-                              rhs_el, iel,
-                              ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
     
-    N    = ngl
+    N    = params.mesh.ngl
     Q    = N + 1
+    neqs = params.neqs
     
     for ieq=1:neqs
         for l=1:Q
@@ -1396,15 +1640,10 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(u, neqs, ngl,
-                              dψ, ω,
-                              uprimitive,
-                              F, G, S,
-                              Je,
-                              dξdx, dξdy,
-                              dηdx, dηdy,
-                              rhs_el, iel,
-                              ::NCL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+
+    neqs = params.neqs
+    ngl  = params.mesh.ngl
     
     for ieq=1:neqs
         for j=1:ngl
@@ -1419,19 +1658,19 @@ function _expansion_inviscid!(u, neqs, ngl,
                     dGdξ = 0.0; dGdη = 0.0
                     dpdξ = 0.0; dpdη = 0.0               
                     for k = 1:ngl
-                        dFdξ += dψ[k,i]*F[k,j,ieq]
-                        dFdη += dψ[k,j]*F[i,k,ieq]
+                        dFdξ += params.basis.dψ[k,i]*params.F[k,j,ieq]
+                        dFdη += params.basis.dψ[k,j]*params.F[i,k,ieq]
                         
-                        dGdξ += dψ[k,i]*G[k,j,ieq]
-                        dGdη += dψ[k,j]*G[i,k,ieq]
+                        dGdξ += params.basis.dψ[k,i]*params.G[k,j,ieq]
+                        dGdη += params.basis.dψ[k,j]*params.G[i,k,ieq]
                         
-                        dpdξ += dψ[k,i]*uprimitive[k,j,neqs+1]
-                        dpdη += dψ[k,j]*uprimitive[i,k,neqs+1]
+                        dpdξ += params.basis.dψ[k,i]*params.uprimitive[k,j,params.neqs+1]
+                        dpdη += params.basis.dψ[k,j]*params.uprimitive[i,k,params.neqs+1]
                     end
-                    dξdx_ij = dξdx[iel,i,j]
-                    dξdy_ij = dξdy[iel,i,j]
-                    dηdx_ij = dηdx[iel,i,j]
-                    dηdy_ij = dηdy[iel,i,j]
+                    dξdx_ij = params.metrics.dξdx[iel,i,j]
+                    dξdy_ij = params.metrics.dξdy[iel,i,j]
+                    dηdx_ij = params.metrics.dηdx[iel,i,j]
+                    dηdy_ij = params.metrics.dηdy[iel,i,j]
                     
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij            
                     dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
@@ -1442,21 +1681,21 @@ function _expansion_inviscid!(u, neqs, ngl,
                     dpdx = dpdξ*dξdx_ij + dpdη*dηdx_ij            
                     dpdy = dpdξ*dξdy_ij + dpdη*dηdy_ij
 
-                    ρij = uprimitive[i,j,1]
-                    uij = uprimitive[i,j,2]
-                    vij = uprimitive[i,j,3]
+                    ρij = params.uprimitive[i,j,1]
+                    uij = params.uprimitive[i,j,2]
+                    vij = params.uprimitive[i,j,3]
                     
                     if (ieq == 1)
                         auxi = ωJac*(dFdx + dGdy)
                     elseif(ieq == 2)
                         auxi = ωJac*(uij*dFdx + vij*dGdy + dpdx/ρij)
                     elseif(ieq == 3)
-                        auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - S[i,j,ieq])
+                        auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - params.S[i,j,ieq])
                     elseif(ieq == 4)
                         auxi = ωJac*(uij*dFdx + vij*dGdy)
                     end
                     
-                    rhs_el[iel,i,j,ieq] -= auxi
+                    params.rhs_el[iel,i,j,ieq] -= auxi
                 end
             end
         end
@@ -1562,25 +1801,53 @@ end
 
 function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, inputs, rhs_el, iel, ieq,
-                          QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal; Δ=1.0, lrichardson=false)
 
+    # Weak form  -∫(dψ_i/dx) μ (dq/dx) dx
+    #   = -Σ_k ωJac_k · (dξ/dx)_k · μ · (dq/dx)_k · (dψ_i/dξ)_k
+    # ωJac = ω · Je, Je = dx/dξ, (dξ/dx) is the metric coefficient.
     for k = 1:ngl
-        ωJac = ω[k]*Je[iel,k]
-        
+        ωJac    = ω[k]*Je[iel,k]
+        dξdx_k  = dξdx[iel,k]
+
         dqdξ = 0.0
         @turbo for ii = 1:ngl
             dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
         end
 
-        dξdx_kl = dqdξ*dξdx[iel,k]
-        dqdx = visc_coeffieq[ieq]*dξdx_kl
-        
-        ∇ξ∇u_kl = dξdx[iel,k]*dqdx*ωJac
-        
+        dqdx   = dqdξ*dξdx_k
+        flux_x = visc_coeffieq[ieq]*dqdx
+
+        integrand = ωJac*dξdx_k*flux_x
+
         @turbo for i = 1:ngl
-            dhdξ_ik = dψ[i,k]
-            
-            rhs_diffξ_el[iel,i,ieq] -= dhdξ_ik * ∇ξ∇u_kl
+            rhs_diffξ_el[iel,i,ieq] -= dψ[i,k]*integrand
+        end
+    end
+end
+
+# Marras-style Dynamic SGS (DSGS) for 1D: viscosity coefficient is a per-element
+# scalar μ_el (precomputed by compute_dsgs_viscosity! before the visc loop).
+function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, μ_el, ω,
+                          ngl, dψ, Je, dξdx, inputs, rhs_el, iel, ieq,
+                          QT::Inexact, VT::DSGS, SD::NSD_1D, ::ContGal; Δ=1.0, lrichardson=false)
+
+    for k = 1:ngl
+        ωJac    = ω[k]*Je[iel,k]
+        dξdx_k  = dξdx[iel,k]
+
+        dqdξ = 0.0
+        @turbo for ii = 1:ngl
+            dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
+        end
+
+        dqdx   = dqdξ*dξdx_k
+        flux_x = μ_el*dqdx
+
+        integrand = ωJac*dξdx_k*flux_x
+
+        @turbo for i = 1:ngl
+            rhs_diffξ_el[iel,i,ieq] -= dψ[i,k]*integrand
         end
     end
 end
@@ -1594,13 +1861,21 @@ end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
+                          Tabs, qn, qs,
+                          uaux,
                           ngl, dψ, Je,
                           dξdx, dξdy,
                           dηdx, dηdy,
+                          connijk,
                           inputs, rhs_el,
                           iel, ieq,
                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
-    
+
+    # Total-energy form: the energy slot also needs the viscous-work term
+    # ∂(τ_ij u_j)/∂x_i so momentum dissipation is returned to the energy
+    # budget. ρθ has no such term, so the augmentation is gated off for it.
+    add_tau_u = (ieq == 4) && (inputs[:energy_equation] != "theta")
+
     for l = 1:ngl
         ωl = ω[l]
         for k = 1:ngl
@@ -1608,7 +1883,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             @inbounds begin
                 Jekl = Je[iel,k,l]
                 ωJac = ω[k]*ωl*Jekl
-                
+
                 dqdξ = 0.0
                 dqdη = 0.0
                 @turbo for ii = 1:ngl
@@ -1619,16 +1894,44 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 dξdy_kl = dξdy[iel,k,l]
                 dηdx_kl = dηdx[iel,k,l]
                 dηdy_kl = dηdy[iel,k,l]
-                
+
                 auxi = dqdξ*dξdx_kl + dqdη*dηdx_kl
                 dqdx = visc_coeffieq[ieq]*auxi
-                
+
                 auxi = dqdξ*dξdy_kl + dqdη*dηdy_kl
                 dqdy = visc_coeffieq[ieq]*auxi
-                
-                ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
-                ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
-                
+
+                flux_x = dqdx
+                flux_y = dqdy
+
+                if add_tau_u
+                    dudξ = 0.0; dudη = 0.0
+                    dvdξ = 0.0; dvdη = 0.0
+                    @turbo for ii = 1:ngl
+                        dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                        dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+                        dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                        dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+                    end
+                    dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+                    dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+                    dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+                    dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+                    div_u = dudx + dvdy
+
+                    μ     = visc_coeffieq[2]
+                    τ_xx  = 2.0*μ*dudx - (2.0/3.0)*μ*div_u
+                    τ_yy  = 2.0*μ*dvdy - (2.0/3.0)*μ*div_u
+                    τ_xy  = μ*(dudy + dvdx)
+                    u_loc = uprimitiveieq[k,l,2]
+                    v_loc = uprimitiveieq[k,l,3]
+                    flux_x += τ_xx*u_loc + τ_xy*v_loc
+                    flux_y += τ_xy*u_loc + τ_yy*v_loc
+                end
+
+                ∇ξ∇u_kl = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
+                ∇η∇u_kl = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
+
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]
                     dhdη_il = dψ[i,l]
@@ -1646,15 +1949,18 @@ end
 #
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
+                          Tabs, qn, qs,
+                          uaux,
                           ngl, dψ, Je,
                           dξdx, dξdy,
                           dηdx, dηdy,
+                          connijk,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
-    
-    Sc_t      = PHYS_CONST.Sc_t
-    Δ2        = Δ^2
+                          QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0, lrichardson=false, vargs...)
+
+    Δ2    = Δ^2
+    micro = size(Tabs, 1)
 
     # Determine if this is a momentum equation
     is_u_momentum  = (ieq == 2)
@@ -1722,28 +2028,95 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                     τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
                     flux_x = τ_xy
                     flux_y = τ_yy
+
                     
                 elseif is_temperature
-                    # USE EFFECTIVE DIFFUSIVITY
-                    effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                          uprimitiveieq[k,l,1],
-                                                          dudx, dvdy, dudy, dvdx,
-                                                          PHYS_CONST, Δ2,
-                                                          inputs, 
-                                                          VT, SD)
-                    
-                    # Compute temperature gradient
-                    dθdξ = 0.0; dθdη = 0.0
-                    @turbo for ii = 1:ngl
-                        dθdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
-                        dθdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+
+                    if (micro == 1)
+                        # Dry: gradient of potential temperature θ
+                        dθdξ = 0.0; dθdη = 0.0
+                        @turbo for ii = 1:ngl
+                            dθdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                            dθdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+                        end
+                        dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl
+                        dθdy = dθdξ*dξdy_kl + dθdη*dηdy_kl
+
+                        effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
+                                                              uprimitiveieq[k,l,1],
+                                                              dudx, dvdy, dudy, dvdx,
+                                                              PHYS_CONST, Δ2,
+                                                              inputs, VT, SD)
+                        flux_x = effective_diffusivity * dθdx
+                        flux_y = effective_diffusivity * dθdy
+
+                        # Total-energy equation: also add the viscous-work term τ·u so that
+                        # the SGS-momentum dissipation is consistently returned to the energy
+                        # budget. Skip for the θ form where the ρθ equation has no τ·u term.
+                        if inputs[:energy_equation] != "theta"
+                            effective_viscosity = SGS_diffusion(visc_coeffieq, 2,
+                                                                uprimitiveieq[k,l,1],
+                                                                dudx, dvdy, dudy, dvdx,
+                                                                PHYS_CONST, Δ2,
+                                                                inputs,
+                                                                VT, SD)
+                            τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
+                            τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
+                            τ_xy = effective_viscosity * (dudy + dvdx)
+                            u_loc = uprimitiveieq[k,l,2]
+                            v_loc = uprimitiveieq[k,l,3]
+                            flux_x += τ_xx * u_loc + τ_xy * v_loc
+                            flux_y += τ_xy * u_loc + τ_yy * v_loc
+                        end
+
+                    elseif (micro > 1)
+                        # Moist: gradient of liquid-water static energy hl
+                        cp   = PHYS_CONST.cp
+                        Lc   = PHYS_CONST.Lc
+                        Rvap = PHYS_CONST.Rvap
+                        g    = PHYS_CONST.g
+                        ip   = connijk[iel, k, l]
+
+                        dhldξ = 0.0; dhldη = 0.0
+                        @turbo for ii = 1:ngl
+                            dhldξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                            dhldη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+                        end
+                        dhldx = dhldξ*dξdx_kl + dhldη*dηdx_kl
+                        dhldy = dhldξ*dξdy_kl + dhldη*dηdy_kl
+
+                        effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
+                                                              uprimitiveieq[k,l,1],
+                                                              dudx, dvdy, dudy, dvdx,
+                                                              PHYS_CONST, Δ2,
+                                                              inputs, VT, SD)
+
+                        if lrichardson
+                            T_ref = Tabs[ip]
+                            γ     = (Lc^2 * qs[ip]) / (Rvap * cp * T_ref^2)
+
+                            dqndξ = 0.0; dqndη = 0.0
+                            @turbo for ii = 1:ngl
+                                dqndξ += dψ[ii,k]*qn[connijk[iel,ii,l]]
+                                dqndη += dψ[ii,l]*qn[connijk[iel,k,ii]]
+                            end
+                            dqndy      = dqndξ*dξdy_kl + dqndη*dηdy_kl
+                            dhl_eff_dy = (1.0/(cp*(1+γ)))*dhldy - T_ref*dqndy
+
+                            S12_2D  = 0.5*(dudy + dvdx)
+                            Sij2    = 2.0*(dudx^2 + dvdy^2 + 2.0*S12_2D^2)
+                            N2      = abs(T_ref) > 1.0f-12 ? (g/T_ref)*dhl_eff_dy : 0.0
+                            Ri      = Sij2 > 1.0f-12 ? N2/Sij2 : 0.0
+                            Ri_crit = PHYS_CONST.Ri_crit
+                            f_Ri    = Ri >= Ri_crit ? 0.0 :
+                                      Ri >= 0.0     ? (1.0 - Ri/Ri_crit)^2 :
+                                                       min(sqrt(1.0 - 16.0*Ri), 3.0)
+                            effective_diffusivity *= f_Ri
+                        end
+
+                        flux_x = effective_diffusivity * dhldx
+                        flux_y = effective_diffusivity * dhldy
                     end
-                    
-                    dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl
-                    dθdy = dθdξ*dξdy_kl + dθdη*dηdy_kl
-                    
-                    flux_x = effective_diffusivity * dθdx
-                    flux_y = effective_diffusivity * dθdy
                     
                 else
                     # Other scalars (use appropriate Schmidt number)
@@ -1781,7 +2154,90 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                     rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η_flux_kl
                 end
             end
-        end  
+        end
+    end
+end
+
+#
+# Entropy-stable Navier-Stokes parabolic expansion (2D), ported from
+# M. Artiano's ma/ab_dev _expansion_visc_navierstokes!.
+#
+# Computes the gradients of the primitive variables (rho, u, v, T) held
+# in uprimitive and assembles the full viscous flux for all equations
+# at once through the problem-side flux_parabolic (deviatoric stress
+# tensor + heat flux), instead of the per-equation Laplacian of
+# _expansion_visc!. Only defined for the 4-equation total-energy
+# formulation. The gradients/fluxes are local SVectors so the loop is
+# allocation-free (no gradient_dxi/dx_flux scratch arrays needed).
+#
+function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
+                                       uprimitiveieq, visc_coeffieq, ω,
+                                       ngl, dψ, Je,
+                                       dξdx, dξdy,
+                                       dηdx, dηdy,
+                                       inputs, rhs_el,
+                                       iel, neqs,
+                                       QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0)
+
+    Δ2 = Δ^2
+
+    for l = 1:ngl
+        ωl = ω[l]
+        for k = 1:ngl
+
+            @inbounds begin
+                Je_kl = Je[iel,k,l]
+                ωJac  = ω[k]*ωl*Je_kl
+
+                # Gradients of (rho, u, v, T) in reference space:
+                dρdξ = 0.0; dudξ = 0.0; dvdξ = 0.0; dTdξ = 0.0
+                dρdη = 0.0; dudη = 0.0; dvdη = 0.0; dTdη = 0.0
+                @turbo for ii = 1:ngl
+                    dρdξ += dψ[ii,k]*uprimitiveieq[ii,l,1]
+                    dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                    dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                    dTdξ += dψ[ii,k]*uprimitiveieq[ii,l,4]
+
+                    dρdη += dψ[ii,l]*uprimitiveieq[k,ii,1]
+                    dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+                    dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+                    dTdη += dψ[ii,l]*uprimitiveieq[k,ii,4]
+                end
+                dξdx_kl = dξdx[iel,k,l]
+                dξdy_kl = dξdy[iel,k,l]
+                dηdx_kl = dηdx[iel,k,l]
+                dηdy_kl = dηdy[iel,k,l]
+
+                gradient_dx = SVector(dρdξ*dξdx_kl + dρdη*dηdx_kl,
+                                      dudξ*dξdx_kl + dudη*dηdx_kl,
+                                      dvdξ*dξdx_kl + dvdη*dηdx_kl,
+                                      dTdξ*dξdx_kl + dTdη*dηdx_kl)
+                gradient_dy = SVector(dρdξ*dξdy_kl + dρdη*dηdy_kl,
+                                      dudξ*dξdy_kl + dudη*dηdy_kl,
+                                      dvdξ*dξdy_kl + dvdη*dηdy_kl,
+                                      dTdξ*dξdy_kl + dTdη*dηdy_kl)
+
+                u_kl = SVector(uprimitiveieq[k,l,1],
+                               uprimitiveieq[k,l,2],
+                               uprimitiveieq[k,l,3],
+                               uprimitiveieq[k,l,4])
+
+                flux_x = flux_parabolic(u_kl, (gradient_dx, gradient_dy), 1, visc_coeffieq, inputs, Δ2)
+                flux_y = flux_parabolic(u_kl, (gradient_dx, gradient_dy), 2, visc_coeffieq, inputs, Δ2)
+
+                dx_flux = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
+                dy_flux = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
+
+                for i = 1:ngl
+                    dhdξ_ik = dψ[i,k]
+                    dhdη_il = dψ[i,l]
+                    for ieq = 1:4
+                        rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * dx_flux[ieq]
+                        rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * dy_flux[ieq]
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -1800,11 +2256,15 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          μsgs,
-                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0)
-    conn_el = @view connijk[iel,:,:,:]
-    lsponge = inputs[:lsponge]
-    zs      = inputs[:zsponge]
+                        #   μsgs,
+                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal,
+                          Δ,
+                          lrichardson
+                          )
+    # conn_el = @view connijk[iel,:,:,:]
+    # lsponge = inputs[:lsponge]
+    # zs      = inputs[:zsponge]
+
     for m = 1:ngl
         for l = 1:ngl
             
@@ -1817,15 +2277,15 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 @inbounds begin
                     Je_klm = Je[iel,k,l,m]
                     ωJac   = ω[k] * ωlm * Je_klm
-                    ip     = conn_el[k,l,m]
-                    z      = coords[ip,3]
+                    # ip     = conn_el[k,l,m]
+                    # z      = coords[ip,3]
                     
                     σμ     = 1.0
-                    if (z > zs) && (ieq > 4)
-                        Z = (z - zs) / (25000. - zs)
-                        # Formula: 1 - (10*X^3 - 15*X^4 + 6*X^5)
-                        σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
-                    end
+                    # if (z > zs) && (ieq > 4)
+                    #     Z = (z - zs) / (25000. - zs)
+                    #     # Formula: 1 - (10*X^3 - 15*X^4 + 6*X^5)
+                    #     σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
+                    # end
                     
                     dqdξ = 0.0
                     dqdη = 0.0
@@ -1873,6 +2333,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
             end
         end
     end
+    return
 end
 
 
@@ -1889,8 +2350,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           iel, ieq, connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          μ_max,
-                          QT::Inexact, VT, SD::NSD_3D, ::ContGal; Δ=1.0)
+                        #   μ_max_ieq,
+                          QT::Inexact, VT, SD::NSD_3D, ::ContGal, Δ=1.0, lrichardson=false)
 
     Δ2 = Δ^2
 
@@ -1899,30 +2360,29 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     is_v_momentum  = (ieq == 3)
     is_w_momentum  = (ieq == 4)
     is_temperature = (ieq == 5)
-    conn_el        = @view connijk[iel,:,:,:]
-    μ_max_ieq      = μ_max[ieq] 
+    # μ_max_ieq      = μ_max[ieq]
 
-    lsponge = inputs[:lsponge]
-    zs      = inputs[:zsponge]
-    
+    micro   = size(Tabs,1)
+    zs      = 19000.0
+
     for m = 1:ngl
         for l = 1:ngl
 
             ωl = ω[l]
             ωm = ω[m]
             ωlm = ωl * ωm
-            
+
             for k = 1:ngl
 
-                ip     = conn_el[k,l,m]
+                ip     = connijk[iel,k,l,m]
                 z      = coords[ip,3]
                 
                 σμ     = 1.0
-                if (z > zs) && (ieq > 4)
-                    Z = (z - zs) / (25000. - zs)
-                    # Formula: 1 - (10*X^3 - 15*X^4 + 6*X^5)
-                    σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
-                end
+                # if (z > zs) && (ieq > 4)
+                #     Z = (z - zs) / (25000. - zs)
+                #     # Formula: 1 - (10*X^3 - 15*X^4 + 6*X^5)
+                #     σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
+                # end
                 @inbounds begin
                     Je_klm = Je[iel,k,l,m]
                     ωJac = ω[k] * ωlm * Je_klm
@@ -2058,7 +2518,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
 
                     elseif is_temperature
                         
-                        if inputs[:energy_equation] == "theta" 
+                        if (micro == 1)
                             # Compute temperature gradient
                             dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
                             @turbo for ii = 1:ngl
@@ -2072,7 +2532,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             dθdy = dθdξ*dξdy_klm + dθdη*dηdy_klm + dθdζ*dζdy_klm
                             dθdz = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
 
-                            if inputs[:lrichardson]
+                            if lrichardson
                                 θ_ref = uprimitiveieq[k,l,m,5]  # Local temperature
                             else
                                 θ_ref = 1.0  # Dummy value (not used when lrichardson=false)
@@ -2089,18 +2549,19 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                                                 dθdz,
                                                                 PHYS_CONST, Δ2,
                                                                 inputs, 
-                                                                VT, SD)
+                                                                VT, SD,
+                                                                ltheta_eqn=(micro == 1),
+                                                                lrichardson=lrichardson )
                             flux_x = effective_diffusivity * dθdx
                             flux_y = effective_diffusivity * dθdy
                             flux_z = effective_diffusivity * dθdz
                             μ_local = effective_diffusivity
 
-                        elseif inputs[:energy_equation] == "energy" 
+                        elseif (micro > 1)
                             PhysConst = PhysicalConst{Float32}()
                             cp        = PhysConst.cp
                             Rvap      = PhysConst.Rvap
                             Lc        = PhysConst.Lc
-                            ip        = connijk[iel,k,l,m]
                             # Compute energy gradient
                             dhldξ = 0.0; dhldη = 0.0; dhldζ = 0.0
                             @turbo for ii = 1:ngl
@@ -2112,7 +2573,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             dhldx = dhldξ*dξdx_klm + dhldη*dηdx_klm + dhldζ*dζdx_klm
                             dhldy = dhldξ*dξdy_klm + dhldη*dηdy_klm + dhldζ*dζdy_klm
                             dhldz = dhldξ*dξdz_klm + dhldη*dηdz_klm + dhldζ*dζdz_klm
-                            if inputs[:lrichardson]
+                            if lrichardson
                                 T_ref = Tabs[ip]
                                 # θ_ref = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
 
@@ -2153,7 +2614,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                                                 dhl_eff_dz,
                                                                 PHYS_CONST, Δ2,
                                                                 inputs, 
-                                                                VT, SD) 
+                                                                VT, SD,
+                                                                ltheta_eqn=(micro == 1))
                             flux_x = effective_diffusivity * dhldx
                             flux_y = effective_diffusivity * dhldy
                             flux_z = effective_diffusivity * dhldz
@@ -2209,12 +2671,12 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η_flux_klm
                         rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ_flux_klm
                     end
-                    μ_max_ieq = max(μ_local * σμ, μ_max_ieq)
+                    # μ_max_ieq = max(μ_local * σμ, μ_max_ieq)
                 end
             end
         end
     end
-    μ_max[ieq] = μ_max_ieq
+    # μ_max[ieq] = μ_max_ieq
 end
 
 function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, rhs_el, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)

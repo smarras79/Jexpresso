@@ -200,9 +200,9 @@ end
 
 function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, beta, T, backend)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    if rank == 0 @info "built laguerre basis ..... " end
+    if rank == 0 println(" # built laguerre basis ..... ") end
     
     Nξ = size(ξ,1)  - 1
     Qξ = size(ξq,1) - 1
@@ -211,7 +211,7 @@ function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, beta, T, b
     Q  = (Qξ + 1)
     basis = St_Lagrange{T, backend}(KernelAbstractions.zeros(backend, TFloat, N,Q), KernelAbstractions.zeros(backend, TFloat, N,Q))
     (basis.ψ, basis.dψ) = LagrangeLaguerreBasis(ξ, ξq, beta,T, backend)
-    if rank == 0 @info "built laguerre basis ..... DONE" end
+    if rank == 0 println(" # built laguerre basis ..... DONE") end
     return basis
 end
 
@@ -247,7 +247,7 @@ end
 
 function build_cg!(cg::St_cg, nop, backend)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     if rank == 0 println(" # Compute Chebyshev-Gauss nodes ........................ ") end
         
@@ -337,7 +337,7 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop, ba
           using Algorithm 23 of Kopriva's book valid for nop ≤  200
     """
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     
     println_rank( " # Compute LG nodes ........................"; msg_rank = rank)
@@ -388,7 +388,7 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
      """
           Compute the Nodes and Weights for the Legendre-Gauss-Lobatto Quadrature
      """
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     
     NITER = 100

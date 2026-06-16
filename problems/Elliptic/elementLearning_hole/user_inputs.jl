@@ -11,28 +11,41 @@ function user_inputs()
         :ldss_laplace         => true,
         :lsparse              => true,
         :lelementLearning     => true,
-        :lEL_Sample           => true,
+        #:lEL_Sample           => true,
+        #:NNfile               => "JX_NN_model.onnx",
+        :NNfile               => "JX_RFRC_model.onnx",
+        #:NNfile               => "JX_RFRC_final.jld2",
         :Nsamp                => 50000,
         :rconst               => [0.0],
+        #---------------------------------------------------------------------------
+        # Plotting parameters
+        #---------------------------------------------------------------------------
+        :outformat           => "vtk",
+        #:output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
+        #:output_dir          => "./output-RNN/",
+        :output_dir          => "./output-RFRC/",
+        #:output_dir          => "./output-RFRC-JLD2/",
+        #:output_dir          => "./output-Axb/",
+        :loverwrite_output   => true,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+       # :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/jexpresso_domain_unique_bcs.msh",
-      #  :gmsh_filename        => "./meshes/gmsh_grids/jex-el_domain_unique_bcs.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/jex-el_domain_unique_bcs.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/plate_word_unit.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_unit_square_10x10el.msh",
         #---------------------------------------------------------------------------
         # static adaptivity
         #---------------------------------------------------------------------------
         #:lpreadapt       => true,
-        :amr_max_level   => 1,
+        #:amr_max_level   => 1,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -51,13 +64,6 @@ function user_inputs()
         :yscale              => 3.14,
         :xdisp               => 1.0,
         :ydisp               => 0.0,
-        #---------------------------------------------------------------------------
-        # Plotting parameters
-        #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-        :output_dir          => "./output/",
-        :loverwrite_output   => true,
-        #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
