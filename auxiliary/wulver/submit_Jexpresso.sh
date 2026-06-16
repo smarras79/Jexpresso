@@ -32,4 +32,13 @@ echo "--- Instantiating Julia Project ---"
 julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 echo "--- Instantiation Complete ---"
 
-mpirun -np 256 -hostfile nodefile julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "LESsmago"); include("src/Jexpresso.jl")'
+# Same launch approach as the laptop (jexp_mpich.sh / INSTALL.md sec 5.6,
+# Route A/B system MPI): the script form `src/Jexpresso.jl <EQ> <CASE>`,
+# NOT `-e 'push!(ARGS,...); include(...)'`. Runtime env defaults match
+# jexp_mpich.sh; override in the job environment if needed.
+: "${JEXPRESSO_STEP_HEARTBEAT:=0}"
+: "${JEXPRESSO_ALLOC_SUMMARY:=0}"
+: "${JEXPRESSO_PRECOMPILE_WARMUP:=1}"
+export JEXPRESSO_STEP_HEARTBEAT JEXPRESSO_ALLOC_SUMMARY JEXPRESSO_PRECOMPILE_WARMUP
+
+mpirun -np 256 -hostfile nodefile julia --project=. src/Jexpresso.jl CompEuler LESsmago
