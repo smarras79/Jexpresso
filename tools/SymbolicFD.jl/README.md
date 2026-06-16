@@ -87,9 +87,12 @@ SymbolicFD.solve("∂q/∂t + ∇⋅(u q) = μ∇²q",
 ## Time-independent (steady) problems
 
 If the equation has **no `∂q/∂t` term**, it is solved as a steady elliptic
-problem rather than time-marched. The same operators are assembled into a matrix
-`A` (by probing the affine residual `A q + c` column by column) and the system
-`A q = b` is solved directly, with Dirichlet boundary nodes.
+problem rather than time-marched. The same operators are assembled into a
+**sparse** matrix `A` (`SparseMatrixCSC`, by probing the affine residual
+`A q + c` column by column and keeping only the nonzeros — a dense `n×n` matrix
+is never formed) and the system `A q = b` is solved directly with the sparse
+factorization (the Thomas algorithm for this 1D banded operator), with Dirichlet
+boundary nodes.
 
 ```bash
 julia --project=. tools/SymbolicFD.jl/run_heat_steady_1d.jl
@@ -194,9 +197,10 @@ re-interpreted.
    otherwise the tree is the residual `lhs - rhs` to drive to zero (steady).
 4. **Discretize + evaluate** — each `∇/∇⋅/∇²` node calls its finite-difference
    stencil on the field it receives; field algebra composes them.
-5. **Solve** — transient: explicit RK4 with an automatic CFL-based `Δt`; steady:
-   assemble the operator into a matrix `A` and solve `A q = b` directly with
-   Dirichlet boundary nodes.
+5. **Solve** — transient: explicit RK4 with an automatic CFL-based `Δt`
+   (matrix-free — only the operator is applied); steady: assemble the operator
+   into a **sparse** matrix and solve `A q = b` directly with Dirichlet boundary
+   nodes (no dense matrix is ever stored).
 6. **Output** — PNG + on-the-fly plots like `sod1d`, plus CSV.
 
 ## Path to Jexpresso integration

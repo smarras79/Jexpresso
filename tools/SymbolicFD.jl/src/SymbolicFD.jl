@@ -27,8 +27,9 @@
 module SymbolicFD
 
 using Printf
-using LinearAlgebra  # steady (time-independent) problems: assemble + solve A q = b
-using Plots          # PNG output + on-the-fly window, exactly as in Jexpresso
+using LinearAlgebra        # steady solve: backs sparse `\`
+using SparseArrays         # steady operators are stored sparse (never dense)
+using Plots                # PNG output + on-the-fly window, exactly as in Jexpresso
 
 export solve, parse_equation, FDMesh1D, Field, ascii_plot
 
@@ -532,41 +533,55 @@ end
 
 #---------------------------------------------------------------------------------
 # 6b. Steady / time-independent solve (no ∂/∂t): assemble the discrete operator
-#     into a matrix and solve A q = b directly, with Dirichlet boundary nodes.
+#     into a SPARSE matrix and solve A q = b directly, with Dirichlet boundary
+#     nodes. A dense n×n matrix is NEVER formed.
 #
 # The same operator evaluator is reused: for a linear PDE the residual is affine,
-# residual(q) = A q + c, so the matrix is recovered column-by-column by probing
-# residual(e_j) - residual(0), and b = -residual(0). This needs the genuine
-# operators of Section 3 -- nothing here is specific to a particular equation.
+# residual(q) = A q + c. We assemble A column-by-column from residual(e_j) -
+# residual(0), keeping only the nonzeros, into SparseMatrixCSC storage; b =
+# -residual(0). The sparse factorization that backs `\` is, for this 1D banded
+# operator, the Thomas algorithm. Nothing here is specific to a given equation.
 #---------------------------------------------------------------------------------
-function solve_steady(resid::Node, mesh::FDMesh1D, inputs::Dict)
+# Assemble the steady system into SPARSE storage. Returns (A::SparseMatrixCSC,
+# b, resid!). Boundary rows (1, n) are left out of the operator and given an
+# identity row -- a Dirichlet condition.
+function assemble_steady(resid::Node, mesh::FDMesh1D, inputs::Dict)
     mesh.periodic &&
         error("SymbolicFD: a steady (no ∂/∂t) problem needs Dirichlet boundary data; " *
               "set `:periodic => false` and provide `:bc_left` / `:bc_right`.")
     n = mesh.npoin
     resid! = build_rhs(resid, mesh)
 
-    c   = zeros(n);  resid!(c, zeros(n))          # c = residual(0)
-    A   = zeros(n, n);  e = zeros(n);  col = zeros(n)
+    c = zeros(n);  resid!(c, zeros(n))            # c = residual(0)
+
+    Is = Int[];  Js = Int[];  Vs = Float64[]
+    e  = zeros(n);  col = zeros(n)
     for j in 1:n
         fill!(e, 0.0); e[j] = 1.0
         resid!(col, e)                            # residual(e_j) = A e_j + c
-        @inbounds for i in 1:n
-            A[i, j] = col[i] - c[i]
+        @inbounds for i in 2:n-1                   # interior rows only
+            v = col[i] - c[i]
+            if v != 0.0
+                push!(Is, i); push!(Js, j); push!(Vs, v)
+            end
         end
     end
-    b = -c
+    push!(Is, 1); push!(Js, 1); push!(Vs, 1.0)     # Dirichlet identity rows
+    push!(Is, n); push!(Js, n); push!(Vs, 1.0)
+    A = sparse(Is, Js, Vs, n, n)                   # SparseMatrixCSC -- never dense
 
-    # Dirichlet boundary conditions: overwrite the two boundary rows
     bcl = Float64(get(inputs, :bc_left,  0.0))
     bcr = Float64(get(inputs, :bc_right, 0.0))
-    A[1, :] .= 0.0; A[1, 1] = 1.0; b[1] = bcl
-    A[n, :] .= 0.0; A[n, n] = 1.0; b[n] = bcr
+    b = -c;  b[1] = bcl;  b[n] = bcr
+    return A, b, resid!
+end
 
-    q = A \ b
+function solve_steady(resid::Node, mesh::FDMesh1D, inputs::Dict)
+    A, b, resid! = assemble_steady(resid, mesh, inputs)
+    q = A \ b                                      # sparse LU (Thomas in 1D)
 
     # report the interior residual of the original (unconstrained) operator
-    r = zeros(n); resid!(r, q)
+    n = length(b); r = zeros(n); resid!(r, q)
     rmax = n > 2 ? maximum(abs, @view r[2:n-1]) : 0.0
     return q, rmax
 end

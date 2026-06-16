@@ -16,6 +16,7 @@
 #---------------------------------------------------------------------------------=#
 
 using Test
+using SparseArrays
 include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
 using .SymbolicFD
 const S = SymbolicFD
@@ -136,6 +137,12 @@ end
         _, mode, node = parse_equation("∇²q = 0", Dict())
         @test mode == :steady
         m  = S.FDMesh1D(Dict(:npoin => 101, :xmin => -1.0, :xmax => 1.0, :periodic => false))
+
+        # the assembled operator must be SPARSE, never dense
+        A, b, _ = S.assemble_steady(node, m, Dict(:bc_left => 0.0, :bc_right => 1.0))
+        @test A isa SparseMatrixCSC
+        @test nnz(A) ≤ 5 * m.npoin                 # banded (tridiagonal + 2 BC rows)
+
         q, rmax = S.solve_steady(node, m, Dict(:bc_left => 0.0, :bc_right => 1.0))
         @test rel_l2(q, [(xi + 1) / 2 for xi in m.x]) < 1e-10
         @test rmax < 1e-8
