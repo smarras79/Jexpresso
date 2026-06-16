@@ -5,8 +5,14 @@ A small, **stand-alone** "write-the-equation-and-solve-it" engine for Jexpresso.
 You write a PDE using Julia's unicode characters (a few common LaTeX spellings
 are accepted too), describe the grid with a `user_inputs()`-style `Dict` exactly
 as in Jexpresso, and the equation is **parsed, finite-difference discretized and
-integrated in time automatically** — no external packages required (only the
-`Printf` standard library).
+integrated in time automatically**.
+
+The solution is **saved to PNG and plotted on the fly in exactly the same way as
+`problems/CompEuler/sod1d`** — using `Plots.jl` (GR backend), an `INIT-<var>.png`
+at `t = 0` and a `fields-it<iout>.png` at every diagnostic output, with the GR
+window updating live during the run. `Plots` is the only dependency (already part
+of Jexpresso's `Project.toml`); a CSV dump is always written, and a terminal
+ASCII plot is available as a display-free fallback (`:outformat => "ascii"`).
 
 ## Example
 
@@ -34,19 +40,23 @@ julia run_gaussian_1d.jl
 
 This advects a gaussian wave once around the periodic domain `[-1, 1]` while a
 small `μ` diffuses it slightly. The solver prints the parsed terms, the chosen
-`Δt`, mass/peak diagnostics, writes `output/solution.csv` (`x, q_initial,
-q_final`) and draws a terminal ASCII plot of the initial and final fields.
+`Δt` and mass/peak diagnostics, writes `output/INIT-q.png`, a
+`output/fields-it<iout>.png` per diagnostic output (live-updated on screen) and
+`output/solution.csv`.
 
 ## Running it
 
+Run it inside the Jexpresso project environment so `Plots` resolves (it is
+already a Jexpresso dependency). From the repository root:
+
 ```bash
-cd tools/SymbolicFD.jl
-julia run_gaussian_1d.jl
+julia --project=. tools/SymbolicFD.jl/run_gaussian_1d.jl
 ```
 
-No package installation is needed — the engine uses only the `Printf` standard
-library. Output goes to the terminal (parsed terms, `Δt`, diagnostics, two ASCII
-plots) and to `tools/SymbolicFD.jl/output/solution.csv`.
+PNGs land in `tools/SymbolicFD.jl/output/` (`INIT-q.png`, `fields-it0.png` …
+`fields-it20.png`) and, with a display attached, a GR window updates on the fly.
+On a headless machine set `:plot_live => false` (PNGs are still written) or
+`:outformat => "ascii"` for a terminal plot only.
 
 You can also drive it from the Julia REPL:
 
@@ -128,14 +138,20 @@ inputs (`μ∇²q` ⇒ `inputs[:μ]`).
 | `:tend`        | final time                                      | `1.0`            |
 | `:Δt`          | fixed time step (otherwise CFL-derived)         | auto             |
 | `:CFL`         | CFL number for the automatic `Δt`               | `0.5`            |
-| `:output_dir`  | directory for `solution.csv`                    | `"."`            |
-| `:plot`        | terminal ASCII plot                             | `true`           |
+| `:output_dir`  | directory for figures / `solution.csv`          | `"."`            |
+| `:outformat`   | `"png"` (Plots.jl, like sod1d) or `"ascii"`     | `"png"`          |
+| `:ndiagnostics_outputs` | number of on-the-fly plot snapshots    | `10`             |
+| `:plot_live`   | update an on-screen GR window during the run    | `true`           |
 
 ## Path to Jexpresso integration
 
 The design intentionally mirrors Jexpresso so it can be folded in later:
 
-- the `Dict`-based `user_inputs()` matches Jexpresso's problem inputs;
+- the `Dict`-based `user_inputs()` matches Jexpresso's problem inputs, including
+  the `:outformat`, `:ndiagnostics_outputs` and `:output_dir` output keys;
+- the PNG / on-the-fly plotting reproduces `src/io/plotting/jeplots.jl`
+  (`plot_initial`, `plot_results`, `render_plot_matrix`) so it can be swapped for
+  the real `write_output`/`jeplots` calls directly;
 - `:nsd`, `:xmin/:xmax`, `:npoin/:nelx`, `:periodic` reuse Jexpresso's 1D grid
   vocabulary;
 - the parser emits typed `PDETerm`s, which is the natural place to plug into

@@ -52,10 +52,12 @@ function user_inputs()
         :tend      => 2.0,        # one full period for u = 1 on a domain of length 2
         :CFL       => 0.4,        # automatic Δt = CFL * stable step
         #-------------------------------------------------------------------
-        # Output
+        # Output (PNG + on-the-fly plotting, exactly like problems/CompEuler/sod1d)
         #-------------------------------------------------------------------
-        :output_dir => joinpath(@__DIR__, "output"),
-        :plot       => true,
+        :output_dir           => joinpath(@__DIR__, "output"),
+        :outformat            => "png",   # "png" (Plots.jl) or "ascii"
+        :ndiagnostics_outputs => 20,      # number of on-the-fly snapshots
+        :plot_live            => true,    # update an on-screen window during the run
     )
     return inputs
 end

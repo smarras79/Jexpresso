@@ -29,6 +29,7 @@
 module SymbolicFD
 
 using Printf
+using Plots          # PNG output + on-the-fly window, exactly as in Jexpresso
 
 export solve, parse_equation, FDMesh1D, PDETerm, ascii_plot
 
@@ -348,22 +349,91 @@ function stable_dt(terms::Vector{PDETerm}, m::FDMesh1D, cfl::Float64)
     return dt
 end
 
-function integrate!(q, rhs!, dt, nsteps)
-    n  = length(q)
-    k1 = zeros(n); k2 = zeros(n); k3 = zeros(n); k4 = zeros(n); qt = zeros(n)
-    for _ in 1:nsteps
-        rhs!(k1, q)
-        @. qt = q + 0.5dt*k1 ; rhs!(k2, qt)
-        @. qt = q + 0.5dt*k2 ; rhs!(k3, qt)
-        @. qt = q +     dt*k3 ; rhs!(k4, qt)
-        @. q += (dt/6) * (k1 + 2k2 + 2k3 + k4)
-    end
+# RK4 work arrays, allocated once and reused across steps.
+struct RK4Work
+    k1::Vector{Float64}; k2::Vector{Float64}
+    k3::Vector{Float64}; k4::Vector{Float64}; qt::Vector{Float64}
+end
+RK4Work(n::Int) = RK4Work(zeros(n), zeros(n), zeros(n), zeros(n), zeros(n))
+
+"advance `q` by one explicit RK4 step of size `dt`."
+function rk4_step!(q, rhs!, dt, w::RK4Work)
+    rhs!(w.k1, q)
+    @. w.qt = q + 0.5dt*w.k1 ; rhs!(w.k2, w.qt)
+    @. w.qt = q + 0.5dt*w.k2 ; rhs!(w.k3, w.qt)
+    @. w.qt = q +     dt*w.k3 ; rhs!(w.k4, w.qt)
+    @. q += (dt/6) * (w.k1 + 2w.k2 + 2w.k3 + w.k4)
     return q
 end
 
 #---------------------------------------------------------------------------------
-# 9. Output helpers (dependency-free: CSV + terminal ASCII plot)
+# 9. Output helpers
+#
+# PNG figures and the on-the-fly window are produced with Plots.jl in exactly
+# the same way as Jexpresso's src/io/plotting/jeplots.jl (used e.g. by
+# problems/CompEuler/sod1d): an `INIT-<var>.png` at t = 0 and a `fields-it<iout>.png`
+# at every diagnostic output. A CSV is always written and a terminal ASCII plot
+# is kept as a display-free fallback (:outformat => "ascii").
 #---------------------------------------------------------------------------------
+# Write a figure to file without flashing a window (mirrors jeplots._savefig_silent):
+# with the GR backend, :overwrite_figure = false routes the export through a
+# dedicated file workstation instead of the active (on-screen) one.
+function _savefig_silent(plt, fout_name)
+    plt[:overwrite_figure] = false
+    Plots.savefig(plt, string(fout_name))
+    return nothing
+end
+
+# Initial condition figure, same look as jeplots.plot_initial(NSD_1D, …).
+function plot_initial_png(x, q, var, OUTPUT_DIR::String)
+    npoin = length(q)
+    plt = Plots.scatter(x[1:npoin], q[1:npoin];
+                        markersize = 5,
+                        color = :blue,
+                        xlabel = "x",
+                        ylabel = "$var(x)",
+                        title = "$var",
+                        titlefontsize = 24,
+                        guidefontsize = 18,
+                        legendfontsize = 14,
+                        tickfontsize = 14,
+                        legend = false,
+                        size = (800, 600))
+    _savefig_silent(plt, string(OUTPUT_DIR, "/INIT-", var, ".png"))
+    return plt
+end
+
+# One diagnostic output: build the per-variable curve (same style as
+# jeplots.plot_results), save it as `fields-it<iout>.png` and, when `live` is
+# true, paint the active GR workstation so the window updates on the fly --
+# this is the very mechanism jeplots.render_plot_matrix relies on.
+function plot_results_png(x, q, var, ttl::String, OUTPUT_DIR::String, iout::Int;
+                          live::Bool = true, wfig = 600, hfig = 400)
+    sort_idx = sortperm(x)
+    plt = Plots.plot(x[sort_idx], q[sort_idx];
+                     line = (:blue, 2),
+                     marker = (:circle, 5, :blue),
+                     title = string(var, "  ", ttl),
+                     xlabel = "x",
+                     titlefontsize = 22,
+                     guidefontsize = 18,
+                     legendfontsize = 14,
+                     tickfontsize = 14,
+                     legend = false,
+                     show = false,
+                     size = (wfig, hfig))
+    fout = string(OUTPUT_DIR, "/fields-it", iout, ".png")
+    if live
+        # plain savefig on the GR backend repaints the on-screen workstation
+        # (live window) AND prints the same canvas to file -- no flicker.
+        try; Plots.savefig(plt, fout); catch; end
+        try; display(plt); catch; end
+    else
+        _savefig_silent(plt, fout)
+    end
+    return plt
+end
+
 function save_csv(path, m::FDMesh1D, q0, q)
     open(path, "w") do io
         println(io, "x,q_initial,q_final")
@@ -422,8 +492,10 @@ Required / recognised `inputs` keys
 - `:tend`                     final time
 - `:Δt`                       time step (optional; otherwise CFL-derived)
 - `:CFL`                      CFL number used for the automatic Δt (default 0.5)
-- `:output_dir`              where to write `solution.csv` (default ".")
-- `:plot`                     true/false terminal ASCII plot (default true)
+- `:output_dir`              where to write the figures / `solution.csv` (default ".")
+- `:outformat`               "png" (Plots.jl, like sod1d) or "ascii" (default "png")
+- `:ndiagnostics_outputs`     number of on-the-fly plot snapshots (default 10)
+- `:plot_live`                update an on-screen window on the fly (default true)
 """
 function solve(eqn::AbstractString, inputs::Dict)
     nsd = Int(get(inputs, :nsd, 1))
@@ -463,21 +535,52 @@ function solve(eqn::AbstractString, inputs::Dict)
 
     rhs! = build_rhs(terms, mesh)
     @printf("   Δt = %.3e, nsteps = %d, t_end = %.4g\n", dt, nsteps, tend)
-    integrate!(q, rhs!, dt, nsteps)
 
-    # diagnostics
+    # ---- output set-up -------------------------------------------------------
+    outdir = String(get(inputs, :output_dir, "."))
+    isdir(outdir) || mkpath(outdir)
+    outformat = String(get(inputs, :outformat, "png"))
+    usepng    = lowercase(outformat) == "png"
+    live      = Bool(get(inputs, :plot_live, true))
+    nout      = max(1, Int(get(inputs, :ndiagnostics_outputs, 10)))
+    out_every = max(1, cld(nsteps, nout))
+
+    # initial snapshot
+    if usepng
+        plot_initial_png(mesh.x, q0, var, outdir)
+        plot_results_png(mesh.x, q0, var, @sprintf("t=%.4g", 0.0), outdir, 0; live = live)
+    end
+
+    # ---- time loop with on-the-fly diagnostics ------------------------------
+    w    = RK4Work(mesh.npoin)
+    iout = 0
+    for s in 1:nsteps
+        rk4_step!(q, rhs!, dt, w)
+        if s % out_every == 0 || s == nsteps
+            iout += 1
+            t = s * dt
+            if usepng
+                plot_results_png(mesh.x, q, var, @sprintf("t=%.4g", t), outdir, iout;
+                                 live = live)
+            end
+            @printf("   output %3d : t = %.4g, peak = %.6g\n", iout, t, maximum(q))
+        end
+    end
+
+    # ---- diagnostics & data dump --------------------------------------------
     mass0 = sum(q0) * mesh.Δx
     mass1 = sum(q)  * mesh.Δx
     @printf("   mass: initial = %.6g, final = %.6g  (Δ = %.3e)\n",
             mass0, mass1, mass1 - mass0)
     @printf("   peak: initial = %.6g, final = %.6g\n", maximum(q0), maximum(q))
 
-    outdir = String(get(inputs, :output_dir, "."))
-    isdir(outdir) || mkpath(outdir)
     csv = save_csv(joinpath(outdir, "solution.csv"), mesh, q0, q)
     println("   wrote ", csv)
+    usepng && println("   wrote ", outdir, "/INIT-", var, ".png and ",
+                      outdir, "/fields-it{0..", iout, "}.png")
 
-    if get(inputs, :plot, true)
+    # terminal ASCII fallback (kept for headless / dependency-free use)
+    if !usepng
         ascii_plot(mesh.x, q0; label = "$var(x, t=0)")
         ascii_plot(mesh.x, q;  label = "$var(x, t=$(round(tend, digits=3)))")
     end
