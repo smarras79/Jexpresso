@@ -1,5 +1,5 @@
 # ============================================================================
-# Stage 3: Ghost Layer Extension for Spatial Elements
+# Ghost Layer Exchange for Spatial AMR Constraints
 # ============================================================================
 # MPI communication of spatial constraint data across rank boundaries.
 #
@@ -43,7 +43,7 @@ function exchange_spatial_ghosts(
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
     rank::Int, comm::MPI.Comm
 )
-    @info rank "[$rank] Stage 3: Building spatial ghost constraints..."
+    @info rank "[$rank] Building spatial ghost constraints..."
 
     nprocs = MPI.Comm_size(comm)
 
@@ -184,7 +184,7 @@ For each NCF where the child element is LOCAL and the parent is on ANOTHER rank:
   - Stores constraints in spatial_amr_cache.cross_rank_parent_weights using
     GLOBAL spatial IPs for the parent (no valid local IP exists on this rank).
 
-The Stage 5 MPI pattern later communicates these effects to the parent rank.
+The GMRES AllReduce handles cross-rank effects for the parent rank.
 """
 function build_spatial_constraints_parent_ghost(
     mesh::St_mesh, spatial_amr_cache::SpatialAMRCache,
@@ -199,7 +199,6 @@ function build_spatial_constraints_parent_ghost(
 
     # ── Pre-fetch all parent face node coordinates via MPI ────────────────────
     coord_cache = fetch_parent_face_coordinates(mesh, rank, comm)
-    @info rank "[$rank] coord_cache populated with $(length(coord_cache)) parent node coordinates"
 
     for pg_idx = 1:num_ncf_pg
         local_facet_id = Int(mesh.lfid_pg[pg_idx])
@@ -230,8 +229,6 @@ function build_spatial_constraints_parent_ghost(
 
         # Check that all parent coordinates are available in the cache
         if !all(gip -> haskey(coord_cache, gip), parent_global_ips)
-            missing = count(gip -> !haskey(coord_cache, gip), parent_global_ips)
-            @info rank "[$rank] pg_idx=$pg_idx: $missing parent GIPs missing from coord_cache, skipping"
             num_skipped += 1
             continue
         end

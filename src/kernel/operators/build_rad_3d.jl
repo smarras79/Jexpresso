@@ -195,8 +195,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     rank   = MPI.Comm_rank(MPI.COMM_WORLD)
     comm   = MPI.COMM_WORLD
 
-    # ── Stage 1b: Initialize Spatial AMR Cache ──────────────────────────────────
-    # Stage 1: Spatial Mesh Infrastructure Integration
+    # ── Initialize Spatial AMR Cache ─────────────────────────────────────────────
     # Initialize cache structure to hold spatial AMR data for constraint assembly.
     spatial_amr_cache = SpatialAMRCache(
         element_refinement_levels = Vector{Int}(mesh.ad_lvl),
@@ -207,9 +206,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     local_has_spatial = mesh.num_ncf > 0 ? 1 : 0
     global_has_spatial = MPI.Allreduce(local_has_spatial, MPI.MAX, MPI.COMM_WORLD)
     has_spatial_hanging_nodes = global_has_spatial == 1
-    @info rank, has_spatial_hanging_nodes
-    # Stage 2-3 will be called after angular mesh setup (either adaptive or uniform)
-    # Cache initialized but constraint building deferred until mesh fully available
+    # Constraint building deferred until mesh fully available (after angular mesh setup)
     R_spatial = nothing  # Will hold spatial restriction matrix if needed
     P_spatial = nothing  # Will hold spatial prolongation matrix if needed
     spatial_hanging_nodes_all_angular = Set{Int}()  # set for spatial hanging nodes
@@ -358,7 +355,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
         # ── Pre-adaptivity matrices for adaptivity criterion ─────────────────
         @rankinfo rank "Assembling pre-adaptivity LHS and mass matrix..."
-        @info rank
         LHS = sparse_lhs_assembly_3Dby2D_adaptive(
             ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
             mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ,
@@ -374,16 +370,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             ngl, extra_meshes_extra_nelems, connijk_spa)
         
         M_inv = spdiagm(0 => 1.0 ./ Md)
-        @info size(Md), size(LHS)
-        @info "Md range" minimum(Md), maximum(Md)
-        @info "Md mean" sum(Md) / length(Md)
-        @info "Large Md entries" count(Md .> 1e4)
-        @info "LHS diagonal range" minimum(diag(LHS)), maximum(diag(LHS))
-        @info "MLHS diagonal range" minimum(diag(M_inv*LHS)), maximum(diag(M_inv*LHS))
-        @info "norm(LHS, Inf)" norm(LHS, Inf)
-        @info "norm(MLHS, Inf)" norm(M_inv*LHS, Inf)
-        @info "norm(LHS, 1)" norm(LHS, 1)
-        @info "norm(MLHS, 1)" norm(M_inv*LHS, 1)
         # ── Adaptivity criterion ──────────────────────────────────────────────
         @rankinfo rank "Computing adaptivity criterion..."
         one_vec = ones(Float64, size(LHS, 1))
@@ -593,16 +579,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
                     ngl, extra_meshes_extra_nelems, connijk_spa)
                 M_inv = spdiagm(0 => 1.0 ./ Md)
-                @info size(Md), size(LHS)
-                @info "Md range" minimum(Md), maximum(Md)
-                @info "Md mean" sum(Md) / length(Md)
-                @info "Large Md entries" count(Md .> 1e4)
-                @info "LHS diagonal range" minimum(diag(LHS)), maximum(diag(LHS))
-                @info "MLHS diagonal range" minimum(diag(M_inv*LHS)), maximum(diag(M_inv*LHS))
-                @info "norm(LHS, Inf)" norm(LHS, Inf)
-                @info "norm(MLHS, Inf)" norm(M_inv*LHS, Inf)
-                @info "norm(LHS, 1)" norm(LHS, 1)
-                @info "norm(MLHS, 1)" norm(M_inv*LHS, 1)
             else  # global_max_ref == 0, has_spatial_hanging_nodes: spatial-only combined path
                 # connijk_spa, n_spa, ip2gip_spa, gip2owner_spa, gip2owner_extra, gip_to_local,
                 # nc_mat (identity), nc_non_global_nodes, n_non_global_nodes, LHS, Md
@@ -623,28 +599,21 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 nonowned_parent_gids      = Set{Int}()
             end  # if !(global_max_ref == 0) / else (spatial-only)
 
-            # ── Stage 2-3: Spatial Constraints with Adaptive Angular Mesh ─────────────
-            if has_spatial_hanging_nodes
-                @info "[$rank] Building spatial constraints with adaptive angular mesh (Stage 2+)..."
+                        if has_spatial_hanging_nodes
                 spatial_amr_cache = build_spatial_constraint_matrices(
                     mesh, spatial_amr_cache,
                     extra_meshes_coords, extra_meshes_connijk,
                     extra_meshes_extra_nops, extra_meshes_extra_nelems,
                     ngl, rank
                 )
-                @info "[$rank] ✓ Spatial constraint matrices built with adaptive angular"
-                @info "[$rank]   - $(length(spatial_amr_cache.parent_weights)) hanging nodes"
-    
                 verify_spatial_constraints(spatial_amr_cache, rank, npoin, extra_meshes_extra_nelems, extra_meshes_extra_nops)
-                @info "[$rank] ✓ Verification passed"
-    
                 spatial_amr_cache = exchange_spatial_ghosts(
                     mesh, spatial_amr_cache,
                     extra_meshes_extra_nops, extra_meshes_extra_nelems,
                     rank, comm
                 )
-                @info "[$rank] ✓ Ghost exchange complete (Stage 3)"
                 verify_spatial_ghost_exchange(spatial_amr_cache, rank)
+                @rankinfo rank "Spatial AMR: $(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank hanging nodes"
             end
     
             # ── Set up combined spatial+angular restriction/prolongation ─────────────
@@ -768,7 +737,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     push!(get!(reverse_ghost_map, local_parent, Tuple{Int,Int,Float64}[]),
                           (hanging_gid, owner_hanging, weight))
                 end
-                @info "[$rank] reverse_ghost_map rebuilt with $(length(reverse_ghost_map)) parent entries (spatial+angular extended)"
             end
 
             # ── Mass matrix assembly and inversion ────────────────────────────────
@@ -866,7 +834,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     else  # ── Non-adaptive path ────────────────────────────────────────────────
 
-        # ── Stage 2-3: Spatial Constraints with Uniform Angular Mesh ─────────────
         # Defaults used when there are no spatial hanging nodes.
         n_spa_new = 0
         n_non_global_nodes_spa = 0
@@ -876,7 +843,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         _all_needed_set = Set{Int}()
 
         if has_spatial_hanging_nodes
-            @info "[$rank] Building spatial constraints with uniform angular mesh (Stage 2+)..."
 
             # Create arrays mimicking adaptive mesh structure for uniform case
             extra_meshes_coords_uniform = [extra_mesh.extra_coords[:,:] for _ in 1:nelem]
@@ -885,7 +851,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_extra_nelems_uniform = [extra_mesh.extra_nelem for _ in 1:nelem]
 
             # Initialize here (outside try) so they are in scope for the assembly and
-            # Stage 5 blocks below. The try block updates ip2gip_dedup for coincident
+            # LHS assembly blocks below. The try block updates ip2gip_dedup for coincident
             # nodes and populates nc_non_global_nodes_spa / gip_spa_to_local_ip / n_ang.
             ip2gip_dedup           = Int.(mesh.ip2gip)
             nc_non_global_nodes_spa = Int[]
@@ -900,19 +866,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
                     ngl, rank
                 )
-                @info "[$rank] ✓ Spatial constraint matrices built with uniform angular"
-                @info "[$rank]   - $(length(spatial_amr_cache.parent_weights)) hanging nodes"
-
                 verify_spatial_constraints(spatial_amr_cache, rank, npoin, extra_meshes_extra_nelems_uniform, extra_meshes_extra_nops_uniform)
-                @info "[$rank] ✓ Verification passed"
-
                 spatial_amr_cache = exchange_spatial_ghosts(
                     mesh, spatial_amr_cache,
                     extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
                     rank, comm
                 )
-                @info "[$rank] ✓ Ghost exchange complete (Stage 3)"
                 verify_spatial_ghost_exchange(spatial_amr_cache, rank)
+                @rankinfo rank "Spatial AMR: $(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank hanging nodes"
 
                 # ── Update ip2gip_dedup BEFORE mutual-exclusivity filtering ──────────
                 # Coincident nodes (child at same (x,y,z) as parent corner) must share
@@ -974,8 +935,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         n_removed_cross_rank += 1
                     end
                 end
-                @info "[$rank] Mutual-exclusivity: removed $n_removed_local coincident + $n_removed_cross_rank cross-rank coincident nodes that were also acting as parents or interpolated children"
-
                 # ── Populate gip_spa_to_local_ip: reverse map global spatial ID → local spatial ip ──
                 # Needed to convert cross-rank parent global spatial IDs to local DOF indices.
                 # (initialized to empty Dict before this try block)
@@ -1021,7 +980,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     end
                 end
                 n_spa_new = n_spa_counter
-                @info "[$rank] connijk_spa_uniform built: $n_spa_new unique DOFs (vs $(npoin * n_ang) without dedup)"
 
                 # ── Build nc_non_global_nodes_spa: ip_spa indices for interpolated hanging nodes ──
                 # Look up each hanging spatial node's (x,y,z,θ,ϕ) in point_dict_spa to get ip_spa.
@@ -1073,20 +1031,16 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 # Hanging DOF set for BC exclusion — coincident nodes excluded:
                 # they are now transparent (same ip_spa as parent via coordinate dedup).
                 spatial_hanging_nodes_all_angular = Set(nc_non_global_nodes_spa)
-                @info "[$rank] Tracked $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs ($(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank); coincident nodes handled via coordinate dedup"
 
-                # ── Stage 4 prep: Build spatial constraint matrices for RHS/LHS assembly ────
                 # Build xyz_ang_map from point_dict_spa: (x,y,z) → [(θ,ϕ,dof_idx),...]
                 xyz_ang_map_spa = Dict{NTuple{3,Float64}, Vector{Tuple{Float64,Float64,Int}}}()
                 for ((x,y,z,θ,ϕ), idx) in point_dict_spa
                     push!(get!(xyz_ang_map_spa, (x,y,z), Tuple{Float64,Float64,Int}[]), (θ, ϕ, idx))
                 end
-                @info "[$rank] Building spatial restriction and prolongation matrices (Stage 4 prep)..."
                 R_spatial, P_spatial = build_spatial_restriction_and_prolongation(
                     spatial_amr_cache, n_spa_new, spatial_hanging_nodes_all_angular,
                     point_dict_spa, mesh, xyz_ang_map_spa
                 )
-                @info "[$rank] ✓ Spatial matrices built: R_spatial = $(size(R_spatial)), P_spatial = $(size(P_spatial))"
 
             catch err
                 rethrow(err)
@@ -1094,7 +1048,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
         npoin_ang_total = npoin * extra_mesh.extra_npoin
-        @info "total number of points DOFs", npoin_ang_total, npoin, extra_mesh.extra_npoin
 
         if has_spatial_hanging_nodes
             # Use coordinate-dedup assembly so coincident spatial nodes accumulate
@@ -1179,8 +1132,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 _sg = _all_triples[3_k-2]; _ai = _all_triples[3_k-1]; _cg = _all_triples[3_k]
                 get!(global_sp_ang_to_gid, (_sg, _ai), _cg)
             end
-            @info "[$rank] cross-rank parent GID map: $(length(global_sp_ang_to_gid)) entries for $(length(_all_needed_set)) needed spatial GIPs"
-
             # AllGather (x,y,z,θ,ϕ) for every cross-rank parent compact GID.
             # Each rank contributes coords for GIPs it provided in _local_triples.
             # Used to resolve extended-parent row coordinates in the debug comparison.
@@ -1244,7 +1195,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         M_inv = spdiagm(0 => 1.0 ./ Md)
         MLHS     = sparse(M_inv * LHS)
         A = copy(MLHS)
-        @info "[$rank] A after assembly: size=$(size(A)), nnz=$(nnz(A))"
         M_inv = nothing; LHS = nothing
         GC.gc()
 
@@ -1258,9 +1208,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         n_ext_spa = n_dofs
         A_with_rows_debug = nothing   # captured post-restriction, pre-prolongation for debug comparison
 
-        # ── Stage 5: Apply spatial constraints to LHS matrix (uniform angular mesh) ────
         if has_spatial_hanging_nodes && R_spatial !== nothing
-            @info "[$rank] Applying spatial constraints to LHS matrix (Stage 5, MPI-aware)..."
 
             # Build helper data structures for MPI pattern
             # gip_to_local: global DOF ID → local DOF index
@@ -1351,12 +1299,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
             # Build two ghost constraint dicts, mirroring the angular adaptive pattern:
             #
-            # ghost_constraint_data_spa     → used for MATRIX row/col effects (Stage 5)
+            # ghost_constraint_data_spa     → used for MATRIX row/col effects (LHS)
             #   Contains ALL local parent GIDs (owned + non-owned) + cross-rank GIDs.
             #   The matrix effects functions skip owned parents via `owner == rank && continue`,
             #   so including them is harmless but keeps the pattern consistent with nc_mat.
             #
-            # ghost_constraint_data_spa_rhs → used for RHS effects (Stage 4)
+            # ghost_constraint_data_spa_rhs → used for RHS effects
             #   Contains ONLY non-owned local parent GIDs + cross-rank GIDs.
             #   compute_hanging_rhs_effects_before_restriction has NO ownership skip,
             #   so owned parents must be excluded (they're already in R_spatial_rhs * RHS).
@@ -1456,12 +1404,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
             R_spatial_rhs = sparse(I_rhs_sp, J_rhs_sp, V_rhs_sp, n_spa_new, n_spa_new)
 
-            @info "[$rank] ghost_constraint_data_spa (matrix): $(length(ghost_constraint_data_spa)) hanging DOFs"
-            @info "[$rank] ghost_constraint_data_spa_rhs: $(length(ghost_constraint_data_spa_rhs)) hanging DOFs"
-            @info "[$rank] non-owned local parent RHS entries: $n_nonowned_local_added"
-            @info "[$rank] R_spatial_rhs: $(size(R_spatial_rhs)), nnz=$(nnz(R_spatial_rhs))"
-            @info "maxima of R_spatial_rhs", maximum(R_spatial_rhs), minimum(R_spatial_rhs)
-            @info "maxima of R_spatial", maximum(R_spatial), minimum(R_spatial)
             # ── Build extended parent numbering for cross-rank parents ─────────
             # For each cross-rank parent GID that appears in ghost_constraint_data_spa,
             # assign an extended local index > npoin_ang_total on this rank.
@@ -1483,7 +1425,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 end
             end
             n_ext_spa = n_spa_new + n_ghost_ext_spa
-            @info "[$rank] Extended parent structures: $n_ghost_ext_spa cross-rank parent GIDs → n_ext=$n_ext_spa"
 
             # Extended gip→local map that also resolves extended parent GIDs
             gip_to_local_spa_ext = copy(gip_to_local_spa)
@@ -1506,53 +1447,28 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 P_spatial_ext = P_spatial
             end
 
-            # ── Step 1: AllReduce parent–parent entries ───────────────────────
-            if nprocs > 1
-                @info "[$rank] AllReducing spatial parent-parent matrix entries..."
-                #=A = allreduce_parent_parent_entries(
-                    A, R_spatial_ext, gip2owner_extra, n_spa_new, rank, comm,
-                    ip2gip_spa, Int[], nonowned_parent_dofs_spa,
-                    nonowned_parent_gids_spa, gip_to_local_spa)=#
-                @info "[$rank] A after AllReduce: nnz=$(nnz(A))"
-            end
-
             # ── Step 2: Parallel restriction (R from left) ───────────────────
             # Cross-rank parent effects go into extended rows of A_eff (via extended
             # parent structures); R_spatial_ext has identity at those rows so they survive
             # the left-multiply.  No MPI exchange needed for the extended-parent effects.
-            @info "[$rank] ghost_constraint_data_spa: $(length(ghost_constraint_data_spa)) hanging DOFs, parent_weights: $(length(spatial_amr_cache.parent_weights)), cross_rank_parent_weights: $(length(spatial_amr_cache.cross_rank_parent_weights))"
-            @info "[$rank] Applying parallel spatial restriction (left multiply by R_ext)..."
             row_effects_to_send, A_eff =
                 compute_hanging_row_effects_before_restriction(
                     ghost_constraint_data_spa, A, ip2gip_spa, gip2owner_spa_gid, rank,
                     gid_to_extended_parents_spa, extended_parents_to_gid_spa,
                     gip_to_local_spa_ext)
-            @info "[$rank] A_eff after compute_row_effects: size=$(size(A_eff)), nnz=$(nnz(A_eff))"
-            for (dest, eff) in row_effects_to_send
-                @info "[$rank] → sending $(length(eff)) row effects to rank $dest"
-            end
-            if isempty(row_effects_to_send)
-                @info "[$rank] → no row effects to send (all cross-rank parents in extended set)"
-            end
 
             # Left-multiply by extended R: local hanging rows get constraints applied;
             # extended parent rows (identity in R_spatial_ext) pass through unchanged.
             A_left = R_spatial_ext * A_eff
-            @info "[$rank] A after R_ext * A_eff: size=$(size(A_left)), nnz=$(nnz(A_left))"
 
             received_row_effects = exchange_hanging_effects(row_effects_to_send, rank, comm)
-            for (src, eff) in received_row_effects
-                @info "[$rank] ← received $(length(eff)) row effects from rank $src"
-            end
 
             A_with_rows = add_hanging_row_effects(
                 A_left, received_row_effects, ip2gip_spa,
                 n_ext_spa, rank, gip_to_local_spa_ext)
-            @info "[$rank] A after add_row_effects: nnz=$(nnz(A_with_rows))"
             A_with_rows_debug = copy(A_with_rows)   # snapshot for debug comparison
 
             # ── Step 3: Parallel prolongation (P from right) ─────────────────
-            @info "[$rank] Applying parallel spatial prolongation (right multiply by P_ext)..."
             col_effects_to_send, A_col_eff =
                 compute_hanging_col_effects_before_prolongation(
                     ghost_constraint_data_spa, A_with_rows, ip2gip_spa, gip2owner_spa_gid,
@@ -1560,52 +1476,23 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     spatial_hanging_nodes_all_angular, rank,
                     gid_to_extended_parents_spa, extended_parents_to_gid_spa,
                     gip_to_local_spa_ext)
-            @info "[$rank] A after compute_col_effects: nnz=$(nnz(A_col_eff))"
-            for (dest, eff) in col_effects_to_send
-                @info "[$rank] → sending $(length(eff)) col effects to rank $dest"
-            end
-            if isempty(col_effects_to_send)
-                @info "[$rank] → no col effects to send (all cross-rank parents in extended set)"
-            end
 
             # Right-multiply by extended P: hanging columns get prolongation applied;
             # extended parent columns (identity in P_spatial_ext) pass through unchanged.
             A_both = A_col_eff * P_spatial_ext
-            @info "[$rank] A after *P_spatial_ext: size=$(size(A_both)), nnz=$(nnz(A_both)), nnz(P_spatial_ext)=$(nnz(P_spatial_ext))"
 
             received_col_effects = exchange_hanging_effects(col_effects_to_send, rank, comm)
-            for (src, eff) in received_col_effects
-                @info "[$rank] ← received $(length(eff)) col effects from rank $src"
-            end
 
             A_with_cols = add_hanging_col_effects(
                 A_both, received_col_effects, ip2gip_spa,
                 n_ext_spa, rank, gip_to_local_spa_ext)
-            @info "[$rank] A after add_col_effects: nnz=$(nnz(A_with_cols))"
 
             A = sparse(A_with_cols)  # n_ext_spa × n_ext_spa
             
-            # ── Step 4: Zero non-owned parent entries (prevent GMRES double-count) ──
-            if nprocs > 1 && !isempty(nonowned_parent_dofs_spa)
-                @info "[$rank] Zeroing $(length(nonowned_parent_dofs_spa)) non-owned parent DOF entries..."
-                n_zeroed = 0
-                for i in nonowned_parent_dofs_spa
-                    i <= size(A, 1) || continue
-                    for j in nonowned_parent_dofs_spa
-                        j <= size(A, 2) || continue
-                        if abs(A[i,j]) > 0.0
-                            #A[i,j] = 0.0
-                            #A_with_rows_debug[i,j] = 0.0
-                            n_zeroed += 1
-                        end
-                    end
-                end
-                A_with_rows_debug = sparse(A_with_rows_debug)
-                A = sparse(A)
-                @info "[$rank] A after Step4 zero (n_zeroed=$n_zeroed): nnz=$(nnz(A))"
-            end
+            A_with_rows_debug = sparse(A_with_rows_debug)
+            A = sparse(A)
 
-            @info "[$rank] ✓ Spatial LHS constraints applied (MPI-aware): A = $(size(A)), final nnz=$(nnz(A))"
+            @rankinfo rank "[$rank] ✓ Spatial LHS constraints applied"
         end
     end  # adaptive / non-adaptive
 
@@ -1852,9 +1739,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
 
-    # ── Stage 4: Apply spatial constraints to RHS (uniform angular mesh, MPI-aware) ──
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
-        @info "[$rank] Applying spatial constraints to RHS (Stage 4, MPI-aware)..."
         n_ang = extra_mesh.extra_npoin
         RHS_original = copy(RHS)
         # Step 1: compute weighted RHS contributions from cross-rank hanging nodes
@@ -1868,24 +1753,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         # Step 2: local restriction using ownership-filtered R_spatial_rhs.
         # Only owned-parent constraints are applied locally; non-owned local and
         # cross-rank parents were sent in Step 1 via ghost_constraint_data_spa_rhs.
-        RHS = R_spatial_rhs*RHS#R_spatial_rhs * RHS
+        RHS = R_spatial_rhs*RHS
 
-        for i=1:n_dofs
-            gip = ip2gip_spa[i]
-            if (gip == 4181)
-                @info "restricted 1", RHS[i]
-            elseif (gip == 4417)
-                @info "restricted 4", RHS[i]
-            end
-        end
-        #=for i=1:npoin_ang_total
-            gip = ip2gip_spa[i]
-            if (gip == 56710)
-                @info "restricted 1", RHS[i]
-            elseif (gip == 48347)
-                @info "restricted 4", RHS[i]
-            end
-        end=#
         # Step 3: exchange cross-rank effects (collective — all ranks participate)
         received_rhs_effects =
             exchange_hanging_effects_vector(rhs_effects_to_send, rank, comm)
@@ -1894,23 +1763,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         RHS = add_hanging_rhs_effects(
             RHS, received_rhs_effects, ip2gip_spa, n_spa_new, rank, gip_to_local_spa)
 
-        for i=1:n_spa_new
-            gip = ip2gip_spa[i]
-            if (gip == 4181)
-                @info "added 1", RHS[i]
-            elseif (gip == 4417)
-                @info "added 4", RHS[i]
-            end
-        end
-        #=for i=1:npoin_ang_total
-            gip = ip2gip_spa[i]
-            if (gip == 56710)
-                @info "added 1", RHS[i]
-            elseif (gip == 48347)
-                @info "added 4", RHS[i]
-            end
-        end=#
-        @info "[$rank] ✓ Spatial RHS constraints applied (MPI-aware)"
+        @rankinfo rank "[$rank] ✓ Spatial RHS constraints applied (MPI-aware)"
     end
 
     
@@ -1969,16 +1822,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
         A = dropzeros!(A)
-        
-        
-        @info "[$rank] A after BC application + dropzeros: nnz=$(nnz(A))"
 
 
     # ── RHS restriction ───────────────────────────────────────────────────────
     if inputs[:adaptive_extra_meshes]
         #RHS_mass_weighted = Md .* RHS
         @rankinfo rank "Restricting RHS..."
-        @info maximum(RHS), minimum(RHS)
         rhs_effects_to_send =
             compute_hanging_rhs_effects_before_restriction(
                 ghost_constraint_data_rhs, RHS, ip2gip_spa, gip2owner_spa, rank)
@@ -2003,9 +1852,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
         
         B = RHS_red
-    
-        @info "maxima of restricted RHS"
-        @info maximum(RHS), minimum(RHS)
     else
         for (node, val) in boundary_dict
             RHS[node] = val
@@ -2018,7 +1864,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     # a different local spatial IP. Their assembled rows duplicate the parent's
     # contribution. Zero their rows in A (identity diagonal) and zero their RHS;
     # after the solve, copy the parent solution into them.
-    @info "maxima of A right before coicidence handling", maximum(A), minimum(A)
     # Coincident node enforcement is no longer needed: coordinate deduplication in
     # connijk_spa_uniform ensures child and parent nodes share the same ip_spa, so
     # their assembled contributions naturally merge into a single DOF slot. No
@@ -2028,7 +1873,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     As  = sparse(A)
     rows_A = rowvals(As)
     vals_A = nonzeros(As)
-    @info "maxima of A right before comparison", maximum(As), minimum(As)
     #=if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
         _outdir = "."
         _spa_amr_ref = joinpath(_outdir, "spa_amr_serial_reference.jld2")
@@ -2170,7 +2014,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             B[ip] = 0.0
         end
     elseif has_spatial_hanging_nodes && R_spatial !== nothing
-        @info length(spatial_hanging_nodes_all_angular)
         for ip in spatial_hanging_nodes_all_angular
             
             As[ip,ip] = 1.0
@@ -2201,7 +2044,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
     end
-    @info "n_fixed=$n_fixed, number of large diag values used=$n_big, number of small diag values used=$n_small"
 
     # ── Parallel correctness check: compare assembled (As, B) against serial ──
     # To use: run once with 1 rank to generate the reference file, then run with
@@ -2219,8 +2061,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     
 
     npoin_ang_total = size(B, 1)
-    @info maximum(As), minimum(As), maximum(B), minimum(B)
-    
+
     solution = if (inputs[:adaptive_extra_meshes] && inputs[:RT_shortwave])
         x_warm = zeros(Float64,n_spa)
         if (rt_sol_sw_available)
@@ -2331,7 +2172,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             restart = 60,
             tol     = 1e-7)
     else
-        @info maximum(ip2gip_spa), minimum(ip2gip_spa)
         x_warm = Float64[]
         if (inputs[:lmanufactured_solution])
             x_warm = ref
@@ -2388,8 +2228,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     end
     
     @rankinfo rank "Solve complete."
-    #A = nothing; RHS = nothing; GC.gc()
-    @info maximum(solution), minimum(solution)
     # ── Solution prolongation ─────────────────────────────────────────────────
     solution_new = zeros(Float64, n_spa)
     if inputs[:adaptive_extra_meshes]
@@ -2406,13 +2244,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         solution_new = add_solution_prolongation_contributions(
             @view(solution_local[1:n_spa]), received_solution_contributions,
             ip2gip_spa, n_spa, rank, gip_to_local)
-        @info "prolonged solution maxima"
-        @info maximum(solution_new), minimum(solution_new)
-        @info maximum(P_vec), minimum(P_vec), maximum(nc_mat_rhs), minimum(nc_mat_rhs)
     end
     
     if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
-        @info "[$rank] Applying spatial prolongation to solution..."
 
         # Build reverse ghost map via AllGather: each rank broadcasts its
         # (parent_gid, hanging_gid, owner_hanging, weight) tuples for extended parents;
@@ -2460,7 +2294,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             ip2gip_spa, n_spa_new, rank, gip_to_local_spa)
         solution[1:n_spa_new] .= solution_new_spa
 
-        @info "[$rank] ✓ Spatial prolongation applied"
     end
     # ── Angular integration and error computation ─────────────────────────────
     @rankinfo rank "Integrating solution in angle..."
@@ -2517,9 +2350,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             weight = extra_meshes_extra_Je[iel][e_ext, iθ, iϕ] *
                                      extra_mesh[iel].ωθ[iθ] * extra_mesh[iel].ωθ[iϕ]
                             int_sol_accum[ip] += solution_new[ip_g] * weight / node_div[ip]
-                            if (abs(x -1.5) < 1e-3 && abs(y - 4/3) < 1e-3 && abs(z - 0.0) < 1e-2)
-                                @info "1", rank, solution_new[ip_g], int_sol_accum[ip], e_ext, solution[ip_g], solution_local[ip_g]
-                            end
                             if (inputs[:lmanufactured_solution])
                                 int_ref_accum[ip] += ref[ip_g] * weight / node_div[ip]
                                 L2_ref += ref[ip_g]^2 * weight * ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
@@ -2569,12 +2399,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             for i = 1:ngl, j = 1:ngl, k = 1:ngl
                 ip  = mesh.connijk[iel, i, j, k]
                 x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
-                if (abs(x -1.5) < 1e-3 && abs(y - 4/3) < 1e-3 && abs(z - 0.0) < 1e-2)
-                    @info "1", mesh.ip2gip[ip], ip, int_sol_accum[ip], node_div[ip], int_sol_accum[ip] * node_div[ip]
-                end
-                if (abs(x -0.0) < 1e-3 && abs(y - 4/3) < 1e-2 && abs(z - 0.0) < 1e-2)
-                    @info "2", mesh.ip2gip[ip], ip, int_sol_accum[ip], node_div[ip], int_sol_accum[ip] * node_div[ip]
-                end
             end
         end
         gnpoin_spa  = mesh.gnpoin
@@ -2595,12 +2419,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             int_sol[ip] = g_int_sol[gip]
             int_ref[ip] = g_int_ref[gip]
             x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
-            if (abs(x -1.5) < 1e-3 && abs(y - 4/3) < 1e-3 && abs(z - 0.0) < 1e-2)
-                @info "1", gip, ip, int_sol[ip], g_int_sol[gip]
-            end
-            if (abs(x -0.0) < 1e-3 && abs(y - 4/3) < 1e-2 && abs(z - 0.0) < 1e-2)
-                @info "2", gip, ip, int_sol[ip], g_int_sol[gip]
-            end
         end
         if (inputs[:lmanufactured_solution])
             L2_ref_g = MPI.Allreduce(L2_ref, MPI.SUM, comm)
@@ -2608,7 +2426,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
     if (inputs[:lmanufactured_solution])
-        @info "local errors", rank, sqrt(L2_err), sqrt(L2_ref), sqrt(L2_err / L2_ref) 
         @rankinfo rank @sprintf("L2 error: ‖e‖ = %.6e  ‖u‖ = %.6e  relative = %.6e",
         sqrt(L2_err_g), sqrt(L2_ref_g), sqrt(L2_err_g / L2_ref_g))
     end
@@ -4082,7 +3899,6 @@ end
 function enforce_periodic_phi_conformity!(criterion, thresholds, ref_level,
                                            nelem, nelem_ang, nop_ang,
                                            connijk_ang, coords_ang)
-    @info "periodic_phi_conformity entered"
     for iel = 1:nelem
         for e_ext = 1:nelem_ang[iel]
             nop = nop_ang[iel][e_ext]

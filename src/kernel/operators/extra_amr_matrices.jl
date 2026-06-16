@@ -6,20 +6,6 @@ function build_extended_local_numbering(
     n_spa, ghost_layer::NonConformingGhostLayer,
     ip2gip_spa, rank
 )
-    """
-    Build mapping from global IDs to extended local indices (including ghosts)
-    
-    Local indices: 1:n_spa (owned nodes)
-    Ghost indices: (n_spa+1):(n_spa+n_ghost) (ghost nodes)
-    
-    Returns:
-    - gid_to_extended_local: Dict{Int, Int} mapping global ID -> extended local index
-    - extended_local_to_gid: Vector{Int} inverse mapping
-    - n_total: Total number of nodes (owned + ghost)
-    """
-    
-    @info "[Rank $rank] Building extended local numbering..."
-    
     gid_to_extended_local = Dict{Int, Int}()
     extended_local_to_gid = Int[]
     
@@ -36,9 +22,7 @@ function build_extended_local_numbering(
         gid_to_extended_local[gid] = ip_local
         push!(extended_local_to_gid, gid)
     end
-    
-    @info "[Rank $rank] Mapped $n_spa owned nodes"
-    
+
     # =========================================================================
     # Phase 2: Map ghost nodes (n_spa+1:n_total)
     # =========================================================================
@@ -63,10 +47,7 @@ function build_extended_local_numbering(
     
     n_ghost_mapped = ghost_idx - n_spa - 1
     n_total = ghost_idx - 1
-    
-    @info "[Rank $rank] Mapped $n_ghost_mapped ghost nodes"
-    @info "[Rank $rank] Total extended system size: $n_total"
-    
+
     # Verify count
     if n_ghost_mapped != ghost_layer.n_ghost_nodes
         @warn "[Rank $rank] Ghost node count mismatch: expected $(ghost_layer.n_ghost_nodes), got $n_ghost_mapped"
@@ -90,19 +71,6 @@ function build_restriction_matrices_local_and_ghost(
     ip2gip_spa, gip2owner_extra, gid_to_extended_local, extended_local_to_gid,
     rank
 )
-    """
-    Build restriction matrices with identity for ALL hanging nodes initially.
-    
-    nc_mat: (n_spa × n_spa)
-    
-    Rows:
-    1. Free nodes (1:n_free): Identity
-    2. Interior hanging nodes (n_free+1:n_spa, not interface): Constraint equation
-    3. Interface hanging nodes: Identity (will be used to send data, then removed)
-    
-    After all operations, we manually remove ALL hanging node rows/columns.
-    """
-    
     #These are used to store information about pure ghost parents
     parent_ghost_idx = 1
     gid_to_extended_parents = Dict{Int, Int}()
@@ -123,13 +91,7 @@ function build_restriction_matrices_local_and_ghost(
     # Hanging node set definition
     n_free = n_spa - length(nc_non_global_nodes)
     hanging_node_set = Set(nc_non_global_nodes)
-    
-    @info "[Rank $rank] Building restriction matrices:"
-    @info "  Free DOFs: $n_free"
-    @info "  Total hanging: $(length(nc_non_global_nodes))"
-    @info "  Interior hanging: $(length(setdiff(hanging_node_set, ghost_layer.interface_hanging_nodes)))"
-    @info "  Interface hanging: $(length(ghost_layer.interface_hanging_nodes))"
-    
+
     # Triplet storage for nc_mat
     I_local = Int[]
     J_local = Int[]
@@ -170,18 +132,13 @@ function build_restriction_matrices_local_and_ghost(
             push!(V_rhs, 1.0)
         end
     end
-    
-    @info "[Rank $rank] Added identity for $n_free free nodes"
-    
+
     # =========================================================================
     # Phase 2: Interior hanging nodes - Constraint equations
     # =========================================================================
     
     interpolation_cache = Dict{NTuple{4,Int}, Tuple{Matrix{Float64}, Matrix{Float64}}}()
     interior_hanging = setdiff(hanging_node_set, ghost_layer.interface_hanging_nodes)
-    
-    @info "[Rank $rank] Processing interior hanging: $(length(interior_hanging))"
-    n_processed = 0
     for ip_hanging in interior_hanging
         
         constraint_entries = build_interior_hanging_constraint(
@@ -203,30 +160,15 @@ function build_restriction_matrices_local_and_ghost(
                 push!(V_rhs, weight)
             end
         end
-        n_processed += 1
     end
-    
-    @info "[Rank $rank] Interior hanging constraint equations added to nc_mat"
-    @info "max of nc_mat with interior", rank, maximum(sparse(I_local, J_local, V_local, n_spa, n_spa))
+
     # =========================================================================
     # Phase 3: Interface hanging nodes - Identity + Store constraints
     # =========================================================================
-    
+
     interface_hanging = ghost_layer.interface_hanging_nodes
     
-    @info "[Rank $rank] Processing interface hanging: $(length(interface_hanging))"
-    
     for ip_hanging in interface_hanging
-        # Add IDENTITY to nc_mat (will use this to extract data before removal)
-        #=if !(ip_hanging in interior_hanging) && !(ip_hanging <= n_free)
-            push!(I_local, ip_hanging)
-            push!(J_local, ip_hanging)
-            push!(V_local, 1.0)
-            push!(I_rhs, ip_hanging)
-            push!(J_rhs, ip_hanging)
-            push!(V_rhs, 1.0)
-        end=#
-        
         # Get and store constraint information
         if !haskey(ghost_layer.parent_search_cache, ip_hanging)
             @warn "[Rank $rank] Hanging node $ip_hanging has no parent cache"
@@ -341,15 +283,11 @@ function build_restriction_matrices_local_and_ghost(
 
     end
     
-    @info "[Rank $rank] Interface hanging: $(length(ghost_constraint_data)) nodes with constraints"
-    #@info "max of nc_mat before construction", rank, maximum(sparse(I_local, J_local, V_local, n_spa, n_spa))
     # =========================================================================
     # Build nc_mat: (n_spa × n_spa)
     # =========================================================================
-    @info maximum(I_local), maximum(J_local), n_free, n_spa
     nc_mat = sparse(I_local, J_local, V_local, n_spa+parent_ghost_idx-1, n_spa+parent_ghost_idx-1)
     nc_mat_rhs = sparse(I_rhs, J_rhs, V_rhs, n_spa + parent_ghost_idx-1, n_spa + parent_ghost_idx-1)
-    @info "maximum of nc_mat", rank, maximum(nc_mat)
     # Normalize constraint rows (skip free nodes and interface hanging identities)
     for i = 1:n_spa
         if i in interior_hanging
@@ -359,7 +297,6 @@ function build_restriction_matrices_local_and_ghost(
             end
         
             if abs(col_sum - 1.0) > 1e-13 && abs(col_sum) > 1e-14
-                @info "Column $j sum = $col_sum"
                 for idx in nzrange(nc_mat, i)
                     nonzeros(nc_mat)[idx] /= col_sum
                 end
@@ -373,9 +310,8 @@ function build_restriction_matrices_local_and_ghost(
             for idx in nzrange(nc_mat_rhs, i)
                 col_sum += nonzeros(nc_mat_rhs)[idx]
             end
-        
+
             if abs(col_sum - 1.0) > 1e-13 && abs(col_sum) > 1e-14
-                @info "Column $j sum = $col_sum"
                 for idx in nzrange(nc_mat_rhs, i)
                     nonzeros(nc_mat_rhs)[idx] /= col_sum
                 end
@@ -383,11 +319,8 @@ function build_restriction_matrices_local_and_ghost(
         end
     end
 
-    @info "maximum of nc_mat after column normalization", rank, maximum(nc_mat)
     P = sparse(nc_mat')
     P_vec = sparse(nc_mat_rhs')
-    @info "[Rank $rank] nc_mat: $(size(nc_mat)), nnz=$(nnz(nc_mat))"
-    #Separate matrix to used for rhs restriction from one used for matrix restriction
     return nc_mat, P, nc_mat_rhs, P_vec, ghost_constraint_data, ghost_constraint_data_rhs,
         all_hanging_nodes, gid_to_extended_parents, extended_parents_to_gid,
         extended_parents_x, extended_parents_y, extended_parents_z, extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
@@ -436,9 +369,6 @@ function build_interior_hanging_constraint(
         return Tuple{Int, Float64}[]
     end
     
-    #=if (iel_child == 14 && i_child == 5 && j_child == 3 && k_child == 1)
-        @info iel_child, i_child, j_child, k_child, e_ext_child, iθ_child, jθ_child, iel_parent, e_ext_parent
-    end=#
     # Build or retrieve interpolation matrices
     cache_key = (iel_child, e_ext_child, iel_parent, e_ext_parent)
     
@@ -466,15 +396,6 @@ function build_interior_hanging_constraint(
         iel_child, i_child, j_child, k_child,
         iel_parent, mesh, ngl
     )
-    if (iel_child == 14 && i_child == 5 && j_child == 3 && k_child == 1 && e_ext_child == 3 
-        && iθ_child == 3 && jθ_child == 3)
-        @info "e_ext=3 hanging parent" iel_parent, e_ext_parent, i_parent, j_parent, k_parent
-    end
-    if (iel_child == 14 && i_child == 5 && j_child == 3 && k_child == 2 && e_ext_child == 3 
-        && iθ_child == 3 && jθ_child == 3)
-        @info "e_ext=3 hanging parent k=2" iel_parent, e_ext_parent, i_parent, j_parent, k_parent
-    end
-
     for jθ_parent = 1:(nop_parent+1)
         for iθ_parent = 1:(nop_parent+1)
             Lθ_val = Lθ[iθ_child, iθ_parent]
@@ -1142,12 +1063,8 @@ function exchange_ghost_constraints(
         end
     end
     
-    @info "[Rank $rank] Sending ghost constraint requests to $(length(send_to_rank)) ranks"
-    
     # Exchange requests
     received_requests = exchange_ghost_requests(send_to_rank, rank, comm)
-    
-    @info "[Rank $rank] Received requests from $(length(received_requests)) ranks"
     
     # Process requests and compute responses
     responses = Dict{Int, Vector{Tuple{Int, Vector{Tuple{Int, Float64}}}}}()  
@@ -1660,7 +1577,6 @@ function extract_free_rhs_subvector(
         i in all_hanging_nodes && continue
         RHS_free[i] = RHS_full[i]
     end
-    @info "[Rank $rank] Extracted RHS free subvector: $n_free entries"
     return RHS_free
 end
 

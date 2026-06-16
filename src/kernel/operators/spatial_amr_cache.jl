@@ -1,8 +1,7 @@
 # ============================================================================
-# Stage 1: Spatial AMR Cache Structure - Task 1.2
+# Spatial AMR Cache Structure
 # ============================================================================
-# Cache for spatial AMR data needed by Stage 2+ (constraint matrix construction)
-# This structure holds pre-computed parent element information and interpolation data
+# Cache for spatial AMR data used in constraint matrix construction and RHS/matrix assembly
 
 """
     SpatialAMRCache
@@ -11,19 +10,16 @@ Cache structure for spatial AMR hanging node information to be used during
 constraint matrix construction and RHS/matrix assembly.
 
 Fields:
-- `parent_map::Dict{Int, Int}`: Mapping from hanging node global index to parent element
-  (Will be populated in Stage 1b, used in Stage 2 for constraint equations)
+- `parent_map::Dict{Int, Int}`: Mapping from hanging node local index to parent element
 
 - `parent_weights::Dict{Int, Vector{Tuple{Int, Float64}}}`: Lagrange interpolation weights
   for each hanging node. Maps hanging_node_id → [(parent_node_id, weight), ...]
-  (Populated in Stage 2 during spatial constraint matrix construction)
 
 - `ghost_spatial_parents::Dict{Int, SpatialElementGhostInfo}`: Information about
-  spatial parent elements on ghost processors (for MPI communication, Stage 3)
+  spatial parent elements on ghost processors (for MPI communication)
 
 - `spatial_interp_cache::Dict{Tuple{Int,Int,Int}, Matrix{Float64}}`: Cache of
   Lagrange interpolation matrices. Key: (child_ref_level, parent_ref_level, ngl)
-  (Populated in Stage 2 to avoid recomputation)
 
 - `element_refinement_levels::Vector{Int}`: Copy of mesh.ad_lvl for quick lookup
 
@@ -42,7 +38,6 @@ Base.@kwdef struct SpatialAMRCache
     # Interpolation weights for CROSS-RANK constraints.
     # Parent lives on another rank — keyed by GLOBAL spatial IP (not local).
     # hanging_local_spatial_ip → [(parent_GLOBAL_spatial_ip, weight), ...]
-    # Used in Stage 5 MPI pattern to exchange row/col effects to the parent rank.
     cross_rank_parent_weights::Dict{Int, Vector{Tuple{Int, Float64}}} =
         Dict{Int, Vector{Tuple{Int, Float64}}}()
 
@@ -75,7 +70,7 @@ end
     SpatialElementGhostInfo
 
 Information about a spatial element on a ghost processor.
-Used in Stage 3 for ghost layer extension.
+Used for ghost layer MPI communication.
 
 Fields:
 - `spatial_elem_id::Int`: Local element ID on ghost processor

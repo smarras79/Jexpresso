@@ -1,8 +1,7 @@
 # ============================================================================
-# Stage 1: Spatial Mesh Infrastructure Integration - Query Functions
+# Spatial Mesh Infrastructure Query Functions
 # ============================================================================
-# These functions provide access to spatial AMR structures for Stage 1+ implementation
-# They query the mesh data structures populated by p4est/Gridap for spatial hanging nodes
+# Access to spatial AMR mesh structures (populated by p4est) for spatial hanging node data
 
 """
     get_spatial_hanging_nodes_for_element(mesh::St_mesh, iel::Int) -> Vector{Tuple{Int, Int}}
@@ -77,7 +76,7 @@ Returns tuple `(local_facet_id, refinement_half_1, refinement_half_2)`:
 - `local_facet_id`: Which face of the child element (1-6 in 3D)
 - `refinement_half_1`, `refinement_half_2`: Info about refinement pattern on that face
 
-This info is needed to build the spatial constraint matrix in Stage 2.
+This info is needed to build the spatial constraint matrix.
 """
 function get_spatial_child_facet_indices(mesh::St_mesh, ncf_idx::Int)
     if ncf_idx < 1 || ncf_idx > mesh.num_ncf
@@ -96,7 +95,7 @@ Returns tuple `(IPc_nodes, IPp_nodes)` where:
 - `IPp_nodes`: Global node indices on parent element's side of the facet
 
 These node lists are pre-computed and stored in mesh.IPc_list and mesh.IPp_list.
-They will be used in Stage 2 to build the actual Lagrange interpolation constraint matrix.
+They are used to build the Lagrange interpolation constraint matrix.
 """
 function get_spatial_parent_child_node_mapping(mesh::St_mesh, ncf_idx::Int)
     if ncf_idx < 1 || ncf_idx > mesh.num_ncf

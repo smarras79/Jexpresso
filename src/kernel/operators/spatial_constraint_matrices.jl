@@ -1,5 +1,5 @@
 # ============================================================================
-# Stage 2: Spatial Constraint Matrix Construction
+# Spatial Constraint Matrix Construction
 # ============================================================================
 # Build Lagrange interpolation constraint equations for spatial hanging nodes
 
@@ -36,7 +36,7 @@ function build_spatial_constraint_matrices(
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
     ngl::Int, rank::Int
 )
-    @rankinfo rank "[$rank] Stage 2: Building spatial constraint matrices with angular coupling..."
+    @rankinfo rank "[$rank] Building spatial constraint matrices with angular coupling..."
 
     num_ncf = spatial_amr_cache.num_spatial_hanging_facets
 
@@ -49,36 +49,6 @@ function build_spatial_constraint_matrices(
     @rankinfo rank "[$rank] Processing $(num_ncf) spatial non-conforming facets..."
     @rankinfo rank "[$rank] Spatial elements: $nelem, each with angular mesh"
     @rankinfo rank "[$rank] BUILDING: Full spatial-angular constraint system"
-
-    # ── Spatial-Angular Coupling Note ──────────────────────────────────────
-    # CRITICAL: When a spatial hanging node is constrained, ALL angular nodes
-    # at that spatial location are also constrained via the spatial constraint.
-    #
-    # For a spatial hanging node with constraint:
-    #   u_spatial_hanging = Σ w_s * u_spatial_parent
-    #
-    # And angular DOFs at that location [nelem_ang elements]:
-    #   u_spatial_hanging(e, θ, φ) for e = 1:nelem_ang
-    #
-    # The spatial constraint applies to ALL angular nodes:
-    #   u_spatial_hanging(e, θ, φ) = Σ w_s * u_spatial_parent(e, θ, φ)
-    #
-    # Current Stage 2 (spatial-only):
-    #   - Builds spatial hanging node constraints
-    #   - Stores in cache.parent_weights
-    #   - Angular mesh data not yet available
-    #
-    # Future Stage 2+ Enhancement (spatial-angular):
-    #   - Will replicate spatial constraints across ALL angular nodes
-    #   - For each spatial hanging node at (i,j,k):
-    #     - For each angular element e = 1:nelem_ang:
-    #       - For each angular node (θ,φ):
-    #         - Create constraint linking all angular copies
-    #   - Creates spatial-angular Kronecker product structure
-    #
-    # For now: cache.parent_weights contains spatial constraints only.
-    # RHS/Matrix assembly (Stages 4-5) will expand to full spatial-angular.
-    # ───────────────────────────────────────────────────────────────────────
 
     # Cache for interpolation matrices to avoid recomputation
     interp_cache = Dict{Tuple{Int,Int,Int}, Tuple{Matrix{Float64}, Matrix{Float64}, Matrix{Float64}}}()
@@ -214,8 +184,6 @@ function build_spatial_interpolation_matrices_from_facet_nodes(
         
         L1 = build_1d_lagrange_matrix(parent_x, child_x)  # x-direction
         L2 = build_1d_lagrange_matrix(parent_z, child_z)  # y-direction
-        #@info local_facet_id, child_x, parent_x, L1
-        #@info child_z, parent_z, L2
     elseif local_facet_id in [3, 4]
         # y-faces: x and z vary, y constant
         # Line 1 varies in x, Line 2 varies in z
@@ -226,8 +194,6 @@ function build_spatial_interpolation_matrices_from_facet_nodes(
         
         L1 = build_1d_lagrange_matrix(parent_x, child_x)  # x-direction
         L2 = build_1d_lagrange_matrix(parent_y, child_y)  # z-direction
-        #@info local_facet_id, child_x, parent_x, L1
-        #@info child_y, parent_y, L2
     elseif local_facet_id in [5, 6]
         # x-faces: y and z vary, x constant
         # Line 1 varies in y, Line 2 varies in z
@@ -238,8 +204,6 @@ function build_spatial_interpolation_matrices_from_facet_nodes(
         
         L1 = build_1d_lagrange_matrix(parent_y, child_y)  # y-direction
         L2 = build_1d_lagrange_matrix(parent_z, child_z)  # z-direction
-        #@info local_facet_id, child_y, parent_y, L1
-        #@info child_z, parent_z, L2
     else
         error("Invalid local_facet_id: $local_facet_id")
     end
@@ -403,46 +367,6 @@ function build_cross_rank_hanging_node_constraints(
 end
 
 # ============================================================================
-# Extract Element Coordinates
-# ============================================================================
-
-"""
-    extract_element_corner_coords(iel, mesh) -> (3, 8) matrix
-
-Extract corner coordinates of hexahedral element from mesh.
-
-Returns 3×8 matrix where each column is a corner node:
-- Row 1: x coordinates
-- Row 2: y coordinates
-- Row 3: z coordinates
-"""
-function extract_element_corner_coords(iel::Int, mesh::St_mesh)
-    coords = zeros(Float64, 3, 8)
-    ngl = mesh.ngl
-
-    # 8 corners of hex element in reference ordering
-    corners = [
-        (1,   1,   1),
-        (1,   1,   ngl),
-        (ngl, 1,   ngl),
-        (ngl, 1,   1),
-        (1,   ngl, 1),
-        (1,   ngl, ngl),
-        (ngl, ngl, ngl),
-        (ngl, ngl, 1)
-    ]
-
-    for (corner_idx, (i, j, k)) in enumerate(corners)
-        ip = mesh.connijk[iel, i, j, k]
-        coords[1, corner_idx] = mesh.x[ip]
-        coords[2, corner_idx] = mesh.y[ip]
-        coords[3, corner_idx] = mesh.z[ip]
-    end
-
-    return coords
-end
-
-# ============================================================================
 # Build 1D Lagrange Interpolation Matrix
 # ============================================================================
 
@@ -511,21 +435,7 @@ function build_hanging_node_constraints_with_angular(
     cache::SpatialAMRCache, mesh::St_mesh, ngl::Int,
     extra_meshes_extra_nelems, extra_meshes_extra_nops, rank::Int
 )
-    """
-    Build constraint equations for hanging nodes on a spatial facet.
-
-    FIXED: Now processes ALL LGL nodes on the facet (not just corners),
-    and uses the correct pair of L matrices based on face orientation.
-
-    Face orientation:
-    - Face 1,2: z-faces (normal ±z) → use Lx, Ly
-    - Face 3,4: y-faces (normal ±y) → use Lx, Lz
-    """
-
     num_spatial_hanging = 0
-
-    # Determine which L matrices to use based on face orientation
-    # Face numbering for 3D hexahedron:
 
     # Process ALL ngl² nodes on the facet (not just unique ones)
     for node_idx = 1:length(IPc_nodes)
@@ -557,25 +467,13 @@ function build_hanging_node_constraints_with_angular(
         # For each parent node position (p1, p2) on the parent face:
         #   weight = w_1[p1] * w_2[p2]
         parent_weights_raw = Tuple{Int, Float64}[]
-        x_child = mesh.x[child_node_id]
-        y_child = mesh.y[child_node_id]
-        z_child = mesh.z[child_node_id]
-        # Iterate through all parent nodes (ngl × ngl grid on parent facet)
         for p1 = 1:ngl
             for p2 = 1:ngl
-                parent_face_idx = (p2 - 1) * ngl + p1#(p1 - 1) * ngl + p2
+                parent_face_idx = (p2 - 1) * ngl + p1
                 if parent_face_idx <= length(IPp_nodes)
                     parent_node_id = Int(IPp_nodes[parent_face_idx])
                     if parent_node_id > 0
-                        # Tensor product of weights
-                        x_parent = mesh.x[parent_node_id]
-                        y_parent = mesh.y[parent_node_id]
-                        z_parent = mesh.z[parent_node_id]
-                        #@info "child", x_child, y_child, z_child
-                        #@info "parent", x_parent, y_parent, z_parent
-                        #@info "weights", w_1[p1], w_2[p2], w_1[p1] * w_2[p2]
                         weight = w_1[p1] * w_2[p2]
-                        #@info weight, w_1[p1], w_2[p2], parent_node_id, parent_face_idx
                         if abs(weight) > 1e-14
                             push!(parent_weights_raw, (parent_node_id, weight))
                         end
@@ -627,108 +525,6 @@ function build_hanging_node_constraints_with_angular(
     end
 
     return num_spatial_hanging
-end
-
-"""
-    build_hanging_node_constraints(
-        child_elem_id, parent_elem_id, local_facet_id,
-        IPc_nodes, IPp_nodes, Lx, Ly, Lz,
-        cache, mesh, ngl
-    )
-
-Build constraint equations for hanging nodes on a spatial facet.
-
-For each hanging node on the child facet:
-- Look up (i,j) position in parent facet coordinates
-- Use Lx, Ly to get weights from parent nodes
-- Store constraint in cache.parent_weights
-"""
-function build_hanging_node_constraints(
-    child_elem_id::Int, parent_elem_id::Int, local_facet_id::Int,
-    IPc_nodes::Vector, IPp_nodes::Vector,
-    Lx::Matrix{Float64}, Ly::Matrix{Float64}, Lz::Matrix{Float64},
-    cache::SpatialAMRCache, mesh::St_mesh, ngl::Int
-)
-    # Total nodes on face
-    ngl2 = ngl * ngl
-
-    # Get unique non-zero child nodes
-    unique_child_nodes = unique(filter(x -> x > 0, IPc_nodes))
-
-    for child_node_id in unique_child_nodes
-        # Find position of this node in IPc_nodes array
-        node_positions = findall(x -> x == child_node_id, IPc_nodes)
-
-        if isempty(node_positions)
-            continue
-        end
-
-        # Process first occurrence only (hanging nodes should have unique positions)
-        pos = node_positions[1]
-
-        # Convert linear index to (i,j) in face
-        # Note: face_idx is 1-indexed position in IPc_list array (already 1:ngl2)
-        i = div(pos - 1, ngl) + 1  # Row
-        j = mod(pos - 1, ngl) + 1  # Column
-
-        # Check bounds
-        if i > size(Lx, 1) || j > size(Lx, 2) || i < 1 || j < 1
-            continue
-        end
-
-        # Get interpolation weights from Lagrange matrices
-        # Lx[i, :] gives weights for child row i from all parent nodes
-        # Ly[j, :] gives weights for child col j from all parent nodes
-        w_x = Lx[i, :]  # Weights in x direction (for each parent)
-        w_y = Ly[j, :]  # Weights in y direction (for each parent)
-
-        # Build constraint: tensor product of 1D weights
-        # For 2D face: weight[parent_idx] = w_x[i_parent] * w_y[j_parent]
-        # We need to map from the node ID to the parent node index
-
-        parent_weights_raw = Tuple{Int, Float64}[]
-
-        # Get unique parent node IDs (non-zero entries)
-        unique_parent_nodes = unique(filter(x -> x > 0, IPp_nodes))
-
-        # For each parent node, look up its weights from Lagrange matrices
-        # The parent_idx should correspond to position in the parent node array
-        for parent_idx = 1:min(length(unique_parent_nodes), length(w_x), length(w_y))
-            parent_node_id = unique_parent_nodes[parent_idx]
-
-            # Tensor product of 1D Lagrange weights
-            weight = w_x[parent_idx] * w_y[parent_idx]
-            
-            if abs(weight) > 1e-14
-                push!(parent_weights_raw, (Int(parent_node_id), weight))
-            end
-        end
-
-        # If no weights passed threshold, use all and don't filter
-        if isempty(parent_weights_raw)
-            for parent_idx = 1:min(length(unique_parent_nodes), length(w_x), length(w_y))
-                parent_node_id = unique_parent_nodes[parent_idx]
-                weight = w_x[parent_idx] * w_y[parent_idx]
-                push!(parent_weights_raw, (Int(parent_node_id), weight))
-            end
-        end
-
-        # Normalize to ensure partition of unity
-        total_weight = sum(w -> w[2], parent_weights_raw; init=0.0)
-
-        if abs(total_weight) > 1e-14
-            parent_weights = [(n, w/total_weight) for (n, w) in parent_weights_raw]
-        else
-            # Fallback: uniform weights
-            uniform_weight = 1.0 / length(parent_weights_raw)
-            parent_weights = [(n, uniform_weight) for (n, _) in parent_weights_raw]
-        end
-
-        # Store in cache
-        if !haskey(cache.parent_weights, child_node_id)
-            cache.parent_weights[child_node_id] = parent_weights
-        end
-    end
 end
 
 # ============================================================================
@@ -819,7 +615,7 @@ function verify_spatial_constraints(cache::SpatialAMRCache, rank::Int, n_spatial
 end
 
 # ============================================================================
-# Stage 4: Build Sparse Constraint Matrices for Assembly
+# Build Sparse Constraint Matrices for Assembly
 # ============================================================================
 
 """
@@ -936,60 +732,6 @@ function build_spatial_restriction_and_prolongation(
     R_spatial = sparse(rows_M, cols_M, vals_M, n_spa_new, n_spa_new)
     P_spatial = R_spatial'
     return R_spatial, P_spatial
-end
-
-"""
-    apply_spatial_constraint_to_rhs(
-        RHS::Vector, spatial_amr_cache::SpatialAMRCache,
-        n_ang_per_spatial::Int
-    ) -> Vector
-
-Apply spatial constraint restrictions to RHS for hanging spatial nodes.
-
-For each spatial hanging node s and its parents {p1, p2, ...} with weights {w1, w2, ...}:
-  For each angular node a ∈ [1, n_ang_per_spatial]:
-    RHS_out[(s-1)*n_ang + a] = Σ_i( w_i * RHS[(p_i-1)*n_ang + a] )
-
-This applies the spatial constraint across ALL associated angular DOFs at each location
-(spatial-angular coupling).
-
-Arguments:
-- RHS: Original RHS vector of size npoin * n_ang_per_spatial
-- spatial_amr_cache: Cache containing parent_weights from Stage 2
-- n_ang_per_spatial: Number of angular DOFs per spatial node
-
-Returns: Modified RHS with spatial constraints applied (same size as input).
-"""
-function apply_spatial_constraint_to_rhs(
-    RHS::Vector{Float64},
-    spatial_amr_cache::SpatialAMRCache,
-    n_ang_per_spatial::Int
-)::Vector{Float64}
-    RHS_out = copy(RHS)
-
-    # Apply spatial constraints: for each hanging spatial node
-    for (spatial_hanging_node_id, parent_list) in spatial_amr_cache.parent_weights
-        # For each angular DOF associated with this spatial hanging node
-        for i_ang = 1:n_ang_per_spatial
-            # Global DOF index for this (spatial_hanging, angular) pair
-            idx_hanging = (spatial_hanging_node_id - 1) * n_ang_per_spatial + i_ang
-
-            # Interpolate from parents: RHS_hanging = Σ weight * RHS_parent
-            rhs_val = 0.0
-            for (parent_node_id, weight) in parent_list
-                idx_parent = (parent_node_id - 1) * n_ang_per_spatial + i_ang
-                if 1 <= idx_parent <= length(RHS)
-                    rhs_val += weight * RHS[idx_parent]
-                end
-            end
-
-            if 1 <= idx_hanging <= length(RHS_out)
-                RHS_out[idx_hanging] = rhs_val
-            end
-        end
-    end
-
-    return RHS_out
 end
 
 # =============================================================================
@@ -1398,8 +1140,6 @@ function build_spatial_constraints_for_combined_path(
         end
     end
     R_spatial_rhs = sparse(I_rhs_sp, J_rhs_sp, V_rhs_sp, n_spa, n_spa)
-    @info "[$rank] [comb-path] ghost_constraint_data_spa: $(length(ghost_constraint_data_spa)) hanging DOFs"
-    @info "[$rank] [comb-path] ghost_constraint_data_spa_rhs: $(length(ghost_constraint_data_spa_rhs)) hanging DOFs"
 
     # ── Extended parent system (mirrors uniform path lines 1394-1429) ─────────
     # Uses gip2owner_spa (Vector by compact GID, already covers all global DOFs)
@@ -1455,6 +1195,5 @@ end
 
 export build_spatial_constraint_matrices, verify_spatial_constraints,
        build_spatial_restriction_and_prolongation,
-       apply_spatial_constraint_to_rhs,
        combine_spatial_angular_restrictions,
        build_spatial_constraints_for_combined_path

@@ -7,12 +7,6 @@ function driver(nparts,
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
 
-    # Debug: Check MPI library being used
-    if rank == 0
-        # @info "MPI Library: $(MPI.Get_library_version_string())"
-        @info "Using distribute with comm: $comm"
-    end
-
     if inputs[:lwarmup] == true
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
@@ -49,50 +43,33 @@ function driver(nparts,
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
 
-    # Stage 1 RT spatial AMR test: Apply selective refinement if requested
+    # RT spatial AMR: Apply selective refinement if requested
     if (inputs[:lRT_problem]) && haskey(inputs, :lRT_spatial_amr) && inputs[:lRT_spatial_amr] == true
         if rank == 0
-            @info "[Stage 1b] Applying selective spatial refinement for RT spatial AMR cache test..."
+            @info "[Spatial AMR] Applying selective spatial refinement..."
         end
 
         # Create refinement flags for specific elements
         adapt_flags = zeros(Int, sem.mesh.nelem)
 
-        # Stage 1 verification: Refine only a single element (simplest case for cache verification)
-        # This tests:
-        # 1. Cache initialization with one local hanging facet
-        # 2. Single-element refinement hanging node pattern
-        # 3. SpatialAMRCache population
-
         if sem.mesh.nelem > 0
-            # Mark element 1 for refinement (simplest test)
             if rank == 0
                 adapt_flags[1] = 1
-                for i=1:sem.mesh.ngl
-                    for j=1:sem.mesh.ngl
-                        for k=1:sem.mesh.ngl
-                            ip = sem.mesh.connijk[1,i,j,k]
-                            @info sem.mesh.x[ip], sem.mesh.y[ip], sem.mesh.z[ip]
-                        end
-                    end
-                end
             end
         end
 
         if rank == 0
-            @info "[Stage 1b] Marked $(sum(adapt_flags)) element(s) for refinement (single-element test)"
+            @info "[Spatial AMR] Marked $(sum(adapt_flags)) element(s) for refinement"
         end
 
-        # Apply refinement: rebuild mesh with AMR framework using adapt_flags
-        # (AMR is already enabled in inputs, just rebuild with custom refinement flags)
         sem, partitioned_model = sem_setup(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, sem.mesh, sem.interp, nothing, nothing)
 
         if rank == 0
-            @info "[Stage 1b] Spatial refinement complete"
-            @info "[Stage 1b] Refined mesh: $(sem.mesh.nelem) elements, $(sem.mesh.num_hanging_facets) hanging facets"
-            @info "[Stage 1b] Spatial non-conforming facets (ncf): $(sem.mesh.num_ncf)"
+            @info "[Spatial AMR] Spatial refinement complete"
+            @info "[Spatial AMR] Refined mesh: $(sem.mesh.nelem) elements, $(sem.mesh.num_hanging_facets) hanging facets"
+            @info "[Spatial AMR] Spatial non-conforming facets (ncf): $(sem.mesh.num_ncf)"
             if sem.mesh.num_ncf > 0
-                @info "[Stage 1b] ✓ Cache will be initialized with $(sem.mesh.num_ncf) spatial hanging facets"
+                @info "[Spatial AMR] ✓ Cache will be initialized with $(sem.mesh.num_ncf) spatial hanging facets"
             end
         end
     end
@@ -307,9 +284,7 @@ function driver(nparts,
                         inputs[:outformat])
                 
                     write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
-                
-                    @info "isamp" isamp
-                
+
                 end #isamp loop
             
                 #-----------------------------------------------------
