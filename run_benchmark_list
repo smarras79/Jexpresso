@@ -32,3 +32,40 @@ run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_cas
 run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
 
 NOTICE: replace mpiexec with mpirun if that's what you use.
+
+The commands above use mpiexec() from MPI.jl, which points at the bundled
+MPICH_jll launcher. If you use a system OpenMPI with mpirun instead, do the
+following.
+
+#Parallel (OpenMPI with mpirun)
+#
+# ONE-TIME SETUP: bind MPI.jl to your system OpenMPI so the worker Julia
+# processes load the same MPI that mpirun launches them with. Run this once in
+# the project, then RESTART Julia:
+julia>]
+pkg> add MPIPreferences
+julia>
+using MPIPreferences
+MPIPreferences.use_system_binary()   # auto-detects the OpenMPI on your PATH
+# -> writes LocalPreferences.toml; restart Julia, then verify:
+using MPI
+MPI.MPI_LIBRARY            # should report OpenMPI
+MPI.versioninfo()         # confirms "library = OpenMPI" and the mpirun path
+# To go back to the bundled MPICH later: MPIPreferences.use_jll_binary(); restart.
+
+# RUN: call the system `mpirun` directly instead of mpiexec(). Everything else
+# (the -n count and the Julia command) is identical.
+using MPI
+JULIA = Base.julia_cmd()
+run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
+run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
+run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
+run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
+
+# NOTICE (OpenMPI):
+#  - If -n exceeds your physical cores, add --oversubscribe:
+#      run(`mpirun --oversubscribe -n 3 $JULIA --project=. -e '...'`)
+#  - If you run as root (e.g. in a container), OpenMPI needs:
+#      run(`mpirun --allow-run-as-root -n 3 $JULIA --project=. -e '...'`)
+#  - You can also use the configured launcher portably via mpiexec() once
+#    MPIPreferences points at OpenMPI: it then resolves to your system mpirun.
