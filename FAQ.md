@@ -82,47 +82,47 @@ echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
 Full explanation:
 [INSTALL.md, Section 5.5](INSTALL.md#55-macos-hostname-fix-mpich-and-mpich_jll-only).
 
-### Precompiling on an InfiniBand cluster fails with `Failed to modify UD QP to INIT on mlx5_0`
+### Precompiling on an InfiniBand cluster hangs or fails at `MPI.Init` (`Failed to modify UD QP to INIT on mlx5_0`)
 
-**A.** When `using Jexpresso` precompiles, its `@compile_workload` runs one serial
-driver pass that calls `MPI.Init()`. On an InfiniBand cluster the default
-libfabric (OFI) provider is `verbs;ofi_rxm` (mlx5), which allocates an RDMA queue
-pair at init time. On a **login node** (verbs disabled) or when the locked-memory
-limit is low (`ulimit -l`), that allocation is refused and precompilation aborts:
+**A.** Historically Jexpresso's `@compile_workload` ran one serial driver pass that
+called `MPI.Init()` to bake in the integrator/RHS specializations. On an
+InfiniBand cluster that init brings up the libfabric (OFI) fabric, which is
+hostile to precompilation on a **login node** in several ways:
 
-```
-n0096:rank0.julia.bin: Failed to modify UD QP to INIT on mlx5_0: Operation not permitted
-MPIDI_OFI_init_local ... create_vni_context: Cannot allocate memory
-ERROR: The following 1 direct dependency failed to precompile: Jexpresso
-```
+- the `verbs;ofi_rxm` (mlx5) default allocates an RDMA queue pair and aborts when
+  verbs are disabled or locked memory is low (`ulimit -l`):
 
-Jexpresso now steers the precompile worker onto the shared-memory `shm` provider
-automatically (`src/Jexpresso.jl`, `@setup_workload`), so a plain
-`julia --project=. -e 'using Pkg; Pkg.precompile()'` succeeds out of the box on a
-login node. `shm` is intra-node only and does no network-interface probing, so it
-avoids both the verbs/mlx5 failure above *and* the multi-minute stall the `tcp`
-provider can hit while enumerating every NIC (IPoIB, bonded, …) during
-`MPI.Init`. The override is scoped to precompilation only and is skipped if you
-have already pinned `FI_PROVIDER` yourself — so your compute-node runs keep using
-verbs/mlx5.
+  ```
+  n0096:rank0.julia.bin: Failed to modify UD QP to INIT on mlx5_0: Operation not permitted
+  MPIDI_OFI_init_local ... create_vni_context: Cannot allocate memory
+  ERROR: The following 1 direct dependency failed to precompile: Jexpresso
+  ```
 
-If you still hit this (e.g. with a customized `FI_PROVIDER`), force a benign
-provider just for the precompile step, or precompile inside a compute-node
-allocation where verbs and locked memory are permitted:
+- the `tcp` provider enumerates every NIC (IPoIB, bonded, …) and does reverse-DNS
+  during `MPI.Init`, which can **stall for many minutes**;
+- even `shm` can stall during fabric bring-up on some builds.
+
+The root issue is that precompilation should not depend on a working MPI fabric.
+So **Jexpresso no longer runs the MPI driver workload during precompilation by
+default** (`src/Jexpresso.jl`, `@setup_workload`). The package still precompiles
+fully — every method in the module is compiled regardless — you just skip the
+warm-up pass, so the *first* `run_case` in a session pays a bit more JIT. A plain
+`julia --project=. -e 'using Pkg; Pkg.precompile()'` now completes on a login node
+without ever touching the fabric.
+
+To opt back into the warm-up — e.g. inside a compute-node allocation where the
+fabric is healthy — set the env var before precompiling:
 
 ```bash
-# Login node: sidestep the RDMA fabric for precompilation (shm = no network)
-FI_PROVIDER=shm julia --project=. -e 'using Pkg; Pkg.precompile()'
-
-# tcp also works but probes every NIC and can stall for minutes on some
-# login nodes; prefer shm for the single-process precompile.
-
-# Or precompile on a compute node where verbs/locked memory are allowed
-salloc -N1 -n1 -t 0:30:00      # your partition/account flags
-julia --project=. -e 'using Pkg; Pkg.precompile()'
+# On a compute node (fabric healthy): bake in the integrator/RHS warm-up
+salloc -N1 -n1 -t 0:30:00                 # your partition/account flags
+JEXPRESSO_PRECOMPILE_WORKLOAD=1 julia --project=. -e 'using Pkg; Pkg.precompile()'
 ```
 
-Quick way to find a provider that initializes fast on your node:
+When opted in, Jexpresso steers libfabric onto the lightweight `shm` provider for
+the single-process precompile worker (unless you've pinned `FI_PROVIDER`
+yourself), and restores it afterwards. If `shm` is unhappy on your build, find a
+provider that initializes fast and pin it:
 
 ```bash
 for p in shm tcp; do
@@ -131,6 +131,9 @@ for p in shm tcp; do
     'using MPI; MPI.Init(); println("ok, size=", MPI.Comm_size(MPI.COMM_WORLD)); MPI.Finalize()' \
     || echo "HANG/FAIL"
 done
+# then, on the compute node:
+JEXPRESSO_PRECOMPILE_WORKLOAD=1 FI_PROVIDER=<fast one> \
+  julia --project=. -e 'using Pkg; Pkg.precompile()'
 ```
 
 ### A run is "stuck" for ~30–60 s before the time loop advances

@@ -502,43 +502,56 @@ end
         end
     end
 
-    # The same MPI.Init() also brings up the libfabric (OFI) provider. On
-    # an InfiniBand cluster the default selection picks the verbs/mlx5
-    # provider, which tries to allocate an RDMA queue pair at init time:
+    # ── Opt-in gate for the MPI-driven driver workload ──────────────────
+    # Running the sod1d driver below calls MPI.Init(), which on an
+    # InfiniBand cluster brings up the libfabric (OFI) fabric. That step is
+    # hostile to precompilation on a login node, in three different ways
+    # depending on the provider:
     #
-    #   Failed to modify UD QP to INIT on mlx5_0: Operation not permitted
-    #   MPIDI_OFI_init_local ... create_vni_context: Cannot allocate memory
+    #   * verbs/mlx5 (the IB default) tries to allocate an RDMA queue pair
+    #     and aborts — verbs are disabled / locked memory too low:
+    #         Failed to modify UD QP to INIT on mlx5_0: Operation not permitted
+    #         create_vni_context: Cannot allocate memory
+    #   * tcp enumerates every NIC (IPoIB, bonded, …) and does reverse-DNS
+    #     during MPI.Init — this can stall for many minutes.
+    #   * shm can also stall while the fabric is brought up on some builds.
     #
-    # That allocation is refused on login nodes (verbs disabled) or when the
-    # locked-memory limit is too low (`ulimit -l`), so precompilation aborts
-    # even though it only ever needs a singleton, single-process MPI. The
-    # precompile worker never talks to another rank, so steer libfabric onto
-    # the shared-memory `shm` provider for the duration of the workload. `shm`
-    # is intra-node only and does *zero* network-interface probing, so it
-    # avoids both the verbs/mlx5 QP + memory-pinning path *and* the multi-
-    # minute stall the `tcp` provider can hit while enumerating every NIC
-    # (IPoIB, bonded, etc.) and doing reverse-DNS during MPI.Init on a login
-    # node. A single-rank singleton init is exactly shm's happy path. Only set
-    # it when the user hasn't pinned FI_PROVIDER themselves, and restore the
-    # previous state afterwards so nothing leaks past precompilation (the
-    # actual mpiexec-launched compute processes choose their provider
-    # unaffected).
+    # The core problem is that precompilation should not depend on a working
+    # MPI fabric at all. So by default we DO NOT run the driver workload:
+    # the package still precompiles fully (every method in the module is
+    # compiled regardless), we just skip the extra warm-up pass that bakes
+    # in the integrator/RHS specializations. `using Jexpresso` works either
+    # way; without the warm-up the first `run_case` pays more JIT.
+    #
+    # To opt back into the warm-up — e.g. inside a compute-node allocation
+    # where the fabric is healthy — set:
+    #
+    #     JEXPRESSO_PRECOMPILE_WORKLOAD=1   (also: true / yes / on)
+    #
+    # before precompiling. When opted in we also steer libfabric onto the
+    # shared-memory `shm` provider (unless the user pinned FI_PROVIDER), the
+    # lightest option for the single-process precompile worker, and restore
+    # the previous state afterwards so nothing leaks past precompilation.
+    _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "")) in
+                    ("1", "true", "yes", "on")
     _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
     _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
-    if !_fi_provider_was_set
+    if _run_workload && !_fi_provider_was_set
         ENV["FI_PROVIDER"] = "shm"
     end
 
     @compile_workload begin
-        push!(empty!(ARGS), "CompEuler", "sod1d", "true")
-        include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
+        if _run_workload
+            push!(empty!(ARGS), "CompEuler", "sod1d", "true")
+            include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
+        end
     end
 
-    # Undo the temporary FI_PROVIDER override (no-op if the user had pinned
-    # it, since we left theirs untouched above).
-    if !_fi_provider_was_set
+    # Undo the temporary FI_PROVIDER override (no-op if we never set it, or
+    # if the user had pinned it — we left theirs untouched above).
+    if _run_workload && !_fi_provider_was_set
         delete!(ENV, "FI_PROVIDER")
-    else
+    elseif _run_workload
         ENV["FI_PROVIDER"] = _fi_provider_prev
     end
 end
