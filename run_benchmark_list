@@ -24,6 +24,8 @@ Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
 
 
 #Parallel
+
+#A. With native MPICH_jll
 using MPI
 JULIA = Base.julia_cmd()
 run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
@@ -31,4 +33,19 @@ run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_cas
 run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
 run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
 
-NOTICE: replace mpiexec with mpirun if that's what you use.
+#B. With OpenMPI
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])'
+
+#
+# NOW then restart Julia
+#
+julia --project=.
+] precompile
+using MPI
+using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])
+println(MPI.identify_implementation())
+JULIA = Base.julia_cmd()
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
