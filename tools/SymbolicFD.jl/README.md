@@ -83,6 +83,21 @@ SymbolicFD.solve("∂q/∂t + ∇⋅(u q) = μ∇²q",
                  Dict(:u => [1.0], :μ => 1e-3, :tend => 2.0))
 ```
 
+## Tests
+
+Analytic-solution and operator checks live in `runtests.jl`:
+
+```bash
+julia --project=. tools/SymbolicFD.jl/runtests.jl
+```
+
+They verify the operators against exact derivatives (with 2nd-order
+convergence), parsing and rank bookkeeping (dimensional / unknown-symbol
+errors), the heat equation against its analytic decay
+`q = e^{-μπ²t} sin(πx)`, periodic advection returning to itself after one
+period with machine-precision mass conservation, and an end-to-end `solve`
+smoke test.
+
 ## Changing the equation
 
 Edit **two** things in `run_gaussian_1d.jl` — the `equation` string and the
