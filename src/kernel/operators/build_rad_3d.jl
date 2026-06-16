@@ -2693,10 +2693,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @rankinfo rank "Writing output"
             title = @sprintf "Solution-Radiation"
             if (inputs[:outformat] == VTK())
-                if (inputs[:adaptive_extra_mesh])
+                if (inputs[:adaptive_extra_meshes])
                     write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
                         0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"]; iout=1, nvar=13)
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"]; iout=1, nvar=13)
                     return
                 else
                     write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
@@ -2708,7 +2708,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 if (inputs[:adaptive_extra_meshes])
                     write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
                         0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"]; iout=1, nvar=13)
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"]; iout=1, nvar=13)
                     return
                 else
                     write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
@@ -2719,18 +2719,47 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         else
             
+            out_vectors = zeros(mesh.npoin,1)
+            if (inputs[:adaptive_extra_meshes])
+                out_vectors = zeros(mesh.npoin,2)
+            end
+            for i=1:mesh.npoin
+                out_vectors[i,1] = int_sol[i]
+            end
+            if (inputs[:adaptive_extra_meshes])
+                for iel = 1:nelem
+                    for i = 1:ngl, j = 1:ngl, k = 1:ngl
+                        ip = mesh.connijk[iel,i,j,k]
+                        out_vectors[ip,2] = extra_meshes_extra_nelems[iel]
+                    end
+                end
+            end
             @rankinfo rank "Writing output"
             title = @sprintf "Solution-Radiation"
             if (inputs[:outformat] == VTK())
-                write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
-                0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-                ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
-                return
+                if (inputs[:adaptive_extra_meshes])
+                    write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","nelem_ang"], ["Ang_int","nelem_ang"]; iout=1, nvar=2)
+                    return
+                else
+                    write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+                    return
+                end
             elseif (inputs[:outformat] == NETCDF())
-                write_NetCDF(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
-                0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-                ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
-                return
+                if (inputs[:adaptive_extra_meshes])
+                    write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int", "nelem_ang"], ["Ang_int","nelem_ang"]; iout=1, nvar=2)
+                    return
+                else
+                    write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+                    return
+                end
             end
         end
     end
