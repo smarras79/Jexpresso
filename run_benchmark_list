@@ -34,38 +34,65 @@ run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_cas
 NOTICE: replace mpiexec with mpirun if that's what you use.
 
 The commands above use mpiexec() from MPI.jl, which points at the bundled
-MPICH_jll launcher. If you use a system OpenMPI with mpirun instead, do the
-following.
+MPICH_jll launcher. There are TWO different OpenMPI situations; check which one
+you are in first:
 
-#Parallel (OpenMPI with mpirun)
+    using MPI
+    MPI.versioninfo()
+    #  binary = OpenMPI_jll + a ~/.julia/artifacts/... path  -> CASE A (JLL)
+    #  library = OpenMPI    + a system path (e.g. /opt/homebrew) -> CASE B (system)
+
+
+#Parallel - CASE A: OpenMPI from the JLL (OpenMPI_jll)
 #
-# ONE-TIME SETUP: bind MPI.jl to your system OpenMPI so the worker Julia
-# processes load the same MPI that mpirun launches them with. Run this once in
-# the project, then RESTART Julia:
+# This is the common case if you switched MPI.jl away from MPICH_jll with
+# MPIPreferences.use_jll_binary("OpenMPI_jll"). The launcher lives inside a
+# Julia artifact and depends on other artifacts (e.g. Hwloc_jll's
+# libhwloc.15.dylib). Calling a BARE `mpirun` from a shell fails with
+#   dyld: Library not loaded: @rpath/libhwloc.15.dylib
+# because the artifact library environment is only set up when the launcher is
+# invoked THROUGH MPI.jl. So launch with the mpiexec() do-block (NOT bare
+# mpirun, and NOT $(mpiexec()) interpolation - the do-block is what sets the
+# environment that lets prte/mpirun find libhwloc):
+using MPI
+JULIA = Base.julia_cmd()
+mpiexec() do exe
+    run(`$exe -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
+end
+mpiexec() do exe
+    run(`$exe -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
+end
+mpiexec() do exe
+    run(`$exe -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
+end
+mpiexec() do exe
+    run(`$exe -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
+end
+
+
+#Parallel - CASE B: a real system OpenMPI (e.g. Homebrew, MacPorts, HPC module)
+#
+# ONE-TIME SETUP: bind MPI.jl to the system OpenMPI so the worker Julia
+# processes load the same MPI mpirun launches them with. Find its lib dir with
+#   ompi_info --path libdir        # e.g. /opt/homebrew/lib
+# then (RESTART Julia afterwards):
 julia>]
 pkg> add MPIPreferences
 julia>
 using MPIPreferences
-MPIPreferences.use_system_binary()   # auto-detects the OpenMPI on your PATH
+MPIPreferences.use_system_binary(; extra_paths = ["/opt/homebrew/lib"],
+                                   mpiexec     = "/opt/homebrew/bin/mpirun")
 # -> writes LocalPreferences.toml; restart Julia, then verify:
 using MPI
-MPI.MPI_LIBRARY            # should report OpenMPI
-MPI.versioninfo()         # confirms "library = OpenMPI" and the mpirun path
+MPI.versioninfo()         # "library = OpenMPI" + the system mpirun path
 # To go back to the bundled MPICH later: MPIPreferences.use_jll_binary(); restart.
 
-# RUN: call the system `mpirun` directly instead of mpiexec(). Everything else
-# (the -n count and the Julia command) is identical.
+# RUN: call the system mpirun by FULL PATH (a bare `mpirun` may resolve to the
+# JLL launcher in ~/.julia/artifacts instead - see CASE A):
 using MPI
 JULIA = Base.julia_cmd()
-run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
-run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
-run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
-run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
 
-# NOTICE (OpenMPI):
-#  - If -n exceeds your physical cores, add --oversubscribe:
-#      run(`mpirun --oversubscribe -n 3 $JULIA --project=. -e '...'`)
-#  - If you run as root (e.g. in a container), OpenMPI needs:
-#      run(`mpirun --allow-run-as-root -n 3 $JULIA --project=. -e '...'`)
-#  - You can also use the configured launcher portably via mpiexec() once
-#    MPIPreferences points at OpenMPI: it then resolves to your system mpirun.
+# NOTICE (system OpenMPI):
+#  - If -n exceeds your physical cores, add --oversubscribe.
+#  - If you run as root (e.g. in a container), add --allow-run-as-root.
