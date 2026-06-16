@@ -2,6 +2,8 @@
 
 This guide walks you through downloading, building, and testing **Jexpresso**.
 
+> **Hit an error?** See [FAQ.md](FAQ.md) for fixes to common installation and run problems.
+
 ## Prerequisites
 
 - **Julia 1.11.9** is the recommended version.
