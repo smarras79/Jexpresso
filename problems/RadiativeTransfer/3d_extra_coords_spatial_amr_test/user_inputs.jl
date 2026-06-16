@@ -32,9 +32,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :extra_dimensions    => 2,
         :lRT_problem        => true,
+        :RT_amr_threshold   => [0.15],
         :lmanufactured_solution => true,
-        :adaptive_extra_meshes => false,  # No angular adaptation for this test
-        :extra_dimensions_order => 4,
+        :adaptive_extra_meshes => true,  # No angular adaptation for this test
+        :extra_dimensions_order => 3,
         :extra_dimensions_nelemx => 3,
         :extra_dimensions_nelemy => 3,
         :lcubed_sphere_angular_mesh => false,

@@ -1652,26 +1652,15 @@ end
 function extract_free_rhs_subvector(
     RHS_full, all_hanging_nodes, n_free, n_spa, n_spa_g, rank
 )
-    """
-    Extract the (n_free) subvector by removing ALL hanging node entries.
-
-    Keep only: entries 1:n_free (free nodes only)
-    """
-
+    # Copy free DOF entries (non-hanging) regardless of index position.
+    # DOF indices are assigned by element-scan order and free/hanging DOFs can
+    # be interleaved throughout 1..n_spa — n_free is a COUNT not an upper bound.
     RHS_free = zeros(eltype(RHS_full), n_spa_g)
-
-    
     for i = 1:n_spa
-        if !(i in all_hanging_nodes) && i <= n_free
-            RHS_free[i] = RHS_full[i]
-        elseif i <= n_free
-            RHS_free[i] = 0
-        end
-
+        i in all_hanging_nodes && continue
+        RHS_free[i] = RHS_full[i]
     end
-
     @info "[Rank $rank] Extracted RHS free subvector: $n_free entries"
-
     return RHS_free
 end
 

@@ -275,6 +275,36 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         neighbors = zeros(Int, nelem, 26, 2)
         adapted   = false
 
+        # ── Spatial coincident node deduplication for global numbering ────────
+        # Spatial AMR creates coincident nodes: child element corners at the same
+        # (x,y,z) as a parent corner.  Without remapping them to share the parent's
+        # GIP, setup_global_numbering_adaptive_angular_scalable creates two compact
+        # GIDs for the same location but only one rank claims the DOF, causing the
+        # "Unowned global DOFs detected" assertion failure.
+        ip2gip_dedup  = Int.(mesh.ip2gip)
+        _remapped_ips = Set{Int}()
+        if has_spatial_hanging_nodes
+            _cache_pre = build_spatial_constraint_matrices(
+                mesh, spatial_amr_cache,
+                extra_meshes_coords, extra_meshes_connijk,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                ngl, rank
+            )
+            _cache_pre = exchange_spatial_ghosts(
+                mesh, _cache_pre,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                rank, comm
+            )
+            for (child_ip, parent_ip) in _cache_pre.coincident_nodes
+                ip2gip_dedup[child_ip] = mesh.ip2gip[parent_ip]
+                push!(_remapped_ips, child_ip)
+            end
+            for (child_ip, parent_global_spa) in _cache_pre.cross_rank_coincident_nodes
+                ip2gip_dedup[child_ip] = parent_global_spa
+                push!(_remapped_ips, child_ip)
+            end
+        end
+
         # ── Pre-adaptivity connectivity and numbering ─────────────────────────
         @rankinfo rank "Building initial adaptive spatial-angular connectivity..."
         flush(stdout)
@@ -291,10 +321,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         flush(stdout)
         ip2gip_spa, gip2ip, gip2owner_spa, gnpoin =
             setup_global_numbering_adaptive_angular_scalable(
-                mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
+                ip2gip_dedup, mesh.gip2owner, mesh, connijk_spa,
                 extra_meshes_coords, extra_meshes_connijk,
                 extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                n_spa, n_non_global_nodes, nc_non_global_nodes)
+                n_spa, n_non_global_nodes, nc_non_global_nodes;
+                remapped_ips = _remapped_ips)
         @rankinfo rank "✓ Global numbering complete: gnpoin=$gnpoin"
         flush(stdout)
 
@@ -422,159 +453,179 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             mesh.xmax, mesh.ymax, mesh.zmax,
             extra_mesh[1].ψ, extra_mesh[1].dψ, ang_refine_mask)
 
-            nonowned_parent_indices = Set{Int}()
-            nc_mat = sparse(I,n_spa,n_spa)
-            nc_mat_rhs = sparse(I,n_spa,n_spa)
-            P = nc_mat'
-            P_vec = nc_mat_rhs'
+        nonowned_parent_indices = Set{Int}()
+        nc_mat = sparse(I,n_spa,n_spa)
+        nc_mat_rhs = sparse(I,n_spa,n_spa)
+        P = nc_mat'
+        P_vec = nc_mat_rhs'
         
+        adapted = false   # set to true inside the if block when adaptation occurs
         # CRITICAL: Must use global maximum across ALL ranks to avoid MPI divergence
         # If one rank has adapted and another hasn't, they end up in different code blocks
         # with different MPI calls that can't be satisfied collectively
         local_max_ref = maximum(maximum.(extra_meshes_ref_level))
         global_max_ref = MPI.Allreduce(local_max_ref, MPI.MAX, MPI.COMM_WORLD)
-        if !(global_max_ref == 0)
-            # ── Post-adaptivity connectivity ──────────────────────────────────
-            connijk_spa = [Array{Int}(undef, ngl, ngl, ngl,
-                              extra_meshes_extra_nelems[iel],
-                              extra_meshes_extra_nops[iel][1]+1,
-                              extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
-
-            @rankinfo rank "Rebuilding connectivity on adapted mesh..."
-            nc_mat, nc_non_global_nodes, n_non_global_nodes, n_spa =
-                adaptive_spatial_angular_numbering_3D_2D!(
-                    connijk_spa, nelem, ngl, mesh.connijk,
-                    extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                    extra_meshes_coords, mesh.x, mesh.y, mesh.z,
-                    extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
-
-            adapted = true
-            @rankinfo rank "Hanging nodes: $n_non_global_nodes"
-
-            # ── Post-adaptivity global numbering ──────────────────────────────
-            @rankinfo rank "Building post-adaptivity global numbering..."
-            ip2gip_spa, gip2ip, gip2owner_spa, gnpoin =
-                setup_global_numbering_adaptive_angular_scalable(
-                    mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
+        if !(global_max_ref == 0) || has_spatial_hanging_nodes
+            if !(global_max_ref == 0)
+                # ── Post-adaptivity connectivity ──────────────────────────────────
+                connijk_spa = [Array{Int}(undef, ngl, ngl, ngl,
+                                  extra_meshes_extra_nelems[iel],
+                                  extra_meshes_extra_nops[iel][1]+1,
+                                  extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
+    
+                @rankinfo rank "Rebuilding connectivity on adapted mesh..."
+                nc_mat, nc_non_global_nodes, n_non_global_nodes, n_spa =
+                    adaptive_spatial_angular_numbering_3D_2D!(
+                        connijk_spa, nelem, ngl, mesh.connijk,
+                        extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                        extra_meshes_coords, mesh.x, mesh.y, mesh.z,
+                        extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
+    
+                adapted = true
+                @rankinfo rank "Hanging nodes: $n_non_global_nodes"
+    
+                # ── Post-adaptivity global numbering ──────────────────────────────
+                @rankinfo rank "Building post-adaptivity global numbering..."
+                ip2gip_spa, gip2ip, gip2owner_spa, gnpoin =
+                    setup_global_numbering_adaptive_angular_scalable(
+                        ip2gip_dedup, mesh.gip2owner, mesh, connijk_spa,
+                        extra_meshes_coords, extra_meshes_connijk,
+                        extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                        n_spa, n_non_global_nodes, nc_non_global_nodes;
+                        remapped_ips = _remapped_ips)
+    
+                @rankinfo rank "Global DOF count (post-adapt): $gnpoin  (free: $(n_spa - n_non_global_nodes), hanging: $n_non_global_nodes)"
+    
+                # ── Owner map in local indexing ───────────────────────────────────
+                gip2owner_extra = zeros(Int, n_spa)
+                for ip = 1:n_spa
+                    gip2owner_extra[ip] = gip2owner_spa[ip2gip_spa[ip]]
+                end
+    
+                # ── Reverse GID lookup (used in many downstream functions) ────────
+                gip_to_local = Dict{Int, Int}()
+                sizehint!(gip_to_local, n_spa)
+                for ip = 1:n_spa
+                    gip_to_local[ip2gip_spa[ip]] = ip
+                end
+    
+                # ── Ghost layer ───────────────────────────────────────────────────
+                @rankinfo rank "Building ghost layer..."
+                ghost_layer = build_nonconforming_ghost_layer(
+                    mesh, connijk_spa, mesh.ip2gip, ip2gip_spa, gip2owner_spa,
                     extra_meshes_coords, extra_meshes_connijk,
                     extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                    n_spa, n_non_global_nodes, nc_non_global_nodes)
-
-            @rankinfo rank "Global DOF count (post-adapt): $gnpoin  (free: $(n_spa - n_non_global_nodes), hanging: $n_non_global_nodes)"
-
-            # ── Owner map in local indexing ───────────────────────────────────
-            gip2owner_extra = zeros(Int, n_spa)
-            for ip = 1:n_spa
-                gip2owner_extra[ip] = gip2owner_spa[ip2gip_spa[ip]]
-            end
-
-            # ── Reverse GID lookup (used in many downstream functions) ────────
-            gip_to_local = Dict{Int, Int}()
-            sizehint!(gip_to_local, n_spa)
-            for ip = 1:n_spa
-                gip_to_local[ip2gip_spa[ip]] = ip
-            end
-
-            # ── Ghost layer ───────────────────────────────────────────────────
-            @rankinfo rank "Building ghost layer..."
-            ghost_layer = build_nonconforming_ghost_layer(
-                mesh, connijk_spa, mesh.ip2gip, ip2gip_spa, gip2owner_spa,
-                extra_meshes_coords, extra_meshes_connijk,
-                extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
-                extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
-                extra_meshes_ref_level, n_spa, neighbors)
-
-            @rankinfo rank "Building extended local numbering for ghost parents..."
-            gid_to_extended_local, extended_local_to_gid, n_total =
-                build_extended_local_numbering(n_spa, ghost_layer, ip2gip_spa, rank)
-
-            # ── Constraint (restriction/prolongation) matrices ────────────────
-            @rankinfo rank "Building restriction and prolongation matrices..."
-            nc_mat, P, nc_mat_rhs, P_vec,
-                ghost_constraint_data, ghost_constraint_data_rhs, all_hanging_nodes,
-                gid_to_extended_parents, extended_parents_to_gid,
-                extended_parents_x, extended_parents_y, extended_parents_z,
-                extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
-                local_parent_indices, nonowned_parent_indices, nonowned_parent_gids =
-                build_restriction_matrices_local_and_ghost(
-                    connijk_spa, nc_non_global_nodes, n_spa,
-                    ghost_layer, extra_meshes_coords, extra_meshes_connijk,
-                    extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                    extra_meshes_extra_Je, mesh, ngl, nelem, neighbors,
-                    ip2gip_spa, gip2owner_extra, gid_to_extended_local,
-                    extended_local_to_gid, rank)
-
-            # Build reverse ghost map via AllGather so every rank learns about
-            # hanging nodes on OTHER ranks that depend on parents it owns locally.
-            # The local-only approach misses: rank B has hanging node H depending on
-            # parent P owned by rank A; A's ghost_constraint_data never mentions H,
-            # so A never sends its contribution → H stays at P * solution locally only.
-            @rankinfo rank "Building reverse ghost constraint map..."
-            _ext_gid_set_ang = Set(extended_parents_to_gid)
-            _local_rev_ang = Float64[]
-            for (ip_hanging, parent_constraints) in ghost_constraint_data
-                hanging_gid   = ip2gip_spa[ip_hanging]
-                owner_hanging = get(gip2owner_spa, hanging_gid, rank)
-                for (parent_gid, weight) in parent_constraints
-                    parent_gid in _ext_gid_set_ang || continue
-                    push!(_local_rev_ang, Float64(parent_gid), Float64(hanging_gid),
-                          Float64(owner_hanging), weight)
+                    extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
+                    extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
+                    extra_meshes_ref_level, n_spa, neighbors)
+    
+                @rankinfo rank "Building extended local numbering for ghost parents..."
+                gid_to_extended_local, extended_local_to_gid, n_total =
+                    build_extended_local_numbering(n_spa, ghost_layer, ip2gip_spa, rank)
+    
+                # ── Constraint (restriction/prolongation) matrices ────────────────
+                @rankinfo rank "Building restriction and prolongation matrices..."
+                nc_mat, P, nc_mat_rhs, P_vec,
+                    ghost_constraint_data, ghost_constraint_data_rhs, all_hanging_nodes,
+                    gid_to_extended_parents, extended_parents_to_gid,
+                    extended_parents_x, extended_parents_y, extended_parents_z,
+                    extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
+                    local_parent_indices, nonowned_parent_indices, nonowned_parent_gids =
+                    build_restriction_matrices_local_and_ghost(
+                        connijk_spa, nc_non_global_nodes, n_spa,
+                        ghost_layer, extra_meshes_coords, extra_meshes_connijk,
+                        extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                        extra_meshes_extra_Je, mesh, ngl, nelem, neighbors,
+                        ip2gip_spa, gip2owner_extra, gid_to_extended_local,
+                        extended_local_to_gid, rank)
+    
+                # Build reverse ghost map via AllGather so every rank learns about
+                # hanging nodes on OTHER ranks that depend on parents it owns locally.
+                # The local-only approach misses: rank B has hanging node H depending on
+                # parent P owned by rank A; A's ghost_constraint_data never mentions H,
+                # so A never sends its contribution → H stays at P * solution locally only.
+                @rankinfo rank "Building reverse ghost constraint map..."
+                _ext_gid_set_ang = Set(extended_parents_to_gid)
+                _local_rev_ang = Float64[]
+                for (ip_hanging, parent_constraints) in ghost_constraint_data
+                    hanging_gid   = ip2gip_spa[ip_hanging]
+                    owner_hanging = get(gip2owner_spa, hanging_gid, rank)
+                    for (parent_gid, weight) in parent_constraints
+                        parent_gid in _ext_gid_set_ang || continue
+                        push!(_local_rev_ang, Float64(parent_gid), Float64(hanging_gid),
+                              Float64(owner_hanging), weight)
+                    end
                 end
-            end
-            _n_rev_loc_ang = Int32(length(_local_rev_ang) ÷ 4)
-            _n_rev_all_ang = MPI.Allgather([_n_rev_loc_ang], comm)
-            _all_rev_ang   = MPI.Allgatherv(_local_rev_ang, Int32.(_n_rev_all_ang .* 4), comm)
+                _n_rev_loc_ang = Int32(length(_local_rev_ang) ÷ 4)
+                _n_rev_all_ang = MPI.Allgather([_n_rev_loc_ang], comm)
+                _all_rev_ang   = MPI.Allgatherv(_local_rev_ang, Int32.(_n_rev_all_ang .* 4), comm)
+    
+                reverse_ghost_map = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+                for k = 1:length(_all_rev_ang) ÷ 4
+                    s = 4*(k-1)
+                    parent_gid    = Int(round(_all_rev_ang[s+1]))
+                    hanging_gid   = Int(round(_all_rev_ang[s+2]))
+                    owner_hanging = Int(round(_all_rev_ang[s+3]))
+                    weight        = _all_rev_ang[s+4]
+                    local_parent  = get(gip_to_local, parent_gid, 0)
+                    local_parent == 0 && continue
+                    get(gip2owner_spa, parent_gid, -1) != rank && continue
+                    push!(get!(reverse_ghost_map, local_parent, Tuple{Int,Int,Float64}[]),
+                          (hanging_gid, owner_hanging, weight))
+                end
+    
+                # ── LHS and mass matrix on adapted mesh ───────────────────────────
+                @rankinfo rank "Assembling LHS on adapted mesh..."
+                LHS = sparse_lhs_assembly_3Dby2D_adaptive(
+                    ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
+                    mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ,
+                    extra_meshes_connijk, extra_meshes_extra_Je,
+                    extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
+                    extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
+                    dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                    extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
+    
+                P    = nc_mat'
+                rest = nc_mat
+                
+                Md = assemble_mass_diagonal_3Dby2D_adaptive(
+                    ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
+                    extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
+                    ngl, extra_meshes_extra_nelems, connijk_spa)
+                M_inv = spdiagm(0 => 1.0 ./ Md)
+                @info size(Md), size(LHS)
+                @info "Md range" minimum(Md), maximum(Md)
+                @info "Md mean" sum(Md) / length(Md)
+                @info "Large Md entries" count(Md .> 1e4)
+                @info "LHS diagonal range" minimum(diag(LHS)), maximum(diag(LHS))
+                @info "MLHS diagonal range" minimum(diag(M_inv*LHS)), maximum(diag(M_inv*LHS))
+                @info "norm(LHS, Inf)" norm(LHS, Inf)
+                @info "norm(MLHS, Inf)" norm(M_inv*LHS, Inf)
+                @info "norm(LHS, 1)" norm(LHS, 1)
+                @info "norm(MLHS, 1)" norm(M_inv*LHS, 1)
+            else  # global_max_ref == 0, has_spatial_hanging_nodes: spatial-only combined path
+                # connijk_spa, n_spa, ip2gip_spa, gip2owner_spa, gip2owner_extra, gip_to_local,
+                # nc_mat (identity), nc_non_global_nodes, n_non_global_nodes, LHS, Md
+                # are all already correct from pre-adaptation (lines ~270-429).
+                # Only the ghost/constraint structures are missing — initialize empty.
+                ghost_constraint_data     = Dict{Int, Vector{Tuple{Int,Float64}}}()
+                ghost_constraint_data_rhs = Dict{Int, Vector{Tuple{Int,Float64}}}()
+                all_hanging_nodes         = Set{Int}()
+                gid_to_extended_parents   = Dict{Int,Int}()
+                extended_parents_to_gid   = Int[]
+                extended_parents_x        = Float64[]
+                extended_parents_y        = Float64[]
+                extended_parents_z        = Float64[]
+                extended_parents_θ        = Float64[]
+                extended_parents_ϕ        = Float64[]
+                extended_parents_ip       = Int[]
+                local_parent_indices      = Set{Int}()
+                nonowned_parent_gids      = Set{Int}()
+            end  # if !(global_max_ref == 0) / else (spatial-only)
 
-            reverse_ghost_map = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
-            for k = 1:length(_all_rev_ang) ÷ 4
-                s = 4*(k-1)
-                parent_gid    = Int(round(_all_rev_ang[s+1]))
-                hanging_gid   = Int(round(_all_rev_ang[s+2]))
-                owner_hanging = Int(round(_all_rev_ang[s+3]))
-                weight        = _all_rev_ang[s+4]
-                local_parent  = get(gip_to_local, parent_gid, 0)
-                local_parent == 0 && continue
-                get(gip2owner_spa, parent_gid, -1) != rank && continue
-                push!(get!(reverse_ghost_map, local_parent, Tuple{Int,Int,Float64}[]),
-                      (hanging_gid, owner_hanging, weight))
-            end
-
-            # ── LHS and mass matrix on adapted mesh ───────────────────────────
-            @rankinfo rank "Assembling LHS on adapted mesh..."
-            LHS = sparse_lhs_assembly_3Dby2D_adaptive(
-                ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
-                mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ,
-                extra_meshes_connijk, extra_meshes_extra_Je,
-                extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
-                extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
-                dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
-
-            P    = nc_mat'
-            rest = nc_mat
-            
-            Md = assemble_mass_diagonal_3Dby2D_adaptive(
-                ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
-                extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
-                ngl, extra_meshes_extra_nelems, connijk_spa)
-            M_inv = spdiagm(0 => 1.0 ./ Md)
-            @info size(Md), size(LHS)
-            @info "Md range" minimum(Md), maximum(Md)
-            @info "Md mean" sum(Md) / length(Md)
-            @info "Large Md entries" count(Md .> 1e4)
-            @info "LHS diagonal range" minimum(diag(LHS)), maximum(diag(LHS))
-            @info "MLHS diagonal range" minimum(diag(M_inv*LHS)), maximum(diag(M_inv*LHS))
-            @info "norm(LHS, Inf)" norm(LHS, Inf)
-            @info "norm(MLHS, Inf)" norm(M_inv*LHS, Inf)
-            @info "norm(LHS, 1)" norm(LHS, 1)
-            @info "norm(MLHS, 1)" norm(M_inv*LHS, 1)
-        end  # if adapted
-
-        # ── Stage 2-3: Spatial Constraints with Adaptive Angular Mesh ─────────────
-        if has_spatial_hanging_nodes
-            @info "[$rank] Building spatial constraints with adaptive angular mesh (Stage 2+)..."
-            try
+            # ── Stage 2-3: Spatial Constraints with Adaptive Angular Mesh ─────────────
+            if has_spatial_hanging_nodes
+                @info "[$rank] Building spatial constraints with adaptive angular mesh (Stage 2+)..."
                 spatial_amr_cache = build_spatial_constraint_matrices(
                     mesh, spatial_amr_cache,
                     extra_meshes_coords, extra_meshes_connijk,
@@ -583,10 +634,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 )
                 @info "[$rank] ✓ Spatial constraint matrices built with adaptive angular"
                 @info "[$rank]   - $(length(spatial_amr_cache.parent_weights)) hanging nodes"
-
+    
                 verify_spatial_constraints(spatial_amr_cache, rank, npoin, extra_meshes_extra_nelems, extra_meshes_extra_nops)
                 @info "[$rank] ✓ Verification passed"
-
+    
                 spatial_amr_cache = exchange_spatial_ghosts(
                     mesh, spatial_amr_cache,
                     extra_meshes_extra_nops, extra_meshes_extra_nelems,
@@ -594,93 +645,225 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 )
                 @info "[$rank] ✓ Ghost exchange complete (Stage 3)"
                 verify_spatial_ghost_exchange(spatial_amr_cache, rank)
-
-                error("[Rank $rank] Stages 2-3 complete: Spatial constraints built with adaptive angular mesh. " *
-                      "Stages 4-5 (RHS/Matrix assembly) not yet implemented.")
-            catch err
-                @rankinfo rank "[$rank] Error: $err"
-                rethrow(err)
             end
-        end
-
-        # ── Mass matrix assembly and inversion ────────────────────────────────
-        pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
-        if pM !== nothing
-            assemble_mpi!(Md, pM)
-        end
-        M_inv = spdiagm(0 => 1.0 ./ Md)
-        MLHS  = sparse(M_inv * LHS)
-        # ── All-reduce parent–parent entries across ranks ─────────────────────
-        # Hanging-node constraint handling requires that (parent, parent) blocks
-        # of M⁻¹LHS are globally consistent before restriction/prolongation.
-        if nprocs > 1
-            @rankinfo rank "All-reducing parent-parent matrix entries..."
-            #=MLHS = allreduce_parent_parent_entries(
-                MLHS, nc_mat, gip2owner_extra, n_spa, rank, comm,
-                ip2gip_spa, local_parent_indices, nonowned_parent_indices,
-                nonowned_parent_gids, gip_to_local)=#
-        end
-
-        # ── Parallel restriction: apply R from the left ───────────────────────
-        # Interface hanging nodes on other ranks contribute row effects that must
-        # be communicated before the local nc_mat application.
-        @rankinfo rank "Applying parallel restriction (left multiply by R)..."
-        row_effects_to_send, MLHS_effects =
-            compute_hanging_row_effects_before_restriction(
-                ghost_constraint_data, MLHS, ip2gip_spa, gip2owner_spa, rank,
-                gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
-
-        A_left_restricted = nc_mat * MLHS_effects
-
-        received_row_effects =
-            exchange_hanging_effects(row_effects_to_send, rank, comm)
-
-        A_with_row_effects = add_hanging_row_effects(
-            A_left_restricted, received_row_effects, ip2gip_spa,
-            size(MLHS_effects, 1), rank, gip_to_local)
-
-        # ── Parallel prolongation: apply P from the right ─────────────────────
-        @rankinfo rank "Applying parallel prolongation (right multiply by P)..."
-        col_effects_to_send, A_ghost_effects =
-            compute_hanging_col_effects_before_prolongation(
-                ghost_constraint_data, A_with_row_effects, ip2gip_spa, gip2owner_spa,
-                n_spa, size(MLHS_effects, 1), all_hanging_nodes, rank,
-                gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
-
-        A_both_restricted = A_ghost_effects * P
-
-        received_col_effects =
-            exchange_hanging_effects(col_effects_to_send, rank, comm)
-
-        n_spa_g = size(MLHS_effects, 1)
-        A_with_col_effects = add_hanging_col_effects(
-            A_both_restricted, received_col_effects, ip2gip_spa,
-            n_spa_g, rank, gip_to_local)
-
-        # ── Extract free-node submatrix ───────────────────────────────────────
-        n_free = n_spa - length(nc_non_global_nodes)
-        @rankinfo rank "Extracting free-node submatrix (removing hanging rows/cols)..."
-        A_free = extract_free_submatrix_remove_all_hanging(
-            A_with_col_effects, all_hanging_nodes, n_free, n_spa_g, rank)
-
-        A = sparse(A_free)
-
-        # Remove non-owned parent–parent entries to avoid double-counting.
-        # These were all-reduced above and must be zeroed on non-owning ranks.
-        for i in nonowned_parent_indices
-            for j in nonowned_parent_indices
-                if abs(A[i,j]) > 0.0
-                    #A[i,j] = 0.0
+    
+            # ── Set up combined spatial+angular restriction/prolongation ─────────────
+            # Both R operators are set up HERE before application:
+            #   - Angular R: already in nc_mat (built above by build_restriction_matrices_local_and_ghost)
+            #   - Spatial R: augmented into nc_mat by combine_spatial_angular_restrictions
+            #
+            # Mathematical basis (disjoint hanging sets by can_refine_angular mask):
+            #   nc_mat_combined = nc_mat + nc_mat_spatial_local - I_{spatial_hanging}
+            #
+            # The off-diagonals sum without interference; the subtracted identity
+            # removes the identity rows nc_mat has for nodes free-in-angular but
+            # spatial-hanging. One combined R is then applied with the same parallel
+            # restriction/prolongation machinery (compute_hanging_row_effects_before_restriction,
+            # exchange_hanging_effects, etc.).
+            #
+            # Guard: requires adapted=true (connijk_spa, n_spa available).
+            # If no spatial hanging nodes, nc_mat is unchanged and all_hanging_nodes
+            # stays as the pure angular set.
+            spatial_hanging_combined = Set{Int}()
+    
+            if has_spatial_hanging_nodes
+                # Build (x,y,z,θ,ϕ) → combined DOF index for the adapted mesh.
+                point_dict_combined_adapted = Dict{NTuple{5,Float64}, Int}()
+                for iel_d = 1:nelem
+                    for kk_d = 1:ngl, jj_d = 1:ngl, ii_d = 1:ngl
+                        ip_s_d = mesh.connijk[iel_d, ii_d, jj_d, kk_d]
+                        x_d = mesh.x[ip_s_d]; y_d = mesh.y[ip_s_d]; z_d = mesh.z[ip_s_d]
+                        for e_d = 1:extra_meshes_extra_nelems[iel_d]
+                            nop_d = extra_meshes_extra_nops[iel_d][e_d]
+                            for jθ_d = 1:nop_d+1, iθ_d = 1:nop_d+1
+                                i_ang_d = extra_meshes_connijk[iel_d][e_d, iθ_d, jθ_d]
+                                θ_d = extra_meshes_coords[iel_d][1, i_ang_d]
+                                ϕ_d = extra_meshes_coords[iel_d][2, i_ang_d]
+                                key_d = (round(x_d, digits=12), round(y_d, digits=12),
+                                         round(z_d, digits=12), round(θ_d, digits=12),
+                                         round(ϕ_d, digits=12))
+                                get!(point_dict_combined_adapted, key_d,
+                                     connijk_spa[iel_d][ii_d, jj_d, kk_d, e_d, iθ_d, jθ_d])
+                            end
+                        end
+                    end
+                end
+                if global_max_ref == 0
+                    # Spatial-only case: no angular adaptation, nc_mat is identity.
+                    # Use the proven uniform-path approach directly (mirrors lines 952-1429)
+                    # instead of combine_spatial_angular_restrictions, which has parallel bugs.
+                    (nc_mat, P, nc_mat_rhs,
+                     ghost_constraint_data, ghost_constraint_data_rhs,
+                     gid_to_extended_parents, extended_parents_to_gid,
+                     gip_to_local, all_hanging_nodes, _) =
+                        build_spatial_constraints_for_combined_path(
+                            spatial_amr_cache, mesh,
+                            ip2gip_spa, gip2owner_extra, gip2owner_spa,
+                            point_dict_combined_adapted, n_spa, rank, comm
+                        )
+                    spatial_hanging_combined = all_hanging_nodes
+                    P_vec = sparse(nc_mat_rhs')
+                else
+                    # Combined angular+spatial: build spatial constraints with the proven
+                    # uniform-path approach, then merge them with the angular nc_mat.
+                    (R_spatial_ext_comb, _, R_spatial_rhs_ext_comb,
+                     ghost_cdata_spa_c, ghost_cdata_spa_rhs_c,
+                     _, ext_to_gid_spa_c,
+                     _, spatial_hanging_combined_raw, _) =
+                        build_spatial_constraints_for_combined_path(
+                            spatial_amr_cache, mesh,
+                            ip2gip_spa, gip2owner_extra, gip2owner_spa,
+                            point_dict_combined_adapted, n_spa, rank, comm
+                        )
+                    nc_mat, P, nc_mat_rhs, P_vec, all_hanging_nodes, spatial_hanging_combined =
+                        combine_spatial_angular_restrictions(
+                            nc_mat, nc_mat_rhs,
+                            ghost_constraint_data, ghost_constraint_data_rhs,
+                            gid_to_extended_parents, extended_parents_to_gid,
+                            extended_parents_x, extended_parents_y, extended_parents_z,
+                            extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
+                            all_hanging_nodes,
+                            R_spatial_ext_comb, R_spatial_rhs_ext_comb,
+                            ghost_cdata_spa_c, ghost_cdata_spa_rhs_c,
+                            ext_to_gid_spa_c,
+                            spatial_hanging_combined_raw,
+                            n_spa, rank
+                        )
                 end
             end
+
+            # ── Rebuild reverse ghost map after spatial constraints are finalized ──
+            # For the spatial-only combined path and the combined angular+spatial path,
+            # ghost_constraint_data and gid_to_extended_parents were set/augmented inside
+            # the has_spatial_hanging_nodes block. The reverse_ghost_map built earlier
+            # (lines 547-575) used only the angular extended parents and is now stale.
+            # Rebuild it here from the finalized ghost_constraint_data so that solution
+            # prolongation at line ~2334 correctly exchanges cross-rank parent contributions.
+            if has_spatial_hanging_nodes
+                _ext_gid_set_all = Set(extended_parents_to_gid)
+                _local_rev_all = Float64[]
+                for (ip_hanging, parent_constraints) in ghost_constraint_data
+                    hanging_gid   = ip2gip_spa[ip_hanging]
+                    owner_hanging = get(gip2owner_spa, hanging_gid, rank)
+                    for (parent_gid, weight) in parent_constraints
+                        parent_gid in _ext_gid_set_all || continue
+                        push!(_local_rev_all, Float64(parent_gid), Float64(hanging_gid),
+                              Float64(owner_hanging), weight)
+                    end
+                end
+                _n_rev_loc_all = Int32(length(_local_rev_all) ÷ 4)
+                _n_rev_all_all = MPI.Allgather([_n_rev_loc_all], comm)
+                _all_rev_all   = MPI.Allgatherv(_local_rev_all, Int32.(_n_rev_all_all .* 4), comm)
+
+                reverse_ghost_map = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+                for k = 1:length(_all_rev_all) ÷ 4
+                    s = 4*(k-1)
+                    parent_gid    = Int(round(_all_rev_all[s+1]))
+                    hanging_gid   = Int(round(_all_rev_all[s+2]))
+                    owner_hanging = Int(round(_all_rev_all[s+3]))
+                    weight        = _all_rev_all[s+4]
+                    local_parent  = get(gip_to_local, parent_gid, 0)
+                    local_parent == 0 && continue
+                    get(gip2owner_spa, parent_gid, -1) != rank && continue
+                    push!(get!(reverse_ghost_map, local_parent, Tuple{Int,Int,Float64}[]),
+                          (hanging_gid, owner_hanging, weight))
+                end
+                @info "[$rank] reverse_ghost_map rebuilt with $(length(reverse_ghost_map)) parent entries (spatial+angular extended)"
+            end
+
+            # ── Mass matrix assembly and inversion ────────────────────────────────
+            pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
+            if pM !== nothing
+                assemble_mpi!(Md, pM)
+            end
+            M_inv = spdiagm(0 => 1.0 ./ Md)
+            MLHS  = sparse(M_inv * LHS)
+            # ── All-reduce parent–parent entries across ranks ─────────────────────
+            # Hanging-node constraint handling requires that (parent, parent) blocks
+            # of M⁻¹LHS are globally consistent before restriction/prolongation.
+            if nprocs > 1
+                @rankinfo rank "All-reducing parent-parent matrix entries..."
+                #=MLHS = allreduce_parent_parent_entries(
+                    MLHS, nc_mat, gip2owner_extra, n_spa, rank, comm,
+                    ip2gip_spa, local_parent_indices, nonowned_parent_indices,
+                    nonowned_parent_gids, gip_to_local)=#
+            end
+    
+            # ── Parallel restriction: apply R from the left ───────────────────────
+            # Interface hanging nodes on other ranks contribute row effects that must
+            # be communicated before the local nc_mat application.
+            @rankinfo rank "Applying parallel restriction (left multiply by R)..."
+            row_effects_to_send, MLHS_effects =
+                compute_hanging_row_effects_before_restriction(
+                    ghost_constraint_data, MLHS, ip2gip_spa, gip2owner_spa, rank,
+                    gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
+    
+            A_left_restricted = nc_mat * MLHS_effects
+    
+            received_row_effects =
+                exchange_hanging_effects(row_effects_to_send, rank, comm)
+    
+            A_with_row_effects = add_hanging_row_effects(
+                A_left_restricted, received_row_effects, ip2gip_spa,
+                size(MLHS_effects, 1), rank, gip_to_local)
+    
+            # ── Parallel prolongation: apply P from the right ─────────────────────
+            @rankinfo rank "Applying parallel prolongation (right multiply by P)..."
+            col_effects_to_send, A_ghost_effects =
+                compute_hanging_col_effects_before_prolongation(
+                    ghost_constraint_data, A_with_row_effects, ip2gip_spa, gip2owner_spa,
+                    n_spa, size(MLHS_effects, 1), all_hanging_nodes, rank,
+                    gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
+    
+            A_both_restricted = A_ghost_effects * P
+    
+            received_col_effects =
+                exchange_hanging_effects(col_effects_to_send, rank, comm)
+    
+            n_spa_g = size(MLHS_effects, 1)
+            A_with_col_effects = add_hanging_col_effects(
+                A_both_restricted, received_col_effects, ip2gip_spa,
+                n_spa_g, rank, gip_to_local)
+    
+            # ── Extract free-node submatrix ───────────────────────────────────────
+            n_free = n_spa - length(all_hanging_nodes)
+            @rankinfo rank "Extracting free-node submatrix (removing hanging rows/cols)..."
+            A_free = extract_free_submatrix_remove_all_hanging(
+                A_with_col_effects, all_hanging_nodes, n_free, n_spa_g, rank)
+    
+            A = sparse(A_free)
+    
+            # Remove non-owned parent–parent entries to avoid double-counting.
+            # These were all-reduced above and must be zeroed on non-owning ranks.
+            for i in nonowned_parent_indices
+                for j in nonowned_parent_indices
+                    if abs(A[i,j]) > 0.0
+                        #A[i,j] = 0.0
+                    end
+                end
+            end
+            A = sparse(A)
+    
+            RHS = zeros(TFloat, n_spa_g)
+            ref = zeros(TFloat, n_spa)
+            BDY = zeros(TFloat, n_spa_g)
+    
+        else  # if !(global_max_ref == 0) || has_spatial_hanging_nodes
+            # Conforming adaptive case: no refinement occurred, so Md still holds the
+            # locally-assembled mass diagonal from line ~374.  In parallel the diagonal
+            # is incomplete (missing neighbour-rank contributions at shared DOFs), so
+            # assemble it globally before inverting.
+            pM_conform = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
+            if pM_conform !== nothing
+                assemble_mpi!(Md, pM_conform)
+            end
+            M_inv = spdiagm(0 => 1.0 ./ Md)
+            A = sparse(M_inv*LHS)
+            n_spa_g = n_spa
+            RHS = zeros(TFloat, n_spa)
+            ref = zeros(TFloat, n_spa)
+            BDY = zeros(TFloat, n_spa)
         end
-        A = sparse(A)
-
-        RHS = zeros(TFloat, n_spa_g)
-        ref = zeros(TFloat, n_spa)
-        BDY = zeros(TFloat, n_spa_g)
-        
-
     else  # ── Non-adaptive path ────────────────────────────────────────────────
 
         # ── Stage 2-3: Spatial Constraints with Uniform Angular Mesh ─────────────
@@ -893,15 +1076,19 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 @info "[$rank] Tracked $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs ($(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank); coincident nodes handled via coordinate dedup"
 
                 # ── Stage 4 prep: Build spatial constraint matrices for RHS/LHS assembly ────
+                # Build xyz_ang_map from point_dict_spa: (x,y,z) → [(θ,ϕ,dof_idx),...]
+                xyz_ang_map_spa = Dict{NTuple{3,Float64}, Vector{Tuple{Float64,Float64,Int}}}()
+                for ((x,y,z,θ,ϕ), idx) in point_dict_spa
+                    push!(get!(xyz_ang_map_spa, (x,y,z), Tuple{Float64,Float64,Int}[]), (θ, ϕ, idx))
+                end
                 @info "[$rank] Building spatial restriction and prolongation matrices (Stage 4 prep)..."
                 R_spatial, P_spatial = build_spatial_restriction_and_prolongation(
                     spatial_amr_cache, n_spa_new, spatial_hanging_nodes_all_angular,
-                    point_dict_spa, mesh, extra_mesh
+                    point_dict_spa, mesh, xyz_ang_map_spa
                 )
                 @info "[$rank] ✓ Spatial matrices built: R_spatial = $(size(R_spatial)), P_spatial = $(size(P_spatial))"
 
             catch err
-                @info "[$rank] Error: $err"
                 rethrow(err)
             end
         end
@@ -1424,7 +1611,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     # ── Common setup: nc_mat row structure, free DOF count ────────────────────
     nc_rows  = size(nc_mat, 1) > 2 ? rowvals(nc_mat) : zeros(Int, 1, 1)
-    n_free   = inputs[:adaptive_extra_meshes] ? n_spa - n_non_global_nodes :
+    # Use all_hanging_nodes (the full combined set for all adaptive cases) rather than
+    # n_non_global_nodes (angular-only) so that the combined angular+spatial path
+    # correctly excludes both types of hanging DOFs from the free-DOF count.
+    n_free   = inputs[:adaptive_extra_meshes] ? n_spa - length(all_hanging_nodes) :
                (has_spatial_hanging_nodes ? n_spa_new - n_non_global_nodes_spa : npoin_ang_total)
 
     # ── Precompute spatial factors (shared by RHS and BC loops) ──────────────
@@ -1506,7 +1696,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
                         Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
 
-                        if is_boundary && ip_g <= n_free && !(ip_g in all_hanging_nodes)
+                        if is_boundary && !(ip_g in all_hanging_nodes)
                             # Find the most-inflow face normal for this direction:
                             # the one giving the most negative Ω·n.
                             # If the minimum dot product is < -1e-13 the direction
@@ -1725,7 +1915,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     
     # ── Ghost boundary nodes (extended ghost-parent DOFs) ─────────────────────
-    if inputs[:adaptive_extra_meshes] && n_spa_g > n_spa
+    # extended_parents_ip/x/y/z/θ/ϕ are populated only by the angular adaptive path.
+    # Spatial extended parents carry no angular coordinate data here, so skip this
+    # block when there is no angular adaptation (extended_parents_ip is empty).
+    if inputs[:adaptive_extra_meshes] && n_spa_g > n_spa && !isempty(extended_parents_ip)
         n_extended = n_spa_g - n_spa
         for i = 1:n_extended
             ip   = extended_parents_ip[i]

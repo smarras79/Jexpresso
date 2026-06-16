@@ -861,7 +861,8 @@ function build_spatial_restriction_and_prolongation(
     n_spa_new::Int,
     spatial_hanging_nodes_all_angular::Set{Int},
     point_dict_spa::Dict{NTuple{5,Float64}, Int},
-    mesh, extra_mesh
+    mesh,
+    xyz_ang_map::Dict{NTuple{3,Float64}, Vector{Tuple{Float64,Float64,Int}}}
 )::Tuple{SparseMatrixCSC, SparseMatrixCSC}
 
     if isempty(spatial_amr_cache.parent_weights)
@@ -883,19 +884,17 @@ function build_spatial_restriction_and_prolongation(
     end
 
     # Phase 2: constraint weight rows for interpolated hanging DOFs.
-    # Use point_dict_spa to convert (x,y,z,θ,ϕ) → dedup DOF index.
-    n_angular_nodes = extra_mesh.extra_npoin
+    # Use xyz_ang_map (keyed by rounded (x,y,z)) to iterate over ALL angular DOFs
+    # present at the hanging location — including newly-refined ones from angular
+    # AMR that are absent from the base extra_mesh.
     for (hanging_node_id, parent_list) in spatial_amr_cache.parent_weights
         x_child = mesh.x[hanging_node_id]
         y_child = mesh.y[hanging_node_id]
         z_child = mesh.z[hanging_node_id]
-        for i_ang = 1:n_angular_nodes
-            θ = extra_mesh.extra_coords[1, i_ang]
-            ϕ = extra_mesh.extra_coords[2, i_ang]
-            key_h = (round(x_child, digits=12), round(y_child, digits=12),
-                     round(z_child, digits=12), round(θ, digits=12), round(ϕ, digits=12))
-            col_hanging = get(point_dict_spa, key_h, 0)
-            col_hanging == 0 && continue
+        xyz_key_h = (round(x_child, digits=12), round(y_child, digits=12), round(z_child, digits=12))
+        ang_dofs_h = get(xyz_ang_map, xyz_key_h, Tuple{Float64,Float64,Int}[])
+        for (θ, ϕ, col_hanging) in ang_dofs_h
+            col_hanging > 0 || continue
             for (parent_node_id, weight) in parent_list
                 x_p = mesh.x[parent_node_id]; y_p = mesh.y[parent_node_id]; z_p = mesh.z[parent_node_id]
                 key_p = (round(x_p, digits=12), round(y_p, digits=12),
@@ -910,23 +909,15 @@ function build_spatial_restriction_and_prolongation(
     end
 
     # Phase 3: cross-rank parents that are locally present.
-    # A cross-rank NCF child's parents are stored by global spatial IP in
-    # cross_rank_parent_weights. If a parent's GIP maps to a local IP on this
-    # rank, its contribution to R_spatial is missing: the ghost effects step
-    # skips it (owner == rank → continue) while R_spatial also has no entry.
-    # Adding it here closes that gap without touching the ghost effects path.
     gip_to_local_r = Dict{Int,Int}(Int(mesh.ip2gip[ip]) => ip for ip = 1:mesh.npoin)
     for (hanging_node_id, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
         x_child = mesh.x[hanging_node_id]
         y_child = mesh.y[hanging_node_id]
         z_child = mesh.z[hanging_node_id]
-        for i_ang = 1:n_angular_nodes
-            θ = extra_mesh.extra_coords[1, i_ang]
-            ϕ = extra_mesh.extra_coords[2, i_ang]
-            key_h = (round(x_child, digits=12), round(y_child, digits=12),
-                     round(z_child, digits=12), round(θ, digits=12), round(ϕ, digits=12))
-            col_hanging = get(point_dict_spa, key_h, 0)
-            col_hanging == 0 && continue
+        xyz_key_h = (round(x_child, digits=12), round(y_child, digits=12), round(z_child, digits=12))
+        ang_dofs_h = get(xyz_ang_map, xyz_key_h, Tuple{Float64,Float64,Int}[])
+        for (θ, ϕ, col_hanging) in ang_dofs_h
+            col_hanging > 0 || continue
             for (parent_gip, weight) in cross_weights
                 local_ip = get(gip_to_local_r, parent_gip, 0)
                 local_ip == 0 && continue
@@ -1001,6 +992,469 @@ function apply_spatial_constraint_to_rhs(
     return RHS_out
 end
 
+# =============================================================================
+# MPI exchange: combined DOF GIDs for cross-rank spatial parents
+# =============================================================================
+
+"""
+    _exchange_spatial_parent_combined_gids(...)
+
+Allgatherv-based exchange that mirrors the uniform angular path's `global_sp_ang_to_gid`
+construction (build_rad_3d.jl:1060-1103).
+
+Round 1: every rank broadcasts the set of cross-rank parent spatial GIPs it needs so
+that ALL ranks know the full needed set.
+
+Round 2: every rank contributes `(parent_spatial_gip, angular_index_k, compact_gid)`
+triples for any needed GIP present in its local spatial mesh, then ALL ranks receive
+all triples and build the result locally.
+
+This avoids the point-to-point owner-lookup approach, which silently drops parents
+whose owner is not recorded in `mesh.pgip_ghost` (causing wrong results in parallel).
+
+Returns `Dict{Int,Vector{Int}}`: parent_global_spatial_ip → [combined_gid_1,...,combined_gid_n_ang_base].
+"""
+function _exchange_spatial_parent_combined_gids(
+    spatial_amr_cache::SpatialAMRCache,
+    ip2gip_spa::Vector{Int},
+    xyz_ang_map::Dict{NTuple{3,Float64}, Vector{Tuple{Float64,Float64,Int}}},
+    mesh::St_mesh,
+    rank::Int, comm::MPI.Comm
+)
+    # Round 1: Allgather all needed cross-rank parent GIPs across ranks.
+    local_needed = Int[]
+    seen_needed  = Set{Int}()
+    for (_, weights) in spatial_amr_cache.cross_rank_parent_weights
+        for (parent_gip, _) in weights
+            parent_gip in seen_needed && continue
+            push!(seen_needed, parent_gip)
+            push!(local_needed, parent_gip)
+        end
+    end
+    nn         = Int32(length(local_needed))
+    nn_all     = MPI.Allgather([nn], comm)
+    all_needed = MPI.Allgatherv(local_needed, nn_all, comm)
+    all_needed_set = Set(all_needed)
+
+    # Round 2: for every needed GIP locally visible, contribute quadruples
+    # (parent_gip, θ, ϕ, compact_combined_gid).  Using xyz_ang_map covers ALL
+    # adapted angular DOFs at the parent location, not just the base-mesh ones.
+    local_quads = Float64[]
+    seen_spa_ang = Set{Tuple{Int,Float64,Float64}}()
+    for lip = 1:mesh.npoin
+        sp_gip = Int(mesh.ip2gip[lip])
+        sp_gip in all_needed_set || continue
+        xyz_key = (round(mesh.x[lip], digits=12),
+                   round(mesh.y[lip], digits=12),
+                   round(mesh.z[lip], digits=12))
+        ang_dofs = get(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[])
+        for (θ_k, ϕ_k, ip_comb) in ang_dofs
+            key_t = (sp_gip, θ_k, ϕ_k)
+            key_t in seen_spa_ang && continue
+            push!(seen_spa_ang, key_t)
+            push!(local_quads, Float64(sp_gip), θ_k, ϕ_k, Float64(ip2gip_spa[ip_comb]))
+        end
+    end
+    nq      = Int32(length(local_quads) ÷ 4)
+    nq_all  = MPI.Allgather([nq], comm)
+    all_q   = MPI.Allgatherv(local_quads, Int32.(nq_all .* 4), comm)
+
+    # Build result: (parent_gip, (θ, ϕ)) → compact_combined_gid
+    result = Dict{Tuple{Int, NTuple{2,Float64}}, Int}()
+    for k = 1:length(all_q) ÷ 4
+        gip = Int(round(all_q[4k-3]))
+        θ_k = all_q[4k-2]
+        ϕ_k = all_q[4k-1]
+        gid = Int(round(all_q[4k]))
+        result[(gip, (θ_k, ϕ_k))] = gid
+    end
+    return result
+end
+
+# =============================================================================
+# Combine angular and spatial restriction operators into one nc_mat
+# =============================================================================
+
+"""
+    combine_spatial_angular_restrictions(
+        nc_mat, nc_mat_rhs,
+        ghost_constraint_data, ghost_constraint_data_rhs,
+        gid_to_extended_parents, extended_parents_to_gid,
+        extended_parents_x, extended_parents_y, extended_parents_z,
+        extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
+        all_hanging_nodes,
+        R_spatial_ext, R_spatial_rhs_ext,
+        ghost_constraint_data_spa, ghost_constraint_data_spa_rhs,
+        extended_parents_to_gid_spa,
+        spatial_hanging_nodes,
+        n_spa, rank
+    )
+
+Combine an already-built angular restriction matrix `nc_mat` with already-built
+spatial constraint outputs (from `build_spatial_constraints_for_combined_path`).
+
+The spatial outputs use extended-parent indices starting at `n_spa + 1`.  This
+function re-indexes them to start at `n_spa + n_ang_ext + 1` (after the existing
+angular extended parents) before assembling the combined matrix.
+
+Mathematical identity (disjoint hanging-node sets by `can_refine_angular` mask):
+
+    nc_mat_combined[i, j] = nc_mat[i, j]
+                           + R_spatial_weight_only[i, j]     (hanging rows, off-diag)
+                           - δ_{ij} for i in spatial_hanging  (remove angular identity rows)
+
+Mutates in-place: `ghost_constraint_data`, `ghost_constraint_data_rhs`,
+`gid_to_extended_parents`, `extended_parents_to_gid`, and the six
+`extended_parents_*` coordinate/index vectors.
+"""
+function combine_spatial_angular_restrictions(
+    nc_mat::SparseMatrixCSC,
+    nc_mat_rhs::SparseMatrixCSC,
+    ghost_constraint_data::Dict{Int,Vector{Tuple{Int,Float64}}},
+    ghost_constraint_data_rhs::Dict{Int,Vector{Tuple{Int,Float64}}},
+    gid_to_extended_parents::Dict{Int,Int},
+    extended_parents_to_gid::Vector{Int},
+    extended_parents_x::Vector{Float64},
+    extended_parents_y::Vector{Float64},
+    extended_parents_z::Vector{Float64},
+    extended_parents_θ::Vector{Float64},
+    extended_parents_ϕ::Vector{Float64},
+    extended_parents_ip::Vector{Int},
+    all_hanging_nodes::Set{Int},
+    R_spatial_ext::SparseMatrixCSC,
+    R_spatial_rhs_ext::SparseMatrixCSC,
+    ghost_constraint_data_spa::Dict{Int,Vector{Tuple{Int,Float64}}},
+    ghost_constraint_data_spa_rhs::Dict{Int,Vector{Tuple{Int,Float64}}},
+    extended_parents_to_gid_spa::Vector{Int},
+    spatial_hanging_nodes::Set{Int},
+    n_spa::Int,
+    rank::Int
+)
+    n_ang_ext = length(extended_parents_to_gid)   # angular extended parents already present
+    n_spa_ext = length(extended_parents_to_gid_spa)
+    n_new     = n_spa + n_ang_ext + n_spa_ext
+
+    # ── 1. Merge ghost constraint dicts (spatial entries into angular ones) ───
+    for (k, v) in ghost_constraint_data_spa
+        existing = get!(ghost_constraint_data, k, Tuple{Int,Float64}[])
+        for entry in v
+            any(g == entry[1] for (g, _) in existing) || push!(existing, entry)
+        end
+    end
+    for (k, v) in ghost_constraint_data_spa_rhs
+        existing = get!(ghost_constraint_data_rhs, k, Tuple{Int,Float64}[])
+        for entry in v
+            any(g == entry[1] for (g, _) in existing) || push!(existing, entry)
+        end
+    end
+
+    # ── 2. Merge extended parents: spatial ones go after angular, with offset ─
+    # Spatial extended parents from build_spatial_constraints_for_combined_path
+    # have indices n_spa+1..n_spa+n_spa_ext.  Re-index them to
+    # n_spa+n_ang_ext+1..n_new so they don't collide with angular ext parents.
+    for (k_idx, gid) in enumerate(extended_parents_to_gid_spa)
+        new_ext_idx = n_spa + n_ang_ext + k_idx
+        gid_to_extended_parents[gid] = new_ext_idx
+        push!(extended_parents_to_gid, gid)
+        # Spatial ext parents carry no angular coordinate data; use ip=0 so the
+        # ghost-BC block (guarded by !isempty(extended_parents_ip)) can safely
+        # iterate over them without attempting to apply BC logic.
+        push!(extended_parents_ip, 0)
+        push!(extended_parents_x,  0.0)
+        push!(extended_parents_y,  0.0)
+        push!(extended_parents_z,  0.0)
+        push!(extended_parents_θ,  0.0)
+        push!(extended_parents_ϕ,  0.0)
+    end
+
+    # ── 3. Extract spatial triplets (filter free-DOF identities; shift ext indices) ─
+    # R_spatial_ext contains:
+    #   identity rows for free DOFs (i == j, i ≤ n_spa, i ∉ spatial_hanging_nodes)
+    #   weight rows   for hanging DOFs (off-diagonal, or ext-parent diagonal)
+    #   identity rows for spatial extended parents (i == j, i > n_spa)
+    # The combining formula already has identity from nc_mat for free DOFs, so we
+    # only add weight rows and spatial extended-parent identity rows.
+    Is_r, Js_r, Vs_r = findnz(R_spatial_ext)
+    I_spa = Int[]; J_spa = Int[]; V_spa = Float64[]
+    for k in eachindex(Is_r)
+        i, j, v = Is_r[k], Js_r[k], Vs_r[k]
+        # Skip free-DOF identity (not in hanging set and within base DOF range)
+        (i == j && i <= n_spa && !(i in spatial_hanging_nodes)) && continue
+        push!(I_spa, i > n_spa ? i + n_ang_ext : i)
+        push!(J_spa, j > n_spa ? j + n_ang_ext : j)
+        push!(V_spa, v)
+    end
+
+    Is_rr, Js_rr, Vs_rr = findnz(R_spatial_rhs_ext)
+    I_spa_rhs = Int[]; J_spa_rhs = Int[]; V_spa_rhs = Float64[]
+    for k in eachindex(Is_rr)
+        i, j, v = Is_rr[k], Js_rr[k], Vs_rr[k]
+        (i == j && i <= n_spa && !(i in spatial_hanging_nodes)) && continue
+        push!(I_spa_rhs, i > n_spa ? i + n_ang_ext : i)
+        push!(J_spa_rhs, j > n_spa ? j + n_ang_ext : j)
+        push!(V_spa_rhs, v)
+    end
+
+    # ── 4. Build combined matrices ────────────────────────────────────────────
+    # nc_mat has identity rows for DOFs free in angular (including spatial-hanging).
+    # Subtracting I_{spatial_hanging} removes those identity entries so the combined
+    # row carries only the spatial weights.
+    I_nc,     J_nc,     V_nc     = findnz(nc_mat)
+    I_nc_rhs, J_nc_rhs, V_nc_rhs = findnz(nc_mat_rhs)
+
+    I_sub = collect(spatial_hanging_nodes)
+    J_sub = collect(spatial_hanging_nodes)
+    V_sub = fill(-1.0, length(I_sub))
+
+    nc_mat_combined = sparse(
+        vcat(I_nc,     I_spa,     I_sub),
+        vcat(J_nc,     J_spa,     J_sub),
+        vcat(Float64.(V_nc),     V_spa,     V_sub), n_new, n_new)
+    nc_mat_rhs_combined = sparse(
+        vcat(I_nc_rhs, I_spa_rhs, I_sub),
+        vcat(J_nc_rhs, J_spa_rhs, J_sub),
+        vcat(Float64.(V_nc_rhs), V_spa_rhs, V_sub), n_new, n_new)
+
+    P_combined     = sparse(nc_mat_combined')
+    P_vec_combined = sparse(nc_mat_rhs_combined')
+
+    all_hanging_combined = union(all_hanging_nodes, spatial_hanging_nodes)
+
+    @info "[$rank] Combined angular+spatial restriction: " *
+          "$(length(spatial_hanging_nodes)) spatial hanging DOFs, " *
+          "$n_ang_ext angular ext + $n_spa_ext spatial ext parents → n_new=$n_new"
+
+    return nc_mat_combined, P_combined, nc_mat_rhs_combined, P_vec_combined,
+           all_hanging_combined, spatial_hanging_nodes
+end
+
+# =============================================================================
+# Spatial constraints for the combined adaptive path (spatial-only case)
+# Mirrors the proven uniform-angular-mesh path (build_rad_3d.jl lines 952-1429)
+# instead of using combine_spatial_angular_restrictions, which has parallel bugs.
+# =============================================================================
+
+"""
+    build_spatial_constraints_for_combined_path(...)
+
+Build spatial AMR constraint structures for the combined adaptive path.
+
+Works for both the spatial-only case (`global_max_ref == 0`) and the combined
+angular+spatial case (`global_max_ref > 0`).  Uses the same logic as the proven
+uniform-angular-mesh path but drives node lookup through `xyz_ang_map` built from
+`point_dict_combined_adapted`, so adapted angular DOFs are covered correctly.
+
+Returns:
+  (R_spatial_ext, P_spatial_ext, R_spatial_rhs_ext,
+   ghost_constraint_data_spa, ghost_constraint_data_spa_rhs,
+   gid_to_extended_parents_spa, extended_parents_to_gid_spa,
+   gip_to_local_spa_ext, spatial_hanging_nodes_all_angular, n_ext_spa)
+"""
+function build_spatial_constraints_for_combined_path(
+    spatial_amr_cache::SpatialAMRCache,
+    mesh,
+    ip2gip_spa::Vector{Int},
+    gip2owner_extra::Vector{Int},
+    gip2owner_spa,
+    point_dict_combined_adapted::Dict{NTuple{5,Float64}, Int},
+    n_spa::Int,
+    rank::Int,
+    comm::MPI.Comm
+)
+
+    # ── Build (x,y,z) → [(θ,ϕ,combined_DOF)] from point_dict_combined_adapted ──
+    # This reverse map covers ALL adapted angular DOFs, including refined ones from
+    # angular AMR that are absent from extra_mesh_base.extra_coords.  Both the
+    # spatial-only path (global_max_ref==0, no angular adaptation) and the combined
+    # path (global_max_ref>0) are handled correctly: for the spatial-only case the
+    # map simply reproduces what extra_mesh_base would give.
+    xyz_ang_map = Dict{NTuple{3,Float64}, Vector{Tuple{Float64,Float64,Int}}}()
+    for (key, ip_comb) in point_dict_combined_adapted
+        x, y, z, θ, ϕ = key
+        xyz_key = (x, y, z)  # keys are already rounded at point_dict construction
+        push!(get!(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[]), (θ, ϕ, ip_comb))
+    end
+
+    # ── spatial_hanging_nodes_all_angular ──────────────────────────────────────
+    nc_non_global_nodes_spa = Int[]
+    nc_set_spa = Set{Int}()
+    for hanging_ip in keys(spatial_amr_cache.parent_weights)
+        xyz_key = (round(mesh.x[hanging_ip], digits=12),
+                   round(mesh.y[hanging_ip], digits=12),
+                   round(mesh.z[hanging_ip], digits=12))
+        for (_, _, ip_spa_h) in get(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[])
+            ip_spa_h in nc_set_spa && continue
+            push!(nc_non_global_nodes_spa, ip_spa_h)
+            push!(nc_set_spa, ip_spa_h)
+        end
+    end
+    for hanging_ip in keys(spatial_amr_cache.cross_rank_parent_weights)
+        xyz_key = (round(mesh.x[hanging_ip], digits=12),
+                   round(mesh.y[hanging_ip], digits=12),
+                   round(mesh.z[hanging_ip], digits=12))
+        for (_, _, ip_spa_h) in get(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[])
+            ip_spa_h in nc_set_spa && continue
+            push!(nc_non_global_nodes_spa, ip_spa_h)
+            push!(nc_set_spa, ip_spa_h)
+        end
+    end
+    spatial_hanging_nodes_all_angular = Set(nc_non_global_nodes_spa)
+    @info "[$rank] [comb-path] $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs"
+
+    # ── R_spatial: Phases 1, 2, 3 ─────────────────────────────────────────────
+    R_spatial, _ = build_spatial_restriction_and_prolongation(
+        spatial_amr_cache, n_spa, spatial_hanging_nodes_all_angular,
+        point_dict_combined_adapted, mesh, xyz_ang_map
+    )
+
+    # ── global (spatial_GIP, (θ,ϕ)) → compact_GID ────────────────────────────
+    # Exchange cross-rank parent combined GIDs using xyz_ang_map so adapted
+    # angular DOFs are covered.  Returns Dict{Tuple{Int,NTuple{2,Float64}},Int}.
+    global_sp_ang_to_gid = _exchange_spatial_parent_combined_gids(
+        spatial_amr_cache, ip2gip_spa, xyz_ang_map, mesh, rank, comm
+    )
+
+    # ── gip_to_local_spa ──────────────────────────────────────────────────────
+    gip_to_local_spa = Dict{Int,Int}(ip2gip_spa[ip] => ip for ip = 1:n_spa)
+
+    # ── _rhs_handled_dofs: combined DOFs whose RHS is covered by local parents ─
+    _rhs_handled_dofs = Set{Int}()
+    for (hsp, _) in spatial_amr_cache.parent_weights
+        xyz_key = (round(mesh.x[hsp], digits=12),
+                   round(mesh.y[hsp], digits=12),
+                   round(mesh.z[hsp], digits=12))
+        for (_, _, d) in get(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[])
+            d == 0 && continue
+            push!(_rhs_handled_dofs, d)
+        end
+    end
+
+    # ── Ghost constraint dicts + Source 1 R_spatial augmentation ─────────────
+    ghost_constraint_data_spa     = Dict{Int, Vector{Tuple{Int, Float64}}}()
+    ghost_constraint_data_spa_rhs = Dict{Int, Vector{Tuple{Int, Float64}}}()
+    gip_to_local_r = Dict{Int,Int}(Int(ip2gip_spa[ip]) => ip for ip = 1:n_spa)
+
+    # Source 1: cross-rank parents — iterate over all adapted angular DOFs at the
+    # hanging location via xyz_ang_map; match parent by (θ, ϕ) key.
+    for (hanging_local_spa, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
+        xyz_key_h = (round(mesh.x[hanging_local_spa], digits=12),
+                     round(mesh.y[hanging_local_spa], digits=12),
+                     round(mesh.z[hanging_local_spa], digits=12))
+        for (θ_k, ϕ_k, hanging_dof) in get(xyz_ang_map, xyz_key_h, Tuple{Float64,Float64,Int}[])
+            (hanging_dof == 0 || hanging_dof > n_spa) && continue
+            ang_key = (θ_k, ϕ_k)
+            parent_constraints = Tuple{Int, Float64}[]
+            for (parent_global_spa, weight) in cross_weights
+                parent_gid = get(global_sp_ang_to_gid, (parent_global_spa, ang_key), 0)
+                parent_gid == 0 && continue
+                push!(parent_constraints, (parent_gid, weight))
+                local_ip = get(gip_to_local_r, parent_gid, 0)
+                local_ip == 0 && continue
+                R_spatial[local_ip, hanging_dof] = weight
+            end
+            isempty(parent_constraints) && continue
+            ghost_constraint_data_spa[hanging_dof] = copy(parent_constraints)
+            if !(hanging_dof in _rhs_handled_dofs)
+                ghost_constraint_data_spa_rhs[hanging_dof] = copy(parent_constraints)
+            end
+        end
+    end
+    P_spatial = sparse(R_spatial')
+
+    # Source 2: local parents split by ownership
+    I_rhs_sp = Int[]; J_rhs_sp = Int[]; V_rhs_sp = Float64[]
+    for dof = 1:n_spa
+        if !(dof in spatial_hanging_nodes_all_angular)
+            push!(I_rhs_sp, dof); push!(J_rhs_sp, dof); push!(V_rhs_sp, 1.0)
+        end
+    end
+    for (hanging_local_spa, local_weights) in spatial_amr_cache.parent_weights
+        xyz_key_h = (round(mesh.x[hanging_local_spa], digits=12),
+                     round(mesh.y[hanging_local_spa], digits=12),
+                     round(mesh.z[hanging_local_spa], digits=12))
+        for (θ_k, ϕ_k, hanging_dof) in get(xyz_ang_map, xyz_key_h, Tuple{Float64,Float64,Int}[])
+            (hanging_dof == 0 || hanging_dof > n_spa) && continue
+            for (parent_local_spa, weight) in local_weights
+                key_p = (round(mesh.x[parent_local_spa], digits=12),
+                         round(mesh.y[parent_local_spa], digits=12),
+                         round(mesh.z[parent_local_spa], digits=12),
+                         round(θ_k, digits=12), round(ϕ_k, digits=12))
+                parent_dof = get(point_dict_combined_adapted, key_p, 0)
+                (parent_dof == 0 || parent_dof > n_spa) && continue
+                parent_gid = ip2gip_spa[parent_dof]
+                mat_entry = get!(ghost_constraint_data_spa, hanging_dof, Tuple{Int,Float64}[])
+                if !any(g == parent_gid for (g, _) in mat_entry)
+                    push!(mat_entry, (parent_gid, weight))
+                end
+                if gip2owner_extra[parent_dof] == rank
+                    push!(I_rhs_sp, parent_dof); push!(J_rhs_sp, hanging_dof); push!(V_rhs_sp, weight)
+                else
+                    rhs_entry = get!(ghost_constraint_data_spa_rhs, hanging_dof, Tuple{Int,Float64}[])
+                    if !any(g == parent_gid for (g, _) in rhs_entry)
+                        push!(rhs_entry, (parent_gid, weight))
+                    end
+                end
+            end
+        end
+    end
+    R_spatial_rhs = sparse(I_rhs_sp, J_rhs_sp, V_rhs_sp, n_spa, n_spa)
+    @info "[$rank] [comb-path] ghost_constraint_data_spa: $(length(ghost_constraint_data_spa)) hanging DOFs"
+    @info "[$rank] [comb-path] ghost_constraint_data_spa_rhs: $(length(ghost_constraint_data_spa_rhs)) hanging DOFs"
+
+    # ── Extended parent system (mirrors uniform path lines 1394-1429) ─────────
+    # Uses gip2owner_spa (Vector by compact GID, already covers all global DOFs)
+    # instead of gip2owner_spa_gid (Dict) — no ghost augmentation loop needed.
+    gid_to_extended_parents_spa = Dict{Int,Int}()
+    extended_parents_to_gid_spa = Int[]
+    n_ghost_ext_spa = 0
+    for (_, parent_list) in ghost_constraint_data_spa
+        for (parent_gid, _) in parent_list
+            owner = gip2owner_spa[parent_gid]
+            if owner != rank &&
+               !haskey(gid_to_extended_parents_spa, parent_gid) &&
+               !haskey(gip_to_local_spa, parent_gid)
+                n_ghost_ext_spa += 1
+                gid_to_extended_parents_spa[parent_gid] = n_spa + n_ghost_ext_spa
+                push!(extended_parents_to_gid_spa, parent_gid)
+            end
+        end
+    end
+    n_ext_spa = n_spa + n_ghost_ext_spa
+    @info "[$rank] [comb-path] $n_ghost_ext_spa extended parents → n_ext_spa=$n_ext_spa"
+
+    gip_to_local_spa_ext = copy(gip_to_local_spa)
+    for (pgid, ext_idx) in gid_to_extended_parents_spa
+        gip_to_local_spa_ext[pgid] = ext_idx
+    end
+
+    if n_ghost_ext_spa > 0
+        I_re, J_re, V_re = findnz(R_spatial)
+        for k = 1:n_ghost_ext_spa
+            ext_idx = n_spa + k
+            push!(I_re, ext_idx); push!(J_re, ext_idx); push!(V_re, 1.0)
+        end
+        R_spatial_ext = sparse(I_re, J_re, V_re, n_ext_spa, n_ext_spa)
+        P_spatial_ext = sparse(R_spatial_ext')
+        I_rr, J_rr, V_rr = findnz(R_spatial_rhs)
+        for k = 1:n_ghost_ext_spa
+            ext_idx = n_spa + k
+            push!(I_rr, ext_idx); push!(J_rr, ext_idx); push!(V_rr, 1.0)
+        end
+        R_spatial_rhs_ext = sparse(I_rr, J_rr, V_rr, n_ext_spa, n_ext_spa)
+    else
+        R_spatial_ext     = R_spatial
+        P_spatial_ext     = P_spatial
+        R_spatial_rhs_ext = R_spatial_rhs
+    end
+
+    return (R_spatial_ext, P_spatial_ext, R_spatial_rhs_ext,
+            ghost_constraint_data_spa, ghost_constraint_data_spa_rhs,
+            gid_to_extended_parents_spa, extended_parents_to_gid_spa,
+            gip_to_local_spa_ext, spatial_hanging_nodes_all_angular, n_ext_spa)
+end
+
 export build_spatial_constraint_matrices, verify_spatial_constraints,
        build_spatial_restriction_and_prolongation,
-       apply_spatial_constraint_to_rhs
+       apply_spatial_constraint_to_rhs,
+       combine_spatial_angular_restrictions,
+       build_spatial_constraints_for_combined_path

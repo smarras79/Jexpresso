@@ -5,29 +5,31 @@
 #   (spatial or angular, never both at the same interface).
 #
 # Consequence: angular refinement of element `iel` is only safe when EVERY
-# spatial neighbor that shares a FACE or EDGE with `iel` (local and cross-rank)
-# is at the same spatial refinement level.  Corner-only contacts are excluded
-# because the angular non-conformity handler does not need to communicate across
-# corners.  Face and edge contacts both require matching spatial nodes, so a
-# spatially non-conforming edge is just as problematic as a non-conforming face.
+# spatial neighbor that shares a FACE, EDGE, or CORNER with `iel` (local and
+# cross-rank) is at the same spatial refinement level.  Corner contacts are
+# included even though the angular non-conformity handler does not communicate
+# across corners, because including them ensures complete orthogonality: no
+# element adjacent to a spatial non-conformity in any topology can become
+# angularly non-conforming at the same time.
 
 """
 Refinement state snapshot for one spatial element, including the refinement
-levels of every known spatial neighbor (face- and edge-adjacent only; corners
-excluded).
+levels of every known spatial neighbor (face- and edge-adjacent; corners are
+tracked internally for the `can_refine_angular` decision but not stored here).
 
 Fields
 ------
 - `spatial_level`   : `mesh.ad_lvl[iel]`
 - `max_angular_level`: `maximum(extra_meshes_ref_level[iel])`
 - `local_neighbor_elems`          : local (same-rank) face+edge neighbour element indices
-- `local_neighbor_spatial_levels` : `mesh.ad_lvl` for each local neighbour
-- `local_neighbor_max_ang_levels` : `maximum(ref_level)` for each local neighbour
+- `local_neighbor_spatial_levels` : `mesh.ad_lvl` for each local face+edge neighbour
+- `local_neighbor_max_ang_levels` : `maximum(ref_level)` for each local face+edge neighbour
 - `cross_rank_neighbor_spatial_levels` : spatial levels of face+edge cross-rank neighbours,
   discovered via AllGather bbox exchange
 - `cross_rank_neighbor_max_ang_levels` : angular levels of those same neighbours
-- `can_refine_angular` : true iff the element is not at a NCF face AND no face/edge
-  neighbour (local or cross-rank) has a different spatial refinement level
+- `can_refine_angular` : true iff the element is not at a NCF face AND no neighbour
+  of any topology (face, edge, or corner; local or cross-rank) has a different
+  spatial refinement level
 """
 struct ElementRefinementRecord
     spatial_level::Int
@@ -117,14 +119,14 @@ Algorithm
 3. Compute bounding boxes for all local elements.
 4. AllGather bounding boxes + levels from all ranks (8 Float64 per element).
 5. For each local element, scan all global elements via `_bbox_topology`:
-   - :face and :edge contacts → tracked as neighbours (corners excluded)
-   - Same-rank matches → `local_neighbor_elems`
-   - Cross-rank matches → `cross_rank_neighbor_*_levels`
-6. `can_refine_angular` = `!spa_nc[iel]` AND no face/edge neighbour
-   (local or cross-rank) has a different spatial level.
-   (Differs from old code: edge neighbours with different spatial level now also
-   block angular refinement, since the angular solver requires matching nodes on
-   every shared edge.)
+   - :face and :edge contacts → tracked as neighbours in `local_neighbor_elems`
+     and `cross_rank_neighbor_*_levels`; edge subset tracked separately
+   - :corner contacts → tracked separately (not in the struct fields) for the
+     `can_refine_angular` decision
+   - Same-rank matches → `local_neighbor_elems` (face/edge)
+   - Cross-rank matches → `cross_rank_neighbor_*_levels` (face/edge)
+6. `can_refine_angular` = `!spa_nc[iel]` AND no neighbour of ANY topology
+   (face, edge, or corner; local or cross-rank) has a different spatial level.
 """
 function build_element_refinement_records(
     mesh, extra_meshes_ref_level, nelem::Int, ngl::Int, comm
@@ -188,13 +190,15 @@ function build_element_refinement_records(
     local_start = Int(sum(n_all[1:MPI.Comm_rank(comm)])) + 1
     local_end   = local_start + nelem - 1
 
-    # ── 5. Find face+edge neighbours; track edge neighbours separately ─────────
+    # ── 5. Find face+edge+corner neighbours ───────────────────────────────────
     n_global = length(all_flat) ÷ n_fields
-    local_nbrs      = [Int[] for _ = 1:nelem]
-    local_edge_nbrs = [Int[] for _ = 1:nelem]   # subset: edge contacts only
-    cr_spa_nbr      = [Int[] for _ = 1:nelem]
-    cr_ang_nbr      = [Int[] for _ = 1:nelem]
-    cr_edge_spa_nbr = [Int[] for _ = 1:nelem]   # cross-rank edge-contact spatial levels
+    local_nbrs        = [Int[] for _ = 1:nelem]   # face+edge (stored in struct)
+    local_edge_nbrs   = [Int[] for _ = 1:nelem]   # edge subset (for edge_ncf check)
+    local_corner_nbrs = [Int[] for _ = 1:nelem]   # corner subset (for corner_ncf check)
+    cr_spa_nbr        = [Int[] for _ = 1:nelem]   # face+edge cross-rank spatial levels
+    cr_ang_nbr        = [Int[] for _ = 1:nelem]   # face+edge cross-rank angular levels
+    cr_edge_spa_nbr   = [Int[] for _ = 1:nelem]   # edge cross-rank spatial levels
+    cr_corner_spa_nbr = [Int[] for _ = 1:nelem]   # corner cross-rank spatial levels
 
     for iel = 1:nelem
         xl,xh,yl,yh,zl,zh = bboxes[iel]
@@ -207,18 +211,25 @@ function build_element_refinement_records(
             alvl = Int(round(all_flat[s+8]))
 
             topo = _bbox_topology(xl,xh,yl,yh,zl,zh, xil,xih,yil,yih,zil,zih)
-            # Corners excluded: angular solver does not communicate across corners
-            (topo == :none || topo == :corner) && continue
+            topo == :none && continue
 
             if local_start <= k <= local_end
                 jel = k - local_start + 1
                 jel == iel && continue
-                push!(local_nbrs[iel], jel)
-                topo == :edge && push!(local_edge_nbrs[iel], jel)
+                if topo == :corner
+                    push!(local_corner_nbrs[iel], jel)
+                else
+                    push!(local_nbrs[iel], jel)
+                    topo == :edge && push!(local_edge_nbrs[iel], jel)
+                end
             else
-                push!(cr_spa_nbr[iel], slvl)
-                push!(cr_ang_nbr[iel], alvl)
-                topo == :edge && push!(cr_edge_spa_nbr[iel], slvl)
+                if topo == :corner
+                    push!(cr_corner_spa_nbr[iel], slvl)
+                else
+                    push!(cr_spa_nbr[iel], slvl)
+                    push!(cr_ang_nbr[iel], alvl)
+                    topo == :edge && push!(cr_edge_spa_nbr[iel], slvl)
+                end
             end
         end
     end
@@ -231,12 +242,15 @@ function build_element_refinement_records(
         ln_ang = Int[max_ang_levels[j] for j in lnbrs]
 
         # can_refine_angular: blocked if element is at a NCF face OR any
-        # face/edge neighbour has a different spatial refinement level.
-        # The edge-neighbour check is new: a non-conforming edge requires the
-        # same matching treatment as a non-conforming face, so we must block it.
+        # neighbour of ANY topology (face, edge, or corner) has a different
+        # spatial refinement level.  This ensures complete orthogonality: no
+        # element in the buffer zone around a spatial non-conformity can also
+        # become angularly non-conforming.
         my_slvl = spatial_levels[iel]
         edge_ncf = any(spatial_levels[j] != my_slvl for j in local_edge_nbrs[iel]) ||
                    any(slvl             != my_slvl for slvl in cr_edge_spa_nbr[iel])
+        corner_ncf = any(spatial_levels[j] != my_slvl for j in local_corner_nbrs[iel]) ||
+                     any(slvl             != my_slvl for slvl in cr_corner_spa_nbr[iel])
 
         records[iel] = ElementRefinementRecord(
             my_slvl,
@@ -246,7 +260,7 @@ function build_element_refinement_records(
             ln_ang,
             cr_spa_nbr[iel],
             cr_ang_nbr[iel],
-            !spa_nc[iel] && !edge_ncf,
+            !spa_nc[iel] && !edge_ncf && !corner_ncf,
         )
     end
 
@@ -343,13 +357,13 @@ function verify_element_refinement_records(
     global_n   = MPI.Allreduce(nelem,     MPI.SUM, comm)
 
     if rank == 0
-        @info "verify_refinement: neighbour count (face+edge, corners excluded) " *
+        @info "verify_refinement: face+edge neighbour count (stored in struct; corners " *
+              "tracked separately for can_refine_angular but not counted here) " *
               "min=$global_min max=$global_max " *
-              "mean=$(round(global_sum/global_n, digits=2)) " *
-              "(should match serial)"
+              "mean=$(round(global_sum/global_n, digits=2))"
         if global_max > 18   # 6 face + 12 edge neighbours max in 3D
-            @warn "verify_refinement: max total neighbour count $global_max > 18 " *
-                  "(face+edge max in 3D is 18: 6 face + 12 edge)"
+            @warn "verify_refinement: max face+edge neighbour count $global_max > 18 " *
+                  "(6 face + 12 edge is the 3D maximum)"
             ok = false
         end
     end
