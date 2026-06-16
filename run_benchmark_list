@@ -26,9 +26,9 @@ Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
 #Parallel
 using MPI
 JULIA = Base.julia_cmd()
-run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler thetaTracers`)
-run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler 3d`)
-run(`$(mpiexec()) -n 3 $JULIA --project=. src/Jexpresso.jl CompEuler city2d`)
-run(`$(mpiexec()) -n 3 $JULIA --project=. src/Jexpresso.jl CompEuler kelvinHelmholtzChan2022`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
 
 NOTICE: replace mpiexec with mpirun if that's what you use.

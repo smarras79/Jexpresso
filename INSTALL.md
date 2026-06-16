@@ -2,6 +2,8 @@
 
 This guide walks you through downloading, building, and testing **Jexpresso**.
 
+> **Hit an error?** See [FAQ.md](FAQ.md) for fixes to common installation and run problems.
+
 ## Prerequisites
 
 - **Julia 1.11.9** is the recommended version.
@@ -29,15 +31,17 @@ cd Jexpresso
 ln -s ../JexpressoMeshes/meshes .
 ```
 
-## 3. Build and precompile
+## 3. Build and precompile (serial)
+
+These steps give you a working **serial** Jexpresso. If you want to run in
+parallel, do these steps first and then continue with
+[Section 5 — Running in parallel with MPI](#5-running-in-parallel-with-mpi).
 
 If you are not already inside the project directory, move into it first:
 
 ```bash
 cd PATH/TO/Jexpresso
 ```
-
-Then build the project in three steps.
 
 **3a. Instantiate the dependencies** (with automatic precompilation disabled so
 it can be controlled explicitly below):
@@ -46,136 +50,18 @@ it can be controlled explicitly below):
 julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
 ```
 
-**3b. Point MPI at your system binary**, replacing the path with the location of
-your MPI library: You only need this step if you are planning to run Jexpresso in parallel and must 
-have some version of MPI installed first:
-
-```bash
-julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/PATH/TO/MPILIB/lib"])'
-```
-
-> For example, if you use OpenMPI installed with Homebrew, the path is likely
-> `/opt/homebrew/lib`.
-
-```bash
-julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])'
-```
-
-**3c. Alternative: use MPI.jl's bundled MPI (MPICH-based JLL).**
-
-Use this route if step 3b deadlocks on `MPI.Init` (a known sharp edge
-with Open MPI 5 + macOS + MPI.jl, where the PMIx handshake never
-completes), or if you don't want to install a system MPI at all. With
-this route MPI ships *with* Julia's package environment — no system
-MPI is needed.
-
-```bash
-julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary()'
-julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
-```
-
-Verify the bind:
-
-```bash
-julia --project=. -e '
-  using MPIPreferences; println("binary = ", MPIPreferences.binary)
-  using MPI;            println(MPI.identify_implementation())'
-```
-
-`binary` should now print `"MPItrampoline_jll"` (which defaults to
-MPICH on macOS).
-
-> **Important — launch with the bundled `mpiexec`, NOT system `mpirun`.**
-> After switching to the JLL binary, the system `mpirun` will not work
-> because it belongs to a different MPI. Use the launcher MPI.jl ships:
-
-```bash
-julia --project=. -e '
-  using MPI
-  run(`$(mpiexec()) -n 4 $(Base.julia_cmd()) --project=. src/Jexpresso.jl CompEuler city2d`)'
-```
-
-For daily use you can wrap the launcher in a small shell file `jexp_mpich.sh`:
-
-```bash
-#!/bin/bash
-
-# USER: change to your julia path: ---------------------------------------
-JULIA=/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia
-# END USER ---------------------------------------------------------------
-
-#!/bin/bash
-jexp_mpich() {
-    local msg="I am starting Julia; please be patient. Jexpresso hasn't started yet!"
-    local border
-    border=$(printf '═%.0s' $(seq 1 $(( ${#msg} + 2 ))))
-    printf '\033[1;31m╔%s╗\n║ %s ║\n╚%s╝\033[0m\n' "$border" "$msg" "$border"
-
-    # Launch Julia in the background so we can animate while it starts
-    $JULIA --project=. -e "
-      using MPI
-      run(\`\$(mpiexec()) -n $1 \$(Base.julia_cmd()) --project=. src/Jexpresso.jl $2 $3\`)" &
-    local pid=$!
-
-    # Ctrl-C should kill Julia and restore the cursor
-    trap 'kill "$pid" 2>/dev/null; tput cnorm 2>/dev/null; printf "\r\033[K"; trap - INT; return 130' INT
-
-    local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    local n=${#frames}
-    local i=0
-    tput civis 2>/dev/null                  # hide cursor
-    while kill -0 "$pid" 2>/dev/null; do
-        printf '\r\033[1;31m%s waiting…\033[0m\033[K' "${frames:i++%n:1}"
-        sleep 0.1
-    done
-    tput cnorm 2>/dev/null                   # restore cursor
-    printf '\r\033[K'                        # erase the spinner line
-    trap - INT
-    wait "$pid"                              # propagate Julia's exit status
-}
-jexp_mpich "$@"
-}
-# Usage:
-jexp_mpich 4 CompEuler city2d
-```
-
-**3d. macOS-specific: register your hostname in `/etc/hosts`.**
-
-Required for *any* MPICH-based MPI on macOS (so: required if you took
-step 3c, optional otherwise). MPICH's TCP channel resolves the machine
-hostname via the C `gethostbyname()` call, which on macOS only returns
-mDNS names (`*.local`) and fails on the bare hostname, producing
-`MPI_Init` errors of the form:
-
-```
-GetSockInterfaceAddr ... gethostbyname failed, <your-hostname> (errno 0)
-```
-
-Fix once, permanently:
-
-```bash
-echo "127.0.0.1   $(hostname -s)" | sudo tee -a /etc/hosts
-echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
-```
-
-Verify:
-
-```bash
-ping -c 1 $(hostname -s)     # should respond from 127.0.0.1
-```
-
-If you cannot sudo, the equivalent env-var workaround is to export
-`MPICH_INTERFACE_HOSTNAME=127.0.0.1` in every shell session before
-launching MPI jobs (or add it to `~/.zshrc`).
-
-**3e. Precompile everything:**
+**3b. Precompile everything:**
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.precompile()'
 ```
 
-This last step may take a while the first time as Julia compiles all
-dependencies.
+This step may take a while the first time as Julia compiles all dependencies.
+
+> **Going parallel?** Do **not** precompile yet if you already know you will
+> run with MPI — configuring MPI first (Section 5) rebuilds the `MPI` package,
+> which triggers a recompile anyway. Either order works, but configuring MPI
+> first saves you one precompilation pass.
 
 ## 4. Test the installation
 
@@ -195,9 +81,238 @@ using Jexpresso
 Jexpresso.run_case("CompEuler", "sod1d")
 ```
 
-If the test runs to completion, your Jexpresso installation is ready to go. 🎉
+If the test runs to completion, your serial Jexpresso installation is ready. 🎉
 
-## 5. Daily workflow — interactive REPL for fast iteration
+---
+
+## 5. Running in parallel with MPI
+
+Everything you need to install, configure, and run Jexpresso in parallel lives
+in this section. **Skip it entirely if you only run serially.**
+
+Julia's [`MPI.jl`](https://juliaparallel.org/MPI.jl/stable/) does not contain an
+MPI implementation itself — it binds to one at build time. You pick exactly
+**one** of the three routes below and tell `MPIPreferences` which one to use.
+
+| Route | What provides MPI | When to choose it |
+|-------|-------------------|-------------------|
+| **A. OpenMPI** (system binary) | An OpenMPI you install on the machine | Linux clusters / HPC where OpenMPI is the site default |
+| **B. MPICH** (system binary) | An MPICH you install on the machine | You prefer MPICH, or your cluster ships MPICH |
+| **C. MPICH_jll** (native, bundled) | MPI shipped *inside* Julia's package env — nothing to install | Laptops/desktops, no admin rights, or OpenMPI deadlocks on macOS (see [Troubleshooting](#56-troubleshooting)) |
+
+The three routes share the same workflow: **install MPI → point `MPIPreferences`
+at it → rebuild `MPI` → launch with the matching `mpiexec`.** Only the details
+differ, and they are spelled out per route below.
+
+### 5.1 Install an MPI implementation
+
+#### Route A — OpenMPI (system binary)
+
+```bash
+# Ubuntu/Debian
+sudo apt install libopenmpi-dev openmpi-bin
+
+# macOS (Homebrew)
+brew install open-mpi
+
+# Verify
+mpiexec --version
+```
+
+#### Route B — MPICH (system binary)
+
+```bash
+# Ubuntu/Debian
+sudo apt install mpich libmpich-dev
+
+# macOS (Homebrew)
+brew install mpich
+
+# Verify
+mpiexec --version
+```
+
+#### Route C — MPICH_jll (native, bundled with MPI.jl)
+
+**Nothing to install.** MPI ships *with* Julia's package environment as a JLL
+(MPItrampoline, which defaults to MPICH). This is the most reliable route on a
+laptop and the recommended fallback when a system OpenMPI deadlocks on macOS.
+Proceed straight to the configuration step below.
+
+### 5.2 Point `MPIPreferences` at your MPI
+
+Run **one** of these, matching the route you chose. The setting is recorded in
+`LocalPreferences.toml` in the project root.
+
+#### Route A or B — system binary (OpenMPI / MPICH)
+
+If MPI is installed in standard system paths (`/usr/bin`, `/usr/local/bin`):
+
+```bash
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+```
+
+If MPI lives in a non-standard location (multiple installs, `/opt/...`,
+Homebrew on Apple Silicon), pass its `lib` directory explicitly:
+
+```bash
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/PATH/TO/MPILIB/lib"])'
+```
+
+> For Homebrew-installed OpenMPI/MPICH on Apple Silicon the path is usually
+> `/opt/homebrew/lib`:
+>
+> ```bash
+> julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])'
+> ```
+
+#### Route C — MPICH_jll (native)
+
+```bash
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary()'
+```
+
+### 5.3 Rebuild `MPI` and precompile
+
+`MPI` must be rebuilt against whatever you just selected, then everything
+precompiled:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+### 5.4 Verify the binding
+
+```bash
+julia --project=. -e '
+  using MPIPreferences; println("binary = ", MPIPreferences.binary)
+  using MPI;            println(MPI.identify_implementation())'
+```
+
+- **Route A** should report an Open MPI implementation and `binary = "system"`.
+- **Route B** should report MPICH and `binary = "system"`.
+- **Route C** should print `binary = "MPItrampoline_jll"` (MPICH-based).
+
+### 5.5 macOS hostname fix (MPICH and MPICH_jll only)
+
+Required for **any MPICH-based MPI on macOS** — i.e. Route B on macOS and
+Route C on macOS. Not needed for OpenMPI (Route A).
+
+MPICH's TCP channel resolves the machine hostname via the C `gethostbyname()`
+call, which on macOS only returns mDNS names (`*.local`) and fails on the bare
+hostname, producing `MPI_Init` errors like:
+
+```
+GetSockInterfaceAddr ... gethostbyname failed, <your-hostname> (errno 0)
+```
+
+Fix once, permanently:
+
+```bash
+echo "127.0.0.1   $(hostname -s)" | sudo tee -a /etc/hosts
+echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
+```
+
+Verify:
+
+```bash
+ping -c 1 $(hostname -s)     # should respond from 127.0.0.1
+```
+
+If you cannot `sudo`, export `MPICH_INTERFACE_HOSTNAME=127.0.0.1` in every shell
+session before launching MPI jobs (or add it to `~/.zshrc`).
+
+### 5.6 Launch a parallel run
+
+> **Use the launcher that matches your route.** A system `mpiexec`/`mpirun`
+> belongs to the system MPI; the JLL provides its own `mpiexec` through MPI.jl.
+> Mixing them is the most common cause of "it won't start" failures.
+
+#### Route A or B — system MPI (OpenMPI / MPICH)
+
+Use the system launcher directly:
+
+```bash
+mpiexec -n <NPROCS> julia --project=. src/Jexpresso.jl <EQUATIONS> <CASE_NAME>
+```
+
+For example, 4 ranks of the 3D Euler case:
+
+```bash
+mpiexec -n 4 julia --project=. src/Jexpresso.jl CompEuler 3d
+```
+
+If `mpiexec` is not on your `PATH`, or you have several MPIs installed, use
+absolute paths to both the launcher and `julia`:
+
+```bash
+/opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 \
+  /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia \
+  --project=. src/Jexpresso.jl CompEuler theta
+```
+
+#### Route C — MPICH_jll (native)
+
+Do **not** use the system `mpirun`. Launch with the `mpiexec` that MPI.jl ships,
+which you reach from inside Julia:
+
+```bash
+julia --project=. -e '
+  using MPI
+  run(`$(mpiexec()) -n 4 $(Base.julia_cmd()) --project=. src/Jexpresso.jl CompEuler city2d`)'
+```
+
+For daily use, wrap the launcher in a small shell script (a ready-made copy
+ships as [`jexp_mpich.sh`](jexp_mpich.sh) in the repo root):
+
+```bash
+#!/bin/bash
+
+# USER: change to your julia path: ---------------------------------------
+JULIA=/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia
+# END USER ---------------------------------------------------------------
+
+jexp_mpich() {
+    $JULIA --project=. -e "
+      using MPI
+      run(\`\$(mpiexec()) -n $1 \$(Base.julia_cmd()) --project=. src/Jexpresso.jl $2 $3\`)"
+}
+
+jexp_mpich "$@"
+```
+
+Usage:
+
+```bash
+./jexp_mpich.sh 4 CompEuler city2d
+```
+
+### 5.7 Troubleshooting
+
+- **OpenMPI 5 + macOS deadlock on `MPI.Init` (Route A).** A known sharp edge
+  where the PMIx handshake never completes and the run hangs forever. The fix is
+  to switch to **Route C (MPICH_jll)** — redo Sections 5.2–5.6 with the JLL
+  binary. This needs no system MPI at all.
+- **Library conflicts / stale binding.** Remove the recorded preference and
+  reconfigure from Section 5.2:
+  ```bash
+  rm -f LocalPreferences.toml
+  ```
+- **Path issues (system MPI).** Confirm which launcher you are actually calling:
+  ```bash
+  which mpiexec
+  which mpirun
+  ```
+  Use absolute paths (see Section 5.6) if the wrong one is picked up.
+- **Version mismatches (system MPI).** Make sure the compiler wrappers and the
+  runtime agree:
+  ```bash
+  mpicc --version
+  mpif90 --version
+  ```
+
+## 6. Daily workflow — interactive REPL for fast iteration
 
 Every Julia process pays a one-time JIT compilation cost on first use of
 `sem_setup`, the `with_mpi` closure, the SciML integrator, the VTK
@@ -241,7 +356,8 @@ are picked up without restarting the REPL.
 ### MPI runs from the same Julia process
 
 You can also drive parallel `mpiexec` runs from within an interactive
-Julia session — Julia's `run(...)` keeps the bundled `mpiexec` happy
+Julia session — Julia's `run(...)` keeps `mpiexec` happy (this works for
+all three routes; with Route C be sure `mpiexec()` comes from `using MPI`)
 and you can re-run as many times as you like without restart:
 
 ```julia
@@ -300,3 +416,5 @@ TrixiBase = "0.1.8"
 UUIDs = "1.11.0"
 UnicodePlots = "=3.7.2"
 ```
+</content>
+</invoke>
