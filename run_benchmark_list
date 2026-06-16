@@ -72,12 +72,23 @@ end
 
 #Parallel - CASE B: a real system OpenMPI (e.g. Homebrew, MacPorts, HPC module)
 #
-# Verified working sequence (Homebrew OpenMPI 5.x, libmpi in /opt/homebrew/lib).
-# Bind MPI.jl to the system OpenMPI BEFORE the first `using MPI`: MPI.jl reads
-# its preferences at load time, so setting them first means NO Julia restart is
-# needed. (If MPI was already loaded this session, restart Julia once.) Find the
-# lib dir with `ompi_info --path libdir` if it is not /opt/homebrew/lib.
+# Working sequence (Homebrew OpenMPI 5.x, libmpi in /opt/homebrew/lib).
 #
+# Two independent things must both point at the SAME OpenMPI:
+#   1. the libmpi the worker Julia processes load  -> set by MPIPreferences
+#   2. the mpirun launcher that `run(...)` invokes  -> set by which binary you call
+# MPIPreferences ONLY controls (1). It does NOT change which `mpirun` your shell
+# finds. A bare `mpirun` is resolved from PATH and on many setups picks the
+# OpenMPI_jll launcher in ~/.julia/artifacts/... instead of Homebrew's, which
+# then dies with `Library not loaded: @rpath/libhwloc.15.dylib`. Check what a
+# bare mpirun would actually run with:  Sys.which("mpirun")
+#
+# => Call the Homebrew launcher by FULL PATH (/opt/homebrew/bin/mpirun) so (2)
+#    matches (1). The full path is reliable regardless of PATH ordering.
+#
+# Bind MPI.jl BEFORE the first `using MPI` (it reads preferences at load time),
+# so no Julia restart is needed. If MPI was already loaded, restart Julia once.
+# Find the lib dir with `ompi_info --path libdir` if it is not /opt/homebrew/lib.
 # add MPIPreferences once if needed:  julia>] then  pkg> add MPIPreferences
 julia --project=.
 
@@ -86,17 +97,18 @@ MPIPreferences.use_system_binary(; extra_paths = ["/opt/homebrew/lib"])
 using MPI                 # picks up the system OpenMPI (no restart needed here)
 using Jexpresso
 JULIA = Base.julia_cmd()
-run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
-run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
-run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
-run(`mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
 
 # Verify the binding any time with:  MPI.versioninfo()   # binary: system, abi: OpenMPI
 # To go back to the bundled MPICH later: MPIPreferences.use_jll_binary(); restart.
 
 # NOTICE (system OpenMPI):
-#  - If a bare `mpirun` errors with a missing libhwloc.15.dylib, it resolved to
-#    the OpenMPI_jll launcher in ~/.julia/artifacts (see CASE A). Use the full
-#    Homebrew path instead: /opt/homebrew/bin/mpirun
+#  - A bare `mpirun` works ONLY if `Sys.which("mpirun")` already points at
+#    /opt/homebrew/bin/mpirun (fix by putting /opt/homebrew/bin first on PATH,
+#    or removing the OpenMPI_jll artifact bin from PATH). Otherwise use the full
+#    path above.
 #  - If -n exceeds your physical cores, add --oversubscribe.
 #  - If you run as root (e.g. in a container), add --allow-run-as-root.
