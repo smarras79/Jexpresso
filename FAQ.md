@@ -102,27 +102,39 @@ hostile to precompilation on a **login node** in several ways:
   during `MPI.Init`, which can **stall for many minutes**;
 - even `shm` can stall during fabric bring-up on some builds.
 
-The root issue is that precompilation should not depend on a working MPI fabric.
-So **Jexpresso no longer runs the MPI driver workload during precompilation by
-default** (`src/Jexpresso.jl`, `@setup_workload`). The package still precompiles
-fully — every method in the module is compiled regardless — you just skip the
-warm-up pass, so the *first* `run_case` in a session pays a bit more JIT. A plain
-`julia --project=. -e 'using Pkg; Pkg.precompile()'` now completes on a login node
-without ever touching the fabric.
+Jexpresso handles both problems so the warm-up still happens (and your first
+`run_case` stays fast) without precompilation hanging:
 
-To opt back into the warm-up — e.g. inside a compute-node allocation where the
-fabric is healthy — set the env var before precompiling:
+1. **Lean workload.** The precompile pass no longer runs a full 2000-step sod1d
+   simulation — `drivers.jl` caps it to 3 timesteps while `jl_generating_output`
+   is set. That still triggers every RHS / integrator / callback specialization,
+   so the cache is fully warmed, but precompilation finishes in seconds-to-a-minute
+   instead of many minutes. (If you saw it "hang at `Progress 0/1`" for 7+ minutes,
+   that was the full simulation running, not a true hang — the lean pass fixes it.)
+2. **shm fabric.** For the single-process precompile worker, libfabric is steered
+   onto the shared-memory `shm` provider (unless you've pinned `FI_PROVIDER`),
+   which needs no network and avoids both the verbs/mlx5 abort and the tcp NIC
+   stall. It's restored afterwards, so compute-node runs are unaffected.
+
+So a plain `julia --project=. -e 'using Pkg; Pkg.precompile()'` should now complete
+on a login node **and** keep cold runs fast.
+
+If `MPI.Init` still can't come up at all on your node (no working fabric
+provider), disable the workload — the package still precompiles fully, you just
+lose the warm-up so the first run pays more JIT:
 
 ```bash
-# On a compute node (fabric healthy): bake in the integrator/RHS warm-up
-salloc -N1 -n1 -t 0:30:00                 # your partition/account flags
-JEXPRESSO_PRECOMPILE_WORKLOAD=1 julia --project=. -e 'using Pkg; Pkg.precompile()'
+JEXPRESSO_PRECOMPILE_WORKLOAD=0 julia --project=. -e 'using Pkg; Pkg.precompile()'
 ```
 
-When opted in, Jexpresso steers libfabric onto the lightweight `shm` provider for
-the single-process precompile worker (unless you've pinned `FI_PROVIDER`
-yourself), and restores it afterwards. If `shm` is unhappy on your build, find a
-provider that initializes fast and pin it:
+Or precompile inside a compute-node allocation where the fabric is healthy:
+
+```bash
+salloc -N1 -n1 -t 0:30:00                 # your partition/account flags
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+To check which provider initializes fast on your node (the default is `shm`):
 
 ```bash
 for p in shm tcp; do
@@ -131,9 +143,8 @@ for p in shm tcp; do
     'using MPI; MPI.Init(); println("ok, size=", MPI.Comm_size(MPI.COMM_WORLD)); MPI.Finalize()' \
     || echo "HANG/FAIL"
 done
-# then, on the compute node:
-JEXPRESSO_PRECOMPILE_WORKLOAD=1 FI_PROVIDER=<fast one> \
-  julia --project=. -e 'using Pkg; Pkg.precompile()'
+# if shm is slow but another provider is fast, pin it for precompile:
+FI_PROVIDER=<fast one> julia --project=. -e 'using Pkg; Pkg.precompile()'
 ```
 
 ### A run is "stuck" for ~30–60 s before the time loop advances

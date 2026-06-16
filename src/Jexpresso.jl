@@ -502,11 +502,17 @@ end
         end
     end
 
-    # ── Opt-in gate for the MPI-driven driver workload ──────────────────
-    # Running the sod1d driver below calls MPI.Init(), which on an
-    # InfiniBand cluster brings up the libfabric (OFI) fabric. That step is
-    # hostile to precompilation on a login node, in three different ways
-    # depending on the provider:
+    # ── MPI-driven driver workload ──────────────────────────────────────
+    # Running the sod1d driver below bakes the hot-path JIT (RHS, the SciML
+    # integrator, the callback-specialized warm-up) into the precompile
+    # cache, so the first `run_case` in a fresh process is launch-cost-only
+    # instead of paying ~tens of seconds of JIT. The workload is kept *lean*
+    # — drivers.jl caps the run to 3 timesteps while `jl_generating_output`
+    # is set — so precompilation stays fast; a full 2000-step sod1d pass is
+    # NOT run here.
+    #
+    # The driver calls MPI.Init(), which on an InfiniBand cluster brings up
+    # the libfabric (OFI) fabric. On a login node that step is hostile:
     #
     #   * verbs/mlx5 (the IB default) tries to allocate an RDMA queue pair
     #     and aborts — verbs are disabled / locked memory too low:
@@ -514,25 +520,22 @@ end
     #         create_vni_context: Cannot allocate memory
     #   * tcp enumerates every NIC (IPoIB, bonded, …) and does reverse-DNS
     #     during MPI.Init — this can stall for many minutes.
-    #   * shm can also stall while the fabric is brought up on some builds.
     #
-    # The core problem is that precompilation should not depend on a working
-    # MPI fabric at all. So by default we DO NOT run the driver workload:
-    # the package still precompiles fully (every method in the module is
-    # compiled regardless), we just skip the extra warm-up pass that bakes
-    # in the integrator/RHS specializations. `using Jexpresso` works either
-    # way; without the warm-up the first `run_case` pays more JIT.
+    # So for the single-process precompile worker we steer libfabric onto
+    # the shared-memory `shm` provider (unless the user pinned FI_PROVIDER),
+    # which needs no network and is the singleton-init happy path, and
+    # restore the previous state afterwards so nothing leaks past
+    # precompilation.
     #
-    # To opt back into the warm-up — e.g. inside a compute-node allocation
-    # where the fabric is healthy — set:
+    # The workload runs by default. If MPI.Init still can't come up on a
+    # particular node (no working fabric provider at all), disable it with
     #
-    #     JEXPRESSO_PRECOMPILE_WORKLOAD=1   (also: true / yes / on)
+    #     JEXPRESSO_PRECOMPILE_WORKLOAD=0   (also: false / no / off)
     #
-    # before precompiling. When opted in we also steer libfabric onto the
-    # shared-memory `shm` provider (unless the user pinned FI_PROVIDER), the
-    # lightest option for the single-process precompile worker, and restore
-    # the previous state afterwards so nothing leaks past precompilation.
-    _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "")) in
+    # before precompiling — the package still precompiles fully, you just
+    # lose the warm-up and the first run pays more JIT. Alternatively
+    # precompile inside a compute-node allocation where the fabric is healthy.
+    _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "1")) in
                     ("1", "true", "yes", "on")
     _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
     _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
@@ -543,7 +546,7 @@ end
     @compile_workload begin
         if _run_workload
             push!(empty!(ARGS), "CompEuler", "sod1d", "true")
-            include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
+            include(joinpath(@__DIR__, "run.jl"))   # lean driver pass (3 steps)
         end
     end
 
