@@ -513,15 +513,20 @@ end
     # locked-memory limit is too low (`ulimit -l`), so precompilation aborts
     # even though it only ever needs a singleton, single-process MPI. The
     # precompile worker never talks to another rank, so steer libfabric onto
-    # the loopback `tcp` provider for the duration of the workload — it skips
-    # the verbs/mlx5 QP + memory-pinning path entirely. Only set it when the
-    # user hasn't pinned FI_PROVIDER themselves, and restore the previous
-    # state afterwards so nothing leaks past precompilation (the actual
-    # mpiexec-launched compute processes choose their provider unaffected).
+    # the shared-memory `shm` provider for the duration of the workload. `shm`
+    # is intra-node only and does *zero* network-interface probing, so it
+    # avoids both the verbs/mlx5 QP + memory-pinning path *and* the multi-
+    # minute stall the `tcp` provider can hit while enumerating every NIC
+    # (IPoIB, bonded, etc.) and doing reverse-DNS during MPI.Init on a login
+    # node. A single-rank singleton init is exactly shm's happy path. Only set
+    # it when the user hasn't pinned FI_PROVIDER themselves, and restore the
+    # previous state afterwards so nothing leaks past precompilation (the
+    # actual mpiexec-launched compute processes choose their provider
+    # unaffected).
     _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
     _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
     if !_fi_provider_was_set
-        ENV["FI_PROVIDER"] = "tcp"
+        ENV["FI_PROVIDER"] = "shm"
     end
 
     @compile_workload begin

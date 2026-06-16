@@ -96,10 +96,13 @@ MPIDI_OFI_init_local ... create_vni_context: Cannot allocate memory
 ERROR: The following 1 direct dependency failed to precompile: Jexpresso
 ```
 
-Jexpresso now steers the precompile worker onto the loopback `tcp` provider
+Jexpresso now steers the precompile worker onto the shared-memory `shm` provider
 automatically (`src/Jexpresso.jl`, `@setup_workload`), so a plain
 `julia --project=. -e 'using Pkg; Pkg.precompile()'` succeeds out of the box on a
-login node. The override is scoped to precompilation only and is skipped if you
+login node. `shm` is intra-node only and does no network-interface probing, so it
+avoids both the verbs/mlx5 failure above *and* the multi-minute stall the `tcp`
+provider can hit while enumerating every NIC (IPoIB, bonded, …) during
+`MPI.Init`. The override is scoped to precompilation only and is skipped if you
 have already pinned `FI_PROVIDER` yourself — so your compute-node runs keep using
 verbs/mlx5.
 
@@ -108,12 +111,26 @@ provider just for the precompile step, or precompile inside a compute-node
 allocation where verbs and locked memory are permitted:
 
 ```bash
-# Login node: sidestep the RDMA fabric for precompilation
-FI_PROVIDER=tcp julia --project=. -e 'using Pkg; Pkg.precompile()'
+# Login node: sidestep the RDMA fabric for precompilation (shm = no network)
+FI_PROVIDER=shm julia --project=. -e 'using Pkg; Pkg.precompile()'
+
+# tcp also works but probes every NIC and can stall for minutes on some
+# login nodes; prefer shm for the single-process precompile.
 
 # Or precompile on a compute node where verbs/locked memory are allowed
 salloc -N1 -n1 -t 0:30:00      # your partition/account flags
 julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+Quick way to find a provider that initializes fast on your node:
+
+```bash
+for p in shm tcp; do
+  echo -n "$p: "
+  timeout 30 env FI_PROVIDER=$p julia --project=. -e \
+    'using MPI; MPI.Init(); println("ok, size=", MPI.Comm_size(MPI.COMM_WORLD)); MPI.Finalize()' \
+    || echo "HANG/FAIL"
+done
 ```
 
 ### A run is "stuck" for ~30–60 s before the time loop advances
