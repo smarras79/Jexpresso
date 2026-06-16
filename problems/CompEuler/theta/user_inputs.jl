@@ -46,7 +46,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "png",
+        :outformat           => "vtk",
         :loverwrite_output   => true,
         :lwrite_initial      => true,
         :output_dir          => "./output",
