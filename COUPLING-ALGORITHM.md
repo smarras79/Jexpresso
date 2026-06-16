@@ -7,11 +7,19 @@ This document describes the coupling algorithm between Jexpresso (Julia SEM solv
 
 ## 1. Handshake
 
-Both codes are launched as a single MPI job sharing `MPI_COMM_WORLD`:
+Both codes are launched as a single MPMD MPI job sharing one `MPI_COMM_WORLD`:
 
 ```
 mpirun -np 2 ./AlyaProxy/Alya.x : -x JEXPRESSO_COUPLED=1 -np 2 julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
 ```
+
+> **Prerequisite — one MPI for both codes.** Because Alya (Fortran) and
+> Jexpresso (Julia) share a single `MPI_COMM_WORLD`, they must be built and run
+> against the **same MPI implementation, version, and ABI** — Alya via `mpif90`,
+> Jexpresso via `MPI.jl`/`MPIPreferences`. A mismatch makes the handshake below
+> hang in `MPI_Init` or corrupt the exchanged data. See
+> [RUN-COUPLED.md](RUN-COUPLED.md) for how to identify, match, and verify the MPI
+> on both sides before launching.
 
 Alya ranks occupy world ranks `0 .. N_alya-1`; Jexpresso occupies `N_alya .. N_alya+N_jexpresso-1`.
 
