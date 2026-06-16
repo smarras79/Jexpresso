@@ -78,25 +78,10 @@ Section 1.** If it doesn't, fix it in the next step.
 
 ---
 
-## 3. Make the Julia side match the Fortran side
+## 3. Compare the two sides — and reconcile them if they differ
 
-Point `MPI.jl` at the **same** system MPI that `mpif90` uses, using the library
-path from Section 1, then rebuild and precompile:
-
-```bash
-# Use the SAME lib dir that `mpif90 -show` reported (here: Homebrew on macOS).
-julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])'
-julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
-julia --project=. -e 'using Pkg; Pkg.precompile()'
-```
-
-> If the system MPI is already in a standard location (`/usr/bin`,
-> `/usr/local/bin`), `MPIPreferences.use_system_binary()` with no `extra_paths`
-> is enough. The detailed configuration options are in
-> [INSTALL.md, Section 5.2](INSTALL.md#52-point-mpipreferences-at-your-mpi).
-
-**Confirm the match** by running the Section 2 check again and comparing it
-side-by-side with Section 1. Both must agree on all three rows:
+Put the output of Section 1 (Fortran) next to Section 2 (Julia). Both must agree
+on all three rows:
 
 | Must match | Fortran (Alya) | Julia (Jexpresso) |
 |------------|----------------|-------------------|
@@ -104,7 +89,66 @@ side-by-side with Section 1. Both must agree on all three rows:
 | Version | `mpiexec --version` | `MPI.identify_implementation()` |
 | Library / launcher | `mpif90 -show` → `-L.../lib` | `MPIPreferences.binary == "system"` + same `mpiexec` |
 
-Only proceed once these line up.
+**If all three rows agree, skip to Section 5.** For example, the verified setup
+
+```
+Julia:   binary = system   ("OpenMPI", v"5.0.8")
+Fortran: mpif90 -show  →  -L/opt/homebrew/Cellar/open-mpi/5.0.8/lib
+```
+
+already matches (OpenMPI 5.0.8 on both), so no reconciliation is needed.
+
+### If they do NOT match
+
+Pick **one** of the two directions below — whichever lets both sides land on the
+same implementation **and** version. Changing one side means leaving the other
+alone.
+
+#### Option A *(usual)* — rebind the Julia side to the Fortran side's MPI
+
+Use this when `mpif90` already points at the MPI you want for the whole job
+(e.g. the cluster/Homebrew default). Point `MPI.jl` at the **same** library that
+`mpif90 -show` reported, then rebuild and precompile:
+
+```bash
+# Use the SAME lib dir that `mpif90 -show` printed.
+# Homebrew OpenMPI on Apple Silicon:
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])'
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+> The path is the `-L.../lib` from `mpif90 -show` — e.g.
+> `/opt/homebrew/Cellar/open-mpi/5.0.8/lib`, of which `/opt/homebrew/lib` is the
+> Homebrew symlink. If the MPI is in a standard location (`/usr/bin`,
+> `/usr/local/bin`), `MPIPreferences.use_system_binary()` with no `extra_paths`
+> suffices. Full options:
+> [INSTALL.md, Section 5.2](INSTALL.md#52-point-mpipreferences-at-your-mpi).
+
+#### Option B — rebuild the Fortran side against the Julia side's MPI
+
+Use this when you want to keep the MPI that `MPI.jl` is already bound to (e.g.
+you don't want to re-precompile Julia, or MPI.jl points at the MPI you prefer).
+Recompile `Alya.x` with the `mpif90` that belongs to **that** MPI — pin it
+explicitly via the `MPIF90` variable so the right wrapper is used regardless of
+`PATH` (see Section 5):
+
+```bash
+cd AlyaProxy
+# Point MPIF90 at the wrapper of the MPI that MPI.jl reports. Example:
+MPIF90=/opt/homebrew/Cellar/open-mpi/5.0.8/bin/mpif90 bash compilef90.sh
+cd ..
+```
+
+If that MPI provides no `mpif90` at all (for instance MPI.jl is on the bundled
+`MPItrampoline_jll`), you cannot easily build Alya against it — install a matching
+**system** MPI and use Option A instead. See the
+[note on the JLL route in Section 4](#4-choose-a-consistent-mpi-for-coupling).
+
+### Confirm the match
+
+Re-run the Section 2 check and re-read `mpif90 -show`; the three rows above must
+now line up. **Only proceed once they do.**
 
 ---
 
@@ -136,13 +180,50 @@ For a coupled run, pick **one** of the following — the same choice applies to
 
 ## 5. Compile the Alya proxy with the chosen MPI
 
-With the correct `mpif90` first on your `PATH` (verify with `which mpif90`),
-build the proxy:
+`Alya.x` is built from `myAlya.f90` (a symlink to `alya_all2all_time_loop.f90`)
+by [`AlyaProxy/compilef90.sh`](AlyaProxy/compilef90.sh), which calls `mpif90`.
+The only thing that matters is that this `mpif90` belongs to the **same MPI**
+you bound MPI.jl to in Section 3.
+
+**First make sure the right wrapper is selected.** `compilef90.sh` uses the
+`mpif90` first on your `PATH` by default, but you can pin a specific one with the
+`MPIF90` variable (recommended when several MPIs are installed):
 
 ```bash
 cd AlyaProxy
-bash compilef90.sh        # runs: mpif90 -cpp -DUSEMPIF08 myAlya.f90 -o Alya.x
+
+# Option A — the mpif90 on PATH is already the right one (verify, then build):
+which mpif90 && mpif90 -show
+bash compilef90.sh
+
+# Option B — pin the exact wrapper that matches MPI.jl:
+MPIF90=/opt/homebrew/Cellar/open-mpi/5.0.8/bin/mpif90 bash compilef90.sh
+
 cd ..
+```
+
+The script prints the wrapper's `-show` line so you can eyeball that the
+include/lib paths point at the same MPI as the Julia side.
+
+**Worked example (the verified Homebrew OpenMPI 5.0.8 setup).** If
+`MPI.identify_implementation()` reports `("OpenMPI", v"5.0.8")` and `mpif90
+-show` reports `-L/opt/homebrew/Cellar/open-mpi/5.0.8/lib`, the two already
+match — just build:
+
+```bash
+cd AlyaProxy && bash compilef90.sh && cd ..
+```
+
+**Verify what `Alya.x` actually linked against** (catches a wrong wrapper even
+when `-show` looked fine):
+
+```bash
+# macOS:
+otool -L AlyaProxy/Alya.x | grep -i mpi
+#   → .../open-mpi/5.0.8/lib/libmpi.40.dylib   (must be the SAME MPI as MPI.jl)
+
+# Linux:
+ldd AlyaProxy/Alya.x | grep -i mpi
 ```
 
 This produces `./AlyaProxy/Alya.x`, linked against the MPI you selected in

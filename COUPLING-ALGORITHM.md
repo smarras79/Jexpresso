@@ -18,8 +18,9 @@ mpirun -np 2 ./AlyaProxy/Alya.x : -x JEXPRESSO_COUPLED=1 -np 2 julia --project=.
 > against the **same MPI implementation, version, and ABI** — Alya via `mpif90`,
 > Jexpresso via `MPI.jl`/`MPIPreferences`. A mismatch makes the handshake below
 > hang in `MPI_Init` or corrupt the exchanged data. See
-> [RUN-COUPLED.md](RUN-COUPLED.md) for how to identify, match, and verify the MPI
-> on both sides before launching.
+> [RUN-COUPLED.md](RUN-COUPLED.md) for how to identify the MPI on both sides,
+> **reconcile them if they differ** (rebind MPI.jl or recompile Alya), and verify
+> the match before launching.
 
 Alya ranks occupy world ranks `0 .. N_alya-1`; Jexpresso occupies `N_alya .. N_alya+N_jexpresso-1`.
 
