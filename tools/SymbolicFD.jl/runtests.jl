@@ -31,7 +31,7 @@ rel_l2(num, exact) = l2(num .- exact) / l2(exact)
 
 # integrate an equation WITHOUT any file/plot output, returning (mesh, q0, q)
 function integrate_only(eqn, inputs, q0fun; tend, cfl = 0.4, Δt = nothing)
-    var, dqdt = parse_equation(eqn, inputs)
+    var, mode, dqdt = parse_equation(eqn, inputs)
     mesh = S.FDMesh1D(inputs)
     rhs! = S.build_rhs(dqdt, mesh)
     q0   = Float64[q0fun(xi) for xi in mesh.x]
@@ -89,20 +89,23 @@ end
 
     # ----------------------------------------------------------------------------
     @testset "parsing & rank bookkeeping" begin
-        var, dqdt = parse_equation("∂q/∂t + ∇⋅(uq) = μ∇²q", Dict(:u => [1.0], :μ => 1e-3))
+        var, mode, dqdt = parse_equation("∂q/∂t + ∇⋅(uq) = μ∇²q", Dict(:u => [1.0], :μ => 1e-3))
         @test var == "q"
+        @test mode == :transient
+
+        # no time derivative -> steady mode, unknown inferred (q not a parameter)
+        v2, m2, _ = parse_equation("μ∇²q = f", Dict(:μ => 1.0, :f => x -> 0.0))
+        @test v2 == "q"
+        @test m2 == :steady
 
         # a scalar = vector balance must be rejected (∇q is rank 1)
         m = make_mesh(16)
-        _, bad = parse_equation("∂q/∂t = ∇q", Dict())
+        _, _, bad = parse_equation("∂q/∂t = ∇q", Dict())
         rhs! = S.build_rhs(bad, m)
         @test_throws ErrorException rhs!(zeros(16), ones(16))
 
-        # unknown symbol must be reported
+        # unknown symbol on a transient eqn must be reported
         @test_throws ErrorException parse_equation("∂q/∂t = a q", Dict())
-
-        # missing time derivative must be reported
-        @test_throws ErrorException parse_equation("∇⋅(uq) = 0", Dict(:u => [1.0]))
     end
 
     # ----------------------------------------------------------------------------
@@ -125,6 +128,30 @@ end
         Δx = m.Δx
         @test sum(q0) * Δx ≈ 2.0                          # mean 1 over length-2 domain
         @test abs(sum(q) * Δx - sum(q0) * Δx) < 1e-10    # conservative form
+    end
+
+    # ----------------------------------------------------------------------------
+    @testset "steady (time-independent) problems" begin
+        # Laplace  ∇²q = 0,  q(-1)=0, q(1)=1  ->  linear  q = (x+1)/2
+        _, mode, node = parse_equation("∇²q = 0", Dict())
+        @test mode == :steady
+        m  = S.FDMesh1D(Dict(:npoin => 101, :xmin => -1.0, :xmax => 1.0, :periodic => false))
+        q, rmax = S.solve_steady(node, m, Dict(:bc_left => 0.0, :bc_right => 1.0))
+        @test rel_l2(q, [(xi + 1) / 2 for xi in m.x]) < 1e-10
+        @test rmax < 1e-8
+
+        # Poisson  μ∇²q = f,  μ=1, f=-π²sin(πx)  ->  q = sin(πx),  q(±1)=0
+        inp = Dict(:μ => 1.0, :f => x -> -Float64(π)^2 * sinpi(x))
+        _, mode2, node2 = parse_equation("μ∇²q = f", inp)
+        @test mode2 == :steady
+        m2 = S.FDMesh1D(Dict(:npoin => 257, :xmin => -1.0, :xmax => 1.0, :periodic => false))
+        q2, r2 = S.solve_steady(node2, m2, merge(inp, Dict(:bc_left => 0.0, :bc_right => 0.0)))
+        @test rel_l2(q2, [sinpi(xi) for xi in m2.x]) < 2e-3
+        @test r2 < 1e-8
+
+        # a steady solve refuses a periodic grid (no Dirichlet data)
+        mp = S.FDMesh1D(Dict(:npoin => 32, :periodic => true))
+        @test_throws ErrorException S.solve_steady(node, mp, Dict())
     end
 
     # ----------------------------------------------------------------------------

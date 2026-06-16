@@ -4,8 +4,9 @@ A small, **stand-alone** "write-the-equation-and-solve-it" engine for Jexpresso.
 
 You write a PDE using Julia's unicode characters (a few common LaTeX spellings
 are accepted too), describe the grid with a `user_inputs()`-style `Dict` exactly
-as in Jexpresso, and the equation is **discretized and integrated in time
-automatically**.
+as in Jexpresso, and the equation is **discretized and solved automatically** —
+time-marched if it has a `∂q/∂t` term, or solved as a steady (elliptic) problem
+if it does not.
 
 > **No AI, no PDF parsing, no string-to-case lookup.** This tool is *not*
 > `tools/EquationGenerator.jl` (which uses Claude to generate a problem
@@ -83,6 +84,31 @@ SymbolicFD.solve("∂q/∂t + ∇⋅(u q) = μ∇²q",
                  Dict(:u => [1.0], :μ => 1e-3, :tend => 2.0))
 ```
 
+## Time-independent (steady) problems
+
+If the equation has **no `∂q/∂t` term**, it is solved as a steady elliptic
+problem rather than time-marched. The same operators are assembled into a matrix
+`A` (by probing the affine residual `A q + c` column by column) and the system
+`A q = b` is solved directly, with Dirichlet boundary nodes.
+
+```bash
+julia --project=. tools/SymbolicFD.jl/run_heat_steady_1d.jl
+```
+
+solves the steady heat (Poisson) equation `∇⋅∇(q) = f` on `[-1, 1]` with a
+localized source and cold ends `q(±1) = 0`. The unknown is inferred as the only
+symbol that is not a supplied parameter (override with `:unknown => "q"`). Steady
+problems use a non-periodic grid and the Dirichlet keys `:bc_left` / `:bc_right`
+(default `0.0`). The banner reports the steady residual it assembled, e.g.
+
+```
+   steady residual : ∇²(q) - f(x) = 0   (solve for q)
+```
+
+Examples: `∇²q = 0` (Laplace ⇒ linear profile between the end values),
+`μ∇²q = f` (Poisson). The direct solve assumes a **linear** operator; nonlinear
+steady problems are out of scope for now.
+
 ## Tests
 
 Analytic-solution and operator checks live in `runtests.jl`:
@@ -114,8 +140,10 @@ Worked examples (drop the string into `equation`, adjust inputs):
 | Pure advection (no diffusion)       | `"∂q/∂t + ∇⋅(u q) = 0"`                      | `:u => [1.0]`           |
 | Conservative advection–diffusion    | `"∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)"`    | `:u => [1.0], :μ`       |
 | Non-conservative form               | `"∂q/∂t + u⋅∇q = μ∇²q"`                      | `:u => [1.0], :μ`       |
-| Pure diffusion (heat equation)      | `"∂q/∂t = μ∇²q"`                             | `:μ => 0.01`            |
+| Transient diffusion (heat eqn)      | `"∂q/∂t = μ∇²q"`                             | `:μ => 0.01`            |
 | Advection–diffusion–decay           | `"∂q/∂t + ∇⋅(u q) = μ∇²q - k q"`             | `:u,:μ,:k`              |
+| **Steady** heat / Poisson (no ∂/∂t) | `"∇²q = f"` / `"μ∇²q = f"`                   | `:f, :bc_left,:bc_right`|
+| **Steady** Laplace                  | `"∇²q = 0"`                                  | `:bc_left,:bc_right`    |
 
 Change the initial shape with `:q0`, e.g. a narrower gaussian
 `x -> exp(-(x^2)/(2*0.05^2))` or a square pulse `x -> abs(x) < 0.3 ? 1.0 : 0.0`.
@@ -143,11 +171,13 @@ re-interpreted.
 | `:xmin`,`:xmax`| domain                                          | `-1`, `1`        |
 | `:npoin`/`:nelx`| number of grid points                          | `100`            |
 | `:periodic`    | periodic boundary conditions                    | `true`           |
-| `:u`,`:μ`,…    | parameter symbols (vector for a vector quantity)| —                |
-| `:q0`          | initial condition `x -> value`                  | gaussian         |
-| `:tend`        | final time                                      | `1.0`            |
+| `:u`,`:μ`,…    | parameters (vector for a vector, `x->…` for a field) | —           |
+| `:q0`          | initial condition `x -> value` (transient)      | gaussian         |
+| `:tend`        | final time (transient)                          | `1.0`            |
 | `:Δt`          | fixed time step (otherwise CFL-derived)         | auto             |
 | `:CFL`         | CFL number for the automatic `Δt`               | `0.5`            |
+| `:bc_left`,`:bc_right` | Dirichlet boundary values (steady)      | `0.0`            |
+| `:unknown`     | unknown name if it cannot be inferred (steady)  | inferred         |
 | `:output_dir`  | directory for figures / `solution.csv`          | `"."`            |
 | `:outformat`   | `"png"` (Plots.jl, like sod1d) or `"ascii"`     | `"png"`          |
 | `:ndiagnostics_outputs` | number of on-the-fly plot snapshots    | `10`             |
@@ -159,12 +189,14 @@ re-interpreted.
    unicode, collapse contiguous `∇⋅∇`/`∇^2`/`Δ` to `∇²`.
 2. **Parse** — recursive-descent parser builds an expression tree of operator
    and field nodes (no equation templates).
-3. **Build the RHS** — the `∂q/∂t` term is identified and removed, the rest is
-   moved across `=`; the result is the tree for `∂q/∂t = …`.
+3. **Build the RHS / residual** — if a `∂q/∂t` term is present it is removed and
+   the rest moved across `=` to form the tree for `∂q/∂t = …` (transient);
+   otherwise the tree is the residual `lhs - rhs` to drive to zero (steady).
 4. **Discretize + evaluate** — each `∇/∇⋅/∇²` node calls its finite-difference
-   stencil on the field it receives; field algebra composes them. Evaluating the
-   tree on the current state gives `∂q/∂t`.
-5. **Integrate** — explicit RK4 with an automatic CFL-based `Δt`.
+   stencil on the field it receives; field algebra composes them.
+5. **Solve** — transient: explicit RK4 with an automatic CFL-based `Δt`; steady:
+   assemble the operator into a matrix `A` and solve `A q = b` directly with
+   Dirichlet boundary nodes.
 6. **Output** — PNG + on-the-fly plots like `sod1d`, plus CSV.
 
 ## Path to Jexpresso integration

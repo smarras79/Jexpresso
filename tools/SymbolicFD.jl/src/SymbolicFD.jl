@@ -27,6 +27,7 @@
 module SymbolicFD
 
 using Printf
+using LinearAlgebra  # steady (time-independent) problems: assemble + solve A q = b
 using Plots          # PNG output + on-the-fly window, exactly as in Jexpresso
 
 export solve, parse_equation, FDMesh1D, Field, ascii_plot
@@ -255,14 +256,15 @@ fneg(a::Field) = Field(a.mesh, a.rank, [-ac for ac in a.comp])
 #   atom   := '(' expr ')' | number | id
 #---------------------------------------------------------------------------------
 struct Node
-    op::Symbol                  # :const :vecconst :var :grad :div :lap :dt :mul :dot :add :sub :neg
+    op::Symbol           # :const :func :vecconst :var :grad :div :lap :dt :mul :dot :add :sub :neg
     val::Float64
     vec::Vector{Float64}
     name::String
+    fun::Union{Nothing,Function}   # for :func -- a spatially varying parameter/source x->value
     args::Vector{Node}
 end
-Node(op::Symbol; val = 0.0, vec = Float64[], name = "", args = Node[]) =
-    Node(op, val, vec, name, args)
+Node(op::Symbol; val = 0.0, vec = Float64[], name = "", fun = nothing, args = Node[]) =
+    Node(op, val, vec, name, fun, args)
 
 mutable struct PState
     chars::Vector{Char}
@@ -301,11 +303,13 @@ function _leaf(p::PState, name::String)
         return Node(:var; name = name)
     elseif haskey(p.inputs, Symbol(name))
         v = p.inputs[Symbol(name)]
-        return v isa AbstractVector ? Node(:vecconst; vec = Float64.(v)) :
-                                      Node(:const;    val = Float64(v))
+        v isa Function       && return Node(:func;     name = name, fun = v)
+        v isa AbstractVector && return Node(:vecconst; vec = Float64.(v))
+        return Node(:const; val = Float64(v))
     end
     error("SymbolicFD: unknown symbol `$name` in the equation. " *
-          "Add `:$name => value` to your inputs Dict (a vector for a vector quantity).")
+          "Add `:$name => value` to your inputs Dict (a vector for a vector quantity, " *
+          "a function `x->…` for a spatially varying coefficient/source).")
 end
 
 function parse_atom(p::PState)
@@ -393,33 +397,61 @@ function flatten!(acc::Vector{Tuple{Float64,Node}}, n::Node, s::Float64)
     return acc
 end
 
-"""
-    parse_equation(eqn, inputs) -> (var::String, dqdt::Node)
+# Infer the unknown of a *steady* (no ∂/∂t) equation: the single-character
+# symbol that is not a provided parameter. Overridable with `:unknown => "q"`.
+function find_unknown(s::AbstractString, inputs::Dict)
+    haskey(inputs, :unknown) && return String(inputs[:unknown])
+    cands = String[]
+    for c in s
+        if isletter(c)
+            str = string(c)
+            (!haskey(inputs, Symbol(str)) && str ∉ cands) && push!(cands, str)
+        end
+    end
+    length(cands) == 1 ||
+        error("SymbolicFD: could not infer the unknown (candidates: $cands). " *
+              "Provide `:unknown => \"q\"`, or make sure every parameter is in the inputs Dict.")
+    return cands[1]
+end
 
-Parse a unicode/LaTeX PDE into the unknown variable name and the expression
-tree for the right-hand side of `∂var/∂t = dqdt`. The time-derivative term is
-identified and removed; every other term is moved across the `=` with the
-appropriate sign. No operator is tied to a specific equation: `dqdt` is just a
-composition of the `∇/∇⋅/∇²` operators and field algebra defined above.
+"""
+    parse_equation(eqn, inputs) -> (var::String, mode::Symbol, node::Node)
+
+Parse a unicode/LaTeX PDE into the unknown variable name, a `mode`, and an
+expression tree, with NO operator tied to a specific equation:
+
+- if a `∂var/∂t` term is present, `mode = :transient` and `node` is the
+  right-hand side of `∂var/∂t = node` (the time term is removed and every other
+  term moved across `=` with the proper sign);
+- otherwise `mode = :steady` and `node` is the residual `lhs - rhs`, to be
+  driven to zero by a direct solve.
 """
 function parse_equation(eqn::AbstractString, inputs::Dict)
     s = normalize_equation(eqn)
     occursin("=", s) ||
         error("SymbolicFD: the equation must contain `=` (e.g. `∂q/∂t + ∇⋅(uq) = μ∇²q`).")
-    m = match(r"∂([^/]+)/∂t", s)
-    m === nothing &&
-        error("SymbolicFD: no `∂q/∂t`-type time derivative found in the equation.")
-    var = String(m.captures[1])
+    lhs, rhs = split(s, "=", limit = 2)
+    tm = match(r"∂([^/]+)/∂t", s)
+
+    if tm === nothing
+        # ---- steady / time-independent (e.g. the steady heat equation) ----
+        var = find_unknown(s, inputs)
+        length(var) == 1 ||
+            error("SymbolicFD: use a single-character unknown name (got `$var`).")
+        resid = Node(:sub; args = [parse_side(lhs, var, inputs),
+                                   parse_side(rhs, var, inputs)])
+        return var, :steady, resid
+    end
+
+    # ---- transient ----
+    var = String(tm.captures[1])
     length(var) == 1 ||
         error("SymbolicFD: use single-character variable/parameter names (got `$var`); " *
               "juxtaposition like `uq` is read as u*q.")
-
-    lhs, rhs = split(s, "=", limit = 2)
     lhs_terms = flatten!(Tuple{Float64,Node}[], parse_side(lhs, var, inputs), 1.0)
     rhs_terms = flatten!(Tuple{Float64,Node}[], parse_side(rhs, var, inputs), 1.0)
 
-    # collect the dq/dt right-hand-side terms (rhs keep sign, lhs flip)
-    signed = Tuple{Float64,Node}[]
+    signed = Tuple{Float64,Node}[]          # dq/dt terms (rhs keep sign, lhs flip)
     dt_found = false
     for (sg, nd) in rhs_terms
         nd.op == :dt ? error("SymbolicFD: the ∂q/∂t term must be on the left of `=`.") :
@@ -436,14 +468,13 @@ function parse_equation(eqn::AbstractString, inputs::Dict)
     end
     dt_found || error("SymbolicFD: no `∂$var/∂t` term found.")
 
-    # build the dqdt tree
-    isempty(signed) && return var, Node(:const; val = 0.0)
+    isempty(signed) && return var, :transient, Node(:const; val = 0.0)
     s1, n1 = signed[1]
     dqdt = s1 == 1.0 ? n1 : Node(:neg; args = [n1])
     for (sg, nd) in signed[2:end]
         dqdt = Node(sg == 1.0 ? :add : :sub; args = [dqdt, nd])
     end
-    return var, dqdt
+    return var, :transient, dqdt
 end
 
 #---------------------------------------------------------------------------------
@@ -452,6 +483,7 @@ end
 function eval_node(n::Node, qf::Field)
     op = n.op
     op == :const    && return const_field(qf.mesh, n.val)
+    op == :func     && return Field(qf.mesh, 0, [Float64[n.fun(xi) for xi in qf.mesh.x]])
     op == :vecconst && return vec_const_field(qf.mesh, n.vec)
     op == :var      && return qf
     op == :grad     && return gradient(eval_node(n.args[1], qf))
@@ -469,6 +501,7 @@ end
 function ast_str(n::Node)
     op = n.op
     op == :const    && return @sprintf("%.4g", n.val)
+    op == :func     && return string(n.name, "(x)")
     op == :vecconst && return string("[", join(map(x -> @sprintf("%.4g", x), n.vec), ","), "]")
     op == :var      && return n.name
     op == :grad     && return string("∇(", ast_str(n.args[1]), ")")
@@ -485,16 +518,57 @@ end
 #---------------------------------------------------------------------------------
 # 6. Right-hand side closure: wrap q in a Field, evaluate the tree, return ∂q/∂t
 #---------------------------------------------------------------------------------
-function build_rhs(dqdt::Node, mesh::FDMesh1D)
+function build_rhs(node::Node, mesh::FDMesh1D)
     function rhs!(dq, q)
         qf = scalar_field(mesh, q)        # alias q; operators allocate, never mutate q
-        r  = eval_node(dqdt, qf)
-        r.rank == 0 || error("SymbolicFD: ∂$("q")/∂t evaluated to a rank-$(r.rank) field; " *
-                             "the equation is not a scalar balance.")
+        r  = eval_node(node, qf)
+        r.rank == 0 || error("SymbolicFD: the equation evaluated to a rank-$(r.rank) field; " *
+                             "it is not a scalar balance.")
         copyto!(dq, r.comp[1])
         return dq
     end
     return rhs!
+end
+
+#---------------------------------------------------------------------------------
+# 6b. Steady / time-independent solve (no ∂/∂t): assemble the discrete operator
+#     into a matrix and solve A q = b directly, with Dirichlet boundary nodes.
+#
+# The same operator evaluator is reused: for a linear PDE the residual is affine,
+# residual(q) = A q + c, so the matrix is recovered column-by-column by probing
+# residual(e_j) - residual(0), and b = -residual(0). This needs the genuine
+# operators of Section 3 -- nothing here is specific to a particular equation.
+#---------------------------------------------------------------------------------
+function solve_steady(resid::Node, mesh::FDMesh1D, inputs::Dict)
+    mesh.periodic &&
+        error("SymbolicFD: a steady (no ∂/∂t) problem needs Dirichlet boundary data; " *
+              "set `:periodic => false` and provide `:bc_left` / `:bc_right`.")
+    n = mesh.npoin
+    resid! = build_rhs(resid, mesh)
+
+    c   = zeros(n);  resid!(c, zeros(n))          # c = residual(0)
+    A   = zeros(n, n);  e = zeros(n);  col = zeros(n)
+    for j in 1:n
+        fill!(e, 0.0); e[j] = 1.0
+        resid!(col, e)                            # residual(e_j) = A e_j + c
+        @inbounds for i in 1:n
+            A[i, j] = col[i] - c[i]
+        end
+    end
+    b = -c
+
+    # Dirichlet boundary conditions: overwrite the two boundary rows
+    bcl = Float64(get(inputs, :bc_left,  0.0))
+    bcr = Float64(get(inputs, :bc_right, 0.0))
+    A[1, :] .= 0.0; A[1, 1] = 1.0; b[1] = bcl
+    A[n, :] .= 0.0; A[n, n] = 1.0; b[n] = bcr
+
+    q = A \ b
+
+    # report the interior residual of the original (unconstrained) operator
+    r = zeros(n); resid!(r, q)
+    rmax = n > 2 ? maximum(abs, @view r[2:n-1]) : 0.0
+    return q, rmax
 end
 
 #---------------------------------------------------------------------------------
@@ -624,31 +698,74 @@ Recognised `inputs` keys
 - `:periodic`                 true/false (default true)
 - `:nsd`                      spatial dimension (only 1 implemented so far)
 - `:u`, `:μ`, …               parameter symbols in the equation (vector for a
-                              vector quantity, e.g. a velocity `:u => [1.0]`)
-- `:q0`                       initial condition `x -> value`
-- `:tend`                     final time
-- `:Δt`                       time step (optional; otherwise CFL-derived)
-- `:CFL`                      CFL number for the automatic Δt (default 0.5)
+                              vector quantity `:u => [1.0]`; a function `x->…`
+                              for a spatially varying coefficient/source)
+- `:q0`                       initial condition `x -> value` (transient only)
+- `:tend`, `:Δt`, `:CFL`      time-integration controls (transient only)
 - `:output_dir`               where to write figures / `solution.csv` (default ".")
 - `:outformat`                "png" (Plots.jl, like sod1d) or "ascii" (default "png")
 - `:ndiagnostics_outputs`     number of on-the-fly plot snapshots (default 10)
 - `:plot_live`                update an on-screen window on the fly (default true)
+
+If the equation has **no `∂q/∂t` term** the problem is solved as a steady
+(time-independent) elliptic problem, e.g. the steady heat equation `μ∇²q = f`.
+In that case the discrete operator is assembled into a matrix and solved
+directly; extra keys:
+- `:bc_left`, `:bc_right`     Dirichlet boundary values (default 0.0)
+- `:unknown`                  name of the unknown if it cannot be inferred
+- (the grid defaults to non-periodic; provide `:periodic => false` explicitly
+  if you also set other periodic options)
 """
 function solve(eqn::AbstractString, inputs::Dict)
     nsd_in = Int(get(inputs, :nsd, 1))
     nsd_in == 1 || error("SymbolicFD: only nsd = 1 is implemented so far (got nsd = $nsd_in).")
 
-    var, dqdt = parse_equation(eqn, inputs)
-    mesh = FDMesh1D(inputs)
+    var, mode, node = parse_equation(eqn, inputs)
+
+    # mesh: default to periodic for transient, non-periodic for steady (unless set)
+    inputs_mesh = haskey(inputs, :periodic) ? inputs :
+                  merge(inputs, Dict(:periodic => (mode == :transient)))
+    mesh = FDMesh1D(inputs_mesh)
 
     println("="^72)
     println(" SymbolicFD : composing finite-difference operators for")
     println("   ", eqn)
     println("   normalized      : ", normalize_equation(eqn))
-    println("   discretized RHS : ∂$var/∂t = ", ast_str(dqdt))
+    if mode == :transient
+        println("   discretized RHS : ∂$var/∂t = ", ast_str(node))
+    else
+        println("   steady residual : ", ast_str(node), " = 0   (solve for $var)")
+    end
     println("   nsd = $nsd_in, npoin = $(mesh.npoin), domain = [$(mesh.xmin), $(mesh.xmax)], ",
             mesh.periodic ? "periodic" : "non-periodic")
     println("="^72)
+
+    outdir = String(get(inputs, :output_dir, "."))
+    isdir(outdir) || mkpath(outdir)
+    usepng = lowercase(String(get(inputs, :outformat, "png"))) == "png"
+    live   = Bool(get(inputs, :plot_live, true))
+
+    # ============================ steady / elliptic ============================
+    if mode == :steady
+        q, rmax = solve_steady(node, mesh, inputs)
+        @printf("   max interior residual = %.3e\n", rmax)
+        @printf("   q: min = %.6g, max = %.6g\n", minimum(q), maximum(q))
+        usepng && plot_results_png(mesh.x, q, var, "steady", outdir, 0; live = live)
+        open(joinpath(outdir, "solution.csv"), "w") do io
+            println(io, "x,$var")
+            for i in 1:mesh.npoin
+                @printf(io, "%.10e,%.10e\n", mesh.x[i], q[i])
+            end
+        end
+        println("   wrote ", joinpath(outdir, "solution.csv"))
+        usepng ? println("   wrote ", outdir, "/fields-it0.png") :
+                 ascii_plot(mesh.x, q; label = "$var(x)")
+        println("="^72)
+        return mesh, q, q
+    end
+
+    # =============================== transient =================================
+    dqdt = node
 
     # initial condition
     q0fun = get(inputs, :q0, x -> exp(-(x^2) / (2 * 0.1^2)))   # default gaussian
@@ -664,12 +781,7 @@ function solve(eqn::AbstractString, inputs::Dict)
     rhs! = build_rhs(dqdt, mesh)
     @printf("   Δt = %.3e, nsteps = %d, t_end = %.4g\n", dt, nsteps, tend)
 
-    # output set-up
-    outdir = String(get(inputs, :output_dir, "."))
-    isdir(outdir) || mkpath(outdir)
-    usepng = lowercase(String(get(inputs, :outformat, "png"))) == "png"
-    live   = Bool(get(inputs, :plot_live, true))
-    nout   = max(1, Int(get(inputs, :ndiagnostics_outputs, 10)))
+    nout      = max(1, Int(get(inputs, :ndiagnostics_outputs, 10)))
     out_every = max(1, cld(nsteps, nout))
     if usepng
         plot_initial_png(mesh.x, q0, var, outdir)
