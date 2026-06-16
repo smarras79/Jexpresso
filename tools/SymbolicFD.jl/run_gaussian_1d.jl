@@ -33,6 +33,7 @@ function user_inputs()
         # Space dimension and grid (exactly like Jexpresso's 1D path)
         #-------------------------------------------------------------------
         :nsd       => 1,
+        :method    => :fd,        # discretization: :fd (this) or :sem (next step)
         :xmin      => -1.0,
         :xmax      =>  1.0,
         :npoin     => 200,        # number of grid points

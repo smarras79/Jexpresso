@@ -77,6 +77,24 @@ end
     end
 
     # ----------------------------------------------------------------------------
+    @testset "discretization backend (:method)" begin
+        # default backend is finite differences
+        @test make_mesh(16).disc isa S.FDMethod
+
+        # :sem selects the spectral-element backend; the mesh builds, but the
+        # SEM derivative primitive is stubbed (next step) and must error clearly
+        msem = S.FDMesh1D(Dict(:npoin => 16, :periodic => true, :method => :sem, :nop => 4))
+        @test msem.disc isa S.SEMMethod
+        @test msem.disc.nop == 4
+        fsem = Field(msem, 0, [collect(1.0:16.0)])
+        @test_throws ErrorException S.gradient(fsem)
+        @test_throws ErrorException S.laplacian(fsem)
+
+        # unknown method is rejected
+        @test_throws ErrorException S.FDMesh1D(Dict(:method => :nope))
+    end
+
+    # ----------------------------------------------------------------------------
     @testset "2nd-order spatial convergence (∇²)" begin
         err(N) = begin
             m = make_mesh(N)

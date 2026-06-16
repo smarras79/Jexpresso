@@ -34,6 +34,26 @@ composition works — `∇⋅(u q)`, `∇⋅(D∇q)`, `u⋅∇q`, `∇²q`, … 
 advection-diffusion. Dimensional mistakes (e.g. adding a scalar to a vector) are
 caught automatically by the rank bookkeeping.
 
+## Discretization method (`:method`, user-selectable)
+
+The numerical method is a pluggable backend. Everything above the
+directional-derivative primitive — the operators, the parser, the RHS / steady
+assembly, the time loop and the matrix-free Krylov solve — is method-agnostic;
+only `deriv1`/`deriv2` change with the backend, dispatched on the mesh:
+
+| `:method`  | backend                                            | status         |
+|------------|----------------------------------------------------|----------------|
+| `:fd`      | 2nd-order central finite differences (this file)   | **working** (default) |
+| `:sem`     | Jexpresso's spectral element method                | **next step** (stubbed) |
+
+The SEM backend is stubbed with the seam in place (selecting `:sem` builds the
+mesh and dispatches, then raises a clear "not implemented yet" error). It will
+reuse Jexpresso's `St_lgl` nodes/weights and the `dψ` nodal differentiation
+matrix (`src/kernel/bases/basis_structs.jl`), with `problems/CompEuler/sod1d` as
+the 1D reference — including its **DSGS** residual-based shock capturing
+(Marras et al.; `src/kernel/physics/SGS.jl`), to be added as a
+discretization-agnostic artificial-viscosity field in a follow-up.
+
 ## Example
 
 ```julia
@@ -171,6 +191,8 @@ re-interpreted.
 
 | key            | meaning                                         | default          |
 |----------------|-------------------------------------------------|------------------|
+| `:method`      | `:fd` finite differences / `:sem` spectral elem (next) | `:fd`     |
+| `:nop`         | polynomial order per element (`:method => :sem`)| `4`              |
 | `:nsd`         | spatial dimension (only `1` implemented so far) | `1`              |
 | `:xmin`,`:xmax`| domain                                          | `-1`, `1`        |
 | `:npoin`/`:nelx`| number of grid points                          | `100`            |

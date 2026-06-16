@@ -82,14 +82,44 @@ function normalize_equation(eqn::AbstractString)
 end
 
 #---------------------------------------------------------------------------------
-# 2. Finite-difference mesh (1D now; ND-ready: operators ask the mesh for
-#    a directional derivative, so a 2D/3D mesh only needs to add directions).
+# 2. Discretization backend (user-selectable) and the 1D grid
+#
+# The numerical method is pluggable. Everything above the directional-derivative
+# primitive (the operators ∇/∇⋅/∇², the parser, the RHS/steady assembly, the
+# time loop) is method-agnostic; only `deriv1`/`deriv2` change with the backend,
+# dispatched on the mesh's `disc::Discretization`:
+#
+#   :method => :fd   ->  FDMethod   : 2nd-order central finite differences (this file)
+#   :method => :sem  ->  SEMMethod  : Jexpresso's spectral element method  (FOLLOW-UP)
+#
+# The SEM backend is stubbed here with the seam in place: it will reuse
+# Jexpresso's St_lgl nodes/weights and the dψ nodal differentiation matrix
+# (src/kernel/bases/basis_structs.jl), with problems/CompEuler/sod1d as the 1D
+# reference (including its DSGS shock capturing, also a follow-up).
 #---------------------------------------------------------------------------------
+abstract type Discretization end
+struct FDMethod  <: Discretization end
+Base.@kwdef struct SEMMethod <: Discretization
+    nop::Int = 4                       # polynomial order per element (LGL: nop+1 nodes)
+end
+
+method_name(::FDMethod)  = "finite differences (2nd-order central)"
+method_name(d::SEMMethod) = "spectral element (nop = $(d.nop))  [not yet implemented]"
+
+function discretization(inputs::Dict)
+    m = get(inputs, :method, :fd)
+    m === :fd  && return FDMethod()
+    m === :sem && return SEMMethod(nop = Int(get(inputs, :nop, 4)))
+    error("SymbolicFD: unknown :method `$m`; choose :fd (finite differences) or " *
+          ":sem (spectral element).")
+end
+
 """
     FDMesh1D
 
-Uniform 1D finite-difference grid with `npoin` nodes on `[xmin, xmax]`.
-For a periodic grid `x_i = xmin + i*Δx`, `i = 0 … npoin-1`, `Δx = (xmax-xmin)/npoin`.
+1D grid container with `npoin` nodes on `[xmin, xmax]` and the chosen
+discretization `disc`. For `FDMethod` the nodes are uniform; `x_i = xmin + i*Δx`.
+(Named historically; it holds whichever `Discretization` was selected.)
 """
 struct FDMesh1D
     nsd::Int
@@ -99,6 +129,7 @@ struct FDMesh1D
     Δx::Float64
     x::Vector{Float64}
     periodic::Bool
+    disc::Discretization
 end
 
 function FDMesh1D(inputs::Dict)
@@ -106,6 +137,7 @@ function FDMesh1D(inputs::Dict)
     xmax     = Float64(get(inputs, :xmax,  1.0))
     npoin    = Int(get(inputs, :npoin, get(inputs, :nelx, 100)))
     periodic = Bool(get(inputs, :periodic, true))
+    disc     = discretization(inputs)
     if periodic
         Δx = (xmax - xmin) / npoin
         x  = [xmin + i * Δx for i in 0:npoin-1]
@@ -113,7 +145,7 @@ function FDMesh1D(inputs::Dict)
         Δx = (xmax - xmin) / (npoin - 1)
         x  = [xmin + i * Δx for i in 0:npoin-1]
     end
-    return FDMesh1D(1, npoin, xmin, xmax, Δx, x, periodic)
+    return FDMesh1D(1, npoin, xmin, xmax, Δx, x, periodic, disc)
 end
 
 nsd(m::FDMesh1D) = m.nsd
@@ -121,9 +153,22 @@ nsd(m::FDMesh1D) = m.nsd
 @inline _ip(i, m::FDMesh1D) = i == m.npoin ? (m.periodic ? 1 : m.npoin) : i + 1
 @inline _im(i, m::FDMesh1D) = i == 1       ? (m.periodic ? m.npoin : 1) : i - 1
 
-# --- the directional-derivative primitives (the ONLY mesh-specific numerics) ---
+#---------------------------------------------------------------------------------
+# Directional-derivative primitives — the ONLY method-specific numerics.
+# The operators call deriv1/deriv2(f, m, dir); these route to the backend.
+#---------------------------------------------------------------------------------
+deriv1(f::Vector{Float64}, m::FDMesh1D, dir::Int) = deriv1(m.disc, f, m, dir)
+deriv2(f::Vector{Float64}, m::FDMesh1D, dir::Int) = deriv2(m.disc, f, m, dir)
+
+const _SEM_TODO = "SymbolicFD: the SEM (spectral element) backend is not implemented yet " *
+    "— it is the next step. Use `:method => :fd` for now. SEM will reuse Jexpresso's " *
+    "St_lgl / LagrangeInterpolatingPolynomials and target problems/CompEuler/sod1d."
+deriv1(::SEMMethod, f, m, dir) = error(_SEM_TODO)
+deriv2(::SEMMethod, f, m, dir) = error(_SEM_TODO)
+
+# --- finite-difference backend (FDMethod) --------------------------------------
 "first derivative ∂f/∂x_dir at every node (2nd-order central; periodic wrap)."
-function deriv1(f::Vector{Float64}, m::FDMesh1D, dir::Int)
+function deriv1(::FDMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int)
     dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
     n, h = m.npoin, m.Δx
     out = similar(f)
@@ -134,7 +179,7 @@ function deriv1(f::Vector{Float64}, m::FDMesh1D, dir::Int)
 end
 
 "second derivative ∂²f/∂x_dir² at every node (compact 3-point central)."
-function deriv2(f::Vector{Float64}, m::FDMesh1D, dir::Int)
+function deriv2(::FDMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int)
     dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
     n, h = m.npoin, m.Δx
     out = similar(f)
@@ -708,6 +753,9 @@ operators, build the right-hand side `∂q/∂t = …`, integrate in time and re
 the mesh together with the initial and final solution vectors.
 
 Recognised `inputs` keys
+- `:method`                   `:fd` finite differences (default) or `:sem`
+                              spectral element (Jexpresso; not yet implemented)
+- `:nop`                      polynomial order per element when `:method => :sem`
 - `:xmin`, `:xmax`            domain (default [-1, 1])
 - `:npoin` (or `:nelx`)       number of grid points (default 100)
 - `:periodic`                 true/false (default true)
@@ -743,8 +791,9 @@ function solve(eqn::AbstractString, inputs::Dict)
     mesh = FDMesh1D(inputs_mesh)
 
     println("="^72)
-    println(" SymbolicFD : composing finite-difference operators for")
+    println(" SymbolicFD : composing operators for")
     println("   ", eqn)
+    println("   method          : ", method_name(mesh.disc))
     println("   normalized      : ", normalize_equation(eqn))
     if mode == :transient
         println("   discretized RHS : ∂$var/∂t = ", ast_str(node))
