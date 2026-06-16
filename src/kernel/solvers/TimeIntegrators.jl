@@ -516,7 +516,7 @@ function time_loop!(inputs, params, u, args...)
         # diagnostic-VTK output, if any, goes to a per-rank mktempdir that's
         # removed right after.
         if precompile_warmup_enabled(inputs)
-            rank == 0 && (print(YELLOW_FG(" # Integrator warm-up with real callbacks ......... ")); flush(stdout))
+            rank == 0 && (print(YELLOW_FG(" # Integrator warm-up with real callbacks (PATIENCE: ONLY DONE ON 1st RUN!) ......... ")); flush(stdout))
             _t_wm = time_ns()
             u_snap    = copy(u)
             qnm1_snap = copy(params.qp.qnm1)
