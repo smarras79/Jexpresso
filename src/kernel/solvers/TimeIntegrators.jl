@@ -545,6 +545,13 @@ function time_loop!(inputs, params, u, args...)
             # only deviation is `tstops = [t0_w + Δt_w]` (just one point)
             # to keep the warmup cheap.
             warm_saveat = range(t0_w, t0_w + Δt_w, length = inputs[:ndiagnostics_outputs])
+            # Suppress the coupling exchange during this throw-away step.
+            # callbacks_main contains cb_coupling so the warm-up solve has the
+            # exact same CallbackSet type as the production solve (the whole
+            # point of this warm-up), but firing it here would send one extra
+            # Julia→Alya message that Alya never receives, deadlocking the pair
+            # at shutdown. The guard makes the coupling condition return false.
+            is_coupled && (JEXPRESSO_COUPLING_WARMUP[] = true)
             with_logger(NullLogger()) do
                 try
                     solve(warmup_prob,
@@ -556,6 +563,8 @@ function time_loop!(inputs, params, u, args...)
                           saveat = warm_saveat)
                 catch e
                     rank == 0 && @warn "integrator warm-up failed; continuing without it" exception=e
+                finally
+                    JEXPRESSO_COUPLING_WARMUP[] = false
                 end
             end
             u .= u_snap

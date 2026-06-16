@@ -262,6 +262,15 @@ const JEXPRESSO_EARLY_SYNC_DONE      = Ref{Bool}(false)
 const JEXPRESSO_EARLY_NPOIN_SEND     = Ref{Union{Nothing, Vector{Int32}}}(nothing)
 const JEXPRESSO_EARLY_SEND_TO_RANKS  = Ref{Union{Nothing, Vector{Int32}}}(nothing)
 
+# Integrator warm-up guard.  The SciML integrator warm-up in time_loop! runs a
+# throw-away step with the REAL callback set (so the production solve does not
+# recompile).  That set includes the coupling callback, but the warm-up step
+# must NOT perform a real Julia→Alya exchange: Alya posts exactly `nsteps`
+# receives, so an extra warm-up send desyncs the pair by one message and
+# deadlocks them at shutdown.  Set true around the warm-up solve to make the
+# coupling condition return false (no send) while preserving the callback type.
+const JEXPRESSO_COUPLING_WARMUP      = Ref{Bool}(false)
+
 function set_mpi_comm(comm::MPI.Comm)
     JEXPRESSO_MPI_COMM[] = comm
 end
@@ -1926,7 +1935,11 @@ function setup_coupling_callback(is_coupled, params, inputs)
     t0   = params.tspan[1]
     tol0 = get(inputs, :couple_time_tol, 1e-12)
 
-    @inline coupling_condition(u_state, t, integrator) = t > t0 + tol0
+    # Suppress the exchange during the integrator warm-up step (see
+    # JEXPRESSO_COUPLING_WARMUP): a warm-up send has no matching Alya receive
+    # and would desync the pair by one message.
+    @inline coupling_condition(u_state, t, integrator) =
+        (t > t0 + tol0) && !JEXPRESSO_COUPLING_WARMUP[]
 
     neqs = params.neqs
     mesh = params.mesh
