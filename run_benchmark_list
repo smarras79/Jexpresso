@@ -76,19 +76,22 @@ end
 #
 # Two independent things must both point at the SAME OpenMPI:
 #   1. the libmpi the worker Julia processes load  -> set by MPIPreferences
-#   2. the mpirun launcher (and the prte daemon it spawns) -> resolved from PATH
+#   2. the mpirun launcher + the prte daemon/plugins/libs it uses
 # MPIPreferences ONLY controls (1).
 #
-# IMPORTANT (Open MPI 5.x): `mpirun` is a thin front-end that launches the PRRTE
-# daemon `prte` as a CHILD process, found via PATH. If the OpenMPI_jll artifact
-# bin (~/.julia/artifacts/.../bin) is on PATH ahead of /opt/homebrew/bin, then
-# even a FULL-PATH /opt/homebrew/bin/mpirun spawns the ARTIFACT's prte, which
-# dies with `Library not loaded: @rpath/libhwloc.15.dylib`. So pinning mpirun is
-# not enough - the PATH used for the launch must find Homebrew's prte first.
-# Inspect with:  Sys.which("prte")  and  println(ENV["PATH"])
+# IMPORTANT (Open MPI 5.x): mpirun is a front-end that launches the PRRTE daemon
+# `prte` and loads plugins/libs from its install prefix. Open MPI is relocatable
+# and OVERRIDES that prefix from the env var OPAL_PREFIX (also PRTE_PREFIX /
+# PMIX_PREFIX). OpenMPI_jll's __init__ exports OPAL_PREFIX pointing at its
+# artifact, so once that JLL has been loaded in the session (or the var is left
+# in your shell), EVERY Open MPI you launch - even a full-path Homebrew mpirun -
+# is redirected into the artifact and runs the artifact's prte, dying with
+# `Library not loaded: @rpath/libhwloc.15.dylib`. PATH does NOT fix this; the
+# env var wins. Inspect with:
+#   for k in ("OPAL_PREFIX","PRTE_PREFIX","PMIX_PREFIX"); println(k," => ",get(ENV,k,"(unset)")); end
 #
-# => Wrap the launch in withenv(...) to put /opt/homebrew/bin first, so BOTH
-#    mpirun and its prte helper come from Homebrew (matching the libmpi above).
+# => Unset OPAL_PREFIX/PRTE_PREFIX/PMIX_PREFIX for the launch so Homebrew mpirun
+#    uses its own /opt/homebrew prefix (matching the libmpi above).
 #
 # Bind MPI.jl BEFORE the first `using MPI` (it reads preferences at load time),
 # so no Julia restart is needed. If MPI was already loaded, restart Julia once.
@@ -102,7 +105,10 @@ using MPI                 # picks up the system OpenMPI (no restart needed here)
 using Jexpresso
 JULIA = Base.julia_cmd()
 mpi = "/opt/homebrew/bin/mpirun"
-withenv("PATH" => "/opt/homebrew/bin:" * get(ENV, "PATH", "")) do
+withenv("OPAL_PREFIX" => nothing,   # critical: drop the OpenMPI_jll artifact prefix
+        "PRTE_PREFIX" => nothing,
+        "PMIX_PREFIX" => nothing,
+        "PATH" => "/opt/homebrew/bin:" * get(ENV, "PATH", "")) do
     run(`$mpi -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
     run(`$mpi -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
     run(`$mpi -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
@@ -113,9 +119,10 @@ end
 # To go back to the bundled MPICH later: MPIPreferences.use_jll_binary(); restart.
 
 # NOTICE (system OpenMPI):
-#  - PERMANENT FIX (then the bare commands work without withenv): remove the
-#    OpenMPI_jll artifact bin from PATH. If `echo $PATH` in your shell shows a
-#    ~/.julia/artifacts/.../bin entry, delete that line from ~/.zshrc (or
-#    wherever it was added) and restart the shell.
+#  - PERMANENT FIX (then the plain commands work without withenv): get rid of the
+#    inherited OPAL_PREFIX. Check `echo $OPAL_PREFIX` in your shell; if set,
+#    delete that export from ~/.zshrc and restart the shell. If it is empty in
+#    the shell but present in Julia's ENV, a loaded OpenMPI_jll set it - keep the
+#    withenv wrapper, or avoid loading that JLL.
 #  - If -n exceeds your physical cores, add --oversubscribe.
 #  - If you run as root (e.g. in a container), add --allow-run-as-root.
