@@ -308,5 +308,7 @@ REBUILD_SYSIMAGE=1 ./run_coupled.sh   # force sysimage rebuild first
 - **Wrong `mpif90`/`mpiexec` picked up.** Confirm `which mpif90`, `which mpiexec`,
   and `which mpirun` all point at the same installation, or use absolute paths.
 
+See also the [FAQ.md](FAQ.md) for common run and installation errors.
+
 For the full description of what the two codes exchange once they are running,
 see [COUPLING-ALGORITHM.md](COUPLING-ALGORITHM.md).

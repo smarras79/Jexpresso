@@ -20,6 +20,8 @@ Suggested Julia version: 1.11.2 or higher.
 # Installation:
 Follow the instructins in [INSTALL.md](INSTALL.md)
 
+Run into trouble? Check the [FAQ.md](FAQ.md) for common installation and run errors.
+
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
 Please cite Jexpresso using:
