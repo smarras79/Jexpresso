@@ -501,9 +501,40 @@ end
             delete!(ENV, k)
         end
     end
+
+    # The same MPI.Init() also brings up the libfabric (OFI) provider. On
+    # an InfiniBand cluster the default selection picks the verbs/mlx5
+    # provider, which tries to allocate an RDMA queue pair at init time:
+    #
+    #   Failed to modify UD QP to INIT on mlx5_0: Operation not permitted
+    #   MPIDI_OFI_init_local ... create_vni_context: Cannot allocate memory
+    #
+    # That allocation is refused on login nodes (verbs disabled) or when the
+    # locked-memory limit is too low (`ulimit -l`), so precompilation aborts
+    # even though it only ever needs a singleton, single-process MPI. The
+    # precompile worker never talks to another rank, so steer libfabric onto
+    # the loopback `tcp` provider for the duration of the workload — it skips
+    # the verbs/mlx5 QP + memory-pinning path entirely. Only set it when the
+    # user hasn't pinned FI_PROVIDER themselves, and restore the previous
+    # state afterwards so nothing leaks past precompilation (the actual
+    # mpiexec-launched compute processes choose their provider unaffected).
+    _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
+    _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
+    if !_fi_provider_was_set
+        ENV["FI_PROVIDER"] = "tcp"
+    end
+
     @compile_workload begin
         push!(empty!(ARGS), "CompEuler", "sod1d", "true")
         include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
+    end
+
+    # Undo the temporary FI_PROVIDER override (no-op if the user had pinned
+    # it, since we left theirs untouched above).
+    if !_fi_provider_was_set
+        delete!(ENV, "FI_PROVIDER")
+    else
+        ENV["FI_PROVIDER"] = _fi_provider_prev
     end
 end
 end

@@ -82,6 +82,40 @@ echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
 Full explanation:
 [INSTALL.md, Section 5.5](INSTALL.md#55-macos-hostname-fix-mpich-and-mpich_jll-only).
 
+### Precompiling on an InfiniBand cluster fails with `Failed to modify UD QP to INIT on mlx5_0`
+
+**A.** When `using Jexpresso` precompiles, its `@compile_workload` runs one serial
+driver pass that calls `MPI.Init()`. On an InfiniBand cluster the default
+libfabric (OFI) provider is `verbs;ofi_rxm` (mlx5), which allocates an RDMA queue
+pair at init time. On a **login node** (verbs disabled) or when the locked-memory
+limit is low (`ulimit -l`), that allocation is refused and precompilation aborts:
+
+```
+n0096:rank0.julia.bin: Failed to modify UD QP to INIT on mlx5_0: Operation not permitted
+MPIDI_OFI_init_local ... create_vni_context: Cannot allocate memory
+ERROR: The following 1 direct dependency failed to precompile: Jexpresso
+```
+
+Jexpresso now steers the precompile worker onto the loopback `tcp` provider
+automatically (`src/Jexpresso.jl`, `@setup_workload`), so a plain
+`julia --project=. -e 'using Pkg; Pkg.precompile()'` succeeds out of the box on a
+login node. The override is scoped to precompilation only and is skipped if you
+have already pinned `FI_PROVIDER` yourself — so your compute-node runs keep using
+verbs/mlx5.
+
+If you still hit this (e.g. with a customized `FI_PROVIDER`), force a benign
+provider just for the precompile step, or precompile inside a compute-node
+allocation where verbs and locked memory are permitted:
+
+```bash
+# Login node: sidestep the RDMA fabric for precompilation
+FI_PROVIDER=tcp julia --project=. -e 'using Pkg; Pkg.precompile()'
+
+# Or precompile on a compute node where verbs/locked memory are allowed
+salloc -N1 -n1 -t 0:30:00      # your partition/account flags
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
 ### A run is "stuck" for ~30–60 s before the time loop advances
 
 **A.** That is the one-time JIT compilation cost (`sem_setup`, the SciML
