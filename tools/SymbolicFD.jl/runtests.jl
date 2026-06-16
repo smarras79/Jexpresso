@@ -16,7 +16,7 @@
 #---------------------------------------------------------------------------------=#
 
 using Test
-using SparseArrays
+using LinearOperators
 include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
 using .SymbolicFD
 const S = SymbolicFD
@@ -138,10 +138,10 @@ end
         @test mode == :steady
         m  = S.FDMesh1D(Dict(:npoin => 101, :xmin => -1.0, :xmax => 1.0, :periodic => false))
 
-        # the assembled operator must be SPARSE, never dense
-        A, b, _ = S.assemble_steady(node, m, Dict(:bc_left => 0.0, :bc_right => 1.0))
-        @test A isa SparseMatrixCSC
-        @test nnz(A) ≤ 5 * m.npoin                 # banded (tridiagonal + 2 BC rows)
+        # the steady solve is matrix-free: a LinearOperator, no stored matrix
+        L, b, _ = S.steady_operator(node, m, Dict(:bc_left => 0.0, :bc_right => 1.0))
+        @test L isa AbstractLinearOperator
+        @test size(L) == (m.npoin, m.npoin)
 
         q, rmax = S.solve_steady(node, m, Dict(:bc_left => 0.0, :bc_right => 1.0))
         @test rel_l2(q, [(xi + 1) / 2 for xi in m.x]) < 1e-10

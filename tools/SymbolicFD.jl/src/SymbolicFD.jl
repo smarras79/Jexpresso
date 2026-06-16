@@ -27,8 +27,8 @@
 module SymbolicFD
 
 using Printf
-using LinearAlgebra        # steady solve: backs sparse `\`
-using SparseArrays         # steady operators are stored sparse (never dense)
+using Krylov               # steady (time-independent) solve: matrix-free GMRES
+using LinearOperators      # wrap the discrete operator as a matrix-free LinearOperator
 using Plots                # PNG output + on-the-fly window, exactly as in Jexpresso
 
 export solve, parse_equation, FDMesh1D, Field, ascii_plot
@@ -532,56 +532,56 @@ function build_rhs(node::Node, mesh::FDMesh1D)
 end
 
 #---------------------------------------------------------------------------------
-# 6b. Steady / time-independent solve (no ∂/∂t): assemble the discrete operator
-#     into a SPARSE matrix and solve A q = b directly, with Dirichlet boundary
-#     nodes. A dense n×n matrix is NEVER formed.
+# 6b. Steady / time-independent solve (no ∂/∂t): MATRIX-FREE.
 #
-# The same operator evaluator is reused: for a linear PDE the residual is affine,
-# residual(q) = A q + c. We assemble A column-by-column from residual(e_j) -
-# residual(0), keeping only the nonzeros, into SparseMatrixCSC storage; b =
-# -residual(0). The sparse factorization that backs `\` is, for this 1D banded
-# operator, the Thomas algorithm. Nothing here is specific to a given equation.
+# The discrete operator is NEVER stored (not even sparse). The same operator
+# evaluator is reused: for a linear PDE the residual is affine,
+# residual(q) = A q + c, so a matrix-vector product A·x is just
+#     A·x = residual(x) - residual(0).
+# We wrap that as a `LinearOperator` (with identity rows at the two boundary
+# nodes for the Dirichlet conditions) and hand it to Krylov.jl's GMRES. Only
+# operator *applications* ever happen -- nothing equation-specific lives here.
 #---------------------------------------------------------------------------------
-# Assemble the steady system into SPARSE storage. Returns (A::SparseMatrixCSC,
-# b, resid!). Boundary rows (1, n) are left out of the operator and given an
-# identity row -- a Dirichlet condition.
-function assemble_steady(resid::Node, mesh::FDMesh1D, inputs::Dict)
+# Build the matrix-free Dirichlet operator L and right-hand side b such that
+# L x = b is the discrete steady BVP. Returns (L::LinearOperator, b, resid!).
+function steady_operator(resid::Node, mesh::FDMesh1D, inputs::Dict)
     mesh.periodic &&
         error("SymbolicFD: a steady (no ∂/∂t) problem needs Dirichlet boundary data; " *
               "set `:periodic => false` and provide `:bc_left` / `:bc_right`.")
     n = mesh.npoin
     resid! = build_rhs(resid, mesh)
 
-    c = zeros(n);  resid!(c, zeros(n))            # c = residual(0)
+    c = zeros(n);  resid!(c, zeros(n))             # c = residual(0)
 
-    Is = Int[];  Js = Int[];  Vs = Float64[]
-    e  = zeros(n);  col = zeros(n)
-    for j in 1:n
-        fill!(e, 0.0); e[j] = 1.0
-        resid!(col, e)                            # residual(e_j) = A e_j + c
-        @inbounds for i in 2:n-1                   # interior rows only
-            v = col[i] - c[i]
-            if v != 0.0
-                push!(Is, i); push!(Js, j); push!(Vs, v)
-            end
-        end
+    # matrix-free product  y = L x :  interior rows = A x = residual(x) - c,
+    # boundary rows = x (identity ⇒ Dirichlet). No matrix is materialized.
+    function matvec!(y, x)
+        resid!(y, x)                               # y = residual(x) = A x + c
+        @inbounds @. y -= c                        # y = A x
+        @inbounds y[1] = x[1];  y[n] = x[n]        # Dirichlet identity rows
+        return y
     end
-    push!(Is, 1); push!(Js, 1); push!(Vs, 1.0)     # Dirichlet identity rows
-    push!(Is, n); push!(Js, n); push!(Vs, 1.0)
-    A = sparse(Is, Js, Vs, n, n)                   # SparseMatrixCSC -- never dense
+    L = LinearOperator(Float64, n, n, false, false, matvec!)
 
     bcl = Float64(get(inputs, :bc_left,  0.0))
     bcr = Float64(get(inputs, :bc_right, 0.0))
     b = -c;  b[1] = bcl;  b[n] = bcr
-    return A, b, resid!
+    return L, b, resid!
 end
 
 function solve_steady(resid::Node, mesh::FDMesh1D, inputs::Dict)
-    A, b, resid! = assemble_steady(resid, mesh, inputs)
-    q = A \ b                                      # sparse LU (Thomas in 1D)
+    L, b, resid! = steady_operator(resid, mesh, inputs)
+    n = length(b)
+    atol = Float64(get(inputs, :ksp_atol, 1e-12))
+    rtol = Float64(get(inputs, :ksp_rtol, 1e-10))
+    # full GMRES (memory = n) converges in ≤ n iterations even on the
+    # ill-conditioned Laplacian; bump :ksp_memory down for a restarted variant.
+    mem  = Int(get(inputs, :ksp_memory, n))
+    q, stats = Krylov.gmres(L, b; atol = atol, rtol = rtol, memory = mem, itmax = 4n)
+    stats.solved || @warn "SymbolicFD: GMRES did not fully converge" stats.status
 
     # report the interior residual of the original (unconstrained) operator
-    n = length(b); r = zeros(n); resid!(r, q)
+    r = zeros(n); resid!(r, q)
     rmax = n > 2 ? maximum(abs, @view r[2:n-1]) : 0.0
     return q, rmax
 end
