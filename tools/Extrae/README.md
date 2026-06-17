@@ -148,6 +148,28 @@ though no trace is produced. The test **passes** on macOS.
    `halo exchange` communication, and the `allreduce` collective, and quantify
    how much time each MPI rank spends in each.
 
+### Memory / OOM on a single node
+
+Each rank is a full Julia process (base runtime + MPI + Extrae ≈ 0.5–1 GB)
+**plus** Extrae's per-process trace buffer. Running many ranks on one node can
+exceed the memory granted to an interactive allocation (which often defaults
+to only a few GB total, not the whole node), giving an `oom_kill` /
+`Out Of Memory` / `EXIT CODE: 9` failure.
+
+If you hit OOM:
+
+- **Give the allocation the node's memory.** In your interactive session
+  request enough RAM, e.g. `salloc --nodes=1 --ntasks=32 --mem=0` (`--mem=0`
+  asks for all memory on the node) or `--mem-per-cpu=2G`.
+- **Use fewer ranks** while validating, then scale up:
+  `./tools/Extrae/run_extrae_example.sh 8`.
+- The trace buffer in `extrae.xml` is already set small (`<buffer><size>` =
+  100000 events ≈ a few MB/rank); keep it modest for many-rank single-node
+  runs.
+
+A practical rule of thumb: budget ~1 GB per rank, so 32 ranks ⇒ ask for
+~32 GB.
+
 ---
 
 ## How the instrumentation maps to Jexpresso

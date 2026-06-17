@@ -47,8 +47,14 @@
     <final-directory enabled="yes">/tmp</final-directory>
   </storage>
 
+  <!-- Trace buffer size, in EVENTS, allocated PER PROCESS up front. 5,000,000
+       is huge (hundreds of MB/rank) and on a single node with many ranks it
+       is a common cause of OOM kills. This example emits only a few thousand
+       events per rank, so 100,000 is plenty; the buffer is flushed to disk
+       when full, so a smaller value never loses data — it just flushes more
+       often. Increase it for large production runs if you have the RAM.   -->
   <buffer enabled="yes">
-    <size enabled="yes">5000000</size>
+    <size enabled="yes">100000</size>
     <circular enabled="no" />
   </buffer>
 
