@@ -275,26 +275,21 @@ What is instrumented so far (this is being added incrementally):
 More phases (`sem_setup`, `initialize`, `params_setup`, then the RHS / MPI
 halo-exchange hot paths) are being layered on top step by step.
 
-To capture a trace of, say, `CompEuler/theta` on a compute node:
+To capture a trace of, say, `CompEuler/theta` on a compute node, use the
+launcher (one command — it sets up the Extrae preload, turns on
+`JEXPRESSO_EXTRAE`, and avoids all the LD_PRELOAD shell-quoting pitfalls):
 
 ```bash
-# same Extrae preload setup as the example:
-ART=$(julia --project=. -e 'using Extrae_jll; print(Extrae_jll.artifact_dir)')
-export EXTRAE_LIB=$ART/lib/libmpitrace.so
-export EXTRAE_LIBPATH=$(julia --project=. -e 'using Extrae_jll; print(Extrae_jll.LIBPATH[])')
-export EXTRAE_CONFIG_FILE=$PWD/tools/Extrae/extrae.xml
-
-# turn the in-solver instrumentation ON:
-export JEXPRESSO_EXTRAE=1
-
-# launch the real solver under the Extrae preload (one rank per core):
-julia --project=. -e '
-  using MPI
-  run(`$(mpiexec()) -n 4 env -u OMP_NUM_THREADS \
-      LD_LIBRARY_PATH='"$EXTRAE_LIBPATH"':$LD_LIBRARY_PATH \
-      LD_PRELOAD='"$EXTRAE_LIB"' \
-      $(Base.julia_cmd()) --project=. src/Jexpresso.jl CompEuler theta`)'
+./tools/Extrae/run_jexpresso_traced.sh 4 CompEuler theta
+#                                       ^ranks ^eqs    ^case
 ```
+
+Export `EXTRAE_LIB` / `EXTRAE_LIBPATH` / `EXTRAE_CONFIG_FILE` beforehand to
+override the auto-derived Extrae_jll paths (e.g. to use a system Extrae
+module). If you prefer to launch by hand, set those vars and build the
+`env … LD_PRELOAD=…` prefix in **bash** (not inside the Julia `-e` string, or
+Julia tries to interpolate `$LD_LIBRARY_PATH` and fails with
+`UndefVarError`); the launcher script shows the correct form.
 
 When active you'll see `Jexpresso: Extrae tracing ACTIVE` on rank 0, and the
 merged `jexpresso-extrae.prv` will show a `time_loop` user-function region
