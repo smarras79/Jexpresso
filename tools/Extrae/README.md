@@ -255,3 +255,48 @@ To instrument the **real** Jexpresso solver, follow the same recipe: `include`
 regions of the time loop in `@user_function`, `emit` the step number, and call
 `ExtraeShim.finish()` at the end. Because the shim is a no-op off Linux, this
 can live in the codebase without breaking laptop/macOS runs.
+
+---
+
+## Tracing a real Jexpresso run (in-solver instrumentation)
+
+Jexpresso ships an in-tree, opt-in version of this shim as the `Profiling`
+submodule (`src/kernel/infrastructure/Profiling.jl`). It is **off unless you
+set `JEXPRESSO_EXTRAE`**, so normal runs are completely unaffected (when off,
+each instrumentation call is a single `Ref{Bool}` read).
+
+What is instrumented so far (this is being added incrementally):
+
+| Phase | Annotation | Where |
+|-------|------------|-------|
+| `time_loop` | `Profiling.region(PHASE_TIMELOOP)` user region + event | `problems/drivers.jl` |
+| `init`/`finish` | session open/close | `src/run.jl` (after `MPI.Init()`, end of run) |
+
+More phases (`sem_setup`, `initialize`, `params_setup`, then the RHS / MPI
+halo-exchange hot paths) are being layered on top step by step.
+
+To capture a trace of, say, `CompEuler/theta` on a compute node:
+
+```bash
+# same Extrae preload setup as the example:
+ART=$(julia --project=. -e 'using Extrae_jll; print(Extrae_jll.artifact_dir)')
+export EXTRAE_LIB=$ART/lib/libmpitrace.so
+export EXTRAE_LIBPATH=$(julia --project=. -e 'using Extrae_jll; print(Extrae_jll.LIBPATH[])')
+export EXTRAE_CONFIG_FILE=$PWD/tools/Extrae/extrae.xml
+
+# turn the in-solver instrumentation ON:
+export JEXPRESSO_EXTRAE=1
+
+# launch the real solver under the Extrae preload (one rank per core):
+julia --project=. -e '
+  using MPI
+  run(`$(mpiexec()) -n 4 env -u OMP_NUM_THREADS \
+      LD_LIBRARY_PATH='"$EXTRAE_LIBPATH"':$LD_LIBRARY_PATH \
+      LD_PRELOAD='"$EXTRAE_LIB"' \
+      $(Base.julia_cmd()) --project=. src/Jexpresso.jl CompEuler theta`)'
+```
+
+When active you'll see `Jexpresso: Extrae tracing ACTIVE` on rank 0, and the
+merged `jexpresso-extrae.prv` will show a `time_loop` user-function region
+alongside the automatically traced MPI calls. Open it in Paraver exactly as
+above.
