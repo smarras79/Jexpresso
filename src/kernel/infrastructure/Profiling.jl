@@ -44,6 +44,10 @@ const PHASE_PARAMS    = 3     # params_setup
 const PHASE_TIMELOOP  = 4     # time_loop! (the main workload)
 const PHASE_RHS       = 5     # (reserved for a later step) RHS evaluation
 const PHASE_HALO      = 6     # (reserved for a later step) MPI halo exchange
+# coupling (Jexpresso <-> Alya) phases
+const PHASE_CPL_SETUP  = 7    # one-time coupling handshake / data receive
+const PHASE_CPL_INTERP = 8    # per-step interpolation of the solution to Alya pts
+const PHASE_CPL_COMM   = 9    # per-step MPI send of the packed data to Alya
 
 """
     Profiling.enabled() -> Bool
@@ -100,9 +104,11 @@ function init(rank::Integer = 0)
         # Name the phase event + its values for the Paraver timeline.
         m.register(EV_PHASE, "Jexpresso phase",
                    UInt64[PHASE_NONE, PHASE_SEM_SETUP, PHASE_INIT,
-                          PHASE_PARAMS, PHASE_TIMELOOP, PHASE_RHS, PHASE_HALO],
+                          PHASE_PARAMS, PHASE_TIMELOOP, PHASE_RHS, PHASE_HALO,
+                          PHASE_CPL_SETUP, PHASE_CPL_INTERP, PHASE_CPL_COMM],
                    String["idle", "sem_setup", "initialize", "params_setup",
-                          "time_loop", "rhs", "halo_exchange"])
+                          "time_loop", "rhs", "halo_exchange",
+                          "coupling_setup", "coupling_interp", "coupling_comm"])
         if rank == 0
             @info "Jexpresso: Extrae tracing ACTIVE (JEXPRESSO_EXTRAE set)."
         end
@@ -189,6 +195,29 @@ function region(f, phase::Integer)
         user_function(false)
         emit(EV_PHASE, PHASE_NONE)
     end
+end
+
+"""
+    Profiling.region_begin(phase)
+    Profiling.region_end()
+
+Open / close a traced region WITHOUT a closure — for bracketing a span inline
+when wrapping it in a `do` block would change variable scope (e.g. inside the
+coupling exchange). Always pair them, and do not nest one pair inside another
+(use sequential, non-overlapping pairs). No-op when inactive.
+"""
+function region_begin(phase::Integer)
+    _ACTIVE[] || return nothing
+    emit(EV_PHASE, phase)
+    user_function(true)
+    return nothing
+end
+
+function region_end()
+    _ACTIVE[] || return nothing
+    user_function(false)
+    emit(EV_PHASE, PHASE_NONE)
+    return nothing
 end
 
 end # module Profiling
