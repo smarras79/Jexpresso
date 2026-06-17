@@ -60,7 +60,10 @@ if [[ -n "${EXTRAE_LIB:-}" ]]; then
         echo "  EXTRAE_LIBPATH=${EXTRAE_LIBPATH}"
         ENV_ASSIGN="LD_LIBRARY_PATH=${EXTRAE_LIBPATH}:${LD_LIBRARY_PATH:-} ${ENV_ASSIGN}"
     fi
-    PRELOAD_PREFIX="env ${ENV_ASSIGN}"
+    # Unset OMP_NUM_THREADS for the ranks: this run is pure MPI, and leaving it
+    # set only makes Extrae print "OMP_NUM_THREADS is set but OpenMP is not
+    # supported!" (harmless). Julia threading uses JULIA_NUM_THREADS, not OMP.
+    PRELOAD_PREFIX="env -u OMP_NUM_THREADS ${ENV_ASSIGN}"
 else
     echo "Tracing OFF (EXTRAE_LIB unset): running without an Extrae trace."
     PRELOAD_PREFIX=""
