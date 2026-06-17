@@ -32,7 +32,7 @@ using LinearOperators      # wrap the discrete operator as a matrix-free LinearO
 using Plots                # PNG output + on-the-fly window, exactly as in Jexpresso
 import LinearAlgebra: ⋅    # overloaded for the symbolic DSL: ∇⋅F = divergence
 
-export solve, parse_equation, FDMesh1D, Field, ascii_plot
+export solve, parse_equation, FDMesh1D, FDMesh2D, Field, ascii_plot
 export ∇, Δ, ∂t, ⋅, @vars      # symbolic equation DSL
 
 #---------------------------------------------------------------------------------
@@ -117,6 +117,11 @@ function discretization(inputs::Dict)
           ":sem (spectral element).")
 end
 
+# Supertype for every mesh. The operator algebra (§3), the parser, the RHS/time
+# loop and the output are written against this abstract type and `nsd(m)`, so a
+# new dimension only needs its mesh struct + the `deriv1/deriv2` primitives.
+abstract type AbstractFDMesh end
+
 """
     SEMData
 
@@ -144,7 +149,7 @@ end
 discretization `disc`. For `FDMethod` the nodes are uniform; for `SEMMethod`
 they are element-wise LGL nodes and `sem` holds the spectral-element data.
 """
-struct FDMesh1D
+struct FDMesh1D <: AbstractFDMesh
     nsd::Int
     npoin::Int
     xmin::Float64
@@ -174,6 +179,100 @@ nsd(m::FDMesh1D) = m.nsd
 
 @inline _ip(i, m::FDMesh1D) = i == m.npoin ? (m.periodic ? 1 : m.npoin) : i + 1
 @inline _im(i, m::FDMesh1D) = i == 1       ? (m.periodic ? m.npoin : 1) : i - 1
+
+#---------------------------------------------------------------------------------
+# 2b. Two-dimensional meshes.
+#
+# Two flavours, both <: AbstractFDMesh and both implementing only `nsd` and the
+# `deriv1/deriv2(f, m, dir)` primitives (the operator algebra is unchanged):
+#
+#   FDMesh2D   : a structured Cartesian grid (tensor product of two 1D grids).
+#                Supports FDMethod (central differences) and SEMMethod
+#                (tensor-product LGL, reusing the SAME 1D Jexpresso basis).
+#   JexSEMMesh : wraps the spectral-element bundle Jexpresso's `sem_setup`
+#                builds from a *gmsh* mesh (connijk, x/y, metrics dξdx…, dψ, ω).
+#                This is the path that runs on the EXISTING kopriva grid.
+#
+# Nodes are numbered ip = (jy-1)*nx + ix (x fastest) so a structured field
+# reshapes to an nx×ny image for heat-map output.
+#---------------------------------------------------------------------------------
+"per-mesh tensor-product spectral-element data for a structured `FDMesh2D`."
+struct SEMData2D
+    nelx::Int
+    nely::Int
+    ngl::Int
+    ξ::Vector{Float64}
+    D::Matrix{Float64}
+    ω::Vector{Float64}
+    conn::Array{Int,3}        # conn[e,i,j] -> global node; e = (ey-1)*nelx + ex
+    Jx::Float64
+    Jy::Float64
+    Minv::Vector{Float64}     # 1 / DSS(ω_i ω_j Jx Jy)
+end
+
+"""
+    FDMesh2D
+
+Structured Cartesian 2D mesh on `[xmin,xmax]×[ymin,ymax]`. `nx`,`ny` are the
+unique node counts per direction (`npoin = nx*ny`), `xu`,`yu` the 1D coordinate
+lines, and `x`,`y` the per-node coordinates (`ip = (jy-1)*nx + ix`). `dx`,`dy`
+are the FD spacings; `Δx = min(dx,dy)` feeds the CFL estimate.
+"""
+struct FDMesh2D <: AbstractFDMesh
+    nsd::Int
+    npoin::Int
+    nx::Int
+    ny::Int
+    xmin::Float64; xmax::Float64
+    ymin::Float64; ymax::Float64
+    dx::Float64;   dy::Float64
+    Δx::Float64
+    x::Vector{Float64}
+    y::Vector{Float64}
+    xu::Vector{Float64}
+    yu::Vector{Float64}
+    periodic::Bool
+    disc::Discretization
+    sem::Union{Nothing,SEMData2D}
+end
+
+"""
+    JexSEMMesh
+
+Spectral-element mesh read from a *gmsh* file through Jexpresso's `sem_setup`.
+Holds references to the pieces of the returned `sem` bundle that the weak-form
+operator needs: `connijk[e,i,j]`, node coords `x`,`y`, the `dψ` matrix, weights
+`ω`, the metric terms `dξdx,dξdy,dηdx,dηdy` and Jacobian `Je`, and the assembled
+inverse lumped mass `Minv = 1/DSS(ω_iω_j Je)`. `nx`,`ny`,`xu`,`yu` are filled
+when the grid happens to be a structured quad mesh (used only for plotting).
+"""
+struct JexSEMMesh <: AbstractFDMesh
+    nsd::Int
+    npoin::Int
+    nelem::Int
+    ngl::Int
+    x::Vector{Float64}
+    y::Vector{Float64}
+    Δx::Float64
+    periodic::Bool
+    disc::Discretization
+    connijk::Array{Int,3}            # [iel, i, j] -> global node
+    D::Matrix{Float64}               # dψ[k,i]
+    ω::Vector{Float64}
+    Je::Array{Float64,3}             # [iel,i,j]
+    dξdx::Array{Float64,3}; dξdy::Array{Float64,3}
+    dηdx::Array{Float64,3}; dηdy::Array{Float64,3}
+    Minv::Vector{Float64}
+    nx::Int; ny::Int                 # structured plotting grid (0 if unstructured)
+    xu::Vector{Float64}; yu::Vector{Float64}
+end
+
+nsd(::FDMesh2D)   = 2
+nsd(::JexSEMMesh) = 2
+
+# directional-derivative forwarders: the operator algebra calls these on any mesh
+deriv1(f::Vector{Float64}, m::AbstractFDMesh, dir::Int) = deriv1(m.disc, f, m, dir)
+deriv2(f::Vector{Float64}, m::AbstractFDMesh, dir::Int) = deriv2(m.disc, f, m, dir)
 
 #---------------------------------------------------------------------------------
 # SEM backend: REUSE Jexpresso's spectral basis (no reimplementation).
@@ -249,12 +348,168 @@ function build_sem_mesh(inputs::Dict, disc::SEMMethod, xmin, xmax, periodic)
 end
 
 #---------------------------------------------------------------------------------
-# Directional-derivative primitives — the ONLY method-specific numerics.
-# The operators call deriv1/deriv2(f, m, dir); these route to the backend.
+# 2D mesh construction
 #---------------------------------------------------------------------------------
-deriv1(f::Vector{Float64}, m::FDMesh1D, dir::Int) = deriv1(m.disc, f, m, dir)
-deriv2(f::Vector{Float64}, m::FDMesh1D, dir::Int) = deriv2(m.disc, f, m, dir)
+# number of nodes / spacing for one structured direction
+function _axis_1d(np::Int, lo::Float64, hi::Float64, periodic::Bool)
+    d  = periodic ? (hi - lo) / np : (hi - lo) / (np - 1)
+    xu = [lo + i * d for i in 0:np-1]
+    return d, xu
+end
 
+function FDMesh2D(inputs::Dict)
+    disc     = discretization(inputs)
+    periodic = Bool(get(inputs, :periodic, true))
+    xmin = Float64(get(inputs, :xmin, -1.0)); xmax = Float64(get(inputs, :xmax, 1.0))
+    ymin = Float64(get(inputs, :ymin, -1.0)); ymax = Float64(get(inputs, :ymax, 1.0))
+
+    disc isa SEMMethod && return build_sem_mesh_2d(inputs, disc, xmin, xmax, ymin, ymax, periodic)
+
+    nx = Int(get(inputs, :npoinx, get(inputs, :nelx, 64)))
+    ny = Int(get(inputs, :npoiny, get(inputs, :nely, 64)))
+    dx, xu = _axis_1d(nx, xmin, xmax, periodic)
+    dy, yu = _axis_1d(ny, ymin, ymax, periodic)
+    npoin  = nx * ny
+    x = zeros(npoin); y = zeros(npoin)
+    for jy in 1:ny, ix in 1:nx
+        ip = (jy - 1) * nx + ix
+        x[ip] = xu[ix]; y[ip] = yu[jy]
+    end
+    return FDMesh2D(2, npoin, nx, ny, xmin, xmax, ymin, ymax, dx, dy,
+                    min(dx, dy), x, y, xu, yu, periodic, disc, nothing)
+end
+
+# structured tensor-product SEM: reuse the SAME 1D LGL basis in x and y
+function build_sem_mesh_2d(inputs, disc::SEMMethod, xmin, xmax, ymin, ymax, periodic)
+    nop = disc.nop; ngl = nop + 1
+    ξ, ω, D = sem_basis(nop)
+    nelx = Int(get(inputs, :nelx, 8)); nely = Int(get(inputs, :nely, 8))
+    hx = (xmax - xmin) / nelx; hy = (ymax - ymin) / nely
+    Jx = hx / 2; Jy = hy / 2
+    npx = periodic ? nelx * nop : nelx * nop + 1
+    npy = periodic ? nely * nop : nely * nop + 1
+    npoin = npx * npy
+    gx(ex, i) = periodic ? mod1((ex - 1) * nop + i, npx) : (ex - 1) * nop + i
+    gy(ey, j) = periodic ? mod1((ey - 1) * nop + j, npy) : (ey - 1) * nop + j
+    # 1D coordinate lines
+    xu = zeros(npx); yu = zeros(npy)
+    for ex in 1:nelx, i in 1:ngl
+        (periodic && (ex - 1) * nop + i == npx + 1) ||
+            (xu[gx(ex, i)] = xmin + (ex - 1) * hx + (ξ[i] + 1) / 2 * hx)
+    end
+    for ey in 1:nely, j in 1:ngl
+        (periodic && (ey - 1) * nop + j == npy + 1) ||
+            (yu[gy(ey, j)] = ymin + (ey - 1) * hy + (ξ[j] + 1) / 2 * hy)
+    end
+    conn = zeros(Int, nelx * nely, ngl, ngl)
+    x = zeros(npoin); y = zeros(npoin)
+    for ey in 1:nely, ex in 1:nelx
+        e = (ey - 1) * nelx + ex
+        for j in 1:ngl, i in 1:ngl
+            ix = gx(ex, i); iy = gy(ey, j); ip = (iy - 1) * npx + ix
+            conn[e, i, j] = ip; x[ip] = xu[ix]; y[ip] = yu[iy]
+        end
+    end
+    M = zeros(npoin)
+    for e in 1:nelx*nely, j in 1:ngl, i in 1:ngl
+        M[conn[e, i, j]] += ω[i] * ω[j] * Jx * Jy
+    end
+    Minv = 1.0 ./ M
+    Δx = min(minimum(diff(sort(xu))), minimum(diff(sort(yu))))
+    sem = SEMData2D(nelx, nely, ngl, ξ, D, ω, conn, Jx, Jy, Minv)
+    return FDMesh2D(2, npoin, npx, npy, xmin, xmax, ymin, ymax, hx, hy,
+                    Δx, x, y, xu, yu, periodic, disc, sem)
+end
+
+#---------------------------------------------------------------------------------
+# Jexpresso-mesh SEM (gmsh): read the EXISTING grid through `sem_setup`.
+#
+# We do not reimplement mesh reading or metric terms: Jexpresso's `sem_setup`
+# (src/kernel/infrastructure/sem_setup.jl) reads the *.msh file named in the
+# inputs, builds the high-order connectivity `connijk`, the metric terms
+# (dξdx,…,Je) and the basis dψ/ω. We pull those arrays out of the returned `sem`
+# bundle and apply the same weak-form operator as rhs.jl's _expansion_inviscid!.
+#---------------------------------------------------------------------------------
+const _PA_UUID = Base.UUID("5a9dfac6-5c52-46f7-8278-5e2210713be9")   # PartitionedArrays
+const _PA = Ref{Module}()
+_partarrays() = isassigned(_PA) ? _PA[] : (_PA[] = Base.require(Base.PkgId(_PA_UUID, "PartitionedArrays")))
+
+# Build the sem bundle by replaying Jexpresso's own preprocessing: fill input
+# defaults (mod_inputs_user_inputs!), then run sem_setup inside a with_mpi block
+# (PartitionedArrays creates the serial `distribute`). Runs in the latest world.
+function _jex_sem_setup_impl(jex::Module, ka::Module, pa::Module, inputs::Dict)
+    if !jex.MPI.Initialized()
+        jex.MPI.Init()
+    end
+    rank = jex.MPI.Comm_rank(jex.MPI.COMM_WORLD)
+    jin = copy(inputs)
+    get!(jin, :backend, ka.CPU())
+    jex.mod_inputs_user_inputs!(jin, rank)        # fill all the defaults sem_setup needs
+    semref = Ref{Any}(nothing)
+    pa.with_mpi(; comm = jex.MPI.COMM_WORLD) do distribute
+        semref[] = jex.sem_setup(jin, 1, distribute)   # (sem_namedtuple, partitioned_model[, …])
+    end
+    return semref[]
+end
+
+function build_jex_sem_mesh(inputs::Dict, disc::SEMMethod)
+    jex = _jexpresso(); ka = _kabstr(); pa = _partarrays()
+    res  = Base.invokelatest(_jex_sem_setup_impl, jex, ka, pa, inputs)
+    sem  = res isa Tuple ? res[1] : res
+    return Base.invokelatest(_assemble_jex_mesh, sem, disc, inputs)
+end
+
+# Pull the arrays we need out of the `sem` bundle and assemble a JexSEMMesh.
+function _assemble_jex_mesh(sem, disc::SEMMethod, inputs::Dict)
+    mesh    = sem.mesh
+    metrics = sem.metrics
+    npoin   = Int(mesh.npoin)
+    nelem   = Int(mesh.nelem)
+    ngl     = Int(mesh.ngl)
+    x = Float64.(collect(mesh.x)); y = Float64.(collect(mesh.y))
+    connijk = Int.(collect(mesh.connijk))[1:nelem, 1:ngl, 1:ngl]
+    D  = Matrix{Float64}(collect(sem.basis.dψ))
+    ω  = Float64.(collect(sem.ω))
+    Je   = Float64.(collect(metrics.Je))
+    dξdx = Float64.(collect(metrics.dξdx)); dξdy = Float64.(collect(metrics.dξdy))
+    dηdx = Float64.(collect(metrics.dηdx)); dηdy = Float64.(collect(metrics.dηdy))
+    # assembled inverse lumped mass  Minv_ip = 1 / Σ_{e∋ip} ω_i ω_j Je_ij
+    M = zeros(npoin)
+    @inbounds for e in 1:nelem, j in 1:ngl, i in 1:ngl
+        M[connijk[e, i, j]] += ω[i] * ω[j] * Je[e, i, j]
+    end
+    Minv = 1.0 ./ M
+    Δx = _min_node_distance(connijk, x, y, nelem, ngl)
+    periodic = Bool(get(inputs, :periodic, true))
+    nx, ny, xu, yu = _structured_axes(x, y)        # for plotting, if the grid is a quad lattice
+    return JexSEMMesh(2, npoin, nelem, ngl, x, y, Δx, periodic, disc,
+                      connijk, D, ω, Je, dξdx, dξdy, dηdx, dηdy, Minv, nx, ny, xu, yu)
+end
+
+# smallest distance between the first two nodes of an element edge (CFL scale)
+function _min_node_distance(connijk, x, y, nelem, ngl)
+    dmin = Inf
+    @inbounds for e in 1:nelem
+        a = connijk[e, 1, 1]; b = connijk[e, 2, 1]; c = connijk[e, 1, 2]
+        dmin = min(dmin, hypot(x[a]-x[b], y[a]-y[b]), hypot(x[a]-x[c], y[a]-y[c]))
+    end
+    return isfinite(dmin) ? dmin : 1.0
+end
+
+# recover the (nx,ny) lattice + axes if the node cloud is a structured grid,
+# else return zeros (heat-map output then falls back to a scatter).
+function _structured_axes(x, y)
+    xu = sort(unique(round.(x; digits = 10)))
+    yu = sort(unique(round.(y; digits = 10)))
+    (length(xu) * length(yu) == length(x)) || return 0, 0, Float64[], Float64[]
+    return length(xu), length(yu), xu, yu
+end
+
+#---------------------------------------------------------------------------------
+# Directional-derivative primitives — the ONLY method-specific numerics.
+# The operators call deriv1/deriv2(f, m, dir) (forwarders above route to the
+# backend, dispatching on the mesh's `disc` and the mesh type).
+#---------------------------------------------------------------------------------
 # --- spectral-element backend (SEMMethod): weak-form derivative, as in rhs.jl ----
 # Galerkin weak first derivative with lumped LGL mass, exactly the structure of
 # rhs.jl's _expansion_inviscid! + DSS_rhs! + Minv:
@@ -307,6 +562,96 @@ function deriv2(::FDMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int)
     return out
 end
 
+# --- finite-difference backend on the structured 2D grid -----------------------
+# ip = (jy-1)*nx + ix; x-neighbours step ±1 (wrap in ix), y-neighbours step ±nx.
+@inline function _nb2d(ip, nx, ny, dir, off, periodic)
+    ix = (ip - 1) % nx + 1; jy = (ip - 1) ÷ nx + 1
+    if dir == 1
+        ix2 = ix + off
+        ix2 = ix2 < 1 ? (periodic ? ix2 + nx : 1) : ix2 > nx ? (periodic ? ix2 - nx : nx) : ix2
+        return (jy - 1) * nx + ix2
+    else
+        jy2 = jy + off
+        jy2 = jy2 < 1 ? (periodic ? jy2 + ny : 1) : jy2 > ny ? (periodic ? jy2 - ny : ny) : jy2
+        return (jy2 - 1) * nx + ix
+    end
+end
+
+function deriv1(::FDMethod, f::Vector{Float64}, m::FDMesh2D, dir::Int)
+    (dir == 1 || dir == 2) || error("SymbolicFD: direction $dir is invalid on a 2D mesh.")
+    h = dir == 1 ? m.dx : m.dy
+    out = similar(f)
+    @inbounds for ip in 1:m.npoin
+        out[ip] = (f[_nb2d(ip, m.nx, m.ny, dir,  1, m.periodic)] -
+                   f[_nb2d(ip, m.nx, m.ny, dir, -1, m.periodic)]) / (2h)
+    end
+    return out
+end
+
+function deriv2(::FDMethod, f::Vector{Float64}, m::FDMesh2D, dir::Int)
+    (dir == 1 || dir == 2) || error("SymbolicFD: direction $dir is invalid on a 2D mesh.")
+    h = dir == 1 ? m.dx : m.dy
+    out = similar(f)
+    @inbounds for ip in 1:m.npoin
+        out[ip] = (f[_nb2d(ip, m.nx, m.ny, dir,  1, m.periodic)] - 2f[ip] +
+                   f[_nb2d(ip, m.nx, m.ny, dir, -1, m.periodic)]) / (h * h)
+    end
+    return out
+end
+
+# --- tensor-product SEM backend on the structured 2D grid ----------------------
+# Weak directional derivative, the 2D analogue of the 1D form: the metric factors
+# of the affine tensor-product element fold into the lumped mass, so
+#   (∂f/∂x)_ip = Minv_ip · DSS( ω_i ω_j · Jy · Σ_k dψ[k,i] f[k,j] )      (dir = 1)
+#   (∂f/∂y)_ip = Minv_ip · DSS( ω_i ω_j · Jx · Σ_k dψ[k,j] f[i,k] )      (dir = 2)
+# with Minv = 1/DSS(ω_i ω_j Jx Jy).  divergence = ∂F/∂x + ∂G/∂y by linearity.
+function deriv1(::SEMMethod, f::Vector{Float64}, m::FDMesh2D, dir::Int)
+    s = m.sem::SEMData2D; ngl = s.ngl
+    geo = dir == 1 ? s.Jy : s.Jx          # transverse Jacobian (the other direction)
+    out = zeros(m.npoin)
+    @inbounds for e in 1:s.nelx*s.nely, j in 1:ngl, i in 1:ngl
+        dfdξ = 0.0
+        if dir == 1
+            for k in 1:ngl; dfdξ += s.D[k, i] * f[s.conn[e, k, j]]; end
+        else
+            for k in 1:ngl; dfdξ += s.D[k, j] * f[s.conn[e, i, k]]; end
+        end
+        out[s.conn[e, i, j]] += s.ω[i] * s.ω[j] * geo * dfdξ
+    end
+    @inbounds for ip in 1:m.npoin; out[ip] *= s.Minv[ip]; end
+    return out
+end
+
+deriv2(d::SEMMethod, f::Vector{Float64}, m::FDMesh2D, dir::Int) =
+    deriv1(d, deriv1(d, f, m, dir), m, dir)
+
+# --- SEM backend on the Jexpresso (gmsh) mesh: weak deriv with metric terms -----
+# Exactly rhs.jl's _expansion_inviscid! per-direction (CL, Inexact, ContGal, 2D):
+#   ∂f/∂ξ|ij = Σ_k dψ[k,i] f[k,j] ,  ∂f/∂η|ij = Σ_k dψ[k,j] f[i,k]
+#   ∂f/∂x    = ∂f/∂ξ·dξdx + ∂f/∂η·dηdx   (dir = 1; dξdy/dηdy for dir = 2)
+#   (∂f/∂x)_ip = Minv_ip · DSS( ω_i ω_j Je_ij · ∂f/∂x|ij )
+# divergence ∇⋅(F,G) = ∂F/∂x + ∂G/∂y reproduces the fused kernel by linearity.
+function deriv1(::SEMMethod, f::Vector{Float64}, m::JexSEMMesh, dir::Int)
+    ngl = m.ngl
+    mx  = dir == 1 ? m.dξdx : m.dξdy
+    mη  = dir == 1 ? m.dηdx : m.dηdy
+    out = zeros(m.npoin)
+    @inbounds for e in 1:m.nelem, j in 1:ngl, i in 1:ngl
+        dfdξ = 0.0; dfdη = 0.0
+        for k in 1:ngl
+            dfdξ += m.D[k, i] * f[m.connijk[e, k, j]]
+            dfdη += m.D[k, j] * f[m.connijk[e, i, k]]
+        end
+        dfdx = dfdξ * mx[e, i, j] + dfdη * mη[e, i, j]
+        out[m.connijk[e, i, j]] += m.ω[i] * m.ω[j] * m.Je[e, i, j] * dfdx
+    end
+    @inbounds for ip in 1:m.npoin; out[ip] *= m.Minv[ip]; end
+    return out
+end
+
+deriv2(d::SEMMethod, f::Vector{Float64}, m::JexSEMMesh, dir::Int) =
+    deriv1(d, deriv1(d, f, m, dir), m, dir)
+
 #---------------------------------------------------------------------------------
 # 3. Discrete fields and the differential operators that act on them
 #
@@ -328,14 +673,14 @@ Discrete tensor field. `comp` holds `nsd^rank` component vectors (each of length
 `npoin`); component `c-1` decodes to a base-`nsd` multi-index of length `rank`.
 """
 struct Field
-    mesh::FDMesh1D
+    mesh::AbstractFDMesh
     rank::Int
     comp::Vector{Vector{Float64}}
 end
 
-scalar_field(m::FDMesh1D, v::Vector{Float64}) = Field(m, 0, [v])
-const_field(m::FDMesh1D, c::Real)             = Field(m, 0, [fill(Float64(c), m.npoin)])
-function vec_const_field(m::FDMesh1D, v::AbstractVector)
+scalar_field(m::AbstractFDMesh, v::Vector{Float64}) = Field(m, 0, [v])
+const_field(m::AbstractFDMesh, c::Real)             = Field(m, 0, [fill(Float64(c), m.npoin)])
+function vec_const_field(m::AbstractFDMesh, v::AbstractVector)
     length(v) == nsd(m) ||
         error("SymbolicFD: a vector constant needs nsd = $(nsd(m)) components, got $(length(v)).")
     return Field(m, 1, [fill(Float64(v[d]), m.npoin) for d in 1:nsd(m)])
@@ -807,10 +1152,15 @@ end
 #---------------------------------------------------------------------------------
 # 5. Evaluate the expression tree on the current state field -> ∂q/∂t
 #---------------------------------------------------------------------------------
+# evaluate a spatially-varying coefficient/source: f(x) in 1D, f(x,y) in 2D
+_eval_func(fun, m::AbstractFDMesh) =
+    nsd(m) == 1 ? Float64[fun(xi) for xi in m.x] :
+                  Float64[fun(m.x[ip], m.y[ip]) for ip in 1:m.npoin]
+
 function eval_node(n::Node, qf::Field)
     op = n.op
     op == :const    && return const_field(qf.mesh, n.val)
-    op == :func     && return Field(qf.mesh, 0, [Float64[n.fun(xi) for xi in qf.mesh.x]])
+    op == :func     && return Field(qf.mesh, 0, [_eval_func(n.fun, qf.mesh)])
     op == :vecconst && return vec_const_field(qf.mesh, n.vec)
     op == :var      && return qf
     op == :grad     && return gradient(eval_node(n.args[1], qf))
@@ -847,7 +1197,7 @@ end
 #---------------------------------------------------------------------------------
 # 6. Right-hand side closure: wrap q in a Field, evaluate the tree, return ∂q/∂t
 #---------------------------------------------------------------------------------
-function build_rhs(node::Node, mesh::FDMesh1D)
+function build_rhs(node::Node, mesh::AbstractFDMesh)
     function rhs!(dq, q)
         qf = scalar_field(mesh, q)        # alias q; operators allocate, never mutate q
         r  = eval_node(node, qf)
@@ -919,7 +1269,7 @@ end
 #---------------------------------------------------------------------------------
 # Auto Δt from the advective (:u) and diffusive (:μ) scales when present; the
 # user can always override with :Δt. (RK4 stays stable while dt·max|λ| ≲ 2.8.)
-function stable_dt(inputs::Dict, m::FDMesh1D, cfl::Float64)
+function stable_dt(inputs::Dict, m::AbstractFDMesh, cfl::Float64)
     h, dt = m.Δx, Inf
     if haskey(inputs, :u)
         uv = inputs[:u]
@@ -992,11 +1342,40 @@ function plot_results_png(x, q, var, ttl::String, OUTPUT_DIR::String, iout::Int;
     return plt
 end
 
+# 2D field as a coloured node map (works for any node cloud: structured FD,
+# tensor-product SEM, or the unstructured gmsh SEM grid).
+function plot_field_png_2d(m::AbstractFDMesh, q, var, ttl::String, OUTPUT_DIR::String,
+                           iout::Int; live::Bool = true, init::Bool = false)
+    plt = Plots.scatter(m.x, m.y; marker_z = q, markershape = :rect, markersize = 3,
+                        markerstrokewidth = 0, c = :viridis, aspect_ratio = :equal,
+                        xlabel = "x", ylabel = "y", title = string(var, "  ", ttl),
+                        colorbar = true, legend = false, show = false, size = (700, 600))
+    fout = init ? string(OUTPUT_DIR, "/INIT-", var, ".png") :
+                  string(OUTPUT_DIR, "/fields-it", iout, ".png")
+    if live && !init
+        try; Plots.savefig(plt, fout); catch; end
+        try; display(plt);             catch; end
+    else
+        _savefig_silent(plt, fout)
+    end
+    return plt
+end
+
 function save_csv(path, m::FDMesh1D, q0, q)
     open(path, "w") do io
         println(io, "x,q_initial,q_final")
         for i in 1:m.npoin
             @printf(io, "%.10e,%.10e,%.10e\n", m.x[i], q0[i], q[i])
+        end
+    end
+    return path
+end
+
+function save_csv(path, m::AbstractFDMesh, q0, q)            # 2D: x,y,q_initial,q_final
+    open(path, "w") do io
+        println(io, "x,y,q_initial,q_final")
+        for ip in 1:m.npoin
+            @printf(io, "%.10e,%.10e,%.10e,%.10e\n", m.x[ip], m.y[ip], q0[ip], q[ip])
         end
     end
     return path
@@ -1045,7 +1424,11 @@ Recognised `inputs` keys
 - `:xmin`, `:xmax`            domain (default [-1, 1])
 - `:npoin` (or `:nelx`)       number of grid points (default 100)
 - `:periodic`                 true/false (default true)
-- `:nsd`                      spatial dimension (only 1 implemented so far)
+- `:nsd`                      spatial dimension: 1, or 2 (structured FD/SEM, or
+                              a gmsh grid read through Jexpresso when
+                              `:method => :sem` and `:gmsh_filename` is set)
+- `:ymin`, `:ymax`            y-extent of the 2D domain (default [-1, 1])
+- `:nelx`, `:nely`            elements (SEM) / points (FD) per direction in 2D
 - `:u`, `:μ`, …               parameter symbols in the equation (vector for a
                               vector quantity `:u => [1.0]`; a function `x->…`
                               for a spatially varying coefficient/source)
@@ -1072,14 +1455,35 @@ function solve(residual::Node, inputs::Dict)    # symbolic Node input: build_fro
     return _run(var, mode, node, repr, inputs)
 end
 
+# mesh factory: 1D, structured 2D, or the gmsh-read Jexpresso 2D SEM mesh
+function build_mesh(inputs::Dict)
+    nsd_in = Int(get(inputs, :nsd, 1))
+    nsd_in == 1 && return FDMesh1D(inputs)
+    nsd_in == 2 || error("SymbolicFD: nsd must be 1 or 2 (got $nsd_in).")
+    disc = discretization(inputs)
+    if disc isa SEMMethod && (Bool(get(inputs, :lread_gmsh, false)) || haskey(inputs, :gmsh_filename))
+        return build_jex_sem_mesh(inputs, disc)     # read the EXISTING gmsh grid
+    end
+    return FDMesh2D(inputs)
+end
+
+# discrete integral ∫q dV (mass): cell volume for FD, lumped mass for SEM
+integrate(m::FDMesh1D, q)  = m.sem === nothing ? sum(q) * m.Δx        : sum(q ./ m.sem.Minv)
+integrate(m::FDMesh2D, q)  = m.sem === nothing ? sum(q) * m.dx * m.dy : sum(q ./ m.sem.Minv)
+integrate(m::JexSEMMesh, q) = sum(q ./ m.Minv)
+
+_domain_str(m::FDMesh1D) = "[$(m.xmin), $(m.xmax)]"
+_domain_str(m::FDMesh2D) = "[$(m.xmin), $(m.xmax)]×[$(m.ymin), $(m.ymax)]"
+_domain_str(m::JexSEMMesh) =
+    @sprintf("[%.3g, %.3g]×[%.3g, %.3g] (gmsh)", minimum(m.x), maximum(m.x), minimum(m.y), maximum(m.y))
+
 function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
     nsd_in = Int(get(inputs, :nsd, 1))
-    nsd_in == 1 || error("SymbolicFD: only nsd = 1 is implemented so far (got nsd = $nsd_in).")
 
     # mesh: default to periodic for transient, non-periodic for steady (unless set)
     inputs_mesh = haskey(inputs, :periodic) ? inputs :
                   merge(inputs, Dict(:periodic => (mode == :transient)))
-    mesh = FDMesh1D(inputs_mesh)
+    mesh = build_mesh(inputs_mesh)
 
     println("="^72)
     println(" SymbolicFD : composing operators for")
@@ -1090,7 +1494,7 @@ function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
     else
         println("   steady residual : ", ast_str(node), " = 0   (solve for $var)")
     end
-    println("   nsd = $nsd_in, npoin = $(mesh.npoin), domain = [$(mesh.xmin), $(mesh.xmax)], ",
+    println("   nsd = $nsd_in, npoin = $(mesh.npoin), domain = ", _domain_str(mesh), ", ",
             mesh.periodic ? "periodic" : "non-periodic")
     println("="^72)
 
@@ -1101,6 +1505,7 @@ function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
 
     # ============================ steady / elliptic ============================
     if mode == :steady
+        nsd_in == 1 || error("SymbolicFD: steady (no ∂/∂t) solves are 1D-only so far.")
         q, rmax = solve_steady(node, mesh, inputs)
         @printf("   max interior residual = %.3e\n", rmax)
         @printf("   q: min = %.6g, max = %.6g\n", minimum(q), maximum(q))
@@ -1120,10 +1525,13 @@ function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
 
     # =============================== transient =================================
     dqdt = node
+    is2d = nsd_in == 2
 
-    # initial condition
-    q0fun = get(inputs, :q0, x -> exp(-(x^2) / (2 * 0.1^2)))   # default gaussian
-    q0 = Float64[q0fun(xi) for xi in mesh.x]
+    # initial condition: q0(x) in 1D, q0(x,y) in 2D
+    default_q0 = is2d ? ((x, y) -> exp(-(x^2 + y^2) / (2 * 0.1^2))) :
+                        (x -> exp(-(x^2) / (2 * 0.1^2)))
+    q0fun = get(inputs, :q0, default_q0)
+    q0 = _eval_func(q0fun, mesh)
     q  = copy(q0)
 
     # time stepping
@@ -1135,11 +1543,17 @@ function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
     rhs! = build_rhs(dqdt, mesh)
     @printf("   Δt = %.3e, nsteps = %d, t_end = %.4g\n", dt, nsteps, tend)
 
+    # output helpers (1D line plot vs 2D node map)
+    plot_init(q)        = is2d ? plot_field_png_2d(mesh, q, var, "t=0", outdir, 0; init = true) :
+                                 plot_initial_png(mesh.x, q, var, outdir)
+    plot_snap(q, t, it) = is2d ? plot_field_png_2d(mesh, q, var, @sprintf("t=%.4g", t), outdir, it; live = live) :
+                                 plot_results_png(mesh.x, q, var, @sprintf("t=%.4g", t), outdir, it; live = live)
+
     nout      = max(1, Int(get(inputs, :ndiagnostics_outputs, 10)))
     out_every = max(1, cld(nsteps, nout))
     if usepng
-        plot_initial_png(mesh.x, q0, var, outdir)
-        plot_results_png(mesh.x, q0, var, @sprintf("t=%.4g", 0.0), outdir, 0; live = live)
+        plot_init(q0)
+        plot_snap(q0, 0.0, 0)
     end
 
     # time loop with on-the-fly diagnostics
@@ -1149,20 +1563,20 @@ function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
         if sstep % out_every == 0 || sstep == nsteps
             iout += 1
             t = sstep * dt
-            usepng && plot_results_png(mesh.x, q, var, @sprintf("t=%.4g", t), outdir, iout; live = live)
+            usepng && plot_snap(q, t, iout)
             @printf("   output %3d : t = %.4g, peak = %.6g\n", iout, t, maximum(q))
         end
     end
 
     # diagnostics & data dump
-    mass0, mass1 = sum(q0)*mesh.Δx, sum(q)*mesh.Δx
+    mass0, mass1 = integrate(mesh, q0), integrate(mesh, q)
     @printf("   mass: initial = %.6g, final = %.6g  (Δ = %.3e)\n", mass0, mass1, mass1-mass0)
     @printf("   peak: initial = %.6g, final = %.6g\n", maximum(q0), maximum(q))
     csv = save_csv(joinpath(outdir, "solution.csv"), mesh, q0, q)
     println("   wrote ", csv)
     usepng && println("   wrote ", outdir, "/INIT-", var, ".png and ",
                       outdir, "/fields-it{0..", iout, "}.png")
-    if !usepng
+    if !usepng && !is2d
         ascii_plot(mesh.x, q0; label = "$var(x, t=0)")
         ascii_plot(mesh.x, q;  label = "$var(x, t=$(round(tend, digits=3)))")
     end

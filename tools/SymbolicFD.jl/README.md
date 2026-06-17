@@ -61,10 +61,41 @@ i.e. the `dF/dξ|_i = Σ_k dψ[k,i] f_k` kernel, `ω`-weighted, direct-stiffness
 summed across elements, and divided by the assembled lumped mass (the affine
 metric cancels). The Jexpresso package is loaded lazily, only when
 `:method => :sem` is selected, so the FD path keeps its light footprint. Choose
-the order with `:nop` and the number of elements with `:nelx`. `problems/CompEuler/sod1d` remains the 1D reference; its **DSGS**
-residual-based shock capturing (`src/kernel/physics/SGS.jl`) is the next
-follow-up (a discretization-agnostic artificial-viscosity field for both
-backends).
+the order with `:nop` and the number of elements with `:nelx`.
+
+## Two dimensions (`:nsd => 2`)
+
+The operator layer is written generically over `nsd`, so 2D needs only a 2D mesh
+and the directional-derivative primitive. Three mesh paths are available:
+
+| `:method` | mesh                                    | `deriv1` |
+|-----------|-----------------------------------------|----------|
+| `:fd`     | structured Cartesian grid               | 2nd-order central in x and y |
+| `:sem`    | structured Cartesian grid (no gmsh)     | tensor-product LGL, weak form |
+| `:sem` + `:gmsh_filename` | **the existing Jexpresso gmsh grid** | weak form on the read mesh + metric terms |
+
+The gmsh path reads the **same grid the Jexpresso problem uses** — for
+`problems/AdvDiff/kopriva` that is `meshes/gmsh_grids/kopriva_periodic.msh` — by
+calling Jexpresso's own `sem_setup` (`src/kernel/infrastructure/sem_setup.jl`)
+inside a `with_mpi` block. We take `connijk`, the node coordinates, the metric
+terms `dξdx,…,Je` and the `dψ`/`ω` basis straight from the returned `sem` bundle
+and apply the weak directional derivative exactly as `rhs.jl`'s
+`_expansion_inviscid!` (CL, Inexact, ContGal, 2D):
+
+```
+∂f/∂ξ|ij = Σ_k dψ[k,i] f[k,j]        ∂f/∂η|ij = Σ_k dψ[k,j] f[i,k]
+∂f/∂x    = ∂f/∂ξ·dξdx + ∂f/∂η·dηdx
+(∂f/∂x)_ip = Minv_ip · DSS( ω_i ω_j Je_ij · ∂f/∂x|ij )
+```
+
+Because `DSS` and `Minv` are linear, `∇⋅(F,G) = ∂F/∂x + ∂G/∂y` reproduces the
+fused divergence kernel exactly. `tools/SymbolicFD.jl/run_advdiff_2d.jl` is the
+2D analogue of `run_gaussian_1d.jl`, set up like `AdvDiff/kopriva` (gaussian blob
+at `(0,3)`, `u=(0.5,1.0)`, `μ=0.1`, periodic, read from the kopriva grid).
+
+`problems/CompEuler/sod1d`'s **DSGS** residual-based shock capturing
+(`src/kernel/physics/SGS.jl`) is the next follow-up (a discretization-agnostic
+artificial-viscosity field for both backends).
 
 ## Example — write the equation as live symbols (no string)
 

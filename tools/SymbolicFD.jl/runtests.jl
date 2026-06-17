@@ -124,6 +124,76 @@ end
     end
 
     # ----------------------------------------------------------------------------
+    @testset "2D structured operators (FD + tensor SEM)" begin
+        mesh2(N; method = :fd) = S.FDMesh2D(Dict(:nsd => 2, :method => method,
+            :xmin => -1.0, :xmax => 1.0, :ymin => -1.0, :ymax => 1.0,
+            :npoinx => N, :npoiny => N, :nelx => N, :nely => N, :nop => 4,
+            :periodic => true))
+        on(m, f) = Float64[f(m.x[ip], m.y[ip]) for ip in 1:m.npoin]
+        exact_x(m)   = on(m, (x, y) -> Float64(π) * cospi(x) * sinpi(y))
+        exact_y(m)   = on(m, (x, y) -> Float64(π) * sinpi(x) * cospi(y))
+        exact_lap(m) = on(m, (x, y) -> -2 * Float64(π)^2 * sinpi(x) * sinpi(y))
+
+        # --- finite differences (2nd-order central) ---
+        m = mesh2(64)
+        @test S.nsd(m) == 2
+        f = on(m, (x, y) -> sinpi(x) * sinpi(y))
+        g = S.gradient(Field(m, 0, f))
+        @test g.rank == 1 && length(g.comp) == 2
+        @test rel_l2(g.comp[1], exact_x(m)) < 5e-3
+        @test rel_l2(g.comp[2], exact_y(m)) < 5e-3
+        @test rel_l2(S.laplacian(Field(m, 0, f)).comp[1], exact_lap(m)) < 5e-3
+        # divergence of u·f with u=[0.5,1.0] is 0.5 fx + 1.0 fy
+        vf = S.fmul(S.vec_const_field(m, [0.5, 1.0]), Field(m, 0, f))
+        @test rel_l2(S.divergence(vf).comp[1], 0.5 .* exact_x(m) .+ exact_y(m)) < 5e-3
+        # 2nd-order convergence of ∇²
+        e1 = l2(S.laplacian(Field(mesh2(32), 0, on(mesh2(32), (x,y)->sinpi(x)*sinpi(y)))).comp[1] .- exact_lap(mesh2(32)))
+        e2 = l2(S.laplacian(Field(mesh2(64), 0, on(mesh2(64), (x,y)->sinpi(x)*sinpi(y)))).comp[1] .- exact_lap(mesh2(64)))
+        @test 3.5 < e1 / e2 < 4.5
+
+        # --- tensor-product SEM (reuses the SAME 1D Jexpresso basis) ---
+        local msem
+        sem_ok = true
+        try
+            msem = mesh2(4; method = :sem)        # 4×4 elements, nop=4
+        catch err
+            sem_ok = false
+            @warn "2D SEM test skipped (could not load Jexpresso basis here)" err
+        end
+        if sem_ok
+            @test msem.sem !== nothing
+            fs = on(msem, (x, y) -> sinpi(x) * sinpi(y))
+            gs = S.gradient(Field(msem, 0, fs))
+            @test rel_l2(gs.comp[1], exact_x(msem)) < 1e-2     # spectral, well under FD
+            @test rel_l2(gs.comp[2], exact_y(msem)) < 1e-2
+            @test rel_l2(S.laplacian(Field(msem, 0, fs)).comp[1], exact_lap(msem)) < 2e-2
+        else
+            @test_skip sem_ok
+        end
+    end
+
+    # ----------------------------------------------------------------------------
+    @testset "2D advection-diffusion (structured FD)" begin
+        # gaussian blob advected one full period on a periodic box; conservative
+        # form ⇒ discrete mass is conserved, diffusion ⇒ the peak decays.
+        inputs = Dict(:nsd => 2, :method => :fd, :periodic => true,
+                      :xmin => -1.0, :xmax => 1.0, :ymin => -1.0, :ymax => 1.0,
+                      :npoinx => 64, :npoiny => 64,
+                      :u => [1.0, 1.0], :μ => 1e-3,
+                      :q0 => (x, y) -> 1.0 + 0.5 * sinpi(x) * sinpi(y),
+                      :tend => 0.3, :CFL => 0.3,
+                      :outformat => "ascii", :plot_live => false,
+                      :output_dir => mktempdir())
+        @vars q u μ
+        mesh, q0, q = SymbolicFD.solve(∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q), inputs)
+        @test length(q) == 64 * 64
+        @test all(isfinite, q)
+        m0 = S.integrate(mesh, q0); m1 = S.integrate(mesh, q)
+        @test abs(m1 - m0) / abs(m0) < 1e-6          # conservative
+        @test maximum(q) ≤ maximum(q0) + 1e-6        # diffusion ⇒ peak decays
+    end
+
+    # ----------------------------------------------------------------------------
     @testset "parsing & rank bookkeeping" begin
         var, mode, dqdt = parse_equation("∂q/∂t + ∇⋅(uq) = μ∇²q", Dict(:u => [1.0], :μ => 1e-3))
         @test var == "q"
