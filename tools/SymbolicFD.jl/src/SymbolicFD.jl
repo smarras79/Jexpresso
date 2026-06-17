@@ -30,8 +30,10 @@ using Printf
 using Krylov               # steady (time-independent) solve: matrix-free GMRES
 using LinearOperators      # wrap the discrete operator as a matrix-free LinearOperator
 using Plots                # PNG output + on-the-fly window, exactly as in Jexpresso
+import LinearAlgebra: ⋅    # overloaded for the symbolic DSL: ∇⋅F = divergence
 
 export solve, parse_equation, FDMesh1D, Field, ascii_plot
+export ∇, Δ, ∂t, ⋅, @vars      # symbolic equation DSL
 
 #---------------------------------------------------------------------------------
 # 1. Normalization: turn LaTeX shortcuts into the unicode the parser expects
@@ -524,6 +526,169 @@ function parse_equation(eqn::AbstractString, inputs::Dict)
 end
 
 #---------------------------------------------------------------------------------
+# 4b. Symbolic front-end: write the equation as live Julia symbols, no string.
+#
+#   @vars q u μ
+#   eq = ∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q)          # residual form,  = 0 implied
+#   solve(eq, inputs)
+#
+# `∇`, `Δ`, `∂t` are real objects and `+ - * ⋅` are overloaded on `Node`, so the
+# expression *evaluates* to the same AST the string parser produces. Notes on
+# Julia lexing: write `∂t(q)` (the literal `∂q/∂t` lexes as two identifiers
+# `∂q`,`∂t`), and put a `*` between a coefficient and an operator (`μ*∇⋅∇(q)`,
+# since `μ∇` would lex as one identifier). Parameter symbols are resolved
+# (scalar / vector / function of x) from the inputs Dict at solve time; the
+# unknown is the symbol carrying `∂t(·)`, or the one symbol absent from inputs.
+#---------------------------------------------------------------------------------
+struct Nabla     end                       # ∇
+struct Laplacian end                       # Δ  (and ∇⋅∇)
+struct TimeDeriv end                       # ∂t
+struct ScaledNabla; coef::Node; end          # c*∇  (see note on precedence below)
+
+const ∇  = Nabla()
+const Δ  = Laplacian()
+const ∂t = TimeDeriv()
+
+tonode(x::Node)           = x
+tonode(x::Real)           = Node(:const;    val = Float64(x))
+tonode(x::AbstractVector) = Node(:vecconst; vec = Float64.(x))
+tonode(x) = error("SymbolicFD: cannot use $(typeof(x)) in a symbolic equation; " *
+                  "use field/parameter symbols (see @vars), numbers, or vectors.")
+
+# gradient ∇(f) ; divergence ∇⋅(F) ; Laplacian Δ(f) and the composed ∇⋅∇(f)
+(::Nabla)(x)     = Node(:grad; args = [tonode(x)])
+(::Laplacian)(x) = Node(:lap;  args = [tonode(x)])
+⋅(::Nabla, n::Node) = n.op == :grad ? Node(:lap; args = n.args) :   # ∇⋅∇ → compact Δ
+                                      Node(:div; args = [n])
+⋅(a::Node, b::Node) = Node(:dot; args = [a, b])
+
+# Julia lexes/associates `μ*∇⋅∇(q)` as `(μ*∇)⋅∇(q)` (`*` and `⋅` share precedence,
+# left-assoc), so `μ*∇` must build a "scaled ∇" that carries the coefficient into
+# the divergence/Laplacian. This is what lets the user write `μ*∇⋅∇(q)` verbatim.
+Base.:*(c::Node, ::Nabla) = ScaledNabla(c)
+Base.:*(c,       ::Nabla) = ScaledNabla(tonode(c))
+⋅(s::ScaledNabla, n::Node) =
+    n.op == :grad ? Node(:mul; args = [s.coef, Node(:lap; args = n.args)]) :
+                    Node(:mul; args = [s.coef, Node(:div; args = [n])])
+
+# time derivative ∂t(q)
+function (::TimeDeriv)(n::Node)
+    n.op == :sym || error("SymbolicFD: ∂t(...) expects the unknown field symbol, e.g. ∂t(q).")
+    return Node(:dt; name = n.name)
+end
+
+# field algebra on the AST
+Base.:+(a::Node, b::Node) = Node(:add; args = [a, b])
+Base.:+(a::Node, b)       = Node(:add; args = [a, tonode(b)])
+Base.:+(a,       b::Node) = Node(:add; args = [tonode(a), b])
+Base.:-(a::Node, b::Node) = Node(:sub; args = [a, b])
+Base.:-(a::Node, b)       = Node(:sub; args = [a, tonode(b)])
+Base.:-(a,       b::Node) = Node(:sub; args = [tonode(a), b])
+Base.:-(a::Node)          = Node(:neg; args = [a])
+Base.:*(a::Node, b::Node) = Node(:mul; args = [a, b])
+Base.:*(a::Node, b)       = Node(:mul; args = [a, tonode(b)])
+Base.:*(a,       b::Node) = Node(:mul; args = [tonode(a), b])
+Base.:/(a::Node, b::Real) = Node(:mul; args = [a, tonode(1 / b)])
+
+"""
+    @vars q u μ ...
+
+Declare each name as a symbolic field/parameter for building an equation, e.g.
+`@vars q u μ` then `eq = ∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q)`.
+"""
+macro vars(names...)
+    blk = Expr(:block)
+    for nm in names
+        push!(blk.args, :($(esc(nm)) = $(Node)(:sym; name = $(string(nm)))))
+    end
+    push!(blk.args, :nothing)
+    return blk
+end
+
+# walk a symbolic tree --------------------------------------------------------
+function _find_dt_name(n::Node)
+    n.op == :dt && return n.name
+    for a in n.args
+        r = _find_dt_name(a)
+        r != "" && return r
+    end
+    return ""
+end
+
+function _collect_syms!(n::Node, acc::Set{String})
+    n.op == :sym && push!(acc, n.name)
+    for a in n.args; _collect_syms!(a, acc); end
+    return acc
+end
+
+# resolve a parameter symbol from the inputs Dict (scalar / vector / function)
+function _resolve_param(name::String, inputs::Dict)
+    haskey(inputs, Symbol(name)) ||
+        error("SymbolicFD: unknown symbol `$name`. Add `:$name => value` to inputs " *
+              "(a vector for a vector quantity, a function `x->…` for a field).")
+    v = inputs[Symbol(name)]
+    v isa Function       && return Node(:func;     name = name, fun = v)
+    v isa AbstractVector && return Node(:vecconst; vec  = Float64.(v))
+    return Node(:const; val = Float64(v))
+end
+
+# replace :sym leaves by :var (the unknown) or resolved parameter nodes
+function resolve_syms(n::Node, var::String, inputs::Dict)
+    n.op == :sym && return n.name == var ? Node(:var; name = n.name) :
+                                           _resolve_param(n.name, inputs)
+    isempty(n.args) && return n
+    return Node(n.op; val = n.val, vec = n.vec, name = n.name, fun = n.fun,
+                args = [resolve_syms(a, var, inputs) for a in n.args])
+end
+
+"""
+    build_from_residual(residual::Node, inputs) -> (var, mode, node, repr)
+
+Turn a symbolic residual `R` (meaning `R = 0`) into the same `(var, mode, node)`
+the string parser yields: transient `∂q/∂t = …` when an `∂t(q)` term is present,
+else a steady residual to drive to zero.
+"""
+function build_from_residual(residual::Node, inputs::Dict)
+    dtname = _find_dt_name(residual)
+    if dtname != ""
+        var = dtname
+    else
+        cands = collect(setdiff(_collect_syms!(residual, Set{String}()),
+                                String[String(k) for k in keys(inputs)]))
+        var = haskey(inputs, :unknown) ? String(inputs[:unknown]) :
+              (length(cands) == 1 ? cands[1] :
+               error("SymbolicFD: could not infer the unknown (candidates: $cands); " *
+                     "pass `:unknown => \"q\"`."))
+    end
+    length(var) == 1 ||
+        error("SymbolicFD: use a single-character unknown name (got `$var`).")
+
+    resolved = resolve_syms(residual, var, inputs)
+    repr = string(ast_str(resolved), " = 0")
+
+    terms = flatten!(Tuple{Float64,Node}[], resolved, 1.0)
+    if dtname == ""
+        return var, :steady, resolved, repr
+    end
+    signed = Tuple{Float64,Node}[]
+    for (sg, nd) in terms
+        if nd.op == :dt
+            sg == 1.0 || error("SymbolicFD: the ∂t(q) term must enter the residual with + sign.")
+            nd.name == var || error("SymbolicFD: time-derivative variable mismatch.")
+        else
+            push!(signed, (-sg, nd))            # move to RHS of ∂q/∂t = …
+        end
+    end
+    isempty(signed) && return var, :transient, Node(:const; val = 0.0), repr
+    s1, n1 = signed[1]
+    dqdt = s1 == 1.0 ? n1 : Node(:neg; args = [n1])
+    for (sg, nd) in signed[2:end]
+        dqdt = Node(sg == 1.0 ? :add : :sub; args = [dqdt, nd])
+    end
+    return var, :transient, dqdt, repr
+end
+
+#---------------------------------------------------------------------------------
 # 5. Evaluate the expression tree on the current state field -> ∂q/∂t
 #---------------------------------------------------------------------------------
 function eval_node(n::Node, qf::Field)
@@ -550,6 +715,8 @@ function ast_str(n::Node)
     op == :func     && return string(n.name, "(x)")
     op == :vecconst && return string("[", join(map(x -> @sprintf("%.4g", x), n.vec), ","), "]")
     op == :var      && return n.name
+    op == :sym      && return n.name
+    op == :dt       && return string("∂", n.name, "/∂t")
     op == :grad     && return string("∇(", ast_str(n.args[1]), ")")
     op == :div      && return string("∇⋅(", ast_str(n.args[1]), ")")
     op == :lap      && return string("∇²(", ast_str(n.args[1]), ")")
@@ -748,9 +915,12 @@ end
 """
     solve(eqn, inputs) -> (mesh, q0, q)
 
-Parse the unicode/LaTeX PDE string `eqn` into composed finite-difference
-operators, build the right-hand side `∂q/∂t = …`, integrate in time and return
-the mesh together with the initial and final solution vectors.
+Solve a PDE given either as a **symbolic expression** built from `@vars` and the
+operators `∇`, `Δ`, `∂t`, `⋅` (residual form, e.g. `∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q)`),
+or as a **string** (`"∂q/∂t + ∇⋅(u q) = μ∇²q"`, LaTeX accepted). The equation is
+turned into composed finite-difference operators; with a `∂t` term it is
+integrated in time (return = initial & final fields), otherwise it is solved as a
+steady problem. Returns the mesh and the (initial, final) solution vectors.
 
 Recognised `inputs` keys
 - `:method`                   `:fd` finite differences (default) or `:sem`
@@ -779,11 +949,16 @@ directly; extra keys:
 - (the grid defaults to non-periodic; provide `:periodic => false` explicitly
   if you also set other periodic options)
 """
-function solve(eqn::AbstractString, inputs::Dict)
+solve(eqn::AbstractString, inputs::Dict) =      # string input: parse to (var,mode,node)
+    _run(parse_equation(eqn, inputs)..., String(eqn), inputs)
+function solve(residual::Node, inputs::Dict)    # symbolic Node input: build_from_residual
+    var, mode, node, repr = build_from_residual(residual, inputs)
+    return _run(var, mode, node, repr, inputs)
+end
+
+function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
     nsd_in = Int(get(inputs, :nsd, 1))
     nsd_in == 1 || error("SymbolicFD: only nsd = 1 is implemented so far (got nsd = $nsd_in).")
-
-    var, mode, node = parse_equation(eqn, inputs)
 
     # mesh: default to periodic for transient, non-periodic for steady (unless set)
     inputs_mesh = haskey(inputs, :periodic) ? inputs :
@@ -792,9 +967,8 @@ function solve(eqn::AbstractString, inputs::Dict)
 
     println("="^72)
     println(" SymbolicFD : composing operators for")
-    println("   ", eqn)
+    println("   ", eqn_repr)
     println("   method          : ", method_name(mesh.disc))
-    println("   normalized      : ", normalize_equation(eqn))
     if mode == :transient
         println("   discretized RHS : ∂$var/∂t = ", ast_str(node))
     else

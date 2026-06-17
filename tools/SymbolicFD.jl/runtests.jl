@@ -128,6 +128,32 @@ end
     end
 
     # ----------------------------------------------------------------------------
+    @testset "symbolic equation DSL (no string)" begin
+        @vars q u μ
+        eq = ∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q)        # residual form, = 0 implied
+        @test eq isa S.Node
+
+        inp = Dict(:u => [1.0], :μ => 1e-3)
+        var, mode, node, _ = S.build_from_residual(eq, inp)
+        @test var == "q"
+        @test mode == :transient
+
+        # symbolic and string forms must build the SAME discrete RHS
+        _, _, node_str = parse_equation("∂q/∂t + ∇⋅(u q) = μ∇²q", inp)
+        m  = make_mesh(128)
+        q0 = Float64[exp(-(x^2) / (2 * 0.1^2)) for x in m.x]
+        dq_sym = zeros(m.npoin); S.build_rhs(node,     m)(dq_sym, q0)
+        dq_str = zeros(m.npoin); S.build_rhs(node_str, m)(dq_str, q0)
+        @test maximum(abs, dq_sym .- dq_str) < 1e-12
+
+        # no ∂t ⇒ steady; ∇⋅∇ collapses to the compact Laplacian
+        @vars q f
+        _, mode2, node2, _ = S.build_from_residual(∇⋅∇(q) - f, Dict(:f => x -> 0.0))
+        @test mode2 == :steady
+        @test node2.args[1].op == :lap
+    end
+
+    # ----------------------------------------------------------------------------
     @testset "heat equation analytic decay" begin
         μ, tend = 0.05, 0.5
         m, q0, q = integrate_only("∂q/∂t = μ∇²q", Dict(:μ => μ, :npoin => 256),

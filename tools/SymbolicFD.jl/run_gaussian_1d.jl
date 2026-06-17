@@ -20,9 +20,17 @@ include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
 using .SymbolicFD
 
 #---------------------------------------------------------------------------------
-# 1. The equation, written by the user in Julia's unicode (LaTeX also accepted).
+# 1. The equation, written with live Julia symbols (no string).
+#    Declare the symbols, then write the residual ( = 0 implied):
+#
+#         ∂q/∂t + ∇⋅(u q) - μ ∇⋅∇(q) = 0      <=>   ∂q/∂t + ∇⋅(u q) = μ ∇⋅∇(q)
+#
+#    Notation notes: use `∂t(q)` (the literal `∂q/∂t` lexes as two identifiers),
+#    and a `*` after a coefficient (`μ*…`, since `μ∇` would lex as one symbol).
+#    A plain string equation, e.g. "∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)", also works.
 #---------------------------------------------------------------------------------
-equation = "∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)"
+@vars q u μ
+equation = ∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q)
 
 #---------------------------------------------------------------------------------
 # 2. Inputs — same spirit as a Jexpresso `user_inputs()`.

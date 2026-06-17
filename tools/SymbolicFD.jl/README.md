@@ -54,12 +54,13 @@ the 1D reference — including its **DSGS** residual-based shock capturing
 (Marras et al.; `src/kernel/physics/SGS.jl`), to be added as a
 discretization-agnostic artificial-viscosity field in a follow-up.
 
-## Example
+## Example — write the equation as live symbols (no string)
 
 ```julia
 include("src/SymbolicFD.jl"); using .SymbolicFD
 
-equation = "∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)"
+@vars q u μ                                  # declare the symbols
+equation = ∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q)        # residual form, " = 0" implied
 
 inputs = Dict(
     :nsd  => 1, :xmin => -1.0, :xmax => 1.0, :npoin => 200, :periodic => true,
@@ -72,10 +73,24 @@ inputs = Dict(
 mesh, q0, q = SymbolicFD.solve(equation, inputs)
 ```
 
-The run banner prints the **discretized RHS it built**, e.g.
+`∇`, `Δ`, `∂t` are real objects and `+ − * ⋅` are overloaded on the expression
+tree, so `equation` *is* the AST — no parsing of a string. Two Julia-lexing
+notes: write **`∂t(q)`** (the literal `∂q/∂t` lexes as two identifiers `∂q`,`∂t`)
+and put a **`*`** after a coefficient (`μ*∇⋅∇(q)`, since `μ∇` would lex as one
+identifier). The unknown is the symbol carrying `∂t(·)` (or, for steady problems,
+the one symbol absent from `inputs`); the rest are resolved from `inputs` as
+scalars, vectors, or functions `x->…`.
+
+A plain **string** equation still works too (handy for `=`-form and LaTeX):
+
+```julia
+SymbolicFD.solve("∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)", inputs)
+```
+
+Either way the run banner prints the **discretized RHS it built**, e.g.
 
 ```
-   discretized RHS : ∂q/∂t = 0.001·∇²(q) - ∇⋅([1]·q)
+   discretized RHS : ∂q/∂t = -∇⋅([1]·q) + 0.001·∇²(q)
 ```
 
 ## Running it
@@ -211,10 +226,14 @@ re-interpreted.
 
 ## How it works (pipeline)
 
-1. **Normalize** — strip `\mathbf{}`/`\vec{}`, map LaTeX greek/operators to
-   unicode, collapse contiguous `∇⋅∇`/`∇^2`/`Δ` to `∇²`.
-2. **Parse** — recursive-descent parser builds an expression tree of operator
-   and field nodes (no equation templates).
+1. **Build the tree** — either *symbolic input* (`∇`/`Δ`/`∂t` + overloaded
+   `+ − * ⋅` on `Node`s) constructs the expression tree directly, or a *string*
+   is normalized (strip `\mathbf{}`, map LaTeX→unicode, collapse `∇⋅∇`/`Δ`→`∇²`)
+   and parsed by a recursive-descent parser into the same tree. No equation
+   templates either way.
+2. **Resolve symbols** — the unknown (the `∂t(·)` argument, or the lone non-input
+   symbol) becomes the field; other symbols are resolved from `inputs` as
+   scalars / vectors / functions of `x`.
 3. **Build the RHS / residual** — if a `∂q/∂t` term is present it is removed and
    the rest moved across `=` to form the tree for `∂q/∂t = …` (transient);
    otherwise the tree is the residual `lhs - rhs` to drive to zero (steady).

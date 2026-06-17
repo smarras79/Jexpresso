@@ -20,8 +20,10 @@
 include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
 using .SymbolicFD
 
-# Equation written by the user in unicode (no time derivative -> steady solve).
-equation = "∇⋅∇(q) = f"          # equivalently "∇²q = f" or "Δq = f"
+# Equation as live symbols, residual form (no ∂t term ⇒ steady solve):
+#   ∇⋅∇(q) - f = 0   <=>   ∇²q = f.   (A string "∇⋅∇(q) = f" also works.)
+@vars q f
+equation = ∇⋅∇(q) - f
 
 function user_inputs()
     inputs = Dict(
