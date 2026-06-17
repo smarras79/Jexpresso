@@ -36,7 +36,7 @@ using .SymbolicFD
 #    A plain string equation, e.g. "∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)", also works.
 #---------------------------------------------------------------------------------
 @vars q u μ
-equation = ∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q)
+equation = ∂t(q) + ∇⋅(u*q) - 2*μ*∇⋅∇(q)
 
 #---------------------------------------------------------------------------------
 # 2. Inputs — same spirit as a Jexpresso `user_inputs()`.
