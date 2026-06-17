@@ -55,6 +55,15 @@ esac
 export JEXPRESSO_EXTRAE=1
 export EXTRAE_CONFIG_FILE
 
+# Precompile Extrae ONCE, serially, before the MPI launch. Profiling.init()
+# loads Extrae via Base.require on every rank; if the package still needs
+# precompiling, 4 ranks racing to do it under an active MPI session can hang.
+echo "Ensuring Extrae is precompiled ..."
+"${JULIA}" --project=. -e '
+    import Pkg
+    haskey(Pkg.project().dependencies, "Extrae") || Pkg.add("Extrae")
+    Pkg.precompile()' >/dev/null
+
 echo "EXTRAE_LIB=${EXTRAE_LIB}"
 echo "EXTRAE_CONFIG_FILE=${EXTRAE_CONFIG_FILE}"
 echo "Tracing ${EQ}/${CASE} on ${NRANKS} ranks ..."

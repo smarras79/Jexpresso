@@ -99,7 +99,20 @@ function init(rank::Integer = 0)
         return false
     end
     try
-        m.init()
+        # IMPORTANT: when Extrae is loaded via LD_PRELOAD (the MPI-tracing
+        # workflow), the library auto-initialises inside the MPI_Init
+        # interception — by the time we get here it is ALREADY initialised.
+        # Calling Extrae_init() a second time under an active MPI session can
+        # deadlock (it was the cause of a hang right after the Extrae banner).
+        # So only initialise if it has not been initialised yet (e.g. a rare
+        # run with JEXPRESSO_EXTRAE set but no preload).
+        already = false
+        try
+            already = m.isinit() != 0
+        catch
+            already = false
+        end
+        already || m.init()
         _ACTIVE[] = true
         # Name the phase event + its values for the Paraver timeline.
         m.register(EV_PHASE, "Jexpresso phase",
@@ -110,7 +123,7 @@ function init(rank::Integer = 0)
                           "time_loop", "rhs", "halo_exchange",
                           "coupling_setup", "coupling_interp", "coupling_comm"])
         if rank == 0
-            @info "Jexpresso: Extrae tracing ACTIVE (JEXPRESSO_EXTRAE set)."
+            @info "Jexpresso: Extrae tracing ACTIVE (JEXPRESSO_EXTRAE set; already_initialised=$already)."
         end
     catch err
         @debug "Extrae.init() failed; Jexpresso tracing stays off" exception = err
