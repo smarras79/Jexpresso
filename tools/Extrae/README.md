@@ -172,6 +172,73 @@ A practical rule of thumb: budget ~1 GB per rank, so 32 ranks ⇒ ask for
 
 ---
 
+## Submitting as a SLURM batch job
+
+Instead of hand-setting an interactive allocation every time, use the ready
+made job script, which requests the right `--ntasks`/`--mem`, precompiles the
+project once, sets up the Extrae preload from `Extrae_jll`, and launches the
+example:
+
+```bash
+sbatch tools/Extrae/submit_extrae.sh
+```
+
+Edit the `#SBATCH` header to change the rank count (`--ntasks`), memory
+(`--mem-per-cpu`), and your `--account`. The trace files appear in the submit
+directory; watch progress in `jexp-extrae.<jobid>.out` / `.err`.
+
+---
+
+## Visualizing the trace in Paraver
+
+A run produces three files that together form one Paraver trace — keep them
+together (same basename):
+
+```
+jexpresso-extrae.prv     # the trace data
+jexpresso-extrae.pcf     # event/value labels (so you see "compute RHS", etc.)
+jexpresso-extrae.row     # the rank/thread layout
+```
+
+1. **Get Paraver (`wxparaver`).** It is BSC's free GUI viewer. Either load a
+   cluster module if available (`module avail paraver` → `module load paraver`)
+   or download it for your laptop from <https://tools.bsc.es/paraver> and copy
+   the three files over:
+
+   ```bash
+   scp 'wulver:/project/smarras/smarras/Jexpresso/jexpresso-extrae.*' .
+   ```
+
+2. **Open the trace:**
+
+   ```bash
+   wxparaver jexpresso-extrae.prv
+   ```
+
+   The `.pcf`/`.row` are picked up automatically because they share the
+   basename.
+
+3. **Look at the timeline.** Paraver ships ready-made *configuration files*
+   (`.cfg`) that build the standard views in one click:
+   - `File ▸ Load Configuration…` → from the bundled `cfgs/` pick
+     **`mpi/views/MPI_call.cfg`** to colour each rank's timeline by MPI routine
+     (you'll see `MPI_Waitall` / `MPI_Allreduce` blocks, like Fig. 2 in the
+     paper), and **`General/views/user_functions.cfg`** to see the
+     `compute RHS` / `halo exchange` / `allreduce` user regions you annotated.
+   - The custom events you `emit` (Solver phase, Iteration, residual) show up
+     under `<event-type>` — right-click a timeline ▸ *View ▸ Event Flags*, or
+     open a 2D *Analyzer* histogram on the "Solver phase" event type.
+
+4. **Quantify with the Analyzer (2D tables).** `File ▸ Load Configuration…` →
+   **`mpi/analysis/2dp_MPI_call_profile.cfg`** gives the % of time each rank
+   spends in each MPI call — the table behind the paper's conclusion that
+   `MPI_Waitall`/`MPI_Allreduce` dominate.
+
+Tip: if you only have a terminal, `prv2dim` and the `paramedir` CLI (shipped
+with Paraver) can compute the same profiles headless and dump them to CSV.
+
+---
+
 ## How the instrumentation maps to Jexpresso
 
 The MPI example is intentionally shaped like Jexpresso's real solver loop:
