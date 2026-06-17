@@ -49,12 +49,19 @@ only `deriv1`/`deriv2` change with the backend, dispatched on the mesh:
 The SEM backend does **not** reimplement the spectral basis: it calls Jexpresso's
 `basis_structs_ξ_ω!` / `build_Interpolation_basis!`
 (`src/kernel/bases/basis_structs.jl`) for the LGL nodes/weights `ξ`,`ω` and the
-`dψ` differentiation matrix, builds an element LGL grid, and applies `dψ` with the
-same kernel as `rhs.jl`'s `_expansion_inviscid!` (`dF/dξ|_i = Σ_k dψ[k,i] f_k`),
-direct-stiffness-averaged to a C0 nodal derivative. The Jexpresso package is
-loaded lazily, only when `:method => :sem` is selected, so the FD path keeps its
-light footprint. Choose the order with `:nop` and the number of elements with
-`:nelx`. `problems/CompEuler/sod1d` remains the 1D reference; its **DSGS**
+`dψ` differentiation matrix, builds an element LGL grid, and forms the derivative
+with the **same weak-form structure as `rhs.jl`** (`_expansion_inviscid!` +
+`DSS_rhs!` + `Minv`):
+
+```
+(∂f/∂x)_i = Minv_i · DSS( ω_i · Σ_k dψ[k,i] f_k )
+```
+
+i.e. the `dF/dξ|_i = Σ_k dψ[k,i] f_k` kernel, `ω`-weighted, direct-stiffness
+summed across elements, and divided by the assembled lumped mass (the affine
+metric cancels). The Jexpresso package is loaded lazily, only when
+`:method => :sem` is selected, so the FD path keeps its light footprint. Choose
+the order with `:nop` and the number of elements with `:nelx`. `problems/CompEuler/sod1d` remains the 1D reference; its **DSGS**
 residual-based shock capturing (`src/kernel/physics/SGS.jl`) is the next
 follow-up (a discretization-agnostic artificial-viscosity field for both
 backends).

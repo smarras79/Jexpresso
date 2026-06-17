@@ -123,17 +123,18 @@ end
 Per-mesh spectral-element data for the SEM backend: `nelem` elements of order
 `nop` (`ngl = nop+1` LGL nodes each), reference LGL nodes `ξ`, the nodal
 differentiation matrix `D` (Jexpresso's `basis.dψ`, indexed `[basis, point]`),
-element→global connectivity `conn`, metric `jac = dξ/dx = 2/h`, and node
-multiplicities `mult` for the C0 direct-stiffness average.
+the LGL quadrature weights `ω`, element→global connectivity `conn`, and the
+assembled inverse lumped mass `Minv` (`Minv_i = 1 / Σ_{e∋i} ω_i J_e`). These are
+exactly the ingredients of Jexpresso's weak-form RHS: `Minv · DSS(ω ⊙ Dᵀ f)`.
 """
 struct SEMData
     nelem::Int
     ngl::Int
     ξ::Vector{Float64}
     D::Matrix{Float64}
+    ω::Vector{Float64}
     conn::Matrix{Int}
-    jac::Float64
-    mult::Vector{Float64}
+    Minv::Vector{Float64}
 end
 
 """
@@ -208,8 +209,8 @@ function build_sem_mesh(inputs::Dict, disc::SEMMethod, xmin, xmax, periodic)
     ξ, ω, D = sem_basis(nop)
     nelem = haskey(inputs, :nelx) ? Int(inputs[:nelx]) :
             max(1, round(Int, (Int(get(inputs, :npoin, nop + 1)) - (periodic ? 0 : 1)) / nop))
-    h   = (xmax - xmin) / nelem
-    jac = 2.0 / h
+    h  = (xmax - xmin) / nelem
+    Je = h / 2                                              # affine metric dx/dξ
     npoin = periodic ? nelem * nop : nelem * nop + 1
     conn  = zeros(Int, nelem, ngl)
     x     = zeros(npoin)
@@ -222,12 +223,13 @@ function build_sem_mesh(inputs::Dict, disc::SEMMethod, xmin, xmax, periodic)
             (periodic && gf == npoin + 1) || (x[gid] = xL + (ξ[i] + 1) / 2 * h)
         end
     end
-    mult = zeros(npoin)
+    M = zeros(npoin)                                        # assembled lumped mass
     for e in 1:nelem, i in 1:ngl
-        mult[conn[e, i]] += 1.0
+        M[conn[e, i]] += ω[i] * Je
     end
-    Δx = minimum(diff(sort(x)))                              # min node spacing (CFL)
-    sem = SEMData(nelem, ngl, ξ, D, conn, jac, mult)
+    Minv = 1.0 ./ M
+    Δx = minimum(diff(sort(x)))                             # min node spacing (CFL)
+    sem = SEMData(nelem, ngl, ξ, D, ω, conn, Minv)
     return FDMesh1D(1, npoin, xmin, xmax, Δx, x, periodic, disc, sem)
 end
 
@@ -238,25 +240,28 @@ end
 deriv1(f::Vector{Float64}, m::FDMesh1D, dir::Int) = deriv1(m.disc, f, m, dir)
 deriv2(f::Vector{Float64}, m::FDMesh1D, dir::Int) = deriv2(m.disc, f, m, dir)
 
-# --- spectral-element backend (SEMMethod): same dψ application as rhs.jl ---------
-# Per element, dF/dξ|_i = Σ_k dψ[k,i] f_k  (exactly rhs.jl's _expansion_inviscid!
-# kernel); multiply by the metric dξ/dx and direct-stiffness-average shared nodes
-# to get the C0 nodal derivative.
+# --- spectral-element backend (SEMMethod): weak-form derivative, as in rhs.jl ----
+# Galerkin weak first derivative with lumped LGL mass, exactly the structure of
+# rhs.jl's _expansion_inviscid! + DSS_rhs! + Minv:
+#     (∂f/∂x)_i = Minv_i · DSS( ω_i · Σ_k dψ[k,i] f_k )
+# (the affine metric dξ/dx cancels between the ω-weighted weak derivative and the
+# lumped mass, so it does not appear explicitly). Σ_k dψ[k,i] f_k is the same
+# dF/dξ|_i kernel rhs.jl uses. deriv2 composes two weak first derivatives.
 function deriv1(::SEMMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int)
     dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
     s = m.sem::SEMData
     out = zeros(m.npoin)
     @inbounds for e in 1:s.nelem
         for i in 1:s.ngl
-            acc = 0.0
+            dFdξ = 0.0
             for k in 1:s.ngl
-                acc += s.D[k, i] * f[s.conn[e, k]]
+                dFdξ += s.D[k, i] * f[s.conn[e, k]]      # dF/dξ at node i (rhs.jl kernel)
             end
-            out[s.conn[e, i]] += acc * s.jac
+            out[s.conn[e, i]] += s.ω[i] * dFdξ            # ω-weighted weak derivative, DSS-summed
         end
     end
     @inbounds for ip in 1:m.npoin
-        out[ip] /= s.mult[ip]
+        out[ip] *= s.Minv[ip]                             # inverse lumped mass
     end
     return out
 end
