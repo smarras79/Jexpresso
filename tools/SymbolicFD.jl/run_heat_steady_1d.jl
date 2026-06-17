@@ -17,7 +17,9 @@
 #       julia --project=. tools/SymbolicFD.jl/run_heat_steady_1d.jl
 #---------------------------------------------------------------------------------=#
 
-include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
+# Load the module ONCE per session (see note in run_gaussian_1d.jl): re-including
+# this script reuses the same module so the symbolic `Node`s and `solve` match.
+isdefined(Main, :SymbolicFD) || include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
 using .SymbolicFD
 
 # Equation as live symbols, residual form (no ∂t term ⇒ steady solve):

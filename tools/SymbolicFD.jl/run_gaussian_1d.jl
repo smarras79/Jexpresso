@@ -16,7 +16,13 @@
 #       julia run_gaussian_1d.jl
 #---------------------------------------------------------------------------------=#
 
-include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
+# Load the module ONCE per Julia session. Re-`include`ing this script (e.g. after
+# editing the inputs below) then reuses the same module, so the symbolic `Node`s
+# in `equation` and the `solve` method always come from the same module instance.
+# (Re-defining the module on every include would create two incompatible `Node`
+# types and break `solve`. To pick up edits to src/SymbolicFD.jl, restart Julia
+# or use Revise.jl.)
+isdefined(Main, :SymbolicFD) || include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
 using .SymbolicFD
 
 #---------------------------------------------------------------------------------
