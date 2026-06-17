@@ -192,16 +192,25 @@ const _KA  = Ref{Module}()
 _jexpresso() = isassigned(_JEX) ? _JEX[] : (_JEX[] = Base.require(Base.PkgId(_JEX_UUID, "Jexpresso")))
 _kabstr()    = isassigned(_KA)  ? _KA[]  : (_KA[]  = Base.require(Base.PkgId(_KA_UUID,  "KernelAbstractions")))
 
-"reuse Jexpresso's LGL nodes/weights and the dψ differentiation matrix."
-function sem_basis(nop::Int)
-    jex = _jexpresso()
-    cpu = _kabstr().CPU()
-    lgl = jex.basis_structs_ξ_ω!(jex.LGL(), nop, cpu)        # St_lgl: ξ, ω
+# The actual basis build. Calls methods from packages that were just loaded with
+# `Base.require`, so it must run in the latest world age (see `sem_basis`).
+function _sem_basis_impl(jex::Module, ka::Module, nop::Int)
+    cpu = ka.CPU()
+    lgl = jex.basis_structs_ξ_ω!(jex.LGL(), nop, cpu)         # St_lgl: ξ, ω
     ξ   = Float64.(collect(lgl.ξ))
     ω   = Float64.(collect(lgl.ω))
     basis = jex.build_Interpolation_basis!(jex.LagrangeBasis(), ξ, ξ, Float64, cpu)
     D   = Matrix{Float64}(basis.dψ)                           # dψ[k,i] = dψ_k(ξ_i)
     return ξ, ω, D
+end
+
+"reuse Jexpresso's LGL nodes/weights and the dψ differentiation matrix."
+function sem_basis(nop::Int)
+    jex = _jexpresso()
+    ka  = _kabstr()
+    # `_jexpresso()/_kabstr()` may have just loaded the packages, advancing the
+    # world age past this method; `invokelatest` runs the build in the new world.
+    return Base.invokelatest(_sem_basis_impl, jex, ka, nop)::Tuple{Vector{Float64},Vector{Float64},Matrix{Float64}}
 end
 
 function build_sem_mesh(inputs::Dict, disc::SEMMethod, xmin, xmax, periodic)
