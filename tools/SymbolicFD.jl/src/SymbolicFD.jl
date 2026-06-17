@@ -195,6 +195,12 @@ _kabstr()    = isassigned(_KA)  ? _KA[]  : (_KA[]  = Base.require(Base.PkgId(_KA
 # The actual basis build. Calls methods from packages that were just loaded with
 # `Base.require`, so it must run in the latest world age (see `sem_basis`).
 function _sem_basis_impl(jex::Module, ka::Module, nop::Int)
+    # Jexpresso's basis/IO helpers query the global communicator, so MPI must be
+    # initialised first — normally src/run.jl does this, but the SEM path loads
+    # the basis directly. Singleton (no-arg) init is fine for this serial use.
+    if !jex.MPI.Initialized()
+        jex.MPI.Init()
+    end
     cpu = ka.CPU()
     lgl = jex.basis_structs_ξ_ω!(jex.LGL(), nop, cpu)         # St_lgl: ξ, ω
     ξ   = Float64.(collect(lgl.ξ))
