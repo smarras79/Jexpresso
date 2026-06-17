@@ -1750,6 +1750,7 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       inputs, neqs::Int,
                                       elem_bboxes::Vector{NTuple{4,Float64}},
                                       bins::ElemBins)
+    Profiling.region_begin(Profiling.PHASE_CPL_INTERP)
     if cpg.send_coords
         # Build a (npoin × ndime) matrix whose columns are the Jexpresso mesh
         # node coordinates, then interpolate those fields to Alya point locations
@@ -1782,7 +1783,10 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
             mesh_x, mesh_y)
         pack_velocity_data!(cpg, @view(u_interp[:, 2:neqs-1]), owner_ranks)
     end
+    Profiling.region_end()                          # end coupling_interp
+    Profiling.region_begin(Profiling.PHASE_CPL_COMM)
     coupling_exchange_data!(cpg)
+    Profiling.region_end()                          # end coupling_comm
 end
 
 # 3D variant of je_perform_coupling_exchange.  Same structure as the 2D
@@ -1810,6 +1814,7 @@ function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
                                           inputs, neqs::Int,
                                           elem_bboxes::Vector{NTuple{6,Float64}},
                                           bins::ElemBins3D)
+    Profiling.region_begin(Profiling.PHASE_CPL_INTERP)
     if cpg.send_coords
         ndime     = cpg.ndime
         npoin     = length(mesh_x)
@@ -1842,7 +1847,10 @@ function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
             mesh_x, mesh_y, mesh_z)
         pack_velocity_data!(cpg, @view(u_interp[:, 2:neqs-1]), owner_ranks)
     end
+    Profiling.region_end()                          # end coupling_interp
+    Profiling.region_begin(Profiling.PHASE_CPL_COMM)
     coupling_exchange_data!(cpg)
+    Profiling.region_end()                          # end coupling_comm
 end
 
 # ===========================================================================

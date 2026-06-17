@@ -269,11 +269,20 @@ What is instrumented so far (this is being added incrementally):
 
 | Phase | Annotation | Where |
 |-------|------------|-------|
-| `time_loop` | `Profiling.region(PHASE_TIMELOOP)` user region + event | `problems/drivers.jl` |
 | `init`/`finish` | session open/close | `src/run.jl` (after `MPI.Init()`, end of run) |
+| `time_loop` | `Profiling.region(PHASE_TIMELOOP)` user region + event | `problems/drivers.jl` |
+| `coupling_setup` | one-time Jexpresso↔Alya handshake / data receive | `src/run.jl` |
+| `coupling_interp` | per-step interpolation of the solution to Alya points | `src/kernel/coupling/couplingStructs.jl` |
+| `coupling_comm` | per-step MPI send of the packed data to Alya | `src/kernel/coupling/couplingStructs.jl` |
 
-More phases (`sem_setup`, `initialize`, `params_setup`, then the RHS / MPI
-halo-exchange hot paths) are being layered on top step by step.
+The coupling regions only appear in a coupled run (`JEXPRESSO_COUPLED=1`,
+i.e. Jexpresso launched alongside Alya/AlyaProxy). In the Paraver timeline you
+then see, every coupled step, a `coupling_interp` block immediately followed by
+a `coupling_comm` block, so you can quantify how much of each step is spent
+interpolating vs. communicating with Alya.
+
+More phases (`sem_setup`, `initialize`, `params_setup`, then the RHS hot path)
+are being layered on top step by step.
 
 To capture a trace of, say, `CompEuler/theta` on a compute node, use the
 launcher (one command — it sets up the Extrae preload, turns on
