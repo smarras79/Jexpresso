@@ -88,17 +88,28 @@ though no trace is produced. The test **passes** on macOS.
    julia --project=. -e 'import Pkg; Pkg.add("Extrae")'
    ```
 
-2. **Locate the Extrae MPI tracing library** (`libmpitrace.so`):
+2. **Locate the Extrae MPI tracing library.** Use the **C** library
+   `libmpitrace.so` — *not* the Fortran `libmpitracef.so`, since MPI.jl calls
+   the C MPI ABI. Also capture the dependency search path (`libunwind`, PAPI,
+   …) so the dynamic loader can start `julia` with the preload attached:
 
    ```bash
-   # (A) system module — preferred on HPC:
+   # (A) system module — preferred on HPC (deps resolve via system libs):
    module load extrae
    export EXTRAE_LIB=$EXTRAE_HOME/lib/libmpitrace.so
+   export EXTRAE_LIBPATH=$EXTRAE_HOME/lib
 
-   # (B) or the Julia artifact:
+   # (B) or the Julia artifact (note the exact C lib name, and use the jll's
+   #     own LIBPATH so libunwind.so.8 etc. are found):
    ART=$(julia --project=. -e 'using Extrae_jll; print(Extrae_jll.artifact_dir)')
-   export EXTRAE_LIB=$(find "$ART" -name 'libmpitrace*.so' | head -1)
+   export EXTRAE_LIB=$ART/lib/libmpitrace.so
+   export EXTRAE_LIBPATH=$(julia --project=. -e 'using Extrae_jll; print(Extrae_jll.LIBPATH[])')
    ```
+
+   > If you skip `EXTRAE_LIBPATH` with the artifact route you'll see
+   > `julia: error while loading shared libraries: libunwind.so.8: cannot open
+   > shared object file` — that just means the preload's dependencies aren't on
+   > the loader path yet.
 
 3. **Let Extrae instrument MPI automatically.** Extrae must be loaded *after*
    Julia but *before* the MPI library. The paper (§3.1) suggests MPI.jl's

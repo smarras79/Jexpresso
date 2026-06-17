@@ -37,10 +37,30 @@ EXAMPLE="${SCRIPT_DIR}/extrae_mpi_jexpresso_pattern.jl"
 
 # If EXTRAE_LIB is set, wrap each rank in `env LD_PRELOAD=<lib>` so the Extrae
 # MPI interception library is loaded per rank. Otherwise launch plainly.
+#
+# EXTRAE_LIB must be the *C* MPI tracing library  libmpitrace.so
+#   (NOT the Fortran one, libmpitracef.so — MPI.jl uses the C MPI ABI).
+#
+# EXTRAE_LIBPATH (optional) is prepended to LD_LIBRARY_PATH for the ranks so
+# the loader can resolve Extrae's own dependencies (libunwind, PAPI, ...).
+# With the Julia artifact, get it from the jll:
+#   export EXTRAE_LIBPATH=$(julia --project=. -e 'using Extrae_jll; print(Extrae_jll.LIBPATH[])')
+# With a system module it is usually  $EXTRAE_HOME/lib.
 if [[ -n "${EXTRAE_LIB:-}" ]]; then
+    case "${EXTRAE_LIB}" in
+        *libmpitracef.so)
+            echo "WARNING: EXTRAE_LIB points at the Fortran lib (libmpitracef.so);" >&2
+            echo "         MPI.jl needs the C lib libmpitrace.so — MPI calls won't be traced." >&2
+            ;;
+    esac
     echo "Tracing ON: LD_PRELOAD=${EXTRAE_LIB}"
     echo "  EXTRAE_CONFIG_FILE=${EXTRAE_CONFIG_FILE:-<unset!>}"
-    PRELOAD_PREFIX="env LD_PRELOAD=${EXTRAE_LIB}"
+    ENV_ASSIGN="LD_PRELOAD=${EXTRAE_LIB}"
+    if [[ -n "${EXTRAE_LIBPATH:-}" ]]; then
+        echo "  EXTRAE_LIBPATH=${EXTRAE_LIBPATH}"
+        ENV_ASSIGN="LD_LIBRARY_PATH=${EXTRAE_LIBPATH}:${LD_LIBRARY_PATH:-} ${ENV_ASSIGN}"
+    fi
+    PRELOAD_PREFIX="env ${ENV_ASSIGN}"
 else
     echo "Tracing OFF (EXTRAE_LIB unset): running without an Extrae trace."
     PRELOAD_PREFIX=""
