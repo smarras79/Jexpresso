@@ -266,6 +266,16 @@ include(joinpath( "auxiliary", "checks.jl"))
 # `jl_generating_output` returns 0 (we're not generating precompile
 # output), so the include fires and the historic auto-run path is
 # preserved.
+#
+# NOTE: run.jl reads the case-reload bookkeeping globals below, so they
+# MUST be defined before this script-path include fires (the include runs
+# during module-body evaluation, before the definitions further down would
+# otherwise be reached). Defined here, ahead of the include, so script-form
+# runs work; the REPL `run_case` path includes run.jl only after the whole
+# module is loaded, so it sees them regardless.
+const _LOADED_CASE_DIR  = Ref{String}("")
+const _CASE_FILE_MTIMES = Dict{String,Float64}()
+
 if abspath(PROGRAM_FILE) == abspath(@__FILE__) &&
    ccall(:jl_generating_output, Cint, ()) == 0
     include("./run.jl")
@@ -447,8 +457,10 @@ end
 # Skipping the redundant include keeps an unchanged re-run launch-cost-only;
 # switching cases or editing any user_*.jl bumps the check so changes still
 # take effect.
-const _LOADED_CASE_DIR  = Ref{String}("")
-const _CASE_FILE_MTIMES = Dict{String,Float64}()
+#
+# (The `_LOADED_CASE_DIR` / `_CASE_FILE_MTIMES` globals these comments
+# describe are defined earlier, just above the script-path `include("./run.jl")`,
+# so script-form runs can read them — see the note there.)
 
 """
     Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
