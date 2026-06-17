@@ -87,6 +87,11 @@ else
     nparts = MPI.Comm_size(comm)
 end
 
+# Begin optional Extrae tracing (no-op unless JEXPRESSO_EXTRAE is set). Done
+# right after MPI init so MPI auto-instrumentation and our custom events share
+# the same session. See src/kernel/infrastructure/Profiling.jl.
+Profiling.init(rank)
+
 #--------------------------------------------------------
 # Parse command line args:
 #--------------------------------------------------------
@@ -310,3 +315,7 @@ else
                TFloat)
     end
 end
+
+# Close the optional Extrae tracing session and flush the Paraver trace
+# (no-op unless JEXPRESSO_EXTRAE is set).
+Profiling.finish()

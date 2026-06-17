@@ -112,6 +112,10 @@ include(joinpath( "macros", "je_macros.jl"))
 
 include(joinpath( "auxiliary", "timing.jl"))
 
+# Optional Extrae (Paraver) instrumentation. Submodule `Profiling`; OFF
+# unless JEXPRESSO_EXTRAE is set. See tools/Extrae/README.md.
+include(joinpath( "kernel", "infrastructure", "Profiling.jl"))
+
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "mesh", "meshStructs.jl"))

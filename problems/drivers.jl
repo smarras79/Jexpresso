@@ -180,8 +180,13 @@ function driver(nparts,
         precompile_warmup_run!(inputs, params, u, partitioned_model,
                                is_coupled, coupling)
 
-        @time solution = time_loop!(inputs, params, u, partitioned_model,
-                                    is_coupled, coupling)
+        # Trace the main workload as a Paraver region (no-op unless
+        # JEXPRESSO_EXTRAE is set). This is the coarse first step of the
+        # Extrae integration; see src/kernel/infrastructure/Profiling.jl.
+        @time solution = Profiling.region(Profiling.PHASE_TIMELOOP) do
+            time_loop!(inputs, params, u, partitioned_model,
+                       is_coupled, coupling)
+        end
 
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
 
