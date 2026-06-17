@@ -1,4 +1,4 @@
-#==============================================================================
+# ==============================================================================
 # runtests.jl  --  test the Extrae.jl integration end-to-end
 #
 # This is the test you can run on your MacBook Air.  It verifies that:
@@ -16,7 +16,7 @@
 # Run from the Jexpresso project root:
 #
 #     julia --project=. tools/Extrae/runtests.jl
-#==============================================================================
+# ==============================================================================
 module ExtraeIntegrationTests
 
 using Test

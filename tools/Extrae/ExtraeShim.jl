@@ -1,4 +1,4 @@
-#==============================================================================
+# ==============================================================================
 # ExtraeShim.jl
 #
 # A thin, *portable* wrapper around the Extrae.jl HPC profiler
@@ -33,7 +33,7 @@
 #
 # Reference: S. Sanchez-Ramirez & M. Giordano, "Extrae.jl: Julia bindings for
 # the Extrae HPC Profiler", Proceedings of JuliaCon (arXiv:2504.12087v1).
-#==============================================================================
+# ==============================================================================
 module ExtraeShim
 
 export init, finish, register, emit, user_function, @user_function, is_active

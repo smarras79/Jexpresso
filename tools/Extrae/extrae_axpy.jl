@@ -1,4 +1,4 @@
-#==============================================================================
+# ==============================================================================
 # extrae_axpy.jl  --  serial Extrae.jl instrumentation example
 #
 # Reproduces the canonical examples from the Extrae.jl paper
@@ -13,7 +13,7 @@
 # On Linux with Extrae installed this writes a Paraver trace into ./set-0/ and
 # a `*.prv` after merge (see README).  On macOS it runs identically but the
 # instrumentation calls are no-ops (see ExtraeShim.jl for why).
-#==============================================================================
+# ==============================================================================
 
 include(joinpath(@__DIR__, "ExtraeShim.jl"))
 using .ExtraeShim
