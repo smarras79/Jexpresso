@@ -1,4 +1,4 @@
-#==============================================================================
+# ==============================================================================
 # extrae_mpi_jexpresso_pattern.jl  --  MPI Extrae.jl instrumentation example
 #
 # A small, self-contained distributed kernel that mirrors the communication
@@ -28,7 +28,7 @@
 #
 # To get a REAL Paraver trace you must run on Linux with Extrae installed and
 # MPI auto-instrumentation enabled via LD_PRELOAD / MPIPreferences (see README).
-#==============================================================================
+# ==============================================================================
 
 using MPI
 
@@ -68,17 +68,19 @@ function halo_exchange!(u_local, comm, rank, nranks)
     left  = rank == 0          ? MPI.PROC_NULL : rank - 1
     right = rank == nranks - 1 ? MPI.PROC_NULL : rank + 1
 
-    # interior first/last (the values our neighbours need)
-    send_left  = u_local[2]
-    send_right = u_local[n - 1]
+    # interior first/last (the values our neighbours need). Bind the send
+    # buffers to locals (not inline `Ref(...)`) so they stay alive until
+    # Waitall completes, regardless of MPI.jl version.
+    send_left  = Ref(u_local[2])
+    send_right = Ref(u_local[n - 1])
     recv_left  = Ref(zero(eltype(u_local)))
     recv_right = Ref(zero(eltype(u_local)))
 
     reqs = MPI.Request[]
     push!(reqs, MPI.Irecv!(recv_left,  comm; source = left,  tag = 1))
     push!(reqs, MPI.Irecv!(recv_right, comm; source = right, tag = 0))
-    push!(reqs, MPI.Isend(Ref(send_right), comm; dest = right, tag = 1))
-    push!(reqs, MPI.Isend(Ref(send_left),  comm; dest = left,  tag = 0))
+    push!(reqs, MPI.Isend(send_right, comm; dest = right, tag = 1))
+    push!(reqs, MPI.Isend(send_left,  comm; dest = left,  tag = 0))
     MPI.Waitall(reqs)
 
     if left != MPI.PROC_NULL
