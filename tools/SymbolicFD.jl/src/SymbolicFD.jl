@@ -92,12 +92,13 @@ end
 # dispatched on the mesh's `disc::Discretization`:
 #
 #   :method => :fd   ->  FDMethod   : 2nd-order central finite differences (this file)
-#   :method => :sem  ->  SEMMethod  : Jexpresso's spectral element method  (FOLLOW-UP)
+#   :method => :sem  ->  SEMMethod  : spectral element, REUSING Jexpresso's basis
 #
-# The SEM backend is stubbed here with the seam in place: it will reuse
-# Jexpresso's St_lgl nodes/weights and the dψ nodal differentiation matrix
-# (src/kernel/bases/basis_structs.jl), with problems/CompEuler/sod1d as the 1D
-# reference (including its DSGS shock capturing, also a follow-up).
+# The SEM backend does not reimplement the spectral basis: it calls Jexpresso's
+# basis_structs_ξ_ω!/build_Interpolation_basis! (src/kernel/bases/basis_structs.jl)
+# for the LGL nodes/weights and the dψ differentiation matrix, and applies dψ with
+# the same kernel as rhs.jl's _expansion_inviscid! (DSS-averaged to C0). DSGS
+# shock capturing (src/kernel/physics/SGS.jl), as in sod1d, remains a follow-up.
 #---------------------------------------------------------------------------------
 abstract type Discretization end
 struct FDMethod  <: Discretization end
@@ -106,7 +107,7 @@ Base.@kwdef struct SEMMethod <: Discretization
 end
 
 method_name(::FDMethod)  = "finite differences (2nd-order central)"
-method_name(d::SEMMethod) = "spectral element (nop = $(d.nop))  [not yet implemented]"
+method_name(d::SEMMethod) = "spectral element (LGL, nop = $(d.nop); reuses Jexpresso basis)"
 
 function discretization(inputs::Dict)
     m = get(inputs, :method, :fd)
@@ -117,11 +118,30 @@ function discretization(inputs::Dict)
 end
 
 """
+    SEMData
+
+Per-mesh spectral-element data for the SEM backend: `nelem` elements of order
+`nop` (`ngl = nop+1` LGL nodes each), reference LGL nodes `ξ`, the nodal
+differentiation matrix `D` (Jexpresso's `basis.dψ`, indexed `[basis, point]`),
+element→global connectivity `conn`, metric `jac = dξ/dx = 2/h`, and node
+multiplicities `mult` for the C0 direct-stiffness average.
+"""
+struct SEMData
+    nelem::Int
+    ngl::Int
+    ξ::Vector{Float64}
+    D::Matrix{Float64}
+    conn::Matrix{Int}
+    jac::Float64
+    mult::Vector{Float64}
+end
+
+"""
     FDMesh1D
 
 1D grid container with `npoin` nodes on `[xmin, xmax]` and the chosen
-discretization `disc`. For `FDMethod` the nodes are uniform; `x_i = xmin + i*Δx`.
-(Named historically; it holds whichever `Discretization` was selected.)
+discretization `disc`. For `FDMethod` the nodes are uniform; for `SEMMethod`
+they are element-wise LGL nodes and `sem` holds the spectral-element data.
 """
 struct FDMesh1D
     nsd::Int
@@ -132,22 +152,21 @@ struct FDMesh1D
     x::Vector{Float64}
     periodic::Bool
     disc::Discretization
+    sem::Union{Nothing,SEMData}
 end
 
 function FDMesh1D(inputs::Dict)
     xmin     = Float64(get(inputs, :xmin, -1.0))
     xmax     = Float64(get(inputs, :xmax,  1.0))
-    npoin    = Int(get(inputs, :npoin, get(inputs, :nelx, 100)))
     periodic = Bool(get(inputs, :periodic, true))
     disc     = discretization(inputs)
-    if periodic
-        Δx = (xmax - xmin) / npoin
-        x  = [xmin + i * Δx for i in 0:npoin-1]
-    else
-        Δx = (xmax - xmin) / (npoin - 1)
-        x  = [xmin + i * Δx for i in 0:npoin-1]
-    end
-    return FDMesh1D(1, npoin, xmin, xmax, Δx, x, periodic, disc)
+
+    disc isa SEMMethod && return build_sem_mesh(inputs, disc, xmin, xmax, periodic)
+
+    npoin = Int(get(inputs, :npoin, get(inputs, :nelx, 100)))
+    Δx = periodic ? (xmax - xmin) / npoin : (xmax - xmin) / (npoin - 1)
+    x  = [xmin + i * Δx for i in 0:npoin-1]
+    return FDMesh1D(1, npoin, xmin, xmax, Δx, x, periodic, disc, nothing)
 end
 
 nsd(m::FDMesh1D) = m.nsd
@@ -156,17 +175,94 @@ nsd(m::FDMesh1D) = m.nsd
 @inline _im(i, m::FDMesh1D) = i == 1       ? (m.periodic ? m.npoin : 1) : i - 1
 
 #---------------------------------------------------------------------------------
+# SEM backend: REUSE Jexpresso's spectral basis (no reimplementation).
+#
+# We do NOT recompute LGL nodes or the differentiation matrix: they come straight
+# from Jexpresso's src/kernel/bases/basis_structs.jl —
+#     basis_structs_ξ_ω!(LGL(), nop, CPU())            -> LGL nodes ξ and weights ω
+#     build_Interpolation_basis!(LagrangeBasis(),ξ,ξ,…) -> the dψ differentiation matrix
+# The package is loaded lazily (only when :method => :sem) so the FD path keeps
+# its light dependency footprint.
+#---------------------------------------------------------------------------------
+const _JEX_UUID = Base.UUID("b6c1962e-2b89-11f0-398d-4f31b209be71")   # Jexpresso
+const _KA_UUID  = Base.UUID("63c18a36-062a-441e-b654-da1e3ab1ce7c")   # KernelAbstractions
+const _JEX = Ref{Module}()
+const _KA  = Ref{Module}()
+_jexpresso() = isassigned(_JEX) ? _JEX[] : (_JEX[] = Base.require(Base.PkgId(_JEX_UUID, "Jexpresso")))
+_kabstr()    = isassigned(_KA)  ? _KA[]  : (_KA[]  = Base.require(Base.PkgId(_KA_UUID,  "KernelAbstractions")))
+
+"reuse Jexpresso's LGL nodes/weights and the dψ differentiation matrix."
+function sem_basis(nop::Int)
+    jex = _jexpresso()
+    cpu = _kabstr().CPU()
+    lgl = jex.basis_structs_ξ_ω!(jex.LGL(), nop, cpu)        # St_lgl: ξ, ω
+    ξ   = Float64.(collect(lgl.ξ))
+    ω   = Float64.(collect(lgl.ω))
+    basis = jex.build_Interpolation_basis!(jex.LagrangeBasis(), ξ, ξ, Float64, cpu)
+    D   = Matrix{Float64}(basis.dψ)                           # dψ[k,i] = dψ_k(ξ_i)
+    return ξ, ω, D
+end
+
+function build_sem_mesh(inputs::Dict, disc::SEMMethod, xmin, xmax, periodic)
+    nop = disc.nop; ngl = nop + 1
+    ξ, ω, D = sem_basis(nop)
+    nelem = haskey(inputs, :nelx) ? Int(inputs[:nelx]) :
+            max(1, round(Int, (Int(get(inputs, :npoin, nop + 1)) - (periodic ? 0 : 1)) / nop))
+    h   = (xmax - xmin) / nelem
+    jac = 2.0 / h
+    npoin = periodic ? nelem * nop : nelem * nop + 1
+    conn  = zeros(Int, nelem, ngl)
+    x     = zeros(npoin)
+    for e in 1:nelem
+        xL = xmin + (e - 1) * h
+        for i in 1:ngl
+            gf  = (e - 1) * nop + i
+            gid = periodic ? mod1(gf, npoin) : gf
+            conn[e, i] = gid
+            (periodic && gf == npoin + 1) || (x[gid] = xL + (ξ[i] + 1) / 2 * h)
+        end
+    end
+    mult = zeros(npoin)
+    for e in 1:nelem, i in 1:ngl
+        mult[conn[e, i]] += 1.0
+    end
+    Δx = minimum(diff(sort(x)))                              # min node spacing (CFL)
+    sem = SEMData(nelem, ngl, ξ, D, conn, jac, mult)
+    return FDMesh1D(1, npoin, xmin, xmax, Δx, x, periodic, disc, sem)
+end
+
+#---------------------------------------------------------------------------------
 # Directional-derivative primitives — the ONLY method-specific numerics.
 # The operators call deriv1/deriv2(f, m, dir); these route to the backend.
 #---------------------------------------------------------------------------------
 deriv1(f::Vector{Float64}, m::FDMesh1D, dir::Int) = deriv1(m.disc, f, m, dir)
 deriv2(f::Vector{Float64}, m::FDMesh1D, dir::Int) = deriv2(m.disc, f, m, dir)
 
-const _SEM_TODO = "SymbolicFD: the SEM (spectral element) backend is not implemented yet " *
-    "— it is the next step. Use `:method => :fd` for now. SEM will reuse Jexpresso's " *
-    "St_lgl / LagrangeInterpolatingPolynomials and target problems/CompEuler/sod1d."
-deriv1(::SEMMethod, f, m, dir) = error(_SEM_TODO)
-deriv2(::SEMMethod, f, m, dir) = error(_SEM_TODO)
+# --- spectral-element backend (SEMMethod): same dψ application as rhs.jl ---------
+# Per element, dF/dξ|_i = Σ_k dψ[k,i] f_k  (exactly rhs.jl's _expansion_inviscid!
+# kernel); multiply by the metric dξ/dx and direct-stiffness-average shared nodes
+# to get the C0 nodal derivative.
+function deriv1(::SEMMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int)
+    dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
+    s = m.sem::SEMData
+    out = zeros(m.npoin)
+    @inbounds for e in 1:s.nelem
+        for i in 1:s.ngl
+            acc = 0.0
+            for k in 1:s.ngl
+                acc += s.D[k, i] * f[s.conn[e, k]]
+            end
+            out[s.conn[e, i]] += acc * s.jac
+        end
+    end
+    @inbounds for ip in 1:m.npoin
+        out[ip] /= s.mult[ip]
+    end
+    return out
+end
+
+deriv2(d::SEMMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int) =
+    deriv1(d, deriv1(d, f, m, dir), m, dir)
 
 # --- finite-difference backend (FDMethod) --------------------------------------
 "first derivative ∂f/∂x_dir at every node (2nd-order central; periodic wrap)."

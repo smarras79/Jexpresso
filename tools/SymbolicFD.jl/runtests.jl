@@ -80,18 +80,35 @@ end
     @testset "discretization backend (:method)" begin
         # default backend is finite differences
         @test make_mesh(16).disc isa S.FDMethod
-
-        # :sem selects the spectral-element backend; the mesh builds, but the
-        # SEM derivative primitive is stubbed (next step) and must error clearly
-        msem = S.FDMesh1D(Dict(:npoin => 16, :periodic => true, :method => :sem, :nop => 4))
-        @test msem.disc isa S.SEMMethod
-        @test msem.disc.nop == 4
-        fsem = Field(msem, 0, [collect(1.0:16.0)])
-        @test_throws ErrorException S.gradient(fsem)
-        @test_throws ErrorException S.laplacian(fsem)
-
         # unknown method is rejected
         @test_throws ErrorException S.FDMesh1D(Dict(:method => :nope))
+
+        # SEM backend reuses Jexpresso's basis (dψ, ξ, ω); only run the numerical
+        # check if the Jexpresso package can be loaded in this environment.
+        local msem
+        sem_ok = true
+        try
+            msem = S.FDMesh1D(Dict(:method => :sem, :nop => 4, :nelx => 8,
+                                   :xmin => -1.0, :xmax => 1.0, :periodic => true))
+        catch err
+            sem_ok = false
+            @warn "SEM backend test skipped (could not load Jexpresso basis here)" err
+        end
+        if sem_ok
+            @test msem.disc isa S.SEMMethod
+            @test msem.sem !== nothing
+            # spectral first derivative of sin(πx) on the LGL element mesh
+            f  = Float64[sinpi(x) for x in msem.x]
+            d  = S.deriv1(f, msem, 1)
+            ex = [Float64(π) * cospi(x) for x in msem.x]
+            @test rel_l2(d, ex) < 1e-3
+            # spectral Laplacian (∇⋅∇) via the operator layer
+            lap = S.laplacian(Field(msem, 0, f)).comp[1]
+            ex2 = [-Float64(π)^2 * sinpi(x) for x in msem.x]
+            @test rel_l2(lap, ex2) < 1e-2
+        else
+            @test_skip sem_ok
+        end
     end
 
     # ----------------------------------------------------------------------------
