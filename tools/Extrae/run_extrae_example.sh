@@ -11,8 +11,18 @@
 # launches the example under it, so it uses whatever MPI your MPIPreferences
 # point at (MPICH_jll is the recommended route on macOS — see INSTALL.md).
 #
-# To capture a REAL Paraver trace you must run this on Linux with Extrae
-# installed and LD_PRELOAD / MPIPreferences preloads configured (see README).
+# To capture a REAL Paraver trace, run this on Linux and point EXTRAE_LIB at
+# the Extrae MPI tracing library (libmpitrace.so). The preload is attached to
+# the *rank processes only* (via `env`), so Extrae is loaded after Julia but
+# before the MPI library — the arrangement recommended by the Extrae.jl paper
+# (this avoids the libstdc++ version clashes you get from preloading on the
+# `julia` binary itself). EXTRAE_CONFIG_FILE should point at extrae.xml.
+#
+#   export EXTRAE_LIB=$EXTRAE_HOME/lib/libmpitrace.so
+#   export EXTRAE_CONFIG_FILE=$PWD/tools/Extrae/extrae.xml
+#   ./tools/Extrae/run_extrae_example.sh 32
+#
+# Leave EXTRAE_LIB unset to run without tracing (e.g. on macOS).
 #==============================================================================
 set -euo pipefail
 
@@ -25,9 +35,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 EXAMPLE="${SCRIPT_DIR}/extrae_mpi_jexpresso_pattern.jl"
 
+# If EXTRAE_LIB is set, wrap each rank in `env LD_PRELOAD=<lib>` so the Extrae
+# MPI interception library is loaded per rank. Otherwise launch plainly.
+if [[ -n "${EXTRAE_LIB:-}" ]]; then
+    echo "Tracing ON: LD_PRELOAD=${EXTRAE_LIB}"
+    echo "  EXTRAE_CONFIG_FILE=${EXTRAE_CONFIG_FILE:-<unset!>}"
+    PRELOAD_PREFIX="env LD_PRELOAD=${EXTRAE_LIB}"
+else
+    echo "Tracing OFF (EXTRAE_LIB unset): running without an Extrae trace."
+    PRELOAD_PREFIX=""
+fi
+
 echo "Launching Extrae MPI example with ${NRANKS} ranks ..."
 cd "${PROJECT_ROOT}"
 "${JULIA}" --project=. -e "
   using MPI
-  run(\`\$(mpiexec()) -n ${NRANKS} \$(Base.julia_cmd()) --project=. ${EXAMPLE}\`)
+  run(\`\$(mpiexec()) -n ${NRANKS} ${PRELOAD_PREFIX} \$(Base.julia_cmd()) --project=. ${EXAMPLE}\`)
 "

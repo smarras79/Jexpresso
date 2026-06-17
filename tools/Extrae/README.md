@@ -88,28 +88,40 @@ though no trace is produced. The test **passes** on macOS.
    julia --project=. -e 'import Pkg; Pkg.add("Extrae")'
    ```
 
-2. **Let Extrae instrument MPI automatically.** Extrae must be loaded *after*
-   Julia but *before* the MPI library. The clean way (per the paper, §3.1) is
-   to use MPI.jl's `preloads` preference so the Extrae shared library is
-   `LD_PRELOAD`-ed for you:
+2. **Locate the Extrae MPI tracing library** (`libmpitrace.so`):
 
-   ```julia
-   using MPIPreferences
-   # adjust the filename to your Extrae_jll / system install
-   MPIPreferences.use_system_binary()          # or use_jll_binary()
-   # then add the Extrae library to the preloads list in LocalPreferences.toml:
-   #   [MPIPreferences]
-   #   preloads = ["libextrae.so"]
+   ```bash
+   # (A) system module — preferred on HPC:
+   module load extrae
+   export EXTRAE_LIB=$EXTRAE_HOME/lib/libmpitrace.so
+
+   # (B) or the Julia artifact:
+   ART=$(julia --project=. -e 'using Extrae_jll; print(Extrae_jll.artifact_dir)')
+   export EXTRAE_LIB=$(find "$ART" -name 'libmpitrace*.so' | head -1)
    ```
 
-   Alternatively, set `LD_PRELOAD=/path/to/libmpitrace.so` (the MPI flavour of
-   the Extrae library) directly in your launch environment.
-
-3. **Point Extrae at the config file** and run:
+3. **Let Extrae instrument MPI automatically.** Extrae must be loaded *after*
+   Julia but *before* the MPI library. The paper (§3.1) suggests MPI.jl's
+   `preloads` preference — but that keyword only exists in newer
+   `MPIPreferences`, and Jexpresso pins `MPIPreferences = "=0.1.11"`, which
+   does **not** support it. The portable equivalent is to attach the preload
+   to the **rank processes only**, via `env`, so it loads after Julia but
+   before MPI (do *not* `LD_PRELOAD` the `julia` binary itself — that loads
+   Extrae before Julia and triggers libstdc++ version clashes). The launcher
+   does this for you when `EXTRAE_LIB` is set:
 
    ```bash
    export EXTRAE_CONFIG_FILE=$PWD/tools/Extrae/extrae.xml
-   ./tools/Extrae/run_extrae_example.sh 4
+   ./tools/Extrae/run_extrae_example.sh 32          # 32 ranks on a 32-core node
+   ```
+
+   Equivalent explicit command:
+
+   ```bash
+   julia --project=. -e '
+     using MPI
+     run(`$(mpiexec()) -n 32 env LD_PRELOAD='"$EXTRAE_LIB"' \
+         $(Base.julia_cmd()) --project=. tools/Extrae/extrae_mpi_jexpresso_pattern.jl`)'
    ```
 
 4. **Merge** the per-process trace files into a single Paraver trace (this is
