@@ -730,6 +730,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:entropy_variables] = false
     end
 
+    if(!haskey(inputs, :new_primitive_variables))
+        inputs[:new_primitive_variables] = false
+    end
+
     #
     # saturation adjustment:
     #

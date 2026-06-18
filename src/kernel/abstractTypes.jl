@@ -79,8 +79,15 @@ struct artiano_ec <: AbstractVolumeFlux end
 struct artiano_etec <: AbstractVolumeFlux end
 struct artiano_tec <: AbstractVolumeFlux end
 struct kennedy_gruber <: AbstractVolumeFlux end
+struct shima <: AbstractVolumeFlux end
+struct chandrashekar <: AbstractVolumeFlux end
 struct central_euler <: AbstractVolumeFlux end
 struct central_theta <: AbstractVolumeFlux end
+#
+# Gradient variables for the Navier-Stokes parabolic 
+abstract type AbstractGradientVariables end
+struct GradientVariablesPrimitive <: AbstractGradientVariables end
+struct GradientVariablesEntropy   <: AbstractGradientVariables end
 #
 # Boundary flags/conditions
 #
