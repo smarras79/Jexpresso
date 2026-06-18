@@ -428,11 +428,11 @@ function compute_direct_radiation(F_dir, τ_nodes, κ_abs, σ, sw, mesh_local)
     # S_dir[ip_g] = σ[ip] × Φ_sun[ip_ang] × G_dir[ip]
     # without allocating the full (npoin × npoin_ang) array.
 
-    @info "Direct beam radiation:"
-    @info "  G_dir range : [$(round(minimum(G_dir),digits=2)), " *
-          "$(round(maximum(G_dir),digits=2))] W/m²"
-    @info "  Q_dir range : [$(round(minimum(Q_dir),sigdigits=4)), " *
-          "$(round(maximum(Q_dir),sigdigits=4))] W/m³"
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        @info "Direct beam radiation:"
+        @info "  G_dir range : [$(round(minimum(G_dir),digits=2)), $(round(maximum(G_dir),digits=2))] W/m²"
+        @info "  Q_dir range : [$(round(minimum(Q_dir),sigdigits=4)), $(round(maximum(Q_dir),sigdigits=4))] W/m³"
+    end
 
     return G_dir, Q_dir
 end

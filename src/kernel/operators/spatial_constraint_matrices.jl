@@ -36,19 +36,19 @@ function build_spatial_constraint_matrices(
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
     ngl::Int, rank::Int
 )
-    @rankinfo rank "[$rank] Building spatial constraint matrices with angular coupling..."
+    @rankinfo rank "Building spatial constraint matrices with angular coupling..."
 
     num_ncf = spatial_amr_cache.num_spatial_hanging_facets
 
     if num_ncf == 0
-        @rankinfo rank "[$rank] No spatial hanging facets found, skipping constraint matrix construction"
+        @rankinfo rank "No spatial hanging facets found, skipping constraint matrix construction"
         return spatial_amr_cache
     end
 
     nelem = length(extra_meshes_coords)
-    @rankinfo rank "[$rank] Processing $(num_ncf) spatial non-conforming facets..."
-    @rankinfo rank "[$rank] Spatial elements: $nelem, each with angular mesh"
-    @rankinfo rank "[$rank] BUILDING: Full spatial-angular constraint system"
+    @rankinfo rank "Processing $(num_ncf) spatial non-conforming facets..."
+    @rankinfo rank "Spatial elements: $nelem, each with angular mesh"
+    @rankinfo rank "BUILDING: Full spatial-angular constraint system"
 
     # Cache for interpolation matrices to avoid recomputation
     interp_cache = Dict{Tuple{Int,Int,Int}, Tuple{Matrix{Float64}, Matrix{Float64}, Matrix{Float64}}}()
@@ -99,14 +99,14 @@ function build_spatial_constraint_matrices(
             num_spatial_angular_hanging += num_spatial_added * nelem_ang_child * (nop_child+1) * (nop_child+1)
 
         catch err
-            @rankinfo rank "[$rank] Error processing facet $ncf_idx (child=$child_elem_id, parent=$parent_elem_id): $err"
+            @rankinfo rank "Error processing facet $ncf_idx (child=$child_elem_id, parent=$parent_elem_id): $err"
             rethrow(err)
         end
     end
 
-    @rankinfo rank "[$rank] ✓ Spatial constraint matrices built"
-    @rankinfo rank "[$rank]   - $(num_spatial_hanging) spatial hanging nodes"
-    @rankinfo rank "[$rank]   - $(num_spatial_angular_hanging) spatial-angular hanging DOFs (including all angular elements)"
+    @rankinfo rank "✓ Spatial constraint matrices built"
+    @rankinfo rank "  - $(num_spatial_hanging) spatial hanging nodes"
+    @rankinfo rank "  - $(num_spatial_angular_hanging) spatial-angular hanging DOFs (including all angular elements)"
     return spatial_amr_cache
 end
 
@@ -554,7 +554,7 @@ function verify_spatial_constraints(cache::SpatialAMRCache, rank::Int, n_spatial
                                     extra_meshes_extra_nelems=nothing,
                                     extra_meshes_extra_nops=nothing)
     if length(cache.parent_weights) == 0
-        @rankinfo rank "[$rank] WARNING: No constraint weights found in cache"
+        @rankinfo rank "WARNING: No constraint weights found in cache"
         return
     end
 
@@ -586,15 +586,15 @@ function verify_spatial_constraints(cache::SpatialAMRCache, rank::Int, n_spatial
         if abs(col_sum - 1.0) > 1e-10
             num_violated_col_unity += 1
             if num_violated_col_unity <= 5  # Print first 5 violations
-                @rankinfo rank "[$rank] WARNING: Column $col sum = $col_sum (should be 1.0)"
+                @rankinfo rank "WARNING: Column $col sum = $col_sum (should be 1.0)"
             end
         end
     end
 
-    @rankinfo rank "[$rank] Spatial Constraint Verification Summary:"
-    @rankinfo rank "[$rank]   - Spatial hanging nodes: $num_hanging"
-    @rankinfo rank "[$rank]   - Restriction matrix size: $n_spatial_nodes × $n_spatial_nodes"
-    @rankinfo rank "[$rank]   - Columns with sums ≠ 1.0: $num_violated_col_unity"
+    @rankinfo rank "Spatial Constraint Verification Summary:"
+    @rankinfo rank "  - Spatial hanging nodes: $num_hanging"
+    @rankinfo rank "  - Restriction matrix size: $n_spatial_nodes × $n_spatial_nodes"
+    @rankinfo rank "  - Columns with sums ≠ 1.0: $num_violated_col_unity"
 
     # If angular mesh provided, verify spatial-angular coupling awareness
     if extra_meshes_extra_nelems !== nothing && extra_meshes_extra_nops !== nothing
@@ -602,8 +602,8 @@ function verify_spatial_constraints(cache::SpatialAMRCache, rank::Int, n_spatial
         avg_nop = Int(round(mean([nops[1] for nops in extra_meshes_extra_nops])))
 
         expected_spatial_angular = num_hanging * total_angular_nelems * (avg_nop + 1) * (avg_nop + 1)
-        @rankinfo rank "[$rank]   - Expected spatial-angular DOFs (with coupling): ~$expected_spatial_angular"
-        @rankinfo rank "[$rank]   - NOTE: RHS/Matrix assembly will expand these constraints to all angular nodes"
+        @rankinfo rank "  - Expected spatial-angular DOFs (with coupling): ~$expected_spatial_angular"
+        @rankinfo rank "  - NOTE: RHS/Matrix assembly will expand these constraints to all angular nodes"
     end
 
     if num_violated_col_unity > 0
@@ -611,7 +611,7 @@ function verify_spatial_constraints(cache::SpatialAMRCache, rank::Int, n_spatial
               "$num_violated_col_unity column(s) have sum ≠ 1.0 (partition of unity violated)")
     end
 
-    @rankinfo rank "[$rank] ✓ Spatial constraints verified: partition of unity satisfied"
+    @rankinfo rank "✓ Spatial constraints verified: partition of unity satisfied"
 end
 
 # ============================================================================
@@ -962,9 +962,9 @@ function combine_spatial_angular_restrictions(
 
     all_hanging_combined = union(all_hanging_nodes, spatial_hanging_nodes)
 
-    @info "[$rank] Combined angular+spatial restriction: " *
-          "$(length(spatial_hanging_nodes)) spatial hanging DOFs, " *
-          "$n_ang_ext angular ext + $n_spa_ext spatial ext parents → n_new=$n_new"
+    @rankinfo rank "Combined angular+spatial restriction: " *
+                   "$(length(spatial_hanging_nodes)) spatial hanging DOFs, " *
+                   "$n_ang_ext angular ext + $n_spa_ext spatial ext parents → n_new=$n_new"
 
     return nc_mat_combined, P_combined, nc_mat_rhs_combined, P_vec_combined,
            all_hanging_combined, spatial_hanging_nodes
@@ -1041,7 +1041,7 @@ function build_spatial_constraints_for_combined_path(
         end
     end
     spatial_hanging_nodes_all_angular = Set(nc_non_global_nodes_spa)
-    @info "[$rank] [comb-path] $(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs"
+    @rankinfo rank "$(length(spatial_hanging_nodes_all_angular)) spatial-angular hanging DOFs"
 
     # ── R_spatial: Phases 1, 2, 3 ─────────────────────────────────────────────
     R_spatial, _ = build_spatial_restriction_and_prolongation(
@@ -1160,7 +1160,7 @@ function build_spatial_constraints_for_combined_path(
         end
     end
     n_ext_spa = n_spa + n_ghost_ext_spa
-    @info "[$rank] [comb-path] $n_ghost_ext_spa extended parents → n_ext_spa=$n_ext_spa"
+    @rankinfo rank "$n_ghost_ext_spa extended parents → n_ext_spa=$n_ext_spa"
 
     gip_to_local_spa_ext = copy(gip_to_local_spa)
     for (pgid, ext_idx) in gid_to_extended_parents_spa

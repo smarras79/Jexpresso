@@ -271,8 +271,9 @@ function build_jacobi_preconditioner(A_local, ip2gip, gnpoin,
     d_min = minimum(abs.(d_global[d_global .!= 0.0]))
     n_small = count(d -> abs(d) < 1e-14, d_global)
     if n_small > 0
-        @warn "Jacobi preconditioner: $n_small near-zero diagonal entries. " *
-              "Replacing with d_min=$(round(d_min,sigdigits=3))."
+        MPI.Comm_rank(comm) == 0 &&
+            @warn "Jacobi preconditioner: $n_small near-zero diagonal entries. " *
+                  "Replacing with d_min=$(round(d_min,sigdigits=3))."
         for i = 1:gnpoin
             abs(d_global[i]) < 1e-14 && (d_global[i] = d_min)
         end
@@ -433,16 +434,9 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin; npoin
     end
     #Use allreduce to build global rhs vector
     MPI.Allreduce!(b_global, +, MPI.COMM_WORLD)
-    @info maximum(b_global), minimum(b_global), maximum(b), minimum(b)
     # Solve using LSQR
-    if rank == 0
-        println("Starting parallel LSQR solve...")
-        println("Global problem size: $(gnpoin) × $(gnpoin)")
-        println("Number of processes: $(MPI.Comm_size(MPI.COMM_WORLD))")
-    end
     maxiter = gnpoin
-    @info tol, maxiter
-    x, stats = Krylov.lsqr(A_parallel, b_global;
+    x, _ = Krylov.lsqr(A_parallel, b_global;
                    atol = tol,
                    rtol = tol,
                    itmax = maxiter,
@@ -455,7 +449,6 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin; npoin
         x_local[ip] = x[gip]
     end
 
-    @info stats
     return x_local
 end
 

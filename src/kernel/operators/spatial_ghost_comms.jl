@@ -43,17 +43,11 @@ function exchange_spatial_ghosts(
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
     rank::Int, comm::MPI.Comm
 )
-    @info rank "[$rank] Building spatial ghost constraints..."
-
     nprocs = MPI.Comm_size(comm)
 
     if nprocs == 1
-        @rankinfo rank "[$rank] Single rank, no ghost exchange needed"
         return spatial_amr_cache
     end
-
-    num_ncf_pg = mesh.num_ncf_pg
-    @rankinfo rank "[$rank] Processing $num_ncf_pg parent-ghost NCFs (child local, parent ghost)..."
 
     # ALL ranks must call build_spatial_constraints_parent_ghost regardless of
     # num_ncf_pg. Ranks without child NCFs may still own parent nodes that other
@@ -66,7 +60,7 @@ function exchange_spatial_ghosts(
     )
 
     n_cross_rank = length(spatial_amr_cache.cross_rank_parent_weights)
-    @rankinfo rank "[$rank] ✓ Cross-rank constraints built for $n_cross_rank hanging nodes"
+    @rankinfo rank "✓ Cross-rank constraints built for $n_cross_rank hanging nodes"
 
     return spatial_amr_cache
 end
@@ -248,13 +242,12 @@ function build_spatial_constraints_parent_ghost(
             num_constraints_added += num_added
 
         catch err
-            @info rank "[$rank] pg_idx=$pg_idx: error building cross-rank constraints: $err"
+            @warn "pg_idx=$pg_idx: error building cross-rank constraints: $err"
             num_skipped += 1
             continue
         end
     end
 
-    @info rank "[$rank] Parent-ghost NCFs: $num_constraints_added cross-rank constraints added, $num_skipped skipped"
     return spatial_amr_cache
 end
 
@@ -363,8 +356,8 @@ function build_spatial_ghost_constraint_data(
     end
 
     n_interface = length(unique(dof_h ÷ n_ang + 1 for dof_h in keys(ghost_constraint_data)))
-    @rankinfo rank "[$rank] Spatial ghost constraint data: $n_interface cross-rank hanging spatial nodes"
-    @rankinfo rank "[$rank] Reverse ghost map: $(length(reverse_ghost_map)) owned parent DOFs have cross-rank children"
+    @rankinfo rank "Spatial ghost constraint data: $n_interface cross-rank hanging spatial nodes"
+    @rankinfo rank "Reverse ghost map: $(length(reverse_ghost_map)) owned parent DOFs have cross-rank children"
 
     return ghost_constraint_data, reverse_ghost_map
 end
@@ -379,11 +372,11 @@ end
 Verify that spatial ghost exchange completed successfully.
 """
 function verify_spatial_ghost_exchange(cache::SpatialAMRCache, rank::Int)
-    @rankinfo rank "[$rank] Verifying spatial ghost exchange..."
+    @rankinfo rank "Verifying spatial ghost exchange..."
 
     n_local      = length(cache.parent_weights)
     n_cross_rank = length(cache.cross_rank_parent_weights)
-    @rankinfo rank "[$rank] Local hanging nodes: $n_local, cross-rank hanging nodes: $n_cross_rank"
+    @rankinfo rank "Local hanging nodes: $n_local, cross-rank hanging nodes: $n_cross_rank"
 
     # Basic integrity check for local constraints
     for (hanging_ip, weights) in cache.parent_weights
@@ -392,7 +385,7 @@ function verify_spatial_ghost_exchange(cache::SpatialAMRCache, rank::Int)
         end
         w_sum = sum(w for (_, w) in weights)
         if abs(w_sum - 1.0) > 1e-8
-            @warn "[$rank] Hanging node $hanging_ip weight sum = $w_sum (expected 1.0)"
+            @warn "Hanging node $hanging_ip weight sum = $w_sum (expected 1.0)"
         end
     end
 
@@ -403,11 +396,11 @@ function verify_spatial_ghost_exchange(cache::SpatialAMRCache, rank::Int)
         end
         w_sum = sum(w for (_, w) in weights)
         if abs(w_sum - 1.0) > 1e-8
-            @warn "[$rank] Cross-rank hanging node $hanging_ip weight sum = $w_sum (expected 1.0)"
+            @warn "Cross-rank hanging node $hanging_ip weight sum = $w_sum (expected 1.0)"
         end
     end
 
-    @rankinfo rank "[$rank] ✓ Ghost exchange verification passed"
+    @rankinfo rank "✓ Ghost exchange verification passed"
     return true
 end
 

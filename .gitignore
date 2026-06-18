@@ -11,3 +11,4 @@ LocalPreferences.toml
 runjexpresso
 meshes
 mesh.log
+*.code-workspace

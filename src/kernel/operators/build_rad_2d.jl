@@ -38,14 +38,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_ang_total += mesh.ngl*mesh.ngl*extra_mesh[e].extra_npoin
         end
         connijk_spa = [Array{Int}(undef, ngl, ngl, extra_meshes_extra_nelems[iel], extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
-        @info "building initial adaptive connectivity"
+        MPI.Comm_rank(comm) == 0 && @info "building initial adaptive connectivity"
         neighbors = zeros(Int,nelem,8,2)
         adapted = false
         
         nc_mat, nc_mat_div, nc_non_global_nodes, n_non_global_nodes, n_spa  = adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, mesh.connijk, 
                                                                                                      extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
                                                   extra_meshes_coords, mesh.x, mesh.y,extra_meshes_ref_level, neighbors, adapted)
-        @info "built initial adaptive spatial angular connectivity"
+        MPI.Comm_rank(comm) == 0 && @info "built initial adaptive spatial angular connectivity"
         @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl, extra_meshes_extra_nelems,
@@ -56,48 +56,39 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelems,
                                    extra_meshes_extra_npoins, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
         total_ip = size(LHS,1)
-        @info "built pre-adaptivity matrices"
-        @info maximum(LHS), minimum(LHS)
-        @info maximum(M), minimum(M)
+        MPI.Comm_rank(comm) == 0 && @info "built pre-adaptivity matrices"
         one_vec = Vector{Float64}(undef, size(LHS,1))
         fill!(one_vec,Float64(1))
         pointwise_interaction = abs.(LHS) * one_vec
-        @info maximum(one_vec), minimum(one_vec), maximum(pointwise_interaction), minimum(pointwise_interaction)
         @time criterion = compute_adaptivity_criterion(pointwise_interaction, nelem, ngl, mesh.connijk, extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_coords,
                                                 connijk_spa)
         
-        @info "criterion computed"
+        MPI.Comm_rank(comm) == 0 && @info "criterion computed"
         @time adapt_angular_grid_2Dby1D!(criterion,inputs[:RT_amr_threshold], extra_meshes_ref_level,nelem,ngl,extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors, extra_meshes_extra_npoins,
                                   extra_meshes_connijk, extra_meshes_coords, extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dxdξ, mesh.connijk,
                                   mesh.x, mesh.y, mesh.xmin, mesh.ymin, mesh.xmax, mesh.ymax) 
-        @info "angular mesh adapted"
+        MPI.Comm_rank(comm) == 0 && @info "angular mesh adapted"
         if !(maximum(extra_meshes_ref_level[:][:]) == 0)
             connijk_spa = [Array{Int}(undef, ngl, ngl, extra_meshes_extra_nelems[iel], extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
             @time nc_mat, nc_mat_div, nc_non_global_nodes, n_non_global_nodes, n_spa  = adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, mesh.connijk, 
                                                                extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
                                                                 extra_meshes_coords, mesh.x, mesh.y, extra_meshes_ref_level, neighbors, adapted)
             
-            @info "adapted connectivity"
+            MPI.Comm_rank(comm) == 0 && @info "adapted connectivity ($(n_non_global_nodes) hanging nodes)"
             adapted = true
-            @info "number of hanging nodes", n_non_global_nodes
             @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl, extra_meshes_extra_nelems,
                                    dξdx, dξdy, dηdx, dηdy, extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
 
-            #Try this alternative assembly approach
-            @info size(nc_mat), size(LHS), size(nc_mat')
             A_test = nc_mat*LHS*nc_mat'
 
             @time M = sparse_mass_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelems,
                                    extra_meshes_extra_npoins, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
-            @info "built adapted matrices"
+            MPI.Comm_rank(comm) == 0 && @info "built adapted matrices"
             M_test = nc_mat*M*nc_mat'
-
-            @info maximum(A_test), minimum(A_test)
-            @info maximum(M_test), minimum(M_test)
         end
         npoin_ang_total = n_spa#maximum(connijk_spa[1])
         counter = 0
@@ -106,7 +97,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 counter += 1
             end
         end
-        @info npoin_ang_total, counter
         npoin_ang_total -= counter
         #invert mass matrix
         I_vec = Vector{Int}()
@@ -145,20 +135,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         RHS = zeros(TFloat, n_spa)#npoin_ang_total)
         ref = zeros(TFloat, n_spa)
         BDY = zeros(TFloat, n_spa)
-        @info size(RHS), size(A),n_spa-n_non_global_nodes
     else
         npoin_ang_total = npoin*extra_mesh.extra_npoin
         @time LHS = sparse_lhs_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk, 
                                     extra_mesh.extra_metrics.Je, 
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    dξdx, dξdy, dηdx, dηdy, extra_mesh.extra_npoin, inputs[:rad_HG_g])
-        @info "assembled LHS"
+        MPI.Comm_rank(comm) == 0 && @info "assembled LHS"
         @time M = sparse_mass_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk,
                                     extra_mesh.extra_metrics.Je,
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    extra_mesh.extra_npoin)
-        @info "assembled Mass matrix"
-        @info nnz(M), nnz(LHS), npoin_ang_total^2, nnz(M)/npoin_ang_total^2, nnz(LHS)/npoin_ang_total^2
+        MPI.Comm_rank(comm) == 0 && @info "assembled Mass matrix"
         
         # inexact integration makes M diagonal, build the sparse inverse to save space
         ip2gip_extra, gip2owner_extra, gnpoin = setup_global_numbering_extra_dim(mesh.ip2gip, mesh.gip2owner, npoin, extra_mesh.extra_npoin, npoin_ang_total)
@@ -187,7 +175,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             push!(V_vec, val)
         end
         M_inv = sparse(I_vec, J_vec, V_vec)
-        @info size(M_inv), size(LHS)    
         #@time M_inv = M \ Matrix(I, size(M)) #M\Diagonal(ones(npoin_ang_total))
         #M_inv = sparse(M_inv)
         #M = nothing
@@ -202,9 +189,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         M_sp = nothing
         GC.gc()
     
-        @info "LHS max/min"
-        @info maximum(LHS), minimum(LHS)
-        @info maximum(M), minimum(M)
         A = sparse(M_inv*LHS)
         #=x = real.(eigvals(Array(LHS)))
         y = imag.(eigvals(Array(LHS)))
@@ -452,43 +436,23 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
         B = U_red_proj
     end
-    @info "RHS max/min"
-    @info maximum(B), minimum(B)
-    #@info maximum(U_red_proj), minimum(U_red_proj)
-
-    #x = real.(eigvals(Array(A)))
-    #y = imag.(eigvals(Array(A)))
-    #display(Makie.scatter(x, y, label="e-values"))
-
-    #A_inv = inv(A)
-    @info "built RHS"
-    #@info RHS
-    @info "solving system"
+    MPI.Comm_rank(comm) == 0 && @info "built RHS, solving system..."
     As = sparse(A)
     A = nothing
     GC.gc()
-    @info typeof(As)
-    @info size(As), size(B)
 
-    #@time solution = As \ B#RHS
-    #=@time solution, stats = Krylov.fgmres(As, B;
-                   atol = 1e-13,
-                   rtol = 1e-13,
-                   #btol = 1e-13,
-                   #etol = 1e-13,
-                   #axtol = 1e-13,
-                   itmax = n_spa,
-                   verbose = 1)=#
-    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM; 
-    npoin_g = npoin_ang_total)
+    x_warm = zeros(Float64, npoin_ang_total)
+    @time solution = solve_parallel_gmres_asm(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+        npoin_g = npoin_ang_total,
+        precond = :global_ilu,
+        restart = 50,
+        tol     = 1e-6)
    
-    @info maximum(solution), minimum(solution)
-    @info "done radiation solved"
-    @info "dof", npoin_ang_total
+    MPI.Comm_rank(comm) == 0 && @info "radiation solved ($(npoin_ang_total) DOF)"
     A = nothing
     RHS = nothing
     GC.gc()
-    @info "integrating solution and reference in angle"
+    MPI.Comm_rank(comm) == 0 && @info "integrating solution in angle..."
     int_sol = zeros(TFloat, npoin,1)
     int_ref = zeros(TFloat, npoin,1)
     L2_err = 0.0
@@ -636,16 +600,15 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             int_sol[ip] = g_int_sol[gip]
             int_ref[ip] = g_int_ref[gip]
         end
-        if (inputs[:lmanufactured_solution])
-            L2_ref_g = MPI.Allreduce(L2_ref, MPI.SUM, comm)
-            L2_err_g = MPI.Allreduce(L2_err, MPI.SUM, comm)
+        if inputs[:lmanufactured_solution]
+            L2_ref = MPI.Allreduce(L2_ref, MPI.SUM, comm)
+            L2_err = MPI.Allreduce(L2_err, MPI.SUM, comm)
         end
 
 
-    if (inputs[:lmanufactured_solution])
-        @info "new L2 norms", sqrt(L2_ref), sqrt(L2_err), sqrt(L2_err/L2_ref)
-        @info "infinity norms", maximum(abs.(solution-ref)), maximum(abs.(solution-ref))/maximum(ref)
-        
+    if inputs[:lmanufactured_solution] && MPI.Comm_rank(comm) == 0
+        @info "L2 norms: ref=$(round(sqrt(L2_ref),sigdigits=4)) err=$(round(sqrt(L2_err),sigdigits=4)) rel=$(round(sqrt(L2_err/max(L2_ref,1e-30)),sigdigits=4))"
+        @info "L∞ error: $(round(maximum(abs.(solution-ref))/max(maximum(ref),1e-30)*100, digits=4))%"
     end
     title = @sprintf "Solution-Radiation"
     write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
@@ -723,7 +686,6 @@ end
 
 function sparse_lhs_assembly_2Dby1D_adaptive(ref_level, ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang, npoin_ang_total, nelem, ngl, nelem_ang,
                                    dξdx, dξdy, dηdx, dηdy, npoin_ang, rad_HG_g, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
-    @info adapted
     max_entries = npoin_ang_total^2
     I_vec = Vector{Int}()
     J_vec = Vector{Int}()
@@ -1190,8 +1152,6 @@ function adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, conni
             end
         end
     end
-    @info "finished non-adaptive connectivity"
-    @info "total number of independent points", iter-1
     n_spa = iter-1
     max_entries = iter^2
     In_vec = Vector{Int}()
@@ -1547,8 +1507,8 @@ function find_edge_node_match(ngl,iel,ip,connijk)
         iter += 1
 
     end
-    if (found == false) 
-        @info "failed to find" 
+    if !found
+        @warn "find_edge_node_match: failed to find matching edge node"
     end
     return k, j, ip1
 end

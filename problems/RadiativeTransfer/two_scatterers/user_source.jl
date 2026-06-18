@@ -71,17 +71,20 @@ function user_extinction(x,y)
     κ1 = 100/(1+exp(-30*r1))
     r2 = 2/7 - sqrt((x-4*3/5)^2+ (y-1*2/4)^2)
     κ2 = 100/(1+exp(-30*r2))
-    return κ1 + κ2
+    # Background floor prevents zero diagonal at interior LGL midpoint nodes in vacuum
+    # regions (where the nop=4 center-node LGL derivative vanishes), which would cause
+    # ILU to fail with a zero pivot.
+    return max(κ1 + κ2, 1e-4)
 end
 
 function user_scattering_coef(x,y)
-  
+
     r1 = 2/5 - sqrt((x-9*3/20)^2+ (y-2*2/5)^2)
     κ1 = 100/(1+exp(-30*r1))
     r2 = 2/7 - sqrt((x-4*3/5)^2+ (y-1*2/4)^2)
     κ2 = 100/(1+exp(-30*r2))
- 
-    return 0.7*(κ1+κ2)
+
+    return 0.7*max(κ1+κ2, 1e-4)
 
 end
 

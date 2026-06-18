@@ -106,10 +106,12 @@ function atmos_to_rad_longwave(atmos_data, npoin)
     end
 
     κ_ext = κ .+ σ
-    @info "LW extinction   extrema: $(extrema(κ_ext))"
-    @info "LW absorption   extrema: $(extrema(κ))"
-    @info "LW scattering   extrema: $(extrema(σ))"
-    @info "LW SSA          extrema: $(extrema(σ ./ max.(κ_ext, 1e-30)))"
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        @info "LW extinction   extrema: $(extrema(κ_ext))"
+        @info "LW absorption   extrema: $(extrema(κ))"
+        @info "LW scattering   extrema: $(extrema(σ))"
+        @info "LW SSA          extrema: $(extrema(σ ./ max.(κ_ext, 1e-30)))"
+    end
 
     return κ, σ
 end
@@ -246,7 +248,7 @@ function atmos_to_rad_shortwave(atmos_data, npoin)
         κ[ip] = κ_vap + κ_o3 + κ_liq_abs + κ_ice_abs
         σ[ip] = σ_ray + σ_liq_sca + σ_ice_sca
 
-        κ_abs_min = 1e-10
+        κ_abs_min = 1e-6
         κ[ip]  = max(ρ * κ[ip], κ_abs_min)
         g_eff[ip] = if σ[ip] > 1e-30
             (0.0 * σ_ray + 0.85 * σ_liq_sca + 0.80 * σ_ice_sca) / σ[ip]
@@ -259,11 +261,13 @@ function atmos_to_rad_shortwave(atmos_data, npoin)
     κ_ext = κ .+ σ
     ω₀    = σ ./ max.(κ_ext, 1e-30)
 
-    @info "SW extinction   extrema: $(extrema(κ_ext))"
-    @info "SW absorption   extrema: $(extrema(κ))"
-    @info "SW scattering   extrema: $(extrema(σ))"
-    @info "SW SSA          extrema: $(extrema(ω₀))"
-    @info "SW effective g  extrema: $(extrema(g_eff))"
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        @info "SW extinction   extrema: $(extrema(κ_ext))"
+        @info "SW absorption   extrema: $(extrema(κ))"
+        @info "SW scattering   extrema: $(extrema(σ))"
+        @info "SW SSA          extrema: $(extrema(ω₀))"
+        @info "SW effective g  extrema: $(extrema(g_eff))"
+    end
 
     return κ, σ, g_eff
 end
@@ -590,25 +594,27 @@ function check_beam_flux(extra_mesh, sw, ngl)
     expected  = sw.S₀_flux * sw.μ₀
     rel_err   = abs(flux_integrated - expected) / expected * 100.0
 
-    @info "Beam flux check:"
-    @info "  δ_beam              : $(sw.δ_beam) rad  ($(round(rad2deg(sw.δ_beam),digits=1))°)"
-    @info "  θ_sun               : $(round(θ_sun,digits=4)) rad  ($(round(rad2deg(θ_sun),digits=1))°)"
-    @info "  ∫ dΩ full sphere    : $(round(solid_angle_full,digits=6))  (exact 4π = $(round(4π,digits=6)))"
-    @info "  ∫ dΩ inflow hemi    : $(round(solid_angle_in,  digits=6))  (exact 2π = $(round(2π,digits=6)))"
-    @info "  Integrated flux     : $(round(flux_integrated, digits=4)) W/m²"
-    @info "  Expected  (S₀ μ₀)  : $(round(expected,        digits=4)) W/m²"
-    @info "  Relative error      : $(round(rel_err,         digits=2))%"
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        @info "Beam flux check:"
+        @info "  δ_beam              : $(sw.δ_beam) rad  ($(round(rad2deg(sw.δ_beam),digits=1))°)"
+        @info "  θ_sun               : $(round(θ_sun,digits=4)) rad  ($(round(rad2deg(θ_sun),digits=1))°)"
+        @info "  ∫ dΩ full sphere    : $(round(solid_angle_full,digits=6))  (exact 4π = $(round(4π,digits=6)))"
+        @info "  ∫ dΩ inflow hemi    : $(round(solid_angle_in,  digits=6))  (exact 2π = $(round(2π,digits=6)))"
+        @info "  Integrated flux     : $(round(flux_integrated, digits=4)) W/m²"
+        @info "  Expected  (S₀ μ₀)  : $(round(expected,        digits=4)) W/m²"
+        @info "  Relative error      : $(round(rel_err,         digits=2))%"
 
-    # Residual error after removing the μ₀² double-projection
-    flux_old_convention = flux_integrated / sw.μ₀   # what old check would give
-    @info "  [Diagnostic] flux/μ₀ = $(round(flux_old_convention,digits=4)) W/m²  " *
-          "(should equal S₀ = $(sw.S₀_flux) if old double-μ₀ issue was present)"
+        # Residual error after removing the μ₀² double-projection
+        flux_old_convention = flux_integrated / sw.μ₀   # what old check would give
+        @info "  [Diagnostic] flux/μ₀ = $(round(flux_old_convention,digits=4)) W/m²  " *
+              "(should equal S₀ = $(sw.S₀_flux) if old double-μ₀ issue was present)"
 
-    if rel_err > 5.0
-        @warn "Flux error > 5%. The beam is under-resolved on this angular mesh. " *
-              "Recommended minimum δ_beam ≈ $(round(rad2deg(π/(4*ngl)), digits=1))° " *
-              "for a $(round(Int, π/maximum(nop_ang .+ 1)))×$(round(Int,2π/maximum(nop_ang .+ 1))) " *
-              "element mesh of order $(maximum(nop_ang))."
+        if rel_err > 5.0
+            @warn "Flux error > 5%. The beam is under-resolved on this angular mesh. " *
+                  "Recommended minimum δ_beam ≈ $(round(rad2deg(π/(4*ngl)), digits=1))° " *
+                  "for a $(round(Int, π/maximum(nop_ang .+ 1)))×$(round(Int,2π/maximum(nop_ang .+ 1))) " *
+                  "element mesh of order $(maximum(nop_ang))."
+        end
     end
 
     return (flux = flux_integrated, expected = expected, rel_err = rel_err,
@@ -688,18 +694,19 @@ function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
     end
 
     z_span = maximum(mesh.z[nodes_in_col]) - minimum(mesh.z[nodes_in_col])
-    if z_span < 0.5*(mesh.zmax - mesh.zmin)
-        @warn "Column spans only $(round(z_span,digits=2)) m of " *
-              "$(round(mesh.zmax-mesh.zmin,digits=2)) m total. " *
-              "Column may be incomplete."
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        if z_span < 0.5*(mesh.zmax - mesh.zmin)
+            @warn "Column spans only $(round(z_span,digits=2)) m of " *
+                  "$(round(mesh.zmax-mesh.zmin,digits=2)) m total. " *
+                  "Column may be incomplete."
+        end
+        @info "SW lateral BC profile:"
+        @info "  Reference element: $ref_iel"
+        @info "  Column (x,y): ($(round(x_col,digits=4)), $(round(y_col,digits=4)))"
+        @info "  Nodes found: $(length(nodes_in_col))"
+        @info "  z range: [$(round(minimum(mesh.z[nodes_in_col]),digits=2)), " *
+                          "$(round(maximum(mesh.z[nodes_in_col]),digits=2))]"
     end
-
-    @info "SW lateral BC profile:"
-    @info "  Reference element: $ref_iel"
-    @info "  Column (x,y): ($(round(x_col,digits=4)), $(round(y_col,digits=4)))"
-    @info "  Nodes found: $(length(nodes_in_col))"
-    @info "  z range: [$(round(minimum(mesh.z[nodes_in_col]),digits=2)), " *
-                      "$(round(maximum(mesh.z[nodes_in_col]),digits=2))]"
 
     # ── Sort by z descending (TOA first), deduplicate interfaces ─────────────
     z_vals   = mesh.z[nodes_in_col]
@@ -728,7 +735,8 @@ function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
                          0.5*(κext_unique[i-1] + κext_unique[i]) * dz
     end
 
-    @info "  Total optical depth τ(surface): $(round(τ_from_TOA[end], digits=4))"
+    MPI.Comm_rank(MPI.COMM_WORLD) == 0 &&
+        @info "  Total optical depth τ(surface): $(round(τ_from_TOA[end], digits=4))"
 
     return z_unique, τ_from_TOA
 end

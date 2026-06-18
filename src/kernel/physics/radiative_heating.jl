@@ -184,9 +184,11 @@ function compute_rt_radiative_heating(
                 mesh.y[ip] ≈ mesh.ymin || mesh.y[ip] ≈ mesh.ymax]
                 
         G_total = G_accum .+ G_dir
-        @info "G_dir    on boundaries: $(round.(extrema(G_dir[bdy_nodes]),   sigdigits=4))"
-        @info "G_diffuse on boundaries: $(round.(extrema(G_accum[bdy_nodes]), sigdigits=4))"
-        @info "G_total  on boundaries: $(round.(extrema(G_total[bdy_nodes]),  sigdigits=4))"
+        if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+            @info "G_dir    on boundaries: $(round.(extrema(G_dir[bdy_nodes]),   sigdigits=4))"
+            @info "G_diffuse on boundaries: $(round.(extrema(G_accum[bdy_nodes]), sigdigits=4))"
+            @info "G_total  on boundaries: $(round.(extrema(G_total[bdy_nodes]),  sigdigits=4))"
+        end
 
         θ_sun = π - acos(clamp(sw_μ₀, 0.0, 1.0))
         Ωx_sun = sin(θ_sun)*cos(sw_φ₀)

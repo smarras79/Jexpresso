@@ -484,9 +484,6 @@ function exchange_ghost_neighbor_info(
                 
                 if !isempty(shared)
                     # These elements are neighbors across partition boundary
-                    if (rank == 1 && iel_owned == 1)
-                         @info "checking number neighbors for the refined element on processor boundary", iel_owned, remote_iel 
-                    end
                     push!(ghost_neighbors, (remote_iel, remote_rank))
                 end
             end
@@ -1363,9 +1360,6 @@ function exchange_interface_node_requests(
     for (iel_owned, ghost_list) in ghost_neighbor_map
         # Get global IDs of boundary nodes in owned element
         owned_boundary_global = Set(ip2gip[ip] for ip in elem_boundary_nodes[iel_owned])
-        if (iel_owned == 1 && rank == 1)
-            @info " checking total number of spatial nodes on detected on refined element bdy", rank, iel_owned, length(owned_boundary_global)
-        end
         for (ghost_iel, ghost_owner) in ghost_list
             # We need the nodes from ghost_iel that overlap with iel_owned's boundary
             if !haskey(interface_requests, ghost_owner)
