@@ -140,6 +140,23 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::kennedy_gruber)
     aux[5] = rho_e/rho
 end
 
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::Union{shima,chandrashekar})
+    PhysConst = PhysicalConst{Float64}()
+    rho = q[1]
+    rho_u = q[2]
+    rho_v = q[3]
+    rho_e = q[4]
+
+    u = rho_u/rho
+    v = rho_v/rho
+    p = (PhysConst.γ - 1.0) * (rho_e - 0.5*(rho_u*u + rho_v*v))
+
+    aux[1] = rho
+    aux[2] = u
+    aux[3] = v
+    aux[4] = p
+end
+
 function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL, ::ranocha)
     
     PhysConst = PhysicalConst{Float64}()
@@ -509,6 +526,62 @@ end
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 
+@inline function flux_turbo(u_ll, u_rr, ::shima)
+    γ = PhysicalConst{Float64}().γ
+    rho_ll, v1_ll, v2_ll, p_ll = u_ll
+    rho_rr, v1_rr, v2_rr, p_rr = u_rr
+
+    rho_avg=0.5*(rho_ll+rho_rr)
+    v1_avg=0.5*(v1_ll+v1_rr)
+    v2_avg=0.5*(v2_ll+v2_rr)
+    p_avg=0.5*(p_ll+p_rr)
+    kin=0.5*(v1_ll*v1_rr+v2_ll*v2_rr)
+
+    inv_gamma_minus_one =1.0/(γ-1.0)
+
+    f1=rho_avg*v1_avg
+    f2=f1*v1_avg+p_avg
+    f3=f1*v2_avg
+    f4=p_avg*v1_avg*inv_gamma_minus_one + f1*kin + 0.5*(p_ll*v1_rr+p_rr*v1_ll)
+
+    g1=rho_avg*v2_avg 
+    g2=g1*v1_avg 
+    g3=g1*v2_avg+p_avg
+    g4=p_avg*v2_avg*inv_gamma_minus_one + g1*kin + 0.5*(p_ll*v2_rr+p_rr*v2_ll)
+
+    return SVector(f1,f2,f3,f4), SVector(g1,g2,g3,g4)
+end
+
+@inline function flux_turbo(u_ll, u_rr, ::chandrashekar)
+    γ = PhysicalConst{Float64}().γ
+    rho_ll, v1_ll, v2_ll, p_ll = u_ll
+    rho_rr, v1_rr, v2_rr, p_rr = u_rr
+
+    beta_ll=0.5*rho_ll/p_ll
+    beta_rr=0.5*rho_rr/p_rr
+
+    vsq=0.5*(v1_ll^2+v2_ll^2)+0.5*(v1_rr^2+v2_rr^2)
+    rho_avg=0.5*(rho_ll+rho_rr)
+    rho_mean=ln_mean(rho_ll,rho_rr)
+    beta_mean=ln_mean(beta_ll,beta_rr)
+    beta_avg=0.5*(beta_ll+beta_rr)
+    v1_avg=0.5*(v1_ll+v1_rr)
+    v2_avg=0.5*(v2_ll+v2_rr)
+    p_mean=0.5*rho_avg/beta_avg
+    ef=0.5*(1.0/((γ-1.0)*beta_mean)-vsq)
+
+    f1=rho_mean*v1_avg
+    f2=f1*v1_avg+p_mean
+    f3=f1*v2_avg
+    f4 = f1 * ef + f2 * v1_avg + f3*v2_avg
+    
+    g1=rho_mean*v2_avg
+    g2=g1*v1_avg
+    g3=g1*v2_avg+p_mean
+    g4 = g1 * ef + g2 * v1_avg + g3*v2_avg
+    return SVector(f1,f2,f3, f4), SVector(g1,g2,g3,g4)
+end
+
 @inline function flux_turbo(u_ll, u_rr, sol_type::central_theta)
 	return 0.5f0 .* (flux(u_ll,sol_type) .+ flux(u_rr, sol_type))
 end
@@ -573,24 +646,78 @@ end
     end
 end
 
-@inline function convert_transformed_to_primitive(u_transformed) 
-    return u_transformed
+@inline convert_transformed_to_primitive(u, ::GradientVariablesPrimitive) = u
+@inline convert_derivative_to_primitive(u, gradient, ::GradientVariablesPrimitive) = gradient
+
+@inline function convert_transformed_to_primitive(w, ::GradientVariablesEntropy)
+    PhysConst = PhysicalConst{Float64}()
+    u   = entropy2cons(w)
+    rho = u[1]
+    v1  = u[2] / rho
+    v2  = u[3] / rho
+    p   = PhysConst.γm1 * (u[4] - 0.5 * rho * (v1*v1 + v2*v2))
+    T   = p / (rho * PhysConst.Rair)
+    return SVector(rho, v1, v2, T)
 end
 
-@inline function convert_derivative_to_primitive(u, gradient) 
-    return gradient
+@inline function convert_derivative_to_primitive(w, grad_w, ::GradientVariablesEntropy)
+    # w = (w1,w2,w3,w4), w2 = ρv1/p, w3 = ρv2/p, w4 = -ρ/p ⇒ p/ρ = -1/w4.
+    #   ∂v1 = (p/ρ)(∂w2 + v1 ∂w4),  ∂v2 = (p/ρ)(∂w3 + v2 ∂w4)
+    #   ∂T  = (1/Rair)(p/ρ)^2 ∂w4         (T = p/(ρ·Rair) = -1/(Rair·w4))
+    PhysConst = PhysicalConst{Float64}()
+    invR = 1.0 / PhysConst.Rair
+    w4   = w[4]
+    pρ   = -1.0 / w4
+    v1   = -w[2] / w4
+    v2   = -w[3] / w4
+    return SVector(grad_w[1],                                   # ∂ρ: unused downstream
+                   pρ * (grad_w[2] + v1 * grad_w[4]),           # ∂v1
+                   pρ * (grad_w[3] + v2 * grad_w[4]),           # ∂v2
+                   invR * pρ * pρ * grad_w[4])                  # ∂T (Jexpresso R=Rair)
 end
 
-function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, inputs, delta2)
-	# Here, `u` is assumed to be the "transformed" variables specified by `gradient_variable_transformation`.
-    rho, v1, v2, _ = convert_transformed_to_primitive(u)
-    # Here `gradients` is assumed to contain the gradients of the primitive variables (rho, v1, v2, T)
-    # either computed directly or reverse engineered from the gradient of the entropy variables
-    # by way of the `convert_gradient_variables` function.
-    _, dv1dx, dv2dx, dTdx = convert_derivative_to_primitive(u, gradients[1])
-    _, dv1dy, dv2dy, dTdy = convert_derivative_to_primitive(u, gradients[2])
+# Conservative to entropy variables for compressible Euler 2D (Trixi
+# CompressibleEulerEquations2D). u = (ρ, ρu, ρv, ρE).
+@inline function cons2entropy(u)
+    PhysConst = PhysicalConst{Float64}()
+    γ      = PhysConst.γ
+    invγm1 = 1.0 / PhysConst.γm1
+    rho, rho_v1, rho_v2, rho_e = u[1], u[2], u[3], u[4]
+    v1 = rho_v1 / rho
+    v2 = rho_v2 / rho
+    v_square = v1*v1 + v2*v2
+    p = PhysConst.γm1 * (rho_e - 0.5 * rho * v_square)
+    s = log(p) - γ * log(rho)
+    rho_p = rho / p
+    w1 = (γ - s) * invγm1 - 0.5 * rho_p * v_square
+    w2 = rho_p * v1
+    w3 = rho_p * v2
+    w4 = -rho_p
+    return SVector(w1, w2, w3, w4)
+end
 
-    # Components of viscous stress tensor
+# Entropy to conservative variables (Hughes–Franca–Mallet 1986, as in Trixi).
+@inline function entropy2cons(w)
+    PhysConst = PhysicalConst{Float64}()
+    γ      = PhysConst.γ
+    γm1    = PhysConst.γm1
+    invγm1 = 1.0 / γm1
+    V1, V2, V3, V5 = w[1]*γm1, w[2]*γm1, w[3]*γm1, w[4]*γm1
+    s = γ - V1 + (V2*V2 + V3*V3) / (2.0 * V5)
+    rho_iota = (γm1 / (-V5)^γ)^(invγm1) * exp(-s * invγm1)
+    rho    = -rho_iota * V5
+    rho_v1 =  rho_iota * V2
+    rho_v2 =  rho_iota * V3
+    rho_e  =  rho_iota * (1.0 - (V2*V2 + V3*V3) / (2.0 * V5))
+    return SVector(rho, rho_v1, rho_v2, rho_e)
+end
+
+function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, inputs, delta2, gradvars)
+    rho, v1, v2, _ = convert_transformed_to_primitive(u, gradvars)
+
+    _, dv1dx, dv2dx, dTdx = convert_derivative_to_primitive(u, gradients[1], gradvars)
+    _, dv1dy, dv2dy, dTdy = convert_derivative_to_primitive(u, gradients[2], gradvars)
+
 
     # (4 * (v1)_x / 3 - 2 * (v2)_y / 3)
     tau_11 = (4 * dv1dx - 2 * dv2dy) / 3
@@ -601,34 +728,16 @@ function flux_parabolic(u, gradients, orientation::Integer, visc_coeffieq, input
     tau_22 = (4 * dv2dy - 2 * dv1dx) / 3
 
     PhysConst = PhysicalConst{Float64}()
+    gamma = PhysConst.γ
 
-    mu_eff_momentum = SGS_diffusion(visc_coeffieq, 2,  # ieq=2 for u-momentum
-                                    rho, dv1dx, dv2dy, dv1dy, dv2dx,
-                                    PhysConst, delta2, inputs, SMAG(), NSD_2D())
-    
-    kappa_eff_temp = SGS_diffusion(visc_coeffieq, 4,  # ieq=4 for temperature
-                                    rho, dv1dx, dv2dy, dv1dy, dv2dx,
-                                   PhysConst, delta2, inputs, SMAG(), NSD_2D())
-    
-    mu_total = mu_eff_momentum 
-    mu_total = 1e-4
-    
-        cp = PhysConst.cp
-        kappa = kappa_eff_temp / cp 
-	Pr = 0.72
-	gamma =  PhysConst.γ
-	kappa = gamma /(gamma-1)/ Pr
-        q1 = kappa * dTdx
-        q2 = kappa * dTdy
+    Pr    = inputs[:Pr]::Float64
 
-    # In the simplest cases, the user passed in `mu` or `mu()`
-    # (which returns just a constant) but
-    # more complex functions like Sutherland's law are possible.
-    # `dynamic_viscosity` is a helper function that handles both cases
-    # by dispatching on the type of `equations.mu`.
-    #mu = dynamic_viscosity(u, equations)
-    #mu = 1e-4 
-    mu = mu_total
+    mu = SGS_diffusion(visc_coeffieq, 2, rho, dv1dx, dv2dy, dv1dy, dv2dx,
+                       PhysConst, delta2, inputs, SMAG(), NSD_2D())
+
+    kappa = gamma * PhysConst.Rair / ((gamma - 1) * Pr)
+    q1 = kappa * dTdx
+    q2 = kappa * dTdy
 
     if orientation == 1
         # parabolic flux components in the x-direction
