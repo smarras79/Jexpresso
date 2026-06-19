@@ -4,9 +4,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
 
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    ## Subtract background velocity
-    #qv = copy(q)
-    @views uaux[:,2:3] .= uaux[:,2:3] .- params.qp.qe[:,2:3]
+    ## Subtract reference state from ALL prognostic variables (ρ, ρu, ρv, ρE
+    ## for TOTAL) before filtering, so the modal filter acts only on the
+    ## perturbation from the IC. Otherwise the filter slowly smooths the
+    ## reference state itself and leaks ringing near sharp ICs (e.g. KH shear
+    ## layer in ρE). This now matches the behaviour of filter_gpu_2d!.
+    @views uaux[:,1:params.neqs] .-= params.qp.qe[:,1:params.neqs]
     ## store Dimension of MxM object
 
     ## Loop through the elements
@@ -82,7 +85,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
     end
     
     @views uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
-    @views uaux[:,2:3] .+= params.qp.qe[:,2:3]
+    @views uaux[:,1:params.neqs] .+= params.qp.qe[:,1:params.neqs]
 
     uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
@@ -394,8 +397,9 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     #params.uaux[:,2:4] .= params.uaux[:,2:4] .- params.qe[:,2:4]
     ## store Dimension of MxM object
     
-    ## Loop through the elements
-    @views uaux[:,2:4] .= uaux[:,2:4] .- params.qp.qe[:,2:4]
+    ## Subtract reference state from ALL prognostic variables (ρ, ρu, ρv, ρw,
+    ## ρE for TOTAL) before filtering — see 2D ::TOTAL comment for rationale.
+    @views uaux[:,1:params.neqs] .-= params.qp.qe[:,1:params.neqs]
 
     for e=1:params.mesh.nelem
         for k=1:params.mesh.ngl
@@ -491,7 +495,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     end
 
     uaux[:,1:params.neqs] .= @view params.B[:,1:params.neqs]
-    @views uaux[:,2:4] .= uaux[:,2:4] .+ params.qp.qe[:,2:4]
+    @views uaux[:,1:params.neqs] .+= params.qp.qe[:,1:params.neqs]
     #=if (params.laguerre)
 
     @time uaux .= params.B

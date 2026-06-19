@@ -1774,32 +1774,42 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 end
             end
         end 
-        if ("periodicy" in mesh.bdy_face_type)
+        # The canonical 2D tag for the second periodic direction is
+        # "periodicz" (gmsh meshes carry either "periodicz" directly or
+        # "periodicy", which mod_mesh_read_gmsh! remaps to "periodicz" at
+        # read time; BCs.jl also skips "periodicz"). This block used to
+        # search bdy_face_type for "periodicy", which can never match in
+        # 2D after the remap — so restructure4periodicity_2D was called
+        # with a tag that matched no edge and the y-periodicity was
+        # silently never built (doubly-periodic cases like
+        # kelvinHelmholtzChan2022 then blow up at the free top/bottom
+        # boundaries).
+        if ("periodicz" in mesh.bdy_edge_type)
             finder = false
             iedge_bdy = 1
             while (finder == false)
-                if (mesh.bdy_edge_type[iedge_bdy] == "periodicy")
-                    ip = mesh.poin_in_bdy_edge[iedge_bdy,1,1]
-                    ip1 = mesh.poin_in_bdy_edge[iedge_bdy,1,2]
+                if (mesh.bdy_edge_type[iedge_bdy] == "periodicz")
+                    ip = mesh.poin_in_bdy_edge[iedge_bdy,1]
+                    ip1 = mesh.poin_in_bdy_edge[iedge_bdy,2]
                     t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
                     mag = sqrt(t1[1]^2 + t1[2]^2)
                     nory .= [-t1[2]/mag, t1[1]/mag]
                     finder = true
                 else
-                    iface_bdy +=1
+                    iedge_bdy +=1
                 end
             end
         end
         if ladaptive
             empty!(mesh.periodic_ncf_parent_gels)
             detect_periodic_ncf_parent_gels_2D!(mesh, "periodicx", elm2pelm)
-            detect_periodic_ncf_parent_gels_2D!(mesh, "periodicy", elm2pelm)
+            detect_periodic_ncf_parent_gels_2D!(mesh, "periodicz", elm2pelm)
             total_peri_ncf = MPI.Allreduce(length(mesh.periodic_ncf_parent_gels), MPI.SUM, comm)
             println_rank(" # Periodic NCF parent elements detected: $(total_peri_ncf) (will be refined by amr_strategy!)"; msg_rank = rank, suppress = false)
         end
         MPI.Barrier(comm)
         restructure4periodicity_2D(mesh, norx, "periodicx")
-        restructure4periodicity_2D(mesh, nory, "periodicy")
+        restructure4periodicity_2D(mesh, nory, "periodicz")
         # restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
         # restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
         mesh.gel2owner = find_gip_owner(mesh.el2gel)

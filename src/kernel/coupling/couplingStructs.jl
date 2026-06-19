@@ -124,7 +124,11 @@ const _CACHE_FINGERPRINT_KEYS = (
 # changes - on-disk caches written with an older schema will then fail
 # the fingerprint check and be regenerated automatically. No manual
 # `rm -rf .jexpresso_cache` needed.
-const _CACHE_SCHEMA_VERSION = 2
+# v3: 2D y-periodicity fix in mod_mesh_read_gmsh! (restructure was
+# called with the dead "periodicy" tag) — caches written before the
+# fix carry a mesh with no top/bottom periodic pairing and must be
+# rebuilt.
+const _CACHE_SCHEMA_VERSION = 3
 
 function _cache_fingerprint(inputs, nparts::Int)
     fp = Dict{String,Any}()

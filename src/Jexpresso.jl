@@ -14,7 +14,7 @@ using KernelAbstractions
 # UnicodePlots, Geodesy) and were not referenced anywhere in the source
 # tree. Removed to cut the per-rank baseline. Re-add at the REPL if
 # you need them interactively.
- using Revise
+# using Revise
 # using BenchmarkTools
 using Dates
 using CSV, DataFrames
@@ -434,6 +434,18 @@ end
 # instead of problems/<eqs>/<eqs_case>; matches the third positional
 # arg of the historical command-line form.
 # ──────────────────────────────────────────────────────────────────────
+# Record of which case's user_*.jl files are currently loaded in this
+# session (case dir + per-file mtimes). run.jl consults this to skip
+# re-`include`ing them when the SAME case is re-run unchanged. Re-including
+# redefines user_flux!/user_source!/… which invalidates the compiled rhs!,
+# forcing the RHS + SciML integrator to recompile inside the warm-up on
+# every run_case call (the ~30 s "Precompile warm-up" freeze on a re-run).
+# Skipping the redundant include keeps an unchanged re-run launch-cost-only;
+# switching cases or editing any user_*.jl bumps the check so changes still
+# take effect.
+const _LOADED_CASE_DIR  = Ref{String}("")
+const _CASE_FILE_MTIMES = Dict{String,Float64}()
+
 """
     Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
 
@@ -481,9 +493,87 @@ end
 # the workload to succeed — this is what tripped us up before sod1d
 # was added back).
 @setup_workload begin
+    # The workload below calls MPI.Init() (via run.jl). If precompilation
+    # is triggered from a process that was itself launched by mpiexec —
+    # e.g. a cold-cache `mpiexec -n 3 julia -e 'using Jexpresso; ...'` —
+    # the precompile worker inherits the launcher's PMI/hydra environment
+    # variables (PMI_FD, PMI_RANK, ...). MPICH then attempts a full PMI
+    # handshake against a socket it doesn't own and aborts with
+    # `PMI_Get_appnum returned -1`, failing precompilation on every rank.
+    # Scrub those variables so MPI.Init falls back to singleton init
+    # inside the precompile sandbox, exactly as it does when
+    # `Pkg.precompile()` runs from a plain serial REPL. This only runs
+    # during precompilation (@setup_workload is a no-op otherwise), so
+    # the actual mpiexec-launched compute processes are unaffected.
+    for k in collect(keys(ENV))
+        if startswith(k, "PMI_")    || startswith(k, "PMIX_")  ||
+           startswith(k, "HYDRA_")  || startswith(k, "HYDI_")  ||
+           startswith(k, "MPIEXEC_")|| startswith(k, "OMPI_")  ||
+           startswith(k, "MPI_LOCALRANKID") || startswith(k, "MPI_LOCALNRANKS")
+            delete!(ENV, k)
+        end
+    end
+
+    # ── MPI-driven driver workload ──────────────────────────────────────
+    # Running the sod1d driver below bakes the hot-path JIT (RHS, the SciML
+    # integrator, the callback-specialized warm-up) into the precompile
+    # cache, so the first `run_case` in a fresh process is launch-cost-only
+    # instead of paying ~tens of seconds of JIT. The workload is kept *lean*
+    # — drivers.jl caps the run to 3 timesteps while `jl_generating_output`
+    # is set — so precompilation stays fast; a full 2000-step sod1d pass is
+    # NOT run here.
+    #
+    # The driver calls MPI.Init(), which on an InfiniBand cluster brings up
+    # the libfabric (OFI) fabric. On a login node that step is hostile:
+    #
+    #   * verbs/mlx5 (the IB default) tries to allocate an RDMA queue pair
+    #     and aborts — verbs are disabled / locked memory too low:
+    #         Failed to modify UD QP to INIT on mlx5_0: Operation not permitted
+    #         create_vni_context: Cannot allocate memory
+    #   * tcp enumerates every NIC (IPoIB, bonded, …) and does reverse-DNS
+    #     during MPI.Init — this can stall for many minutes.
+    #
+    # So for the single-process precompile worker we steer libfabric onto
+    # the shared-memory `shm` provider (unless the user pinned FI_PROVIDER),
+    # which needs no network and is the singleton-init happy path, and
+    # restore the previous state afterwards so nothing leaks past
+    # precompilation.
+    #
+    # The workload is OFF by default: on an InfiniBand login node MPI.Init
+    # cannot reliably bring up a fabric (verbs aborts, tcp/shm can stall for
+    # many minutes), and we will not let precompilation hang on that. The
+    # package still precompiles fully without it; you only lose the warm-up,
+    # so the first solve of a given problem shape pays its JIT at runtime.
+    #
+    # Opt in — only on a compute node where the fabric is healthy, or any
+    # machine where MPI.Init is cheap (e.g. a laptop) — with:
+    #
+    #     JEXPRESSO_PRECOMPILE_WORKLOAD=1   (also: true / yes / on)
+    #
+    # When opted in the run is lean (drivers.jl caps it to 3 steps while
+    # generating precompile output) and uses FI_PROVIDER=shm for the
+    # single-process worker.
+    _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "0")) in
+                    ("1", "true", "yes", "on")
+    _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
+    _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
+    if _run_workload && !_fi_provider_was_set
+        ENV["FI_PROVIDER"] = "shm"
+    end
+
     @compile_workload begin
-        push!(empty!(ARGS), "CompEuler", "sod1d", "true")
-        include(joinpath(@__DIR__, "run.jl"))   # one full driver pass
+        if _run_workload
+            push!(empty!(ARGS), "CompEuler", "sod1d", "true")
+            include(joinpath(@__DIR__, "run.jl"))   # lean driver pass (3 steps)
+        end
+    end
+
+    # Undo the temporary FI_PROVIDER override (no-op if we never set it, or
+    # if the user had pinned it — we left theirs untouched above).
+    if _run_workload && !_fi_provider_was_set
+        delete!(ENV, "FI_PROVIDER")
+    elseif _run_workload
+        ENV["FI_PROVIDER"] = _fi_provider_prev
     end
 end
 end

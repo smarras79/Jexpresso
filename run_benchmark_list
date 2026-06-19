@@ -18,12 +18,46 @@ Jexpresso.run_case("Helmholtz", "case1_laguerre")
 Jexpresso.run_case("AdvDiff", "Wave_Train")
 Jexpresso.run_case("AdvDiff", "kopriva")
 Jexpresso.run_case("AdvDiff", "2d_Laguerre")
+Jexpresso.run_case("ShallowWater", "SoliWaveIsland")
+
+Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
+
 
 #Parallel
+
+#A. With native MPICH_jll
 using MPI
 JULIA = Base.julia_cmd()
-run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler thetaTracers`)
-run(`$(mpiexec()) -n 2 $JULIA --project=. src/Jexpresso.jl CompEuler 3d`)
-run(`$(mpiexec()) -n 3 $JULIA --project=. src/Jexpresso.jl CompEuler city2d`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
+run(`$(mpiexec()) -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
 
-NOTICE: replace mpiexec with mpirun if that's what you use.
+#B. With OpenMPI
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])'
+
+#
+# NOW then restart Julia
+#
+julia --project=.
+] precompile
+using MPI
+using MPIPreferences; MPIPreferences.use_system_binary(extra_paths=["/opt/homebrew/lib"])
+println(MPI.identify_implementation())
+JULIA = Base.julia_cmd()
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "thetaTracers")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "3d")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "city2d")'`)
+run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")'`)
+
+
+# Reference results:
+ NOTE: the allocations must be approx. the same no matter what computer is used,
+ but the wallclock is chip dependent.
+
+| problem    | allocation-on-2nd-run | approx. wallclock |
+|------------|-----------------------|-------------------|
+| sod1d      | 138.818 MiB           | 3 s               |
+| theta      | 39 MiB                | 5–9 s             |
+| 3d         | 199 MiB	             | 145 s  	         |
+| wave1d_lag | 99MiB	             | 4 s		 |

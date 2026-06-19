@@ -14,19 +14,29 @@ function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::TOTAL)
         pos_p = neqs+1
         Tabs = mp.Tabs[1:npoin]
         p = p_m
+    elseif !ENERGY_EQUATION_THETA[]
+        # Total-energy form: slot pos+1 holds ρE, so the ρθ gas law does
+        # not apply; p = (γ-1)(ρE - ½ρ|u|²) summed over the momentum slots.
+        ρE = integrator.u[pos*npoin+1:(pos+1)*npoin]
+        ke = zero(ρ)
+        for m = 2:pos
+            ρum = @view integrator.u[(m-1)*npoin+1:m*npoin]
+            ke .+= ρum.^2
+        end
+        p = PhysConst.γm1 .* (ρE .- 0.5 .* ke ./ ρ)
     else
         θ = integrator.u[pos*npoin+1:(pos+1)*npoin]
         # Compute pressure using vectorized operation
         p = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     end
-    
+
     # Compute speed of sound using vectorized operation
-    
+
     c = sqrt.(PhysConst.γ .* p ./ ρ)
-    
+
     # Find the maximum speed of sound
     max_c = maximum(c)
-    
+
     return max_c
 end
 

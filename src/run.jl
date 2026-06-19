@@ -110,14 +110,31 @@ user_bc_file         = string(case_name_dir, "/user_bc.jl")
 user_initialize_file = string(case_name_dir, "/initialize.jl")
 user_primitives_file = string(case_name_dir, "/user_primitives.jl")
 
-include(driver_file)
-
-include(user_input_file)
-include(user_flux_file)
-include(user_source_file)
-include(user_bc_file)
-include(user_initialize_file)
-include(user_primitives_file)
+# PERF: only (re-)include the driver + the case's user_*.jl files when
+# something actually changed since the last run in this session. Re-running
+# the SAME case unchanged must NOT re-`include` these, because that
+# redefines user_flux!/user_source!/user_bc!/… and redefining a method
+# Julia has already specialized into the compiled `rhs!` invalidates it —
+# so the next `solve(...)` (the warm-up step in time_loop!) recompiles the
+# entire RHS + integrator from scratch, which is the ~30 s freeze at
+# "# Precompile warm-up (1 step solve)" on a second identical run_case.
+#
+# Reload when the case directory changed (different case → its functions
+# really must be redefined) or when any of these files was edited (mtime
+# bump → pick up the user's change). Otherwise reuse the already-compiled
+# code: an unchanged re-run is then launch-cost-only.
+_case_load_files = [driver_file, user_input_file, user_flux_file,
+                    user_source_file, user_bc_file, user_initialize_file,
+                    user_primitives_file]
+_need_case_reload = (_LOADED_CASE_DIR[] != case_name_dir) ||
+    any(f -> get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f), _case_load_files)
+if _need_case_reload
+    for _f in _case_load_files
+        include(_f)
+        _CASE_FILE_MTIMES[_f] = mtime(_f)
+    end
+    _LOADED_CASE_DIR[] = case_name_dir
+end
 #--------------------------------------------------------
 # Read User Inputs:
 #--------------------------------------------------------
@@ -188,6 +205,18 @@ end
 if rank == 0
     cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
 end
+
+#--------------------------------------------------------
+# Typed cache of :energy_equation for hot-path callers (user_flux!,
+# user_primitives!, user_uout!). Reading the non-const module-global
+# `inputs` from inside per-quadrature-point loops costs ~38 ns per
+# access and inhibits inlining; a Ref{Bool} const reads in ~2 ns and
+# is type-stable.
+#--------------------------------------------------------
+if !@isdefined(ENERGY_EQUATION_THETA)
+    const ENERGY_EQUATION_THETA = Ref{Bool}(false)
+end
+ENERGY_EQUATION_THETA[] = (inputs[:energy_equation] == "theta")
 
 #--------------------------------------------------------
 # Convert inputs Dict → NamedTuple if the user opted in.

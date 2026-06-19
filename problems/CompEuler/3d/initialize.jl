@@ -15,7 +15,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # 
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
-    qoutvars = ["ρ", "u", "v", "w", "θ", "θp"]
+    qoutvars = ["ρ", "u", "v", "w", "θ", "p"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     

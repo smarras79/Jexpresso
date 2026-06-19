@@ -41,6 +41,22 @@ function driver(nparts,
         tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
     end
 
+    # PERF: during package precompilation (PrecompileTools @compile_workload)
+    # this driver runs only to bake the hot-path JIT — RHS, the SciML
+    # integrator, the callback-specialized warm-up — into the precompile
+    # cache. The actual time integration is throwaway there, so cap the run
+    # to a handful of steps. A full sod1d pass is 2000 steps (tend=0.2,
+    # Δt=1e-4); running all of them during precompile is what made it take
+    # minutes. The warm-up pre-pass plus the first few real steps still
+    # trigger every specialization we want cached, so cold runs stay fast
+    # without precompilation paying for a full simulation. `jl_generating_
+    # output` is 1 only while generating precompile output, so real runs are
+    # never shortened.
+    if ccall(:jl_generating_output, Cint, ()) == 1 && haskey(inputs, :Δt)
+        _dt_pc = TFloat(inputs[:Δt])
+        tspan  = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit]) + 3 * _dt_pc]
+    end
+
     #---------------------------------------------------------
     # Mesh + initial state (+ coupling object in MPMD mode).
     #
