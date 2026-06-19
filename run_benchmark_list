@@ -55,7 +55,9 @@ run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpr
  NOTE: the allocations must be approx. the same no matter what computer is used,
  but the wallclock is chip dependent.
 
-| problem | allocation-on-2nd-run | approx. wallclock |
-|---------|----------------------|------------------|
-| sod1d   | 138.818 MiB          | 3 s              |
-| theta   | 39 MiB               | 5–9 s            |
+| problem    | allocation-on-2nd-run | approx. wallclock |
+|------------|-----------------------|-------------------|
+| sod1d      | 138.818 MiB           | 3 s               |
+| theta      | 39 MiB                | 5–9 s             |
+| 3d         | 199 MiB	             | 145 s  	         |
+| wave1d_lag | 99MiB	             | 4 s		 |
