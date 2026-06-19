@@ -55,10 +55,15 @@ function user_inputs()
         # DHIT kinetic-energy spectra (Flad & Gassner 2017): the DGSEM field is
         # super-sampled onto an equidistant N_uni³ grid with N_uni = nel·(N+1)
         # (= "DOF per direction"; 6 cells × N=7 → 48³, 18 cells × N=7 → 144³),
-        # FFT'd, and shell-binned. Writes dhit_spectrum_{1D,3D}_<iout>.dat at
-        # every :diagnostics_at_times.
+        # FFT'd, and shell-binned. Writes dhit_spectrum_{1D,3D}_<iout>.dat plus
+        # the dhit_integrals.dat time series at every :diagnostics_at_times.
+        # The 3D file also carries the dissipation-rate spectrum D(k)=2νk²E(k),
+        # and dhit_integrals.dat the Fig. 9 energy/dissipation integrals up to
+        # :dhit_kcut, using the fixed molecular ν = :dhit_nu (default mu_molecular).
         #---------------------------------------------------------------------------
         :dhit_spectra         => true,
+        :dhit_kcut            => 16.0,        # Fourier-space integration cutoff (Fig. 9)
+        :dhit_nu              => _mumol,      # fixed kinematic ν for ε=2ν∫k²E dk (ρ_ref=1)
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
         :gmsh_filename       => _mesh,
