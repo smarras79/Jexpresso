@@ -853,7 +853,8 @@ function inviscid_rhs_el!(u, params,
                          S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
                          params.mesh.connijk, params.mesh.poin_in_bdy_face,
                          params.mesh.elem_to_face, params.mesh.bdy_face_type,
-                         Float64(params.xmin), Float64(params.xmax), Float64(params.zmax))
+                         Float64(params.xmin), Float64(params.xmax), Float64(params.zmax),
+                         params.inputs[:lkep]::Bool, params.fluxaux, params.volume_flux)
 end
 
 function _inviscid_rhs_el_3d!(u, uaux, qe,
@@ -870,20 +871,27 @@ function _inviscid_rhs_el_3d!(u, uaux, qe,
                               S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
                               connijk_mesh, poin_in_bdy_face,
                               elem_to_face, bdy_face_type,
-                              xmin, xmax, zmax)
+                              xmin, xmax, zmax,
+                              lkep, fluxaux, volume_flux)
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i=1:ngl
 
             ip = connijk[iel,i,j,k]
 
-            user_flux!(@view(F[i,j,k,:]),
-                       @view(G[i,j,k,:]),
-                       @view(H[i,j,k,:]),
-                       @view(uaux[ip,:]),
-                       @view(qe[ip,:]),
-                       mesh,
-                       CL, SOL_VARS_TYPE;
-                       neqs=neqs, ip=ip)
+            if lkep
+                user_fluxaux!(@view(fluxaux[ip,:]), SD,
+                              @view(uaux[ip,:]),
+                              SOL_VARS_TYPE, volume_flux)
+            else
+                user_flux!(@view(F[i,j,k,:]),
+                           @view(G[i,j,k,:]),
+                           @view(H[i,j,k,:]),
+                           @view(uaux[ip,:]),
+                           @view(qe[ip,:]),
+                           mesh,
+                           CL, SOL_VARS_TYPE;
+                           neqs=neqs, ip=ip)
+            end
 
             if lsource
                 user_source!(@view(S[i,j,k,:]),
@@ -918,21 +926,33 @@ function _inviscid_rhs_el_3d!(u, uaux, qe,
             end
         end
 
-        _expansion_inviscid!(u,
-                             neqs, ngl,
-                             dψ, ω,
-                             F, G, H, S,
-                             Je,
-                             dξdx, dξdy, dξdz,
-                             dηdx, dηdy, dηdz,
-                             dζdx, dζdy, dζdz,
-                             rhs_el, iel,
-                             connijk_mesh,
-                             coords,
-                             poin_in_bdy_face,
-                             elem_to_face,
-                             bdy_face_type,
-                             CL, QT, SD, AD)
+        if lkep
+            _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
+                                     S, Je,
+                                     dξdx, dξdy, dξdz,
+                                     dηdx, dηdy, dηdz,
+                                     dζdx, dζdy, dζdz,
+                                     rhs_el, iel,
+                                     fluxaux, connijk,
+                                     volume_flux,
+                                     CL, QT, SD, AD)
+        else
+            _expansion_inviscid!(u,
+                                 neqs, ngl,
+                                 dψ, ω,
+                                 F, G, H, S,
+                                 Je,
+                                 dξdx, dξdy, dξdz,
+                                 dηdx, dηdy, dηdz,
+                                 dζdx, dζdy, dζdz,
+                                 rhs_el, iel,
+                                 connijk_mesh,
+                                 coords,
+                                 poin_in_bdy_face,
+                                 elem_to_face,
+                                 bdy_face_type,
+                                 CL, QT, SD, AD)
+        end
     end
 end
 
@@ -1018,7 +1038,10 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # variables (rho, u, v, T). Only valid for the 4-equation
     # total-energy formulation (SOL_VARS_TYPE = TOTAL()); potential
     # temperature is not supported by flux_parabolic yet.
-    if params.inputs[:entropy_variables]::Bool
+    if params.inputs[:new_primitive_variables]::Bool
+
+        gradvars = params.inputs[:entropy_variables]::Bool ?
+                   GradientVariablesEntropy() : GradientVariablesPrimitive()
         _viscous_rhs_el_2d_navierstokes!(params.uaux, qe, params.uprimitive,
                             params.rhs_diffξ_el, params.rhs_diffη_el,
                             params.rhs_diff_el, params.visc_coeff, params.ω,
@@ -1028,7 +1051,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                             params.inputs, params.rhs_el,
                             Int64(params.mesh.nelem), Int64(params.neqs),
                             connijk, Float64(params.mesh.Δeffective_l),
-                            params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+                            params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE,
+                            gradvars)
         return
     end
 
@@ -1219,14 +1243,18 @@ function _viscous_rhs_el_2d_navierstokes!(uaux, qe, uprimitive,
                              inputs, rhs_el,
                              nelem, neqs,
                              connijk, Δ,
-                             QT, VT, SD, AD, SOL_VARS_TYPE)
+                             QT, VT, SD, AD, SOL_VARS_TYPE, gradvars)
     for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j]
-            user_primitives!(@view(uaux[ip,:]),
-                             @view(qe[ip,:]),
-                             @view(uprimitive[i,j,:]),
-                             SOL_VARS_TYPE)
+            # Fill the per-node buffer with the chosen gradient variables:
+            # primitive (ρ,u,v,T) or entropy (w1..w4). Their gradients are taken
+            # below; flux_parabolic reverse-engineers primitive derivatives via
+            # convert_derivative_to_primitive(·, gradvars).
+            _ns_fill_gradvars!(@view(uprimitive[i,j,:]),
+                               @view(uaux[ip,:]),
+                               @view(qe[ip,:]),
+                               SOL_VARS_TYPE, gradvars)
         end
 
         _expansion_visc_navierstokes!(rhs_diffξ_el,
@@ -1241,12 +1269,73 @@ function _viscous_rhs_el_2d_navierstokes!(uaux, qe, uprimitive,
                                       dηdx, dηdy,
                                       inputs, rhs_el,
                                       iel, neqs,
-                                      QT, VT, SD, AD; Δ=Δ)
+                                      QT, VT, SD, AD, gradvars; Δ=Δ)
     end
 
     rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
 end
 
+# Fill the NS gradient-variable buffer per node.
+# Primitive: delegate to the problem-side user_primitives! (ρ,u,v,T).
+# Entropy:   conservative → entropy variables via the problem-side cons2entropy.
+@inline _ns_fill_gradvars!(dst, u, qe, SOL, ::GradientVariablesPrimitive) =
+    user_primitives!(u, qe, dst, SOL)
+@inline function _ns_fill_gradvars!(dst, u, qe, SOL, ::GradientVariablesEntropy)
+    w = cons2entropy(@view(u[1:4]))
+    @inbounds for k = 1:4
+        dst[k] = w[k]
+    end
+    return nothing
+end
+
+
+# 5-component (3D total-energy) analogue of _ns_fill_gradvars!.
+@inline _ns_fill_gradvars5!(dst, u, qe, SOL, ::GradientVariablesPrimitive) =
+    user_primitives!(u, qe, dst, SOL)
+@inline function _ns_fill_gradvars5!(dst, u, qe, SOL, ::GradientVariablesEntropy)
+    w = cons2entropy(@view(u[1:5]))
+    @inbounds for k = 1:5
+        dst[k] = w[k]
+    end
+    return nothing
+end
+
+# 3D analogue of _viscous_rhs_el_2d_navierstokes!: fill the per-node gradient-variable
+# buffer (ρ,u,v,w,T or w1..w5) then assemble the full viscous flux per element; sum the
+# three reference-direction contributions.
+function _viscous_rhs_el_3d_navierstokes!(uaux, qe, uprimitive,
+                             rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                             rhs_diff_el, visc_coeff, ω,
+                             ngl, dψ, Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             inputs, rhs_el,
+                             nelem, neqs,
+                             connijk, Δ,
+                             QT, VT, SD, AD, SOL_VARS_TYPE, gradvars)
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[iel,i,j,k]
+            _ns_fill_gradvars5!(@view(uprimitive[i,j,k,:]),
+                                @view(uaux[ip,:]),
+                                @view(qe[ip,:]),
+                                SOL_VARS_TYPE, gradvars)
+        end
+
+        _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                                      uprimitive, visc_coeff, ω,
+                                      ngl, dψ, Je,
+                                      dξdx, dξdy, dξdz,
+                                      dηdx, dηdy, dηdz,
+                                      dζdx, dζdy, dζdz,
+                                      inputs, rhs_el,
+                                      iel, neqs,
+                                      QT, VT, SD, AD, gradvars; Δ=Δ)
+    end
+
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el .+ rhs_diffζ_el)
+end
 
 function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
     # Typed function barrier (paired with FullSpecialize at the
@@ -1256,6 +1345,29 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # fully specialized and non-allocating. The VREM/Smagorinsky hot
     # loop accesses ~20 params.* fields per element and dominated the
     # per-step cost without this barrier.
+    #
+    # Entropy-stable Navier-Stokes parabolic path (3D analogue of the NSD_2D
+    # branch): full viscous flux (deviatoric stress + heat flux via the
+    # problem-side flux_parabolic) for all 5 equations at once, from the
+    # gradients of (ρ,u,v,w,T). Gated on :new_primitive_variables; only valid
+    # for the total-energy formulation (SOL_VARS_TYPE = TOTAL()).
+    if params.inputs[:new_primitive_variables]::Bool
+        gradvars = params.inputs[:entropy_variables]::Bool ?
+                   GradientVariablesEntropy() : GradientVariablesPrimitive()
+        _viscous_rhs_el_3d_navierstokes!(params.uaux, qe, params.uprimitive,
+                            params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
+                            params.rhs_diff_el, params.visc_coeff, params.ω,
+                            Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                            params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                            params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                            params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                            params.inputs, params.rhs_el,
+                            Int64(params.mesh.nelem), Int64(params.neqs),
+                            connijk, Float64(params.mesh.Δeffective_l),
+                            params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE,
+                            gradvars)
+        return
+    end
     _viscous_rhs_el_3d!(params.uaux, qe, params.uprimitive,
                         params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
                         params.rhs_diff_el, params.visc_coeff, params.ω,
@@ -1495,6 +1607,63 @@ function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
 
                 for ieq=1:neqs
                     rhs_el[iel,i,j,ieq] -= ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
+                end
+            end
+        end
+    end
+end
+
+# 3D KEP flux-differencing volume term (analogue of the NSD_2D method). Accumulates the
+# three physical flux components (F,G,H) along each of the three reference lines (ξ,η,ζ)
+# via the symmetric two-point flux_turbo, maps to ∂x/∂y/∂z through the 9 metrics, and
+# subtracts the divergence (minus source) into rhs_el.
+function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
+                                  S, Je,
+                                  dξdx, dξdy, dξdz,
+                                  dηdx, dηdy, dηdz,
+                                  dζdx, dζdy, dζdz,
+                                  rhs_el, iel,
+                                  fluxaux, connijk,
+                                  volume_flux_type,
+                                  ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
+    for kk = 1:ngl
+        ωk = ω[kk]
+        for j = 1:ngl
+            ωj = ω[j]
+            for i = 1:ngl
+                @inbounds begin
+                    ip   = connijk[iel,i,j,kk]
+                    ωJac = ω[i]*ωj*ωk*Je[iel,i,j,kk]
+                    aux_ijk = @view(fluxaux[ip,:])
+
+                    mjk = connijk[iel,1,j,kk]; imk = connijk[iel,i,1,kk]; ijm = connijk[iel,i,j,1]
+                    Fξ,Gξ,Hξ = flux_turbo(aux_ijk, @view(fluxaux[mjk,:]), volume_flux_type)
+                    Fη,Gη,Hη = flux_turbo(aux_ijk, @view(fluxaux[imk,:]), volume_flux_type)
+                    Fζ,Gζ,Hζ = flux_turbo(aux_ijk, @view(fluxaux[ijm,:]), volume_flux_type)
+                    dFdξ=(2.0*dψ[1,i])*Fξ; dGdξ=(2.0*dψ[1,i])*Gξ; dHdξ=(2.0*dψ[1,i])*Hξ
+                    dFdη=(2.0*dψ[1,j])*Fη; dGdη=(2.0*dψ[1,j])*Gη; dHdη=(2.0*dψ[1,j])*Hη
+                    dFdζ=(2.0*dψ[1,kk])*Fζ; dGdζ=(2.0*dψ[1,kk])*Gζ; dHdζ=(2.0*dψ[1,kk])*Hζ
+                    for m = 2:ngl
+                        mjk = connijk[iel,m,j,kk]; imk = connijk[iel,i,m,kk]; ijm = connijk[iel,i,j,m]
+                        Fξ,Gξ,Hξ = flux_turbo(aux_ijk, @view(fluxaux[mjk,:]), volume_flux_type)
+                        Fη,Gη,Hη = flux_turbo(aux_ijk, @view(fluxaux[imk,:]), volume_flux_type)
+                        Fζ,Gζ,Hζ = flux_turbo(aux_ijk, @view(fluxaux[ijm,:]), volume_flux_type)
+                        dFdξ+=(2.0*dψ[m,i])*Fξ; dGdξ+=(2.0*dψ[m,i])*Gξ; dHdξ+=(2.0*dψ[m,i])*Hξ
+                        dFdη+=(2.0*dψ[m,j])*Fη; dGdη+=(2.0*dψ[m,j])*Gη; dHdη+=(2.0*dψ[m,j])*Hη
+                        dFdζ+=(2.0*dψ[m,kk])*Fζ; dGdζ+=(2.0*dψ[m,kk])*Gζ; dHdζ+=(2.0*dψ[m,kk])*Hζ
+                    end
+
+                    dξdx_=dξdx[iel,i,j,kk]; dξdy_=dξdy[iel,i,j,kk]; dξdz_=dξdz[iel,i,j,kk]
+                    dηdx_=dηdx[iel,i,j,kk]; dηdy_=dηdy[iel,i,j,kk]; dηdz_=dηdz[iel,i,j,kk]
+                    dζdx_=dζdx[iel,i,j,kk]; dζdy_=dζdy[iel,i,j,kk]; dζdz_=dζdz[iel,i,j,kk]
+
+                    dFdx = dFdξ*dξdx_ + dFdη*dηdx_ + dFdζ*dζdx_
+                    dGdy = dGdξ*dξdy_ + dGdη*dηdy_ + dGdζ*dζdy_
+                    dHdz = dHdξ*dξdz_ + dHdη*dηdz_ + dHdζ*dζdz_
+
+                    for ieq = 1:neqs
+                        rhs_el[iel,i,j,kk,ieq] -= ωJac*((dFdx[ieq] + dGdy[ieq] + dHdz[ieq]) - S[i,j,kk,ieq])
+                    end
                 end
             end
         end
@@ -2177,7 +2346,8 @@ function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
                                        dηdx, dηdy,
                                        inputs, rhs_el,
                                        iel, neqs,
-                                       QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0)
+                                       QT::Inexact, VT, SD::NSD_2D, ::ContGal,
+                                       gradvars; Δ=1.0)
 
     Δ2 = Δ^2
 
@@ -2222,8 +2392,8 @@ function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
                                uprimitiveieq[k,l,3],
                                uprimitiveieq[k,l,4])
 
-                flux_x = flux_parabolic(u_kl, (gradient_dx, gradient_dy), 1, visc_coeffieq, inputs, Δ2)
-                flux_y = flux_parabolic(u_kl, (gradient_dx, gradient_dy), 2, visc_coeffieq, inputs, Δ2)
+                flux_x = flux_parabolic(u_kl, (gradient_dx, gradient_dy), 1, visc_coeffieq, inputs, Δ2, gradvars)
+                flux_y = flux_parabolic(u_kl, (gradient_dx, gradient_dy), 2, visc_coeffieq, inputs, Δ2, gradvars)
 
                 dx_flux = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
                 dy_flux = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
@@ -2234,6 +2404,102 @@ function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el,
                     for ieq = 1:4
                         rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * dx_flux[ieq]
                         rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * dy_flux[ieq]
+                    end
+                end
+            end
+        end
+    end
+end
+
+# 3D analogue: full NS viscous flux (5 eqs) from gradients of (ρ,u,v,w,T), mapped through
+# the 9 metric terms, with three flux_parabolic evaluations (x,y,z) scattered to the three
+# reference-direction RHS buffers. VT is forwarded to flux_parabolic for the effective μ
+# (constant for AV / Smagorinsky for SMAG).
+function _expansion_visc_navierstokes!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                                       uprimitiveieq, visc_coeffieq, ω,
+                                       ngl, dψ, Je,
+                                       dξdx, dξdy, dξdz,
+                                       dηdx, dηdy, dηdz,
+                                       dζdx, dζdy, dζdz,
+                                       inputs, rhs_el,
+                                       iel, neqs,
+                                       QT::Inexact, VT, SD::NSD_3D, ::ContGal,
+                                       gradvars; Δ=1.0)
+    Δ2 = Δ^2
+    for m = 1:ngl
+        ωm = ω[m]
+        for l = 1:ngl
+            ωl = ω[l]
+            for k = 1:ngl
+                @inbounds begin
+                    Je_klm = Je[iel,k,l,m]
+                    ωJac   = ω[k]*ωl*ωm*Je_klm
+
+                    dρdξ=0.0; dudξ=0.0; dvdξ=0.0; dwdξ=0.0; dTdξ=0.0
+                    dρdη=0.0; dudη=0.0; dvdη=0.0; dwdη=0.0; dTdη=0.0
+                    dρdζ=0.0; dudζ=0.0; dvdζ=0.0; dwdζ=0.0; dTdζ=0.0
+                    @turbo for ii = 1:ngl
+                        dρdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,1]
+                        dudξ += dψ[ii,k]*uprimitiveieq[ii,l,m,2]
+                        dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,3]
+                        dwdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,4]
+                        dTdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,5]
+
+                        dρdη += dψ[ii,l]*uprimitiveieq[k,ii,m,1]
+                        dudη += dψ[ii,l]*uprimitiveieq[k,ii,m,2]
+                        dvdη += dψ[ii,l]*uprimitiveieq[k,ii,m,3]
+                        dwdη += dψ[ii,l]*uprimitiveieq[k,ii,m,4]
+                        dTdη += dψ[ii,l]*uprimitiveieq[k,ii,m,5]
+
+                        dρdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,1]
+                        dudζ += dψ[ii,m]*uprimitiveieq[k,l,ii,2]
+                        dvdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,3]
+                        dwdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,4]
+                        dTdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,5]
+                    end
+
+                    dξdx_klm=dξdx[iel,k,l,m]; dξdy_klm=dξdy[iel,k,l,m]; dξdz_klm=dξdz[iel,k,l,m]
+                    dηdx_klm=dηdx[iel,k,l,m]; dηdy_klm=dηdy[iel,k,l,m]; dηdz_klm=dηdz[iel,k,l,m]
+                    dζdx_klm=dζdx[iel,k,l,m]; dζdy_klm=dζdy[iel,k,l,m]; dζdz_klm=dζdz[iel,k,l,m]
+
+                    gradient_dx = SVector(dρdξ*dξdx_klm + dρdη*dηdx_klm + dρdζ*dζdx_klm,
+                                          dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm,
+                                          dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm,
+                                          dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm,
+                                          dTdξ*dξdx_klm + dTdη*dηdx_klm + dTdζ*dζdx_klm)
+                    gradient_dy = SVector(dρdξ*dξdy_klm + dρdη*dηdy_klm + dρdζ*dζdy_klm,
+                                          dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm,
+                                          dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm,
+                                          dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm,
+                                          dTdξ*dξdy_klm + dTdη*dηdy_klm + dTdζ*dζdy_klm)
+                    gradient_dz = SVector(dρdξ*dξdz_klm + dρdη*dηdz_klm + dρdζ*dζdz_klm,
+                                          dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm,
+                                          dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm,
+                                          dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm,
+                                          dTdξ*dξdz_klm + dTdη*dηdz_klm + dTdζ*dζdz_klm)
+
+                    u_klm = SVector(uprimitiveieq[k,l,m,1], uprimitiveieq[k,l,m,2],
+                                    uprimitiveieq[k,l,m,3], uprimitiveieq[k,l,m,4],
+                                    uprimitiveieq[k,l,m,5])
+
+                    grads  = (gradient_dx, gradient_dy, gradient_dz)
+                    flux_x = flux_parabolic(u_klm, grads, 1, visc_coeffieq, inputs, Δ2, gradvars, VT)
+                    flux_y = flux_parabolic(u_klm, grads, 2, visc_coeffieq, inputs, Δ2, gradvars, VT)
+                    flux_z = flux_parabolic(u_klm, grads, 3, visc_coeffieq, inputs, Δ2, gradvars, VT)
+
+                    dξ_flux = (dξdx_klm*flux_x + dξdy_klm*flux_y + dξdz_klm*flux_z)*ωJac
+                    dη_flux = (dηdx_klm*flux_x + dηdy_klm*flux_y + dηdz_klm*flux_z)*ωJac
+                    dζ_flux = (dζdx_klm*flux_x + dζdy_klm*flux_y + dζdz_klm*flux_z)*ωJac
+
+                    for i = 1:ngl
+                        dhdξ_ik = dψ[i,k]
+                        dhdη_il = dψ[i,l]
+                        dhdζ_im = dψ[i,m]
+                        for ieq = 1:5
+                            rhs_diffξ_el[iel,i,l,m,ieq] -= dhdξ_ik * dξ_flux[ieq]
+                            rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * dη_flux[ieq]
+                            rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * dζ_flux[ieq]
+                        end
                     end
                 end
             end
