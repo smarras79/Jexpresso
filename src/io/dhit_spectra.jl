@@ -227,16 +227,51 @@ function compute_dhit_spectra(u, params, t, iout)
 
     TKE = sum(E3d)
 
+    # --- Dissipation-rate spectrum D(k) = 2 ν k² E(k) and band integrals ---
+    # ν is the (fixed) molecular kinematic viscosity used for both DNS and LES,
+    # so the energy/dissipation integrals are directly comparable, exactly as in
+    # Flad & Gassner (2017), Fig. 9. ρ_ref = 1 for this unit-density DHIT setup.
+    inputs = params.inputs
+    μmol = get(inputs, :mu_molecular, length(get(inputs, :μ, [])) >= 2 ? inputs[:μ][2] : 0.0)
+    ν    = Float64(get(inputs, :dhit_nu, μmol))                 # kinematic ν = μ/ρ_ref, ρ_ref=1
+    kcut = Float64(get(inputs, :dhit_kcut, 16.0))               # integration cutoff wavenumber
+    mcut = max(1, round(Int, kcut/dk))
+
+    Dk = zeros(Float64, kmax3d + 1)                             # 2 ν k² E(k)
+    @inbounds for m in 1:kmax3d
+        kp = m*dk
+        Dk[m + 1] = 2.0*ν*kp*kp*E3d[m + 1]
+    end
+    # Band integrals up to kcut (shells already carry the per-shell energy, so a
+    # plain sum is the Fourier-space integral ∫_1^{kcut} … dk):
+    Ekin_band = 0.0; eps_band = 0.0
+    @inbounds for m in 1:min(mcut, kmax3d)
+        Ekin_band += E3d[m + 1]
+        eps_band  += Dk[m + 1]
+    end
+    eps_total = sum(Dk)
+
     # --- Write output ---
-    outdir = params.inputs[:output_dir]
+    outdir = inputs[:output_dir]
     f3 = joinpath(outdir, @sprintf("dhit_spectrum_3D_%06d.dat", iout))
     open(f3, "w") do io
-        @printf(io, "# DHIT 3D KE spectrum   time=%.6e  N_uni=%d  Nyquist=%d  dk=%.6e  TKE=%.8e\n",
-                t, n, n÷2, dk, TKE)
-        println(io, "# k            E(k)")
+        @printf(io, "# DHIT 3D KE spectrum   time=%.6e  N_uni=%d  Nyquist=%d  dk=%.6e  nu=%.6e  TKE=%.8e\n",
+                t, n, n÷2, dk, ν, TKE)
+        println(io, "# k            E(k)           D(k)=2*nu*k^2*E(k)")
         for m in 1:kmax3d
-            @printf(io, "%.6e  %.8e\n", m*dk, E3d[m + 1])
+            @printf(io, "%.6e  %.8e  %.8e\n", m*dk, E3d[m + 1], Dk[m + 1])
         end
+    end
+
+    # --- Time series of band integrals (Fig. 9): appended across output times ---
+    fint = joinpath(outdir, "dhit_integrals.dat")
+    write_header = !isfile(fint) || iout == 0
+    open(fint, write_header ? "w" : "a") do io
+        if write_header
+            @printf(io, "# DHIT energy/dissipation integrals   nu=%.6e  kcut=%.3f  dk=%.6e\n", ν, kcut, dk)
+            println(io, "# time          Ekin(k<=kcut)   eps(k<=kcut)    Ekin_total      eps_total")
+        end
+        @printf(io, "%.6e  %.8e  %.8e  %.8e  %.8e\n", t, Ekin_band, eps_band, TKE, eps_total)
     end
 
     f1 = joinpath(outdir, @sprintf("dhit_spectrum_1D_%06d.dat", iout))

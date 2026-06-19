@@ -26,6 +26,13 @@ At every `:diagnostics_at_times`, `compute_dhit_spectra` (in
 
 Both spectra satisfy `Σ_k E(k) = ½⟨|u|²⟩` (resolved kinetic energy).
 
+5. The **dissipation-rate spectrum** `D(k) = 2ν k² E(k)` and the Fourier-space
+   band integrals of Fig. 9,
+   `E_kin = Σ_{k≤k_cut} E(k)` and `ε = 2ν Σ_{k≤k_cut} k² E(k)`,
+   evaluated with a fixed molecular kinematic viscosity `ν` (= `:dhit_nu`,
+   default `mu_molecular`, with `ρ_ref = 1`) so DNS and LES are directly
+   comparable, and a cutoff `k_cut = :dhit_kcut` (default 16).
+
 ## Matching the paper's resolutions
 
 `DOF/dir = nel · (N+1)`, `k_Ny = DOF/2`:
@@ -42,17 +49,27 @@ dissipation are integrated in Fourier space up to `k = 16`.
 
 Per output index `<iout>`, written to `:output_dir`:
 
-- `dhit_spectrum_3D_<iout>.dat` — columns: `k  E(k)`
+- `dhit_spectrum_3D_<iout>.dat` — columns: `k  E(k)  D(k)=2νk²E(k)`
 - `dhit_spectrum_1D_<iout>.dat` — columns: `k  E1_avg  E1_x  E1_y  E1_z`
 
-Each header line records the time, `N_uni`, Nyquist, `dk = 2π/L`, and total
-resolved KE.
+and a single appended time series:
+
+- `dhit_integrals.dat` — columns: `t  Ekin(k≤kcut)  eps(k≤kcut)  Ekin_total  eps_total`
+
+Each spectrum header records the time, `N_uni`, Nyquist, `dk = 2π/L`, `ν`, and
+total resolved KE.
 
 ## Plotting
 
 ```bash
-python3 problems/CompEuler/dhit3D/plot_dhit_spectra.py ./output-dhit/ --mode 3d --save Ek.png
+# energy spectrum E(k)
+python3 problems/CompEuler/dhit3D/plot_dhit_spectra.py ./output-dhit/ --mode 3d   --save Ek.png
+# dissipation-rate spectrum D(k)=2 nu k^2 E(k)
+python3 problems/CompEuler/dhit3D/plot_dhit_spectra.py ./output-dhit/ --mode diss --save Dk.png
 ```
+
+The energy/dissipation decay over time (Fig. 9) is the `dhit_integrals.dat`
+time series: plot columns 2/3 (band-limited) or 4/5 (full) against column 1.
 
 ## Enabling / disabling
 
