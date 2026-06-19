@@ -220,6 +220,8 @@ include(joinpath( "io", "mod_inputs.jl"))
 
 include(joinpath( "io", "les_statistics.jl"))
 
+include(joinpath( "io", "dhit_spectra.jl"))
+
 include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))

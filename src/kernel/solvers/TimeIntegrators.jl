@@ -402,6 +402,12 @@ function time_loop!(inputs, params, u, args...)
             if (lwrite_time == true)
                 append_pvd_entry(pvd_path, integrator.t, "iter_$(idx).pvtu")
             end
+            # DHIT kinetic-energy spectra (1D + 3D), Flad & Gassner (2017) style.
+            # MPI-collective; runs on all ranks at each diagnostics time.
+            # No-op unless inputs[:dhit_spectra] == true.
+            if get(inputs, :dhit_spectra, false)
+                compute_dhit_spectra(integrator.u, integrator.p, integrator.t, idx)
+            end
             # Save p4est forest checkpoint alongside VTK for AMR restart support.
             # p8est_save is MPI-collective: all ranks call together.
             # Julia closures capture `partitioned_model` by binding — it always
