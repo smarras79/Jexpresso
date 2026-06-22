@@ -18,9 +18,10 @@
 #
 #  Feature representation (per the design decision): the 3 unique entries
 #  (â11, â12, â22) of the SPD tensor â at each of the (k+1)^2 reference nodes,
-#  i.e. a 3·(k+1)^2 input vector. For an affine element â is ξ-independent, so
-#  the per-node entries are identical; the per-node layout keeps the interface
-#  ready for ξ-dependent (curved-element) â later.
+#  i.e. a 3·(k+1)^2 input vector. For an AFFINE element (parallelogram) â is
+#  ξ-independent, so the per-node entries are identical; for a general (bilinear)
+#  straight-sided quad or a curved element â varies within the element, and the
+#  per-node layout carries that variation.
 #
 #  Sampling source (Option 1): random element shapes are produced by
 #  *synthesizing* random affine Jacobians J_K directly (no mesh file needed),

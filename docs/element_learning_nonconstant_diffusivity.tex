@@ -96,7 +96,7 @@ interior-elimination operator, replacing an explicit per-element matrix inverse.
 Source of non-constancy & Physical $a$ & Geometry $\Jk$ & Test case \\
 \midrule
 \textbf{Physical} ($a(x,y)$) & varies & uniform (structured mesh) & \code{case1\_nonconstant} \\
-\textbf{Mesh-induced}        & $a=1$  & varies (unstructured/curved mesh) & \code{elementLearning\_hole\_nonconstant} \\
+\textbf{Mesh-induced}        & $a=1$  & varies (non-affine: general quads / curved) & \code{elementLearning\_hole\_nonconstant} \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -106,6 +106,29 @@ notes prescribe (Option~1: \emph{``use an unstructured mesh, which supplies a se
 of random element shapes''}). With constant physical $a=1$, the only non-trivial
 part of $\ahat$ is the Jacobian --- exactly the \emph{``simplest case''} of the
 notes.
+
+\subsection{Constant within an element, or varying? (affine vs.\ bilinear)}
+$\ahat$ is constant \emph{within} an element only when the element map is
+\textbf{affine}, which for a quadrilateral means a \textbf{parallelogram}
+(opposite sides parallel \emph{and} equal); then $\Jk$ is constant.
+``Straight sides'' is \emph{not} sufficient: a general straight-sided quad
+(trapezoid, kite, or the sheared/fanned quads that conform to a curved boundary
+such as the hole) has a \textbf{bilinear} map
+$x(\xi,\eta)=\sum_i N_i(\xi,\eta)\,P_i$, so
+$\partial N_i/\partial\xi \propto (1\pm\eta)$ and $\Jk=\partial x/\partial\xi$
+varies \textbf{linearly inside the element}. Hence $\ahat(\xi)$ --- and the VTU
+\code{ahat\_eff}, \code{ahat\_aniso}, \code{ahat\_11/12/22} fields --- \textbf{vary
+within each non-parallelogram element}, peaking at the most distorted corners.
+The within-element gradient seen in the plots is therefore expected and correct;
+only true parallelograms show a single value per element. (Curved/high-order
+geometry is just a further source of the same $\xi$-dependence.)
+
+\medskip\noindent\textbf{Sampling consistency.} The default sampler
+\code{synthesize\_random\_ahat} draws random \textbf{affine} Jacobians
+(parallelograms $\Rightarrow$ $\ahat$ constant per element). To train a surrogate
+that matches \emph{general} (bilinear) mesh quads, generate within-element-varying
+samples --- \code{:lEL\_xidependent => true}
+(\code{synthesize\_random\_ahat\_field}) or a dedicated bilinear-quad sampler.
 
 \subsection{A useful identity (area normalisation)}
 \label{sec:detone}
@@ -148,8 +171,9 @@ unchanged.
 \code{el\_nonconstant\_sampling!} synthesises random element shapes (random affine
 Jacobians: rotation $\times$ anisotropic stretch $\times$ shear) and, per sample,
 \begin{enumerate}
-  \item forms $\ahat = a\,\det(J)\,(J^{\mathsf{T}}J)^{-1}$ (constant per element,
-        or $\xi$-dependent for curved elements via
+  \item forms $\ahat = a\,\det(J)\,(J^{\mathsf{T}}J)^{-1}$ (constant per element
+        for an affine/parallelogram shape, or varying within the element ---
+        general bilinear quad / curved --- via
         \code{synthesize\_random\_ahat\_field}),
   \item assembles the local reference stiffness
         (\code{el\_assemble\_local\_stiffness} via the precomputed components

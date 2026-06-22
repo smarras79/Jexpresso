@@ -45,12 +45,33 @@ inverse.
 | Source of non‑constancy | Physical `a` | Geometry `J_K`            | Test case |
 |-------------------------|:------------:|:-------------------------:|-----------|
 | **Physical** (`a(x,y)`) | varies       | uniform (structured mesh) | `case1_nonconstant` |
-| **Mesh‑induced**        | `a = 1`      | varies (unstructured/curved mesh) | `elementLearning_hole_nonconstant` |
+| **Mesh‑induced**        | `a = 1`      | varies (non‑affine elements: general quads / curved) | `elementLearning_hole_nonconstant` |
 
 This document focuses on the **mesh‑induced** case, which is the one the EL
 notes prescribe (Option 1: *“use an unstructured mesh, which supplies a set of
 random element shapes”*). With constant physical `a = 1`, the only non‑trivial
 part of `â` is the Jacobian — exactly the *“simplest case”* of the notes.
+
+### Constant within an element, or varying? (affine vs. bilinear)
+
+`â` is constant **within** an element only when the element map is **affine**,
+which for a quadrilateral means a **parallelogram** (opposite sides parallel
+*and* equal) — then `J_K` is constant. "Straight sides" is *not* sufficient: a
+general straight‑sided quad (trapezoid, kite, or the sheared/fanned quads that
+conform to a curved boundary such as the hole) has a **bilinear** map
+`x(ξ,η) = Σ Nᵢ(ξ,η) Pᵢ`, so `∂Nᵢ/∂ξ ∝ (1±η)` and `J_K = ∂x/∂ξ` varies
+**linearly inside the element**. Hence `â(ξ)` — and the VTU `ahat_eff`,
+`ahat_aniso`, `ahat_11/12/22` fields — **vary within each non‑parallelogram
+element**, peaking at the most distorted corners. This within‑element gradient
+in the plots is expected and correct; only true parallelograms show a single
+value per element. (Curved/high‑order geometry is just a further source of the
+same `ξ`‑dependence.)
+
+> **Sampling consistency.** The default sampler `synthesize_random_ahat`
+> draws random **affine** Jacobians (parallelograms ⇒ `â` constant per element).
+> To train a surrogate that matches *general* (bilinear) mesh quads, generate
+> within‑element‑varying samples — `:lEL_xidependent => true`
+> (`synthesize_random_ahat_field`) or a dedicated bilinear‑quad sampler.
 
 ### A useful identity (area normalisation)
 
@@ -93,8 +114,9 @@ The NN output is the flattened `T^{ie}` of size `nvo·nvb`
 `el_nonconstant_sampling!` synthesises random element shapes (random affine
 Jacobians: rotation × anisotropic stretch × shear) and, per sample,
 
-1. forms `â = a·det(J)·(JᵀJ)⁻¹` (constant per element, or ξ‑dependent for curved
-   elements via `synthesize_random_ahat_field`),
+1. forms `â = a·det(J)·(JᵀJ)⁻¹` (constant per element for an affine/parallelogram
+   shape, or varying within the element — general bilinear quad / curved — via
+   `synthesize_random_ahat_field`),
 2. assembles the local reference stiffness
    (`el_assemble_local_stiffness` via the precomputed components `K11,K12,K22`,
    or `el_assemble_local_stiffness_field` for the ξ‑dependent case),
