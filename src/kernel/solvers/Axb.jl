@@ -77,6 +77,11 @@ function standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
             params.qp.qoutvars,
             inputs[:outformat])
 
+    # Automatic L2-error check against the exact field qe (e.g. a manufactured
+    # solution). No-op when qe carries no exact field.
+    print_solution_L2_error(sol, params.qp.qe, sem.matrix.M, sem.mesh.npoin;
+                            label="direct solve")
+
     write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
 
     return nothing

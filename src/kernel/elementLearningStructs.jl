@@ -1177,6 +1177,11 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                 params.qp.qoutvars,
                 inputs[:outformat])
 
+        # Automatic L2-error check against the exact field qe (e.g. a
+        # manufactured solution). No-op when qe carries no exact field.
+        print_solution_L2_error(usol, params.qp.qe, sem.matrix.M, npoin;
+                                label="element-learning inference")
+
         write_output(args...; nvar=neqs, qexact=params.qp.qe)
         #-----------------------------------------------------
         # END Element-learning infrastructure
@@ -1194,3 +1199,46 @@ function expansion_2d!(a::Matrix, ψ::Matrix)
     return dot(ψ, a * ψ)
 
 end
+
+
+# ---------------------------------------------------------------------------
+# Post-run L2 error against the stored exact field qe.
+#
+# Computes the (mass-weighted) L2 error of the computed solution `sol`
+# against the exact/reference field `qe`, using the lumped mass matrix `M`
+# as the L2 inner-product weight:
+#
+#       ‖e‖_{L2} = sqrt( Σ_i M_i (sol_i - qe_i)^2 ),
+#       relative = ‖e‖_{L2} / ‖qe‖_{L2}.
+#
+# Intended for the method-of-manufactured-solutions verification: when a
+# problem stores its exact solution in qe (e.g. Elliptic/elementLearning*),
+# this prints the error automatically right after the solve. It is a safe
+# no-op for problems that carry no exact field (qe ≡ 0), so it can be called
+# unconditionally from the generic solvers.
+# ---------------------------------------------------------------------------
+@inline _sol_scalar(a, ip) = ndims(a) == 1 ? a[ip] : a[ip, 1]
+
+function print_solution_L2_error(sol, qe, M, npoin; label="solution")
+    err2 = 0.0
+    ref2 = 0.0
+    linf = 0.0
+    @inbounds for ip in 1:npoin
+        e = _sol_scalar(sol, ip) - _sol_scalar(qe, ip)
+        m = M[ip]
+        err2 += m * e * e
+        ref2 += m * _sol_scalar(qe, ip)^2
+        linf  = max(linf, abs(e))
+    end
+
+    if ref2 > 0.0
+        abserr = sqrt(err2)
+        relerr = sqrt(err2 / ref2)
+        println(GREEN_FG(string(" # MMS verification: ", label,
+                                " vs exact qe  →  ‖e‖_L2 = ", abserr,
+                                " , relative ‖e‖_L2 = ", relerr,
+                                " , ‖e‖_∞ = ", linf)))
+    end
+    return nothing
+end
+
