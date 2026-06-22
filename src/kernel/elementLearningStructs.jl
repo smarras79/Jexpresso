@@ -21,6 +21,7 @@ function diagnose_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ, T;
     println("  --- STRUCT (persistent) ---")
     struct_arrays = [
         ("Avovo/AIoIo ×2",   (nvo, nvo,          nelem), 2),
+        ("fvo/tie ×2",       (nvo,               nelem), 2),
         ("Avovb/Avo∂τ/AIo∂τ",(nvo, elnbdypoints, nelem), 3),
         ("Avo∂O/AIo∂O",      (nvo, elnbdypoints, nelem), 2),
         ("A∂Ovo/A∂OIo",      (elnbdypoints, nvo, nelem), 2),
@@ -74,6 +75,7 @@ end
 Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
                                            dims0,
                                            dims_vovo,
+                                           dims_fvo,
                                            dims_∂Ovo,
                                            dims_vovb,
                                            dims_T2,
@@ -86,6 +88,17 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
     # ── Per-element: interior × interior  (nvo × nvo × nelem) ────────────────
     Avovo   = KernelAbstractions.zeros(backend, T, dims_vovo)
     AIoIo   = KernelAbstractions.zeros(backend, T, dims_vovo)
+
+    # ── Per-element source term  (nvo × nelem) ───────────────────────────────
+    #   fvo : interior element load vector  f_{v^{ie,o}} = (f, φ_i)_K  for the
+    #         interior DOFs of element ie  (RHS of the governing equation
+    #         -∇·(a∇u) = f restricted to the element interior).
+    #   tie : t^{ie} = (A_{v^{ie,o},v^{ie,o}})^{-1} f_{v^{ie,o}}   — eq. (1.6b).
+    #         Used both to form the condensed skeleton RHS  f̂  (eq. 1.7b) and
+    #         to recover the interior solution  u_{v^{ie,o}} = t^{ie} - T^{ie} u_{v^{ie,b}}
+    #         (eq. 1.9).
+    fvo     = KernelAbstractions.zeros(backend, T, dims_fvo)
+    tie     = KernelAbstractions.zeros(backend, T, dims_fvo)
 
     # ── Per-element: interior × local-boundary  (nvo × elnbdy × nelem) ───────
     Avovb   = KernelAbstractions.zeros(backend, T, dims_vovb)
@@ -122,6 +135,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
     k            = ngl - 1
 
     dims_vovo  = (nvo,          nvo,          nelem)
+    dims_fvo   = (nvo,          nelem)
     dims_vovb  = (nvo,          elnbdypoints, nelem)
     dims_∂Ovo  = (elnbdypoints, nvo,          nelem)
     dims_T1    = (elnbdypoints, elnbdypoints)
@@ -133,6 +147,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ,
     return St_elemLearning{T,
                            dims0,
                            dims_vovo,
+                           dims_fvo,
                            dims_∂Ovo,
                            dims_vovb,
                            dims_T2,
@@ -172,6 +187,13 @@ struct EL_InferBuffers
     # ── Gather / recovery ─────────────────────────────────────────────────────
     uvb_nn       :: Matrix{Float64}    # (nelem, elnbdypoints)
     uvo_nn       :: Vector{Float64}    # (nelintpoints,)
+
+    # ── Source term f  (static-condensation RHS) ───────────────────────────────
+    f̂_∂τ         :: Vector{Float64}    # (length∂τ,)            modified skeleton RHS  f̂_{∂τ}
+    tie_all      :: Matrix{Float64}    # (nelintpoints, nelem)  t^{ie} = A_{vo,vo}^{-1} f_{vo}
+    At           :: Vector{Float64}    # (elnbdypoints,)        A_{vb,vo} t^{ie}        (eq. 1.8)
+    fvo_ie       :: Vector{Float64}    # (nelintpoints,)        interior load scratch
+    invAvovo_buf :: Matrix{Float64}    # (nelintpoints, nelintpoints)  inv scratch for t^{ie}
 end
 
 """
@@ -202,6 +224,12 @@ function EL_InferBuffers(mesh, A_∂τ∂τ::SparseMatrixCSC,
         # Gather / recovery
         Matrix{Float64}(undef, mesh.nelem, elnbdypoints),
         Vector{Float64}(undef, nelintpoints),
+        # Source term f
+        Vector{Float64}(undef, mesh.length∂τ),
+        Matrix{Float64}(undef, nelintpoints, mesh.nelem),
+        Vector{Float64}(undef, elnbdypoints),
+        Vector{Float64}(undef, nelintpoints),
+        Matrix{Float64}(undef, nelintpoints, nelintpoints),
     )
 end
 
@@ -221,6 +249,12 @@ struct EL_WorkBuffers
     ∂O_in_∂τ     :: Vector{Int}
     Γ_in_∂τ      :: Vector{Int}
     u∂O          :: Vector{Float64}
+
+    # Source-term scratch (static-condensation RHS  f̂_{∂O})
+    f∂O          :: Vector{Float64}   # raw load on the internal skeleton ∂O
+    Δf∂O         :: Vector{Float64}   # Σ_ie A_{∂O,Io} t^{ie}            (eq. 1.7b/1.8)
+    f̂∂O          :: Vector{Float64}   # f̂_{∂O} = f_{∂O} - Δf∂O           (eq. 1.3b)
+    rhs∂O        :: Vector{Float64}   # f̂_{∂O} - B_{∂O,Γ} gΓ             (eq. 1.4)
 
     # Recovery block scratch
     AIoΓ_ie      :: Matrix{Float64}
@@ -308,6 +342,10 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
         Vector{Int}(undef, mesh.length∂O),                          # ∂O_in_∂τ
         Vector{Int}(undef, mesh.lengthΓ),                           # Γ_in_∂τ
         Vector{T}(undef, mesh.length∂O),                            # u∂O
+        Vector{T}(undef, mesh.length∂O),                            # f∂O
+        Vector{T}(undef, mesh.length∂O),                            # Δf∂O
+        Vector{T}(undef, mesh.length∂O),                            # f̂∂O
+        Vector{T}(undef, mesh.length∂O),                            # rhs∂O
         Matrix{T}(undef, nelintpoints, mesh.lengthΓ),               # AIoΓ_ie
         Vector{T}(undef, nelintpoints),                             # AIou∂O_ie
         Vector{T}(undef, nelintpoints),                             # AIoΓg_ie
@@ -324,9 +362,19 @@ end
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  Main function                                                              ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
+# `RHS` is the global right-hand-side / load vector of the governing equation
+#   -∇·(a∇u) = f,   u = g on ∂Ω.
+# Its entries play a double role (set upstream by `user_source!` + mass-matrix
+# scaling, followed by `apply_boundary_conditions_lin_solve!`):
+#   • at the Dirichlet boundary nodes  Γ   : RHS holds the boundary data g(x)
+#   • at every interior / skeleton node     : RHS holds the discrete load
+#                                             f_i = (f, φ_i)_Ω = (M f)_i .
+# The static-condensation algorithm therefore extracts the Dirichlet data
+# gΓ from RHS[Γ] and the element load vectors  f_{v^{ie,o}} , f_{∂O}  from the
+# remaining (non-Dirichlet) entries of RHS.
 function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               A::SparseMatrixCSC,
-                              ubdy, EL,
+                              RHS, EL,
                               avisc,
                               bufferin, bufferout,
                               BOΓg, gΓ,
@@ -390,17 +438,29 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     end
 
     # =========================================================================
-    # SECTION 3: Gather Dirichlet data
+    # SECTION 3: Gather Dirichlet data gΓ and the source/load vector f
     # =========================================================================
     lengthΓ = mesh.lengthΓ
     @inbounds for iΓ = 1:lengthΓ
-        gΓ[iΓ] = ubdy[mesh.Γ[iΓ], 1]
+        gΓ[iΓ] = RHS[mesh.Γ[iΓ], 1]
+    end
+
+    # Per-element interior load  f_{v^{ie,o}}  (eq. 1.6b RHS). The interior DOFs
+    # of an element are never on Γ, so RHS there holds the genuine load f.
+    @inbounds for iel = 1:nelem
+        for ii = 1:nelintpoints
+            EL.fvo[ii, iel] = RHS[mesh.conn[iel, elnbdypoints+ii], 1]
+        end
     end
 
     if EL.lEL_Sample
 
-        # ── Build ΔB ──────────────────────────────────────────────────────────
+        # ── Build ΔB and the condensed RHS correction Δf_{∂O} ──────────────────
+        #   ΔB    = Σ_ie A_{∂O,vo} (A_{vo,vo})^{-1} A_{vo,∂τ}          (eq. 1.3b)
+        #   t^ie  = (A_{vo,vo})^{-1} f_{vo}                            (eq. 1.6b)
+        #   Δf_{∂O} = Σ_ie A_{∂O,vo} t^ie  (= Σ_ie A_{∂O,Io} A_{Io,Io}^{-1} f_{Io})
         fill!(nonzeros(wbuf.ΔB), zero(eltype(A)))
+        fill!(wbuf.Δf∂O, zero(eltype(A)))
 
         @inbounds for iel = 1:nelem
             for j = 1:elnbdypoints
@@ -415,6 +475,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             LinearAlgebra.mul!(wbuf.BC_local, invAvovo,
                                @view(EL.Avo∂τ[:, :, iel]))
 
+            # t^ie = (A_{vo,vo})^{-1} f_{vo}   — stored for the interior recovery
+            LinearAlgebra.mul!(@view(EL.tie[:, iel]), invAvovo,
+                               @view(EL.fvo[:, iel]))
+
             for j_loc = 1:elnbdypoints
                 jτ = wbuf.conn_∂τ_idx[j_loc];  jτ == 0 && continue
                 for i_loc = 1:elnbdypoints
@@ -425,6 +489,16 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                     end
                     wbuf.ΔB[io, jτ] += s
                 end
+            end
+
+            # Δf_{∂O} += A_{∂O,vo} t^ie
+            for i_loc = 1:elnbdypoints
+                io = wbuf.conn_∂O_idx[i_loc];  io == 0 && continue
+                s  = zero(eltype(A))
+                for ii = 1:nelintpoints
+                    s += EL.A∂Ovo[i_loc, ii, iel] * EL.tie[ii, iel]
+                end
+                wbuf.Δf∂O[io] += s
             end
         end
 
@@ -440,8 +514,17 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         B_∂O∂O = B_∂O∂τ[:, wbuf.∂O_in_∂τ]
         B_∂O∂Γ = B_∂O∂τ[:, wbuf.Γ_in_∂τ]
 
+        # Condensed skeleton RHS on the internal skeleton:
+        #   f̂_{∂O} = f_{∂O} - Δf_{∂O}                                  (eq. 1.3b)
+        @inbounds for i = 1:mesh.length∂O
+            wbuf.f∂O[i] = RHS[mesh.∂O[i], 1]
+        end
+        wbuf.f̂∂O .= wbuf.f∂O .- wbuf.Δf∂O
+
+        # Solve  B_{∂O,∂O} u_{∂O} = f̂_{∂O} - B_{∂O,Γ} gΓ               (eq. 1.4)
         BOΓg_tmp          = B_∂O∂Γ * gΓ
-        wbuf.u∂O         .= -(B_∂O∂O \ BOΓg_tmp)
+        wbuf.rhs∂O       .= wbuf.f̂∂O .- BOΓg_tmp
+        wbuf.u∂O         .= B_∂O∂O \ wbuf.rhs∂O
 
         @inbounds for io = 1:mesh.length∂O;  u[mesh.∂O[io]] = wbuf.u∂O[io];  end
         @inbounds for io = 1:mesh.lengthΓ;   u[mesh.Γ[io]]  = gΓ[io];        end
@@ -468,11 +551,15 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             end
 
             LinearAlgebra.mul!(wbuf.AIoΓg_ie, wbuf.AIoΓ_ie, gΓ)
-            wbuf.rhs_ie .= wbuf.AIou∂O_ie .+ wbuf.AIoΓg_ie
+
+            # Interior recovery (eq. 1.5 / 1.9):
+            #   u_{v^{ie,o}} = (A_{Io,Io})^{-1} ( f_{Io} - A_{Io,∂O} u_{∂O} - A_{Io,Γ} gΓ )
+            #               = t^ie - T^ie u_{v^{ie,b}} .
+            wbuf.rhs_ie .= @view(EL.fvo[:, iel]) .- wbuf.AIou∂O_ie .- wbuf.AIoΓg_ie
 
             copyto!(wbuf.invAIoIo_buf, @view(EL.AIoIo[:, :, iel]))
             invAIoIo = inv(wbuf.invAIoIo_buf)
-            LinearAlgebra.mul!(wbuf.uvo_ie, invAIoIo, wbuf.rhs_ie, -1.0, 0.0)
+            LinearAlgebra.mul!(wbuf.uvo_ie, invAIoIo, wbuf.rhs_ie)
 
             for ii = 1:nelintpoints
                 u[mesh.conn[iel, elnbdypoints+ii]] = wbuf.uvo_ie[ii]
@@ -497,7 +584,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         elementLearning_infer!(u, mesh,
                                wbuf.model, wbuf.model_type,
                                wbuf.input_name, wbuf.output_name,
-                               avisc, EL, A_∂τ∂τ, ∂τ_pos, gΓ, wbuf.infer,
+                               avisc, EL, A_∂τ∂τ, ∂τ_pos, gΓ, RHS, wbuf.infer,
                                nelintpoints, elnbdypoints)
 
         # PERF: ad-hoc @btime instrumentation removed. The line below was a
@@ -524,7 +611,7 @@ end
 
 """
     elementLearning_infer!(u, mesh, model, model_type, input_name, output_name,
-                           avisc, EL, A_∂τ∂τ, ∂τ_pos, gΓ, buf,
+                           avisc, EL, A_∂τ∂τ, ∂τ_pos, gΓ, RHS, buf,
                            nelintpoints, elnbdypoints)
 
 Element-learning inference step.  Dispatches on `model_type`:
@@ -539,13 +626,19 @@ Element-learning inference step.  Dispatches on `model_type`:
 - `input_name`    : ONNX input tensor name   (unused for JLD2)
 - `output_name`   : ONNX output tensor name  (unused for JLD2)
 - `avisc`         : NN input features — (1, nfeatures) shared OR (nelem, nfeatures)
-- `EL`            : element-learning struct (.Avovb[:,:,iel])
+- `EL`            : element-learning struct (.Avovb, .AIoIo, .fvo per element)
 - `A_∂τ∂τ`        : sparse skeleton submatrix of A (read-only)
 - `∂τ_pos`        : Dict mapping global node → index in ∂τ numbering
 - `gΓ`            : Dirichlet values on Γ
+- `RHS`           : global load/RHS vector (carries f on interior/skeleton DOFs)
 - `buf`           : EL_InferBuffers — all pre-allocated working arrays
 - `nelintpoints`  : number of interior points per element
 - `elnbdypoints`  : number of boundary nodes per element
+
+The NN provides the local operator T^{ie} = (A_{vo,vo})^{-1} A_{vo,vb} only; the
+source contribution t^{ie} = (A_{vo,vo})^{-1} f_{vo} (eq. 1.6b) is still formed
+here from the stored interior blocks `EL.AIoIo` and load `EL.fvo`.  When the load
+`f` is zero this work is skipped and the homogeneous fast path is recovered.
 """
 function elementLearning_infer!(
     u            :: AbstractMatrix{Float64},
@@ -559,6 +652,7 @@ function elementLearning_infer!(
     A_∂τ∂τ       :: SparseMatrixCSC,
     ∂τ_pos       :: Dict,
     gΓ           :: Vector{Float64},
+    RHS,
     buf          :: EL_InferBuffers,
     nelintpoints :: Int,
     elnbdypoints :: Int,
@@ -608,6 +702,43 @@ function elementLearning_infer!(
     end
 
     # ══════════════════════════════════════════════════════════════════════════
+    # STEP 4.5 — Assemble the condensed skeleton RHS  f̂_{∂τ}   (eq. 1.7b / 1.8)
+    #
+    #   f̂_{∂τ}  ←  f_{∂τ}                                   (load on the skeleton)
+    #   for each element:  f̂_{v^{ie,b}}  ←  f̂_{v^{ie,b}} - A_{vb,vo} t^{ie}
+    #   with t^{ie} = (A_{vo,vo})^{-1} f_{vo}  and  At = A_{vb,vo} t^{ie}.
+    # ══════════════════════════════════════════════════════════════════════════
+    @inbounds for j = 1:mesh.length∂τ
+        buf.f̂_∂τ[j] = RHS[mesh.∂τ[j], 1]
+    end
+
+    has_source = any(x -> x != zero(x), EL.fvo)
+    if has_source
+        @inbounds for iel = 1:nelem
+            for j = 1:elnbdypoints
+                buf.conn_∂τ_idx[j] = get(∂τ_pos, mesh.conn[iel, j], 0)
+            end
+            # t^{ie} = (A_{vo,vo})^{-1} f_{vo}
+            copyto!(buf.invAvovo_buf, @view(EL.AIoIo[:, :, iel]))
+            invAvovo = inv(buf.invAvovo_buf)
+            for ii = 1:nelintpoints
+                buf.fvo_ie[ii] = EL.fvo[ii, iel]
+            end
+            LinearAlgebra.mul!(@view(buf.tie_all[:, iel]), invAvovo, buf.fvo_ie)
+            # At = A_{vb,vo} t^{ie} = (A_{vo,vb})^T t^{ie}
+            LinearAlgebra.mul!(buf.At,
+                               transpose(@view(EL.Avovb[:, :, iel])),
+                               @view(buf.tie_all[:, iel]))
+            for i = 1:elnbdypoints
+                i_prime = buf.conn_∂τ_idx[i];  i_prime == 0 && continue
+                buf.f̂_∂τ[i_prime] -= buf.At[i]
+            end
+        end
+    else
+        fill!(buf.tie_all, 0.0)
+    end
+
+    # ══════════════════════════════════════════════════════════════════════════
     # STEP 5 — Build ∂O and Γ index maps in-place
     # ══════════════════════════════════════════════════════════════════════════
     @inbounds for i  = 1:mesh.length∂O
@@ -619,12 +750,14 @@ function elementLearning_infer!(
 
     # ══════════════════════════════════════════════════════════════════════════
     # STEP 6 — Extract sparse submatrices and solve
+    #          B_{∂O,∂O} u_{∂O} = f̂_{∂O} - B_{∂O,Γ} gΓ              (eq. 1.4)
     # ══════════════════════════════════════════════════════════════════════════
     B_∂O∂O  = buf.B_∂τ∂τ[buf.∂O_in_∂τ, buf.∂O_in_∂τ]
     B_∂O∂Γ  = buf.B_∂τ∂τ[buf.∂O_in_∂τ, buf.Γ_in_∂τ]
 
+    f̂_∂O    = buf.f̂_∂τ[buf.∂O_in_∂τ]
     BOΓg_nn = B_∂O∂Γ * gΓ
-    u∂O_nn  = -(B_∂O∂O \ BOΓg_nn)
+    u∂O_nn  = B_∂O∂O \ (f̂_∂O .- BOΓg_nn)
 
     # ══════════════════════════════════════════════════════════════════════════
     # STEP 7 — Scatter solution into u
@@ -646,7 +779,7 @@ function elementLearning_infer!(
     end
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STEP 8b — Local interior recovery  u_vo = -T^{ie,nn} * u_vb
+    # STEP 8b — Local interior recovery  u_vo = t^{ie} - T^{ie,nn} * u_vb  (eq. 1.9)
     # ══════════════════════════════════════════════════════════════════════════
     @inbounds for iel = 1:nelem
         LinearAlgebra.mul!(buf.uvo_nn,
@@ -654,7 +787,7 @@ function elementLearning_infer!(
                            @view(buf.uvb_nn[iel, :]),
                            -1.0, 0.0)
         for i = 1:nelintpoints
-            u[mesh.conn[iel, elnbdypoints + i]] = buf.uvo_nn[i]
+            u[mesh.conn[iel, elnbdypoints + i]] = buf.uvo_nn[i] + buf.tie_all[i, iel]
         end
     end
 
