@@ -70,9 +70,7 @@ function driver(nparts,
     coupling = nothing
     if is_coupled
         @assert world !== nothing "world communicator must be supplied when is_coupled=true"
-        coupling, sem, partitioned_model, qp =
-            setup_coupling_and_mesh(world, nparts, inputs, nparts,
-                                    distribute, rank, OUTPUT_DIR, TFloat)
+        coupling, sem, partitioned_model, qp = setup_coupling_and_mesh(world, nparts, inputs, nparts, distribute, rank, OUTPUT_DIR, TFloat)
     else
         if inputs[:lwarmup] == true
             if rank == 0 println(BLUE_FG(string(" # JIT pre-compilation of large problem ..."))) end
@@ -117,28 +115,7 @@ function driver(nparts,
             # time for code they never call. _ensure_rt_loaded!() is a
             # cheap no-op once the first RT run has triggered it.
             Jexpresso._ensure_rt_loaded!()
-            if sem.mesh.SD == NSD_2D()
-                build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
-                                                 sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy,
-                                                 sem.metrics.nx, sem.metrics.ny, sem.mesh.elem_to_edge, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
-            else
-                κ = zeros(sem.mesh.npoin)
-                σ = zeros(sem.mesh.npoin)
-                if inputs[:lRT_from_data]
-                    @info "reading atmospheric data to build extinction and scattering coefficients"
-                    filename = inputs[:RT_data_file]
-                    data = read_atmospheric_data(filename)
-                    data_interp = interpolate_atmosphere_to_mesh(data, sem.mesh)
-                    κ, σ = atmos_to_rad(data_interp, sem.mesh.npoin)
-                end
-
-                build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
-                                                 sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dξdz,
-                                                 sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
-                                                 sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
-                                                 sem.metrics.nx, sem.metrics.ny, sem.metrics.nz,
-                                                 sem.mesh.elem_to_face, sem.mesh.extra_mesh, κ, σ, sem.QT, NSD_3D(), sem.AD)
-            end
+            build_rad(sem, inputs)
             return
         end
 
@@ -154,8 +131,7 @@ function driver(nparts,
     #---------------------------------------------------------
     if rank == 0 println(" # Params_setup ..................................") end
 
-    params, u = params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, tspan;
-                             coupling = coupling)
+    params, u = params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, tspan; coupling = coupling)
 
     if rank == 0 println(" # Params_setup .................................. DONE") end
 
