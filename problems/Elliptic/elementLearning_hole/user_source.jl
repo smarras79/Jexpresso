@@ -48,7 +48,7 @@ manufactured_f(x, y) = MMS_A * (MMS_KX^2 + MMS_KY^2) * sin(MMS_KX * x) * cos(MMS
 #             (not necessarily a manufactured one).
 #   :zero   → homogeneous problem  f = 0    (original element-learning case;
 #             reproduces the result obtained before the source term was added)
-el_source_mode() = :mms
+el_source_mode() = :zero
 const FCONST = 1.0
 
 # ── Arbitrary, user-defined source f(x,y) for the  :custom  mode ─────────────
@@ -61,7 +61,7 @@ function user_defined_source(x, y, xmin, xmax, ymin, ymax)
     L     = abs(xmax - xmin)
 
     alpha = 0.0
-    beta  = 0.0
+    beta  = 1.0
     gamma = 0.0
 
     f   = -beta*( cos(x/L)*exp(-x/L)*cos(y)/L + sin(x/L)*exp(-x/L)*cos(y) )

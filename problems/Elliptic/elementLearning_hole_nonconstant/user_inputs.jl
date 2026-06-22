@@ -30,10 +30,11 @@ function user_inputs()
         :llinsolve            => true,
         :ldss_laplace         => true,
         :lsparse              => true,
-        :lelementLearning     => true,
+#        :lelementLearning     => true,
         :lEL_nonconstant      => true,   # geometry-induced â feature (a = 1)
 #        :lEL_Sample           => true,   # uncomment to (re)generate training data
-        :NNfile               => "JX_RFRC_model.onnx",
+        :NNfile               => "JX_NN_model.onnx",
+        #:NNfile               => "JX_RFRC_model.onnx",
         :Nsamp                => 50000,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
