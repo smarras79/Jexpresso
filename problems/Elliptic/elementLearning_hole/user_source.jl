@@ -39,12 +39,36 @@ manufactured_u(x, y) = MMS_A * sin(MMS_KX * x) * cos(MMS_KY * y)
 manufactured_f(x, y) = MMS_A * (MMS_KX^2 + MMS_KY^2) * sin(MMS_KX * x) * cos(MMS_KY * y)
 
 # ── Source / test mode selector ─────────────────────────────────────────────
-#   :mms   → manufactured solution above   (non-constant f, exact g, exact qe)
-#   :const → constant source  f = FCONST
-#   :zero  → homogeneous problem  f = 0     (original element-learning case;
-#            reproduces the result obtained before the source term was added)
+# Edit el_source_mode() below to choose the source term used by this problem
+# (self-contained here — no user_inputs.jl plumbing needed):
+#   :mms    → manufactured solution above  (non-constant f, exact g, exact qe)
+#   :const  → constant source  f = FCONST
+#   :custom → arbitrary user-defined source f(x,y)  — see user_defined_source
+#             below; use this to solve  A u = f  with ANY right-hand side
+#             (not necessarily a manufactured one).
+#   :zero   → homogeneous problem  f = 0    (original element-learning case;
+#             reproduces the result obtained before the source term was added)
 el_source_mode() = :mms
 const FCONST = 1.0
+
+# ── Arbitrary, user-defined source f(x,y) for the  :custom  mode ─────────────
+# Edit this freely to solve  A u = f  with any source term. The domain bounds
+# (xmin/xmax/ymin/ymax) are passed in so the expression can be made
+# domain-relative if desired. The template below is the original
+# (non-manufactured) source of this problem: with the coefficients at 0 it
+# returns f = 0; set alpha/beta/gamma to activate the spatially-varying terms.
+function user_defined_source(x, y, xmin, xmax, ymin, ymax)
+    L     = abs(xmax - xmin)
+
+    alpha = 0.0
+    beta  = 0.0
+    gamma = 0.0
+
+    f   = -beta*( cos(x/L)*exp(-x/L)*cos(y)/L + sin(x/L)*exp(-x/L)*cos(y) )
+    u_e = gamma*sin(x/L)*exp(-x/L)*cos(y)
+
+    return f - alpha*u_e
+end
 
 
 function user_source!(S,
@@ -67,6 +91,8 @@ function user_source!(S,
         return manufactured_f(x, y)          # non-constant manufactured source
     elseif mode == :const
         return FCONST                        # constant source
+    elseif mode == :custom
+        return user_defined_source(x, y, xmin, xmax, ymin, ymax)  # arbitrary f(x,y)
     else
         return 0.0                           # homogeneous (f = 0)
     end
