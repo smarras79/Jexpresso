@@ -118,6 +118,8 @@ include(joinpath( "kernel", "mesh", "meshStructs.jl"))
 
 include(joinpath( "kernel", "elementLearningStructs.jl"))
 
+include(joinpath( "kernel", "EL_nonconstant_diffusivity.jl"))
+
 include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "ArtificialViscosity","viscousStructs.jl"))

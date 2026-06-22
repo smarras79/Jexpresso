@@ -1023,6 +1023,30 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         if isfile("input_tensor.csv");  rm("input_tensor.csv");  end
         if isfile("output_tensor.csv"); rm("output_tensor.csv"); end
 
+        # =====================================================================
+        # NON-CONSTANT DIFFUSIVITY (Option 1: synthesized random Jacobians).
+        # Self-contained: generates (per-node 2×2 SPD â feature → T^{ie}) pairs
+        # on the reference element, independent of the global matrix / mesh.
+        # Gated by inputs[:lEL_nonconstant]; leaves the constant pipeline below
+        # untouched when false.
+        # =====================================================================
+        if get(inputs, :lEL_nonconstant, false)
+            if rank == 0
+                println(BLUE_FG(" # EL SAMPLING — NON-CONSTANT DIFFUSIVITY (Option 1) ......"))
+            end
+            nvo, nvb = el_nonconstant_sampling!(bufferin, bufferout,
+                                                params.basis.ψ, params.basis.dψ,
+                                                params.ω, ngl, inputs[:Nsamp])
+            total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
+            total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
+            if rank == 0
+                println(BLUE_FG(string(" # EL SAMPLING — NON-CONSTANT DIFFUSIVITY: ",
+                                       inputs[:Nsamp], " samples, feature=3·(k+1)²=",
+                                       3*ngl^2, ", T^{ie}=", nvo, "×", nvb, " .......... DONE")))
+            end
+            return nothing
+        end
+
         # ── Allocate ONCE outside the loop ────────────────────────────────────────
         A       = sem.matrix.L
         A_∂τ∂τ  = A[sem.mesh.∂τ, sem.mesh.∂τ]
