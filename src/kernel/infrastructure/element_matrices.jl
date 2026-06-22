@@ -372,19 +372,26 @@ function build_laplace_matrix(SD::NSD_1D, ψ, dψ, ω, mesh, metrics, N, Q, T)
 end
 
 
-function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
-    
+function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T; afun=nothing)
+
     Le = zeros(nelem, Q+1, Q+1, N+1, N+1)
 
     for iel = 1:nelem
         for l = 1:Q+1, k = 1:Q+1
-            
+
             dξdx_kl = metrics.dξdx[iel,k,l]
             dξdy_kl = metrics.dξdy[iel,k,l]
             dηdx_kl = metrics.dηdx[iel,k,l]
-            dηdy_kl = metrics.dηdy[iel,k,l]            
+            dηdy_kl = metrics.dηdy[iel,k,l]
+
+            # Non-constant (scalar) diffusivity a(x,y), evaluated at the (k,l)
+            # node's physical coordinates. afun === nothing → a = 1 (the plain
+            # Laplacian, identical to the previous behaviour).
+            acoef = afun === nothing ? one(T) :
+                    T(afun(mesh.x[mesh.connijk[iel,k,l]], mesh.y[mesh.connijk[iel,k,l]]))
+
             for j = 1:N+1, i = 1:N+1
-                
+
                 dΨJKdx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
                 dΨJKdy = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
 
@@ -392,16 +399,16 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, 
 
                     dΨIKdx = dψ[m,k]*ψ[n,l]*dξdx_kl + ψ[m,k]*dψ[n,l]*dηdx_kl
                     dΨIKdy = dψ[m,k]*ψ[n,l]*dξdy_kl + ψ[m,k]*dψ[n,l]*dηdy_kl
-                    
-                    Le[iel,m,n,i,j] += ω[k]*ω[l]*metrics.Je[iel,k,l]*(dΨIKdx*dΨJKdx + dΨIKdy*dΨJKdy)
+
+                    Le[iel,m,n,i,j] += acoef*ω[k]*ω[l]*metrics.Je[iel,k,l]*(dΨIKdx*dΨJKdx + dΨIKdy*dΨJKdy)
                 end
             end
         end
     end
-    
+
     #@info size(L)
     #show(stdout, "text/plain", L)
-    
+
     return Le
 end
 
@@ -1295,12 +1302,16 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             #
             # CPU
             #
+            # Optional non-constant diffusivity a(x,y): supply
+            # inputs[:diffusivity] => (x,y)->a  to assemble -∇·(a∇u). Absent →
+            # a = 1 (plain Laplacian, unchanged behaviour for all problems).
+            afun = get(inputs, :diffusivity, nothing)
             Le = build_laplace_matrix(SD,
                                       basis.ψ, basis.dψ,
                                       ω, mesh.nelem,
                                       mesh,
                                       metrics,
-                                      N, Q, TFloat)
+                                      N, Q, TFloat; afun=afun)
             
             if (inputs[:lsparse])
                 println(" # DSS sparse")
