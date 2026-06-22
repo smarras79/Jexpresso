@@ -120,11 +120,22 @@ integrand by `a(x,y)` at each node so the discrete operator is genuinely
 
 ### 2.5 VTU visualisation
 
-`write_vtk(NSD_2D)` writes (when `inputs[:lEL_nonconstant]` is set and `metrics`
-are passed) the per‑cell fields `ahat_eff` and `ahat_aniso` (Section 1),
-element‑averaged over the nodes. For the physical case, `case1_nonconstant`
-instead writes the nodal scalar field `diffusivity = a(x,y)` (gated on
-`inputs[:diffusivity]`).
+`write_vtk(NSD_2D)` writes the geometry‑induced `â` to the VTU when
+`inputs[:lEL_nonconstant]` is set and `metrics` are supplied. **Three output
+formats** are available via `inputs[:ahat_output]` (default `:cell`):
+
+| `inputs[:ahat_output]` | VTU fields | Location | Description |
+|------------------------|------------|----------|-------------|
+| `:cell`  (default) | `ahat_eff`, `ahat_aniso` | cell data  | invariants, element‑averaged (piecewise‑constant per element) |
+| `:nodal`           | `ahat_eff`, `ahat_aniso` | point data | same invariants, **smoothed nodal** field (`â` averaged over the elements sharing each node, then invariants taken) |
+| `:tensor`          | `ahat_11`, `ahat_12`, `ahat_22` | point data | the full smoothed nodal **tensor components** |
+
+with `ahat_eff = tr(â)/2 = (λmax+λmin)/2 ≥ 1` (`1` ⇔ undistorted) and
+`ahat_aniso = λmax/λmin` (`1` ⇔ isotropic). The smoothing averages the three
+`â` components over the elements incident to each node (count‑weighted).
+
+For the *physical* case, `case1_nonconstant` instead writes the nodal scalar
+field `diffusivity = a(x,y)` (gated on `inputs[:diffusivity]`).
 
 ---
 
@@ -243,6 +254,7 @@ writes the nodal `diffusivity` field to the VTU.
   self‑consistent because `L` is the standard Laplacian.
 - VTU `â` fields and the diffusivity operator are **2‑D** (`NSD_2D`), matching
   the current EL scope.
-- The `â` cell field is element‑averaged (one value per element, expanded to
-  its sub‑cells); a nodal/smoothed variant or full‑tensor (`â11,â12,â22`)
-  output is a small extension if needed.
+- Three `â` VTU formats are provided (`inputs[:ahat_output]` = `:cell` /
+  `:nodal` / `:tensor`, Section 2.5). The nodal smoothing is a count‑weighted
+  average over incident elements; across MPI partitions it is a per‑partition
+  average (a visualisation field, not used in the solve).

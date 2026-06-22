@@ -350,43 +350,82 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
         Float64[]
 
     #
-    # Optional: GEOMETRY-induced reference diffusivity â (EL notes), written as a
-    # per-cell field so the non-constant diffusion dictated by the element shapes
-    # can be visualised. â(ξ) = (|K|/|ref|)·a·J_K⁻¹J_K⁻ᵀ with physical a = 1, so
-    # det(â) = 1 (area-normalised) and the variation is purely anisotropic:
-    #   ahat_eff   = tr(â)/2 = (λmax+λmin)/2 ≥ 1   (1 ⇔ undistorted element)
-    #   ahat_aniso = λmax/λmin                      (1 ⇔ isotropic)
-    # Active only when inputs[:lEL_nonconstant] is true AND metrics are supplied.
+    # Optional: GEOMETRY-induced reference diffusivity â (EL notes), written to
+    # the VTU so the non-constant diffusion dictated by the element shapes can be
+    # visualised. â(ξ) = (|K|/|ref|)·a·J_K⁻¹J_K⁻ᵀ with physical a = 1, so
+    # det(â) = 1 (area-normalised) and the variation is purely anisotropic.
+    #
+    # Active when inputs[:lEL_nonconstant] is true AND metrics are supplied.
+    # Three output formats, selected by inputs[:ahat_output] (default :cell):
+    #   :cell   → per-cell invariants  ahat_eff = tr(â)/2 ≥ 1,  ahat_aniso = λmax/λmin
+    #             (element-averaged; one value per element, piecewise-constant).
+    #   :nodal  → the SAME invariants as a SMOOTHED nodal field (â averaged over the
+    #             elements sharing each node, then ahat_eff / ahat_aniso from it).
+    #   :tensor → the full smoothed nodal tensor components ahat_11, ahat_12, ahat_22.
     #
     write_ahat = get(inputs, :lEL_nonconstant, false) && metrics !== nothing
-    ahat_eff_cell   = Float64[]
-    ahat_aniso_cell = Float64[]
+    ahat_mode  = get(inputs, :ahat_output, :cell)
+
+    ahat_eff_cell   = Float64[];  ahat_aniso_cell = Float64[]   # :cell
+    ahat_eff_node   = Float64[];  ahat_aniso_node = Float64[]   # :nodal
+    ahat11_node     = Float64[];  ahat12_node     = Float64[];  ahat22_node = Float64[]  # :tensor
+
     if write_ahat
-        ncells = isel - 1
-        ahat_eff_cell   = zeros(Float64, ncells)
-        ahat_aniso_cell = zeros(Float64, ncells)
-        ic = 1
-        @inbounds for iel = 1:nelem
-            # element-averaged invariants of â over the (i,j) nodes
-            seff = 0.0; saniso = 0.0
-            for i = 1:ngl, j = 1:ngl
+        if ahat_mode == :cell
+            # ── per-cell invariants (element-averaged) ────────────────────────
+            ncells = isel - 1
+            ahat_eff_cell   = zeros(Float64, ncells)
+            ahat_aniso_cell = zeros(Float64, ncells)
+            ic = 1
+            @inbounds for iel = 1:nelem
+                seff = 0.0; saniso = 0.0
+                for i = 1:ngl, j = 1:ngl
+                    ix = metrics.dξdx[iel,i,j]; iy = metrics.dξdy[iel,i,j]
+                    nx = metrics.dηdx[iel,i,j]; ny = metrics.dηdy[iel,i,j]
+                    Je = metrics.Je[iel,i,j]
+                    a11 = Je*(ix*ix + iy*iy); a12 = Je*(ix*nx + iy*ny); a22 = Je*(nx*nx + ny*ny)
+                    tr   = a11 + a22
+                    detâ = a11*a22 - a12*a12
+                    disc = sqrt(max(tr*tr - 4*detâ, 0.0))
+                    λmax = 0.5*(tr + disc); λmin = 0.5*(tr - disc)
+                    seff   += 0.5*tr
+                    saniso += (λmin > 0 ? λmax/λmin : 0.0)
+                end
+                eff = seff/(ngl*ngl); aniso = saniso/(ngl*ngl)
+                for _ = 1:(ngl-1)*(ngl-1)
+                    ahat_eff_cell[ic] = eff; ahat_aniso_cell[ic] = aniso; ic += 1
+                end
+            end
+        else
+            # ── smoothed NODAL â: average the tensor over elements at each node ─
+            s11 = zeros(Float64, npoin); s12 = zeros(Float64, npoin)
+            s22 = zeros(Float64, npoin); cnt = zeros(Int, npoin)
+            @inbounds for iel = 1:nelem, i = 1:ngl, j = 1:ngl
+                ip = mesh.connijk[iel,i,j]
                 ix = metrics.dξdx[iel,i,j]; iy = metrics.dξdy[iel,i,j]
                 nx = metrics.dηdx[iel,i,j]; ny = metrics.dηdy[iel,i,j]
                 Je = metrics.Je[iel,i,j]
-                a11 = Je*(ix*ix + iy*iy); a12 = Je*(ix*nx + iy*ny); a22 = Je*(nx*nx + ny*ny)
-                tr   = a11 + a22
-                detâ = a11*a22 - a12*a12
-                disc = sqrt(max(tr*tr - 4*detâ, 0.0))
-                λmax = 0.5*(tr + disc); λmin = 0.5*(tr - disc)
-                seff   += 0.5*tr
-                saniso += (λmin > 0 ? λmax/λmin : 0.0)
+                s11[ip] += Je*(ix*ix + iy*iy)
+                s12[ip] += Je*(ix*nx + iy*ny)
+                s22[ip] += Je*(nx*nx + ny*ny)
+                cnt[ip] += 1
             end
-            eff   = seff   / (ngl*ngl)
-            aniso = saniso / (ngl*ngl)
-            for _ = 1:(ngl-1)*(ngl-1)        # one value per sub-cell of this element
-                ahat_eff_cell[ic]   = eff
-                ahat_aniso_cell[ic] = aniso
-                ic += 1
+            @inbounds for ip = 1:npoin
+                c = max(cnt[ip], 1); s11[ip] /= c; s12[ip] /= c; s22[ip] /= c
+            end
+            if ahat_mode == :tensor
+                ahat11_node = s11; ahat12_node = s12; ahat22_node = s22
+            else  # :nodal invariants from the smoothed tensor
+                ahat_eff_node   = zeros(Float64, npoin)
+                ahat_aniso_node = zeros(Float64, npoin)
+                @inbounds for ip = 1:npoin
+                    tr   = s11[ip] + s22[ip]
+                    detâ = s11[ip]*s22[ip] - s12[ip]*s12[ip]
+                    disc = sqrt(max(tr*tr - 4*detâ, 0.0))
+                    λmax = 0.5*(tr + disc); λmin = 0.5*(tr - disc)
+                    ahat_eff_node[ip]   = 0.5*tr
+                    ahat_aniso_node[ip] = (λmin > 0 ? λmax/λmin : 0.0)
+                end
             end
         end
     end
@@ -415,8 +454,17 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
         end
 
         if write_ahat
-            vtkf["ahat_eff",   VTKCellData()] = ahat_eff_cell
-            vtkf["ahat_aniso", VTKCellData()] = ahat_aniso_cell
+            if ahat_mode == :cell
+                vtkf["ahat_eff",   VTKCellData()] = ahat_eff_cell
+                vtkf["ahat_aniso", VTKCellData()] = ahat_aniso_cell
+            elseif ahat_mode == :tensor
+                vtkf["ahat_11", VTKPointData()] = @view(ahat11_node[1:npoin])
+                vtkf["ahat_12", VTKPointData()] = @view(ahat12_node[1:npoin])
+                vtkf["ahat_22", VTKPointData()] = @view(ahat22_node[1:npoin])
+            else # :nodal
+                vtkf["ahat_eff",   VTKPointData()] = @view(ahat_eff_node[1:npoin])
+                vtkf["ahat_aniso", VTKPointData()] = @view(ahat_aniso_node[1:npoin])
+            end
         end
 
         vtkf
