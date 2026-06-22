@@ -16,13 +16,14 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     #---------------------------------------------------------------------------------
 
 
-    if (inputs[:backend] == CPU())        
+    if (inputs[:backend] == CPU())
         for ip =1:mesh.npoin
             x=mesh.x[ip]
-            y=mesh.y[ip]           
-            q.qn[ip,1] = 0.0 #sin(x/2)*exp(-x/2)*cos(y)
-
-            q.qe[ip,1] = 0.0 #sin(x/2)*exp(-x/2)*cos(y)
+            y=mesh.y[ip]
+            # Zero initial guess; exact field qe = manufactured solution u_ex
+            # (used for the error/convergence check); 0 in the non-MMS modes.
+            q.qn[ip,1] = 0.0
+            q.qe[ip,1] = el_source_mode() == :mms ? manufactured_u(x, y) : 0.0
         end
     else
         k = initialize_gpu!(inputs[:backend])
@@ -43,10 +44,10 @@ end
     ip = @index(Global, Linear)
     xip = x[ip]
     yip = y[ip]
-    qn[ip,1] = sin(xip/2)*exp(-xip/2)*cos(yip)
+    # Zero initial guess; exact field = manufactured solution u_ex.
+    qn[ip,1] = T(0.0)
+    qe[ip,1] = T(MMS_A * sin(MMS_KX * xip) * cos(MMS_KY * yip))
 
-    qe[ip,1] = sin(xip/2)*exp(-xip/2)*cos(yip)
-        
 end
 
 function user_get_adapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, q, qe, connijk, nelem, ngl)

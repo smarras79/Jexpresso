@@ -26,17 +26,27 @@
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
 
+    if el_source_mode() == :mms
+        # Manufactured solution: impose g = u_exact on the WHOLE boundary,
+        # regardless of edge tag (works for any geometry). Consistent with the
+        # source f returned by user_source! and the exact field qe set in
+        # initialize.jl.
+        qbdy[1] = manufactured_u(coords[1], coords[2])
+        return
+    end
+
+    # ── Default (thermal) Dirichlet data, used when not in MMS mode ──────────
     L = 5.0
     #qbdy[1] = 1.0
-    
+
     if (tag == "bottom")
         qbdy[1] = 105.0
-    elseif (tag == "right") 
+    elseif (tag == "right")
         qbdy[1] = 105.0
     elseif (tag == "top") #top
         qbdy[1] = 105 + 30.0*sin(π*coords[1]/L)
     elseif (tag == "left") #left
         qbdy[1] = 105.0
     end
-    
+
 end

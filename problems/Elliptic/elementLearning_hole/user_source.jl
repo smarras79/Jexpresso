@@ -1,3 +1,52 @@
+# ============================================================================
+#  Manufactured solution for verifying the element-learning Laplace solver.
+#
+#  Governing equation (constant diffusivity a = 1, the "standard Laplacian"
+#  the element-learning network is trained on):
+#
+#        -∇·(∇u) = -Δu = f ,        u = g  on ∂Ω.
+#
+#  Method of Manufactured Solutions (MMS): pick a smooth exact solution
+#  u_ex(x,y), insert it into the PDE to obtain the (non-constant) source
+#  f = -Δu_ex, and impose the Dirichlet data g = u_ex|_{∂Ω}. The discrete
+#  solution must then converge to u_ex. See e.g.
+#    • P. J. Roache, "Code Verification by the Method of Manufactured
+#      Solutions", J. Fluids Eng. 124 (2002) 4–10.
+#    • K. Salari & P. Knupp, "Code Verification by the Method of Manufactured
+#      Solutions", SAND2000-1444, Sandia (2000).
+#
+#  Chosen exact solution (a Laplacian eigenfunction — smooth, with a genuinely
+#  NON-CONSTANT right-hand side and NON-ZERO, non-trivial boundary data on
+#  every edge):
+#
+#        u_ex(x,y) = A · sin(kx·x) · cos(ky·y)
+#        f(x,y)    = -Δu_ex = A·(kx² + ky²)·sin(kx·x)·cos(ky·y) = (kx²+ky²)·u_ex
+#
+#  These closed forms are defined once here and reused by user_bc.jl (for g)
+#  and initialize.jl (for the exact field qe). user_source.jl is `include`d
+#  before those files, so the helpers below are in scope there.
+# ============================================================================
+
+# ── Manufactured-solution parameters (smooth, well resolved at nop = 6) ──────
+const MMS_A  = 1.0
+const MMS_KX = 1.0
+const MMS_KY = 1.0
+
+"Exact manufactured solution  u_ex(x,y) = A sin(kx x) cos(ky y)."
+manufactured_u(x, y) = MMS_A * sin(MMS_KX * x) * cos(MMS_KY * y)
+
+"Manufactured source  f = -Δu_ex = A (kx²+ky²) sin(kx x) cos(ky y)."
+manufactured_f(x, y) = MMS_A * (MMS_KX^2 + MMS_KY^2) * sin(MMS_KX * x) * cos(MMS_KY * y)
+
+# ── Source / test mode selector ─────────────────────────────────────────────
+#   :mms   → manufactured solution above   (non-constant f, exact g, exact qe)
+#   :const → constant source  f = FCONST
+#   :zero  → homogeneous problem  f = 0     (original element-learning case;
+#            reproduces the result obtained before the source term was added)
+el_source_mode() = :mms
+const FCONST = 1.0
+
+
 function user_source!(S,
                       q,
                       qe,
@@ -8,51 +57,24 @@ function user_source!(S,
                       xmax=1.0, xmin=0.0,
                       ymax=1.0, ymin=0.0)
 
-
     PhysConst = PhysicalConst{Float64}()
 
     #
-    # S(q(x)) — right-hand-side / source term f of the governing equation
+    # S(q(x)) — right-hand-side / source term f of  -Δu = f.
     #
-    #            -∇·(a∇u) = f ,   u = g on ∂Ω.
-    #
-    # ────────────────────────────────────────────────────────────────────────
-    #  CONSTANT source knob
-    # ────────────────────────────────────────────────────────────────────────
-    #   fconst = 0.0  ->  homogeneous problem (f = 0). Reproduces the original
-    #                     element-learning result and is the case used to verify
-    #                     that adding the non-zero source term f did NOT break it.
-    #   fconst ≠ 0.0  ->  constant, non-zero right-hand side  f = fconst  (e.g.
-    #                     set fconst = 1.0 to exercise the new source-term path).
-    # ────────────────────────────────────────────────────────────────────────
-    fconst = 0.0
-
-    #L     = sqrt((xmax-xmin)^2 + (ymax-ymin)^2)
-    L     = abs(xmax-xmin)
-
-    alpha = 0.0 #1.0
-    beta  = 0.0 #1.0
-    gamma = 0.0 #1.0
-
-    # Optional manufactured (spatially-varying) source. It is fully gated by
-    # `beta`, so with the defaults below f reduces exactly to the constant
-    # `fconst` (and to 0 when fconst = 0).
-    f   = fconst - beta*( cos(x/L) * exp(-x/L)*cos(y)/L + sin(x/L)*exp(-x/L)*cos(y) )
-
-    u_e = gamma*sin(x/L)*exp(-x/L)*cos(y)
-
-    return f - alpha*u_e
+    mode = el_source_mode()
+    if mode == :mms
+        return manufactured_f(x, y)          # non-constant manufactured source
+    elseif mode == :const
+        return FCONST                        # constant source
+    else
+        return 0.0                           # homogeneous (f = 0)
+    end
 
 end
 
 function user_source_gpu(q, qe, x, y)
     T = eltype(q)
-    L = 2
-    alpha = 10
-    # Constant source knob (mirror of the CPU path above).
-    fconst = T(0.0)
-    f   = fconst #T(- (cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y))
-    u_e = T(0.0) #T(sin(x/L)*exp(-x/L)*cos(y))
-
-    return T(f - alpha*u_e)
+    # Mirror of the CPU manufactured source (constant a = 1).
+    return T(MMS_A * (MMS_KX^2 + MMS_KY^2) * sin(MMS_KX * x) * cos(MMS_KY * y))
 end

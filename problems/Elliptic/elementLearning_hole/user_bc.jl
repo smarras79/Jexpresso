@@ -26,9 +26,17 @@
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
 
+    if el_source_mode() == :mms
+        # Manufactured solution: impose g = u_exact on the WHOLE boundary
+        # (every tag, including the hole/circle boundary). MMS is valid on
+        # arbitrary geometry. Consistent with user_source! and initialize.jl.
+        qbdy[1] = manufactured_u(coords[1], coords[2])
+        return
+    end
+
     L = 2.0
     #qbdy[1] = 1.0
-    
+
     if (tag == "bottom")
         qbdy[1] = 105.0
     elseif (tag == "right") 
