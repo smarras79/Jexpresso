@@ -339,6 +339,17 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
 
 
     #
+    # Optional: non-constant diffusivity field a(x,y), written to the VTU so the
+    # variable coefficient can be visualised alongside the solution. Active only
+    # when inputs[:diffusivity] is a callable (x,y)->a (e.g. case1_nonconstant);
+    # other cases are unaffected.
+    #
+    write_diffusivity = haskey(inputs, :diffusivity) && inputs[:diffusivity] !== nothing
+    diffvals = write_diffusivity ?
+        Float64[inputs[:diffusivity](mesh.x[ip], mesh.y[ip]) for ip = 1:npoin] :
+        Float64[]
+
+    #
     # Write solution to vtk:
     #
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
@@ -351,12 +362,16 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        
+
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+
+        if write_diffusivity
+            vtkf["diffusivity", VTKPointData()] = @view(diffvals[1:npoin])
+        end
+
         vtkf
     end
     
