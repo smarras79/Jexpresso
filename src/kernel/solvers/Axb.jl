@@ -82,7 +82,7 @@ function standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     print_solution_L2_error(sol, params.qp.qe, sem.matrix.M, sem.mesh.npoin;
                             label="direct solve")
 
-    write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
+    write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe, metrics=params.metrics)
 
     return nothing
 end

@@ -1224,7 +1224,7 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         print_solution_L2_error(usol, params.qp.qe, sem.matrix.M, npoin;
                                 label="element-learning inference")
 
-        write_output(args...; nvar=neqs, qexact=params.qp.qe)
+        write_output(args...; nvar=neqs, qexact=params.qp.qe, metrics=params.metrics)
         #-----------------------------------------------------
         # END Element-learning infrastructure
         #-----------------------------------------------------
