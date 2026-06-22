@@ -1,0 +1,350 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{tabularx,booktabs,array}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage{amsmath,amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[hyphens]{url}
+\usepackage[htt]{hyphenat}
+\usepackage{hyperref}
+
+% Safety net: render the few Greek/accented glyphs that appear inside code
+% identifiers (e.g. dξdx) when compiling with pdflatex + utf8.
+\usepackage{newunicodechar}
+\newunicodechar{ξ}{\ensuremath{\xi}}
+\newunicodechar{η}{\ensuremath{\eta}}
+\newunicodechar{â}{\ensuremath{\hat{a}}}
+\newunicodechar{λ}{\ensuremath{\lambda}}
+
+% Allow long \texttt tokens (with underscores, dots, !) to break across lines
+\sloppy
+\emergencystretch=3em
+\hyphenpenalty=1000
+
+% \code{...} : like \texttt but breakable after every "\_" so that long
+% snake_case identifiers are wrapped instead of running into the margin.
+\makeatletter
+\newcommand{\code}[1]{{\def\_{\char`\_\discretionary{}{}{}}\texttt{#1}}}
+\makeatother
+
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    language=Julia,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{teal},
+    showstringspaces=false
+}
+
+\newcommand{\ahat}{\hat{a}}
+\newcommand{\Jk}{J_K}
+
+\title{Mesh-induced reference diffusivity $\ahat$ for Element Learning\\
+\large Theory, implementation, and verification}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+This note documents the \textbf{non-constant diffusivity} capability added to
+the Element Learning (EL) solver: what the mesh-induced reference diffusivity
+$\ahat$ is, how it is generated and consumed in the code, and how each piece was
+verified.
+
+It accompanies the code in
+\begin{itemize}
+  \item \code{src/kernel/EL_nonconstant_diffusivity.jl} --- the $\ahat$ machinery,
+  \item \code{src/kernel/elementLearningStructs.jl} --- sampling/inference wiring,
+  \item \code{src/io/write_output.jl} --- VTU visualisation,
+  \item \code{problems/Elliptic/elementLearning_hole_nonconstant/} --- the geometry test,
+  \item \code{problems/Elliptic/case1_nonconstant/} --- the physical-$a(x,y)$ reference test,
+  \item \code{tools/EL_training/train_rfrc.py} --- the matching RF-RC trainer.
+\end{itemize}
+
+\section{What $\ahat$ is}
+\label{sec:what}
+
+On an element $K$ the local stiffness entry of the variable-coefficient operator
+$-\nabla\!\cdot(a\,\nabla u)$ is pulled back to the reference element
+$[-1,1]^d$:
+\begin{align}
+(A_{v^o,v})_{ij}
+  &= \int_K a(x)\,\nabla_x \phi_i \cdot \nabla_x \phi_j \nonumber\\
+  &= \int_{[-1,1]^d} (\ahat\,\nabla_\xi \phi_i)\cdot(\nabla_\xi \phi_j),
+\end{align}
+with the \textbf{reference diffusivity}
+\begin{equation}
+\ahat(\xi) \;=\; \frac{|K|}{|[-1,1]^d|}\; a\; \Jk^{-1}\,\Jk^{-\mathsf{T}}
+\qquad\text{(a $2\times2$ SPD tensor in 2-D)},
+\label{eq:ahat}
+\end{equation}
+where $\Jk = \partial x/\partial \xi$ is the element Jacobian. $\ahat$ fuses two
+ingredients:
+\begin{enumerate}
+  \item the \textbf{physical} scalar diffusivity $a$ of the PDE, and
+  \item the \textbf{geometry} of the element through $\Jk$.
+\end{enumerate}
+The EL surrogate learns the map
+$\ahat \mapsto T^{ie} = (A_{v^o,v^o})^{-1} A_{v^o,v^b}$, i.e.\ the local
+interior-elimination operator, replacing an explicit per-element matrix inverse.
+
+\subsection{Two ways $\ahat$ becomes non-constant}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}lccY@{}}
+\toprule
+Source of non-constancy & Physical $a$ & Geometry $\Jk$ & Test case \\
+\midrule
+\textbf{Physical} ($a(x,y)$) & varies & uniform (structured mesh) & \code{case1_nonconstant} \\
+\textbf{Mesh-induced}        & $a=1$  & varies (unstructured/curved mesh) & \code{elementLearning_hole_nonconstant} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+This document focuses on the \textbf{mesh-induced} case, which is the one the EL
+notes prescribe (Option~1: \emph{``use an unstructured mesh, which supplies a set
+of random element shapes''}). With constant physical $a=1$, the only non-trivial
+part of $\ahat$ is the Jacobian --- exactly the \emph{``simplest case''} of the
+notes.
+
+\subsection{A useful identity (area normalisation)}
+\label{sec:detone}
+
+For $a=1$,
+\begin{equation}
+\det(\ahat)
+  = \Big(\tfrac{|K|}{|\mathrm{ref}|}\Big)^{2}\det(\Jk^{-1}\Jk^{-\mathsf{T}})
+  = \det(\Jk)^{2}\,\big(1/\det(\Jk)\big)^{2}
+  = 1 .
+\end{equation}
+So \textbf{$\det(\ahat)=1$ identically}: the mesh-induced $\ahat$ is
+\emph{area-normalised} and its variation is \textbf{purely anisotropic}. Two
+scalar invariants then fully describe it (because
+$\lambda_{\max}\lambda_{\min}=\det=1 \Rightarrow \lambda_{\min}=1/\lambda_{\max}$):
+\begin{align}
+\texttt{ahat\_eff}   &= \tfrac{1}{2}\,\mathrm{tr}(\ahat)
+   = \tfrac{1}{2}(\lambda_{\max}+\lambda_{\min}) \ge 1
+   &&(=1 \Leftrightarrow \text{undistorted element}),\\
+\texttt{ahat\_aniso} &= \lambda_{\max}/\lambda_{\min}
+   &&(=1 \Leftrightarrow \text{isotropic}).
+\end{align}
+These are among the fields written to the VTU (Section~\ref{sec:vtu}).
+
+\section{Implementation}
+
+\subsection{Feature representation}
+The NN input feature is the per-node $\ahat$ tensor, stored as its three unique
+SPD entries $(\ahat_{11},\ahat_{12},\ahat_{22})$ at each of the $(k+1)^2$
+reference nodes:
+\begin{align*}
+\text{feature length} &= 3\,(k+1)^2 \quad\text{(was $(k+1)^2$ for the constant-scalar case)},\\
+\text{layout (conn node $m$)} &= [\,\ahat_{11}^{(m)},\ \ahat_{12}^{(m)},\ \ahat_{22}^{(m)}\,].
+\end{align*}
+The NN output is the flattened $T^{ie}$ of size $n_{vo}\cdot n_{vb}$
+($n_{vo}=(k-1)^2$ interior nodes, $n_{vb}=(k+1)^2-(k-1)^2$ boundary nodes),
+unchanged.
+
+\subsection{Sampling (training-data generation) --- Option 1}
+\code{el_nonconstant_sampling!} synthesises random element shapes (random affine
+Jacobians: rotation $\times$ anisotropic stretch $\times$ shear) and, per sample,
+\begin{enumerate}
+  \item forms $\ahat = a\,\det(J)\,(J^{\mathsf{T}}J)^{-1}$ (constant per element,
+        or $\xi$-dependent for curved elements via
+        \code{synthesize_random_ahat_field}),
+  \item assembles the local reference stiffness
+        (\code{el_assemble_local_stiffness} via the precomputed components
+        \code{K11,K12,K22}, or \code{el_assemble_local_stiffness_field} for the
+        $\xi$-dependent case),
+  \item condenses $T^{ie} = (A_{v^o v^o})^{-1} A_{v^o v^b}$,
+  \item writes $(\text{feature},\ \mathrm{vec}(T^{ie}))$ in \textbf{\code{mesh.conn} node order}.
+\end{enumerate}
+
+\subsection{Inference}
+\code{el_avisc_nonconstant!} builds the per-element feature from the \textbf{real
+mesh metrics} $\ahat = J_e\, a\, \Jk^{-1}\Jk^{-\mathsf{T}}$ (with
+$\Jk^{-1} = [\,d\xi dx\ \ d\xi dy;\ d\eta dx\ \ d\eta dy\,]$,
+$a=\code{el_diffusivity}(x,y)$, default $1$), in the same \code{mesh.conn} order.
+Because sampling and inference share that single ordering,
+\code{elementLearning_infer!} is reused \textbf{unchanged} --- only the feature
+differs.
+
+Gated by \code{inputs[:lEL_nonconstant]} (default \code{false}), so the existing
+constant-amplitude pipeline and its trained model are untouched.
+
+\subsection{Operator for the physical reference test}
+For \code{case1_nonconstant}, \code{build_laplace_matrix(NSD_2D; afun)} multiplies
+the integrand by $a(x,y)$ at each node so the discrete operator is genuinely
+$-\nabla\!\cdot(a\nabla u)$; \code{afun === nothing} reproduces the plain
+Laplacian exactly.
+
+\subsection{VTU visualisation}
+\label{sec:vtu}
+\code{write_vtk(NSD_2D)} writes the geometry-induced $\ahat$ to the VTU when
+\code{inputs[:lEL_nonconstant]} is set and \code{metrics} are supplied.
+\textbf{Three output formats} are available via \code{inputs[:ahat_output]}
+(default \code{:cell}):
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}lllY@{}}
+\toprule
+\code{inputs[:ahat_output]} & VTU fields & Location & Description \\
+\midrule
+\code{:cell} (default) & \code{ahat_eff}, \code{ahat_aniso} & cell data &
+  invariants, element-averaged (piecewise-constant per element) \\
+\code{:nodal} & \code{ahat_eff}, \code{ahat_aniso} & point data &
+  same invariants, \textbf{smoothed nodal} field ($\ahat$ averaged over the
+  elements sharing each node, then invariants taken) \\
+\code{:tensor} & \code{ahat_11}, \code{ahat_12}, \code{ahat_22} & point data &
+  the full smoothed nodal \textbf{tensor components} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+with $\texttt{ahat\_eff}=\tfrac{1}{2}\mathrm{tr}(\ahat)=
+\tfrac{1}{2}(\lambda_{\max}+\lambda_{\min})\ge1$ ($1\Leftrightarrow$
+undistorted) and $\texttt{ahat\_aniso}=\lambda_{\max}/\lambda_{\min}$
+($1\Leftrightarrow$ isotropic). The smoothing averages the three $\ahat$
+components over the elements incident to each node (count-weighted).
+
+For the \emph{physical} case, \code{case1_nonconstant} instead writes the nodal
+scalar field $\code{diffusivity}=a(x,y)$ (gated on \code{inputs[:diffusivity]}).
+
+\section{Verification}
+\label{sec:verify}
+
+The full JEXPRESSO solve (GMSH mesh $+$ trained ONNX model) was \textbf{not} run
+in this environment, so verification targets the mathematics and the data flow
+with standalone Julia checks. All tolerances below are machine precision
+($\sim 10^{-16}$--$10^{-10}$) unless noted; all checks \textbf{passed}.
+
+\subsection{Manufactured solution (physical reference, \code{case1_nonconstant})}
+For $a(x,y)=1+0.2x$, $u_{\mathrm{ex}}=\sin(x)\cos(y)$, the analytic source
+\begin{equation*}
+f = -A_1 k_x \cos(k_x x)\cos(k_y y)
+    + (A_0 + A_1 x)(k_x^2+k_y^2)\sin(k_x x)\cos(k_y y)
+\end{equation*}
+was checked against a central finite-difference evaluation of
+$-\nabla\!\cdot(a\nabla u_{\mathrm{ex}})$:
+\begin{equation*}
+\max\big|\,{-}\nabla\!\cdot(a\nabla u_{\mathrm{ex}})_{\mathrm{FD}} - f\,\big|
+   \approx 2.6\times10^{-6}\quad(\text{FD truncation; PASS}),
+\end{equation*}
+with $a\in[1.2,2.2]>0$ on the domain.
+
+\subsection{Diffusivity-weighted operator (\code{build_laplace_matrix})}
+Replicating the assembly on a reference element:
+\begin{itemize}
+  \item \code{afun === nothing} reproduces the pure reference Laplacian (matches
+        the EL module's $\code{K11}+\code{K22}$) $\Rightarrow$ \textbf{existing
+        problems unaffected};
+  \item constant $a=c$ scales the operator by exactly $c$;
+  \item non-constant $a(x,y)$ keeps the element matrix \textbf{symmetric, PSD,
+        with the constant nullspace}.
+\end{itemize}
+
+\subsection{Local $\ahat$ machinery (\code{EL_nonconstant_diffusivity.jl})}
+\begin{itemize}
+  \item the reference Laplacian ($\ahat=I$) is symmetric, PSD, constant nullspace;
+  \item the precomputed $K$-component assembly equals the full $O(N^6)$
+        quadrature assembly for constant $\ahat$;
+  \item synthesised $\ahat$ is \textbf{SPD on every draw} (2000 samples);
+  \item $T^{ie}$ reproduces the local Dirichlet interior recovery
+        $u_{v^o} = -T^{ie} u_{v^b}$ vs the direct block solve;
+  \item the metrics-based $\ahat$ (inference) equals the synthesised $\ahat$
+        (sampling) for the \textbf{same Jacobian} --- i.e.\ \textbf{sampling
+        $\leftrightarrow$ inference consistency};
+  \item feature/output dimensions are $3(k+1)^2$ and $n_{vo}\cdot n_{vb}$
+        (e.g.\ $nop=6 \to 147$ and $25\times24$).
+\end{itemize}
+
+\subsection{Inference-wiring node ordering}
+\begin{itemize}
+  \item the \code{mesh.conn} $\leftrightarrow$ tensor $(i,j)$ map round-trips on
+        the element layout;
+  \item the conn-ordered $T^{ie}$ reproduces the direct interior recovery,
+        confirming \code{elementLearning_infer!} can be reused for the
+        non-constant feature;
+  \item $\xi$-dependent (curved-element) $\ahat$ is SPD and genuinely
+        node-varying, and its assembled stiffness is symmetric/PSD with the
+        constant nullspace.
+\end{itemize}
+
+\subsection{VTU $\ahat$ formats (\code{write_vtk})}
+\begin{itemize}
+  \item \textbf{undistorted} element $J=s\,I$: $\texttt{ahat\_eff}=1$,
+        $\texttt{ahat\_aniso}=1$, $\det(\ahat)=1$ at \textbf{all scales} $s$
+        (scale-invariant, as expected);
+  \item \textbf{arbitrary distorted} $J$ (rotation/stretch/shear sweep):
+        $\det(\ahat)=1$ always, $\ahat$ SPD, $\texttt{ahat\_eff}\ge1$,
+        $\texttt{ahat\_aniso}\ge1$;
+  \item \code{:cell} gives distinct per-element values; the \textbf{smoothed
+        nodal} tensor (\code{:tensor}) at a shared edge equals the mean of the
+        adjacent elements' $\ahat$; \code{:nodal} invariants from the smoothed
+        tensor satisfy $\texttt{ahat\_eff}\ge1$;
+  \item the VTU invariants are computed from the \textbf{same} $\ahat$ entries as
+        \code{el_ahat_nodes_from_metrics}, so \emph{what you see equals what the
+        surrogate consumes}.
+\end{itemize}
+
+\subsection{Trainer}
+\code{tools/EL_training/train_rfrc.py} auto-sizes \code{N_in} from the CSV (so
+$3(k+1)^2$ is picked up automatically) and standardises the heterogeneous
+$\ahat$ feature, baking the standardisation into the exported ONNX so the Julia
+side keeps feeding the \textbf{raw} $\ahat$ feature. The
+standardise\,$\to$\,bake-in round-trip ($\code{export(raw)} ==
+\code{train(standardised)}$) was verified.
+
+\section{How to run}
+
+\subsection{Geometry-induced $\ahat$ test (the subject of this note)}
+\begin{lstlisting}
+julia --project=.
+julia> push!(empty!(ARGS), "Elliptic", "elementLearning_hole_nonconstant");
+julia> include("./src/Jexpresso.jl")
+\end{lstlisting}
+\begin{itemize}
+  \item \textbf{Verify the physical problem and see $\ahat$ now} (no model
+        needed): comment \code{:lelementLearning} in \code{user_inputs.jl}. The
+        direct solver solves $-\Delta u = f$ on the hole, prints the MMS
+        $\lVert e\rVert_{L^2}$, and writes \code{ahat_eff}/\code{ahat_aniso} (or
+        the tensor components, per \code{inputs[:ahat_output]}) to
+        \code{output-nonconstant/iter_1.pvtu}. The anisotropy concentrates around
+        the circular hole, where elements are most distorted.
+  \item \textbf{EL surrogate inference}: keep \code{:lelementLearning => true}
+        with a model trained on the $3(k+1)^2$ $\ahat$ feature (sample with
+        \code{:lEL_Sample}, train with \code{tools/EL_training/train_rfrc.py}).
+\end{itemize}
+
+\subsection{Physical $a(x,y)$ reference test}
+\begin{lstlisting}
+julia> push!(empty!(ARGS), "Elliptic", "case1_nonconstant");
+julia> include("./src/Jexpresso.jl")
+\end{lstlisting}
+Direct solve of $-\nabla\!\cdot(a\nabla u)=f$ with $a=1+0.2x$; prints the MMS
+$\lVert e\rVert_{L^2}$ and writes the nodal \code{diffusivity} field to the VTU.
+
+\section{Known limitations / follow-ups}
+\begin{itemize}
+  \item The EL \textbf{inference} path needs a model retrained on the
+        $3(k+1)^2$ $\ahat$ feature; running with the old $(k+1)^2$ model $+$
+        \code{:lEL_nonconstant} fails on a dimension mismatch (expected).
+  \item For a \emph{physical} non-constant $a(x,y)$ solved \textbf{through} the
+        EL surrogate, the global skeleton matrix $L$ should also be assembled
+        with that $a$ (use \code{inputs[:diffusivity]}); the mesh-induced
+        ($a=1$) case is already self-consistent because $L$ is the standard
+        Laplacian.
+  \item VTU $\ahat$ fields and the diffusivity operator are \textbf{2-D}
+        (\code{NSD_2D}), matching the current EL scope.
+  \item Three $\ahat$ VTU formats are provided (\code{inputs[:ahat_output]} =
+        \code{:cell} / \code{:nodal} / \code{:tensor}, Section~\ref{sec:vtu}).
+        The nodal smoothing is a count-weighted average over incident elements;
+        across MPI partitions it is a per-partition average (a visualisation
+        field, not used in the solve).
+\end{itemize}
+
+\end{document}
