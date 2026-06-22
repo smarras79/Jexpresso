@@ -302,7 +302,7 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
     return EL_WorkBuffers(
         zeros(Int, elnbdypoints),                                   # conn_∂O_idx
         zeros(Int, elnbdypoints),                                   # conn_∂τ_idx
-        spzeros(T, mesh.length∂O, mesh.length∂τ),                  # ΔB
+        spzeros(T, mesh.length∂O, mesh.length∂τ),                   # ΔB
         Matrix{T}(undef, nelintpoints, nelintpoints),               # invAvovo_buf
         Matrix{T}(undef, nelintpoints, elnbdypoints),               # BC_local
         Vector{Int}(undef, mesh.length∂O),                          # ∂O_in_∂τ
@@ -835,4 +835,229 @@ function flush_MLtensor!(buffer::Vector{Vector{Float64}}, total_cols_written, fn
     end
     empty!(buffer)
     return total_cols_written + ncols
+end
+
+#---------------------------------------------------------------------------------------
+# Element learning (standalone Lx = RHS path).
+#
+# Consolidates the full element-learning workflow — allocation, the sampling
+# branch (writes input/output tensors) and the inference branch (calls the
+# trained NN and writes the solution) — that used to live inline inside the
+# `if inputs[:lelementLearning]` block of driver(). Called from there.
+#---------------------------------------------------------------------------------------
+function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)
+
+    if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ......."))) end
+
+    ngl            = sem.mesh.ngl
+    ngr            = sem.mesh.ngr
+    npoin          = sem.mesh.npoin
+    nelem          = sem.mesh.nelem
+    nelem_semi_inf = sem.mesh.nelem_semi_inf
+    nelintpoints   = (ngl - 2)^2
+    nelpoints      = ngl^2
+    elnbdypoints   = nelpoints - nelintpoints
+    length∂O       = sem.mesh.length∂O
+    length∂τ       = sem.mesh.length∂τ
+    lengthΓ        = sem.mesh.lengthΓ
+    
+    RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(npoin))
+    Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(npoin))
+    
+    EL = @time allocate_elemLearning(nelem, ngl,
+                                     length∂O,
+                                     length∂τ,
+                                     lengthΓ,
+                                     TFloat, inputs[:backend];
+                                     Nsamp=inputs[:Nsamp],
+                                     lEL_Sample=inputs[:lEL_Sample])
+
+    if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ....... DONE"))) end
+
+    BOΓg        = zeros(length∂O)
+    gΓ          = zeros(lengthΓ)
+    lvtk_sample = false
+
+    if EL.lEL_Sample
+        #-----------------------------------------------------
+        # 1. Sampling
+        #-----------------------------------------------------
+        bufferin  = Vector{Vector{Float64}}()
+        bufferout = Vector{Vector{Float64}}()
+        total_cols_writtenin  = 0
+        total_cols_writtenout = 0
+
+        if isfile("input_tensor.csv");  rm("input_tensor.csv");  end
+        if isfile("output_tensor.csv"); rm("output_tensor.csv"); end
+
+        # ── Allocate ONCE outside the loop ────────────────────────────────────────
+        A       = sem.matrix.L
+        A_∂τ∂τ  = A[sem.mesh.∂τ, sem.mesh.∂τ]
+        avisc   = zeros(TFloat, 1, ngl^2)          # shape fixed, values change each iter
+        nfeatures = size(avisc, 2)
+
+        wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
+                              nelintpoints, elnbdypoints,
+                              inputs[:NNfile])  # load_inference called ONCE here
+
+        Nsamples = inputs[:Nsamp]
+        for isamp = 1:Nsamples
+            println(" # --- sample = $isamp")
+
+            # avisc changes each sample — update values in-place, no reallocation
+            ranvisc      = 0.5 + rand()
+            avisc[1, :] .= ranvisc
+
+            for ip = 1:npoin
+                user_source!(RHS[ip], params.qp.qn[ip], params.qp.qe[ip],
+                             npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
+                             neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                             xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
+                             ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
+            end
+            RHS = sem.matrix.M .* RHS
+
+            apply_boundary_conditions_lin_solve!(sem.matrix.L,
+                                                 0.0, params.qp.qe,
+                                                 params.mesh.coords,
+                                                 params.metrics.nx,
+                                                 params.metrics.ny,
+                                                 params.metrics.nz,
+                                                 npoin,
+                                                 params.mesh.npoin_linear,
+                                                 params.mesh.poin_in_bdy_edge,
+                                                 params.mesh.poin_in_bdy_face,
+                                                 params.mesh.nedges_bdy,
+                                                 params.mesh.nfaces_bdy,
+                                                 ngl, ngr,
+                                                 nelem_semi_inf,
+                                                 params.basis.ψ, params.basis.dψ,
+                                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                 RHS, 0.0, params.ubdy,
+                                                 params.mesh.connijk_lag,
+                                                 params.mesh.bdy_edge_in_elem,
+                                                 params.mesh.bdy_edge_type,
+                                                 params.ω, qp.neqs,
+                                                 params.inputs, params.AD, sem.mesh.SD)
+
+            # wbuf reused — no new allocations, no new ONNX sessions
+            elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
+                                 A, RHS, EL,
+                                 avisc,
+                                 bufferin, bufferout,
+                                 BOΓg, gΓ, wbuf;
+                                 isamp=isamp,
+                                 total_cols_writtenin=total_cols_writtenin,
+                                 total_cols_writtenout=total_cols_writtenout)
+        end # isamp loop
+
+        total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
+        total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
+
+        if rank == 0 println(BLUE_FG(" # EL SAMPLING .......... DONE")) end
+
+    else
+        #-----------------------------------------------------
+        # 2. Inference:
+        #-----------------------------------------------------
+        #
+        # L*q = M*RHS   See algo 12.18 of Giraldo's book
+        #
+        # 2.a/b
+        μ        = 1
+        #â        = zeros(TFloat, ngl, ngl)
+        avisc      = zeros(TFloat, 1, ngl^2)
+        avisc[1,:].= 0.5 + rand() #Uniform distribution between 0.5 and 1.5
+        nfeatures  = size(avisc, 2)
+        #ψ        = sem.basis.ψ
+        #expansion_2d!(â, ψ)
+
+        for ip =1:npoin
+            RHS[ip] = user_source!(RHS[ip],
+                                   params.qp.qn[ip],
+                                   params.qp.qe[ip],
+                                   npoin,
+                                   inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                   neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                                   xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
+                                   ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
+        end
+        RHS = sem.matrix.M.*RHS
+
+        apply_boundary_conditions_lin_solve!(sem.matrix.L,
+                                             0.0, params.qp.qe,
+                                             params.mesh.coords,
+                                             params.metrics.nx,
+                                             params.metrics.ny,
+                                             params.metrics.nz,
+                                             npoin,
+                                             params.mesh.npoin_linear,
+                                             params.mesh.poin_in_bdy_edge,
+                                             params.mesh.poin_in_bdy_face,
+                                             params.mesh.nedges_bdy,
+                                             params.mesh.nfaces_bdy,
+                                             ngl, ngr,
+                                             nelem_semi_inf,
+                                             params.basis.ψ, params.basis.dψ,
+                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                             RHS, 0.0, params.ubdy,
+                                             params.mesh.connijk_lag,
+                                             params.mesh.bdy_edge_in_elem,
+                                             params.mesh.bdy_edge_type,
+                                             params.ω, qp.neqs,
+                                             params.inputs, params.AD, sem.mesh.SD)
+
+        #-----------------------------------------------------
+        # Element-learning infrastructure
+        #-----------------------------------------------------
+        nfeatures    = size(avisc, 2)
+        A            = sem.matrix.L
+        A_∂τ∂τ       = A[sem.mesh.∂τ, sem.mesh.∂τ]   # needed by EL_WorkBuffers constructor
+
+        wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
+                              nelintpoints, elnbdypoints,
+                              inputs[:NNfile])
+
+        total_cols_writtenin  = 0
+        total_cols_writtenout = 0
+
+        println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... ")))
+        elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
+                             A, RHS, EL,
+                             avisc,
+                             [0.0], [0.0],
+                             BOΓg, gΓ, wbuf;
+                             isamp=1,
+                             total_cols_writtenin=total_cols_writtenin,
+                             total_cols_writtenout=total_cols_writtenout)
+
+
+        println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... DONE")))
+        usol = params.qp.qn
+        neqs = params.qp.neqs
+        args = (params.SD, usol, params.uaux, 1, 1,
+                sem.mesh, nothing,
+                nothing, nothing,
+                0.0, 0.0, 0.0,
+                OUTPUT_DIR, inputs,
+                params.qp.qvars,
+                params.qp.qoutvars,
+                inputs[:outformat])
+
+        write_output(args...; nvar=neqs, qexact=params.qp.qe)
+        #-----------------------------------------------------
+        # END Element-learning infrastructure
+        #-----------------------------------------------------
+    end
+
+    return nothing
+end
+
+
+# Point evaluation: interpolate at a single point (ξ, η)
+function expansion_2d!(a::Matrix, ψ::Matrix)
+
+    # Tensor product form: ψᵀ * A * ψ
+    return dot(ψ, a * ψ)
+
 end

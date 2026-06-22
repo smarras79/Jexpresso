@@ -14,7 +14,7 @@ using KernelAbstractions
 # UnicodePlots, Geodesy) and were not referenced anywhere in the source
 # tree. Removed to cut the per-rank baseline. Re-add at the REPL if
 # you need them interactively.
-# using Revise
+using Revise
 # using BenchmarkTools
 using Dates
 using CSV, DataFrames
@@ -116,8 +116,6 @@ include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "mesh", "meshStructs.jl"))
 
-#include(joinpath( "kernel", "elementLearningStructs_new.jl"))
-#include(joinpath( "kernel", "elementLearningStructs_sparse.jl"))
 include(joinpath( "kernel", "elementLearningStructs.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))

@@ -11,7 +11,7 @@ function user_inputs()
         :ldss_laplace         => true,
         :lsparse              => true,
         :lelementLearning     => true,
-        #:lEL_Sample           => true,
+#        :lEL_Sample           => true,
         #:NNfile               => "JX_NN_model.onnx",
         :NNfile               => "JX_RFRC_model.onnx",
         #:NNfile               => "JX_RFRC_final.jld2",
@@ -31,7 +31,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-       # :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+ #       :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
