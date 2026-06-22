@@ -1034,9 +1034,13 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
             if rank == 0
                 println(BLUE_FG(" # EL SAMPLING — NON-CONSTANT DIFFUSIVITY (Option 1) ......"))
             end
+            conn2ij  = el_conn_to_ij(sem.mesh, ngl)
             nvo, nvb = el_nonconstant_sampling!(bufferin, bufferout,
                                                 params.basis.ψ, params.basis.dψ,
-                                                params.ω, ngl, inputs[:Nsamp])
+                                                params.ω, ngl, inputs[:Nsamp];
+                                                conn2ij=conn2ij,
+                                                elnbdypoints=elnbdypoints,
+                                                xidependent=get(inputs, :lEL_xidependent, false))
             total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
             total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
             if rank == 0
@@ -1123,8 +1127,22 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         # 2.a/b
         μ        = 1
         #â        = zeros(TFloat, ngl, ngl)
-        avisc      = zeros(TFloat, 1, ngl^2)
-        avisc[1,:].= 0.5 + rand() #Uniform distribution between 0.5 and 1.5
+        if get(inputs, :lEL_nonconstant, false)
+            # NON-CONSTANT DIFFUSIVITY: per-element 2×2 SPD â feature (3·(k+1)²)
+            # built from the element metrics, in mesh.conn node order (matching
+            # the sampler). The trained model (input size 3·(k+1)²) is then used
+            # by elementLearning_infer! exactly as in the constant case.
+            conn2ij = el_conn_to_ij(sem.mesh, ngl)
+            avisc   = zeros(TFloat, nelem, 3*ngl^2)
+            el_avisc_nonconstant!(avisc, sem.mesh, params.metrics, conn2ij, ngl)
+            if rank == 0
+                println(BLUE_FG(string(" # INFERENCE — NON-CONSTANT DIFFUSIVITY: per-element â feature ",
+                                       "(3·(k+1)²=", 3*ngl^2, ") from metrics")))
+            end
+        else
+            avisc      = zeros(TFloat, 1, ngl^2)
+            avisc[1,:].= 0.5 + rand() #Uniform distribution between 0.5 and 1.5
+        end
         nfeatures  = size(avisc, 2)
         #ψ        = sem.basis.ψ
         #expansion_2d!(â, ψ)
