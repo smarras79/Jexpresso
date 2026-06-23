@@ -20,3 +20,7 @@ docs/*.toc
 docs/*.fls
 docs/*.fdb_latexmk
 docs/*.synctex.gz
+
+# Python bytecode caches
+__pycache__/
+*.pyc
