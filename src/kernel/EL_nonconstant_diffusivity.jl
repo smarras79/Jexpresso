@@ -163,7 +163,7 @@ end
 # The shape model: rotation θ, anisotropic stretch (s1,s2), and a shear γ — a
 # generic distribution of well-formed (det>0) elements.
 function synthesize_random_ahat(rng::AbstractRNG;
-                                amin=0.5, amax=1.5,
+                                amin=1.0, amax=1.0,   # a is a nuisance (Tie is amplitude-invariant); a=1 matches inference
                                 smin=0.5, smax=2.0, shear_max=0.5)
     a  = amin + (amax-amin)*rand(rng)
     θ  = 2π*rand(rng)
@@ -185,7 +185,7 @@ end
 # warp magnitude `curve` is kept small and det(J) is guarded > 0. Returns a
 # (3, ngl²) matrix in tensor flat order P=(i-1)*ngl+j: rows (â11, â12, â22).
 function synthesize_random_ahat_field(rng::AbstractRNG, ngl::Int;
-                                      amin=0.5, amax=1.5,
+                                      amin=1.0, amax=1.0,   # a is a nuisance (Tie is amplitude-invariant); a=1 matches inference
                                       smin=0.5, smax=2.0, shear_max=0.5,
                                       curve=0.15)
     a  = amin + (amax-amin)*rand(rng)
@@ -261,7 +261,8 @@ end
 # parallelism (⇒ a genuine bilinear quad). Amplitude a ~ U(amin,amax). Returns
 # (a, P1, P2, P3, P4).
 function synthesize_random_quad(rng::AbstractRNG;
-                                amin=0.5, amax=1.5, smin=0.5, smax=2.0,
+                                amin=1.0, amax=1.0,   # a=1: nuisance (Tie is amplitude-invariant), matches inference
+                                smin=0.5, smax=2.0,
                                 shear_max=0.5, jitter=0.25)
     a  = amin + (amax-amin)*rand(rng)
     θ  = 2π*rand(rng)
