@@ -10,7 +10,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
     if rank == 0
-        pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
+        # Wrap long values across multiple lines so nothing is cropped — the
+        # default pretty_table truncates wide cells with "…" and hides the
+        # tail of long paths / vectors / NamedTuples that users need to see.
+        term_cols = try displaysize(stdout)[2] catch; 120 end
+        key_w     = 32
+        # Leave room for the two outer borders, the column separator, and the
+        # padding PrettyTables adds around each cell (≈ 7 chars total).
+        val_w     = max(40, term_cols - key_w - 7)
+        pretty_table(inputs;
+                     sortkeys       = true,
+                     border_crayon  = crayon"yellow",
+                     linebreaks     = true,
+                     autowrap       = true,
+                     columns_width  = [key_w, val_w],
+                     crop           = :none)
     end
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
@@ -35,22 +49,167 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
-    if(!haskey(inputs, :l_incompressible))
-       inputs[:l_incompressible] = false
+
+    if(!haskey(inputs, :RT_atmos_coupling))
+       inputs[:RT_atmos_coupling] = false
     end
 
-    if(!haskey(inputs, :l_vort_stream))
-       inputs[:l_vort_stream] = false
+    if (inputs[:RT_atmos_coupling])
+        inputs[:RT_radiative_heating] = true
     end
 
-    if(!haskey(inputs, :bulk_fluxes))
-       inputs[:bulk_fluxes] = false
+
+    if(!haskey(inputs, :RT_radiative_heating))
+       inputs[:RT_radiative_heating] = false
     end
 
+    if(!haskey(inputs, :lmanufactured_solution))
+       inputs[:lmanufactured_solution] = false
+    end
+
+    if(!haskey(inputs, :RT_amr_threshold))
+       inputs[:lRT_amr_threshold] = [1.0]
+    end
+
+    if(!haskey(inputs, :lRT_problem))
+       inputs[:lRT_problem] = false
+    end
+
+    if(!haskey(inputs, :lRT_from_data))
+       inputs[:lRT_from_data] = false
+    end
+    if (inputs[:lRT_from_data])
+       if (!(haskey(inputs, :RT_shortwave)))
+            inputs[:RT_longwave] = true
+            inputs[:RT_shortwave] = false
+       elseif inputs[:RT_shortwave]
+            inputs[:RT_longwave] = false
+       else
+            inputs[:RT_longwave] = true
+       end
+
+    end
+
+    if (!(haskey(inputs, :RT_shortwave)))
+        inputs[:RT_shortwave] = false
+    end
+    
+    if (!(haskey(inputs, :RT_longwave)))
+        inputs[:RT_longwave] = false
+    end
+
+    if(!haskey(inputs, :RT_S0_flux))
+        inputs[:RT_S0_flux] = 1361.0
+    end
+    if(!haskey(inputs, :RT_μ0))
+        inputs[:RT_μ0] = 0.5
+    end
+    if(!haskey(inputs, :RT_ϕ0))
+        inputs[:RT_ϕ0] = 3*π/4
+    end
+    if(!haskey(inputs, :RT_δ_beam))
+        inputs[:RT_δ_beam] = 0.05
+    end
+    if(!haskey(inputs, :RT_ϵ_surface))
+        inputs[:RT_ϵ_surface] = 0.97
+    end
+    if(!haskey(inputs, :RT_T_space))
+        inputs[:RT_T_space] = 0.0
+    end
+
+    if(!haskey(inputs, :RT_data_file))
+       inputs[:RT_data_file] = ""
+    end
+
+    if(!haskey(inputs, :lcubed_sphere_angular_mesh))
+       inputs[:lcubed_sphere_angular_mesh] = false
+    end
+
+    if(!haskey(inputs, :rad_HG_g))
+      inputs[:rad_HG_g] = 0.0
+    end
+
+    if(!haskey(inputs, :extra_dimensions))
+      inputs[:extra_dimensions] = 0
+    end
+    
+    if(!haskey(inputs, :adaptive_extra_meshes))
+      inputs[:adaptive_extra_meshes] = false
+    end
+
+    if(!haskey(inputs, :extra_dimensions_order))
+      inputs[:extra_dimensions_order] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_nelemx))
+      inputs[:extra_dimensions_nelemx] = 2
+    end
+
+    if(!haskey(inputs, :extra_dimensions_nelemy))
+      inputs[:extra_dimensions_nelemy] = 2
+    end
+
+    if(!haskey(inputs, :extra_dimensions_xmin))
+      inputs[:extra_dimensions_xmin] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_xmax))
+        inputs[:extra_dimensions_xmax] = 2*π
+    end
+
+    if(!haskey(inputs, :extra_dimensions_ymin))
+      inputs[:extra_dimensions_ymin] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_ymax))
+        inputs[:extra_dimensions_ymax] = 2*π
+    end
+
+    if(!haskey(inputs, :lwall_model))
+       inputs[:lwall_model] = false
+    end
+
+    # Default to the rank-0-read + MPI.bcast mesh path on every platform.
+    # The alternative — `GmshDiscreteModel(parts, file)` in the
+    # `lxy_partition=false` branch of `mod_mesh_read_gmsh!` — goes
+    # through GridapGmsh's "distributed" constructor, which (depending
+    # on the release) parses the .msh file on every rank: nparts × file
+    # I/O, nparts × gmsh parses, nparts × peak GMSH memory. On a laptop
+    # with a non-trivial mesh that adds minutes to pre-processing
+    # before the time-loop even starts.
+    #
+    # Originally this was macOS-only because the parallel constructor
+    # SIGBUSes on Apple Silicon + Open MPI. The serial-read + bcast
+    # path has since been the macOS default with no issues, so make it
+    # the default on Linux too. Users who need a different partition
+    # strategy can still opt out by setting `:lxy_partition => false`
+    # in their user_inputs.jl.
+    if(!haskey(inputs, :lxy_partition))
+        inputs[:lxy_partition] = true
+    end
+
+    if(!haskey(inputs, :ifirst_wall_node_index))
+         inputs[:ifirst_wall_node_index] = 2 #default is the first LGL point above the surface node along the vertical direction of the surface element
+    end
+    
+    if(!haskey(inputs, :lkep))
+       inputs[:lkep] = false
+    end
+    
     if(!haskey(inputs, :bdy_fluxes))
        inputs[:bdy_fluxes] = false
     end
 
+    if(!haskey(inputs, :bulk_fluxes))
+        inputs[:bulk_fluxes] = false
+    else
+        if inputs[:bulk_fluxes]  == true
+            if inputs[:bdy_fluxes]  == false
+                inputs[:bdy_fluxes]  = true
+            end
+        end
+    end
+    
     if(!haskey(inputs, :LST))
        inputs[:LST] = false
     end
@@ -112,8 +271,24 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :lsparse))
-      inputs[:lsparse] = false
+        inputs[:lsparse] = true
+
+        if(haskey(inputs, :lelementLearning) &&
+            inputs[:lelementLearning] == true)
+           # inputs[:lsparse] = false
+        end
+    else
+        if(inputs[:lsparse] == true &&
+            haskey(inputs, :lelementLearning) &&
+            inputs[:lelementLearning] == true)
+            #inputs[:lsparse] = false
+        end
     end
+    
+    if(!haskey(inputs, :NNfile))
+      inputs[:NNfile] = nothing
+    end
+
 
     if(!haskey(inputs, :plot_vlines))
       inputs[:plot_vlines] = "empty"
@@ -122,7 +297,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :plot_hlines))
       inputs[:plot_hlines] = "empty"
     end
-    
+
+    # Colormap for the 2D PNG writer (any ColorSchemes.jl name). The
+    # default is cmocean's desaturated diverging "balance", which renders
+    # wave fields better than highly saturated maps like viridis.
+    if(!haskey(inputs, :plot_colormap))
+      inputs[:plot_colormap] = :balance
+    end
+
+    # PNG writers: true (default) renders all variables of an output time
+    # as ONE plot-matrix figure -- the gksqt window is updated in place and
+    # fields-it<n>.png is written. false writes one silent PNG per variable
+    # instead (<var>-it<n>.png) and opens no window; see render_plot_matrix
+    # in jeplots.jl for why the two modes are mutually exclusive under GR.
+    if(!haskey(inputs, :plot_matrix))
+      inputs[:plot_matrix] = true
+    end
+
     if(!haskey(inputs, :plot_axis))
       inputs[:plot_axis] = "empty"
     end
@@ -191,6 +382,51 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lwarp] = false
     end
 
+    if inputs[:lwarp] == true
+        if(!haskey(inputs,:z_transition_start))
+            inputs[:z_transition_start] = -1000.0
+        end
+        if(!haskey(inputs,:z_transition_end))
+             inputs[:z_transition_end] = 2200.0
+        end
+    end
+    
+    if(!haskey(inputs,:lstretch))
+        inputs[:lstretch] = false
+    end
+    
+    if inputs[:lstretch] == true
+        if(!haskey(inputs,:stretch_type))
+            inputs[:stretch_type] = "powerlaw"
+        else
+            if inputs[:stretch_type] == "fixed_first"
+                if(!haskey(inputs, :first_zelement_size))
+                    inputs[:first_zelement_size] = 1.0;
+                end
+            elseif (inputs[:stretch_type] == "fixed_first_twoblocks_weak" ||
+                inputs[:stretch_type] == "fixed_first_twoblocks_strong" ||
+                inputs[:stretch_type] == "fixed_first_twoblocks_strong_weak")
+                
+                if(!haskey(inputs, :first_zelement_size))
+                    inputs[:first_zelement_size] = 1.0;
+                end
+                if(!haskey(inputs, :max_zelement_size_bottom))
+                    inputs[:max_zelement_size_bottom] = 1.0;
+                end
+                if(!haskey(inputs, :zlevel_transition))
+                    inputs[:zlevel_transition] = 1000000000.0
+                end
+                if(!haskey(inputs, :uniform_zelement_size))
+                    inputs[:uniform_zelement_size] = 1.0
+                end
+                if(!haskey(inputs, :max_zelement_size_top))
+                    inputs[:max_zelement_size_top] = 1.0;
+                end
+            end
+            
+        end
+    end
+    
     if(!haskey(inputs,:mount_type))
         inputs[:lagnesi] = "agnesi"
     end
@@ -244,6 +480,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             inputs[:outformat] = VTK()
         elseif lowercase(inputs[:outformat]) == "hdf5" || lowercase(inputs[:outformat]) == "h5"
             inputs[:outformat] = HDF5()
+        elseif lowercase(inputs[:outformat]) == "netcdf" || lowercase(inputs[:outformat]) == "netcdf"
+            inputs[:outformat] = NETCDF()
         end
     end
 
@@ -264,11 +502,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
 
     #Restart:
-    if (haskey(inputs, :lrestart))
-        if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))
-            mod_inputs_check(inputs, :restart_input_file_path, "e")
-        end
-    else
+    if (!haskey(inputs, :lrestart))
         inputs[:lrestart] = false
     end
     #
@@ -283,6 +517,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if(!haskey(inputs, :radiation_time_step))
         inputs[:radiation_time_step] = inputs[:Δt]*100
+    end
+
+    if(!haskey(inputs, :restart_time))
+        inputs[:restart_time] = 0.0
     end
 
     #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
@@ -384,10 +622,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     # Element learning (lelemLearning)
     #
+    if (!haskey(inputs, :Nsamp))
+    	inputs[:Nsamp] = 1
+    end
     if (!haskey(inputs, :lelementLearning))
         inputs[:lelementLearning] = false
     end
     
+    if !haskey(inputs, :lEL_Sample)
+        inputs[:lEL_Sample] = false
+    end
+        
     #
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
     # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
@@ -415,9 +660,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:loutput_pert] = false
     end
     if(!haskey(inputs, :lwrite_initial))
-        inputs[:lwrite_initial] = false
+        inputs[:lwrite_initial] = true
     end
 
+    if (!haskey(inputs, :gmsh_filename_c))
+        if haskey(inputs, :gmsh_filename)
+            inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+        else
+            inputs[:gmsh_filename_c] = "none"
+        end
+    end
+    
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
@@ -434,6 +687,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     else
         mod_inputs_check(inputs, :gmsh_filename, "e")
+        mod_inputs_check(inputs, :gmsh_filename_c, "e")
         
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")
@@ -453,6 +707,20 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         #@warn s
         
     end #lread_gmsh
+
+    
+    if (!haskey(inputs, :lwarmup))
+        inputs[:lwarmup] = false
+    else
+        if !haskey(inputs, :gmsh_filename_c)
+            if haskey(inputs, :gmsh_filename)
+                inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+            else
+                inputs[:gmsh_filename_c] = "none"
+            end
+        end
+    end
+    
     #
     # Some physical constants and parameters:
     #
@@ -486,6 +754,32 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     if(!haskey(inputs, :visc_model))
         inputs[:visc_model] = AV() #Default is artificial viscosity with constant coefficient
+    end
+
+    
+    if(!haskey(inputs, :lrichardson))
+        inputs[:lrichardson] = false #Default is artificial viscosity with constant coefficient
+    end
+
+    #
+    # Kinetic Energy or Entropy Preserving
+    #
+    if(!haskey(inputs, :lkep))
+        inputs[:lkep] = false
+    end
+        
+    if inputs[:lkep] == true
+        if(!haskey(inputs, :volume_flux))
+            inputs[:volume_flux] = ranocha()
+        end
+    else
+        if(!haskey(inputs, :volume_flux))
+            inputs[:volume_flux] = nothing
+        end
+    end
+
+    if(!haskey(inputs, :entropy_variables))
+        inputs[:entropy_variables] = false
     end
 
     #
@@ -568,47 +862,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # Define neqs based on the equations being solved
     #------------------------------------------------------------------------
     neqs::Int8 = 1
-    if (lowercase(parsed_equations) == "compeuler")
-        inputs[:equations] = CompEuler()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-    elseif (lowercase(parsed_equations) == "burgers")
-        inputs[:equations] = Burgers()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-    elseif (lowercase(parsed_equations) == "shallowwater")
-        inputs[:equations] = ShallowWater()    
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false    
-    elseif (lowercase(parsed_equations) == "advdiff" ||
-        lowercase(parsed_equations) == "advdif" ||
-        lowercase(parsed_equations) == "ad" ||
-        lowercase(parsed_equations) == "adv2d")
-        inputs[:equations] = AdvDiff()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-    elseif (lowercase(parsed_equations) == "elliptic" ||
-        lowercase(parsed_equations) == "diffusion")
-        inputs[:equations] = Elliptic()
-        inputs[:ldss_laplace] = true
-        inputs[:ldss_differentiation] = false     
-    elseif (lowercase(parsed_equations) == "helmholtz" ||
-        lowercase(parsed_equations) == "diffusion")
-        inputs[:equations] = Helmholtz()
-        inputs[:ldss_laplace] = true
-        inputs[:ldss_differentiation] = false
-    else
-        
-        #inputs[:neqs] = 1 #default
-        
-        s = """
-                jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
-                Chose among:
-                         - "CompEuler"
-                         - "AdvDiff"
-              """
-        
-        @error s
+    
+    if(!haskey(inputs, :lsponge))
+        inputs[:lsponge] = false
+    end
+    if(!haskey(inputs, :zsponge))
+        inputs[:zsponge] = 14000.0
+    end
+    if  inputs[:lsponge] == true
+        if(!haskey(inputs, :zsponge))
+            inputs[:zsponge] = 14000.0
+        end
     end
 
     if(!haskey(inputs, :lmoist))
@@ -622,17 +886,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :energy_equation))
         inputs[:energy_equation] = "theta"
         inputs[:δtotal_energy] = 0.0
-    else
-        if (lowercase(inputs[:equation_set]) == "totalenergy" ||
-            lowercase(inputs[:equation_set]) == "totalene"    ||
-            lowercase(inputs[:equation_set]) == "totene"      ||
-            lowercase(inputs[:equation_set]) == "tene")
-            inputs[:δtotal_energy] = 1.0
-        else
-            #Default
-            inputs[:energy_equation] = "theta"
-            inputs[:δtotal_energy] = 0.0
-        end
+    end
+
+    if(!haskey(inputs, :lrichardson))
+        inputs[:lrichardson] = false
     end
     if(!haskey(inputs, :CL))
         # :CL stands for Conservation Law.
@@ -658,7 +915,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :sol_vars_names))
-        inputs[:sol_vars_names] = ("rho", "rho.u", "rho.v", "rho.theta")
+        inputs[:sol_vars_names] = ("q1", "q2", "q3", "q4")
     end
     
     if(!haskey(inputs, :case))
@@ -679,6 +936,89 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :ldss_laplace))
         inputs[:ldss_laplace] = false
     end
+
+    # AMR    
+    if(!haskey(inputs, :lamr))
+        inputs[:lamr] = false
+    end
+
+    # LES statistics defaults (used by giga_les TimeIntegrators.jl callbacks).
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = Float64[]
+    end
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+    if(!haskey(inputs, :statistics_online_interval))
+        inputs[:statistics_online_interval] = Float32(inputs[:Δt])
+    end
+
+    # VTK / AMR restart defaults (used by giga_les TimeIntegrators.jl).
+    if(!haskey(inputs, :lrestart_vtk))
+        inputs[:lrestart_vtk] = false
+    end
+    if(!haskey(inputs, :lrestart_amr))
+        inputs[:lrestart_amr] = false
+    end
+
+    # LES profile/stress var defaults (used by giga_les params_setup.jl).
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
+    if(!haskey(inputs, :amr_freq))
+        inputs[:amr_freq] = 0
+    end
+
+    if(!haskey(inputs, :amr_max_level))
+        inputs[:amr_max_level] = 0
+    end
+     
+    if(!haskey(inputs, :ladapt))
+        inputs[:ladapt] = false
+    end
+
+    if inputs[:lamr] == true
+        inputs[:ladapt] = true
+    end
+
+    if(!haskey(inputs, :linitial_refine))
+        inputs[:linitial_refine] = false
+    end
+        
+    if(!haskey(inputs, :init_refine_lvl))
+        inputs[:init_refine_lvl] = 0
+    end
+        
+    if(!haskey(inputs, :amr_max_level))
+        inputs[:amr_max_level] = 0
+    end
+
+    if(!haskey(inputs, :lpreadapt))
+        inputs[:lpreadapt] = false
+    end
+
+    if(!haskey(inputs, :preadapt_max_level))
+        inputs[:preadapt_max_level] = 0
+    end
+
+    if(!haskey(inputs, :amr_start_time))
+        inputs[:amr_start_time] = Float32(0.0)
+    end
+
+    if(!haskey(inputs, :user_heatflux))
+        inputs[:user_heatflux] = 0.0
+        inputs[:δhf] = 0.0
+    else
+        inputs[:δhf] = 1.0
+    end
+
+    if inputs[:lpreadapt] == true
+        inputs[:ladapt] = true
+    end
     #------------------------------------------------------------------------
     # The following quantities stored in the inputs[] dictionary are only
     # auxiliary and are NEVER to be defined by the user
@@ -689,18 +1029,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:δvisc] = 0.0
     end
 
-    # AMR
-    if(!haskey(inputs, :ladapt))
-        inputs[:ladapt] = false
-    end
-
-    if(!haskey(inputs, :linitial_refine))
-        inputs[:linitial_refine] = false
-    end
-        
-    if(!haskey(inputs, :amr_max_level))
-        inputs[:amr_max_level] = 0
-    end
 
     return inputs
 end
@@ -715,7 +1043,7 @@ function _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
+function mod_inputs_check(inputs, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
@@ -732,7 +1060,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
 end
 
 
-function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
+function mod_inputs_check(inputs, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """

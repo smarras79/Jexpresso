@@ -8,12 +8,16 @@ Before starting, ensure you have the following:
 
 * **Julia Installation:** You need to have Julia installed on your system. You can download it from the official Julia website: [https://julialang.org/downloads/](https://julialang.org/downloads/)
 * **Jexpresso Repository:** The `Jexpresso.jl` framework needs to be accessible. This tutorial assumes you have the repository cloned locally. If not, you can clone it using Git:
+
     ```bash
     git clone https://github.com/smarras79/Jexpresso.git
+    
     ```
-    ```bash
+
+```bash
     git clone https://github.com/smarras79/JexpressoMeshes.git
     ```
+    
     ```bash
     cd Jexpresso
     ```
@@ -198,8 +202,8 @@ Follow the output tutorial [here](./define_output_variables.md)
 ### Now run the new case:
 
 ```bash
-push!(empty!(ARGS), "CompEuler", "Hello");
-include("./src/Jexpresso.jl")
+using Jexpresso
+Jexpresso.run_case("CompEuler", "Hello")
 ```
 
 

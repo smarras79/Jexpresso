@@ -590,6 +590,33 @@ function  BarycentricWeights(x)
     return w
 end
 
+function  BarycentricWeights!(x,w)
+    """
+       BarycentricWeights(x)
+       x:set points x[j]=x_j
+       computes the Barycentric weights for a set of interpolation points x_j
+       using algorithm 30 of Kopriva's book
+    """
+    N=size(x,1)-1
+    mini = minimum(x)
+    maxi = maximum(x)
+    scale = (maxi - mini)/2
+    for j=1:N+1
+        w[j]=1
+    end
+    for j=2:N+1
+        for k=1:j-1
+            w[k] = w[k]*(x[k]-x[j])/scale
+            w[j] = w[j]*(x[j]-x[k])/scale
+        end
+    end
+    for j=1:N+1
+        w[j]=1/w[j]
+    end
+    return w
+end
+
+
 function BarycentricWeights_gpu!(x,N,ω)
     j = @index(Global, Linear)
     T = eltype(x)
@@ -670,6 +697,45 @@ function PolynomialInterpolationMatrix(x,w,ξ)
     return T
 end
 
+function PolynomialInterpolationMatrix!(x,w,ξ,T)
+    """
+       PolynomialInterpolationMatrix(x,w,ξ)
+       x::set of interpolation points
+       w::barcyentric weights associated with x
+       ξ::set of points to interpolate to
+       computes the interpolation matrix needed to interpolate between the points x and ξ
+       using algorithm 32 of Kopriva's book
+    """
+    M=size(ξ,1)
+    N=size(x,1)
+    mini = minimum(x)
+    maxi = maximum(x)
+    scale = (maxi - mini)/2
+    for k=1:M
+        rowHasMatch = false
+        for j=1:N
+            T[k,j] = 0.0
+            if (AlmostEqual(ξ[k],x[j]))
+                rowHasMatch = true
+                T[k,j] = 1.0
+            end
+        end
+        if (rowHasMatch == false)
+            s=0
+            for j=1:N
+                t=w[j]/(ξ[k]-x[j])
+                T[k,j] = t
+                s=s+t
+            end
+            for j =1:N
+                T[k,j] = T[k,j]/s
+            end
+        end
+    end
+    return T
+end
+
+
 function  InterpolateToNewPoints(T,f)
     """
        IterpolateToNewPoints(T,f)
@@ -728,6 +794,41 @@ function LagrangeInterpolatingPolynomials(x,x_j,w)
     end
     return l
 end
+
+function LagrangeInterpolatingPolynomials!(x,x_j,w,l)
+    """
+       LagrangeInterpolatingPolynomials(x,x_j,w)
+       x::point to interpolate to
+       x_j::set of N interpolation points
+       w::barycentric weights associated with x_j
+       compute the value of N lagrangian interpolating polynomials associated 
+       with x_j and w at x
+       using algorithm 34 of Kopriva's book
+    """
+    N=size(x_j,1)
+    xMatchesNode = false
+    for j=1:N
+        l[j]=0.0
+        if (AlmostEqual(x,x_j[j]))
+            l[j]=1.0
+            xMatchesNode = true
+        end
+    end
+    if (xMatchesNode)
+        return l
+    end
+    s=0.0
+    for j=1:N
+        t=w[j]/(x-x_j[j])
+        l[j] = t
+        s=s+t
+    end
+    for j=1:N
+        l[j]=l[j]/s
+    end
+    return l
+end
+
 
 function D2CoarseToFineInterpolation(x,y,f,ξ,η)
     """

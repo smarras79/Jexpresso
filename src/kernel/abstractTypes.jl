@@ -59,17 +59,28 @@ struct NCL <: AbstractLaw end
 abstract type AbstractPert end
 struct PERT  <: AbstractPert end
 struct TOTAL <: AbstractPert end
+struct THETA <: AbstractPert end
 
 #
 # viscosity type
 #
 abstract type AbstractVT end
-struct AV   <: AbstractVT end
-struct SMAG <: AbstractVT end
-struct VREM <: AbstractVT end
-struct DSGS <: AbstractVT end
+struct AV    <: AbstractVT end
+struct SMAG  <: AbstractVT end
+struct DSMAG <: AbstractVT end
+struct VREM  <: AbstractVT end
+struct WALE  <: AbstractVT end
+struct DSGS  <: AbstractVT end
 
 
+abstract type AbstractVolumeFlux end
+struct ranocha <: AbstractVolumeFlux end
+struct artiano_ec <: AbstractVolumeFlux end
+struct artiano_etec <: AbstractVolumeFlux end
+struct artiano_tec <: AbstractVolumeFlux end
+struct kennedy_gruber <: AbstractVolumeFlux end
+struct central_euler <: AbstractVolumeFlux end
+struct central_theta <: AbstractVolumeFlux end
 #
 # Boundary flags/conditions
 #

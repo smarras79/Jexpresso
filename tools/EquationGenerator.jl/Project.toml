@@ -1,0 +1,13 @@
+name = "EquationGenerator"
+uuid = "12345678-1234-1234-1234-123456789abc"
+authors = ["Jexpresso Team"]
+version = "1.0.0"
+
+[deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+Mustache = "ffc61df8-8c66-5a1e-a0ef-4c8f52e3d1ce"
+
+[compat]
+julia = "1.9"

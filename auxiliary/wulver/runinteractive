@@ -1,0 +1,1 @@
+srun -p general -n 1 --ntasks-per-node=32 --qos=standard --account=smarras --time=59:00 --pty bash

@@ -3,13 +3,38 @@ using WriteVTK
 include("./plotting/jeplots.jl")
 
 #------------------------------------------------------------------
+# Write PVD file for ParaView time series
+#------------------------------------------------------------------
+function init_pvd_file(path)
+    open(path, "w") do io
+        println(io, "<?xml version=\"1.0\"?>")
+        println(io, "<VTKFile type=\"Collection\" version=\"0.1\">")
+        println(io, "  <Collection>")
+        println(io, "  </Collection>")
+        println(io, "</VTKFile>")
+    end
+end
+
+function append_pvd_entry(path, time, filename)
+    lines = readlines(path)
+    insert_pos = length(lines) - 1  # insert before last 2 lines
+    insert!(lines, insert_pos, "    <DataSet timestep=\"$time\" file=\"$filename\"/>")
+    open(path, "w") do io
+        for line in lines
+            println(io, line)
+        end
+    end
+end
+
+#------------------------------------------------------------------
 # Callback for missing user_uout!()
 #------------------------------------------------------------------
-function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar)
-    
+function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar; μ_dsgs_pnode=nothing)
+
     if function_exists(@__MODULE__, :user_uout!)
         for ip=1:npoin
-            user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), @view(qe[ip,1:nvar]); mp=mp)
+            user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,:]), @view(qe[ip,:]);
+                       mp=mp, μ_dsgs_pnode=μ_dsgs_pnode)
         end
     else
         for ip=1:npoin
@@ -23,13 +48,15 @@ end
 end
 
 function function_exists(module_name::Module, function_name::Symbol)
-    return isdefined(module_name, function_name) && isa(getfield(module_name, function_name), Function)
+    return isdefined(module_name, function_name) &&
+           isa(getfield(module_name, function_name), Function) &&
+           !isempty(methods(getfield(module_name, function_name)))
 end
 #------------------------------------------------------------------
 # END Callback for missing user_uout!()
 #------------------------------------------------------------------
 
-function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
     qout = zeros(mesh.npoin)
@@ -37,14 +64,13 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol, uaux, t, iout,
-                      mesh::St_mesh, mp, F_data,
-                      connijk_original, poin_in_bdy_face_original,
-                      x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::PNG;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -70,28 +96,70 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,
         #end
     else
         #for iout = 1:size(sol.t[:], 1)
-        title = string("sol at time ", t)
+        title = @sprintf "t = %.4f" t
+        # DSGS runs render the viscosity staircase as one more panel of
+        # the same output time (the per-node broadcast is in μ_dsgs_pnode)
+        μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
             if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
                 KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
             end
         #end
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
+end
+
+function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::PNG;
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
+
+    #
+    # 2D PNG of q(t): one colored map per variable and output time.
+    # inputs[:lplot_surf3d] selects the Spline2D-interpolated surface view
+    # (plot_surf3d), otherwise the nodal point map (plot_triangulation) is
+    # used -- the latter is the safer choice for solutions with kinks such
+    # as the shallow water wet/dry front, where a global spline overshoots.
+    #
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+
+    if (inputs[:backend] == CPU())
+        q = sol
+    else
+        q = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
+        KernelAbstractions.copyto!(CPU(), q, sol)
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+    end
+
+    title = @sprintf "t = %.4f s" t
+    if (inputs[:lplot_surf3d])
+        plot_surf3d(SD, mesh, q, title, OUTPUT_DIR;
+                    iout=iout, nvar=nvar,
+                    smoothing_factor=inputs[:smoothing_factor], varnames=varnames)
+    else
+        plot_triangulation(SD, mesh, q, title, OUTPUT_DIR, inputs;
+                           iout=iout, nvar=nvar, varnames=varnames)
+    end
+
+    println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)
 end
 
 
 function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
-                      OUTPUT_DIR::String, inputs::Dict,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     #
@@ -118,30 +186,30 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
         write_vtk(SD, mesh, u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=u_exact, case=case)
     end
     
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
-    
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
+
 end
 
 
-function write_output(SD, sol, uaux, t, iout,
-                      mesh::St_mesh, mp, F_data,
-                      connijk_original, poin_in_bdy_face_original,
-                      x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::VTK;
-                      nvar=1, qexact=zeros(1,nvar), case="")
-    
-    comm = MPI.COMM_WORLD
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
+
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
 
-        write_vtk(SD, mesh, sol, uaux, mp, 
+        write_vtk(SD, mesh, sol, uaux, mp,
                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
-                  iout=iout, nvar=nvar, qexact=qexact, case=case) 
+                  iout=iout, nvar=nvar, qexact=qexact, case=case,
+                  μ_dsgs_pnode=μ_dsgs_pnode)
         
     else
         #VERIFY THIS on GPU
@@ -153,18 +221,19 @@ function write_output(SD, sol, uaux, t, iout,
         write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                    OUTPUT_DIR::String, inputs::Dict,
+                    OUTPUT_DIR::String, inputs,
                     varnames, outvarnames,
                     outformat::NETCDF;
-                    nvar=1, qexact=zeros(1,nvar), case="")
+                    nvar=1, qexact=zeros(1,nvar), case="",
+                    μ_dsgs_pnode=nothing)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
@@ -189,17 +258,18 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                      iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter_", iout, ".pvtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
-                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="",
+                   μ_dsgs_pnode=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -207,21 +277,25 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     nvar     = size(varnames, 1)
     noutvar  = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     new_size = size(mesh.x,1)
-    if (mesh.nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
-    else
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
-    end
-    isel = 1
-    npoin = mesh.npoin
-    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl)
-    conn .= mesh.connijk
+
+    npoin          = mesh.npoin
+    nelem          = mesh.nelem
+    nelem_semi_inf = mesh.nelem_semi_inf
+    ngl            = mesh.ngl
+    ngr            = mesh.ngr
     
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
+    if (nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1)]
+    else
+        subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(ngl-1)^2]
+    end
+    
+    isel = 1
+    for iel = 1:nelem
+        for i = 1:ngl-1
+            for j = 1:ngl-1
                 ip1 = mesh.connijk[iel,i,j]
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
@@ -237,10 +311,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
             end
         end
     end
-    
-    for iel = 1:mesh.nelem_semi_inf
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngr-1
+
+    for iel = 1:nelem_semi_inf
+        for i = 1:ngl-1
+            for j = 1:ngr-1
                 ip1 = mesh.connijk_lag[iel,i,j]
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
@@ -262,24 +336,24 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                   μ_dsgs_pnode=μ_dsgs_pnode)
 
-    
+
     #
     # Write solution to vtk:
     #
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.x[1:mesh.npoin],
-                         mesh.y[1:mesh.npoin],
-                         mesh.y[1:mesh.npoin]*TFloat(0.0),
+                         mesh.coords[1:mesh.npoin,1],
+                         mesh.coords[1:mesh.npoin,2],
+                         mesh.coords[1:mesh.npoin,2]*TFloat(0.0),
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        # vtkf["gid", VTKCellData()] = mesh.ip2gip[:]
-
+        
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
@@ -293,9 +367,12 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
 end
 
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
-                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
-                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   connijk_original, poin_in_bdy_face_original,
+                   x_original, y_original, z_original,
+                   t, title::String, OUTPUT_DIR::String, inputs,
+                   varnames, outvarnames;
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="",
+                   μ_dsgs_pnode=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -304,21 +381,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     noutvar = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
     
-    xx = zeros(size(mesh.x,1))
-    yy = zeros(size(mesh.x,1))
-    zz = zeros(size(mesh.x,1))
-    xx .= mesh.x 
-    yy .= mesh.y
-    zz .= mesh.z
-    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
-    conn .= mesh.connijk
-    x_spare = zeros(Bool,size(mesh.x,1),1)
-    y_spare = zeros(Bool,size(mesh.y,1),1)
-    z_spare = zeros(Bool,size(mesh.z,1),1)
-    connijk_spare = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
-    poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
-    poin_bdy .= mesh.poin_in_bdy_face
-   
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
     
@@ -359,18 +421,19 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
-    
-    
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                   μ_dsgs_pnode=μ_dsgs_pnode)
+
+
     #
     # Write solution:
     #
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.x[1:mesh.npoin],
-                         mesh.y[1:mesh.npoin],
-                         mesh.z[1:mesh.npoin],
+                         mesh.coords[1:mesh.npoin,1],
+                         mesh.coords[1:mesh.npoin,2],
+                         mesh.coords[1:mesh.npoin,3],
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
@@ -504,14 +567,13 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD, sol, uaux, t, iout,
-                      mesh::St_mesh, mp, F_data,
-                      connijk_original, poin_in_bdy_face_original,
-                      x_original, y_original, z_original,
-                      OUTPUT_DIR::String, inputs::Dict,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
                       outformat::HDF5;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
@@ -536,7 +598,7 @@ function write_output(SD, sol, uaux, t, iout,
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
 end
-function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     #println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     
@@ -555,10 +617,10 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
     end
     
-    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
-    
+    MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
+
 end
-function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5; nvar=1)
+function read_output(SD, INPUT_DIR::String, inputs, npoin, outformat::HDF5; nvar=1)
     
     #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
@@ -568,9 +630,13 @@ function read_output(SD, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5
 end
 
 
-function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
-    
-    comm = MPI.COMM_WORLD
+function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, title::String, OUTPUT_DIR::String, inputs, varnames; iout=1, nvar=1, case="")
+    # PERF: pull HDF5 into Jexpresso's namespace on first use; no-op
+    # after that. Eager-loading HDF5 in src/Jexpresso.jl cost every
+    # non-HDF5 run (city2d uses VTK output) tens of MB and seconds.
+    _ensure_hdf5_loaded!()
+
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     #Write one HDF5 file timestep
@@ -593,25 +659,30 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
     end
 end
 
-function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
-    comm = MPI.COMM_WORLD
+function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
+    _ensure_hdf5_loaded!()
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
 
     q  = zeros(Float64, npoin, nvar+1)
     qe = zeros(Float64, npoin, nvar+1)
     
-
     #read one HDF5 file time
-    
     fout_name = string(INPUT_DIR, "/t.h5")
     time = rank == 0 ? convert(Float64, h5read(fout_name, "time")) : 0.0
     time = MPI.bcast(time, 0, comm)
-    inputs[:tinit] = time
+    if inputs isa AbstractDict
+        inputs[:tinit] = time
+    else
+        @warn "read_hdf5: cannot write :tinit into a NamedTuple inputs; " *
+              "restart time = $time will be ignored unless you rebind " *
+              "inputs in the caller."
+    end
     #Write one HDF5 file per variable
     for ivar = 1:nvar
-        fout_name = string(INPUT_DIR, "/var_", ivar,"_",rank, ".h5")
-        idx = (ivar - 1)*npoin
+        fout_name   = string(INPUT_DIR, "/var_", ivar,"_",rank, ".h5")
+        idx         = (ivar - 1)*npoin
         q[:, ivar]  = convert(Array{Float64, 1}, h5read(fout_name, "q"))
         qe[:, ivar] = convert(Array{Float64, 1}, h5read(fout_name, "qe"))
     end
@@ -619,34 +690,37 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     return q, qe
 end
 
-function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+    # PERF: pull NCDatasets into Jexpresso's namespace on first use.
+    _ensure_netcdf_loaded!()
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
-    
-    xx = zeros(size(mesh.x,1))
-    yy = zeros(size(mesh.x,1))
-    xx .= mesh.x 
-    yy .= mesh.y
-    nvar     = size(varnames, 1)
-    noutvar  = max(nvar, size(outvarnames,1))
-    if (mesh.nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
+
+    xx      = mesh.x
+    yy      = mesh.y
+    nvar    = size(varnames, 1)
+    noutvar = max(nvar, size(outvarnames,1))
+
+    ngr            = mesh.ngr
+    ngl            = mesh.ngl
+    npoin          = mesh.npoin
+    nelem          = mesh.nelem
+    nelem_semi_inf = mesh.nelem_semi_inf
+    if (nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
     else
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+        subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
     end
+
     nsubelem = size(subelem, 1)
     isel = 1
-    npoin = mesh.npoin
-    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl)
-    conn .= mesh.connijk
-    
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
+    for iel = 1:nelem
+        for i = 1:ngl-1
+            for j = 1:ngl-1
                 ip1 = mesh.connijk[iel,i,j]
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
@@ -662,9 +736,9 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
         end
     end
     
-    for iel = 1:mesh.nelem_semi_inf
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngr-1
+    for iel = 1:nelem_semi_inf
+        for i = 1:ngl-1
+            for j = 1:ngr-1
                 ip1 = mesh.connijk_lag[iel,i,j]
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
@@ -673,7 +747,6 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 subelem[isel, 2] = mesh.ip2gip[ip2]
                 subelem[isel, 3] = mesh.ip2gip[ip3]
                 subelem[isel, 4] = mesh.ip2gip[ip4]
-                
                 
                 isel = isel + 1
             end
@@ -686,12 +759,11 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
-
-
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    nprocs = MPI.Comm_size(comm)
     
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
+
     local_list = findall(x->x == rank, mesh.gip2owner)
     # Gather data from all processes
     all_ip2gip  = MPI.gather(mesh.ip2gip[local_list], comm)
@@ -777,133 +849,169 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
 end
 
-function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
-                      iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                      iout=1, nvar=1, qexact=zeros(1,nvar), case="",
+                      comm=MPI.COMM_WORLD)
+    _ensure_netcdf_loaded!()
 
-    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(varnames, Tuple)    || isa(varnames, String))    varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
-    
+
     nvar    = size(varnames, 1)
-    noutvar = max(nvar, size(outvarnames,1))
-    npoin   = mesh.npoin
-    
-    xx = zeros(size(mesh.x,1))
-    yy = zeros(size(mesh.x,1))
-    zz = zeros(size(mesh.x,1))
-    xx .= mesh.x 
-    yy .= mesh.y
-    zz .= mesh.z
-    nsubelem = mesh.nelem*(mesh.ngl-1)^3
-    subelem  = Array{Int64}(undef, nsubelem, 8)
-    
+    noutvar = max(nvar, size(outvarnames, 1))
+
+    rank   = MPI.Comm_rank(comm)
+    nranks = MPI.Comm_size(comm)
+
+    # ----------------------------------------------------------------
+    # local sizes
+    # ----------------------------------------------------------------
+    local_npoin    = mesh.npoin
+    local_nsubelem = mesh.nelem * (mesh.ngl - 1)^3
+
+    # ----------------------------------------------------------------
+    # global sizes
+    # ----------------------------------------------------------------
+    global_npoin    = MPI.Allreduce(local_npoin,    +, comm)
+    global_nsubelem = MPI.Allreduce(local_nsubelem, +, comm)
+
+    # ----------------------------------------------------------------
+    # local coordinates
+    # ----------------------------------------------------------------
+    xx = copy(mesh.x)
+    yy = copy(mesh.y)
+    zz = copy(mesh.z)
+
+    # ----------------------------------------------------------------
+    # build local subelement connectivity using ip2gip for global node indices
+    # ----------------------------------------------------------------
+    subelem = Array{Int64}(undef, local_nsubelem, 8)
     isel = 1
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
             for j = 1:mesh.ngl-1
                 for k = 1:mesh.ngl-1
-                    ip1 = mesh.connijk[iel,i,j,k]
-                    ip2 = mesh.connijk[iel,i+1,j,k]
-                    ip3 = mesh.connijk[iel,i+1,j+1,k]
-                    ip4 = mesh.connijk[iel,i,j+1,k]
-                    
-                    ip5 = mesh.connijk[iel,i,j,k+1]
-                    ip6 = mesh.connijk[iel,i+1,j,k+1]
-                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
-                    ip8 = mesh.connijk[iel,i,j+1,k+1]
-
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    
-                    isel = isel + 1
+                    subelem[isel, :] = [
+                        mesh.ip2gip[mesh.connijk[iel,i,  j,  k  ]],
+                        mesh.ip2gip[mesh.connijk[iel,i+1,j,  k  ]],
+                        mesh.ip2gip[mesh.connijk[iel,i+1,j+1,k  ]],
+                        mesh.ip2gip[mesh.connijk[iel,i,  j+1,k  ]],
+                        mesh.ip2gip[mesh.connijk[iel,i,  j,  k+1]],
+                        mesh.ip2gip[mesh.connijk[iel,i+1,j,  k+1]],
+                        mesh.ip2gip[mesh.connijk[iel,i+1,j+1,k+1]],
+                        mesh.ip2gip[mesh.connijk[iel,i,  j+1,k+1]],
+                    ]
+                    isel += 1
                 end
             end
         end
     end
-    
-    #
-    # Fetch user-defined diagnostic vars or take them from the solution vars:
-    #
-    qout = zeros(Float64, npoin, noutvar)
-    @show noutvar
-    u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 
-    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".nc")
-    NCDataset(fout_name, "c") do ds
-        
-        # dimensions
-        defDim(ds, "nMesh3d_node", npoin)
-        defDim(ds, "nMesh3d_volume", nsubelem)
-        defDim(ds, "nMaxMesh3d_volume_nodes", 8)
+    # ----------------------------------------------------------------
+    # diagnostic output vars
+    # ----------------------------------------------------------------
+    qout = zeros(Float64, local_npoin, noutvar)
+    u2uaux!(qaux, q, nvar, local_npoin)
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], local_npoin, nvar, noutvar)
 
-        # --- the mesh topology "dummy" variable with your exact attributes ---
-        mesh = defVar(ds, "mesh", Int32, ())  # scalar dummy
-        mesh.attrib["cf_role"]                  = "mesh_topology"
-        mesh.attrib["long_name"]                = "Topology of a 3-d unstructured mesh"
-        mesh.attrib["topology_dimension"]       = 3
-        mesh.attrib["node_coordinates"]         = "Mesh3d_node_x Mesh3d_node_y Mesh3d_node_z"
-        mesh.attrib["volume_node_connectivity"] = "Mesh3d_volume_nodes"
-        mesh.attrib["volume_shape_type"]        = "Mesh3d_vol_types"
-        mesh.attrib["volume_dimension"]         = "nMesh3d_volume"
+    # ----------------------------------------------------------------
+    # gather everything to rank 0
+    # ----------------------------------------------------------------
+    all_ip2gip  = MPI.gather(mesh.ip2gip, comm; root=0)
+    all_xx      = MPI.gather(xx,          comm; root=0)
+    all_yy      = MPI.gather(yy,          comm; root=0)
+    all_zz      = MPI.gather(zz,          comm; root=0)
+    all_subelem = MPI.gather(subelem,     comm; root=0)
+    all_qout    = [MPI.gather(qout[:,ivar], comm; root=0) for ivar in 1:noutvar]
 
-        vol_types = defVar(ds, "Mesh3d_vol_types", Int32, ("nMesh3d_volume",))
-        vol_types.attrib["cf_role"]       = "volume_shape_type"
-        vol_types.attrib["long_name"]     = "Specifies the shape of the individual volumes."
-        vol_types.attrib["flag_range"]    = [0, 2]                # integer array
-        vol_types.attrib["flag_values"]   = [0, 1, 2]             # integer array
-        vol_types.attrib["flag_meanings"] = "tetrahedron wedge hexahedron"
+    # ----------------------------------------------------------------
+    # rank 0 writes serially
+    # ----------------------------------------------------------------
+    if rank == 0
+        all_ip2gip  = vcat(all_ip2gip...)
+        all_xx      = vcat(all_xx...)
+        all_yy      = vcat(all_yy...)
+        all_zz      = vcat(all_zz...)
+        all_subelem = vcat(all_subelem...)
+        all_qout    = [vcat(all_qout[ivar]...) for ivar in 1:noutvar]
 
+        perm = sortperm(all_ip2gip)
+        # reorder node data by global index
+        perm = sortperm(all_ip2gip)
 
-        # node coordinates
-        nx = defVar(ds, "Mesh3d_node_x", Float64, ("nMesh3d_node",))
-        ny = defVar(ds, "Mesh3d_node_y", Float64, ("nMesh3d_node",))
-        nz = defVar(ds, "Mesh3d_node_z", Float64, ("nMesh3d_node",))
-        nx.attrib["standard_name"] = "projection_x_coordinate"
-        nx.attrib["units"]         = "m"
-        ny.attrib["standard_name"] = "projection_y_coordinate"
-        ny.attrib["units"]         = "m"
-        nz.attrib["standard_name"] = "projection_z_coordinate"
-        nz.attrib["units"]         = "m"
+        fout_name = string(OUTPUT_DIR, "/iter_", iout, ".nc")
+        mkpath(dirname(fout_name))
 
-        # volum->node connectivity 
-        FILL = Int32(2_147_483_647)
-        v2n = defVar(ds, "Mesh3d_volume_nodes", Int32, ("nMesh3d_volume", "nMaxMesh3d_volume_nodes");fillvalue=FILL)
-        v2n.attrib["cf_role"]     = "volume_node_connectivity"
-        v2n.attrib["start_index"] = 1   # choose 1-based; UGRID default is 0-based if unspecified
+        NCDataset(fout_name, "c") do ds
 
-        for ivar = 1:noutvar
+            # ---- dimensions ----
+            defDim(ds, "nMesh3d_node",            global_npoin)
+            defDim(ds, "nMesh3d_volume",          global_nsubelem)
+            defDim(ds, "nMaxMesh3d_volume_nodes", 8)
 
-            # Define data variable
-            data_var = defVar(ds, "q$(ivar)", Float64, ("nMesh3d_node",))
-            
-            # Add attributes for data
-            data_var.attrib["long_name"] = "q$(ivar) field"
-            data_var.attrib["location"]  = "node"
-            data_var.attrib["units"]     = "N/A"
-            data_var[:]                  = qout[:,ivar]
+            # ---- mesh topology ----
+            mesh_var = defVar(ds, "mesh", Int32, ())
+            mesh_var.attrib["cf_role"]                  = "mesh_topology"
+            mesh_var.attrib["long_name"]                = "Topology of a 3-d unstructured mesh"
+            mesh_var.attrib["topology_dimension"]       = 3
+            mesh_var.attrib["node_coordinates"]         = "Mesh3d_node_x Mesh3d_node_y Mesh3d_node_z"
+            mesh_var.attrib["volume_node_connectivity"] = "Mesh3d_volume_nodes"
+            mesh_var.attrib["volume_shape_type"]        = "Mesh3d_vol_types"
+            mesh_var.attrib["volume_dimension"]         = "nMesh3d_volume"
+
+            # ---- volume types ----
+            vol_types = defVar(ds, "Mesh3d_vol_types", Int32, ("nMesh3d_volume",))
+            vol_types.attrib["cf_role"]       = "volume_shape_type"
+            vol_types.attrib["long_name"]     = "Specifies the shape of the individual volumes."
+            vol_types.attrib["flag_range"]    = [0, 2]
+            vol_types.attrib["flag_values"]   = [0, 1, 2]
+            vol_types.attrib["flag_meanings"] = "tetrahedron wedge hexahedron"
+
+            # ---- node coordinates ----
+            nx = defVar(ds, "Mesh3d_node_x", Float64, ("nMesh3d_node",))
+            ny = defVar(ds, "Mesh3d_node_y", Float64, ("nMesh3d_node",))
+            nz = defVar(ds, "Mesh3d_node_z", Float64, ("nMesh3d_node",))
+            nx.attrib["standard_name"] = "projection_x_coordinate"
+            nx.attrib["units"]         = "m"
+            ny.attrib["standard_name"] = "projection_y_coordinate"
+            ny.attrib["units"]         = "m"
+            nz.attrib["standard_name"] = "projection_z_coordinate"
+            nz.attrib["units"]         = "m"
+
+            # ---- connectivity ----
+            FILL = Int32(2_147_483_647)
+            v2n = defVar(ds, "Mesh3d_volume_nodes", Int32,
+                         ("nMesh3d_volume", "nMaxMesh3d_volume_nodes"); fillvalue=FILL)
+            v2n.attrib["cf_role"]     = "volume_node_connectivity"
+            v2n.attrib["start_index"] = 1
+
+            # ---- solution variables ----
+            data_vars = [defVar(ds, "q$(ivar)", Float64, ("nMesh3d_node",)) for ivar = 1:noutvar]
+            for ivar = 1:noutvar
+                data_vars[ivar].attrib["long_name"] = "q$(ivar) field"
+                data_vars[ivar].attrib["location"]  = "node"
+                data_vars[ivar].attrib["units"]     = "N/A"
+            end
+
+            # ---- global attributes ----
+            ds.attrib["title"]       = "Unstructured data"
+            ds.attrib["Conventions"] = "CF-1.11 UGRID-1.0"
+
+            # ---- write data (nodes reordered by global index) ----
+            vol_types[:] = fill(Int32(2), global_nsubelem)
+            nx[:]        = all_xx[perm]
+            ny[:]        = all_yy[perm]
+            nz[:]        = all_zz[perm]
+            v2n[:]       = all_subelem
+            for ivar = 1:noutvar
+                data_vars[ivar][:] = all_qout[ivar][perm]
+            end
+
         end
-            
-        # Add global attributes
-        ds.attrib["title"] = "Unstructured data"
-        ds.attrib["Conventions"] = "CF-1.11 UGRID-1.0"
-
-        volume_type = zeros(Int32, nsubelem)
-        fill!(volume_type, 2)
-        vol_types[:] = volume_type
-        nx[:]        = xx
-        ny[:]        = yy
-        nz[:]        = zz
-        v2n[:]       = subelem
-            
     end
+
+    MPI.Barrier(comm)
 
 end

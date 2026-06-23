@@ -1,6 +1,11 @@
 using Artifacts
-import RRTMGP: get_artifact_path
-import Infiltrator
+# PERF: `import RRTMGP: get_artifact_path` and `import Infiltrator`
+# were hoisted into Jexpresso._ensure_rt_loaded!() so non-RT runs
+# (city2d et al.) don't pay the load cost. compute_radiative_fluxes!
+# and ncol_ds_clear_sky below reference these names — they parse fine
+# without the imports because Julia resolves names at call time, and
+# _ensure_rt_loaded!() is guaranteed to have run before any RT entry
+# point fires (drivers.jl calls it under `if inputs[:lRT_problem]`).
 
 Base.@kwdef mutable struct phys_grid{T <: AbstractFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, backend}
 
@@ -199,7 +204,7 @@ function store_mesh_to_phys_grid_correspondance!(phys_grid,el_max,el_min,nelem,n
                 e += 1
             end
             if (found == false)
-                @info "error could not find corresponding element on dynamics mesh, something is broken"
+                println(" # error could not find corresponding element on dynamics mesh, something is broken")
                 @info e, x, y, z, maximum(el_max[:,1]), minimum(el_min[:,1])
             end
             S = 0
@@ -670,9 +675,14 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         inc_flux_diffuse = nothing
         swbcs = (cos_zenith, irrad, sfc_alb_direct, inc_flux_diffuse, sfc_alb_diffuse)
         slv_sw = SLVSW(Float64, DA, context, phys_grid.nlev-1, phys_grid.ncol, swbcs...)
-        exfiltrate = false
+        # PERF: removed `exfiltrate && Infiltrator.@exfiltrate` —
+        # the macro is expanded at parse time (not call time), so even
+        # though `exfiltrate = false` made it dead code, the
+        # macroexpansion still required `Infiltrator` to be in scope
+        # when phys_grid.jl is included. That broke the lazy-load
+        # design for non-RT runs. Re-add via `@eval` if you actually
+        # need exfiltration here.
         # calling longwave and shortwave solvers
-        exfiltrate && Infiltrator.@exfiltrate
         solve_lw!(slv_lw, as, lookup_lw, lookup_lw_cld)
 
         solve_sw!(slv_sw, as, lookup_sw, lookup_sw_cld)
