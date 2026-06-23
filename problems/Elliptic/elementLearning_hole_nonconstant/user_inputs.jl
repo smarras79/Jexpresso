@@ -38,6 +38,10 @@ function user_inputs()
         #:EL_amax              => 1.0,    # (sampling) max of a ~ U(EL_amin,EL_amax) per element
         #:EL_avar              => 0.0,    # (sampling) >0 ⇒ smooth within-element variation of a
 #        :lEL_Sample           => true,   # uncomment to (re)generate training data
+        #:lEL_exact            => true,   # run inference WITHOUT a trained model
+                                          # (exact Tⁱᵉ=(A_vᵒvᵒ)⁻¹A_vᵒvᵇ); also the
+                                          # automatic fallback if :NNfile is missing
+                                          # or still incomplete.
         :NNfile               => "JX_NN_model.onnx",
         #:NNfile               => "JX_RFRC_model.onnx",
         :Nsamp                => 50000,

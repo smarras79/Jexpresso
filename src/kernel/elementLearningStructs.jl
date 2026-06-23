@@ -282,55 +282,72 @@ Loads the model from `NNfile` — supports both `.onnx` and `.jld2` extensions.
 """
 function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
                         nfeatures::Int, nelintpoints::Int, elnbdypoints::Int,
-                        NNfile::String)
+                        NNfile::String; force_exact::Bool=false)
     T = eltype(A)
 
-    local model
+    local model     = nothing
     local m_type    = :NONE
     local m_inname  = ""
     local m_outname = ""
 
-    if !isfile(NNfile)
-        error("Model file not found: $NNfile")
-    end
-
-    ext = lowercase(splitext(NNfile)[2])
-
-    if ext == ".onnx"
-        # ── ONNX: load session, cache tensor names ────────────────────────────
-        ENV["OMP_NUM_THREADS"]      = "1"
-        ENV["ORT_NUM_THREADS"]      = "1"
-        ENV["OPENBLAS_NUM_THREADS"] = "1"
-
-        model      = ONNXRunTime.load_inference(NNfile)
-        m_type     = :ONNX
-        m_inname   = first(model.input_names)
-        m_outname  = first(model.output_names)
-
-    elseif ext == ".jld2"
-        # ── JLD2: load and reconstruct into the local NNRFRC.RFRC type ────────
-        raw = jldopen(NNfile, "r") do file; file["model"]; end
-        if raw isa NNRFRC.RFRC
-            model = raw
-        else
-            # JLD2 returns ReconstructedMutable when module path differs;
-            # rebuild field-by-field matching the RFRC struct definition:
-            #   struct RFRC{T}
-            #       W_in, W_res, W_out, b_out, ridge_alpha, activation
-            #   end
-            model = NNRFRC.RFRC{Float32}(
-                Matrix{Float32}(raw.W_in),       # 1st: W_in
-                Matrix{Float32}(raw.W_res),      # 2nd: W_res
-                Matrix{Float32}(raw.W_out),      # 3rd: W_out
-                Vector{Float32}(raw.b_out),      # 4th: b_out
-                Float32(raw.ridge_alpha),         # 5th: ridge_alpha
-                raw.activation                    # 6th: activation (Function)
-            )
-        end
-        m_type = :JLD2
-
+    if force_exact || !isfile(NNfile)
+        # No usable model requested/available → EXACT local condensation (no NN).
+        reason = force_exact ? ":lEL_exact requested" : "model file not found ($NNfile)"
+        @warn string("Element learning: ", reason,
+                     " — using EXACT local condensation Tⁱᵉ=(A_vᵒvᵒ)⁻¹A_vᵒvᵇ ",
+                     "(no NN surrogate). Provide a trained :NNfile to use the surrogate.")
+        m_type = :EXACT
     else
-        error("Unsupported model extension: \"$ext\" — use .onnx or .jld2")
+        ext = lowercase(splitext(NNfile)[2])
+        if ext != ".onnx" && ext != ".jld2"
+            error("Unsupported model extension: \"$ext\" — use .onnx or .jld2")
+        end
+        try
+            if ext == ".onnx"
+                # ── ONNX: load session, cache tensor names ────────────────────
+                ENV["OMP_NUM_THREADS"]      = "1"
+                ENV["ORT_NUM_THREADS"]      = "1"
+                ENV["OPENBLAS_NUM_THREADS"] = "1"
+
+                model      = ONNXRunTime.load_inference(NNfile)
+                m_type     = :ONNX
+                m_inname   = first(model.input_names)
+                m_outname  = first(model.output_names)
+
+            else  # ".jld2"
+                # ── JLD2: load and reconstruct into the local NNRFRC.RFRC type ─
+                raw = jldopen(NNfile, "r") do file; file["model"]; end
+                if raw isa NNRFRC.RFRC
+                    model = raw
+                else
+                    # JLD2 returns ReconstructedMutable when module path differs;
+                    # rebuild field-by-field matching the RFRC struct definition:
+                    #   struct RFRC{T}
+                    #       W_in, W_res, W_out, b_out, ridge_alpha, activation
+                    #   end
+                    model = NNRFRC.RFRC{Float32}(
+                        Matrix{Float32}(raw.W_in),       # 1st: W_in
+                        Matrix{Float32}(raw.W_res),      # 2nd: W_res
+                        Matrix{Float32}(raw.W_out),      # 3rd: W_out
+                        Vector{Float32}(raw.b_out),      # 4th: b_out
+                        Float32(raw.ridge_alpha),         # 5th: ridge_alpha
+                        raw.activation                    # 6th: activation (Function)
+                    )
+                end
+                m_type = :JLD2
+            end
+        catch err
+            # The file exists but cannot be loaded (e.g. still being written /
+            # incomplete / corrupt) → fall back to EXACT instead of crashing.
+            @warn string("Element learning: could not load model from ", NNfile,
+                         " (likely incomplete or corrupt) — falling back to EXACT ",
+                         "local condensation Tⁱᵉ=(A_vᵒvᵒ)⁻¹A_vᵒvᵇ (no NN surrogate).",
+                         " Error: ", err)
+            model     = nothing
+            m_type    = :EXACT
+            m_inname  = ""
+            m_outname = ""
+        end
     end
 
     return EL_WorkBuffers(
@@ -678,8 +695,14 @@ function elementLearning_infer!(
         _infer_jld2!(buf, model,
                      avisc, nfeatures, nout, nelem, nelem_avisc,
                      nelintpoints, elnbdypoints)
+
+    elseif model_type == :EXACT
+        # No (or incomplete) trained surrogate: use the EXACT local condensation
+        # Tⁱᵉ = (A_vᵒvᵒ)⁻¹ A_vᵒvᵇ instead of the NN prediction, so the whole
+        # element-learning solve still runs end-to-end (and is exact).
+        _infer_exact!(buf, EL, nelem, nelintpoints, elnbdypoints)
     else
-        error("Unknown model_type: $model_type — expected :ONNX or :JLD2")
+        error("Unknown model_type: $model_type — expected :ONNX, :JLD2, or :EXACT")
     end
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -791,6 +814,27 @@ function elementLearning_infer!(
         end
     end
 
+    return nothing
+end
+
+
+# =============================================================================
+#  _infer_exact!  — NO-surrogate fallback
+#
+#  Fills buf.Tie_nn_all with the EXACT local condensation
+#      Tⁱᵉ = (A_vᵒvᵒ)⁻¹ A_vᵒvᵇ ,
+#  computed directly from the per-element blocks already assembled in EL
+#  (EL.Avovo, EL.Avovb). This lets the element-learning solve run even when no
+#  trained model is available (or the training file is still incomplete): the
+#  result is the exact static-condensation solution, with the NN simply replaced
+#  by the true local map. The feature/avisc are unused in this path.
+# =============================================================================
+function _infer_exact!(buf, EL, nelem, nelintpoints, elnbdypoints)
+    Avovo = Matrix{Float64}(undef, nelintpoints, nelintpoints)
+    @inbounds for iel = 1:nelem
+        copyto!(Avovo, @view(EL.Avovo[:, :, iel]))   # fresh copy: \ may overwrite it
+        buf.Tie_nn_all[:, :, iel] .= Avovo \ @view(EL.Avovb[:, :, iel])
+    end
     return nothing
 end
 
@@ -1204,9 +1248,13 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         A            = sem.matrix.L
         A_∂τ∂τ       = A[sem.mesh.∂τ, sem.mesh.∂τ]   # needed by EL_WorkBuffers constructor
 
+        # :lEL_exact => true forces the NN-free EXACT local condensation; it is
+        # also used automatically when :NNfile is missing or fails to load, so the
+        # inference solve can run before/without a complete trained model.
         wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
                               nelintpoints, elnbdypoints,
-                              inputs[:NNfile])
+                              get(inputs, :NNfile, "");
+                              force_exact = get(inputs, :lEL_exact, false))
 
         total_cols_writtenin  = 0
         total_cols_writtenout = 0
