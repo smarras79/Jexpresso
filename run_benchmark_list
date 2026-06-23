@@ -68,6 +68,9 @@ run(`/opt/homebrew/bin/mpirun -n 3 $JULIA --project=. -e 'using Jexpresso; Jexpr
 |----------------|-----------------------|-------------------|
 | sod1d          | 138.818 MiB           | 3 s               |
 | theta          | 39 MiB                | 5–9 s             |
-| 3d             | 178 MiB               | 145 s  	     |
+| thetaTracers   | 155 MiB               | 106 s             | FLAG
+| 3d             | 178 MiB               | 145 s  	     | FLAG
 | wave1d_lag     | 99MiB                 | 4 s	             |
-| theta_laguerre | 179 MiB               | 68 s              |
+| theta_laguerre | 179 MiB               | 68 s              | FLAG
+| 2d_extra_coords| 96 MiB                |  1 s              |
+| 3d_extra_coords| ? MiB                 |  ? s              |
