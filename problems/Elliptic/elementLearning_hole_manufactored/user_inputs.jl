@@ -1,0 +1,87 @@
+function user_inputs()
+    inputs = Dict(
+        #---------------------------------------------------------------------------
+        # MANUFACTURED-SOLUTION test on the plate-with-hole geometry.
+        #
+        # user_source.jl is hardwired to el_source_mode() = :mms, so this solves
+        #   -Δu = f  on the hole, with f = -Δu_ex, g = u_ex on ∂Ω, u_ex stored in
+        # qe. The post-solve L2 error ("# MMS verification: ... ‖e‖_L2 = ...")
+        # checks the result against the analytic solution u_ex = sin(x) cos(y).
+        #
+        #   • As shipped (:lelementLearning => true): verifies the EL surrogate
+        #     (needs a trained model in :NNfile).
+        #   • Comment :lelementLearning to verify with the direct solver (Ax=b) —
+        #     runnable immediately, no model required.
+        #---------------------------------------------------------------------------
+        :tend                 => 1.0,
+        :ode_solver           => "GMRES", #"BICGSTABLE", #ORK256()
+        :ndiagnostics_outputs => 1,
+        :lsource              => true, 
+        :llinsolve            => true,
+        :ldss_laplace         => true,
+        :lsparse              => true,
+        :lelementLearning     => true,
+#        :lEL_Sample           => true,
+        :NNfile               => "JX_NN_model.onnx",
+        #:NNfile               => "JX_RFRC_model.onnx",
+        #:NNfile               => "JX_RFRC_final.jld2",
+        :Nsamp                => 50000,
+        :rconst               => [0.0],
+        #---------------------------------------------------------------------------
+        # Plotting parameters
+        #---------------------------------------------------------------------------
+        :outformat           => "vtk",
+        #:output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
+        #:output_dir          => "./output-RNN/",
+        :output_dir          => "./output-manufactured/",
+        #:output_dir          => "./output-RFRC/",
+        #:output_dir          => "./output-RFRC-JLD2/",
+        #:output_dir          => "./output-Axb/",
+        :loverwrite_output   => true,
+        #---------------------------------------------------------------------------
+        # Mesh paramters and files:
+        #---------------------------------------------------------------------------
+        :lread_gmsh          => true, #If false, a 1D problem will be enforced
+#        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
+
+        
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/jexpresso_domain_unique_bcs.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/jex-el_domain_unique_bcs.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/plate_word_unit.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_unit_square_10x10el.msh",
+        #---------------------------------------------------------------------------
+        # static adaptivity
+        #---------------------------------------------------------------------------
+        #:lpreadapt       => true,
+        #:amr_max_level   => 1,
+        #---------------------------------------------------------------------------
+        #Integration and quadrature properties
+        #---------------------------------------------------------------------------
+        :interpolation_nodes =>"lgl",
+        :nop                 => 6,      # Polynomial order
+        #---------------------------------------------------------------------------
+        # Physical parameters/constants:
+        #---------------------------------------------------------------------------
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:ivisc_equations      => (1, 2, 3, 4),
+        #:μ                   => (0.0, 75.0, 75.0, 75.0), #horizontal viscosity constant for momentum
+        #---------------------------------------------------------------------------
+        # grid modification parameters
+        #---------------------------------------------------------------------------
+        :xscale              => 1.0,
+        :yscale              => 1.0,
+        :xdisp               => 0.0,
+        :ydisp               => 0.0,
+    ) #Dict
+    #---------------------------------------------------------------------------
+    # END User define your inputs below: the order doesn't matter
+    #---------------------------------------------------------------------------
+
+    return inputs
+    
+end
