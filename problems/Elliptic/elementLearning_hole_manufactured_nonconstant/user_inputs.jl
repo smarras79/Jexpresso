@@ -34,7 +34,7 @@ function user_inputs()
         :lEL_xidependent      => true,   # (sampling) within-element-varying â for bilinear quads
         :EL_sample_shape      => :quad,  # (sampling) :affine | :quad (bilinear, recommended) | :warp
         :ahat_output          => :cell, # VTU â format: :cell | :nodal | :tensor
-        :lEL_Sample           => true,   # uncomment to (re)generate training data
+   #     :lEL_Sample           => true,   # uncomment to (re)generate training data
         :NNfile               => "JX_NN_model.onnx",
         #:NNfile               => "JX_RFRC_model.onnx",
         #:NNfile               => "JX_RFRC_final.jld2",
@@ -55,8 +55,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
-#        :gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
+#        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
 
         
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
