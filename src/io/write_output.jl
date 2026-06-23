@@ -263,6 +263,28 @@ end
 #------------
 # VTK writer
 #------------
+# =============================================================================
+#  Exact / manufactured-solution VTU output (opt-in via inputs[:lwrite_exact])
+#
+#  `qexact` carries the analytic/manufactured field per node (e.g. params.qp.qe).
+#  The default placeholder `zeros(1,nvar)` has size 1 in the node dimension and
+#  is treated as "no exact field". When a real field is present AND
+#  inputs[:lwrite_exact] is true, each solution variable ivar is written to the
+#  VTU as a point field "<varnames[ivar]>_exact", so the manufactured solution
+#  can be visualised / differenced against the computed one in ParaView.
+# =============================================================================
+_has_exact_field(qexact, npoin) =
+    (ndims(qexact) == 1 && length(qexact) >= npoin) ||
+    (ndims(qexact) >= 2 && size(qexact, 1) >= npoin)
+
+function _exact_view(qexact, npoin, ivar)
+    if ndims(qexact) == 1
+        return @view(qexact[1:npoin])
+    else
+        return @view(qexact[1:npoin, ivar])
+    end
+end
+
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
@@ -348,6 +370,13 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     diffvals = write_diffusivity ?
         Float64[inputs[:diffusivity](mesh.x[ip], mesh.y[ip]) for ip = 1:npoin] :
         Float64[]
+
+    #
+    # Optional: exact / manufactured solution, written per solution variable as
+    # "<varname>_exact". Active only when inputs[:lwrite_exact] is true and a real
+    # exact field was supplied (qexact sized to npoin); other cases are unaffected.
+    #
+    write_exact = get(inputs, :lwrite_exact, false) && _has_exact_field(qexact, npoin)
 
     #
     # Optional: GEOMETRY-induced reference diffusivity â (EL notes), written to
@@ -449,6 +478,14 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
 
+        if write_exact
+            nexact = ndims(qexact) == 1 ? 1 : size(qexact, 2)
+            for ivar = 1:min(nvar, nexact)
+                vtkf[string(varnames[ivar], "_exact"), VTKPointData()] =
+                    _exact_view(qexact, npoin, ivar)
+            end
+        end
+
         if write_diffusivity
             vtkf["diffusivity", VTKPointData()] = @view(diffvals[1:npoin])
         end
@@ -532,6 +569,8 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
                    μ_dsgs_pnode=μ_dsgs_pnode)
 
+    # Optional exact / manufactured solution (see the 2D writer / _has_exact_field).
+    write_exact = get(inputs, :lwrite_exact, false) && _has_exact_field(qexact, npoin)
 
     #
     # Write solution:
@@ -551,7 +590,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+
+        if write_exact
+            nexact = ndims(qexact) == 1 ? 1 : size(qexact, 2)
+            for ivar = 1:min(nvar, nexact)
+                vtkf[string(varnames[ivar], "_exact"), VTKPointData()] =
+                    _exact_view(qexact, npoin, ivar)
+            end
+        end
+
         vtkf
     end
     

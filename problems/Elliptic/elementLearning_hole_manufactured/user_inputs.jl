@@ -22,6 +22,7 @@ function user_inputs()
         :lsparse              => true,
         :lelementLearning     => true,
 #        :lEL_Sample           => true,
+        :lwrite_exact         => true,   # write the manufactured solution to the VTU
         :NNfile               => "JX_NN_model.onnx",
         #:NNfile               => "JX_RFRC_model.onnx",
         #:NNfile               => "JX_RFRC_final.jld2",
