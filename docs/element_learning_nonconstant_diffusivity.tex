@@ -108,6 +108,7 @@ part of $\ahat$ is the Jacobian --- exactly the \emph{``simplest case''} of the
 notes.
 
 \subsection{Constant within an element, or varying? (affine vs.\ bilinear)}
+\label{sec:within}
 $\ahat$ is constant \emph{within} an element only when the element map is
 \textbf{affine}, which for a quadrilateral means a \textbf{parallelogram}
 (opposite sides parallel \emph{and} equal); then $\Jk$ is constant.
@@ -347,6 +348,103 @@ julia> include("./src/Jexpresso.jl")
 \end{lstlisting}
 Direct solve of $-\nabla\!\cdot(a\nabla u)=f$ with $a=1+0.2x$; prints the MMS
 $\lVert e\rVert_{L^2}$ and writes the nodal \code{diffusivity} field to the VTU.
+
+\section{Generating training data and the \code{:lEL\_xidependent} flag}
+\label{sec:sampling}
+
+\subsection{The \code{:lEL\_xidependent} flag}
+This is a \textbf{sampling-only} option that controls how the synthetic
+training $\ahat$ is generated. The symbol $\xi$ is the reference-element
+coordinate, so ``$\xi$-dependent'' means $\ahat$ \emph{varies within} the
+element (node to node) rather than being a single value per element.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}llY@{}}
+\toprule
+\code{:lEL\_xidependent} & sampler & each training element's $\ahat$ \\
+\midrule
+\code{false} (default) & \code{synthesize\_random\_ahat} --- random
+  \textbf{affine} Jacobian (rotation $\times$ stretch $\times$ shear) &
+  \textbf{constant within the element} (parallelogram); all $(k+1)^2$ nodes
+  identical \\
+\code{true} & \code{synthesize\_random\_ahat\_field} --- smooth anisotropic
+  per-node warp & \textbf{varies within the element} (mimics a bilinear /
+  curved element) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent
+Real mesh quads (e.g.\ those conforming to the hole) are \textbf{bilinear}, so
+their $\ahat$ varies inside each element (Section~\ref{sec:within}). The default
+affine sampler only ever produces \emph{constant-per-element} feature vectors,
+so a model trained on it never sees within-element variation. Set
+\code{:lEL\_xidependent => true} so the training data resembles what inference
+actually feeds. The flag has \textbf{no effect at inference} --- inference always
+builds $\ahat$ from the real mesh metrics.
+
+\subsection{Sampling: producing \code{input\_tensor.csv} / \code{output\_tensor.csv}}
+Set, in the case's \code{user\_inputs.jl} (e.g.\
+\code{elementLearning\_hole\_manufactured\_nonconstant}):
+\begin{lstlisting}
+:lelementLearning => true,
+:lEL_nonconstant  => true,
+:lEL_xidependent  => true,   # within-element-varying a-hat (recommended)
+:lEL_Sample       => true,   # <-- uncomment to GENERATE training data
+:Nsamp            => 50000,  # number of samples
+\end{lstlisting}
+then run from the Jexpresso root:
+\begin{lstlisting}
+julia --project=.
+julia> push!(empty!(ARGS), "Elliptic", "elementLearning_hole_manufactured_nonconstant");
+julia> include("./src/Jexpresso.jl")
+\end{lstlisting}
+
+\noindent
+Two CSVs are written to the current working directory:
+\begin{itemize}
+  \item \code{input\_tensor.csv} --- the per-node $\ahat$ feature, shape
+        $3(k+1)^2 \times N_{\mathrm{samp}}$ (at \code{nop=6}: $147 \times 50000$);
+  \item \code{output\_tensor.csv} --- the flattened $T^{ie}$, shape
+        $n_{vo}\,n_{vb} \times N_{\mathrm{samp}}$ (at \code{nop=6}:
+        $600 \times 50000$, with $n_{vo}=25$, $n_{vb}=24$).
+\end{itemize}
+The sampling branch returns before loading any NN model, so \textbf{no trained
+model is needed to sample}.
+
+\paragraph{Which mesh for sampling?} The \textbf{one-element mesh}
+(\code{square\_dirichletT\_1x1.msh}), not the full hole mesh. With the current
+sampler the samples are \emph{synthesised} random Jacobians, so the mesh supplies
+only (i) the polynomial order and (ii) the local node-ordering layout read from a
+single element (\code{el\_conn\_to\_ij}); it contributes \emph{no} element
+geometry. The full \code{plate\_hole\_circle\_unit.msh} would therefore produce
+\emph{identical} training data at much higher cost. This also matches the EL
+notes' recipe (``fix the mesh containing only one reference element''). The only
+hard requirement is that \code{:nop} match the inference mesh, since the feature
+size $3(k+1)^2$ and output size $n_{vo}n_{vb}$ depend on it. (If instead you want
+the samples drawn from the \emph{actual} hole element shapes, use the full circle
+mesh together with the bilinear-quad sampler noted at the end of this section.)
+Inference/verification then uses the full circle mesh.
+
+\subsection{Train, then infer}
+\begin{lstlisting}
+# from the directory holding the two CSVs:
+python tools/EL_training/train_rfrc.py    # auto-sizes N_in=3(k+1)^2 -> JX_RFRC_model.onnx
+\end{lstlisting}
+Then point \code{:NNfile} at the trained model, re-comment \code{:lEL\_Sample},
+and re-run the case: it now performs EL inference and prints
+\code{\# MMS verification: ... }$\lVert e\rVert_{L^2}$\code{ = ...}, the
+surrogate's error against the analytic $u_{\mathrm{ex}}$.
+
+\subsection{What the sampled data is (and is not)}
+The samples are \textbf{synthetic} (Option~1: synthesised random Jacobians).
+They do \emph{not} depend on the manufactured solution, and the mesh is used
+only to fix the node ordering --- so the same training data is produced by any
+\code{:lEL\_nonconstant} case. The manufactured solution's role is
+\textbf{verification at inference}, not data generation. To instead draw each
+sample from the \emph{actual} mesh element shapes, a bilinear-quad sampler (draw
+4 random corners, build the bilinear map, take per-node $\ahat$) is the natural
+extension.
 
 \section{Known limitations / follow-ups}
 \begin{itemize}
