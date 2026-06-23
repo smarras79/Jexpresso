@@ -352,24 +352,28 @@ $\lVert e\rVert_{L^2}$ and writes the nodal \code{diffusivity} field to the VTU.
 \section{Generating training data and the \code{:lEL\_xidependent} flag}
 \label{sec:sampling}
 
-\subsection{The \code{:lEL\_xidependent} flag}
-This is a \textbf{sampling-only} option that controls how the synthetic
-training $\ahat$ is generated. The symbol $\xi$ is the reference-element
-coordinate, so ``$\xi$-dependent'' means $\ahat$ \emph{varies within} the
-element (node to node) rather than being a single value per element.
+\subsection{The element-shape selector \code{:EL\_sample\_shape}}
+This \textbf{sampling-only} option controls the element-shape distribution from
+which the synthetic training $\ahat$ is drawn. The symbol $\xi$ is the
+reference-element coordinate, so a $\xi$-dependent $\ahat$ \emph{varies within}
+the element (node to node) rather than being a single value per element.
 
 \begin{center}
 \begin{tabularx}{\linewidth}{@{}llY@{}}
 \toprule
-\code{:lEL\_xidependent} & sampler & each training element's $\ahat$ \\
+\code{:EL\_sample\_shape} & sampler & each training element's $\ahat$ \\
 \midrule
-\code{false} (default) & \code{synthesize\_random\_ahat} --- random
+\code{:affine} (default) & \code{synthesize\_random\_ahat} --- random
   \textbf{affine} Jacobian (rotation $\times$ stretch $\times$ shear) &
   \textbf{constant within the element} (parallelogram); all $(k+1)^2$ nodes
   identical \\
-\code{true} & \code{synthesize\_random\_ahat\_field} --- smooth anisotropic
-  per-node warp & \textbf{varies within the element} (mimics a bilinear /
-  curved element) \\
+\code{:quad} \;\textbf{(recommended)} & \code{synthesize\_random\_quad} +
+  \code{ahat\_field\_from\_quad} --- random straight-sided \textbf{bilinear} quad
+  (4 corners) & \textbf{varies within the element} exactly as a real mesh quad;
+  the per-node $\ahat$ equals \code{el\_ahat\_nodes\_from\_metrics} for the same
+  shape (verified to machine precision) \\
+\code{:warp} & \code{synthesize\_random\_ahat\_field} --- smooth synthetic
+  per-node warp & varies within the element (legacy approximation) \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -377,11 +381,22 @@ element (node to node) rather than being a single value per element.
 \noindent
 Real mesh quads (e.g.\ those conforming to the hole) are \textbf{bilinear}, so
 their $\ahat$ varies inside each element (Section~\ref{sec:within}). The default
-affine sampler only ever produces \emph{constant-per-element} feature vectors,
-so a model trained on it never sees within-element variation. Set
-\code{:lEL\_xidependent => true} so the training data resembles what inference
-actually feeds. The flag has \textbf{no effect at inference} --- inference always
-builds $\ahat$ from the real mesh metrics.
+\code{:affine} sampler only ever produces \emph{constant-per-element} feature
+vectors, so a model trained on it never sees within-element variation. Use
+\code{:EL\_sample\_shape => :quad} so the training shapes (and hence $\ahat$)
+match what inference feeds. The selector has \textbf{no effect at inference} ---
+inference always builds $\ahat$ from the real mesh metrics. (Legacy:
+\code{:lEL\_xidependent => true} is still honoured and maps to \code{:warp}.)
+
+\paragraph{Does the (high) solution order matter?} No, for the \emph{shape}:
+a straight-sided element has a \textbf{bilinear} geometry (fixed by its 4
+corners) at \emph{any} solution order $k$ --- the high-order LGL nodes lie on the
+straight edges and add no curvature. The order does enter through \emph{where}
+$\ahat$ is sampled (the $(k+1)^2$ LGL nodes) and the order-$k$ assembly basis,
+both taken automatically from \code{:nop}. So \code{:quad} is correct for
+$k=6$ and higher with no change. (Only genuinely \emph{curved} elements --- e.g.\
+isoparametric high-order edges resolving the circle exactly --- would need a
+curved-geometry sampler; with straight chords the bilinear model is exact.)
 
 \subsection{Sampling: producing \code{input\_tensor.csv} / \code{output\_tensor.csv}}
 Set, in the case's \code{user\_inputs.jl} (e.g.\
@@ -389,7 +404,7 @@ Set, in the case's \code{user\_inputs.jl} (e.g.\
 \begin{lstlisting}
 :lelementLearning => true,
 :lEL_nonconstant  => true,
-:lEL_xidependent  => true,   # within-element-varying a-hat (recommended)
+:EL_sample_shape  => :quad,  # bilinear straight-sided quads (recommended)
 :lEL_Sample       => true,   # <-- uncomment to GENERATE training data
 :Nsamp            => 50000,  # number of samples
 \end{lstlisting}
@@ -421,10 +436,12 @@ geometry. The full \code{plate\_hole\_circle\_unit.msh} would therefore produce
 \emph{identical} training data at much higher cost. This also matches the EL
 notes' recipe (``fix the mesh containing only one reference element''). The only
 hard requirement is that \code{:nop} match the inference mesh, since the feature
-size $3(k+1)^2$ and output size $n_{vo}n_{vb}$ depend on it. (If instead you want
-the samples drawn from the \emph{actual} hole element shapes, use the full circle
-mesh together with the bilinear-quad sampler noted at the end of this section.)
-Inference/verification then uses the full circle mesh.
+size $3(k+1)^2$ and output size $n_{vo}n_{vb}$ depend on it. This holds for all
+\code{:EL\_sample\_shape} values --- including \code{:quad}, which \emph{synthesises}
+random straight-sided quads rather than reading the mesh. (A sampler that draws
+each element's corners from the \emph{actual} mesh would be a further option; it
+would then use the full circle mesh.) Inference/verification uses the full circle
+mesh.
 
 \subsection{Train, then infer}
 \begin{lstlisting}
@@ -437,14 +454,15 @@ and re-run the case: it now performs EL inference and prints
 surrogate's error against the analytic $u_{\mathrm{ex}}$.
 
 \subsection{What the sampled data is (and is not)}
-The samples are \textbf{synthetic} (Option~1: synthesised random Jacobians).
+The samples are \textbf{synthetic} (Option~1: synthesised random shapes ---
+affine parallelograms for \code{:affine}, bilinear quads for \code{:quad}).
 They do \emph{not} depend on the manufactured solution, and the mesh is used
 only to fix the node ordering --- so the same training data is produced by any
 \code{:lEL\_nonconstant} case. The manufactured solution's role is
-\textbf{verification at inference}, not data generation. To instead draw each
-sample from the \emph{actual} mesh element shapes, a bilinear-quad sampler (draw
-4 random corners, build the bilinear map, take per-node $\ahat$) is the natural
-extension.
+\textbf{verification at inference}, not data generation. The remaining option ---
+drawing each sample from the \emph{actual} mesh element shapes (read each
+element's 4 corners from the mesh) rather than synthesising them --- is a natural
+further extension.
 
 \section{Known limitations / follow-ups}
 \begin{itemize}

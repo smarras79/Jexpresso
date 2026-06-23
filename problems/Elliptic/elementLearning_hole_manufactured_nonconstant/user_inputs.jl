@@ -31,7 +31,7 @@ function user_inputs()
         :lsparse              => true,
         :lelementLearning     => true,
         :lEL_nonconstant      => true,   # geometry-induced â feature (a = 1)
-#        :lEL_xidependent      => true,   # (sampling) within-element-varying â for bilinear quads
+        :EL_sample_shape      => :quad,  # (sampling) :affine | :quad (bilinear, recommended) | :warp
         :ahat_output          => :nodal, # VTU â format: :cell | :nodal | :tensor
 #        :lEL_Sample           => true,   # uncomment to (re)generate training data
         :NNfile               => "JX_NN_model.onnx",

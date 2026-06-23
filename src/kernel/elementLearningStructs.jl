@@ -1035,12 +1035,18 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                 println(BLUE_FG(" # EL SAMPLING — NON-CONSTANT DIFFUSIVITY (Option 1) ......"))
             end
             conn2ij  = el_conn_to_ij(sem.mesh, ngl)
+            # element-shape distribution for the synthetic â samples:
+            #   inputs[:EL_sample_shape] = :affine | :quad | :warp
+            # (backward compat: :lEL_xidependent => true  ⇒  :warp)
+            sample_shape = get(inputs, :EL_sample_shape,
+                               get(inputs, :lEL_xidependent, false) ? :warp : :affine)
             nvo, nvb = el_nonconstant_sampling!(bufferin, bufferout,
                                                 params.basis.ψ, params.basis.dψ,
                                                 params.ω, ngl, inputs[:Nsamp];
                                                 conn2ij=conn2ij,
                                                 elnbdypoints=elnbdypoints,
-                                                xidependent=get(inputs, :lEL_xidependent, false))
+                                                shape=sample_shape,
+                                                ξnodes=sem.ξ)
             total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
             total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
             if rank == 0

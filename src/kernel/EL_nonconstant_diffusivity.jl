@@ -216,6 +216,67 @@ function synthesize_random_ahat_field(rng::AbstractRNG, ngl::Int;
     return ah
 end
 
+# ── BILINEAR straight-sided quad: the geometry model that matches real meshes ─
+# A straight-sided general quad (trapezoid/kite/rhomboid) maps from the reference
+# square by the BILINEAR (Q1) map  x(ξ,η) = Σ_i N_i(ξ,η) P_i,  with corners ordered
+#   P1=(ξ,η)=(-1,-1),  P2=(+1,-1),  P3=(+1,+1),  P4=(-1,+1)
+# and N_i = ¼(1±ξ)(1±η). This holds at ANY solution order: the high-order LGL
+# nodes lie ON the straight edges, so the geometry is fixed by the 4 corners while
+# â is still evaluated at all (k+1)² nodes (and the stiffness uses the order-k
+# basis). J = ∂x/∂ξ = [∂x/∂ξ ∂x/∂η; ∂y/∂ξ ∂y/∂η] varies linearly inside the quad.
+function bilinear_jacobian(P1, P2, P3, P4, ξ, η)
+    dNξ1 = -(1-η)/4; dNξ2 =  (1-η)/4; dNξ3 =  (1+η)/4; dNξ4 = -(1+η)/4
+    dNη1 = -(1-ξ)/4; dNη2 = -(1+ξ)/4; dNη3 =  (1+ξ)/4; dNη4 =  (1-ξ)/4
+    xξ = dNξ1*P1[1] + dNξ2*P2[1] + dNξ3*P3[1] + dNξ4*P4[1]
+    yξ = dNξ1*P1[2] + dNξ2*P2[2] + dNξ3*P3[2] + dNξ4*P4[2]
+    xη = dNη1*P1[1] + dNη2*P2[1] + dNη3*P3[1] + dNη4*P4[1]
+    yη = dNη1*P1[2] + dNη2*P2[2] + dNη3*P3[2] + dNη4*P4[2]
+    return [xξ xη; yξ yη]
+end
+
+# Per-node â(ξ) field of a bilinear quad, evaluated at the LGL nodes ξnodes (the
+# SAME nodes Jexpresso uses), in tensor flat order P=(i-1)*ngl+j (node (i,j) sits
+# at (ξ_i, ξ_j)). â = a·det(J)·J⁻¹J⁻ᵀ — identical to el_ahat_nodes_from_metrics,
+# so the sampled feature matches what inference builds from the real metrics.
+# Returns (ah::Matrix(3,ngl²), ok::Bool) with ok=false if det(J)≤0 anywhere.
+function ahat_field_from_quad(a, P1, P2, P3, P4, ξnodes, ngl::Int)
+    ah = Matrix{Float64}(undef, 3, ngl*ngl)
+    ok = true
+    @inbounds for i = 1:ngl, j = 1:ngl
+        P  = (i-1)*ngl + j
+        J  = bilinear_jacobian(P1, P2, P3, P4, ξnodes[i], ξnodes[j])
+        Je = J[1,1]*J[2,2] - J[1,2]*J[2,1]
+        Je <= 0 && (ok = false)
+        Ji = inv(J)
+        c  = a*Je
+        ah[1,P] = c*(Ji[1,1]^2     + Ji[1,2]^2)        # â11
+        ah[2,P] = c*(Ji[1,1]*Ji[2,1] + Ji[1,2]*Ji[2,2])# â12
+        ah[3,P] = c*(Ji[2,1]^2     + Ji[2,2]^2)        # â22
+    end
+    return ah, ok
+end
+
+# Draw a random straight-sided quad: a base affine map (rotation × stretch × shear)
+# applied to the reference corners, then an independent per-corner jitter to break
+# parallelism (⇒ a genuine bilinear quad). Amplitude a ~ U(amin,amax). Returns
+# (a, P1, P2, P3, P4).
+function synthesize_random_quad(rng::AbstractRNG;
+                                amin=0.5, amax=1.5, smin=0.5, smax=2.0,
+                                shear_max=0.5, jitter=0.25)
+    a  = amin + (amax-amin)*rand(rng)
+    θ  = 2π*rand(rng)
+    s1 = smin + (smax-smin)*rand(rng)
+    s2 = smin + (smax-smin)*rand(rng)
+    γ  = shear_max*(2*rand(rng) - 1)
+    B  = [cos(θ) -sin(θ); sin(θ) cos(θ)] * [s1 γ; 0.0 s2]
+    refc = ((-1.0,-1.0), (1.0,-1.0), (1.0,1.0), (-1.0,1.0))
+    P = map(refc) do r
+        b = B*[r[1], r[2]]
+        (b[1] + jitter*(2*rand(rng)-1), b[2] + jitter*(2*rand(rng)-1))
+    end
+    return a, P[1], P[2], P[3], P[4]
+end
+
 # ── T^{ie} = (A_{v^o,v^o})^{-1} A_{v^o,v^b} from a local stiffness matrix ─────
 # Returns the (nint × nbdy) matrix in the convention used by the sampler
 # (output_tensor stores vec of this; matches the sign used elsewhere in the EL
@@ -302,10 +363,18 @@ end
 # T^{ie}=(A_vovo)⁻¹A_vovb, BOTH in mesh.conn node ordering so the trained model
 # is directly usable by elementLearning_infer! at inference time.
 #
-#   conn2ij       : conn-local index → tensor (i,j) map (from el_conn_to_ij)
-#   elnbdypoints  : number of boundary nodes per element (conn cols 1:elnbdypoints)
-#   xidependent   : false → affine synthesized Jacobian (constant â per element);
-#                   true  → curved element (smoothly ξ-varying â per node).
+#   conn2ij      : conn-local index → tensor (i,j) map (from el_conn_to_ij)
+#   elnbdypoints : number of boundary nodes per element (conn cols 1:elnbdypoints)
+#   shape        : element-shape distribution used to draw â (see below)
+#   ξnodes       : 1-D LGL nodes (length ngl); required for shape == :quad
+#
+# shape options:
+#   :affine → random affine Jacobian (PARALLELOGRAM): â constant within the
+#             element. Fast (uses the precomputed K-components).
+#   :quad   → random straight-sided BILINEAR quad (4 corners): â varies within
+#             the element exactly as a real mesh quad does. ★ recommended to
+#             match straight-sided meshes (any solution order — see header).
+#   :warp   → smooth synthetic per-node warp (legacy ξ-dependent approximation).
 #
 # Feature layout (per node, conn order m=1..ngl²): [â11_m, â12_m, â22_m].
 # Output  layout: vec(T^{ie}) with T^{ie} of size (nvo × nvb) in conn order.
@@ -314,7 +383,8 @@ function el_nonconstant_sampling!(bufferin::Vector{Vector{Float64}},
                                   ψ, dψ, ω, ngl::Int, Nsamp::Int;
                                   conn2ij,
                                   elnbdypoints::Int,
-                                  xidependent::Bool = false,
+                                  shape::Symbol = :affine,
+                                  ξnodes::AbstractVector = Float64[],
                                   rng::AbstractRNG = Random.default_rng(),
                                   verbose::Bool = true)
     nelpoints = ngl*ngl
@@ -323,12 +393,26 @@ function el_nonconstant_sampling!(bufferin::Vector{Vector{Float64}},
     vo   = collect(elnbdypoints+1:nelpoints)     #             interior last
     K11, K12, K22 = el_precompute_reference_components(ψ, dψ, ω, ngl)
 
+    if shape == :quad && length(ξnodes) != ngl
+        error("el_nonconstant_sampling!: shape=:quad needs ξnodes of length ngl=$ngl (got $(length(ξnodes)))")
+    end
+
     for isamp = 1:Nsamp
-        # 1) synthesize â (constant affine, or ξ-dependent curved) in tensor order
-        if xidependent
-            ah_tensor = synthesize_random_ahat_field(rng, ngl)         # (3, ngl²)
+        # 1) draw â in tensor order according to the chosen element-shape model
+        â11 = â12 = â22 = 0.0
+        ah_tensor = Matrix{Float64}(undef, 0, 0)
+        if shape == :quad
+            local ok
+            for _try = 1:100                      # resample until det(J) > 0 everywhere
+                a, P1, P2, P3, P4 = synthesize_random_quad(rng)
+                ah_tensor, ok = ahat_field_from_quad(a, P1, P2, P3, P4, ξnodes, ngl)
+                ok && break
+            end
+            A_loc = el_assemble_local_stiffness_field(ψ, dψ, ω, ah_tensor, ngl)
+        elseif shape == :warp
+            ah_tensor = synthesize_random_ahat_field(rng, ngl)
             A_loc     = el_assemble_local_stiffness_field(ψ, dψ, ω, ah_tensor, ngl)
-        else
+        else  # :affine
             â11, â12, â22, _J = synthesize_random_ahat(rng)
             A_loc = el_assemble_local_stiffness(K11, K12, K22, â11, â12, â22)
         end
@@ -340,18 +424,18 @@ function el_nonconstant_sampling!(bufferin::Vector{Vector{Float64}},
         # 3) build the per-node feature in conn order (node m ↔ tensor perm[m])
         feat = Vector{Float64}(undef, 3*nelpoints)
         @inbounds for m = 1:nelpoints
-            if xidependent
+            if shape == :affine
+                feat[3m-2] = â11; feat[3m-1] = â12; feat[3m] = â22
+            else
                 P = perm[m]
                 feat[3m-2] = ah_tensor[1,P]; feat[3m-1] = ah_tensor[2,P]; feat[3m] = ah_tensor[3,P]
-            else
-                feat[3m-2] = â11; feat[3m-1] = â12; feat[3m] = â22
             end
         end
 
         push!(bufferin,  feat)
         push!(bufferout, vec(Tie))
         if verbose && (isamp % max(1, Nsamp ÷ 20) == 0)
-            println(" # EL non-constant sampling: $isamp / $Nsamp")
+            println(" # EL non-constant sampling ($(shape)): $isamp / $Nsamp")
         end
     end
     return length(vo), length(vb)
