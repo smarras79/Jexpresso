@@ -67,11 +67,15 @@ in the plots is expected and correct; only true parallelograms show a single
 value per element. (Curved/high‑order geometry is just a further source of the
 same `ξ`‑dependence.)
 
-> **Sampling consistency.** The default sampler `synthesize_random_ahat`
+> **Sampling consistency.** The default sampler (`:EL_sample_shape => :affine`)
 > draws random **affine** Jacobians (parallelograms ⇒ `â` constant per element).
-> To train a surrogate that matches *general* (bilinear) mesh quads, generate
-> within‑element‑varying samples — `:lEL_xidependent => true`
-> (`synthesize_random_ahat_field`) or a dedicated bilinear‑quad sampler.
+> To train a surrogate that matches *general* (bilinear) mesh quads, set
+> **`:EL_sample_shape => :quad`** — it synthesises random straight-sided bilinear
+> quads whose per-node `â` equals `el_ahat_nodes_from_metrics` for the same shape
+> (verified exactly), so the training `â` matches what inference feeds. This is
+> correct at any solution order `k` (straight sides ⇒ bilinear geometry from 4
+> corners; `â` is still evaluated at all `(k+1)²` nodes). (`:warp` is a legacy
+> synthetic-warp approximation; `:lEL_xidependent => true` is its alias.)
 
 ### A useful identity (area normalisation)
 
@@ -111,12 +115,13 @@ The NN output is the flattened `T^{ie}` of size `nvo·nvb`
 
 ### 2.2 Sampling (training‑data generation) — Option 1
 
-`el_nonconstant_sampling!` synthesises random element shapes (random affine
-Jacobians: rotation × anisotropic stretch × shear) and, per sample,
+`el_nonconstant_sampling!` synthesises random element shapes
+(`:EL_sample_shape` = `:affine` parallelogram, `:quad` bilinear straight-sided
+quad, or `:warp` synthetic warp) and, per sample,
 
-1. forms `â = a·det(J)·(JᵀJ)⁻¹` (constant per element for an affine/parallelogram
-   shape, or varying within the element — general bilinear quad / curved — via
-   `synthesize_random_ahat_field`),
+1. forms the per-node `â = a·det(J)·(JᵀJ)⁻¹` — constant for `:affine`, or varying
+   within the element for `:quad`/`:warp` (the `:quad` field equals
+   `el_ahat_nodes_from_metrics` for the same shape),
 2. assembles the local reference stiffness
    (`el_assemble_local_stiffness` via the precomputed components `K11,K12,K22`,
    or `el_assemble_local_stiffness_field` for the ξ‑dependent case),

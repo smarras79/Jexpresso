@@ -10,3 +10,13 @@ LocalPreferences.toml
 meshes
 mesh.log
 .jexpresso_cache/
+
+# LaTeX build artifacts (docs/*.tex compiled locally)
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.pdf
+docs/*.toc
+docs/*.fls
+docs/*.fdb_latexmk
+docs/*.synctex.gz
