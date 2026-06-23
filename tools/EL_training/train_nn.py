@@ -25,6 +25,15 @@ and the ONNX export wrapper are added. Set `standardize = False` to recover the
 original behaviour.
 """
 
+import os
+import sys
+# Make the helper modules (train_common_EL, IO_EL, NN_RFRC, …) importable when
+# this script is launched by a path from elsewhere, e.g.
+#   cd EL_Jexpresso && python ../tools/EL_training/train_nn.py
+# Python only puts the SCRIPT's folder on sys.path, not the run directory, so we
+# prepend the current working directory (where train_common_EL.py lives).
+sys.path.insert(0, os.getcwd())
+
 import torch
 import torch.nn as nn
 import torch.onnx
