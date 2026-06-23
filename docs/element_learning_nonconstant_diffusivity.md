@@ -139,6 +139,18 @@ reused **unchanged** — only the feature differs.
 Gated by `inputs[:lEL_nonconstant]` (default `false`), so the existing
 constant‑amplitude pipeline and its trained model are untouched.
 
+> **Amplitude consistency (training ↔ inference).** The exact map `â ↦ T^{ie}`
+> is invariant under a *uniform* rescaling of `â`, so for `a` constant within an
+> element `T^{ie}` does not depend on `a`. The **learned** surrogate is *not*
+> analytically scale‑invariant, however (it is a standardised NN), so an `â`
+> whose magnitude falls outside the training range is extrapolated poorly. The
+> sampler therefore draws a physical amplitude `a ~ U(:EL_amin, :EL_amax)` per
+> element (default `(1,1)` ⇒ legacy geometry‑only `â`), and `:EL_avar > 0` adds a
+> smooth **within‑element** variation of `a` (so `T^{ie}` genuinely varies). To
+> infer with a non‑trivial `el_diffusivity` (e.g. `a = 1 + 1(x>5)`), set
+> `:EL_amin/:EL_amax` to bracket its range — and `:EL_avar > 0` if `a` varies
+> inside an element.
+
 ### 2.4 Operator for the physical reference test
 
 For `case1_nonconstant`, `build_laplace_matrix(NSD_2D; afun)` multiplies the

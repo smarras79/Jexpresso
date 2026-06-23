@@ -33,6 +33,11 @@ function user_inputs()
         :lEL_nonconstant      => true,   # geometry-induced â feature (a = 1)
         :lEL_xidependent      => true,   # (sampling) within-element-varying â for bilinear quads
         :EL_sample_shape      => :quad,  # (sampling) :affine | :quad (bilinear, recommended) | :warp
+        # Physical-amplitude sampling (match a non-trivial el_diffusivity at inference;
+        # defaults below = a≡1, geometry-only). See EL_nonconstant_diffusivity.jl header.
+        #:EL_amin              => 1.0,    # (sampling) min of a ~ U(EL_amin,EL_amax) per element
+        #:EL_amax              => 1.0,    # (sampling) max of a ~ U(EL_amin,EL_amax) per element
+        #:EL_avar              => 0.0,    # (sampling) >0 ⇒ smooth within-element variation of a
         :ahat_output          => :cell, # VTU â format: :cell | :nodal | :tensor
         :lEL_Sample           => true,   # uncomment to (re)generate training data
         :NNfile               => "JX_NN_model.onnx",

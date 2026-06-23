@@ -37,12 +37,33 @@
 #    :lEL_xidependent => true   (sampling only) synthesize ξ-dependent â for
 #                               curved / non-affine elements; default false uses
 #                               affine Jacobians (constant â per element).
+#    :EL_amin/:EL_amax => Float (sampling only) range of the physical scalar
+#                               diffusivity a drawn per element; default (1,1).
+#                               Set to bracket the a(x,y) range you will infer on
+#                               (see the amplitude note below). Default keeps the
+#                               legacy a=1 (geometry-only) behaviour.
+#    :EL_avar         => Float (sampling only) relative magnitude of a SMOOTH
+#                               WITHIN-element variation of a; default 0 (a is
+#                               constant inside each sampled element). Use >0 to
+#                               train genuinely non-constant-coefficient elements.
+#
+#  Amplitude note (why a is sampled, not fixed to 1).  The exact local map
+#  â ↦ T^{ie} = (A_{vo,vo})^{-1} A_{vo,vb} is invariant under a UNIFORM rescaling
+#  of â (a global scalar cancels). T^{ie} is therefore independent of a *when a is
+#  constant within the element*. The LEARNED surrogate, however, is a generic NN
+#  with input standardisation baked in (tools/EL_training): it is NOT analytically
+#  scale-invariant, so an â whose magnitude lies outside the sampled range is an
+#  out-of-distribution input and is extrapolated poorly. Hence, to infer with a
+#  non-trivial el_diffusivity (e.g. a = 1 + 1(x>5)), train with :EL_amin/:EL_amax
+#  spanning that a-range. For a that varies WITHIN an element, also set :EL_avar>0
+#  so T^{ie} itself varies and the (feature → T^{ie}) pairs teach that regime.
 #
 #  Sampling and inference share ONE node ordering (mesh.conn order, via
 #  el_conn_to_ij), so the per-element â feature built from metrics at inference
 #  matches the synthesized â feature used for training, and the recovery in
 #  elementLearning_infer! is reused unchanged. The physical scalar diffusivity at
-#  inference is el_diffusivity(x,y) (default 1; redefine for a varying coeff.).
+#  inference is el_diffusivity(x,y) (default 1; redefine for a varying coeff., and
+#  train with a matching :EL_amin/:EL_amax/:EL_avar — see the amplitude note).
 # =============================================================================
 
 using LinearAlgebra
@@ -157,13 +178,54 @@ function el_assemble_local_stiffness_field(ψ::AbstractMatrix, dψ::AbstractMatr
     return A
 end
 
+# ── Per-element amplitude field for the physical scalar diffusivity a ─────────
+# Draws a base amplitude a0 ~ U(amin,amax) and, if avar>0, a SMOOTH low-frequency
+# multiplicative variation across the reference element (relative magnitude avar,
+# clamped strictly positive). Returns a length-ngl² vector in tensor flat order
+# P=(i-1)*ngl+j. This is the factor by which the geometric â (built at a=1) is
+# multiplied node-by-node, mirroring inference where â_node = a(x_node)·Je·J⁻¹J⁻ᵀ.
+#   avar == 0 ⇒ a is constant inside the element (a uniform per-element amplitude);
+#   avar  > 0 ⇒ a varies within the element (genuine non-constant coefficient).
+function synthesize_amplitude_field(rng::AbstractRNG, ngl::Int;
+                                    amin=1.0, amax=1.0, avar=0.0)
+    a0 = amin + (amax-amin)*rand(rng)
+    n  = ngl*ngl
+    af = Vector{Float64}(undef, n)
+    if avar == 0.0
+        fill!(af, a0)
+        return af
+    end
+    b1 = 2*rand(rng)-1; b2 = 2*rand(rng)-1; b3 = 2*rand(rng)-1   # smooth warp coeffs
+    coord(i) = -1.0 + 2.0*(i-1)/(ngl-1)
+    @inbounds for i = 1:ngl, j = 1:ngl
+        P  = (i-1)*ngl + j
+        ξ̂  = coord(i);  η̂ = coord(j)
+        s  = 1.0 + avar*(b1*ξ̂ + b2*η̂ + b3*ξ̂*η̂)
+        af[P] = a0 * max(s, 1e-6)                                # keep a strictly > 0
+    end
+    return af
+end
+
+# Multiply a per-node â field (3 × ngl², tensor flat order) by a per-node
+# amplitude field in place: â_node ← a_node · â_node.
+function el_apply_amplitude!(ah_tensor::AbstractMatrix, afield::AbstractVector)
+    @inbounds for P = 1:size(ah_tensor, 2)
+        s = afield[P]
+        ah_tensor[1,P] *= s; ah_tensor[2,P] *= s; ah_tensor[3,P] *= s
+    end
+    return ah_tensor
+end
+
 # ── Synthesize a random affine Jacobian → SPD reference diffusivity â ─────────
-# Draw an element shape J_K and a scalar amplitude a ~ U(amin,amax); return the
-# constant SPD tensor â = a·det(J)·(JᵀJ)^{-1} as its 3 unique entries, plus J.
-# The shape model: rotation θ, anisotropic stretch (s1,s2), and a shear γ — a
-# generic distribution of well-formed (det>0) elements.
+# Draw a random element shape J_K and return the GEOMETRIC SPD tensor
+# â = a·det(J)·(JᵀJ)^{-1} as its 3 unique entries, plus J. The physical amplitude
+# a defaults to 1 here (pure geometry); the per-element/per-node amplitude is
+# applied separately by el_nonconstant_sampling! via synthesize_amplitude_field
+# (inputs :EL_amin/:EL_amax/:EL_avar) so geometry and amplitude are sampled
+# independently. The shape model: rotation θ, anisotropic stretch (s1,s2), and a
+# shear γ — a generic distribution of well-formed (det>0) elements.
 function synthesize_random_ahat(rng::AbstractRNG;
-                                amin=1.0, amax=1.0,   # a is a nuisance (Tie is amplitude-invariant); a=1 matches inference
+                                amin=1.0, amax=1.0,   # default a=1 ⇒ pure geometry; amplitude applied by the sampler
                                 smin=0.5, smax=2.0, shear_max=0.5)
     a  = amin + (amax-amin)*rand(rng)
     θ  = 2π*rand(rng)
@@ -185,7 +247,7 @@ end
 # warp magnitude `curve` is kept small and det(J) is guarded > 0. Returns a
 # (3, ngl²) matrix in tensor flat order P=(i-1)*ngl+j: rows (â11, â12, â22).
 function synthesize_random_ahat_field(rng::AbstractRNG, ngl::Int;
-                                      amin=1.0, amax=1.0,   # a is a nuisance (Tie is amplitude-invariant); a=1 matches inference
+                                      amin=1.0, amax=1.0,   # default a=1 ⇒ pure geometry; amplitude applied by the sampler
                                       smin=0.5, smax=2.0, shear_max=0.5,
                                       curve=0.15)
     a  = amin + (amax-amin)*rand(rng)
@@ -258,10 +320,11 @@ end
 
 # Draw a random straight-sided quad: a base affine map (rotation × stretch × shear)
 # applied to the reference corners, then an independent per-corner jitter to break
-# parallelism (⇒ a genuine bilinear quad). Amplitude a ~ U(amin,amax). Returns
-# (a, P1, P2, P3, P4).
+# parallelism (⇒ a genuine bilinear quad). The amplitude a defaults to 1 (pure
+# geometry); the per-element/per-node amplitude is applied by el_nonconstant_sampling!
+# via synthesize_amplitude_field. Returns (a, P1, P2, P3, P4).
 function synthesize_random_quad(rng::AbstractRNG;
-                                amin=1.0, amax=1.0,   # a=1: nuisance (Tie is amplitude-invariant), matches inference
+                                amin=1.0, amax=1.0,   # default a=1 ⇒ pure geometry; amplitude applied by the sampler
                                 smin=0.5, smax=2.0,
                                 shear_max=0.5, jitter=0.25)
     a  = amin + (amax-amin)*rand(rng)
@@ -333,8 +396,16 @@ end
 
 # ── INFERENCE feature: per-element â from a real mesh's metrics ──────────────
 # Scalar physical diffusivity a(x,y); default 1 (geometry-only â — the standard
-# Laplacian amplitude). Redefine for a spatially-varying coefficient, e.g.
+# Laplacian amplitude, exactly the legacy a=1 behaviour). Redefine for a
+# spatially-varying coefficient, e.g.
 #   el_diffusivity(x,y) = 1.0 + (x > 5.0)   # cf. the PDF's a = 1 + 1(x>5).
+#
+# IMPORTANT — keep training and inference amplitudes consistent. The surrogate
+# only generalises over the â magnitudes it was TRAINED on. With the default
+# a=1 the sampler produces geometry-only â, so a non-trivial el_diffusivity here
+# yields out-of-distribution inputs unless the model was trained with a matching
+# amplitude range: set :EL_amin/:EL_amax to bracket this function's range (and
+# :EL_avar>0 if a varies within an element). See the amplitude note in the header.
 el_diffusivity(x, y) = 1.0
 
 # Fill `avisc` (nelem × 3·ngl²) with the per-node 2×2 SPD â feature for every
@@ -368,10 +439,18 @@ end
 #   elnbdypoints : number of boundary nodes per element (conn cols 1:elnbdypoints)
 #   shape        : element-shape distribution used to draw â (see below)
 #   ξnodes       : 1-D LGL nodes (length ngl); required for shape == :quad
+#   amin,amax    : range of the physical scalar amplitude a drawn per element
+#                  (default 1,1 ⇒ legacy geometry-only â). The geometric â is
+#                  multiplied by this amplitude so the model sees — and learns to
+#                  reproduce T^{ie} for — the â magnitudes that inference will feed
+#                  when el_diffusivity ≠ 1 (see the header amplitude note).
+#   avar         : relative magnitude of a SMOOTH within-element variation of a
+#                  (default 0 ⇒ a constant inside each element). >0 makes a — and
+#                  hence T^{ie} — vary within the element (true non-constant coeff).
 #
 # shape options:
-#   :affine → random affine Jacobian (PARALLELOGRAM): â constant within the
-#             element. Fast (uses the precomputed K-components).
+#   :affine → random affine Jacobian (PARALLELOGRAM): geometric â constant within
+#             the element. Fast (uses the precomputed K-components) when avar==0.
 #   :quad   → random straight-sided BILINEAR quad (4 corners): â varies within
 #             the element exactly as a real mesh quad does. ★ recommended to
 #             match straight-sided meshes (any solution order — see header).
@@ -386,6 +465,8 @@ function el_nonconstant_sampling!(bufferin::Vector{Vector{Float64}},
                                   elnbdypoints::Int,
                                   shape::Symbol = :affine,
                                   ξnodes::AbstractVector = Float64[],
+                                  amin::Real = 1.0, amax::Real = 1.0,
+                                  avar::Real = 0.0,
                                   rng::AbstractRNG = Random.default_rng(),
                                   verbose::Bool = true)
     nelpoints = ngl*ngl
@@ -399,33 +480,55 @@ function el_nonconstant_sampling!(bufferin::Vector{Vector{Float64}},
     end
 
     for isamp = 1:Nsamp
-        # 1) draw â in tensor order according to the chosen element-shape model
+        # 0) draw the physical amplitude field a (tensor order); constant within
+        #    the element when avar==0. Geometry below is synthesized at a=1 and
+        #    then scaled by this amplitude, mirroring inference (â=a·Je·J⁻¹J⁻ᵀ).
+        afield     = synthesize_amplitude_field(rng, ngl; amin=amin, amax=amax, avar=avar)
+        const_amp  = (avar == 0.0)               # a uniform across the element
+        a0         = afield[1]
+
+        # 1) draw geometric â (a=1) in tensor order per the element-shape model,
+        #    then apply the amplitude field
         â11 = â12 = â22 = 0.0
         ah_tensor = Matrix{Float64}(undef, 0, 0)
         if shape == :quad
             local ok
             for _try = 1:100                      # resample until det(J) > 0 everywhere
-                a, P1, P2, P3, P4 = synthesize_random_quad(rng)
-                ah_tensor, ok = ahat_field_from_quad(a, P1, P2, P3, P4, ξnodes, ngl)
+                _a, P1, P2, P3, P4 = synthesize_random_quad(rng)
+                ah_tensor, ok = ahat_field_from_quad(1.0, P1, P2, P3, P4, ξnodes, ngl)
                 ok && break
             end
+            el_apply_amplitude!(ah_tensor, afield)
             A_loc = el_assemble_local_stiffness_field(ψ, dψ, ω, ah_tensor, ngl)
         elseif shape == :warp
             ah_tensor = synthesize_random_ahat_field(rng, ngl)
+            el_apply_amplitude!(ah_tensor, afield)
             A_loc     = el_assemble_local_stiffness_field(ψ, dψ, ω, ah_tensor, ngl)
         else  # :affine
-            â11, â12, â22, _J = synthesize_random_ahat(rng)
-            A_loc = el_assemble_local_stiffness(K11, K12, K22, â11, â12, â22)
+            â11, â12, â22, _J = synthesize_random_ahat(rng)         # geometry (a=1)
+            if const_amp
+                â11 *= a0; â12 *= a0; â22 *= a0                     # uniform amplitude
+                A_loc = el_assemble_local_stiffness(K11, K12, K22, â11, â12, â22)
+            else
+                ah_tensor = Matrix{Float64}(undef, 3, nelpoints)    # per-node amplitude
+                @inbounds for P = 1:nelpoints
+                    s = afield[P]
+                    ah_tensor[1,P] = s*â11; ah_tensor[2,P] = s*â12; ah_tensor[3,P] = s*â22
+                end
+                A_loc = el_assemble_local_stiffness_field(ψ, dψ, ω, ah_tensor, ngl)
+            end
         end
 
         # 2) reorder tensor → conn, partition, and condense  T^{ie}=Avovo⁻¹Avovb
         A_conn = A_loc[perm, perm]
         Tie    = A_conn[vo, vo] \ A_conn[vo, vb]
 
-        # 3) build the per-node feature in conn order (node m ↔ tensor perm[m])
+        # 3) build the per-node feature in conn order (node m ↔ tensor perm[m]).
+        #    The constant fast path applies only to a uniform-amplitude affine â.
+        use_const_feat = (shape == :affine && const_amp)
         feat = Vector{Float64}(undef, 3*nelpoints)
         @inbounds for m = 1:nelpoints
-            if shape == :affine
+            if use_const_feat
                 feat[3m-2] = â11; feat[3m-1] = â12; feat[3m] = â22
             else
                 P = perm[m]

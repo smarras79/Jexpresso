@@ -1040,13 +1040,22 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
             # (backward compat: :lEL_xidependent => true  ⇒  :warp)
             sample_shape = get(inputs, :EL_sample_shape,
                                get(inputs, :lEL_xidependent, false) ? :warp : :affine)
+            # Physical-amplitude sampling: draw a ~ U(EL_amin,EL_amax) per element
+            # (default 1,1 ⇒ geometry-only â). EL_avar>0 adds within-element a
+            # variation. Train with these to match a non-trivial el_diffusivity at
+            # inference (see the amplitude note in EL_nonconstant_diffusivity.jl).
+            EL_amin = get(inputs, :EL_amin, 1.0)
+            EL_amax = get(inputs, :EL_amax, 1.0)
+            EL_avar = get(inputs, :EL_avar, 0.0)
             nvo, nvb = el_nonconstant_sampling!(bufferin, bufferout,
                                                 params.basis.ψ, params.basis.dψ,
                                                 params.ω, ngl, inputs[:Nsamp];
                                                 conn2ij=conn2ij,
                                                 elnbdypoints=elnbdypoints,
                                                 shape=sample_shape,
-                                                ξnodes=sem.ξ)
+                                                ξnodes=sem.ξ,
+                                                amin=EL_amin, amax=EL_amax,
+                                                avar=EL_avar)
             total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
             total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
             if rank == 0
