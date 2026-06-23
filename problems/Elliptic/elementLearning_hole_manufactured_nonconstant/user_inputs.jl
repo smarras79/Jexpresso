@@ -31,13 +31,13 @@ function user_inputs()
         :lsparse              => true,
         :lelementLearning     => true,
         :lEL_nonconstant      => true,   # geometry-induced â feature (a = 1)
-#        :lEL_xidependent      => true,   # (sampling) within-element-varying â for bilinear quads
+        :lEL_xidependent      => true,   # (sampling) within-element-varying â for bilinear quads
         :ahat_output          => :nodal, # VTU â format: :cell | :nodal | :tensor
-#        :lEL_Sample           => true,   # uncomment to (re)generate training data
+        :lEL_Sample           => true,   # uncomment to (re)generate training data
         :NNfile               => "JX_NN_model.onnx",
         #:NNfile               => "JX_RFRC_model.onnx",
         #:NNfile               => "JX_RFRC_final.jld2",
-        :Nsamp                => 50000,
+        :Nsamp                => 100000,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         # Plotting parameters
@@ -54,8 +54,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-#        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+#        :gmsh_filename       => "./meshes/gmsh_grids/plate_hole_circle_unit.msh",
 
         
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
