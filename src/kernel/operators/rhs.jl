@@ -1887,7 +1887,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     # μ_max_ieq      = μ_max[ieq]
 
     micro   = size(Tabs,1)
-    zs      = 19000.0
 
     for m = 1:ngl
         for l = 1:ngl
@@ -1968,19 +1967,34 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     # Velocity divergence
                     div_u = dudx + dvdy + dwdz
 
+                    # θ gradient for Richardson correction (dry case; shared across all equations)
+                    dθdz_ri  = 0.0
+                    θ_ref_ri = 1.0
+                    if lrichardson && micro == 1
+                        _dθdξ = 0.0; _dθdη = 0.0; _dθdζ = 0.0
+                        @turbo for ii = 1:ngl
+                            _dθdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,5]
+                            _dθdη += dψ[ii,l]*uprimitiveieq[k,ii,m,5]
+                            _dθdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,5]
+                        end
+                        dθdz_ri  = _dθdξ*dξdz_klm + _dθdη*dηdz_klm + _dθdζ*dζdz_klm
+                        θ_ref_ri = uprimitiveieq[k,l,m,5]
+                    end
+
                     if is_u_momentum
                         # USE EFFECTIVE VISCOSITY
                         effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
                                                             uprimitiveieq[k,l,m,1],
-                                                            dudx, dvdy, dwdz,      
-                                                            dudy, dvdx,            
-                                                            dudz, dwdx,            
+                                                            dudx, dvdy, dwdz,
+                                                            dudy, dvdx,
+                                                            dudz, dwdx,
                                                             dvdz, dwdy,
-                                                            0.0,
-                                                            0.0,
+                                                            θ_ref_ri,
+                                                            dθdz_ri,
                                                             PHYS_CONST, Δ2,
-                                                            inputs, 
-                                                            VT, SD)
+                                                            inputs,
+                                                            VT, SD,
+                                                            lrichardson=lrichardson)
                         
                         # Stress tensor for u-momentum
                         τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
@@ -1996,15 +2010,16 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         # USE EFFECTIVE VISCOSITY
                         effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
                                                             uprimitiveieq[k,l,m,1],
-                                                            dudx, dvdy, dwdz,      
-                                                            dudy, dvdx,            
-                                                            dudz, dwdx,            
-                                                            dvdz, dwdy, 
-                                                            0.0,
-                                                            0.0,           
+                                                            dudx, dvdy, dwdz,
+                                                            dudy, dvdx,
+                                                            dudz, dwdx,
+                                                            dvdz, dwdy,
+                                                            θ_ref_ri,
+                                                            dθdz_ri,
                                                             PHYS_CONST, Δ2,
-                                                            inputs, 
-                                                            VT, SD)
+                                                            inputs,
+                                                            VT, SD,
+                                                            lrichardson=lrichardson)
                         
                         # Stress tensor for v-momentum
                         τ_xy = effective_viscosity * (dudy + dvdx)
@@ -2024,11 +2039,12 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                                             dudy, dvdx,
                                                             dudz, dwdx,
                                                             dvdz, dwdy,
-                                                            0.0,
-                                                            0.0,
+                                                            θ_ref_ri,
+                                                            dθdz_ri,
                                                             PHYS_CONST, Δ2,
-                                                            inputs, 
-                                                            VT, SD)
+                                                            inputs,
+                                                            VT, SD,
+                                                            lrichardson=lrichardson)
                         
                         # Stress tensor for w-momentum
                         τ_xz = effective_viscosity * (dudz + dwdx)
@@ -2152,15 +2168,16 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         # USE EFFECTIVE DIFFUSIVITY
                         effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
                                                               uprimitiveieq[k,l,m,1],
-                                                              dudx, dvdy, dwdz,      
-                                                              dudy, dvdx,            
-                                                              dudz, dwdx,            
+                                                              dudx, dvdy, dwdz,
+                                                              dudy, dvdx,
+                                                              dudz, dwdx,
                                                               dvdz, dwdy,
-                                                              0.0,
-                                                              0.0,
+                                                              θ_ref_ri,
+                                                              dθdz_ri,
                                                               PHYS_CONST, Δ2,
-                                                              inputs, 
-                                                              VT, SD)
+                                                              inputs,
+                                                              VT, SD,
+                                                              lrichardson=lrichardson)
                         
                         # Compute scalar gradient
                         dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0

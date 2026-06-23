@@ -114,7 +114,7 @@ end
     Sij       = sqrt(Sij2)         # |S|
     
     # ===== Richardson Number Correction =====
-    # Only apply for potential temperature with Richardson correction enabled
+    # Applied to all equations (momentum, temperature, tracers) via shared f_Ri
     f_Ri = 1.0  # Default: no correction
     
     if ltheta_eqn && lrichardson

@@ -33,13 +33,13 @@ function user_source!(S,
     #--------------
     # SPONGE
     #--------------
-    if inputs[:lsponge] == true
-        zs = inputs[:zsponge]
+    # if inputs[:lsponge] == true
+        zs = 3000.0
     	xr = 0.0
     	xl = 0.0
-    	α  = 0.5
+    	α  = 1.0/300.0
 	if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-            betay_coe = α*sinpi(0.5*(z - zs)/(zmax - zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+            betay_coe = 0.5*α*(1.0 - cospi((z - zs)/(zmax - zs)))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
 	else
 		betay_coe = 0.0
 	end
@@ -68,8 +68,8 @@ function user_source!(S,
         S[2] -= cs*(q[2]-qe[2])
     	S[3] -= cs*(q[3]-qe[3])
         S[4] -= cs*(q[4]-qe[4])
-        #S[5] -= cs*(q[5]-qe[5])
-    end	 #sponge
+        # S[5] -= cs*(q[5]-qe[5])
+    # end	 #sponge
 
     
     #Coriolis & geostrophic wind    
