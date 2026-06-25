@@ -1,4 +1,4 @@
-#==============================================================================
+#----------------------------------------------------------------------------
 # IMEXTimeIntegrators.jl
 #
 # Jexpresso's native IMEX (implicit-explicit) time integrator.
@@ -34,7 +34,7 @@
 #   otherwise falls back to a direct sparse factorization. Krylov / AMG
 #   preconditioning is intentionally left out of this lean integration; cases
 #   that need it can plug a custom `lsolve` closure.
-#==============================================================================
+#----------------------------------------------------------------------------
 
 function imex_time_loop!(inputs, params, u)
 
@@ -208,9 +208,9 @@ function imex_time_loop!(inputs, params, u)
     nonl_res_buf = KernelAbstractions.zeros(backend, nl_precision, Int64(unkwn))
     Lu_buf       = KernelAbstractions.zeros(backend, nl_precision, Int64(unkwn))
 
-    #==========================================================================
+    #----------------------------------------------------------------------------
     # Runge-Kutta IMEX
-    #==========================================================================
+    #----------------------------------------------------------------------------
     if method == "RK"
         for key in (:A_RK, :b_RK, :c_RK, :A_RK_tilde, :b_RK_tilde, :c_RK_tilde)
             haskey(coeff, key) || error("IMEX/RK: missing coefficient $(key) in :coeff")
@@ -279,9 +279,9 @@ function imex_time_loop!(inputs, params, u)
             end
         end
 
-    #==========================================================================
+    #----------------------------------------------------------------------------
     # Multistep IMEX
-    #==========================================================================
+    #----------------------------------------------------------------------------
     elseif method == "multistep"
         for key in (:alpha, :beta, :xi)
             haskey(coeff, key) || error("IMEX/multistep: missing coefficient $(key) in :coeff")
