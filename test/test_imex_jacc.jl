@@ -58,6 +58,31 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         @test resnorm ≤ 1e-8 * norm(b)
     end
 
+    @testset "jacc_bicgstab! reproduces the sparse-LU solve (CPU path parity)" begin
+        # The constant-operator CPU path (_imex_rk_run_const!) solves each stage
+        # with a cached sparse LU (lu/ldiv!), i.e. exactly `A \ b`. The JACC path
+        # (_imex_rk_run_const_jacc!) replaces that with jacc_bicgstab!. This
+        # checks the two agree to ~machine precision on the real stage operator
+        # A = I - λL, so swapping the solver does not change the stage solution.
+        n  = 2000
+        K  = spdiagm(-1 => fill(-1.0, n-1), 0 => fill(2.0, n), 1 => fill(-1.0, n-1))
+        Minv = 0.5 .+ rand(n)
+        μ, λ = 1.0e-2, 1.0e-3
+        L  = -μ * (Minv .* K)
+        A  = sparse(1.0I, n, n) - λ * L
+        b  = A * rand(n)
+
+        x_direct = A \ b                       # what lu/ldiv! computes on the CPU path
+
+        Aj = JaccSparseCSR(A)
+        xj = JACC.Array(zeros(n))
+        work = ntuple(_ -> JACC.Array(zeros(n)), 6)
+        conv, _, _ = jacc_bicgstab!(xj, Aj, JACC.Array(copy(b)), work;
+                                    rtol = 1e-10, atol = 1e-14, itmax = 1000)
+        @test conv
+        @test norm(Array(xj) .- x_direct) ≤ 1e-9 * norm(x_direct)
+    end
+
     @testset "jacc_bicgstab! handles a zero RHS" begin
         n  = 32
         A  = sprand(n, n, 0.3) + 2.0 * I
