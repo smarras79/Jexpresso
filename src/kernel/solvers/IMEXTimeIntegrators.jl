@@ -235,6 +235,22 @@ function imex_time_loop!(inputs, params, u)
         A_RK       = coeff[:A_RK];       b_RK       = coeff[:b_RK];       c_RK       = coeff[:c_RK]
         A_RK_tilde = coeff[:A_RK_tilde]; b_RK_tilde = coeff[:b_RK_tilde]; c_RK_tilde = coeff[:c_RK_tilde]
 
+        # Fast path for the common IMEX case: a time-independent implicit
+        # operator (upd_L == false) and matched residual/solver precision. The
+        # whole hot loop runs inside a type-stable function barrier so that the
+        # stage vectors handed to `rhs!` are concretely typed - otherwise the
+        # Any-typed locals here would make every `rhs!` evaluation type-unstable
+        # and box, allocating GiB over a run.
+        if operator_is_constant && same_precision
+            _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
+                                params, qp, sem, inputs,
+                                A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
+                                Δt, k, nl_atol, nl_rtol, max_nl_iter,
+                                t_n, inputs[:tend], dosetimes, neqs, npoint, rank)
+            println_rank(" #   IMEX integrator ........................... DONE"; msg_rank = rank)
+            return u
+        end
+
         U_stages = Dict{Int,Any}()
         for j = 1:k
             U_stages[j] = KernelAbstractions.zeros(backend, nl_precision, Int64(unkwn))
@@ -423,4 +439,142 @@ function imex_time_loop!(inputs, params, u)
     println_rank(" #   IMEX integrator ........................... DONE"; msg_rank = rank)
 
     return u
+end
+
+
+# Thin wrapper around write_output for the IMEX diagnostic snapshots.
+function _imex_write(params, u, t, iout, inputs)
+    write_output(params.SD, u, params.uaux, t, iout,
+                 params.mesh, params.mp,
+                 params.connijk_original, params.poin_in_bdy_face_original,
+                 params.x_original, params.y_original, params.z_original,
+                 inputs[:output_dir], inputs,
+                 params.qp.qvars, params.qp.qoutvars,
+                 inputs[:outformat];
+                 nvar = params.qp.neqs, qexact = params.qp.qe)
+    return nothing
+end
+
+
+#----------------------------------------------------------------------------
+# Type-stable hot loop for the constant-operator IMEX additive Runge-Kutta
+# path (delta == 1, upd_L == false, matched residual/solver precision).
+#
+# Why a separate function: `imex_time_loop!` reads the time step, buffers and
+# user closures out of `inputs`/runtime-typed allocations, so inside it the
+# stage vectors and `S_fun!`/`L_fun!` are inferred `Any`. Passing an Any-typed
+# stage vector into `rhs!` makes the entire RHS evaluation type-unstable and
+# box on every array op - which is what made this small case allocate GiB. By
+# taking `u` and the closures as positional arguments, Julia specializes this
+# function on their concrete runtime types; the stage vectors and work buffers
+# are then allocated here with `similar(u)`, so they are concretely typed and
+# `rhs!` stays allocation-light.
+#
+# The constant implicit operator `I - λᵢ L` is assembled and LU-factorized
+# once per stage and reused for every step; the per-stage solve is an in-place
+# `ldiv!` with the cached factorization (equivalent to the case's direct
+# `:lsolve = L \ b`). A custom iterative `:lsolve` is only honoured on the
+# general path in `imex_time_loop!`.
+#----------------------------------------------------------------------------
+function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
+                             params, qp, sem, inputs,
+                             A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
+                             Δt, k, nl_atol, nl_rtol, max_nl_iter,
+                             tinit, tend, dosetimes, neqs, npoint, rank)
+
+    # Work buffers and stage vectors. `u` is a concrete positional argument
+    # here, so `similar(u)` yields concretely-typed arrays.
+    rhs_buf = fill!(similar(u), zero(eltype(u)))
+    s_j_buf = fill!(similar(u), zero(eltype(u)))
+    l_j_buf = fill!(similar(u), zero(eltype(u)))
+    res_buf = fill!(similar(u), zero(eltype(u)))
+    Lu_buf  = fill!(similar(u), zero(eltype(u)))
+    x_buf   = fill!(similar(u), zero(eltype(u)))
+    U_stages = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
+
+    # Constant per-stage operators: assemble + factorize once, reuse every step.
+    L0   = L_update(u, tinit, Δt * A_RK_tilde[1, 1])
+    Lmat = Vector{typeof(L0)}(undef, k)
+    Lmat[1] = L0
+    for i in 2:k
+        Lmat[i] = L_update(u, tinit, Δt * A_RK_tilde[i, i])
+    end
+    Lfac = [lu(Lmat[i]) for i in 1:k]
+
+    t_n          = tinit
+    n_step       = 0
+    next_out_idx = 1
+    iout         = 0
+
+    while (abs(t_n - tend) > 1.0e-14 && t_n < tend)
+        for i = 1:k
+            time_tilde = t_n + c_RK_tilde[i] * Δt
+            L_mat = Lmat[i]
+            L_fac = Lfac[i]
+
+            # Stage RHS:  u + Σ_{j<i} Δt[ A_ex S_j + (A_im - A_ex) L_j ]
+            copyto!(rhs_buf, u)
+            for j = 1:i-1
+                fill!(s_j_buf, zero(eltype(s_j_buf)))
+                tj = t_n + c_RK[j] * Δt
+                S_fun!(s_j_buf, U_stages[j], tj, params, sem)
+                fill!(l_j_buf, zero(eltype(l_j_buf)))
+                L_fun!(l_j_buf, U_stages[j], tj, params)
+                aex = Δt * A_RK[i, j]
+                bim = Δt * (A_RK_tilde[i, j] - A_RK[i, j])
+                @. rhs_buf += aex * s_j_buf + bim * l_j_buf
+            end
+            if bcs_fun! !== nothing
+                bcs_fun!(rhs_buf, L_mat, time_tilde, params, sem, qp)
+            end
+
+            # Solve (I - λL) U_i = rhs with the cached factorization. The
+            # operator is linear, so the fixed-point loop converges in a single
+            # solve; the residual check is kept for robustness.
+            copyto!(res_buf, rhs_buf)
+            nl_norm_0 = norm(res_buf)
+            nl_norm_k = nl_norm_0
+            nl_iter   = 1
+            while (nl_norm_k > nl_atol && nl_norm_k > nl_rtol * nl_norm_0 && nl_iter < max_nl_iter)
+                ldiv!(x_buf, L_fac, res_buf)
+                U_stages[i] .+= x_buf
+                mul!(Lu_buf, L_mat, U_stages[i])
+                @. res_buf = rhs_buf - Lu_buf
+                nl_norm_k = norm(res_buf)
+                nl_iter  += 1
+            end
+        end
+
+        # Solution update: u += Σ_i Δt b_RK[i] S(U_i)
+        for i = 1:k
+            fill!(s_j_buf, zero(eltype(s_j_buf)))
+            ti = t_n + c_RK[i] * Δt
+            S_fun!(s_j_buf, U_stages[i], ti, params, sem)
+            axpy!(Δt * b_RK[i], s_j_buf, u)
+        end
+
+        t_n    += Δt
+        n_step += 1
+
+        while next_out_idx <= length(dosetimes) && t_n + 1.0e-10 >= dosetimes[next_out_idx]
+            iout += 1
+            u2uaux!(params.uaux, u, neqs, npoint)
+            println_rank(@sprintf(" #   IMEX: t = %.6f   step = %d", t_n, n_step); msg_rank = rank)
+            _imex_write(params, u, t_n, iout, inputs)
+            next_out_idx += 1
+        end
+
+        for j = 1:k
+            fill!(U_stages[j], zero(eltype(U_stages[j])))
+        end
+    end
+
+    # Final snapshot if the schedule did not already cover t_end.
+    if iout == 0 || next_out_idx <= length(dosetimes)
+        iout += 1
+        u2uaux!(params.uaux, u, neqs, npoint)
+        _imex_write(params, u, t_n, iout, inputs)
+    end
+
+    return nothing
 end

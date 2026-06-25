@@ -147,6 +147,18 @@ the user closure with `build_laplace_matrix` + `DSS_laplace_sparse`.
    GiB. This mirrors how Jexpresso's linear-solve path assembles/factorizes
    once and solves many times.
 
+   The constant-operator path also runs inside a **type-stable function
+   barrier** (`_imex_rk_run_const!`). `imex_time_loop!` reads the time step,
+   work buffers and user closures (`:S_fun`, `:L_fun`) out of the `inputs`
+   Dict and runtime-typed allocations, so inside it they are inferred `Any`.
+   Handing an `Any`-typed stage vector to `rhs!` makes the whole RHS
+   evaluation type-unstable and box on every array op — that allocated several
+   GiB even after the factorization fix. The barrier takes `u` and the
+   closures as positional arguments (so Julia specializes on their concrete
+   types) and allocates the stage vectors/buffers with `similar(u)`, keeping
+   `rhs!` allocation-light and the per-step work in the low-MiB range. The
+   solve is an in-place `ldiv!` with the cached LU.
+
 4. **Output.** Writes through newmaster's `write_output(SD, u, uaux, t, iout,
    mesh, mp, connijk_original, …, qp.qvars, qp.qoutvars, outformat; nvar,
    qexact)` — the same call newmaster's own callbacks use. `uaux` is refreshed
