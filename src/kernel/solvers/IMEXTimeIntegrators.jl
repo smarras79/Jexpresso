@@ -242,11 +242,27 @@ function imex_time_loop!(inputs, params, u)
         # Any-typed locals here would make every `rhs!` evaluation type-unstable
         # and box, allocating GiB over a run.
         if operator_is_constant && same_precision
+            # Per-region allocation breakdown of the IMEX hot loop. Enable with
+            # `:lalloc_summary => true` in user_inputs.jl (or env
+            # JEXPRESSO_ALLOC_SUMMARY=1). The labels imex_S_fun / imex_L_fun /
+            # imex_ldiv / imex_mul / imex_output (and the rhs! sub-labels nested
+            # under imex_S_fun) show where allocation actually happens.
+            if alloc_summary_enabled(inputs)
+                TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
+            end
+
             _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
                                 params, qp, sem, inputs,
                                 A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
                                 Δt, k, nl_atol, nl_rtol, max_nl_iter,
                                 t_n, inputs[:tend], dosetimes, neqs, npoint, rank)
+
+            if rank == 0 && alloc_summary_enabled(inputs)
+                println()
+                println(" # ===== IMEX allocation summary (constant-operator RK path) =====")
+                show(stdout, JEXPRESSO_TIMER; allocations = true, sortby = :firstexec)
+                println()
+            end
             println_rank(" #   IMEX integrator ........................... DONE"; msg_rank = rank)
             return u
         end
@@ -485,12 +501,18 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
     # Work buffers and stage vectors. `u` is a concrete positional argument
     # here, so `similar(u)` yields concretely-typed arrays.
     rhs_buf = fill!(similar(u), zero(eltype(u)))
-    s_j_buf = fill!(similar(u), zero(eltype(u)))
-    l_j_buf = fill!(similar(u), zero(eltype(u)))
     res_buf = fill!(similar(u), zero(eltype(u)))
     Lu_buf  = fill!(similar(u), zero(eltype(u)))
     x_buf   = fill!(similar(u), zero(eltype(u)))
     U_stages = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
+
+    # Cached explicit/implicit stage evaluations S(U_i) and L(U_i). Each is
+    # computed ONCE, right after stage i is solved, and reused both by the
+    # later stages' RHS assembly and by the final solution update. This drops
+    # the number of (expensive) `rhs!` evaluations from ~k(k+1)/2 + k per step
+    # to exactly k per step.
+    S_store = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
+    L_store = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
 
     # Constant per-stage operators: assemble + factorize once, reuse every step.
     L0   = L_update(u, tinit, Δt * A_RK_tilde[1, 1])
@@ -512,17 +534,13 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
             L_mat = Lmat[i]
             L_fac = Lfac[i]
 
-            # Stage RHS:  u + Σ_{j<i} Δt[ A_ex S_j + (A_im - A_ex) L_j ]
+            # Stage RHS from cached stage evaluations:
+            #   u + Σ_{j<i} Δt[ A_ex S_j + (A_im - A_ex) L_j ]
             copyto!(rhs_buf, u)
             for j = 1:i-1
-                fill!(s_j_buf, zero(eltype(s_j_buf)))
-                tj = t_n + c_RK[j] * Δt
-                S_fun!(s_j_buf, U_stages[j], tj, params, sem)
-                fill!(l_j_buf, zero(eltype(l_j_buf)))
-                L_fun!(l_j_buf, U_stages[j], tj, params)
                 aex = Δt * A_RK[i, j]
                 bim = Δt * (A_RK_tilde[i, j] - A_RK[i, j])
-                @. rhs_buf += aex * s_j_buf + bim * l_j_buf
+                @. rhs_buf += aex * S_store[j] + bim * L_store[j]
             end
             if bcs_fun! !== nothing
                 bcs_fun!(rhs_buf, L_mat, time_tilde, params, sem, qp)
@@ -536,21 +554,23 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
             nl_norm_k = nl_norm_0
             nl_iter   = 1
             while (nl_norm_k > nl_atol && nl_norm_k > nl_rtol * nl_norm_0 && nl_iter < max_nl_iter)
-                ldiv!(x_buf, L_fac, res_buf)
+                @timeit_debug JEXPRESSO_TIMER "imex_ldiv" ldiv!(x_buf, L_fac, res_buf)
                 U_stages[i] .+= x_buf
-                mul!(Lu_buf, L_mat, U_stages[i])
+                @timeit_debug JEXPRESSO_TIMER "imex_mul"  mul!(Lu_buf, L_mat, U_stages[i])
                 @. res_buf = rhs_buf - Lu_buf
                 nl_norm_k = norm(res_buf)
                 nl_iter  += 1
             end
+
+            # Cache S(U_i) and L(U_i) for this stage (reused above and below).
+            ti = t_n + c_RK[i] * Δt
+            @timeit_debug JEXPRESSO_TIMER "imex_S_fun" S_fun!(S_store[i], U_stages[i], ti, params, sem)
+            @timeit_debug JEXPRESSO_TIMER "imex_L_fun" L_fun!(L_store[i], U_stages[i], ti, params)
         end
 
-        # Solution update: u += Σ_i Δt b_RK[i] S(U_i)
+        # Solution update: u += Σ_i Δt b_RK[i] S(U_i)  (cached)
         for i = 1:k
-            fill!(s_j_buf, zero(eltype(s_j_buf)))
-            ti = t_n + c_RK[i] * Δt
-            S_fun!(s_j_buf, U_stages[i], ti, params, sem)
-            axpy!(Δt * b_RK[i], s_j_buf, u)
+            axpy!(Δt * b_RK[i], S_store[i], u)
         end
 
         t_n    += Δt
@@ -560,7 +580,7 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
             iout += 1
             u2uaux!(params.uaux, u, neqs, npoint)
             println_rank(@sprintf(" #   IMEX: t = %.6f   step = %d", t_n, n_step); msg_rank = rank)
-            _imex_write(params, u, t_n, iout, inputs)
+            @timeit_debug JEXPRESSO_TIMER "imex_output" _imex_write(params, u, t_n, iout, inputs)
             next_out_idx += 1
         end
 
@@ -573,7 +593,7 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
     if iout == 0 || next_out_idx <= length(dosetimes)
         iout += 1
         u2uaux!(params.uaux, u, neqs, npoint)
-        _imex_write(params, u, t_n, iout, inputs)
+        @timeit_debug JEXPRESSO_TIMER "imex_output" _imex_write(params, u, t_n, iout, inputs)
     end
 
     return nothing
