@@ -136,7 +136,18 @@ the user closure with `build_laplace_matrix` + `DSS_laplace_sparse`.
    closure is the extension point if iterative/preconditioned solves are
    wanted later.
 
-3. **Output.** Writes through newmaster's `write_output(SD, u, uaux, t, iout,
+3. **Constant-operator factorization caching.** When the implicit operator is
+   time-independent (`:upd_L => false`, the Burgers case), the per-stage system
+   matrix `I − λᵢ L` never changes. It is therefore assembled **and
+   LU-factorized once** and the factorization is reused for every step (the
+   solve receives the cached `lu(...)` object, so `F \ b` does only
+   forward/back substitution). Without this, a fresh sparse LU — with full 2-D
+   fill-in — was built and discarded on every stage of every step
+   (`k · nsteps` factorizations), which made this small case allocate tens of
+   GiB. This mirrors how Jexpresso's linear-solve path assembles/factorizes
+   once and solves many times.
+
+4. **Output.** Writes through newmaster's `write_output(SD, u, uaux, t, iout,
    mesh, mp, connijk_original, …, qp.qvars, qp.qoutvars, outformat; nvar,
    qexact)` — the same call newmaster's own callbacks use. `uaux` is refreshed
    from `u` (`u2uaux!`) before each write. The diagnostic schedule

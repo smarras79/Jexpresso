@@ -87,10 +87,12 @@ function imex_time_loop!(inputs, params, u)
 
     S_fun!  = inputs[:S_fun]
     bcs_fun! = inputs[:bcs_fun]
+    # `upd_L` is always defined (false in the pure-explicit case) so the hot
+    # loops can test it without a `delta == 1` guard.
+    upd_L = (delta == 1) ? inputs[:upd_L] : false
     if delta == 1
         L_fun!  = inputs[:L_fun]
         build_L = inputs[:build_L]
-        upd_L   = inputs[:upd_L]
     end
 
     backend = inputs[:backend]
@@ -120,6 +122,21 @@ function imex_time_loop!(inputs, params, u)
             return solver_precision.(Is_cache - λ * L_temp)
         end
     end
+
+    # When the implicit operator is constant in time (`upd_L == false`) the
+    # per-stage system matrix `I - λ L` never changes, so it is assembled and
+    # LU-factorized ONCE and the factorization is reused for every step. This
+    # is the decisive memory/time win: without it, a fresh sparse LU (with full
+    # 2-D fill-in) would be built and thrown away on every stage of every step
+    # (~k·nsteps factorizations), which is what made this case allocate tens of
+    # GiB. The factorization is passed to the solve in place of the raw matrix;
+    # `F \ b` reuses it, so no re-factorization happens in the hot loop.
+    operator_is_constant = (delta == 1 && !upd_L)
+
+    # Avoid an extra residual copy when the residual and solver precisions match
+    # (the common case, e.g. both Float64).
+    same_precision = (solver_precision === nl_precision)
+    solver_rhs(res) = same_precision ? res : solver_precision.(res)
 
     #--------------------------------------------------------------------------
     # RHS builders (in-place into pre-allocated buffers)
@@ -223,20 +240,41 @@ function imex_time_loop!(inputs, params, u)
             U_stages[j] = KernelAbstractions.zeros(backend, nl_precision, Int64(unkwn))
         end
 
+        # Constant-operator fast path: assemble and factorize each stage's
+        # `I - λ_i L` once and reuse the factorization for every time step.
+        Lmat_stage = Vector{Any}(undef, k)   # sparse operator   (for residual mul!)
+        Lfac_stage = Vector{Any}(undef, k)   # its LU factorization (for the solve)
+        if operator_is_constant
+            for i = 1:k
+                λi            = Δt * A_RK_tilde[i, i]
+                Lmat_stage[i] = L_update(u, t_n, λi)
+                Lfac_stage[i] = lu(Lmat_stage[i])
+            end
+        end
+
         while (abs(t_n - inputs[:tend]) > 1.0e-14 && t_n < inputs[:tend])
             for i = 1:k
                 time_tilde = t_n + c_RK_tilde[i] * Δt
                 λ          = Δt * A_RK_tilde[i, i]
 
-                # Implicit operator for this stage
-                L_curr = L_update(U_stages[i], time_tilde, λ)
+                # Implicit operator for this stage. `L_mat` is the matrix (used
+                # for the residual); `L_solve` is what is handed to the linear
+                # solve - a cached factorization when the operator is constant,
+                # otherwise the freshly-built matrix.
+                if operator_is_constant
+                    L_mat   = Lmat_stage[i]
+                    L_solve = Lfac_stage[i]
+                else
+                    L_mat   = L_update(U_stages[i], time_tilde, λ)
+                    L_solve = L_mat
+                end
 
                 # Stage RHS
                 rhs = construct_rhs_rk!(rhs_buf, s_j_buf, l_j_buf,
                                         u, U_stages, t_n, i,
                                         A_RK, A_RK_tilde, c_RK)
                 if bcs_fun! !== nothing
-                    bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
+                    bcs_fun!(rhs, L_mat, time_tilde, params, sem, qp)
                 end
 
                 # Nonlinear fixed-point loop: solve L_curr U_i = rhs
@@ -246,15 +284,16 @@ function imex_time_loop!(inputs, params, u)
                 nl_norm_k = nl_norm_0
                 nl_iter   = 1
                 while (nl_norm_k > nl_atol && nl_norm_k > nl_rtol * nl_norm_0 && nl_iter < max_nl_iter)
-                    x = imex_linsolve(L_curr, solver_precision.(nonl_res))
+                    x = imex_linsolve(L_solve, solver_rhs(nonl_res))
                     U_stages[i] .+= x
 
-                    if delta == 1 && upd_L
-                        L_curr = L_update(U_stages[i], time_tilde, λ)
-                        bcs_fun! !== nothing && bcs_fun!(rhs, L_curr, time_tilde, params, sem, qp)
+                    if upd_L
+                        L_mat   = L_update(U_stages[i], time_tilde, λ)
+                        L_solve = L_mat
+                        bcs_fun! !== nothing && bcs_fun!(rhs, L_mat, time_tilde, params, sem, qp)
                     end
 
-                    mul!(Lu_buf, L_curr, U_stages[i])
+                    mul!(Lu_buf, L_mat, U_stages[i])
                     @. nonl_res = rhs - Lu_buf
                     nl_norm_k = norm(nonl_res)
                     nl_iter += 1
@@ -317,13 +356,15 @@ function imex_time_loop!(inputs, params, u)
         end
 
         u_next = KernelAbstractions.zeros(backend, nl_precision, Int64(unkwn))
-        L_curr = L_update(u_next, t_n + Δt, lambda)
+        # Constant operator (upd_L == false): assemble + factorize once, reuse.
+        L_mat   = L_update(u_next, t_n + Δt, lambda)
+        L_solve = operator_is_constant ? lu(L_mat) : L_mat
 
         while (abs(t_n - inputs[:tend]) > 1.0e-14 && t_n < inputs[:tend])
             rhs = construct_rhs_multistep!(rhs_buf, s_j_buf, l_j_buf,
                                            u_prev, t_n, alpha, beta, lambda)
             if bcs_fun! !== nothing
-                bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
+                bcs_fun!(rhs, L_mat, t_n + Δt, params, sem, qp)
             end
 
             nonl_res = nonl_res_buf
@@ -332,15 +373,16 @@ function imex_time_loop!(inputs, params, u)
             nl_norm_k = nl_norm_0
             nl_iter   = 1
             while (nl_norm_k > nl_atol && nl_norm_k > nl_rtol * nl_norm_0 && nl_iter < max_nl_iter)
-                x = imex_linsolve(L_curr, solver_precision.(nonl_res))
+                x = imex_linsolve(L_solve, solver_rhs(nonl_res))
                 u_next .+= x
 
-                if delta == 1 && upd_L
-                    L_curr = L_update(u_next, t_n + Δt, lambda)
-                    bcs_fun! !== nothing && bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
+                if upd_L
+                    L_mat   = L_update(u_next, t_n + Δt, lambda)
+                    L_solve = L_mat
+                    bcs_fun! !== nothing && bcs_fun!(rhs, L_mat, t_n + Δt, params, sem, qp)
                 end
 
-                mul!(Lu_buf, L_curr, u_next)
+                mul!(Lu_buf, L_mat, u_next)
                 @. nonl_res = rhs - Lu_buf
                 nl_norm_k = norm(nonl_res)
                 nl_iter += 1
