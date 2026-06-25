@@ -242,27 +242,13 @@ function imex_time_loop!(inputs, params, u)
         # Any-typed locals here would make every `rhs!` evaluation type-unstable
         # and box, allocating GiB over a run.
         if operator_is_constant && same_precision
-            # Per-region allocation breakdown of the IMEX hot loop. Enable with
-            # `:lalloc_summary => true` in user_inputs.jl (or env
-            # JEXPRESSO_ALLOC_SUMMARY=1). The labels imex_S_fun / imex_L_fun /
-            # imex_ldiv / imex_mul / imex_output (and the rhs! sub-labels nested
-            # under imex_S_fun) show where allocation actually happens.
-            if alloc_summary_enabled(inputs)
-                TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
-            end
-
+            # The constant-operator barrier prints a per-region allocation
+            # breakdown at the end when `:lalloc_summary => true` (runtime flag).
             _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
                                 params, qp, sem, inputs,
                                 A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
                                 Δt, k, nl_atol, nl_rtol, max_nl_iter,
                                 t_n, inputs[:tend], dosetimes, neqs, npoint, rank)
-
-            if rank == 0 && alloc_summary_enabled(inputs)
-                println()
-                println(" # ===== IMEX allocation summary (constant-operator RK path) =====")
-                show(stdout, JEXPRESSO_TIMER; allocations = true, sortby = :firstexec)
-                println()
-            end
             println_rank(" #   IMEX integrator ........................... DONE"; msg_rank = rank)
             return u
         end
@@ -528,6 +514,14 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
     next_out_idx = 1
     iout         = 0
 
+    # Per-region allocation accounting. `@allocated` works at runtime (unlike
+    # @timeit_debug, which is gated at module-load time by JEXPRESSO_ALLOC_SUMMARY)
+    # so this populates even when only `:lalloc_summary => true` is set in
+    # user_inputs.jl. The accounting itself is cheap (a couple of gc_bytes reads
+    # per call) and the breakdown is printed once at the end.
+    lmeasure = alloc_summary_enabled(inputs)
+    a_asm = 0; a_solve = 0; a_mul = 0; a_Sfun = 0; a_Lfun = 0; a_out = 0
+
     while (abs(t_n - tend) > 1.0e-14 && t_n < tend)
         for i = 1:k
             time_tilde = t_n + c_RK_tilde[i] * Δt
@@ -536,11 +530,13 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
 
             # Stage RHS from cached stage evaluations:
             #   u + Σ_{j<i} Δt[ A_ex S_j + (A_im - A_ex) L_j ]
-            copyto!(rhs_buf, u)
-            for j = 1:i-1
-                aex = Δt * A_RK[i, j]
-                bim = Δt * (A_RK_tilde[i, j] - A_RK[i, j])
-                @. rhs_buf += aex * S_store[j] + bim * L_store[j]
+            a_asm += @allocated begin
+                copyto!(rhs_buf, u)
+                for j = 1:i-1
+                    aex = Δt * A_RK[i, j]
+                    bim = Δt * (A_RK_tilde[i, j] - A_RK[i, j])
+                    @. rhs_buf += aex * S_store[j] + bim * L_store[j]
+                end
             end
             if bcs_fun! !== nothing
                 bcs_fun!(rhs_buf, L_mat, time_tilde, params, sem, qp)
@@ -554,9 +550,9 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
             nl_norm_k = nl_norm_0
             nl_iter   = 1
             while (nl_norm_k > nl_atol && nl_norm_k > nl_rtol * nl_norm_0 && nl_iter < max_nl_iter)
-                @timeit_debug JEXPRESSO_TIMER "imex_ldiv" ldiv!(x_buf, L_fac, res_buf)
+                a_solve += @allocated ldiv!(x_buf, L_fac, res_buf)
                 U_stages[i] .+= x_buf
-                @timeit_debug JEXPRESSO_TIMER "imex_mul"  mul!(Lu_buf, L_mat, U_stages[i])
+                a_mul   += @allocated mul!(Lu_buf, L_mat, U_stages[i])
                 @. res_buf = rhs_buf - Lu_buf
                 nl_norm_k = norm(res_buf)
                 nl_iter  += 1
@@ -564,8 +560,8 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
 
             # Cache S(U_i) and L(U_i) for this stage (reused above and below).
             ti = t_n + c_RK[i] * Δt
-            @timeit_debug JEXPRESSO_TIMER "imex_S_fun" S_fun!(S_store[i], U_stages[i], ti, params, sem)
-            @timeit_debug JEXPRESSO_TIMER "imex_L_fun" L_fun!(L_store[i], U_stages[i], ti, params)
+            a_Sfun += @allocated S_fun!(S_store[i], U_stages[i], ti, params, sem)
+            a_Lfun += @allocated L_fun!(L_store[i], U_stages[i], ti, params)
         end
 
         # Solution update: u += Σ_i Δt b_RK[i] S(U_i)  (cached)
@@ -580,7 +576,7 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
             iout += 1
             u2uaux!(params.uaux, u, neqs, npoint)
             println_rank(@sprintf(" #   IMEX: t = %.6f   step = %d", t_n, n_step); msg_rank = rank)
-            @timeit_debug JEXPRESSO_TIMER "imex_output" _imex_write(params, u, t_n, iout, inputs)
+            a_out += @allocated _imex_write(params, u, t_n, iout, inputs)
             next_out_idx += 1
         end
 
@@ -593,7 +589,23 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
     if iout == 0 || next_out_idx <= length(dosetimes)
         iout += 1
         u2uaux!(params.uaux, u, neqs, npoint)
-        @timeit_debug JEXPRESSO_TIMER "imex_output" _imex_write(params, u, t_n, iout, inputs)
+        a_out += @allocated _imex_write(params, u, t_n, iout, inputs)
+    end
+
+    if lmeasure && rank == 0
+        gib(b) = b / (1024.0^3)
+        total = a_asm + a_solve + a_mul + a_Sfun + a_Lfun + a_out
+        println()
+        println(" # ===== IMEX per-region allocation (constant-operator RK path) =====")
+        @printf("   stage RHS assembly        : %8.3f GiB\n", gib(a_asm))
+        @printf("   linear solve (ldiv!)      : %8.3f GiB\n", gib(a_solve))
+        @printf("   residual mul!             : %8.3f GiB\n", gib(a_mul))
+        @printf("   S(U) [rhs!]               : %8.3f GiB\n", gib(a_Sfun))
+        @printf("   L(U) [sparse mul!]        : %8.3f GiB\n", gib(a_Lfun))
+        @printf("   output (write_output/VTK) : %8.3f GiB\n", gib(a_out))
+        println("   ----------------------------------------------")
+        @printf("   total measured            : %8.3f GiB\n", gib(total))
+        println()
     end
 
     return nothing
