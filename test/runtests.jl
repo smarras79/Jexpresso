@@ -11,4 +11,10 @@ using Test
     run_example("CompEuler", "$alg_case")
 end
 
+# IMEX/JACC portable linear-algebra kernels (CPU default backend). Self-
+# contained: it only needs JACC + SparseArrays + LinearAlgebra and does not
+# build the full Jexpresso module or require a mesh, so it always runs in CI.
+# The GPU equivalent lives in test/test_imex_jacc_gpu.jl (run on a GPU box).
+include(joinpath(project_root, "test", "test_imex_jacc.jl"))
+
 end # module
