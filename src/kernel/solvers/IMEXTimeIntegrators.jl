@@ -500,14 +500,33 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
     S_store = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
     L_store = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
 
-    # Constant per-stage operators: assemble + factorize once, reuse every step.
-    L0   = L_update(u, tinit, Δt * A_RK_tilde[1, 1])
+    # Constant per-stage operators I - λ_i L, with λ_i = Δt * Ã[i,i]. Stages
+    # that share the same λ_i (e.g. ARS(2,3,2) stages 2 and 3) are the SAME
+    # matrix, so assemble + LU-factorize once per DISTINCT λ_i and share the
+    # factorization. This avoids redundant (and memory-heavy) factorizations.
+    λs = [Δt * A_RK_tilde[i, i] for i in 1:k]
+    L0   = L_update(u, tinit, λs[1])
+    F0   = lu(L0)
     Lmat = Vector{typeof(L0)}(undef, k)
+    Lfac = Vector{typeof(F0)}(undef, k)
     Lmat[1] = L0
+    Lfac[1] = F0
     for i in 2:k
-        Lmat[i] = L_update(u, tinit, Δt * A_RK_tilde[i, i])
+        reuse = 0
+        for j in 1:i-1
+            if λs[j] == λs[i]
+                reuse = j
+                break
+            end
+        end
+        if reuse > 0
+            Lmat[i] = Lmat[reuse]
+            Lfac[i] = Lfac[reuse]
+        else
+            Lmat[i] = L_update(u, tinit, λs[i])
+            Lfac[i] = lu(Lmat[i])
+        end
     end
-    Lfac = [lu(Lmat[i]) for i in 1:k]
 
     t_n          = tinit
     n_step       = 0
