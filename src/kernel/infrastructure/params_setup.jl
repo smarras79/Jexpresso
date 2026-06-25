@@ -246,6 +246,10 @@ function params_setup(sem,
     PhysConst = PhysicalConst{TFloat}()
     thermo_params = create_updated_TD_Parameters(PhysConst.potential_temperature_reference_pressure)
     sgs        = allocate_SGS(sem.mesh.npoin, TFloat, backend, PhysConst, inputs[:visc_model])
+    if sgs isa AbstractSGSModel
+        sgs.lrichardson = get(inputs, :lrichardson, false)
+        sgs.ltheta_eqn  = !(haskey(inputs, :energy_equation) && inputs[:energy_equation] == "energy")
+    end
     sgs_stress = zeros(TFloat, Int64(sem.mesh.npoin), 12)
     
     #------------------------------------------------------------------------------------

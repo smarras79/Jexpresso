@@ -1047,6 +1047,17 @@ function mod_inputs_check(inputs, key, value, error_or_warning::String)
 
 end
 
+function build_tspan(inputs, TFloat)
+    if get(inputs, :lamr, false) == true
+        amr_freq = inputs[:amr_freq]
+        Δt_amr   = amr_freq * inputs[:Δt]
+        [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + inputs[:amr_start_time] + Δt_amr)]
+    else
+        [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    end
+end
+
+
 function mod_inputs_print_welcome(rank = 0)
     if rank == 0
         print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
