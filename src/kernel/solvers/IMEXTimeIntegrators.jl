@@ -242,6 +242,21 @@ function imex_time_loop!(inputs, params, u)
         # Any-typed locals here would make every `rhs!` evaluation type-unstable
         # and box, allocating GiB over a run.
         if operator_is_constant && same_precision
+            # GPU/JACC opt-in (`:limex_jacc => true`): the per-stage implicit
+            # solve and the residual sparse mat-vec run on the JACC device via a
+            # portable BiCGSTAB instead of the host sparse LU. Everything else
+            # (vector algebra, explicit `rhs!`) stays on the native backend that
+            # `u` lives on, so a GPU run only needs `:backend => CUDABackend()`
+            # and a JACC backend configured for the matching device.
+            if get(inputs, :limex_jacc, false)
+                _imex_rk_run_const_jacc!(u, build_L, L_update, S_fun!, bcs_fun!,
+                                         params, qp, sem, inputs,
+                                         A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
+                                         Δt, k, nl_atol, nl_rtol, max_nl_iter,
+                                         t_n, inputs[:tend], dosetimes, neqs, npoint, rank)
+                println_rank(" #   IMEX integrator (JACC) .................... DONE"; msg_rank = rank)
+                return u
+            end
             # The constant-operator barrier prints a per-region allocation
             # breakdown at the end when `:lalloc_summary => true` (runtime flag).
             _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
@@ -625,6 +640,164 @@ function _imex_rk_run_const!(u, L_update, S_fun!, L_fun!, bcs_fun!,
         println("   ----------------------------------------------")
         @printf("   total measured            : %8.3f GiB\n", gib(total))
         println()
+    end
+
+    return nothing
+end
+
+
+#----------------------------------------------------------------------------
+# JACC / GPU constant-operator IMEX additive Runge-Kutta path.
+#
+# A device-portable twin of `_imex_rk_run_const!`. It is selected by
+# `:limex_jacc => true` and differs in exactly the piece the direct-LU path
+# could not move off the host: the per-stage implicit solve `(I - λL) x = b`
+# and the residual sparse mat-vec are done on the JACC device with
+# `jacc_bicgstab!` / `jacc_spmv!` (imex_jacc.jl) instead of `lu` / `ldiv!`.
+#
+# Everything else is shared with the host path's logic and stays on the native
+# KernelAbstractions backend of `u`:
+#   * stage RHS assembly, the solution update and the residual combination are
+#     plain broadcast / `axpy!` on `similar(u)` buffers (run on GPU when `u` is
+#     a device array);
+#   * S(U_i) is the explicit `rhs!` through `S_fun!`, which already dispatches on
+#     that backend;
+#   * L(U_i) is a device SpMV with the raw L operator.
+#
+# So on a CPU run (the default, and what is exercised by the test suite) this
+# uses the JACC CPU backend and is bit-for-bit a BiCGSTAB-instead-of-LU solve;
+# on `:backend => CUDABackend()` with a CUDA-configured JACC it runs on the GPU
+# with no further code change.
+#----------------------------------------------------------------------------
+function _imex_rk_run_const_jacc!(u, build_L, L_update, S_fun!, bcs_fun!,
+                                  params, qp, sem, inputs,
+                                  A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
+                                  Δt, k, nl_atol, nl_rtol, max_nl_iter,
+                                  tinit, tend, dosetimes, neqs, npoint, rank)
+
+    # Configure JACC for the requested device (no-op / default on CPU).
+    imex_jacc_init_backend!(inputs)
+
+    index_type = (TInt === Int32) ? Int32 : Int
+    float_type = eltype(u)
+
+    # Work buffers and stage vectors live on the native backend of `u`.
+    rhs_buf = fill!(similar(u), zero(eltype(u)))
+    res_buf = fill!(similar(u), zero(eltype(u)))
+    Lu_buf  = fill!(similar(u), zero(eltype(u)))
+    x_buf   = fill!(similar(u), zero(eltype(u)))
+    U_stages = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
+    S_store  = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
+    L_store  = [fill!(similar(u), zero(eltype(u))) for _ in 1:k]
+
+    # BiCGSTAB scratch (r, rhat, p, v, s, t).
+    bicg_work = ntuple(_ -> fill!(similar(u), zero(eltype(u))), 6)
+    itmax = get(inputs, :imex_jacc_itmax, max(500, 10 * Int(ceil(sqrt(npoint)))))
+
+    # Raw implicit operator L (for L(U_i) = L * U_i), assembled once on the host
+    # and copied to the device as CSR.
+    L_raw  = build_L(u, tinit, params)
+    L_jacc = JaccSparseCSR(L_raw; index_type = index_type, float_type = float_type)
+
+    # Per-stage system operators I - λ_i L. Stages that share the same λ_i share
+    # the (host sparse + device CSR) operator, mirroring the LU-dedup of the host
+    # path. The host sparse copy is kept only so a `bcs_fun!` that mutates the
+    # matrix still has something to act on; the solve/SpMV use the CSR.
+    λs   = [Δt * A_RK_tilde[i, i] for i in 1:k]
+    A0_h = L_update(u, tinit, λs[1])
+    Ahost = Vector{typeof(A0_h)}(undef, k)
+    Ajacc = Vector{typeof(L_jacc)}(undef, k)
+    Ahost[1] = A0_h
+    Ajacc[1] = JaccSparseCSR(A0_h; index_type = index_type, float_type = float_type)
+    for i in 2:k
+        reuse = 0
+        for j in 1:i-1
+            if λs[j] == λs[i]
+                reuse = j
+                break
+            end
+        end
+        if reuse > 0
+            Ahost[i] = Ahost[reuse]
+            Ajacc[i] = Ajacc[reuse]
+        else
+            Ahost[i] = L_update(u, tinit, λs[i])
+            Ajacc[i] = JaccSparseCSR(Ahost[i]; index_type = index_type, float_type = float_type)
+        end
+    end
+
+    t_n          = tinit
+    n_step       = 0
+    next_out_idx = 1
+    iout         = 0
+
+    while (abs(t_n - tend) > 1.0e-14 && t_n < tend)
+        for i = 1:k
+            time_tilde = t_n + c_RK_tilde[i] * Δt
+
+            # Stage RHS:  u + Σ_{j<i} Δt[ A_ex S_j + (A_im - A_ex) L_j ]
+            copyto!(rhs_buf, u)
+            for j = 1:i-1
+                aex = Δt * A_RK[i, j]
+                bim = Δt * (A_RK_tilde[i, j] - A_RK[i, j])
+                @. rhs_buf += aex * S_store[j] + bim * L_store[j]
+            end
+            if bcs_fun! !== nothing
+                bcs_fun!(rhs_buf, Ahost[i], time_tilde, params, sem, qp)
+            end
+
+            # Solve (I - λL) U_i = rhs on the device. The operator is linear, so
+            # the fixed-point loop converges in one BiCGSTAB solve; the residual
+            # check below is kept for robustness / parity with the host path.
+            copyto!(res_buf, rhs_buf)
+            nl_norm_0 = norm(res_buf)
+            nl_norm_k = nl_norm_0
+            nl_iter   = 1
+            while (nl_norm_k > nl_atol && nl_norm_k > nl_rtol * nl_norm_0 && nl_iter < max_nl_iter)
+                conv, bi, _ = jacc_bicgstab!(x_buf, Ajacc[i], res_buf, bicg_work;
+                                             rtol = nl_rtol, atol = nl_atol, itmax = itmax)
+                if !conv && rank == 0
+                    @warn "IMEX/JACC BiCGSTAB did not converge (stage $i, step $n_step): $bi iters"
+                end
+                U_stages[i] .+= x_buf
+                jacc_spmv!(Lu_buf, Ajacc[i], U_stages[i])
+                @. res_buf = rhs_buf - Lu_buf
+                nl_norm_k = norm(res_buf)
+                nl_iter  += 1
+            end
+
+            # Cache S(U_i) [explicit rhs!] and L(U_i) [device SpMV].
+            ti = t_n + c_RK[i] * Δt
+            S_fun!(S_store[i], U_stages[i], ti, params, sem)
+            jacc_spmv!(L_store[i], L_jacc, U_stages[i])
+        end
+
+        # Solution update: u += Σ_i Δt b_RK[i] S(U_i)
+        for i = 1:k
+            axpy!(Δt * b_RK[i], S_store[i], u)
+        end
+
+        t_n    += Δt
+        n_step += 1
+
+        while next_out_idx <= length(dosetimes) && t_n + 1.0e-10 >= dosetimes[next_out_idx]
+            iout += 1
+            u2uaux!(params.uaux, u, neqs, npoint)
+            println_rank(@sprintf(" #   IMEX(JACC): t = %.6f   step = %d", t_n, n_step); msg_rank = rank)
+            _imex_write(params, u, t_n, iout, inputs)
+            next_out_idx += 1
+        end
+
+        for j = 1:k
+            fill!(U_stages[j], zero(eltype(U_stages[j])))
+        end
+    end
+
+    # Final snapshot if the schedule did not already cover t_end.
+    if iout == 0 || next_out_idx <= length(dosetimes)
+        iout += 1
+        u2uaux!(params.uaux, u, neqs, npoint)
+        _imex_write(params, u, t_n, iout, inputs)
     end
 
     return nothing

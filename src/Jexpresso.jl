@@ -194,6 +194,8 @@ include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
+include(joinpath( "kernel", "solvers", "imex_jacc.jl"))
+
 include(joinpath( "kernel", "solvers", "IMEXTimeIntegrators.jl"))
 
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))

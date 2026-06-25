@@ -998,6 +998,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :k))                inputs[:k]                = 1             end
     if(!haskey(inputs, :upd_L))            inputs[:upd_L]            = false         end
     if(!haskey(inputs, :bcs_fun))          inputs[:bcs_fun]          = nothing       end
+    # GPU/JACC opt-in for the constant-operator IMEX-RK path: when true the
+    # per-stage implicit solve runs on the JACC device (portable BiCGSTAB +
+    # SpMV) instead of the host sparse LU. See kernel/solvers/imex_jacc.jl.
+    if(!haskey(inputs, :limex_jacc))       inputs[:limex_jacc]       = false         end
     if(!haskey(inputs, :Δt_expl))          inputs[:Δt_expl]          = inputs[:Δt]   end
     # Forward-compat flag (the lean integrator solves directly / via :lsolve;
     # :assembled is accepted for cases authored against the richer storage path).

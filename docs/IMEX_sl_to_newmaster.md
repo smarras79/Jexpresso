@@ -227,13 +227,59 @@ git-ignored, so it is provided/generated locally, not committed).
 
 ---
 
-## 8. Suggested next steps
+## 8. GPU / JACC.jl execution
+
+The constant-operator IMEX-RK path can run on the GPU through
+[JACC.jl](https://github.com/JuliaORNL/JACC.jl). The split is deliberate: only
+the one piece that pinned the fast path to the host — the per-stage sparse
+**linear solve** `(I - λL) x = b`, previously a cached sparse LU
+(`lu` / `ldiv!`) with no portable GPU equivalent — is moved onto the device.
+
+| File | Role |
+|---|---|
+| `src/kernel/solvers/imex_jacc.jl` | `JaccSparseCSR` (device-resident CSR), `jacc_spmv!` (portable SpMV, one JACC thread per row) and `jacc_bicgstab!` (matrix-free BiCGSTAB). |
+| `src/kernel/solvers/IMEXTimeIntegrators.jl` | `_imex_rk_run_const_jacc!`, a device-portable twin of `_imex_rk_run_const!`, selected by `:limex_jacc => true`. |
+
+BiCGSTAB (not CG) is used because the stage operator
+`I - λL = I + λμ (M⁻¹K)` is **not symmetric** — `M⁻¹` is a diagonal scaling of
+the symmetric stiffness `K` — although its spectrum is real and positive.
+
+Everything else stays on the native KernelAbstractions backend that `u` lives
+on: the stage-RHS assembly, the solution update and the residual combination
+are plain broadcast / `axpy!` on `similar(u)` buffers, the explicit `S(u)` is
+`rhs!` (already backend-dispatched), and `L(u)` is a device SpMV. So:
+
+* **CPU (default).** Leave `:backend` unset. JACC uses its CPU backend and the
+  path is a drop-in *BiCGSTAB-instead-of-LU* solve — this is what the unit test
+  exercises.
+* **NVIDIA GPU.** Set `:backend => CUDABackend()` in the case **and** configure
+  JACC for CUDA (`LocalPreferences.toml` or `JACC.set_backend("cuda")`). The
+  explicit `rhs!` and all vector algebra then also run on the GPU; no further
+  code change is needed. AMD follows the same pattern with `ROCBackend()` /
+  `"amdgpu"`.
+
+`case2d_imex_sl/user_inputs.jl` ships with `:limex_jacc => true` (and a
+commented `:backend => CUDABackend()` line) so the case routes through the JACC
+solver out of the box.
+
+Validate the kernels independently of a full run with:
+
+```bash
+julia --project test/test_imex_jacc.jl
+```
+
+(SpMV vs `sparse mul!`, and BiCGSTAB vs the exact solution of a Helmholtz-like
+`I - λL` system; runs on whatever JACC backend is configured).
+
+---
+
+## 9. Suggested next steps
 
 * Run `case2d_imex_sl` and compare the output against the `sl/imex` run to
   confirm the migration is numerically faithful (the porting was verified by
   inspection against the newmaster APIs; it still needs a runtime check).
-* If an iterative/preconditioned solver is desired, reintroduce it behind a
-  custom `:lsolve` closure (and, if AMG is wanted, add `AlgebraicMultigrid` /
-  `IncompleteLU` back to `Project.toml`) rather than as a second code path.
+* For a fully fused GPU run, port the per-stage RHS assembly into a single
+  fused kernel and add a (Jacobi / block) preconditioner to `jacc_bicgstab!`
+  to cut iteration counts on stiffer viscosities.
 * Optionally add a `test/CI-runs/Burgers/case2d_imex_sl/` mirror so CI
-  exercises the IMEX path.
+  exercises the IMEX path, and add `test/test_imex_jacc.jl` to `runtests.jl`.

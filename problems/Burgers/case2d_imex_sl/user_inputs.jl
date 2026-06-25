@@ -63,7 +63,13 @@ function user_inputs()
     function _imex_L(params)
         if L_cache[] === nothing
             μ        = params.inputs[:μ]
-            Minv     = params.Minv
+            # Assemble the operator on the host: `params.Lap_sparse` is a host
+            # SparseMatrixCSC, so `Minv` must be a host vector too (on a GPU
+            # backend `params.Minv` is a device array - `Array(...)` brings it
+            # back so the broadcast stays a host sparse matrix). The JACC path
+            # (kernel/solvers/imex_jacc.jl) then copies this host operator to the
+            # device as CSR; the explicit/host path uses it directly.
+            Minv     = Array(params.Minv)
             L_global = params.Lap_sparse   # pre-assembled global stiffness K
             # NSD_2D build_laplace_matrix returns the positive stiffness K, so
             # the diffusion operator ν Δ ↦ -μ M⁻¹ K picks up a minus sign.
@@ -116,6 +122,25 @@ function user_inputs()
         # wiring is needed.
         #---------------------------------------------------------------------------
         :ode_solver           => IMEX(),
+        #---------------------------------------------------------------------------
+        # GPU / JACC.jl execution.
+        #
+        # `:limex_jacc => true` routes the constant-operator IMEX-RK path through
+        # the hardware-agnostic JACC solver (kernel/solvers/imex_jacc.jl): the
+        # per-stage implicit system (I - λL) x = b is solved with a portable
+        # BiCGSTAB and the sparse mat-vecs run as JACC kernels, instead of the
+        # host sparse LU. The same code runs on CPU and GPU.
+        #
+        #   * CPU (default):   leave `:backend` unset. JACC uses its CPU backend,
+        #                      so this is a drop-in BiCGSTAB-instead-of-LU solve
+        #                      and is the configuration exercised by the tests.
+        #   * NVIDIA GPU:      uncomment `:backend => CUDABackend()` below AND
+        #                      configure JACC for CUDA (LocalPreferences.toml or
+        #                      `JACC.set_backend("cuda")`). The explicit `rhs!`
+        #                      and all vector algebra then also run on the GPU.
+        #---------------------------------------------------------------------------
+        :limex_jacc           => true,
+        # :backend            => CUDABackend(),
         :tinit                => 0.0,
         :tend                 => 0.5,
         :Δt                   => 1.0e-3,
