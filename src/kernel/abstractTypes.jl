@@ -92,6 +92,20 @@ struct LinearClaw_KopRefxmax <: AbstractBC end
 struct DirichletExample <: AbstractBC end
 struct bc_space_function <: AbstractBC end
 
+#
+# Time integration
+#
+# Dispatch tag selecting Jexpresso's native IMEX (implicit-explicit)
+# time integrator instead of the OrdinaryDiffEq `solve()` path. When
+# `inputs[:ode_solver] isa IMEX`, `time_loop!` routes to
+# `imex_time_loop!` (see src/kernel/solvers/IMEXTimeIntegrators.jl).
+# The concrete scheme (multistep or Runge-Kutta) and its Butcher
+# tableaux are supplied through the `:method`/`:coeff` inputs, so the
+# same tag drives any IMEX multistep / ARK scheme.
+#
+abstract type AbstractTimeIntegrator end
+struct IMEX <: AbstractTimeIntegrator end
+
 abstract type AbstractOutFormat end
 struct PNG <: AbstractOutFormat end
 struct ASCII <: AbstractOutFormat end

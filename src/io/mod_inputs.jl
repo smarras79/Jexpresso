@@ -977,6 +977,31 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:δvisc] = 0.0
     end
 
+    #------------------------------------------------------------------------
+    # IMEX time-integrator options (see kernel/solvers/IMEXTimeIntegrators.jl).
+    #
+    # Generic knobs are defaulted here so a case that selects
+    # `:ode_solver => IMEX()` only has to specify the pieces it cares about.
+    # The problem-specific closures (:S_fun, :L_fun, :build_L) and the Butcher
+    # tableaux (:coeff) carry no meaningful default and must be supplied by the
+    # IMEX case's user_inputs.jl. These defaults are inert for every non-IMEX
+    # case, since time_loop! only reads them when inputs[:ode_solver] isa IMEX.
+    #------------------------------------------------------------------------
+    if(!haskey(inputs, :lsolve))           inputs[:lsolve]           = nothing       end
+    if(!haskey(inputs, :solver_precision)) inputs[:solver_precision] = Float64       end
+    if(!haskey(inputs, :nl_precision))     inputs[:nl_precision]     = Float64       end
+    if(!haskey(inputs, :nl_atol))          inputs[:nl_atol]          = 1.0e-8        end
+    if(!haskey(inputs, :nl_rtol))          inputs[:nl_rtol]          = 1.0e-8        end
+    if(!haskey(inputs, :max_nl_iter))      inputs[:max_nl_iter]      = 10            end
+    if(!haskey(inputs, :delta))            inputs[:delta]            = 1             end
+    if(!haskey(inputs, :method))           inputs[:method]           = "RK"          end
+    if(!haskey(inputs, :k))                inputs[:k]                = 1             end
+    if(!haskey(inputs, :upd_L))            inputs[:upd_L]            = false         end
+    if(!haskey(inputs, :bcs_fun))          inputs[:bcs_fun]          = nothing       end
+    if(!haskey(inputs, :Δt_expl))          inputs[:Δt_expl]          = inputs[:Δt]   end
+    # Forward-compat flag (the lean integrator solves directly / via :lsolve;
+    # :assembled is accepted for cases authored against the richer storage path).
+    if(!haskey(inputs, :matrix_storage))   inputs[:matrix_storage]   = :matrix_free  end
 
     return inputs
 end

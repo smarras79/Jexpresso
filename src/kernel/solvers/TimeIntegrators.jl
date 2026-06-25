@@ -116,6 +116,10 @@ the real solve's first `rhs!` call.
 """
 function precompile_warmup_run!(inputs, params, u,
                                 partitioned_model, is_coupled, coupling)
+    # The native IMEX integrator does not go through SciML `solve()`, so the
+    # OrdinaryDiffEq warm-up below does not apply (and `inputs[:ode_solver]` is
+    # not a SciML algorithm). Skip it.
+    inputs[:ode_solver] isa IMEX && return nothing
     (precompile_warmup_enabled(inputs) || alloc_summary_enabled(inputs)) || return nothing
 
     comm = get_mpi_comm()
@@ -191,7 +195,20 @@ function time_loop!(inputs, params, u, args...)
     is_coupled = length(args) >= 2 ? args[2] : false
     coupling   = length(args) >= 3 ? args[3] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
-    
+
+    #------------------------------------------------------------------------
+    # Native IMEX (implicit-explicit) integrator.
+    #
+    # When the user selects `:ode_solver => IMEX()` the time advancement is
+    # done by Jexpresso's own `imex_time_loop!` rather than the OrdinaryDiffEq
+    # `solve()` path below. We dispatch here, before the SciML problem and the
+    # warm-up `solve` are set up, since none of that machinery applies to the
+    # hand-rolled IMEX loop.
+    #------------------------------------------------------------------------
+    if inputs[:ode_solver] isa IMEX
+        return imex_time_loop!(inputs, params, u)
+    end
+
     # FullSpecialize: SciMLBase's default AutoSpecialize wraps rhs! in a
     # FunctionWrapper that type-erases `params` to ::Any. That defeats
     # type inference inside the entire RHS chain - every `params.field`
