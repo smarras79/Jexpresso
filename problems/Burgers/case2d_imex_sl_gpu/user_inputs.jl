@@ -1,6 +1,16 @@
 function user_inputs()
 
     #--------------------------------------------------------------------------
+    # Bring the CUDA backend type into scope. `CUDABackend` is defined by
+    # CUDA.jl, which Jexpresso does NOT depend on by default, so we load it
+    # lazily here (the established Jexpresso pattern for optional backends). If
+    # CUDA.jl is not in the active project this raises a clear
+    # "Package CUDA not found" - add it on the GPU machine with `] add CUDA`.
+    # For AMD GPUs use AMDGPU / ROCBackend instead (see below).
+    #--------------------------------------------------------------------------
+    @isdefined(CUDABackend) || @eval Jexpresso using CUDA
+
+    #--------------------------------------------------------------------------
     # GPU twin of Burgers/case2d_imex_sl.
     #
     # Identical physics, mesh and IMEX configuration as the CPU case; the ONLY
