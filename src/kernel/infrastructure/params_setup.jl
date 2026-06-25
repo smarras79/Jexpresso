@@ -412,7 +412,13 @@ function params_setup(sem,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
-                  sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
+                  sem.matrix.M, sem.matrix.Minv,
+                  # Pre-assembled global (sparse) Galerkin Laplacian/stiffness,
+                  # built once in sem_setup when :ldss_laplace is set. Exposed
+                  # here so the IMEX implicit operator can reuse it instead of
+                  # re-assembling it on every run (a very allocation-heavy op).
+                  Lap_sparse = (hasproperty(sem.matrix, :L) ? sem.matrix.L : nothing),
+                  g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,
                   phys_grid = sem.phys_grid,

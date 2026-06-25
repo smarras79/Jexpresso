@@ -182,11 +182,16 @@ Same ARS(2,3,2) tableaux, same `S_fun!` / `L_fun!` / `build_L` / `_imex_L`
 | `:lvisc` | `true` | `true` | **kept** — see §6 |
 | `:method`, `:delta`, `:k`, `:coeff`, `:S_fun`, `:L_fun`, `:build_L`, `:lsolve` | present | present | unchanged config |
 
-`_imex_L` is unchanged in spirit; it reads `params.SD/basis/ω/mesh/metrics/Minv`
-and `params.inputs[:μ]/[:nop]`, then builds
-`-μ[1] * (Minv .* DSS_laplace_sparse(mesh, build_laplace_matrix(...)))`. These
-are the *same* functions newmaster calls internally in `matrix_wrapper`, so the
-operator is assembled consistently with the rest of the code.
+`_imex_L` builds `-μ[1] * (Minv .* K)`, where `K` is the global Galerkin
+stiffness. Crucially it does **not** re-assemble `K` with
+`build_laplace_matrix` / `DSS_laplace_sparse` at run time — that assembly is
+extremely allocation-heavy (tens of millions of node-pair allocations, ~8 GiB
+for this small case). Instead it reuses `params.Lap_sparse`, the **same** `K`
+that `matrix_wrapper` already assembled once during `sem_setup` (because
+`:ldss_laplace => true`). `params_setup` exposes `sem.matrix.L` as
+`params.Lap_sparse` for exactly this purpose. With this, the IMEX run's
+allocation is dominated by `rhs!` and VTK output (tens of MiB), not operator
+assembly.
 
 ---
 

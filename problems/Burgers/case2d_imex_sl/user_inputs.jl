@@ -50,28 +50,21 @@ function user_inputs()
     #--------------------------------------------------------------------------
     # Implicit operator  L = -μ M⁻¹ K   (K = positive 2D Galerkin stiffness).
     #
-    # It is linear and time-independent, so the sparse assembly
-    # (build_laplace_matrix + DSS_laplace_sparse, the native Jexpresso
-    # element-matrix infrastructure) only has to run once. The assembled
-    # operator is cached in the closure so build_L / L_fun! never re-assemble.
+    # The global Galerkin stiffness K is already assembled once during
+    # sem_setup (because :ldss_laplace => true below) and exposed as
+    # params.Lap_sparse. We reuse it here rather than calling
+    # build_laplace_matrix + DSS_laplace_sparse again — re-assembling the SEM
+    # Laplacian at run time is extremely allocation-heavy. The resulting
+    # operator -μ M⁻¹ K is linear and time-independent, so it is cached in the
+    # closure and built only once.
     #--------------------------------------------------------------------------
     L_cache = Ref{Any}(nothing)
 
     function _imex_L(params)
         if L_cache[] === nothing
-            SD      = params.SD
-            basis   = params.basis
-            ω       = params.ω
-            mesh    = params.mesh
-            metrics = params.metrics
-            μ       = params.inputs[:μ]
-            N       = params.inputs[:nop]
-            Q       = N
-
-            Le       = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem,
-                                            mesh, metrics, N, Q, TFloat)
-            L_global = DSS_laplace_sparse(mesh, Le)
+            μ        = params.inputs[:μ]
             Minv     = params.Minv
+            L_global = params.Lap_sparse   # pre-assembled global stiffness K
             # NSD_2D build_laplace_matrix returns the positive stiffness K, so
             # the diffusion operator ν Δ ↦ -μ M⁻¹ K picks up a minus sign.
             L_cache[] = -μ[1] * (Minv .* L_global)
