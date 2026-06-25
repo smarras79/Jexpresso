@@ -36,6 +36,13 @@
 #   that need it can plug a custom `lsolve` closure.
 #----------------------------------------------------------------------------
 
+# Pull in the portable JACC linear-algebra kernels used by the GPU/JACC path
+# (`:limex_jacc => true`). Included here, next to the only code that uses them,
+# so the integrator and its solver always load together regardless of the
+# top-level include list in Jexpresso.jl. `@__DIR__` is this file's directory
+# (src/kernel/solvers), where imex_jacc.jl also lives.
+include(joinpath(@__DIR__, "imex_jacc.jl"))
+
 function imex_time_loop!(inputs, params, u)
 
     comm = get_mpi_comm()
