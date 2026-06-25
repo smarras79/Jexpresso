@@ -5,7 +5,6 @@
                                ρ,
                                u11, u22, u12, u21,
                                PhysConst, Δ2,
-                               inputs,
                                ::SMAG, ::NSD_2D;
                                ltheta_eqn=true,
                                lrichardson=false)
@@ -74,7 +73,6 @@ end
                                θ_ref,
                                dθdz,
                                PhysConst, Δ2,
-                               inputs,
                                ::SMAG, ::NSD_3D;
                                ltheta_eqn=true,
                                lrichardson=false)
@@ -152,7 +150,7 @@ end
             # Cap at maximum enhancement factor (e.g., 3x)
             min(sqrt(1.0 - 16.0*Ri), 3.0)
         end
-    elseif lrichardson && inputs[:energy_equation] == "energy"
+    elseif lrichardson && !ltheta_eqn
         # ===== Moist Richardson Number Logic =====
         # Note: In this mode, the caller has pre-calculated:
         # θ_ref  => T_abs (Absolute Temperature in Kelvin)
@@ -223,7 +221,6 @@ end
                                ρ,
                                u11, u22, u12, u21,
                                PhysConst, Δ2,
-                               inputs,
                                ::VREM, ::NSD_2D;
                                ltheta_eqn=true,
                                lrichardson=false)
@@ -295,7 +292,6 @@ end
                                u31, u32, u33,
                                θ_ref, dθdz,
                                PhysConst, Δ2,
-                               inputs,
                                ::VREM, ::NSD_3D;
                                ltheta_eqn=true,
                                lrichardson=false)
@@ -443,8 +439,9 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
                              dηdx, dηdy, dηdz,
                              dζdx, dζdy, dζdz,
                              connijk, iel, Δ2,
-                             micro, lrichardson, ::NSD_3D)
+                             micro, ::NSD_3D)
 
+    lrichardson = sgs.lrichardson
     g       = sgs.g
     cp      = sgs.cp
     Lc      = sgs.Lc
@@ -586,8 +583,9 @@ function compute_sgs_cache!(sgs::SGS_VREM,
                              dηdx, dηdy, dηdz,
                              dζdx, dζdy, dζdz,
                              connijk, iel, Δ2,
-                             micro, lrichardson, ::NSD_3D)
+                             micro, ::NSD_3D)
 
+    lrichardson = sgs.lrichardson
     g       = sgs.g
     cp      = sgs.cp
     Lc      = sgs.Lc

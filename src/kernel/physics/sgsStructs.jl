@@ -21,6 +21,10 @@ Base.@kwdef mutable struct SGS_SMAG{T <: AbstractFloat, dims1, backend, VT} <: A
     C_s::T
     C_s2::T
 
+    # run-time configuration flags (set from inputs after allocation)
+    lrichardson::Bool = false   # enable Richardson stability correction
+    ltheta_eqn::Bool  = true   # true = dry θ equation; false = moist energy equation
+
     # per-point caches (size npoin) — zeroed at construction, filled by compute_sgs_cache!
     μ_turb::VT = KernelAbstractions.zeros(backend, T, dims1)  # turbulent viscosity
     f_Ri::VT   = KernelAbstractions.zeros(backend, T, dims1)  # Richardson correction factor
@@ -55,6 +59,10 @@ Base.@kwdef mutable struct SGS_VREM{T <: AbstractFloat, dims1, backend, VT} <: A
     C_s::T
     C_s2::T
     C_vrem::T  # = 2.5 * C_s²
+
+    # run-time configuration flags (set from inputs after allocation)
+    lrichardson::Bool = false
+    ltheta_eqn::Bool  = true
 
     # per-point caches (size npoin)
     μ_turb::VT = KernelAbstractions.zeros(backend, T, dims1)
