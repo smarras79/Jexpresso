@@ -110,7 +110,7 @@ function user_inputs()
         :limex_jacc_offload   => true,
         :tinit                => 0.0,
         :tend                 => 0.5,
-        :Δt                   => 1.0e-3,
+        :Δt                   => 1.0e-4,
         :diagnostics_at_times => (0.1:0.1:0.5),
         :output_dir           => "./output",
         #---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ function user_inputs()
         :lread_gmsh          => true,
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_burgers2d.msh",
 	:linitial_refine     => true,
-        :init_refine_lvl     => 1,
+        :init_refine_lvl     => 2,
         #---------------------------------------------------------------------------
         # Output
         #---------------------------------------------------------------------------
