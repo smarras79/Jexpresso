@@ -1006,6 +1006,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # uploaded once, stage vectors copied host↔device per step). Requires
     # :limex_jacc => true and CUDA loaded (run with `backend = :cuda`).
     if(!haskey(inputs, :limex_jacc_offload)) inputs[:limex_jacc_offload] = false      end
+    # Precision of the offloaded implicit solve (Float16/Float32/Float64). `nothing`
+    # means "use the host precision" (TFloat). The host pipeline always runs in
+    # TFloat; only the device (I-λL)x=b solve uses this. See run_imex_precision_study.
+    if(!haskey(inputs, :imex_jacc_solve_precision)) inputs[:imex_jacc_solve_precision] = nothing end
     if(!haskey(inputs, :Δt_expl))          inputs[:Δt_expl]          = inputs[:Δt]   end
     # Forward-compat flag (the lean integrator solves directly / via :lsolve;
     # :assembled is accepted for cases authored against the richer storage path).

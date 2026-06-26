@@ -193,7 +193,11 @@ function jacc_bicgstab!(x, A::JaccSparseCSR, b, work;
         # p = r + β (p - ω v)
         @. p = r + β * (p - ω * v)
         jacc_spmv!(v, A, p)
-        α = ρ_new / dot(rhat, v)
+        rtv = dot(rhat, v)
+        if rtv == zero(T)
+            break                       # breakdown (more likely in low precision)
+        end
+        α = ρ_new / rtv
         # s = r - α v
         @. s = r - α * v
         resnorm = norm(s)
