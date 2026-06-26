@@ -57,6 +57,15 @@ variable. Read once-ish; cheap.
 """
 enabled() = lowercase(get(ENV, "JEXPRESSO_EXTRAE", "")) in ("1", "true", "yes", "on")
 
+# Flushed per-rank diagnostic print to stderr, used to pinpoint where a traced
+# run might stall during Extrae start-up. Active only while tracing is opted in.
+function _dbg(rank, msg)
+    enabled() || return nothing
+    println(stderr, "[extrae rank=$rank] $msg")
+    flush(stderr)
+    return nothing
+end
+
 """
     Profiling.is_active() -> Bool
 
@@ -93,11 +102,14 @@ function init(rank::Integer = 0)
         _ACTIVE[] = false
         return false
     end
+    _dbg(rank, "init: loading Extrae package (Base.require) ...")
     m = _load_extrae()
     if m === nothing
+        _dbg(rank, "init: Extrae package NOT loadable -> tracing off")
         _ACTIVE[] = false
         return false
     end
+    _dbg(rank, "init: Extrae package loaded")
     try
         # IMPORTANT: when Extrae is loaded via LD_PRELOAD (the MPI-tracing
         # workflow), the library auto-initialises inside the MPI_Init
@@ -108,13 +120,21 @@ function init(rank::Integer = 0)
         # run with JEXPRESSO_EXTRAE set but no preload).
         already = false
         try
+            _dbg(rank, "init: calling Extrae.isinit() ...")
             already = m.isinit() != 0
+            _dbg(rank, "init: isinit -> $already")
         catch
             already = false
+            _dbg(rank, "init: isinit threw -> assuming not initialised")
         end
-        already || m.init()
+        if !already
+            _dbg(rank, "init: calling Extrae.init() ...")
+            m.init()
+            _dbg(rank, "init: Extrae.init() returned")
+        end
         _ACTIVE[] = true
         # Name the phase event + its values for the Paraver timeline.
+        _dbg(rank, "init: registering phase event ...")
         m.register(EV_PHASE, "Jexpresso phase",
                    UInt64[PHASE_NONE, PHASE_SEM_SETUP, PHASE_INIT,
                           PHASE_PARAMS, PHASE_TIMELOOP, PHASE_RHS, PHASE_HALO,
@@ -122,6 +142,7 @@ function init(rank::Integer = 0)
                    String["idle", "sem_setup", "initialize", "params_setup",
                           "time_loop", "rhs", "halo_exchange",
                           "coupling_setup", "coupling_interp", "coupling_comm"])
+        _dbg(rank, "init: register done -> tracing ACTIVE")
         if rank == 0
             @info "Jexpresso: Extrae tracing ACTIVE (JEXPRESSO_EXTRAE set; already_initialised=$already)."
         end
