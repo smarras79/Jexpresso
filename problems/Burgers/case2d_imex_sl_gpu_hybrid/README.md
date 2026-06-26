@@ -85,17 +85,42 @@ comparison table plus writes `imex_precision_study.csv`. Columns:
   Float64   GPU    1500    5.00   4.000e-14     0     0.950    633.33    1.00x     0.000e+00
 ```
 (numbers above are illustrative). Each run also prints its own diagnostics block.
-Note: pure `Float16` BiCGSTAB usually will **not** reach a tight tolerance — the
-large residual / `ncnv` count / `relerr` is itself the diagnostic, and it may be
-*slower* than double because it iterates to `itmax`. `Float32` is typically the
-useful operating point (large speedup, small `relerr`). To set the precision for
-a single run instead of the sweep, put `:imex_jacc_solve_precision => Float32` in
+The solve tolerance is automatically floored at `8·eps(precision)` so a low
+precision targets a residual it can actually reach instead of iterating to `itmax`
+forever (e.g. Float16 → ~1e-2, Float32 → ~1e-6, Float64 → 1e-8). The `relerr`
+column is then the honest accuracy cost of that precision. `Float32` is typically
+the useful operating point (good speedup, small `relerr`); `Float16` trades a much
+larger `relerr` for the smallest footprint. To fix the precision for a single run
+instead of the sweep, put `:imex_jacc_solve_precision => Float32` in
 `user_inputs.jl`.
 
-## Performance note
+## Making the GPU win: refine the mesh
 
-At this problem size (~5k points) the GPU solve will **not** necessarily beat the
-CPU's cached sparse LU — host↔device transfer per stage and a small SpMV dominate.
-The offload pays off on large meshes / many DOF, where the linear solve is the
-bottleneck. Correctness is identical to the host LU solve (verified to ~1e-9 in
-`test/test_imex_jacc.jl`).
+At the base size (10×10 → ~5k points) the GPU solve will **not** beat the CPU's
+cached LU — GPU kernel-launch overhead and the per-stage host↔device copies
+dominate a tiny SpMV, so the offload (and the precision-study `speedup`) can come
+out *slower* than double. The offload pays off only when the linear solve is the
+bottleneck, i.e. on a large mesh.
+
+Scale the mesh at load time with p4est uniform refinement — needs **both** flags
+in `user_inputs.jl` (they are independent; both default off):
+
+```julia
+:linitial_refine => true,   # enable uniform refinement of the gmsh mesh
+:init_refine_lvl => 2,      # refine L times: each level ≈ 2× per dim ⇒ ~4× DOF
+```
+
+`L=1` → 20×20, `L=2` → 40×40, `L=3` → 80×80, … (DOF and solve cost grow ~4ᴸ). Pick
+`L` so the run is large enough that `solve_s` is a meaningful fraction of the step
+time; then `run_imex_precision_study` will show `Float32` pulling ahead of
+`Float64` with a small `relerr`. Note the study re-reads + re-refines the mesh once
+per precision (3×), so very large `L` makes setup dominate — increase `:Δt`/lower
+`:tend` while exploring if needed.
+
+If the run looks stuck between the every-0.1 diagnostic writes, it's just slow,
+not hung: a heartbeat now prints every `:imex_jacc_print_every` steps (default 50;
+`0` disables) showing the step, cumulative solves, avg BiCGSTAB iters and
+device-solve time.
+
+Correctness is identical to the host LU solve (verified to ~1e-9 in
+`test/test_imex_jacc.jl`), independent of mesh size.
