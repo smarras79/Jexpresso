@@ -447,11 +447,69 @@ const _LOADED_CASE_DIR  = Ref{String}("")
 const _CASE_FILE_MTIMES = Dict{String,Float64}()
 
 """
+    Jexpresso.enable_cuda!()
+
+Load CUDA.jl into the Jexpresso module so GPU cases can use `CUDABackend()`.
+
+This MUST be called before `run_case` for any case that sets
+`:backend => CUDABackend()` (e.g. `Burgers/case2d_imex_sl_gpu`). CUDA.jl is an
+optional dependency that Jexpresso does not load by default; a case file cannot
+load it lazily and use `CUDABackend()` in the same call because the freshly
+added constructor is "too new for the running world" (a Julia world-age error).
+Loading it here, ahead of the run, sidesteps that.
+
+`using CUDA: CUDABackend` imports only the backend type (not all of CUDA's
+exports), which avoids the `CUDA.CG` ↔ `Jexpresso.CG` name clash. Also nudges
+JACC onto its CUDA backend so the IMEX implicit solve runs on the device.
+
+    using Jexpresso
+    Jexpresso.enable_cuda!()
+    Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu")
+
+For AMD GPUs use [`enable_amdgpu!`](@ref) instead.
+"""
+function enable_cuda!()
+    @eval Jexpresso begin
+        import CUDA
+        using CUDA: CUDABackend
+    end
+    try
+        @eval Jexpresso (JACC.set_backend("cuda"))
+    catch err
+        @warn "enable_cuda!: JACC.set_backend(\"cuda\") failed; configure JACC's CUDA backend manually (LocalPreferences.toml)." exception = err
+    end
+    return nothing
+end
+
+"""
+    Jexpresso.enable_amdgpu!()
+
+AMD-GPU counterpart of [`enable_cuda!`](@ref): loads AMDGPU.jl (`ROCBackend`)
+into Jexpresso and points JACC at its `amdgpu` backend. Call before `run_case`
+for a case that sets `:backend => ROCBackend()`.
+"""
+function enable_amdgpu!()
+    @eval Jexpresso begin
+        import AMDGPU
+        using AMDGPU: ROCBackend
+    end
+    try
+        @eval Jexpresso (JACC.set_backend("amdgpu"))
+    catch err
+        @warn "enable_amdgpu!: JACC.set_backend(\"amdgpu\") failed; configure JACC's AMDGPU backend manually." exception = err
+    end
+    return nothing
+end
+
+"""
     Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
 
 Run a single Jexpresso case from the REPL. `eqs` and `eqs_case` are
 the directory names under `problems/<eqs>/<eqs_case>/` (e.g.
 `run_case("CompEuler", "3d")`). Returns `nothing`.
+
+For a GPU case (`:backend => CUDABackend()`), call
+[`enable_cuda!`](@ref) first.
 
 Prefer this to `include("./src/Jexpresso.jl")` — the include path
 re-defines the module on every call (the `WARNING: replacing module
@@ -467,7 +525,11 @@ function run_case(eqs::AbstractString, eqs_case::AbstractString;
     # the orchestration top-to-bottom in this module's scope. The
     # function/case-file redefinitions it performs are silent (only
     # module redefinitions print the WARNING).
-    Base.include(@__MODULE__, joinpath(@__DIR__, "run.jl"))
+    #
+    # `invokelatest` runs the include in the latest world age, so a case that
+    # uses a package loaded earlier in this same top-level block (e.g.
+    # `enable_cuda!(); run_case(...)` on one line) still sees `CUDABackend`.
+    Base.invokelatest(Base.include, @__MODULE__, joinpath(@__DIR__, "run.jl"))
     return nothing
 end
 

@@ -18,25 +18,33 @@ vector algebra on the GPU.
 
 ## Run
 
-```bash
-# On a node with an NVIDIA GPU, CUDA.jl available, and JACC configured for CUDA:
-julia --project=. -e 'using CUDA; using JACC; JACC.set_backend("cuda")' \
-                  src/Jexpresso.jl Burgers case2d_imex_sl_gpu
-# or in the REPL:
-#   using CUDA, JACC; JACC.set_backend("cuda")
-#   using Jexpresso; Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu")
+On a node with an NVIDIA GPU and CUDA.jl in the project, **load CUDA before the
+run** with `Jexpresso.enable_cuda!()` (this is required — see the note below):
+
+```julia
+using Jexpresso
+Jexpresso.enable_cuda!()                        # loads CUDABackend + JACC CUDA backend
+Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu")
 ```
 
+### Why `enable_cuda!()` and not just `using CUDA`?
+
+`CUDABackend` is defined by CUDA.jl, an optional dependency Jexpresso does not
+load by default. A case file cannot load CUDA lazily and construct
+`CUDABackend()` in the same call — Julia rejects calling a constructor that was
+added to the method table *after* the running code started (a "world-age"
+error). `enable_cuda!()` loads CUDA ahead of the run, into the `Jexpresso`
+module, and selectively imports only `CUDABackend` (so it doesn't clash with
+`Jexpresso.CG`). It also nudges JACC onto its CUDA backend.
+
 Requirements:
-* `CUDA.jl` loaded in the session (so `CUDABackend` resolves) and a functional
-  NVIDIA GPU;
-* JACC configured for CUDA (a `LocalPreferences.toml` selecting the CUDA backend,
-  or `JACC.set_backend("cuda")`);
+* `CUDA.jl` in the active project — add it on the GPU machine with `] add CUDA`;
+* a functional NVIDIA GPU (`using CUDA; CUDA.functional()`);
 * the doubly-periodic mesh `./meshes/gmsh_grids/hexa_TFI_10x10_burgers2d.msh`
   (the `meshes/` tree is git-ignored, so it is provided/generated locally).
 
-For AMD GPUs, replace `CUDABackend()` with `ROCBackend()` in `user_inputs.jl`
-and use `JACC.set_backend("amdgpu")` (AMDGPU.jl).
+For AMD GPUs, replace `CUDABackend()` with `ROCBackend()` in `user_inputs.jl`,
+add AMDGPU.jl, and call `Jexpresso.enable_amdgpu!()` instead.
 
 ## Kernel-level tests (no full run needed)
 

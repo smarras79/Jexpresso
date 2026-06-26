@@ -38,15 +38,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     
     if (inputs[:backend] != CPU())
-        if (inputs[:backend] == CUDABackend())
-            global TInt = Int32
-            global TFloat = Float32
-            global cpu = false
-        else
-            global TInt = Int32
-            global TFloat = Float32
-            global cpu = false
-        end
+        # Any non-CPU (GPU) backend runs in 32-bit. Note: do NOT construct
+        # `CUDABackend()` here to test the type — CUDA may have only just been
+        # loaded (via Jexpresso.enable_cuda!), so calling its constructor from
+        # this already-running context would hit a world-age error. Comparing
+        # against the always-available `CPU()` is enough.
+        global TInt = Int32
+        global TFloat = Float32
+        global cpu = false
     end
 
     if(!haskey(inputs, :lmanufactured_solution))
