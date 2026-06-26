@@ -36,14 +36,14 @@ function sparse_mass_assembly_3Dby2D_jacc(
     - JACC handles backend-specific optimizations
     """
 
-    # Set JACC backend
-    if backend == :CUDA
-        JACC.set_backend("cuda")
-        JACC.@init_backend
-    elseif backend == :AMDGPU
-        JACC.set_backend("amdgpu")
-        JACC.@init_backend
-    end
+    # NOTE: JACC's active backend is configured GLOBALLY (a LocalPreferences.toml
+    # selecting the backend, or `Jexpresso.enable_cuda!()` / `enable_amdgpu!()`),
+    # not from inside this function. The previous `JACC.@init_backend` here
+    # expanded to a top-level `import` of the device package, which is illegal
+    # inside a function body and broke precompilation of the whole package
+    # whenever a GPU backend was active (JACC's CUDA/AMDGPU extension loaded).
+    # The `backend` keyword is kept only for call-site compatibility; the device
+    # is taken from JACC's global configuration.
 
     # Pre-compute maximum entries per element
     ngl_cubed = ngl * ngl * ngl
@@ -181,16 +181,9 @@ function sparse_mass_assembly_3Dby2D_adaptive_jacc(
     - connijk_spa: Combined spatial-angular connectivity
     """
 
-    # Set JACC backend
-    if backend == :CUDA
-        JACC.set_backend(Val(:CUDA))
-    elseif backend == :AMDGPU
-        JACC.set_backend(Val(:AMDGPU))
-    elseif backend == :OPENMP
-        JACC.set_backend(Val(:OPENMP))
-    else
-        JACC.set_backend(Val(:CPU))
-    end
+    # JACC's active backend is configured globally (see the note in
+    # sparse_mass_assembly_3Dby2D_jacc); it is not switched from inside this
+    # function. The `backend` keyword is kept for call-site compatibility.
 
     # Estimate maximum entries per element
     ngl_cubed = ngl * ngl * ngl
