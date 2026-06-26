@@ -744,39 +744,62 @@ function run_imex_precision_study(eqs::AbstractString, eqs_case::AbstractString;
     return results
 end
 
+function _imex_reference(results)
+    for d in results
+        d.precision === Float64 && return d
+    end
+    return isempty(results) ? nothing : results[end]
+end
+
+# True relative L2 solution error of run `d` against the reference run `ref`
+# (both are the final solution u of the SAME case, so same length).
+function _imex_relerr(d, ref)
+    d === ref && return 0.0
+    (hasproperty(d, :final_u) && hasproperty(ref, :final_u)) || return NaN
+    length(d.final_u) == length(ref.final_u) || return NaN
+    rn = sqrt(sum(abs2, ref.final_u))
+    rn == 0 && return NaN
+    return sqrt(sum(abs2, d.final_u .- ref.final_u)) / rn
+end
+
 function _print_imex_precision_table(results)
     if isempty(results)
         println(" # IMEX precision study: no diagnostics collected.")
         return
     end
-    ref = nothing
-    for d in results
-        d.precision === Float64 && (ref = d)
-    end
-    ref === nothing && (ref = results[end])
+    ref = _imex_reference(results)
+    rp  = string(ref.precision)
     println()
-    println(" # ===== IMEX/JACC implicit-solve precision study =====")
-    @printf("  %-9s %4s %8s %8s %11s %11s %5s %9s %16s %12s\n",
-            "precision", "dev", "nsolve", "avg_it", "mean_res", "max_res",
-            "ncnv", "solve_s", "final||u||2", "d||u|| vs f64")
+    println(" # ===== IMEX/JACC implicit-solve precision study  (reference = ", rp, ") =====")
+    @printf("  %-8s %4s %7s %7s %11s %5s %9s %9s %8s %13s\n",
+            "prec", "dev", "nsolve", "avg_it", "mean_res", "ncnv",
+            "solve_s", "us/solve", "speedup", "relerr")
     for d in results
-        @printf("  %-9s %4s %8d %8.2f %11.3e %11.3e %5d %9.3f %16.8e %12.3e\n",
+        sp = d.solve_seconds > 0 ? ref.solve_seconds / d.solve_seconds : 0.0
+        @printf("  %-8s %4s %7d %7.2f %11.3e %5d %9.3f %9.2f %7.2fx %13.3e\n",
                 string(d.precision), d.on_gpu ? "GPU" : "CPU", d.nsolve, d.avg_iters,
-                d.mean_resnorm, d.max_resnorm, d.nonconverged, d.solve_seconds,
-                d.final_unorm, d.final_unorm - ref.final_unorm)
+                d.mean_resnorm, d.nonconverged, d.solve_seconds, d.us_per_solve,
+                sp, _imex_relerr(d, ref))
     end
-    println(" #   (d||u|| vs f64 = drift of the final solution norm from the double-precision run)")
+    println(" #   solve_s / us  : DEVICE implicit-solve time only (host rhs!/assembly/output excluded)")
+    println(" #   speedup       : (", rp, " solve time) / (this solve time)   [>1 = faster than ", rp, "]")
+    println(" #   relerr        : ||u_prec - u_", rp, "||2 / ||u_", rp, "||2   [accuracy cost of reduced precision]")
+    println(" #   ncnv          : # stage solves that did not reach tolerance (expect many for Float16)")
     println()
 end
 
 function _write_imex_precision_csv(results, outfile)
+    isempty(results) && return
+    ref = _imex_reference(results)
     open(outfile, "w") do io
-        println(io, "precision,device,nsteps,nsolve,total_iters,avg_iters,mean_resnorm,max_resnorm,nonconverged,solve_seconds,final_unorm")
+        println(io, "precision,device,nsteps,nsolve,total_iters,avg_iters,mean_resnorm,max_resnorm,nonconverged,solve_seconds,us_per_solve,speedup_vs_ref,relerr_vs_ref,final_unorm")
         for d in results
-            @printf(io, "%s,%s,%d,%d,%d,%.6f,%.6e,%.6e,%d,%.6f,%.10e\n",
+            sp = d.solve_seconds > 0 ? ref.solve_seconds / d.solve_seconds : 0.0
+            @printf(io, "%s,%s,%d,%d,%d,%.6f,%.6e,%.6e,%d,%.6f,%.3f,%.6f,%.6e,%.10e\n",
                     string(d.precision), d.on_gpu ? "GPU" : "CPU", d.nsteps, d.nsolve,
                     d.total_iters, d.avg_iters, d.mean_resnorm, d.max_resnorm,
-                    d.nonconverged, d.solve_seconds, d.final_unorm)
+                    d.nonconverged, d.solve_seconds, d.us_per_solve, sp,
+                    _imex_relerr(d, ref), d.final_unorm)
         end
     end
     println(" # IMEX precision study diagnostics written to: ", outfile)

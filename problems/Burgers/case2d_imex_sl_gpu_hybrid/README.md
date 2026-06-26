@@ -66,12 +66,31 @@ using CUDA, JACC; using Jexpresso          # JACC already on its CUDA backend (r
 Jexpresso.run_imex_precision_study("Burgers", "case2d_imex_sl_gpu_hybrid")
 ```
 
-It runs the case once per precision `(Float16, Float32, Float64)`, prints a
-comparison table (BiCGSTAB iterations, residual norms, non-converged solves,
-solve wall-time, final ‖u‖₂ and its drift from the double run) and writes
-`imex_precision_study.csv`. Each run also prints its own diagnostics block at the
-end. Note: pure `Float16` BiCGSTAB often will **not** reach a tight tolerance —
-that (large residual / non-converged count) is itself the diagnostic.
+It runs the case once per precision `(Float16, Float32, Float64)` and prints a
+comparison table plus writes `imex_precision_study.csv`. Columns:
+
+| column | meaning |
+|---|---|
+| `nsolve`, `avg_it` | # device solves and average BiCGSTAB iterations/solve |
+| `mean_res`, `ncnv` | mean residual ‖b−Ax‖ and # solves that didn't reach tol |
+| `solve_s`, `us/solve` | **device implicit-solve time** (host rhs!/assembly/output excluded) |
+| `speedup` | (double solve time) / (this solve time) — the **gain** vs double |
+| `relerr` | ‖u_prec − u_f64‖₂ / ‖u_f64‖₂ — the **accuracy cost** of reduced precision |
+
+```
+ # ===== IMEX/JACC implicit-solve precision study  (reference = Float64) =====
+  prec      dev  nsolve  avg_it    mean_res  ncnv   solve_s  us/solve  speedup        relerr
+  Float16   GPU    1500   40.00   2.000e-03  1500     2.100   1400.00    0.45x     3.529e-02
+  Float32   GPU    1500    5.00   7.000e-07     0     0.450    300.00    2.11x     1.721e-06
+  Float64   GPU    1500    5.00   4.000e-14     0     0.950    633.33    1.00x     0.000e+00
+```
+(numbers above are illustrative). Each run also prints its own diagnostics block.
+Note: pure `Float16` BiCGSTAB usually will **not** reach a tight tolerance — the
+large residual / `ncnv` count / `relerr` is itself the diagnostic, and it may be
+*slower* than double because it iterates to `itmax`. `Float32` is typically the
+useful operating point (large speedup, small `relerr`). To set the precision for
+a single run instead of the sweep, put `:imex_jacc_solve_precision => Float32` in
+`user_inputs.jl`.
 
 ## Performance note
 
