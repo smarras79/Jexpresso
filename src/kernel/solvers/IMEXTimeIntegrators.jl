@@ -922,6 +922,20 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
     work_d = ntuple(_ -> JACC.array(zeros(S, n)), 6)
     itmax  = get(inputs, :imex_jacc_itmax, max(500, 10 * Int(ceil(sqrt(npoint)))))
 
+    # Precision-aware stopping tolerance. Asking for `nl_rtol` (e.g. 1e-8) in a
+    # precision that cannot represent it — Float16 (eps≈1e-3) and Float32
+    # (eps≈1e-7) — makes BiCGSTAB iterate to `itmax` on EVERY solve (the run looks
+    # hung in the reduced-precision sweep). Floor the relative tolerance at a few
+    # × machine epsilon of the solve precision S so each precision converges to
+    # what it can actually reach. Float64 is unaffected (8·eps≈2e-15 < 1e-8).
+    solve_rtol = max(nl_rtol, 8 * eps(real(S)))
+    solve_atol = nl_atol
+    print_every = get(inputs, :imex_jacc_print_every, 50)   # heartbeat cadence (steps); 0 disables
+    if rank == 0 && solve_rtol > nl_rtol
+        @printf(" #   solve tolerance floored to %.2e for %s (requested %.2e is below its precision)\n",
+                Float64(solve_rtol), string(S), Float64(nl_rtol))
+    end
+
     # Where is the GPU load? The solve arrays are a CuArray (GPU) when JACC is on
     # its CUDA backend, or a plain Vector (CPU) otherwise — printing their type is
     # direct proof of where (I - λL)x = b actually runs.
@@ -997,7 +1011,7 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
             copyto!(b_d, rhs_s)                       # host -> device
             t0 = time_ns()
             conv, bi, rn = jacc_bicgstab!(x_d, Adev[i], b_d, work_d;
-                                          rtol = nl_rtol, atol = nl_atol, itmax = itmax)
+                                          rtol = solve_rtol, atol = solve_atol, itmax = itmax)
             solve_ns += time_ns() - t0
             copyto!(x_s, x_d)                         # device -> host (S)
             x_h .= x_s                                # S -> T
@@ -1025,6 +1039,14 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
 
         t_n    += Δt
         n_step += 1
+
+        # Heartbeat so a slow run is visibly progressing (not hung) between the
+        # sparse diagnostic outputs. Shows cumulative solves, avg BiCGSTAB iters
+        # and device-solve wall time. Disable with :imex_jacc_print_every => 0.
+        if rank == 0 && print_every > 0 && (n_step % print_every == 0)
+            @printf(" #   IMEX(JACC offload) … step %d, t=%.4f | solves=%d avg_it=%.1f solve=%.2fs\n",
+                    n_step, t_n, nsolve, nsolve > 0 ? tot_iters / nsolve : 0.0, solve_ns / 1.0e9)
+        end
 
         while next_out_idx <= length(dosetimes) && t_n + 1.0e-10 >= dosetimes[next_out_idx]
             iout += 1
