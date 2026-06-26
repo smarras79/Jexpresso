@@ -44,8 +44,8 @@ if _GPU_READY[]
                 A = sprand(n, n, 0.2) + 2.0 * I
                 x = rand(n)
                 Aj = JaccSparseCSR(A)                 # nzval/colind/rowptr -> CuArray
-                xj = JACC.Array(copy(x))              # -> CuArray
-                yj = JACC.Array(zeros(n))
+                xj = JACC.array(copy(x))              # -> CuArray
+                yj = JACC.array(zeros(n))
                 jacc_spmv!(yj, Aj, xj)
                 @test Array(yj) ≈ A * x rtol = 1e-10
             end
@@ -64,9 +64,9 @@ if _GPU_READY[]
             b     = A * xtrue
 
             Aj = JaccSparseCSR(A)
-            bj = JACC.Array(copy(b))
-            xj = JACC.Array(zeros(n))
-            work = ntuple(_ -> JACC.Array(zeros(n)), 6)
+            bj = JACC.array(copy(b))
+            xj = JACC.array(zeros(n))
+            work = ntuple(_ -> JACC.array(zeros(n)), 6)
 
             conv, iters, resnorm = jacc_bicgstab!(xj, Aj, bj, work;
                                                   rtol = 1e-10, atol = 1e-14, itmax = 1000)

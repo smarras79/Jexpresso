@@ -101,9 +101,9 @@ function JaccSparseCSR(A::SparseMatrixCSC;
     n = size(A, 1)
     @assert size(A, 2) == n "JaccSparseCSR expects a square operator"
     At     = sparse(transpose(A))                 # CSC(Aᵀ) == CSR(A)
-    rowptr = JACC.Array(convert(Vector{index_type}, At.colptr))
-    colind = JACC.Array(convert(Vector{index_type}, At.rowval))
-    nzval  = JACC.Array(convert(Vector{float_type}, At.nzval))
+    rowptr = JACC.array(convert(Vector{index_type}, At.colptr))
+    colind = JACC.array(convert(Vector{index_type}, At.rowval))
+    nzval  = JACC.array(convert(Vector{float_type}, At.nzval))
     return JaccSparseCSR{typeof(rowptr), typeof(nzval)}(n, rowptr, colind, nzval)
 end
 

@@ -8,7 +8,7 @@
 #     julia --project test/test_imex_jacc.jl
 #
 # On a machine with a JACC GPU backend configured (CUDA/AMDGPU), the same test
-# exercises the device path because `JACC.Array` then returns a device array.
+# exercises the device path because `JACC.array` then returns a device array.
 
 using Test
 using SparseArrays
@@ -24,8 +24,8 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
             A = sprand(n, n, 0.2) + 2.0 * I        # well-conditioned, nonsymmetric
             x = rand(n)
             Aj = JaccSparseCSR(A)
-            xj = JACC.Array(copy(x))
-            yj = JACC.Array(zeros(n))
+            xj = JACC.array(copy(x))
+            yj = JACC.array(zeros(n))
             jacc_spmv!(yj, Aj, xj)
             @test Array(yj) ≈ A * x rtol = 1e-12
         end
@@ -47,9 +47,9 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         b     = A * xtrue
 
         Aj = JaccSparseCSR(A)
-        bj = JACC.Array(copy(b))
-        xj = JACC.Array(zeros(n))
-        work = ntuple(_ -> JACC.Array(zeros(n)), 6)
+        bj = JACC.array(copy(b))
+        xj = JACC.array(zeros(n))
+        work = ntuple(_ -> JACC.array(zeros(n)), 6)
 
         conv, iters, resnorm = jacc_bicgstab!(xj, Aj, bj, work;
                                               rtol = 1e-10, atol = 1e-14, itmax = 1000)
@@ -65,8 +65,8 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         n  = 1000
         A  = sprand(n, n, 0.05) + 2.0 * I
         Aj = JaccSparseCSR(A)
-        x  = JACC.Array(rand(n))
-        y  = JACC.Array(zeros(n))
+        x  = JACC.array(rand(n))
+        y  = JACC.array(zeros(n))
         jacc_spmv!(y, Aj, x)                       # warm up / compile
         if y isa Vector                            # CPU JACC backend only
             @test (@allocated jacc_spmv!(y, Aj, x)) == 0
@@ -90,9 +90,9 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         x_direct = A \ b                       # what lu/ldiv! computes on the CPU path
 
         Aj = JaccSparseCSR(A)
-        xj = JACC.Array(zeros(n))
-        work = ntuple(_ -> JACC.Array(zeros(n)), 6)
-        conv, _, _ = jacc_bicgstab!(xj, Aj, JACC.Array(copy(b)), work;
+        xj = JACC.array(zeros(n))
+        work = ntuple(_ -> JACC.array(zeros(n)), 6)
+        conv, _, _ = jacc_bicgstab!(xj, Aj, JACC.array(copy(b)), work;
                                     rtol = 1e-10, atol = 1e-14, itmax = 1000)
         @test conv
         @test norm(Array(xj) .- x_direct) ≤ 1e-9 * norm(x_direct)
@@ -101,7 +101,7 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
     @testset "offload round-trip: host rhs -> device solve -> host (parity)" begin
         # Exercises exactly what _imex_rk_run_const_jacc_offload! does per stage:
         # assemble the operator + rhs on the host, upload to device arrays
-        # (JACC.Array), solve with jacc_bicgstab!, copy the solution back. On the
+        # (JACC.array), solve with jacc_bicgstab!, copy the solution back. On the
         # JACC CPU backend the "device" arrays are host Vectors, so this both
         # validates the mechanics and matches the device path bit-for-bit.
         n  = 1500
@@ -114,9 +114,9 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         x_ref = A \ rhs_h                         # host LU reference
 
         A_d   = JaccSparseCSR(A)                  # operator uploaded once
-        b_d   = JACC.Array(zeros(n))
-        x_d   = JACC.Array(zeros(n))
-        work  = ntuple(_ -> JACC.Array(zeros(n)), 6)
+        b_d   = JACC.array(zeros(n))
+        x_d   = JACC.array(zeros(n))
+        work  = ntuple(_ -> JACC.array(zeros(n)), 6)
         x_h   = zeros(n)
 
         copyto!(b_d, rhs_h)                        # host -> device
@@ -139,8 +139,8 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
 
         for (S, tol) in ((Float64, 1e-9), (Float32, 1e-4))
             A_d  = JaccSparseCSR(A; float_type = S)
-            b_d  = JACC.Array(zeros(S, n)); x_d = JACC.Array(zeros(S, n))
-            work = ntuple(_ -> JACC.Array(zeros(S, n)), 6)
+            b_d  = JACC.array(zeros(S, n)); x_d = JACC.array(zeros(S, n))
+            work = ntuple(_ -> JACC.array(zeros(S, n)), 6)
             rhs_s = Vector{S}(undef, n); rhs_s .= rhs_h         # T -> S
             copyto!(b_d, rhs_s)
             conv, _, _ = jacc_bicgstab!(x_d, A_d, b_d, work; rtol = tol, atol = tol/100, itmax = 2000)
@@ -153,8 +153,8 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         # Float16: must run and stay finite (it may not reach a tight tolerance).
         let S = Float16
             A_d  = JaccSparseCSR(A; float_type = S)
-            b_d  = JACC.Array(zeros(S, n)); x_d = JACC.Array(zeros(S, n))
-            work = ntuple(_ -> JACC.Array(zeros(S, n)), 6)
+            b_d  = JACC.array(zeros(S, n)); x_d = JACC.array(zeros(S, n))
+            work = ntuple(_ -> JACC.array(zeros(S, n)), 6)
             rhs_s = Vector{S}(undef, n); rhs_s .= rhs_h
             copyto!(b_d, rhs_s)
             jacc_bicgstab!(x_d, A_d, b_d, work; rtol = 1e-3, atol = 1e-5, itmax = 500)
@@ -168,9 +168,9 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         n  = 32
         A  = sprand(n, n, 0.3) + 2.0 * I
         Aj = JaccSparseCSR(A)
-        bj = JACC.Array(zeros(n))
-        xj = JACC.Array(ones(n))
-        work = ntuple(_ -> JACC.Array(zeros(n)), 6)
+        bj = JACC.array(zeros(n))
+        xj = JACC.array(ones(n))
+        work = ntuple(_ -> JACC.array(zeros(n)), 6)
         conv, iters, _ = jacc_bicgstab!(xj, Aj, bj, work)
         @test conv
         @test iters == 0

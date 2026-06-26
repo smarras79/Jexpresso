@@ -499,7 +499,7 @@ end
 """
     Jexpresso.jacc_status() -> Bool
 
-Print JACC's active backend (via the type `JACC.Array` returns) and whether the
+Print JACC's active backend (via the type `JACC.array` returns) and whether the
 JACC solve will run on the GPU. Use it to verify the setup BEFORE a long run:
 a `CuArray`/`ROCArray` type means GPU; a plain `Array` (`Vector`) means JACC is on
 its CPU (`threads`) backend and the IMEX offload solve will run on the CPU.
@@ -509,7 +509,7 @@ you must `JACC.set_backend("cuda")` and RESTART Julia (see [`enable_cuda!`](@ref
 Returns `true` when JACC is on a GPU backend.
 """
 function jacc_status()
-    a = JACC.Array(zeros(4))
+    a = JACC.array(zeros(4))
     on_gpu = !(a isa Array)
     println(" # ── JACC / GPU status ─────────────────────────────────────────────")
     println(" #   JACC array type   : ", typeof(a))
@@ -539,7 +539,7 @@ function jacc_status()
     # The backend JACC actually COMPILED IN (a const baked into its .ji). If this
     # disagrees with the file preference above, JACC's precompile cache is stale —
     # it never recompiled against the changed preference, which is the usual cause
-    # of "pref says cuda but JACC.Array is a Vector".
+    # of "pref says cuda but JACC.array is a Vector".
     loaded_pref = try
         string(JACC.Preferences.Backend.default)
     catch

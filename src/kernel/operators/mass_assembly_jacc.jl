@@ -54,21 +54,21 @@ function sparse_mass_assembly_3Dby2D_jacc(
     # Each element gets its own segment to avoid atomics
     total_max_entries = nelem * max_entries_per_elem
 
-    I_all = JACC.Array(zeros(Int, total_max_entries))
-    J_all = JACC.Array(zeros(Int, total_max_entries))
-    V_all = JACC.Array(zeros(Float64, total_max_entries))
-    entry_counts = JACC.Array(zeros(Int, nelem))  # Track entries per element
+    I_all = JACC.array(zeros(Int, total_max_entries))
+    J_all = JACC.array(zeros(Int, total_max_entries))
+    V_all = JACC.array(zeros(Float64, total_max_entries))
+    entry_counts = JACC.array(zeros(Int, nelem))  # Track entries per element
 
     # Transfer input data to device
-    ω_dev = JACC.Array(ω)
-    Je_dev = JACC.Array(Je)
-    connijk_dev = JACC.Array(connijk)
-    ωθ_dev = JACC.Array(ωθ)
-    ωϕ_dev = JACC.Array(ωϕ)
-    connijk_ang_dev = JACC.Array(connijk_ang)
-    Je_ang_dev = JACC.Array(Je_ang)
-    ψ_dev = JACC.Array(ψ)
-    nop_ang_dev = JACC.Array(nop_ang)
+    ω_dev = JACC.array(ω)
+    Je_dev = JACC.array(Je)
+    connijk_dev = JACC.array(connijk)
+    ωθ_dev = JACC.array(ωθ)
+    ωϕ_dev = JACC.array(ωϕ)
+    connijk_ang_dev = JACC.array(connijk_ang)
+    Je_ang_dev = JACC.array(Je_ang)
+    ψ_dev = JACC.array(ψ)
+    nop_ang_dev = JACC.array(nop_ang)
 
     # Parallel loop over elements
     JACC.parallel_for(nelem) do iel
@@ -195,18 +195,18 @@ function sparse_mass_assembly_3Dby2D_adaptive_jacc(
     # Allocate storage
     total_max_entries = nelem * max_entries_per_elem
 
-    I_all = JACC.Array(zeros(Int, total_max_entries))
-    J_all = JACC.Array(zeros(Int, total_max_entries))
-    V_all = JACC.Array(zeros(Float64, total_max_entries))
-    entry_counts = JACC.Array(zeros(Int, nelem))
+    I_all = JACC.array(zeros(Int, total_max_entries))
+    J_all = JACC.array(zeros(Int, total_max_entries))
+    V_all = JACC.array(zeros(Float64, total_max_entries))
+    entry_counts = JACC.array(zeros(Int, nelem))
 
     # Transfer data to device
-    ω_dev = JACC.Array(ω)
-    Je_dev = JACC.Array(Je)
-    connijk_dev = JACC.Array(connijk)
-    ωθ_dev = JACC.Array(ωθ)
-    ωϕ_dev = JACC.Array(ωϕ)
-    ψ_dev = JACC.Array(ψ)
+    ω_dev = JACC.array(ω)
+    Je_dev = JACC.array(Je)
+    connijk_dev = JACC.array(connijk)
+    ωθ_dev = JACC.array(ωθ)
+    ωϕ_dev = JACC.array(ωϕ)
+    ψ_dev = JACC.array(ψ)
 
     # For adaptive version, we need to handle variable-sized arrays per element
     # This is more complex - flatten the data structures
@@ -235,11 +235,11 @@ function sparse_mass_assembly_3Dby2D_adaptive_jacc(
         end
     end
 
-    nop_dev = JACC.Array(nop_flat)
-    Je_ang_dev = JACC.Array(Je_flat)
-    connijk_ang_dev = JACC.Array(connijk_ang_flat)
-    connijk_spa_dev = JACC.Array(connijk_spa_flat)
-    nelem_ang_dev = JACC.Array(nelem_ang_per_elem)
+    nop_dev = JACC.array(nop_flat)
+    Je_ang_dev = JACC.array(Je_flat)
+    connijk_ang_dev = JACC.array(connijk_ang_flat)
+    connijk_spa_dev = JACC.array(connijk_spa_flat)
+    nelem_ang_dev = JACC.array(nelem_ang_per_elem)
 
     # Parallel loop over elements
     JACC.parallel_for(nelem) do iel
