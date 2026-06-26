@@ -1,17 +1,17 @@
 function user_inputs()
 
     #--------------------------------------------------------------------------
-    # IMPORTANT: load CUDA BEFORE running this case:
+    # IMPORTANT: run this case with `backend = :cuda` so CUDA is loaded first:
     #
     #     using Jexpresso
-    #     Jexpresso.enable_cuda!()                       # loads CUDABackend
-    #     Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu")
+    #     Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu"; backend = :cuda)
     #
     # `CUDABackend` is defined by CUDA.jl, an optional dependency Jexpresso does
     # not load by default. It cannot be loaded lazily *inside* this function and
-    # used in the same call (that triggers a Julia world-age error); enable_cuda!
-    # loads it ahead of the run. If CUDA.jl is not in the project, add it on the
-    # GPU machine with `] add CUDA`.
+    # used in the same call (that triggers a Julia world-age error), so run_case
+    # loads it ahead of the run when given `backend = :cuda` (equivalently, call
+    # `Jexpresso.enable_cuda!()` yourself first). If CUDA.jl is not in the
+    # project, add it on the GPU machine with `] add CUDA`.
     #--------------------------------------------------------------------------
 
     #--------------------------------------------------------------------------

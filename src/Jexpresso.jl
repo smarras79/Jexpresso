@@ -508,8 +508,13 @@ Run a single Jexpresso case from the REPL. `eqs` and `eqs_case` are
 the directory names under `problems/<eqs>/<eqs_case>/` (e.g.
 `run_case("CompEuler", "3d")`). Returns `nothing`.
 
-For a GPU case (`:backend => CUDABackend()`), call
-[`enable_cuda!`](@ref) first.
+For a GPU case (one whose `user_inputs.jl` sets `:backend => CUDABackend()`),
+pass `backend = :cuda` so CUDA is loaded before the case is read:
+
+    Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu"; backend = :cuda)
+
+(`:amdgpu` loads AMDGPU/`ROCBackend` instead). This is equivalent to calling
+[`enable_cuda!`](@ref) yourself beforehand, but in a single call.
 
 Prefer this to `include("./src/Jexpresso.jl")` — the include path
 re-defines the module on every call (the `WARNING: replacing module
@@ -518,7 +523,21 @@ orchestration layer. With `run_case`, `using Jexpresso` happens
 exactly once per session and the second case onward is launch-cost-only.
 """
 function run_case(eqs::AbstractString, eqs_case::AbstractString;
-                  CI_MODE::Bool=false)
+                  CI_MODE::Bool=false, backend::Union{Symbol,Nothing}=nothing)
+    # Load the GPU backend package (CUDA/AMDGPU) BEFORE reading the case, so the
+    # case's `CUDABackend()`/`ROCBackend()` resolves. This must happen here, not
+    # inside the case's user_inputs(): loading a package and using its freshly
+    # added constructor in the same call is a Julia world-age error. Because this
+    # runs before the `invokelatest` below, the include sees the just-loaded
+    # methods.
+    if backend === :cuda || backend === :CUDA
+        enable_cuda!()
+    elseif backend === :amdgpu || backend === :AMDGPU || backend === :rocm || backend === :ROCm
+        enable_amdgpu!()
+    elseif backend !== nothing && backend !== :cpu && backend !== :CPU
+        error("run_case: unknown backend $(repr(backend)); use :cuda, :amdgpu or :cpu (default).")
+    end
+
     push!(empty!(ARGS), String(eqs), String(eqs_case), string(CI_MODE))
     # run.jl is a script — no `module …` declaration — so re-`include`ing
     # it from inside the already-loaded Jexpresso module just re-runs
@@ -526,9 +545,9 @@ function run_case(eqs::AbstractString, eqs_case::AbstractString;
     # function/case-file redefinitions it performs are silent (only
     # module redefinitions print the WARNING).
     #
-    # `invokelatest` runs the include in the latest world age, so a case that
-    # uses a package loaded earlier in this same top-level block (e.g.
-    # `enable_cuda!(); run_case(...)` on one line) still sees `CUDABackend`.
+    # `invokelatest` runs the include in the latest world age, so the case sees
+    # a GPU backend just loaded above (or earlier in this top-level block via
+    # `enable_cuda!()`).
     Base.invokelatest(Base.include, @__MODULE__, joinpath(@__DIR__, "run.jl"))
     return nothing
 end

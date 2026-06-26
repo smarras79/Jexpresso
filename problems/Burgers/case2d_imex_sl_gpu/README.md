@@ -18,24 +18,25 @@ vector algebra on the GPU.
 
 ## Run
 
-On a node with an NVIDIA GPU and CUDA.jl in the project, **load CUDA before the
-run** with `Jexpresso.enable_cuda!()` (this is required — see the note below):
+On a node with an NVIDIA GPU and CUDA.jl in the project, run with
+`backend = :cuda` (this loads CUDA before the case is read):
 
 ```julia
 using Jexpresso
-Jexpresso.enable_cuda!()                        # loads CUDABackend + JACC CUDA backend
-Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu")
+Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu"; backend = :cuda)
 ```
 
-### Why `enable_cuda!()` and not just `using CUDA`?
+### Why `backend = :cuda` (and not just `using CUDA`)?
 
 `CUDABackend` is defined by CUDA.jl, an optional dependency Jexpresso does not
 load by default. A case file cannot load CUDA lazily and construct
 `CUDABackend()` in the same call — Julia rejects calling a constructor that was
 added to the method table *after* the running code started (a "world-age"
-error). `enable_cuda!()` loads CUDA ahead of the run, into the `Jexpresso`
-module, and selectively imports only `CUDABackend` (so it doesn't clash with
-`Jexpresso.CG`). It also nudges JACC onto its CUDA backend.
+error). Passing `backend = :cuda` makes `run_case` call `Jexpresso.enable_cuda!()`
+**before** it reads the case, loading CUDA into the `Jexpresso` module and
+selectively importing only `CUDABackend` (so it doesn't clash with
+`Jexpresso.CG`); it also nudges JACC onto its CUDA backend. Equivalently you can
+call `Jexpresso.enable_cuda!()` yourself first and then `run_case(...)`.
 
 Requirements:
 * `CUDA.jl` in the active project — add it on the GPU machine with `] add CUDA`;
