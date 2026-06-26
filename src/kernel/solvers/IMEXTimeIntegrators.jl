@@ -904,6 +904,28 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
     work_d = ntuple(_ -> JACC.Array(zeros(T, n)), 6)
     itmax  = get(inputs, :imex_jacc_itmax, max(500, 10 * Int(ceil(sqrt(npoint)))))
 
+    # Where is the GPU load? The solve arrays are a CuArray (GPU) when JACC is on
+    # its CUDA backend, or a plain Vector (CPU) otherwise — printing their type is
+    # direct proof of where (I - λL)x = b actually runs.
+    on_gpu = !(x_d isa Array)
+    n_ops  = length(unique(λs))
+    if rank == 0
+        println()
+        println(" #   ┌─ IMEX/JACC — implicit-solve GPU offload ───────────────────────")
+        println(" #   │   CPU (host) : mesh, sem_setup, explicit rhs! S(u), stage-RHS")
+        println(" #   │                assembly, L(u) mat-vec, solution update, output")
+        println(" #   │   GPU (dev)  : per-stage implicit solve (I - λL)x = b  [BiCGSTAB]")
+        println(" #   │   solve array type : ", typeof(x_d))
+        println(" #   │   running on GPU?  : ", on_gpu ? "YES" : "NO  (JACC CPU backend / no GPU)")
+        println(" #   │   device operators : ", n_ops, " distinct (I - λL) CSR uploaded once")
+        println(" #   └────────────────────────────────────────────────────────────────")
+        if !on_gpu
+            @warn "IMEX/JACC offload: solve arrays are host Arrays — the GPU is NOT being used. Run with `backend = :cuda` so JACC is on its CUDA backend (and CUDA.functional() is true)."
+        end
+        println()
+    end
+    nsolve = 0   # count of implicit solves carried out on the device
+
     t_n          = tinit
     n_step       = 0
     next_out_idx = 1
@@ -912,6 +934,11 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
     while (abs(t_n - tend) > 1.0e-14 && t_n < tend)
         for i = 1:k
             time_tilde = t_n + c_RK_tilde[i] * Δt
+
+            # `trace` prints the CPU↔GPU hand-off for the FIRST step only, so the
+            # user can see the alternation without flooding the screen over every
+            # step. The actual device residency is the same on every step.
+            trace = (rank == 0 && n_step == 0)
 
             # Stage RHS on the host: u + Σ_{j<i} Δt[ A_ex S_j + (A_im - A_ex) L_j ]
             copyto!(rhs_h, u)
@@ -923,23 +950,28 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
             if bcs_fun! !== nothing
                 bcs_fun!(rhs_h, Ahost[i], time_tilde, params, sem, qp)
             end
+            trace && println(@sprintf("   [CPU] step 0 stage %d: assembled stage RHS on host", i))
 
             # Offload the linear solve (I - λL) U_i = rhs to the device. The
             # operator is linear, so a single BiCGSTAB solve (iterating to
             # tolerance internally) is exact up to that tolerance.
+            trace && print(@sprintf("   [GPU] step 0 stage %d: solving (I-λL)x=b on device ... ", i))
             copyto!(b_d, rhs_h)                       # host -> device
             conv, bi, _ = jacc_bicgstab!(x_d, Adev[i], b_d, work_d;
                                          rtol = nl_rtol, atol = nl_atol, itmax = itmax)
+            copyto!(x_h, x_d)                         # device -> host
+            nsolve += 1
+            trace && println(@sprintf("done (%d BiCGSTAB iters), x copied back to host", bi))
             if !conv && rank == 0
                 @warn "IMEX/JACC offload BiCGSTAB did not converge (stage $i, step $n_step): $bi iters"
             end
-            copyto!(x_h, x_d)                         # device -> host
             U_stages[i] .+= x_h
 
             # Cache S(U_i) [host rhs!] and L(U_i) [host sparse mat-vec].
             ti = t_n + c_RK[i] * Δt
             S_fun!(S_store[i], U_stages[i], ti, params, sem)
             mul!(L_store[i], L_raw, U_stages[i])
+            trace && println(@sprintf("   [CPU] step 0 stage %d: S(U)=rhs! and L(U) mat-vec on host", i))
         end
 
         # Solution update: u += Σ_i Δt b_RK[i] S(U_i)
@@ -968,6 +1000,14 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
         iout += 1
         u2uaux!(params.uaux, u, neqs, npoint)
         _imex_write(params, u, t_n, iout, inputs)
+    end
+
+    if rank == 0
+        println()
+        println(" #   └─ IMEX/JACC offload done: ", nsolve, " implicit solves (I-λL)x=b on ",
+                on_gpu ? "the GPU device" : "the CPU (JACC host backend)",
+                "; rhs!/assembly/output ran on the CPU.")
+        println()
     end
 
     return nothing
