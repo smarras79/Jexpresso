@@ -520,19 +520,35 @@ function jacc_status()
     # runtime `import Preferences`, which would hit a world-age error).
     proj = Base.active_project()
     println(" #   active project    : ", proj)
+    file_pref = nothing
     lp = joinpath(dirname(proj), "LocalPreferences.toml")
     if isfile(lp)
         m = match(r"default_backend\s*=\s*\"([^\"]*)\"", read(lp, String))
         if m === nothing
-            println(" #   JACC pref         : default_backend NOT set in ", lp)
+            println(" #   JACC pref (file)  : default_backend NOT set in ", lp)
         else
-            pv = m.captures[1]
-            println(" #   JACC pref         : default_backend = \"", pv, "\"",
-                    pv == "cuda" ? "" : "   <-- must be \"cuda\"")
+            file_pref = m.captures[1]
+            println(" #   JACC pref (file)  : default_backend = \"", file_pref, "\"",
+                    file_pref == "cuda" ? "" : "   <-- must be \"cuda\"")
         end
     else
-        println(" #   JACC pref         : LocalPreferences.toml MISSING next to the active project")
+        println(" #   JACC pref (file)  : LocalPreferences.toml MISSING next to the active project")
         println(" #                       (`set_backend` wrote it elsewhere, or not at all)")
+    end
+
+    # The backend JACC actually COMPILED IN (a const baked into its .ji). If this
+    # disagrees with the file preference above, JACC's precompile cache is stale —
+    # it never recompiled against the changed preference, which is the usual cause
+    # of "pref says cuda but JACC.Array is a Vector".
+    loaded_pref = try
+        string(JACC.Preferences.Backend.default)
+    catch
+        "?"
+    end
+    println(" #   JACC backend (loaded const) : \"", loaded_pref, "\"")
+    if file_pref !== nothing && loaded_pref != "?" && file_pref != loaded_pref
+        println(" #   >>> STALE CACHE: file says \"", file_pref, "\" but JACC loaded \"", loaded_pref,
+                "\". JACC did NOT recompile. <<<")
     end
 
     # Is a GPU actually visible?
@@ -548,18 +564,64 @@ function jacc_status()
 
     if !on_gpu
         println(" #")
-        println(" #   To run the solve on the GPU:")
-        println(" #     1. be on a GPU node with `Main.CUDA.functional() == true`;")
-        println(" #     2. in THIS project:  using CUDA, JACC; JACC.set_backend(\"cuda\")")
-        println(" #        — check the line above now reads default_backend = \"cuda\";")
-        println(" #     3. RESTART Julia with the SAME `--project` (or JULIA_PROJECT);")
-        println(" #     4. `using CUDA, JACC` again, then re-check Jexpresso.jacc_status().")
-        println(" #   If the pref already reads \"cuda\" but the type is still Vector, JACC")
-        println(" #   was started in a different project, or its cache is stale (try")
-        println(" #   `using Pkg; Pkg.precompile()` after the restart).")
+        if file_pref == "cuda" && loaded_pref != "cuda"
+            println(" #   DIAGNOSIS: stale JACC precompile cache — the preference is \"cuda\" but")
+            println(" #   JACC loaded \"", loaded_pref, "\". Force JACC to recompile, then RESTART:")
+            println(" #     Jexpresso.force_recompile_jacc()   # deletes JACC's compiled cache")
+            println(" #   …then exit Julia, start again (same --project), `using CUDA, JACC`, and")
+            println(" #   re-check Jexpresso.jacc_status() — the loaded const should read \"cuda\".")
+        else
+            println(" #   To run the solve on the GPU:")
+            println(" #     1. be on a GPU node with `Main.CUDA.functional() == true`;")
+            println(" #     2. in THIS project:  using CUDA, JACC; JACC.set_backend(\"cuda\")")
+            println(" #        — check the file pref above now reads default_backend = \"cuda\";")
+            println(" #     3. RESTART Julia with the SAME `--project` (or JULIA_PROJECT);")
+            println(" #     4. `using CUDA, JACC` again, then re-check Jexpresso.jacc_status().")
+            println(" #   If the loaded const still disagrees with the file pref, the cache is")
+            println(" #   stale: run Jexpresso.force_recompile_jacc() and restart.")
+        end
     end
     println(" # ──────────────────────────────────────────────────────────────────")
     return on_gpu
+end
+
+"""
+    Jexpresso.force_recompile_jacc()
+
+Delete JACC's precompiled cache (the `.ji` files) from every writable depot, so
+JACC recompiles from scratch on the next Julia start and finally picks up the
+`default_backend = "cuda"` preference. Use this when `jacc_status()` reports a
+stale cache (file preference = "cuda" but JACC loaded "threads").
+
+After calling it you MUST exit and restart Julia (same `--project`); then
+`using CUDA, JACC` and re-check `jacc_status()`.
+"""
+function force_recompile_jacc()
+    tag = "v$(VERSION.major).$(VERSION.minor)"
+    removed = String[]
+    for d in DEPOT_PATH
+        cdir = joinpath(d, "compiled", tag, "JACC")     # base pkg + its extension caches
+        if isdir(cdir)
+            try
+                rm(cdir; recursive = true, force = true)
+                push!(removed, cdir)
+            catch err
+                println(" # could not remove ", cdir, " : ", err)
+            end
+        end
+    end
+    if isempty(removed)
+        println(" # force_recompile_jacc: no JACC compiled cache found (nothing to do).")
+    else
+        println(" # force_recompile_jacc: removed JACC precompile cache:")
+        foreach(p -> println(" #   ", p), removed)
+        println(" #")
+        println(" # NOW: exit Julia, start a fresh session with the SAME --project, then:")
+        println(" #   using CUDA, JACC          # JACC recompiles against default_backend=\"cuda\"")
+        println(" #   using Jexpresso")
+        println(" #   Jexpresso.jacc_status()   # loaded const should now read \"cuda\", type a CuArray")
+    end
+    return nothing
 end
 
 """
