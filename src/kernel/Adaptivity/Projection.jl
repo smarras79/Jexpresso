@@ -214,6 +214,12 @@ end
 
 
 function build_projection_1d(ξa)
+    # The projection build is small host-side scalar work (barycentric weights,
+    # interpolation matrices). On a GPU backend `ξa` (the interpolation nodes) is
+    # a CuArray, and indexing it element-by-element throws "scalar indexing is
+    # disallowed". Bring the nodes to the host once; the returned interp/project
+    # are host Float64 arrays either way.
+    ξa = Array(ξa)
     Np = length(ξa)
 
     # Create the barycentric weights (we assume a similar function exists in Julia)

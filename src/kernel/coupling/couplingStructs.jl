@@ -734,6 +734,9 @@ end
 _num_elems(mesh) = mesh.nelem
 
 function barycentric_weights(nodes::AbstractVector{<:Real})
+    # Host-side scalar computation; bring the nodes off the GPU if needed so the
+    # element-by-element loop below does not hit "scalar indexing is disallowed".
+    nodes = Array(nodes)
     n = length(nodes)
     w = ones(Float64, n)
     for j in 1:n
