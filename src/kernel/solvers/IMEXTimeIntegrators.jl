@@ -256,6 +256,20 @@ function imex_time_loop!(inputs, params, u)
             # `u` lives on, so a GPU run only needs `:backend => CUDABackend()`
             # and a JACC backend configured for the matching device.
             if get(inputs, :limex_jacc, false)
+                if get(inputs, :limex_jacc_offload, false)
+                    # HYBRID offload: the Jexpresso pipeline (mesh / rhs! / vector
+                    # algebra) stays on the host (`:backend => CPU()`), and ONLY
+                    # the per-stage implicit solve (I - λL) x = b is run on the GPU
+                    # via JACC — the operator is uploaded once and each stage's
+                    # small rhs/solution vector is copied host↔device per step.
+                    _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!,
+                                                     params, qp, sem, inputs,
+                                                     A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
+                                                     Δt, k, nl_atol, nl_rtol, max_nl_iter,
+                                                     t_n, inputs[:tend], dosetimes, neqs, npoint, rank)
+                    println_rank(" #   IMEX integrator (JACC offload) ............ DONE"; msg_rank = rank)
+                    return u
+                end
                 _imex_rk_run_const_jacc!(u, build_L, L_update, S_fun!, bcs_fun!,
                                          params, qp, sem, inputs,
                                          A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
@@ -791,6 +805,155 @@ function _imex_rk_run_const_jacc!(u, build_L, L_update, S_fun!, bcs_fun!,
             iout += 1
             u2uaux!(params.uaux, u, neqs, npoint)
             println_rank(@sprintf(" #   IMEX(JACC): t = %.6f   step = %d", t_n, n_step); msg_rank = rank)
+            _imex_write(params, u, t_n, iout, inputs)
+            next_out_idx += 1
+        end
+
+        for j = 1:k
+            fill!(U_stages[j], zero(eltype(U_stages[j])))
+        end
+    end
+
+    # Final snapshot if the schedule did not already cover t_end.
+    if iout == 0 || next_out_idx <= length(dosetimes)
+        iout += 1
+        u2uaux!(params.uaux, u, neqs, npoint)
+        _imex_write(params, u, t_n, iout, inputs)
+    end
+
+    return nothing
+end
+
+
+#----------------------------------------------------------------------------
+# HYBRID GPU offload of the constant-operator IMEX additive Runge-Kutta path.
+#
+# Selected by `:limex_jacc => true` AND `:limex_jacc_offload => true`, with
+# `:backend => CPU()` (the default). The entire Jexpresso pipeline — mesh,
+# sem_setup, the explicit `rhs!` (S_fun!), the stage-RHS assembly and the
+# solution update — runs on the HOST exactly as in the proven CPU path. The
+# ONLY thing moved onto the GPU is the per-stage implicit linear solve
+# (I - λL) x = b, performed with `jacc_bicgstab!` on JACC device arrays:
+#
+#   * the distinct per-stage operators I - λ_i L are assembled once on the host
+#     and uploaded to the device as CSR (`JaccSparseCSR`, whose arrays are
+#     `JACC.Array`s — CuArrays when JACC's backend is CUDA);
+#   * each stage copies its small rhs vector host→device, solves on the device,
+#     and copies the solution device→host;
+#   * S(U_i) is the host `rhs!`; L(U_i) is a host sparse mat-vec with the cached
+#     operator (both feed the next stages' RHS).
+#
+# This sidesteps the (incomplete) GPU port of the rest of Jexpresso: nothing but
+# the solver touches the device, so there are no GPU scalar-indexing / MPI-type
+# issues. Requires CUDA loaded and JACC on its CUDA backend — run with
+# `Jexpresso.run_case(...; backend = :cuda)` (which loads CUDA for JACC while the
+# case keeps `:backend => CPU()`). If JACC is on its CPU backend the device
+# arrays are plain host arrays and this simply runs the solve on the CPU.
+#----------------------------------------------------------------------------
+function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!,
+                                          params, qp, sem, inputs,
+                                          A_RK, b_RK, c_RK, A_RK_tilde, c_RK_tilde,
+                                          Δt, k, nl_atol, nl_rtol, max_nl_iter,
+                                          tinit, tend, dosetimes, neqs, npoint, rank)
+
+    T = eltype(u)
+    n = length(u)
+    index_type = (TInt === Int32) ? Int32 : Int
+
+    # Host buffers / stage vectors (u is a host array on the CPU backend).
+    rhs_h    = fill!(similar(u), zero(T))
+    x_h      = fill!(similar(u), zero(T))
+    U_stages = [fill!(similar(u), zero(T)) for _ in 1:k]
+    S_store  = [fill!(similar(u), zero(T)) for _ in 1:k]
+    L_store  = [fill!(similar(u), zero(T)) for _ in 1:k]
+
+    # Raw host operator L (for L(U_i) = L * U_i on the host).
+    L_raw = build_L(u, tinit, params)
+
+    # Per-stage operators I - λ_i L assembled on the host and uploaded to the
+    # device as CSR (deduplicated by λ_i, as in the host path). The host sparse
+    # copy is kept only so a `bcs_fun!` that mutates the matrix has something to
+    # act on; the solve uses the device CSR.
+    λs    = [Δt * A_RK_tilde[i, i] for i in 1:k]
+    A0_h  = L_update(u, tinit, λs[1])
+    A0_d  = JaccSparseCSR(A0_h; index_type = index_type, float_type = T)
+    Ahost = Vector{typeof(A0_h)}(undef, k)
+    Adev  = Vector{typeof(A0_d)}(undef, k)
+    Ahost[1] = A0_h
+    Adev[1]  = A0_d
+    for i in 2:k
+        reuse = 0
+        for j in 1:i-1
+            if λs[j] == λs[i]
+                reuse = j
+                break
+            end
+        end
+        if reuse > 0
+            Ahost[i] = Ahost[reuse]
+            Adev[i]  = Adev[reuse]
+        else
+            Ahost[i] = L_update(u, tinit, λs[i])
+            Adev[i]  = JaccSparseCSR(Ahost[i]; index_type = index_type, float_type = T)
+        end
+    end
+
+    # Device vectors for the solve (CuArrays when JACC backend == CUDA).
+    b_d    = JACC.Array(zeros(T, n))
+    x_d    = JACC.Array(zeros(T, n))
+    work_d = ntuple(_ -> JACC.Array(zeros(T, n)), 6)
+    itmax  = get(inputs, :imex_jacc_itmax, max(500, 10 * Int(ceil(sqrt(npoint)))))
+
+    t_n          = tinit
+    n_step       = 0
+    next_out_idx = 1
+    iout         = 0
+
+    while (abs(t_n - tend) > 1.0e-14 && t_n < tend)
+        for i = 1:k
+            time_tilde = t_n + c_RK_tilde[i] * Δt
+
+            # Stage RHS on the host: u + Σ_{j<i} Δt[ A_ex S_j + (A_im - A_ex) L_j ]
+            copyto!(rhs_h, u)
+            for j = 1:i-1
+                aex = Δt * A_RK[i, j]
+                bim = Δt * (A_RK_tilde[i, j] - A_RK[i, j])
+                @. rhs_h += aex * S_store[j] + bim * L_store[j]
+            end
+            if bcs_fun! !== nothing
+                bcs_fun!(rhs_h, Ahost[i], time_tilde, params, sem, qp)
+            end
+
+            # Offload the linear solve (I - λL) U_i = rhs to the device. The
+            # operator is linear, so a single BiCGSTAB solve (iterating to
+            # tolerance internally) is exact up to that tolerance.
+            copyto!(b_d, rhs_h)                       # host -> device
+            conv, bi, _ = jacc_bicgstab!(x_d, Adev[i], b_d, work_d;
+                                         rtol = nl_rtol, atol = nl_atol, itmax = itmax)
+            if !conv && rank == 0
+                @warn "IMEX/JACC offload BiCGSTAB did not converge (stage $i, step $n_step): $bi iters"
+            end
+            copyto!(x_h, x_d)                         # device -> host
+            U_stages[i] .+= x_h
+
+            # Cache S(U_i) [host rhs!] and L(U_i) [host sparse mat-vec].
+            ti = t_n + c_RK[i] * Δt
+            S_fun!(S_store[i], U_stages[i], ti, params, sem)
+            mul!(L_store[i], L_raw, U_stages[i])
+        end
+
+        # Solution update: u += Σ_i Δt b_RK[i] S(U_i)
+        for i = 1:k
+            axpy!(Δt * b_RK[i], S_store[i], u)
+        end
+
+        t_n    += Δt
+        n_step += 1
+
+        while next_out_idx <= length(dosetimes) && t_n + 1.0e-10 >= dosetimes[next_out_idx]
+            iout += 1
+            u2uaux!(params.uaux, u, neqs, npoint)
+            println_rank(@sprintf(" #   IMEX(JACC offload): t = %.6f   step = %d", t_n, n_step); msg_rank = rank)
             _imex_write(params, u, t_n, iout, inputs)
             next_out_idx += 1
         end

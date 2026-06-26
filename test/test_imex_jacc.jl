@@ -98,6 +98,34 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         @test norm(Array(xj) .- x_direct) ≤ 1e-9 * norm(x_direct)
     end
 
+    @testset "offload round-trip: host rhs -> device solve -> host (parity)" begin
+        # Exercises exactly what _imex_rk_run_const_jacc_offload! does per stage:
+        # assemble the operator + rhs on the host, upload to device arrays
+        # (JACC.Array), solve with jacc_bicgstab!, copy the solution back. On the
+        # JACC CPU backend the "device" arrays are host Vectors, so this both
+        # validates the mechanics and matches the device path bit-for-bit.
+        n  = 1500
+        K  = spdiagm(-1 => fill(-1.0, n-1), 0 => fill(2.0, n), 1 => fill(-1.0, n-1))
+        Minv = 0.5 .+ rand(n)
+        μ, λ = 1.0e-2, 1.0e-3
+        A  = sparse(1.0I, n, n) - λ * (-μ * (Minv .* K))
+
+        rhs_h = A * rand(n)                       # host rhs
+        x_ref = A \ rhs_h                         # host LU reference
+
+        A_d   = JaccSparseCSR(A)                  # operator uploaded once
+        b_d   = JACC.Array(zeros(n))
+        x_d   = JACC.Array(zeros(n))
+        work  = ntuple(_ -> JACC.Array(zeros(n)), 6)
+        x_h   = zeros(n)
+
+        copyto!(b_d, rhs_h)                        # host -> device
+        conv, _, _ = jacc_bicgstab!(x_d, A_d, b_d, work; rtol = 1e-10, atol = 1e-14, itmax = 1000)
+        copyto!(x_h, x_d)                          # device -> host
+        @test conv
+        @test norm(x_h .- x_ref) ≤ 1e-9 * norm(x_ref)
+    end
+
     @testset "jacc_bicgstab! handles a zero RHS" begin
         n  = 32
         A  = sprand(n, n, 0.3) + 2.0 * I

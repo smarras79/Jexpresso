@@ -1001,6 +1001,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # per-stage implicit solve runs on the JACC device (portable BiCGSTAB +
     # SpMV) instead of the host sparse LU. See kernel/solvers/imex_jacc.jl.
     if(!haskey(inputs, :limex_jacc))       inputs[:limex_jacc]       = false         end
+    # HYBRID offload: keep the Jexpresso pipeline on the host (`:backend => CPU()`)
+    # but run ONLY the per-stage implicit solve on the GPU via JACC (operator
+    # uploaded once, stage vectors copied host↔device per step). Requires
+    # :limex_jacc => true and CUDA loaded (run with `backend = :cuda`).
+    if(!haskey(inputs, :limex_jacc_offload)) inputs[:limex_jacc_offload] = false      end
     if(!haskey(inputs, :Δt_expl))          inputs[:Δt_expl]          = inputs[:Δt]   end
     # Forward-compat flag (the lean integrator solves directly / via :lsolve;
     # :assembled is accepted for cases authored against the richer storage path).
