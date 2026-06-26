@@ -845,7 +845,7 @@ end
 #
 #   * the distinct per-stage operators I - λ_i L are assembled once on the host
 #     and uploaded to the device as CSR (`JaccSparseCSR`, whose arrays are
-#     `JACC.Array`s — CuArrays when JACC's backend is CUDA);
+#     `JACC.array`s — CuArrays when JACC's backend is CUDA);
 #   * each stage copies its small rhs vector host→device, solves on the device,
 #     and copies the solution device→host;
 #   * S(U_i) is the host `rhs!`; L(U_i) is a host sparse mat-vec with the cached
@@ -917,9 +917,9 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
     end
 
     # Device vectors for the solve, in precision S (CuArrays when JACC backend == CUDA).
-    b_d    = JACC.Array(zeros(S, n))
-    x_d    = JACC.Array(zeros(S, n))
-    work_d = ntuple(_ -> JACC.Array(zeros(S, n)), 6)
+    b_d    = JACC.array(zeros(S, n))
+    x_d    = JACC.array(zeros(S, n))
+    work_d = ntuple(_ -> JACC.array(zeros(S, n)), 6)
     itmax  = get(inputs, :imex_jacc_itmax, max(500, 10 * Int(ceil(sqrt(npoint)))))
 
     # Where is the GPU load? The solve arrays are a CuArray (GPU) when JACC is on
