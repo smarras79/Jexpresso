@@ -58,9 +58,11 @@ variable. Read once-ish; cheap.
 enabled() = lowercase(get(ENV, "JEXPRESSO_EXTRAE", "")) in ("1", "true", "yes", "on")
 
 # Flushed per-rank diagnostic print to stderr, used to pinpoint where a traced
-# run might stall during Extrae start-up. Active only while tracing is opted in.
+# run might stall during Extrae start-up. OFF by default; enable with
+# JEXPRESSO_EXTRAE_DEBUG=1 to trace each start-up step.
+_debug_enabled() = lowercase(get(ENV, "JEXPRESSO_EXTRAE_DEBUG", "")) in ("1", "true", "yes", "on")
 function _dbg(rank, msg)
-    enabled() || return nothing
+    _debug_enabled() || return nothing
     println(stderr, "[extrae rank=$rank] $msg")
     flush(stderr)
     return nothing
