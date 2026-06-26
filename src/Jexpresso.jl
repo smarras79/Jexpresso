@@ -511,11 +511,54 @@ Returns `true` when JACC is on a GPU backend.
 function jacc_status()
     a = JACC.Array(zeros(4))
     on_gpu = !(a isa Array)
-    println(" # JACC array type : ", typeof(a))
-    println(" # JACC on GPU?    : ", on_gpu ? "YES" : "NO  (CPU / 'threads' backend)")
-    if !on_gpu
-        println(" # To enable the GPU: `using CUDA, JACC; JACC.set_backend(\"cuda\")`, then RESTART Julia.")
+    println(" # ── JACC / GPU status ─────────────────────────────────────────────")
+    println(" #   JACC array type   : ", typeof(a))
+    println(" #   JACC uses GPU?    : ", on_gpu ? "YES" : "NO   (CPU / 'threads' backend)")
+
+    # Active project + the stored JACC preference: the two things that explain
+    # why the backend is what it is. Read LocalPreferences.toml directly (no
+    # runtime `import Preferences`, which would hit a world-age error).
+    proj = Base.active_project()
+    println(" #   active project    : ", proj)
+    lp = joinpath(dirname(proj), "LocalPreferences.toml")
+    if isfile(lp)
+        m = match(r"default_backend\s*=\s*\"([^\"]*)\"", read(lp, String))
+        if m === nothing
+            println(" #   JACC pref         : default_backend NOT set in ", lp)
+        else
+            pv = m.captures[1]
+            println(" #   JACC pref         : default_backend = \"", pv, "\"",
+                    pv == "cuda" ? "" : "   <-- must be \"cuda\"")
+        end
+    else
+        println(" #   JACC pref         : LocalPreferences.toml MISSING next to the active project")
+        println(" #                       (`set_backend` wrote it elsewhere, or not at all)")
     end
+
+    # Is a GPU actually visible?
+    if isdefined(Main, :CUDA)
+        try
+            println(" #   CUDA.functional() : ", Main.CUDA.functional())
+        catch err
+            println(" #   CUDA.functional() : error (", err, ")")
+        end
+    else
+        println(" #   CUDA loaded?      : NO   (do `using CUDA`)")
+    end
+
+    if !on_gpu
+        println(" #")
+        println(" #   To run the solve on the GPU:")
+        println(" #     1. be on a GPU node with `Main.CUDA.functional() == true`;")
+        println(" #     2. in THIS project:  using CUDA, JACC; JACC.set_backend(\"cuda\")")
+        println(" #        — check the line above now reads default_backend = \"cuda\";")
+        println(" #     3. RESTART Julia with the SAME `--project` (or JULIA_PROJECT);")
+        println(" #     4. `using CUDA, JACC` again, then re-check Jexpresso.jacc_status().")
+        println(" #   If the pref already reads \"cuda\" but the type is still Vector, JACC")
+        println(" #   was started in a different project, or its cache is stale (try")
+        println(" #   `using Pkg; Pkg.precompile()` after the restart).")
+    end
+    println(" # ──────────────────────────────────────────────────────────────────")
     return on_gpu
 end
 
