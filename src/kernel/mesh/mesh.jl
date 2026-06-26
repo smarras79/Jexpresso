@@ -2107,26 +2107,35 @@ function find_gip_owner(a)
     rank = MPI.Comm_rank(comm)
     nranks = MPI.Comm_size(comm)
 
+    # The MPI Gatherv/Scatterv element type MUST match the eltype of `a`. `a` is a
+    # mesh index array (ip2gip / el2gel / …) whose eltype is `TInt`, which is
+    # Int32 on a GPU backend and Int64 on CPU. Hard-coding Int64 buffers here made
+    # the send (Int32) and receive (Int64) datatypes disagree, which tripped an
+    # MPICH pack/unpack assertion (`*actual_unpack_bytes % element_size == 0`) and
+    # aborted mesh setup on the GPU build. Derive the buffer type from `a` so the
+    # two always agree (identical behaviour on CPU, where eltype is Int64).
+    T = eltype(a)
+
     # Share local sizes with all ranks (avoids object serialization overhead)
     local_n = length(a)
-    all_ns = MPI.Allgather(local_n, comm)  # Vector{Int64} of length nranks
+    all_ns = MPI.Allgather(local_n, comm)  # Vector{Int} of length nranks
 
-    element_owners = Vector{Int64}(undef, local_n)
+    element_owners = Vector{T}(undef, local_n)
 
     if rank == 0
         total_n = sum(all_ns)
-        flat_elements = Vector{Int64}(undef, total_n)
+        flat_elements = Vector{T}(undef, total_n)
         MPI.Gatherv!(a, MPI.VBuffer(flat_elements, Cint.(all_ns)), 0, comm)
 
         # Determine ownership for each global point
-        element_owner_map = Dict{Int64, Int64}()
-        ownership_counts  = zeros(Int64, nranks)
+        element_owner_map = Dict{T, T}()
+        ownership_counts  = zeros(Int, nranks)
         offset = 0
         for r in 0:nranks-1
             sz = all_ns[r+1]
             for i in offset+1:offset+sz
                 el    = flat_elements[i]
-                owner = Int64(r)
+                owner = T(r)
                 if !haskey(element_owner_map, el)
                     element_owner_map[el] = owner
                 else
@@ -2141,10 +2150,10 @@ function find_gip_owner(a)
             offset += sz
         end
 
-        # Build flat result array
-        all_owners_result = Int64[element_owner_map[flat_elements[i]] for i in 1:total_n]
+        # Build flat result array (same eltype as `a` so the Scatterv types match)
+        all_owners_result = T[element_owner_map[flat_elements[i]] for i in 1:total_n]
 
-        # Scatter ownership results back to each rank using raw Int64 buffers
+        # Scatter ownership results back to each rank
         MPI.Scatterv!(MPI.VBuffer(all_owners_result, Cint.(all_ns)), element_owners, 0, comm)
     else
         MPI.Gatherv!(a, nothing, 0, comm)
