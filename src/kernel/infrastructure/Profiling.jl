@@ -48,6 +48,9 @@ const PHASE_HALO      = 6     # (reserved for a later step) MPI halo exchange
 const PHASE_CPL_SETUP  = 7    # one-time coupling handshake / data receive
 const PHASE_CPL_INTERP = 8    # per-step interpolation of the solution to Alya pts
 const PHASE_CPL_COMM   = 9    # per-step MPI send of the packed data to Alya
+# RHS sub-phase (step 3b): within a `rhs` region, the inter-rank assembly.
+# Time in the `rhs` region NOT marked as comm is the volume/flux compute.
+const PHASE_RHS_COMM   = 10   # DSS_global_RHS! -> assemble_mpi! (RHS MPI assembly)
 
 """
     Profiling.enabled() -> Bool
@@ -140,10 +143,12 @@ function init(rank::Integer = 0)
         m.register(EV_PHASE, "Jexpresso phase",
                    UInt64[PHASE_NONE, PHASE_SEM_SETUP, PHASE_INIT,
                           PHASE_PARAMS, PHASE_TIMELOOP, PHASE_RHS, PHASE_HALO,
-                          PHASE_CPL_SETUP, PHASE_CPL_INTERP, PHASE_CPL_COMM],
+                          PHASE_CPL_SETUP, PHASE_CPL_INTERP, PHASE_CPL_COMM,
+                          PHASE_RHS_COMM],
                    String["idle", "sem_setup", "initialize", "params_setup",
                           "time_loop", "rhs", "halo_exchange",
-                          "coupling_setup", "coupling_interp", "coupling_comm"])
+                          "coupling_setup", "coupling_interp", "coupling_comm",
+                          "rhs_comm"])
         _dbg(rank, "init: register done -> tracing ACTIVE")
         if rank == 0
             @info "Jexpresso: Extrae tracing ACTIVE (JEXPRESSO_EXTRAE set; already_initialised=$already)."
@@ -255,5 +260,14 @@ function region_end()
     emit(EV_PHASE, PHASE_NONE)
     return nothing
 end
+
+"""
+    Profiling.mark(phase)
+
+Emit a phase-value change on the EV_PHASE event WITHOUT touching the
+user-function region stack — for marking a sub-phase inside an already-open
+region (e.g. the MPI-assembly span inside a `rhs` region). No-op when inactive.
+"""
+mark(phase::Integer) = emit(EV_PHASE, phase)
 
 end # module Profiling

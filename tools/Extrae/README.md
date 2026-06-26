@@ -275,6 +275,13 @@ What is instrumented so far (this is being added incrementally):
 | `coupling_interp` | per-step interpolation of the solution to Alya points | `src/kernel/coupling/couplingStructs.jl` |
 | `coupling_comm` | per-step MPI send of the packed data to Alya | `src/kernel/coupling/couplingStructs.jl` |
 | `rhs` | every RHS evaluation (each RK stage) | `src/kernel/operators/rhs.jl` (`rhs!` wrapper around `_rhs_impl!`) |
+| `rhs_comm` | the RHS inter-rank MPI assembly (`DSS_global_RHS!` → `assemble_mpi!`) inside each `rhs` region | `src/kernel/operators/rhs.jl` |
+
+Within each `rhs` region the "Jexpresso phase" event reads `rhs` during the
+volume/flux **compute** and switches to `rhs_comm` for the **MPI assembly**, so
+you can read off compute-vs-communication time inside the RHS itself. (The
+assembly is marked with `Profiling.mark`, which only changes the phase event —
+it does not open a nested user-function region.)
 
 The coupling regions only appear in a coupled run (`JEXPRESSO_COUPLED=1`,
 i.e. Jexpresso launched alongside Alya/AlyaProxy). In the Paraver timeline you
