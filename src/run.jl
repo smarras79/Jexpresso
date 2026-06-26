@@ -262,6 +262,22 @@ if JEXPRESSO_COUPLING_ENABLED
 end
 
 #--------------------------------------------------------
+# Pre-load the lazy AMR / GridapP4est mesh dependencies HERE, at top level, so
+# the world age advances before the driver runs. The gmsh reader `using`-s
+# GridapP4est lazily (`_ensure_amr_loaded!()`) and then immediately calls its
+# constructors (UniformlyRefinedForestOfOctreesDiscreteModel, …); doing that load
+# *inside* the driver call would make the freshly added methods "too new for the
+# running world" — a world-age error on the FIRST mesh read of a session (it only
+# "worked" before when GridapP4est happened to be warm from a previous run).
+# Loading it as its own top-level statement (the world advances between top-level
+# statements) fixes it. Gated on gmsh so non-gmsh cases keep the lazy behaviour;
+# `_ensure_amr_loaded!()` is a no-op after the first call.
+#--------------------------------------------------------
+if get(inputs, :lread_gmsh, false)
+    _ensure_amr_loaded!()
+end
+
+#--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
 # UX: this is the boundary where PartitionedArrays' with_mpi block
