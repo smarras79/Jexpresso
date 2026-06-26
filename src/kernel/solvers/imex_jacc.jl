@@ -129,6 +129,25 @@ function jacc_spmv!(y, A::JaccSparseCSR, x)
     return y
 end
 
+# CPU fast path. On the threaded CPU backend `JACC.parallel_for` spawns tasks on
+# every call (~2 KB/call), which — multiplied over every BiCGSTAB iteration of
+# every stage of every step — doubled this case's allocation. When the operands
+# are plain host `Vector`s (CPU run) a serial `@inbounds` loop is identical in
+# result and allocation-free; GPU device arrays still dispatch to the
+# JACC.parallel_for method above. This keeps the kernels portable while making
+# the CPU JACC path as allocation-light as the direct-LU path.
+function jacc_spmv!(y::Vector, A::JaccSparseCSR{<:Vector, <:Vector}, x::Vector)
+    rowptr = A.rowptr; colind = A.colind; nzval = A.nzval
+    @inbounds for i in 1:A.n
+        acc = zero(eltype(y))
+        for k in rowptr[i]:(rowptr[i + 1] - 1)
+            acc += nzval[k] * x[colind[k]]
+        end
+        y[i] = acc
+    end
+    return y
+end
+
 #----------------------------------------------------------------------------
 # Matrix-free BiCGSTAB on the device.
 #

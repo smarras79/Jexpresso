@@ -58,6 +58,21 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         @test resnorm ≤ 1e-8 * norm(b)
     end
 
+    @testset "jacc_spmv! is allocation-free on the CPU path" begin
+        # Regression guard: the CPU Vector dispatch must NOT go through
+        # JACC.parallel_for, whose threaded/serial CPU backend allocates per call
+        # (152 KB/call at 1 thread) and doubled this case's allocation.
+        n  = 1000
+        A  = sprand(n, n, 0.05) + 2.0 * I
+        Aj = JaccSparseCSR(A)
+        x  = JACC.Array(rand(n))
+        y  = JACC.Array(zeros(n))
+        jacc_spmv!(y, Aj, x)                       # warm up / compile
+        if y isa Vector                            # CPU JACC backend only
+            @test (@allocated jacc_spmv!(y, Aj, x)) == 0
+        end
+    end
+
     @testset "jacc_bicgstab! reproduces the sparse-LU solve (CPU path parity)" begin
         # The constant-operator CPU path (_imex_rk_run_const!) solves each stage
         # with a cached sparse LU (lu/ldiv!), i.e. exactly `A \ b`. The JACC path
