@@ -13,17 +13,6 @@ function driver(nparts,
     rank = MPI.Comm_rank(comm)
 
     #---------------------------------------------------------
-    # Time span (shared by both standalone and coupled paths).
-    #---------------------------------------------------------
-    if inputs[:lamr] == true
-        amr_freq = inputs[:amr_freq]
-        Δt_amr   = amr_freq * inputs[:Δt]
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + inputs[:amr_start_time] + Δt_amr)]
-    else
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
-    end
-
-    #---------------------------------------------------------
     # Mesh + initial state (+ coupling object in MPMD mode).
     #
     #   - Coupled path:  setup_coupling_and_mesh does sem_setup +
@@ -96,6 +85,11 @@ function driver(nparts,
 
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     end
+    #---------------------------------------------------------
+    # Time span (shared by both standalone and coupled paths).
+    #---------------------------------------------------------
+    # Build tspan after initialize() so VTK/HDF5 restarts that update inputs[:tinit] are reflected.
+    tspan = build_tspan(inputs, TFloat)
 
     #---------------------------------------------------------
     # Parameters setup (shared).
