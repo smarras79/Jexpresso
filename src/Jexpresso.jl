@@ -459,8 +459,23 @@ added constructor is "too new for the running world" (a Julia world-age error).
 Loading it here, ahead of the run, sidesteps that.
 
 `using CUDA: CUDABackend` imports only the backend type (not all of CUDA's
-exports), which avoids the `CUDA.CG` ↔ `Jexpresso.CG` name clash. Also nudges
-JACC onto its CUDA backend so the IMEX implicit solve runs on the device.
+exports), which avoids the `CUDA.CG` ↔ `Jexpresso.CG` name clash.
+
+IMPORTANT — JACC backend is a COMPILE-TIME preference. `JACC.set_backend("cuda")`
+only writes a preference; JACC reads it when it loads, so it does NOT take effect
+until you RESTART Julia. To actually run the JACC solve on the GPU:
+
+    using CUDA, JACC
+    JACC.set_backend("cuda")     # one-time; writes LocalPreferences.toml
+    # ... exit and restart Julia ...
+    # then, in the fresh session:
+    using CUDA, JACC
+    using Jexpresso
+    Jexpresso.jacc_status()      # confirm: array type is a CuArray, GPU = YES
+
+`enable_cuda!()` is only needed for a full-GPU case that sets
+`:backend => CUDABackend()` (e.g. `Burgers/case2d_imex_sl_gpu`); the hybrid
+offload case keeps `:backend => CPU()` and just needs JACC on its CUDA backend.
 
     using Jexpresso
     Jexpresso.enable_cuda!()
@@ -474,11 +489,34 @@ function enable_cuda!()
         using CUDA: CUDABackend
     end
     try
-        @eval Jexpresso (JACC.set_backend("cuda"))
+        @eval Jexpresso (JACC.set_backend("cuda"))   # writes preference; needs a restart
     catch err
         @warn "enable_cuda!: JACC.set_backend(\"cuda\") failed; configure JACC's CUDA backend manually (LocalPreferences.toml)." exception = err
     end
     return nothing
+end
+
+"""
+    Jexpresso.jacc_status() -> Bool
+
+Print JACC's active backend (via the type `JACC.Array` returns) and whether the
+JACC solve will run on the GPU. Use it to verify the setup BEFORE a long run:
+a `CuArray`/`ROCArray` type means GPU; a plain `Array` (`Vector`) means JACC is on
+its CPU (`threads`) backend and the IMEX offload solve will run on the CPU.
+
+JACC's backend is fixed at load time from a preference, so if this prints "NO"
+you must `JACC.set_backend("cuda")` and RESTART Julia (see [`enable_cuda!`](@ref)).
+Returns `true` when JACC is on a GPU backend.
+"""
+function jacc_status()
+    a = JACC.Array(zeros(4))
+    on_gpu = !(a isa Array)
+    println(" # JACC array type : ", typeof(a))
+    println(" # JACC on GPU?    : ", on_gpu ? "YES" : "NO  (CPU / 'threads' backend)")
+    if !on_gpu
+        println(" # To enable the GPU: `using CUDA, JACC; JACC.set_backend(\"cuda\")`, then RESTART Julia.")
+    end
+    return on_gpu
 end
 
 """
@@ -550,6 +588,93 @@ function run_case(eqs::AbstractString, eqs_case::AbstractString;
     # `enable_cuda!()`).
     Base.invokelatest(Base.include, @__MODULE__, joinpath(@__DIR__, "run.jl"))
     return nothing
+end
+
+
+"""
+    Jexpresso.run_imex_precision_study(eqs, eqs_case;
+                                       precisions = (Float16, Float32, Float64),
+                                       backend = nothing, CI_MODE = false,
+                                       outfile = "imex_precision_study.csv")
+
+Run an IMEX/JACC-offload case once per solve precision and collect diagnostics.
+
+Only the offloaded implicit solve `(I - λL)x = b` runs in each precision; the
+host pipeline (mesh, `rhs!`, assembly, output) always runs in `TFloat`. The case
+must use the offload path (`:limex_jacc => true`, `:limex_jacc_offload => true`),
+e.g. `Burgers/case2d_imex_sl_gpu_hybrid`. Pass `backend = :cuda` to run the solve
+on the GPU.
+
+Returns a `Vector` of per-run diagnostic NamedTuples (precision, BiCGSTAB
+iterations, residual norms, non-converged solves, solve wall-time, final ‖u‖₂),
+prints a comparison table, and writes them to `outfile` (CSV; pass `nothing` to
+skip).
+
+    using Jexpresso
+    Jexpresso.run_imex_precision_study("Burgers", "case2d_imex_sl_gpu_hybrid"; backend = :cuda)
+"""
+function run_imex_precision_study(eqs::AbstractString, eqs_case::AbstractString;
+                                  precisions = (Float16, Float32, Float64),
+                                  backend::Union{Symbol,Nothing} = nothing,
+                                  CI_MODE::Bool = false,
+                                  outfile::Union{AbstractString,Nothing} = "imex_precision_study.csv")
+    results = Any[]
+    for P in precisions
+        IMEX_JACC_LAST_DIAG[]       = nothing
+        IMEX_JACC_SOLVE_PRECISION[] = P
+        try
+            run_case(eqs, eqs_case; CI_MODE = CI_MODE, backend = backend)
+        finally
+            IMEX_JACC_SOLVE_PRECISION[] = nothing
+        end
+        d = IMEX_JACC_LAST_DIAG[]
+        if d === nothing
+            @warn "run_imex_precision_study: no diagnostics for $P — is the case on the JACC offload path (:limex_jacc && :limex_jacc_offload)?"
+        else
+            push!(results, d)
+        end
+    end
+    _print_imex_precision_table(results)
+    (outfile === nothing || isempty(results)) || _write_imex_precision_csv(results, outfile)
+    return results
+end
+
+function _print_imex_precision_table(results)
+    if isempty(results)
+        println(" # IMEX precision study: no diagnostics collected.")
+        return
+    end
+    ref = nothing
+    for d in results
+        d.precision === Float64 && (ref = d)
+    end
+    ref === nothing && (ref = results[end])
+    println()
+    println(" # ===== IMEX/JACC implicit-solve precision study =====")
+    @printf("  %-9s %4s %8s %8s %11s %11s %5s %9s %16s %12s\n",
+            "precision", "dev", "nsolve", "avg_it", "mean_res", "max_res",
+            "ncnv", "solve_s", "final||u||2", "d||u|| vs f64")
+    for d in results
+        @printf("  %-9s %4s %8d %8.2f %11.3e %11.3e %5d %9.3f %16.8e %12.3e\n",
+                string(d.precision), d.on_gpu ? "GPU" : "CPU", d.nsolve, d.avg_iters,
+                d.mean_resnorm, d.max_resnorm, d.nonconverged, d.solve_seconds,
+                d.final_unorm, d.final_unorm - ref.final_unorm)
+    end
+    println(" #   (d||u|| vs f64 = drift of the final solution norm from the double-precision run)")
+    println()
+end
+
+function _write_imex_precision_csv(results, outfile)
+    open(outfile, "w") do io
+        println(io, "precision,device,nsteps,nsolve,total_iters,avg_iters,mean_resnorm,max_resnorm,nonconverged,solve_seconds,final_unorm")
+        for d in results
+            @printf(io, "%s,%s,%d,%d,%d,%.6f,%.6e,%.6e,%d,%.6f,%.10e\n",
+                    string(d.precision), d.on_gpu ? "GPU" : "CPU", d.nsteps, d.nsolve,
+                    d.total_iters, d.avg_iters, d.mean_resnorm, d.max_resnorm,
+                    d.nonconverged, d.solve_seconds, d.final_unorm)
+        end
+    end
+    println(" # IMEX precision study diagnostics written to: ", outfile)
 end
 
 

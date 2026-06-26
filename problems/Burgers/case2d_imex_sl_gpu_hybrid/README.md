@@ -26,21 +26,52 @@ a host sparse mat-vec.
 
 ## Run
 
-On a node with an NVIDIA GPU and CUDA.jl in the project:
+> **JACC's backend is a compile-time preference.** It is read when JACC loads, so
+> setting it to CUDA requires a **Julia restart** — a runtime `set_backend` does
+> not switch the current session. This is the #1 reason the solve "runs on the
+> CPU" despite a GPU being present.
+
+**One-time setup** (writes `LocalPreferences.toml`):
 
 ```julia
+using CUDA, JACC
+JACC.set_backend("cuda")
+```
+**Then exit and restart Julia.** In the fresh session:
+
+```julia
+using CUDA, JACC
 using Jexpresso
-Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu_hybrid"; backend = :cuda)
+Jexpresso.jacc_status()        # MUST show a CuArray type and "GPU? YES"
+Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu_hybrid")
 ```
 
-`backend = :cuda` loads CUDA and points JACC at the GPU; the case itself keeps
-`:backend => CPU()`, so the Jexpresso compute backend stays on the host. For AMD
-GPUs use `backend = :amdgpu`. If CUDA is not loaded (JACC on its CPU backend) the
-solve simply runs on the CPU — still correct.
+No `backend = :cuda` kwarg is needed: this case keeps `:backend => CPU()`, so only
+JACC needs to be on its CUDA backend. The run's banner prints the solve array type
+(`CuArray` ⇒ GPU, `Vector` ⇒ CPU) and warns if it fell back to the CPU. For AMD
+GPUs use `JACC.set_backend("amdgpu")` + AMDGPU.
 
 Requirements: CUDA.jl in the project (`] add CUDA`), a functional NVIDIA GPU
 (`using CUDA; CUDA.functional()`), and the mesh
 `./meshes/gmsh_grids/hexa_TFI_10x10_burgers2d.msh`.
+
+## Precision study (half / single / double)
+
+Only the offloaded solve's precision is configurable (`:imex_jacc_solve_precision`,
+default = host precision); the host pipeline always runs in `TFloat`. To sweep
+half/single/double and collect diagnostics in one call:
+
+```julia
+using CUDA, JACC; using Jexpresso          # JACC already on its CUDA backend (restarted)
+Jexpresso.run_imex_precision_study("Burgers", "case2d_imex_sl_gpu_hybrid")
+```
+
+It runs the case once per precision `(Float16, Float32, Float64)`, prints a
+comparison table (BiCGSTAB iterations, residual norms, non-converged solves,
+solve wall-time, final ‖u‖₂ and its drift from the double run) and writes
+`imex_precision_study.csv`. Each run also prints its own diagnostics block at the
+end. Note: pure `Float16` BiCGSTAB often will **not** reach a tight tolerance —
+that (large residual / non-converged count) is itself the diagnostic.
 
 ## Performance note
 

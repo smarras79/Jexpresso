@@ -126,6 +126,44 @@ include(joinpath(PROJECT_ROOT, "src", "kernel", "solvers", "imex_jacc.jl"))
         @test norm(x_h .- x_ref) ≤ 1e-9 * norm(x_ref)
     end
 
+    @testset "multi-precision solve (half / single / double)" begin
+        # Mirrors the precision study: build the operator in double on the host,
+        # solve in S = Float32/Float64 (and Float16 best-effort), with the
+        # host↔device staging casts the offload runner performs.
+        n  = 1000
+        K  = spdiagm(-1 => fill(-1.0, n-1), 0 => fill(2.0, n), 1 => fill(-1.0, n-1))
+        Minv = 0.5 .+ rand(n)
+        A    = sparse(1.0I, n, n) - 1.0e-3 * (-1.0e-2 * (Minv .* K))
+        rhs_h = A * rand(n)                       # host double rhs
+        x_ref = A \ rhs_h
+
+        for (S, tol) in ((Float64, 1e-9), (Float32, 1e-4))
+            A_d  = JaccSparseCSR(A; float_type = S)
+            b_d  = JACC.Array(zeros(S, n)); x_d = JACC.Array(zeros(S, n))
+            work = ntuple(_ -> JACC.Array(zeros(S, n)), 6)
+            rhs_s = Vector{S}(undef, n); rhs_s .= rhs_h         # T -> S
+            copyto!(b_d, rhs_s)
+            conv, _, _ = jacc_bicgstab!(x_d, A_d, b_d, work; rtol = tol, atol = tol/100, itmax = 2000)
+            x_h = zeros(n); x_s = Vector{S}(undef, n)
+            copyto!(x_s, x_d); x_h .= x_s                       # S -> T
+            @test conv
+            @test norm(x_h .- x_ref) ≤ 10tol * norm(x_ref)
+        end
+
+        # Float16: must run and stay finite (it may not reach a tight tolerance).
+        let S = Float16
+            A_d  = JaccSparseCSR(A; float_type = S)
+            b_d  = JACC.Array(zeros(S, n)); x_d = JACC.Array(zeros(S, n))
+            work = ntuple(_ -> JACC.Array(zeros(S, n)), 6)
+            rhs_s = Vector{S}(undef, n); rhs_s .= rhs_h
+            copyto!(b_d, rhs_s)
+            jacc_bicgstab!(x_d, A_d, b_d, work; rtol = 1e-3, atol = 1e-5, itmax = 500)
+            x_h = zeros(n); x_s = Vector{S}(undef, n)
+            copyto!(x_s, x_d); x_h .= x_s
+            @test all(isfinite, x_h)
+        end
+    end
+
     @testset "jacc_bicgstab! handles a zero RHS" begin
         n  = 32
         A  = sprand(n, n, 0.3) + 2.0 * I

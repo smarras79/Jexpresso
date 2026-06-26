@@ -43,6 +43,14 @@
 # (src/kernel/solvers), where imex_jacc.jl also lives.
 include(joinpath(@__DIR__, "imex_jacc.jl"))
 
+# Precision study hooks for the JACC offload path. When
+# `IMEX_JACC_SOLVE_PRECISION[]` is a concrete type (Float16/Float32/Float64) it
+# overrides `inputs[:imex_jacc_solve_precision]` for the device solve; the
+# offload runner stashes that run's diagnostics in `IMEX_JACC_LAST_DIAG` so
+# `run_imex_precision_study` can collect them across runs.
+const IMEX_JACC_SOLVE_PRECISION = Ref{Union{DataType,Nothing}}(nothing)
+const IMEX_JACC_LAST_DIAG       = Ref{Any}(nothing)
+
 function imex_time_loop!(inputs, params, u)
 
     comm = get_mpi_comm()
@@ -856,13 +864,23 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
                                           Δt, k, nl_atol, nl_rtol, max_nl_iter,
                                           tinit, tend, dosetimes, neqs, npoint, rank)
 
-    T = eltype(u)
+    T = eltype(u)                 # host precision (the Jexpresso pipeline runs in T)
     n = length(u)
     index_type = (TInt === Int32) ? Int32 : Int
 
-    # Host buffers / stage vectors (u is a host array on the CPU backend).
+    # Precision of the device SOLVE only. A global override (set by
+    # run_imex_precision_study) wins over the input; otherwise the input, else T.
+    S = IMEX_JACC_SOLVE_PRECISION[]
+    if S === nothing
+        S = get(inputs, :imex_jacc_solve_precision, T)
+    end
+    S === nothing && (S = T)
+
+    # Host buffers / stage vectors (u is a host array on the CPU backend, in T).
     rhs_h    = fill!(similar(u), zero(T))
     x_h      = fill!(similar(u), zero(T))
+    rhs_s    = Vector{S}(undef, n)   # host staging in solve precision (T -> S)
+    x_s      = Vector{S}(undef, n)   # host staging in solve precision (S -> T)
     U_stages = [fill!(similar(u), zero(T)) for _ in 1:k]
     S_store  = [fill!(similar(u), zero(T)) for _ in 1:k]
     L_store  = [fill!(similar(u), zero(T)) for _ in 1:k]
@@ -870,13 +888,13 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
     # Raw host operator L (for L(U_i) = L * U_i on the host).
     L_raw = build_L(u, tinit, params)
 
-    # Per-stage operators I - λ_i L assembled on the host and uploaded to the
-    # device as CSR (deduplicated by λ_i, as in the host path). The host sparse
-    # copy is kept only so a `bcs_fun!` that mutates the matrix has something to
-    # act on; the solve uses the device CSR.
+    # Per-stage operators I - λ_i L assembled on the host (double) and uploaded to
+    # the device as CSR in the SOLVE precision S (deduplicated by λ_i). The host
+    # sparse copy is kept only so a `bcs_fun!` that mutates the matrix has
+    # something to act on; the solve uses the device CSR.
     λs    = [Δt * A_RK_tilde[i, i] for i in 1:k]
     A0_h  = L_update(u, tinit, λs[1])
-    A0_d  = JaccSparseCSR(A0_h; index_type = index_type, float_type = T)
+    A0_d  = JaccSparseCSR(A0_h; index_type = index_type, float_type = S)
     Ahost = Vector{typeof(A0_h)}(undef, k)
     Adev  = Vector{typeof(A0_d)}(undef, k)
     Ahost[1] = A0_h
@@ -894,14 +912,14 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
             Adev[i]  = Adev[reuse]
         else
             Ahost[i] = L_update(u, tinit, λs[i])
-            Adev[i]  = JaccSparseCSR(Ahost[i]; index_type = index_type, float_type = T)
+            Adev[i]  = JaccSparseCSR(Ahost[i]; index_type = index_type, float_type = S)
         end
     end
 
-    # Device vectors for the solve (CuArrays when JACC backend == CUDA).
-    b_d    = JACC.Array(zeros(T, n))
-    x_d    = JACC.Array(zeros(T, n))
-    work_d = ntuple(_ -> JACC.Array(zeros(T, n)), 6)
+    # Device vectors for the solve, in precision S (CuArrays when JACC backend == CUDA).
+    b_d    = JACC.Array(zeros(S, n))
+    x_d    = JACC.Array(zeros(S, n))
+    work_d = ntuple(_ -> JACC.Array(zeros(S, n)), 6)
     itmax  = get(inputs, :imex_jacc_itmax, max(500, 10 * Int(ceil(sqrt(npoint)))))
 
     # Where is the GPU load? The solve arrays are a CuArray (GPU) when JACC is on
@@ -916,15 +934,34 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
         println(" #   │                assembly, L(u) mat-vec, solution update, output")
         println(" #   │   GPU (dev)  : per-stage implicit solve (I - λL)x = b  [BiCGSTAB]")
         println(" #   │   solve array type : ", typeof(x_d))
+        println(" #   │   solve precision  : ", S, "   (host pipeline in ", T, ")")
         println(" #   │   running on GPU?  : ", on_gpu ? "YES" : "NO  (JACC CPU backend / no GPU)")
         println(" #   │   device operators : ", n_ops, " distinct (I - λL) CSR uploaded once")
         println(" #   └────────────────────────────────────────────────────────────────")
         if !on_gpu
-            @warn "IMEX/JACC offload: solve arrays are host Arrays — the GPU is NOT being used. Run with `backend = :cuda` so JACC is on its CUDA backend (and CUDA.functional() is true)."
+            @warn """
+            IMEX/JACC offload is running on the CPU (JACC array type = $(typeof(x_d))).
+            JACC picks its backend from a COMPILE-TIME preference, so it cannot be
+            switched mid-session — `enable_cuda!()` / `backend = :cuda` only writes the
+            preference for the NEXT session. To run the solve on the GPU, do this ONCE
+            and then RESTART Julia:
+                using CUDA, JACC
+                JACC.set_backend("cuda")        # writes LocalPreferences.toml
+                # ... exit and restart Julia ...
+            then `using CUDA, JACC` again and re-run. Verify with `Jexpresso.jacc_status()`
+            that the array type is a CuArray before the run.
+            """
         end
         println()
     end
-    nsolve = 0   # count of implicit solves carried out on the device
+
+    # Diagnostics accumulators for this run.
+    nsolve    = 0
+    tot_iters = 0
+    nonconv   = 0
+    res_sum   = 0.0
+    res_max   = 0.0
+    solve_ns  = UInt64(0)
 
     t_n          = tinit
     n_step       = 0
@@ -955,15 +992,22 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
             # Offload the linear solve (I - λL) U_i = rhs to the device. The
             # operator is linear, so a single BiCGSTAB solve (iterating to
             # tolerance internally) is exact up to that tolerance.
-            trace && print(@sprintf("   [GPU] step 0 stage %d: solving (I-λL)x=b on device ... ", i))
-            copyto!(b_d, rhs_h)                       # host -> device
-            conv, bi, _ = jacc_bicgstab!(x_d, Adev[i], b_d, work_d;
-                                         rtol = nl_rtol, atol = nl_atol, itmax = itmax)
-            copyto!(x_h, x_d)                         # device -> host
-            nsolve += 1
-            trace && println(@sprintf("done (%d BiCGSTAB iters), x copied back to host", bi))
-            if !conv && rank == 0
-                @warn "IMEX/JACC offload BiCGSTAB did not converge (stage $i, step $n_step): $bi iters"
+            trace && print(@sprintf("   [GPU] step 0 stage %d: solving (I-λL)x=b on device [%s] ... ", i, string(S)))
+            rhs_s .= rhs_h                            # T -> S (host cast)
+            copyto!(b_d, rhs_s)                       # host -> device
+            t0 = time_ns()
+            conv, bi, rn = jacc_bicgstab!(x_d, Adev[i], b_d, work_d;
+                                          rtol = nl_rtol, atol = nl_atol, itmax = itmax)
+            solve_ns += time_ns() - t0
+            copyto!(x_s, x_d)                         # device -> host (S)
+            x_h .= x_s                                # S -> T
+            nsolve    += 1
+            tot_iters += bi
+            conv || (nonconv += 1)
+            rnf = Float64(rn); res_sum += rnf; res_max = max(res_max, rnf)
+            trace && println(@sprintf("done (%d iters, ‖res‖=%.2e), x copied back to host", bi, rnf))
+            if !conv && rank == 0 && n_step == 0
+                @warn "IMEX/JACC offload BiCGSTAB did not reach tol in $(string(S)) (stage $i, step 0): $bi iters, ‖res‖=$(rnf). Reduced precision may not converge; see end-of-run diagnostics."
             end
             U_stages[i] .+= x_h
 
@@ -1002,11 +1046,34 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
         _imex_write(params, u, t_n, iout, inputs)
     end
 
+    # Stash and print this run's diagnostics (collected by run_imex_precision_study).
+    unorm = sqrt(Float64(sum(abs2, u)))
+    diag = (precision     = S,
+            on_gpu        = on_gpu,
+            nsteps        = n_step,
+            nsolve        = nsolve,
+            total_iters   = tot_iters,
+            avg_iters     = nsolve > 0 ? tot_iters / nsolve : 0.0,
+            mean_resnorm  = nsolve > 0 ? res_sum / nsolve : 0.0,
+            max_resnorm   = res_max,
+            nonconverged  = nonconv,
+            solve_seconds = solve_ns / 1.0e9,
+            final_unorm   = unorm)
+    IMEX_JACC_LAST_DIAG[] = diag
+
     if rank == 0
         println()
-        println(" #   └─ IMEX/JACC offload done: ", nsolve, " implicit solves (I-λL)x=b on ",
-                on_gpu ? "the GPU device" : "the CPU (JACC host backend)",
-                "; rhs!/assembly/output ran on the CPU.")
+        println(" #   ┌─ IMEX/JACC offload diagnostics ────────────────────────────────")
+        @printf(" #   │   solve precision     : %s   (host pipeline %s, device %s)\n",
+                string(S), string(T), on_gpu ? "GPU" : "CPU")
+        @printf(" #   │   implicit solves     : %d   over %d steps\n", nsolve, n_step)
+        @printf(" #   │   BiCGSTAB iterations : %d total, %.2f avg/solve\n", tot_iters, diag.avg_iters)
+        @printf(" #   │   residual ‖b-Ax‖     : %.3e mean, %.3e max\n", diag.mean_resnorm, res_max)
+        @printf(" #   │   non-converged solves: %d  (of %d)\n", nonconv, nsolve)
+        @printf(" #   │   solve wall time     : %.3f s   (%.1f µs/solve)\n",
+                diag.solve_seconds, nsolve > 0 ? diag.solve_seconds / nsolve * 1.0e6 : 0.0)
+        @printf(" #   │   final ‖u‖₂           : %.10e\n", unorm)
+        println(" #   └────────────────────────────────────────────────────────────────")
         println()
     end
 

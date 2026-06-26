@@ -10,16 +10,27 @@ function user_inputs()
     # (incompletely ported) GPU pipeline is exercised — only the JACC BiCGSTAB
     # solver touches the device.
     #
-    # Run it with `backend = :cuda`, which loads CUDA for JACC (the Jexpresso
-    # compute backend still resolves to CPU from this file):
+    # IMPORTANT — JACC's backend is a COMPILE-TIME preference, so it must be set
+    # to CUDA and Julia RESTARTED before JACC will use the GPU (a runtime
+    # set_backend does NOT switch the current session). One-time setup:
     #
+    #     using CUDA, JACC
+    #     JACC.set_backend("cuda")          # writes LocalPreferences.toml
+    #     # ... exit and restart Julia ...
+    #
+    # Then, in the fresh session:
+    #
+    #     using CUDA, JACC
     #     using Jexpresso
-    #     Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu_hybrid"; backend = :cuda)
+    #     Jexpresso.jacc_status()           # MUST print a CuArray type / GPU = YES
+    #     Jexpresso.run_case("Burgers", "case2d_imex_sl_gpu_hybrid")
     #
-    # Requirements: CUDA.jl in the project, a functional NVIDIA GPU, and the mesh
-    # ./meshes/gmsh_grids/hexa_TFI_10x10_burgers2d.msh. If CUDA is not loaded /
-    # JACC is on its CPU backend, the solve simply runs on the CPU (still
-    # correct). For AMD GPUs use `backend = :amdgpu`.
+    # No `backend = :cuda` kwarg is needed here: this case keeps :backend => CPU(),
+    # so only JACC needs to be on its CUDA backend. If JACC is on its CPU backend
+    # the solve simply runs on the CPU (still correct — and the run prints a
+    # warning saying so). Requirements: CUDA.jl in the project, a functional
+    # NVIDIA GPU, and the mesh ./meshes/gmsh_grids/hexa_TFI_10x10_burgers2d.msh.
+    # For AMD GPUs use JACC.set_backend("amdgpu") + AMDGPU.
     #--------------------------------------------------------------------------
 
     #--------------------------------------------------------------------------
