@@ -1047,6 +1047,8 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
     end
 
     # Stash and print this run's diagnostics (collected by run_imex_precision_study).
+    # `final_u` (a host copy of the final solution, in the host precision) lets the
+    # study compute the true relative solution error vs the double-precision run.
     unorm = sqrt(Float64(sum(abs2, u)))
     diag = (precision     = S,
             on_gpu        = on_gpu,
@@ -1058,7 +1060,9 @@ function _imex_rk_run_const_jacc_offload!(u, build_L, L_update, S_fun!, bcs_fun!
             max_resnorm   = res_max,
             nonconverged  = nonconv,
             solve_seconds = solve_ns / 1.0e9,
-            final_unorm   = unorm)
+            us_per_solve  = nsolve > 0 ? solve_ns / nsolve / 1.0e3 : 0.0,
+            final_unorm   = unorm,
+            final_u       = Array{Float64}(u))
     IMEX_JACC_LAST_DIAG[] = diag
 
     if rank == 0
