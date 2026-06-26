@@ -274,6 +274,7 @@ What is instrumented so far (this is being added incrementally):
 | `coupling_setup` | one-time Jexpresso↔Alya handshake / data receive | `src/run.jl` |
 | `coupling_interp` | per-step interpolation of the solution to Alya points | `src/kernel/coupling/couplingStructs.jl` |
 | `coupling_comm` | per-step MPI send of the packed data to Alya | `src/kernel/coupling/couplingStructs.jl` |
+| `rhs` | every RHS evaluation (each RK stage) | `src/kernel/operators/rhs.jl` (`rhs!` wrapper around `_rhs_impl!`) |
 
 The coupling regions only appear in a coupled run (`JEXPRESSO_COUPLED=1`,
 i.e. Jexpresso launched alongside Alya/AlyaProxy). In the Paraver timeline you

@@ -118,7 +118,24 @@ function reset∇fToZero!(params)
     fill!(params.∇f,  zero(params.T))
 end
 
+# Thin Extrae tracing wrapper around the RHS evaluation (step 3a of the
+# Extrae integration). When tracing is inactive — the normal case — this is a
+# single Ref read plus a tail call to the real implementation, so it adds no
+# measurable overhead and no allocation. When active it brackets each RHS
+# evaluation in a PHASE_RHS Paraver region (exception-safe via try/finally).
+# The integrator still calls `rhs!`, so the ODEFunction registration is
+# unchanged.
 function rhs!(du, u, params, time)
+    Profiling.is_active() || return _rhs_impl!(du, u, params, time)
+    Profiling.region_begin(Profiling.PHASE_RHS)
+    try
+        return _rhs_impl!(du, u, params, time)
+    finally
+        Profiling.region_end()
+    end
+end
+
+function _rhs_impl!(du, u, params, time)
     backend = params.inputs[:backend]
     # for @timers, do not delete
     timers = params.timers
