@@ -115,7 +115,7 @@ function user_inputs()
         # Time integration (acoustic CFL ⇒ Δt; raise :tend to ~700 s for the
         # full bubble rise — kept short here so the example finishes quickly)
         #-------------------------------------------------------------------
-        :tend       => 200.0,
+        :tend       => 1000.0,
         :wave_speed => 360.0,                  # ≈ sound speed for the CFL Δt
         :CFL        => 0.5,
         #-------------------------------------------------------------------
@@ -123,7 +123,7 @@ function user_inputs()
         #-------------------------------------------------------------------
         :output_dir => joinpath(@__DIR__, "output_euler_theta"),
         :outformat  => "png",
-        :ndiagnostics_outputs => 20,
+        :ndiagnostics_outputs => 100,
         :plot_live  => true,
     )
 end
