@@ -93,7 +93,7 @@ function user_inputs()
         # Space, discretization, structured grid over the bubble box
         #-------------------------------------------------------------------
         :nsd        => 2,
-        :method     => :fd,                    # structured FD (self-contained)
+        :method     => :sem,                    # structured FD (self-contained)
         :periodic   => false,
         :xmin       => 0.0,  :xmax => 10000.0,
         :ymin       => 0.0,  :ymax => 10000.0,
