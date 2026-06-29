@@ -33,7 +33,8 @@ using Plots                # PNG output + on-the-fly window, exactly as in Jexpr
 import LinearAlgebra: ⋅    # overloaded for the symbolic DSL: ∇⋅F = divergence
 
 export solve, parse_equation, FDMesh1D, FDMesh2D, Field, ascii_plot
-export ∇, Δ, ∂t, ⋅, @vars      # symbolic equation DSL
+export ∇, Δ, ∂t, ∂x, ∂y, ⋅, @vars      # symbolic equation DSL
+export solve_system, build_system       # coupled systems (e.g. the Euler θ equations)
 
 #---------------------------------------------------------------------------------
 # 1. Normalization: turn LaTeX shortcuts into the unicode the parser expects
@@ -753,6 +754,30 @@ end
 
 fneg(a::Field) = Field(a.mesh, a.rank, [-ac for ac in a.comp])
 
+# --- per-direction first derivative ∂/∂xᵢ on a scalar field (flux-form systems) -
+# This is the single directional primitive the divergence already uses, exposed
+# directly so a conservation law can be written component-wise as
+# `∂t(q) + ∂x(Fx) + ∂y(Fy) = S`. It returns a scalar field (rank unchanged at 0).
+function deriv_dir(f::Field, dir::Int)
+    f.rank == 0 ||
+        error("SymbolicFD: ∂x/∂y act on a scalar (rank-0) field; got rank $(f.rank).")
+    return Field(f.mesh, 0, [deriv1(f.comp[1], f.mesh, dir)])
+end
+
+"elementwise division of two scalar fields (e.g. the velocity u = ρu/ρ)."
+function fdivf(a::Field, b::Field)
+    (a.rank == 0 && b.rank == 0) ||
+        error("SymbolicFD: `/` is an elementwise operation on scalar (rank-0) fields.")
+    return Field(a.mesh, 0, [a.comp[1] ./ b.comp[1]])
+end
+
+"elementwise power of a scalar field by a constant exponent (e.g. the gas law (ρθ)^γ)."
+function fpowf(a::Field, p::Float64)
+    a.rank == 0 ||
+        error("SymbolicFD: `^` is an elementwise operation on a scalar (rank-0) field.")
+    return Field(a.mesh, 0, [a.comp[1] .^ p])
+end
+
 #---------------------------------------------------------------------------------
 # 4. The expression tree (AST) and the recursive-descent parser
 #
@@ -1049,7 +1074,18 @@ Base.:-(a::Node)          = Node(:neg; args = [a])
 Base.:*(a::Node, b::Node) = Node(:mul; args = [a, b])
 Base.:*(a::Node, b)       = Node(:mul; args = [a, tonode(b)])
 Base.:*(a,       b::Node) = Node(:mul; args = [tonode(a), b])
-Base.:/(a::Node, b::Real) = Node(:mul; args = [a, tonode(1 / b)])
+Base.:/(a::Node, b::Real) = Node(:mul;  args = [a, tonode(1 / b)])
+Base.:/(a::Node, b::Node) = Node(:fdiv; args = [a, b])          # elementwise field ÷ field
+Base.:/(a,       b::Node) = Node(:fdiv; args = [tonode(a), b])
+Base.:^(a::Node, p::Real) = Node(:fpow; val = Float64(p), args = [a])   # field .^ constant
+
+# directional first derivatives ∂x, ∂y : the flux-form primitive for systems
+struct Dx end                              # ∂x
+struct Dy end                              # ∂y
+const ∂x = Dx()
+const ∂y = Dy()
+(::Dx)(x) = Node(:dx; args = [tonode(x)])
+(::Dy)(x) = Node(:dy; args = [tonode(x)])
 
 """
     @vars q u μ ...
@@ -1157,22 +1193,40 @@ _eval_func(fun, m::AbstractFDMesh) =
     nsd(m) == 1 ? Float64[fun(xi) for xi in m.x] :
                   Float64[fun(m.x[ip], m.y[ip]) for ip in 1:m.npoin]
 
-function eval_node(n::Node, qf::Field)
+# The state `st` the tree is evaluated against is either a single `Field` (the
+# scalar path: any `:var` is THE unknown) or a `name -> Field` environment (the
+# system path: each `:var` is looked up by name among the prognostic unknowns).
+@inline _mesh(qf::Field)            = qf.mesh
+@inline _mesh(env::AbstractDict)    = first(values(env)).mesh
+@inline _lookup_var(qf::Field, ::String) = qf
+@inline _lookup_var(env::AbstractDict, name::String) =
+    get(() -> error("SymbolicFD: no field bound to unknown `$name` in the system state."),
+        env, name)
+
+function eval_node(n::Node, st)
     op = n.op
-    op == :const    && return const_field(qf.mesh, n.val)
-    op == :func     && return Field(qf.mesh, 0, [_eval_func(n.fun, qf.mesh)])
-    op == :vecconst && return vec_const_field(qf.mesh, n.vec)
-    op == :var      && return qf
-    op == :grad     && return gradient(eval_node(n.args[1], qf))
-    op == :div      && return divergence(eval_node(n.args[1], qf))
-    op == :lap      && return laplacian(eval_node(n.args[1], qf))
-    op == :mul      && return fmul(eval_node(n.args[1], qf), eval_node(n.args[2], qf))
-    op == :dot      && return fdot(eval_node(n.args[1], qf), eval_node(n.args[2], qf))
-    op == :add      && return fadd(eval_node(n.args[1], qf), eval_node(n.args[2], qf),  1.0)
-    op == :sub      && return fadd(eval_node(n.args[1], qf), eval_node(n.args[2], qf), -1.0)
-    op == :neg      && return fneg(eval_node(n.args[1], qf))
+    op == :const    && return const_field(_mesh(st), n.val)
+    op == :func     && return Field(_mesh(st), 0, [_eval_func(n.fun, _mesh(st))])
+    op == :vecconst && return vec_const_field(_mesh(st), n.vec)
+    op == :var      && return _lookup_var(st, n.name)
+    op == :grad     && return gradient(eval_node(n.args[1], st))
+    op == :div      && return divergence(eval_node(n.args[1], st))
+    op == :lap      && return laplacian(eval_node(n.args[1], st))
+    op == :dx       && return deriv_dir(eval_node(n.args[1], st), 1)   # ∂/∂x
+    op == :dy       && return deriv_dir(eval_node(n.args[1], st), 2)   # ∂/∂y
+    op == :mul      && return fmul(eval_node(n.args[1], st), eval_node(n.args[2], st))
+    op == :fdiv     && return fdivf(eval_node(n.args[1], st), eval_node(n.args[2], st))
+    op == :fpow     && return fpowf(eval_node(n.args[1], st), n.val)
+    op == :dot      && return fdot(eval_node(n.args[1], st), eval_node(n.args[2], st))
+    op == :add      && return fadd(eval_node(n.args[1], st), eval_node(n.args[2], st),  1.0)
+    op == :sub      && return fadd(eval_node(n.args[1], st), eval_node(n.args[2], st), -1.0)
+    op == :neg      && return fneg(eval_node(n.args[1], st))
     error("SymbolicFD: cannot evaluate node $(op).")
 end
+
+# parenthesize a child when it is a sum/difference sitting inside a tighter
+# operator (·, /, ^, ⋅), so the banner reads unambiguously.
+_astp(n::Node) = (n.op in (:add, :sub, :neg)) ? string("(", ast_str(n), ")") : ast_str(n)
 
 "pretty-print an AST node back to unicode, for the run banner."
 function ast_str(n::Node)
@@ -1186,8 +1240,12 @@ function ast_str(n::Node)
     op == :grad     && return string("∇(", ast_str(n.args[1]), ")")
     op == :div      && return string("∇⋅(", ast_str(n.args[1]), ")")
     op == :lap      && return string("∇²(", ast_str(n.args[1]), ")")
-    op == :mul      && return string(ast_str(n.args[1]), "·", ast_str(n.args[2]))
-    op == :dot      && return string(ast_str(n.args[1]), "⋅", ast_str(n.args[2]))
+    op == :dx       && return string("∂x(", ast_str(n.args[1]), ")")
+    op == :dy       && return string("∂y(", ast_str(n.args[1]), ")")
+    op == :fdiv     && return string(_astp(n.args[1]), "/", _astp(n.args[2]))
+    op == :fpow     && return string(_astp(n.args[1]), "^", @sprintf("%.4g", n.val))
+    op == :mul      && return string(_astp(n.args[1]), "·", _astp(n.args[2]))
+    op == :dot      && return string(_astp(n.args[1]), "⋅", _astp(n.args[2]))
     op == :add      && return string(ast_str(n.args[1]), " + ", ast_str(n.args[2]))
     op == :sub      && return string(ast_str(n.args[1]), " - ", ast_str(n.args[2]))
     op == :neg      && return string("-", ast_str(n.args[1]))
@@ -1298,6 +1356,150 @@ function rk4_step!(q, rhs!, dt, w::RK4Work)
     @. w.qt = q +     dt*w.k3 ; rhs!(w.k4, w.qt)
     @. q += (dt/6) * (w.k1 + 2w.k2 + 2w.k3 + w.k4)
     return q
+end
+
+#---------------------------------------------------------------------------------
+# 7b. Systems of equations — the Euler θ (potential-temperature) case.
+#
+# Everything above (the operator algebra, the AST, the directional primitives) is
+# per-scalar-field; a SYSTEM is just several residual equations sharing a mesh,
+# each carrying its own ∂t(·) unknown, with fluxes that reference the OTHER
+# unknowns. The compressible Euler equations in conservative θ form, 2D, are the
+# canonical example (problems/CompEuler/theta, the rising thermal bubble):
+#
+#   ∂ρ /∂t + ∂x(ρu)            + ∂y(ρv)            = 0
+#   ∂ρu/∂t + ∂x(ρu·u + p)      + ∂y(ρu·v)          = 0
+#   ∂ρv/∂t + ∂x(ρv·u)          + ∂y(ρv·v + p)      = -ρ g
+#   ∂ρθ/∂t + ∂x(ρθ·u)          + ∂y(ρθ·v)          = 0
+#       with  u = ρu/ρ,  v = ρv/ρ,  p = C₀ (ρθ)^γ   (perfect-gas law for θ).
+#
+# As in Jexpresso's `theta` (which runs `:SOL_VARS_TYPE => PERT()`), we evolve the
+# PERTURBATION about a hydrostatic background ρ̄(y), (ρθ)‾(y), p̄(y) with ∂p̄/∂y =
+# -ρ̄g.  Writing the prognostic unknowns as the perturbations (ρ',ρu,ρv,(ρθ)') and
+# pp = p - p̄, the scheme is DISCRETELY well balanced: at rest pp ≡ 0 pointwise
+# and the gravity source -ρ'g vanishes, so the background is preserved to machine
+# precision regardless of the stencil. The whole system is written symbolically
+# with @vars + ∂x/∂y + the field algebra, and discretized by the SAME operators.
+#---------------------------------------------------------------------------------
+# replace :sym leaves: unknowns -> :var (keep the name), others -> resolved param
+function resolve_syms_sys(n::Node, unknowns::Set{String}, inputs::Dict)
+    n.op == :sym && return n.name in unknowns ? Node(:var; name = n.name) :
+                                                _resolve_param(n.name, inputs)
+    isempty(n.args) && return n
+    return Node(n.op; val = n.val, vec = n.vec, name = n.name, fun = n.fun,
+                args = [resolve_syms_sys(a, unknowns, inputs) for a in n.args])
+end
+
+# move the (resolved) residual `R = 0` for unknown `var` to `∂var/∂t = dqdt`
+function _dqdt_from_residual(resolved::Node, var::String)
+    terms  = flatten!(Tuple{Float64,Node}[], resolved, 1.0)
+    signed = Tuple{Float64,Node}[]
+    dt_found = false
+    for (sg, nd) in terms
+        if nd.op == :dt
+            nd.name == var ||
+                error("SymbolicFD: the equation for `$var` also contains ∂$(nd.name)/∂t.")
+            sg == 1.0 || error("SymbolicFD: the ∂$var/∂t term must enter with a + sign.")
+            dt_found = true
+        else
+            push!(signed, (-sg, nd))             # everything else moves across `=`
+        end
+    end
+    dt_found || error("SymbolicFD: an equation in the system has no ∂$var/∂t term.")
+    isempty(signed) && return Node(:const; val = 0.0)
+    s1, n1 = signed[1]
+    dqdt = s1 == 1.0 ? n1 : Node(:neg; args = [n1])
+    for (sg, nd) in signed[2:end]
+        dqdt = Node(sg == 1.0 ? :add : :sub; args = [dqdt, nd])
+    end
+    return dqdt
+end
+
+"""
+    build_system(eqs, inputs) -> (unknowns::Vector{String}, rhs::Vector{Node}, repr::Vector{String})
+
+Turn a vector of symbolic residual equations (each `= 0`, each with exactly one
+`∂t(·)` term naming its prognostic unknown) into the ordered list of unknowns and
+one right-hand-side tree `∂uᵢ/∂t = rhs[i]` per equation. Unknown symbols are kept
+as `:var` references (looked up against the evolving system state); every other
+symbol is resolved from `inputs` (scalar / vector / function of x as usual).
+"""
+function build_system(eqs::AbstractVector, inputs::Dict)
+    isempty(eqs) && error("SymbolicFD: the system has no equations.")
+    nodes = Node[e isa Node ? e :
+                 error("SymbolicFD: each system equation must be a symbolic residual (a Node).")
+                 for e in eqs]
+    unknowns = String[]
+    for e in nodes
+        nm = _find_dt_name(e)
+        nm == "" && error("SymbolicFD: every equation in a system needs a ∂t(·) term.")
+        nm in unknowns && error("SymbolicFD: two equations evolve the same unknown `$nm`.")
+        push!(unknowns, nm)
+    end
+    uset = Set(unknowns)
+    rhs_nodes = Node[]; reprs = String[]
+    for (i, e) in enumerate(nodes)
+        resolved = resolve_syms_sys(e, uset, inputs)
+        push!(reprs, string(ast_str(resolved), " = 0"))
+        push!(rhs_nodes, _dqdt_from_residual(resolved, unknowns[i]))
+    end
+    return unknowns, rhs_nodes, reprs
+end
+
+# system RHS closure: Q and dQ are neqs component vectors; bind each unknown to
+# its current field, evaluate every equation's tree, write back ∂uᵢ/∂t.
+function build_system_rhs(unknowns::Vector{String}, rhs_nodes::Vector{Node}, mesh::AbstractFDMesh)
+    neq = length(unknowns)
+    function rhs!(dQ::Vector{Vector{Float64}}, Q::Vector{Vector{Float64}})
+        env = Dict{String,Field}()
+        for i in 1:neq
+            env[unknowns[i]] = scalar_field(mesh, Q[i])     # aliases Q[i]; ops allocate
+        end
+        for i in 1:neq
+            r = eval_node(rhs_nodes[i], env)
+            r.rank == 0 ||
+                error("SymbolicFD: equation $(i) ($(unknowns[i])) evaluated to a rank-$(r.rank) " *
+                      "field; each conservation law must be a scalar balance.")
+            copyto!(dQ[i], r.comp[1])
+        end
+        return dQ
+    end
+    return rhs!
+end
+
+# explicit RK4 for a system (vector of component vectors)
+struct SysRK4Work
+    k1::Vector{Vector{Float64}}; k2::Vector{Vector{Float64}}
+    k3::Vector{Vector{Float64}}; k4::Vector{Vector{Float64}}
+    qt::Vector{Vector{Float64}}
+end
+SysRK4Work(neq::Int, n::Int) =
+    SysRK4Work([zeros(n) for _ in 1:neq], [zeros(n) for _ in 1:neq],
+               [zeros(n) for _ in 1:neq], [zeros(n) for _ in 1:neq],
+               [zeros(n) for _ in 1:neq])
+
+function rk4_step_sys!(Q::Vector{Vector{Float64}}, rhs!, dt, w::SysRK4Work)
+    neq = length(Q)
+    rhs!(w.k1, Q)
+    for i in 1:neq; @. w.qt[i] = Q[i] + 0.5dt * w.k1[i]; end ; rhs!(w.k2, w.qt)
+    for i in 1:neq; @. w.qt[i] = Q[i] + 0.5dt * w.k2[i]; end ; rhs!(w.k3, w.qt)
+    for i in 1:neq; @. w.qt[i] = Q[i] +     dt * w.k3[i]; end ; rhs!(w.k4, w.qt)
+    for i in 1:neq
+        @. Q[i] += (dt/6) * (w.k1[i] + 2w.k2[i] + 2w.k3[i] + w.k4[i])
+    end
+    return Q
+end
+
+# initial state: :q0 returns the neqs component values at a node, (x,y)->(…)
+function eval_q0_sys(q0fun, mesh::AbstractFDMesh, neq::Int)
+    Q = [zeros(mesh.npoin) for _ in 1:neq]
+    for ip in 1:mesh.npoin
+        vals = nsd(mesh) == 2 ? q0fun(mesh.x[ip], mesh.y[ip]) : q0fun(mesh.x[ip])
+        length(vals) == neq ||
+            error("SymbolicFD: :q0 must return $neq values per node, got $(length(vals)).")
+        for i in 1:neq; Q[i][ip] = Float64(vals[i]); end
+    end
+    return Q
 end
 
 #---------------------------------------------------------------------------------
@@ -1454,6 +1656,8 @@ function solve(residual::Node, inputs::Dict)    # symbolic Node input: build_fro
     var, mode, node, repr = build_from_residual(residual, inputs)
     return _run(var, mode, node, repr, inputs)
 end
+# a VECTOR of residual Nodes ⇒ a coupled system (e.g. the Euler θ equations)
+solve(eqs::AbstractVector, inputs::Dict) = solve_system(eqs, inputs)
 
 # mesh factory: 1D, structured 2D, or the gmsh-read Jexpresso 2D SEM mesh
 function build_mesh(inputs::Dict)
@@ -1583,6 +1787,121 @@ function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
     println("="^72)
 
     return mesh, q0, q
+end
+
+#---------------------------------------------------------------------------------
+# 9b. System driver — time-march a coupled system (the Euler θ equations).
+#
+# Mirrors `_run` (the scalar transient path) but carries `neqs` component vectors
+# through the system RHS and the system RK4. Output: a CSV with all components and
+# a PNG snapshot of a diagnostic field (default the last unknown; override with
+# `:diag => (Q, mesh) -> Vector`, e.g. the potential-temperature perturbation).
+#---------------------------------------------------------------------------------
+"""
+    solve_system(eqs, inputs) -> (mesh, Q0, Q)
+
+Solve a coupled, transient system of conservation laws written symbolically. `eqs`
+is a vector of residual `Node`s (one per equation, each with a single `∂t(·)`
+unknown), built with `@vars`, the operators `∂x`, `∂y`, `∇`, `∇²`, and the field
+algebra `+ - * / ^`. The canonical use is the 2D compressible Euler equations in
+potential-temperature form (the rising thermal bubble of `problems/CompEuler/theta`).
+
+`Q0` and `Q` are `Vector{Vector{Float64}}`, one component vector per unknown, in
+the order the equations are given. Recognised keys are those of `solve` plus:
+
+- `:q0`    initial condition `(x,y) -> (u₁, …, u_neqs)` (one tuple per node)
+- `:Δt`    fixed time step; otherwise CFL·Δx / `:wave_speed` (default 350 m/s)
+- `:diag`  `(Q, mesh) -> Vector` plotted/printed as the diagnostic (default `Q[end]`)
+- `:diag_name`  label for that diagnostic field (default the last unknown's name)
+"""
+function solve_system(eqs::AbstractVector, inputs::Dict)
+    unknowns, rhs_nodes, reprs = build_system(eqs, inputs)
+    return _run_system(unknowns, rhs_nodes, reprs, inputs)
+end
+
+function _run_system(unknowns::Vector{String}, rhs_nodes::Vector{Node},
+                     reprs::Vector{String}, inputs::Dict)
+    neq    = length(unknowns)
+    nsd_in = Int(get(inputs, :nsd, 2))
+    mesh   = build_mesh(merge(inputs, Dict(:nsd => nsd_in)))
+
+    println("="^72)
+    println(" SymbolicFD : composing operators for a coupled system ($neq equations)")
+    println("   method          : ", method_name(mesh.disc))
+    for i in 1:neq
+        println(@sprintf("   ∂%-3s/∂t = %s", unknowns[i], ast_str(rhs_nodes[i])))
+    end
+    println("   nsd = $nsd_in, npoin = $(mesh.npoin), domain = ", _domain_str(mesh), ", ",
+            mesh.periodic ? "periodic" : "non-periodic")
+    println("="^72)
+
+    outdir = String(get(inputs, :output_dir, "."))
+    isdir(outdir) || mkpath(outdir)
+    usepng = lowercase(String(get(inputs, :outformat, "png"))) == "png"
+    live   = Bool(get(inputs, :plot_live, true))
+
+    haskey(inputs, :q0) ||
+        error("SymbolicFD: a system solve needs an initial condition " *
+              "`:q0 => (x,y) -> (...)` returning the $neq components [" *
+              join(unknowns, ", ") * "].")
+    Q0 = eval_q0_sys(inputs[:q0], mesh, neq)
+    Q  = [copy(c) for c in Q0]
+
+    # diagnostic field (default = last unknown, e.g. the (ρθ)' perturbation)
+    diag_fun  = get(inputs, :diag, (QQ, m) -> QQ[end])
+    diag_name = String(get(inputs, :diag_name, unknowns[end]))
+
+    # time step: explicit :Δt, else an acoustic CFL with a user wave speed
+    cfl   = Float64(get(inputs, :CFL, 0.5))
+    cwave = Float64(get(inputs, :wave_speed, 350.0))           # ~ sound speed (m/s)
+    tend  = Float64(get(inputs, :tend, 1.0))
+    dt    = haskey(inputs, :Δt) ? Float64(inputs[:Δt]) : cfl * mesh.Δx / cwave
+    nsteps = max(1, ceil(Int, tend / dt)); dt = tend / nsteps
+    rhs! = build_system_rhs(unknowns, rhs_nodes, mesh)
+    @printf("   Δt = %.3e, nsteps = %d, t_end = %.4g\n", dt, nsteps, tend)
+
+    plot_diag(t, it) = usepng &&
+        plot_field_png_2d(mesh, diag_fun(Q, mesh), diag_name, @sprintf("t=%.4g", t),
+                          outdir, it; live = live, init = (it == 0))
+
+    nout      = max(1, Int(get(inputs, :ndiagnostics_outputs, 10)))
+    out_every = max(1, cld(nsteps, nout))
+    plot_diag(0.0, 0)
+
+    w, iout = SysRK4Work(neq, mesh.npoin), 0
+    for sstep in 1:nsteps
+        rk4_step_sys!(Q, rhs!, dt, w)
+        if sstep % out_every == 0 || sstep == nsteps
+            iout += 1
+            t = sstep * dt
+            usepng && plot_diag(t, iout)
+            d = diag_fun(Q, mesh)
+            @printf("   output %3d : t = %.4g, %s ∈ [%.4g, %.4g]\n",
+                    iout, t, diag_name, minimum(d), maximum(d))
+        end
+        all(c -> all(isfinite, c), Q) ||
+            error("SymbolicFD: the system blew up at step $sstep (non-finite values); " *
+                  "reduce :Δt / add viscosity (e.g. a `+ μ∇²(·)` term per equation).")
+    end
+
+    # data dump: x,y and every component (initial & final)
+    csv = joinpath(outdir, "solution.csv")
+    open(csv, "w") do io
+        hdr = ["x", "y"]
+        for u in unknowns; push!(hdr, "$(u)_0"); push!(hdr, "$(u)_f"); end
+        println(io, join(hdr, ","))
+        for ip in 1:mesh.npoin
+            row = @sprintf("%.10e,%.10e", mesh.x[ip], mesh.y[ip])
+            for i in 1:neq; row *= @sprintf(",%.10e,%.10e", Q0[i][ip], Q[i][ip]); end
+            println(io, row)
+        end
+    end
+    println("   wrote ", csv)
+    usepng && println("   wrote ", outdir, "/INIT-", diag_name, ".png and ",
+                      outdir, "/fields-it{0..", iout, "}.png")
+    println("="^72)
+
+    return mesh, Q0, Q
 end
 
 end # module

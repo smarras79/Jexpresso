@@ -93,9 +93,77 @@ fused divergence kernel exactly. `tools/SymbolicFD.jl/run_advdiff_2d.jl` is the
 2D analogue of `run_gaussian_1d.jl`, set up like `AdvDiff/kopriva` (gaussian blob
 at `(0,3)`, `u=(0.5,1.0)`, `μ=0.1`, periodic, read from the kopriva grid).
 
-`problems/CompEuler/sod1d`'s **DSGS** residual-based shock capturing
-(`src/kernel/physics/SGS.jl`) is the next follow-up (a discretization-agnostic
-artificial-viscosity field for both backends).
+Because `DSS` and `Minv` are linear, `∇⋅(F,G) = ∂F/∂x + ∂G/∂y` reproduces the
+fused divergence kernel exactly.
+
+## Systems of equations — the Euler θ case (`problems/CompEuler/theta`)
+
+The operators are per-scalar-field; a **system** is just several residual
+equations sharing a mesh, each carrying its own `∂t(·)` unknown, with fluxes that
+reference the *other* unknowns. The canonical example is the 2D compressible
+Euler equations in **potential-temperature (θ) form** — the rising thermal bubble
+of `problems/CompEuler/theta`:
+
+```
+∂ρ /∂t + ∂x(ρu)        + ∂y(ρv)        = 0
+∂ρu/∂t + ∂x(ρu·u + p′) + ∂y(ρu·v)      = 0
+∂ρv/∂t + ∂x(ρv·u)      + ∂y(ρv·v + p′) = -ρ′ g
+∂ρθ/∂t + ∂x(ρθ·u)      + ∂y(ρθ·v)      = 0
+        u = ρu/ρ,  v = ρv/ρ,  p = C₀ (ρθ)^γ   (perfect-gas law for θ)
+```
+
+Two small additions to the DSL make this writable verbatim, and they are the
+*natural* flux-form primitives (no equation templates, still pure operator
+algebra):
+
+| symbol      | node    | meaning                                  |
+|-------------|---------|------------------------------------------|
+| `∂x`, `∂y`  | `:dx/:dy` | directional first derivative `∂/∂xᵢ` (the same primitive `∇⋅` uses, exposed per component) |
+| `a/b`       | `:fdiv` | elementwise field division (`u = ρu/ρ`)  |
+| `a^γ`       | `:fpow` | elementwise power by a constant (`(ρθ)^γ`) |
+
+Pass a **vector of residual equations** to `solve`; each must have exactly one
+`∂t(·)` term naming its unknown. As in Jexpresso's `theta`
+(`:SOL_VARS_TYPE => PERT()`), we evolve the **perturbation** about a hydrostatic
+background ρ̄(y), (ρθ)‾(y), p̄(y) (with `∂p̄/∂y = −ρ̄g`); carrying the pressure
+perturbation `p′ = p − p̄` and the buoyancy source `−ρ′g` makes the scheme
+**discretely well balanced** — the resting background is preserved to machine
+precision regardless of the stencil (verified in `runtests.jl`).
+
+```julia
+@vars ρ ρu ρv ρθ ρb ρθb pb ν              # unknowns are the perturbations
+u  = ρu/(ρb + ρ);  v = ρv/(ρb + ρ)
+p′ = C0*(ρθb + ρθ)^γ - pb                  # γ, C0, g are ordinary numbers
+eqs = [ ∂t(ρ)  + ∂x(ρu)           + ∂y(ρv),
+        ∂t(ρu) + ∂x(ρu*u + p′)    + ∂y(ρu*v)         - ν*Δ(ρu),
+        ∂t(ρv) + ∂x(ρv*u)         + ∂y(ρv*v + p′)    - ν*Δ(ρv)  + ρ*g,
+        ∂t(ρθ) + ∂x((ρθb+ρθ)*u)   + ∂y((ρθb+ρθ)*v)   - ν*Δ(ρθ) ]
+mesh, Q0, Q = SymbolicFD.solve(eqs, inputs)   # ⇒ Vector of component fields
+```
+
+`tools/SymbolicFD.jl/run_euler_theta_2d.jl` is the system analogue of
+`run_advdiff_2d.jl`: it sets up the rising thermal bubble exactly as
+`problems/CompEuler/theta/initialize.jl` (warm anomaly `Δθ = θc(1−r/r0)`,
+`θref = 300 K`, `θc = 2 K`, at rest on the hydrostatic background) and time-marches
+it with the same RK4 driver. The small constant viscosity `ν` plays the role of
+Jexpresso's `:lvisc => true, :μ` artificial viscosity. Extra system inputs:
+
+| key          | meaning                                                       |
+|--------------|---------------------------------------------------------------|
+| `:q0`        | initial state `(x,y) -> (u₁,…,u_neqs)` (one tuple per node)    |
+| `:Δt`        | fixed step; else CFL·Δx / `:wave_speed` (default 350 m/s)      |
+| `:diag`      | `(Q, mesh) -> Vector` plotted/printed (default `Q[end]`)       |
+| `:diag_name` | label for that diagnostic (default the last unknown's name)   |
+
+```bash
+julia --project=. tools/SymbolicFD.jl/run_euler_theta_2d.jl
+```
+
+defaults to the self-contained structured-FD backend; flip `:method => :sem`
+with a `:gmsh_filename` to run the very same equations on a spectral-element gmsh
+grid through Jexpresso's `sem_setup` (the `∂x/∂y` then become the weak-form
+derivative on the read mesh). `problems/CompEuler/sod1d`'s **DSGS** residual-based
+shock capturing (`src/kernel/physics/SGS.jl`) remains the next follow-up.
 
 ## Example — write the equation as live symbols (no string)
 
@@ -234,6 +302,10 @@ Change the initial shape with `:q0`, e.g. a narrower gaussian
 
 - time derivative `∂q/∂t`;
 - gradient `∇q`, divergence `∇⋅(…)`, Laplacian `∇²q` / `Δq` / `∇⋅∇(q)`;
+- directional first derivatives `∂x(…)`, `∂y(…)` (symbolic DSL only — the
+  flux-form primitive for systems, see the Euler θ case above);
+- elementwise field division `a/b` and power `a^γ` (symbolic DSL only — for
+  closures like `u = ρu/ρ` and the gas law `(ρθ)^γ`);
 - products by juxtaposition (`uq` = `u*q`) or `*`; inner product `⋅`
   (`u⋅∇q`); sums/differences `+ −`;
 - single-character variable/parameter names (so `uq` reads unambiguously);

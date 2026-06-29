@@ -293,6 +293,97 @@ end
     end
 
     # ----------------------------------------------------------------------------
+    @testset "directional & algebra operators (∂x, ∂y, /, ^)" begin
+        m = S.FDMesh2D(Dict(:nsd => 2, :method => :fd, :periodic => true,
+                            :xmin => -1.0, :xmax => 1.0, :ymin => -1.0, :ymax => 1.0,
+                            :npoinx => 64, :npoiny => 64))
+        on(f) = Float64[f(m.x[ip], m.y[ip]) for ip in 1:m.npoin]
+        fld   = Field(m, 0, [on((x, y) -> sinpi(x) * sinpi(y))])
+        @test rel_l2(S.deriv_dir(fld, 1).comp[1], on((x, y) -> Float64(π) * cospi(x) * sinpi(y))) < 5e-3
+        @test rel_l2(S.deriv_dir(fld, 2).comp[1], on((x, y) -> Float64(π) * sinpi(x) * cospi(y))) < 5e-3
+        a = Field(m, 0, [on((x, y) -> 2.0 + sinpi(x))])
+        b = Field(m, 0, [on((x, y) -> 1.5 .+ 0.0 * x)])
+        @test S.fdivf(a, b).comp[1] ≈ a.comp[1] ./ b.comp[1]
+        @test S.fpowf(a, 1.4).comp[1] ≈ a.comp[1] .^ 1.4
+    end
+
+    # ----------------------------------------------------------------------------
+    @testset "Euler θ system (rising thermal bubble)" begin
+        # thermodynamics (PhysicalConst defaults)
+        Rair, cp, cv = 287.0, 1004.0, 717.0
+        γ    = cp / cv
+        g    = 9.80616
+        pref = 101200.0
+        C0   = (Rair^γ) / pref^(γ - 1.0)
+        θref = 300.0
+        p̄(x, y)  = pref * (1.0 - g * y / (cp * θref))^(cp / Rair)
+        ρθ̄(x, y) = (p̄(x, y) / C0)^(1 / γ)
+        ρ̄(x, y)  = ρθ̄(x, y) / θref
+
+        # the 2D compressible Euler equations in θ (PERT) form, fully symbolic
+        @vars ρ ρu ρv ρθ ρb ρθb pb ν
+        u  = ρu / (ρb + ρ)
+        v  = ρv / (ρb + ρ)
+        p′ = C0 * (ρθb + ρθ)^γ - pb
+        eqρ  = ∂t(ρ)  + ∂x(ρu)            + ∂y(ρv)
+        eqρu = ∂t(ρu) + ∂x(ρu*u + p′)     + ∂y(ρu*v)         - ν*Δ(ρu)
+        eqρv = ∂t(ρv) + ∂x(ρv*u)          + ∂y(ρv*v + p′)    - ν*Δ(ρv)  + ρ*g
+        eqρθ = ∂t(ρθ) + ∂x((ρθb + ρθ)*u)  + ∂y((ρθb + ρθ)*v) - ν*Δ(ρθ)
+        eqs  = [eqρ, eqρu, eqρv, eqρθ]
+        params = Dict(:ρb => ρ̄, :ρθb => ρθ̄, :pb => p̄, :ν => 0.0)
+
+        # the system is parsed into 4 conservation laws with the right unknowns
+        unknowns, rhs_nodes, _ = S.build_system(eqs, params)
+        @test unknowns == ["ρ", "ρu", "ρv", "ρθ"]
+        @test length(rhs_nodes) == 4
+
+        # WELL BALANCED: the hydrostatic background at rest is preserved exactly
+        # (pp ≡ 0 pointwise, buoyancy −ρ′g = 0 ⇒ ∂Q/∂t = 0 to machine precision)
+        mh = S.FDMesh2D(Dict(:nsd => 2, :method => :fd, :periodic => false,
+                             :xmin => 0.0, :xmax => 1000.0, :ymin => 0.0, :ymax => 1000.0,
+                             :npoinx => 20, :npoiny => 20))
+        rhs! = S.build_system_rhs(unknowns, rhs_nodes, mh)
+        Q  = [zeros(mh.npoin) for _ in 1:4]
+        dQ = [zeros(mh.npoin) for _ in 1:4]
+        rhs!(dQ, Q)
+        @test maximum(maximum.(abs, dQ)) < 1e-5
+
+        # a warm bubble at rest must accelerate UPWARD (buoyancy source sign)
+        xc, yc, r0, θc = 5000.0, 2500.0, 2000.0, 2.0
+        function q0(x, y)
+            r  = sqrt((x - xc)^2 + (y - yc)^2)
+            Δθ = r < r0 ? θc * (1.0 - r / r0) : 0.0
+            θ  = θref + Δθ
+            p  = pref * (1.0 - g * y / (cp * θ))^(cp / Rair)
+            ρ  = (p / C0)^(1 / γ) / θ
+            ρr = ρ̄(x, y)
+            return (ρ - ρr, 0.0, 0.0, ρ * θ - ρr * θref)
+        end
+        diag(Q, m) = [ (ρθ̄(m.x[ip], m.y[ip]) + Q[4][ip]) /
+                       (ρ̄(m.x[ip], m.y[ip]) + Q[1][ip]) - θref  for ip in 1:m.npoin ]
+        inp = merge(params, Dict(:nsd => 2, :method => :fd, :periodic => false,
+                    :xmin => 0.0, :xmax => 10000.0, :ymin => 0.0, :ymax => 10000.0,
+                    :npoinx => 40, :npoiny => 40, :ν => 15.0,
+                    :q0 => q0, :diag => diag, :diag_name => "dtheta",
+                    :tend => 40.0, :wave_speed => 360.0, :CFL => 0.5,
+                    :outformat => "ascii", :plot_live => false, :output_dir => mktempdir()))
+        mesh, Q0, Qf = SymbolicFD.solve(eqs, inp)
+        @test length(Qf) == 4 && length(Qf[1]) == 40 * 40
+        @test all(c -> all(isfinite, c), Qf)
+        @test maximum(Qf[3]) > 0.0                       # upward vertical momentum
+        # the θ diagnostic reconstructs the exact nodal bubble Δθ = θc(1−r/r0)
+        Δθ_nodal = [ (r = sqrt((mesh.x[ip] - xc)^2 + (mesh.y[ip] - yc)^2);
+                      r < r0 ? θc * (1.0 - r / r0) : 0.0)  for ip in 1:mesh.npoin ]
+        @test maximum(abs, diag(Q0, mesh) .- Δθ_nodal) < 1e-9
+        @test 0.0 < maximum(diag(Q0, mesh)) ≤ θc + 1e-9
+        @test isfile(joinpath(inp[:output_dir], "solution.csv"))
+
+        # a malformed system (an equation without a ∂t term) is rejected
+        @vars a b
+        @test_throws ErrorException S.build_system([∂t(a) + ∂x(b), ∂x(a)], Dict())
+    end
+
+    # ----------------------------------------------------------------------------
     @testset "end-to-end solve (ascii, no display)" begin
         dir = mktempdir()
         inputs = Dict(:nsd => 1, :xmin => -1.0, :xmax => 1.0, :npoin => 256,
