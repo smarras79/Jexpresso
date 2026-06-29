@@ -434,6 +434,18 @@ end
 # instead of problems/<eqs>/<eqs_case>; matches the third positional
 # arg of the historical command-line form.
 # ──────────────────────────────────────────────────────────────────────
+# Record of which case's user_*.jl files are currently loaded in this
+# session (case dir + per-file mtimes). run.jl consults this to skip
+# re-`include`ing them when the SAME case is re-run unchanged. Re-including
+# redefines user_flux!/user_source!/… which invalidates the compiled rhs!,
+# forcing the RHS + SciML integrator to recompile inside the warm-up on
+# every run_case call (the ~30 s "Precompile warm-up" freeze on a re-run).
+# Skipping the redundant include keeps an unchanged re-run launch-cost-only;
+# switching cases or editing any user_*.jl bumps the check so changes still
+# take effect.
+const _LOADED_CASE_DIR  = Ref{String}("")
+const _CASE_FILE_MTIMES = Dict{String,Float64}()
+
 """
     Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
 
