@@ -159,11 +159,30 @@ Jexpresso's `:lvisc => true, :μ` artificial viscosity. Extra system inputs:
 julia --project=. tools/SymbolicFD.jl/run_euler_theta_2d.jl
 ```
 
-defaults to the self-contained structured-FD backend; flip `:method => :sem`
-with a `:gmsh_filename` to run the very same equations on a spectral-element gmsh
-grid through Jexpresso's `sem_setup` (the `∂x/∂y` then become the weak-form
-derivative on the read mesh). `problems/CompEuler/sod1d`'s **DSGS** residual-based
-shock capturing (`src/kernel/physics/SGS.jl`) remains the next follow-up.
+defaults to the self-contained structured-FD backend.
+
+### The system runs on the SEM backend exactly like 1D
+
+`∂x`, `∂y` (and `Δ`) are **not** a new discretization: they call the same
+directional primitive `deriv1(·, mesh, dir)` that `∇`/`∇⋅`/`∇²` already use, which
+dispatches on the mesh's discretization. So on a spectral-element mesh the Euler
+θ system goes through **Jexpresso's existing SEM infrastructure** — the weak-form
+derivative of `rhs.jl`'s `_expansion_inviscid!` (`∂f/∂ξ·dξdx + ∂f/∂η·dηdx`, then
+`DSS` + `Minv`) — identically to the 1D path, with no change to the equations:
+
+| backend (`:method`) | `∂x`/`∂y` become … |
+|---------------------|---------------------|
+| `:fd`               | 2nd-order central differences (structured grid) |
+| `:sem` (structured) | tensor-product LGL weak derivative, reusing the **same 1D Jexpresso basis** |
+| `:sem` + `:gmsh_filename` | the weak derivative with full curvilinear metric terms on the **existing gmsh grid** (`sem_setup`), the mesh `problems/CompEuler/theta` runs on |
+
+Because `DSS` and `Minv` are linear, the flux divergence written component-wise as
+`∂x(Fx) + ∂y(Fy)` reproduces Jexpresso's *fused* inviscid divergence operator
+**exactly** (`runtests.jl` asserts the identity, and the well-balanced check, on
+the SEM mesh too). To switch, only the grid keys change — see the alternatives at
+the bottom of `run_euler_theta_2d.jl`. `problems/CompEuler/sod1d`'s **DSGS**
+residual-based shock capturing (`src/kernel/physics/SGS.jl`) remains the next
+follow-up.
 
 ## Example — write the equation as live symbols (no string)
 
