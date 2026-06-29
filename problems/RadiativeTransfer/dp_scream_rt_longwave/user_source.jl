@@ -1,7 +1,7 @@
-function user_source!(S::SubArray{Float64},
-                      q::SubArray{Float64}, 
-                      qe::SubArray{Float64},
-                      npoin::Int64,
+function user_source!(S,
+                      q, 
+                      qe,
+                      npoin,
                       ::CL, ::TOTAL;
                       neqs=1)
     
@@ -20,10 +20,10 @@ function user_source!(S::SubArray{Float64},
    
 end
 
-function user_source!(S::SubArray{Float64},
-                      q::SubArray{Float64}, 
-                      qe::SubArray{Float64},
-                      npoin::Int64,
+function user_source!(S,
+                      q, 
+                      qe,
+                      npoin,
                       ::CL, ::PERT;
                       neqs=1)
 
@@ -99,10 +99,13 @@ function user_scattering_coef(x,y,z)
 
 end
 
-function user_scattering_functions(θ,θ1,ϕ,ϕ1,HG)
+function user_scattering_functions(θ,θ1,ϕ,ϕ1,g)
+    # cos of scattering angle between directions (θ,ϕ) and (θ1,ϕ1)
+    cos_Θ = sin(θ)*sin(θ1)*cos(ϕ - ϕ1) + cos(θ)*cos(θ1)
+    cos_Θ = clamp(cos_Θ, -1.0, 1.0)   # guard against floating point outside [-1,1]
 
-    return (1/(3*π))*(1 + (cos(θ - θ1))^2)*(1+(cos(ϕ-ϕ1))^2)
-
+    # Henyey-Greenstein
+    return (1 - g^2) / ((4*π)*(1 + g^2 - 2*g*cos_Θ))^(3/2)
 end
 
 function user_rhs(x,y,z,θ,ϕ)
@@ -115,8 +118,8 @@ function user_rhs_sphere(x,y,z,θ,ϕ)
 end
 
 function user_rad_bc(x,y,z,θ,ϕ)
-    if ((abs(z-20000))<1e-5) #&& abs(x-2500)>1 && abs(x-47500)>1 && abs(y-2500)>1 && abs(y-47500)>1)
-        return exp(-((92/(2*π))*(θ-π))^2)
+    if ((abs(z-20000))<1e-5) #|| abs(x-2500)<1 || abs(x-47500)<1 || abs(y-2500)<1 || abs(y-47500)<1)
+        return exp(-((24/(2*π))*(θ-3*π/4))^2)* exp(-((48/(2*π))*(ϕ-π))^2)
     else
         return 0.0
     end

@@ -8,6 +8,7 @@ module Jexpresso
 
 using QuadGK
 using MPI
+MPI.Init()
 using KernelAbstractions
 # PERF: the following five `using`s eagerly load big package binaries
 # on every MPI rank (Revise ~150 MB, BenchmarkTools, SnoopCompile,
@@ -91,11 +92,8 @@ using Gridap.Adaptivity
 using GridapDistributed
 using PartitionedArrays
 using GridapGmsh
-# PERF: `using GridapP4est` (and its companion P4est_wrapper) moved
-# into Jexpresso._ensure_amr_loaded!(). They are only touched by AMR
-# / initial-refinement / restart-AMR code paths, all gated by
-# `inputs[:ladapt]`, `inputs[:linitial_refine]`, `inputs[:lamr]` or
-# `inputs[:lrestart_amr]`. city2d and other plain runs skip the load.
+using GridapP4est
+using P4est_wrapper
 
 using PrecompileTools
 
@@ -150,9 +148,21 @@ include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
 include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
 
+include(joinpath( "kernel", "physics", "shortwave_rad.jl"))
+
+include(joinpath( "kernel", "physics", "longwave_rad.jl"))
+
+include(joinpath( "kernel", "physics", "radiative_heating.jl"))
+
+include(joinpath( "kernel", "physics", "optical_depth_integral.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
+
+include(joinpath( "kernel", "mesh", "extra_mesh_spatial_amr.jl"))
+
+include(joinpath( "kernel", "mesh", "pole_handling.jl"))
 
 include(joinpath( "kernel", "bases", "basis_structs.jl"))
 
@@ -196,15 +206,23 @@ include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 
+include(joinpath("kernel", "operators", "asm_preconditioner.jl"))
+
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
-include(joinpath("kernel", "operators", "build_rad_2d.jl"))
-
-include(joinpath("kernel", "operators", "build_rad_3d.jl"))
+include(joinpath("kernel", "operators", "build_rad.jl"))
 
 include(joinpath( "kernel", "operators", "angular_comms.jl"))
 
+include(joinpath( "kernel", "operators", "spatial_amr_cache.jl"))
+
+include(joinpath( "kernel", "operators", "spatial_constraint_matrices.jl"))
+
+include(joinpath( "kernel", "operators", "spatial_ghost_comms.jl"))
+
 include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
+
+include(joinpath( "kernel", "operators", "element_refinement_tracking.jl"))
 
 include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
 
@@ -310,9 +328,13 @@ into Jexpresso's namespace. No-op after the first call.
 """
 function _ensure_rt_loaded!()
     _RT_LOADED[] && return nothing
+    # Import ClimaComms first in its own @eval so that the @static macro
+    # expansion in the next @eval sees ClimaComms already in scope.
+    # (Macros expand across the full @eval begin...end block before any
+    # statement executes, so a combined block would fail with UndefVarError.)
+    @eval Jexpresso import ClimaComms
+    @eval Jexpresso @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
     @eval Jexpresso begin
-        import ClimaComms
-        @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
         using RRTMGP
         using RRTMGP.Vmrs
         using RRTMGP.LookUpTables
@@ -327,7 +349,17 @@ function _ensure_rt_loaded!()
         using RRTMGP.ArtifactPaths
         import RRTMGP.Parameters.RRTMGPParameters
         import RRTMGP: get_artifact_path
+        # LinearOperators: used by Axb_rad_mpi.jl (matvec wrappers)
         using LinearOperators
+        # Preconditioner stack: used by asm_preconditioner.jl
+        using KLU
+        using ILUZero
+        using IncompleteLU
+        using Krylov
+        using AMD
+        using MUMPS
+        # KrylovPreconditioners: used by the 2D RT solver in build_rad.jl
+        using KrylovPreconditioners
     end
     # NCDatasets is also touched from this code path (Dataset(...) in
     # compute_radiative_fluxes!), so pull it in via its dedicated loader.
@@ -385,21 +417,12 @@ end
 #   * TimeIntegrators.jl :: write_p4est_checkpoint
 # All gated by `inputs[:ladapt]`, `inputs[:linitial_refine]`,
 # `inputs[:lamr]`, or `inputs[:lrestart_amr]`.
-const _AMR_LOADED = Ref(false)
-"""
-    Jexpresso._ensure_amr_loaded!()
-
-Lazily bring GridapP4est and P4est_wrapper into Jexpresso's namespace.
-Called from every entry point that touches the p4est forest. No-op
-after the first call.
-"""
+const _AMR_LOADED = Ref(true)
+# GridapP4est and P4est_wrapper are loaded eagerly at module load time
+# (top of Jexpresso.jl) to avoid Julia world-age errors: the @eval lazy-
+# load approach bumped the world counter after mesh.jl was compiled,
+# making OctreeDistributedDiscreteModel inaccessible from compiled code.
 function _ensure_amr_loaded!()
-    _AMR_LOADED[] && return nothing
-    @eval Jexpresso begin
-        using GridapP4est
-        using P4est_wrapper
-    end
-    _AMR_LOADED[] = true
     return nothing
 end
 

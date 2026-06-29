@@ -129,6 +129,21 @@ _case_load_files = [driver_file, user_input_file, user_flux_file,
 _need_case_reload = (_LOADED_CASE_DIR[] != case_name_dir) ||
     any(f -> get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f), _case_load_files)
 if _need_case_reload
+    # Clear all methods of the user_* dispatch functions before reloading.
+    # These functions are never defined in src/ — every method comes from a
+    # case file — so deleting them all is safe and avoids cross-case
+    # contamination (e.g. theta's user_source!/user_uout! persisting into
+    # an RT case or Wave_Train).  Path-based filtering was unreliable because
+    # m.file may use tilde-abbreviated or otherwise non-canonical paths.
+    for _fname in (:user_flux!, :user_source!, :user_bc_dirichlet!,
+                   :user_primitives!, :user_uout!)
+        if isdefined(@__MODULE__, _fname)
+            _func = getfield(@__MODULE__, _fname)
+            for _m in collect(methods(_func))
+                Base.delete_method(_m)
+            end
+        end
+    end
     for _f in _case_load_files
         include(_f)
         _CASE_FILE_MTIMES[_f] = mtime(_f)

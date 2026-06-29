@@ -1,4 +1,22 @@
+export St_extra_mesh
 export St_mesh
+
+Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}
+
+    extra_coords  = KernelAbstractions.zeros(backend,TFloat, dims1)
+    extra_coords_cart = KernelAbstractions.zeros(backend,TFloat, dims5)
+    extra_connijk = KernelAbstractions.zeros(backend,TInt, dims2)
+    extra_nelem::Union{TInt, Missing} = nelem
+    extra_npoin::Union{TInt, Missing} = npoin
+    extra_nop = KernelAbstractions.zeros(backend,TInt, dims3)
+    extra_metrics = allocate_metrics(NSD, dims4[1], dims4[2], dims4[3], TFloat, backend)
+    Minv = KernelAbstractions.zeros(backend,TFloat, npoin)
+    ωθ = KernelAbstractions.zeros(backend,TInt, 5)
+    ωϕ = KernelAbstractions.zeros(backend,TInt, 5)
+    ψ = KernelAbstractions.zeros(backend,TInt, 5,5)
+    dψ = KernelAbstractions.zeros(backend,TInt, 5,5)
+    ref_level = KernelAbstractions.zeros(backend,TInt,nelem)
+end
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
@@ -123,6 +141,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
     elem_to_face              = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0, 0)
+    elem_to_edge              = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0)
     edge_type                 = Array{Union{Nothing, String}}(nothing, 1)
     face_type                 = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type             = Array{Union{Nothing, String}}(nothing, 1)
@@ -194,5 +213,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     lneed_redistribute::Bool = false
 
     msg_suppress::Bool = false
+
+    extra_mesh = Array{St_extra_mesh}(undef, 0, 0)
 
 end

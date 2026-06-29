@@ -1,12 +1,12 @@
-function user_bc_dirichlet!(q::SubArray{Float64},
-                            x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
+function user_bc_dirichlet!(q,
+                            coords,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
                             nx, ny, nz,
                             xmin, xmax,
                             ymin, ymax,
                             zmin, zmax,
-                            qe::SubArray{Float64}, ::TOTAL)
+                            qe, ::TOTAL)
 
     qnl = nx*q[2] + ny*q[3] + nz*q[4]
     qbdy[2] = (q[2] - qnl*nx) 
@@ -15,15 +15,15 @@ function user_bc_dirichlet!(q::SubArray{Float64},
     
 end
 
-function user_bc_dirichlet!(q::SubArray{Float64},
-                            x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
+function user_bc_dirichlet!(q,
+                            coords,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
                             nx, ny, nz,
                             xmin, xmax,
                             ymin, ymax,
                             zmin, zmax,
-                            qe::SubArray{Float64}, ::PERT)
+                            qe, ::PERT)
 
     qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
     qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
@@ -31,12 +31,17 @@ function user_bc_dirichlet!(q::SubArray{Float64},
     qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, z::AbstractFloat, t::AbstractFloat, tag::String, inputs)
-    flux = zeros(size(q,2),1)
-    return flux
+
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
+
+    if (tag == "bottom")
+        F_edge[4] = 0.0
+    elseif (tag == "top")
+        F_edge[4] = 0.0
+    end
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,y,z,t,nx,ny,nz,qbdy,lpert)
+function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,nz,qbdy,lpert)
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
