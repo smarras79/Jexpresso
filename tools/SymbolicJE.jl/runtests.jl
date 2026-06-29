@@ -1,9 +1,9 @@
 #=---------------------------------------------------------------------------------
-# runtests.jl  --  analytic-solution and operator checks for SymbolicFD.jl
+# runtests.jl  --  analytic-solution and operator checks for SymbolicJE.jl
 #
 # Run inside the Jexpresso project environment (so Plots resolves):
 #
-#       julia --project=. tools/SymbolicFD.jl/runtests.jl
+#       julia --project=. tools/SymbolicJE.jl/runtests.jl
 #
 # Covers:
 #   1. differential operators (∇, ∇⋅, ∇²) vs. exact derivatives + 2nd-order
@@ -17,9 +17,9 @@
 
 using Test
 using LinearOperators
-include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
-using .SymbolicFD
-const S = SymbolicFD
+include(joinpath(@__DIR__, "src", "SymbolicJE.jl"))
+using .SymbolicJE
+const S = SymbolicJE
 
 # ---- helpers ---------------------------------------------------------------------
 make_mesh(N; xmin = -1.0, xmax = 1.0) =
@@ -46,7 +46,7 @@ function integrate_only(eqn, inputs, q0fun; tend, cfl = 0.4, Δt = nothing)
     return mesh, q0, q
 end
 
-@testset "SymbolicFD" begin
+@testset "SymbolicJE" begin
 
     # ----------------------------------------------------------------------------
     @testset "operators vs. exact derivatives" begin
@@ -185,7 +185,7 @@ end
                       :outformat => "ascii", :plot_live => false,
                       :output_dir => mktempdir())
         @vars q u μ
-        mesh, q0, q = SymbolicFD.solve(∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q), inputs)
+        mesh, q0, q = SymbolicJE.solve(∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q), inputs)
         @test length(q) == 64 * 64
         @test all(isfinite, q)
         m0 = S.integrate(mesh, q0); m1 = S.integrate(mesh, q)
@@ -437,7 +437,7 @@ end
                     :q0 => q0, :diag => diag, :diag_name => "dtheta",
                     :tend => 40.0, :wave_speed => 360.0, :CFL => 0.5,
                     :outformat => "ascii", :plot_live => false, :output_dir => mktempdir()))
-        mesh, Q0, Qf = SymbolicFD.solve(eqs, inp)
+        mesh, Q0, Qf = SymbolicJE.solve(eqs, inp)
         @test length(Qf) == 4 && length(Qf[1]) == 40 * 40
         @test all(c -> all(isfinite, c), Qf)
         @test maximum(Qf[3]) > 0.0                       # upward vertical momentum
@@ -462,7 +462,7 @@ end
                       :tend => 0.5, :CFL => 0.4,
                       :outformat => "ascii", :plot_live => false,
                       :output_dir => dir)
-        mesh, q0, q = SymbolicFD.solve("∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)", inputs)
+        mesh, q0, q = SymbolicJE.solve("∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)", inputs)
         @test length(q) == 256
         @test all(isfinite, q)
         @test isfile(joinpath(dir, "solution.csv"))

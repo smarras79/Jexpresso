@@ -1,7 +1,7 @@
 #=---------------------------------------------------------------------------------
 # run_heat_steady_1d.jl
 #
-# Stand-alone example of a TIME-INDEPENDENT problem for SymbolicFD.jl.
+# Stand-alone example of a TIME-INDEPENDENT problem for SymbolicJE.jl.
 #
 # Because the equation has no ∂q/∂t term, it is solved as a steady (elliptic)
 # problem: the discrete operator is assembled into a matrix and solved directly,
@@ -14,13 +14,13 @@
 #   and a localized heat source f(x) (so q bulges up between the cold ends).
 #
 # Run with:
-#       julia --project=. tools/SymbolicFD.jl/run_heat_steady_1d.jl
+#       julia --project=. tools/SymbolicJE.jl/run_heat_steady_1d.jl
 #---------------------------------------------------------------------------------=#
 
 # Load the module ONCE per session (see note in run_gaussian_1d.jl): re-including
 # this script reuses the same module so the symbolic `Node`s and `solve` match.
-isdefined(Main, :SymbolicFD) || include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
-using .SymbolicFD
+isdefined(Main, :SymbolicJE) || include(joinpath(@__DIR__, "src", "SymbolicJE.jl"))
+using .SymbolicJE
 
 # Equation as live symbols, residual form (no ∂t term ⇒ steady solve):
 #   ∇⋅∇(q) - f = 0   <=>   ∇²q = f.   (A string "∇⋅∇(q) = f" also works.)
@@ -57,4 +57,4 @@ function user_inputs()
     return inputs
 end
 
-mesh, q0, q = SymbolicFD.solve(equation, user_inputs())
+mesh, q0, q = SymbolicJE.solve(equation, user_inputs())

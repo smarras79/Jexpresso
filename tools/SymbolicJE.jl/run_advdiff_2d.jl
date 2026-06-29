@@ -1,7 +1,7 @@
 #=---------------------------------------------------------------------------------
 # run_advdiff_2d.jl
 #
-# Stand-alone 2D example for SymbolicFD.jl — the 2D analogue of run_gaussian_1d.jl,
+# Stand-alone 2D example for SymbolicJE.jl — the 2D analogue of run_gaussian_1d.jl,
 # set up exactly like Jexpresso's problems/AdvDiff/kopriva:
 #
 #       ∂q/∂t + ∇⋅(u q) = μ ∇⋅∇(q)
@@ -17,15 +17,15 @@
 # weak-form operator is the one in rhs.jl's _expansion_inviscid! (DSS + Minv).
 #
 # Run from the Jexpresso root (so the gmsh path and project resolve):
-#       julia --project=. tools/SymbolicFD.jl/run_advdiff_2d.jl
+#       julia --project=. tools/SymbolicJE.jl/run_advdiff_2d.jl
 #
 # To run instead on a structured Cartesian grid (no gmsh / no Jexpresso needed),
 # set :method => :fd (or :sem without :gmsh_filename) and give :npoinx/:npoiny
 # (FD) or :nelx/:nely (SEM); see the commented block below.
 #---------------------------------------------------------------------------------=#
 
-isdefined(Main, :SymbolicFD) || include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
-using .SymbolicFD
+isdefined(Main, :SymbolicJE) || include(joinpath(@__DIR__, "src", "SymbolicJE.jl"))
+using .SymbolicJE
 
 #---------------------------------------------------------------------------------
 # 1. The equation, with live Julia symbols (residual form, = 0 implied):
@@ -98,4 +98,4 @@ end
 #---------------------------------------------------------------------------------
 # 3. Solve.
 #---------------------------------------------------------------------------------
-mesh, q0, q = SymbolicFD.solve(equation, user_inputs())
+mesh, q0, q = SymbolicJE.solve(equation, user_inputs())

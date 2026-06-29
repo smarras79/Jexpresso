@@ -1,7 +1,7 @@
 #=---------------------------------------------------------------------------------
 # run_euler_theta_2d.jl
 #
-# Stand-alone 2D example for SymbolicFD.jl — the *system* analogue of
+# Stand-alone 2D example for SymbolicJE.jl — the *system* analogue of
 # run_advdiff_2d.jl. It writes the 2D compressible Euler equations in
 # potential-temperature (θ) form as four coupled conservation laws in unicode and
 # time-marches the classic rising thermal bubble of problems/CompEuler/theta.
@@ -21,15 +21,15 @@
 # momentum/θ equations, exactly the role of Jexpresso's `:lvisc => true, :μ`.
 #
 # Run from the Jexpresso root (so Plots resolves through the project):
-#       julia --project=. tools/SymbolicFD.jl/run_euler_theta_2d.jl
+#       julia --project=. tools/SymbolicJE.jl/run_euler_theta_2d.jl
 #
 # Defaults to the self-contained structured finite-difference backend (no gmsh /
 # no Jexpresso needed). To run instead on a spectral-element gmsh grid, set
 # :method => :sem and :gmsh_filename (see the commented block at the bottom).
 #---------------------------------------------------------------------------------=#
 
-isdefined(Main, :SymbolicFD) || include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
-using .SymbolicFD
+isdefined(Main, :SymbolicJE) || include(joinpath(@__DIR__, "src", "SymbolicJE.jl"))
+using .SymbolicJE
 
 #---------------------------------------------------------------------------------
 # 1. Thermodynamics (PhysicalConst defaults; see globalConstantsPhysics.jl).
@@ -148,4 +148,4 @@ end
 #---------------------------------------------------------------------------------
 # 4. Solve the system.
 #---------------------------------------------------------------------------------
-mesh, Q0, Q = SymbolicFD.solve(equations, user_inputs())
+mesh, Q0, Q = SymbolicJE.solve(equations, user_inputs())

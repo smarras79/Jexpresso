@@ -1,5 +1,5 @@
 #=---------------------------------------------------------------------------------
-# SymbolicFD.jl
+# SymbolicJE.jl
 #
 # Write a PDE with Julia's unicode characters (a few LaTeX spellings are accepted
 # too) and have it discretized and solved automatically. For example
@@ -24,7 +24,7 @@
 # loop over `nsd` directions through a single directional-derivative primitive;
 # only a multi-dimensional mesh + that primitive need to be added.
 #---------------------------------------------------------------------------------=#
-module SymbolicFD
+module SymbolicJE
 
 using Printf
 using Krylov               # steady (time-independent) solve: matrix-free GMRES
@@ -114,7 +114,7 @@ function discretization(inputs::Dict)
     m = get(inputs, :method, :fd)
     m === :fd  && return FDMethod()
     m === :sem && return SEMMethod(nop = Int(get(inputs, :nop, 4)))
-    error("SymbolicFD: unknown :method `$m`; choose :fd (finite differences) or " *
+    error("SymbolicJE: unknown :method `$m`; choose :fd (finite differences) or " *
           ":sem (spectral element).")
 end
 
@@ -519,7 +519,7 @@ end
 # lumped mass, so it does not appear explicitly). Σ_k dψ[k,i] f_k is the same
 # dF/dξ|_i kernel rhs.jl uses. deriv2 composes two weak first derivatives.
 function deriv1(::SEMMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int)
-    dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
+    dir == 1 || error("SymbolicJE: direction $dir is unavailable on a 1D mesh.")
     s = m.sem::SEMData
     out = zeros(m.npoin)
     @inbounds for e in 1:s.nelem
@@ -543,7 +543,7 @@ deriv2(d::SEMMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int) =
 # --- finite-difference backend (FDMethod) --------------------------------------
 "first derivative ∂f/∂x_dir at every node (2nd-order central; periodic wrap)."
 function deriv1(::FDMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int)
-    dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
+    dir == 1 || error("SymbolicJE: direction $dir is unavailable on a 1D mesh.")
     n, h = m.npoin, m.Δx
     out = similar(f)
     @inbounds for i in 1:n
@@ -554,7 +554,7 @@ end
 
 "second derivative ∂²f/∂x_dir² at every node (compact 3-point central)."
 function deriv2(::FDMethod, f::Vector{Float64}, m::FDMesh1D, dir::Int)
-    dir == 1 || error("SymbolicFD: direction $dir is unavailable on a 1D mesh.")
+    dir == 1 || error("SymbolicJE: direction $dir is unavailable on a 1D mesh.")
     n, h = m.npoin, m.Δx
     out = similar(f)
     @inbounds for i in 1:n
@@ -579,7 +579,7 @@ end
 end
 
 function deriv1(::FDMethod, f::Vector{Float64}, m::FDMesh2D, dir::Int)
-    (dir == 1 || dir == 2) || error("SymbolicFD: direction $dir is invalid on a 2D mesh.")
+    (dir == 1 || dir == 2) || error("SymbolicJE: direction $dir is invalid on a 2D mesh.")
     h = dir == 1 ? m.dx : m.dy
     out = similar(f)
     @inbounds for ip in 1:m.npoin
@@ -590,7 +590,7 @@ function deriv1(::FDMethod, f::Vector{Float64}, m::FDMesh2D, dir::Int)
 end
 
 function deriv2(::FDMethod, f::Vector{Float64}, m::FDMesh2D, dir::Int)
-    (dir == 1 || dir == 2) || error("SymbolicFD: direction $dir is invalid on a 2D mesh.")
+    (dir == 1 || dir == 2) || error("SymbolicJE: direction $dir is invalid on a 2D mesh.")
     h = dir == 1 ? m.dx : m.dy
     out = similar(f)
     @inbounds for ip in 1:m.npoin
@@ -683,7 +683,7 @@ scalar_field(m::AbstractFDMesh, v::Vector{Float64}) = Field(m, 0, [v])
 const_field(m::AbstractFDMesh, c::Real)             = Field(m, 0, [fill(Float64(c), m.npoin)])
 function vec_const_field(m::AbstractFDMesh, v::AbstractVector)
     length(v) == nsd(m) ||
-        error("SymbolicFD: a vector constant needs nsd = $(nsd(m)) components, got $(length(v)).")
+        error("SymbolicJE: a vector constant needs nsd = $(nsd(m)) components, got $(length(v)).")
     return Field(m, 1, [fill(Float64(v[d]), m.npoin) for d in 1:nsd(m)])
 end
 
@@ -702,7 +702,7 @@ function divergence(f::Field)
     m, d = f.mesh, nsd(f.mesh)
     if f.rank == 0
         # 1D convenience: ∇⋅ of a scalar flux is just ∂/∂x (the single direction).
-        d == 1 || error("SymbolicFD: ∇⋅ needs a vector (rank ≥ 1) field when nsd > 1.")
+        d == 1 || error("SymbolicJE: ∇⋅ needs a vector (rank ≥ 1) field when nsd > 1.")
         return Field(m, 0, [deriv1(f.comp[1], m, 1)])
     end
     nc_out = length(f.comp) ÷ d
@@ -731,12 +731,12 @@ function fmul(a::Field, b::Field)
     elseif b.rank == 0
         return Field(a.mesh, a.rank, [b.comp[1] .* ac for ac in a.comp])
     end
-    error("SymbolicFD: `*` is scalar×field; use `⋅` for a vector·vector contraction.")
+    error("SymbolicJE: `*` is scalar×field; use `⋅` for a vector·vector contraction.")
 end
 
 "inner product `⋅` : equal-rank fields contracted to a scalar (rank 0 = product)."
 function fdot(a::Field, b::Field)
-    a.rank == b.rank || error("SymbolicFD: `⋅` needs equal-rank operands.")
+    a.rank == b.rank || error("SymbolicJE: `⋅` needs equal-rank operands.")
     a.rank == 0 && return Field(a.mesh, 0, [a.comp[1] .* b.comp[1]])
     out = zeros(a.mesh.npoin)
     for c in 1:length(a.comp)
@@ -747,7 +747,7 @@ end
 
 function fadd(a::Field, b::Field, s::Float64)
     a.rank == b.rank ||
-        error("SymbolicFD: cannot add a rank-$(a.rank) and a rank-$(b.rank) field " *
+        error("SymbolicJE: cannot add a rank-$(a.rank) and a rank-$(b.rank) field " *
               "(the equation is dimensionally inconsistent).")
     return Field(a.mesh, a.rank, [a.comp[c] .+ s .* b.comp[c] for c in 1:length(a.comp)])
 end
@@ -760,21 +760,21 @@ fneg(a::Field) = Field(a.mesh, a.rank, [-ac for ac in a.comp])
 # `∂t(q) + ∂x(Fx) + ∂y(Fy) = S`. It returns a scalar field (rank unchanged at 0).
 function deriv_dir(f::Field, dir::Int)
     f.rank == 0 ||
-        error("SymbolicFD: ∂x/∂y act on a scalar (rank-0) field; got rank $(f.rank).")
+        error("SymbolicJE: ∂x/∂y act on a scalar (rank-0) field; got rank $(f.rank).")
     return Field(f.mesh, 0, [deriv1(f.comp[1], f.mesh, dir)])
 end
 
 "elementwise division of two scalar fields (e.g. the velocity u = ρu/ρ)."
 function fdivf(a::Field, b::Field)
     (a.rank == 0 && b.rank == 0) ||
-        error("SymbolicFD: `/` is an elementwise operation on scalar (rank-0) fields.")
+        error("SymbolicJE: `/` is an elementwise operation on scalar (rank-0) fields.")
     return Field(a.mesh, 0, [a.comp[1] ./ b.comp[1]])
 end
 
 "elementwise power of a scalar field by a constant exponent (e.g. the gas law (ρθ)^γ)."
 function fpowf(a::Field, p::Float64)
     a.rank == 0 ||
-        error("SymbolicFD: `^` is an elementwise operation on a scalar (rank-0) field.")
+        error("SymbolicJE: `^` is an elementwise operation on a scalar (rank-0) field.")
     return Field(a.mesh, 0, [a.comp[1] .^ p])
 end
 
@@ -811,7 +811,7 @@ _peek(p::PState)  = p.pos <= length(p.chars) ? p.chars[p.pos]     : '\0'
 _peek2(p::PState) = p.pos+1 <= length(p.chars) ? p.chars[p.pos+1] : '\0'
 _adv!(p::PState)  = (c = _peek(p); p.pos += 1; c)
 _expect!(p::PState, c::Char) = _adv!(p) == c ||
-    error("SymbolicFD: expected `$c` near position $(p.pos) in the equation.")
+    error("SymbolicJE: expected `$c` near position $(p.pos) in the equation.")
 
 _isidchar(c::Char) = isletter(c) || c == '_'
 function _is_factor_start(c::Char)
@@ -841,7 +841,7 @@ function _leaf(p::PState, name::String)
         v isa AbstractVector && return Node(:vecconst; vec = Float64.(v))
         return Node(:const; val = Float64(v))
     end
-    error("SymbolicFD: unknown symbol `$name` in the equation. " *
+    error("SymbolicJE: unknown symbol `$name` in the equation. " *
           "Add `:$name => value` to your inputs Dict (a vector for a vector quantity, " *
           "a function `x->…` for a spatially varying coefficient/source).")
 end
@@ -858,12 +858,12 @@ function parse_atom(p::PState)
     elseif _isidchar(c)
         return _leaf(p, string(_adv!(p)))     # single-character identifier
     end
-    error("SymbolicFD: unexpected character `$c` near position $(p.pos).")
+    error("SymbolicJE: unexpected character `$c` near position $(p.pos).")
 end
 
 function parse_timederiv(p::PState)
     _expect!(p, '∂')
-    _isidchar(_peek(p)) || error("SymbolicFD: expected a variable name after ∂.")
+    _isidchar(_peek(p)) || error("SymbolicJE: expected a variable name after ∂.")
     name = string(_adv!(p))
     _expect!(p, '/'); _expect!(p, '∂'); _expect!(p, 't')
     return Node(:dt; name = name)
@@ -943,7 +943,7 @@ function find_unknown(s::AbstractString, inputs::Dict)
         end
     end
     length(cands) == 1 ||
-        error("SymbolicFD: could not infer the unknown (candidates: $cands). " *
+        error("SymbolicJE: could not infer the unknown (candidates: $cands). " *
               "Provide `:unknown => \"q\"`, or make sure every parameter is in the inputs Dict.")
     return cands[1]
 end
@@ -963,7 +963,7 @@ expression tree, with NO operator tied to a specific equation:
 function parse_equation(eqn::AbstractString, inputs::Dict)
     s = normalize_equation(eqn)
     occursin("=", s) ||
-        error("SymbolicFD: the equation must contain `=` (e.g. `∂q/∂t + ∇⋅(uq) = μ∇²q`).")
+        error("SymbolicJE: the equation must contain `=` (e.g. `∂q/∂t + ∇⋅(uq) = μ∇²q`).")
     lhs, rhs = split(s, "=", limit = 2)
     tm = match(r"∂([^/]+)/∂t", s)
 
@@ -971,7 +971,7 @@ function parse_equation(eqn::AbstractString, inputs::Dict)
         # ---- steady / time-independent (e.g. the steady heat equation) ----
         var = find_unknown(s, inputs)
         length(var) == 1 ||
-            error("SymbolicFD: use a single-character unknown name (got `$var`).")
+            error("SymbolicJE: use a single-character unknown name (got `$var`).")
         resid = Node(:sub; args = [parse_side(lhs, var, inputs),
                                    parse_side(rhs, var, inputs)])
         return var, :steady, resid
@@ -980,7 +980,7 @@ function parse_equation(eqn::AbstractString, inputs::Dict)
     # ---- transient ----
     var = String(tm.captures[1])
     length(var) == 1 ||
-        error("SymbolicFD: use single-character variable/parameter names (got `$var`); " *
+        error("SymbolicJE: use single-character variable/parameter names (got `$var`); " *
               "juxtaposition like `uq` is read as u*q.")
     lhs_terms = flatten!(Tuple{Float64,Node}[], parse_side(lhs, var, inputs), 1.0)
     rhs_terms = flatten!(Tuple{Float64,Node}[], parse_side(rhs, var, inputs), 1.0)
@@ -988,19 +988,19 @@ function parse_equation(eqn::AbstractString, inputs::Dict)
     signed = Tuple{Float64,Node}[]          # dq/dt terms (rhs keep sign, lhs flip)
     dt_found = false
     for (sg, nd) in rhs_terms
-        nd.op == :dt ? error("SymbolicFD: the ∂q/∂t term must be on the left of `=`.") :
+        nd.op == :dt ? error("SymbolicJE: the ∂q/∂t term must be on the left of `=`.") :
                        push!(signed, (sg, nd))
     end
     for (sg, nd) in lhs_terms
         if nd.op == :dt
-            sg == 1.0 || error("SymbolicFD: the ∂q/∂t term must appear with a + sign.")
-            nd.name == var || error("SymbolicFD: time-derivative variable mismatch.")
+            sg == 1.0 || error("SymbolicJE: the ∂q/∂t term must appear with a + sign.")
+            nd.name == var || error("SymbolicJE: time-derivative variable mismatch.")
             dt_found = true
         else
             push!(signed, (-sg, nd))
         end
     end
-    dt_found || error("SymbolicFD: no `∂$var/∂t` term found.")
+    dt_found || error("SymbolicJE: no `∂$var/∂t` term found.")
 
     isempty(signed) && return var, :transient, Node(:const; val = 0.0)
     s1, n1 = signed[1]
@@ -1038,7 +1038,7 @@ const ∂t = TimeDeriv()
 tonode(x::Node)           = x
 tonode(x::Real)           = Node(:const;    val = Float64(x))
 tonode(x::AbstractVector) = Node(:vecconst; vec = Float64.(x))
-tonode(x) = error("SymbolicFD: cannot use $(typeof(x)) in a symbolic equation; " *
+tonode(x) = error("SymbolicJE: cannot use $(typeof(x)) in a symbolic equation; " *
                   "use field/parameter symbols (see @vars), numbers, or vectors.")
 
 # gradient ∇(f) ; divergence ∇⋅(F) ; Laplacian Δ(f) and the composed ∇⋅∇(f)
@@ -1059,7 +1059,7 @@ Base.:*(c,       ::Nabla) = ScaledNabla(tonode(c))
 
 # time derivative ∂t(q)
 function (::TimeDeriv)(n::Node)
-    n.op == :sym || error("SymbolicFD: ∂t(...) expects the unknown field symbol, e.g. ∂t(q).")
+    n.op == :sym || error("SymbolicJE: ∂t(...) expects the unknown field symbol, e.g. ∂t(q).")
     return Node(:dt; name = n.name)
 end
 
@@ -1121,7 +1121,7 @@ end
 # resolve a parameter symbol from the inputs Dict (scalar / vector / function)
 function _resolve_param(name::String, inputs::Dict)
     haskey(inputs, Symbol(name)) ||
-        error("SymbolicFD: unknown symbol `$name`. Add `:$name => value` to inputs " *
+        error("SymbolicJE: unknown symbol `$name`. Add `:$name => value` to inputs " *
               "(a vector for a vector quantity, a function `x->…` for a field).")
     v = inputs[Symbol(name)]
     v isa Function       && return Node(:func;     name = name, fun = v)
@@ -1154,11 +1154,11 @@ function build_from_residual(residual::Node, inputs::Dict)
                                 String[String(k) for k in keys(inputs)]))
         var = haskey(inputs, :unknown) ? String(inputs[:unknown]) :
               (length(cands) == 1 ? cands[1] :
-               error("SymbolicFD: could not infer the unknown (candidates: $cands); " *
+               error("SymbolicJE: could not infer the unknown (candidates: $cands); " *
                      "pass `:unknown => \"q\"`."))
     end
     length(var) == 1 ||
-        error("SymbolicFD: use a single-character unknown name (got `$var`).")
+        error("SymbolicJE: use a single-character unknown name (got `$var`).")
 
     resolved = resolve_syms(residual, var, inputs)
     repr = string(ast_str(resolved), " = 0")
@@ -1170,8 +1170,8 @@ function build_from_residual(residual::Node, inputs::Dict)
     signed = Tuple{Float64,Node}[]
     for (sg, nd) in terms
         if nd.op == :dt
-            sg == 1.0 || error("SymbolicFD: the ∂t(q) term must enter the residual with + sign.")
-            nd.name == var || error("SymbolicFD: time-derivative variable mismatch.")
+            sg == 1.0 || error("SymbolicJE: the ∂t(q) term must enter the residual with + sign.")
+            nd.name == var || error("SymbolicJE: time-derivative variable mismatch.")
         else
             push!(signed, (-sg, nd))            # move to RHS of ∂q/∂t = …
         end
@@ -1200,7 +1200,7 @@ _eval_func(fun, m::AbstractFDMesh) =
 @inline _mesh(env::AbstractDict)    = first(values(env)).mesh
 @inline _lookup_var(qf::Field, ::String) = qf
 @inline _lookup_var(env::AbstractDict, name::String) =
-    get(() -> error("SymbolicFD: no field bound to unknown `$name` in the system state."),
+    get(() -> error("SymbolicJE: no field bound to unknown `$name` in the system state."),
         env, name)
 
 function eval_node(n::Node, st)
@@ -1221,7 +1221,7 @@ function eval_node(n::Node, st)
     op == :add      && return fadd(eval_node(n.args[1], st), eval_node(n.args[2], st),  1.0)
     op == :sub      && return fadd(eval_node(n.args[1], st), eval_node(n.args[2], st), -1.0)
     op == :neg      && return fneg(eval_node(n.args[1], st))
-    error("SymbolicFD: cannot evaluate node $(op).")
+    error("SymbolicJE: cannot evaluate node $(op).")
 end
 
 # parenthesize a child when it is a sum/difference sitting inside a tighter
@@ -1259,7 +1259,7 @@ function build_rhs(node::Node, mesh::AbstractFDMesh)
     function rhs!(dq, q)
         qf = scalar_field(mesh, q)        # alias q; operators allocate, never mutate q
         r  = eval_node(node, qf)
-        r.rank == 0 || error("SymbolicFD: the equation evaluated to a rank-$(r.rank) field; " *
+        r.rank == 0 || error("SymbolicJE: the equation evaluated to a rank-$(r.rank) field; " *
                              "it is not a scalar balance.")
         copyto!(dq, r.comp[1])
         return dq
@@ -1282,7 +1282,7 @@ end
 # L x = b is the discrete steady BVP. Returns (L::LinearOperator, b, resid!).
 function steady_operator(resid::Node, mesh::FDMesh1D, inputs::Dict)
     mesh.periodic &&
-        error("SymbolicFD: a steady (no ∂/∂t) problem needs Dirichlet boundary data; " *
+        error("SymbolicJE: a steady (no ∂/∂t) problem needs Dirichlet boundary data; " *
               "set `:periodic => false` and provide `:bc_left` / `:bc_right`.")
     n = mesh.npoin
     resid! = build_rhs(resid, mesh)
@@ -1314,7 +1314,7 @@ function solve_steady(resid::Node, mesh::FDMesh1D, inputs::Dict)
     # ill-conditioned Laplacian; bump :ksp_memory down for a restarted variant.
     mem  = Int(get(inputs, :ksp_memory, n))
     q, stats = Krylov.gmres(L, b; atol = atol, rtol = rtol, memory = mem, itmax = 4n)
-    stats.solved || @warn "SymbolicFD: GMRES did not fully converge" stats.status
+    stats.solved || @warn "SymbolicJE: GMRES did not fully converge" stats.status
 
     # report the interior residual of the original (unconstrained) operator
     r = zeros(n); resid!(r, q)
@@ -1398,14 +1398,14 @@ function _dqdt_from_residual(resolved::Node, var::String)
     for (sg, nd) in terms
         if nd.op == :dt
             nd.name == var ||
-                error("SymbolicFD: the equation for `$var` also contains ∂$(nd.name)/∂t.")
-            sg == 1.0 || error("SymbolicFD: the ∂$var/∂t term must enter with a + sign.")
+                error("SymbolicJE: the equation for `$var` also contains ∂$(nd.name)/∂t.")
+            sg == 1.0 || error("SymbolicJE: the ∂$var/∂t term must enter with a + sign.")
             dt_found = true
         else
             push!(signed, (-sg, nd))             # everything else moves across `=`
         end
     end
-    dt_found || error("SymbolicFD: an equation in the system has no ∂$var/∂t term.")
+    dt_found || error("SymbolicJE: an equation in the system has no ∂$var/∂t term.")
     isempty(signed) && return Node(:const; val = 0.0)
     s1, n1 = signed[1]
     dqdt = s1 == 1.0 ? n1 : Node(:neg; args = [n1])
@@ -1425,15 +1425,15 @@ as `:var` references (looked up against the evolving system state); every other
 symbol is resolved from `inputs` (scalar / vector / function of x as usual).
 """
 function build_system(eqs::AbstractVector, inputs::Dict)
-    isempty(eqs) && error("SymbolicFD: the system has no equations.")
+    isempty(eqs) && error("SymbolicJE: the system has no equations.")
     nodes = Node[e isa Node ? e :
-                 error("SymbolicFD: each system equation must be a symbolic residual (a Node).")
+                 error("SymbolicJE: each system equation must be a symbolic residual (a Node).")
                  for e in eqs]
     unknowns = String[]
     for e in nodes
         nm = _find_dt_name(e)
-        nm == "" && error("SymbolicFD: every equation in a system needs a ∂t(·) term.")
-        nm in unknowns && error("SymbolicFD: two equations evolve the same unknown `$nm`.")
+        nm == "" && error("SymbolicJE: every equation in a system needs a ∂t(·) term.")
+        nm in unknowns && error("SymbolicJE: two equations evolve the same unknown `$nm`.")
         push!(unknowns, nm)
     end
     uset = Set(unknowns)
@@ -1458,7 +1458,7 @@ function build_system_rhs(unknowns::Vector{String}, rhs_nodes::Vector{Node}, mes
         for i in 1:neq
             r = eval_node(rhs_nodes[i], env)
             r.rank == 0 ||
-                error("SymbolicFD: equation $(i) ($(unknowns[i])) evaluated to a rank-$(r.rank) " *
+                error("SymbolicJE: equation $(i) ($(unknowns[i])) evaluated to a rank-$(r.rank) " *
                       "field; each conservation law must be a scalar balance.")
             copyto!(dQ[i], r.comp[1])
         end
@@ -1496,7 +1496,7 @@ function eval_q0_sys(q0fun, mesh::AbstractFDMesh, neq::Int)
     for ip in 1:mesh.npoin
         vals = nsd(mesh) == 2 ? q0fun(mesh.x[ip], mesh.y[ip]) : q0fun(mesh.x[ip])
         length(vals) == neq ||
-            error("SymbolicFD: :q0 must return $neq values per node, got $(length(vals)).")
+            error("SymbolicJE: :q0 must return $neq values per node, got $(length(vals)).")
         for i in 1:neq; Q[i][ip] = Float64(vals[i]); end
     end
     return Q
@@ -1663,7 +1663,7 @@ solve(eqs::AbstractVector, inputs::Dict) = solve_system(eqs, inputs)
 function build_mesh(inputs::Dict)
     nsd_in = Int(get(inputs, :nsd, 1))
     nsd_in == 1 && return FDMesh1D(inputs)
-    nsd_in == 2 || error("SymbolicFD: nsd must be 1 or 2 (got $nsd_in).")
+    nsd_in == 2 || error("SymbolicJE: nsd must be 1 or 2 (got $nsd_in).")
     disc = discretization(inputs)
     if disc isa SEMMethod && (Bool(get(inputs, :lread_gmsh, false)) || haskey(inputs, :gmsh_filename))
         return build_jex_sem_mesh(inputs, disc)     # read the EXISTING gmsh grid
@@ -1690,7 +1690,7 @@ function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
     mesh = build_mesh(inputs_mesh)
 
     println("="^72)
-    println(" SymbolicFD : composing operators for")
+    println(" SymbolicJE : composing operators for")
     println("   ", eqn_repr)
     println("   method          : ", method_name(mesh.disc))
     if mode == :transient
@@ -1709,7 +1709,7 @@ function _run(var, mode, node, eqn_repr::AbstractString, inputs::Dict)
 
     # ============================ steady / elliptic ============================
     if mode == :steady
-        nsd_in == 1 || error("SymbolicFD: steady (no ∂/∂t) solves are 1D-only so far.")
+        nsd_in == 1 || error("SymbolicJE: steady (no ∂/∂t) solves are 1D-only so far.")
         q, rmax = solve_steady(node, mesh, inputs)
         @printf("   max interior residual = %.3e\n", rmax)
         @printf("   q: min = %.6g, max = %.6g\n", minimum(q), maximum(q))
@@ -1826,7 +1826,7 @@ function _run_system(unknowns::Vector{String}, rhs_nodes::Vector{Node},
     mesh   = build_mesh(merge(inputs, Dict(:nsd => nsd_in)))
 
     println("="^72)
-    println(" SymbolicFD : composing operators for a coupled system ($neq equations)")
+    println(" SymbolicJE : composing operators for a coupled system ($neq equations)")
     println("   method          : ", method_name(mesh.disc))
     for i in 1:neq
         println(@sprintf("   ∂%-3s/∂t = %s", unknowns[i], ast_str(rhs_nodes[i])))
@@ -1841,7 +1841,7 @@ function _run_system(unknowns::Vector{String}, rhs_nodes::Vector{Node},
     live   = Bool(get(inputs, :plot_live, true))
 
     haskey(inputs, :q0) ||
-        error("SymbolicFD: a system solve needs an initial condition " *
+        error("SymbolicJE: a system solve needs an initial condition " *
               "`:q0 => (x,y) -> (...)` returning the $neq components [" *
               join(unknowns, ", ") * "].")
     Q0 = eval_q0_sys(inputs[:q0], mesh, neq)
@@ -1880,7 +1880,7 @@ function _run_system(unknowns::Vector{String}, rhs_nodes::Vector{Node},
                     iout, t, diag_name, minimum(d), maximum(d))
         end
         all(c -> all(isfinite, c), Q) ||
-            error("SymbolicFD: the system blew up at step $sstep (non-finite values); " *
+            error("SymbolicJE: the system blew up at step $sstep (non-finite values); " *
                   "reduce :Δt / add viscosity (e.g. a `+ μ∇²(·)` term per equation).")
     end
 

@@ -1,4 +1,4 @@
-# SymbolicFD.jl
+# SymbolicJE.jl
 
 A small, **stand-alone** "write-the-equation-and-solve-it" engine for Jexpresso.
 
@@ -89,7 +89,7 @@ and apply the weak directional derivative exactly as `rhs.jl`'s
 ```
 
 Because `DSS` and `Minv` are linear, `∇⋅(F,G) = ∂F/∂x + ∂G/∂y` reproduces the
-fused divergence kernel exactly. `tools/SymbolicFD.jl/run_advdiff_2d.jl` is the
+fused divergence kernel exactly. `tools/SymbolicJE.jl/run_advdiff_2d.jl` is the
 2D analogue of `run_gaussian_1d.jl`, set up like `AdvDiff/kopriva` (gaussian blob
 at `(0,3)`, `u=(0.5,1.0)`, `μ=0.1`, periodic, read from the kopriva grid).
 
@@ -138,10 +138,10 @@ eqs = [ ∂t(ρ)  + ∂x(ρu)           + ∂y(ρv),
         ∂t(ρu) + ∂x(ρu*u + p′)    + ∂y(ρu*v)         - ν*Δ(ρu),
         ∂t(ρv) + ∂x(ρv*u)         + ∂y(ρv*v + p′)    - ν*Δ(ρv)  + ρ*g,
         ∂t(ρθ) + ∂x((ρθb+ρθ)*u)   + ∂y((ρθb+ρθ)*v)   - ν*Δ(ρθ) ]
-mesh, Q0, Q = SymbolicFD.solve(eqs, inputs)   # ⇒ Vector of component fields
+mesh, Q0, Q = SymbolicJE.solve(eqs, inputs)   # ⇒ Vector of component fields
 ```
 
-`tools/SymbolicFD.jl/run_euler_theta_2d.jl` is the system analogue of
+`tools/SymbolicJE.jl/run_euler_theta_2d.jl` is the system analogue of
 `run_advdiff_2d.jl`: it sets up the rising thermal bubble exactly as
 `problems/CompEuler/theta/initialize.jl` (warm anomaly `Δθ = θc(1−r/r0)`,
 `θref = 300 K`, `θc = 2 K`, at rest on the hydrostatic background) and time-marches
@@ -156,7 +156,7 @@ Jexpresso's `:lvisc => true, :μ` artificial viscosity. Extra system inputs:
 | `:diag_name` | label for that diagnostic (default the last unknown's name)   |
 
 ```bash
-julia --project=. tools/SymbolicFD.jl/run_euler_theta_2d.jl
+julia --project=. tools/SymbolicJE.jl/run_euler_theta_2d.jl
 ```
 
 defaults to the self-contained structured-FD backend.
@@ -187,7 +187,7 @@ follow-up.
 ## Example — write the equation as live symbols (no string)
 
 ```julia
-include("src/SymbolicFD.jl"); using .SymbolicFD
+include("src/SymbolicJE.jl"); using .SymbolicJE
 
 @vars q u μ                                  # declare the symbols
 equation = ∂t(q) + ∇⋅(u*q) - μ*∇⋅∇(q)        # residual form, " = 0" implied
@@ -200,7 +200,7 @@ inputs = Dict(
     :tend => 2.0, :CFL => 0.4,
 )
 
-mesh, q0, q = SymbolicFD.solve(equation, inputs)
+mesh, q0, q = SymbolicJE.solve(equation, inputs)
 ```
 
 `∇`, `Δ`, `∂t` are real objects and `+ − * ⋅` are overloaded on the expression
@@ -214,7 +214,7 @@ scalars, vectors, or functions `x->…`.
 A plain **string** equation still works too (handy for `=`-form and LaTeX):
 
 ```julia
-SymbolicFD.solve("∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)", inputs)
+SymbolicJE.solve("∂q/∂t + ∇⋅(\\mathbf{u}q) = \\mu∇⋅∇(q)", inputs)
 ```
 
 Either way the run banner prints the **discretized RHS it built**, e.g.
@@ -229,7 +229,7 @@ Either way the run banner prints the **discretized RHS it built**, e.g.
 inside the project environment. From the repository root:
 
 ```bash
-julia --project=. tools/SymbolicFD.jl/run_gaussian_1d.jl
+julia --project=. tools/SymbolicJE.jl/run_gaussian_1d.jl
 ```
 
 This advects a gaussian wave once around the periodic domain `[-1, 1]` while a
@@ -237,15 +237,15 @@ small `μ` diffuses it slightly. The solution is **saved to PNG and plotted on t
 fly in exactly the same way as `problems/CompEuler/sod1d`** — using `Plots.jl`
 (GR backend), an `INIT-q.png` at `t = 0` and a `fields-it<iout>.png` at every
 diagnostic output, with the GR window updating live during the run. Files land
-in `tools/SymbolicFD.jl/output/`. A CSV is always written, and a terminal ASCII
+in `tools/SymbolicJE.jl/output/`. A CSV is always written, and a terminal ASCII
 plot is available as a display-free fallback (`:outformat => "ascii"`). On a
 headless machine set `:plot_live => false` (PNGs are still written).
 
 You can also drive it from the Julia REPL:
 
 ```julia
-include("tools/SymbolicFD.jl/src/SymbolicFD.jl"); using .SymbolicFD
-SymbolicFD.solve("∂q/∂t + ∇⋅(u q) = μ∇²q",
+include("tools/SymbolicJE.jl/src/SymbolicJE.jl"); using .SymbolicJE
+SymbolicJE.solve("∂q/∂t + ∇⋅(u q) = μ∇²q",
                  Dict(:u => [1.0], :μ => 1e-3, :tend => 2.0))
 ```
 
@@ -261,7 +261,7 @@ boundary nodes) is wrapped as a `LinearOperator` and handed to Krylov.jl's GMRES
 Tune with `:ksp_rtol`, `:ksp_atol`, `:ksp_memory` (default full GMRES).
 
 ```bash
-julia --project=. tools/SymbolicFD.jl/run_heat_steady_1d.jl
+julia --project=. tools/SymbolicJE.jl/run_heat_steady_1d.jl
 ```
 
 solves the steady heat (Poisson) equation `∇⋅∇(q) = f` on `[-1, 1]` with a
@@ -283,7 +283,7 @@ steady problems are out of scope for now.
 Analytic-solution and operator checks live in `runtests.jl`:
 
 ```bash
-julia --project=. tools/SymbolicFD.jl/runtests.jl
+julia --project=. tools/SymbolicJE.jl/runtests.jl
 ```
 
 They verify the operators against exact derivatives (with 2nd-order

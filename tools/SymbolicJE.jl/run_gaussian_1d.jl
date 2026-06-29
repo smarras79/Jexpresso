@@ -1,7 +1,7 @@
 #=---------------------------------------------------------------------------------
 # run_gaussian_1d.jl
 #
-# Stand-alone example for SymbolicFD.jl
+# Stand-alone example for SymbolicJE.jl
 #
 #   1D advection-diffusion of a gaussian wave on the periodic grid [-1, 1]:
 #
@@ -20,10 +20,10 @@
 # editing the inputs below) then reuses the same module, so the symbolic `Node`s
 # in `equation` and the `solve` method always come from the same module instance.
 # (Re-defining the module on every include would create two incompatible `Node`
-# types and break `solve`. To pick up edits to src/SymbolicFD.jl, restart Julia
+# types and break `solve`. To pick up edits to src/SymbolicJE.jl, restart Julia
 # or use Revise.jl.)
-isdefined(Main, :SymbolicFD) || include(joinpath(@__DIR__, "src", "SymbolicFD.jl"))
-using .SymbolicFD
+isdefined(Main, :SymbolicJE) || include(joinpath(@__DIR__, "src", "SymbolicJE.jl"))
+using .SymbolicJE
 
 #---------------------------------------------------------------------------------
 # 1. The equation, written with live Julia symbols (no string).
@@ -80,4 +80,4 @@ end
 #---------------------------------------------------------------------------------
 # 3. Solve.
 #---------------------------------------------------------------------------------
-mesh, q0, q = SymbolicFD.solve(equation, user_inputs())
+mesh, q0, q = SymbolicJE.solve(equation, user_inputs())
