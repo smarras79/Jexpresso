@@ -305,6 +305,76 @@ end
         b = Field(m, 0, [on((x, y) -> 1.5 .+ 0.0 * x)])
         @test S.fdivf(a, b).comp[1] ≈ a.comp[1] ./ b.comp[1]
         @test S.fpowf(a, 1.4).comp[1] ≈ a.comp[1] .^ 1.4
+
+        # ∂x/∂y are NOT a new discretization: they call the SAME directional
+        # primitive `deriv1(·, mesh, dir)` the gradient/divergence use, which is
+        # the backend's operator (FD here, the weak form on a SEM/gmsh mesh). So
+        # any backend's correctness is inherited. Prove the routing identities:
+        @test S.deriv_dir(fld, 1).comp[1] == S.gradient(fld).comp[1]    # ∂x ≡ ∇ₓ
+        @test S.deriv_dir(fld, 2).comp[1] == S.gradient(fld).comp[2]    # ∂y ≡ ∇_y
+        # the Euler flux divergence ∂x(Fx)+∂y(Fy) reproduces the (fused) divergence
+        # operator exactly — on a SEM mesh this IS Jexpresso's _expansion_inviscid!
+        Fx = Field(m, 0, [on((x, y) -> cospi(x) * sinpi(y))])
+        Fy = Field(m, 0, [on((x, y) -> sinpi(x) * cospi(y))])
+        fused = S.deriv_dir(Fx, 1).comp[1] .+ S.deriv_dir(Fy, 2).comp[1]
+        @test fused == S.divergence(Field(m, 1, [Fx.comp[1], Fy.comp[1]])).comp[1]
+        # the Laplacian Δ used for viscosity is Σ_dir deriv2 (compact FD / weak SEM)
+        @test S.laplacian(fld).comp[1] == S.deriv2(fld.comp[1], m, 1) .+ S.deriv2(fld.comp[1], m, 2)
+    end
+
+    # ----------------------------------------------------------------------------
+    @testset "2D SEM directional operators + Euler θ (Jexpresso basis)" begin
+        # The 2D directional operators and the Euler θ system must run through
+        # Jexpresso's SEM weak-form infrastructure exactly as the 1D path does
+        # (deriv1(::SEMMethod, FDMesh2D/JexSEMMesh) = the _expansion_inviscid! +
+        # DSS + Minv kernel). This needs Jexpresso's basis; skip if unavailable.
+        semd(N) = S.FDMesh2D(Dict(:nsd => 2, :method => :sem, :nop => 4,
+                    :nelx => N, :nely => N, :periodic => true,
+                    :xmin => -1.0, :xmax => 1.0, :ymin => -1.0, :ymax => 1.0))
+        local msem
+        sem_ok = true
+        try
+            msem = semd(4)
+        catch err
+            sem_ok = false
+            @warn "2D SEM (Euler θ) test skipped (could not load Jexpresso basis here)" err
+        end
+        if sem_ok
+            @test msem.sem !== nothing
+            on(mm, f) = Float64[f(mm.x[ip], mm.y[ip]) for ip in 1:mm.npoin]
+            fs = Field(msem, 0, [on(msem, (x, y) -> sinpi(x) * sinpi(y))])
+            # ∂x/∂y on the SEM mesh: weak-form derivative vs exact (spectral acc.)
+            @test rel_l2(S.deriv_dir(fs, 1).comp[1], on(msem, (x, y) -> Float64(π) * cospi(x) * sinpi(y))) < 1e-2
+            @test rel_l2(S.deriv_dir(fs, 2).comp[1], on(msem, (x, y) -> Float64(π) * sinpi(x) * cospi(y))) < 1e-2
+            # ∂x/∂y reuse the gradient primitive AND ∂x(Fx)+∂y(Fy) == weak ∇⋅ here too
+            @test S.deriv_dir(fs, 1).comp[1] == S.gradient(fs).comp[1]
+            Fx = Field(msem, 0, [on(msem, (x, y) -> cospi(x) * sinpi(y))])
+            Fy = Field(msem, 0, [on(msem, (x, y) -> sinpi(x) * cospi(y))])
+            fused = S.deriv_dir(Fx, 1).comp[1] .+ S.deriv_dir(Fy, 2).comp[1]
+            @test fused == S.divergence(Field(msem, 1, [Fx.comp[1], Fy.comp[1]])).comp[1]
+
+            # the Euler θ system, time-marched on the SEM mesh, is well balanced:
+            # the resting hydrostatic background is preserved (∂Q/∂t ≈ 0).
+            Rair, cp, cv = 287.0, 1004.0, 717.0; γ = cp / cv; g = 9.80616
+            pref = 101200.0; C0 = (Rair^γ) / pref^(γ - 1.0); θref = 300.0
+            p̄(x, y)  = pref * (1.0 - g * (y + 1.0) / (cp * θref))^(cp / Rair)   # y∈[-1,1]→[0,2]
+            ρθ̄(x, y) = (p̄(x, y) / C0)^(1 / γ); ρ̄(x, y) = ρθ̄(x, y) / θref
+            @vars ρ ρu ρv ρθ ρb ρθb pb
+            u = ρu / (ρb + ρ); v = ρv / (ρb + ρ); p′ = C0 * (ρθb + ρθ)^γ - pb
+            eqs = [ ∂t(ρ)  + ∂x(ρu)           + ∂y(ρv),
+                    ∂t(ρu) + ∂x(ρu*u + p′)    + ∂y(ρu*v),
+                    ∂t(ρv) + ∂x(ρv*u)         + ∂y(ρv*v + p′)    + ρ*g,
+                    ∂t(ρθ) + ∂x((ρθb + ρθ)*u) + ∂y((ρθb + ρθ)*v) ]
+            params = Dict(:ρb => ρ̄, :ρθb => ρθ̄, :pb => p̄)
+            unk, rhsn, _ = S.build_system(eqs, params)
+            rhs! = S.build_system_rhs(unk, rhsn, msem)
+            Q  = [zeros(msem.npoin) for _ in 1:4]
+            dQ = [zeros(msem.npoin) for _ in 1:4]
+            rhs!(dQ, Q)
+            @test maximum(maximum.(abs, dQ)) < 1e-4      # well balanced on the SEM mesh
+        else
+            @test_skip sem_ok
+        end
     end
 
     # ----------------------------------------------------------------------------

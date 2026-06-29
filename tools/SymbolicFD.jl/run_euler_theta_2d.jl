@@ -128,12 +128,22 @@ function user_inputs()
     )
 end
 
-# --- spectral-element / gmsh alternative ----------------------------------------
-# To run the very same equations on a gmsh grid through Jexpresso's sem_setup,
-# replace the grid keys above with:
-#   :method => :sem, :nop => 4, :lread_gmsh => true,
-#   :gmsh_filename => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
-# (the directional ∂x/∂y then become the weak-form derivative on the read mesh).
+# --- spectral-element alternatives (Jexpresso's SEM infrastructure) -------------
+# The directional operators ∂x/∂y (and Δ) dispatch on the mesh's discretization,
+# so switching the backend is purely a matter of the grid keys — the equations
+# above are unchanged. On a SEM mesh, ∂x/∂y become Jexpresso's weak-form
+# derivative (rhs.jl's _expansion_inviscid! + DSS + Minv), exactly as in 1D, and
+# ∂x(Fx)+∂y(Fy) reproduces the fused inviscid divergence by linearity.
+#
+#   (a) structured tensor-product SEM (reuses the SAME 1D Jexpresso LGL basis,
+#       no gmsh file needed) — swap the :npoinx/:npoiny keys above for:
+#         :method => :sem, :nop => 4, :nelx => 25, :nely => 25,
+#
+#   (b) a gmsh grid read through Jexpresso's sem_setup (full curvilinear metric
+#       terms dξdx,…,Je on the EXISTING mesh) — add:
+#         :method => :sem, :nop => 4, :lread_gmsh => true,
+#         :gmsh_filename => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+#       (this is the grid problems/CompEuler/theta itself runs on).
 
 #---------------------------------------------------------------------------------
 # 4. Solve the system.
