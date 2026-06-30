@@ -73,7 +73,7 @@ function user_inputs()
         #       :fft_use_mesh => true,  :nop => 1,
         #       :fft_Lx => 2π, :fft_Ly => 2π,
         #   with :gmsh_filename a NON-periodic structured square mesh.
-        #= ====================================================================== =#
+        # ======================================================================= =#
     ) #Dict
 
     return inputs
