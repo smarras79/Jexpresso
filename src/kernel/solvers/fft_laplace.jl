@@ -193,12 +193,11 @@ function fft_enforce_zero_mean!(F)
     return F
 end
 
-# Evaluate the user RHS / exact field at an nd-tuple of coordinates (2D or 3D).
-# The case's user_fft_rhs / user_fft_exact must accept the matching arity.
-_eval_fft_rhs(c::NTuple{2}) = user_fft_rhs(c[1], c[2])
-_eval_fft_rhs(c::NTuple{3}) = user_fft_rhs(c[1], c[2], c[3])
-_eval_fft_exact(c::NTuple{2}) = user_fft_exact(c[1], c[2])
-_eval_fft_exact(c::NTuple{3}) = user_fft_exact(c[1], c[2], c[3])
+# NOTE: the user RHS / exact field are evaluated INLINE at the call sites (the
+# coords tuple has length 2 or 3) rather than through a separate helper method.
+# This keeps the arity logic inside the function Revise reloads — a separate
+# helper can be missed by a partial reload, leaving the caller calling an
+# undefined method.
 
 # Separable N-D FFT: apply the 1-D Radix2FFT along each axis in turn. `ws[d]` are
 # the twiddles for axis d (forward s=+1 or backward s=-1, from InitializeFFT).
@@ -243,7 +242,8 @@ function fft_report_grid_error(u, lines, Ls)
     uex = Array{Float64}(undef, size(u))
     @inbounds for I in CartesianIndices(u)
         coord  = ntuple(d -> lines[d][I[d]], ND)
-        uex[I] = Float64(_eval_fft_exact(coord))
+        uex[I] = Float64(ND == 2 ? user_fft_exact(coord[1], coord[2]) :
+                                   user_fft_exact(coord[1], coord[2], coord[3]))
     end
     u .+= (sum(uex) - sum(u)) / length(u)
     err  = u .- uex
@@ -343,7 +343,8 @@ function fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
     F = Array{Float64}(undef, dims)
     @inbounds for I in CartesianIndices(F)
         coord = ntuple(d -> lines[d][I[d]], ND)
-        F[I]  = Float64(_eval_fft_rhs(coord))
+        F[I]  = Float64(ND == 2 ? user_fft_rhs(coord[1], coord[2]) :
+                                  user_fft_rhs(coord[1], coord[2], coord[3]))
     end
     fft_enforce_zero_mean!(F)
 
