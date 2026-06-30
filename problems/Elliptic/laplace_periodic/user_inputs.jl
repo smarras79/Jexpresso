@@ -63,7 +63,7 @@ function user_inputs()
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
 
-        #=== OPTIONAL: write the FFT result on the SEM mesh nodes ==================
+        #= OPTIONAL: write the FFT result on the SEM mesh nodes ==================
         #   Only useful if you specifically want the output sampled at the mesh
         #   nodes rather than on the spectral grid. It does NOT make the method
         #   higher/lower order — the FFT order is still N. Because it samples the
@@ -73,7 +73,7 @@ function user_inputs()
         #       :fft_use_mesh => true,  :nop => 1,
         #       :fft_Lx => 2π, :fft_Ly => 2π,
         #   with :gmsh_filename a NON-periodic structured square mesh.
-        #=========================================================================#
+        #= ====================================================================== =#
     ) #Dict
 
     return inputs
