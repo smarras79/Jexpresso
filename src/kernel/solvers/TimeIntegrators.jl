@@ -217,7 +217,7 @@ function time_loop!(inputs, params, u, args...)
     rad_time           = inputs[:radiation_time_step]
     lnew_mesh    = true   
     lwrite_time  = (inputs[:outformat] == VTK()) && (rank == 0)
-    lwrite_init  = !(inputs[:lrestart] || inputs[:lrestart_vtk] || inputs[:lrestart_amr]) 
+    lwrite_init  = !(inputs[:lrestart] || inputs[:lrestart_vtk] || inputs[:lrestart_amr])
 
     if (lwrite_time == true)
         pvd_path = joinpath(inputs[:output_dir], "simulation.pvd")
@@ -267,7 +267,7 @@ function time_loop!(inputs, params, u, args...)
                      " ......... END"; msg_rank = rank)
     end
 
-    function two_stream_condition(u, t, integrator)
+    function rad_condition(u, t, integrator)
         if (rem(t,rad_time) < 1e-3)
             return true
         else
@@ -276,9 +276,13 @@ function time_loop!(inputs, params, u, args...)
     end
 
     function do_radiation!(integrator)
-        println(" doing two stream radiation heat flux calculations at t=", integrator.t)
-        #println(" # doing rad test")
-        compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
+        if (params.inputs[:RT_atmos_coupling])
+            println(" doing full 3D RT solve + heat flux calculations at t=", integrator.t)
+            get_RT_heat_fluxes!(params.uaux, params.qp.qe, params.mesh, params.mp, params.metrics, params.atmos_data, params, params.basis.dψ, params.basis.ψ, params.ω, PhysicalConst{TFloat}(), params.inputs)
+        else
+            println(" doing two stream radiation heat flux calculations at t=", integrator.t)
+            compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
+        end
     end
 
     function restart_condition(u, t, integrator)
@@ -417,7 +421,7 @@ function time_loop!(inputs, params, u, args...)
     cb_les_stat    = DiscreteCallback(les_stat_condition, do_les_statistics!)
     cb_les_online  = DiscreteCallback(les_online_condition, do_les_online!)
 
-    cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
+    cb_rad     = DiscreteCallback(rad_condition, do_radiation!)
     cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)

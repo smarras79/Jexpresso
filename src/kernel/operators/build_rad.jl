@@ -1,46 +1,94 @@
-using SparseArrays
-using KrylovPreconditioners
+# ──────────────────────────────────────────────────────────────────────────────
+# Logging helper: only rank 0 prints to avoid redundant multi-process output.
+# ──────────────────────────────────────────────────────────────────────────────
+macro rankinfo(rank, msgs...)
+    quote
+        if $(esc(rank)) == 0
+            @info $(map(esc, msgs)...)
+        end
+    end
+end
 
-#---------------------------------------------------------------------------------------
-# Radiative transfer problem builder.
-#
-# Dispatches on the mesh spatial dimension (2D vs 3D) and forwards the
-# appropriate metric/connectivity arguments to build_radiative_transfer_problem.
-# The 3D path additionally reads atmospheric data (when :lRT_from_data) to build
-# the extinction (κ) and scattering (σ) coefficients. Consolidates the inline
-# 2D/3D `if` of the lRT_problem branch of driver().
-#---------------------------------------------------------------------------------------
-function build_rad(sem, inputs)
+"""
+    build_rad!(sem, partitioned_model, inputs, nparts, distribute)
+
+Entry point for the radiative transfer solver. Handles spatial AMR setup when
+`:lRT_spatial_amr` is set, then dispatches to the 2D or 3D RT problem builder.
+Called from `driver` instead of the inline `if inputs[:lRT_problem]` block.
+"""
+function build_rad!(sem, partitioned_model, inputs, nparts, distribute)
+    _ensure_rt_loaded!()
+    rank = MPI.Comm_rank(MPI.COMM_WORLD)
+
+    if haskey(inputs, :lRT_spatial_amr) && inputs[:lRT_spatial_amr] == true
+        if rank == 0
+            @info "[Spatial AMR] Applying selective spatial refinement..."
+        end
+        adapt_flags = zeros(Int, sem.mesh.nelem)
+        if sem.mesh.nelem > 0 && rank == 0
+            adapt_flags[1] = 1
+        end
+        if rank == 0
+            @info "[Spatial AMR] Marked $(sum(adapt_flags)) element(s) for refinement"
+        end
+        sem, partitioned_model = sem_setup(inputs, nparts, distribute,
+                                           adapt_flags, partitioned_model,
+                                           sem.mesh, sem.interp, nothing, nothing)
+        if rank == 0
+            @info "[Spatial AMR] Spatial refinement complete"
+            @info "[Spatial AMR] Refined mesh: $(sem.mesh.nelem) elements, $(sem.mesh.num_hanging_facets) hanging facets"
+            @info "[Spatial AMR] Spatial non-conforming facets (ncf): $(sem.mesh.num_ncf)"
+            if sem.mesh.num_ncf > 0
+                @info "[Spatial AMR] ✓ Cache will be initialized with $(sem.mesh.num_ncf) spatial hanging facets"
+            end
+        end
+    end
 
     if sem.mesh.SD == NSD_2D()
-        build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
-                                         sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy,
-                                         sem.metrics.nx, sem.metrics.ny, sem.mesh.elem_to_edge, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
+        build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl,
+                                         sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
+                                         sem.metrics.dξdx, sem.metrics.dξdy,
+                                         sem.metrics.dηdx, sem.metrics.dηdy,
+                                         sem.metrics.nx, sem.metrics.ny,
+                                         sem.mesh.elem_to_edge, sem.mesh.extra_mesh,
+                                         sem.QT, NSD_2D(), sem.AD)
     else
-        κ = zeros(sem.mesh.npoin)
-        σ = zeros(sem.mesh.npoin)
+        κ          = []
+        σ          = []
+        z_prof     = []
+        τ_from_TOA = []
+        data_interp = []
         if inputs[:lRT_from_data]
             @info "reading atmospheric data to build extinction and scattering coefficients"
-            filename = inputs[:RT_data_file]
-            data = read_atmospheric_data(filename)
+            data        = read_atmospheric_data(inputs[:RT_data_file])
             data_interp = interpolate_atmosphere_to_mesh(data, sem.mesh)
-            κ, σ = atmos_to_rad(data_interp, sem.mesh.npoin)
+            if inputs[:RT_shortwave]
+                κ, σ, inputs[:rad_HG_g] = atmos_to_rad_shortwave(data_interp, sem.mesh.npoin)
+                κ_ext_sw = κ .+ σ
+                z_prof, τ_from_TOA = build_sw_lateral_bc_profile(sem.mesh, κ_ext_sw, sem.mesh.ngl)
+            else
+                κ, σ = atmos_to_rad_longwave(data_interp, sem.mesh.npoin)
+            end
         end
-
-        build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
+        build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl,
+                                         sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
                                          sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dξdz,
                                          sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
                                          sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
                                          sem.metrics.nx, sem.metrics.ny, sem.metrics.nz,
-                                         sem.mesh.elem_to_face, sem.mesh.extra_mesh, κ, σ, sem.QT, NSD_3D(), sem.AD)
+                                         sem.mesh.elem_to_face, sem.mesh.extra_mesh,
+                                         κ, σ, data_interp, z_prof, τ_from_TOA,
+                                         sem.QT, NSD_3D(), sem.AD)
     end
-
-    return nothing
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 2D radiative transfer solver
+# ──────────────────────────────────────────────────────────────────────────────
 
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dηdx, dηdy, nx, ny, elem_to_edge, 
         extra_mesh, QT::Inexact, SD::NSD_2D, AD::ContGal)
-    comm = get_mpi_comm()
+    comm = MPI.COMM_WORLD
     npoin = mesh.npoin
     nelem = mesh.nelem
     nc_mat = zeros(Float64,1)
@@ -76,14 +124,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_ang_total += mesh.ngl*mesh.ngl*extra_mesh[e].extra_npoin
         end
         connijk_spa = [Array{Int}(undef, ngl, ngl, extra_meshes_extra_nelems[iel], extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
-        println(" # building initial adaptive connectivity")
+        MPI.Comm_rank(comm) == 0 && @info "building initial adaptive connectivity"
         neighbors = zeros(Int,nelem,8,2)
         adapted = false
         
         nc_mat, nc_mat_div, nc_non_global_nodes, n_non_global_nodes, n_spa  = adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, mesh.connijk, 
                                                                                                      extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
                                                   extra_meshes_coords, mesh.x, mesh.y,extra_meshes_ref_level, neighbors, adapted)
-        println(" # built initial adaptive spatial angular connectivity")
+        MPI.Comm_rank(comm) == 0 && @info "built initial adaptive spatial angular connectivity"
         @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl, extra_meshes_extra_nelems,
@@ -94,48 +142,39 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelems,
                                    extra_meshes_extra_npoins, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
         total_ip = size(LHS,1)
-        println(" # built pre-adaptivity matrices")
-        @info maximum(LHS), minimum(LHS)
-        @info maximum(M), minimum(M)
+        MPI.Comm_rank(comm) == 0 && @info "built pre-adaptivity matrices"
         one_vec = Vector{Float64}(undef, size(LHS,1))
         fill!(one_vec,Float64(1))
         pointwise_interaction = abs.(LHS) * one_vec
-        @info maximum(one_vec), minimum(one_vec), maximum(pointwise_interaction), minimum(pointwise_interaction)
         @time criterion = compute_adaptivity_criterion(pointwise_interaction, nelem, ngl, mesh.connijk, extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_coords,
                                                 connijk_spa)
         
-        println(" # criterion computed")
+        MPI.Comm_rank(comm) == 0 && @info "criterion computed"
         @time adapt_angular_grid_2Dby1D!(criterion,inputs[:RT_amr_threshold], extra_meshes_ref_level,nelem,ngl,extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors, extra_meshes_extra_npoins,
                                   extra_meshes_connijk, extra_meshes_coords, extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dxdξ, mesh.connijk,
                                   mesh.x, mesh.y, mesh.xmin, mesh.ymin, mesh.xmax, mesh.ymax) 
-        println(" # angular mesh adapted")
+        MPI.Comm_rank(comm) == 0 && @info "angular mesh adapted"
         if !(maximum(extra_meshes_ref_level[:][:]) == 0)
             connijk_spa = [Array{Int}(undef, ngl, ngl, extra_meshes_extra_nelems[iel], extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
             @time nc_mat, nc_mat_div, nc_non_global_nodes, n_non_global_nodes, n_spa  = adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, mesh.connijk, 
                                                                extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
                                                                 extra_meshes_coords, mesh.x, mesh.y, extra_meshes_ref_level, neighbors, adapted)
             
-            println(" # adapted connectivity")
+            MPI.Comm_rank(comm) == 0 && @info "adapted connectivity ($(n_non_global_nodes) hanging nodes)"
             adapted = true
-            @info "number of hanging nodes", n_non_global_nodes
             @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl, extra_meshes_extra_nelems,
                                    dξdx, dξdy, dηdx, dηdy, extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
 
-            #Try this alternative assembly approach
-            @info size(nc_mat), size(LHS), size(nc_mat')
             A_test = nc_mat*LHS*nc_mat'
 
             @time M = sparse_mass_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelems,
                                    extra_meshes_extra_npoins, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
-            println(" # built adapted matrices")
+            MPI.Comm_rank(comm) == 0 && @info "built adapted matrices"
             M_test = nc_mat*M*nc_mat'
-
-            @info maximum(A_test), minimum(A_test)
-            @info maximum(M_test), minimum(M_test)
         end
         npoin_ang_total = n_spa#maximum(connijk_spa[1])
         counter = 0
@@ -144,7 +183,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 counter += 1
             end
         end
-        @info npoin_ang_total, counter
         npoin_ang_total -= counter
         #invert mass matrix
         I_vec = Vector{Int}()
@@ -183,20 +221,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         RHS = zeros(TFloat, n_spa)#npoin_ang_total)
         ref = zeros(TFloat, n_spa)
         BDY = zeros(TFloat, n_spa)
-        @info size(RHS), size(A),n_spa-n_non_global_nodes
     else
         npoin_ang_total = npoin*extra_mesh.extra_npoin
         @time LHS = sparse_lhs_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk, 
                                     extra_mesh.extra_metrics.Je, 
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    dξdx, dξdy, dηdx, dηdy, extra_mesh.extra_npoin, inputs[:rad_HG_g])
-        println(" # assembled LHS")
+        MPI.Comm_rank(comm) == 0 && @info "assembled LHS"
         @time M = sparse_mass_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk,
                                     extra_mesh.extra_metrics.Je,
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    extra_mesh.extra_npoin)
-        println(" # assembled Mass matrix")
-        @info nnz(M), nnz(LHS), npoin_ang_total^2, nnz(M)/npoin_ang_total^2, nnz(LHS)/npoin_ang_total^2
+        MPI.Comm_rank(comm) == 0 && @info "assembled Mass matrix"
         
         # inexact integration makes M diagonal, build the sparse inverse to save space
         ip2gip_extra, gip2owner_extra, gnpoin = setup_global_numbering_extra_dim(mesh.ip2gip, mesh.gip2owner, npoin, extra_mesh.extra_npoin, npoin_ang_total)
@@ -225,7 +261,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             push!(V_vec, val)
         end
         M_inv = sparse(I_vec, J_vec, V_vec)
-        @info size(M_inv), size(LHS)    
         #@time M_inv = M \ Matrix(I, size(M)) #M\Diagonal(ones(npoin_ang_total))
         #M_inv = sparse(M_inv)
         #M = nothing
@@ -240,9 +275,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         M_sp = nothing
         GC.gc()
     
-        println(" # LHS max/min")
-        @info maximum(LHS), minimum(LHS)
-        @info maximum(M), minimum(M)
         A = sparse(M_inv*LHS)
         #=x = real.(eigvals(Array(LHS)))
         y = imag.(eigvals(Array(LHS)))
@@ -490,43 +522,23 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
         B = U_red_proj
     end
-    println(" # RHS max/min")
-    @info maximum(B), minimum(B)
-    #@info maximum(U_red_proj), minimum(U_red_proj)
-
-    #x = real.(eigvals(Array(A)))
-    #y = imag.(eigvals(Array(A)))
-    #display(Makie.scatter(x, y, label="e-values"))
-
-    #A_inv = inv(A)
-    println(" # built RHS")
-    #@info RHS
-    println(" # solving system")
+    MPI.Comm_rank(comm) == 0 && @info "built RHS, solving system..."
     As = sparse(A)
     A = nothing
     GC.gc()
-    @info typeof(As)
-    @info size(As), size(B)
 
-    #@time solution = As \ B#RHS
-    #=@time solution, stats = Krylov.fgmres(As, B;
-                   atol = 1e-13,
-                   rtol = 1e-13,
-                   #btol = 1e-13,
-                   #etol = 1e-13,
-                   #axtol = 1e-13,
-                   itmax = n_spa,
-                   verbose = 1)=#
-    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM; 
-    npoin_g = npoin_ang_total)
+    x_warm = zeros(Float64, npoin_ang_total)
+    @time solution = solve_parallel_gmres_asm(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
+        npoin_g = npoin_ang_total,
+        precond = :global_ilu,
+        restart = 50,
+        tol     = 1e-6)
    
-    @info maximum(solution), minimum(solution)
-    println(" # done radiation solved")
-    @info "dof", npoin_ang_total
+    MPI.Comm_rank(comm) == 0 && @info "radiation solved ($(npoin_ang_total) DOF)"
     A = nothing
     RHS = nothing
     GC.gc()
-    println(" # integrating solution and reference in angle")
+    MPI.Comm_rank(comm) == 0 && @info "integrating solution in angle..."
     int_sol = zeros(TFloat, npoin,1)
     int_ref = zeros(TFloat, npoin,1)
     L2_err = 0.0
@@ -674,16 +686,15 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             int_sol[ip] = g_int_sol[gip]
             int_ref[ip] = g_int_ref[gip]
         end
-        if (inputs[:lmanufactured_solution])
-            L2_ref_g = MPI.Allreduce(L2_ref, MPI.SUM, comm)
-            L2_err_g = MPI.Allreduce(L2_err, MPI.SUM, comm)
+        if inputs[:lmanufactured_solution]
+            L2_ref = MPI.Allreduce(L2_ref, MPI.SUM, comm)
+            L2_err = MPI.Allreduce(L2_err, MPI.SUM, comm)
         end
 
 
-    if (inputs[:lmanufactured_solution])
-        @info "new L2 norms", sqrt(L2_ref), sqrt(L2_err), sqrt(L2_err/L2_ref)
-        @info "infinity norms", maximum(abs.(solution-ref)), maximum(abs.(solution-ref))/maximum(ref)
-        
+    if inputs[:lmanufactured_solution] && MPI.Comm_rank(comm) == 0
+        @info "L2 norms: ref=$(round(sqrt(L2_ref),sigdigits=4)) err=$(round(sqrt(L2_err),sigdigits=4)) rel=$(round(sqrt(L2_err/max(L2_ref,1e-30)),sigdigits=4))"
+        @info "L∞ error: $(round(maximum(abs.(solution-ref))/max(maximum(ref),1e-30)*100, digits=4))%"
     end
     title = @sprintf "Solution-Radiation"
     write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
@@ -761,7 +772,6 @@ end
 
 function sparse_lhs_assembly_2Dby1D_adaptive(ref_level, ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang, npoin_ang_total, nelem, ngl, nelem_ang,
                                    dξdx, dξdy, dηdx, dηdy, npoin_ang, rad_HG_g, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
-    @info adapted
     max_entries = npoin_ang_total^2
     I_vec = Vector{Int}()
     J_vec = Vector{Int}()
@@ -1228,8 +1238,6 @@ function adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, conni
             end
         end
     end
-    println(" # finished non-adaptive connectivity")
-    @info "total number of independent points", iter-1
     n_spa = iter-1
     max_entries = iter^2
     In_vec = Vector{Int}()
@@ -1585,22 +1593,15 @@ function find_edge_node_match(ngl,iel,ip,connijk)
         iter += 1
 
     end
-    if (found == false) 
-        println(" # failed to find")
+    if !found
+        @warn "find_edge_node_match: failed to find matching edge node"
     end
     return k, j, ip1
 end
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Logging helper: only rank 0 prints to avoid redundant multi-process output.
+# 3D radiative transfer solver
 # ──────────────────────────────────────────────────────────────────────────────
-macro rankinfo(rank, msgs...)
-    quote
-        if $(esc(rank)) == 0
-            @info $(map(esc, msgs)...)
-        end
-    end
-end
 
 """
     build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je,
@@ -1729,11 +1730,18 @@ Writes a VTK file of the angle-integrated solution and reference field to
 """
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
         nx, ny, nz, elem_to_face,
-        extra_mesh, κ, σ, QT::Inexact, SD::NSD_3D, AD::ContGal)
+        extra_mesh, κ, σ, atmos_data, z_prof, τ_from_TOA, QT::Inexact, SD::NSD_3D, AD::ContGal;
+        rt_sol_lw = Float64[], rt_sol_sw = Float64[], rt_sol_lw_available = false, rt_sol_sw_available = false)
 
+    bdy = make_boundary_predicates(mesh)
+    sw = []
+    lw = []
+    connijk_spa = []
+    F_dir  :: Union{Vector{Float64}, Nothing} = nothing
+    G_dir  :: Union{Vector{Float64}, Nothing} = nothing
+    Q_dir  :: Union{Vector{Float64}, Nothing} = nothing
     nc_mat = zeros(Float64,1)
     P = zeros(Float64,1)
-    rest = zeros(Float64,1)
     nc_non_global_nodes = []
     n_non_global_nodes = 0
     n_spa = 0
@@ -1743,11 +1751,45 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     comm   = get_mpi_comm()
     nprocs = MPI.Comm_size(comm)
     rank   = MPI.Comm_rank(comm)
-    
+
+    if(inputs[:lRT_from_data])
+        sw  = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)
+        lw  = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
+    end
+
+    if (inputs[:RT_shortwave])
+        κ_ext_sw      = κ .+ σ
+        F_dir, τ_nodes = compute_tau_direct_3D(mesh, κ_ext_sw, sw, comm)
+        G_dir, Q_dir = compute_direct_radiation(F_dir, τ_nodes, κ, σ, sw, mesh)
+        ip_toa = argmax(mesh.z)
+        ip_sfc = argmin(mesh.z)
+        mfp = 1.0 / mean(κ_ext_sw)
+        sw_ω₀_lateral  = mean(σ ./ max.(κ_ext_sw, 1e-30))
+        @rankinfo rank "SW domain-mean ω₀: $(round(sw_ω₀_lateral, digits=4))"
+        @rankinfo rank "Mean free path: $(round(mfp/1000, digits=2)) km"
+        @rankinfo rank "Domain width:   $(round((mesh.xmax-mesh.xmin)/1000, digits=2)) km"
+        @rankinfo rank "τ at TOA (z=$(round(mesh.z[ip_toa],digits=0))m): $(round(τ_nodes[ip_toa],digits=4))"
+        @rankinfo rank "τ at sfc (z=$(round(mesh.z[ip_sfc],digits=0))m): $(round(τ_nodes[ip_sfc],digits=4))"
+    end
+
+    # ── Initialize Spatial AMR Cache ─────────────────────────────────────────────
+    # Initialize cache structure to hold spatial AMR data for constraint assembly.
+    spatial_amr_cache = SpatialAMRCache(
+        element_refinement_levels = Vector{Int}(mesh.ad_lvl),
+        num_spatial_hanging_facets = mesh.num_ncf
+    )
+
+    # Compute GLOBAL max to ensure all ranks make same decision (prevent MPI divergence)
+    local_has_spatial = mesh.num_ncf > 0 ? 1 : 0
+    global_has_spatial = MPI.Allreduce(local_has_spatial, MPI.MAX, comm)
+    has_spatial_hanging_nodes = global_has_spatial == 1
+    # Constraint building deferred until mesh fully available (after angular mesh setup)
+    R_spatial = nothing  # Will hold spatial restriction matrix if needed
+    P_spatial = nothing  # Will hold spatial prolongation matrix if needed
+    spatial_hanging_nodes_all_angular = Set{Int}()  # set for spatial hanging nodes
     if inputs[:adaptive_extra_meshes]
         gip2owner_extra = []
         local_parent_indices = Set{Int}()
-        local_non_owned_parents = Set{Int}()
         nonowned_parent_gids = Set{Int}()
         gid_to_extended_parents = Dict{Int, Int}()
         extended_parents_to_gid = Int[]
@@ -1806,22 +1848,59 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         neighbors = zeros(Int, nelem, 26, 2)
         adapted   = false
 
+        # ── Spatial coincident node deduplication for global numbering ────────
+        # Spatial AMR creates coincident nodes: child element corners at the same
+        # (x,y,z) as a parent corner.  Without remapping them to share the parent's
+        # GIP, setup_global_numbering_adaptive_angular_scalable creates two compact
+        # GIDs for the same location but only one rank claims the DOF, causing the
+        # "Unowned global DOFs detected" assertion failure.
+        ip2gip_dedup  = Int.(mesh.ip2gip)
+        _remapped_ips = Set{Int}()
+        if has_spatial_hanging_nodes
+            _cache_pre = build_spatial_constraint_matrices(
+                mesh, spatial_amr_cache,
+                extra_meshes_coords, extra_meshes_connijk,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                ngl, rank
+            )
+            _cache_pre = exchange_spatial_ghosts(
+                mesh, _cache_pre,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                rank, comm
+            )
+            for (child_ip, parent_ip) in _cache_pre.coincident_nodes
+                ip2gip_dedup[child_ip] = mesh.ip2gip[parent_ip]
+                push!(_remapped_ips, child_ip)
+            end
+            for (child_ip, parent_global_spa) in _cache_pre.cross_rank_coincident_nodes
+                ip2gip_dedup[child_ip] = parent_global_spa
+                push!(_remapped_ips, child_ip)
+            end
+        end
+
         # ── Pre-adaptivity connectivity and numbering ─────────────────────────
         @rankinfo rank "Building initial adaptive spatial-angular connectivity..."
+        flush(stdout)
         nc_mat, nc_non_global_nodes, n_non_global_nodes, n_spa =
             adaptive_spatial_angular_numbering_3D_2D!(
                 connijk_spa, nelem, ngl, mesh.connijk,
                 extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
                 extra_meshes_coords, mesh.x, mesh.y, mesh.z,
                 extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
+        @rankinfo rank "✓ Connectivity built: n_spa=$n_spa, n_non_global=$n_non_global_nodes"
+        flush(stdout)
 
         @rankinfo rank "Building pre-adaptivity global numbering..."
+        flush(stdout)
         ip2gip_spa, gip2ip, gip2owner_spa, gnpoin =
             setup_global_numbering_adaptive_angular_scalable(
-                mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
+                ip2gip_dedup, mesh.gip2owner, mesh, connijk_spa,
                 extra_meshes_coords, extra_meshes_connijk,
                 extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                n_spa, n_non_global_nodes, nc_non_global_nodes)
+                n_spa, n_non_global_nodes, nc_non_global_nodes;
+                remapped_ips = _remapped_ips)
+        @rankinfo rank "✓ Global numbering complete: gnpoin=$gnpoin"
+        flush(stdout)
 
         gip2owner_extra = zeros(Int, n_spa)
         for ip = 1:n_spa
@@ -1836,7 +1915,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
         @rankinfo rank "Global DOF count (pre-adapt): $gnpoin"
+        flush(stdout)
 
+        @rankinfo rank "Building non-conforming ghost layer..."
+        flush(stdout)
         ghost_layer = build_nonconforming_ghost_layer(
             mesh, connijk_spa, mesh.ip2gip, ip2gip_spa, gip2owner_spa,
             extra_meshes_coords, extra_meshes_connijk,
@@ -1844,6 +1926,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
             extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
             extra_meshes_ref_level, n_spa, neighbors)
+        @rankinfo rank "✓ Ghost layer built"
+        flush(stdout)
 
         # ── Pre-adaptivity matrices for adaptivity criterion ─────────────────
         @rankinfo rank "Assembling pre-adaptivity LHS and mass matrix..."
@@ -1854,13 +1938,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
             extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
             dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-            extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ)
+            extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
 
         Md = assemble_mass_diagonal_3Dby2D_adaptive(
             ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
             extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
             ngl, extra_meshes_extra_nelems, connijk_spa)
-
+        
+        M_inv = spdiagm(0 => 1.0 ./ Md)
         # ── Adaptivity criterion ──────────────────────────────────────────────
         @rankinfo rank "Computing adaptivity criterion..."
         one_vec = ones(Float64, size(LHS, 1))
@@ -1883,12 +1968,41 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_coords, connijk_spa, extra_mesh[1].ψ, extra_mesh[1].dψ,
             extra_meshes_extra_dξdx, extra_meshes_extra_dηdx,
             extra_meshes_extra_dξdy, extra_meshes_extra_dηdy)
-
+        # Reduction to find maximum of criterion
+        crit_max = MPI.Allreduce(maximum(maximum.(criterion)), MPI.MAX, comm)
+        thresholds = [crit_max * inputs[:RT_amr_threshold][1]]
         # ── Angular grid refinement ───────────────────────────────────────────
         @rankinfo rank "Adapting angular grid..."
-        
+
+        # Build per-element refinement records and compute which elements are
+        # eligible for angular refinement.  An element that is already spatially
+        # non-conforming with any neighbor (local or cross-rank) must not also
+        # become angularly non-conforming with that same neighbor.
+        ang_refine_records = build_element_refinement_records(
+            mesh, extra_meshes_ref_level, nelem, ngl, comm)
+        verify_element_refinement_records(
+            ang_refine_records, nelem, comm, rank;
+            uniform_spatial = !has_spatial_hanging_nodes)
+        ang_refine_mask = build_angular_refinement_mask(ang_refine_records)
+        @rankinfo rank "Angular refinement eligible: $(count(ang_refine_mask))/$nelem elements"
+
+        # Force periodic angular elements on the same spatial element to conform after refinement
+        max_conformity_iters = 2
+        for _ = 1:max_conformity_iters
+            n_forced_before = count(c -> c > thresholds[1],
+                                    [criterion[iel][e] for iel=1:nelem
+                                    for e=1:extra_meshes_extra_nelems[iel]])
+            enforce_periodic_phi_conformity!(criterion, thresholds, extra_meshes_ref_level,
+                                            nelem, extra_meshes_extra_nelems, extra_meshes_extra_nops,
+                                            extra_meshes_connijk, extra_meshes_coords)
+            n_forced_after = count(c -> c > thresholds[1],
+                                [criterion[iel][e] for iel=1:nelem
+                                    for e=1:extra_meshes_extra_nelems[iel]])
+            n_forced_after == n_forced_before && break
+        end
+
         adapt_angular_grid_3Dby2D!(
-            criterion, inputs[:RT_amr_threshold], extra_meshes_ref_level, nelem, ngl,
+            criterion, thresholds, extra_meshes_ref_level, nelem, ngl,
             extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors,
             extra_meshes_extra_npoins, extra_meshes_connijk, extra_meshes_coords,
             extra_meshes_extra_Je,
@@ -1899,215 +2013,741 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             mesh.connijk, mesh.x, mesh.y, mesh.z,
             mesh.xmin, mesh.ymin, mesh.zmin,
             mesh.xmax, mesh.ymax, mesh.zmax,
-            extra_mesh[1].ψ, extra_mesh[1].dψ)
+            extra_mesh[1].ψ, extra_mesh[1].dψ, ang_refine_mask)
 
-            nonowned_parent_indices = Set{Int}()
-            nc_mat = sparse(I,n_spa,n_spa)
-            nc_mat_rhs = sparse(I,n_spa,n_spa)
-            P = nc_mat'
-            P_vec = nc_mat_rhs'
-
-        if !(maximum(maximum.(extra_meshes_ref_level)) == 0)
-
-            # ── Post-adaptivity connectivity ──────────────────────────────────
-            connijk_spa = [Array{Int}(undef, ngl, ngl, ngl,
-                              extra_meshes_extra_nelems[iel],
-                              extra_meshes_extra_nops[iel][1]+1,
-                              extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
-
-            @rankinfo rank "Rebuilding connectivity on adapted mesh..."
-            nc_mat, nc_non_global_nodes, n_non_global_nodes, n_spa =
-                adaptive_spatial_angular_numbering_3D_2D!(
-                    connijk_spa, nelem, ngl, mesh.connijk,
-                    extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                    extra_meshes_coords, mesh.x, mesh.y, mesh.z,
-                    extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
-
-            adapted = true
-            @rankinfo rank "Hanging nodes: $n_non_global_nodes"
-
-            # ── Post-adaptivity global numbering ──────────────────────────────
-            @rankinfo rank "Building post-adaptivity global numbering..."
-            ip2gip_spa, gip2ip, gip2owner_spa, gnpoin =
-                setup_global_numbering_adaptive_angular_scalable(
-                    mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
+        nonowned_parent_indices = Set{Int}()
+        nc_mat = sparse(I,n_spa,n_spa)
+        nc_mat_rhs = sparse(I,n_spa,n_spa)
+        P = nc_mat'
+        P_vec = nc_mat_rhs'
+        
+        adapted = false   # set to true inside the if block when adaptation occurs
+        # CRITICAL: Must use global maximum across ALL ranks to avoid MPI divergence
+        # If one rank has adapted and another hasn't, they end up in different code blocks
+        # with different MPI calls that can't be satisfied collectively
+        local_max_ref = maximum(maximum.(extra_meshes_ref_level))
+        global_max_ref = MPI.Allreduce(local_max_ref, MPI.MAX, MPI.COMM_WORLD)
+        if !(global_max_ref == 0) || has_spatial_hanging_nodes
+            if !(global_max_ref == 0)
+                # ── Post-adaptivity connectivity ──────────────────────────────────
+                connijk_spa = [Array{Int}(undef, ngl, ngl, ngl,
+                                  extra_meshes_extra_nelems[iel],
+                                  extra_meshes_extra_nops[iel][1]+1,
+                                  extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
+    
+                @rankinfo rank "Rebuilding connectivity on adapted mesh..."
+                nc_mat, nc_non_global_nodes, n_non_global_nodes, n_spa =
+                    adaptive_spatial_angular_numbering_3D_2D!(
+                        connijk_spa, nelem, ngl, mesh.connijk,
+                        extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                        extra_meshes_coords, mesh.x, mesh.y, mesh.z,
+                        extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
+    
+                adapted = true
+                @rankinfo rank "Hanging nodes: $n_non_global_nodes"
+    
+                # ── Post-adaptivity global numbering ──────────────────────────────
+                @rankinfo rank "Building post-adaptivity global numbering..."
+                ip2gip_spa, gip2ip, gip2owner_spa, gnpoin =
+                    setup_global_numbering_adaptive_angular_scalable(
+                        ip2gip_dedup, mesh.gip2owner, mesh, connijk_spa,
+                        extra_meshes_coords, extra_meshes_connijk,
+                        extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                        n_spa, n_non_global_nodes, nc_non_global_nodes;
+                        remapped_ips = _remapped_ips)
+    
+                @rankinfo rank "Global DOF count (post-adapt): $gnpoin  (free: $(n_spa - n_non_global_nodes), hanging: $n_non_global_nodes)"
+    
+                # ── Owner map in local indexing ───────────────────────────────────
+                gip2owner_extra = zeros(Int, n_spa)
+                for ip = 1:n_spa
+                    gip2owner_extra[ip] = gip2owner_spa[ip2gip_spa[ip]]
+                end
+    
+                # ── Reverse GID lookup (used in many downstream functions) ────────
+                gip_to_local = Dict{Int, Int}()
+                sizehint!(gip_to_local, n_spa)
+                for ip = 1:n_spa
+                    gip_to_local[ip2gip_spa[ip]] = ip
+                end
+    
+                # ── Ghost layer ───────────────────────────────────────────────────
+                @rankinfo rank "Building ghost layer..."
+                ghost_layer = build_nonconforming_ghost_layer(
+                    mesh, connijk_spa, mesh.ip2gip, ip2gip_spa, gip2owner_spa,
                     extra_meshes_coords, extra_meshes_connijk,
                     extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                    n_spa, n_non_global_nodes, nc_non_global_nodes)
+                    extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
+                    extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
+                    extra_meshes_ref_level, n_spa, neighbors)
+    
+                @rankinfo rank "Building extended local numbering for ghost parents..."
+                gid_to_extended_local, extended_local_to_gid, _ =
+                    build_extended_local_numbering(n_spa, ghost_layer, ip2gip_spa, rank)
+    
+                # ── Constraint (restriction/prolongation) matrices ────────────────
+                @rankinfo rank "Building restriction and prolongation matrices..."
+                nc_mat, P, nc_mat_rhs, P_vec,
+                    ghost_constraint_data, ghost_constraint_data_rhs, all_hanging_nodes,
+                    gid_to_extended_parents, extended_parents_to_gid,
+                    extended_parents_x, extended_parents_y, extended_parents_z,
+                    extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
+                    local_parent_indices, nonowned_parent_indices, nonowned_parent_gids =
+                    build_restriction_matrices_local_and_ghost(
+                        connijk_spa, nc_non_global_nodes, n_spa,
+                        ghost_layer, extra_meshes_coords, extra_meshes_connijk,
+                        extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                        mesh, ngl, nelem, neighbors,
+                        ip2gip_spa, gip2owner_extra, gid_to_extended_local,
+                        extended_local_to_gid, rank)
+    
+                # Build reverse ghost map via AllGather so every rank learns about
+                # hanging nodes on OTHER ranks that depend on parents it owns locally.
+                # The local-only approach misses: rank B has hanging node H depending on
+                # parent P owned by rank A; A's ghost_constraint_data never mentions H,
+                # so A never sends its contribution → H stays at P * solution locally only.
+                @rankinfo rank "Building reverse ghost constraint map..."
+                _ext_gid_set_ang = Set(extended_parents_to_gid)
+                _local_rev_ang = Float64[]
+                for (ip_hanging, parent_constraints) in ghost_constraint_data
+                    hanging_gid   = ip2gip_spa[ip_hanging]
+                    owner_hanging = get(gip2owner_spa, hanging_gid, rank)
+                    for (parent_gid, weight) in parent_constraints
+                        parent_gid in _ext_gid_set_ang || continue
+                        push!(_local_rev_ang, Float64(parent_gid), Float64(hanging_gid),
+                              Float64(owner_hanging), weight)
+                    end
+                end
+                _n_rev_loc_ang = Int32(length(_local_rev_ang) ÷ 4)
+                _n_rev_all_ang = MPI.Allgather([_n_rev_loc_ang], comm)
+                _all_rev_ang   = MPI.Allgatherv(_local_rev_ang, Int32.(_n_rev_all_ang .* 4), comm)
+    
+                reverse_ghost_map = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+                for k = 1:length(_all_rev_ang) ÷ 4
+                    s = 4*(k-1)
+                    parent_gid    = Int(round(_all_rev_ang[s+1]))
+                    hanging_gid   = Int(round(_all_rev_ang[s+2]))
+                    owner_hanging = Int(round(_all_rev_ang[s+3]))
+                    weight        = _all_rev_ang[s+4]
+                    local_parent  = get(gip_to_local, parent_gid, 0)
+                    local_parent == 0 && continue
+                    get(gip2owner_spa, parent_gid, -1) != rank && continue
+                    push!(get!(reverse_ghost_map, local_parent, Tuple{Int,Int,Float64}[]),
+                          (hanging_gid, owner_hanging, weight))
+                end
+    
+                # ── LHS and mass matrix on adapted mesh ───────────────────────────
+                @rankinfo rank "Assembling LHS on adapted mesh..."
+                LHS = sparse_lhs_assembly_3Dby2D_adaptive(
+                    ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
+                    mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ,
+                    extra_meshes_connijk, extra_meshes_extra_Je,
+                    extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
+                    extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
+                    dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                    extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
+    
+                P    = nc_mat'
 
-            @rankinfo rank "Global DOF count (post-adapt): $gnpoin  (free: $(n_spa - n_non_global_nodes), hanging: $n_non_global_nodes)"
+                Md = assemble_mass_diagonal_3Dby2D_adaptive(
+                    ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
+                    extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
+                    ngl, extra_meshes_extra_nelems, connijk_spa)
+                M_inv = spdiagm(0 => 1.0 ./ Md)
+            else  # global_max_ref == 0, has_spatial_hanging_nodes: spatial-only combined path
+                # connijk_spa, n_spa, ip2gip_spa, gip2owner_spa, gip2owner_extra, gip_to_local,
+                # nc_mat (identity), nc_non_global_nodes, n_non_global_nodes, LHS, Md
+                # are all already correct from pre-adaptation (lines ~270-429).
+                # Only the ghost/constraint structures are missing — initialize empty.
+                ghost_constraint_data     = Dict{Int, Vector{Tuple{Int,Float64}}}()
+                ghost_constraint_data_rhs = Dict{Int, Vector{Tuple{Int,Float64}}}()
+                all_hanging_nodes         = Set{Int}()
+                gid_to_extended_parents   = Dict{Int,Int}()
+                extended_parents_to_gid   = Int[]
+                extended_parents_x        = Float64[]
+                extended_parents_y        = Float64[]
+                extended_parents_z        = Float64[]
+                extended_parents_θ        = Float64[]
+                extended_parents_ϕ        = Float64[]
+                extended_parents_ip       = Int[]
+                local_parent_indices      = Set{Int}()
+                nonowned_parent_gids      = Set{Int}()
+            end  # if !(global_max_ref == 0) / else (spatial-only)
 
-            # ── Owner map in local indexing ───────────────────────────────────
-            gip2owner_extra = zeros(Int, n_spa)
-            for ip = 1:n_spa
-                gip2owner_extra[ip] = gip2owner_spa[ip2gip_spa[ip]]
-            end
-
-            # ── Reverse GID lookup (used in many downstream functions) ────────
-            gip_to_local = Dict{Int, Int}()
-            sizehint!(gip_to_local, n_spa)
-            for ip = 1:n_spa
-                gip_to_local[ip2gip_spa[ip]] = ip
-            end
-
-            # ── Ghost layer ───────────────────────────────────────────────────
-            @rankinfo rank "Building ghost layer..."
-            ghost_layer = build_nonconforming_ghost_layer(
-                mesh, connijk_spa, mesh.ip2gip, ip2gip_spa, gip2owner_spa,
-                extra_meshes_coords, extra_meshes_connijk,
-                extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
-                extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
-                extra_meshes_ref_level, n_spa, neighbors)
-
-            @rankinfo rank "Building extended local numbering for ghost parents..."
-            gid_to_extended_local, extended_local_to_gid, n_total =
-                build_extended_local_numbering(n_spa, ghost_layer, ip2gip_spa, rank)
-
-            # ── Constraint (restriction/prolongation) matrices ────────────────
-            @rankinfo rank "Building restriction and prolongation matrices..."
-            nc_mat, P, nc_mat_rhs, P_vec,
-                ghost_constraint_data, ghost_constraint_data_rhs, all_hanging_nodes,
-                gid_to_extended_parents, extended_parents_to_gid,
-                extended_parents_x, extended_parents_y, extended_parents_z,
-                extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
-                local_parent_indices, nonowned_parent_indices, nonowned_parent_gids =
-                build_restriction_matrices_local_and_ghost(
-                    connijk_spa, nc_non_global_nodes, n_spa,
-                    ghost_layer, extra_meshes_coords, extra_meshes_connijk,
+                        if has_spatial_hanging_nodes
+                spatial_amr_cache = build_spatial_constraint_matrices(
+                    mesh, spatial_amr_cache,
+                    extra_meshes_coords, extra_meshes_connijk,
                     extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                    extra_meshes_extra_Je, mesh, ngl, nelem, neighbors,
-                    ip2gip_spa, gip2owner_extra, gid_to_extended_local,
-                    extended_local_to_gid, rank)
-
-            # Precompute reverse ghost map (reused for solution prolongation)
-            @rankinfo rank "Building reverse ghost constraint map..."
-            reverse_ghost_map = build_reverse_ghost_constraint_map(
-                ghost_constraint_data, ip2gip_spa, gip2owner_spa, rank, gip_to_local)
-
-            # ── LHS and mass matrix on adapted mesh ───────────────────────────
-            @rankinfo rank "Assembling LHS on adapted mesh..."
-            LHS = sparse_lhs_assembly_3Dby2D_adaptive(
-                ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
-                mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ,
-                extra_meshes_connijk, extra_meshes_extra_Je,
-                extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
-                extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
-                dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, inputs[:lRT_from_data], κ, σ)
-
-            P    = nc_mat'
-            rest = nc_mat
-
-            Md = assemble_mass_diagonal_3Dby2D_adaptive(
-                ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
-                extra_meshes_extra_Je, extra_meshes_extra_nops, n_spa, nelem,
-                ngl, extra_meshes_extra_nelems, connijk_spa)
-        end  # if adapted
-
-        # ── Mass matrix assembly and inversion ────────────────────────────────
-        pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
-        if pM !== nothing
-            assemble_mpi!(Md, pM)
-        end
-        M_inv = spdiagm(0 => 1.0 ./ Md)
-        MLHS  = sparse(M_inv * LHS)
-
-        # ── All-reduce parent–parent entries across ranks ─────────────────────
-        # Hanging-node constraint handling requires that (parent, parent) blocks
-        # of M⁻¹LHS are globally consistent before restriction/prolongation.
-        if nprocs > 1
-            @rankinfo rank "All-reducing parent-parent matrix entries..."
-            MLHS = allreduce_parent_parent_entries(
-                MLHS, nc_mat, gip2owner_extra, n_spa, rank, comm,
-                ip2gip_spa, local_parent_indices, nonowned_parent_indices,
-                nonowned_parent_gids, gip_to_local)
-        end
-
-        # ── Parallel restriction: apply R from the left ───────────────────────
-        # Interface hanging nodes on other ranks contribute row effects that must
-        # be communicated before the local nc_mat application.
-        @rankinfo rank "Applying parallel restriction (left multiply by R)..."
-        row_effects_to_send, MLHS_effects =
-            compute_hanging_row_effects_before_restriction(
-                ghost_constraint_data, MLHS, ip2gip_spa, gip2owner_spa, rank,
-                gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
-
-        A_left_restricted = nc_mat * MLHS_effects
-
-        received_row_effects =
-            exchange_hanging_effects(row_effects_to_send, rank, comm)
-
-        A_with_row_effects = add_hanging_row_effects(
-            A_left_restricted, received_row_effects, ip2gip_spa,
-            size(MLHS_effects, 1), rank, gip_to_local)
-
-        # ── Parallel prolongation: apply P from the right ─────────────────────
-        @rankinfo rank "Applying parallel prolongation (right multiply by P)..."
-        col_effects_to_send, A_ghost_effects =
-            compute_hanging_col_effects_before_prolongation(
-                ghost_constraint_data, A_with_row_effects, ip2gip_spa, gip2owner_spa,
-                n_spa, size(MLHS_effects, 1), all_hanging_nodes, rank,
-                gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
-
-        A_both_restricted = A_ghost_effects * P
-
-        received_col_effects =
-            exchange_hanging_effects(col_effects_to_send, rank, comm)
-
-        n_spa_g = size(MLHS_effects, 1)
-        A_with_col_effects = add_hanging_col_effects(
-            A_both_restricted, received_col_effects, ip2gip_spa,
-            n_spa_g, rank, gip_to_local)
-
-        # ── Extract free-node submatrix ───────────────────────────────────────
-        n_free = n_spa - length(nc_non_global_nodes)
-        @rankinfo rank "Extracting free-node submatrix (removing hanging rows/cols)..."
-        A_free = extract_free_submatrix_remove_all_hanging(
-            A_with_col_effects, all_hanging_nodes, n_free, n_spa_g, rank)
-
-        A = sparse(A_free)
-
-        # Remove non-owned parent–parent entries to avoid double-counting.
-        # These were all-reduced above and must be zeroed on non-owning ranks.
-        for i in nonowned_parent_indices
-            for j in nonowned_parent_indices
-                if abs(A[i,j]) > 0.0
-                    A[i,j] = 0.0
+                    ngl, rank
+                )
+                verify_spatial_constraints(spatial_amr_cache, rank, npoin, extra_meshes_extra_nelems, extra_meshes_extra_nops)
+                spatial_amr_cache = exchange_spatial_ghosts(
+                    mesh, spatial_amr_cache,
+                    extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                    rank, comm
+                )
+                verify_spatial_ghost_exchange(spatial_amr_cache, rank)
+                @rankinfo rank "Spatial AMR: $(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank hanging nodes"
+            end
+    
+            # ── Set up combined spatial+angular restriction/prolongation ─────────────
+            # Both R operators are set up HERE before application:
+            #   - Angular R: already in nc_mat (built above by build_restriction_matrices_local_and_ghost)
+            #   - Spatial R: augmented into nc_mat by combine_spatial_angular_restrictions
+            #
+            # Mathematical basis (disjoint hanging sets by can_refine_angular mask):
+            #   nc_mat_combined = nc_mat + nc_mat_spatial_local - I_{spatial_hanging}
+            #
+            # The off-diagonals sum without interference; the subtracted identity
+            # removes the identity rows nc_mat has for nodes free-in-angular but
+            # spatial-hanging. One combined R is then applied with the same parallel
+            # restriction/prolongation machinery (compute_hanging_row_effects_before_restriction,
+            # exchange_hanging_effects, etc.).
+            #
+            # Guard: requires adapted=true (connijk_spa, n_spa available).
+            # If no spatial hanging nodes, nc_mat is unchanged and all_hanging_nodes
+            # stays as the pure angular set.
+            spatial_hanging_combined = Set{Int}()
+    
+            if has_spatial_hanging_nodes
+                # Build (x,y,z,θ,ϕ) → combined DOF index for the adapted mesh.
+                point_dict_combined_adapted = Dict{NTuple{5,Float64}, Int}()
+                for iel_d = 1:nelem
+                    for kk_d = 1:ngl, jj_d = 1:ngl, ii_d = 1:ngl
+                        ip_s_d = mesh.connijk[iel_d, ii_d, jj_d, kk_d]
+                        x_d = mesh.x[ip_s_d]; y_d = mesh.y[ip_s_d]; z_d = mesh.z[ip_s_d]
+                        for e_d = 1:extra_meshes_extra_nelems[iel_d]
+                            nop_d = extra_meshes_extra_nops[iel_d][e_d]
+                            for jθ_d = 1:nop_d+1, iθ_d = 1:nop_d+1
+                                i_ang_d = extra_meshes_connijk[iel_d][e_d, iθ_d, jθ_d]
+                                θ_d = extra_meshes_coords[iel_d][1, i_ang_d]
+                                ϕ_d = extra_meshes_coords[iel_d][2, i_ang_d]
+                                key_d = (round(x_d, digits=12), round(y_d, digits=12),
+                                         round(z_d, digits=12), round(θ_d, digits=12),
+                                         round(ϕ_d, digits=12))
+                                get!(point_dict_combined_adapted, key_d,
+                                     connijk_spa[iel_d][ii_d, jj_d, kk_d, e_d, iθ_d, jθ_d])
+                            end
+                        end
+                    end
+                end
+                if global_max_ref == 0
+                    # Spatial-only case: no angular adaptation, nc_mat is identity.
+                    # Use the proven uniform-path approach directly (mirrors lines 952-1429)
+                    # instead of combine_spatial_angular_restrictions, which has parallel bugs.
+                    (nc_mat, P, nc_mat_rhs,
+                     ghost_constraint_data, ghost_constraint_data_rhs,
+                     gid_to_extended_parents, extended_parents_to_gid,
+                     gip_to_local, all_hanging_nodes, _) =
+                        build_spatial_constraints_for_combined_path(
+                            spatial_amr_cache, mesh,
+                            ip2gip_spa, gip2owner_extra, gip2owner_spa,
+                            point_dict_combined_adapted, n_spa, rank, comm
+                        )
+                    spatial_hanging_combined = all_hanging_nodes
+                    P_vec = sparse(nc_mat_rhs')
+                else
+                    # Combined angular+spatial: build spatial constraints with the proven
+                    # uniform-path approach, then merge them with the angular nc_mat.
+                    (R_spatial_ext_comb, _, R_spatial_rhs_ext_comb,
+                     ghost_cdata_spa_c, ghost_cdata_spa_rhs_c,
+                     _, ext_to_gid_spa_c,
+                     _, spatial_hanging_combined_raw, _) =
+                        build_spatial_constraints_for_combined_path(
+                            spatial_amr_cache, mesh,
+                            ip2gip_spa, gip2owner_extra, gip2owner_spa,
+                            point_dict_combined_adapted, n_spa, rank, comm
+                        )
+                    nc_mat, P, nc_mat_rhs, P_vec, all_hanging_nodes, spatial_hanging_combined =
+                        combine_spatial_angular_restrictions(
+                            nc_mat, nc_mat_rhs,
+                            ghost_constraint_data, ghost_constraint_data_rhs,
+                            gid_to_extended_parents, extended_parents_to_gid,
+                            extended_parents_x, extended_parents_y, extended_parents_z,
+                            extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
+                            all_hanging_nodes,
+                            R_spatial_ext_comb, R_spatial_rhs_ext_comb,
+                            ghost_cdata_spa_c, ghost_cdata_spa_rhs_c,
+                            ext_to_gid_spa_c,
+                            spatial_hanging_combined_raw,
+                            n_spa, rank
+                        )
                 end
             end
+
+            # ── Rebuild reverse ghost map after spatial constraints are finalized ──
+            # For the spatial-only combined path and the combined angular+spatial path,
+            # ghost_constraint_data and gid_to_extended_parents were set/augmented inside
+            # the has_spatial_hanging_nodes block. The reverse_ghost_map built earlier
+            # (lines 547-575) used only the angular extended parents and is now stale.
+            # Rebuild it here from the finalized ghost_constraint_data so that solution
+            # prolongation at line ~2334 correctly exchanges cross-rank parent contributions.
+            if has_spatial_hanging_nodes
+                _ext_gid_set_all = Set(extended_parents_to_gid)
+                _local_rev_all = Float64[]
+                for (ip_hanging, parent_constraints) in ghost_constraint_data
+                    hanging_gid   = ip2gip_spa[ip_hanging]
+                    owner_hanging = get(gip2owner_spa, hanging_gid, rank)
+                    for (parent_gid, weight) in parent_constraints
+                        parent_gid in _ext_gid_set_all || continue
+                        push!(_local_rev_all, Float64(parent_gid), Float64(hanging_gid),
+                              Float64(owner_hanging), weight)
+                    end
+                end
+                _n_rev_loc_all = Int32(length(_local_rev_all) ÷ 4)
+                _n_rev_all_all = MPI.Allgather([_n_rev_loc_all], comm)
+                _all_rev_all   = MPI.Allgatherv(_local_rev_all, Int32.(_n_rev_all_all .* 4), comm)
+
+                reverse_ghost_map = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+                for k = 1:length(_all_rev_all) ÷ 4
+                    s = 4*(k-1)
+                    parent_gid    = Int(round(_all_rev_all[s+1]))
+                    hanging_gid   = Int(round(_all_rev_all[s+2]))
+                    owner_hanging = Int(round(_all_rev_all[s+3]))
+                    weight        = _all_rev_all[s+4]
+                    local_parent  = get(gip_to_local, parent_gid, 0)
+                    local_parent == 0 && continue
+                    get(gip2owner_spa, parent_gid, -1) != rank && continue
+                    push!(get!(reverse_ghost_map, local_parent, Tuple{Int,Int,Float64}[]),
+                          (hanging_gid, owner_hanging, weight))
+                end
+            end
+
+            # ── Mass matrix assembly and inversion ────────────────────────────────
+            pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
+            if pM !== nothing
+                assemble_mpi!(Md, pM)
+            end
+            M_inv = spdiagm(0 => 1.0 ./ Md)
+            MLHS  = sparse(M_inv * LHS)
+            # ── All-reduce parent–parent entries across ranks ─────────────────────
+            # Hanging-node constraint handling requires that (parent, parent) blocks
+            # of M⁻¹LHS are globally consistent before restriction/prolongation.
+            if nprocs > 1
+                @rankinfo rank "All-reducing parent-parent matrix entries..."
+            end
+    
+            # ── Parallel restriction: apply R from the left ───────────────────────
+            # Interface hanging nodes on other ranks contribute row effects that must
+            # be communicated before the local nc_mat application.
+            @rankinfo rank "Applying parallel restriction (left multiply by R)..."
+            row_effects_to_send, MLHS_effects =
+                compute_hanging_row_effects_before_restriction(
+                    ghost_constraint_data, MLHS, ip2gip_spa, gip2owner_spa, rank,
+                    gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
+    
+            A_left_restricted = nc_mat * MLHS_effects
+    
+            received_row_effects =
+                exchange_hanging_effects(row_effects_to_send, rank, comm)
+    
+            A_with_row_effects = add_hanging_row_effects(
+                A_left_restricted, received_row_effects, ip2gip_spa,
+                size(MLHS_effects, 1), rank, gip_to_local)
+    
+            # ── Parallel prolongation: apply P from the right ─────────────────────
+            @rankinfo rank "Applying parallel prolongation (right multiply by P)..."
+            col_effects_to_send, A_ghost_effects =
+                compute_hanging_col_effects_before_prolongation(
+                    ghost_constraint_data, A_with_row_effects, ip2gip_spa, gip2owner_spa,
+                    n_spa, size(MLHS_effects, 1), all_hanging_nodes, rank,
+                    gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
+    
+            A_both_restricted = A_ghost_effects * P
+    
+            received_col_effects =
+                exchange_hanging_effects(col_effects_to_send, rank, comm)
+    
+            n_spa_g = size(MLHS_effects, 1)
+            A_with_col_effects = add_hanging_col_effects(
+                A_both_restricted, received_col_effects, ip2gip_spa,
+                n_spa_g, rank, gip_to_local)
+    
+            # ── Extract free-node submatrix ───────────────────────────────────────
+            n_free = n_spa - length(all_hanging_nodes)
+            @rankinfo rank "Extracting free-node submatrix (removing hanging rows/cols)..."
+            A_free = extract_free_submatrix_remove_all_hanging(
+                A_with_col_effects, all_hanging_nodes, n_free, n_spa_g, rank)
+    
+            A = sparse(A_free)
+    
+            A = sparse(A)
+    
+            RHS = zeros(TFloat, n_spa_g)
+            ref = zeros(TFloat, n_spa)
+            BDY = zeros(TFloat, n_spa_g)
+    
+        else  # if !(global_max_ref == 0) || has_spatial_hanging_nodes
+            # Conforming adaptive case: no refinement occurred, so Md still holds the
+            # locally-assembled mass diagonal from line ~374.  In parallel the diagonal
+            # is incomplete (missing neighbour-rank contributions at shared DOFs), so
+            # assemble it globally before inverting.
+            pM_conform = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
+            if pM_conform !== nothing
+                assemble_mpi!(Md, pM_conform)
+            end
+            M_inv = spdiagm(0 => 1.0 ./ Md)
+            A = sparse(M_inv*LHS)
+            n_spa_g = n_spa
+            RHS = zeros(TFloat, n_spa)
+            ref = zeros(TFloat, n_spa)
+            BDY = zeros(TFloat, n_spa)
         end
-        A = sparse(A)
-
-        RHS = zeros(TFloat, n_spa_g)
-        ref = zeros(TFloat, n_spa)
-        BDY = zeros(TFloat, n_spa_g)
-
     else  # ── Non-adaptive path ────────────────────────────────────────────────
 
+        # Defaults used when there are no spatial hanging nodes.
+        n_spa_new = 0
+        n_non_global_nodes_spa = 0
+        connijk_spa_uniform = Vector{Array{Int,6}}()
+        point_dict_spa = Dict{NTuple{5,Float64}, Int}()
+        global_sp_ang_to_gid = Dict{Tuple{Int,Int}, Int}()
+        _all_needed_set = Set{Int}()
+
+        if has_spatial_hanging_nodes
+
+            # Create arrays mimicking adaptive mesh structure for uniform case
+            extra_meshes_coords_uniform = [extra_mesh.extra_coords[:,:] for _ in 1:nelem]
+            extra_meshes_connijk_uniform = [extra_mesh.extra_connijk for _ in 1:nelem]
+            extra_meshes_extra_nops_uniform = [[extra_mesh.extra_nop[1] for _ in 1:extra_mesh.extra_nelem] for _ in 1:nelem]
+            extra_meshes_extra_nelems_uniform = [extra_mesh.extra_nelem for _ in 1:nelem]
+
+            # Initialize here (outside try) so they are in scope for the assembly and
+            # LHS assembly blocks below. The try block updates ip2gip_dedup for coincident
+            # nodes and populates nc_non_global_nodes_spa / gip_spa_to_local_ip / n_ang.
+            ip2gip_dedup           = Int.(mesh.ip2gip)
+            nc_non_global_nodes_spa = Int[]
+            gip_spa_to_local_ip    = Dict{Int,Int}()
+            n_ang                  = extra_mesh.extra_npoin
+            _remapped_ips          = Set{Int}()
+
+            try
+                spatial_amr_cache = build_spatial_constraint_matrices(
+                    mesh, spatial_amr_cache,
+                    extra_meshes_coords_uniform, extra_meshes_connijk_uniform,
+                    extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
+                    ngl, rank
+                )
+                verify_spatial_constraints(spatial_amr_cache, rank, npoin, extra_meshes_extra_nelems_uniform, extra_meshes_extra_nops_uniform)
+                spatial_amr_cache = exchange_spatial_ghosts(
+                    mesh, spatial_amr_cache,
+                    extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
+                    rank, comm
+                )
+                verify_spatial_ghost_exchange(spatial_amr_cache, rank)
+                @rankinfo rank "Spatial AMR: $(length(spatial_amr_cache.parent_weights)) local + $(length(spatial_amr_cache.cross_rank_parent_weights)) cross-rank hanging nodes"
+
+                # ── Update ip2gip_dedup BEFORE mutual-exclusivity filtering ──────────
+                # Coincident nodes (child at same (x,y,z) as parent corner) must share
+                # the parent's spatial GIP so setup_global_numbering assigns them the same
+                # compact GID on all ranks.  This must happen for ALL coincident nodes —
+                # even those that will be removed below for also acting as parents.
+                # Collect remapped_ips: passed to setup_global_numbering so Phase 2 treats
+                # remapped IPs as nonowned (preventing both ranks from claiming ownership of
+                # the same GIP, which would break sharing detection and produce duplicate GIDs).
+                _remapped_ips = Set{Int}()
+                for (child_ip, parent_ip) in spatial_amr_cache.coincident_nodes
+                    ip2gip_dedup[child_ip] = mesh.ip2gip[parent_ip]
+                    push!(_remapped_ips, child_ip)
+                end
+                for (child_ip, parent_global_spa) in spatial_amr_cache.cross_rank_coincident_nodes
+                    ip2gip_dedup[child_ip] = parent_global_spa
+                    push!(_remapped_ips, child_ip)
+                end
+
+                # ── Mutual-exclusivity post-processing ────────────────────────
+                # Corner nodes at junctions of multiple NCFs can appear simultaneously
+                # as parents of interpolated hanging nodes AND as coincident children of
+                # another NCF. Such nodes must NOT be classified as coincident for
+                # constraint purposes (coincident treatment zeroes their rows), but their
+                # ip2gip_dedup remapping above is kept so global numbering remains unique.
+                local_parent_ip_set = Set{Int}()
+                for (_, plist) in spatial_amr_cache.parent_weights
+                    for (pip, _) in plist
+                        push!(local_parent_ip_set, pip)
+                    end
+                end
+                cross_rank_parent_gip_set = Set{Int}()
+                for (_, plist) in spatial_amr_cache.cross_rank_parent_weights
+                    for (pgip, _) in plist
+                        push!(cross_rank_parent_gip_set, pgip)
+                    end
+                end
+                n_removed_local      = 0
+                n_removed_cross_rank = 0
+                for child_ip in collect(keys(spatial_amr_cache.coincident_nodes))
+                    child_gip = Int(mesh.ip2gip[child_ip])
+                    # Remove if acting as a parent, OR if also classified as interpolated child
+                    # (parent_weights keys take precedence over coincident_nodes)
+                    if child_ip in local_parent_ip_set ||
+                       child_gip in cross_rank_parent_gip_set ||
+                       haskey(spatial_amr_cache.parent_weights, child_ip) ||
+                       haskey(spatial_amr_cache.cross_rank_parent_weights, child_ip)
+                        delete!(spatial_amr_cache.coincident_nodes, child_ip)
+                        n_removed_local += 1
+                    end
+                end
+                for child_ip in collect(keys(spatial_amr_cache.cross_rank_coincident_nodes))
+                    child_gip = Int(mesh.ip2gip[child_ip])
+                    if child_ip in local_parent_ip_set ||
+                       child_gip in cross_rank_parent_gip_set ||
+                       haskey(spatial_amr_cache.parent_weights, child_ip) ||
+                       haskey(spatial_amr_cache.cross_rank_parent_weights, child_ip)
+                        delete!(spatial_amr_cache.cross_rank_coincident_nodes, child_ip)
+                        n_removed_cross_rank += 1
+                    end
+                end
+                # ── Populate gip_spa_to_local_ip: reverse map global spatial ID → local spatial ip ──
+                # Needed to convert cross-rank parent global spatial IDs to local DOF indices.
+                # (initialized to empty Dict before this try block)
+                for ip = 1:mesh.npoin
+                    gip_spa_to_local_ip[Int(mesh.ip2gip[ip])] = ip
+                end
+
+                # ── Build connijk_spa_uniform with coordinate deduplication ──
+                # Key: (x,y,z,θ,ϕ) → unique local DOF index ip_spa.
+                # Coincident spatial nodes (same (x,y,z) but different mesh.connijk ip)
+                # naturally map to the same ip_spa — no explicit coincident handling needed.
+                # ip2gip_dedup ensures coincident nodes share the same gip signature in
+                # setup_global_numbering_adaptive_angular_scalable → same compact GID.
+                connijk_spa_uniform = [
+                    Array{Int}(undef, ngl, ngl, ngl, extra_mesh.extra_nelem,
+                               extra_mesh.extra_nop[1]+1, extra_mesh.extra_nop[1]+1)
+                    for _ in 1:nelem]
+                point_dict_spa = Dict{NTuple{5,Float64}, Int}()
+                n_spa_counter = 0
+                for iel_c = 1:nelem
+                    for kc = 1:ngl, jc = 1:ngl, ic = 1:ngl
+                        ip_c = mesh.connijk[iel_c, ic, jc, kc]
+                        x_c = mesh.x[ip_c]; y_c = mesh.y[ip_c]; z_c = mesh.z[ip_c]
+                        for e_ext_c = 1:extra_mesh.extra_nelem
+                            nop_c = extra_mesh.extra_nop[1]
+                            for jθ_c = 1:nop_c+1, iθ_c = 1:nop_c+1
+                                i_ang_c = extra_mesh.extra_connijk[e_ext_c, iθ_c, jθ_c]
+                                θ_c = extra_mesh.extra_coords[1, i_ang_c]
+                                ϕ_c = extra_mesh.extra_coords[2, i_ang_c]
+                                key = (round(x_c, digits=12), round(y_c, digits=12),
+                                       round(z_c, digits=12), round(θ_c, digits=12),
+                                       round(ϕ_c, digits=12))
+                                idx = get(point_dict_spa, key, 0)
+                                if idx == 0
+                                    n_spa_counter += 1
+                                    point_dict_spa[key] = n_spa_counter
+                                    connijk_spa_uniform[iel_c][ic, jc, kc, e_ext_c, iθ_c, jθ_c] = n_spa_counter
+                                else
+                                    connijk_spa_uniform[iel_c][ic, jc, kc, e_ext_c, iθ_c, jθ_c] = idx
+                                end
+                            end
+                        end
+                    end
+                end
+                n_spa_new = n_spa_counter
+
+                # ── Build nc_non_global_nodes_spa: ip_spa indices for interpolated hanging nodes ──
+                # Look up each hanging spatial node's (x,y,z,θ,ϕ) in point_dict_spa to get ip_spa.
+                # Coincident nodes are already transparent (same ip_spa as parent via dedup).
+                nc_non_global_nodes_spa = Int[]
+                nc_set_spa = Set{Int}()
+                for hanging_ip in keys(spatial_amr_cache.parent_weights)
+                    x_h = mesh.x[hanging_ip]; y_h = mesh.y[hanging_ip]; z_h = mesh.z[hanging_ip]
+                    for e_ext_h = 1:extra_mesh.extra_nelem
+                        nop_h = extra_mesh.extra_nop[1]
+                        for jθ_h = 1:nop_h+1, iθ_h = 1:nop_h+1
+                            i_ang_h = extra_mesh.extra_connijk[e_ext_h, iθ_h, jθ_h]
+                            θ_h = extra_mesh.extra_coords[1, i_ang_h]
+                            ϕ_h = extra_mesh.extra_coords[2, i_ang_h]
+                            key_h = (round(x_h, digits=12), round(y_h, digits=12),
+                                     round(z_h, digits=12), round(θ_h, digits=12),
+                                     round(ϕ_h, digits=12))
+                            ip_spa_h = get(point_dict_spa, key_h, 0)
+                            ip_spa_h == 0 && continue
+                            if !(ip_spa_h in nc_set_spa)
+                                push!(nc_non_global_nodes_spa, ip_spa_h)
+                                push!(nc_set_spa, ip_spa_h)
+                            end
+                        end
+                    end
+                end
+                for hanging_ip in keys(spatial_amr_cache.cross_rank_parent_weights)
+                    x_h = mesh.x[hanging_ip]; y_h = mesh.y[hanging_ip]; z_h = mesh.z[hanging_ip]
+                    for e_ext_h = 1:extra_mesh.extra_nelem
+                        nop_h = extra_mesh.extra_nop[1]
+                        for jθ_h = 1:nop_h+1, iθ_h = 1:nop_h+1
+                            i_ang_h = extra_mesh.extra_connijk[e_ext_h, iθ_h, jθ_h]
+                            θ_h = extra_mesh.extra_coords[1, i_ang_h]
+                            ϕ_h = extra_mesh.extra_coords[2, i_ang_h]
+                            key_h = (round(x_h, digits=12), round(y_h, digits=12),
+                                     round(z_h, digits=12), round(θ_h, digits=12),
+                                     round(ϕ_h, digits=12))
+                            ip_spa_h = get(point_dict_spa, key_h, 0)
+                            ip_spa_h == 0 && continue
+                            if !(ip_spa_h in nc_set_spa)
+                                push!(nc_non_global_nodes_spa, ip_spa_h)
+                                push!(nc_set_spa, ip_spa_h)
+                            end
+                        end
+                    end
+                end
+                n_non_global_nodes_spa = length(nc_non_global_nodes_spa)
+
+                # Hanging DOF set for BC exclusion — coincident nodes excluded:
+                # they are now transparent (same ip_spa as parent via coordinate dedup).
+                spatial_hanging_nodes_all_angular = Set(nc_non_global_nodes_spa)
+
+                # Build xyz_ang_map from point_dict_spa: (x,y,z) → [(θ,ϕ,dof_idx),...]
+                xyz_ang_map_spa = Dict{NTuple{3,Float64}, Vector{Tuple{Float64,Float64,Int}}}()
+                for ((x,y,z,θ,ϕ), idx) in point_dict_spa
+                    push!(get!(xyz_ang_map_spa, (x,y,z), Tuple{Float64,Float64,Int}[]), (θ, ϕ, idx))
+                end
+                R_spatial, P_spatial = build_spatial_restriction_and_prolongation(
+                    spatial_amr_cache, n_spa_new, spatial_hanging_nodes_all_angular,
+                    point_dict_spa, mesh, xyz_ang_map_spa
+                )
+
+            catch err
+                rethrow(err)
+            end
+        end
+
         npoin_ang_total = npoin * extra_mesh.extra_npoin
-        n_spa = npoin_ang_total
-        @rankinfo rank "Assembling LHS ($npoin_ang_total DOF)..."
-        LHS = sparse_lhs_assembly_3Dby2D(
-            ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
-            mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh.ψ,
-            extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
-            extra_mesh.extra_coords, extra_mesh.extra_nop,
-            npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
-            dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-            extra_mesh.extra_npoin, inputs[:rad_HG_g],
-            inputs[:lRT_from_data], κ, σ)
 
-        Md = assemble_mass_diagonal_3Dby2D(
-            ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
-            extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
-            extra_mesh.extra_nop, npoin_ang_total, nelem, ngl,
-            extra_mesh.extra_nelem, extra_mesh.extra_npoin)
+        if has_spatial_hanging_nodes
+            # Use coordinate-dedup assembly so coincident spatial nodes accumulate
+            # into the same DOF slot (n_spa_new ≤ npoin_ang_total).
+            n_dofs = n_spa_new
+            @rankinfo rank "Assembling LHS ($n_spa_new deduplicated DOF, spatial AMR)..."
+            LHS = sparse_lhs_assembly_3Dby2D_spatial_amr(
+                ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
+                mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh.ψ,
+                extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
+                extra_mesh.extra_coords, extra_mesh.extra_nop,
+                n_spa_new, nelem, ngl, extra_mesh.extra_nelem,
+                dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                extra_mesh.extra_npoin, inputs[:rad_HG_g],
+                connijk_spa_uniform, inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
 
-        ip2gip_spa, gip2owner_extra, gnpoin =
-            setup_global_numbering_extra_dim(
-                mesh.ip2gip, mesh.gip2owner, npoin,
-                extra_mesh.extra_npoin, npoin_ang_total)
+            Md = assemble_mass_diagonal_3Dby2D_spatial_amr(
+                ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
+                extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
+                extra_mesh.extra_nop, n_spa_new, nelem, ngl,
+                extra_mesh.extra_nelem, connijk_spa_uniform)
+
+            # Compact global numbering: coincident nodes share the parent's GID (via
+            # ip2gip_dedup), interpolated hanging nodes appear after free nodes in GID space.
+            _ip2gip_spa_full, _, _gip2owner_spa_full, gnpoin =
+                setup_global_numbering_adaptive_angular_scalable(
+                    ip2gip_dedup, mesh.gip2owner, mesh, connijk_spa_uniform,
+                    extra_meshes_coords_uniform, extra_meshes_connijk_uniform,
+                    extra_meshes_extra_nops_uniform, extra_meshes_extra_nelems_uniform,
+                    n_spa_new, n_non_global_nodes_spa, nc_non_global_nodes_spa;
+                    remapped_ips = _remapped_ips)
+            ip2gip_spa = _ip2gip_spa_full
+            gip2owner_extra = zeros(Int, n_spa_new)
+            for ip = 1:n_spa_new
+                gip2owner_extra[ip] = _gip2owner_spa_full[ip2gip_spa[ip]]
+            end
+
+            # ── Build global (spatial_GIP, angular_node_index) → compact_GID map ───────
+            # Cross-rank NCF parents are ghost nodes — not in this rank's local elements,
+            # so not in point_dict_spa.  Targeted two-round AllGather:
+            #   Round 1: gather all needed parent spatial GIPs (from cross_rank_parent_weights)
+            #   Round 2: each owning rank provides (sp_gip, ang_ip, compact_gid) triples
+            _needed_gips = Set{Int}()
+            for (_, _cw) in spatial_amr_cache.cross_rank_parent_weights
+                for (_pgip, _) in _cw
+                    push!(_needed_gips, _pgip)
+                end
+            end
+            _local_needed = collect(_needed_gips)
+            _nn = Int32(length(_local_needed))
+            _nn_all = MPI.Allgather([_nn], comm)
+            _all_needed = MPI.Allgatherv(_local_needed, _nn_all, comm)
+            _all_needed_set = Set(_all_needed)
+
+            # Each rank provides triples for needed GIPs it has in its local elements
+            _local_triples = Int[]
+            _seen_spa_ang = Set{Tuple{Int,Int}}()
+            for _iel = 1:nelem
+                for _kk = 1:ngl, _jj = 1:ngl, _ii = 1:ngl
+                    _ip_s = mesh.connijk[_iel, _ii, _jj, _kk]
+                    _sp_gip = ip2gip_dedup[_ip_s]
+                    _sp_gip in _all_needed_set || continue
+                    for _e = 1:extra_mesh.extra_nelem
+                        _nop = extra_mesh.extra_nop[_e]
+                        for _jt = 1:_nop+1, _it = 1:_nop+1
+                            _i_ang = extra_mesh.extra_connijk[_e, _it, _jt]
+                            _key_t = (_sp_gip, _i_ang)
+                            _key_t in _seen_spa_ang && continue
+                            push!(_seen_spa_ang, _key_t)
+                            _ip_spa = connijk_spa_uniform[_iel][_ii, _jj, _kk, _e, _it, _jt]
+                            push!(_local_triples, _sp_gip, _i_ang, ip2gip_spa[_ip_spa])
+                        end
+                    end
+                end
+            end
+            _nt = Int32(length(_local_triples) ÷ 3)
+            _nt_all = MPI.Allgather([_nt], comm)
+            _all_triples = MPI.Allgatherv(_local_triples, Int32.(_nt_all .* 3), comm)
+            global_sp_ang_to_gid = Dict{Tuple{Int,Int}, Int}()
+            sizehint!(global_sp_ang_to_gid, length(_all_triples) ÷ 3)
+            for _k = 1:length(_all_triples) ÷ 3
+                _sg = _all_triples[3_k-2]; _ai = _all_triples[3_k-1]; _cg = _all_triples[3_k]
+                get!(global_sp_ang_to_gid, (_sg, _ai), _cg)
+            end
+            # AllGather (x,y,z,θ,ϕ) for every cross-rank parent compact GID.
+            # Each rank contributes coords for GIPs it provided in _local_triples.
+            # Used to resolve extended-parent row coordinates in the debug comparison.
+            _local_cdata = Float64[]
+            _seen_cg_c   = Set{Int}()
+            for _k = 1:length(_local_triples) ÷ 3
+                _sg = _local_triples[3_k-2]; _ai = _local_triples[3_k-1]; _cg = _local_triples[3_k]
+                _cg in _seen_cg_c && continue
+                _lip = get(gip_spa_to_local_ip, _sg, 0)
+                _lip == 0 && continue
+                push!(_seen_cg_c, _cg)
+                push!(_local_cdata, Float64(_cg),
+                      mesh.x[_lip], mesh.y[_lip], mesh.z[_lip],
+                      extra_mesh.extra_coords[1, _ai], extra_mesh.extra_coords[2, _ai])
+            end
+            _nc_local  = Int32(length(_local_cdata) ÷ 6)
+            _nc_all_c  = MPI.Allgather([_nc_local], comm)
+            _all_cdata = MPI.Allgatherv(_local_cdata, Int32.(_nc_all_c .* 6), comm)
+            global_gid_to_coords = Dict{Int, NTuple{5,Float64}}()
+            sizehint!(global_gid_to_coords, length(_all_cdata) ÷ 6)
+            for _k = 1:length(_all_cdata) ÷ 6
+                _s  = 6*(_k-1)
+                _cg = Int(round(_all_cdata[_s+1]))
+                haskey(global_gid_to_coords, _cg) && continue
+                global_gid_to_coords[_cg] = (_all_cdata[_s+2], _all_cdata[_s+3],
+                                              _all_cdata[_s+4], _all_cdata[_s+5],
+                                              _all_cdata[_s+6])
+            end
+            _local_cdata = nothing; _all_cdata = nothing; _seen_cg_c = nothing
+        else
+            n_dofs = npoin_ang_total
+            @rankinfo rank "Assembling LHS ($npoin_ang_total DOF)..."
+            LHS = sparse_lhs_assembly_3Dby2D(
+                ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
+                mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh.ψ,
+                extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
+                extra_mesh.extra_coords, extra_mesh.extra_nop,
+                npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
+                dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                extra_mesh.extra_npoin, inputs[:rad_HG_g],
+                inputs[:lRT_from_data], κ, σ, inputs[:RT_shortwave])
+
+            Md = assemble_mass_diagonal_3Dby2D(
+                ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
+                extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
+                extra_mesh.extra_nop, npoin_ang_total, nelem, ngl,
+                extra_mesh.extra_nelem, extra_mesh.extra_npoin)
+
+            ip2gip_spa, gip2owner_extra, gnpoin =
+                setup_global_numbering_extra_dim(
+                    mesh.ip2gip, mesh.gip2owner, npoin,
+                    extra_mesh.extra_npoin, npoin_ang_total)
+        end
+        n_spa = n_dofs
 
         pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_extra)
         if pM !== nothing
@@ -2115,18 +2755,315 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
         M_inv = spdiagm(0 => 1.0 ./ Md)
-        A     = sparse(M_inv * LHS)
+        MLHS     = sparse(M_inv * LHS)
+        A = copy(MLHS)
         M_inv = nothing; LHS = nothing
         GC.gc()
 
-        BDY = zeros(TFloat, npoin_ang_total)
-        RHS = zeros(TFloat, npoin_ang_total)
-        ref = zeros(TFloat, npoin_ang_total)
+        BDY = zeros(TFloat, n_dofs)
+        RHS = zeros(TFloat, n_dofs)
+        ref = zeros(TFloat, n_dofs)
+
+        # Extended parent structures for spatial AMR (populated inside the constraint block)
+        extended_parents_to_gid_spa = Int[]
+        gid_to_extended_parents_spa = Dict{Int,Int}()
+        n_ext_spa = n_dofs
+        A_with_rows_debug = nothing   # captured post-restriction, pre-prolongation for debug comparison
+
+        if has_spatial_hanging_nodes && R_spatial !== nothing
+
+            # Build helper data structures for MPI pattern
+            # gip_to_local: global DOF ID → local DOF index
+            gip_to_local_spa = Dict{Int,Int}()
+            sizehint!(gip_to_local_spa, n_spa_new)
+            for ip = 1:n_spa_new
+                gip_to_local_spa[ip2gip_spa[ip]] = ip
+            end
+
+            # gip2owner_spa_gid: global DOF ID → owner rank (for use in row/col effects functions)
+            gip2owner_spa_gid = Dict{Int,Int}()
+            sizehint!(gip2owner_spa_gid, n_spa_new)
+            for ip = 1:n_spa_new
+                gip2owner_spa_gid[ip2gip_spa[ip]] = gip2owner_extra[ip]
+            end
+            # Add ghost parent DOF compact GIDs for cross-rank NCFs.
+            # Use global_sp_ang_to_gid (built above) — works even when the parent is not
+            # in this rank's local elements (and thus absent from point_dict_spa).
+            for k = 1:length(mesh.pgip_ghost)
+                parent_gip_spa = Int(mesh.pgip_ghost[k])
+                parent_owner   = Int(mesh.pgip_owner[k])
+                parent_gip_spa <= 0 && continue
+                parent_gip_spa in _all_needed_set || continue
+                for ip_a = 1:n_ang
+                    compact_gid = get(global_sp_ang_to_gid, (parent_gip_spa, ip_a), 0)
+                    compact_gid == 0 && continue
+                    gip2owner_spa_gid[compact_gid] = parent_owner
+                end
+            end
+
+            # Build old→new DOF mapping: (spatial_ip-1)*n_ang + ang_ip → dedup ip_spa.
+            # Used to convert old-formula DOF indices to the new coordinate-dedup indices.
+            old_to_new_dof = zeros(Int, npoin * n_ang)
+            for ip_s = 1:npoin
+                x_s = mesh.x[ip_s]; y_s = mesh.y[ip_s]; z_s = mesh.z[ip_s]
+                for ip_a = 1:n_ang
+                    θ_a = extra_mesh.extra_coords[1, ip_a]
+                    ϕ_a = extra_mesh.extra_coords[2, ip_a]
+                    key_o = (round(x_s, digits=12), round(y_s, digits=12), round(z_s, digits=12),
+                             round(θ_a, digits=12), round(ϕ_a, digits=12))
+                    old_to_new_dof[(ip_s - 1) * n_ang + ip_a] = get(point_dict_spa, key_o, 0)
+                end
+            end
+
+            # Find all interpolated parent spatial IPs (coincident nodes are transparent)
+            parent_spatial_ips = Set{Int}()
+            for (_, weights) in spatial_amr_cache.parent_weights
+                for (parent_ip, _) in weights
+                    push!(parent_spatial_ips, parent_ip)
+                end
+            end
+
+            nonowned_parent_gids_spa = Set{Int}()
+            nonowned_parent_dofs_spa  = Int[]
+            for spatial_ip in parent_spatial_ips
+                for ip_a = 1:n_ang
+                    dof = old_to_new_dof[(spatial_ip - 1) * n_ang + ip_a]
+                    (dof == 0 || dof > n_spa_new) && continue
+                    if gip2owner_extra[dof] != rank
+                        push!(nonowned_parent_dofs_spa, dof)
+                        push!(nonowned_parent_gids_spa, ip2gip_spa[dof])
+                    end
+                end
+            end
+
+            # cross_rank_parent_weights may also contain parents with local representation
+            # (shared boundary nodes whose NCF face is owned by another rank).
+            # Directly map (raw_GIP, ang_ip) → compact_GID via global_sp_ang_to_gid,
+            # then invert ip2gip_spa to find the local dedup DOF — no raw spatial GIPs needed.
+            let _gid_to_local_dof = Dict{Int,Int}(Int(ip2gip_spa[ip]) => ip for ip = 1:n_spa_new),
+                _seen = Set(nonowned_parent_dofs_spa)
+                for (_, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
+                    for (parent_global_spa, _) in cross_weights
+                        for ip_a = 1:n_ang
+                            compact_gid = get(global_sp_ang_to_gid, (parent_global_spa, ip_a), 0)
+                            compact_gid == 0 && continue
+                            local_dof = get(_gid_to_local_dof, compact_gid, 0)
+                            local_dof == 0 && continue
+                            gip2owner_extra[local_dof] == rank && continue
+                            local_dof in _seen && continue
+                            push!(_seen, local_dof)
+                            push!(nonowned_parent_dofs_spa, local_dof)
+                            push!(nonowned_parent_gids_spa, ip2gip_spa[local_dof])
+                        end
+                    end
+                end
+            end
+
+            # Build two ghost constraint dicts, mirroring the angular adaptive pattern:
+            #
+            # ghost_constraint_data_spa     → used for MATRIX row/col effects (LHS)
+            #   Contains ALL local parent GIDs (owned + non-owned) + cross-rank GIDs.
+            #   The matrix effects functions skip owned parents via `owner == rank && continue`,
+            #   so including them is harmless but keeps the pattern consistent with nc_mat.
+            #
+            # ghost_constraint_data_spa_rhs → used for RHS effects
+            #   Contains ONLY non-owned local parent GIDs + cross-rank GIDs.
+            #   compute_hanging_rhs_effects_before_restriction has NO ownership skip,
+            #   so owned parents must be excluded (they're already in R_spatial_rhs * RHS).
+            #
+            # Also builds R_spatial_rhs: the RHS restriction matrix with ONLY owned-parent
+            # constraints (mirrors nc_mat_rhs in the angular adaptive case).
+
+            ghost_constraint_data_spa     = Dict{Int, Vector{Tuple{Int, Float64}}}()
+            ghost_constraint_data_spa_rhs = Dict{Int, Vector{Tuple{Int, Float64}}}()
+
+            # Pre-compute which dedup DOFs are already handled via parent_weights →
+            # R_spatial_rhs (local restriction).  With coordinate dedup, two different
+            # spatial IPs at the same (x,y,z) can map to the same hanging_dof — one in
+            # parent_weights (local, → R_spatial_rhs) and one in cross_rank_parent_weights
+            # (cross-rank, → ghost exchange).  Including such a DOF in both paths would
+            # apply the restriction twice.  Exclude from ghost_constraint_data_spa_rhs any
+            # hanging_dof already covered by R_spatial_rhs.
+            _rhs_handled_dofs = Set{Int}()
+            for (hsp, _) in spatial_amr_cache.parent_weights
+                for _ipa = 1:n_ang
+                    _d = old_to_new_dof[(hsp - 1) * n_ang + _ipa]
+                    _d == 0 && continue
+                    push!(_rhs_handled_dofs, _d)
+                end
+            end
+
+            # ── Source 1: fully cross-rank parents ─────────────────────────────
+            # hanging_dof uses old_to_new_dof for dedup index.
+            # Parent compact GID from global_sp_ang_to_gid: works for parents that are ghost
+            # nodes (not in local elements) and thus absent from point_dict_spa.
+            # ghost_constraint_data_spa_rhs gets the entry ONLY if the hanging_dof has no
+            # local representation in parent_weights (otherwise R_spatial_rhs handles it).
+            gip_to_local_r = Dict{Int,Int}(Int(ip2gip_spa[ip]) => ip for ip = 1:n_spa_new)
+            for (hanging_local_spa, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
+                for ip_a = 1:n_ang
+                    hanging_dof = old_to_new_dof[(hanging_local_spa - 1) * n_ang + ip_a]
+                    (hanging_dof == 0 || hanging_dof > n_spa_new) && continue
+                    parent_constraints = Tuple{Int, Float64}[]
+                    for (parent_global_spa, weight) in cross_weights
+                        parent_gid = get(global_sp_ang_to_gid, (parent_global_spa, ip_a), 0)
+                        parent_gid == 0 && continue
+                        push!(parent_constraints, (parent_gid, weight))
+                        local_ip = get(gip_to_local_r, parent_gid, 0)
+                        local_ip == 0 && continue
+                        R_spatial[local_ip, hanging_dof] = weight
+                    end
+                    isempty(parent_constraints) && continue
+                    ghost_constraint_data_spa[hanging_dof] = copy(parent_constraints)
+                    if !(hanging_dof in _rhs_handled_dofs)
+                        ghost_constraint_data_spa_rhs[hanging_dof] = copy(parent_constraints)
+                    end
+                end
+            end
+            P_spatial = sparse(R_spatial')
+            # ── Source 2: local parents split by ownership ────────────────────
+            # Build R_spatial_rhs (owned parents only) and populate both ghost dicts.
+            # All DOF indices use old_to_new_dof for dedup conversion.
+            I_rhs_sp = Int[]; J_rhs_sp = Int[]; V_rhs_sp = Float64[]
+            for dof = 1:n_spa_new
+                if !(dof in spatial_hanging_nodes_all_angular)
+                    push!(I_rhs_sp, dof); push!(J_rhs_sp, dof); push!(V_rhs_sp, 1.0)
+                end
+            end
+            n_nonowned_local_added = 0
+            for (hanging_local_spa, local_weights) in spatial_amr_cache.parent_weights
+                for ip_a = 1:n_ang
+                    hanging_dof = old_to_new_dof[(hanging_local_spa - 1) * n_ang + ip_a]
+                    (hanging_dof == 0 || hanging_dof > n_spa_new) && continue
+                    for (parent_local_spa, weight) in local_weights
+                        parent_dof = old_to_new_dof[(parent_local_spa - 1) * n_ang + ip_a]
+                        (parent_dof == 0 || parent_dof > n_spa_new) && continue
+                        parent_gid = ip2gip_spa[parent_dof]
+                        # Matrix dict gets ALL local parents (owned ones skipped at use time)
+                        mat_entry = get!(ghost_constraint_data_spa, hanging_dof, Tuple{Int,Float64}[])
+                        if !any(g == parent_gid for (g, _) in mat_entry)
+                            push!(mat_entry, (parent_gid, weight))
+                        end
+                        if gip2owner_extra[parent_dof] == rank
+                            # Owned parent → goes into R_spatial_rhs for local RHS multiply
+                            push!(I_rhs_sp, parent_dof)
+                            push!(J_rhs_sp, hanging_dof)
+                            push!(V_rhs_sp, weight)
+                        else
+                            # Non-owned local parent → RHS dict (will be exchanged via MPI)
+                            rhs_entry = get!(ghost_constraint_data_spa_rhs, hanging_dof, Tuple{Int,Float64}[])
+                            if !any(g == parent_gid for (g, _) in rhs_entry)
+                                push!(rhs_entry, (parent_gid, weight))
+                                n_nonowned_local_added += 1
+                            end
+                        end
+                    end
+                end
+            end
+            # Sources 3 & 4 (coincident nodes) are omitted: with coordinate dedup,
+            # coincident child and parent share the same ip_spa → same compact GID →
+            # no explicit constraint row needed; they're transparent in assembly.
+
+            R_spatial_rhs = sparse(I_rhs_sp, J_rhs_sp, V_rhs_sp, n_spa_new, n_spa_new)
+
+            # ── Build extended parent numbering for cross-rank parents ─────────
+            # For each cross-rank parent GID that appears in ghost_constraint_data_spa,
+            # assign an extended local index > npoin_ang_total on this rank.
+            # This mirrors the angular adaptive case's gid_to_extended_parents mechanism:
+            # rank 1 (hanging rank) computes cross-rank parent P0's row/col effects and
+            # stores them in extended rows/cols of the local matrix.  The parallel matvec
+            # then AllReduces these extended-row contributions to P0's global residual.
+            n_ghost_ext_spa = 0
+            for (_, parent_list) in ghost_constraint_data_spa
+                for (parent_gid, _) in parent_list
+                    owner = get(gip2owner_spa_gid, parent_gid, rank)
+                    if owner != rank &&
+                       !haskey(gid_to_extended_parents_spa, parent_gid) &&
+                       !haskey(gip_to_local_spa, parent_gid)
+                        n_ghost_ext_spa += 1
+                        gid_to_extended_parents_spa[parent_gid] = n_spa_new + n_ghost_ext_spa
+                        push!(extended_parents_to_gid_spa, parent_gid)
+                    end
+                end
+            end
+            n_ext_spa = n_spa_new + n_ghost_ext_spa
+
+            # Extended gip→local map that also resolves extended parent GIDs
+            gip_to_local_spa_ext = copy(gip_to_local_spa)
+            for (pgid, ext_idx) in gid_to_extended_parents_spa
+                gip_to_local_spa_ext[pgid] = ext_idx
+            end
+
+            # Extended R and P: same as R_spatial/P_spatial but with identity rows/cols
+            # at every extended parent index so that extended rows survive R * A_eff.
+            if n_ghost_ext_spa > 0
+                I_re, J_re, V_re = findnz(R_spatial)
+                for k = 1:n_ghost_ext_spa
+                    ext_idx = n_spa_new + k
+                    push!(I_re, ext_idx); push!(J_re, ext_idx); push!(V_re, 1.0)
+                end
+                R_spatial_ext = sparse(I_re, J_re, V_re, n_ext_spa, n_ext_spa)
+                P_spatial_ext = sparse(R_spatial_ext')
+            else
+                R_spatial_ext = R_spatial
+                P_spatial_ext = P_spatial
+            end
+
+            # ── Step 2: Parallel restriction (R from left) ───────────────────
+            # Cross-rank parent effects go into extended rows of A_eff (via extended
+            # parent structures); R_spatial_ext has identity at those rows so they survive
+            # the left-multiply.  No MPI exchange needed for the extended-parent effects.
+            row_effects_to_send, A_eff =
+                compute_hanging_row_effects_before_restriction(
+                    ghost_constraint_data_spa, A, ip2gip_spa, gip2owner_spa_gid, rank,
+                    gid_to_extended_parents_spa, extended_parents_to_gid_spa,
+                    gip_to_local_spa_ext)
+
+            # Left-multiply by extended R: local hanging rows get constraints applied;
+            # extended parent rows (identity in R_spatial_ext) pass through unchanged.
+            A_left = R_spatial_ext * A_eff
+
+            received_row_effects = exchange_hanging_effects(row_effects_to_send, rank, comm)
+
+            A_with_rows = add_hanging_row_effects(
+                A_left, received_row_effects, ip2gip_spa,
+                n_ext_spa, rank, gip_to_local_spa_ext)
+            A_with_rows_debug = copy(A_with_rows)   # snapshot for debug comparison
+
+            # ── Step 3: Parallel prolongation (P from right) ─────────────────
+            col_effects_to_send, A_col_eff =
+                compute_hanging_col_effects_before_prolongation(
+                    ghost_constraint_data_spa, A_with_rows, ip2gip_spa, gip2owner_spa_gid,
+                    n_spa_new, n_ext_spa,
+                    spatial_hanging_nodes_all_angular, rank,
+                    gid_to_extended_parents_spa, extended_parents_to_gid_spa,
+                    gip_to_local_spa_ext)
+
+            # Right-multiply by extended P: hanging columns get prolongation applied;
+            # extended parent columns (identity in P_spatial_ext) pass through unchanged.
+            A_both = A_col_eff * P_spatial_ext
+
+            received_col_effects = exchange_hanging_effects(col_effects_to_send, rank, comm)
+
+            A_with_cols = add_hanging_col_effects(
+                A_both, received_col_effects, ip2gip_spa,
+                n_ext_spa, rank, gip_to_local_spa_ext)
+
+            A = sparse(A_with_cols)  # n_ext_spa × n_ext_spa
+            
+            A_with_rows_debug = sparse(A_with_rows_debug)
+            A = sparse(A)
+
+            @rankinfo rank "✓ Spatial LHS constraints applied"
+        end
     end  # adaptive / non-adaptive
 
-    # ── Common setup: nc_mat row structure, free DOF count ────────────────────
-    nc_rows  = size(nc_mat, 1) > 2 ? rowvals(nc_mat) : zeros(Int, 1, 1)
-    n_free   = inputs[:adaptive_extra_meshes] ? n_spa - n_non_global_nodes : npoin_ang_total
+    # ── Common setup: free DOF count ──────────────────────────────────────────
+    # Use all_hanging_nodes (the full combined set for all adaptive cases) rather than
+    # n_non_global_nodes (angular-only) so that the combined angular+spatial path
+    # correctly excludes both types of hanging DOFs from the free-DOF count.
+    n_free   = inputs[:adaptive_extra_meshes] ? n_spa - length(all_hanging_nodes) :
+               (has_spatial_hanging_nodes ? n_spa_new - n_non_global_nodes_spa : npoin_ang_total)
 
     # ── Precompute spatial factors (shared by RHS and BC loops) ──────────────
     spatial_factor = Vector{Float64}(undef, npoin)
@@ -2147,10 +3084,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     end
 
     boundary_dict = Dict{Int, Float64}()
-    bdy_normals   = Dict{Int, NTuple{3,Float64}}()
-
+    bdy_normals   = Dict{Int, Vector{NTuple{3,Float64}}}()
     # ── RHS and boundary condition assembly ──────────────────────────────────
     @rankinfo rank "Assembling RHS and boundary conditions..."
+   
     for iel = 1:nelem
         for i = 1:ngl, j = 1:ngl, k = 1:ngl
             ip  = mesh.connijk[iel, i, j, k]
@@ -2162,44 +3099,33 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 iface  = elem_to_face[iel, i, j, k, 1]
                 face_i = elem_to_face[iel, i, j, k, 2]
                 face_j = elem_to_face[iel, i, j, k, 3]
-                matchx = (x == mesh.xmax || x == mesh.xmin)
-                matchy = (y == mesh.ymax || y == mesh.ymin)
-                matchz = (z == mesh.zmax || z == mesh.zmin)
-                nmatches = matchx + matchy + matchz
 
-                nx_acc = nx[iface, face_i, face_j]
-                ny_acc = ny[iface, face_i, face_j]
-                nz_acc = nz[iface, face_i, face_j]
-
-                if nmatches >= 2
-                    added  = 0
-                    needed = nmatches - 1
-                    for (iface2, fi2, fj2) in get(node_to_bdy_faces, ip, [])
-                        iface2 == iface && continue
-                        if nmatches == 2
-                            if abs(nx_acc - nx[iface2,fi2,fj2]) > 1e-12 ||
-                               abs(ny_acc - ny[iface2,fi2,fj2]) > 1e-12 ||
-                               abs(nz_acc - nz[iface2,fi2,fj2]) > 1e-12
-                                nx_acc += nx[iface2, fi2, fj2]
-                                ny_acc += ny[iface2, fi2, fj2]
-                                nz_acc += nz[iface2, fi2, fj2]
-                                added  += 1
-                            end
-                        else
-                            nx_acc += nx[iface2, fi2, fj2]
-                            ny_acc += ny[iface2, fi2, fj2]
-                            nz_acc += nz[iface2, fi2, fj2]
-                            added  += 1
-                        end
-                        added >= needed && break
-                    end
+                # Collect all distinct face normals directly from node_to_bdy_faces.
+                # This avoids the coordinate-equality fragility of the nmatches approach
+                # entirely — we just gather every distinct normal from every face that
+                # owns this node.
+                collected = NTuple{3,Float64}[]
+                for (iface2, fi2, fj2) in get(node_to_bdy_faces, ip, [])
+                    nxyz = (nx[iface2, fi2, fj2],
+                            ny[iface2, fi2, fj2],
+                            nz[iface2, fi2, fj2])
+                    is_dup = any(abs(n[1]-nxyz[1]) < 1e-12 &&
+                                 abs(n[2]-nxyz[2]) < 1e-12 &&
+                                 abs(n[3]-nxyz[3]) < 1e-12 for n in collected)
+                    is_dup || push!(collected, nxyz)
                 end
-                bdy_normals[ip] = (nx_acc, ny_acc, nz_acc)
+
+                # Fallback: if node_to_bdy_faces didn't cover this node's first face
+                if isempty(collected)
+                    push!(collected, (nx[iface, face_i, face_j],
+                                    ny[iface, face_i, face_j],
+                                    nz[iface, face_i, face_j]))
+                end
+
+                bdy_normals[ip] = collected
             end
 
-            nx_new = is_boundary ? bdy_normals[ip][1] : 0.0
-            ny_new = is_boundary ? bdy_normals[ip][2] : 0.0
-            nz_new = is_boundary ? bdy_normals[ip][3] : 0.0
+            face_normals = is_boundary ? bdy_normals[ip] : NTuple{3,Float64}[]
 
             if inputs[:adaptive_extra_meshes]
                 for e_ext = 1:extra_meshes_extra_nelems[iel]
@@ -2215,27 +3141,61 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         bip = exp(-((6/(2π)) * (ϕ - 2π/3))^2)
                         ref[ip_g] = sf * sip * bip
 
-                        if is_boundary
-                            prodx = nx_new * sin(θ) * cos(ϕ)
-                            prody = ny_new * sin(θ) * sin(ϕ)
-                            prodz = nz_new * cos(θ)
+                        Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
 
-                            if prodx + prody + prodz < -1e-13
-                                if ip_g <= n_free && !(ip_g in all_hanging_nodes)
-                                    val = user_rad_bc(x, y, z, θ, ϕ)
+                        if is_boundary && !(ip_g in all_hanging_nodes)
+                            # Find the most-inflow face normal for this direction:
+                            # the one giving the most negative Ω·n.
+                            # If the minimum dot product is < -1e-13 the direction
+                            # is inflow through at least one face → apply BC.
+                            best_dot = 0.0
+                            best_nx  = face_normals[1][1]
+                            best_ny  = face_normals[1][2]
+                            best_nz  = face_normals[1][3]
+                            
+                            for (fnx, fny, fnz) in face_normals
+                                
+                                d = fnx*Ωx + fny*Ωy + fnz*Ωz
+                                if d < best_dot
+                                    best_dot = d
+                                    best_nx  = fnx; best_ny = fny; best_nz = fnz
+                                end
+                            end
+                            
+                            
+                            if best_dot < -1e-10
+                                    val = 0.0
+                                    if inputs[:RT_shortwave]
+                                        val = user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ, bdy, sw, F_dir[ip], τ_nodes[ip], sw_ω₀_lateral, inputs[:rad_HG_g][ip])
+                                    elseif inputs[:RT_longwave]
+                                        val = user_rad_bc_longwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, ip, atmos_data, bdy, lw)
+                                    else
+                                        val = user_rad_bc(x, y, z, θ, ϕ)
+                                    end
                                     BDY[ip_g] = val
                                     if !haskey(boundary_dict, ip_g)
                                         boundary_dict[ip_g] = is_owned ? val : 0.0
                                     end
-                                end
                             else
                                 if is_owned
-                                    RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                    RHS[ip_g] = if inputs[:RT_shortwave]
+                                        user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
+                                    elseif inputs[:RT_longwave]
+                                        user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                    else
+                                        user_rhs(x, y, z, θ, ϕ)
+                                    end
                                 end
                             end
                         else
                             if is_owned
-                                RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                RHS[ip_g] = if inputs[:RT_shortwave]
+                                    user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
+                                elseif inputs[:RT_longwave]
+                                    user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                else
+                                    user_rhs(x, y, z, θ, ϕ)
+                                end
                             end
                         end
                     end
@@ -2247,31 +3207,69 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         ip_ext  = extra_mesh.extra_connijk[e_ext, iϕ, iθ]
                         θ       = extra_mesh.extra_coords[1, ip_ext]
                         ϕ       = extra_mesh.extra_coords[2, ip_ext]
-                        ip_g    = (ip-1) * extra_mesh.extra_npoin + ip_ext
+                        # Use coordinate-dedup DOF index when spatial AMR is active,
+                        # old formula otherwise (gip2owner_extra size matches accordingly).
+                        ip_g = has_spatial_hanging_nodes ?
+                               connijk_spa_uniform[iel][i, j, k, e_ext, iϕ, iθ] :
+                               (ip-1) * extra_mesh.extra_npoin + ip_ext
                         is_owned = (gip2owner_extra[ip_g] == rank)
 
                         sip = exp(-((6/(2π)) * (θ - 3π/5))^2)
                         bip = exp(-((6/(2π)) * (ϕ - 2π/3))^2)
                         ref[ip_g] = sf * sip * bip
 
-                        if is_boundary
-                            prodx = nx_new * sin(θ) * cos(ϕ)
-                            prody = ny_new * sin(θ) * sin(ϕ)
-                            prodz = nz_new * cos(θ)
-                            if prodx + prody + prodz < -1e-13
-                                val = user_rad_bc(x, y, z, θ, ϕ)
+                        Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
+
+                        if is_boundary && !(ip_g in spatial_hanging_nodes_all_angular)
+                            best_dot = 0.0
+                            best_nx  = face_normals[1][1]
+                            best_ny  = face_normals[1][2]
+                            best_nz  = face_normals[1][3]
+                            for (fnx, fny, fnz) in face_normals
+                                d = fnx*Ωx + fny*Ωy + fnz*Ωz
+                                
+                                if d < best_dot
+                                    best_dot = d
+                                    best_nx  = fnx; best_ny = fny; best_nz = fnz
+                                end
+                            end
+                            
+                            if best_dot < -1e-10
+                               
+                            
+                                val = 0.0
+                                if inputs[:RT_shortwave]
+                                    val = user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ, bdy, sw, F_dir[ip], τ_nodes[ip], sw_ω₀_lateral, inputs[:rad_HG_g][ip])
+                                elseif inputs[:RT_longwave]
+                                    val = user_rad_bc_longwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, ip, atmos_data, bdy, lw)
+                                else
+                                    val = user_rad_bc(x, y, z, θ, ϕ)
+                                end
                                 BDY[ip_g] = val
                                 if !haskey(boundary_dict, ip_g)
                                     boundary_dict[ip_g] = is_owned ? val : 0.0
                                 end
+                                
                             else
                                 if is_owned
-                                    RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                    RHS[ip_g] = if inputs[:RT_shortwave]
+                                        user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
+                                    elseif inputs[:RT_longwave]
+                                        user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                    else
+                                        user_rhs(x, y, z, θ, ϕ)
+                                    end
                                 end
                             end
                         else
                             if is_owned
-                                RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                RHS[ip_g] = if inputs[:RT_shortwave]
+                                    user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
+                                elseif inputs[:RT_longwave]
+                                    user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                else
+                                    user_rhs(x, y, z, θ, ϕ)
+                                end
                             end
                         end
                     end
@@ -2280,20 +3278,73 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
 
+    # Verify neighbour / NCF consistency for the purely-spatial-AMR path
+    # (adaptive_extra_meshes=false, uniform angular mesh).
+    # extra_meshes_ref_level is not available here; pass nothing → all angular levels = 0.
+    if !inputs[:adaptive_extra_meshes]
+        begin
+            _ang_ref_records_spa_only = build_element_refinement_records(
+                mesh, nothing, nelem, ngl, comm)
+            verify_element_refinement_records(
+                _ang_ref_records_spa_only, nelem, comm, rank;
+                uniform_spatial = !has_spatial_hanging_nodes)
+        end
+    end
+
+    if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
+        n_ang = extra_mesh.extra_npoin
+        # Step 1: compute weighted RHS contributions from cross-rank hanging nodes
+        # and route them to the owning rank of each ghost parent.
+        # Uses ghost_constraint_data_spa_rhs (non-owned local + cross-rank only),
+        # since owned local parents are already handled by R_spatial_rhs * RHS.
+        rhs_effects_to_send =
+            compute_hanging_rhs_effects_before_restriction(
+                ghost_constraint_data_spa_rhs, RHS, ip2gip_spa, gip2owner_spa_gid, rank)
+        
+        # Step 2: local restriction using ownership-filtered R_spatial_rhs.
+        # Only owned-parent constraints are applied locally; non-owned local and
+        # cross-rank parents were sent in Step 1 via ghost_constraint_data_spa_rhs.
+        RHS = R_spatial_rhs*RHS
+
+        # Step 3: exchange cross-rank effects (collective — all ranks participate)
+        received_rhs_effects =
+            exchange_hanging_effects_vector(rhs_effects_to_send, rank, comm)
+
+        # Step 4: accumulate received effects into parent rows
+        RHS = add_hanging_rhs_effects(
+            RHS, received_rhs_effects, ip2gip_spa, n_spa_new, rank, gip_to_local_spa)
+
+        @rankinfo rank "✓ Spatial RHS constraints applied (MPI-aware)"
+    end
+
+    
     # ── Ghost boundary nodes (extended ghost-parent DOFs) ─────────────────────
-    if inputs[:adaptive_extra_meshes] && n_spa_g > n_spa
+    # extended_parents_ip/x/y/z/θ/ϕ are populated only by the angular adaptive path.
+    # Spatial extended parents carry no angular coordinate data here, so skip this
+    # block when there is no angular adaptation (extended_parents_ip is empty).
+    if inputs[:adaptive_extra_meshes] && n_spa_g > n_spa && !isempty(extended_parents_ip)
         n_extended = n_spa_g - n_spa
         for i = 1:n_extended
             ip   = extended_parents_ip[i]
             x    = extended_parents_x[i]; y = extended_parents_y[i]; z = extended_parents_z[i]
             θ    = extended_parents_θ[i]; ϕ = extended_parents_ϕ[i]
             ip_g = n_spa + i
-
+            Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
             if ip in mesh.poin_in_bdy_face
-                nx_new = bdy_normals[ip][1]
-                ny_new = bdy_normals[ip][2]
-                nz_new = bdy_normals[ip][3]
-                if nx_new*sin(θ)*cos(ϕ) + ny_new*sin(θ)*sin(ϕ) + nz_new*cos(θ) < -1e-13
+                face_normals = bdy_normals[ip]
+                best_dot = 0.0
+                best_nx  = face_normals[1][1]
+                best_ny  = face_normals[1][2]
+                best_nz  = face_normals[1][3]
+                for (fnx, fny, fnz) in face_normals
+                    d = fnx*Ωx + fny*Ωy + fnz*Ωz
+                    
+                    if d < best_dot
+                        best_dot = d
+                        best_nx  = fnx; best_ny = fny; best_nz = fnz
+                    end
+                end
+                if best_dot < -1e-13
                     val = user_rad_bc(x, y, z, θ, ϕ)
                     BDY[ip_g] = val
                     boundary_dict[ip_g] = val
@@ -2307,6 +3358,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         boundary_set = Set(keys(boundary_dict))
         rows_A = rowvals(A)
         vals_A = nonzeros(A)
+        
+        
 
         for col = 1:size(A, 2)
             for ptr = nzrange(A, col)
@@ -2320,7 +3373,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
         A = dropzeros!(A)
-    
+
 
     # ── RHS restriction ───────────────────────────────────────────────────────
     if inputs[:adaptive_extra_meshes]
@@ -2343,8 +3396,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         for (node, val) in boundary_dict
             if val != 0.0
                 RHS_red[node] = val
+                
             end
         end
+        
         B = RHS_red
     else
         for (node, val) in boundary_dict
@@ -2353,26 +3408,184 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         B = RHS
     end
 
-    # ── Linear solve ──────────────────────────────────────────────────────────
-    @rankinfo rank "Solving system ($(size(A,1)) DOF)..."
-    As  = sparse(A)
-    A   = nothing; GC.gc()
+    # ── Coincident node enforcement (uniform angular path) ────────────────────
+    # Coincident nodes sit at exactly the same (x,y,z) as a parent node but have
+    # a different local spatial IP. Their assembled rows duplicate the parent's
+    # contribution. Zero their rows in A (identity diagonal) and zero their RHS;
+    # after the solve, copy the parent solution into them.
+    # Coincident node enforcement is no longer needed: coordinate deduplication in
+    # connijk_spa_uniform ensures child and parent nodes share the same ip_spa, so
+    # their assembled contributions naturally merge into a single DOF slot. No
+    # explicit row-zeroing is required.
 
-    npoin_ang_total = size(B, 1)
-    @info maximum(As), minimum(As), maximum(B), minimum(B)
-    solution = if inputs[:adaptive_extra_meshes]
-        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, pM;
-            npoin_g = n_spa_g,
-            g_ip2gip = extended_parents_to_gid,
-            g_gip2ip = gid_to_extended_parents)
+    #-Symmetrize boundary conditions:
+    As  = sparse(A)
+    rows_A = rowvals(As)
+    vals_A = nonzeros(As)
+
+    _hanging_iter = if inputs[:adaptive_extra_meshes]
+        all_hanging_nodes
+    elseif has_spatial_hanging_nodes && R_spatial !== nothing
+        spatial_hanging_nodes_all_angular
     else
-        solve_parallel_lsqr(ip2gip_spa, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM;
-        npoin_g = npoin_ang_total)
+        nothing
     end
 
+    if _hanging_iter !== nothing && !isempty(_hanging_iter)
+        n_dof = size(As, 1)
+        is_hanging = falses(n_dof)
+        for ip in _hanging_iter
+            is_hanging[ip] = true
+            B[ip] = 0.0
+        end
+        # O(nnz) pass: zero all stored entries in hanging node rows and columns.
+        for jcol = 1:n_dof
+            col_is_hanging = is_hanging[jcol]
+            for ptr in nzrange(As, jcol)
+                row = rows_A[ptr]
+                if col_is_hanging || is_hanging[row]
+                    vals_A[ptr] = 0.0
+                end
+            end
+        end
+        # Set diagonal = 1 for every hanging node. After the zeroing pass the diagonal
+        # entry for ip exists as a structural zero (value 0.0) in vals_A — we scan
+        # column ip and overwrite it in-place without any memory allocation.
+        # If the diagonal was absent from the sparsity pattern (assembled as exactly 0
+        # and dropped before this point), fall back to the binary-search assignment.
+        for ip in _hanging_iter
+            diag_set = false
+            for ptr in nzrange(As, ip)
+                if rows_A[ptr] == ip
+                    vals_A[ptr] = 1.0
+                    diag_set = true
+                    break
+                end
+            end
+            if !diag_set
+                As[ip, ip] = 1.0
+            end
+        end
+        dropzeros!(As)
+        rows_A = rowvals(As)
+        vals_A = nonzeros(As)
+    end
+
+    
+
+    # ── Linear solve ──────────────────────────────────────────────────────────
+    @rankinfo rank "Solving system ($(size(A,1)) DOF)..."
+
+    A   = nothing; GC.gc()
+    
+
+    npoin_ang_total = size(B, 1)
+
+    solution = if (inputs[:adaptive_extra_meshes] && inputs[:RT_shortwave])
+        x_warm = zeros(Float64,n_spa)
+        if (rt_sol_sw_available)
+            x_warm = rt_sol_sw
+        end
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
+            precond     = :global_ilu,
+            asm_solver  = :rcmilu,
+            asm_ilu_tau = 0.1,
+            npoin_g     = n_spa_g,
+            g_ip2gip    = extended_parents_to_gid,
+            g_gip2ip    = gid_to_extended_parents,
+            restart     = 100,
+            tol         = 1e-7)
+
+    elseif (inputs[:adaptive_extra_meshes] && inputs[:RT_longwave])
+        x_warm = zeros(Float64,n_spa)
+        if (rt_sol_lw_available)
+            x_warm = rt_sol_lw
+        end
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
+            precond     = :global_ilu,
+            asm_solver  = :rcmilu,
+            asm_ilu_tau = 0.1,
+            npoin_g     = n_spa_g,
+            g_ip2gip    = extended_parents_to_gid,
+            g_gip2ip    = gid_to_extended_parents,
+            restart     = 100,
+            tol         = 1e-7)
+
+    elseif inputs[:adaptive_extra_meshes]
+        # Row scaling (left) — normalize by row norm
+        x_warm = Float64[]
+        if (inputs[:lmanufactured_solution])
+            x_warm = ref
+            
+            for i in all_hanging_nodes
+                x_warm[i] = 0.0
+            end
+           
+        end
+        
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin,
+            n_spa, x_warm;
+            precond     = :global_ilu,
+            asm_solver  = :rcmilu,
+            asm_ilu_tau = 0.1,
+            npoin_g     = n_spa_g,
+            g_ip2gip    = extended_parents_to_gid,
+            g_gip2ip    = gid_to_extended_parents,
+            restart     = 100,
+            tol         = 1e-7)
+
+    elseif (inputs[:RT_shortwave])
+        x_warm = Float64[]
+        if (rt_sol_sw_available)
+            x_warm = rt_sol_sw
+        end
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
+            npoin_g  = n_ext_spa,
+            g_ip2gip = extended_parents_to_gid_spa,
+            g_gip2ip = gid_to_extended_parents_spa,
+            precond     = :global_ilu,
+            asm_solver  = :rcmilu,
+            asm_ilu_tau = 0.1,
+            restart = 100,
+            tol     = 1e-3)
+
+    elseif (inputs[:RT_longwave])
+        x_warm = Float64[]
+        if (rt_sol_lw_available)
+            x_warm = rt_sol_lw
+        end
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
+            npoin_g  = n_ext_spa,
+            g_ip2gip = extended_parents_to_gid_spa,
+            g_gip2ip = gid_to_extended_parents_spa,
+            precond     = :global_ilu,
+            asm_solver  = :rcmilu,
+            asm_ilu_tau = 0.1,
+            restart = 60,
+            tol     = 1e-7)
+    else
+        x_warm = Float64[]
+        if (inputs[:lmanufactured_solution])
+            x_warm = ref
+            if has_spatial_hanging_nodes && R_spatial !== nothing
+                for i in spatial_hanging_nodes_all_angular
+                    x_warm[i] = 0.0
+                end
+            end
+        end
+        solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
+        npoin_g  = n_ext_spa,
+        g_ip2gip = extended_parents_to_gid_spa,
+        g_gip2ip = gid_to_extended_parents_spa,
+        precond  = :global_ilu,
+        asm_solver = :rcmsplu,
+        asm_ilu_tau = 0.1,
+        restart  = 50,
+        tol      = 1e-7)
+
+    end
+    
     @rankinfo rank "Solve complete."
-    A = nothing; RHS = nothing; GC.gc()
-    @info maximum(solution), minimum(solution)
     # ── Solution prolongation ─────────────────────────────────────────────────
     solution_new = zeros(Float64, n_spa)
     if inputs[:adaptive_extra_meshes]
@@ -2381,7 +3594,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             compute_solution_prolongation_contributions(
                 reverse_ghost_map, solution, ip2gip_spa, n_free, rank)
 
-        solution_local = P_vec * solution
+        solution_local = P * solution
 
         received_solution_contributions =
             exchange_hanging_effects_vector(solution_contributions_to_send, rank, comm)
@@ -2390,7 +3603,56 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @view(solution_local[1:n_spa]), received_solution_contributions,
             ip2gip_spa, n_spa, rank, gip_to_local)
     end
+    
+    if !inputs[:adaptive_extra_meshes] && has_spatial_hanging_nodes && R_spatial !== nothing
 
+        # Build reverse ghost map via AllGather: each rank broadcasts its
+        # (parent_gid, hanging_gid, owner_hanging, weight) tuples for extended parents;
+        # owning ranks collect entries where they hold the parent locally.
+        _ext_gid_set_prol = Set(extended_parents_to_gid_spa)
+        _local_rev = Float64[]
+        for (hanging_dof, constraints) in ghost_constraint_data_spa
+            hanging_dof > n_spa_new && continue
+            hanging_gid   = ip2gip_spa[hanging_dof]
+            owner_hanging = get(gip2owner_spa_gid, hanging_gid, rank)
+            for (parent_gid, weight) in constraints
+                parent_gid in _ext_gid_set_prol || continue
+                push!(_local_rev, Float64(parent_gid), Float64(hanging_gid),
+                      Float64(owner_hanging), weight)
+            end
+        end
+        _n_rev_loc = Int32(length(_local_rev) ÷ 4)
+        _n_rev_all = MPI.Allgather([_n_rev_loc], comm)
+        _all_rev   = MPI.Allgatherv(_local_rev, Int32.(_n_rev_all .* 4), comm)
+
+        spa_reverse_ghost_map = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+        for k = 1:length(_all_rev) ÷ 4
+            s = 4*(k-1)
+            parent_gid    = Int(round(_all_rev[s+1]))
+            hanging_gid   = Int(round(_all_rev[s+2]))
+            owner_hanging = Int(round(_all_rev[s+3]))
+            weight        = _all_rev[s+4]
+            local_parent  = get(gip_to_local_spa, parent_gid, 0)
+            local_parent == 0 && continue
+            get(gip2owner_spa_gid, parent_gid, -1) != rank && continue
+            push!(get!(spa_reverse_ghost_map, local_parent, Tuple{Int,Int,Float64}[]),
+                  (hanging_gid, owner_hanging, weight))
+        end
+
+        solution_contribs_spa = compute_solution_prolongation_contributions(
+            spa_reverse_ghost_map, solution, ip2gip_spa, n_spa_new, rank)
+
+        solution_local_spa = P_spatial_ext * solution
+
+        received_spa_contribs = exchange_hanging_effects_vector(
+            solution_contribs_spa, rank, comm)
+
+        solution_new_spa = add_solution_prolongation_contributions(
+            @view(solution_local_spa[1:n_spa_new]), received_spa_contribs,
+            ip2gip_spa, n_spa_new, rank, gip_to_local_spa)
+        solution[1:n_spa_new] .= solution_new_spa
+
+    end
     # ── Angular integration and error computation ─────────────────────────────
     @rankinfo rank "Integrating solution in angle..."
     int_sol      = zeros(TFloat, npoin, 1)
@@ -2400,43 +3662,31 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     L2_err = 0.0
     L2_ref = 0.0
 
-    # Compute node sharing divisors for correct accumulation at shared nodes
-    node_div = ones(Int, npoin)
-    
-        for iel = 1:nelem
-            for k = 1:ngl, j = 1:ngl, i = 1:ngl
-                ip    = mesh.connijk[iel, i, j, k]
-                x_ip  = mesh.x[ip]; y_ip = mesh.y[ip]; z_ip = mesh.z[ip]
-                matchx  = abs(x_ip - mesh.xmin) < 1e-10 || abs(x_ip - mesh.xmax) < 1e-10
-                matchy  = abs(y_ip - mesh.ymin) < 1e-10 || abs(y_ip - mesh.ymax) < 1e-10
-                matchz  = abs(z_ip - mesh.zmin) < 1e-10 || abs(z_ip - mesh.zmax) < 1e-10
-                nmatches = matchx + matchy + matchz
-                on_bdy   = ip in mesh.poin_in_bdy_face
-
-                is_corner = (i ∈ (1,ngl)) && (j ∈ (1,ngl)) && (k ∈ (1,ngl))
-                is_edge   = !is_corner && (
-                    ((i ∈ (1,ngl)) && (j ∈ (1,ngl))) ||
-                    ((i ∈ (1,ngl)) && (k ∈ (1,ngl))) ||
-                    ((j ∈ (1,ngl)) && (k ∈ (1,ngl))))
-                is_face   = !is_corner && !is_edge &&
-                            (i ∈ (1,ngl) || j ∈ (1,ngl) || k ∈ (1,ngl))
-
-                div = 1
-                if is_corner
-                    if !on_bdy; div = 8
-                    elseif nmatches == 1; div = 4
-                    elseif nmatches == 2; div = 2
-                    end
-                elseif is_edge
-                    if !on_bdy; div = 4
-                    elseif nmatches == 1; div = 2
-                    end
-                elseif is_face
-                    if !on_bdy; div = 2 end
-                end
-                node_div[ip] = max(node_div[ip], div)
-            end
+    # Compute node sharing divisors for correct accumulation at shared nodes.
+    # Local count: how many local elements reference each spatial node.
+    node_div_local = zeros(Int, npoin)
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j, k]
+            node_div_local[ip] += 1
         end
+    end
+
+    # For spatial AMR, parent nodes at the coarse-fine interface appear in local
+    # elements on MULTIPLE ranks (fine-element owner and coarse-element owner).
+    # We need the GLOBAL total of contributions so that all ranks' shares sum to
+    # exactly one angular integral per spatial node. Use spatial GIDs (mesh.ip2gip)
+    # which are consistent with the g_int_sol AllReduce below.
+    g_count = zeros(Int, mesh.gnpoin)
+    for ip = 1:npoin
+        g_count[mesh.ip2gip[ip]] += node_div_local[ip]
+    end
+    MPI.Allreduce!(g_count, MPI.SUM, comm)
+    node_div_global = zeros(Int, npoin)
+    for ip = 1:npoin
+        node_div_global[ip] = g_count[mesh.ip2gip[ip]]
+    end
+    node_div = node_div_global
 
         if inputs[:adaptive_extra_meshes]
             for iel = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
@@ -2444,9 +3694,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 for e_ext = 1:extra_meshes_extra_nelems[iel]
                     for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
                         for iϕ = 1:extra_meshes_extra_nops[iel][e_ext]+1
-                            ip_ext = extra_meshes_connijk[iel][e_ext, iθ, iϕ]
-                            θ      = extra_meshes_coords[iel][1, ip_ext]
-                            ϕ      = extra_meshes_coords[iel][2, ip_ext]
                             ip_g   = connijk_spa[iel][i, j, k, e_ext, iθ, iϕ]
                             weight = extra_meshes_extra_Je[iel][e_ext, iθ, iϕ] *
                                      extra_mesh[iel].ωθ[iθ] * extra_mesh[iel].ωθ[iϕ]
@@ -2468,21 +3715,22 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     for iθ = 1:extra_mesh.extra_nop[e_ext]+1
                         for iϕ = 1:extra_mesh.extra_nop[e_ext]+1
                             ip_ext = extra_mesh.extra_connijk[e_ext, iθ, iϕ]
-                            θ      = extra_mesh.extra_coords[1, ip_ext]
-                            ϕ      = extra_mesh.extra_coords[2, ip_ext]
-                            ip_g   = (ip-1) * extra_mesh.extra_npoin + ip_ext
+                            ip_g   = has_spatial_hanging_nodes ?
+                                     connijk_spa_uniform[iel][i, j, k, e_ext, iθ, iϕ] :
+                                     (ip-1) * extra_mesh.extra_npoin + ip_ext
                             int_sol_accum[ip] += solution[ip_g] *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] / node_div[ip]
-                            if (inputs[:lmanufactured_solution])    
-                                int_ref_accum[ip] += (ref[ip_g] - solution[ip_g]) *
+                            
+                            if (inputs[:lmanufactured_solution])
+                                int_ref_accum[ip] += ref[ip_g] *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] / node_div[ip]
                                 L2_ref += ref[ip_g]^2 *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] *
                                 ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
-                                L2_err += (ref[ip_g])^2 *
+                                L2_err += (ref[ip_g] - solution[ip_g])^2 *
                                 extra_mesh.extra_metrics.Je[e_ext, iθ, iϕ] *
                                 extra_mesh.ωθ[iθ] * extra_mesh.ωθ[iϕ] *
                                 ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
@@ -2492,10 +3740,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 end
             end
         end
-    
 
-    # ── Global reduction of integrals and norms ───────────────────────────────
-    
         gnpoin_spa  = mesh.gnpoin
         g_int_sol   = zeros(Float64, gnpoin_spa)
         g_int_ref   = zeros(Float64, gnpoin_spa)
@@ -2518,19 +3763,162 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             L2_ref_g = MPI.Allreduce(L2_ref, MPI.SUM, comm)
             L2_err_g = MPI.Allreduce(L2_err, MPI.SUM, comm)
         end
-    
 
     if (inputs[:lmanufactured_solution])
         @rankinfo rank @sprintf("L2 error: ‖e‖ = %.6e  ‖u‖ = %.6e  relative = %.6e",
         sqrt(L2_err_g), sqrt(L2_ref_g), sqrt(L2_err_g / L2_ref_g))
     end
 
-    # ── VTK output ────────────────────────────────────────────────────────────
-    @rankinfo rank "Writing output"
-    title = @sprintf "Solution-Radiation"
-    write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
-              0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
-              ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+    if (inputs[:RT_radiative_heating]) && (inputs[:RT_longwave] || inputs[:RT_shortwave])
+        if (inputs[:adaptive_extra_meshes])
+            if (inputs[:RT_shortwave])
+                Q, dTdt, F_net, G = compute_rt_radiative_heating(
+                solution_new, atmos_data, mesh,
+                connijk_spa, extra_meshes_connijk, extra_meshes_coords,
+                extra_meshes_extra_Je, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_npoins,
+                nelem, ngl, κ, σ, extra_mesh[1].ωθ, extra_mesh[1].ωθ, node_div, true, inputs[:RT_longwave];
+                G_dir = G_dir,
+                Q_dir = Q_dir,
+                sw_μ₀ = sw.μ₀,
+                sw_φ₀ = sw.φ₀)
+            else
+                Q, dTdt, F_net, G = compute_rt_radiative_heating(
+                solution_new, atmos_data, mesh,
+                connijk_spa, extra_meshes_connijk, extra_meshes_coords,
+                extra_meshes_extra_Je, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_npoins,
+                nelem, ngl, κ, σ, extra_mesh[1].ωθ, extra_mesh[1].ωθ, node_div, true, inputs[:RT_longwave])
+            end
+
+        else
+
+            if (inputs[:RT_shortwave])
+                Q, dTdt, F_net, G = compute_rt_radiative_heating(
+                solution, atmos_data, mesh,
+                connijk_spa, extra_mesh.extra_connijk, extra_mesh.extra_coords,
+                extra_mesh.extra_metrics.Je, extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_npoin,
+                nelem, ngl, κ, σ, extra_mesh.ωθ, extra_mesh.ωθ, node_div, false, inputs[:RT_longwave];
+                G_dir = G_dir,
+                Q_dir = Q_dir,
+                sw_μ₀ = sw.μ₀,
+                sw_φ₀ = sw.φ₀)
+            else
+                Q, dTdt, F_net, G = compute_rt_radiative_heating(
+                solution, atmos_data, mesh,
+                connijk_spa, extra_mesh.extra_connijk, extra_mesh.extra_coords,
+                extra_mesh.extra_metrics.Je, extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_npoin,
+                nelem, ngl, κ, σ, extra_mesh.ωθ, extra_mesh.ωθ, node_div, false, inputs[:RT_longwave])
+        
+            end
+        end
+    end
+
+
+    if (inputs[:RT_atmos_coupling])
+        return Q, dTdt, solution
+    else
+        # ── VTK output ────────────────────────────────────────────────────────────
+        if (inputs[:RT_radiative_heating]) && (inputs[:RT_longwave] || inputs[:RT_shortwave])
+            out_vectors = zeros(mesh.npoin,12)
+            if (inputs[:adaptive_extra_meshes])
+                out_vectors = zeros(mesh.npoin,13)
+            end
+            for i=1:mesh.npoin
+                out_vectors[i,1] = int_sol[i]
+                out_vectors[i,2] = Q[i]
+                out_vectors[i,3] = dTdt[i]
+                out_vectors[i,4] = F_net[i]
+                out_vectors[i,5] = G[i]
+                out_vectors[i,6] = atmos_data.t_lev[i]
+                out_vectors[i,7] = atmos_data.q_liq[i]
+                out_vectors[i,8] = atmos_data.q_ice[i]
+                out_vectors[i,9] = κ[i]
+                out_vectors[i,10] = σ[i]
+                if (inputs[:RT_shortwave])
+                    out_vectors[i,11] = F_dir[i]
+                    out_vectors[i,12] = τ_nodes[i]
+                end
+            end
+            if (inputs[:adaptive_extra_meshes])
+                for iel = 1:nelem
+                    for i = 1:ngl, j = 1:ngl, k = 1:ngl
+                        ip = mesh.connijk[iel,i,j,k]
+                        out_vectors[ip,13] = extra_meshes_extra_nelems[iel]
+                    end
+                end
+            end
+            @rankinfo rank "Writing output"
+            title = @sprintf "Solution-Radiation"
+            if (inputs[:outformat] == VTK())
+                if (inputs[:adaptive_extra_meshes])
+                    write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"]; iout=1, nvar=13)
+                    return
+                else
+                    write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"]; iout=1, nvar=12)
+                    return
+                end
+            elseif (inputs[:outformat] == NETCDF())
+                if (inputs[:adaptive_extra_meshes])
+                    write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes", "nelem_ang"]; iout=1, nvar=13)
+                    return
+                else
+                    write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"], ["Ang_int","Q","dTdt","F_net","G", "T", "q_liq", "q_ice", "kappa", "sigma", "F_dir", "τ_nodes"]; iout=1, nvar=12)
+                    return
+                end
+            end
+        else
+            
+            out_vectors = zeros(mesh.npoin,1)
+            if (inputs[:adaptive_extra_meshes])
+                out_vectors = zeros(mesh.npoin,2)
+            end
+            for i=1:mesh.npoin
+                out_vectors[i,1] = int_sol[i]
+            end
+            if (inputs[:adaptive_extra_meshes])
+                for iel = 1:nelem
+                    for i = 1:ngl, j = 1:ngl, k = 1:ngl
+                        ip = mesh.connijk[iel,i,j,k]
+                        out_vectors[ip,2] = extra_meshes_extra_nelems[iel]
+                    end
+                end
+            end
+            @rankinfo rank "Writing output"
+            title = @sprintf "Solution-Radiation"
+            if (inputs[:outformat] == VTK())
+                if (inputs[:adaptive_extra_meshes])
+                    write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int","nelem_ang"], ["Ang_int","nelem_ang"]; iout=1, nvar=2)
+                    return
+                else
+                    write_vtk(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+                    return
+                end
+            elseif (inputs[:outformat] == NETCDF())
+                if (inputs[:adaptive_extra_meshes])
+                    write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int", "nelem_ang"], ["Ang_int","nelem_ang"]; iout=1, nvar=2)
+                    return
+                else
+                    write_NetCDF(SD, mesh, out_vectors, out_vectors, nothing, nothing, nothing,
+                        0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+                        ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
+                    return
+                end
+            end
+        end
+    end
 
 end
 
@@ -2583,26 +3971,48 @@ function sparse_lhs_assembly_3Dby2D(ω, Je, connijk, ωθ, ωϕ, x, y, z,
                                     ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang,
                                     npoin_ang_total, nelem, ngl, nelem_ang,
                                     dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                                    npoin_ang, rad_HG_g, rad_data, κ_data, σ_data)
+                                    npoin_ang, g_eff, rad_data, κ_data, σ_data, lshortwave)
 
     intΦ = zeros(Float64, npoin_ang)
-    HG, _ = quadgk(v -> (1-rad_HG_g^2)/((1+rad_HG_g^2-2*rad_HG_g*cos(v))^(3/2)),
-                   0, 2π, rtol=1e-13, atol=1e-13)
-
-    # Precompute scattering integrals once per angular node
-    for e_ext = 1:nelem_ang
-        for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
-            ip_ext = connijk_ang[e_ext, iθ, jθ]
-            θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
-            val = 0.0
-            for e_ext_s = 1:nelem_ang
-                for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
-                    ipθ = connijk_ang[e_ext_s, mθ, nθ]
-                    Φ   = user_scattering_functions(θ, coords_ang[1,ipθ], ϕ, coords_ang[2,ipθ], HG)
-                    val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+    g_table    = [0.0, 0.85]
+    intΦ_table = zeros(Float64, npoin_ang, length(g_table))
+    
+    if (lshortwave)
+        for (ig, g_val) in enumerate(g_table)
+            for e_ext = 1:nelem_ang
+                for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                    ip_ext = connijk_ang[e_ext, iθ, jθ]
+                    θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                    val = 0.0
+                    for e_ext_s = 1:nelem_ang
+                        for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
+                            ipθ = connijk_ang[e_ext_s, mθ, nθ]
+                            Φ   = user_scattering_functions(θ, coords_ang[1,ipθ],
+                                                            ϕ, coords_ang[2,ipθ],
+                                                            g_val)
+                            val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+                        end
+                    end
+                    intΦ_table[ip_ext, ig] = val
                 end
             end
-            intΦ[ip_ext] = val
+        end
+    else
+        # Precompute scattering integrals once per angular node
+        for e_ext = 1:nelem_ang
+            for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                ip_ext = connijk_ang[e_ext, iθ, jθ]
+                θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                val = 0.0
+                for e_ext_s = 1:nelem_ang
+                    for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
+                        ipθ = connijk_ang[e_ext_s, mθ, nθ]
+                        Φ   = user_scattering_functions(θ, coords_ang[1,ipθ], ϕ, coords_ang[2,ipθ], g_eff)
+                        val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+                    end
+                end
+                intΦ[ip_ext] = val
+            end
         end
     end
 
@@ -2631,10 +4041,20 @@ function sparse_lhs_assembly_3Dby2D(ω, Je, connijk, ωθ, ωϕ, x, y, z,
                     θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
                     Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
                     idx_ip = (ip-1)*npoin_ang + ip_ext
-
+                    intϕ_eff = 0.0
+                    if (lshortwave)
+                        α = g_eff[ip] / 0.85
+                        intΦ_eff = (1 - α) * intΦ_table[ip_ext, 1] + α * intΦ_table[ip_ext, 2]
+                    else
+                        intΦ_eff = intΦ[ip_ext]
+                    end
                     _grow_if_needed!(I_vec, J_vec, V_vec, pos)
                     I_vec[pos] = idx_ip; J_vec[pos] = idx_ip
-                    V_vec[pos] = (κ - σ*intΦ[ip_ext]) * ωJac_full
+                    if (rad_data)
+                        V_vec[pos] = (κ + σ*(1 - intΦ_eff)) * ωJac_full
+                    else
+                        V_vec[pos] = (κ - σ * intΦ_eff) * ωJac_full
+                    end
                     pos += 1
 
                     prop_i = (dξdx_ij*Ωx + dξdy_ij*Ωy + dξdz_ij*Ωz) * ωJac_full
@@ -2699,7 +4119,7 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
                                     ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang,
                                     npoin_ang_total, nelem, ngl, nelem_ang,
                                     dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                                    npoin_ang, rad_HG_g, connijk_spa, rad_data, κ_data, σ_data)
+                                    npoin_ang, g_eff, connijk_spa, rad_data, κ_data, σ_data, lshortwave)
 
     ngl_stencil = 3 * (ngl - 1) + 1
     estimated   = round(Int, npoin_ang_total * ngl_stencil * 1.2)
@@ -2708,31 +4128,59 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
     V_vec = Vector{Float64}(undef, estimated)
     pos   = 1
 
-    HG, _ = quadgk(v -> (1-rad_HG_g^2)/((1+rad_HG_g^2-2*rad_HG_g*cos(v))^(3/2)),
-                   0, 2π, rtol=1e-13, atol=1e-13)
-
     # Precompute per-element scattering integrals
     intΦ_per_iel = Vector{Vector{Float64}}(undef, nelem)
-    for iel = 1:nelem
-        n_ang  = npoin_ang[iel]
-        intΦ   = zeros(Float64, n_ang)
-        for e_ext = 1:nelem_ang[iel]
-            for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
-                ip_ext = connijk_ang[iel][e_ext, iθ, jθ]
-                θ = coords_ang[iel][1, ip_ext]; ϕ = coords_ang[iel][2, ip_ext]
-                val = 0.0
-                for e_ext_s = 1:nelem_ang[iel]
-                    for nθ = 1:nop_ang[iel][e_ext_s]+1, mθ = 1:nop_ang[iel][e_ext_s]+1
-                        ipθ = connijk_ang[iel][e_ext_s, mθ, nθ]
-                        Φ   = user_scattering_functions(θ, coords_ang[iel][1,ipθ],
-                                                        ϕ, coords_ang[iel][2,ipθ], HG)
-                        val += ωθ[mθ] * ωϕ[nθ] * Je_ang[iel][e_ext_s, mθ, nθ] * Φ
+    g_table    = [0.0, 0.85]
+    intΦ_table_per_iel = Vector{Matrix{Float64}}(undef, nelem)
+    
+    if (lshortwave)
+        for iel = 1:nelem
+            n_ang  = npoin_ang[iel]
+            intΦ   = zeros(Float64, n_ang, length(g_table))
+            for (ig, g_val) in enumerate(g_table)
+                for e_ext = 1:nelem_ang[iel]
+                    for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
+                        ip_ext = connijk_ang[iel][e_ext, iθ, jθ]
+                        θ = coords_ang[iel][1, ip_ext]; ϕ = coords_ang[iel][2, ip_ext]
+                        val = 0.0
+                        for e_ext_s = 1:nelem_ang[iel]
+                            for nθ = 1:nop_ang[iel][e_ext_s]+1, mθ = 1:nop_ang[iel][e_ext_s]+1
+                                ipθ = connijk_ang[iel][e_ext_s, mθ, nθ]
+                                Φ   = user_scattering_functions(θ, coords_ang[iel][1,ipθ],
+                                                                ϕ, coords_ang[iel][2,ipθ],
+                                                                g_val)
+
+                                val += ωθ[mθ] * ωϕ[nθ] * Je_ang[iel][e_ext_s, mθ, nθ] * Φ
+                            end
+                        end
+                        intΦ[ip_ext, ig] = val
                     end
                 end
-                intΦ[ip_ext] = val
             end
+            intΦ_table_per_iel[iel] = intΦ
         end
-        intΦ_per_iel[iel] = intΦ
+    else
+        for iel = 1:nelem
+            n_ang  = npoin_ang[iel]
+            intΦ   = zeros(Float64, n_ang)
+            for e_ext = 1:nelem_ang[iel]
+                for jθ = 1:nop_ang[iel][e_ext]+1, iθ = 1:nop_ang[iel][e_ext]+1
+                    ip_ext = connijk_ang[iel][e_ext, iθ, jθ]
+                    θ = coords_ang[iel][1, ip_ext]; ϕ = coords_ang[iel][2, ip_ext]
+                    val = 0.0
+                    for e_ext_s = 1:nelem_ang[iel]
+                        for nθ = 1:nop_ang[iel][e_ext_s]+1, mθ = 1:nop_ang[iel][e_ext_s]+1
+                            ipθ = connijk_ang[iel][e_ext_s, mθ, nθ]
+                            Φ   = user_scattering_functions(θ, coords_ang[iel][1,ipθ],
+                                                            ϕ, coords_ang[iel][2,ipθ], g_eff)
+                            val += ωθ[mθ] * ωϕ[nθ] * Je_ang[iel][e_ext_s, mθ, nθ] * Φ
+                        end
+                    end
+                    intΦ[ip_ext] = val
+                end
+            end
+            intΦ_per_iel[iel] = intΦ
+        end
     end
 
     for iel = 1:nelem
@@ -2753,10 +4201,19 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
                     θ = coords_ang[iel][1, ip_ext]; ϕ = coords_ang[iel][2, ip_ext]
                     Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
                     idx_ip = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]
-
+                    if (lshortwave)
+                        α = g_eff[ip] / 0.85
+                        intΦ_eff = (1 - α) * intΦ_table_per_iel[iel][ip_ext, 1] + α * intΦ_table_per_iel[iel][ip_ext, 2]
+                    else
+                        intΦ_eff = intΦ_per_iel[iel][ip_ext]
+                    end
                     _grow_if_needed!(I_vec, J_vec, V_vec, pos)
                     I_vec[pos] = idx_ip; J_vec[pos] = idx_ip
-                    V_vec[pos] = (κ - σ*intΦ_per_iel[iel][ip_ext]) * ωJac_full
+                    if (rad_data)
+                        V_vec[pos] = (κ + σ * (1 - intΦ_eff)) * ωJac_full
+                    else
+                        V_vec[pos] = (κ - σ*intΦ_eff) * ωJac_full
+                    end
                     pos += 1
 
                     prop_i = (dξdx_ij*Ωx + dξdy_ij*Ωy + dξdz_ij*Ωz) * ωJac_full
@@ -2872,6 +4329,169 @@ end
 
 # ──────────────────────────────────────────────────────────────────────────────
 """
+    sparse_lhs_assembly_3Dby2D_spatial_amr(ω, Je, connijk, ωθ, ωϕ, x, y, z,
+        ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang,
+        n_spa_new, nelem, ngl, nelem_ang,
+        dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+        npoin_ang, rad_HG_g, connijk_spa, rad_data, κ_data, σ_data, lshortwave)
+
+Assemble the sparse LHS matrix for spatial AMR with **uniform** angular mesh.
+Uses coordinate-deduplicated `connijk_spa[iel][i,j,k,e_ext,iθ,jθ]` for DOF indexing.
+The angular mesh is uniform across spatial elements (same `connijk_ang`, `Je_ang`, etc.).
+Output size: `n_spa_new × n_spa_new`.
+"""
+function sparse_lhs_assembly_3Dby2D_spatial_amr(ω, Je, connijk, ωθ, ωϕ, x, y, z,
+                                    ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang,
+                                    n_spa_new, nelem, ngl, nelem_ang,
+                                    dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                                    npoin_ang, g_eff, connijk_spa, rad_data, κ_data, σ_data, lshortwave)
+
+    intΦ = zeros(Float64, npoin_ang)
+    g_table    = [0.0, 0.85]
+    intΦ_table = zeros(Float64, npoin_ang, length(g_table))
+
+    if lshortwave
+        for (ig, g_val) in enumerate(g_table)
+            for e_ext = 1:nelem_ang
+                for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                    ip_ext = connijk_ang[e_ext, iθ, jθ]
+                    θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                    val = 0.0
+                    for e_ext_s = 1:nelem_ang
+                        for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
+                            ipθ = connijk_ang[e_ext_s, mθ, nθ]
+                            Φ   = user_scattering_functions(θ, coords_ang[1,ipθ],
+                                                            ϕ, coords_ang[2,ipθ], g_val)
+                            val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+                        end
+                    end
+                    intΦ_table[ip_ext, ig] = val
+                end
+            end
+        end
+    else
+        for e_ext = 1:nelem_ang
+            for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                ip_ext = connijk_ang[e_ext, iθ, jθ]
+                θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                val = 0.0
+                for e_ext_s = 1:nelem_ang
+                    for nθ = 1:nop_ang[e_ext_s]+1, mθ = 1:nop_ang[e_ext_s]+1
+                        ipθ = connijk_ang[e_ext_s, mθ, nθ]
+                        Φ   = user_scattering_functions(θ, coords_ang[1,ipθ], ϕ, coords_ang[2,ipθ], g_eff)
+                        val += ωθ[mθ] * ωϕ[nθ] * Je_ang[e_ext_s, mθ, nθ] * Φ
+                    end
+                end
+                intΦ[ip_ext] = val
+            end
+        end
+    end
+
+    ngl_stencil = 3 * (ngl - 1) + 1
+    estimated   = round(Int, n_spa_new * ngl_stencil * 1.2)
+    I_vec = Vector{Int}(undef, estimated)
+    J_vec = Vector{Int}(undef, estimated)
+    V_vec = Vector{Float64}(undef, estimated)
+    pos   = 1
+
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip       = connijk[iel,i,j,k]
+            ωJac     = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+            dξdx_ij  = dξdx[iel,i,j,k]; dξdy_ij = dξdy[iel,i,j,k]; dξdz_ij = dξdz[iel,i,j,k]
+            dηdx_ij  = dηdx[iel,i,j,k]; dηdy_ij = dηdy[iel,i,j,k]; dηdz_ij = dηdz[iel,i,j,k]
+            dζdx_ij  = dζdx[iel,i,j,k]; dζdy_ij = dζdy[iel,i,j,k]; dζdz_ij = dζdz[iel,i,j,k]
+            κ = rad_data ? κ_data[ip] : user_extinction(x[ip], y[ip], z[ip])
+            σ = rad_data ? σ_data[ip] : user_scattering_coef(x[ip], y[ip], z[ip])
+
+            for e_ext = 1:nelem_ang
+                for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                    ip_ext     = connijk_ang[e_ext, iθ, jθ]
+                    ωJac_rad   = ωθ[iθ]*ωϕ[jθ]*Je_ang[e_ext, iθ, jθ]
+                    ωJac_full  = ωJac * ωJac_rad
+                    θ = coords_ang[1, ip_ext]; ϕ = coords_ang[2, ip_ext]
+                    Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
+                    idx_ip = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]
+                    if lshortwave
+                        α = g_eff[ip] / 0.85
+                        intΦ_eff = (1 - α) * intΦ_table[ip_ext, 1] + α * intΦ_table[ip_ext, 2]
+                    else
+                        intΦ_eff = intΦ[ip_ext]
+                    end
+                    _grow_if_needed!(I_vec, J_vec, V_vec, pos)
+                    I_vec[pos] = idx_ip; J_vec[pos] = idx_ip
+                    if rad_data
+                        V_vec[pos] = (κ + σ*(1 - intΦ_eff)) * ωJac_full
+                    else
+                        V_vec[pos] = (κ - σ * intΦ_eff) * ωJac_full
+                    end
+                    pos += 1
+
+                    prop_i = (dξdx_ij*Ωx + dξdy_ij*Ωy + dξdz_ij*Ωz) * ωJac_full
+                    for m = 1:ngl
+                        abs(dψ[m,i]) < eps(Float64) && continue
+                        idx_m = connijk_spa[iel][m,j,k,e_ext,iθ,jθ]
+                        _grow_if_needed!(I_vec, J_vec, V_vec, pos)
+                        I_vec[pos] = idx_ip; J_vec[pos] = idx_m; V_vec[pos] = dψ[m,i]*prop_i
+                        pos += 1
+                    end
+
+                    prop_j = (dηdx_ij*Ωx + dηdy_ij*Ωy + dηdz_ij*Ωz) * ωJac_full
+                    for n = 1:ngl
+                        abs(dψ[n,j]) < eps(Float64) && continue
+                        idx_n = connijk_spa[iel][i,n,k,e_ext,iθ,jθ]
+                        _grow_if_needed!(I_vec, J_vec, V_vec, pos)
+                        I_vec[pos] = idx_ip; J_vec[pos] = idx_n; V_vec[pos] = dψ[n,j]*prop_j
+                        pos += 1
+                    end
+
+                    prop_k = (dζdx_ij*Ωx + dζdy_ij*Ωy + dζdz_ij*Ωz) * ωJac_full
+                    for o = 1:ngl
+                        abs(dψ[o,k]) < eps(Float64) && continue
+                        idx_o = connijk_spa[iel][i,j,o,e_ext,iθ,jθ]
+                        _grow_if_needed!(I_vec, J_vec, V_vec, pos)
+                        I_vec[pos] = idx_ip; J_vec[pos] = idx_o; V_vec[pos] = dψ[o,k]*prop_k
+                        pos += 1
+                    end
+                end
+            end
+        end
+    end
+    return sparse(view(I_vec,1:pos-1), view(J_vec,1:pos-1), view(V_vec,1:pos-1), n_spa_new, n_spa_new)
+end
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+"""
+    assemble_mass_diagonal_3Dby2D_spatial_amr(ω, Je, connijk, ωθ, ωϕ, connijk_ang,
+        Je_ang, nop_ang, n_spa_new, nelem, ngl, nelem_ang, connijk_spa)
+
+Assemble the lumped mass matrix for spatial AMR with **uniform** angular mesh.
+Uses coordinate-deduplicated `connijk_spa[iel][i,j,k,e_ext,iθ,jθ]` for DOF indexing.
+Returns a vector of length `n_spa_new`.
+"""
+function assemble_mass_diagonal_3Dby2D_spatial_amr(ω, Je, connijk, ωθ, ωϕ, connijk_ang,
+        Je_ang, nop_ang, n_spa_new, nelem, ngl, nelem_ang, connijk_spa)
+
+    Md = zeros(Float64, n_spa_new)
+    @inbounds for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+            for e_ext = 1:nelem_ang
+                for jθ = 1:nop_ang[e_ext]+1, iθ = 1:nop_ang[e_ext]+1
+                    ωJac_rad = ωθ[iθ]*ωϕ[jθ]*Je_ang[e_ext,iθ,jθ]
+                    idx      = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]
+                    Md[idx] += ωJac * ωJac_rad
+                end
+            end
+        end
+    end
+    return Md
+end
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+"""
     compute_adaptivity_criterion3D_2D(pointwise_interaction, nelem, ngl, connijk,
         connijk_ang, nop_ang, nelem_ang, coords_ang, connijk_spa,
         ψ_ang, dψ_ang, dξdθ, dηdθ, dξdϕ, dηdϕ)
@@ -2946,17 +4566,26 @@ in `build_restriction_matrices_local_and_ghost`.
 """
 function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl, nelem_ang, nop_ang, neighbors, npoin_ang,
         connijk_ang, coords_ang, Je_ang, dξdx_ang, dxdξ_ang, dξdy_ang, dydξ_ang, dηdy_ang, dydη_ang, dηdx_ang, dxdη_ang, connijk,
-        x, y, z, xmin_grid, ymin_grid, zmin_grid, xmax_grid, ymax_grid, zmax_grid, ψ, dψ)
+        x, y, z, xmin_grid, ymin_grid, zmin_grid, xmax_grid, ymax_grid, zmax_grid, ψ, dψ,
+        can_refine::Union{BitVector,Nothing}=nothing)
 
     lgl = basis_structs_ξ_ω!(LGL(), ngl-1, CPU())
     adapted_ang = zeros(Int, nelem)
     ang_adapted  = zeros(Int, nelem)
 
     for iel = 1:nelem
-        e_ext = 1
-        while e_ext <= nelem_ang[iel]
-            if abs(criterion[iel][e_ext]) > thresholds[1]
+        # Skip angular refinement for elements that are spatially non-conforming
+        # with at least one neighbor.  Allowing both types of non-conformity at
+        # the same interface is not supported.
+        can_refine !== nothing && !can_refine[iel] && continue
 
+        e_ext = 1
+
+        while e_ext <= nelem_ang[iel]
+
+            if (abs(criterion[iel][e_ext]) > thresholds[1])
+               #@info iel, e_ext
+               #@info rank, criterion[iel][e_ext], thresholds[1], e_ext, iel
                 adapted_ang[iel] = 1
                 ref_level[iel][e_ext] += 1
                 ang_adapted[iel] = 1
@@ -3085,9 +4714,11 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
                     @inbounds for l = 1:nop_ang_new[e_ext1]+1, k = 1:nop_ang_new[e_ext1]+1
                         dxdξ_v = metrics.dxdξ[e_ext1,k,l]; dydη_v = metrics.dydη[e_ext1,k,l]
                         dydξ_v = metrics.dydξ[e_ext1,k,l]; dxdη_v = metrics.dxdη[e_ext1,k,l]
+                        ip  = connijk_ang_new[e_ext1,k,l]
+                        θ = coords_new[1,ip]
                         Je_v   = dxdξ_v*dydη_v - dydξ_v*dxdη_v
                         Jinv   = 1.0 / Je_v
-                        metrics.Je[e_ext1,k,l]   = Je_v
+                        metrics.Je[e_ext1,k,l]   = sin(θ) * Je_v
                         metrics.dξdx[e_ext1,k,l] =  dydη_v*Jinv
                         metrics.dξdy[e_ext1,k,l] = -dxdη_v*Jinv
                         metrics.dηdx[e_ext1,k,l] = -dydξ_v*Jinv
@@ -3097,15 +4728,15 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
 
                 # Enforce ϕ-periodicity: merge ϕ=2π nodes with ϕ=0 counterparts
                 zero_ϕ_dict = Dict{Float64, Int}()
-                for iper = 1:npoin_ang[iel]
-                    if coords_new[2, iper] <= eps(Float64)
-                        zero_ϕ_dict[coords_new[1,iper]] = iper
+                for iper = 1:iter-1   # use iter-1, not npoin_ang[iel] which isn't updated yet
+                    if coords_new[2, iper] < 1e-10   # ϕ ≈ 0
+                        zero_ϕ_dict[coords_new[1, iper]] = iper
                     end
                 end
                 merge_pairs = Dict{Int, Int}()
-                for iper = 1:npoin_ang[iel]
+                for iper = 1:iter-1
                     ϕ = coords_new[2, iper]
-                    if abs(ϕ/π - 2.0) <= eps(Float64)
+                    if abs(ϕ / π - 2.0) < 1e-10   # ϕ ≈ 2π
                         θ = coords_new[1, iper]
                         canonical = get(zero_ϕ_dict, θ, 0)
                         if canonical != 0 && canonical != iper
@@ -3113,7 +4744,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
                         end
                     end
                 end
-
+    
                 if !isempty(merge_pairs)
                     for ip_old in sort(collect(keys(merge_pairs)), rev=true)
                         ip_new = merge_pairs[ip_old]
@@ -3127,9 +4758,13 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
                                 connijk_ang_new[e,i,j] > ip_old && (connijk_ang_new[e,i,j] -= 1)
                             end
                         end
-                        for k in keys(merge_pairs)
-                            merge_pairs[k] > ip_old && (merge_pairs[k] -= 1)
-                        end
+
+                        # Rebuild merge_pairs with updated keys AND values
+                        merge_pairs = Dict(
+                            (k > ip_old ? k - 1 : k) => (v > ip_old ? v - 1 : v)
+                                for (k, v) in merge_pairs if k != ip_old
+                            )
+
                         for i = ip_old+1:npoin_ang[iel]
                             coords_new[1,i-1] = coords_new[1,i]
                             coords_new[2,i-1] = coords_new[2,i]
@@ -3152,13 +4787,17 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
                 nop_ang[iel]     = nop_ang_new
                 criterion[iel]   = criterion_new
                 ref_level[iel]   = ref_level_new
+                
+            
             end
             e_ext += 1
+            
         end
     end
 
     # ── Neighbor detection ────────────────────────────────────────────────────
     for iel = 1:nelem
+        
         xmin = xmax = x[connijk[iel,1,1,1]]; ymin = ymax = y[connijk[iel,1,1,1]]
         zmin = zmax = z[connijk[iel,1,1,1]]
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
@@ -3201,6 +4840,7 @@ function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl
             end
             iter += 1
         end
+        
     end
 end
 
@@ -3593,4 +5233,57 @@ function build_interpolation_matrices!(iel, e_ext, iel1, e_ext1, coords_ang, con
 
     return view(Lθ, 1:nop_child+1, 1:nop_parent+1),
            view(Lϕ, 1:nop_child+1, 1:nop_parent+1)
+end
+
+function enforce_periodic_phi_conformity!(criterion, thresholds, ref_level,
+                                           nelem, nelem_ang, nop_ang,
+                                           connijk_ang, coords_ang)
+    for iel = 1:nelem
+        for e_ext = 1:nelem_ang[iel]
+            nop = nop_ang[iel][e_ext]
+
+            # ϕ at first and last node columns of this element
+            ϕ_first = coords_ang[iel][2, connijk_ang[iel][e_ext, 1,     1]]
+            ϕ_last  = coords_ang[iel][2, connijk_ang[iel][e_ext, 1, nop+1]]
+
+            # An element wraps the periodic boundary if its ϕ sequence
+            # increases but the last column is less than the first —
+            # i.e. the sequence went e.g. 5.7 → 5.9 → 6.1 → 0.0
+            touches_2pi = ϕ_last < ϕ_first
+
+            # ϕ=0 side: first column is near 0 and last column is larger
+            # (the periodic partner of the above)
+            touches_0   = ϕ_first < 1e-10 && ϕ_last > ϕ_first
+            
+            (touches_2pi || touches_0) || continue
+
+            # θ range of this element — used to find the paired element
+            θ_lo = coords_ang[iel][1, connijk_ang[iel][e_ext, 1,     1]]
+            θ_hi = coords_ang[iel][1, connijk_ang[iel][e_ext, nop+1, 1]]
+
+            for e_pair = 1:nelem_ang[iel]
+                e_pair == e_ext && continue
+                nop_p = nop_ang[iel][e_pair]
+
+                ϕ_pair_first = coords_ang[iel][2, connijk_ang[iel][e_pair, 1,       1]]
+                ϕ_pair_last  = coords_ang[iel][2, connijk_ang[iel][e_pair, 1, nop_p+1]]
+
+                pair_2pi = ϕ_pair_last < ϕ_pair_first
+                pair_0   = ϕ_pair_first < 1e-10 && ϕ_pair_last > ϕ_pair_first
+
+                θ_lo_p = coords_ang[iel][1, connijk_ang[iel][e_pair, 1,       1]]
+                θ_hi_p = coords_ang[iel][1, connijk_ang[iel][e_pair, nop_p+1, 1]]
+
+                # Counterpart: same θ range, opposite ϕ boundary
+                if abs(θ_lo_p - θ_lo) < 1e-10 && abs(θ_hi_p - θ_hi) < 1e-10 &&
+                   ((touches_2pi && pair_0) || (touches_0 && pair_2pi))
+                    
+                    if abs(criterion[iel][e_ext]) > abs(criterion[iel][e_pair])
+                        criterion[iel][e_pair] = criterion[iel][e_ext]
+                    end
+                    break
+                end
+            end
+        end
+    end
 end
