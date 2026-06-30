@@ -1,37 +1,33 @@
 function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
-        # PERIODIC Laplace / Poisson problem solved by the classical FFT solver
-        # directly on a structured periodic GMSH grid over [-π, π]ᵈ (2D or 3D).
+        # PERIODIC Laplace / Poisson problem  -∇²u = f  on [-π,π]²
+        # solved by a GLOBAL FOURIER SPECTRAL method (FFT).
         #
-        #   -∇²u = f,   u periodic.   (d = 2 ⇒ [-π,π]²,  d = 3 ⇒ [-π,π]³)
+        # The order of THIS method is N = :fft_N, the number of Fourier modes /
+        # grid points — i.e. spectral accuracy. It is INDEPENDENT of the SEM
+        # polynomial order :nop. The FFT uses its own uniform N×N grid over the
+        # domain below (the natural collocation grid for the trigonometric basis
+        # e^{i k·x}); the SEM/LGL nodal basis is not used by the solve. So pick
+        # :fft_N for the Fourier resolution you want (power of 2); set it to your
+        # grid's resolution and the FFT grid coincides with your grid points.
         #
-        # The solver is dimension-agnostic: it reads the mesh's space dimension
-        # (mesh.nsd) and runs a 2-D or 3-D FFT accordingly.
+        # (:nop only affects how Jexpresso reads the mesh during setup — kept at a
+        #  normal value so a GMSH-periodic mesh reads cleanly; it does NOT change
+        #  the FFT accuracy. Output is a STRUCTURED_POINTS VTK.)
         #
-        # :lfft => true        → use fft_linsolve! (problems/drivers.jl dispatch)
-        # :fft_use_mesh => true → solve ON the mesh nodes (NOT a synthetic grid):
-        #     fft_linsolve! folds the mesh nodes onto the uniform periodic lattice,
-        #     FFT-solves, and scatters the result back to the mesh for the normal
-        #     Jexpresso (VTK) output.
-        #
-        # REQUIREMENTS for the mesh path (a classical FFT needs an equispaced grid):
-        #   • :nop => 1   so the global SEM nodes are the (uniform) element corners.
-        #                 With nop>1 the in-element LGL nodes are non-uniform and
-        #                 the solver will stop with an explanatory error.
-        #   • A structured grid with a POWER-OF-TWO number of cells per direction
-        #     (e.g. 32×32 or 32×32×32) so each axis count is a power of two.
-        #   • The period per axis is taken from :fft_Lx/:fft_Ly[/:fft_Lz] (2π here).
-        #
-        # Point :gmsh_filename at YOUR periodic mesh. (Both a GMSH-periodic mesh and
-        # a plain closed structured box work — the solver folds the +π seam back.)
+        # NOTE: Fourier is the right basis here because the problem is PERIODIC.
+        # For NON-periodic BCs the analogous spectral choice is a Chebyshev basis
+        # (Kopriva's FastChebyshevTransform) — not used in this periodic case.
         #---------------------------------------------------------------------------
         :llinsolve            => true,
         :lfft                 => true,
-        :fft_use_mesh         => true,
-        :fft_Lx               => 2π,        # period in x  (domain [-π, π])
+        :fft_use_mesh         => false,     # FFT on its own spectral grid (mesh-independent)
+        :fft_N                => 64,        # Fourier resolution N (modes) — power of 2
+        :fft_x0               => -π,        # domain corner  (x ∈ [-π, π])
+        :fft_y0               => -π,        # domain corner  (y ∈ [-π, π])
+        :fft_Lx               => 2π,        # period in x
         :fft_Ly               => 2π,        # period in y
-        :fft_Lz               => 2π,        # period in z  (ignored for a 2D mesh)
         #--- generic setup flags --------------------------------------------------
         :ode_solver           => "BICGSTABLE",
         :ndiagnostics_outputs => 1,
@@ -44,14 +40,13 @@ function user_inputs()
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl",
-        :nop                 => 1,          # REQUIRED: linear elements ⇒ uniform grid
+        :nop                 => 4,          # mesh-read order only; does NOT affect the FFT
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
-        # User-supplied periodic mesh spanning [-π,π] per direction.
-        # NOTE: the repo's other meshes live under "gmsh_grids" (no 'e'); change
-        # "gmesh_grids" → "gmsh_grids" if the run reports the file is not found.
+        # Your periodic [-π,π]² grid. (Used to set up the run; the FFT in mode (A)
+        # solves on its own uniform :fft_N grid over the domain given above.)
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2d_2pi.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters (identity: the mesh already spans [-π,π]²)
@@ -67,6 +62,18 @@ function user_inputs()
         :output_dir          => "./output/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
+
+        #=== OPTIONAL: write the FFT result on the SEM mesh nodes ==================
+        #   Only useful if you specifically want the output sampled at the mesh
+        #   nodes rather than on the spectral grid. It does NOT make the method
+        #   higher/lower order — the FFT order is still N. Because it samples the
+        #   solution at the SEM nodes, those nodes must be equispaced, i.e. :nop=>1,
+        #   and (since the nop=1 2D periodic-mesh reader crashes) the mesh must NOT
+        #   carry periodic tags — the FFT folds the seam itself. To use it:
+        #       :fft_use_mesh => true,  :nop => 1,
+        #       :fft_Lx => 2π, :fft_Ly => 2π,
+        #   with :gmsh_filename a NON-periodic structured square mesh.
+        #=========================================================================#
     ) #Dict
 
     return inputs
