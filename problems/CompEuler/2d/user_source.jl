@@ -1,4 +1,4 @@
-function user_source!(S, q, npoin::Int64; neqs=1)
+function user_source!(S, q, npoin; neqs=1)
 
     PhysConst = PhysicalConst{Float64}()
         
@@ -14,7 +14,7 @@ function user_source!(S, q, npoin::Int64; neqs=1)
     
 end
 
-function user_source(q::Array, npoin::Int64; neqs=1)
+function user_source(q::Array, npoin; neqs=1)
 
     PhysConst = PhysicalConst{Float64}()
     S = zeros(Float64, neqs)

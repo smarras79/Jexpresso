@@ -24,27 +24,23 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
-function user_uout!(ip, ET, uout, u, qe; mp = mp)
+function user_uout!(ip, ::TOTAL, uout, u, qe; mp = mp)
     PhysConst = PhysicalConst{Float64}()
+    uout[1] = u[1]
+    uout[2] = u[2]/u[1]
+    uout[3] = u[3]/u[1]
+    uout[4] = u[4]/u[1]
+    uout[5] = u[5]/u[1]
+    uout[6] = u[5]/u[1]-qe[5]/qe[1]
+    uout[7] = perfectGasLaw_ρθtoP(PhysConst, ρ=u[1], θ=u[5]/u[1])
+end
 
-    if ET == TOTAL()
-        uout[1] = u[1]
-        uout[2] = u[2]/u[1]
-        uout[3] = u[3]/u[1]
-        uout[4] = u[4]/u[1]
-        uout[5] = u[5]/u[1]
-        uout[6] = u[5]/u[1]-qe[5]/qe[1]
-        uout[7] = perfectGasLaw_ρθtoP(PhysConst, ρ=u[1], θ=u[5]/u[1])
-
-    elseif ET == PERT()
-        uout[1] = u[1]+qe[1]
-        uout[2] = u[2]/(u[1]+qe[1])
-        uout[3] = u[3]/(u[1]+qe[1])
-        uout[4] = u[4]/(u[1]+qe[1])
-        uout[5] = (u[5]+qe[5])/(u[1]+qe[1])
-        uout[6] = (u[5]+qe[5])/(u[1]+qe[1])-qe[5]/qe[1]
-        
-    end
-        
+function user_uout!(ip, ::PERT, uout, u, qe; mp = mp)
+    uout[1] = u[1]+qe[1]
+    uout[2] = u[2]/(u[1]+qe[1])
+    uout[3] = u[3]/(u[1]+qe[1])
+    uout[4] = u[4]/(u[1]+qe[1])
+    uout[5] = (u[5]+qe[5])/(u[1]+qe[1])
+    uout[6] = (u[5]+qe[5])/(u[1]+qe[1])-qe[5]/qe[1]
 end
 

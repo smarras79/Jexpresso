@@ -9,7 +9,7 @@ function user_primitives!(u,qe,uprimitive,::PERT)
 end
 
 
-function user_uout!(ip, ET, uout, u, qe; kwargs...)
+function user_uout!(ip, ::TOTAL, uout, u, qe; kwargs...)
     
     PhysConst = PhysicalConst{Float64}()
 

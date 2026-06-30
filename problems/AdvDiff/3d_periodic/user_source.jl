@@ -1,7 +1,7 @@
 function user_source!(S,
                       q, 
                       qe,
-                      npoin::Int64,
+                      npoin,
                       ::CL, ::TOTAL;
                       neqs=1,karg...)
     
@@ -18,7 +18,7 @@ end
 function user_source!(S,
                       q, 
                       qe,
-                      npoin::Int64,
+                      npoin,
                       ::CL, ::PERT;
                       neqs=1, karg...)
 

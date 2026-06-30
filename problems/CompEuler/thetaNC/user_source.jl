@@ -1,7 +1,7 @@
 function user_source!(S,
                       q, 
                       qe,
-                      npoin::TInt,
+                      npoin,
                       ::CL, ::TOTAL;
                       neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, xmin = -120000, xmax =120000)
 
@@ -17,7 +17,7 @@ end
 function user_source!(S,
                       q, 
                       qe,
-                      npoin::Int64,
+                      npoin,
                       ::CL, ::PERT;
                       neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, xmin = -120000, xmax =120000)
 
@@ -38,7 +38,7 @@ end
 function user_source!(S,
                       q, 
                       qe,
-                      npoin::Int64,
+                      npoin,
                       ::NCL,
                       ::AbstractPert; #for NCL() there is no differece between PERT() and TOTAL() in the source
                       neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, xmin = -120000, xmax =120000)
