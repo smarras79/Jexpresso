@@ -23,6 +23,8 @@ function user_inputs()
         :llinsolve            => true,
         :lfft                 => true,
         :fft_use_mesh         => false,     # FFT on its own spectral grid (mesh-independent)
+        # SAME DOF as the Chebyshev and EL cases: 64 points/dir = 4096 nodes.
+        # (The FFT needs a power of 2, so 64 is the shared count the other two match.)
         :fft_N                => 64,        # Fourier resolution N (modes) — power of 2
         :fft_x0               => -π,        # domain corner  (x ∈ [-π, π])
         :fft_y0               => -π,        # domain corner  (y ∈ [-π, π])

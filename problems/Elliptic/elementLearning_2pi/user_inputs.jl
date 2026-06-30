@@ -19,18 +19,28 @@ function user_inputs()
         #   x_phys = (x_mesh + xdisp)·(xscale·0.5) = x_mesh·π ∈ [-π,π]   (xdisp=0)
         # and likewise in y. (The other elementLearning_* cases are left as-is.)
         #
-        # NOTE on the grid (the three cases share the DOMAIN, not the grid):
-        # element learning solves a DIRICHLET problem, so it needs a Dirichlet-
-        # tagged mesh — it cannot use the PERIODIC hexa_TFI_2d_2pi.msh that the FFT
-        # case uses. A SMALL square_dirichletT mesh is used here: a 15×15 grid at
-        # nop=6 is ~91×91 ≈ 8k nodes, which builds in moments. (The base case's
-        # 100×100 mesh is ~360k nodes at nop=6 and makes the matrix wrapper crawl —
-        # use it only for production EL, not this comparison.)
+        # SAME NUMBER OF DOF as the FFT and Chebyshev cases: 64 points/dir = 4096
+        # nodes, so the three solve timings are comparable. The global SEM node
+        # count per direction is  nelem·nop + 1 ; with the 3×3 square_dirichletT
+        # mesh and nop = 21 that is  3·21 + 1 = 64.
+        #
+        # Why nop = 21 (and not the usual 6): the FFT needs a power-of-two grid
+        # (64), and 6·nelem+1 is ALWAYS odd, so nop=6 can never match a power of
+        # two. With the meshes that ship with the base case (3×3, 15×15, …), 3×3
+        # at nop=21 is the clean way to hit exactly 64 nodes/dir. (If you have a
+        # 9×9 Dirichlet mesh, nop=7 → 64 is gentler; a 21×21 mesh gives nop=3.)
+        #
+        # NOTE: element learning solves a DIRICHLET problem, so it needs a
+        # Dirichlet-tagged mesh — it cannot use the PERIODIC hexa_TFI_2d_2pi.msh
+        # the FFT case uses (the three share the DOMAIN, not the grid).
         #
         # As shipped this runs the DIRECT SEM solve (Ax=b). To run the element-
-        # learning inference instead — and get its "# SOLVER TIMING" line for the
+        # learning INFERENCE instead — and get its "# SOLVER TIMING" line for the
         # comparison — uncomment :lelementLearning and point :NNfile at a trained
-        # model (â ↦ Tie), exactly as for the base elementLearning case.
+        # model (â ↦ Tie). That model must be trained at the SAME nop used here;
+        # the base model is nop=6, which (see above) cannot share the FFT's DOF —
+        # so matched-DOF timing applies to the direct-SEM solve, while EL-inference
+        # timing should be compared at the model's own nop.
         #---------------------------------------------------------------------------
         :tend                 => 1.0,
         :ode_solver           => "BICGSTABLE",
@@ -47,13 +57,14 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
-        # Small DIRICHLET-tagged square (base extent [-1,1]²) — fast to build.
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
+        # 3×3 DIRICHLET-tagged square (base extent [-1,1]²). With nop=21 this gives
+        # 3·21+1 = 64 nodes/dir = 4096 DOF, matching the FFT and Chebyshev cases.
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 6,      # Polynomial order
+        :nop                 => 21,     # 3 elements × nop 21 + 1 = 64 nodes/dir (= 4096 DOF)
         #---------------------------------------------------------------------------
         # grid modification parameters → map [-1,1]² mesh to [-π,π]²
         #---------------------------------------------------------------------------

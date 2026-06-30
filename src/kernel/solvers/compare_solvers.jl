@@ -3,8 +3,9 @@
 # =============================================================================
 #
 #  compare_laplace_solvers() runs the three comparison cases — all on the SAME
-#  domain [-π,π]² with the SAME manufactured solution u_ex = sin(x)cos(y) — and
-#  prints ONE table of solve wall-clock time and accuracy:
+#  domain [-π,π]², the SAME manufactured solution u_ex = sin(x)cos(y), AND the
+#  SAME number of degrees of freedom (64 points/dir = 4096 nodes) so the solve
+#  timings are comparable — and prints ONE table of time and accuracy:
 #
 #      • Elliptic/laplace_periodic    — FFT / Fourier        (periodic)
 #      • Elliptic/laplace_chebyshev   — Chebyshev collocation (Dirichlet)

@@ -27,7 +27,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :llinsolve            => true,
         :lcheb                => true,
-        :cheb_N               => 24,        # Chebyshev resolution (nodes/dir)
+        # SAME DOF as the FFT and EL cases: 64 points/dir = 4096 nodes.
+        # Chebyshev grid is (cheb_N+1) points/dir ⇒ cheb_N = 63 → 64.
+        :cheb_N               => 63,
         :cheb_xmin            => -π,         # SAME domain [-π,π]² as the FFT and EL cases
         :cheb_xmax            =>  π,
         :cheb_ymin            => -π,
