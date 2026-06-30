@@ -1069,9 +1069,14 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         avisc   = zeros(TFloat, 1, ngl^2)          # shape fixed, values change each iter
         nfeatures = size(avisc, 2)
 
+        # Sampling never evaluates the surrogate (training targets come from the
+        # static condensation below), so build the buffers MODEL-FREE — do NOT
+        # load :NNfile here. During sampling that file is the *output* of the
+        # later training step and typically does not exist yet (loading a missing
+        # / empty .onnx fails with "ModelProto does not have a graph").
         wbuf = EL_WorkBuffers(params.mesh, A, A_∂τ∂τ, nfeatures,
                               nelintpoints, elnbdypoints,
-                              inputs[:NNfile])  # load_inference called ONCE here
+                              nothing)
 
         Nsamples = inputs[:Nsamp]
         for isamp = 1:Nsamples
