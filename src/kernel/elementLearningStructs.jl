@@ -1203,14 +1203,17 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         total_cols_writtenout = 0
 
         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... ")))
-        elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
-                             A, RHS, EL,
-                             avisc,
-                             [0.0], [0.0],
-                             BOΓg, gΓ, wbuf;
-                             isamp=1,
-                             total_cols_writtenin=total_cols_writtenin,
-                             total_cols_writtenout=total_cols_writtenout)
+        # Timed the same way as the FFT/Chebyshev solvers (jx_time_solve) so the
+        # element-learning solve can be compared head-to-head with them.
+        jx_time_solve("element-learning inference", () ->
+            elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
+                                 A, RHS, EL,
+                                 avisc,
+                                 [0.0], [0.0],
+                                 BOΓg, gΓ, wbuf;
+                                 isamp=1,
+                                 total_cols_writtenin=total_cols_writtenin,
+                                 total_cols_writtenout=total_cols_writtenout))
 
 
         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... DONE")))

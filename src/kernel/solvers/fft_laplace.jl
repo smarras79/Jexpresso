@@ -304,7 +304,8 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     end
     fft_enforce_zero_mean!(F)
 
-    u = fft_poisson_solve(F, fft_wavenumbers(N, Lx), fft_wavenumbers(M, Ly))
+    u = jx_time_solve("FFT (Fourier) solve", () ->
+            fft_poisson_solve(F, fft_wavenumbers(N, Lx), fft_wavenumbers(M, Ly)))
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT ............................... DONE")))
 
@@ -345,7 +346,7 @@ function fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
     end
     fft_enforce_zero_mean!(F)
 
-    ugrid = fft_poisson_solve_nd(F, Ls)
+    ugrid = jx_time_solve("FFT (Fourier) solve", () -> fft_poisson_solve_nd(F, Ls))
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT ............................... DONE")))
 

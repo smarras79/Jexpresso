@@ -139,7 +139,8 @@ function cheb_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
                              Nx, "×", Ny, " CGL grid on [", ax, ",", bx, "]×[",
                              ay, ",", by, "] ..............")))
 
-    x, y, U = cheb_poisson_solve_2d(Nx, Ny, ax, bx, ay, by, user_cheb_rhs, gbc)
+    x, y, U = jx_time_solve("Chebyshev collocation solve", () ->
+                  cheb_poisson_solve_2d(Nx, Ny, ax, bx, ay, by, user_cheb_rhs, gbc))
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by Chebyshev collocation ...................... DONE")))
 

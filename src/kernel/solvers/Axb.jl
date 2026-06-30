@@ -1,3 +1,33 @@
+# ---------------------------------------------------------------------------
+# Uniform solver timing.
+#
+# Wrap the PDE-SOLVE kernel of each linear solver (element-learning inference,
+# FFT/Fourier solve, Chebyshev solve) in
+#
+#     u = jx_time_solve("label", () -> <the solve call>)
+#
+# so all of them report wall-clock time the SAME way: one greppable line
+# "# SOLVER TIMING [label]: <seconds> s". This isolates the comparable part of
+# each method (the actual solve, not mesh read / setup / IO) so the spectral
+# solvers can be timed head-to-head against element learning. The most recent
+# elapsed time is also kept in JX_LAST_SOLVE_TIME[] for programmatic use.
+#
+# It is a plain function (not a macro) on purpose: it is called from
+# elementLearningStructs.jl, which is `include`d before this file, and function
+# calls resolve at run time (late binding), whereas a macro would need to exist
+# at parse time.
+# ---------------------------------------------------------------------------
+const JX_LAST_SOLVE_TIME = Ref(0.0)
+
+function jx_time_solve(label, f)
+    t0  = time_ns()
+    val = f()
+    dt  = (time_ns() - t0) / 1e9
+    JX_LAST_SOLVE_TIME[] = dt
+    println(GREEN_FG(string(" # SOLVER TIMING [", label, "]: ", round(dt; sigdigits = 6), " s")))
+    return val
+end
+
 function solveAx(L, RHS, linear_solver...)
     
     prob = LinearProblem(L, RHS);    
