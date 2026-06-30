@@ -583,6 +583,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lfft] = false
     end
 
+    # Chebyshev spectral (collocation) Laplace/Poisson solver — the non-periodic
+    # counterpart of :lfft. Off by default.
+    if (!haskey(inputs, :lcheb))
+        inputs[:lcheb] = false
+    end
+
     if !haskey(inputs, :lEL_Sample)
         inputs[:lEL_Sample] = false
     end

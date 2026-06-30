@@ -987,31 +987,35 @@ end
 
 function CGLDerivativeMatrix(x,N)
 """
-       CGLDerivativeMatrix(N)
-       x::CGL points
-       returns the Derivative matrix for the N Chebyshev Gauss-Lobatto points
+       CGLDerivativeMatrix(x,N)
+       x::CGL points x_j = cos(jπ/N), j=0…N  (length N+1)
+       returns the (N+1)×(N+1) Chebyshev–Gauss–Lobatto first-derivative matrix.
+
+       Corrected from Kopriva's listing: allocate D; the off-diagonals use the
+       numerically-stable sin product form of 1/(x_i-x_j) (verified — Kopriva's
+       formula); the diagonal is taken from the NEGATIVE-SUM TRICK (rows of an
+       exact derivative matrix sum to zero, since d/dx of a constant is 0), which
+       reproduces the endpoint values ±(2N²+1)/6 with the correct signs and is
+       more robust than the explicit closed forms (the original set both endpoint
+       diagonals to +(2N²+1)/6 and used the wrong index in the interior term).
     """
-    for i=1:N+1
-        if (i>1 && i<N+1)
-            D[i,i] = -0.5*x[i]/(sinpi(i/N))^2
-        else
-            D[i,i] = (2*N^2+1)/6
-        end
-        for j =1:N+1
-            if(j!=i)
-                if (j==1 || j == N+1)
-                    c̃j = 2
-                else
-                    c̃j = 1
-                end
-                if (i==1 || i ==N+1)
-                    c̃i = 2
-                else
-                    c̃i = 1
-                end
-                D[i,j] = -0.5 * (c̃i/c̃j)*(-1)^(i-1+j-1)/(sinpi((i-1+j-1)/(2*N))*sinpi((i-j)/(2*N)))
+    D = zeros(Float64, N+1, N+1)
+    for i = 1:N+1
+        c̃i = (i == 1 || i == N+1) ? 2.0 : 1.0
+        for j = 1:N+1
+            if j != i
+                c̃j = (j == 1 || j == N+1) ? 2.0 : 1.0
+                D[i,j] = -0.5 * (c̃i/c̃j) * (-1)^(i-1+j-1) /
+                         (sinpi((i-1+j-1)/(2*N)) * sinpi((i-j)/(2*N)))
             end
         end
+    end
+    for i = 1:N+1                       # diagonal: negative-sum trick
+        s = 0.0
+        for j = 1:N+1
+            j != i && (s += D[i,j])
+        end
+        D[i,i] = -s
     end
     return D
 end

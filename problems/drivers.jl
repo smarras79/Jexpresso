@@ -170,6 +170,10 @@ function driver(nparts,
                 # Classical FFT (Fourier spectral) solver for -∇²u = f on a
                 # periodic rectangular grid (alternative to the SEM direct solve).
                 fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
+            elseif inputs[:lcheb]
+                # Chebyshev spectral (collocation) solver for -∇²u = f on a box
+                # with Dirichlet BCs (the non-periodic counterpart of the FFT).
+                cheb_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
             elseif inputs[:lelementLearning]
                 element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat, rank)
             else
