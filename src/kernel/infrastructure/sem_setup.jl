@@ -192,7 +192,25 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
         mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
         mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
     end
-    
+
+    # ── Keep mesh.coords in sync with the (possibly scaled/displaced) nodes ──────
+    # mesh.coords was filled from mesh.x/mesh.y when the mesh was read, BEFORE the
+    # affine xscale/yscale/xdisp/ydisp transform above. The Dirichlet-BC routines
+    # (BCs.jl) read node positions from mesh.coords, while the source / initial /
+    # exact fields read mesh.x/mesh.y, and the boundary detection compares
+    # coords[:,1] against the (scaled) mesh.xmin/xmax. Without this re-sync a
+    # scaled mesh evaluates boundary data at the UNSCALED coordinates ⇒
+    # inconsistent BCs and a blown-up manufactured-solution error. No-op when no
+    # scaling/displacement was applied (coords already equal x/y from the read).
+    if (inputs[:xscale] != 1.0 || inputs[:xdisp] != 0.0 ||
+        inputs[:yscale] != 1.0 || inputs[:ydisp] != 0.0) && !isempty(mesh.coords)
+        np = min(size(mesh.coords, 1), length(mesh.x))
+        @views mesh.coords[1:np, 1] .= mesh.x[1:np]
+        if size(mesh.coords, 2) >= 2
+            @views mesh.coords[1:np, 2] .= mesh.y[1:np]
+        end
+    end
+
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
