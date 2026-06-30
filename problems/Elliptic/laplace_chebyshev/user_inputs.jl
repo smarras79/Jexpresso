@@ -18,16 +18,20 @@ function user_inputs()
         # the SEM :nop. The solver builds its own CGL grid (the mesh is read only
         # to satisfy setup; :nop is the mesh-read order, not the spectral order).
         #
-        # As shipped: the harmonic field u = exp(x)cos(y) (∇²u = 0 ⇒ a true
-        # LAPLACE problem, f = 0) with the matching non-homogeneous Dirichlet BC.
+        # CHEBYSHEV member of the 3-method comparison trio: all three solve the SAME
+        # manufactured problem on the SAME domain [-π,π]² (only the grid differs):
+        #     -∇²u = 2 sin(x)cos(y) ,   u_ex = sin(x)cos(y) ,  Dirichlet g = u_ex.
+        #     • laplace_periodic     (Fourier/FFT, periodic)
+        #     • laplace_chebyshev    (this case, Chebyshev/Dirichlet)
+        #     • elementLearning_2pi  (element learning / SEM, Dirichlet)
         #---------------------------------------------------------------------------
         :llinsolve            => true,
         :lcheb                => true,
         :cheb_N               => 24,        # Chebyshev resolution (nodes/dir)
-        :cheb_xmin            => -1.0,
-        :cheb_xmax            =>  1.0,
-        :cheb_ymin            => -1.0,
-        :cheb_ymax            =>  1.0,
+        :cheb_xmin            => -π,         # SAME domain [-π,π]² as the FFT and EL cases
+        :cheb_xmax            =>  π,
+        :cheb_ymin            => -π,
+        :cheb_ymax            =>  π,
         #--- generic setup flags --------------------------------------------------
         :ode_solver           => "BICGSTABLE",
         :ndiagnostics_outputs => 1,
