@@ -111,22 +111,135 @@ function write_fft_vtk(path, x, y, u, uex, err)
     return path
 end
 
+# ── Recover the uniform tensor grid from a structured PERIODIC mesh ──────────
+# Classical FFT needs an equispaced grid. The global Jexpresso SEM grid is
+# equispaced only at :nop => 1 (LGL with 2 nodes/element ⇒ the element corners);
+# at nop>1 the in-element LGL nodes are non-uniform and an FFT cannot use them.
+#
+# This maps every mesh node ip to a tensor index (ix,iy) on the Nx×Ny periodic
+# lattice by folding its coordinate into the period: φ = mod(x-xmin, Lx)/Lx.
+# Folding makes a "closed" mesh (a node at both x=xmin and x=xmin+Lx) and a
+# Jexpresso periodic-merged mesh (only x=xmin kept) collapse to the SAME Nx
+# lines — the seam node lands on line 1 either way. Returns
+#   (Nx, Ny, xline, yline, ixof, iyof)
+# with xline[i]=xmin+(i-1)Lx/Nx, ixof[ip]∈1:Nx. Errors if the folded lines are
+# not uniformly spaced (⇒ nop>1 or a non-uniform mesh) or not a power of two.
+function fft_grid_from_mesh(mesh, Lx::Float64, Ly::Float64)
+    npoin = Int(mesh.npoin)
+    xmin  = minimum(@view mesh.x[1:npoin])
+    ymin  = minimum(@view mesh.y[1:npoin])
+    snap  = 5e-8                          # fold the period seam (φ≈1) back to 0
+
+    phx = Vector{Float64}(undef, npoin)
+    phy = Vector{Float64}(undef, npoin)
+    @inbounds for ip = 1:npoin
+        px = mod(mesh.x[ip]-xmin, Lx)/Lx
+        py = mod(mesh.y[ip]-ymin, Ly)/Ly
+        phx[ip] = (px > 1-snap || px < snap) ? 0.0 : px
+        phy[ip] = (py > 1-snap || py < snap) ? 0.0 : py
+    end
+
+    ux = sort(unique(round.(phx, digits=7)))   # distinct periodic grid lines in [0,1)
+    uy = sort(unique(round.(phy, digits=7)))
+    Nx = length(ux); Ny = length(uy)
+
+    _fft_assert_uniform(ux, Nx, "x")
+    _fft_assert_uniform(uy, Ny, "y")
+    (Nx > 1 && (Nx & (Nx-1)) == 0) ||
+        error(" # fft_linsolve!: mesh has Nx=$Nx points along x; an FFT needs a power of 2.")
+    (Ny > 1 && (Ny & (Ny-1)) == 0) ||
+        error(" # fft_linsolve!: mesh has Ny=$Ny points along y; an FFT needs a power of 2.")
+
+    ixof = Vector{Int}(undef, npoin); iyof = Vector{Int}(undef, npoin)
+    @inbounds for ip = 1:npoin
+        ixof[ip] = mod(round(Int, phx[ip]*Nx), Nx) + 1
+        iyof[ip] = mod(round(Int, phy[ip]*Ny), Ny) + 1
+    end
+
+    # every lattice cell must be reached by a node (i.e. a genuine tensor grid)
+    seen = falses(Nx, Ny)
+    @inbounds for ip = 1:npoin
+        seen[ixof[ip], iyof[ip]] = true
+    end
+    all(seen) || error(" # fft_linsolve!: the mesh nodes do not fill an $Nx×$Ny tensor "*
+                       "grid (is it structured and periodic?).")
+
+    xline = [ xmin + (i-1)*Lx/Nx for i = 1:Nx ]
+    yline = [ ymin + (j-1)*Ly/Ny for j = 1:Ny ]
+    return Nx, Ny, xline, yline, ixof, iyof
+end
+
+# Assert the folded grid lines `u` are at the uniform phases (k-1)/N.
+function _fft_assert_uniform(u, N, dir)
+    @inbounds for k = 1:N
+        if abs(u[k] - (k-1)/N) > 1e-4
+            error(" # fft_linsolve!: the mesh is NOT equispaced along $dir (line $k at "*
+                  "phase $(u[k]) ≠ $((k-1)/N)). Classical FFT needs a uniform grid — use "*
+                  ":nop => 1 on a uniform structured periodic mesh, or :fft_use_mesh => false.")
+        end
+    end
+end
+
+# Project the RHS onto the zero-mean subspace (the periodic Poisson solvability /
+# compatibility condition ∫f = 0); warn if a non-negligible mean was removed.
+function fft_enforce_zero_mean!(F)
+    fbar = sum(F) / length(F)
+    if abs(fbar) > 1e-10
+        println(string(" # fft_linsolve!: RHS mean = ", fbar,
+                       " ≠ 0; removing it (periodic compatibility condition)."))
+        F .-= fbar
+    end
+    return F
+end
+
+# L2 / L∞ error of the grid solution `u` (Nx×Ny) vs the exact field sampled on
+# the same lines. The periodic solution is unique only up to a constant, so the
+# constant is pinned to the exact field's mean before comparing.
+function fft_report_grid_error(u, xline, yline, Lx, Ly)
+    Nx = length(xline); Ny = length(yline)
+    uex = Matrix{Float64}(undef, Nx, Ny)
+    @inbounds for j = 1:Ny, i = 1:Nx
+        uex[i,j] = Float64(user_fft_exact(xline[i], yline[j]))
+    end
+    u .+= (sum(uex) - sum(u)) / (Nx*Ny)
+    err  = u .- uex
+    dA   = (Lx*Ly) / (Nx*Ny)
+    l2   = sqrt(sum(abs2, err) * dA)
+    ref2 = sqrt(sum(abs2, uex) * dA)
+    linf = maximum(abs, err)
+    relstr = ref2 > 0 ? string(" , relative ‖e‖_L2 = ", l2/ref2) : ""
+    println(GREEN_FG(string(" # MMS verification: FFT solve vs exact  →  ‖e‖_L2 = ", l2,
+                            relstr, " , ‖e‖_∞ = ", linf)))
+    return uex, err
+end
+
 # ── Driver: classical FFT solve of the Laplace/Poisson equation ──────────────
 # Same call signature as standard_linsolve! / element_learning_linsolve! so the
 # driver dispatch in problems/drivers.jl can swap solvers transparently.
+#
+# Two grid sources, selected by :fft_use_mesh:
+#   false (default) : build a synthetic uniform periodic grid from :fft_N,
+#                     :fft_Lx/:fft_Ly, :fft_x0/:fft_y0 (mesh unused).
+#   true            : solve ON the structured periodic mesh read by Jexpresso
+#                     (requires :nop => 1; period set by :fft_Lx/:fft_Ly), then
+#                     scatter the solution back to the mesh nodes and write it
+#                     through the standard Jexpresso output.
 function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
 
     if inputs[:backend] != CPU()
         error(" # fft_linsolve!: the FFT Laplace solver is CPU-only.")
     end
-
     isdefined(@__MODULE__, :user_fft_rhs) ||
         error(" # fft_linsolve!: define user_fft_rhs(x,y) in the case's user_source.jl")
     has_exact = isdefined(@__MODULE__, :user_fft_exact)
 
-    #-----------------------------------------------------
-    # Uniform periodic grid (FFT requires a structured grid)
-    #-----------------------------------------------------
+    if get(inputs, :fft_use_mesh, false)
+        return fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
+    end
+
+    #=====================================================================
+      Synthetic-grid mode (mesh-independent)
+    =====================================================================#
     N  = Int(get(inputs, :fft_N, 64))
     M  = Int(get(inputs, :fft_M, N))
     (N > 0 && (N & (N-1)) == 0) || error(" # fft_linsolve!: :fft_N=$N must be a power of 2")
@@ -139,64 +252,65 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     y = [ y0 + (j-1)*Ly/M for j = 1:M ]
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT (Fourier spectral): ",
-                             N, "×", M, " periodic grid ..............")))
+                             N, "×", M, " synthetic periodic grid ..............")))
 
-    #-----------------------------------------------------
-    # Sample the RHS (and exact field) on the grid
-    #-----------------------------------------------------
     F = Matrix{Float64}(undef, N, M)
     @inbounds for j = 1:M, i = 1:N
         F[i,j] = Float64(user_fft_rhs(x[i], y[j]))
     end
+    fft_enforce_zero_mean!(F)
 
-    # Periodic Poisson is solvable only for a zero-mean RHS (∫f = 0). Project the
-    # mean out and warn if it was non-negligible (the (0,0) mode is dropped anyway).
-    fbar = sum(F) / (N*M)
-    if abs(fbar) > 1e-10
-        println(string(" # fft_linsolve!: RHS mean = ", fbar,
-                       " ≠ 0; removing it (periodic compatibility condition)."))
-        F .-= fbar
-    end
-
-    #-----------------------------------------------------
-    # Spectral solve
-    #-----------------------------------------------------
-    kx = fft_wavenumbers(N, Lx)
-    ky = fft_wavenumbers(M, Ly)
-    u  = fft_poisson_solve(F, kx, ky)       # zero-mean solution
+    u = fft_poisson_solve(F, fft_wavenumbers(N, Lx), fft_wavenumbers(M, Ly))
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT ............................... DONE")))
 
-    #-----------------------------------------------------
-    # Verification against the manufactured solution (if provided)
-    #-----------------------------------------------------
-    uex = nothing
-    err = nothing
-    if has_exact
-        uex = Matrix{Float64}(undef, N, M)
-        @inbounds for j = 1:M, i = 1:N
-            uex[i,j] = Float64(user_fft_exact(x[i], y[j]))
-        end
-        # The periodic solution is defined up to a constant; pin it to the exact
-        # field's mean so the comparison measures the genuine (mode-by-mode) error.
-        u .+= (sum(uex) - sum(u)) / (N*M)
+    uex = nothing; err = nothing
+    has_exact && ((uex, err) = fft_report_grid_error(u, x, y, Lx, Ly))
 
-        err   = u .- uex
-        dA    = (Lx*Ly) / (N*M)             # uniform-grid quadrature weight
-        l2    = sqrt(sum(abs2, err) * dA)
-        ref2  = sqrt(sum(abs2, uex) * dA)
-        linf  = maximum(abs, err)
-        relstr = ref2 > 0 ? string(" , relative ‖e‖_L2 = ", l2/ref2) : ""
-        println(GREEN_FG(string(" # MMS verification: FFT solve vs exact  →  ‖e‖_L2 = ", l2,
-                                relstr, " , ‖e‖_∞ = ", linf)))
-    end
-
-    #-----------------------------------------------------
-    # Output
-    #-----------------------------------------------------
     vtkpath = joinpath(OUTPUT_DIR, "fft_laplace.vtk")
     write_fft_vtk(vtkpath, x, y, u, uex, err)
     println(string(" # FFT solution written to ", vtkpath))
-
     return u
+end
+
+# ── Mesh-grid mode: solve on the actual structured periodic mesh ─────────────
+function fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
+    mesh = sem.mesh
+    Lx = Float64(get(inputs, :fft_Lx, mesh.xmax - mesh.xmin))
+    Ly = Float64(get(inputs, :fft_Ly, mesh.ymax - mesh.ymin))
+
+    Nx, Ny, xline, yline, ixof, iyof = fft_grid_from_mesh(mesh, Lx, Ly)
+
+    println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT (Fourier spectral) on the ",
+                             Nx, "×", Ny, " periodic mesh grid ..............")))
+
+    # RHS sampled on the canonical grid lines (periodic ⇒ seam value is unique)
+    F = Matrix{Float64}(undef, Nx, Ny)
+    @inbounds for j = 1:Ny, i = 1:Nx
+        F[i,j] = Float64(user_fft_rhs(xline[i], yline[j]))
+    end
+    fft_enforce_zero_mean!(F)
+
+    ugrid = fft_poisson_solve(F, fft_wavenumbers(Nx, Lx), fft_wavenumbers(Ny, Ly))
+
+    println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT ............................... DONE")))
+
+    has_exact && fft_report_grid_error(ugrid, xline, yline, Lx, Ly)
+
+    # Scatter the grid solution back onto every mesh node (seam duplicates get the
+    # same periodic value), then write through the standard Jexpresso output so the
+    # field is visualized on the real mesh.
+    npoin = Int(mesh.npoin)
+    sol   = Vector{TFloat}(undef, npoin)
+    @inbounds for ip = 1:npoin
+        sol[ip] = ugrid[ixof[ip], iyof[ip]]
+    end
+
+    args = (params.SD, sol, params.uaux, 1, 1,
+            mesh, nothing, nothing, nothing,
+            0.0, 0.0, 0.0, OUTPUT_DIR, inputs,
+            params.qp.qvars, params.qp.qoutvars, inputs[:outformat])
+    write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe, metrics=params.metrics)
+    println(string(" # FFT solution written to ", OUTPUT_DIR, " (on the mesh grid)"))
+    return sol
 end
