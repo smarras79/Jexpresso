@@ -282,14 +282,19 @@ Loads the model from `NNfile` — supports both `.onnx` and `.jld2` extensions.
 """
 function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
                         nfeatures::Int, nelintpoints::Int, elnbdypoints::Int,
-                        NNfile::String)
+                        NNfile::Union{String,Nothing})
     T = eltype(A)
 
-    local model
+    local model     = nothing
     local m_type    = :NONE
     local m_inname  = ""
     local m_outname = ""
 
+    # NNfile === nothing ⇒ SAMPLING / model-free build: the surrogate is never
+    # evaluated during sampling (training targets are computed by static
+    # condensation), so skip loading a model and leave model = nothing,
+    # model_type = :NONE. (Inference still requires a real model file.)
+    if NNfile !== nothing
     if !isfile(NNfile)
         error("Model file not found: $NNfile")
     end
@@ -332,6 +337,7 @@ function EL_WorkBuffers(mesh, A::SparseMatrixCSC, A_∂τ∂τ::SparseMatrixCSC,
     else
         error("Unsupported model extension: \"$ext\" — use .onnx or .jld2")
     end
+    end  # if NNfile !== nothing
 
     return EL_WorkBuffers(
         zeros(Int, elnbdypoints),                                   # conn_∂O_idx
