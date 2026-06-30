@@ -52,7 +52,7 @@ function user_inputs()
         # User-supplied periodic mesh spanning [-π,π] per direction.
         # NOTE: the repo's other meshes live under "gmsh_grids" (no 'e'); change
         # "gmesh_grids" → "gmsh_grids" if the run reports the file is not found.
-        :gmsh_filename       => "./meshes/gmesh_grids/hexa_TFI_2d_2pi.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2d_2pi.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters (identity: the mesh already spans [-π,π]²)
         #---------------------------------------------------------------------------
