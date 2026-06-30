@@ -265,24 +265,104 @@ function fill_sgs_cache!(params)
     dξdx = params.metrics.dξdx;  dξdy = params.metrics.dξdy;  dξdz = params.metrics.dξdz
     dηdx = params.metrics.dηdx;  dηdy = params.metrics.dηdy;  dηdz = params.metrics.dηdz
     dζdx = params.metrics.dζdx;  dζdy = params.metrics.dζdy;  dζdz = params.metrics.dζdz
-    Δ        = Float64(mesh.Δeffective_l)
-    ad_lvl   = mesh.ad_lvl
     PhysConst = PhysicalConst{Float64}()
     Pr_t = PhysConst.Pr_t;  μ_mol = PhysConst.μ_mol;  κ_mol = PhysConst.κ_mol
     ET   = params.SOL_VARS_TYPE
 
     uprim  = params.les_stat_cache.sgs_uprim
-    # Track how many elements contribute to each node's gradient estimate.
-    # At shared boundary nodes, adjacent elements give different gradient values
-    # (CG continuity guarantees continuous solution but not continuous derivative).
-    # We average all element contributions so that boundary nodes get the
-    # mean gradient from both sides rather than the last-writer's value.
     ncount = params.les_stat_cache.sgs_ncount
 
-    _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
-                     dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                     ad_lvl, Δ, PhysConst, Pr_t, μ_mol, κ_mol,
-                     ngl, nelem, npoin, VT, ET)
+    if VT isa SMAG
+        # Sij and μ_turb are already stored per-node in params.sgs, written every RHS
+        # call by compute_sgs_cache! (SGS.jl). Use them directly to skip velocity
+        # gradient recomputation. Only temperature gradients are computed here for
+        # SGS heat fluxes (8:10) and scalar dissipation (12).
+        _fill_sgs_smag!(sgs_stress, ncount, uaux, qe, connijk, uprim,
+                        dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                        params.sgs, Pr_t, μ_mol, κ_mol, ngl, nelem, npoin, ET)
+    else
+        ad_lvl   = mesh.ad_lvl
+        _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
+                         dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                         ad_lvl, Float64(mesh.Δeffective_l), PhysConst, Pr_t, μ_mol, κ_mol,
+                         ngl, nelem, npoin, VT, ET)
+    end
+end
+
+function _fill_sgs_smag!(sgs_stress, ncount, uaux, qe, connijk, uprim,
+                          dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                          sgs, Pr_t, μ_mol, κ_mol, ngl, nelem, npoin, ET)
+    fill!(sgs_stress, 0.0)
+
+    # Pass 1: momentum stresses (1:6) and TKE dissipation (11).
+    # Sij and μ_turb are read directly from the SGS cache — no gradient computation.
+    for ip in 1:npoin
+        ρ = ET == PERT() ? uaux[ip,1] + qe[ip,1] : uaux[ip,1]
+        μ_t = Float64(sgs.μ_turb[ip])
+        S11 = Float64(sgs.S11[ip]);  S22 = Float64(sgs.S22[ip]);  S33 = Float64(sgs.S33[ip])
+        S12 = Float64(sgs.S12[ip]);  S13 = Float64(sgs.S13[ip]);  S23 = Float64(sgs.S23[ip])
+        SijSij = S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)
+        ν_t   = μ_t / ρ
+        ν_eff = μ_mol/ρ + ν_t
+        sgs_stress[ip, 1] = -2 * ν_t * S11
+        sgs_stress[ip, 2] = -2 * ν_t * S12
+        sgs_stress[ip, 3] = -2 * ν_t * S13
+        sgs_stress[ip, 4] = -2 * ν_t * S22
+        sgs_stress[ip, 5] = -2 * ν_t * S23
+        sgs_stress[ip, 6] = -2 * ν_t * S33
+        sgs_stress[ip, 11] = 2 * ν_eff * SijSij
+    end
+
+    # Pass 2: SGS heat fluxes (8:10) and scalar dissipation (12) via temperature gradient.
+    fill!(ncount, Int32(0))
+    for iel in 1:nelem
+        for k in 1:ngl, j in 1:ngl, i in 1:ngl
+            ip = connijk[iel,i,j,k]
+            if ET == PERT()
+                ρ = uaux[ip,1] + qe[ip,1]
+                uprim[i,j,k,1] = ρ
+                uprim[i,j,k,5] = (uaux[ip,5]+qe[ip,5])/ρ - qe[ip,5]/qe[ip,1]
+            else
+                ρ = uaux[ip,1]
+                uprim[i,j,k,1] = ρ
+                uprim[i,j,k,5] = uaux[ip,5] / ρ
+            end
+        end
+
+        for k in 1:ngl, j in 1:ngl, i in 1:ngl
+            ip = connijk[iel,i,j,k]
+            ρ  = uprim[i,j,k,1]
+            dθdξ=0.0; dθdη=0.0; dθdζ=0.0
+            for ii in 1:ngl
+                dθdξ += dψ[ii,i]*uprim[ii,j,k,5]
+                dθdη += dψ[ii,j]*uprim[i,ii,k,5]
+                dθdζ += dψ[ii,k]*uprim[i,j,ii,5]
+            end
+            Jdξdx=dξdx[iel,i,j,k]; Jdξdy=dξdy[iel,i,j,k]; Jdξdz=dξdz[iel,i,j,k]
+            Jdηdx=dηdx[iel,i,j,k]; Jdηdy=dηdy[iel,i,j,k]; Jdηdz=dηdz[iel,i,j,k]
+            Jdζdx=dζdx[iel,i,j,k]; Jdζdy=dζdy[iel,i,j,k]; Jdζdz=dζdz[iel,i,j,k]
+            dθdx = dθdξ*Jdξdx + dθdη*Jdηdx + dθdζ*Jdζdx
+            dθdy = dθdξ*Jdξdy + dθdη*Jdηdy + dθdζ*Jdζdy
+            dθdz = dθdξ*Jdξdz + dθdη*Jdηdz + dθdζ*Jdζdz
+            μ_t   = Float64(sgs.μ_turb[ip])
+            κ_t   = μ_t / (ρ * Pr_t)
+            κ_eff = κ_mol + κ_t
+            sgs_stress[ip, 8]  += -κ_t * dθdx
+            sgs_stress[ip, 9]  += -κ_t * dθdy
+            sgs_stress[ip, 10] += -κ_t * dθdz
+            sgs_stress[ip, 12] += κ_eff * (dθdx*dθdx + dθdy*dθdy + dθdz*dθdz)
+            ncount[ip] += one(Int32)
+        end
+    end
+    @inbounds for ip in 1:npoin
+        n = ncount[ip]
+        n < 2 && continue
+        inv_n = 1.0 / n
+        sgs_stress[ip, 8]  *= inv_n
+        sgs_stress[ip, 9]  *= inv_n
+        sgs_stress[ip, 10] *= inv_n
+        sgs_stress[ip, 12] *= inv_n
+    end
 end
 
 function _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
