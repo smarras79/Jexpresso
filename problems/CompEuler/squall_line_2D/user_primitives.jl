@@ -26,7 +26,7 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
-function user_uout!(ip, ET, uout, u, ue; mp=mp)
+function user_uout!(ip, ::PERT, uout, u, ue; mp=mp)
 
     uout[1] = u[1]
     ρ = uout[1] + ue[1]
