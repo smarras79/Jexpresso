@@ -2,18 +2,17 @@
 #  Classical FFT (Fourier spectral) solver for the Laplace / Poisson equation
 # =============================================================================
 #
-#  Solves, on a rectangular PERIODIC domain [x0, x0+Lx] × [y0, y0+Ly],
+#  Solves, on a PERIODIC rectangular box (2D or 3D),
 #
-#       -∇²u(x,y) = f(x,y),          u periodic,
+#       -∇²u = f,          u periodic,
 #
-#  by diagonalizing the Laplacian with the Fourier transform. On a uniform
-#  N×M grid the Fourier modes  exp(i(kx x + ky y))  are eigenfunctions of -∇²
-#  with eigenvalue (kx² + ky²), so the solve is purely algebraic in Fourier
-#  space:
+#  by diagonalizing the Laplacian with the Fourier transform. On a uniform grid
+#  the Fourier modes exp(i k·x) are eigenfunctions of -∇² with eigenvalue |k|²,
+#  so the solve is purely algebraic in Fourier space:
 #
-#       f̂ = F2D(f)                         (forward 2-D FFT, Fourier coeffs)
-#       û_{kx,ky} = f̂_{kx,ky} / (kx²+ky²)  (and û_{0,0}=0 — the constant null space)
-#       u = real( F2D⁻¹(û) )               (inverse 2-D FFT)
+#       f̂ = FFT(f)                         (forward FFT, Fourier coeffs)
+#       û_k = f̂_k / |k|²                   (and û_0 = 0 — the constant null space)
+#       u = real( FFT⁻¹(û) )               (inverse FFT)
 #
 #  This is the "classical FFT Poisson solver". It is an ALTERNATIVE to the
 #  standard SEM direct solve (standard_linsolve!) and the element-learning
@@ -21,24 +20,30 @@
 #  problems/drivers.jl. It is spectrally exact: for a band-limited manufactured
 #  solution the error is at machine precision.
 #
-#  Infrastructure: the forward/backward transforms are Kopriva's FFT routines
+#  Infrastructure: the building-block transforms are Kopriva's FFT routines
 #  (InitializeFFT, Radix2FFT, Forward2DFFT, Backward2DFFT) in
 #  src/kernel/infrastructure/Kopriva_functions.jl, adjusted there to a clean,
-#  self-consistent (and unit-tested) convention:
-#       Forward2DFFT  : normalized forward  →  Fourier coefficients
-#       Backward2DFFT : un-normalized inverse (exact inverse of the forward)
+#  self-consistent (and unit-tested) convention. The N-D core here (fft_nd,
+#  fft_poisson_solve_nd) applies the 1-D Radix2FFT along each axis, so the same
+#  code path serves 2-D and 3-D.
 #
-#  Because an FFT needs a UNIFORM, periodic, power-of-two grid (which the
-#  unstructured GMSH / LGL mesh used by the SEM path is not), this solver builds
-#  its OWN tensor-product grid. Geometry and discretization come from
-#  user_inputs.jl:
-#       :fft_N   => N           number of points per direction (power of 2)
+#  TWO grid sources, selected by :fft_use_mesh in user_inputs.jl:
+#
+#   • :fft_use_mesh => false (default) — SYNTHETIC grid (2D, mesh-independent):
+#       :fft_N   => N           points per direction (power of 2)
 #       :fft_Lx, :fft_Ly        domain lengths            (default 2π)
 #       :fft_x0, :fft_y0        lower-left corner         (default 0)
-#  and the problem supplies the data through two plain functions in its
-#  user_source.jl:
-#       user_fft_rhs(x,y)       the right-hand side f          (REQUIRED)
-#       user_fft_exact(x,y)     the exact solution u_ex        (optional; enables
+#
+#   • :fft_use_mesh => true — solve ON the structured periodic GMSH mesh that
+#     Jexpresso reads (2D or 3D, by mesh.nsd; requires :nop => 1 so the global
+#     nodes are equispaced). Period per axis from :fft_Lx/:fft_Ly[/:fft_Lz]. The
+#     solution is scattered back to the mesh nodes and written by the normal
+#     Jexpresso output.
+#
+#  The problem supplies the data through plain functions in its user_source.jl
+#  (give the arity matching the mesh dimension; z may default for 2D/3D reuse):
+#       user_fft_rhs(x,y[,z])   the right-hand side f          (REQUIRED)
+#       user_fft_exact(x,y[,z]) the exact solution u_ex        (optional; enables
 #                               the automatic L2-error verification)
 # =============================================================================
 
@@ -116,57 +121,53 @@ end
 # equispaced only at :nop => 1 (LGL with 2 nodes/element ⇒ the element corners);
 # at nop>1 the in-element LGL nodes are non-uniform and an FFT cannot use them.
 #
-# This maps every mesh node ip to a tensor index (ix,iy) on the Nx×Ny periodic
-# lattice by folding its coordinate into the period: φ = mod(x-xmin, Lx)/Lx.
-# Folding makes a "closed" mesh (a node at both x=xmin and x=xmin+Lx) and a
-# Jexpresso periodic-merged mesh (only x=xmin kept) collapse to the SAME Nx
-# lines — the seam node lands on line 1 either way. Returns
-#   (Nx, Ny, xline, yline, ixof, iyof)
-# with xline[i]=xmin+(i-1)Lx/Nx, ixof[ip]∈1:Nx. Errors if the folded lines are
-# not uniformly spaced (⇒ nop>1 or a non-uniform mesh) or not a power of two.
-function fft_grid_from_mesh(mesh, Lx::Float64, Ly::Float64)
-    npoin = Int(mesh.npoin)
-    xmin  = minimum(@view mesh.x[1:npoin])
-    ymin  = minimum(@view mesh.y[1:npoin])
-    snap  = 5e-8                          # fold the period seam (φ≈1) back to 0
+# This maps every mesh node ip to a tensor index on the periodic lattice by
+# folding each of its coordinates into the period: φ_d = mod(x_d - min_d, L_d)/L_d.
+# Folding makes a "closed" mesh (a node at both x=min and x=min+L) and a
+# Jexpresso periodic-merged mesh (only x=min kept) collapse to the SAME lines —
+# the seam node lands on line 1 either way. Dimension-agnostic: ND=2 uses
+# (x,y); ND=3 uses (x,y,z). Returns
+#   (dims::NTuple{ND,Int}, lines::NTuple{ND,Vector}, idxof::Vector{NTuple{ND,Int}})
+# where lines[d][i]=min_d+(i-1)L_d/dims[d] and idxof[ip] is the node's lattice
+# index. Errors if the folded lines are not uniformly spaced (⇒ nop>1 or a
+# non-uniform mesh) or any axis count is not a power of two.
+function fft_grid_from_mesh(mesh, Ls::NTuple{ND,Float64}) where {ND}
+    npoin  = Int(mesh.npoin)
+    coords = ND == 3 ? (mesh.x, mesh.y, mesh.z) : (mesh.x, mesh.y)
+    mins   = ntuple(d -> minimum(@view coords[d][1:npoin]), ND)
+    dirs   = ("x", "y", "z")
+    snap   = 5e-8                          # fold the period seam (φ≈1) back to 0
 
-    phx = Vector{Float64}(undef, npoin)
-    phy = Vector{Float64}(undef, npoin)
-    @inbounds for ip = 1:npoin
-        px = mod(mesh.x[ip]-xmin, Lx)/Lx
-        py = mod(mesh.y[ip]-ymin, Ly)/Ly
-        phx[ip] = (px > 1-snap || px < snap) ? 0.0 : px
-        phy[ip] = (py > 1-snap || py < snap) ? 0.0 : py
+    ph = ntuple(d -> Vector{Float64}(undef, npoin), ND)
+    @inbounds for d = 1:ND, ip = 1:npoin
+        p = mod(coords[d][ip] - mins[d], Ls[d]) / Ls[d]
+        ph[d][ip] = (p > 1 - snap || p < snap) ? 0.0 : p
     end
 
-    ux = sort(unique(round.(phx, digits=7)))   # distinct periodic grid lines in [0,1)
-    uy = sort(unique(round.(phy, digits=7)))
-    Nx = length(ux); Ny = length(uy)
+    dims = ntuple(ND) do d
+        u = sort(unique(round.(ph[d], digits = 7)))   # distinct periodic lines in [0,1)
+        N = length(u)
+        _fft_assert_uniform(u, N, dirs[d])
+        (N > 1 && (N & (N-1)) == 0) ||
+            error(" # fft_linsolve!: mesh has N=$N points along $(dirs[d]); an FFT needs a power of 2.")
+        N
+    end
 
-    _fft_assert_uniform(ux, Nx, "x")
-    _fft_assert_uniform(uy, Ny, "y")
-    (Nx > 1 && (Nx & (Nx-1)) == 0) ||
-        error(" # fft_linsolve!: mesh has Nx=$Nx points along x; an FFT needs a power of 2.")
-    (Ny > 1 && (Ny & (Ny-1)) == 0) ||
-        error(" # fft_linsolve!: mesh has Ny=$Ny points along y; an FFT needs a power of 2.")
-
-    ixof = Vector{Int}(undef, npoin); iyof = Vector{Int}(undef, npoin)
+    idxof = Vector{NTuple{ND,Int}}(undef, npoin)
     @inbounds for ip = 1:npoin
-        ixof[ip] = mod(round(Int, phx[ip]*Nx), Nx) + 1
-        iyof[ip] = mod(round(Int, phy[ip]*Ny), Ny) + 1
+        idxof[ip] = ntuple(d -> mod(round(Int, ph[d][ip]*dims[d]), dims[d]) + 1, ND)
     end
 
     # every lattice cell must be reached by a node (i.e. a genuine tensor grid)
-    seen = falses(Nx, Ny)
+    seen = falses(dims...)
     @inbounds for ip = 1:npoin
-        seen[ixof[ip], iyof[ip]] = true
+        seen[idxof[ip]...] = true
     end
-    all(seen) || error(" # fft_linsolve!: the mesh nodes do not fill an $Nx×$Ny tensor "*
-                       "grid (is it structured and periodic?).")
+    all(seen) || error(" # fft_linsolve!: the mesh nodes do not fill a $(join(dims, "×")) "*
+                       "tensor grid (is it structured and periodic?).")
 
-    xline = [ xmin + (i-1)*Lx/Nx for i = 1:Nx ]
-    yline = [ ymin + (j-1)*Ly/Ny for j = 1:Ny ]
-    return Nx, Ny, xline, yline, ixof, iyof
+    lines = ntuple(d -> [ mins[d] + (i-1)*Ls[d]/dims[d] for i = 1:dims[d] ], ND)
+    return dims, lines, idxof
 end
 
 # Assert the folded grid lines `u` are at the uniform phases (k-1)/N.
@@ -192,20 +193,63 @@ function fft_enforce_zero_mean!(F)
     return F
 end
 
-# L2 / L∞ error of the grid solution `u` (Nx×Ny) vs the exact field sampled on
-# the same lines. The periodic solution is unique only up to a constant, so the
-# constant is pinned to the exact field's mean before comparing.
-function fft_report_grid_error(u, xline, yline, Lx, Ly)
-    Nx = length(xline); Ny = length(yline)
-    uex = Matrix{Float64}(undef, Nx, Ny)
-    @inbounds for j = 1:Ny, i = 1:Nx
-        uex[i,j] = Float64(user_fft_exact(xline[i], yline[j]))
+# Evaluate the user RHS / exact field at an nd-tuple of coordinates (2D or 3D).
+# The case's user_fft_rhs / user_fft_exact must accept the matching arity.
+_eval_fft_rhs(c::NTuple{2}) = user_fft_rhs(c[1], c[2])
+_eval_fft_rhs(c::NTuple{3}) = user_fft_rhs(c[1], c[2], c[3])
+_eval_fft_exact(c::NTuple{2}) = user_fft_exact(c[1], c[2])
+_eval_fft_exact(c::NTuple{3}) = user_fft_exact(c[1], c[2], c[3])
+
+# Separable N-D FFT: apply the 1-D Radix2FFT along each axis in turn. `ws[d]` are
+# the twiddles for axis d (forward s=+1 or backward s=-1, from InitializeFFT).
+# `normalize` divides by the total point count — used on the forward transform so
+# it returns the Fourier coefficients (matching the 2-D Forward2DFFT convention).
+function fft_nd(A, ws; normalize::Bool)
+    B = ComplexF64.(A)
+    for d = 1:ndims(B)
+        B = mapslices(v -> Radix2FFT(v, ws[d]), B; dims = d)
     end
-    u .+= (sum(uex) - sum(u)) / (Nx*Ny)
+    normalize && (B ./= length(B))
+    return B
+end
+
+# Solve -∇²u = f on an N-D periodic grid by spectral diagonalization. `F` is the
+# sampled RHS (its size sets the per-axis point counts); `Ls` the per-axis period.
+# The constant null mode (|k|=0) is set to zero ⇒ the returned u is zero-mean.
+function fft_poisson_solve_nd(F, Ls)
+    dims = size(F)
+    ND   = ndims(F)
+    ks   = ntuple(d -> fft_wavenumbers(dims[d], Ls[d]), ND)
+    wf   = ntuple(d -> InitializeFFT(dims[d],  1), ND)
+    wb   = ntuple(d -> InitializeFFT(dims[d], -1), ND)
+    F̂    = fft_nd(F, wf; normalize = true)
+    Û    = Array{ComplexF64}(undef, dims)
+    @inbounds for I in CartesianIndices(F̂)
+        λ = 0.0
+        for d = 1:ND
+            λ += ks[d][I[d]]^2
+        end
+        Û[I] = λ == 0.0 ? zero(ComplexF64) : F̂[I] / λ
+    end
+    return real.(fft_nd(Û, wb; normalize = false))
+end
+
+# L2 / L∞ error of the grid solution `u` vs the exact field sampled on the same
+# lines. `lines` = per-axis coordinate vectors, `Ls` = per-axis periods (2D or
+# 3D). The periodic solution is unique only up to a constant, so the constant is
+# pinned to the exact field's mean before comparing.
+function fft_report_grid_error(u, lines, Ls)
+    ND  = ndims(u)
+    uex = Array{Float64}(undef, size(u))
+    @inbounds for I in CartesianIndices(u)
+        coord  = ntuple(d -> lines[d][I[d]], ND)
+        uex[I] = Float64(_eval_fft_exact(coord))
+    end
+    u .+= (sum(uex) - sum(u)) / length(u)
     err  = u .- uex
-    dA   = (Lx*Ly) / (Nx*Ny)
-    l2   = sqrt(sum(abs2, err) * dA)
-    ref2 = sqrt(sum(abs2, uex) * dA)
+    dV   = prod(Ls) / length(u)
+    l2   = sqrt(sum(abs2, err) * dV)
+    ref2 = sqrt(sum(abs2, uex) * dV)
     linf = maximum(abs, err)
     relstr = ref2 > 0 ? string(" , relative ‖e‖_L2 = ", l2/ref2) : ""
     println(GREEN_FG(string(" # MMS verification: FFT solve vs exact  →  ‖e‖_L2 = ", l2,
@@ -265,7 +309,7 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT ............................... DONE")))
 
     uex = nothing; err = nothing
-    has_exact && ((uex, err) = fft_report_grid_error(u, x, y, Lx, Ly))
+    has_exact && ((uex, err) = fft_report_grid_error(u, (x, y), (Lx, Ly)))
 
     vtkpath = joinpath(OUTPUT_DIR, "fft_laplace.vtk")
     write_fft_vtk(vtkpath, x, y, u, uex, err)
@@ -273,29 +317,39 @@ function fft_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     return u
 end
 
-# ── Mesh-grid mode: solve on the actual structured periodic mesh ─────────────
+# ── Mesh-grid mode: solve on the actual structured periodic mesh (2D or 3D) ──
 function fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
     mesh = sem.mesh
-    Lx = Float64(get(inputs, :fft_Lx, mesh.xmax - mesh.xmin))
-    Ly = Float64(get(inputs, :fft_Ly, mesh.ymax - mesh.ymin))
+    ND   = Int(mesh.nsd)
+    (ND == 2 || ND == 3) ||
+        error(" # fft_linsolve!: mesh nsd=$ND not supported by the FFT solver (need 2 or 3).")
 
-    Nx, Ny, xline, yline, ixof, iyof = fft_grid_from_mesh(mesh, Lx, Ly)
+    # Per-axis period: from inputs if given, else the mesh extent.
+    Ls = ND == 3 ?
+        (Float64(get(inputs, :fft_Lx, mesh.xmax - mesh.xmin)),
+         Float64(get(inputs, :fft_Ly, mesh.ymax - mesh.ymin)),
+         Float64(get(inputs, :fft_Lz, mesh.zmax - mesh.zmin))) :
+        (Float64(get(inputs, :fft_Lx, mesh.xmax - mesh.xmin)),
+         Float64(get(inputs, :fft_Ly, mesh.ymax - mesh.ymin)))
+
+    dims, lines, idxof = fft_grid_from_mesh(mesh, Ls)
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT (Fourier spectral) on the ",
-                             Nx, "×", Ny, " periodic mesh grid ..............")))
+                             join(dims, "×"), " periodic mesh grid ..............")))
 
     # RHS sampled on the canonical grid lines (periodic ⇒ seam value is unique)
-    F = Matrix{Float64}(undef, Nx, Ny)
-    @inbounds for j = 1:Ny, i = 1:Nx
-        F[i,j] = Float64(user_fft_rhs(xline[i], yline[j]))
+    F = Array{Float64}(undef, dims)
+    @inbounds for I in CartesianIndices(F)
+        coord = ntuple(d -> lines[d][I[d]], ND)
+        F[I]  = Float64(_eval_fft_rhs(coord))
     end
     fft_enforce_zero_mean!(F)
 
-    ugrid = fft_poisson_solve(F, fft_wavenumbers(Nx, Lx), fft_wavenumbers(Ny, Ly))
+    ugrid = fft_poisson_solve_nd(F, Ls)
 
     println(YELLOW_FG(string(" # Solve -∇²u = f by classical FFT ............................... DONE")))
 
-    has_exact && fft_report_grid_error(ugrid, xline, yline, Lx, Ly)
+    has_exact && fft_report_grid_error(ugrid, lines, Ls)
 
     # Scatter the grid solution back onto every mesh node (seam duplicates get the
     # same periodic value), then write through the standard Jexpresso output so the
@@ -303,7 +357,7 @@ function fft_linsolve_on_mesh!(sem, params, inputs, OUTPUT_DIR, has_exact)
     npoin = Int(mesh.npoin)
     sol   = Vector{TFloat}(undef, npoin)
     @inbounds for ip = 1:npoin
-        sol[ip] = ugrid[ixof[ip], iyof[ip]]
+        sol[ip] = ugrid[idxof[ip]...]
     end
 
     args = (params.SD, sol, params.uaux, 1, 1,
