@@ -49,9 +49,9 @@ function user_inputs()
         :llinsolve            => true,
         :ldss_laplace         => true,
         :lsparse              => true,
-       # :lelementLearning     => true,
-        :lEL_Sample           => true,
-        :NNfile               => "JX_NN_model.onnx",
+        :lelementLearning     => true,
+        :lEL_Sample           => true,        
+        :NNfile               => "JX_NN_model_9x9_nop7.onnx",
         #:NNfile               => "JX_RFRC_model.onnx",
         #:NNfile               => "JX_RFRC_final.jld2",
         :Nsamp                => 50000,
@@ -62,9 +62,9 @@ function user_inputs()
         :lread_gmsh          => true,
         # 3×3 DIRICHLET-tagged square (base extent [-1,1]²). With nop=21 this gives
         # 3·21+1 = 64 nodes/dir = 4096 DOF, matching the FFT and Chebyshev cases.
-#        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
-#        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_9x9.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
+ #       :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_9x9.msh",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
