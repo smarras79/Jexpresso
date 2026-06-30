@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(),
-        :Δt                   => 0.25,
+        :Δt                   => 0.5,
         :tinit                => 0.0,
         :tend                 => 7200.0,   # 2-hour deep convection simulation
         :diagnostics_at_times => (1, 10, 50, 100, (300:300:7200)...),
@@ -58,13 +58,13 @@ function user_inputs()
         # Mesh parameters
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./meshes/gmsh_grids/hexa_LasherTrapp_full_rad-12x12x16.msh",
+        :gmsh_filename        => "./meshes/gmsh_grids/hexa_LasherTrapp_full_rad-6x6x8.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.1,
-        :mu_y                => 0.1,
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
         :mu_z                => 0.1,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------

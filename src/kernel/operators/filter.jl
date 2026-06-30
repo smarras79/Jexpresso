@@ -579,7 +579,7 @@ end
         @synchronize()
         fqf[i,j,k] = zero(eltype(u))
         for l=1:n_z
-            @inbounds fqf[i,j,k] += q_ti[i,j,l] * fz_t[l,k]
+            @inbounds fqf[i,j,k] += q_tij[i,j,l] * fz_t[l,k]
         end
 
 
@@ -658,12 +658,11 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     #### Compute Inverse Matrix
     leg_inv = zeros(Float128,nop+1,nop+1)
     leg_inv .= leg2
-    ierr = 0
-    gaujordf!(leg_inv,nop+1,ierr)
+    ierr = gaujordf!(leg_inv, nop+1)
     if (ierr != 0)
         println(" # Error in GAUJORDF in FILTER INIT")
-        @info "ierr", ierr
-        exit
+        @info "ierr" ierr
+        error("gaujordf!: singular matrix in filter initialisation (pivot column $ierr)")
     end
     
     ## Compute Boyd-Vandeven (ERF-LOG) Transfer function
@@ -722,14 +721,13 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
 end
 
 
-function gaujordf!(a,n,ierr)
-    
+function gaujordf!(a, n)
+
     ## Initialize
-    ierr = 0
     eps = 1.0e-9
     ipiv = zeros(Int64,n)
     indr = zeros(Int64,n)
-    indc = zeros(Int64,n)  
+    indc = zeros(Int64,n)
 
     for i=1:n
         big = 0
@@ -737,7 +735,7 @@ function gaujordf!(a,n,ierr)
         ## Pivot Search
         irow = -1
         icol = -1
-        
+
         for j=1:n
             if (ipiv[j] != 1)
                 for k = 1:n
@@ -748,17 +746,16 @@ function gaujordf!(a,n,ierr)
                             icol = k
                         end
                     elseif (ipiv[k] > 1)
-                        ierr = -ipiv
-                        return nothing
+                        return -ipiv[k]
                     end
                 end
             end
         end
-        
+
         ipiv[icol] = ipiv[icol] + 1
 
         ## Swap rows
-        
+
         if (irow != icol)
             for l=1:n
                 dum = a[irow,l]
@@ -769,9 +766,8 @@ function gaujordf!(a,n,ierr)
         indr[i] = irow
         indc[i] = icol
         if (abs(a[icol,icol]) < eps)
-            @info "small Gauss Jordan Pivot:", icol, a[icol,icol]
-            ierr = icol
-            return nothing
+            @info "small Gauss Jordan Pivot:" icol a[icol,icol]
+            return icol
         end
         piv = 1.0/a[icol,icol]
         a[icol,icol] = 1.0
@@ -791,7 +787,7 @@ function gaujordf!(a,n,ierr)
     end
     
     ## Unscramble Matrix
-    
+
     for l=n:-1:1
         if (indr[l] != indc[l])
             for k = 1:n
@@ -802,7 +798,8 @@ function gaujordf!(a,n,ierr)
         end
     end
 
-end 
+    return 0
+end
 
 function vandeven_modal(kk,ngl,p)
     

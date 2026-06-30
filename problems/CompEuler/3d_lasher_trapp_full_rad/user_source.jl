@@ -76,9 +76,9 @@ function user_source!(S,
     S[2] = -β_sponge * ρu
     S[3] = -β_sponge * ρv
     S[4] = -ρ * PhysConst.g - β_sponge * ρw
-    S[5] = 0.0#-β_sponge * ρhl
-    S[6] = 0.0#-β_sponge * ρqt
-    S[7] = 0.0#-β_sponge * ρqp
+    S[5] = -β_sponge * ρhl
+    S[6] = -β_sponge * ρqt
+    S[7] = -β_sponge * ρqp
 end
 
 function user_source_gpu(q, qe, x, y, z, PhysConst, xmax, xmin, ymax, ymin, zmax, zmin, lpert)
@@ -97,8 +97,20 @@ function user_source_gpu(q, qe, x, y, z, PhysConst, xmax, xmin, ymax, ymin, zmax
         β_sponge = α_max * sinpi(r / T(2))^T(2)
     end
 
+    ρhl = q[5]
+    ρqt = q[6]
+    ρqp = q[7]
+    if lpert
+        S5 = -β_sponge * ρhl
+        S6 = -β_sponge * ρqt
+        S7 = -β_sponge * ρqp
+    else
+        S5 = -β_sponge * (ρhl - qe[5])
+        S6 = -β_sponge * (ρqt - qe[6])
+        S7 = -β_sponge * ρqp
+    end
     return T(0.0), T(-β_sponge*ρu), T(-β_sponge*ρv),
-           T(-ρ*PhysConst.g - β_sponge*ρw), T(0.0), T(0.0), T(0.0)
+           T(-ρ*PhysConst.g - β_sponge*ρw), T(S5), T(S6), T(S7)
 end
 
 function user_scattering_functions(θ, θ1, ϕ, ϕ1, g)

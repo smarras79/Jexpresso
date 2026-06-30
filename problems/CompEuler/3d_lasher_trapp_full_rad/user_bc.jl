@@ -39,9 +39,9 @@ function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, CL, PhysConst; θ
         y = coords[2]
         # Gaussian surface heat flux (Lasher-Trapp et al. 2001)
         # Center at domain midpoint (~3 km for a 6x6 km domain); adjust xc/yc/σ to match mesh.
-        xc    = 3000.0
-        yc    = 3000.0
-        σ     = 1000.0   # m; keeps flux < 1% of Q_max at lateral boundaries (3 km away)
+        xc    = 4050.0
+        yc    = 4050.0
+        σ     = 500.0   # m; keeps flux < 1% of Q_max at lateral boundaries (3 km away)
         Q_max = 300.0    # W/m² (liquid-ice static energy, no unit conversion needed)
         F_surf[5] = Q_max * exp(-((x - xc)^2 + (y - yc)^2) / (2 * σ^2))
         
