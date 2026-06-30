@@ -43,28 +43,34 @@ function user_inputs()
         # timing should be compared at the model's own nop.
         #---------------------------------------------------------------------------
         :tend                 => 1.0,
-        :ode_solver           => "BICGSTABLE",
+        :ode_solver           => "GMRES", #"BICGSTABLE", #ORK256()
         :ndiagnostics_outputs => 1,
-        :lsource              => true,
+        :lsource              => true, 
         :llinsolve            => true,
         :ldss_laplace         => true,
         :lsparse              => true,
-        #:lelementLearning     => true,   # ← uncomment to time the EL inference
-        #:lEL_Sample           => true,
+       # :lelementLearning     => true,
+        :lEL_Sample           => true,
+        :NNfile               => "JX_NN_model.onnx",
+        #:NNfile               => "JX_RFRC_model.onnx",
+        #:NNfile               => "JX_RFRC_final.jld2",
         :Nsamp                => 50000,
-        :rconst               => [0.0],
+        :rconst               => [0.0],        
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
         # 3×3 DIRICHLET-tagged square (base extent [-1,1]²). With nop=21 this gives
         # 3·21+1 = 64 nodes/dir = 4096 DOF, matching the FFT and Chebyshev cases.
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
+#        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+#        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_9x9.msh",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 21,     # 3 elements × nop 21 + 1 = 64 nodes/dir (= 4096 DOF)
+        #:nop                 => 21,    # 3 elements × nop 21 + 1 = 64 nodes/dir (= 4096 DOF)
+        :nop                 => 7,     # 9 elements × nop 7 + 1 = 64 nodes/dir (= 4096 DOF)
         #---------------------------------------------------------------------------
         # grid modification parameters → map [-1,1]² mesh to [-π,π]²
         #---------------------------------------------------------------------------

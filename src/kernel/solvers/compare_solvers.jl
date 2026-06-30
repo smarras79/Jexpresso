@@ -30,7 +30,9 @@
 function compare_laplace_solvers(; reps::Int = 2,
         cases = [("FFT (Fourier)",          "Elliptic", "laplace_periodic"),
                  ("Chebyshev collocation",  "Elliptic", "laplace_chebyshev"),
-                 ("element learning / SEM", "Elliptic", "elementLearning_2pi")])
+                 ("element learning / SEM", "Elliptic", "elementLearning_2pi_9x9_nop7"),
+                 ("element learning / SEM", "Elliptic", "elementLearning_2pi_3x3_nop21")
+                 ])
 
     rows = Vector{NamedTuple}()
     for (label, eq, case) in cases
