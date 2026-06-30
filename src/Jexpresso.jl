@@ -204,6 +204,8 @@ include(joinpath( "kernel", "solvers", "fft_laplace.jl"))
 
 include(joinpath( "kernel", "solvers", "cheb_laplace.jl"))
 
+include(joinpath( "kernel", "solvers", "compare_solvers.jl"))
+
 include(joinpath("kernel", "operators", "build_rad_2d.jl"))
 
 include(joinpath("kernel", "operators", "build_rad_3d.jl"))

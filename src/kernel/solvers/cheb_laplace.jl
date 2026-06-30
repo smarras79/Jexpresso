@@ -148,11 +148,13 @@ function cheb_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
     if has_exact
         Uex = [ Float64(user_cheb_exact(x[i], y[j])) for i = 1:Nx+1, j = 1:Ny+1 ]
         Err = U .- Uex
-        linf = maximum(abs, Err)
-        ref  = maximum(abs, Uex)
+        linf  = maximum(abs, Err)
+        ref   = maximum(abs, Uex)
+        l2rel = sqrt(sum(abs2, Err) / sum(abs2, Uex))   # relative discrete L2
         relstr = ref > 0 ? string(" , relative L∞ = ", linf/ref) : ""
         println(GREEN_FG(string(" # MMS verification: Chebyshev solve vs exact  →  ‖e‖_∞ = ",
                                 linf, relstr)))
+        jx_record_solve_error(; linf = linf, l2rel = l2rel, npts = (Nx+1)*(Ny+1))
     end
 
     vtkpath = joinpath(OUTPUT_DIR, "cheb_laplace.vtk")

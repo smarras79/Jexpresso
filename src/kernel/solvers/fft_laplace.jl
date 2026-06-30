@@ -254,6 +254,7 @@ function fft_report_grid_error(u, lines, Ls)
     relstr = ref2 > 0 ? string(" , relative ‖e‖_L2 = ", l2/ref2) : ""
     println(GREEN_FG(string(" # MMS verification: FFT solve vs exact  →  ‖e‖_L2 = ", l2,
                             relstr, " , ‖e‖_∞ = ", linf)))
+    jx_record_solve_error(; linf = linf, l2rel = (ref2 > 0 ? l2/ref2 : NaN), npts = length(u))
     return uex, err
 end
 

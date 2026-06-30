@@ -1289,6 +1289,7 @@ function print_solution_L2_error(sol, qe, M, npoin; label="solution")
                                 " vs exact qe  →  ‖e‖_L2 = ", abserr,
                                 " , relative ‖e‖_L2 = ", relerr,
                                 " , ‖e‖_∞ = ", linf)))
+        jx_record_solve_error(; linf = linf, l2rel = relerr, npts = npoin)
     end
     return nothing
 end

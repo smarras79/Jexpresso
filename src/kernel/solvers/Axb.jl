@@ -19,6 +19,10 @@
 # ---------------------------------------------------------------------------
 const JX_LAST_SOLVE_TIME = Ref(0.0)
 
+# Last solve's accuracy, recorded by the error reporters (fft_report_grid_error,
+# the Chebyshev block, print_solution_L2_error). Read by compare_laplace_solvers.
+const JX_LAST_SOLVE_ERR = Ref((linf = NaN, l2rel = NaN, npts = 0))
+
 function jx_time_solve(label, f)
     t0  = time_ns()
     val = f()
@@ -26,6 +30,12 @@ function jx_time_solve(label, f)
     JX_LAST_SOLVE_TIME[] = dt
     println(GREEN_FG(string(" # SOLVER TIMING [", label, "]: ", round(dt; sigdigits = 6), " s")))
     return val
+end
+
+# Stash the most recent solve's error norms for the side-by-side comparison.
+function jx_record_solve_error(; linf = NaN, l2rel = NaN, npts = 0)
+    JX_LAST_SOLVE_ERR[] = (linf = Float64(linf), l2rel = Float64(l2rel), npts = Int(npts))
+    return nothing
 end
 
 function solveAx(L, RHS, linear_solver...)
@@ -94,7 +104,9 @@ function standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
 
     #solAxb = @btime solveAx($sem.matrix.L, $RHS, inputs[:ode_solver])
     #sol = solAxb.u
-    solAxb = sem.matrix.L \ RHS
+    # Timed the same way as the FFT/Chebyshev/EL solvers (jx_time_solve) so the
+    # direct SEM solve is comparable in compare_laplace_solvers.
+    solAxb = jx_time_solve("direct SEM (Ax=b)", () -> sem.matrix.L \ RHS)
     sol = solAxb
 
     println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage .............. DONE")))
