@@ -121,18 +121,25 @@ function  DFT(f,s)
        s::Int32
        computes the discrete forward or backwards fourrier transform of f
        depending on the sign of s using Algorithm 6 of Kopriva's book
+
+       Convention used throughout the FFT block (kept consistent with
+       Jexpresso's spectral Poisson solver, see solvers/fft_laplace.jl):
+         s > 0  (forward) :  F_k = Σ_j f_j exp(-2π i j k / N)      (UNnormalized)
+         s < 0  (backward):  f_j = Σ_k F_k exp(+2π i j k / N)      (UNnormalized)
+       so a forward followed by a backward transform returns N·f. The 1/N
+       (or 1/(N·M) in 2D) normalization is applied by the caller / by the
+       Forward2DFFT wrapper. This O(N²) routine is the reference against which
+       the radix-2 FFT (Radix2FFT) is verified.
     """
-    N=size(f)
-    if (s>0)
-        s=1
-    else
-        s=-1
-    end
-    for k=0:N-1
-        F[k+1]=0
-        for j=0:N-1
-            F[k+1]=F[k+1]+f[j+1]*exp(-2*s*π*im*j*k/N)
+    N  = length(f)
+    ss = s > 0 ? 1 : -1
+    F  = zeros(ComplexF64, N)
+    for k = 0:N-1
+        acc = zero(ComplexF64)
+        for j = 0:N-1
+            acc += f[j+1]*exp(-2*ss*π*im*j*k/N)
         end
+        F[k+1] = acc
     end
     return F
 end
@@ -143,17 +150,18 @@ function InitializeFFT(N,s)
        N:Int32
        s:Int32
        Initializes the exp(-2*s*π*i*j/N) terms necessary for an FFT
-       using Algorithm 7 of Kopriva's book
+       using Algorithm 7 of Kopriva's book.
+
+       Returns the length-N vector of twiddle factors
+         w_j = exp(-2 s π i j / N),  j = 0 … N-1,
+       with s collapsed to ±1 (forward / backward). These are consumed by
+       Radix2FFT (the stage twiddle for a block of size m is w[k·N/m + 1]).
     """
-    w=zeros(Float64,N)
-    if (s>0)
-        s=1
-    else
-        s=-1
-    end
-    w=exp(-2*s*π*im/N)
-    for j=0:N-1
-        w_j[j+1]=w^j
+    ss = s > 0 ? 1 : -1
+    w0 = exp(-2*ss*π*im/N)
+    w_j = Vector{ComplexF64}(undef, N)
+    for j = 0:N-1
+        w_j[j+1] = w0^j
     end
     return w_j
 end
@@ -161,52 +169,54 @@ end
 function Radix2FFT(f,w)
     """
        Radix2FFT(f,w)
-       f::Array of size N
-       w::Array of size N
-       Computes Temperton's Radix 2 Self Sorting Complex FFT of the array f
-       using the complex trigonometric factors computed by InitializeFFT
-       uses Algorithm 8 of Kopriva's book
+       f::Array of size N (N a power of 2)
+       w::length-N twiddle vector from InitializeFFT(N,s), w_j = exp(-2 s π i j/N)
+       Computes the Radix-2 complex FFT of f, i.e.
+         F_k = Σ_j f_j exp(-2 s π i j k / N).
+       (Algorithm 8 of Kopriva's book — re-expressed here as the standard
+       decimation-in-time iterative radix-2 transform, which is numerically
+       robust and matches the DFT reference. The sign s is carried in by the
+       precomputed twiddles `w`, so the same routine serves forward (s=+1) and
+       backward (s=-1) transforms. No normalization is applied here.)
     """
-    N=size(f)
-    Ndiv2 = Int32(N/2)
-    m = Int32(log2(N))
-    for l=1:Int32((m+1)/2)
-        noPtsAtLevel = 2^(l-1)
-        a=0
-        b=Ndiv2/noPtsAtLevel
-        p=0
-        for k=0:b-1
-            W=w[p+1]
-            for i=k:N-1:Int32(N/noPtsAtLevel)
-                z=W*(f[a+i+1]-f[b+i+1])
-                f[a+i+1]=f[a+i+1]+f[b+i+1]
-                f[b+i+1]=z
-            end
-            p=p+noPtsAtLevel
+    N = length(f)
+    (N > 0 && (N & (N-1)) == 0) || error("Radix2FFT: N=$N must be a power of 2")
+    X = Vector{ComplexF64}(undef, N)
+    @inbounds for i = 1:N
+        X[i] = f[i]
+    end
+
+    # ── bit-reversal permutation (decimation in time) ───────────────────────
+    j = 0
+    @inbounds for i = 1:N-1
+        bit = N >> 1
+        while (j & bit) != 0
+            j ⊻= bit
+            bit >>= 1
+        end
+        j ⊻= bit
+        if i < j
+            X[i+1], X[j+1] = X[j+1], X[i+1]
         end
     end
-    for l=(m+3)/2:m
-        noPtsAtLevel=2^(l-1)
-        a=0
-        b=Ndiv2/noPtsAtLevel
-        c=noPtsAtLevel
-        d=b+noPtsAtLevel
-        p=0
-        for k=0:b-1
-            W=w[p+1]
-            for j=k:noPtsAtLevel-1:Int32(N/noPtsAtLevel)
-                for i=j:N-1:2*noPtsAtLevel
-                    z=W*(f[a+i+1]-f[b+i+1])
-                    f[a+i+1]=f[a+i+1]+f[b+i+1]
-                    f[b+i+1]=f[c+i+1]+f[d+i+1]
-                    f[d+i+1]=W*(f[c+i+1]-f[d+i+1])
-                    f[c+i+1]=z
-                end
+
+    # ── Danielson–Lanczos butterflies; stage twiddle W_m^k = w[k·N/m + 1] ───
+    m = 2
+    @inbounds while m <= N
+        half = m >> 1
+        step = N ÷ m
+        for k0 = 0:m:N-1
+            for k = 0:half-1
+                tw = w[k*step + 1]
+                a  = X[k0 + k + 1]
+                b  = tw * X[k0 + k + half + 1]
+                X[k0 + k + 1]        = a + b
+                X[k0 + k + half + 1] = a - b
             end
-            p=p+noPtsAtLevel
         end
+        m <<= 1
     end
-    return f
+    return X
 end
 
 function  FFTOfTwoRealVectors_forward(x,y,w)
@@ -304,24 +314,26 @@ end
 function Forward2DFFT(f,w1,w2)
     """
        Forward2DFFT(f,w1,w2)
-       f::real matrix of size NxM
-       w1,w2::forward trigonometric coefficients corresponding to N and M respectively
-       computes the forward FFT of a real 2D array with an even number of points in each direction
-       using Algorithm 13 of Kopriva's book
+       f::real or complex matrix of size NxM
+       w1,w2::FORWARD twiddles (InitializeFFT(N,1), InitializeFFT(M,1))
+       Computes the NORMALIZED forward 2D FFT (the Fourier coefficients)
+         F_{kx,ky} = (1/(N·M)) Σ_{nx,ny} f_{nx,ny} exp(-2π i nx kx/N) exp(-2π i ny ky/M),
+       so that  f_{nx,ny} = Σ_{kx,ky} F_{kx,ky} exp(+2π i nx kx/N) exp(+2π i ny ky/M)
+       is recovered by Backward2DFFT (Algorithm 13 of Kopriva's book, re-expressed
+       as a separable complex transform: 1-D Radix2FFT along each column, then each
+       row). The separable form is order-independent and avoids the real-pair
+       packing, keeping it consistent with Jexpresso's spectral solver.
     """
-    N=size(f,1)
-    M=size(f,2)
-    for k=0:M-2:2
-        F̅[:,k+1],F̅[:,k+2]=FFTOfTwoRealVectors_forward(f[:,k+1],f[:,k+2],w1)
+    N = size(f,1)
+    M = size(f,2)
+    F = Matrix{ComplexF64}(undef, N, M)
+    @inbounds for m = 1:M
+        F[:,m] = Radix2FFT(view(f,:,m), w1)     # transform along dim 1 (columns)
     end
-    for n=0:N-1
-        F[n+1,:]=Radix2FFT(F̅[n+1,:],w2)
+    @inbounds for n = 1:N
+        F[n,:] = Radix2FFT(view(F,n,:), w2)     # transform along dim 2 (rows)
     end
-    for m=0:M-1
-        for n=0:N-1
-            F[n+1,m+1]=F[n+1,m+1]/M
-        end
-    end
+    F ./= (N*M)
     return F
 end
 
@@ -329,15 +341,21 @@ function Backward2DFFT(F,w1,w2)
     """
        Backward2DFFT(F,w1,w2)
        F::complex matrix of size NxM
-       w1,w2::backward trigonometric coefficients corresponding to N and M respectively
-       computes the real backward FFT of a 2D array with an even number of points in each direction
-       using Algorithm 14 of Kopriva's book
+       w1,w2::BACKWARD twiddles (InitializeFFT(N,-1), InitializeFFT(M,-1))
+       Computes the (UNnormalized) inverse 2D FFT
+         f_{nx,ny} = Σ_{kx,ky} F_{kx,ky} exp(+2π i nx kx/N) exp(+2π i ny ky/M),
+       the exact inverse of Forward2DFFT (Algorithm 14 of Kopriva's book,
+       re-expressed as a separable complex transform). Returned array is complex;
+       take real() when the physical field is known to be real.
     """
-    for n=0:N-1
-        F̄[n+1,:]=Radix2FFT(F[n+1,:],w2)
+    N = size(F,1)
+    M = size(F,2)
+    f = Matrix{ComplexF64}(undef, N, M)
+    @inbounds for m = 1:M
+        f[:,m] = Radix2FFT(view(F,:,m), w1)
     end
-    for k=0:M-2:2
-        f[:,j+1],f[:,j+2]=FFTOfTwoRealVectors_backward(F[:,k+1],F[:,k+2],w1)
+    @inbounds for n = 1:N
+        f[n,:] = Radix2FFT(view(f,n,:), w2)
     end
     return f
 end

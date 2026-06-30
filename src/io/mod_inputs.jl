@@ -576,7 +576,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if (!haskey(inputs, :lelementLearning))
         inputs[:lelementLearning] = false
     end
-    
+
+    # Classical FFT (Fourier spectral) Laplace/Poisson solver — selected in
+    # problems/drivers.jl when :llinsolve is on. Off by default.
+    if (!haskey(inputs, :lfft))
+        inputs[:lfft] = false
+    end
+
     if !haskey(inputs, :lEL_Sample)
         inputs[:lEL_Sample] = false
     end
