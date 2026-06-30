@@ -698,6 +698,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                 end
             
             else
+                
                 #if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin) # FOR YT THIS WOULDN'T WORK WITH TOPOGRAPHY
                     for i = 1:ngl
                         for j = 1:ngl
@@ -786,11 +787,12 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     F_surf[i,j,5] = wθ[iface,i,j,1]*(1.0- δhf) + user_heatflux*δhf
                                 end
                             else
+                                
                                 user_bc_neumann!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
                                                  @view(qe[ip,:]), @view(qe[ip1,:]),
                                                  bdy_face_type[iface],
                                                  @view(coords[ip,:]),
-                                                 @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), SOL_VARS_TYPE, PhysConst;
+                                                 SOL_VARS_TYPE, PhysConst;
                                                  θ = θ,
                                                  θ1 = θ1,
                                                  qn0 = qn1,

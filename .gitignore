@@ -11,3 +11,4 @@ meshes
 mesh.log
 .jexpresso_cache/
 *.code-workspace
+PR_DESCRIPTION.md
