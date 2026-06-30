@@ -15,14 +15,11 @@ function user_source!(S,
     ρu = q[2]
     ρv = q[3]
     ρw = q[4]
-    ρhl = q[5]
-    ρqt = q[6]
-    ρqp = q[7]
-
-    ρhl_ref = qe[5]
-    ρqt_ref = qe[6]
 
     # Rayleigh sponge above 5.5 km; domain top 8.1 km
+    # Thermodynamic variables are NOT damped: in the compressible SEM, independently
+    # damping ρhl/ρqt without adjusting ρ breaks the equation of state and excites
+    # acoustic modes. Use the spectral filter for thermodynamic noise suppression.
     z_sponge = 5500.0
     z_max    = 8100.0
     α_max    = 0.75
@@ -37,9 +34,9 @@ function user_source!(S,
     S[2] = -β_sponge * ρu
     S[3] = -β_sponge * ρv
     S[4] = -ρ * PhysConst.g - β_sponge * ρw
-    S[5] = -β_sponge*(ρhl-ρhl_ref)
-    S[6] = -β_sponge*(ρqt-ρqt_ref)
-    S[7] = -β_sponge*(ρqp)
+    S[5] = 0.0
+    S[6] = 0.0
+    S[7] = 0.0
 end
 
 function user_source!(S,
@@ -59,9 +56,7 @@ function user_source!(S,
     ρu = q[2]
     ρv = q[3]
     ρw = q[4]
-    ρhl = q[5]
-    ρqt = q[6]
-    ρqp = q[7]
+
     z_sponge = 5500.0
     z_max    = 8100.0
     α_max    = 0.75
@@ -76,9 +71,9 @@ function user_source!(S,
     S[2] = -β_sponge * ρu
     S[3] = -β_sponge * ρv
     S[4] = -ρ * PhysConst.g - β_sponge * ρw
-    S[5] = -β_sponge * ρhl
-    S[6] = -β_sponge * ρqt
-    S[7] = -β_sponge * ρqp
+    S[5] = 0.0
+    S[6] = 0.0
+    S[7] = 0.0
 end
 
 function user_source_gpu(q, qe, x, y, z, PhysConst, xmax, xmin, ymax, ymin, zmax, zmin, lpert)
@@ -97,20 +92,8 @@ function user_source_gpu(q, qe, x, y, z, PhysConst, xmax, xmin, ymax, ymin, zmax
         β_sponge = α_max * sinpi(r / T(2))^T(2)
     end
 
-    ρhl = q[5]
-    ρqt = q[6]
-    ρqp = q[7]
-    if lpert
-        S5 = -β_sponge * ρhl
-        S6 = -β_sponge * ρqt
-        S7 = -β_sponge * ρqp
-    else
-        S5 = -β_sponge * (ρhl - qe[5])
-        S6 = -β_sponge * (ρqt - qe[6])
-        S7 = -β_sponge * ρqp
-    end
     return T(0.0), T(-β_sponge*ρu), T(-β_sponge*ρv),
-           T(-ρ*PhysConst.g - β_sponge*ρw), T(S5), T(S6), T(S7)
+           T(-ρ*PhysConst.g - β_sponge*ρw), T(0.0), T(0.0), T(0.0)
 end
 
 function user_scattering_functions(θ, θ1, ϕ, ϕ1, g)

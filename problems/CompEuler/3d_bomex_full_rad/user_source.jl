@@ -15,12 +15,6 @@ function user_source!(S,
     ρu = q[2]
     ρv = q[3]
     ρw = q[4]
-    ρhl = q[5]
-    ρqt = q[6]
-    ρqp = q[7]
-
-    ρhl_ref = qe[5]
-    ρqt_ref = qe[6]
 
     # Coriolis (f-plane, BOMEX latitude ≈ 15°N)
     u_geo = 0.0
@@ -29,6 +23,9 @@ function user_source!(S,
     bvc =  f0 * (ρu - u_geo*ρ)
 
     # Rayleigh sponge layer above 2400 m
+    # Thermodynamic variables are NOT damped: independently damping ρhl/ρqt without
+    # adjusting ρ breaks the equation of state and excites acoustic modes in the
+    # compressible SEM. Use the spectral filter for thermodynamic noise suppression.
     z_sponge = 2400.0
     z_max    = 3000.0
     α_max    = 0.75
@@ -43,9 +40,9 @@ function user_source!(S,
     S[2] = buc - β_sponge * ρu
     S[3] = bvc - β_sponge * ρv
     S[4] = -ρ * PhysConst.g - β_sponge * ρw
-    S[5] = -β_sponge * (ρhl - ρhl_ref)
-    S[6] = -β_sponge * (ρqt - ρqt_ref)
-    S[7] = -β_sponge * ρqp
+    S[5] = 0.0
+    S[6] = 0.0
+    S[7] = 0.0
 end
 
 function user_source!(S,
@@ -61,13 +58,10 @@ function user_source!(S,
 
     PhysConst = PhysicalConst{Float64}()
 
-    ρ   = q[1]
-    ρu  = q[2]
-    ρv  = q[3]
-    ρw  = q[4]
-    ρhl = q[5]
-    ρqt = q[6]
-    ρqp = q[7]
+    ρ  = q[1]
+    ρu = q[2]
+    ρv = q[3]
+    ρw = q[4]
 
     u_geo = 0.0
     f0 = 0.376e-4
@@ -88,9 +82,9 @@ function user_source!(S,
     S[2] = buc - β_sponge * ρu
     S[3] = bvc - β_sponge * ρv
     S[4] = -ρ * PhysConst.g - β_sponge * ρw
-    S[5] = -β_sponge * ρhl
-    S[6] = -β_sponge * ρqt
-    S[7] = -β_sponge * ρqp
+    S[5] = 0.0
+    S[6] = 0.0
+    S[7] = 0.0
 end
 
 function user_source_gpu(q, qe, x, y, z, PhysConst, xmax, xmin, ymax, ymin, zmax, zmin, lpert)
@@ -113,20 +107,8 @@ function user_source_gpu(q, qe, x, y, z, PhysConst, xmax, xmin, ymax, ymin, zmax
         β_sponge = α_max * sinpi(r / T(2))^T(2)
     end
 
-    ρhl = q[5]
-    ρqt = q[6]
-    ρqp = q[7]
-    if lpert
-        S5 = -β_sponge * ρhl
-        S6 = -β_sponge * ρqt
-        S7 = -β_sponge * ρqp
-    else
-        S5 = -β_sponge * (ρhl - qe[5])
-        S6 = -β_sponge * (ρqt - qe[6])
-        S7 = -β_sponge * ρqp
-    end
     return T(0.0), T(buc - β_sponge*ρu), T(bvc - β_sponge*ρv),
-           T(-ρ*PhysConst.g - β_sponge*ρw), T(S5), T(S6), T(S7)
+           T(-ρ*PhysConst.g - β_sponge*ρw), T(0.0), T(0.0), T(0.0)
 end
 
 function user_scattering_functions(θ, θ1, ϕ, ϕ1, g)
@@ -134,4 +116,3 @@ function user_scattering_functions(θ, θ1, ϕ, ϕ1, g)
     cos_Θ = clamp(cos_Θ, -1.0, 1.0)
     return (1 - g^2) / ((4*π) * (1 + g^2 - 2*g*cos_Θ))^(3/2)
 end
-
