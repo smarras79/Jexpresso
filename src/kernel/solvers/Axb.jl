@@ -85,11 +85,17 @@ function jx_belapsed(f; seconds::Real = 2.0)
         return Core.eval(@__MODULE__,
             :(BenchmarkTools.@belapsed (_JX_BENCH_TARGET[])() seconds = $(Float64(seconds))))::Float64
     catch e
-        @warn "BenchmarkTools unavailable; falling back to warm best-of-5 time_ns" exception = (e,)
+        @warn "BenchmarkTools unavailable; using warm minimum-over-budget time_ns" exception = (e,)
+        # Robust fallback: same idea as @belapsed — discard a warm-up run, then
+        # sample repeatedly for `seconds` and return the MINIMUM. This is stable
+        # run-to-run even without BenchmarkTools (a single shot is what scattered).
         f()                                   # warm-up (discarded)
-        best = Inf
-        for _ in 1:5
-            t0 = time_ns(); f(); best = min(best, (time_ns() - t0) / 1e9)
+        best   = Inf
+        tstart = time_ns()
+        while true
+            t0   = time_ns(); f()
+            best = min(best, (time_ns() - t0) / 1e9)
+            (time_ns() - tstart) >= Float64(seconds) * 1e9 && break
         end
         return best
     end
@@ -108,6 +114,30 @@ function jx_btime_solve(label, f; seconds::Real = 2.0)
     println(GREEN_FG(string(" # SOLVER TIMING [", label, "]: ",
                             round(t; sigdigits = 6), " s  (@btime minimum, compilation excluded)")))
     return t
+end
+
+"""
+    jx_robust_solve(label, f; robust = true, seconds = 2.0) -> value
+
+Timing wrapper for the Laplace/Poisson comparison solvers (direct SEM, FFT,
+Chebyshev, element learning) that, unlike `jx_time_solve`, reports a STABLE
+number. When `robust`, it computes `f()` once (the real result, returned to the
+caller) and then benchmarks `f` with BenchmarkTools (@belapsed minimum,
+compilation excluded) — so re-running the same case reports essentially the same
+time instead of the wide scatter a single `@time`/`time_ns` shot gives. When
+`robust = false` it falls back to the single-shot `jx_time_solve`.
+
+Callers gate `robust` on `get(inputs, :lbenchmark_solve, true)` and the budget on
+`get(inputs, :EL_timing_seconds, 2.0)`.
+"""
+function jx_robust_solve(label, f; robust::Bool = true, seconds::Real = 2.0)
+    robust || return jx_time_solve(label, f)
+    val = f()                                   # real result for the caller
+    t   = jx_belapsed(f; seconds = seconds)     # stable @btime minimum
+    JX_LAST_SOLVE_TIME[] = t
+    println(GREEN_FG(string(" # SOLVER TIMING [", label, "]: ",
+                            round(t; sigdigits = 6), " s  (@btime minimum, compilation excluded)")))
+    return val
 end
 
 # Stash the most recent solve's error norms for the side-by-side comparison.
@@ -182,9 +212,12 @@ function standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
 
     #solAxb = @btime solveAx($sem.matrix.L, $RHS, inputs[:ode_solver])
     #sol = solAxb.u
-    # Timed the same way as the FFT/Chebyshev/EL solvers (jx_time_solve) so the
-    # direct SEM solve is comparable in compare_laplace_solvers.
-    solAxb = jx_time_solve("direct SEM (Ax=b)", () -> sem.matrix.L \ RHS)
+    # Robust @btime timing (BenchmarkTools minimum) so re-running the same case
+    # reports a stable time instead of the wide scatter of a single shot. Set
+    # :lbenchmark_solve => false for one quick solve on very large problems.
+    solAxb = jx_robust_solve("direct SEM (Ax=b)", () -> sem.matrix.L \ RHS;
+                             robust  = get(inputs, :lbenchmark_solve, true),
+                             seconds = Float64(get(inputs, :EL_timing_seconds, 2.0)))
     sol = solAxb
 
     println(YELLOW_FG(string(" # Solve x=inv(A)*b: sparse storage .............. DONE")))

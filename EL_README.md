@@ -147,6 +147,15 @@ timing/comparison entirely (useful on very large meshes where the direct solve
 is exactly what element learning is avoiding); `:EL_timing_seconds => S`
 (default 2.0) tunes the per-solve BenchmarkTools time budget.
 
+The **same robust `@btime` timing applies to all the Laplace comparison solvers**
+— direct SEM (`A\RHS` in `standard_linsolve!`), FFT, and Chebyshev — not just
+element learning, so `SOLVER TIMING [...]` lines are stable run-to-run for every
+solver. Because BenchmarkTools excludes compilation internally, even the first
+run in a fresh session reports the steady-state minimum (no manual warm-up run
+needed). Set `:lbenchmark_solve => false` to fall back to a single quick solve
+(one `time_ns` shot) on very large problems where the repeated benchmark solves
+would be too costly.
+
 ### Reference solution + difference in the VTU
 
 The inference run also writes, into the same `iter_1.vtu`, extra nodal fields for
