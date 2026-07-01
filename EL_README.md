@@ -105,10 +105,10 @@ accuracy of the inferred solution:
 
 ```
  # ================== ELEMENT-LEARNING DIAGNOSTICS ==================
- #   timings are @btime minima (compilation excluded); both methods split
- #   into one-time SETUP + repeated per-solve cost, compared like-for-like:
- #   from scratch (setup INCLUDED):  EL total (assembly+infer) = 0.116 s | direct SEM (factorize+solve) = 0.0547 s | speedup = 0.47×
- #   repeated solve (setup HOISTED): EL inference (surrogate)  = 0.0227 s | direct SEM (back-solve) = 0.0031 s | speedup = 0.14×
+ #   @btime minima (compilation excluded). The global matrix A is assembled
+ #   once beforehand and shared by both methods (counted for neither).
+ #   THIS SOLVE (single, time-independent):  EL (block-extract+infer) = 0.116 s | direct SEM (factorize+solve) = 0.0547 s | speedup = 0.47×
+ #   amortized per solve (if reusing A):     EL inference (surrogate)  = 0.0227 s | direct SEM (back-solve) = 0.0031 s | speedup = 0.14×
  #   accuracy  : inference vs numerical (direct SEM)  →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : inference vs exact (manufactured)    →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : direct SEM vs exact (manufactured)   →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
@@ -116,21 +116,28 @@ accuracy of the inferred solution:
 ```
 (illustrative numbers)
 
-**Fair, symmetric timing (important).** Both methods have a one-time SETUP cost
-and a repeated per-solve cost, so they are compared at both levels:
+**What the two timing rows mean.** The **global matrix `A`** is assembled once by
+the SEM setup, before either solve, and is shared — it is counted for neither
+method. What differs is what each method does *with* `A`:
 
-| Level | Element learning | Direct SEM | Meaning |
-|-------|------------------|------------|---------|
-| **from scratch** (setup included) | `EL total` = block assembly + surrogate | `A \ RHS` = factorize + solve | cost of a single solve done cold |
-| **repeated solve** (setup hoisted) | `inference (surrogate)` only | back-solve with a pre-computed LU factor | cost of each solve once setup is cached |
+| Row | Element learning | Direct SEM |
+|-----|------------------|------------|
+| **THIS SOLVE** (the one solve that actually runs) | extract per-element blocks from `A` + surrogate = the full `elementLearning_Axb!` | factorize `A` + solve = `A \ RHS` |
+| **amortized per solve** (only if many solves reuse the same `A`) | surrogate only (`elementLearning_infer!`) | back-solve with a pre-computed `lu(A)` factor |
 
-The earlier versions timed the EL **surrogate** (setup excluded) against the SEM
-**full `A\RHS`** (setup *included*) — which is not symmetric and flatters EL. For
-element learning the per-element block assembly (extracting the reference-element
-operators from `A`, `elementLearning_Axb!` Sections 1–2) is the one-time setup;
-for direct SEM the sparse LU **factorization** is the one-time setup. Hoisting
-each method's setup out gives the `repeated solve` row; leaving both in gives the
-`from scratch` row. Each row's speedup is `SEM / EL`.
+Because this is a **time-independent** problem the solver runs **once**, so the
+top row (**THIS SOLVE**) is the honest comparison: each method includes its own
+`A`-dependent setup — EL's per-element block extraction (`elementLearning_Axb!`
+Sections 1–2) and SEM's sparse LU factorization. The bottom row only applies if
+you solve repeatedly with the *same* operator `A` (e.g. time-stepping or many
+right-hand sides): then each method's `A`-dependent setup is done once and reused,
+so per solve you pay only the EL surrogate / the SEM back-substitution. Each row's
+speedup is `SEM / EL` (>1 means EL is faster).
+
+> An earlier version timed the EL **surrogate** (block extraction excluded)
+> against the SEM **full `A\RHS`** (factorization included) — not symmetric, and
+> it flattered EL. The two rows above fix that by splitting both methods the same
+> way.
 
 * The **exact (manufactured)** accuracy rows appear only when the case stores an
   exact field `qe` (e.g. an MMS test); both the inference and the direct SEM
@@ -184,15 +191,18 @@ solver timings is printed at the very end:
  #        ├─ sampling phase (SEM+startup) : 2m 00s
  #        ├─ (b) training only            : 8m 00s
  #        └─ inference phase (wall clock) : 0m 32s
- #   Solver-level (pure compute, JIT-excluded; from the inference run):
- #        (c) numerical direct SEM Ax=b   : 0.456 s
- #        (d) element-learning inference  : 0.0123 s
- #        speedup (c)/(d)                 : 37.07×
+ #   Solver-level (pure compute, JIT-excluded; this single solve):
+ #        (c) direct SEM (factorize+solve)    : 0.0547 s
+ #        (d) element learning (extract+infer): 0.116 s
+ #        speedup (c)/(d)                     : 0.47×
 ```
 
 (a)/(b) and the phase wall clocks come from the launcher; (c)/(d) are the pure
-solver kernel times scraped from the inference run's diagnostics (phase wall
-clocks additionally include Julia startup, mesh read and IO).
+solver kernel times scraped from the inference run's diagnostics — the honest
+like-for-like single-solve comparison (each includes its own `A`-dependent
+setup: EL's per-element block extraction, SEM's LU factorization). The phase wall
+clocks additionally include Julia startup, mesh read and IO. (The amortized
+"if reusing `A`" numbers are in the `ELEMENT-LEARNING DIAGNOSTICS` block.)
 
 ---
 
