@@ -191,7 +191,10 @@ _fmt_secs() {
 T_SAMPLE=-1; T_TRAIN=-1; T_INFER=-1; T_ALL=0
 # Solver-level times (seconds, JIT-excluded) scraped from the inference run's
 # Julia output; empty means "not reported" (e.g. diagnostics disabled).
+#   *_INFER / *_DIRECT       — single solve: EL total (extract+infer) vs SEM full
+#   *_INFER_ONLY / *_DIRECT_BACK — amortized: EL surrogate vs SEM back-solve
 T_SOLVE_INFER=""; T_SOLVE_DIRECT=""
+T_SOLVE_INFER_ONLY=""; T_SOLVE_DIRECT_BACK=""
 INFER_LOG=""
 
 # Launch Jexpresso.run_case for the current case, serial or under MPI.
@@ -314,6 +317,9 @@ phase_infer() {
     # direct SEM factorize+solve — so scrape the EL total, not the surrogate.
     T_SOLVE_INFER="$(sed -nE 's/.*SOLVER TIMING \[element-learning total \(assembly\+infer\)\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
     T_SOLVE_DIRECT="$(sed -nE 's/.*SOLVER TIMING \[direct SEM \(Ax=b\)\]: ([0-9.eE+-]+) s.*/\1/p'        "${INFER_LOG}" | head -1)"
+    # Amortized-scenario times: EL surrogate (inference only) and SEM back-solve.
+    T_SOLVE_INFER_ONLY="$(sed -nE 's/.*SOLVER TIMING \[element-learning inference\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
+    T_SOLVE_DIRECT_BACK="$(sed -nE 's/.*SOLVER TIMING \[direct SEM \(back-solve, pre-factored\)\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
     rm -f "${INFER_LOG}"
     echo " # [EL pipeline] inference complete — see the case output directory."
 }
@@ -342,13 +348,17 @@ T_ALL=$((SECONDS - _t_all))
 #   (a) full run (all phases that ran)   — pipeline wall clock
 #   (b) training only                    — phase wall clock
 #       sampling / inference phases      — phase wall clock (incl. Julia startup)
-#   (c) direct SEM (factorize+solve)      — pure compute, from the Julia run
-#   (d) element learning (block-extract+infer) — pure compute, from the Julia run
-# (c) and (d) are JIT-excluded solver kernel times for the ONE solve that runs
-# (this is a time-independent problem), compared like-for-like: each includes its
-# own A-dependent setup. The phase wall clocks above additionally include Julia
-# startup, mesh read, IO, etc. (The amortized "if reusing A" numbers — EL
-# surrogate vs SEM back-solve — are in the ELEMENT-LEARNING DIAGNOSTICS block.)
+#   (c)  direct SEM (factorize+solve)            — pure compute, single solve
+#   (d)  element learning (block-extract+infer)  — pure compute, single solve
+#   (c') direct SEM (back-solve, pre-factored)   — amortized (setup reused)
+#   (d') element learning (inference only)       — amortized (setup reused)
+# (c)/(d) are the cost of the ONE solve that actually runs (this is a
+# time-independent problem); each includes its own A-dependent setup — SEM's LU
+# factorization and EL's per-element block extraction from A. (c')/(d') hoist
+# that setup out and are meaningful only if MANY solves reuse the same operator A
+# (time-stepping / multiple RHS): SEM then only back-substitutes and EL only runs
+# the surrogate. All are JIT-excluded @btime minima; the phase wall clocks above
+# additionally include Julia startup, mesh read, IO, etc.
 # ─────────────────────────────────────────────────────────────────────────────
 _step "EL PIPELINE TIMING HIERARCHY"
 echo " #   (a) full run (phases that ran)      : $(_fmt_secs "${T_ALL}")   [${T_ALL}s]"
@@ -357,11 +367,18 @@ echo " #   (a) full run (phases that ran)      : $(_fmt_secs "${T_ALL}")   [${T_
 [[ ${T_INFER}  -ge 0 ]] && echo " #        └─ inference phase (wall clock) : $(_fmt_secs "${T_INFER}")   [${T_INFER}s]"
 echo " #"
 echo " #   Solver-level (pure compute, JIT-excluded; this single solve):"
-echo " #        (c) direct SEM (factorize+solve)    : ${T_SOLVE_DIRECT:-n/a} s"
-echo " #        (d) element learning (extract+infer): ${T_SOLVE_INFER:-n/a} s"
+echo " #        (c) direct SEM (factorize+solve)     : ${T_SOLVE_DIRECT:-n/a} s"
+echo " #        (d) element learning (extract+infer) : ${T_SOLVE_INFER:-n/a} s"
 if [[ -n "${T_SOLVE_DIRECT}" && -n "${T_SOLVE_INFER}" ]]; then
     _spd="$(awk -v c="${T_SOLVE_DIRECT}" -v d="${T_SOLVE_INFER}" 'BEGIN{ if (d>0) printf "%.4g", c/d; else printf "n/a" }')"
-    echo " #        speedup (c)/(d)                 : ${_spd}×"
+    echo " #        speedup (c)/(d)                      : ${_spd}×"
+fi
+echo " #   Amortized (only if many solves reuse the same operator A):"
+echo " #        (c') direct SEM (back-solve)         : ${T_SOLVE_DIRECT_BACK:-n/a} s"
+echo " #        (d') element learning (inference)    : ${T_SOLVE_INFER_ONLY:-n/a} s"
+if [[ -n "${T_SOLVE_DIRECT_BACK}" && -n "${T_SOLVE_INFER_ONLY}" ]]; then
+    _spd2="$(awk -v c="${T_SOLVE_DIRECT_BACK}" -v d="${T_SOLVE_INFER_ONLY}" 'BEGIN{ if (d>0) printf "%.4g", c/d; else printf "n/a" }')"
+    echo " #        speedup (c')/(d')                    : ${_spd2}×"
 fi
 _hr
 

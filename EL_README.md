@@ -197,17 +197,23 @@ solver timings is printed at the very end:
  #        ├─ (b) training only            : 8m 00s
  #        └─ inference phase (wall clock) : 0m 32s
  #   Solver-level (pure compute, JIT-excluded; this single solve):
- #        (c) direct SEM (factorize+solve)    : 0.0547 s
- #        (d) element learning (extract+infer): 0.116 s
- #        speedup (c)/(d)                     : 0.47×
+ #        (c) direct SEM (factorize+solve)     : 0.0547 s
+ #        (d) element learning (extract+infer) : 0.116 s
+ #        speedup (c)/(d)                      : 0.47×
+ #   Amortized (only if many solves reuse the same operator A):
+ #        (c') direct SEM (back-solve)         : 0.0031 s
+ #        (d') element learning (inference)    : 0.0227 s
+ #        speedup (c')/(d')                    : 0.14×
 ```
 
-(a)/(b) and the phase wall clocks come from the launcher; (c)/(d) are the pure
-solver kernel times scraped from the inference run's diagnostics — the honest
-like-for-like single-solve comparison (each includes its own `A`-dependent
-setup: EL's per-element block extraction, SEM's LU factorization). The phase wall
-clocks additionally include Julia startup, mesh read and IO. (The amortized
-"if reusing `A`" numbers are in the `ELEMENT-LEARNING DIAGNOSTICS` block.)
+(a)/(b) and the phase wall clocks come from the launcher; (c)/(d)/(c')/(d') are
+the pure solver kernel times scraped from the inference run's diagnostics.
+**(c)/(d)** is the honest single-solve comparison — each includes its own
+`A`-dependent setup (SEM's LU factorization, EL's per-element block extraction).
+**(c')/(d')** hoists that setup out and applies only when many solves reuse the
+same operator `A` (time-stepping / multiple RHS): SEM then only back-substitutes
+with the cached factor, and EL only runs the surrogate. The phase wall clocks
+additionally include Julia startup, mesh read and IO.
 
 ---
 
