@@ -275,7 +275,15 @@ phase_infer() {
     (
         export JEXPRESSO_EL_SAMPLE=false
         export JEXPRESSO_EL_NNFILE="${NNFILE}"
-        [[ -n "${EL_INFER_MESH}" ]] && export JEXPRESSO_EL_MESH="${EL_INFER_MESH}"
+        # Inference must run on the MULTI-element mesh, never the 1x1 sampling
+        # mesh. If EL_INFER_MESH is set, use it; otherwise fall back to the
+        # case's user_inputs.jl :gmsh_filename by making sure no stray
+        # JEXPRESSO_EL_MESH (e.g. exported in the parent shell) leaks in.
+        if [[ -n "${EL_INFER_MESH}" ]]; then
+            export JEXPRESSO_EL_MESH="${EL_INFER_MESH}"
+        else
+            unset JEXPRESSO_EL_MESH
+        fi
         run_case_julia
     )
     echo " # [EL pipeline] inference complete — see the case output directory."
