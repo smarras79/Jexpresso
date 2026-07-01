@@ -195,7 +195,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, metrics=nothing)
+                      μ_dsgs_pnode=nothing, metrics=nothing,
+                      extra_fields=Pair{String,Vector{Float64}}[])
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -207,7 +208,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
                   iout=iout, nvar=nvar, qexact=qexact, case=case,
-                  μ_dsgs_pnode=μ_dsgs_pnode, metrics=metrics)
+                  μ_dsgs_pnode=μ_dsgs_pnode, metrics=metrics,
+                  extra_fields=extra_fields)
         
     else
         #VERIFY THIS on GPU
@@ -267,7 +269,8 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="",
-                   μ_dsgs_pnode=nothing, metrics=nothing)
+                   μ_dsgs_pnode=nothing, metrics=nothing,
+                   extra_fields=Pair{String,Vector{Float64}}[])
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -467,6 +470,14 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
             end
         end
 
+        # Optional caller-supplied nodal fields (name => length-npoin vector).
+        # Used by element learning to write the reference (direct SEM /
+        # manufactured) solution and its difference from the inferred solution
+        # alongside the solution itself, for side-by-side visualisation.
+        for (fname, fdata) in extra_fields
+            vtkf[fname, VTKPointData()] = @view(fdata[1:npoin])
+        end
+
         vtkf
     end
     
@@ -474,13 +485,14 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs,
                    varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="",
-                   μ_dsgs_pnode=nothing)
+                   μ_dsgs_pnode=nothing,
+                   extra_fields=Pair{String,Vector{Float64}}[])
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -551,12 +563,17 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+
+        # Optional caller-supplied nodal fields (see the NSD_2D writer).
+        for (fname, fdata) in extra_fields
+            vtkf[fname, VTKPointData()] = @view(fdata[1:npoin])
+        end
+
         vtkf
     end
-    
+
     outfiles = map(vtk_save, vtkfile)
-    
+
 end
 
 function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)

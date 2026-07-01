@@ -32,6 +32,41 @@ function jx_time_solve(label, f)
     return val
 end
 
+# ---------------------------------------------------------------------------
+# Warm-up + best-of-reps timing.
+#
+# The FIRST evaluation of `f` in a fresh Julia process pays one-time costs that
+# do NOT reflect steady-state performance — Julia JIT-compiles the solve kernel,
+# a sparse factorization builds its symbolic structure, an ONNX InferenceSession
+# warms up. Timing that first call therefore over-reports the true solve cost.
+#
+# This variant runs `f` once as a throw-away warm-up (time discarded), then runs
+# it `reps` more times and reports the FASTEST — the same "measure the second
+# run" strategy compare_laplace_solvers uses across run_case repetitions, applied
+# here at the individual-solve level. The best time is stored in
+# JX_LAST_SOLVE_TIME[] and the last computed value is returned. Set warmup=false
+# / reps=1 to recover a single-shot measurement.
+# ---------------------------------------------------------------------------
+function jx_time_solve_best(label, f; reps::Int = 2, warmup::Bool = true)
+    if warmup
+        f()                    # throw-away warm-up: compiles/initialises, not timed
+    end
+    n    = max(1, reps)
+    best = Inf
+    val  = nothing
+    for _ in 1:n
+        t0   = time_ns()
+        val  = f()
+        best = min(best, (time_ns() - t0) / 1e9)
+    end
+    JX_LAST_SOLVE_TIME[] = best
+    note = warmup ? string(" (best of ", n, ", JIT/warm-up excluded)") :
+                    string(" (best of ", n, ")")
+    println(GREEN_FG(string(" # SOLVER TIMING [", label, "]: ",
+                            round(best; sigdigits = 6), " s", note)))
+    return val
+end
+
 # Stash the most recent solve's error norms for the side-by-side comparison.
 function jx_record_solve_error(; linf = NaN, l2rel = NaN, npts = 0)
     JX_LAST_SOLVE_ERR[] = (linf = Float64(linf), l2rel = Float64(l2rel), npts = Int(npts))

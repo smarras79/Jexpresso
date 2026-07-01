@@ -178,6 +178,21 @@ done
 _hr()   { printf '=%.0s' {1..79}; printf '\n'; }
 _step() { _hr; echo " # $*"; _hr; }
 
+# Human-readable seconds → "Xs" / "Xm Ys" / "Xh Ym Zs". Integer input (SECONDS).
+_fmt_secs() {
+    local s=$1
+    if   [[ $s -lt 60   ]]; then printf '%ds' "$s"
+    elif [[ $s -lt 3600 ]]; then printf '%dm %ds' $((s/60)) $((s%60))
+    else printf '%dh %dm %ds' $((s/3600)) $(((s%3600)/60)) $((s%60)); fi
+}
+
+# Phase wall-clock (seconds); -1 means "did not run". Populated by the driver.
+T_SAMPLE=-1; T_TRAIN=-1; T_INFER=-1; T_ALL=0
+# Solver-level times (seconds, JIT-excluded) scraped from the inference run's
+# Julia output; empty means "not reported" (e.g. diagnostics disabled).
+T_SOLVE_INFER=""; T_SOLVE_DIRECT=""
+INFER_LOG=""
+
 # Launch Jexpresso.run_case for the current case, serial or under MPI.
 run_case_julia() {
     cd "${REPO_ROOT}"
@@ -272,6 +287,11 @@ phase_infer() {
         exit 1
     fi
     _step "Phase 3/3  INFER    ${EQ}/${CASE}   model=${NNFILE}   mesh=${EL_INFER_MESH:-<case default>}"
+    # Capture the Julia output so the solver-level timings printed by the
+    # inference run (SOLVER TIMING [element-learning inference] / [direct SEM])
+    # can be scraped into the pipeline's timing hierarchy. `tee` keeps it on
+    # screen; pipefail propagates a Julia failure through the pipe.
+    INFER_LOG="$(mktemp "${TMPDIR:-/tmp}/el_infer_XXXXXX")"
     (
         export JEXPRESSO_EL_SAMPLE=false
         export JEXPRESSO_EL_NNFILE="${NNFILE}"
@@ -285,7 +305,12 @@ phase_infer() {
             unset JEXPRESSO_EL_MESH
         fi
         run_case_julia
-    )
+    ) 2>&1 | tee "${INFER_LOG}"
+
+    # Scrape the pure-compute solve times (JIT-excluded) from the run.
+    T_SOLVE_INFER="$(sed -nE 's/.*SOLVER TIMING \[element-learning inference\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
+    T_SOLVE_DIRECT="$(sed -nE 's/.*SOLVER TIMING \[direct SEM \(Ax=b\)\]: ([0-9.eE+-]+) s.*/\1/p'        "${INFER_LOG}" | head -1)"
+    rm -f "${INFER_LOG}"
     echo " # [EL pipeline] inference complete — see the case output directory."
 }
 
@@ -299,8 +324,38 @@ echo " # [EL pipeline] tensors   : ${EL_INPUT_TENSOR} / ${EL_OUTPUT_TENSOR}"
 echo " # [EL pipeline] model     : ${NNFILE}"
 echo " # [EL pipeline] phases    : sample=${DO_SAMPLE} train=${DO_TRAIN} infer=${DO_INFER}"
 
-[[ "${DO_SAMPLE}" -eq 1 ]] && phase_sample
-[[ "${DO_TRAIN}"  -eq 1 ]] && phase_train
-[[ "${DO_INFER}"  -eq 1 ]] && phase_infer
+# Wall-clock each phase that runs (SECONDS is a bash builtin: seconds since
+# shell start; deltas are portable to the macOS default bash). T_ALL sums only
+# the phases that actually executed.
+_t_all=${SECONDS}
+if [[ "${DO_SAMPLE}" -eq 1 ]]; then _t0=${SECONDS}; phase_sample; T_SAMPLE=$((SECONDS - _t0)); fi
+if [[ "${DO_TRAIN}"  -eq 1 ]]; then _t0=${SECONDS}; phase_train;  T_TRAIN=$((SECONDS - _t0));  fi
+if [[ "${DO_INFER}"  -eq 1 ]]; then _t0=${SECONDS}; phase_infer;  T_INFER=$((SECONDS - _t0));  fi
+T_ALL=$((SECONDS - _t_all))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Timing hierarchy
+#   (a) full run (all phases that ran)   — pipeline wall clock
+#   (b) training only                    — phase wall clock
+#       sampling / inference phases      — phase wall clock (incl. Julia startup)
+#   (c) numerical direct SEM Ax=b solve  — pure compute, from the Julia run
+#   (d) element-learning inference solve — pure compute, from the Julia run
+# (c) and (d) are JIT-excluded solver kernel times; the phase wall clocks above
+# additionally include Julia startup, mesh read, IO, etc.
+# ─────────────────────────────────────────────────────────────────────────────
+_step "EL PIPELINE TIMING HIERARCHY"
+echo " #   (a) full run (phases that ran)      : $(_fmt_secs "${T_ALL}")   [${T_ALL}s]"
+[[ ${T_SAMPLE} -ge 0 ]] && echo " #        ├─ sampling phase (SEM+startup) : $(_fmt_secs "${T_SAMPLE}")   [${T_SAMPLE}s]"
+[[ ${T_TRAIN}  -ge 0 ]] && echo " #        ├─ (b) training only            : $(_fmt_secs "${T_TRAIN}")   [${T_TRAIN}s]"
+[[ ${T_INFER}  -ge 0 ]] && echo " #        └─ inference phase (wall clock) : $(_fmt_secs "${T_INFER}")   [${T_INFER}s]"
+echo " #"
+echo " #   Solver-level (pure compute, JIT-excluded; from the inference run):"
+echo " #        (c) numerical direct SEM Ax=b   : ${T_SOLVE_DIRECT:-n/a} s"
+echo " #        (d) element-learning inference  : ${T_SOLVE_INFER:-n/a} s"
+if [[ -n "${T_SOLVE_DIRECT}" && -n "${T_SOLVE_INFER}" ]]; then
+    _spd="$(awk -v c="${T_SOLVE_DIRECT}" -v d="${T_SOLVE_INFER}" 'BEGIN{ if (d>0) printf "%.4g", c/d; else printf "n/a" }')"
+    echo " #        speedup (c)/(d)                 : ${_spd}×"
+fi
+_hr
 
 _step "Element-Learning pipeline DONE"

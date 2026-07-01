@@ -1078,10 +1078,12 @@ end
 #   JEXPRESSO_EL_SAMPLE      "true"/"false"  → inputs[:lEL_Sample]
 #   JEXPRESSO_EL_MESH        path            → inputs[:gmsh_filename]
 #   JEXPRESSO_EL_NNFILE      path            → inputs[:NNfile]
-#   JEXPRESSO_EL_OUTPUT_DIR  path            → inputs[:output_dir]
-#   JEXPRESSO_EL_NSAMP       integer         → inputs[:Nsamp]
-#   JEXPRESSO_EL_TAG         string          → inputs[:EL_tensor_tag]
+#   JEXPRESSO_EL_OUTPUT_DIR    path          → inputs[:output_dir]
+#   JEXPRESSO_EL_NSAMP         integer       → inputs[:Nsamp]
+#   JEXPRESSO_EL_TAG           string        → inputs[:EL_tensor_tag]
 #                                              (tags the input/output CSV names)
+#   JEXPRESSO_EL_DIAGNOSTICS   "true"/"false"→ inputs[:lEL_diagnostics]
+#   JEXPRESSO_EL_TIMING_REPS   integer       → inputs[:EL_timing_reps]
 #---------------------------------------------------------------------------
 function _el_env_override!(inputs, rank = 0)
     _getenv(name) = (v = strip(get(ENV, name, "")); isempty(v) ? nothing : String(v))
@@ -1129,6 +1131,29 @@ function _el_env_override!(inputs, rank = 0)
         inputs[:EL_tensor_tag] = v
         _note(string("JEXPRESSO_EL_TAG → :EL_tensor_tag = ", v,
                      "  (tensors: input_tensor_", v, ".csv / output_tensor_", v, ".csv)"))
+    end
+
+    if (v = _getenv("JEXPRESSO_EL_DIAGNOSTICS")) !== nothing
+        lv = lowercase(v)
+        if lv in ("true", "1", "yes", "on")
+            inputs[:lEL_diagnostics] = true
+            _note("JEXPRESSO_EL_DIAGNOSTICS → :lEL_diagnostics = true")
+        elseif lv in ("false", "0", "no", "off")
+            inputs[:lEL_diagnostics] = false
+            _note("JEXPRESSO_EL_DIAGNOSTICS → :lEL_diagnostics = false")
+        else
+            @warn "Ignoring unrecognised JEXPRESSO_EL_DIAGNOSTICS value (use true/false)" value=v
+        end
+    end
+
+    if (v = _getenv("JEXPRESSO_EL_TIMING_REPS")) !== nothing
+        n = tryparse(Int, v)
+        if n === nothing
+            @warn "Ignoring non-integer JEXPRESSO_EL_TIMING_REPS" value=v
+        else
+            inputs[:EL_timing_reps] = n
+            _note(string("JEXPRESSO_EL_TIMING_REPS → :EL_timing_reps = ", n))
+        end
     end
 
     return inputs
