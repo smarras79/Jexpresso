@@ -586,7 +586,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         
     else
         # ── Inference ─────────────────────────────────────────────────────────
-        println(YELLOW_FG(string(" # --- INFERENCE — solution stored in u ..........")))
+        JX_EL_QUIET[] || println(YELLOW_FG(string(" # --- INFERENCE — solution stored in u ..........")))
         # Time ONLY the surrogate inference (not the per-element block assembly
         # in Sections 1–2 above, which is one-time setup for a fixed operator A).
         # Stashed in JX_LAST_EL_INFER_TIME so the EL diagnostics can compare the
@@ -610,7 +610,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         #                               $wbuf.input_name, $wbuf.output_name,
         #                               $avisc, $EL, $A_∂τ∂τ, $∂τ_pos, $gΓ, $wbuf.infer,
         #                               $nelintpoints, $elnbdypoints)
-        println(YELLOW_FG(string(" # --- INFERENCE — solution stored in u .......... DONE")))
+        JX_EL_QUIET[] || println(YELLOW_FG(string(" # --- INFERENCE — solution stored in u .......... DONE")))
     end
 
     return nothing
@@ -1290,24 +1290,40 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         #   t_direct       — direct SEM solve (A\RHS).
         # Wrapped in try/catch so a diagnostics-only failure never discards the
         # inference result. Gated by :lEL_diagnostics (default true).
-        usol_direct   = nothing
-        t_infer       = NaN
-        t_infer_total = NaN
-        t_direct      = NaN
+        usol_direct    = nothing
+        t_infer        = NaN     # EL surrogate only (elementLearning_infer!)
+        t_infer_total  = NaN     # EL total: per-element block assembly + surrogate
+        t_direct_full  = NaN     # direct SEM: factorize + solve (A\RHS)
+        t_direct_solve = NaN     # direct SEM: back-substitution only (pre-factored)
         if el_diagnostics
-            # Direct SEM reference solution (for accuracy + VTU) and its time.
+            # Quiet the per-sample "# --- INFERENCE ..." chatter while the
+            # benchmarks run the solves many times.
+            JX_EL_QUIET[] = true
             try
-                usol_direct = A \ RHS
-                t_direct    = jx_btime_solve("direct SEM (Ax=b)", () -> A \ RHS; seconds = el_secs)
-            catch e
-                @warn "EL diagnostics: direct SEM reference solve failed; reporting inference-only" exception=(e, catch_backtrace())
-            end
+                # ── Direct SEM reference. Measured BOTH ways so the comparison is
+                #    symmetric with EL's split into one-time setup + repeated cost:
+                #      t_direct_full  = A\RHS               (factorize + solve): the
+                #                       "from scratch" cost, pairs with EL total.
+                #      t_direct_solve = back-solve with a pre-computed LU factor:
+                #                       the "repeated solve" cost (factorization is
+                #                       SEM's one-time setup, hoisted out — the
+                #                       counterpart of hoisting EL's block assembly),
+                #                       pairs with the EL surrogate.
+                try
+                    usol_direct   = A \ RHS
+                    t_direct_full = jx_btime_solve("direct SEM (Ax=b)", () -> A \ RHS; seconds = el_secs)
+                    Afact = LinearAlgebra.lu(A)   # one-time factorization (SEM's setup)
+                    t_direct_solve = jx_btime_solve("direct SEM (back-solve, pre-factored)",
+                                                    () -> Afact \ RHS; seconds = el_secs)
+                catch e
+                    @warn "EL diagnostics: direct SEM reference solve failed; reporting inference-only" exception=(e, catch_backtrace())
+                end
 
-            # Surrogate-only inference: benchmark elementLearning_infer! directly,
-            # reusing the blocks the el_solve() above already assembled (they
-            # depend only on the fixed operator A). ∂τ_pos maps skeleton node →
-            # ∂τ index, exactly as built inside elementLearning_Axb!.
-            try
+                # ── Element learning, split the same way:
+                #      t_infer       = elementLearning_infer! only (surrogate) — the
+                #                      repeated per-solve cost (block assembly hoisted).
+                #      t_infer_total = whole elementLearning_Axb! (assembly + surrogate).
+                #    ∂τ_pos maps skeleton node → ∂τ index, as inside elementLearning_Axb!.
                 ∂τ_pos_b = Dict{Int,Int}(sem.mesh.∂τ[j] => j for j in 1:sem.mesh.length∂τ)
                 infer_only = function ()
                     elementLearning_infer!(params.qp.qn, sem.mesh,
@@ -1320,12 +1336,14 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                 t_infer_total = jx_btime_solve("element-learning total (assembly+infer)", el_solve; seconds = el_secs)
                 JX_LAST_SOLVE_TIME[] = t_infer   # EL "solve time" = the surrogate cost
             catch e
-                @warn "EL diagnostics: surrogate inference timing failed" exception=(e, catch_backtrace())
+                @warn "EL diagnostics: timing failed" exception=(e, catch_backtrace())
+            finally
+                JX_EL_QUIET[] = false
             end
 
             print_EL_diagnostics(usol, usol_direct, params.qp.qe, sem.matrix.M, npoin;
-                                 t_infer = t_infer, t_direct = t_direct,
-                                 t_infer_total = t_infer_total)
+                                 t_infer = t_infer, t_infer_total = t_infer_total,
+                                 t_direct_full = t_direct_full, t_direct_solve = t_direct_solve)
         else
             # Production (diagnostics off): single-shot surrogate time from the
             # in-call instrumentation — no extra solves.
@@ -1438,7 +1456,8 @@ end
 # print_solution_L2_error. `u_direct === nothing` skips the numerical comparison.
 #---------------------------------------------------------------------------------------
 function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
-                              t_infer = NaN, t_direct = NaN, t_infer_total = NaN)
+                              t_infer = NaN, t_infer_total = NaN,
+                              t_direct_full = NaN, t_direct_solve = NaN)
     # M-weighted L2 (abs + relative to ‖b‖) and L∞ norms of (a - b).
     _norms = function (a, b)
         e2 = 0.0; r2 = 0.0; li = 0.0
@@ -1459,23 +1478,27 @@ function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
     end
     has_exact = msq > 0.0
 
+    _spd(a, b) = (isfinite(a) && isfinite(b) && b > 0.0) ?
+                 string(" | speedup = ", round(a / b; sigdigits = 4), "×") : ""
+
     println(GREEN_FG(" # ================== ELEMENT-LEARNING DIAGNOSTICS =================="))
-    if isfinite(t_infer)
-        if isfinite(t_direct) && t_infer > 0.0
-            spd = t_direct / t_infer
-            println(GREEN_FG(string(" #   time      : inference (surrogate) = ", round(t_infer; sigdigits = 6),
-                                    " s | direct SEM = ", round(t_direct; sigdigits = 6),
-                                    " s | speedup = ", round(spd; sigdigits = 4),
-                                    "×   (@btime minimum, compilation excluded)")))
-        else
-            println(GREEN_FG(string(" #   time      : inference (surrogate) = ", round(t_infer; sigdigits = 6),
-                                    " s   (@btime minimum, compilation excluded)")))
-        end
-        if isfinite(t_infer_total)
-            println(GREEN_FG(string(" #   time      : EL total (assembly+inference) = ",
-                                    round(t_infer_total; sigdigits = 6),
-                                    " s   (per-element block assembly from A is one-time setup for fixed A)")))
-        end
+    println(GREEN_FG(" #   timings are @btime minima (compilation excluded); both methods split"))
+    println(GREEN_FG(" #   into one-time SETUP + repeated per-solve cost, compared like-for-like:"))
+    # ── From scratch: each method pays its one-time setup every solve ─────────
+    #    EL: block assembly + surrogate     vs    SEM: factorize + solve
+    if isfinite(t_infer_total) || isfinite(t_direct_full)
+        println(GREEN_FG(string(" #   from scratch (setup INCLUDED):  ",
+                                "EL total (assembly+infer) = ", round(t_infer_total; sigdigits = 6),
+                                " s | direct SEM (factorize+solve) = ", round(t_direct_full; sigdigits = 6),
+                                " s", _spd(t_direct_full, t_infer_total))))
+    end
+    # ── Repeated solve: one-time setup hoisted out of both ────────────────────
+    #    EL: surrogate only                 vs    SEM: back-solve (pre-factored)
+    if isfinite(t_infer) || isfinite(t_direct_solve)
+        println(GREEN_FG(string(" #   repeated solve (setup HOISTED): ",
+                                "EL inference (surrogate) = ", round(t_infer; sigdigits = 6),
+                                " s | direct SEM (back-solve) = ", round(t_direct_solve; sigdigits = 6),
+                                " s", _spd(t_direct_solve, t_infer))))
     end
     if u_direct !== nothing
         nd = _norms(u_infer, u_direct)

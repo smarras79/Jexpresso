@@ -105,32 +105,37 @@ accuracy of the inferred solution:
 
 ```
  # ================== ELEMENT-LEARNING DIAGNOSTICS ==================
- #   time      : inference (surrogate) = 0.0227 s | direct SEM = 0.0547 s | speedup = 2.41×   (@btime minimum, compilation excluded)
- #   time      : EL total (assembly+inference) = 0.116 s   (per-element block assembly from A is one-time setup for fixed A)
+ #   timings are @btime minima (compilation excluded); both methods split
+ #   into one-time SETUP + repeated per-solve cost, compared like-for-like:
+ #   from scratch (setup INCLUDED):  EL total (assembly+infer) = 0.116 s | direct SEM (factorize+solve) = 0.0547 s | speedup = 0.47×
+ #   repeated solve (setup HOISTED): EL inference (surrogate)  = 0.0227 s | direct SEM (back-solve) = 0.0031 s | speedup = 0.14×
  #   accuracy  : inference vs numerical (direct SEM)  →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : inference vs exact (manufactured)    →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : direct SEM vs exact (manufactured)   →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  # ==================================================================
 ```
+(illustrative numbers)
 
-* The **direct SEM** solve (`A \ RHS`) is the always-available numerical
-  reference; the inferred solution is compared against it for both time
-  (speedup) and accuracy.
-* The **exact (manufactured)** rows appear only when the case stores an exact
-  field `qe` (e.g. an MMS test); both the inference and the direct SEM errors
-  against it are printed so their accuracy can be compared directly.
+**Fair, symmetric timing (important).** Both methods have a one-time SETUP cost
+and a repeated per-solve cost, so they are compared at both levels:
+
+| Level | Element learning | Direct SEM | Meaning |
+|-------|------------------|------------|---------|
+| **from scratch** (setup included) | `EL total` = block assembly + surrogate | `A \ RHS` = factorize + solve | cost of a single solve done cold |
+| **repeated solve** (setup hoisted) | `inference (surrogate)` only | back-solve with a pre-computed LU factor | cost of each solve once setup is cached |
+
+The earlier versions timed the EL **surrogate** (setup excluded) against the SEM
+**full `A\RHS`** (setup *included*) — which is not symmetric and flatters EL. For
+element learning the per-element block assembly (extracting the reference-element
+operators from `A`, `elementLearning_Axb!` Sections 1–2) is the one-time setup;
+for direct SEM the sparse LU **factorization** is the one-time setup. Hoisting
+each method's setup out gives the `repeated solve` row; leaving both in gives the
+`from scratch` row. Each row's speedup is `SEM / EL`.
+
+* The **exact (manufactured)** accuracy rows appear only when the case stores an
+  exact field `qe` (e.g. an MMS test); both the inference and the direct SEM
+  errors against it are printed so their accuracy can be compared directly.
 * Norms are mass-matrix-weighted L2 (absolute + relative) and L∞.
-
-**What "inference" times (important).** The `inference (surrogate)` time measures
-**only** the surrogate step (`elementLearning_infer!`) — the per-solve cost that
-element learning actually replaces, and the fair counterpart of the direct
-`A \ RHS` solve. The **`EL total`** line additionally includes the per-element
-block assembly that extracts the reference-element operators from the sparse
-matrix `A` (`elementLearning_Axb!` Sections 1–2). For a fixed operator `A` that
-assembly is **one-time setup**, not a per-solve cost, so it is reported
-separately and NOT charged to "inference". (Timing the whole
-`elementLearning_Axb!` as "inference" is what makes EL wrongly look slower than
-the direct solve.)
 
 **Robust timing (`@btime`).** A single `@time`/`time_ns` shot is noisy — it
 captures whatever GC pause, JIT compilation, or OS hiccup happened on that one
