@@ -131,25 +131,49 @@ The learned operator is mesh-size independent: trained once on the reference ele
 is reused for every element of an arbitrarily large mesh.
 
 \section{Cost model and benchmarking}
-Both methods have a one-time, operator-dependent \emph{setup} and a repeated
-per-solve cost. They are compared symmetrically at two levels (Table~\ref{tab:cost});
-speedup is $t_{\mathrm{SEM}}/t_{\mathrm{EL}}$.
+Each method is timed at two levels (Table~\ref{tab:cost}); speedup is
+$t_{\mathrm{SEM}}/t_{\mathrm{EL}}$. Each level is a separate \texttt{@btime}
+measurement of a specific callable, so the two rows differ precisely in
+\emph{which work is inside the timed call} versus done once beforehand.
+
+\paragraph{This solve (from scratch).} The full cost of the one solve that runs.
+\emph{SEM} times \verb|A\b|, which for a sparse $A$ computes a fresh LU
+factorization and then back-substitutes on every sample. \emph{EL} times the whole
+condensation solve \verb|elementLearning_Axb!|: extract the per-element blocks
+$\{\Aoo^e,\Aob^e,\Abo^e,\Abb\}$ from the global $A$, evaluate the surrogate
+$\{T^e\}$, assemble the Schur complement $S$ \eqref{eq:schur}, solve the skeleton
+system, and recover the interiors \eqref{eq:recover}. Both include all of their
+$A$-dependent work, so this is the honest single-solve comparison.
+
+\paragraph{Amortized (setup reused).} The per-solve cost once the $A$-dependent
+setup has been done once and cached. \emph{SEM} pre-computes the factorization
+$F=\mathrm{lu}(A)$ \emph{outside} the timer and times only \verb|F\b| --- the
+triangular back-substitution alone. \emph{EL} runs \verb|elementLearning_Axb!| once
+outside the timer (which caches the extracted element blocks) and then times
+\verb|elementLearning_infer!|; this reuses the extracted blocks but still, on every
+sample, re-evaluates the surrogate, re-assembles $S$, re-solves the skeleton system,
+and recovers the interiors.
+
 \begin{table}[h]
 \centering
 \small
 \begin{tabular}{@{}lll@{}}
 \toprule
-Level & Direct SEM & Element learning \\
+Level (timed call) & Direct SEM & Element learning \\
 \midrule
-\textbf{This solve} (setup included) & factorize $A$ + back-solve & extract $\{\Aoo^e,\ldots\}$ from $A$ + surrogate \\
-\textbf{Amortized} (setup reused)    & back-solve with cached LU  & surrogate evaluation only \\
+\textbf{This solve} \verb|A\b| / \verb|Axb!| & factorize $A$ + back-solve & extract blocks + surrogate + assemble $S$ + skeleton solve + recover \\[2pt]
+\textbf{Amortized} \verb|F\b| / \verb|infer!| & back-solve, $F=\mathrm{lu}(A)$ cached & surrogate + assemble $S$ + skeleton solve + recover (blocks cached) \\
 \bottomrule
 \end{tabular}
-\caption{Like-for-like timing. For a single (time-independent) solve the ``This solve''
-row is the relevant one --- each method pays its full setup once. The ``Amortized'' row
-applies only when many solves reuse the same operator $A$ (e.g.\ time stepping or
-multiple right-hand sides): SEM then only back-substitutes with the cached factorization
-and EL only evaluates the surrogate.}
+\caption{What is inside each timed call. The two methods hoist \emph{different}
+amounts of work in the amortized row: SEM reuses the \emph{entire} factorization, so
+only the minimal right-hand-side-dependent back-substitution is timed; EL reuses
+\emph{only} the per-element block extraction, so its surrogate, Schur assembly, and
+skeleton solve are still repeated --- even though $\{T^e\}$ and $S$ depend on $A$
+alone and could themselves be cached. The EL amortized figure is therefore a
+\emph{conservative upper bound} on a fully-optimized repeated-solve cost (which would
+cache $S$ and its factorization and per-RHS only form the condensed load,
+back-solve $S$, and recover), whereas the SEM figure already attains that level.}
 \label{tab:cost}
 \end{table}
 
