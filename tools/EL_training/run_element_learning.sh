@@ -307,8 +307,11 @@ phase_infer() {
         run_case_julia
     ) 2>&1 | tee "${INFER_LOG}"
 
-    # Scrape the pure-compute solve times (JIT-excluded) from the run.
-    T_SOLVE_INFER="$(sed -nE 's/.*SOLVER TIMING \[element-learning inference\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
+    # Scrape the pure-compute solve times (JIT-excluded) from the run. For the
+    # single (time-independent) solve the honest EL cost is the full condensation
+    # solve (block-extract from A + surrogate), which pairs like-for-like with the
+    # direct SEM factorize+solve — so scrape the EL total, not the surrogate.
+    T_SOLVE_INFER="$(sed -nE 's/.*SOLVER TIMING \[element-learning total \(assembly\+infer\)\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
     T_SOLVE_DIRECT="$(sed -nE 's/.*SOLVER TIMING \[direct SEM \(Ax=b\)\]: ([0-9.eE+-]+) s.*/\1/p'        "${INFER_LOG}" | head -1)"
     rm -f "${INFER_LOG}"
     echo " # [EL pipeline] inference complete — see the case output directory."
@@ -338,10 +341,13 @@ T_ALL=$((SECONDS - _t_all))
 #   (a) full run (all phases that ran)   — pipeline wall clock
 #   (b) training only                    — phase wall clock
 #       sampling / inference phases      — phase wall clock (incl. Julia startup)
-#   (c) numerical direct SEM Ax=b solve  — pure compute, from the Julia run
-#   (d) element-learning inference solve — pure compute, from the Julia run
-# (c) and (d) are JIT-excluded solver kernel times; the phase wall clocks above
-# additionally include Julia startup, mesh read, IO, etc.
+#   (c) direct SEM (factorize+solve)      — pure compute, from the Julia run
+#   (d) element learning (block-extract+infer) — pure compute, from the Julia run
+# (c) and (d) are JIT-excluded solver kernel times for the ONE solve that runs
+# (this is a time-independent problem), compared like-for-like: each includes its
+# own A-dependent setup. The phase wall clocks above additionally include Julia
+# startup, mesh read, IO, etc. (The amortized "if reusing A" numbers — EL
+# surrogate vs SEM back-solve — are in the ELEMENT-LEARNING DIAGNOSTICS block.)
 # ─────────────────────────────────────────────────────────────────────────────
 _step "EL PIPELINE TIMING HIERARCHY"
 echo " #   (a) full run (phases that ran)      : $(_fmt_secs "${T_ALL}")   [${T_ALL}s]"
@@ -349,9 +355,9 @@ echo " #   (a) full run (phases that ran)      : $(_fmt_secs "${T_ALL}")   [${T_
 [[ ${T_TRAIN}  -ge 0 ]] && echo " #        ├─ (b) training only            : $(_fmt_secs "${T_TRAIN}")   [${T_TRAIN}s]"
 [[ ${T_INFER}  -ge 0 ]] && echo " #        └─ inference phase (wall clock) : $(_fmt_secs "${T_INFER}")   [${T_INFER}s]"
 echo " #"
-echo " #   Solver-level (pure compute, JIT-excluded; from the inference run):"
-echo " #        (c) numerical direct SEM Ax=b   : ${T_SOLVE_DIRECT:-n/a} s"
-echo " #        (d) element-learning inference  : ${T_SOLVE_INFER:-n/a} s"
+echo " #   Solver-level (pure compute, JIT-excluded; this single solve):"
+echo " #        (c) direct SEM (factorize+solve)    : ${T_SOLVE_DIRECT:-n/a} s"
+echo " #        (d) element learning (extract+infer): ${T_SOLVE_INFER:-n/a} s"
 if [[ -n "${T_SOLVE_DIRECT}" && -n "${T_SOLVE_INFER}" ]]; then
     _spd="$(awk -v c="${T_SOLVE_DIRECT}" -v d="${T_SOLVE_INFER}" 'BEGIN{ if (d>0) printf "%.4g", c/d; else printf "n/a" }')"
     echo " #        speedup (c)/(d)                 : ${_spd}×"

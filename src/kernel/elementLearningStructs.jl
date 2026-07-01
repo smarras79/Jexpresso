@@ -1334,7 +1334,13 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                 end
                 t_infer       = jx_btime_solve("element-learning inference", infer_only; seconds = el_secs)
                 t_infer_total = jx_btime_solve("element-learning total (assembly+infer)", el_solve; seconds = el_secs)
-                JX_LAST_SOLVE_TIME[] = t_infer   # EL "solve time" = the surrogate cost
+                # For a single (time-independent) solve the honest EL cost is the
+                # FULL condensation solve: the per-element block extraction from A
+                # runs on that one solve, just like SEM's factorization does. Report
+                # the total to compare_laplace_solvers, matching how SEM reports its
+                # full A\RHS. (t_infer, the surrogate alone, is the amortized cost
+                # relevant only when many solves share the same operator A.)
+                JX_LAST_SOLVE_TIME[] = t_infer_total
             catch e
                 @warn "EL diagnostics: timing failed" exception=(e, catch_backtrace())
             finally
@@ -1482,20 +1488,22 @@ function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
                  string(" | speedup = ", round(a / b; sigdigits = 4), "×") : ""
 
     println(GREEN_FG(" # ================== ELEMENT-LEARNING DIAGNOSTICS =================="))
-    println(GREEN_FG(" #   timings are @btime minima (compilation excluded); both methods split"))
-    println(GREEN_FG(" #   into one-time SETUP + repeated per-solve cost, compared like-for-like:"))
-    # ── From scratch: each method pays its one-time setup every solve ─────────
-    #    EL: block assembly + surrogate     vs    SEM: factorize + solve
+    println(GREEN_FG(" #   @btime minima (compilation excluded). The global matrix A is assembled"))
+    println(GREEN_FG(" #   once beforehand and shared by both methods (counted for neither)."))
+    # ── This solve: the full cost each method pays for the ONE solve that runs.
+    #    EL: extract per-element blocks from A + surrogate   vs   SEM: factorize A + solve.
     if isfinite(t_infer_total) || isfinite(t_direct_full)
-        println(GREEN_FG(string(" #   from scratch (setup INCLUDED):  ",
-                                "EL total (assembly+infer) = ", round(t_infer_total; sigdigits = 6),
+        println(GREEN_FG(string(" #   THIS SOLVE (single, time-independent):  ",
+                                "EL (block-extract+infer) = ", round(t_infer_total; sigdigits = 6),
                                 " s | direct SEM (factorize+solve) = ", round(t_direct_full; sigdigits = 6),
                                 " s", _spd(t_direct_full, t_infer_total))))
     end
-    # ── Repeated solve: one-time setup hoisted out of both ────────────────────
-    #    EL: surrogate only                 vs    SEM: back-solve (pre-factored)
+    # ── Amortized: only if MANY solves share the same operator A (e.g. time
+    #    stepping / multiple RHS). Each method's A-dependent setup is then done
+    #    once and reused, so the per-solve cost drops to: EL surrogate only, and
+    #    SEM back-substitution with a pre-computed LU factor.
     if isfinite(t_infer) || isfinite(t_direct_solve)
-        println(GREEN_FG(string(" #   repeated solve (setup HOISTED): ",
+        println(GREEN_FG(string(" #   amortized per solve (if reusing A):     ",
                                 "EL inference (surrogate) = ", round(t_infer; sigdigits = 6),
                                 " s | direct SEM (back-solve) = ", round(t_direct_solve; sigdigits = 6),
                                 " s", _spd(t_direct_solve, t_infer))))
