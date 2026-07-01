@@ -125,19 +125,27 @@ accuracy of the inferred solution:
 the SEM setup, before either solve, and is shared — it is counted for neither
 method. What differs is what each method does *with* `A`:
 
-| Row | Element learning | Direct SEM |
-|-----|------------------|------------|
-| **THIS SOLVE** (the one solve that actually runs) | extract per-element blocks from `A` + surrogate = the full `elementLearning_Axb!` | factorize `A` + solve = `A \ RHS` |
-| **amortized per solve** (only if many solves reuse the same `A`) | surrogate only (`elementLearning_infer!`) | back-solve with a pre-computed `lu(A)` factor |
+| Row | Timed call (Element learning) | Timed call (Direct SEM) |
+|-----|-------------------------------|-------------------------|
+| **THIS SOLVE** (the one solve that actually runs) | `elementLearning_Axb!`: extract element blocks from `A` + surrogate `{T^e}` + assemble Schur `S` + solve skeleton + recover | `A \ RHS`: factorize `A` + back-solve |
+| **amortized per solve** (only if many solves reuse the same `A`) | `elementLearning_infer!`: surrogate + assemble `S` + solve skeleton + recover (**element blocks cached**) | `F \ RHS` with `F = lu(A)` cached: **back-solve only** |
 
 Because this is a **time-independent** problem the solver runs **once**, so the
 top row (**THIS SOLVE**) is the honest comparison: each method includes its own
 `A`-dependent setup — EL's per-element block extraction (`elementLearning_Axb!`
-Sections 1–2) and SEM's sparse LU factorization. The bottom row only applies if
-you solve repeatedly with the *same* operator `A` (e.g. time-stepping or many
-right-hand sides): then each method's `A`-dependent setup is done once and reused,
-so per solve you pay only the EL surrogate / the SEM back-substitution. Each row's
-speedup is `SEM / EL` (>1 means EL is faster).
+Sections 1–2) and SEM's sparse LU factorization.
+
+The bottom row applies only if you solve repeatedly with the *same* operator `A`
+(time-stepping / many RHS). **Note the two are hoisted differently:** SEM's
+amortized call reuses the *entire* factorization, so only the minimal
+RHS-dependent back-substitution is timed; EL's amortized call reuses *only* the
+extracted element blocks — it still re-evaluates the surrogate, re-assembles `S`,
+and re-solves the skeleton system, even though `{T^e}` and `S` depend on `A` alone
+and could also be cached. So the EL amortized number is a **conservative upper
+bound**: a fully-cached repeated-solve EL would keep `S` (and its factorization)
+and per-RHS only form the condensed load, back-solve `S`, and recover — which is
+smaller. SEM's amortized number already sits at that fully-cached level. Each
+row's speedup is `SEM / EL` (>1 means EL is faster).
 
 > An earlier version timed the EL **surrogate** (block extraction excluded)
 > against the SEM **full `A\RHS`** (factorization included) — not symmetric, and
