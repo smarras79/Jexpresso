@@ -1,0 +1,166 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[hyphens]{url}
+\usepackage{hyperref}
+\usepackage{newunicodechar}
+\newunicodechar{â}{\ensuremath{\hat{a}}}
+\newunicodechar{τ}{\ensuremath{\tau}}
+\newunicodechar{Γ}{\ensuremath{\Gamma}}
+\newunicodechar{θ}{\ensuremath{\theta}}
+\newunicodechar{Ω}{\ensuremath{\Omega}}
+
+\setlength{\parskip}{2pt}
+\newcommand{\Aoo}{A_{oo}}
+\newcommand{\Aob}{A_{ob}}
+\newcommand{\Abo}{A_{bo}}
+\newcommand{\Abb}{A_{bb}}
+\newcommand{\uu}{\mathbf{u}}
+\newcommand{\ff}{\mathbf{f}}
+
+\title{\vspace{-2.5em}Element Learning for Spectral--Element Elliptic Solves:\\
+       Method and Benchmarking}
+\author{Jexpresso}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-2.5em}
+
+\section{Governing problem and discretization}
+We solve the variable--coefficient Poisson problem on a domain $\Omega\subset\mathbb{R}^2$,
+\begin{equation}
+  -\nabla\!\cdot\!\big(a(\mathbf{x})\,\nabla u\big) = f \quad\text{in }\Omega,
+  \qquad u = g \ \text{on }\partial\Omega ,
+  \label{eq:pde}
+\end{equation}
+with a continuous \emph{spectral--element method} (SEM). The mesh has $N_e$ quadrilateral
+elements; each carries a tensor--product nodal basis of degree $k$ on the
+Gauss--Lobatto--Legendre (GLL) points, i.e.\ $(k{+}1)^2$ nodes per element. Global
+assembly (direct stiffness summation) of the diffusion operator and the mass matrix
+yields the sparse linear system
+\begin{equation}
+  A\,\uu = \mathbf{b}, \qquad \mathbf{b} = M\ff ,
+  \label{eq:linsys}
+\end{equation}
+where $A$ is the SEM Laplacian/diffusion matrix, $M$ the (lumped) mass matrix, and the
+Dirichlet data $g$ has been lifted into $\mathbf{b}$. Because \eqref{eq:pde} is
+time--independent, \eqref{eq:linsys} is solved \emph{once}.
+
+\paragraph{Baseline: direct SEM solve.} The reference solver factorizes $A$ once
+(sparse LU) and back-substitutes: $\uu = A\backslash\mathbf{b}$. The factorization is the
+dominant cost; the triangular back-solve is comparatively cheap.
+
+\section{Static condensation}
+Partition the degrees of freedom into three groups: the \emph{Dirichlet} nodes
+$\Gamma$ (values $g$ known); the element \emph{interior} nodes (the $(k{-}1)^2$ nodes
+strictly inside each element, subscript $o$); and the \emph{skeleton} nodes shared
+between elements (subscript $b$, the unknown skeleton is denoted $\partial O$ and the
+full skeleton $\partial\tau=\partial O\cup\Gamma$). Interior nodes of one element are
+coupled only to that element's own skeleton, so the interior unknowns can be eliminated
+element by element. Per element $e$, with interior/boundary blocks
+$\Aoo^e,\Aob^e,\Abo^e$, define the local \emph{condensation operator} and interior load
+\begin{equation}
+  T^e = \big(\Aoo^e\big)^{-1}\Aob^e \in \mathbb{R}^{(k-1)^2\times 4k},
+  \qquad
+  t^e = \big(\Aoo^e\big)^{-1}\ff^{\,e}_o .
+  \label{eq:Te}
+\end{equation}
+Eliminating the interiors produces the condensed \emph{Schur complement} system on the
+skeleton unknowns,
+\begin{equation}
+  S\,\uu_{\partial O} = \hat{\mathbf{b}}_{\partial O},
+  \qquad
+  S = \Abb - \sum_{e} \Abo^e\,T^e,
+  \qquad
+  \hat{\mathbf{b}}_{\partial O} = \mathbf{b}_{\partial O} - \sum_e \Abo^e\,t^e
+      - S_{\partial O,\Gamma}\,g ,
+  \label{eq:schur}
+\end{equation}
+which is much smaller and better conditioned than $A$. The interior values are then
+recovered locally, in parallel over elements,
+\begin{equation}
+  \uu^{\,e}_o = t^e - T^e\,\uu^{\,e}_b .
+  \label{eq:recover}
+\end{equation}
+Equations \eqref{eq:Te}--\eqref{eq:recover} reproduce the direct solve exactly; the only
+per--element work that depends on the geometry/coefficient is forming $T^e$ (one small
+dense inverse per element).
+
+\section{Element learning}
+The key observation is that $T^e$ in \eqref{eq:Te} is a smooth function of the local
+element geometry and diffusivity alone. \emph{Element learning} replaces the per-element
+inverse by a trained neural network surrogate
+\begin{equation}
+  T^e \;\approx\; \mathcal{N}_\theta\!\big(\hat a^{\,e}\big),
+  \qquad
+  \hat a^{\,e}\in\mathbb{R}^{(k+1)^2},
+  \label{eq:surrogate}
+\end{equation}
+where the feature $\hat a^{\,e}$ is the diffusivity $a(\mathbf{x})$ sampled at the
+element's $(k{+}1)^2$ nodes (for constant $a$ a single scalar broadcast to all nodes;
+for the non-constant case a geometry-induced anisotropic $\hat a$). The network maps
+$(k{+}1)^2$ inputs to the $4k(k{-}1)^2$ entries of $\mathrm{vec}(T^e)$. Only the
+\emph{operator} $T^e$ is learned; the interior load $t^e$ in \eqref{eq:Te} is still formed
+exactly from the stored interior block and $\ff^e_o$, so the source term is never
+approximated. With $\mathcal{N}_\theta$ in hand, \eqref{eq:schur}--\eqref{eq:recover}
+proceed as before, but each $T^e$ is a forward network evaluation rather than a dense
+inverse.
+
+\paragraph{Training data.} The map \eqref{eq:surrogate} is learned \emph{offline} on a
+single reference element. Sampling runs the SEM assembly on a $1\times1$ mesh: for many
+random diffusivities $\hat a$ it computes the exact $T^e$ from \eqref{eq:Te} and stores the
+pairs $(\hat a,\,T^e)$ as \texttt{input\_tensor.csv} / \texttt{output\_tensor.csv}. The
+network (a fully connected MLP / small CNN) is trained with input and output
+standardization, then exported to ONNX so the Julia solver reads the raw feature and
+returns the raw $T^e$.
+
+\section{Offline--online pipeline}
+A single launcher automates the three stages end to end:
+\begin{enumerate}\itemsep2pt
+  \item \textbf{Sample} --- run SEM in sampling mode (\texttt{lEL\_Sample=true}) on the
+        $1\times1$ mesh $\Rightarrow$ tagged training CSVs (one pair per case).
+  \item \textbf{Train} --- the Python trainer turns the CSVs into an ONNX model
+        $\mathcal{N}_\theta$.
+  \item \textbf{Infer} --- re-run SEM in inference mode (\texttt{lEL\_Sample=false}) on the
+        real multi-element mesh, loading $\mathcal{N}_\theta$ to build every $T^e$ via
+        \eqref{eq:surrogate}, then solving \eqref{eq:schur}--\eqref{eq:recover}.
+\end{enumerate}
+The learned operator is mesh-size independent: trained once on the reference element, it
+is reused for every element of an arbitrarily large mesh.
+
+\section{Cost model and benchmarking}
+Both methods have a one-time, operator-dependent \emph{setup} and a repeated
+per-solve cost. They are compared symmetrically at two levels (Table~\ref{tab:cost});
+speedup is $t_{\mathrm{SEM}}/t_{\mathrm{EL}}$.
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Level & Direct SEM & Element learning \\
+\midrule
+\textbf{This solve} (setup included) & factorize $A$ + back-solve & extract $\{\Aoo^e,\ldots\}$ from $A$ + surrogate \\
+\textbf{Amortized} (setup reused)    & back-solve with cached LU  & surrogate evaluation only \\
+\bottomrule
+\end{tabular}
+\caption{Like-for-like timing. For a single (time-independent) solve the ``This solve''
+row is the relevant one --- each method pays its full setup once. The ``Amortized'' row
+applies only when many solves reuse the same operator $A$ (e.g.\ time stepping or
+multiple right-hand sides): SEM then only back-substitutes with the cached factorization
+and EL only evaluates the surrogate.}
+\label{tab:cost}
+\end{table}
+
+\noindent The global matrix $A$ is assembled once before either solve and shared, so it
+is counted for neither. All solver times are reported as \texttt{@btime} minima
+(BenchmarkTools: many samples, compilation excluded) so they are repeatable rather than
+a noisy single shot. Accuracy is measured in the mass-weighted $L_2$ norm
+$\|e\|_M=(\sum_i M_i e_i^2)^{1/2}$ (absolute and relative) and $L_\infty$, comparing the
+inferred solution against (i) the direct SEM solution, and (ii) the exact/manufactured
+solution $q_e$ when the case provides one. The inference run additionally writes the SEM
+and exact fields and their differences from the inferred solution into the VTU output for
+side-by-side visualization.
+
+\end{document}
