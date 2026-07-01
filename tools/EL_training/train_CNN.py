@@ -1,8 +1,19 @@
 import os
 import torch
 import torch.onnx
+import matplotlib
 import matplotlib.pyplot as plt
 from train_common_EL import get_device, setup_problem, train_and_eval
+
+# Is the active matplotlib backend interactive? When the pipeline runs headless
+# it sets MPLBACKEND=Agg (non-interactive) so training never blocks on a GUI;
+# under such a backend plt.ion()/plt.pause()/plt.show() only emit
+# "FigureCanvasAgg is non-interactive" warnings. Detect the backend once and
+# skip the interactive calls when it can't show a window — the figure is saved
+# to a PNG instead so the loss history is still captured.
+_INTERACTIVE_BACKEND = matplotlib.get_backend().lower() not in {
+    'agg', 'pdf', 'ps', 'svg', 'cairo', 'template'
+}
 
 # ─────────────────────────────────────────────
 # Configuration  (single definition of each)
@@ -55,7 +66,8 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
 # ─────────────────────────────────────────────
 # Real-time plot setup
 # ─────────────────────────────────────────────
-plt.ion()
+if _INTERACTIVE_BACKEND:
+    plt.ion()
 fig, ax = plt.subplots(figsize=(10, 6))
 line_train, = ax.plot([], [], 'b-', label='Train Loss', linewidth=1.5)
 line_test,  = ax.plot([], [], 'r-', label='Test Loss',  linewidth=1.5)
@@ -69,6 +81,10 @@ plt.tight_layout()
 
 # ── Live-plot callback — called from inside train_and_eval every epoch ───────
 def update_plot(epoch_idx, train_hist, test_hist):
+    # Live updates only make sense with an interactive backend; skip them
+    # (and the warning-emitting plt.pause) when running headless.
+    if not _INTERACTIVE_BACKEND:
+        return
     if epoch_idx % 10 == 0:
         epochs_range = list(range(len(train_hist)))
         line_train.set_data(epochs_range, train_hist)
@@ -131,7 +147,13 @@ ax.text(
     fontfamily          = 'monospace',
 )
 fig.canvas.draw()
-fig.canvas.flush_events()
+if _INTERACTIVE_BACKEND:
+    fig.canvas.flush_events()
+
+# Always persist the loss-history figure so it is captured even headless.
+plot_name = dataname + '_training.png'
+fig.savefig(plot_name, dpi=150)
+print(f"Saved training plot : {plot_name}")
 
 # ─────────────────────────────────────────────
 # ONNX export — always from CPU + best weights
@@ -162,6 +184,7 @@ print(f"Saved ONNX model : {onnx_name}  (exported from best checkpoint)")
 # ─────────────────────────────────────────────
 # Finalise plot
 # ─────────────────────────────────────────────
-plt.ioff()
-plt.show()
+if _INTERACTIVE_BACKEND:
+    plt.ioff()
+    plt.show()
 print("Done.")
