@@ -22,10 +22,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
         #:output_dir          => "/project/smarras/smarras/Jexpresso/Jexpresso/EL/",
-        #:output_dir          => "./output-RNN/",
-        :output_dir          => "./output-RFRC/",
-        #:output_dir          => "./output-RFRC-JLD2/",
-        #:output_dir          => "./output-Axb/",
+        :output_dir          => "./output-CNN/",
+        #:output_dir          => "./output-RFRC/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
