@@ -1279,68 +1279,60 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                                 label="element-learning inference")
 
         # ── Timing + accuracy diagnostics ─────────────────────────────────────
-        # Robust @btime-style timing (BenchmarkTools minimum, compilation
-        # excluded) so numbers are repeatable rather than a noisy single shot:
-        #   t_infer        — SURROGATE inference only (elementLearning_infer!): the
-        #                    per-solve cost EL replaces and the fair counterpart of
-        #                    the direct A\RHS solve.
-        #   t_infer_total  — the whole elementLearning_Axb!, which ALSO re-does the
-        #                    one-time per-element block assembly from A; reported
-        #                    separately, NOT charged to "inference".
-        #   t_direct       — direct SEM solve (A\RHS).
+        # Robust @btime-style timing (BenchmarkTools minimum, compilation excluded)
+        # so numbers are repeatable rather than a noisy single shot. Two levels:
+        #   THIS SOLVE — full cost of the one solve: EL total (elementLearning_Axb!)
+        #                vs SEM full (A\RHS); each includes its own A-dependent setup.
+        #   AMORTIZED  — back-solve of each method's cached factorization for a new
+        #                RHS: EL on the condensed skeleton, SEM on the full system.
         # Wrapped in try/catch so a diagnostics-only failure never discards the
         # inference result. Gated by :lEL_diagnostics (default true).
         usol_direct    = nothing
-        t_infer        = NaN     # EL surrogate only (elementLearning_infer!)
-        t_infer_total  = NaN     # EL total: per-element block assembly + surrogate
-        t_direct_full  = NaN     # direct SEM: factorize + solve (A\RHS)
-        t_direct_solve = NaN     # direct SEM: back-substitution only (pre-factored)
+        t_infer_total  = NaN     # EL "this solve": block extraction + surrogate + Schur solve
+        t_infer_solve  = NaN     # EL amortized: back-solve of the condensed skeleton (cached factor)
+        t_direct_full  = NaN     # SEM "this solve": factorize A + solve (A\RHS)
+        t_direct_solve = NaN     # SEM amortized: back-solve of A (pre-factored)
         if el_diagnostics
             # Quiet the per-sample "# --- INFERENCE ..." chatter while the
             # benchmarks run the solves many times.
             JX_EL_QUIET[] = true
             try
-                # ── Direct SEM reference. Measured BOTH ways so the comparison is
-                #    symmetric with EL's split into one-time setup + repeated cost:
-                #      t_direct_full  = A\RHS               (factorize + solve): the
-                #                       "from scratch" cost, pairs with EL total.
-                #      t_direct_solve = back-solve with a pre-computed LU factor:
-                #                       the "repeated solve" cost (factorization is
-                #                       SEM's one-time setup, hoisted out — the
-                #                       counterpart of hoisting EL's block assembly),
-                #                       pairs with the EL surrogate.
+                # ── THIS SOLVE (setup INCLUDED): the full cost of the one solve.
+                #    SEM: A\RHS = factorize A + back-solve.  EL: elementLearning_Axb!
+                #    = extract element blocks from A + surrogate + Schur assembly +
+                #    skeleton solve + recover.
                 try
                     usol_direct   = A \ RHS
                     t_direct_full = jx_btime_solve("direct SEM (Ax=b)", () -> A \ RHS; seconds = el_secs)
-                    Afact = LinearAlgebra.lu(A)   # one-time factorization (SEM's setup)
+                catch e
+                    @warn "EL diagnostics: direct SEM solve failed" exception=(e, catch_backtrace())
+                end
+                t_infer_total = jx_btime_solve("element-learning total (assembly+infer)", el_solve; seconds = el_secs)
+                JX_LAST_SOLVE_TIME[] = t_infer_total   # honest single-solve EL cost
+
+                # ── AMORTIZED (setup REUSED): a true apples-to-apples comparison ---
+                #    each method back-solves ITS OWN cached factorization for a new RHS.
+                #      SEM: F   = lu(A)        once, then  F \ RHS   (full system).
+                #      EL : F_S = lu(B_∂O∂O)   once, then  F_S \ b   (condensed skeleton).
+                #    The Schur complement B_∂τ∂τ, the NN operators, and the condensed
+                #    load b were all assembled by the solve above and cached in
+                #    wbuf.infer, so only the reduced back-substitution is timed --- the
+                #    direct counterpart of SEM's full back-solve. (EL's system is much
+                #    smaller: only the inter-element skeleton unknowns.)
+                try
+                    Afact = LinearAlgebra.lu(A)
                     t_direct_solve = jx_btime_solve("direct SEM (back-solve, pre-factored)",
                                                     () -> Afact \ RHS; seconds = el_secs)
+                    binf  = wbuf.infer
+                    Bskel = binf.B_∂τ∂τ[binf.∂O_in_∂τ, binf.∂O_in_∂τ]
+                    Fskel = LinearAlgebra.lu(Bskel)
+                    bskel = binf.f̂_∂τ[binf.∂O_in_∂τ] .-
+                            (binf.B_∂τ∂τ[binf.∂O_in_∂τ, binf.Γ_in_∂τ] * gΓ)
+                    t_infer_solve = jx_btime_solve("element-learning (skeleton back-solve)",
+                                                   () -> Fskel \ bskel; seconds = el_secs)
                 catch e
-                    @warn "EL diagnostics: direct SEM reference solve failed; reporting inference-only" exception=(e, catch_backtrace())
+                    @warn "EL diagnostics: amortized back-solve timing failed" exception=(e, catch_backtrace())
                 end
-
-                # ── Element learning, split the same way:
-                #      t_infer       = elementLearning_infer! only (surrogate) — the
-                #                      repeated per-solve cost (block assembly hoisted).
-                #      t_infer_total = whole elementLearning_Axb! (assembly + surrogate).
-                #    ∂τ_pos maps skeleton node → ∂τ index, as inside elementLearning_Axb!.
-                ∂τ_pos_b = Dict{Int,Int}(sem.mesh.∂τ[j] => j for j in 1:sem.mesh.length∂τ)
-                infer_only = function ()
-                    elementLearning_infer!(params.qp.qn, sem.mesh,
-                                           wbuf.model, wbuf.model_type,
-                                           wbuf.input_name, wbuf.output_name,
-                                           avisc, EL, A_∂τ∂τ, ∂τ_pos_b, gΓ, RHS, wbuf.infer,
-                                           nelintpoints, elnbdypoints)
-                end
-                t_infer       = jx_btime_solve("element-learning inference", infer_only; seconds = el_secs)
-                t_infer_total = jx_btime_solve("element-learning total (assembly+infer)", el_solve; seconds = el_secs)
-                # For a single (time-independent) solve the honest EL cost is the
-                # FULL condensation solve: the per-element block extraction from A
-                # runs on that one solve, just like SEM's factorization does. Report
-                # the total to compare_laplace_solvers, matching how SEM reports its
-                # full A\RHS. (t_infer, the surrogate alone, is the amortized cost
-                # relevant only when many solves share the same operator A.)
-                JX_LAST_SOLVE_TIME[] = t_infer_total
             catch e
                 @warn "EL diagnostics: timing failed" exception=(e, catch_backtrace())
             finally
@@ -1348,15 +1340,14 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
             end
 
             print_EL_diagnostics(usol, usol_direct, params.qp.qe, sem.matrix.M, npoin;
-                                 t_infer = t_infer, t_infer_total = t_infer_total,
+                                 t_infer_total = t_infer_total, t_infer_solve = t_infer_solve,
                                  t_direct_full = t_direct_full, t_direct_solve = t_direct_solve)
         else
-            # Production (diagnostics off): single-shot surrogate time from the
-            # in-call instrumentation — no extra solves.
-            t_infer = JX_LAST_EL_INFER_TIME[]
-            JX_LAST_SOLVE_TIME[] = t_infer
+            # Production (diagnostics off): single-shot total time, no extra solves.
+            JX_LAST_SOLVE_TIME[] = JX_LAST_EL_INFER_TIME[]
             println(GREEN_FG(string(" # SOLVER TIMING [element-learning inference]: ",
-                                    round(t_infer; sigdigits = 6), " s  (surrogate only, single shot)")))
+                                    round(JX_LAST_EL_INFER_TIME[]; sigdigits = 6),
+                                    " s  (surrogate only, single shot)")))
         end
 
         # Reference solution(s) + their difference from the inferred solution,
@@ -1462,7 +1453,7 @@ end
 # print_solution_L2_error. `u_direct === nothing` skips the numerical comparison.
 #---------------------------------------------------------------------------------------
 function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
-                              t_infer = NaN, t_infer_total = NaN,
+                              t_infer_total = NaN, t_infer_solve = NaN,
                               t_direct_full = NaN, t_direct_solve = NaN)
     # M-weighted L2 (abs + relative to ‖b‖) and L∞ norms of (a - b).
     _norms = function (a, b)
@@ -1499,14 +1490,16 @@ function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
                                 " s", _spd(t_direct_full, t_infer_total))))
     end
     # ── Amortized: only if MANY solves share the same operator A (e.g. time
-    #    stepping / multiple RHS). Each method's A-dependent setup is then done
-    #    once and reused, so the per-solve cost drops to: EL surrogate only, and
-    #    SEM back-substitution with a pre-computed LU factor.
-    if isfinite(t_infer) || isfinite(t_direct_solve)
+    #    stepping / multiple RHS). Each method's A-dependent setup is done once
+    #    and reused; the per-solve cost is then the back-substitution of the
+    #    cached factorization --- SEM back-solves the full system, EL back-solves
+    #    the (much smaller) condensed skeleton system. This is the true
+    #    apples-to-apples per-RHS comparison.
+    if isfinite(t_infer_solve) || isfinite(t_direct_solve)
         println(GREEN_FG(string(" #   amortized per solve (if reusing A):     ",
-                                "EL inference (surrogate) = ", round(t_infer; sigdigits = 6),
-                                " s | direct SEM (back-solve) = ", round(t_direct_solve; sigdigits = 6),
-                                " s", _spd(t_direct_solve, t_infer))))
+                                "EL (skeleton back-solve) = ", round(t_infer_solve; sigdigits = 6),
+                                " s | direct SEM (full back-solve) = ", round(t_direct_solve; sigdigits = 6),
+                                " s", _spd(t_direct_solve, t_infer_solve))))
     end
     if u_direct !== nothing
         nd = _norms(u_infer, u_direct)

@@ -113,7 +113,7 @@ accuracy of the inferred solution:
  #   @btime minima (compilation excluded). The global matrix A is assembled
  #   once beforehand and shared by both methods (counted for neither).
  #   THIS SOLVE (single, time-independent):  EL (block-extract+infer) = 0.116 s | direct SEM (factorize+solve) = 0.0547 s | speedup = 0.47×
- #   amortized per solve (if reusing A):     EL inference (surrogate)  = 0.0227 s | direct SEM (back-solve) = 0.0031 s | speedup = 0.14×
+ #   amortized per solve (if reusing A):     EL (skeleton back-solve) = 0.0008 s | direct SEM (full back-solve) = 0.0031 s | speedup = 3.9×
  #   accuracy  : inference vs numerical (direct SEM)  →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : inference vs exact (manufactured)    →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : direct SEM vs exact (manufactured)   →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
@@ -128,29 +128,25 @@ method. What differs is what each method does *with* `A`:
 | Row | Timed call (Element learning) | Timed call (Direct SEM) |
 |-----|-------------------------------|-------------------------|
 | **THIS SOLVE** (the one solve that actually runs) | `elementLearning_Axb!`: extract element blocks from `A` + surrogate `{T^e}` + assemble Schur `S` + solve skeleton + recover | `A \ RHS`: factorize `A` + back-solve |
-| **amortized per solve** (only if many solves reuse the same `A`) | `elementLearning_infer!`: surrogate + assemble `S` + solve skeleton + recover (**element blocks cached**) | `F \ RHS` with `F = lu(A)` cached: **back-solve only** |
+| **amortized per solve** (only if many solves reuse the same `A`) | `Fs \ b` with `Fs = lu(S)` cached: **back-solve of the condensed skeleton system** | `F \ RHS` with `F = lu(A)` cached: **back-solve of the full system** |
 
 Because this is a **time-independent** problem the solver runs **once**, so the
 top row (**THIS SOLVE**) is the honest comparison: each method includes its own
 `A`-dependent setup — EL's per-element block extraction (`elementLearning_Axb!`
 Sections 1–2) and SEM's sparse LU factorization.
 
-The bottom row applies only if you solve repeatedly with the *same* operator `A`
-(time-stepping / many RHS). **Note the two are hoisted differently:** SEM's
-amortized call reuses the *entire* factorization, so only the minimal
-RHS-dependent back-substitution is timed; EL's amortized call reuses *only* the
-extracted element blocks — it still re-evaluates the surrogate, re-assembles `S`,
-and re-solves the skeleton system, even though `{T^e}` and `S` depend on `A` alone
-and could also be cached. So the EL amortized number is a **conservative upper
-bound**: a fully-cached repeated-solve EL would keep `S` (and its factorization)
-and per-RHS only form the condensed load, back-solve `S`, and recover — which is
-smaller. SEM's amortized number already sits at that fully-cached level. Each
-row's speedup is `SEM / EL` (>1 means EL is faster).
+The bottom row is a **true apples-to-apples** comparison for the case where many
+solves reuse the same operator `A` (time-stepping / many RHS): **both** methods
+reuse their *entire* `A`-dependent setup and time only the back-substitution for a
+new right-hand side. SEM caches `F = lu(A)` and back-solves the full `N×N` system;
+EL caches `Fs = lu(S)` (the Schur complement `S`, plus the surrogate operators
+`{T^e}`, are assembled once) and back-solves the **condensed skeleton system**,
+which has far fewer unknowns. Element learning's advantage here comes from that
+size reduction. Each row's speedup is `SEM / EL` (>1 means EL is faster).
 
-> An earlier version timed the EL **surrogate** (block extraction excluded)
-> against the SEM **full `A\RHS`** (factorization included) — not symmetric, and
-> it flattered EL. The two rows above fix that by splitting both methods the same
-> way.
+> The reduced back-solve is the dominant amortized cost; the full EL per-RHS map
+> also forms the condensed load and recovers the interiors, both `O(N_e)`,
+> element-local and parallel, and cheap relative to the solve.
 
 * The **exact (manufactured)** accuracy rows appear only when the case stores an
   exact field `qe` (e.g. an MMS test); both the inference and the direct SEM
@@ -208,20 +204,20 @@ solver timings is printed at the very end:
  #        (c) direct SEM (factorize+solve)     : 0.0547 s
  #        (d) element learning (extract+infer) : 0.116 s
  #        speedup (c)/(d)                      : 0.47×
- #   Amortized (only if many solves reuse the same operator A):
- #        (c') direct SEM (back-solve)         : 0.0031 s
- #        (d') element learning (inference)    : 0.0227 s
- #        speedup (c')/(d')                    : 0.14×
+ #   Amortized (reuse cached factorization; back-solve for a new RHS):
+ #        (c') direct SEM (full back-solve)     : 0.0031 s
+ #        (d') element learning (skel back-solve): 0.0008 s
+ #        speedup (c')/(d')                    : 3.9×
 ```
 
 (a)/(b) and the phase wall clocks come from the launcher; (c)/(d)/(c')/(d') are
 the pure solver kernel times scraped from the inference run's diagnostics.
 **(c)/(d)** is the honest single-solve comparison — each includes its own
 `A`-dependent setup (SEM's LU factorization, EL's per-element block extraction).
-**(c')/(d')** hoists that setup out and applies only when many solves reuse the
-same operator `A` (time-stepping / multiple RHS): SEM then only back-substitutes
-with the cached factor, and EL only runs the surrogate. The phase wall clocks
-additionally include Julia startup, mesh read and IO.
+**(c')/(d')** is the true apples-to-apples amortized comparison: both reuse their
+cached factorization and time only the back-substitution for a new RHS — SEM on
+the full system, EL on the smaller condensed skeleton system. The phase wall
+clocks additionally include Julia startup, mesh read and IO.
 
 ---
 

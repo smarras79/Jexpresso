@@ -317,8 +317,9 @@ phase_infer() {
     # direct SEM factorize+solve — so scrape the EL total, not the surrogate.
     T_SOLVE_INFER="$(sed -nE 's/.*SOLVER TIMING \[element-learning total \(assembly\+infer\)\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
     T_SOLVE_DIRECT="$(sed -nE 's/.*SOLVER TIMING \[direct SEM \(Ax=b\)\]: ([0-9.eE+-]+) s.*/\1/p'        "${INFER_LOG}" | head -1)"
-    # Amortized-scenario times: EL surrogate (inference only) and SEM back-solve.
-    T_SOLVE_INFER_ONLY="$(sed -nE 's/.*SOLVER TIMING \[element-learning inference\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
+    # Amortized-scenario times (back-solve of each method's cached factorization):
+    # EL back-solves the condensed skeleton system, SEM the full system.
+    T_SOLVE_INFER_ONLY="$(sed -nE 's/.*SOLVER TIMING \[element-learning \(skeleton back-solve\)\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
     T_SOLVE_DIRECT_BACK="$(sed -nE 's/.*SOLVER TIMING \[direct SEM \(back-solve, pre-factored\)\]: ([0-9.eE+-]+) s.*/\1/p' "${INFER_LOG}" | head -1)"
     rm -f "${INFER_LOG}"
     echo " # [EL pipeline] inference complete — see the case output directory."
@@ -373,9 +374,9 @@ if [[ -n "${T_SOLVE_DIRECT}" && -n "${T_SOLVE_INFER}" ]]; then
     _spd="$(awk -v c="${T_SOLVE_DIRECT}" -v d="${T_SOLVE_INFER}" 'BEGIN{ if (d>0) printf "%.4g", c/d; else printf "n/a" }')"
     echo " #        speedup (c)/(d)                      : ${_spd}×"
 fi
-echo " #   Amortized (only if many solves reuse the same operator A):"
-echo " #        (c') direct SEM (back-solve)         : ${T_SOLVE_DIRECT_BACK:-n/a} s"
-echo " #        (d') element learning (inference)    : ${T_SOLVE_INFER_ONLY:-n/a} s"
+echo " #   Amortized (reuse cached factorization; back-solve for a new RHS):"
+echo " #        (c') direct SEM (full back-solve)     : ${T_SOLVE_DIRECT_BACK:-n/a} s"
+echo " #        (d') element learning (skel back-solve): ${T_SOLVE_INFER_ONLY:-n/a} s"
 if [[ -n "${T_SOLVE_DIRECT_BACK}" && -n "${T_SOLVE_INFER_ONLY}" ]]; then
     _spd2="$(awk -v c="${T_SOLVE_DIRECT_BACK}" -v d="${T_SOLVE_INFER_ONLY}" 'BEGIN{ if (d>0) printf "%.4g", c/d; else printf "n/a" }')"
     echo " #        speedup (c')/(d')                    : ${_spd2}×"
