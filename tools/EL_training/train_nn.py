@@ -37,10 +37,18 @@ sys.path.insert(0, os.getcwd())
 import torch
 import torch.nn as nn
 import torch.onnx
+import matplotlib
 import matplotlib.pyplot as plt
 from torch.utils.data import TensorDataset, DataLoader
 
 from train_common_EL import get_device, setup_problem, train_and_eval
+
+# Skip interactive plotting calls under a non-interactive backend (e.g. the
+# MPLBACKEND=Agg the headless pipeline sets), which would otherwise warn
+# "FigureCanvasAgg is non-interactive". The figure is still saved to a PNG.
+_INTERACTIVE_BACKEND = matplotlib.get_backend().lower() not in {
+    'agg', 'pdf', 'ps', 'svg', 'cairo', 'template'
+}
 
 # ─────────────────────────────────────────────
 # Configuration
@@ -117,7 +125,8 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
 # ─────────────────────────────────────────────
 # Real-time plot
 # ─────────────────────────────────────────────
-plt.ion()
+if _INTERACTIVE_BACKEND:
+    plt.ion()
 fig, ax = plt.subplots(figsize=(10, 6))
 line_train, = ax.plot([], [], 'b-', label='Train Loss', linewidth=1.5)
 line_test,  = ax.plot([], [], 'r-', label='Test Loss',  linewidth=1.5)
@@ -127,6 +136,8 @@ ax.legend(); ax.grid(True, which="both", ls="-", alpha=0.3)
 plt.tight_layout()
 
 def update_plot(epoch_idx, train_hist, test_hist):
+    if not _INTERACTIVE_BACKEND:
+        return
     if epoch_idx % 10 == 0:
         r = list(range(len(train_hist)))
         line_train.set_data(r, train_hist); line_test.set_data(r, test_hist)
@@ -166,7 +177,14 @@ ax.text(0.98, 0.97,
         transform=ax.transAxes, fontsize=9, va='top', ha='right',
         bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.8, edgecolor='gray'),
         fontfamily='monospace')
-fig.canvas.draw(); fig.canvas.flush_events()
+fig.canvas.draw()
+if _INTERACTIVE_BACKEND:
+    fig.canvas.flush_events()
+
+# Always persist the loss-history figure so it is captured even headless.
+plot_name = dataname + '_training.png'
+fig.savefig(plot_name, dpi=150)
+print(f"Saved training plot : {plot_name}")
 
 # ─────────────────────────────────────────────
 # ONNX export — bake standardisation IN/OUT so Julia feeds raw â, reads raw T^ie
@@ -201,4 +219,6 @@ torch.onnx.export(
 print(f"Saved ONNX model : {onnx_name}  "
       f"(standardisation {'baked in' if standardize else 'disabled'})")
 
-plt.ioff(); plt.show(); print("Done.")
+if _INTERACTIVE_BACKEND:
+    plt.ioff(); plt.show()
+print("Done.")

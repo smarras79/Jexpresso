@@ -37,3 +37,4 @@ JX_NN*.onnx
 tools/EL_training/*.onnx
 tools/EL_training/*.pth
 tools/EL_training/*.mat
+tools/EL_training/*_training.png
