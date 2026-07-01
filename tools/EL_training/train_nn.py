@@ -45,9 +45,11 @@ from train_common_EL import get_device, setup_problem, train_and_eval
 # ─────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────
-inputfile      = 'input_tensor.csv'
-outputfile     = 'output_tensor.csv'
-dataname       = 'JX_NN'
+# Tensor filenames / model basename are env-overridable so the pipeline can tag
+# them per test/grid (see tools/EL_training/run_element_learning.sh).
+inputfile      = os.environ.get('EL_INPUT_TENSOR',  'input_tensor.csv')
+outputfile     = os.environ.get('EL_OUTPUT_TENSOR', 'output_tensor.csv')
+dataname       = os.environ.get('EL_DATANAME',      'JX_NN')
 
 num_epochs          = 2000
 b_size              = 256

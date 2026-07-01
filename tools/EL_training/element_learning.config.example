@@ -1,0 +1,67 @@
+# =============================================================================
+#  element_learning.config  —  settings for run_element_learning.sh
+# =============================================================================
+#
+#  Copy this file to  tools/EL_training/element_learning.config  (which the
+#  driver loads automatically) or pass it with  --config <file>, then edit the
+#  values you need. Anything left commented uses the driver's built-in default,
+#  which already targets the elementLearning_hole benchmark.
+#
+#  Precedence:  environment variable  >  this file  >  built-in default.
+#  Every line uses the `: "${VAR:=...}"` form so a value exported in the
+#  environment is never overwritten by this file.
+# =============================================================================
+
+# ── Case (problems/<EQ>/<CASE>) ──────────────────────────────────────────────
+: "${EQ:=Elliptic}"
+: "${CASE:=elementLearning_hole}"
+
+# ── Per-test tag ─────────────────────────────────────────────────────────────
+# Tags the sampled tensors and the trained model so different tests / grids do
+# not overwrite each other. Defaults to a sanitised "<EQ>_<CASE>". Set it
+# explicitly (e.g. add the polynomial order) if you run one case at several
+# resolutions, e.g.  EL_TAG=elementLearning_hole_nop6
+#: "${EL_TAG:=elementLearning_hole}"
+
+# ── Meshes ───────────────────────────────────────────────────────────────────
+# Phase 1 samples the reference-element operator from a single (1x1) element.
+: "${EL_SAMPLE_MESH:=./meshes/gmsh_grids/square_dirichletT_1x1.msh}"
+# Phase 3 runs inference on the real multi-element mesh. Leave EMPTY to keep the
+# :gmsh_filename already set in the case's user_inputs.jl (the hole benchmark
+# uses plate_hole_circle_unit.msh).
+: "${EL_INFER_MESH:=}"
+
+# ── Sampling draws (empty → use the case's :Nsamp) ───────────────────────────
+# The benchmark's user_inputs.jl sets :Nsamp => 50000; lower this for a quick
+# smoke test, e.g. NSAMP=2000.
+: "${NSAMP:=}"
+
+# ── Tagged tensor + model filenames ──────────────────────────────────────────
+# Sensible defaults are derived from EL_TAG; override only if you want custom
+# names. The sampler writes the tensors; the trainer reads them and writes
+# "<EL_DATANAME>_model.onnx", which the driver copies to NNFILE for inference.
+#: "${EL_INPUT_TENSOR:=input_tensor_${EL_TAG}.csv}"
+#: "${EL_OUTPUT_TENSOR:=output_tensor_${EL_TAG}.csv}"
+#: "${EL_DATANAME:=JX_NN_${EL_TAG}}"
+#: "${NNFILE:=${EL_DATANAME}_model.onnx}"
+
+# ── Python trainer ───────────────────────────────────────────────────────────
+# The trainer runs in TRAIN_DIR (its CWD); the driver stages the two CSVs there
+# and copies the exported ONNX back to the repo root. The default is the
+# SELF-CONTAINED in-repo trainer (tools/EL_training ships train_CNN.py and all
+# of its dependencies), so the pipeline works out of the box.
+#
+# To use your own external trainer (e.g. an EL_Jexpresso directory) uncomment:
+#   : "${TRAIN_DIR:=${REPO_ROOT}/../EL_Jexpresso}"
+: "${TRAIN_DIR:=${REPO_ROOT}/tools/EL_training}"
+: "${TRAIN_CMD:=python train_CNN.py}"
+: "${TRAIN_ONNX:=${NNFILE}}"          # model file the trainer writes in TRAIN_DIR
+
+# Requirements for the trainer (install once):
+#   pip install torch scikit-learn scipy matplotlib onnx
+
+# ── Julia launch ─────────────────────────────────────────────────────────────
+: "${JULIA:=julia}"
+: "${JULIA_PROJECT:=.}"
+: "${NPROCS:=1}"                      # >1 → run under: mpiexec -n NPROCS
+: "${MPIEXEC:=mpiexec}"

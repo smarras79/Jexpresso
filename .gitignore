@@ -24,3 +24,16 @@ docs/*.synctex.gz
 # Python bytecode caches
 __pycache__/
 *.pyc
+
+# Element-Learning pipeline (tools/EL_training/run_element_learning.sh)
+tools/EL_training/element_learning.config
+# Sampled tensors (optionally tagged per test: input_tensor_<tag>.csv)
+input_tensor*.csv
+output_tensor*.csv
+tools/EL_training/input_tensor*.csv
+tools/EL_training/output_tensor*.csv
+# Trained-model artifacts produced by the pipeline / trainers
+JX_NN*.onnx
+tools/EL_training/*.onnx
+tools/EL_training/*.pth
+tools/EL_training/*.mat

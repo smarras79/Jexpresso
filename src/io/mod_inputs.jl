@@ -4,10 +4,29 @@ using PrettyTables
 function mod_inputs_user_inputs!(inputs, rank = 0)
 
     error_flag::Int8 = 0
-    
+
     #Store parsed arguments xxx into inputs[:xxx]
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
-    
+
+    #---------------------------------------------------------------------------
+    # Element-Learning pipeline overrides (JEXPRESSO_EL_* environment variables).
+    #
+    # The automated element-learning pipeline (tools/EL_training/run_element_learning.sh)
+    # drives the SAME case through two SEM passes in separate Julia processes:
+    #
+    #   Phase 1 (sample)     JEXPRESSO_EL_SAMPLE=true   + the 1x1 (single-element) mesh
+    #                        → writes input_tensor.csv / output_tensor.csv
+    #   Phase 3 (inference)  JEXPRESSO_EL_SAMPLE=false  + the NxN (multi-element) mesh
+    #                        → loads the trained :NNfile and writes the solution
+    #
+    # Reading these knobs from the environment lets the launcher flip lEL_Sample,
+    # the mesh, the model file and the output directory per phase WITHOUT editing
+    # (and re-committing) the case's user_inputs.jl. Any variable that is unset or
+    # empty leaves the user_inputs.jl value untouched, so a plain `run_case` is
+    # completely unaffected.
+    #---------------------------------------------------------------------------
+    _el_env_override!(inputs, rank)
+
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
     if rank == 0
         # Wrap long values across multiple lines so nothing is cropped — the
@@ -1047,4 +1066,70 @@ function mod_inputs_print_welcome(rank = 0)
         print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
     end
 
+end
+
+#---------------------------------------------------------------------------
+# Element-Learning pipeline: apply JEXPRESSO_EL_* environment overrides.
+#
+# Used by the automated pipeline (tools/EL_training/run_element_learning.sh) to
+# drive one case through its sampling and inference phases without editing
+# user_inputs.jl. Each variable is optional; an unset/empty value is ignored.
+#
+#   JEXPRESSO_EL_SAMPLE      "true"/"false"  → inputs[:lEL_Sample]
+#   JEXPRESSO_EL_MESH        path            → inputs[:gmsh_filename]
+#   JEXPRESSO_EL_NNFILE      path            → inputs[:NNfile]
+#   JEXPRESSO_EL_OUTPUT_DIR  path            → inputs[:output_dir]
+#   JEXPRESSO_EL_NSAMP       integer         → inputs[:Nsamp]
+#   JEXPRESSO_EL_TAG         string          → inputs[:EL_tensor_tag]
+#                                              (tags the input/output CSV names)
+#---------------------------------------------------------------------------
+function _el_env_override!(inputs, rank = 0)
+    _getenv(name) = (v = strip(get(ENV, name, "")); isempty(v) ? nothing : String(v))
+    _note(msg)    = rank == 0 && print(GREEN_FG(string(" # [EL pipeline] ", msg, "\n")))
+
+    if (v = _getenv("JEXPRESSO_EL_SAMPLE")) !== nothing
+        lv = lowercase(v)
+        if lv in ("true", "1", "yes", "on")
+            inputs[:lEL_Sample] = true
+            _note("JEXPRESSO_EL_SAMPLE → :lEL_Sample = true (sampling phase)")
+        elseif lv in ("false", "0", "no", "off")
+            inputs[:lEL_Sample] = false
+            _note("JEXPRESSO_EL_SAMPLE → :lEL_Sample = false (inference phase)")
+        else
+            @warn "Ignoring unrecognised JEXPRESSO_EL_SAMPLE value (use true/false)" value=v
+        end
+    end
+
+    if (v = _getenv("JEXPRESSO_EL_MESH")) !== nothing
+        inputs[:gmsh_filename] = v
+        _note(string("JEXPRESSO_EL_MESH → :gmsh_filename = ", v))
+    end
+
+    if (v = _getenv("JEXPRESSO_EL_NNFILE")) !== nothing
+        inputs[:NNfile] = v
+        _note(string("JEXPRESSO_EL_NNFILE → :NNfile = ", v))
+    end
+
+    if (v = _getenv("JEXPRESSO_EL_OUTPUT_DIR")) !== nothing
+        inputs[:output_dir] = v
+        _note(string("JEXPRESSO_EL_OUTPUT_DIR → :output_dir = ", v))
+    end
+
+    if (v = _getenv("JEXPRESSO_EL_NSAMP")) !== nothing
+        n = tryparse(Int, v)
+        if n === nothing
+            @warn "Ignoring non-integer JEXPRESSO_EL_NSAMP" value=v
+        else
+            inputs[:Nsamp] = n
+            _note(string("JEXPRESSO_EL_NSAMP → :Nsamp = ", n))
+        end
+    end
+
+    if (v = _getenv("JEXPRESSO_EL_TAG")) !== nothing
+        inputs[:EL_tensor_tag] = v
+        _note(string("JEXPRESSO_EL_TAG → :EL_tensor_tag = ", v,
+                     "  (tensors: input_tensor_", v, ".csv / output_tensor_", v, ".csv)"))
+    end
+
+    return inputs
 end

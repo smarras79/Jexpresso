@@ -1026,8 +1026,20 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         total_cols_writtenin  = 0
         total_cols_writtenout = 0
 
-        if isfile("input_tensor.csv");  rm("input_tensor.csv");  end
-        if isfile("output_tensor.csv"); rm("output_tensor.csv"); end
+        # Per-test tensor filenames. A non-empty :EL_tensor_tag (set by the
+        # pipeline from the case/grid via JEXPRESSO_EL_TAG) tags the CSVs so
+        # that samples from different tests / grids never overwrite one another;
+        # the trainer is told the same names. An empty tag reproduces the
+        # historical defaults input_tensor.csv / output_tensor.csv.
+        el_tag        = string(get(inputs, :EL_tensor_tag, ""))
+        el_input_csv  = isempty(el_tag) ? "input_tensor.csv"  : string("input_tensor_",  el_tag, ".csv")
+        el_output_csv = isempty(el_tag) ? "output_tensor.csv" : string("output_tensor_", el_tag, ".csv")
+        if rank == 0 && !isempty(el_tag)
+            println(BLUE_FG(string(" # EL SAMPLING → ", el_input_csv, " , ", el_output_csv)))
+        end
+
+        if isfile(el_input_csv);  rm(el_input_csv);  end
+        if isfile(el_output_csv); rm(el_output_csv); end
 
         # =====================================================================
         # NON-CONSTANT DIFFUSIVITY (Option 1: synthesized random Jacobians).
@@ -1053,8 +1065,8 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                                                 elnbdypoints=elnbdypoints,
                                                 shape=sample_shape,
                                                 ξnodes=sem.ξ)
-            total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
-            total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
+            total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  el_input_csv)
+            total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, el_output_csv)
             if rank == 0
                 println(BLUE_FG(string(" # EL SAMPLING — NON-CONSTANT DIFFUSIVITY: ",
                                        inputs[:Nsamp], " samples, feature=3·(k+1)²=",
@@ -1129,8 +1141,8 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                                  total_cols_writtenout=total_cols_writtenout)
         end # isamp loop
 
-        total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  "input_tensor.csv")
-        total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, "output_tensor.csv")
+        total_cols_writtenin  = flush_MLtensor!(bufferin,  total_cols_writtenin,  el_input_csv)
+        total_cols_writtenout = flush_MLtensor!(bufferout, total_cols_writtenout, el_output_csv)
 
         if rank == 0 println(BLUE_FG(" # EL SAMPLING .......... DONE")) end
 
