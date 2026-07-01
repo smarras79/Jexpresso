@@ -1082,8 +1082,9 @@ end
 #   JEXPRESSO_EL_NSAMP         integer       → inputs[:Nsamp]
 #   JEXPRESSO_EL_TAG           string        → inputs[:EL_tensor_tag]
 #                                              (tags the input/output CSV names)
-#   JEXPRESSO_EL_DIAGNOSTICS   "true"/"false"→ inputs[:lEL_diagnostics]
-#   JEXPRESSO_EL_TIMING_REPS   integer       → inputs[:EL_timing_reps]
+#   JEXPRESSO_EL_DIAGNOSTICS    "true"/"false"→ inputs[:lEL_diagnostics]
+#   JEXPRESSO_EL_TIMING_SECONDS number        → inputs[:EL_timing_seconds]
+#                                               (BenchmarkTools time budget/solve)
 #---------------------------------------------------------------------------
 function _el_env_override!(inputs, rank = 0)
     _getenv(name) = (v = strip(get(ENV, name, "")); isempty(v) ? nothing : String(v))
@@ -1146,13 +1147,13 @@ function _el_env_override!(inputs, rank = 0)
         end
     end
 
-    if (v = _getenv("JEXPRESSO_EL_TIMING_REPS")) !== nothing
-        n = tryparse(Int, v)
-        if n === nothing
-            @warn "Ignoring non-integer JEXPRESSO_EL_TIMING_REPS" value=v
+    if (v = _getenv("JEXPRESSO_EL_TIMING_SECONDS")) !== nothing
+        s = tryparse(Float64, v)
+        if s === nothing
+            @warn "Ignoring non-numeric JEXPRESSO_EL_TIMING_SECONDS" value=v
         else
-            inputs[:EL_timing_reps] = n
-            _note(string("JEXPRESSO_EL_TIMING_REPS → :EL_timing_reps = ", n))
+            inputs[:EL_timing_seconds] = s
+            _note(string("JEXPRESSO_EL_TIMING_SECONDS → :EL_timing_seconds = ", s))
         end
     end
 

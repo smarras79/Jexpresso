@@ -105,7 +105,7 @@ accuracy of the inferred solution:
 
 ```
  # ================== ELEMENT-LEARNING DIAGNOSTICS ==================
- #   time      : inference (surrogate) = 0.0227 s | direct SEM = 0.0547 s | speedup = 2.41×   (fastest warm run, JIT excluded)
+ #   time      : inference (surrogate) = 0.0227 s | direct SEM = 0.0547 s | speedup = 2.41×   (@btime minimum, compilation excluded)
  #   time      : EL total (assembly+inference) = 0.116 s   (per-element block assembly from A is one-time setup for fixed A)
  #   accuracy  : inference vs numerical (direct SEM)  →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : inference vs exact (manufactured)    →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
@@ -132,18 +132,20 @@ separately and NOT charged to "inference". (Timing the whole
 `elementLearning_Axb!` as "inference" is what makes EL wrongly look slower than
 the direct solve.)
 
-**JIT-excluded timing.** The first in-process solve pays Julia's one-time JIT
-compilation (and the ONNX session warm-up) — and, for `A \ RHS`, the first-call
-compilation of the sparse-solver wrapper — which over-reports the true cost. The
-reported times therefore discard a warm-up run and take the fastest of
-`:EL_timing_reps` (default 2) subsequent runs — i.e. steady-state performance,
-measured on the second run onward. A single hand-run (one cold solve) will read
-noticeably higher than these warm numbers.
+**Robust timing (`@btime`).** A single `@time`/`time_ns` shot is noisy — it
+captures whatever GC pause, JIT compilation, or OS hiccup happened on that one
+run, so repeated measurements scatter widely. The diagnostics instead time with
+**BenchmarkTools' `@belapsed`** (the same engine as `@btime`): it runs each
+operation many times over a time budget, excludes compilation, and reports the
+**minimum**, which is far more repeatable. So a single hand-run (one cold solve)
+will read noticeably higher and jump around; the diagnostics numbers are the
+steady-state minima. BenchmarkTools is loaded lazily, only when the diagnostics
+actually time something, so it is not pulled into the baseline of every run.
 
-Set `:lEL_diagnostics => false` in the case's `user_inputs.jl` to skip the extra
-direct solve (useful on very large meshes where the direct solve is exactly what
-element learning is avoiding); `:EL_timing_reps => N` tunes the number of timed
-repetitions.
+Set `:lEL_diagnostics => false` in the case's `user_inputs.jl` to skip the
+timing/comparison entirely (useful on very large meshes where the direct solve
+is exactly what element learning is avoiding); `:EL_timing_seconds => S`
+(default 2.0) tunes the per-solve BenchmarkTools time budget.
 
 ### Reference solution + difference in the VTU
 
