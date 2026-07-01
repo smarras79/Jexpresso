@@ -96,6 +96,34 @@ tools/EL_training/run_element_learning.sh --skip-sample    # reuse existing CSVs
 
 ---
 
+## Diagnostics (printed at the end of inference)
+
+After the inference run, a consolidated block reports the solve time and the
+accuracy of the inferred solution:
+
+```
+ # ================== ELEMENT-LEARNING DIAGNOSTICS ==================
+ #   time      : inference = 0.0123 s | direct SEM = 0.456 s | speedup = 37.1×
+ #   accuracy  : inference vs numerical (direct SEM)  →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
+ #   accuracy  : inference vs exact (manufactured)    →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
+ #   accuracy  : direct SEM vs exact (manufactured)   →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
+ # ==================================================================
+```
+
+* The **direct SEM** solve (`A \ RHS`) is the always-available numerical
+  reference; the inferred solution is compared against it for both time
+  (speedup) and accuracy.
+* The **exact (manufactured)** rows appear only when the case stores an exact
+  field `qe` (e.g. an MMS test); both the inference and the direct SEM errors
+  against it are printed so their accuracy can be compared directly.
+* Norms are mass-matrix-weighted L2 (absolute + relative) and L∞.
+
+Set `:lEL_diagnostics => false` in the case's `user_inputs.jl` to skip the extra
+direct solve (useful on very large meshes where the direct solve is exactly what
+element learning is avoiding).
+
+---
+
 ## Manual steps (equivalent to what the script automates)
 
 Set `JEXPRESSO_EL_TAG` so the sampler tags its output (here `hole`):

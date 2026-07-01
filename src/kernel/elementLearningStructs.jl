@@ -1237,6 +1237,7 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                                  isamp=1,
                                  total_cols_writtenin=total_cols_writtenin,
                                  total_cols_writtenout=total_cols_writtenout))
+        t_infer = JX_LAST_SOLVE_TIME[]
 
 
         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... DONE")))
@@ -1255,6 +1256,28 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         # manufactured solution). No-op when qe carries no exact field.
         print_solution_L2_error(usol, params.qp.qe, sem.matrix.M, npoin;
                                 label="element-learning inference")
+
+        # Consolidated end-of-run diagnostics: solve times + accuracy of the
+        # inferred solution vs the direct numerical (SEM) solution and, when the
+        # case supplies one, the exact/manufactured solution. The direct SEM
+        # reference (A \ RHS) is computed here — elementLearning_Axb! only reads
+        # A and RHS, so they are intact — and timed with the same jx_time_solve
+        # wrapper. It is wrapped in try/catch so a diagnostics-only failure can
+        # never discard the inference result. Gated by :lEL_diagnostics
+        # (default true); set it false to skip the extra (on large meshes,
+        # potentially expensive) direct solve.
+        if get(inputs, :lEL_diagnostics, true)
+            usol_direct = nothing
+            t_direct    = NaN
+            try
+                usol_direct = jx_time_solve("direct SEM (Ax=b)", () -> A \ RHS)
+                t_direct    = JX_LAST_SOLVE_TIME[]
+            catch e
+                @warn "EL diagnostics: direct SEM reference solve failed; reporting inference-only" exception=(e, catch_backtrace())
+            end
+            print_EL_diagnostics(usol, usol_direct, params.qp.qe, sem.matrix.M, npoin;
+                                 t_infer = t_infer, t_direct = t_direct)
+        end
 
         write_output(args...; nvar=neqs, qexact=params.qp.qe, metrics=params.metrics)
         #-----------------------------------------------------
@@ -1314,6 +1337,71 @@ function print_solution_L2_error(sol, qe, M, npoin; label="solution")
                                 " , ‖e‖_∞ = ", linf)))
         jx_record_solve_error(; linf = linf, l2rel = relerr, npts = npoin)
     end
+    return nothing
+end
+
+#---------------------------------------------------------------------------------------
+# End-of-run Element-Learning diagnostics.
+#
+# Prints ONE consolidated block comparing the inferred (surrogate) solution to:
+#   • the direct numerical SEM solution (the reference that is always available),
+#   • the exact / manufactured solution, when the case provides one (‖qe‖ > 0).
+# Also reports the solve wall-clock times and the inference-vs-direct speedup.
+#
+# Norms are mass-matrix (M) weighted L2 (absolute and relative) plus L∞, matching
+# print_solution_L2_error. `u_direct === nothing` skips the numerical comparison.
+#---------------------------------------------------------------------------------------
+function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
+                              t_infer = NaN, t_direct = NaN)
+    # M-weighted L2 (abs + relative to ‖b‖) and L∞ norms of (a - b).
+    _norms = function (a, b)
+        e2 = 0.0; r2 = 0.0; li = 0.0
+        @inbounds for ip in 1:npoin
+            d  = _sol_scalar(a, ip) - _sol_scalar(b, ip)
+            m  = M[ip]
+            e2 += m * d * d
+            r2 += m * _sol_scalar(b, ip)^2
+            li  = max(li, abs(d))
+        end
+        (l2 = sqrt(e2), rel = r2 > 0.0 ? sqrt(e2 / r2) : NaN, linf = li)
+    end
+
+    # Is an exact / manufactured field present? (‖qe‖_M > 0)
+    msq = 0.0
+    @inbounds for ip in 1:npoin
+        msq += M[ip] * _sol_scalar(qe, ip)^2
+    end
+    has_exact = msq > 0.0
+
+    println(GREEN_FG(" # ================== ELEMENT-LEARNING DIAGNOSTICS =================="))
+    if isfinite(t_infer)
+        if isfinite(t_direct) && t_infer > 0.0
+            spd = t_direct / t_infer
+            println(GREEN_FG(string(" #   time      : inference = ", round(t_infer; sigdigits = 6),
+                                    " s | direct SEM = ", round(t_direct; sigdigits = 6),
+                                    " s | speedup = ", round(spd; sigdigits = 4), "×")))
+        else
+            println(GREEN_FG(string(" #   time      : inference = ", round(t_infer; sigdigits = 6), " s")))
+        end
+    end
+    if u_direct !== nothing
+        nd = _norms(u_infer, u_direct)
+        println(GREEN_FG(string(" #   accuracy  : inference vs numerical (direct SEM)  →  ",
+                                "‖e‖_L2 = ", nd.l2, " , rel = ", nd.rel, " , ‖e‖_∞ = ", nd.linf)))
+    end
+    if has_exact
+        ni = _norms(u_infer, qe)
+        println(GREEN_FG(string(" #   accuracy  : inference vs exact (manufactured)    →  ",
+                                "‖e‖_L2 = ", ni.l2, " , rel = ", ni.rel, " , ‖e‖_∞ = ", ni.linf)))
+        if u_direct !== nothing
+            ndx = _norms(u_direct, qe)
+            println(GREEN_FG(string(" #   accuracy  : direct SEM vs exact (manufactured)   →  ",
+                                    "‖e‖_L2 = ", ndx.l2, " , rel = ", ndx.rel, " , ‖e‖_∞ = ", ndx.linf)))
+        end
+    else
+        println(GREEN_FG(" #   accuracy  : no manufactured/exact solution for this case — compared to direct SEM only"))
+    end
+    println(GREEN_FG(" # =================================================================="))
     return nothing
 end
 
