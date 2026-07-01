@@ -1231,18 +1231,12 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         total_cols_writtenin  = 0
         total_cols_writtenout = 0
 
-        # Diagnostics + timing controls. When diagnostics are on we report
-        # JIT-excluded (warm) timings: the first in-process solve compiles the
-        # kernel / warms the ONNX session, so its time is discarded and the
-        # fastest of :EL_timing_reps subsequent runs is reported (see
-        # jx_time_solve_best). When diagnostics are off, a single plain solve is
-        # timed to keep production inference at one solve.
         el_diagnostics = get(inputs, :lEL_diagnostics, true)
-        el_reps        = max(1, get(inputs, :EL_timing_reps, 2))
+        el_secs        = Float64(get(inputs, :EL_timing_seconds, 2.0))  # BenchmarkTools budget
 
-        # Single closure so the (long) call site is written once; re-running it
-        # reproduces params.qp.qn (elementLearning_Axb! is deterministic in the
-        # inference path and only reads A/RHS).
+        # Closure that runs the FULL EL condensation solve (per-element block
+        # assembly from A + surrogate inference). Re-running reproduces
+        # params.qp.qn (deterministic; only reads A/RHS).
         el_solve = function ()
             elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
                                  A, RHS, EL,
@@ -1255,43 +1249,11 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         end
 
         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... ")))
-        # Timed like the FFT/Chebyshev solvers so element learning can be
-        # compared head-to-head; warm timing (JIT excluded) when diagnostics on.
-        #
-        # Two distinct EL costs are reported:
-        #   t_infer        — the SURROGATE inference only (elementLearning_infer!):
-        #                    the per-solve cost element learning actually replaces,
-        #                    and the fair counterpart of the direct A\RHS solve.
-        #   t_infer_total  — the whole elementLearning_Axb! call, which ALSO does
-        #                    the one-time per-element block assembly from A
-        #                    (Sections 1–2). For a fixed operator A that assembly
-        #                    is setup, not a per-solve cost, so it is reported
-        #                    separately rather than charged to "inference".
-        t_infer_total = NaN
-        if el_diagnostics
-            el_solve()                              # warm-up (JIT/ONNX), discarded
-            t_infer = Inf; t_infer_total = Inf
-            for _ in 1:el_reps
-                _t0 = time_ns(); el_solve(); _dt = (time_ns() - _t0) / 1e9
-                t_infer_total = min(t_infer_total, _dt)
-                t_infer       = min(t_infer, JX_LAST_EL_INFER_TIME[])
-            end
-            JX_LAST_SOLVE_TIME[] = t_infer          # (d): pipeline scrapes this line
-            println(GREEN_FG(string(" # SOLVER TIMING [element-learning inference]: ",
-                                    round(t_infer; sigdigits = 6),
-                                    " s  (surrogate only, best of ", el_reps, ", JIT excluded)")))
-            println(GREEN_FG(string(" # SOLVER TIMING [element-learning total (assembly+infer)]: ",
-                                    round(t_infer_total; sigdigits = 6),
-                                    " s  (best of ", el_reps, ", JIT excluded)")))
-        else
-            jx_time_solve("element-learning inference (assembly+infer)", el_solve)
-            t_infer_total = JX_LAST_SOLVE_TIME[]
-            t_infer       = JX_LAST_EL_INFER_TIME[]  # surrogate-only from the single call
-            JX_LAST_SOLVE_TIME[] = t_infer
-        end
-
-
+        # Produce the solution once. This also assembles the per-element blocks
+        # (EL.Avovb/AIoIo/fvo) the surrogate step reuses and warms up JIT/ONNX.
+        el_solve()
         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... DONE")))
+
         usol = params.qp.qn
         neqs = params.qp.neqs
         args = (params.SD, usol, params.uaux, 1, 1,
@@ -1308,28 +1270,61 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         print_solution_L2_error(usol, params.qp.qe, sem.matrix.M, npoin;
                                 label="element-learning inference")
 
-        # Consolidated end-of-run diagnostics: solve times + accuracy of the
-        # inferred solution vs the direct numerical (SEM) solution and, when the
-        # case supplies one, the exact/manufactured solution. The direct SEM
-        # reference (A \ RHS) is computed here — elementLearning_Axb! only reads
-        # A and RHS, so they are intact — with the same warm (JIT-excluded)
-        # timing as the inference solve. It is wrapped in try/catch so a
-        # diagnostics-only failure can never discard the inference result.
-        # Gated by :lEL_diagnostics (default true); set it false to skip the
-        # extra (on large meshes, potentially expensive) direct solve.
-        usol_direct = nothing
+        # ── Timing + accuracy diagnostics ─────────────────────────────────────
+        # Robust @btime-style timing (BenchmarkTools minimum, compilation
+        # excluded) so numbers are repeatable rather than a noisy single shot:
+        #   t_infer        — SURROGATE inference only (elementLearning_infer!): the
+        #                    per-solve cost EL replaces and the fair counterpart of
+        #                    the direct A\RHS solve.
+        #   t_infer_total  — the whole elementLearning_Axb!, which ALSO re-does the
+        #                    one-time per-element block assembly from A; reported
+        #                    separately, NOT charged to "inference".
+        #   t_direct       — direct SEM solve (A\RHS).
+        # Wrapped in try/catch so a diagnostics-only failure never discards the
+        # inference result. Gated by :lEL_diagnostics (default true).
+        usol_direct   = nothing
+        t_infer       = NaN
+        t_infer_total = NaN
+        t_direct      = NaN
         if el_diagnostics
-            t_direct = NaN
+            # Direct SEM reference solution (for accuracy + VTU) and its time.
             try
-                usol_direct = jx_time_solve_best("direct SEM (Ax=b)", () -> A \ RHS;
-                                                 reps = el_reps, warmup = true)
-                t_direct    = JX_LAST_SOLVE_TIME[]
+                usol_direct = A \ RHS
+                t_direct    = jx_btime_solve("direct SEM (Ax=b)", () -> A \ RHS; seconds = el_secs)
             catch e
                 @warn "EL diagnostics: direct SEM reference solve failed; reporting inference-only" exception=(e, catch_backtrace())
             end
+
+            # Surrogate-only inference: benchmark elementLearning_infer! directly,
+            # reusing the blocks the el_solve() above already assembled (they
+            # depend only on the fixed operator A). ∂τ_pos maps skeleton node →
+            # ∂τ index, exactly as built inside elementLearning_Axb!.
+            try
+                ∂τ_pos_b = Dict{Int,Int}(sem.mesh.∂τ[j] => j for j in 1:sem.mesh.length∂τ)
+                infer_only = function ()
+                    elementLearning_infer!(params.qp.qn, sem.mesh,
+                                           wbuf.model, wbuf.model_type,
+                                           wbuf.input_name, wbuf.output_name,
+                                           avisc, EL, A_∂τ∂τ, ∂τ_pos_b, gΓ, RHS, wbuf.infer,
+                                           nelintpoints, elnbdypoints)
+                end
+                t_infer       = jx_btime_solve("element-learning inference", infer_only; seconds = el_secs)
+                t_infer_total = jx_btime_solve("element-learning total (assembly+infer)", el_solve; seconds = el_secs)
+                JX_LAST_SOLVE_TIME[] = t_infer   # EL "solve time" = the surrogate cost
+            catch e
+                @warn "EL diagnostics: surrogate inference timing failed" exception=(e, catch_backtrace())
+            end
+
             print_EL_diagnostics(usol, usol_direct, params.qp.qe, sem.matrix.M, npoin;
                                  t_infer = t_infer, t_direct = t_direct,
                                  t_infer_total = t_infer_total)
+        else
+            # Production (diagnostics off): single-shot surrogate time from the
+            # in-call instrumentation — no extra solves.
+            t_infer = JX_LAST_EL_INFER_TIME[]
+            JX_LAST_SOLVE_TIME[] = t_infer
+            println(GREEN_FG(string(" # SOLVER TIMING [element-learning inference]: ",
+                                    round(t_infer; sigdigits = 6), " s  (surrogate only, single shot)")))
         end
 
         # Reference solution(s) + their difference from the inferred solution,
@@ -1463,10 +1458,10 @@ function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
             println(GREEN_FG(string(" #   time      : inference (surrogate) = ", round(t_infer; sigdigits = 6),
                                     " s | direct SEM = ", round(t_direct; sigdigits = 6),
                                     " s | speedup = ", round(spd; sigdigits = 4),
-                                    "×   (fastest warm run, JIT excluded)")))
+                                    "×   (@btime minimum, compilation excluded)")))
         else
             println(GREEN_FG(string(" #   time      : inference (surrogate) = ", round(t_infer; sigdigits = 6),
-                                    " s   (fastest warm run, JIT excluded)")))
+                                    " s   (@btime minimum, compilation excluded)")))
         end
         if isfinite(t_infer_total)
             println(GREEN_FG(string(" #   time      : EL total (assembly+inference) = ",

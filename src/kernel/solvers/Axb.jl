@@ -40,38 +40,74 @@ function jx_time_solve(label, f)
 end
 
 # ---------------------------------------------------------------------------
-# Warm-up + best-of-reps timing.
+# Robust timing via BenchmarkTools (@belapsed).
 #
-# The FIRST evaluation of `f` in a fresh Julia process pays one-time costs that
-# do NOT reflect steady-state performance — Julia JIT-compiles the solve kernel,
-# a sparse factorization builds its symbolic structure, an ONNX InferenceSession
-# warms up. Timing that first call therefore over-reports the true solve cost.
+# A single @time/time_ns shot is noisy: it captures whatever GC pause, JIT, or OS
+# scheduling hiccup happened on that one run, so repeated measurements scatter
+# widely. BenchmarkTools instead runs the operation MANY times (auto-tuned to a
+# time budget), excludes compilation, and reports the MINIMUM — which is what
+# @btime prints and is far more repeatable.
 #
-# This variant runs `f` once as a throw-away warm-up (time discarded), then runs
-# it `reps` more times and reports the FASTEST — the same "measure the second
-# run" strategy compare_laplace_solvers uses across run_case repetitions, applied
-# here at the individual-solve level. The best time is stored in
-# JX_LAST_SOLVE_TIME[] and the last computed value is returned. Set warmup=false
-# / reps=1 to recover a single-shot measurement.
+# BenchmarkTools is loaded LAZILY, on first use, rather than with a top-level
+# `using`: a package-wide import would add its load cost to the baseline of every
+# run and every MPI rank (that baseline cost is exactly why `using BenchmarkTools`
+# was removed from src/Jexpresso.jl). Here it is pulled in only when a diagnostics
+# timer actually fires.
 # ---------------------------------------------------------------------------
-function jx_time_solve_best(label, f; reps::Int = 2, warmup::Bool = true)
-    if warmup
-        f()                    # throw-away warm-up: compiles/initialises, not timed
+const _BENCHMARKTOOLS   = Ref{Union{Module,Nothing}}(nothing)
+const _JX_BENCH_TARGET  = Ref{Any}(nothing)   # zero-arg fn the benchmarked expr calls
+
+function _ensure_benchmarktools()
+    if _BENCHMARKTOOLS[] === nothing
+        m = Base.require(Base.PkgId(
+                Base.UUID("6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"), "BenchmarkTools"))
+        # Bind the name in THIS module so a later Core.eval can expand the
+        # `BenchmarkTools.@belapsed` macro without a compile-time `using`.
+        Core.eval(@__MODULE__, :(const BenchmarkTools = $m))
+        _BENCHMARKTOOLS[] = m
     end
-    n    = max(1, reps)
-    best = Inf
-    val  = nothing
-    for _ in 1:n
-        t0   = time_ns()
-        val  = f()
-        best = min(best, (time_ns() - t0) / 1e9)
+    return _BENCHMARKTOOLS[]
+end
+
+"""
+    jx_belapsed(f; seconds = 2.0) -> Float64
+
+Minimum wall-clock time (seconds) of the zero-arg function `f`, measured with
+BenchmarkTools' `@belapsed` (many samples, compilation excluded). `f` is stashed
+in a module global so the runtime-expanded macro can reach it. Falls back to a
+warm best-of-N `time_ns` loop if BenchmarkTools cannot be loaded, so a timing
+failure never breaks the run.
+"""
+function jx_belapsed(f; seconds::Real = 2.0)
+    try
+        _ensure_benchmarktools()
+        _JX_BENCH_TARGET[] = f
+        return Core.eval(@__MODULE__,
+            :(BenchmarkTools.@belapsed (_JX_BENCH_TARGET[])() seconds = $(Float64(seconds))))::Float64
+    catch e
+        @warn "BenchmarkTools unavailable; falling back to warm best-of-5 time_ns" exception = (e,)
+        f()                                   # warm-up (discarded)
+        best = Inf
+        for _ in 1:5
+            t0 = time_ns(); f(); best = min(best, (time_ns() - t0) / 1e9)
+        end
+        return best
     end
-    JX_LAST_SOLVE_TIME[] = best
-    note = warmup ? string(" (best of ", n, ", JIT/warm-up excluded)") :
-                    string(" (best of ", n, ")")
+end
+
+"""
+    jx_btime_solve(label, f; seconds = 2.0) -> Float64
+
+Benchmark `f` with `jx_belapsed`, print a `# SOLVER TIMING [label]: … s` line
+(the BenchmarkTools minimum), record it in `JX_LAST_SOLVE_TIME[]`, and return it.
+The robust counterpart of `jx_time_solve`.
+"""
+function jx_btime_solve(label, f; seconds::Real = 2.0)
+    t = jx_belapsed(f; seconds = seconds)
+    JX_LAST_SOLVE_TIME[] = t
     println(GREEN_FG(string(" # SOLVER TIMING [", label, "]: ",
-                            round(best; sigdigits = 6), " s", note)))
-    return val
+                            round(t; sigdigits = 6), " s  (@btime minimum, compilation excluded)")))
+    return t
 end
 
 # Stash the most recent solve's error norms for the side-by-side comparison.
