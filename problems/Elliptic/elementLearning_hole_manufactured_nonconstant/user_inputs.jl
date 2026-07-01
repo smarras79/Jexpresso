@@ -34,10 +34,8 @@ function user_inputs()
         :lEL_xidependent      => true,   # (sampling) within-element-varying â for bilinear quads
         :EL_sample_shape      => :quad,  # (sampling) :affine | :quad (bilinear, recommended) | :warp
         :ahat_output          => :cell, # VTU â format: :cell | :nodal | :tensor
-   #     :lEL_Sample           => true,   # uncomment to (re)generate training data
+        :lEL_Sample           => true,   # uncomment to (re)generate training data
         :NNfile               => "JX_NN_model.onnx",
-        #:NNfile               => "JX_RFRC_model.onnx",
-        #:NNfile               => "JX_RFRC_final.jld2",
         :Nsamp                => 100000,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
