@@ -139,9 +139,9 @@ measurement of a specific callable, so the two rows differ precisely in
 \emph{which work is inside the timed call} versus done once beforehand.
 
 \paragraph{This solve (from scratch).} The full cost of the one solve that runs.
-\emph{SEM} times \verb|A\b|, which for a sparse $A$ computes a fresh LU
-factorization and then back-substitutes on every sample. \emph{EL} times the whole
-condensation solve \verb|elementLearning_Axb!|: extract the per-element blocks
+For SEM the timed call is \verb|A\b|, which for a sparse $A$ computes a fresh LU
+factorization and then back-substitutes on every sample. For EL the timed call is
+the whole condensation solve \verb|elementLearning_Axb!|: extract the per-element blocks
 $\{\Aoo^e,\Aob^e,\Abo^e,\Abb\}$ from the global $A$, evaluate the surrogate
 $\{T^e\}$, assemble the Schur complement $S$ \eqref{eq:schur}, solve the skeleton
 system, and recover the interiors \eqref{eq:recover}. Both include all of their
@@ -150,11 +150,12 @@ $A$-dependent work, so this is the honest single-solve comparison.
 \paragraph{Amortized (setup reused).} The per-solve cost once each method's
 \emph{entire} $A$-dependent setup has been done once and cached --- a true
 apples-to-apples comparison in which each method simply back-substitutes its own
-cached factorization for a new right-hand side. \emph{SEM} pre-computes
-$F=\mathrm{lu}(A)$ and times only \verb|F\b| (the full system). \emph{EL}, having
-already assembled the surrogate operators $\{T^e\}$ and the Schur complement $S$
-during the solve above, pre-computes $F_S=\mathrm{lu}(S_{\partial O,\partial O})$
-and times only $F_S\backslash\mathbf{b}$ --- the back-substitution of the
+cached factorization for a new right-hand side. For SEM, $F=\mathrm{lu}(A)$ is
+pre-computed and the timed call is only the back-solve \verb|F\b| (the full
+system). For EL, having already assembled the surrogate operators $\{T^e\}$ and the
+Schur complement $S$ during the solve above, $F_S=\mathrm{lu}(S_{\partial O,\partial O})$
+is pre-computed and the timed call is only the back-solve $F_S\backslash\mathbf{b}$
+--- the back-substitution of the
 \emph{condensed skeleton} system \eqref{eq:schur}, which is much smaller than $A$
 (only the inter-element skeleton unknowns). This isolates the core linear-solve
 cost: the direct method back-solves the full $N\times N$ system, element learning
