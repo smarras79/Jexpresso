@@ -1157,5 +1157,24 @@ function _el_env_override!(inputs, rank = 0)
         end
     end
 
+    #-----------------------------------------------------------------------
+    # Auto-tag the sampled tensors with the case name for EVERY element-learning
+    # case, so that input_tensor.csv / output_tensor.csv from different EL cases
+    # never overwrite one another (e.g. elementLearning_hole → input_tensor_
+    # elementLearning_hole.csv). Applied only when the tag was not already set —
+    # by JEXPRESSO_EL_TAG above or by an explicit :EL_tensor_tag in the case's
+    # user_inputs.jl — so those explicit choices still win. Non-EL cases keep the
+    # plain filenames.
+    #-----------------------------------------------------------------------
+    if !haskey(inputs, :EL_tensor_tag) &&
+       (get(inputs, :lelementLearning, false) == true || get(inputs, :lEL_Sample, false) == true)
+        casename = String(get(inputs, :_parsed_case_name, ""))
+        if !isempty(casename)
+            inputs[:EL_tensor_tag] = casename
+            _note(string("element-learning case → :EL_tensor_tag = ", casename,
+                         "  (tensors: input_tensor_", casename, ".csv / output_tensor_", casename, ".csv)"))
+        end
+    end
+
     return inputs
 end
