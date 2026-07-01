@@ -2,6 +2,8 @@
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
+\usepackage{tabularx,array}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \usepackage[hyphens]{url}
 \usepackage{hyperref}
 \usepackage{newunicodechar}
@@ -161,14 +163,15 @@ back-solves the reduced skeleton system.
 \begin{table}[h]
 \centering
 \small
-\begin{tabular}{@{}lll@{}}
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{@{}>{\hsize=0.7\hsize}Y >{\hsize=1.15\hsize}Y >{\hsize=1.15\hsize}Y@{}}
 \toprule
 Level (timed call) & Direct SEM & Element learning \\
 \midrule
-\textbf{This solve} \verb|A\b| / \verb|Axb!| & factorize $A$ + back-solve & extract blocks + surrogate + assemble $S$ + skeleton solve + recover \\[2pt]
-\textbf{Amortized} \verb|F\b| / \verb|Fs\b| & back-solve full system, $F=\mathrm{lu}(A)$ cached & back-solve skeleton system, $F_S=\mathrm{lu}(S)$ cached \\
+\textbf{This solve} (\verb|A\b| / \verb|Axb!|) & factorize $A$ + back-solve & extract blocks + surrogate + assemble $S$ + skeleton solve + recover \\[2pt]
+\textbf{Amortized} (\verb|F\b| / \verb|Fs\b|) & back-solve full system, $F=\mathrm{lu}(A)$ cached & back-solve skeleton system, $F_S=\mathrm{lu}(S)$ cached \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \caption{What is inside each timed call. In the \textbf{Amortized} row both methods
 reuse their full $A$-dependent setup (SEM's factorization of $A$; EL's block
 extraction, surrogate $\{T^e\}$, Schur assembly, and factorization of $S$) and time
