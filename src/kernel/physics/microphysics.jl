@@ -866,7 +866,7 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
                     lstarn    = fac_cond+(1-ωn)*fac_fus
                     dlstarn   = -dωn*fac_fus#dωn*fac_cond - dωn * fac_fus 
                     qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100) + (1-ωn)*qsati(T1,P/100))
-                    dqsat     = ωn*dtqsati(T1,P/100) + (1-ωn)*dtqsati(T1,P/100) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
+                    dqsat     = ωn*dtqsatw(T1,P/100) + (1-ωn)*dtqsati(T1,P/100) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
                 
                 end
 
@@ -1049,7 +1049,7 @@ function saturation_adjustment_sam_microphysics_gpu(u,qe,z,MicroConst,PhysConst,
                 lstarn  = fac_cond+(FT(1)-ωn)*fac_fus
                 dlstarn = an*fac_fus
                 qsatt   = FT(max(FT(0.0),ωn*FT(qsatw(T1,P/100)) + (FT(1)-ωn)*FT(qsati(T1,P/100))))
-                dqsat   = ωn*FT(dtqsati(T1,P/100)) + (FT(1)-ωn)*FT(dtqsati(T1,P/100)) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
+                dqsat   = ωn*FT(dtqsatw(T1,P/100)) + (FT(1)-ωn)*FT(dtqsati(T1,P/100)) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
             end
 
             if (T1 >= T0p)

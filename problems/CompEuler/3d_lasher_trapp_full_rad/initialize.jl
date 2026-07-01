@@ -56,8 +56,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 hl = hl_ref
 
                 # Random velocity perturbations below 1 km (Lasher-Trapp et al. 2001)
-                Δu = 0.0#(z <= 1000.0) ? (rand() - 0.5) * 1.0 : 0.0   # uniform in [-0.5, 0.5] m/s
-                Δv = 0.0#(z <= 1000.0) ? (rand() - 0.5) * 1.0 : 0.0
+                Δu = (z <= 1000.0) ? (rand() - 0.1) * 1.0 : 0.0   # uniform in [-0.5, 0.5] m/s
+                Δv = (z <= 1000.0) ? (rand() - 0.1) * 1.0 : 0.0
 
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip, 1] = ρ - ρref

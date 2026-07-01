@@ -853,7 +853,7 @@ function inviscid_rhs_el!(u, params,
                          S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
                          params.mesh.connijk, params.mesh.poin_in_bdy_face,
                          params.mesh.elem_to_face, params.mesh.bdy_face_type,
-                         Float64(params.xmin), Float64(params.xmax), Float64(params.zmax))
+                         Float64(params.xmin), Float64(params.xmax), Float64(params.ymin), Float64(params.ymax), Float64(params.zmax))
 end
 
 function _inviscid_rhs_el_3d!(u, uaux, qe,
@@ -870,7 +870,7 @@ function _inviscid_rhs_el_3d!(u, uaux, qe,
                               S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec,
                               connijk_mesh, poin_in_bdy_face,
                               elem_to_face, bdy_face_type,
-                              xmin, xmax, zmax)
+                              xmin, xmax, ymin, ymax, zmax)
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i=1:ngl
 
@@ -893,7 +893,7 @@ function _inviscid_rhs_el_3d!(u, uaux, qe,
                              CL, SOL_VARS_TYPE;
                              neqs=neqs,
                              x=coords[ip,1], y=coords[ip,2], z=coords[ip,3],
-                             xmax=xmax, xmin=xmin, zmax=zmax)
+                             xmax=xmax, xmin=xmin, ymax=ymax, ymin=ymin, zmax=zmax)
 
                 if (lmoist)
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
