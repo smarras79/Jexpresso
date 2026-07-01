@@ -161,6 +161,23 @@ is pre-computed and the timed call is only the back-solve $F_S\backslash\mathbf{
 cost: the direct method back-solves the full $N\times N$ system, element learning
 back-solves the reduced skeleton system.
 
+\paragraph{Where the LU factorization is done.} Solving a sparse system
+$A\mathbf{x}=\mathbf{b}$ directly means factorizing $A=LU$ into triangular factors
+and then performing two cheap triangular solves (forward $L\mathbf{y}=\mathbf{b}$,
+back $U\mathbf{x}=\mathbf{y}$). The factorization is the expensive step; the
+back-substitutions are $O(\mathrm{nnz})$. In Jexpresso this LU is computed
+\emph{implicitly} by the backslash operator (sparse UMFPACK): it is not a separate
+line of code but part of every \verb|A\b|, and --- since backslash does not cache
+--- it is recomputed on each call. The direct SEM solver factorizes the
+\emph{full} matrix $A$. Element learning never factorizes $A$: its only global
+factorization is the LU of the \emph{condensed skeleton} matrix
+$S_{\partial O,\partial O}$ \eqref{eq:schur}, which is far smaller than $A$,
+together with small \emph{dense} inverses $(\Aoo^e)^{-1}$ of the per-element
+interior blocks used to form the local operators $T^e,t^e$ \eqref{eq:Te}. The
+amortized measurement is exactly what separates these two costs: it caches each
+method's factorization ($F=\mathrm{lu}(A)$ for SEM, $F_S=\mathrm{lu}(S)$ for EL)
+and times only the triangular back-solve for a new right-hand side.
+
 \begin{table}[h]
 \centering
 \small
