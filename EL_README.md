@@ -96,14 +96,16 @@ tools/EL_training/run_element_learning.sh --skip-sample    # reuse existing CSVs
 
 ---
 
-## Diagnostics (printed at the end of inference)
+## Diagnostics
+
+### Accuracy + solve timing (printed at the end of inference)
 
 After the inference run, a consolidated block reports the solve time and the
 accuracy of the inferred solution:
 
 ```
  # ================== ELEMENT-LEARNING DIAGNOSTICS ==================
- #   time      : inference = 0.0123 s | direct SEM = 0.456 s | speedup = 37.1×
+ #   time      : inference = 0.0123 s | direct SEM = 0.456 s | speedup = 37.1×   (fastest warm run, JIT excluded)
  #   accuracy  : inference vs numerical (direct SEM)  →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : inference vs exact (manufactured)    →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
  #   accuracy  : direct SEM vs exact (manufactured)   →  ‖e‖_L2 = … , rel = … , ‖e‖_∞ = …
@@ -118,9 +120,49 @@ accuracy of the inferred solution:
   against it are printed so their accuracy can be compared directly.
 * Norms are mass-matrix-weighted L2 (absolute + relative) and L∞.
 
+**JIT-excluded timing.** The first in-process solve pays Julia's one-time JIT
+compilation (and the ONNX session warm-up), which over-reports the true solve
+cost. The reported times therefore discard a warm-up run and take the fastest of
+`:EL_timing_reps` (default 2) subsequent runs — i.e. steady-state performance,
+measured on the second run onward.
+
 Set `:lEL_diagnostics => false` in the case's `user_inputs.jl` to skip the extra
 direct solve (useful on very large meshes where the direct solve is exactly what
-element learning is avoiding).
+element learning is avoiding); `:EL_timing_reps => N` tunes the number of timed
+repetitions.
+
+### Reference solution + difference in the VTU
+
+The inference run also writes, into the same `iter_1.vtu`, extra nodal fields for
+side-by-side visualisation in ParaView:
+
+| Field                     | Meaning                                             |
+|---------------------------|-----------------------------------------------------|
+| `u_SEM_numerical`         | direct SEM (numerical) solution                     |
+| `diff_SEM_minus_infer`    | SEM − inferred                                      |
+| `u_exact_manufactured`    | exact/manufactured solution (only if the case has one) |
+| `diff_exact_minus_infer`  | exact − inferred (only if the case has one)         |
+
+### Timing hierarchy (printed by the pipeline)
+
+When launched through `run_element_learning.sh`, a hierarchy of wall-clock and
+solver timings is printed at the very end:
+
+```
+ # EL PIPELINE TIMING HIERARCHY
+ #   (a) full run (phases that ran)      : 10m 32s
+ #        ├─ sampling phase (SEM+startup) : 2m 00s
+ #        ├─ (b) training only            : 8m 00s
+ #        └─ inference phase (wall clock) : 0m 32s
+ #   Solver-level (pure compute, JIT-excluded; from the inference run):
+ #        (c) numerical direct SEM Ax=b   : 0.456 s
+ #        (d) element-learning inference  : 0.0123 s
+ #        speedup (c)/(d)                 : 37.07×
+```
+
+(a)/(b) and the phase wall clocks come from the launcher; (c)/(d) are the pure
+solver kernel times scraped from the inference run's diagnostics (phase wall
+clocks additionally include Julia startup, mesh read and IO).
 
 ---
 

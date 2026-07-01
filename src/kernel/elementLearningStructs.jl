@@ -1225,10 +1225,19 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         total_cols_writtenin  = 0
         total_cols_writtenout = 0
 
-        println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... ")))
-        # Timed the same way as the FFT/Chebyshev solvers (jx_time_solve) so the
-        # element-learning solve can be compared head-to-head with them.
-        jx_time_solve("element-learning inference", () ->
+        # Diagnostics + timing controls. When diagnostics are on we report
+        # JIT-excluded (warm) timings: the first in-process solve compiles the
+        # kernel / warms the ONNX session, so its time is discarded and the
+        # fastest of :EL_timing_reps subsequent runs is reported (see
+        # jx_time_solve_best). When diagnostics are off, a single plain solve is
+        # timed to keep production inference at one solve.
+        el_diagnostics = get(inputs, :lEL_diagnostics, true)
+        el_reps        = max(1, get(inputs, :EL_timing_reps, 2))
+
+        # Single closure so the (long) call site is written once; re-running it
+        # reproduces params.qp.qn (elementLearning_Axb! is deterministic in the
+        # inference path and only reads A/RHS).
+        el_solve = function ()
             elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
                                  A, RHS, EL,
                                  avisc,
@@ -1236,7 +1245,18 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                                  BOΓg, gΓ, wbuf;
                                  isamp=1,
                                  total_cols_writtenin=total_cols_writtenin,
-                                 total_cols_writtenout=total_cols_writtenout))
+                                 total_cols_writtenout=total_cols_writtenout)
+        end
+
+        println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... ")))
+        # Timed like the FFT/Chebyshev solvers so element learning can be
+        # compared head-to-head; warm timing (JIT excluded) when diagnostics on.
+        if el_diagnostics
+            jx_time_solve_best("element-learning inference", el_solve;
+                               reps = el_reps, warmup = true)
+        else
+            jx_time_solve("element-learning inference", el_solve)
+        end
         t_infer = JX_LAST_SOLVE_TIME[]
 
 
@@ -1261,16 +1281,17 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         # inferred solution vs the direct numerical (SEM) solution and, when the
         # case supplies one, the exact/manufactured solution. The direct SEM
         # reference (A \ RHS) is computed here — elementLearning_Axb! only reads
-        # A and RHS, so they are intact — and timed with the same jx_time_solve
-        # wrapper. It is wrapped in try/catch so a diagnostics-only failure can
-        # never discard the inference result. Gated by :lEL_diagnostics
-        # (default true); set it false to skip the extra (on large meshes,
-        # potentially expensive) direct solve.
-        if get(inputs, :lEL_diagnostics, true)
-            usol_direct = nothing
-            t_direct    = NaN
+        # A and RHS, so they are intact — with the same warm (JIT-excluded)
+        # timing as the inference solve. It is wrapped in try/catch so a
+        # diagnostics-only failure can never discard the inference result.
+        # Gated by :lEL_diagnostics (default true); set it false to skip the
+        # extra (on large meshes, potentially expensive) direct solve.
+        usol_direct = nothing
+        if el_diagnostics
+            t_direct = NaN
             try
-                usol_direct = jx_time_solve("direct SEM (Ax=b)", () -> A \ RHS)
+                usol_direct = jx_time_solve_best("direct SEM (Ax=b)", () -> A \ RHS;
+                                                 reps = el_reps, warmup = true)
                 t_direct    = JX_LAST_SOLVE_TIME[]
             catch e
                 @warn "EL diagnostics: direct SEM reference solve failed; reporting inference-only" exception=(e, catch_backtrace())
@@ -1279,7 +1300,37 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                                  t_infer = t_infer, t_direct = t_direct)
         end
 
-        write_output(args...; nvar=neqs, qexact=params.qp.qe, metrics=params.metrics)
+        # Reference solution(s) + their difference from the inferred solution,
+        # written into the VTU for side-by-side visualisation:
+        #   • the direct SEM numerical solution (when the diagnostics solve
+        #     produced it), plus (SEM − inference);
+        #   • the exact/manufactured solution (when the case supplies one,
+        #     ‖qe‖_M > 0), plus (exact − inference).
+        el_extra_fields = Pair{String,Vector{Float64}}[]
+        u_inf = Float64[_sol_scalar(usol, ip) for ip in 1:npoin]
+        if usol_direct !== nothing
+            u_sem = Float64[_sol_scalar(usol_direct, ip) for ip in 1:npoin]
+            push!(el_extra_fields, "u_SEM_numerical"      => u_sem)
+            push!(el_extra_fields, "diff_SEM_minus_infer" => (u_sem .- u_inf))
+        end
+        let msq = 0.0
+            @inbounds for ip in 1:npoin
+                msq += sem.matrix.M[ip] * _sol_scalar(params.qp.qe, ip)^2
+            end
+            if msq > 0.0
+                u_ex = Float64[_sol_scalar(params.qp.qe, ip) for ip in 1:npoin]
+                push!(el_extra_fields, "u_exact_manufactured"   => u_ex)
+                push!(el_extra_fields, "diff_exact_minus_infer" => (u_ex .- u_inf))
+            end
+        end
+
+        # extra_fields is only accepted by the VTK writer; pass it only then.
+        if inputs[:outformat] == VTK() && !isempty(el_extra_fields)
+            write_output(args...; nvar=neqs, qexact=params.qp.qe, metrics=params.metrics,
+                         extra_fields=el_extra_fields)
+        else
+            write_output(args...; nvar=neqs, qexact=params.qp.qe, metrics=params.metrics)
+        end
         #-----------------------------------------------------
         # END Element-learning infrastructure
         #-----------------------------------------------------
@@ -1379,9 +1430,11 @@ function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
             spd = t_direct / t_infer
             println(GREEN_FG(string(" #   time      : inference = ", round(t_infer; sigdigits = 6),
                                     " s | direct SEM = ", round(t_direct; sigdigits = 6),
-                                    " s | speedup = ", round(spd; sigdigits = 4), "×")))
+                                    " s | speedup = ", round(spd; sigdigits = 4),
+                                    "×   (fastest warm run, JIT excluded)")))
         else
-            println(GREEN_FG(string(" #   time      : inference = ", round(t_infer; sigdigits = 6), " s")))
+            println(GREEN_FG(string(" #   time      : inference = ", round(t_infer; sigdigits = 6),
+                                    " s   (fastest warm run, JIT excluded)")))
         end
     end
     if u_direct !== nothing
