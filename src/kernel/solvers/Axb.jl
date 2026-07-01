@@ -26,6 +26,12 @@ const JX_LAST_SOLVE_TIME = Ref(0.0)
 # against the direct solve on equal footing (matches the original @btime scope).
 const JX_LAST_EL_INFER_TIME = Ref(0.0)
 
+# When true, elementLearning_Axb! / elementLearning_infer! suppress their
+# per-call "# --- INFERENCE ..." chatter. The diagnostics set it while
+# benchmarking (BenchmarkTools runs the solve MANY times), so those prints do
+# not flood the log once per sample.
+const JX_EL_QUIET = Ref(false)
+
 # Last solve's accuracy, recorded by the error reporters (fft_report_grid_error,
 # the Chebyshev block, print_solution_L2_error). Read by compare_laplace_solvers.
 const JX_LAST_SOLVE_ERR = Ref((linf = NaN, l2rel = NaN, npts = 0))
