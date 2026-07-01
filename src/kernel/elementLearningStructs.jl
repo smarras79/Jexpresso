@@ -587,11 +587,17 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     else
         # ── Inference ─────────────────────────────────────────────────────────
         println(YELLOW_FG(string(" # --- INFERENCE — solution stored in u ..........")))
+        # Time ONLY the surrogate inference (not the per-element block assembly
+        # in Sections 1–2 above, which is one-time setup for a fixed operator A).
+        # Stashed in JX_LAST_EL_INFER_TIME so the EL diagnostics can compare the
+        # per-solve surrogate cost against the direct solve on equal footing.
+        _t_infer0 = time_ns()
         elementLearning_infer!(u, mesh,
                                wbuf.model, wbuf.model_type,
                                wbuf.input_name, wbuf.output_name,
                                avisc, EL, A_∂τ∂τ, ∂τ_pos, gΓ, RHS, wbuf.infer,
                                nelintpoints, elnbdypoints)
+        JX_LAST_EL_INFER_TIME[] = (time_ns() - _t_infer0) / 1e9
 
         # PERF: ad-hoc @btime instrumentation removed. The line below was a
         # *duplicate* call of elementLearning_infer! for timing during
@@ -1251,13 +1257,38 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... ")))
         # Timed like the FFT/Chebyshev solvers so element learning can be
         # compared head-to-head; warm timing (JIT excluded) when diagnostics on.
+        #
+        # Two distinct EL costs are reported:
+        #   t_infer        — the SURROGATE inference only (elementLearning_infer!):
+        #                    the per-solve cost element learning actually replaces,
+        #                    and the fair counterpart of the direct A\RHS solve.
+        #   t_infer_total  — the whole elementLearning_Axb! call, which ALSO does
+        #                    the one-time per-element block assembly from A
+        #                    (Sections 1–2). For a fixed operator A that assembly
+        #                    is setup, not a per-solve cost, so it is reported
+        #                    separately rather than charged to "inference".
+        t_infer_total = NaN
         if el_diagnostics
-            jx_time_solve_best("element-learning inference", el_solve;
-                               reps = el_reps, warmup = true)
+            el_solve()                              # warm-up (JIT/ONNX), discarded
+            t_infer = Inf; t_infer_total = Inf
+            for _ in 1:el_reps
+                _t0 = time_ns(); el_solve(); _dt = (time_ns() - _t0) / 1e9
+                t_infer_total = min(t_infer_total, _dt)
+                t_infer       = min(t_infer, JX_LAST_EL_INFER_TIME[])
+            end
+            JX_LAST_SOLVE_TIME[] = t_infer          # (d): pipeline scrapes this line
+            println(GREEN_FG(string(" # SOLVER TIMING [element-learning inference]: ",
+                                    round(t_infer; sigdigits = 6),
+                                    " s  (surrogate only, best of ", el_reps, ", JIT excluded)")))
+            println(GREEN_FG(string(" # SOLVER TIMING [element-learning total (assembly+infer)]: ",
+                                    round(t_infer_total; sigdigits = 6),
+                                    " s  (best of ", el_reps, ", JIT excluded)")))
         else
-            jx_time_solve("element-learning inference", el_solve)
+            jx_time_solve("element-learning inference (assembly+infer)", el_solve)
+            t_infer_total = JX_LAST_SOLVE_TIME[]
+            t_infer       = JX_LAST_EL_INFER_TIME[]  # surrogate-only from the single call
+            JX_LAST_SOLVE_TIME[] = t_infer
         end
-        t_infer = JX_LAST_SOLVE_TIME[]
 
 
         println(GREEN_FG(string(" # INFERENCE: call to elementLearning_Axb! .......... DONE")))
@@ -1297,7 +1328,8 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
                 @warn "EL diagnostics: direct SEM reference solve failed; reporting inference-only" exception=(e, catch_backtrace())
             end
             print_EL_diagnostics(usol, usol_direct, params.qp.qe, sem.matrix.M, npoin;
-                                 t_infer = t_infer, t_direct = t_direct)
+                                 t_infer = t_infer, t_direct = t_direct,
+                                 t_infer_total = t_infer_total)
         end
 
         # Reference solution(s) + their difference from the inferred solution,
@@ -1403,7 +1435,7 @@ end
 # print_solution_L2_error. `u_direct === nothing` skips the numerical comparison.
 #---------------------------------------------------------------------------------------
 function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
-                              t_infer = NaN, t_direct = NaN)
+                              t_infer = NaN, t_direct = NaN, t_infer_total = NaN)
     # M-weighted L2 (abs + relative to ‖b‖) and L∞ norms of (a - b).
     _norms = function (a, b)
         e2 = 0.0; r2 = 0.0; li = 0.0
@@ -1428,13 +1460,18 @@ function print_EL_diagnostics(u_infer, u_direct, qe, M, npoin;
     if isfinite(t_infer)
         if isfinite(t_direct) && t_infer > 0.0
             spd = t_direct / t_infer
-            println(GREEN_FG(string(" #   time      : inference = ", round(t_infer; sigdigits = 6),
+            println(GREEN_FG(string(" #   time      : inference (surrogate) = ", round(t_infer; sigdigits = 6),
                                     " s | direct SEM = ", round(t_direct; sigdigits = 6),
                                     " s | speedup = ", round(spd; sigdigits = 4),
                                     "×   (fastest warm run, JIT excluded)")))
         else
-            println(GREEN_FG(string(" #   time      : inference = ", round(t_infer; sigdigits = 6),
+            println(GREEN_FG(string(" #   time      : inference (surrogate) = ", round(t_infer; sigdigits = 6),
                                     " s   (fastest warm run, JIT excluded)")))
+        end
+        if isfinite(t_infer_total)
+            println(GREEN_FG(string(" #   time      : EL total (assembly+inference) = ",
+                                    round(t_infer_total; sigdigits = 6),
+                                    " s   (per-element block assembly from A is one-time setup for fixed A)")))
         end
     end
     if u_direct !== nothing

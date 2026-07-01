@@ -19,6 +19,13 @@
 # ---------------------------------------------------------------------------
 const JX_LAST_SOLVE_TIME = Ref(0.0)
 
+# Last element-learning run's SURROGATE-ONLY inference time (the elementLearning_infer!
+# call), i.e. WITHOUT the one-time per-element block assembly that extracts the
+# reference-element operators from the sparse matrix A. Set inside
+# elementLearning_Axb! and read by the EL diagnostics so "inference" is compared
+# against the direct solve on equal footing (matches the original @btime scope).
+const JX_LAST_EL_INFER_TIME = Ref(0.0)
+
 # Last solve's accuracy, recorded by the error reporters (fft_report_grid_error,
 # the Chebyshev block, print_solution_L2_error). Read by compare_laplace_solvers.
 const JX_LAST_SOLVE_ERR = Ref((linf = NaN, l2rel = NaN, npts = 0))
