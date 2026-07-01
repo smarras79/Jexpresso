@@ -8,7 +8,12 @@ full run has three steps:
    single-element `1x1` mesh. This writes the training data as
    `input_tensor_<TAG>.csv` and `output_tensor_<TAG>.csv`, where `<TAG>`
    identifies the test/grid so runs on different cases never overwrite each
-   other's data.
+   other's data. **`<TAG>` defaults to the case name** for every element-learning
+   case — e.g. `problems/Elliptic/elementLearning_hole` automatically writes
+   `input_tensor_elementLearning_hole.csv` / `output_tensor_elementLearning_hole.csv`,
+   whether launched by the pipeline or by a bare `Jexpresso.run_case(...)`.
+   Override with `:EL_tensor_tag => "..."` in `user_inputs.jl` or the
+   `JEXPRESSO_EL_TAG` env var.
 2. **Train** — a Python trainer turns those two CSVs into an ONNX model
    (`JX_NN_<TAG>_model.onnx`). A self-contained copy of the trainer
    (`train_CNN.py` and its dependencies) ships in `tools/EL_training`, so no
@@ -208,24 +213,26 @@ clocks additionally include Julia startup, mesh read and IO. (The amortized
 
 ## Manual steps (equivalent to what the script automates)
 
-Set `JEXPRESSO_EL_TAG` so the sampler tags its output (here `hole`):
+The tensor files are auto-tagged with the case name (here `elementLearning_hole`),
+so no `JEXPRESSO_EL_TAG` is needed:
 
 ```bash
 # 1) Sample: :lEL_Sample => true, 1x1 mesh
-JEXPRESSO_EL_TAG=hole JEXPRESSO_EL_SAMPLE=true \
+JEXPRESSO_EL_SAMPLE=true \
 JEXPRESSO_EL_MESH=./meshes/gmsh_grids/square_dirichletT_1x1.msh \
     julia --project=. -e 'using Jexpresso; Jexpresso.run_case("Elliptic","elementLearning_hole")'
-#      → input_tensor_hole.csv, output_tensor_hole.csv
+#      → input_tensor_elementLearning_hole.csv, output_tensor_elementLearning_hole.csv
 
 # 2) Train
 cd tools/EL_training               # (or your own external trainer directory)
-cp ../../input_tensor_hole.csv ../../output_tensor_hole.csv .
-EL_INPUT_TENSOR=input_tensor_hole.csv EL_OUTPUT_TENSOR=output_tensor_hole.csv \
-EL_DATANAME=JX_NN_hole python train_CNN.py     # → JX_NN_hole_model.onnx
-cp JX_NN_hole_model.onnx ../../    # place it where :NNfile is read from
+cp ../../input_tensor_elementLearning_hole.csv ../../output_tensor_elementLearning_hole.csv .
+EL_INPUT_TENSOR=input_tensor_elementLearning_hole.csv \
+EL_OUTPUT_TENSOR=output_tensor_elementLearning_hole.csv \
+EL_DATANAME=JX_NN_elementLearning_hole python train_CNN.py   # → JX_NN_elementLearning_hole_model.onnx
+cp JX_NN_elementLearning_hole_model.onnx ../../   # place it where :NNfile is read from
 
 # 3) Infer: :lEL_Sample => false, NxN mesh
-JEXPRESSO_EL_SAMPLE=false JEXPRESSO_EL_NNFILE=JX_NN_hole_model.onnx \
+JEXPRESSO_EL_SAMPLE=false JEXPRESSO_EL_NNFILE=JX_NN_elementLearning_hole_model.onnx \
     julia --project=. -e 'using Jexpresso; Jexpresso.run_case("Elliptic","elementLearning_hole")'
 ```
 

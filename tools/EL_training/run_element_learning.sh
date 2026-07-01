@@ -96,13 +96,14 @@ fi
 : "${CASE:=elementLearning_hole}"
 
 # --- Per-test tag ----------------------------------------------------------
-# Tags the sampled tensors and the trained model so that different tests / grids
-# never overwrite each other's files. Defaults to a sanitised "<EQ>_<CASE>";
-# override EL_TAG (e.g. to add the polynomial order or grid) if you run the same
-# case at different resolutions.
+# Tags the sampled tensors and the trained model so that different cases never
+# overwrite each other's files. Defaults to the CASE name, matching the Julia
+# side, which auto-tags every element-learning case's tensors with its case name
+# (input_tensor_<CASE>.csv / output_tensor_<CASE>.csv) — so a pipeline run and a
+# bare Jexpresso.run_case(...) produce identical filenames. Override EL_TAG (e.g.
+# to add the polynomial order) if you run the same case at different resolutions.
 if [[ -z "${EL_TAG:-}" ]]; then
-    _tag_raw="${EQ}_${CASE}"
-    EL_TAG="${_tag_raw//[^A-Za-z0-9]/_}"
+    EL_TAG="${CASE//[^A-Za-z0-9]/_}"
 fi
 
 # --- Meshes ----------------------------------------------------------------
