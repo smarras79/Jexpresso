@@ -1009,15 +1009,23 @@ function element_learning_linsolve!(sem, params, qp, inputs, OUTPUT_DIR, TFloat,
     RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(npoin))
     Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(npoin))
     
-    EL = @time allocate_elemLearning(nelem, ngl,
-                                     length∂O,
-                                     length∂τ,
-                                     lengthΓ,
-                                     TFloat, inputs[:backend];
-                                     Nsamp=inputs[:Nsamp],
-                                     lEL_Sample=inputs[:lEL_Sample])
+    # One-time work-buffer allocation. Previously wrapped in @time, whose noisy,
+    # GC-sensitive output ("0.08 seconds (N allocations …)") was easy to mistake
+    # for a solve timing; report it once with a clear "one-time setup" label so
+    # it is not confused with the @btime solve benchmarks below.
+    _t_alloc = time_ns()
+    EL = allocate_elemLearning(nelem, ngl,
+                               length∂O,
+                               length∂τ,
+                               lengthΓ,
+                               TFloat, inputs[:backend];
+                               Nsamp=inputs[:Nsamp],
+                               lEL_Sample=inputs[:lEL_Sample])
 
-    if rank == 0 println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ....... DONE"))) end
+    if rank == 0
+        println(BLUE_FG(string(" # ALLOCATE FOR ELEMENT LEARNING ....... DONE  (one-time setup: ",
+                               round((time_ns() - _t_alloc) / 1e9; sigdigits = 4), " s)")))
+    end
 
     BOΓg        = zeros(length∂O)
     gΓ          = zeros(lengthΓ)
