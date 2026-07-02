@@ -280,14 +280,15 @@ function params_setup(sem,
             println(" # end conformity4ncf_q!")
         end
     end
+    
     for i=1:qp.neqs
+
         idx = (i-1)*sem.mesh.npoin
         u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
         qp.qnm1[:,i] = @view(qp.qn[:,i])
         qp.qnm2[:,i] = @view(qp.qn[:,i])
         
     end
-    
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
     #if (backend == CPU())
@@ -296,7 +297,7 @@ function params_setup(sem,
     #        visc_coeff .= inputs[:μ]
     #    end
     #else
-   
+    
     if inputs[:lvisc]
         coeffs = zeros(TFloat, qp.neqs)
         if size(inputs[:μ]) > size(coeffs)
@@ -390,6 +391,7 @@ function params_setup(sem,
 
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        
         params = (backend,
                   T, inputs,
                   uaux, vaux, utmp, fluxaux,
@@ -416,6 +418,7 @@ function params_setup(sem,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,
                   phys_grid = sem.phys_grid,
+                  atmos_data = sem.atmos_data,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   les_stat_cache,
                   les_cross_section,

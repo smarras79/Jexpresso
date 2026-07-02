@@ -10,3 +10,4 @@ LocalPreferences.toml
 meshes
 mesh.log
 .jexpresso_cache/
+*.code-workspace

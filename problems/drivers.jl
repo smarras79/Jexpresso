@@ -28,6 +28,7 @@ function driver(nparts,
         print(" # driver() entered, calling sem_setup ......... ")
         flush(stdout)
     end
+
     _t_sem = time_ns()
 
     #---------------------------------------------------------
@@ -40,6 +41,20 @@ function driver(nparts,
     else
         tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
     end
+
+    #check_memory(" Before sem_setup.")
+                
+    # Create initial coarse mesh (for potential refinement)
+    
+
+    #check_memory(" After sem_setup.")
+
+    if (inputs[:backend] != CPU())
+        convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
+    end
+
+    
+
 
     # PERF: during package precompilation (PrecompileTools @compile_workload)
     # this driver runs only to bake the hot-path JIT — RHS, the SciML
@@ -108,14 +123,8 @@ function driver(nparts,
         # lRT_problem builds its own problem and exits early — it does not
         # use params_setup or time_loop!. Standalone-only branch.
         if inputs[:lRT_problem]
-            # PERF: bring RRTMGP + ClimaComms + LinearOperators +
-            # NCDatasets into scope. These were eagerly
-            # loaded at the top of src/Jexpresso.jl, costing every
-            # non-RT run (city2d, sod1d, …) ~tens of seconds of load
-            # time for code they never call. _ensure_rt_loaded!() is a
-            # cheap no-op once the first RT run has triggered it.
-            Jexpresso._ensure_rt_loaded!()
-            build_rad(sem, inputs)
+            build_rad!(sem, partitioned_model, inputs, nparts, distribute)
+
             return
         end
 

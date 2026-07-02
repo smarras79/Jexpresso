@@ -53,6 +53,10 @@ Base.@kwdef mutable struct St_SamMicrophysics{T <:AbstractFloat, dims1, dims2, d
     drad_lw   = KernelAbstractions.zeros(backend,  T, dims3) #Storage shortwave flux contribution
     flux_lw = KernelAbstractions.zeros(backend,  T, dims1) # storage for longwave flux
     flux_sw = KernelAbstractions.zeros(backend,  T, dims1) # storage for shortwave flux
+    rt_sol_lw = []
+    rt_sol_sw = []
+    rt_sol_lw_available = false
+    rt_sol_sw_available = false
 end
 
 function allocate_SamMicrophysics(nelem, npoin, ngl, T, backend , SD; lmoist=false)

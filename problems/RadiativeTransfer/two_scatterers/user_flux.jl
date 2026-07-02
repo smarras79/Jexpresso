@@ -1,6 +1,6 @@
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Float64},
-                    q::SubArray{Float64},
-                    qe::SubArray{Float64},
+function user_flux!(F, G, H,
+                    q,
+                    qe,
                     mesh::St_mesh,
                     ::CL, ::TOTAL; neqs=4, ip=1)
 
@@ -38,9 +38,9 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
     
 end
 
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Float64},
-                    q::SubArray{Float64},
-                    qe::SubArray{Float64},
+function user_flux!(F, G, H,
+                    q,
+                    qe,
                     mesh::St_mesh,
                     ::CL, ::PERT; neqs=4, ip=1)
 
