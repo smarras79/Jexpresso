@@ -12,7 +12,7 @@ function user_inputs()
 	#:lrestart_vtk         => true,
 	#:restart_output_file_path => "",
 	:restart_time         => 9000.0,
-	:diagnostics_at_times => (200:200:9000...,  10800.0),
+	:diagnostics_at_times => (1000:1000:000...,  10800.0),
 	#:diagnostics_at_times => (1:1:1.0),
         :lsource              => true,
 	#:lsponge              => true,
@@ -39,7 +39,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	:statistics_time      => (9000.0:0.2:10800.0),
+	:statistics_time      => (9000.0:2.0:10800.0),
 	#:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,
         :lesprofile_vars      => ["u_mean", "v_mean", "w_mean", "t_mean", "p_mean"],
