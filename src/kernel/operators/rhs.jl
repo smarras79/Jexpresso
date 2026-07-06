@@ -541,7 +541,7 @@ function _build_rhs!(RHS, u, params, time)
 
     @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    if inputs[:ladapt] == true
+    if (inputs[:ladapt] == true) && (params.inputs[:lfilter] == false)
         @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
                           params.g_dss_cache,
                           params.mesh.SD,
@@ -1259,51 +1259,35 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     _viscous_rhs_el_3d!(params.uaux, qe, params.uprimitive,
                         params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
                         params.rhs_diff_el, params.visc_coeff, params.ω,
-                        params.mp.Tabs, params.mp.qn, params.mp.qsatt, params.uaux,
                         Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
                         params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
                         params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
                         params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
-                        params.inputs, params.rhs_el, params.mesh.connijk,
+                        params.rhs_el, params.mesh.connijk,
                         params.mesh.coords, params.mesh.poin_in_bdy_face,
                         params.mesh.elem_to_face, params.mesh.bdy_face_type,
-                        params.μ_max, Int64(params.mesh.nelem), Int64(params.neqs),
+                        Int64(params.mesh.nelem), Int64(params.neqs),
                         params.mesh.ad_lvl, connijk, Float64(params.mesh.Δeffective_l),
-                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE,
+                        params.sgs, params.mp)
 end
 
 function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
                              rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                              rhs_diff_el, visc_coeff, ω,
-                             Tabs, qn_mp, qsatt, uaux_e,
                              ngl, dψ, Je,
                              dξdx, dξdy, dξdz,
                              dηdx, dηdy, dηdz,
                              dζdx, dζdy, dζdz,
-                             inputs, rhs_el, connijk_mesh,
+                             rhs_el, connijk_mesh,
                              coords, poin_in_bdy_face,
                              elem_to_face, bdy_face_type,
-                             μ_max, nelem, neqs,
+                             nelem, neqs,
                              ad_lvl, connijk, Δ,
-                             QT, VT, SD, AD, SOL_VARS_TYPE)
-    # BUGFIX: `lrichardson` used to be hardcoded to `true` here, with a
-    # comment claiming the pre-barrier code did the same. That's wrong —
-    # at the last-known-good commit (sm/newmaster e95cb259) the
-    # un-barriered `_expansion_visc!(NSD_3D)` read `inputs[:lrichardson]`
-    # directly (line `if inputs[:lrichardson]`), defaulting to `false`
-    # via mod_inputs.jl. The hardcoded `true` flipped Richardson on for
-    # every 3D run: under stable stratification (the typical
-    # `:energy_equation => "theta"` CompEuler/3d setup) `Ri` quickly
-    # exceeds `Ri_crit = 0.25`, the `f_Ri` factor collapses to 0, and
-    # `μ_turb` for the theta diffusion is multiplied by zero — VREM and
-    # SMAG both lose their theta dissipation, the simulation diverges,
-    # and the symptom is "viscosity not being added correctly." Reading
-    # the flag back through `inputs[:lrichardson]` restores the
-    # e95cb259 behaviour and lets `:lrichardson => true` in
-    # user_inputs.jl re-enable the correction when the user actually
-    # wants it.
-    lrichardson = get(inputs, :lrichardson, false)
+                             QT, VT, SD, AD, SOL_VARS_TYPE,
+                             sgs, mp)
     Δ_effective = Δ
+    micro = size(mp.Tabs, 1)
 
     for iel = 1:nelem
         Δ_effective = calculate_effective_delta(Δ, ad_lvl[iel])
@@ -1316,6 +1300,16 @@ function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
                              SOL_VARS_TYPE)
         end
 
+        if sgs isa AbstractSGSModel
+            compute_sgs_cache!(sgs, uprimitive, mp, uaux,
+                               ngl, dψ,
+                               dξdx, dξdy, dξdz,
+                               dηdx, dηdy, dηdz,
+                               dζdx, dζdy, dζdz,
+                               connijk_mesh, iel, Δ_effective^2,
+                               micro, SD)
+        end
+
         for ieq = 1:neqs
             _expansion_visc!(rhs_diffξ_el,
                              rhs_diffη_el,
@@ -1323,24 +1317,19 @@ function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
                              uprimitive,
                              visc_coeff,
                              ω,
-                             Tabs,
-                             qn_mp,
-                             qsatt,
-                             uaux_e,
                              ngl,
                              dψ,
                              Je,
                              dξdx, dξdy, dξdz,
                              dηdx, dηdy, dηdz,
                              dζdx, dζdy, dζdz,
-                             inputs, rhs_el, iel, ieq,
+                             rhs_el, iel, ieq,
                              connijk_mesh,
                              coords,
                              poin_in_bdy_face, elem_to_face,
                              bdy_face_type,
-                             QT, VT, SD, AD,
-                             Δ_effective,
-                             lrichardson
+                             sgs,
+                             QT, VT, SD, AD
                              )
 
         end
@@ -2006,22 +1995,20 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                          uprimitiveieq[k,l,1],
                                                          dudx, dvdy, dudy, dvdx,
                                                          PHYS_CONST, Δ2,
-                                                         inputs, 
                                                          VT, SD)
-                    
+
                     τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
                     τ_xy = effective_viscosity * (dudy + dvdx)
                     flux_x = τ_xx
                     flux_y = τ_xy
 
-                    
+
                 elseif is_v_momentum
                     # USE EFFECTIVE VISCOSITY
                     effective_viscosity =  SGS_diffusion(visc_coeffieq, ieq,
                                                          uprimitiveieq[k,l,1],
                                                          dudx, dvdy, dudy, dvdx,
                                                          PHYS_CONST, Δ2,
-                                                         inputs, 
                                                          VT, SD)
                     
                     τ_xy = effective_viscosity * (dudy + dvdx)
@@ -2046,7 +2033,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                               uprimitiveieq[k,l,1],
                                                               dudx, dvdy, dudy, dvdx,
                                                               PHYS_CONST, Δ2,
-                                                              inputs, VT, SD)
+                                                              VT, SD)
                         flux_x = effective_diffusivity * dθdx
                         flux_y = effective_diffusivity * dθdy
 
@@ -2089,7 +2076,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                               uprimitiveieq[k,l,1],
                                                               dudx, dvdy, dudy, dvdx,
                                                               PHYS_CONST, Δ2,
-                                                              inputs, VT, SD)
+                                                              VT, SD)
 
                         if lrichardson
                             T_ref = Tabs[ip]
@@ -2125,9 +2112,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                           uprimitiveieq[k,l,1],
                                                           dudx, dvdy, dudy, dvdx,
                                                           PHYS_CONST, Δ2,
-                                                          inputs, 
                                                           VT, SD)
-                    
+
                     # Compute temperature gradient
                     dqdξ = 0.0; dqdη = 0.0
                     @turbo for ii = 1:ngl
@@ -2340,30 +2326,24 @@ end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitiveieq, visc_coeffieq, ω,
-                          Tabs, qn, qs,
-                          uaux,
                           ngl, dψ, Je,
                           dξdx, dξdy, dξdz,
                           dηdx, dηdy, dηdz,
                           dζdx, dζdy, dζdz,
-                          inputs, rhs_el,
+                          rhs_el,
                           iel, ieq, connijk,
-                          coords, 
+                          coords,
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                        #   μ_max_ieq,
-                          QT::Inexact, VT, SD::NSD_3D, ::ContGal, Δ=1.0, lrichardson=false)
+                          sgs::AbstractSGSModel,
+                          QT::Inexact, VT, SD::NSD_3D, ::ContGal)
 
-    Δ2 = Δ^2
+    ltheta_eqn = sgs.ltheta_eqn
 
     # Determine equation type (indices shifted for 3D)
     is_u_momentum  = (ieq == 2)
     is_v_momentum  = (ieq == 3)
     is_w_momentum  = (ieq == 4)
     is_temperature = (ieq == 5)
-    # μ_max_ieq      = μ_max[ieq]
-
-    micro   = size(Tabs,1)
-    zs      = 19000.0
 
     for m = 1:ngl
         for l = 1:ngl
@@ -2444,19 +2424,10 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     # Velocity divergence
                     div_u = dudx + dvdy + dwdz
 
+                    ρ = uprimitiveieq[k,l,m,1]
+
                     if is_u_momentum
-                        # USE EFFECTIVE VISCOSITY
-                        effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
-                                                            uprimitiveieq[k,l,m,1],
-                                                            dudx, dvdy, dwdz,      
-                                                            dudy, dvdx,            
-                                                            dudz, dwdx,            
-                                                            dvdz, dwdy,
-                                                            0.0,
-                                                            0.0,
-                                                            PHYS_CONST, Δ2,
-                                                            inputs, 
-                                                            VT, SD)
+                        effective_viscosity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
                         
                         # Stress tensor for u-momentum
                         τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
@@ -2469,18 +2440,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         μ_local = effective_viscosity
 
                     elseif is_v_momentum
-                        # USE EFFECTIVE VISCOSITY
-                        effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
-                                                            uprimitiveieq[k,l,m,1],
-                                                            dudx, dvdy, dwdz,      
-                                                            dudy, dvdx,            
-                                                            dudz, dwdx,            
-                                                            dvdz, dwdy, 
-                                                            0.0,
-                                                            0.0,           
-                                                            PHYS_CONST, Δ2,
-                                                            inputs, 
-                                                            VT, SD)
+                        effective_viscosity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
                         
                         # Stress tensor for v-momentum
                         τ_xy = effective_viscosity * (dudy + dvdx)
@@ -2492,19 +2452,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         flux_z = τ_yz
                         μ_local = effective_viscosity
 
-                    elseif is_w_momentum  # NEW BLOCK
-                        # USE EFFECTIVE VISCOSITY
-                        effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
-                                                            uprimitiveieq[k,l,m,1],
-                                                            dudx, dvdy, dwdz,
-                                                            dudy, dvdx,
-                                                            dudz, dwdx,
-                                                            dvdz, dwdy,
-                                                            0.0,
-                                                            0.0,
-                                                            PHYS_CONST, Δ2,
-                                                            inputs, 
-                                                            VT, SD)
+                    elseif is_w_momentum
+                        effective_viscosity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
                         
                         # Stress tensor for w-momentum
                         τ_xz = effective_viscosity * (dudz + dwdx)
@@ -2517,126 +2466,27 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         μ_local = effective_viscosity
 
                     elseif is_temperature
-                        
-                        if (micro == 1)
-                            # Compute temperature gradient
-                            dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
-                            @turbo for ii = 1:ngl
-                                dθdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
-                                dθdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
-                                dθdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
-                            end
-                            
-                            # Transform to physical coordinates
-                            dθdx = dθdξ*dξdx_klm + dθdη*dηdx_klm + dθdζ*dζdx_klm
-                            dθdy = dθdξ*dξdy_klm + dθdη*dηdy_klm + dθdζ*dζdy_klm
-                            dθdz = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
-
-                            if lrichardson
-                                θ_ref = uprimitiveieq[k,l,m,5]  # Local temperature
-                            else
-                                θ_ref = 1.0  # Dummy value (not used when lrichardson=false)
-                            end
-                            
-                            # USE EFFECTIVE DIFFUSIVITY
-                            effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                                uprimitiveieq[k,l,m,1],
-                                                                dudx, dvdy, dwdz,      
-                                                                dudy, dvdx,            
-                                                                dudz, dwdx,            
-                                                                dvdz, dwdy,
-                                                                θ_ref,
-                                                                dθdz,
-                                                                PHYS_CONST, Δ2,
-                                                                inputs, 
-                                                                VT, SD,
-                                                                ltheta_eqn=(micro == 1),
-                                                                lrichardson=lrichardson )
-                            flux_x = effective_diffusivity * dθdx
-                            flux_y = effective_diffusivity * dθdy
-                            flux_z = effective_diffusivity * dθdz
-                            μ_local = effective_diffusivity
-
-                        elseif (micro > 1)
-                            PhysConst = PhysicalConst{Float32}()
-                            cp        = PhysConst.cp
-                            Rvap      = PhysConst.Rvap
-                            Lc        = PhysConst.Lc
-                            # Compute energy gradient
-                            dhldξ = 0.0; dhldη = 0.0; dhldζ = 0.0
-                            @turbo for ii = 1:ngl
-                                dhldξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
-                                dhldη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
-                                dhldζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
-                            end
-                            # Transform to physical coordinates
-                            dhldx = dhldξ*dξdx_klm + dhldη*dηdx_klm + dhldζ*dζdx_klm
-                            dhldy = dhldξ*dξdy_klm + dhldη*dηdy_klm + dhldζ*dζdy_klm
-                            dhldz = dhldξ*dξdz_klm + dhldη*dηdz_klm + dhldζ*dζdz_klm
-                            if lrichardson
-                                T_ref = Tabs[ip]
-                                # θ_ref = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
-
-                                # Compute condensate mixing ratio gradient
-                                dqndξ = 0.0; dqndη = 0.0; dqndζ = 0.0
-                                # dθ_refdξ = 0.0; dθ_refdη = 0.0; dθ_refdζ = 0.0
-                                # p = uaux[:,end]
-                                @turbo for ii = 1:ngl
-                                    ip_k  = conn_el[ii,l,m]
-                                    ip_l  = conn_el[k,ii,m]
-                                    ip_m  = conn_el[k,l,ii]
-                                    dqndξ += dψ[ii,k]*qn[ip_k]
-                                    dqndη += dψ[ii,l]*qn[ip_l]
-                                    dqndζ += dψ[ii,m]*qn[ip_m]
-                                    # dθ_refdξ += dψ[ii,k]*Tabs[ip_k]*(PhysConst.pref/p[ip_k])^(1/PhysConst.cpoverR)
-                                    # dθ_refdη += dψ[ii,l]*Tabs[ip_l]*(PhysConst.pref/p[ip_l])^(1/PhysConst.cpoverR)
-                                    # dθ_refdζ += dψ[ii,m]*Tabs[ip_m]*(PhysConst.pref/p[ip_m])^(1/PhysConst.cpoverR)
-                                end
-                                # Transform to physical coordinates
-                                dqndz = dqndξ*dξdz_klm + dqndη*dηdz_klm + dqndζ*dζdz_klm
-                                # dθ_refdz = dθ_refdξ*dξdz_klm + dθ_refdη*dηdz_klm + dθ_refdζ*dζdz_klm
-
-                                γ          = (Lc^2 * qs[ip]) / (Rvap * cp * T_ref^2)
-                                dhl_eff_dz =(1.0 / (cp * (1 + γ))) * dhldz - T_ref * dqndz
-                            else
-                                T_ref      = 1.0 # Dummy value (not used when lrichardson=false)
-                                dhl_eff_dz = 1.0
-                            end
-                            
-                             # USE EFFECTIVE DIFFUSIVITY
-                            effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                                uprimitiveieq[k,l,m,1],
-                                                                dudx, dvdy, dwdz,      
-                                                                dudy, dvdx,            
-                                                                dudz, dwdx,            
-                                                                dvdz, dwdy,
-                                                                T_ref,
-                                                                dhl_eff_dz,
-                                                                PHYS_CONST, Δ2,
-                                                                inputs, 
-                                                                VT, SD,
-                                                                ltheta_eqn=(micro == 1))
-                            flux_x = effective_diffusivity * dhldx
-                            flux_y = effective_diffusivity * dhldy
-                            flux_z = effective_diffusivity * dhldz
-                            μ_local = effective_diffusivity
+                        # Gradient of scalar variable (θ dry, hl moist) — same computation
+                        dsdξ = 0.0; dsdη = 0.0; dsdζ = 0.0
+                        @turbo for ii = 1:ngl
+                            dsdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
+                            dsdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
+                            dsdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
                         end
+                        dsdx = dsdξ*dξdx_klm + dsdη*dηdx_klm + dsdζ*dζdx_klm
+                        dsdy = dsdξ*dξdy_klm + dsdη*dηdy_klm + dsdζ*dζdy_klm
+                        dsdz = dsdξ*dξdz_klm + dsdη*dηdz_klm + dsdζ*dζdz_klm
+
+                        effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
+                        flux_x = effective_diffusivity * dsdx
+                        flux_y = effective_diffusivity * dsdy
+                        flux_z = effective_diffusivity * dsdz
+                        μ_local = effective_diffusivity
                         
                         
                     else
                         # Other scalars (use appropriate Schmidt number)
-                        # USE EFFECTIVE DIFFUSIVITY
-                        effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
-                                                              uprimitiveieq[k,l,m,1],
-                                                              dudx, dvdy, dwdz,      
-                                                              dudy, dvdx,            
-                                                              dudz, dwdx,            
-                                                              dvdz, dwdy,
-                                                              0.0,
-                                                              0.0,
-                                                              PHYS_CONST, Δ2,
-                                                              inputs, 
-                                                              VT, SD)
+                        effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
                         
                         # Compute scalar gradient
                         dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0

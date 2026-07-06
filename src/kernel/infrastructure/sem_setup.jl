@@ -81,6 +81,7 @@ function _matrix_for_cache(matrix)
 end
 
 function _save_sem_cache(path::String, metrics, matrix; inputs=nothing, nparts::Int=1)
+    inputs[:lamr] && return
     isempty(path) && return
     rank = MPI.Comm_rank(get_mpi_comm())
     try

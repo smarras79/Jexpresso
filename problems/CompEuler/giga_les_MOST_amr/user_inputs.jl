@@ -4,17 +4,25 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.04,
+        :Δt                   => 0.5,
         :tinit                => 0,
-        :tend                 => 10800.0,
-	:lrestart             => false,
+        :tend                 => 100.0,
+        # :tend                 => 43200.0,
+	# :lrestart             => true,
 	#:restart_output_file_path => "",
-	:restart_time         => 500,
-	:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:250:8500...,  9000:10:10800.0...),
+	# :restart_time         => 3500,
+	# :statistics_time      => 100,
+	:diagnostics_at_times => (5:5:100),
+	# :diagnostics_at_times => (100.0:100:43200),
+	# :diagnostics_at_times => (0:4:40..., 100:500:600..., 610:10:700...,  800:100:1000.0...),
         :lsource              => true,
+        :lmoist               => true,
+        :lprecip              => true,
+        :SOL_VARS_TYPE        => TOTAL(),
+        :LST                  => true,
 	:lsponge              => true,
-	:zsponge              => 2500.0,
-        :sounding_file        =>"./data_files/input_sounding_teamx_u10_flat_noheader.dat",
+	:zsponge              => 19000.0,
+        :sounding_file        =>"./data_files/GIGALES_GATE_IDEAL_sounding.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -23,24 +31,28 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :user_heatflux        => 0.12,
         :lwall_model          => true,
-        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        #:visc_model           => AV(),
-        #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 5, 5, 5, 5], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 15.0, 15.0, 15.0, 15.0, 15.0, 0.0], #horizontal viscosity constant for momentum
+        # :visc_model           => AV(),
+        # :μ           => [0.0, 100.0, 100.0, 100.0, 200.0, 200.0, 200.0], #horizontal viscosity constant for momentum
+        :energy_equation      => "energy",
+        # :lrichardson          => true,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
+        # :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_30kmx12kmx25km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_5x2x15_30kmx10kmx25km.msh",
+	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_128kmx128kmx25km_1600m.msh",
+	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les.msh",
 	
         # Warping:
         :lwarp => false,
@@ -60,7 +72,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => false,
+        :lfilter             => true,
         :mu_x                => 0.5,
         :mu_y                => 0.5,
 	:mu_z                => 0.5,
@@ -69,25 +81,37 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP2_scaling-8nodes-128x128x72_10kmX10kmX3dot5km/",
+        :output_dir          => "./output_gigales_energy_moist/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
+        :linitial_refine     => false,
         :init_refine_lvl     => 1,
+        :lpreadapt           => true,
+        :preadapt_max_level       => 3,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
-        :ladapt              => false,
-        :amr                 => true,
+        :lamr                 => true,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
-        :amr_freq            => 20,
-        :amr_max_level       => 1,
+        :amr_freq            => 100,
+        :amr_max_level       => 4,
+        :amr_start_time      => 0.0
+        #---------------------------------------------------------------------------
+        # LSTM AMR  (Gan et al. 2026, JGR Atmospheres)
+        #---------------------------------------------------------------------------
+        # :lstm_amr_mode  => :fallback,  # traditional RHi + composite score only
+        # :lstm_amr_mode  => :collect,   # as :fallback but saves training data
+        # :lstm_amr_mode  => :infer,     # use trained LSTM weights
+        # :lstm_amr_mode       => :fallback,
+        # :lstm_weight_file    => "./lstm_weights.jld2",
+        # # Training data output path (used in :collect mode):
+        # :lstm_data_file      => "./lstm_training_data.jld2"
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

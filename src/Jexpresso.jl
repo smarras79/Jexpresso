@@ -36,7 +36,7 @@ using StaticArrays
 using StaticArrays: SVector, MVector
 using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
-# using SnoopCompile
+# using SnoopCompile  # incompatible with sysimage builds
 using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
@@ -142,6 +142,8 @@ include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
 
 include(joinpath( "kernel", "physics", "turbul.jl"))
 
+include(joinpath( "kernel", "physics", "sgsStructs.jl"))
+
 include(joinpath( "kernel", "physics", "SGS.jl"))
 
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))
@@ -193,10 +195,6 @@ include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
-
-include(joinpath( "kernel", "operators", "imex2d.jl"))
-
-include(joinpath( "kernel", "operators", "imex.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 

@@ -39,13 +39,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if (inputs[:backend] != CPU())
         if (inputs[:backend] == CUDABackend())
-            global TInt = Int32
+            global TInt   = Int32
             global TFloat = Float32
-            global cpu = false
+            global cpu    = false
         else
-            global TInt = Int32
+            global TInt   = Int32
             global TFloat = Float32
-            global cpu = false
+            global cpu    = false
         end
     end
 
@@ -505,6 +505,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if (!haskey(inputs, :lrestart))
         inputs[:lrestart] = false
     end
+    
+    if (!haskey(inputs, :lrestart_vtk))
+        inputs[:lrestart_vtk] = false
+    end
+
+
+    if (!haskey(inputs, :lrestart_amr))
+        inputs[:lrestart_amr] = false
+    end
     #
     # Time:
     #
@@ -523,6 +532,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:restart_time] = 0.0
     end
 
+
     #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
@@ -539,6 +549,37 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     else
         inputs[:ndiagnostics_outputs] = 0
     end
+
+
+
+    #---------------------------------------------------------------------------
+    #LES statistics
+    #---------------------------------------------------------------------------
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = Float64[]
+    end
+
+    if(!haskey(inputs, :statistics_online_start))
+        inputs[:statistics_online_start] = Inf
+    end
+
+    if(!haskey(inputs, :statistics_online_interval))
+        inputs[:statistics_online_interval] = Float32(inputs[:Δt])
+    end
+
+    if(!haskey(inputs, :lesprofile_vars))
+        inputs[:lesprofile_vars] = []
+    end
+
+    if(!haskey(inputs, :lesstress_vars))
+        inputs[:lesstress_vars] = []
+    end
+
+
+    #---------------------------------------------------------------------------
+    #END LES statistics
+    #---------------------------------------------------------------------------
+
     
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
@@ -985,6 +1026,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ladapt] = true
     end
 
+    if(!haskey(inputs, :amr_start_time))
+        inputs[:amr_start_time] = Float32(0.0)
+    end
+
     if(!haskey(inputs, :linitial_refine))
         inputs[:linitial_refine] = false
     end
@@ -1078,6 +1123,17 @@ function mod_inputs_check(inputs, key, value, error_or_warning::String)
     end
 
 end
+
+function build_tspan(inputs, TFloat)
+    if get(inputs, :lamr, false) == true
+        amr_freq = inputs[:amr_freq]
+        Δt_amr   = amr_freq * inputs[:Δt]
+        [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + inputs[:amr_start_time] + Δt_amr)]
+    else
+        [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    end
+end
+
 
 function mod_inputs_print_welcome(rank = 0)
     if rank == 0

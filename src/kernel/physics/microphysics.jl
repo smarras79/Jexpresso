@@ -481,6 +481,12 @@ function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt,
             end
 
         end
+        # Guard against negative density from AMR interpolation overshoots
+        if ρ <= 0.0
+            @warn "microphysics: ρ=$(ρ) ≤ 0 at ip=$(ip)  uaux[ip,1]=$(uaux[ip,1]) uaux[ip,end]=$(uaux[ip,end]) uaux[ip,2]=$(uaux[ip,2]) uaux[ip,3]=$(uaux[ip,3])  uaux[ip,4]=$(uaux[ip,4]) uaux[ip,5]=$(uaux[ip,5])  qe[ip,1]=$(lpert ? qe[ip,1] : 0.0)  qt=$(isnan(qt) ? NaN : qt)  qp=$(isnan(qp) ? NaN : qp)"
+            S_micro[ip] = 0.0
+            continue
+        end
         T = Tabs[ip]
         e_satw = esatw(T)*100
         e_sati = esati(T)*100
@@ -671,9 +677,15 @@ function compute_Pm!(uaux, qe, qr, qs, qg, Pr, Ps, Pg, npoin, MicroConst, lpert)
             ρ = uaux[ip,1]
         end
         #@info ρ,qr[ip],ρ0
-        Pr[ip] = (a_rain * γ4br)/6 * (π * ρ_rain * N0_rain)^(-b_rain/4)*(ρ0/ρ)^(0.5)*(ρ*qr[ip])^(1+b_rain/4)
-        Ps[ip] = (a_snow * γ4bs)/6 * (π * ρ_snow * N0_snow)^(-b_snow/4)*(ρ0/ρ)^(0.5)*(ρ*qs[ip])^(1+b_snow/4)
-        Pg[ip] = (a_graupel * γ4bg)/6 * (π * ρ_graupel * N0_graupel)^(-b_graupel/4)*(ρ0/ρ)^(0.5)*(ρ*qg[ip])^(1+b_graupel/4)
+        if ρ > 0
+            Pr[ip] = (a_rain * γ4br)/6 * (π * ρ_rain * N0_rain)^(-b_rain/4)*(ρ0/ρ)^(0.5)*max(0, ρ*qr[ip])^(1+b_rain/4)
+            Ps[ip] = (a_snow * γ4bs)/6 * (π * ρ_snow * N0_snow)^(-b_snow/4)*(ρ0/ρ)^(0.5)*max(0, ρ*qs[ip])^(1+b_snow/4)
+            Pg[ip] = (a_graupel * γ4bg)/6 * (π * ρ_graupel * N0_graupel)^(-b_graupel/4)*(ρ0/ρ)^(0.5)*max(0, ρ*qg[ip])^(1+b_graupel/4)
+        else
+            Pr[ip] = 0.0
+            Ps[ip] = 0.0
+            Pg[ip] = 0.0
+        end
     end
 end
 
@@ -704,9 +716,15 @@ function compute_Pm_gpu(u, qe, qr, qs, qg, MicroConst, lpert)
     N0_graupel = MicroConst.N0_graupel
     b_graupel = MicroConst.b_graupel
 
-    Pr = (a_rain * γ4br)/FT(6) * (FT(π) * ρ_rain * N0_rain)^(FT(-b_rain/FT(4)))*(ρ0/ρ)^(FT(0.5))*(ρ*qr)^(FT(1)+FT(b_rain/FT(4)))
-    Ps = (a_snow * γ4bs)/FT(6) * (FT(π) * ρ_snow * N0_snow)^(FT(-b_snow/FT(4)))*(ρ0/ρ)^(FT(0.5))*(ρ*qs)^(FT(1)+FT(b_snow/FT(4)))
-    Pg = (a_graupel * γ4bg)/FT(6) * (FT(π) * ρ_graupel * N0_graupel)^(FT(-b_graupel/FT(4)))*(ρ0/ρ)^(FT(0.5))*(ρ*qg)^(FT(1)+FT(b_graupel/FT(4)))
+    if ρ > FT(0)
+        Pr = (a_rain * γ4br)/FT(6) * (FT(π) * ρ_rain * N0_rain)^(FT(-b_rain/FT(4)))*(ρ0/ρ)^(FT(0.5))*max(FT(0), ρ*qr)^(FT(1)+FT(b_rain/FT(4)))
+        Ps = (a_snow * γ4bs)/FT(6) * (FT(π) * ρ_snow * N0_snow)^(FT(-b_snow/FT(4)))*(ρ0/ρ)^(FT(0.5))*max(FT(0), ρ*qs)^(FT(1)+FT(b_snow/FT(4)))
+        Pg = (a_graupel * γ4bg)/FT(6) * (FT(π) * ρ_graupel * N0_graupel)^(FT(-b_graupel/FT(4)))*(ρ0/ρ)^(FT(0.5))*max(FT(0), ρ*qg)^(FT(1)+FT(b_graupel/FT(4)))
+    else
+        Pr = FT(0)
+        Ps = FT(0)
+        Pg = FT(0)
+    end
     #if (Pr > 0)
     #    @info Pr, Ps, Pg
     #end
@@ -779,9 +797,29 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
             end
         end
 
+        # Guard against negative density from AMR interpolation overshoots.
+        # With ρ <= 0 the mixing ratios (qt, qp) flip sign and all downstream
+        # microphysics is unphysical; skip the point and zero all outputs.
+        if ρ <= 0.0
+            qr[ip]       = 0.0
+            qs[ip]       = 0.0
+            qg[ip]       = 0.0
+            qn[ip]       = 0.0
+            qc[ip]       = 0.0
+            qi[ip]       = 0.0
+            qsatt[ip]    = 0.0
+            if NSD == NSD_3D()          # background temperature from background moist static energy
+                Tabs[ip] = (qe[ip,5]/qe[ip,1] - g*z[ip])/cp
+            else
+                Tabs[ip] = (qe[ip,4]/qe[ip,1] - g*z[ip])/cp
+            end
+            uaux[ip,end] = qe[ip,end]  # use background pressure to avoid artificial pressure gradients
+            continue
+        end
+
         # find equilibrium temperature from saturation adjustment
         # initial guess for sensible temperature and pressure assumes no condensates/all vapor
-                
+
         T =  (hl - g*z[ip])/cp
         an   = 1/(T0n - T00n)
         bn   = T00n * an

@@ -51,7 +51,7 @@ function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1, qoutvars=qva
     q          = St_SolutionVars{T, dims1, neqs, backend, Arr1}()
     q.qvars    = qvars
     q.qoutvars = qoutvars
-    
+
     return q
 end
 
@@ -75,13 +75,13 @@ function allocate_rhs(SD, nelem, npoin, ngl, T, backend; neqs=1)
 
     if SD == NSD_1D()
         dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
+        dims2 = (Int64(nelem), Int64(ngl), Int64(neqs))
     elseif SD == NSD_2D()
         dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
+        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs))
     elseif SD == NSD_3D()
         dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
+        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
     end
     
     Arr1 = typeof(KernelAbstractions.zeros(backend,  T, dims1))

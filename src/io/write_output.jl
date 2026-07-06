@@ -1,4 +1,5 @@
 using WriteVTK
+using P4est_wrapper
 
 include("./plotting/jeplots.jl")
 
@@ -24,6 +25,26 @@ function append_pvd_entry(path, time, filename)
             println(io, line)
         end
     end
+end
+
+"""
+    read_pvd_last_entry(pvd_path) -> (last_time::Float64, last_iout::Int)
+
+Return the simulation time and output index of the last `<DataSet>` entry
+in a `simulation.pvd` file.  Used to auto-configure VTK restarts.
+"""
+function read_pvd_last_entry(pvd_path::String)
+    last_time = NaN
+    last_iout = -1
+    for line in readlines(pvd_path)
+        m = match(r"timestep=\"([^\"]+)\"[^>]*file=\"iter_(\d+)\.pvtu\"", line)
+        if m !== nothing
+            last_time = parse(Float64, m[1])
+            last_iout = parse(Int,     m[2])
+        end
+    end
+    isnan(last_time) && error("No DataSet entries found in $pvd_path")
+    return last_time, last_iout
 end
 
 #------------------------------------------------------------------
@@ -383,6 +404,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+
+    gelm_id = zeros(mesh.nelem*(mesh.ngl-1)^3)
+    ad_lvl  = zeros(mesh.nelem*(mesh.ngl-1)^3)
     
     isel = 1
     for iel = 1:mesh.nelem
@@ -409,6 +433,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     subelem[isel, 8] = ip8
                     
                     cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+
+                    gelm_id[isel] = mesh.el2gel[iel]
+                    ad_lvl[isel]  = mesh.ad_lvl[iel]
                     
                     isel = isel + 1
                 end
@@ -438,6 +465,8 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf["gel_id", VTKCellData()] = gelm_id
+        vtkf["ad_lvl", VTKCellData()] = ad_lvl
 
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
@@ -688,6 +717,433 @@ function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
     end
     
     return q, qe
+end
+
+"""
+    read_vtu_cell_data(filename, varnames) -> (Dict{String,Vector{Float64}}, Int)
+
+Read cell-data arrays from a VTK unstructured grid file (.vtu) written in
+appended raw-binary format (as produced by WriteVTK.jl with `compress=false`).
+
+Returns `(data_dict, ncells)`.
+"""
+function read_vtu_cell_data(filename::String, varnames::Vector{String})
+    raw_start, hdr = open(filename, "r") do f
+        buf    = read(f, 8192)
+        needle = codeunits("<AppendedData")
+        idx    = findfirst(needle, buf)
+        idx === nothing && error("No <AppendedData> section in $filename")
+        gt  = findnext(==(UInt8('>')), buf, last(idx))
+        pos = findnext(==(UInt8('_')), buf, gt)
+        pos === nothing && error("No '_' marker after <AppendedData> in $filename")
+        pos, String(buf[1:gt-1])
+    end
+
+    m = match(r"header_type=\"(\w+)\"", hdr)
+    HeaderT = (m !== nothing && m[1] == "UInt32") ? UInt32 : UInt64
+
+    m = match(r"NumberOfCells=\"(\d+)\"", hdr)
+    m === nothing && error("NumberOfCells not found in $filename")
+    ncells = parse(Int, m[1])
+
+    var_offsets = Dict{String,Int}()
+    in_cell_section = false
+    for line in split(hdr, '\n')
+        if   occursin("<CellData",  line); in_cell_section = true  end
+        if   occursin("</CellData", line); in_cell_section = false end
+        if in_cell_section
+            m = match(r"<DataArray[^>]+Name=\"([^\"]+)\"[^>]*offset=\"(\d+)\"", line)
+            if m !== nothing
+                var_offsets[String(m[1])] = parse(Int, m[2])
+            end
+        end
+    end
+
+    result = Dict{String,Vector{Float64}}()
+    open(filename, "r") do f
+        for vname in varnames
+            haskey(var_offsets, vname) || continue
+            seek(f, raw_start + var_offsets[vname])
+            read(f, HeaderT)
+            data = Vector{Float64}(undef, ncells)
+            read!(f, data)
+            result[vname] = data
+        end
+    end
+    return result, ncells
+end
+
+"""
+    read_vtu_point_data(filename, varnames) -> (Dict{String,Vector{Float64}}, Int)
+
+Read point-data arrays from a VTK unstructured grid file (.vtu) written in
+appended raw-binary format (as produced by WriteVTK.jl with `compress=false`).
+
+Returns `(data_dict, npoin)`.  `data_dict[name]` is a `Vector{Float64}` of
+length `npoin` for each name in `varnames` that exists in the file.
+Also searches the `<Points>` element; pass `"__coords__"` in `varnames` to get
+the interleaved (x,y,z) array of length `3*npoin`.
+"""
+function read_vtu_point_data(filename::String, varnames::Vector{String})
+
+    # --- Read the XML header (everything before the binary AppendedData block) ---
+    # WriteVTK.jl always puts the XML header in the first few KB.
+    raw_start, hdr = open(filename, "r") do f
+        buf    = read(f, 8192)
+        needle = codeunits("<AppendedData")
+        idx    = findfirst(needle, buf)
+        idx === nothing &&
+            error("No <AppendedData> section found in first 8192 bytes of $filename")
+        gt  = findnext(==(UInt8('>')), buf, last(idx))
+        # The '_' marker may be separated from '>' by a newline; scan forward.
+        pos = findnext(==(UInt8('_')), buf, gt)
+        pos === nothing &&
+            error("Could not find '_' marker after <AppendedData ...> in $filename")
+        # pos is the 1-based index of '_'; first data byte is at 0-based file offset = pos
+        pos, String(buf[1:gt-1])
+    end
+
+    # --- Extract metadata from the XML header via regex ---
+    # header_type (UInt32 or UInt64)
+    m = match(r"header_type=\"(\w+)\"", hdr)
+    HeaderT = (m !== nothing && m[1] == "UInt32") ? UInt32 : UInt64
+
+    # NumberOfPoints
+    m = match(r"NumberOfPoints=\"(\d+)\"", hdr)
+    m === nothing && error("NumberOfPoints not found in VTU header of $filename")
+    npoin = parse(Int, m[1])
+
+    # All DataArray entries: extract Name, optional NumberOfComponents, and offset.
+    # We scan every <DataArray .../> tag regardless of which section it belongs to,
+    # then use context (preceding section tag) to distinguish Points from PointData.
+    var_offsets = Dict{String,Int}()
+    var_ncomps  = Dict{String,Int}()
+
+    in_points_section = false
+    for line in split(hdr, '\n')
+        if   occursin("<Points",   line); in_points_section = true  end
+        if   occursin("</Points",  line) ||
+             occursin("<Cells",    line) ||
+             occursin("<CellData", line) ||
+             occursin("<PointData",line); in_points_section = false end
+        m = match(r"<DataArray[^>]+Name=\"([^\"]+)\"[^>]*offset=\"(\d+)\"", line)
+        if m !== nothing
+            nm  = in_points_section ? "__coords__" : String(m[1])
+            nc  = in_points_section ? 3 : 1
+            var_offsets[nm] = parse(Int, m[2])
+            var_ncomps[nm]  = nc
+        end
+    end
+
+    # --- Read each requested variable ---
+    result = Dict{String,Vector{Float64}}()
+    open(filename, "r") do f
+        for vname in varnames
+            haskey(var_offsets, vname) || continue
+            off    = var_offsets[vname]
+            ncomp  = var_ncomps[vname]
+            n_vals = npoin * ncomp
+            seek(f, raw_start + off)
+            byte_count = read(f, HeaderT)
+            byte_count == UInt64(n_vals * sizeof(Float64)) ||
+                error("Unexpected byte count for '$vname' in $filename " *
+                      "(got $byte_count, expected $(n_vals * sizeof(Float64)))")
+            data = Vector{Float64}(undef, n_vals)
+            read!(f, data)
+            result[vname] = data
+        end
+    end
+
+    return result, npoin
+end
+
+"""
+    vtk_to_mesh_ipmap(vtk_xyz, mesh_x, mesh_y, mesh_z) -> index_vector
+
+Build a mapping from Jexpresso mesh point index `ip` (1-based) to the
+corresponding 1-based index in the VTK arrays.
+
+Fast path (O(N)): if every VTK point already sits at `(mesh_x[ip], mesh_y[ip],
+mesh_z[ip])` within `tol`, returns an identity range with zero allocation.
+
+Slow path (O(N log N)): coordinates differ in ordering (e.g. different MPI
+rank count).  Builds a coordinate hash-map and finds the matching VTK index
+for every mesh point.  An error is raised if any mesh point has no match.
+
+`vtk_xyz` is the flat interleaved vector `[x₁,y₁,z₁, x₂,y₂,z₂, …]` returned
+by `read_vtu_point_data` when `"__coords__"` is requested.
+"""
+function vtk_to_mesh_ipmap(vtk_xyz::Vector{Float64},
+                            mesh_x::AbstractVector, mesh_y::AbstractVector,
+                            mesh_z::AbstractVector)
+    npoin = length(mesh_x)
+    tol   = 1e-8 * (maximum(abs, mesh_x) + 1.0)   # absolute tolerance
+
+    # --- Fast path: verify VTK ordering matches mesh ordering ---
+    fast = true
+    for ip = 1:npoin
+        j = 3*(ip - 1)
+        if abs(vtk_xyz[j+1] - mesh_x[ip]) > tol ||
+           abs(vtk_xyz[j+2] - mesh_y[ip]) > tol ||
+           abs(vtk_xyz[j+3] - mesh_z[ip]) > tol
+            fast = false
+            break
+        end
+    end
+    fast && return 1:npoin   # identity, no allocation
+
+    # --- Slow path: coordinate hash-map ---
+    @warn "VTK point ordering differs from current mesh — building coordinate map " *
+          "(this is normal when restarting with a different MPI rank count)"
+
+    # Key: (x, y, z) bit-cast to UInt64 triple — exact match on IEEE-754 bits
+    # This works because the coordinates were written from the same Float64 values.
+    key3(x, y, z) = (reinterpret(UInt64, Float64(x)),
+                     reinterpret(UInt64, Float64(y)),
+                     reinterpret(UInt64, Float64(z)))
+
+    vtk_map = Dict{Tuple{UInt64,UInt64,UInt64}, Int}()
+    sizehint!(vtk_map, npoin)
+    for j = 1:npoin
+        k = 3*(j - 1)
+        vtk_map[key3(vtk_xyz[k+1], vtk_xyz[k+2], vtk_xyz[k+3])] = j
+    end
+
+    ip_map = Vector{Int}(undef, npoin)
+    for ip = 1:npoin
+        k = key3(mesh_x[ip], mesh_y[ip], mesh_z[ip])
+        ip_map[ip] = get(vtk_map, k) do
+            error("No VTK point found for mesh point $ip at " *
+                  "($(mesh_x[ip]), $(mesh_y[ip]), $(mesh_z[ip])). " *
+                  "Ensure the VTK files were produced on the same grid.")
+        end
+    end
+    return ip_map
+end
+
+"""
+    read_vtk_restart!(q, mesh, inputs, PhysConst)
+
+Populate `q.qn` and `q.qe` from a VTK output snapshot of a LESICP* case.
+
+Reads the primitive variables (ρ, u, v, w, θ) stored by `user_uout!` and
+converts back to the conserved state vector [ρ, ρu, ρv, ρw, ρθ], overwriting
+`q.qn` only.  `q.qe` is left untouched so the caller can initialise it from
+the background sounding first.
+
+Required entry in `inputs`:
+  - `:restart_vtk_input_dir`  path to the OUTPUT_DIR containing `iter_N/` subdirs
+
+Optional (auto-detected from `simulation.pvd` if absent):
+  - `:restart_vtk_iout`  iteration index N of the snapshot to read
+  - `:tinit`             simulation time at the restart point
+
+Each MPI rank reads its own piece file `iter_N/iter_N_<part>.vtu`
+where `part = MPI.Comm_rank + 1`.
+"""
+function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    part = rank + 1   # WriteVTK parts are 1-indexed
+
+    vtk_dir = get(inputs, :restart_vtk_input_dir, output_dir)
+
+    # --- Auto-detect iout and tinit from simulation.pvd if not provided ---
+    if !haskey(inputs, :restart_vtk_iout)
+        pvd_path      = joinpath(vtk_dir, "simulation.pvd")
+        time_arr      = [0.0]
+        iout_arr      = [0.0]
+        if rank == 0
+            t_pvd, i_pvd  = read_pvd_last_entry(pvd_path)
+            time_arr[1]   = t_pvd
+            iout_arr[1]   = Float64(i_pvd)
+        end
+        MPI.Bcast!(time_arr, 0, comm)
+        MPI.Bcast!(iout_arr, 0, comm)
+        inputs[:tinit]            = time_arr[1]
+        inputs[:restart_vtk_iout] = Int(iout_arr[1])
+        if rank == 0
+            @info " VTK restart: last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+        end
+    else
+
+        inputs[:tinit] = collect(Float64, inputs[:diagnostics_at_times])[inputs[:restart_vtk_iout]]
+        if rank == 0
+            @info " VTK restart: snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+        end
+    end
+
+    iout   = inputs[:restart_vtk_iout]
+    nparts = MPI.Comm_size(comm)
+    # WriteVTK.jl zero-pads the part number to ndigits(nparts) digits
+    part_str = lpad(part, ndigits(nparts), '0')
+    fname    = joinpath(vtk_dir, "iter_$(iout)", "iter_$(iout)_$(part_str).vtu")
+
+    if rank == 0
+        @info " Reading VTK restart from: $fname"
+    end
+
+    vars, npoin_vtk = read_vtu_point_data(fname, ["ρ", "u", "v", "w", "θ", "__coords__"])
+
+    npoin_vtk == mesh.npoin ||
+        error("Rank $rank: VTK point count ($npoin_vtk) ≠ mesh.npoin ($(mesh.npoin)). " *
+              "Restart requires the same MPI rank count and the same grid.")
+
+    # Build a safe index map: vtk_ip = ip_map[mesh_ip]
+    # Fast O(N) identity check; falls back to coordinate hash-map if ordering differs.
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+
+    ρ_arr = vars["ρ"]
+    u_arr = vars["u"]
+    v_arr = vars["v"]
+    w_arr = vars["w"]
+    θ_arr = vars["θ"]
+
+    for ip = 1:mesh.npoin
+        j = ip_map[ip]   # index into VTK arrays
+        ρ = ρ_arr[j]
+        u = u_arr[j]
+        v = v_arr[j]
+        w = w_arr[j]
+        θ = θ_arr[j]
+        P = perfectGasLaw_ρθtoP(PhysConst; ρ=ρ, θ=θ)
+
+        # Only overwrite qn; qe retains the reference state from the normal init
+        q.qn[ip, 1] = ρ
+        q.qn[ip, 2] = ρ * u
+        q.qn[ip, 3] = ρ * v
+        q.qn[ip, 4] = ρ * w
+        q.qn[ip, 5] = ρ * θ
+        q.qn[ip, end] = P
+    end
+
+    if rank == 0
+        @info " VTK restart complete (npoin=$(mesh.npoin), iout=$iout)"
+    end
+end
+
+"""
+    write_p4est_checkpoint(output_dir, iter, partitioned_model)
+
+Save the p4est forest topology to `output_dir/iter_N/iter_N.p4est`.
+Called alongside each VTK write to enable AMR restarts.
+Only called when `inputs[:lamr] == true`.
+"""
+function write_p4est_checkpoint(output_dir::String, iter::Int, partitioned_model)
+    comm  = MPI.COMM_WORLD
+    rank  = MPI.Comm_rank(comm)
+    dir   = joinpath(output_dir, "iter_$(iter)")
+    fname = joinpath(dir, "iter_$(iter).p4est")
+    if rank == 0
+        mkpath(dir)
+    end
+    MPI.Barrier(comm)
+    # save_data=0: no per-quadrant payload, forest topology only
+    # Dispatch on 2D (p4est_save) vs 3D (p8est_save) to avoid passing the wrong struct type.
+    if partitioned_model.pXest_type isa GridapP4est.P4estType
+        @outputrootonly P4est_wrapper.p4est_save(fname, partitioned_model.ptr_pXest, Cint(0))
+    else
+        @outputrootonly P4est_wrapper.p8est_save(fname, partitioned_model.ptr_pXest, Cint(0))
+    end
+end
+
+"""
+    read_vtk_restart_gigales!(q, mesh, inputs; output_dir="")
+
+VTK restart for 7-variable moist compressible Euler (giga_les_MOST_amr).
+Reads primitive fields written by `user_uout!` and reconstructs the conserved
+state in q.qn by calling `user_read_vtu_point_data!` from the problem's
+user_primitives.jl.
+
+Required entry in `inputs`:
+  - `:restart_vtk_input_dir`  path to OUTPUT_DIR containing iter_N/ subdirs
+
+Optional (auto-detected from simulation.pvd if absent):
+  - `:restart_vtk_iout`  iteration index
+  - `:tinit`             simulation time at restart
+"""
+function read_vtk_restart_gigales!(q, mesh, inputs; output_dir="")
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    part = rank + 1
+
+    vtk_dir = get(inputs, :restart_vtk_input_dir, output_dir)
+
+    # Auto-detect iout and tinit from simulation.pvd if not provided
+    if !haskey(inputs, :restart_vtk_iout)
+        pvd_path = joinpath(vtk_dir, "simulation.pvd")
+        time_arr = [0.0]
+        iout_arr = [0.0]
+        if rank == 0
+            t_pvd, i_pvd = read_pvd_last_entry(pvd_path)
+            time_arr[1]  = t_pvd
+            iout_arr[1]  = Float64(i_pvd)
+        end
+        MPI.Bcast!(time_arr, 0, comm)
+        MPI.Bcast!(iout_arr, 0, comm)
+        inputs[:tinit]            = time_arr[1]
+        inputs[:restart_vtk_iout] = Int(iout_arr[1])
+        if rank == 0
+            @info " VTK restart (giga_les): last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+        end
+    else
+
+        inputs[:tinit] = collect(Float64, inputs[:diagnostics_at_times])[inputs[:restart_vtk_iout]]
+        if rank == 0
+            @info " VTK restart: snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+        end
+    end
+
+    iout     = inputs[:restart_vtk_iout]
+    nparts   = MPI.Comm_size(comm)
+    part_str = lpad(part, ndigits(nparts), '0')
+    fname    = joinpath(vtk_dir, "iter_$(iout)", "iter_$(iout)_$(part_str).vtu")
+
+    if rank == 0
+        @info " Reading VTK restart (giga_les) from: $fname"
+    end
+
+    if !function_exists(@__MODULE__, :user_read_vtu_point_data!)
+        error("""
+user_read_vtu_point_data! not found. Define it in your problem's user_primitives.jl:
+
+    function user_read_vtu_point_data!(q, vars, ip_map, mesh)
+        # vars is the Dict returned by read_vtu_point_data — keys are VTK variable names
+        # ip_map maps mesh point index to VTK array index
+        for ip = 1:mesh.npoin
+            j = ip_map[ip]
+            ρ = vars["ρ"][j]
+            # ... unpack and reconstruct conserved state ...
+            q.qn[ip, 1]   = ρ
+            q.qn[ip, end] = vars["pressure"][j]
+        end
+    end
+""")
+    end
+
+    vars, npoin_vtk = read_vtu_point_data(
+        fname, ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "pressure", "__coords__"])
+
+    npoin_vtk == mesh.npoin ||
+        error("Rank $rank: VTK point count ($npoin_vtk) ≠ mesh.npoin ($(mesh.npoin)).")
+
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+
+    user_read_vtu_point_data!(q, vars, ip_map, mesh)
+
+    cdata, _ = read_vtu_cell_data(fname, ["gel_id", "ad_lvl"])
+    if haskey(cdata, "ad_lvl") && haskey(cdata, "gel_id")
+        stride = (mesh.ngl - 1)^3
+        for iel = 1:mesh.nelem
+            icell = (iel - 1) * stride + 1
+            @assert Int(cdata["gel_id"][icell]) == mesh.el2gel[iel] "gel_id mismatch at iel=$iel"
+            mesh.ad_lvl[iel] = Int(cdata["ad_lvl"][icell])
+        end
+    end
+
+    if rank == 0
+        @info " VTK restart (giga_les) complete (npoin=$(mesh.npoin), iout=$iout)"
+    end
 end
 
 function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,

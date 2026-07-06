@@ -32,47 +32,6 @@ function driver(nparts,
     _t_sem = time_ns()
 
     #---------------------------------------------------------
-    # Time span (shared by both standalone and coupled paths).
-    #---------------------------------------------------------
-    if inputs[:lamr] == true
-        amr_freq = inputs[:amr_freq]
-        Δt_amr   = amr_freq * inputs[:Δt]
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
-    else
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
-    end
-
-    #check_memory(" Before sem_setup.")
-                
-    # Create initial coarse mesh (for potential refinement)
-    
-
-    #check_memory(" After sem_setup.")
-
-    if (inputs[:backend] != CPU())
-        convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
-    end
-
-    
-
-
-    # PERF: during package precompilation (PrecompileTools @compile_workload)
-    # this driver runs only to bake the hot-path JIT — RHS, the SciML
-    # integrator, the callback-specialized warm-up — into the precompile
-    # cache. The actual time integration is throwaway there, so cap the run
-    # to a handful of steps. A full sod1d pass is 2000 steps (tend=0.2,
-    # Δt=1e-4); running all of them during precompile is what made it take
-    # minutes. The warm-up pre-pass plus the first few real steps still
-    # trigger every specialization we want cached, so cold runs stay fast
-    # without precompilation paying for a full simulation. `jl_generating_
-    # output` is 1 only while generating precompile output, so real runs are
-    # never shortened.
-    if ccall(:jl_generating_output, Cint, ()) == 1 && haskey(inputs, :Δt)
-        _dt_pc = TFloat(inputs[:Δt])
-        tspan  = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit]) + 3 * _dt_pc]
-    end
-
-    #---------------------------------------------------------
     # Mesh + initial state (+ coupling object in MPMD mode).
     #
     #   - Coupled path:  setup_coupling_and_mesh does sem_setup +
@@ -133,6 +92,27 @@ function driver(nparts,
             @printf("DONE (%.2f s)\n", (time_ns() - _t_init) / 1e9)
             flush(stdout)
         end
+    end
+    #---------------------------------------------------------
+    # Time span (shared by both standalone and coupled paths).
+    #---------------------------------------------------------
+    # Build tspan after initialize() so VTK/HDF5 restarts that update inputs[:tinit] are reflected.
+    tspan = build_tspan(inputs, TFloat)
+
+    # PERF: during package precompilation (PrecompileTools @compile_workload)
+    # this driver runs only to bake the hot-path JIT — RHS, the SciML
+    # integrator, the callback-specialized warm-up — into the precompile
+    # cache. The actual time integration is throwaway there, so cap the run
+    # to a handful of steps. A full sod1d pass is 2000 steps (tend=0.2,
+    # Δt=1e-4); running all of them during precompile is what made it take
+    # minutes. The warm-up pre-pass plus the first few real steps still
+    # trigger every specialization we want cached, so cold runs stay fast
+    # without precompilation paying for a full simulation. `jl_generating_
+    # output` is 1 only while generating precompile output, so real runs are
+    # never shortened.
+    if ccall(:jl_generating_output, Cint, ()) == 1 && haskey(inputs, :Δt)
+        _dt_pc = TFloat(inputs[:Δt])
+        tspan  = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit]) + 3 * _dt_pc]
     end
 
     #---------------------------------------------------------

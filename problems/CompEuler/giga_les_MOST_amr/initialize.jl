@@ -1,8 +1,8 @@
-function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
 
             """
-    println(" Initialize fields for 3D CompEuler with θ equation ........................ ")
+    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -27,13 +27,19 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         
             for ip=1:mesh.npoin
                 z = mesh.z[ip]
-                ρ  = q.qn[ip,1]
-                hl = q.qn[ip,5] / ρ
-                qv = q.qn[ip,6] / ρ
+                if inputs[:SOL_VARS_TYPE] == PERT()
+                    ρ  = q.qn[ip,1] + q.qe[ip,1]
+                    hl = (q.qn[ip,5] + q.qe[ip,5]) / ρ
+                    qv = (q.qn[ip,6] + q.qe[ip,6]) / ρ
+                else
+                    ρ  = q.qn[ip,1]
+                    hl = q.qn[ip,5] / ρ
+                    qv = q.qn[ip,6] / ρ
+                end
                 T  = (hl - PhysConst.g*z) / PhysConst.cp
                 Tv = T*(1+0.61*qv)
                 q.qn[ip,end] = ρ*Tv*PhysConst.Rair
-            
+
                 ρe  = q.qe[ip,1]
                 hle = q.qe[ip,5] / ρe
                 qve = q.qe[ip,6] / ρe
@@ -124,6 +130,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv, Press=pref) #kg/m³
                 hl     = PhysConst.cp*T + PhysConst.g*z
 
+                # u     = 0.0
+                # u_ref = 0.0
+                # v     = 0.0
+                # v_ref = 0.0
+
+
 
 
                 if inputs[:SOL_VARS_TYPE] == PERT()
@@ -152,7 +164,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                     q.qn[ip,3] = ρ*v
                     q.qn[ip,4] = ρ*w
                     q.qn[ip,5] = ρ*hl
-                    q.qn[ip,6] = 0.0
+                    # q.qn[ip,6] = 0.0
                     q.qn[ip,6] = ρ*qv#0.0
                     q.qn[ip,7] = 0.0
                     q.qn[ip,end] = pref_m #+ ρ*qv*PhysConst.Rvap*T
@@ -163,6 +175,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                     q.qe[ip,3] = ρref*v_ref
                     q.qe[ip,4] = ρref*w_ref
                     q.qe[ip,5] = ρref*hl_ref
+                    # q.qe[ip,6] = 0
                     q.qe[ip,6] = ρref*qv_ref
                     q.qe[ip,7] = 0.0
                     q.qe[ip,end] = pref_m #+ ρref*qv*PhysConst.Rvap*Tref
@@ -190,8 +203,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, background, mesh.x, mesh.y, mesh.z, xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    println(maximum(q.qe[:,end]), minimum(q.qe[:,end]))
-    println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")
+    @info maximum(q.qe[:,end]), minimum(q.qe[:,end])
+    @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
     return q
 end
 
@@ -259,4 +272,74 @@ end
     qe[ip,7] = 0.0
     qe[ip,end] = pref_m
 
+end
+
+
+function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, 
+                               Tabs, qn, qc, qi, qr,
+                               qs, qg, Pr, Ps, Pg,
+                               S_micro, qsatt,
+                               connijk, nelem, ngl, 
+                               coords,
+                               max_level)
+    ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
+    tol         = 1e-6
+    x           = coords[:,1]
+    y           = coords[:,2]
+    z           = coords[:,3]
+
+    preadapt_max_lvl = inputs[:preadapt_max_level]
+    for iel = 1:nelem
+        m = 1
+        for i = 1:ngl
+            for j = 1:ngl
+                for k = 1:ngl
+                    ips[m] = connijk[iel, i, j, k]
+                    m += 1
+                end
+            end
+        end
+        # @info q[ips,4] - qe[ips,4]
+        qn_el      = qn[ips]
+        z_el       = z[ips]
+        if any(qn_el .> tol) && (old_ad_lvl[iel] < max_level) && all(z_el .< 14000)
+            adapt_flags[iel] = refine_flag
+        end
+        if all(qn_el .<= 0) 
+            if all(z_el .< 4000.0) && old_ad_lvl[iel] > preadapt_max_lvl
+                adapt_flags[iel] = coarsen_flag
+            elseif all(z_el .< 10000.0) && all(z_el .>= 4000.0) && old_ad_lvl[iel] > max_level-1
+                adapt_flags[iel] = coarsen_flag
+            elseif all(z_el .< 14000.0) && all(z_el .>= 10000.0) && old_ad_lvl[iel] > max_level-2
+                adapt_flags[iel] = coarsen_flag
+            else
+                adapt_flags[iel] = nothing_flag
+            end
+        end
+    end
+end
+
+function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk, nelem, ngl, max_level)
+
+    for iel = 1:nelem
+        for i = 1:ngl, j = 1:ngl, k = 1:ngl
+            ips = connijk[iel, i, j, k]
+            
+            # GEOMETRY HERE
+            x = mesh.x[ips]
+            y = mesh.y[ips]
+            z = mesh.z[ips]
+            
+            if z < 4000.0 && old_ad_lvl[iel] < max_level
+                adapt_flags[iel] = refine_flag
+            elseif z < 10000.0 && old_ad_lvl[iel] < max_level-1
+                adapt_flags[iel] = refine_flag
+            elseif z < 14000.0 && old_ad_lvl[iel] < max_level-2
+                adapt_flags[iel] = refine_flag
+            else
+                adapt_flags[iel] = nothing_flag
+            end
+        end
+    end
+    
 end

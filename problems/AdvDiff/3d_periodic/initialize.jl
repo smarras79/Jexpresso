@@ -119,10 +119,14 @@ end
 end
 
 
-function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
+function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
+                                Tabs, qn, qc, qi, qr,
+                                qs, qg, Pr, Ps, Pg,
+                                S_micro, qsatt,
+                                connijk, nelem, ngl,
+                                max_level)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
     tol         = 0.1
-    max_level   = inputs[:amr_max_level] 
     
     for iel = 1:nelem
         m = 1

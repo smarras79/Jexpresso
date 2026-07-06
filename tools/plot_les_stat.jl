@@ -11,6 +11,7 @@ using LightXML
 using CairoMakie
 using Statistics
 using Printf
+using WriteVTK
 
 include("../src/kernel/physics/globalConstantsPhysics.jl")
 include("../src/kernel/physics/constitutiveLaw.jl")
@@ -396,4 +397,57 @@ function main()
     # return z_avg, wpwp_avg
 end
 
-main()
+"""
+    les_statistics_to_vtk(datfile, vtkfile)
+
+Read `les_statistics.dat` and write a VTK rectilinear grid (.vtr)
+with x-axis = time, y-axis = z, and mean_u as point data.
+
+Usage:
+    les_statistics_to_vtk("output/les_statistics.dat", "output/les_statistics")
+"""
+function les_statistics_to_vtk(DIR::String; infile::String="les_statistics.dat", outfile::String="les_statistics")
+    datfile = joinpath(DIR,infile)
+    vtkfile = joinpath(DIR,outfile)
+    # Read the .dat file, skip comments and blank lines
+    times  = Float64[]
+    zvals  = Float64[]
+    uvals  = Float64[]
+    open(datfile, "r") do io
+        for line in eachline(io)
+            stripped = strip(line)
+            (isempty(stripped) || stripped[1] == '#') && continue
+            cols = split(stripped)
+            push!(times, parse(Float64, cols[1]))
+            push!(zvals, parse(Float64, cols[2]))
+            push!(uvals, parse(Float64, cols[3]))
+        end
+    end
+
+    # Build unique sorted axes
+    t_unique = sort(unique(times))
+    z_unique = sort(unique(zvals))
+    nt = length(t_unique)
+    nz = length(z_unique)
+
+    # Map (time, z) -> index for lookup
+    t_idx = Dict(t => i for (i, t) in enumerate(t_unique))
+    z_idx = Dict(z => j for (j, z) in enumerate(z_unique))
+
+    # Fill 2D array: mean_u[it, iz]
+    mean_u = fill(NaN, nt, nz)
+    for k in eachindex(times)
+        it = t_idx[times[k]]
+        iz = z_idx[zvals[k]]
+        mean_u[it, iz] = uvals[k]
+    end
+
+    # Write VTK rectilinear grid using WriteVTK
+    # x-axis = time, y-axis = z, z-axis = singleton
+    vtkf = vtk_grid(vtkfile, t_unique, z_unique, [0.0])
+    vtkf["mean_u", VTKPointData()] = reshape(mean_u, nt, nz, 1)
+    outfiles = vtk_save(vtkf)
+
+    println("Wrote VTK: $(outfiles[1])  ($(nt) times × $(nz) z-levels)")
+end
+

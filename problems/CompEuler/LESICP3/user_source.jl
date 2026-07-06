@@ -33,8 +33,7 @@ function user_source!(S,
     #--------------
     # SPONGE
     #--------------
-    if inputs[:lsponge] == true
-        zs = inputs[:zsponge]
+        zs = 2500.0
     	xr = 0.0
     	xl = 0.0
     	α  = 0.5
@@ -69,7 +68,6 @@ function user_source!(S,
     	S[3] -= cs*(q[3]-qe[3])
         S[4] -= cs*(q[4]-qe[4])
         #S[5] -= cs*(q[5]-qe[5])
-    end	 #sponge
 
     
     #Coriolis & geostrophic wind    

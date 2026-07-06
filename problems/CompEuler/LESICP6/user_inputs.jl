@@ -4,10 +4,10 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.04,
-        :tinit                => 1750,
+        :Δt                   => 0.02,
+        :tinit                => 0,
         :tend                 => 10800.0,
-	:lrestart             => true,
+	:lrestart             => false,
 	#:restart_output_file_path => "",
 	:restart_time         => 1750,
 	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
@@ -23,6 +23,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
+        :user_heatflux        => 0.12,
         :lwall_model          => true,
         :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
@@ -32,21 +33,37 @@ function user_inputs()
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
         :μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
+        #LES statistics
+        #---------------------------------------------------------------------------
+	:statistics_time      => (10:10:100),
+        :lesprofile_vars      => ["u_mean", "v_mean", "w_mean", "t_mean", "p_mean"],
+        :lesstress_vars       => ["upup_res", "upvp_res", "upwp_res", "vpvp_res", "vpwp_res", "wpwp_res",
+                                   "tptp_res", "uptp_res", "vptp_res", "wptp_res",
+                                   "upup_sfs", "upvp_sfs", "upwp_sfs", "vpvp_sfs", "vpwp_sfs", "wpwp_sfs",
+                                   "tptp_sfs", "uptp_sfs", "vptp_sfs", "wptp_sfs",
+                                   "uppp", "vppp", "wppp", "eps", "eps_t", "rho",
+                                   "upupup", "upupvp", "upupwp",
+                                   "vpvpup", "vpvpvp", "vpvpwp",
+                                   "wpwpup", "wpwpvp", "wpwpwp",
+                                   "upuptp", "vpvptp", "wpwptp"],
+        :lesspectra_vars      => ["u", "v", "w", "t"],
+        #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
+        # :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_10x10x10_coarse.msh",
+        # :gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
+	# :gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
 	
         # Warping:
         :lwarp => true,
         :mount_type => "LESICP",
         :h_mount => 1000.0,
         :a_mount => 10240.0,
-	:z_transition_start => -1000.0,
+	:z_transition_start => 0.0,
 	:z_transition_end => 2200.0,
 
         # Stretching factors:
@@ -68,8 +85,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP6_64x64x36_10kmX10kmX3dot5km-filtered-smag1-warmstart/",
-        #:output_dir          => "./output",
+        # :output_dir          => "/scratch/smarras/smarras/output/LESICP6_64x64x36_10kmX10kmX3dot5km-filtered-smag1-warmstart/",
+        :output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
