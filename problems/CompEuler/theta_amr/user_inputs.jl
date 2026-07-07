@@ -1,5 +1,5 @@
 function user_inputs()
-    
+
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
@@ -9,11 +9,9 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => 1000.0,
         :diagnostics_at_times => (0:100:1000),
-        :restart_time         => 500,
-        :lrestart             => false,
-        :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
+        #:restart_input_file_path => "problems/equations/CompEuler/theta",
         :case                 => "rtb",
-        :lsource              => true, 
+        :lsource              => true,
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -23,7 +21,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc          => true, #false by default NOTICE: works only for Inexact       
+        :lvisc          => true, #false by default NOTICE: works only for Inexact
         :visc_model     => AV(),
         # :visc_model     => VREM(),
         #:visc_model     => SMAG(),
@@ -57,6 +55,14 @@ function user_inputs()
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
+        # preadapt: refine the middle of the domain (a box around the mesh
+        # center) up to :preadapt_max_level before t=0, via
+        # user_get_preadapt_flags! in initialize.jl. See docs/amr_setup.md
+        # section 3.
+        #---------------------------------------------------------------------------
+        :lpreadapt           => true,
+        :preadapt_max_level  => 1,
+        #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
         :lamr              => true,
@@ -64,7 +70,15 @@ function user_inputs()
         # AMR parameters
         #---------------------------------------------------------------------------
         :amr_freq            => 200,
-        :amr_max_level       => 1,
+        :amr_max_level       => 2,
+        #---------------------------------------------------------------------------
+        # AMR restart: resume from iter_5 (t=400, given diagnostics_at_times
+        # = 0:100:1000 and iter_1 = the t=0 IC write). Loads the p4est forest
+        # saved at iter_5/iter_5.p4est and the matching VTK solution data.
+        # See docs/amr_setup.md section 4.
+        #---------------------------------------------------------------------------
+        :lrestart_amr        => false,
+        :restart_vtk_iout    => 5,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
@@ -72,5 +86,5 @@ function user_inputs()
     #---------------------------------------------------------------------------
 
     return inputs
-    
+
 end

@@ -4,16 +4,18 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.5,
+        :Δt                   => 0.3,
         :tinit                => 0,
-        :tend                 => 100.0,
-        # :tend                 => 43200.0,
+        # :tend                 => 100.0,
+        :tend                 => 43200,
+	:lrestart_amr             => true,
+	#:restart_vtk_iout     => 160, 
 	# :lrestart             => true,
 	#:restart_output_file_path => "",
-	# :restart_time         => 3500,
+	# :restart_time         => 1000,
 	# :statistics_time      => 100,
-	:diagnostics_at_times => (5:5:100),
-	# :diagnostics_at_times => (100.0:100:43200),
+	#:diagnostics_at_times => (5:5:100),
+	:diagnostics_at_times => (0.1,100.0:100:43200...),
 	# :diagnostics_at_times => (0:4:40..., 100:500:600..., 610:10:700...,  800:100:1000.0...),
         :lsource              => true,
         :lmoist               => true,
@@ -36,7 +38,7 @@ function user_inputs()
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        :μ                    => [0.0, 15.0, 15.0, 15.0, 15.0, 15.0, 0.0], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 3.0, 3.0, 0.0], #horizontal viscosity constant for momentum
         # :visc_model           => AV(),
         # :μ           => [0.0, 100.0, 100.0, 100.0, 200.0, 200.0, 200.0], #horizontal viscosity constant for momentum
         :energy_equation      => "energy",
@@ -50,7 +52,7 @@ function user_inputs()
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_30kmx12kmx25km.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_5x2x15_30kmx10kmx25km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_10x4x30_60kmx24kmx25km.msh",
 	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_128kmx128kmx25km_1600m.msh",
 	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les.msh",
 	
@@ -73,15 +75,15 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.5,
-        :mu_y                => 0.5,
-	:mu_z                => 0.5,
+        :mu_x                => 0.1,
+        :mu_y                => 0.1,
+	:mu_z                => 0.1,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output_gigales_energy_moist/",
+        :output_dir          => "/scratch/smarras/hw59/output/output_gigales_3lvl_quater_domain_amr_test_fisrt_step/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
@@ -91,7 +93,7 @@ function user_inputs()
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         :lpreadapt           => true,
-        :preadapt_max_level       => 3,
+        :preadapt_max_level       => 2,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
@@ -99,8 +101,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
-        :amr_freq            => 100,
-        :amr_max_level       => 4,
+        :amr_freq            => 125,
+        :amr_max_level       => 3,
         :amr_start_time      => 0.0
         #---------------------------------------------------------------------------
         # LSTM AMR  (Gan et al. 2026, JGR Atmospheres)

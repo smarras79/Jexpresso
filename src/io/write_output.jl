@@ -669,18 +669,23 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     #Write one HDF5 file timestep
+    #
+    # PERF note above explains why HDF5 is loaded lazily via @eval; that
+    # `@eval` bumps the global world age, but this very function (write_hdf5)
+    # was already compiled/entered in the OLDER world before the bump, so a
+    # direct `h5open(...)` call here would raise a world-age MethodError
+    # ("running in world age N, while current world is N+1"). Base.invokelatest
+    # forces the call to resolve against the current (post-@eval) world.
     if rank == 0
         fout_name = string(OUTPUT_DIR, "/t.h5")
-        h5open(fout_name, "w") do fid        
-            write(fid, "time",  t);
-        end
+        Base.invokelatest(h5open, fid -> write(fid, "time", t), fout_name, "w")
     end
     #Write one HDF5 file per variable
     for ivar = 1:nvar
         fout_name = string(OUTPUT_DIR, "/var_", ivar,"_",rank, ".h5")
         idx = (ivar - 1)*mesh.npoin
-        
-        h5open(fout_name, "w") do fid        
+
+        Base.invokelatest(h5open, fout_name, "w") do fid
             write(fid, "q",  q[idx+1:ivar*mesh.npoin]);
             write(fid, "qe", qe[1:mesh.npoin, ivar]);
         end
@@ -698,8 +703,12 @@ function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
     qe = zeros(Float64, npoin, nvar+1)
     
     #read one HDF5 file time
+    #
+    # Base.invokelatest needed here too: _ensure_hdf5_loaded!() lazily
+    # @eval's `using HDF5` at runtime, which bumps the world age past the
+    # one this function was compiled/entered in (see write_hdf5 above).
     fout_name = string(INPUT_DIR, "/t.h5")
-    time = rank == 0 ? convert(Float64, h5read(fout_name, "time")) : 0.0
+    time = rank == 0 ? convert(Float64, Base.invokelatest(h5read, fout_name, "time")) : 0.0
     time = MPI.bcast(time, 0, comm)
     if inputs isa AbstractDict
         inputs[:tinit] = time
@@ -712,8 +721,8 @@ function read_hdf5(SD, INPUT_DIR::String, inputs, npoin, nvar)
     for ivar = 1:nvar
         fout_name   = string(INPUT_DIR, "/var_", ivar,"_",rank, ".h5")
         idx         = (ivar - 1)*npoin
-        q[:, ivar]  = convert(Array{Float64, 1}, h5read(fout_name, "q"))
-        qe[:, ivar] = convert(Array{Float64, 1}, h5read(fout_name, "qe"))
+        q[:, ivar]  = convert(Array{Float64, 1}, Base.invokelatest(h5read, fout_name, "q"))
+        qe[:, ivar] = convert(Array{Float64, 1}, Base.invokelatest(h5read, fout_name, "qe"))
     end
     
     return q, qe
@@ -1048,11 +1057,14 @@ function write_p4est_checkpoint(output_dir::String, iter::Int, partitioned_model
 end
 
 """
-    read_vtk_restart_gigales!(q, mesh, inputs; output_dir="")
+    read_vtk_amr_restart!(q, mesh, inputs; output_dir="", varnames=<gigales 7-var set>)
 
-VTK restart for 7-variable moist compressible Euler (giga_les_MOST_amr).
-Reads primitive fields written by `user_uout!` and reconstructs the conserved
-state in q.qn by calling `user_read_vtu_point_data!` from the problem's
+VTK + p4est-forest AMR restart, usable by any case (2D or 3D) — pair with
+`:lrestart_amr`/`load_p4est_checkpoint_model`. Not to be confused with
+`read_vtk_restart!` (plain, non-AMR VTK restart for LESICP-style cases).
+Reads primitive point-data fields written by `user_uout!` (named `varnames`
+— must match the case's own `qoutvars`) and reconstructs the conserved state
+in q.qn by calling `user_read_vtu_point_data!` from the problem's
 user_primitives.jl.
 
 Required entry in `inputs`:
@@ -1062,7 +1074,8 @@ Optional (auto-detected from simulation.pvd if absent):
   - `:restart_vtk_iout`  iteration index
   - `:tinit`             simulation time at restart
 """
-function read_vtk_restart_gigales!(q, mesh, inputs; output_dir="")
+function read_vtk_amr_restart!(q, mesh, inputs; output_dir="",
+                           varnames=["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "pressure"])
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     part = rank + 1
@@ -1084,7 +1097,7 @@ function read_vtk_restart_gigales!(q, mesh, inputs; output_dir="")
         inputs[:tinit]            = time_arr[1]
         inputs[:restart_vtk_iout] = Int(iout_arr[1])
         if rank == 0
-            @info " VTK restart (giga_les): last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
+            @info " VTK restart: last snapshot is iter_$(inputs[:restart_vtk_iout]) at t=$(inputs[:tinit]) s"
         end
     else
 
@@ -1100,7 +1113,7 @@ function read_vtk_restart_gigales!(q, mesh, inputs; output_dir="")
     fname    = joinpath(vtk_dir, "iter_$(iout)", "iter_$(iout)_$(part_str).vtu")
 
     if rank == 0
-        @info " Reading VTK restart (giga_les) from: $fname"
+        @info " Reading VTK restart from: $fname"
     end
 
     if !function_exists(@__MODULE__, :user_read_vtu_point_data!)
@@ -1121,8 +1134,7 @@ user_read_vtu_point_data! not found. Define it in your problem's user_primitives
 """)
     end
 
-    vars, npoin_vtk = read_vtu_point_data(
-        fname, ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "pressure", "__coords__"])
+    vars, npoin_vtk = read_vtu_point_data(fname, vcat(varnames, "__coords__"))
 
     npoin_vtk == mesh.npoin ||
         error("Rank $rank: VTK point count ($npoin_vtk) ≠ mesh.npoin ($(mesh.npoin)).")
@@ -1133,7 +1145,7 @@ user_read_vtu_point_data! not found. Define it in your problem's user_primitives
 
     cdata, _ = read_vtu_cell_data(fname, ["gel_id", "ad_lvl"])
     if haskey(cdata, "ad_lvl") && haskey(cdata, "gel_id")
-        stride = (mesh.ngl - 1)^3
+        stride = (mesh.ngl - 1)^mesh.nsd
         for iel = 1:mesh.nelem
             icell = (iel - 1) * stride + 1
             @assert Int(cdata["gel_id"][icell]) == mesh.el2gel[iel] "gel_id mismatch at iel=$iel"
@@ -1142,7 +1154,7 @@ user_read_vtu_point_data! not found. Define it in your problem's user_primitives
     end
 
     if rank == 0
-        @info " VTK restart (giga_les) complete (npoin=$(mesh.npoin), iout=$iout)"
+        @info " VTK restart complete (npoin=$(mesh.npoin), iout=$iout)"
     end
 end
 

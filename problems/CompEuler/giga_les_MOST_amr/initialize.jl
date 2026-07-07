@@ -1,8 +1,9 @@
+using Random
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
 
             """
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    #@info " Initialize fields for 3D CompEuler with θ equation ........................ "
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -67,15 +68,45 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             # data_qv_reordered[:,2] .= data_qv[:,1]
             # background_qv           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_qv_reordered)
             
-            amp = 0.1 #K
+            amp = 0.05 #K
+
+            # Gaussian Random Field via random Fourier features.
+            # k ~ N(0, 1/lc²) gives a GRF with Gaussian covariance kernel of
+            # length scale lc.  Dividing by sqrt(n_modes/2) normalises variance
+            # to 1; multiplying by amp sets σ = amp.
+            n_modes   = 200
+            lc_h      = 500.0
+            lc_z      = 200.0
+            # Fixed seed so every MPI rank draws identical wavenumbers/phases;
+            # each rank then evaluates the same analytic field at its own points.
+            grf_rng   = Random.MersenneTwister(42)
+            grf_kx    = randn(grf_rng, n_modes) ./ lc_h
+            grf_ky    = randn(grf_rng, n_modes) ./ lc_h
+            grf_kz    = randn(grf_rng, n_modes) ./ lc_z
+            grf_phase = 2π .* rand(grf_rng, n_modes)
+            grf_norm  = amp / sqrt(n_modes / 2)
+
+            #for ip = 1:mesh.npoin
+
+             #   z = mesh.z[ip]
+
+             #   rand_noise = 0.0
+             #   if z < 300.0
+             #       s = 0.0
+             #       for m = 1:n_modes
+             #           s += cos(grf_kx[m]*mesh.x[ip] + grf_ky[m]*mesh.y[ip] +
+             #                    grf_kz[m]*mesh.z[ip] + grf_phase[m])
+             #       end
+             #       rand_noise = grf_norm * s
+             #   end
 
             for ip = 1:mesh.npoin
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
 
                 rand_noise = 0.0 #K
-                if z < 1000.0 # change to 300m later to be consistent to the ref paper
-                    rand_noise = 2*amp*(rand() - 1.0)
+                if z < 300.0 # change to 300m later to be consistent to the ref paper
+                    rand_noise = 2*amp*(rand() - 0.5)
                 end
 
                 # #else
@@ -112,6 +143,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 qv_ref = background[ip,3]/1000
 
                 T_ref  = θ_ref*(pref/PhysConst.pref)^(1/PhysConst.cpoverR)
+		qv_ref = min(qv_ref, 0.99 * qsatw(T_ref, pref/100))  # clip to saturation: sounding constant-qv layer crosses qsatw near z~500m
+                
                 Tv_ref = T_ref*(1+0.61*qv_ref)
 
                 
@@ -125,6 +158,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 qv     = qv_ref
 
                 T      = T_ref + rand_noise
+		qv     = min(qv_ref, 0.99 * qsatw(T, pref_m/100))  # re-clip at actual noisy T: noise is always ≤0, so T < T_ref near z~500m
+                
                 Tv     = T*(1+0.61*qv)
 
                 ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv, Press=pref) #kg/m³
@@ -203,8 +238,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, background, mesh.x, mesh.y, mesh.z, xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    @info maximum(q.qe[:,end]), minimum(q.qe[:,end])
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    
+    #@info maximum(q.qe[:,end]), minimum(q.qe[:,end])
+    #@info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    if get(inputs, :lrestart_amr, false)
+        read_vtk_amr_restart!(q, mesh, inputs; output_dir=OUTPUT_DIR)
+    end
     return q
 end
 
@@ -283,7 +322,7 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
                                coords,
                                max_level)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
-    tol         = 1e-6
+    tol         = 1e-4
     x           = coords[:,1]
     y           = coords[:,2]
     z           = coords[:,3]
@@ -305,13 +344,13 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
         if any(qn_el .> tol) && (old_ad_lvl[iel] < max_level) && all(z_el .< 14000)
             adapt_flags[iel] = refine_flag
         end
-        if all(qn_el .<= 0) 
-            if all(z_el .< 4000.0) && old_ad_lvl[iel] > preadapt_max_lvl
+        if all(qn_el .<= tol) 
+            if all(z_el .< 6000.0) && old_ad_lvl[iel] > preadapt_max_lvl
                 adapt_flags[iel] = coarsen_flag
-            elseif all(z_el .< 10000.0) && all(z_el .>= 4000.0) && old_ad_lvl[iel] > max_level-1
+            elseif all(z_el .< 14000.0) && all(z_el .>= 6000.0) && old_ad_lvl[iel] > preadapt_max_lvl-1
                 adapt_flags[iel] = coarsen_flag
-            elseif all(z_el .< 14000.0) && all(z_el .>= 10000.0) && old_ad_lvl[iel] > max_level-2
-                adapt_flags[iel] = coarsen_flag
+            #elseif all(z_el .< 14000.0) && all(z_el .>= 10000.0) && old_ad_lvl[iel] > max_level-2
+            #    adapt_flags[iel] = coarsen_flag
             else
                 adapt_flags[iel] = nothing_flag
             end
@@ -330,12 +369,12 @@ function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk
             y = mesh.y[ips]
             z = mesh.z[ips]
             
-            if z < 4000.0 && old_ad_lvl[iel] < max_level
+            if z < 6000.0 && old_ad_lvl[iel] < max_level
                 adapt_flags[iel] = refine_flag
-            elseif z < 10000.0 && old_ad_lvl[iel] < max_level-1
+            elseif z < 14000.0 && old_ad_lvl[iel] < max_level-1
                 adapt_flags[iel] = refine_flag
-            elseif z < 14000.0 && old_ad_lvl[iel] < max_level-2
-                adapt_flags[iel] = refine_flag
+            #elseif z < 14000.0 && old_ad_lvl[iel] < max_level-2
+            #    adapt_flags[iel] = refine_flag
             else
                 adapt_flags[iel] = nothing_flag
             end

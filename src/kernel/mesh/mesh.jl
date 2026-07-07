@@ -1377,31 +1377,6 @@ function _compute_xy_partition(model, nparts)
 end
 
 
-# Partition cells into nparts by x-y centroid bins, ignoring z.
-# Returns a 1-indexed cell_to_part vector of length num_cells(model).
-function _compute_xy_partition(model, nparts)
-    Ω  = Triangulation(model)
-    coords = get_cell_coordinates(Ω)
-    cx = [sum(p[1] for p in c) / length(c) for c in coords]
-    cy = [sum(p[2] for p in c) / length(c) for c in coords]
-
-    lx = maximum(cx) - minimum(cx) + 1e-10
-    ly = maximum(cy) - minimum(cy) + 1e-10
-
-    # Find (nx, ny) with nx*ny == nparts, aspect-ratio aware
-    divisors   = [d for d in 1:nparts if nparts % d == 0]
-    target_nx  = sqrt(nparts * lx / ly)
-    nx = divisors[argmin(abs.(divisors .- target_nx))]
-    ny = nparts ÷ nx
-
-    x_min, y_min = minimum(cx), minimum(cy)
-    xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
-    yi = clamp.(floor.(Int, (cy .- y_min) ./ ly .* ny), 0, ny - 1)
-
-    return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
-end
-
-
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
     backend = CPU()
@@ -5065,24 +5040,34 @@ end
 
 
 """
-    read_ad_lvl_from_p4est(ptr_pXest) -> Vector{TInt}
+    read_ad_lvl_from_p4est(pXest_type, ptr_pXest) -> Vector{TInt}
 
-Walk the local trees of a p8est forest and return the level of every
+Walk the local trees of a p4est/p8est forest and return the level of every
 local leaf quadrant, in p4est ordering.  This ordering matches the
 Jexpresso mesh element ordering when the mesh is built directly from
 the same forest (e.g. after an AMR restart via `load_p4est_checkpoint_model`).
+
+Dispatches on 2D (`p4est_tree_t`/`p4est_quadrant_t`) vs 3D
+(`p8est_tree_t`/`p8est_quadrant_t`) — these have different memory layouts,
+so reading a 2D forest with the 3D struct types silently misreads garbage.
+Mirrors the same 2D/3D dispatch already used by write_p4est_checkpoint /
+load_p4est_checkpoint_model.
 """
-function read_ad_lvl_from_p4est(ptr_pXest)
+function read_ad_lvl_from_p4est(pXest_type, ptr_pXest)
+    TreeT, QuadT = pXest_type isa GridapP4est.P4estType ?
+        (P4est_wrapper.p4est_tree_t, P4est_wrapper.p4est_quadrant_t) :
+        (P4est_wrapper.p8est_tree_t, P4est_wrapper.p8est_quadrant_t)
+
     forest    = unsafe_load(ptr_pXest)
-    trees_arr = unsafe_load(forest.trees)          # sc_array_t of p8est_tree_t
+    trees_arr = unsafe_load(forest.trees)          # sc_array_t of {p4est,p8est}_tree_t
     levels    = TInt[]
     for t in forest.first_local_tree:forest.last_local_tree
-        tree_ptr = Ptr{P4est_wrapper.p8est_tree_t}(
+        tree_ptr = Ptr{TreeT}(
             trees_arr.array + t * trees_arr.elem_size)
         tree   = unsafe_load(tree_ptr)
         n_quads = Int(tree.quadrants.elem_count)
         for q in 0:n_quads-1
-            quad_ptr = Ptr{P4est_wrapper.p8est_quadrant_t}(
+            quad_ptr = Ptr{QuadT}(
                 tree.quadrants.array + q * tree.quadrants.elem_size)
             quad = unsafe_load(quad_ptr)
             push!(levels, TInt(quad.level))
@@ -5113,17 +5098,31 @@ function load_p4est_checkpoint_model(base_model, forest_file::String)
     pXest_type = base_model.pXest_type
     parts      = base_model.parts
 
-    # Load forest (MPI-collective). p8est_load also fills *connectivity_ref with
-    # a freshly allocated connectivity that we leave to be GCed — we use the
-    # Gridap-managed connectivity from base_model throughout.
-    connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
-    loaded_ptr_pXest = P4est_wrapper.p8est_load(
-        forest_file,
-        get_mpi_comm(),
-        Csize_t(0),      # no per-quadrant data stored
-        Cint(0),         # do not read payload
-        C_NULL,
-        connectivity_ref)
+    # Load forest (MPI-collective). p4est_load/p8est_load also fill
+    # *connectivity_ref with a freshly allocated connectivity that we leave
+    # to be GCed — we use the Gridap-managed connectivity from base_model
+    # throughout.
+    # Dispatch on 2D (p4est_load) vs 3D (p8est_load) to avoid passing the
+    # wrong struct type — mirrors write_p4est_checkpoint's save-side dispatch.
+    if pXest_type isa GridapP4est.P4estType
+        connectivity_ref = Ref{Ptr{P4est_wrapper.p4est_connectivity_t}}()
+        loaded_ptr_pXest = P4est_wrapper.p4est_load(
+            forest_file,
+            get_mpi_comm(),
+            Csize_t(0),      # no per-quadrant data stored
+            Cint(0),         # do not read payload
+            C_NULL,
+            connectivity_ref)
+    else
+        connectivity_ref = Ref{Ptr{P4est_wrapper.p8est_connectivity_t}}()
+        loaded_ptr_pXest = P4est_wrapper.p8est_load(
+            forest_file,
+            get_mpi_comm(),
+            Csize_t(0),      # no per-quadrant data stored
+            Cint(0),         # do not read payload
+            C_NULL,
+            connectivity_ref)
+    end
 
     # Ghost layer and lnodes for a non-conforming (AMR) forest
     ptr_ghost  = GridapP4est.setup_pXest_ghost(pXest_type, loaded_ptr_pXest)

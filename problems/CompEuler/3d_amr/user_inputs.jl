@@ -6,21 +6,14 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
-        :diagnostics_at_times => (100:100:1000.0),
-        # :diagnostics_at_times => (5, 100:100:1000...),        
+        :tend                 => 500.0,
+        :diagnostics_at_times => (0:100:1000.0),
         :lsource              => true,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
         # restart options
         #---------------------------------------------------------------------------
-        # set restart_time to enable write restart files every [restart_time] seconds 
-        :restart_time         => 100.0, 
-        # the default restart output dir is $(your_output_dir)/restart but you can always specify
-        # :restart_output_file_path => "./output/CompEuler/3d/output/restart",
         :lrestart             => false,
-        # the default restart input dir is $(your_output_dir)/restart but you can always specify
-        # :restart_input_file_path => "./output/CompEuler/3d/output/restart",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -34,14 +27,10 @@ function user_inputs()
         :visc_model           => AV(), #VREM(), #SMAG(),
         # :visc_model           => SMAG(),
         # :visc_model           => VREM(),
-        # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
-        #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
         :μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
-        # :μ                    => [0.0, 20.0, 20.0, 20.0, 40.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lwarmup             => true,
         # Warping:
         :lwarp => false,
         :mount_type => "agnesi",
@@ -55,15 +44,10 @@ function user_inputs()
         :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
         :first_zelement_size => 250.0,
         :zlevel_transition => 5000.0,
-        
+
         # GMSH files:
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/2x2x2.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x2x10_periodicxy.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_periodic3D.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -84,20 +68,35 @@ function user_inputs()
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
+        # preadapt: refine the middle of the domain (a box around the mesh
+        # center in x,z) up to :preadapt_max_level before t=0, via
+        # user_get_preadapt_flags! in initialize.jl. See docs/amr_setup.md
+        # section 3.
+        #---------------------------------------------------------------------------
+        :lpreadapt           => true,
+        :preadapt_max_level  => 1,
+        #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
-        # :ladapt              => true,
         :lamr                 => true,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
         :amr_freq            => 250,
-        :amr_max_level       => 1,
+        :amr_max_level       => 2,
+        #---------------------------------------------------------------------------
+        # AMR restart: resume from iter_6 (t=250, given diagnostics_at_times
+        # = 50:50:500 and iter_1 = the t=0 IC write). Loads the p4est forest
+        # saved at iter_6/iter_6.p4est and the matching VTK solution data.
+        # See docs/amr_setup.md section 4.
+        #---------------------------------------------------------------------------
+        :lrestart_amr        => false,
+        :restart_vtk_iout    => 6,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
-    
-    return inputs    
+
+    return inputs
 end

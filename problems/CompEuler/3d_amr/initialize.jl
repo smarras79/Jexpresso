@@ -17,7 +17,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # 
     #---------------------------------------------------------------------------------
     qvars = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
-    qoutvars = ["ρ", "u", "v", "w", "θ", "θp"]
+    qoutvars = ["ρ", "u", "v", "w", "θ", "p"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
@@ -160,7 +160,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     if rank == 0
         println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")
     end
-    
+
+    if get(inputs, :lrestart_amr, false)
+        read_vtk_amr_restart!(q, mesh, inputs; output_dir=OUTPUT_DIR,
+                              varnames=["ρ", "u", "v", "w", "θ", "p"])
+    end
+
     return q
 end
 
@@ -241,8 +246,42 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
         if any(theta .> tol) && (old_ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
         end
-        if all(theta .< tol)
+        # Never coarsen below the preadapt floor: the box preadapted in
+        # user_get_preadapt_flags! below should stay refined even where the
+        # runtime θ criterion sees nothing interesting.
+        if all(theta .< tol) && old_ad_lvl[iel] > inputs[:preadapt_max_level]
             adapt_flags[iel] = coarsen_flag
+        end
+    end
+end
+
+# preadapt: refine a box around the middle of the domain (in x,z) before
+# t=0. This mesh spans x ∈ [-5000, 5000], y ∈ [0, 1000] (a single-element-
+# thick slab), z ∈ [0, 10000] (hexa_TFI_10x1x10.msh), so the domain center
+# is (xc, zc) = (0, 5000). Runs before initialize(), so it can only see
+# geometry (mesh.x/mesh.y/mesh.z), not the solution. Octree refinement is
+# isotropic, so refining also splits the thin y-direction inside the box.
+function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk, nelem, ngl, max_level)
+    xc = 0.0
+    zc = 5000.0
+    hx = 1500.0   # half-width of the preadapt box in x
+    hz = 1500.0   # half-width of the preadapt box in z
+
+    for iel = 1:nelem
+        for i = 1:ngl
+            for j = 1:ngl
+                for k = 1:ngl
+                    ips = connijk[iel, i, j, k]
+                    x = mesh.x[ips]
+                    z = mesh.z[ips]
+
+                    if abs(x - xc) < hx && abs(z - zc) < hz && old_ad_lvl[iel] < max_level
+                        adapt_flags[iel] = refine_flag
+                    else
+                        adapt_flags[iel] = nothing_flag
+                    end
+                end
+            end
         end
     end
 end

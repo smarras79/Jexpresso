@@ -252,36 +252,20 @@ include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 
-# PERF: only evaluate run.jl at module-body time when this file was
-# invoked as a Julia SCRIPT (`julia src/Jexpresso.jl CompEuler 3d`).
-# When the package is being precompiled the @compile_workload block at
-# the bottom of this file already includes run.jl with sod1d args, and
-# including it from here too would define `parse_commandline` twice
-# during precompile and violate Julia ≥ 1.10's no-method-overwrite
-# rule:
+# Record of which case's user_*.jl files are currently loaded in this
+# session (case dir + per-file mtimes). run.jl consults this to skip
+# re-`include`ing them when the SAME case is re-run unchanged. Re-including
+# redefines user_flux!/user_source!/… which invalidates the compiled rhs!,
+# forcing the RHS + SciML integrator to recompile inside the warm-up on
+# every run_case call (the ~30 s "Precompile warm-up" freeze on a re-run).
+# Skipping the redundant include keeps an unchanged re-run launch-cost-only;
+# switching cases or editing any user_*.jl bumps the check so changes still
+# take effect.
 #
-#   WARNING: Method definition parse_commandline() in module Jexpresso
-#   ... overwritten on the same line (check for duplicate calls to
-#   `include`).
-#   ERROR: Method overwriting is not permitted during Module
-#   precompilation.
-#
-# When the package is loaded via `using Jexpresso` (precompile cache
-# hit) the module body doesn't re-evaluate at all, so this branch is
-# moot — REPL users invoke `Jexpresso.run_case(eqs, eqs_case)` to
-# start a case (defined further down).
-#
-# The script-form `julia src/Jexpresso.jl CompEuler 3d` still works:
-# `abspath(PROGRAM_FILE)` matches this file's path AND
-# `jl_generating_output` returns 0 (we're not generating precompile
-# output), so the include fires and the historic auto-run path is
-# preserved.
-if abspath(PROGRAM_FILE) == abspath(@__FILE__) &&
-   ccall(:jl_generating_output, Cint, ()) == 0
-    include("./run.jl")
-end
-
-export @timers
+# Must be defined before the script-mode auto-run include below, since
+# run.jl (included at module-body time when invoked as a script) reads it.
+const _LOADED_CASE_DIR  = Ref{String}("")
+const _CASE_FILE_MTIMES = Dict{String,Float64}()
 
 # ──────────────────────────────────────────────────────────────────────
 # Lazy dependency loaders.
@@ -309,6 +293,12 @@ export @timers
 # are referenced this way at present; if a future caller needs e.g.
 # `Infiltrator.@exfiltrate` they must either eager-load it or wrap the
 # call in `@eval`.
+#
+# Must be defined before the script-mode auto-run include below, since
+# run.jl (included at module-body time when invoked as a script) calls
+# through to driver()/sem_setup synchronously and may reach any of
+# these loaders before this file's module body resumes past that
+# include.
 # ──────────────────────────────────────────────────────────────────────
 
 # ─── Radiative-transfer dependency tree ───────────────────────────────
@@ -424,6 +414,37 @@ function _ensure_amr_loaded!()
     return nothing
 end
 
+# PERF: only evaluate run.jl at module-body time when this file was
+# invoked as a Julia SCRIPT (`julia src/Jexpresso.jl CompEuler 3d`).
+# When the package is being precompiled the @compile_workload block at
+# the bottom of this file already includes run.jl with sod1d args, and
+# including it from here too would define `parse_commandline` twice
+# during precompile and violate Julia ≥ 1.10's no-method-overwrite
+# rule:
+#
+#   WARNING: Method definition parse_commandline() in module Jexpresso
+#   ... overwritten on the same line (check for duplicate calls to
+#   `include`).
+#   ERROR: Method overwriting is not permitted during Module
+#   precompilation.
+#
+# When the package is loaded via `using Jexpresso` (precompile cache
+# hit) the module body doesn't re-evaluate at all, so this branch is
+# moot — REPL users invoke `Jexpresso.run_case(eqs, eqs_case)` to
+# start a case (defined further down).
+#
+# The script-form `julia src/Jexpresso.jl CompEuler 3d` still works:
+# `abspath(PROGRAM_FILE)` matches this file's path AND
+# `jl_generating_output` returns 0 (we're not generating precompile
+# output), so the include fires and the historic auto-run path is
+# preserved.
+if abspath(PROGRAM_FILE) == abspath(@__FILE__) &&
+   ccall(:jl_generating_output, Cint, ()) == 0
+    include("./run.jl")
+end
+
+export @timers
+
 # Run the test
 # test_create_2d_projection_matrices_numa2d()
 
@@ -452,19 +473,6 @@ end
 # CI_MODE=true points the case loader at test/CI-runs/<eqs>/<eqs_case>
 # instead of problems/<eqs>/<eqs_case>; matches the third positional
 # arg of the historical command-line form.
-# ──────────────────────────────────────────────────────────────────────
-# Record of which case's user_*.jl files are currently loaded in this
-# session (case dir + per-file mtimes). run.jl consults this to skip
-# re-`include`ing them when the SAME case is re-run unchanged. Re-including
-# redefines user_flux!/user_source!/… which invalidates the compiled rhs!,
-# forcing the RHS + SciML integrator to recompile inside the warm-up on
-# every run_case call (the ~30 s "Precompile warm-up" freeze on a re-run).
-# Skipping the redundant include keeps an unchanged re-run launch-cost-only;
-# switching cases or editing any user_*.jl bumps the check so changes still
-# take effect.
-const _LOADED_CASE_DIR  = Ref{String}("")
-const _CASE_FILE_MTIMES = Dict{String,Float64}()
-
 """
     Jexpresso.run_case(eqs, eqs_case; CI_MODE=false)
 

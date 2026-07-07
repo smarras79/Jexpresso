@@ -164,10 +164,15 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
                 inputs, nparts, distribute,
                 nothing_flags, loaded_model, mesh,
                 interp_base, project_base, dummy_uaux)
-            # Restore ad_lvl from the loaded p4est forest.  The glue-propagation
-            # path inside mod_mesh_mesh_driver starts from the coarse mesh (ad_lvl=0)
-            # and cannot recover the true refinement levels of the checkpoint.
-            # mesh.ad_lvl = read_ad_lvl_from_p4est(partitioned_model.ptr_pXest)
+            # Restore ad_lvl from the loaded p4est forest. The glue-propagation
+            # path inside mod_mesh_mesh_driver starts from the coarse mesh
+            # (ad_lvl=0) and cannot recover the true refinement levels of the
+            # checkpoint — leaving ad_lvl wrong makes calculate_effective_delta
+            # (the CFL dt scaling in TimeIntegrators.jl) use dt for the wrong,
+            # coarser level: a silent CFL violation, not an immediate crash —
+            # it can take a few RK stages to surface as a DomainError deep in
+            # an equation-of-state call.
+            mesh.ad_lvl = read_ad_lvl_from_p4est(partitioned_model.pXest_type, partitioned_model.ptr_pXest)
         end
     else
         mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)

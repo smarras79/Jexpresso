@@ -1094,7 +1094,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                         params.mesh.connijk, params.inputs, params.rhs_el,
                         Int64(params.mesh.nelem), Int64(params.neqs),
                         connijk, Float64(params.mesh.Δeffective_l),
-                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE)
+                        params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE,
+                        params.sgs, params.mp)
 end
 
 # Function barrier for the 2D DSGS viscous assembly. Mirrors
@@ -1171,7 +1172,9 @@ function _viscous_rhs_el_2d!(uaux, qe, uprimitive,
                              connijk_mesh, inputs, rhs_el,
                              nelem, neqs,
                              connijk, Δ,
-                             QT, VT, SD, AD, SOL_VARS_TYPE)
+                             QT, VT, SD, AD, SOL_VARS_TYPE,
+                             sgs, mp)
+    micro = size(Tabs, 1)
     for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j]
@@ -1181,25 +1184,55 @@ function _viscous_rhs_el_2d!(uaux, qe, uprimitive,
                              SOL_VARS_TYPE)
         end
 
+        if sgs isa AbstractSGSModel
+            compute_sgs_cache!(sgs, uprimitive, mp, uaux,
+                               ngl, dψ,
+                               dξdx, dξdy,
+                               dηdx, dηdy,
+                               connijk_mesh, iel, Δ^2,
+                               micro, SD)
+        end
+
         for ieq = 1:neqs
-            _expansion_visc!(rhs_diffξ_el,
-                             rhs_diffη_el,
-                             uprimitive,
-                             visc_coeff,
-                             ω,
-                             Tabs,
-                             qn_mp,
-                             qsatt,
-                             uaux,
-                             ngl,
-                             dψ,
-                             Je,
-                             dξdx, dξdy,
-                             dηdx, dηdy,
-                             connijk_mesh,
-                             inputs, rhs_el,
-                             iel, ieq,
-                             QT, VT, SD, AD; Δ=Δ)
+            if sgs isa AbstractSGSModel
+                _expansion_visc!(rhs_diffξ_el,
+                                 rhs_diffη_el,
+                                 uprimitive,
+                                 visc_coeff,
+                                 ω,
+                                 Tabs,
+                                 qn_mp,
+                                 qsatt,
+                                 uaux,
+                                 ngl,
+                                 dψ,
+                                 Je,
+                                 dξdx, dξdy,
+                                 dηdx, dηdy,
+                                 connijk_mesh,
+                                 inputs, rhs_el,
+                                 iel, ieq, sgs,
+                                 QT, VT, SD, AD; Δ=Δ)
+            else
+                _expansion_visc!(rhs_diffξ_el,
+                                 rhs_diffη_el,
+                                 uprimitive,
+                                 visc_coeff,
+                                 ω,
+                                 Tabs,
+                                 qn_mp,
+                                 qsatt,
+                                 uaux,
+                                 ngl,
+                                 dψ,
+                                 Je,
+                                 dξdx, dξdy,
+                                 dηdx, dηdy,
+                                 connijk_mesh,
+                                 inputs, rhs_el,
+                                 iel, ieq,
+                                 QT, VT, SD, AD; Δ=Δ)
+            end
         end
     end
 
@@ -2144,6 +2177,139 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
+# Cache-reading 2D SGS path (mirrors the 3D cache-based _expansion_visc!
+# at NSD_3D below): Sij/μ_turb/f_Ri are precomputed once per element by
+# compute_sgs_cache! so this is a per-equation read + flux assembly only.
+# Dispatches on sgs::AbstractSGSModel so it applies to SMAG and VREM
+# alike; the Richardson correction baked into sgs.μ_turb therefore
+# affects momentum and temperature identically, matching NSD_3D.
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          Tabs, qn, qs,
+                          uaux,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          connijk,
+                          inputs, rhs_el,
+                          iel, ieq,
+                          sgs::AbstractSGSModel,
+                          QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0)
+
+    micro      = size(Tabs, 1)
+    ltheta_eqn = sgs.ltheta_eqn
+
+    is_u_momentum  = (ieq == 2)
+    is_v_momentum  = (ieq == 3)
+    is_temperature = (ieq == 4)
+
+    for l = 1:ngl
+        ωl = ω[l]
+        for k = 1:ngl
+
+            @inbounds begin
+                Je_kl = Je[iel,k,l]
+                ωJac  = ω[k]*ωl*Je_kl
+                ip    = connijk[iel,k,l]
+                ρ     = uprimitiveieq[k,l,1]
+
+                dξdx_kl = dξdx[iel,k,l]
+                dξdy_kl = dξdy[iel,k,l]
+                dηdx_kl = dηdx[iel,k,l]
+                dηdy_kl = dηdy[iel,k,l]
+
+                dudξ = 0.0; dudη = 0.0
+                dvdξ = 0.0; dvdη = 0.0
+                @turbo for ii = 1:ngl
+                    dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                    dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+                    dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                    dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+                end
+
+                dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+                dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+                dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+                dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+
+                div_u = dudx + dvdy
+
+                if is_u_momentum
+                    effective_viscosity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
+
+                    τ_xx = 2.0*effective_viscosity*dudx - (2.0/3.0)*effective_viscosity*div_u
+                    τ_xy = effective_viscosity*(dudy + dvdx)
+                    flux_x = τ_xx
+                    flux_y = τ_xy
+
+                elseif is_v_momentum
+                    effective_viscosity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
+
+                    τ_xy = effective_viscosity*(dudy + dvdx)
+                    τ_yy = 2.0*effective_viscosity*dvdy - (2.0/3.0)*effective_viscosity*div_u
+                    flux_x = τ_xy
+                    flux_y = τ_yy
+
+                elseif is_temperature
+                    # Gradient of scalar variable (θ dry, hl moist) — same
+                    # computation regardless of micro, matching NSD_3D.
+                    dsdξ = 0.0; dsdη = 0.0
+                    @turbo for ii = 1:ngl
+                        dsdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                        dsdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+                    end
+                    dsdx = dsdξ*dξdx_kl + dsdη*dηdx_kl
+                    dsdy = dsdξ*dξdy_kl + dsdη*dηdy_kl
+
+                    effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
+                    flux_x = effective_diffusivity * dsdx
+                    flux_y = effective_diffusivity * dsdy
+
+                    # Total-energy equation: also add the viscous-work term τ·u so
+                    # that the SGS-momentum dissipation is consistently returned to
+                    # the energy budget. Skip for the θ form where the ρθ equation
+                    # has no τ·u term (matches the dry branch of the legacy path).
+                    if micro == 1 && !ltheta_eqn
+                        effective_viscosity = SGS_diffusion(visc_coeffieq, 2, ρ, ip, sgs, ltheta_eqn, SD)
+                        τ_xx = 2.0*effective_viscosity*dudx - (2.0/3.0)*effective_viscosity*div_u
+                        τ_yy = 2.0*effective_viscosity*dvdy - (2.0/3.0)*effective_viscosity*div_u
+                        τ_xy = effective_viscosity*(dudy + dvdx)
+                        u_loc = uprimitiveieq[k,l,2]
+                        v_loc = uprimitiveieq[k,l,3]
+                        flux_x += τ_xx*u_loc + τ_xy*v_loc
+                        flux_y += τ_xy*u_loc + τ_yy*v_loc
+                    end
+
+                else
+                    # Other scalars (use appropriate Schmidt number)
+                    dqdξ = 0.0; dqdη = 0.0
+                    @turbo for ii = 1:ngl
+                        dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                        dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+                    end
+                    dqdx = dqdξ*dξdx_kl + dqdη*dηdx_kl
+                    dqdy = dqdξ*dξdy_kl + dqdη*dηdy_kl
+
+                    effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq, ρ, ip, sgs, ltheta_eqn, SD)
+                    flux_x = effective_diffusivity * dqdx
+                    flux_y = effective_diffusivity * dqdy
+                end
+
+                ∇ξ_flux_kl = (dξdx_kl*flux_x + dξdy_kl*flux_y)*ωJac
+                ∇η_flux_kl = (dηdx_kl*flux_x + dηdy_kl*flux_y)*ωJac
+
+                @turbo for i = 1:ngl
+                    dhdξ_ik = dψ[i,k]
+                    dhdη_il = dψ[i,l]
+
+                    rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ_flux_kl
+                    rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η_flux_kl
+                end
+            end
+        end
+    end
+end
+
 #
 # Entropy-stable Navier-Stokes parabolic expansion (2D), ported from
 # M. Artiano's ma/ab_dev _expansion_visc_navierstokes!.
@@ -2527,6 +2693,88 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
         end
     end
     # μ_max[ieq] = μ_max_ieq
+end
+
+# _viscous_rhs_el_3d! calls _expansion_visc! with `sgs` passed positionally
+# regardless of whether an SGS model is active (unlike its 2D counterpart,
+# which branches and calls a distinct sgs-less overload). When sgs === nothing
+# that call has the same argument shape as the AbstractSGSModel method above
+# but no matching method existed, so this mirrors the scalar visc_coeffieq-based
+# diffusion in the plain (Tabs/qn/qs/uaux/inputs/Δ/lrichardson-less) 3D method
+# above, adapted to this call site's shorter argument list.
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy, dξdz,
+                          dηdx, dηdy, dηdz,
+                          dζdx, dζdy, dζdz,
+                          rhs_el,
+                          iel, ieq, connijk,
+                          coords,
+                          poin_in_bdy_face, elem_to_face, bdy_face_type,
+                          ::Nothing,
+                          QT::Inexact, VT, SD::NSD_3D, ::ContGal)
+
+    for m = 1:ngl
+        for l = 1:ngl
+
+            ωl = ω[l]
+            ωm = ω[m]
+            ωlm = ωl * ωm
+
+            for k = 1:ngl
+
+                @inbounds begin
+                    Je_klm = Je[iel,k,l,m]
+                    ωJac   = ω[k] * ωlm * Je_klm
+
+                    dqdξ = 0.0
+                    dqdη = 0.0
+                    dqdζ = 0.0
+                    @turbo for ii = 1:ngl
+                        dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
+                        dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
+                        dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
+                    end
+                    dξdx_klm = dξdx[iel,k,l,m]
+                    dξdy_klm = dξdy[iel,k,l,m]
+                    dξdz_klm = dξdz[iel,k,l,m]
+
+                    dηdx_klm = dηdx[iel,k,l,m]
+                    dηdy_klm = dηdy[iel,k,l,m]
+                    dηdz_klm = dηdz[iel,k,l,m]
+
+                    dζdx_klm = dζdx[iel,k,l,m]
+                    dζdy_klm = dζdy[iel,k,l,m]
+                    dζdz_klm = dζdz[iel,k,l,m]
+
+                    auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
+                    dqdx = visc_coeffieq[ieq]*auxi
+
+                    auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
+                    dqdy = visc_coeffieq[ieq]*auxi
+
+                    auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
+                    dqdz = visc_coeffieq[ieq]*auxi
+
+                    ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
+                    ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
+                    ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac
+
+                    @turbo for i = 1:ngl
+                        dhdξ_ik = dψ[i,k]
+                        dhdη_il = dψ[i,l]
+                        dhdζ_im = dψ[i,m]
+
+                        rhs_diffξ_el[iel,i,l,m,ieq] -= dhdξ_ik * ∇ξ∇u_klm
+                        rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η∇u_klm
+                        rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ∇u_klm
+                    end
+                end
+            end
+        end
+    end
+    return
 end
 
 function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, rhs_el, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)

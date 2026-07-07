@@ -41,7 +41,7 @@ function user_source!(S,
         zs = 19000.0
     	xr = 0.0
     	xl = 0.0
-    	α  = 1/60.0
+    	α  = 1/120.0
         if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
                 betay_coe = α * sinpi(0.5*(z - zs)/(zmax - zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
         else

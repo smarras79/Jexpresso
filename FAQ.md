@@ -82,6 +82,46 @@ echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
 Full explanation:
 [INSTALL.md, Section 5.5](INSTALL.md#55-macos-hostname-fix-mpich-and-mpich_jll-only).
 
+### AMR (`theta_amr` and other `:lamr`/`:linitial_refine` cases) fails with `AssertionError: A check failed` in `OctreeDistributedDiscreteModel`
+
+**Q.** Loading a mesh into an AMR case fails with something like:
+
+```
+ERROR: LoadError: AssertionError: A check failed
+Stacktrace:
+  [1] macro expansion
+    @ ~/.julia/packages/Gridap/.../src/Helpers/Macros.jl:61 [inlined]
+  [2] GridapP4est.OctreeDistributedDiscreteModel(Dc::Int64, Dp::Int64, ...)
+    @ GridapP4est ~/.../GridapP4est.jl/src/OctreeDistributedDiscreteModels.jl:325
+```
+
+**A.** This is a mesh-file issue, not a code bug: `GridapP4est`/p4est is not
+manifold-aware — it requires the cell dimension (`Dc`) and the point/embedding
+dimension (`Dp`) of the coarse mesh to be equal. Your `.msh` file has
+`Dp != Dc` (e.g. a mesh that is logically 2D but whose vertices carry a
+nonzero z-coordinate, so Gridap's GMSH reader reports `Dp=3`).
+
+The same mesh loads without any problem for a **non-AMR** case (e.g. `theta`)
+because plain `GridapDistributed` happily assembles on `Dc=2, Dp=3` embedded
+meshes — the mismatch only breaks the octree/AMR path.
+
+To fix it at the source, check whether your mesh's z-coordinate is truly zero
+everywhere:
+
+```bash
+julia --project=. -e '
+  using GridapGmsh
+  m = GmshDiscreteModel("path/to/your.msh")
+  println(typeof(m))   # look for e.g. UnstructuredDiscreteModel{2,2,...}
+                        # if you see {2,3,...} instead, Dp != Dc
+'
+```
+
+If it prints `{Dc,Dp,...}` with `Dp > Dc`, regenerate the mesh (or edit the
+`.geo`) so every `Point(...)` uses `0` for the extra coordinate rather than a
+nonzero constant — a common cause is a copy-paste bug where a mesh-spacing
+variable (e.g. `gridsize`) ends up in the z slot instead of `0`.
+
 ### A run is "stuck" for ~30–60 s before the time loop advances
 
 **A.** That is the one-time JIT compilation cost (`sem_setup`, the SciML

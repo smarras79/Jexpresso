@@ -141,7 +141,12 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     if rank == 0
         @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
     end
-    
+
+    if get(inputs, :lrestart_amr, false)
+        read_vtk_amr_restart!(q, mesh, inputs; output_dir=OUTPUT_DIR,
+                         varnames=["ρ", "u", "w", "θ", "p"])
+    end
+
     return q
 end
 
@@ -214,8 +219,39 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
         if any(dtheta .> tol) && (old_ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
         end
-        if all(dtheta .< tol)
+        # Never coarsen below the preadapt floor: the box preadapted in
+        # user_get_preadapt_flags! below should stay refined even where the
+        # runtime θ criterion sees nothing interesting.
+        if all(dtheta .< tol) && old_ad_lvl[iel] > inputs[:preadapt_max_level]
             adapt_flags[iel] = coarsen_flag
+        end
+    end
+end
+
+# preadapt: refine a box around the middle of the domain before t=0. This
+# mesh spans x ∈ [-5000, 5000], y ∈ [0, 10000] (hexa_TFI_10x10.msh), so the
+# domain center is (xc, yc) = (0, 5000); the box below is a fixed fraction
+# of the domain half-extents around that center. Runs before initialize(),
+# so it can only see geometry (mesh.x/mesh.y), not the solution.
+function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk, nelem, ngl, max_level)
+    xc = 0.0
+    yc = 5000.0
+    hx = 1500.0   # half-width of the preadapt box in x
+    hy = 1500.0   # half-width of the preadapt box in y
+
+    for iel = 1:nelem
+        for i = 1:ngl
+            for j = 1:ngl
+                ips = connijk[iel, i, j]
+                x = mesh.x[ips]
+                y = mesh.y[ips]
+
+                if abs(x - xc) < hx && abs(y - yc) < hy && old_ad_lvl[iel] < max_level
+                    adapt_flags[iel] = refine_flag
+                else
+                    adapt_flags[iel] = nothing_flag
+                end
+            end
         end
     end
 end

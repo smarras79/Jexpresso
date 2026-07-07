@@ -978,9 +978,19 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ldss_laplace] = false
     end
 
-    # AMR    
+    # AMR
     if(!haskey(inputs, :lamr))
         inputs[:lamr] = false
+    end
+
+    # HDF5 solution restart (:lrestart/:restart_time) does not know about the
+    # p4est forest and cannot reconstruct the adapted mesh it was written
+    # against, so it's incompatible with AMR. Force it off rather than
+    # silently corrupting/erroring on a shape mismatch; use :lrestart_amr
+    # (VTK + p4est forest restart) for AMR restarts instead.
+    if inputs[:lamr] == true
+        inputs[:lrestart]     = false
+        inputs[:restart_time] = 0.0
     end
 
     # LES statistics defaults (used by giga_les TimeIntegrators.jl callbacks).

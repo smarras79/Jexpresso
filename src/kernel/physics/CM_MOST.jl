@@ -151,17 +151,6 @@ function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref,
     wθ[1] = -u_star * theta_star
 end
 
-# Moist: q_ref and q_s before z0_m, z0_h
-function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, q_ref, q_s, z0_m, z0_h)
-    u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
-    u_star, theta_star, q_star = _surface_scales_moist(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, ρ, q_ref, q_s)
-    τ_magnitude = ρ * u_star^2
-    τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
-    τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
-    τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
-    wθ[1] = -u_star * theta_star
-    wq[1] = -u_star * q_star
-end
 
 # Backward-compatible kwargs wrapper (kept for external callers; NOT the hot path).
 function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst;
