@@ -84,6 +84,18 @@ UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
+# The registered GridapP4est =0.3.11 does not support AMR on macOS: @cfunction
+# closures are unsupported on ARM64 and the p4est iterator structs have a
+# Julia/C struct-stride mismatch (ARM64 on Julia >= 1.11, x86_64 on Julia
+# >= 1.12), which break the refinement callbacks. The fork below (same UUID +
+# version, plus those fixes) resolves it for every platform. See INSTALL.md
+# section 7. Pinning it here — rather than leaving it a per-machine Pkg.add —
+# makes AMR work out of the box on a fresh instantiate. (The separate
+# `AssertionError` at OctreeDistributedDiscreteModels.jl:325 is a Dp != Dc mesh
+# issue handled in code by _flatten_model_to_cell_dim in mesh.jl, not here.)
+[sources]
+GridapP4est = {url = "https://github.com/Hwang1229/GridapP4est.jl", rev = "arm64-cfunction-fix"}
+
 [compat]
 AMD = "0.5.3"
 BenchmarkTools = "1.8.0"

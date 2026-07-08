@@ -1352,6 +1352,36 @@ const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_f
 const get_glue_components = GridapDistributed.get_glue_components
 
 
+# GridapP4est/p4est is not manifold-aware: the OctreeDistributedDiscreteModel
+# constructor `@check`s that the coarse model's point/embedding dimension `Dp`
+# equals its cell dimension `Dc` (OctreeDistributedDiscreteModels.jl:325).
+# GridapGmsh, however, reports `Dp=3` for ANY .msh whose nodes carry a non-zero
+# z-coordinate — see GmshDiscreteModel's `_setup_point_dim`, which returns 3 as
+# soon as one node has `z !≈ 0`, with no keyword to override it. A logically-2D
+# mesh with a stray non-zero z therefore loads fine for non-AMR cases (plain
+# GridapDistributed assembles happily on a `Dc=2, Dp=3` embedded model) but
+# aborts every AMR run with `AssertionError: A check failed`.
+#
+# Project the coarse model down to `Dp=Dc` by dropping the trailing coordinate
+# component(s). Face/boundary numbering in Gridap is derived from cell
+# connectivity, not coordinates, so the rebuilt topology reproduces the exact
+# same face ordering and the original FaceLabeling (boundary tags) stays valid.
+# No-op when `Dp == Dc`, so 3D meshes and already-flat 2D meshes pass through
+# untouched.
+function _flatten_model_to_cell_dim(model::Gridap.Geometry.DiscreteModel{Dc,Dp}) where {Dc,Dp}
+    Dc == Dp && return model
+    grid        = get_grid(model)
+    coords_flat = [Gridap.Point(ntuple(i -> p[i], Dc)...) for p in get_node_coordinates(grid)]
+    grid_flat   = Gridap.Geometry.UnstructuredGrid(coords_flat,
+                                                   get_cell_node_ids(grid),
+                                                   Gridap.Geometry.get_reffes(grid),
+                                                   Gridap.Geometry.get_cell_type(grid),
+                                                   Gridap.Geometry.OrientationStyle(grid))
+    topo_flat   = Gridap.Geometry.UnstructuredGridTopology(grid_flat)
+    return Gridap.Geometry.UnstructuredDiscreteModel(grid_flat, topo_flat, get_face_labeling(model))
+end
+
+
 # Partition cells into nparts by x-y centroid bins, ignoring z.
 # Returns a 1-indexed cell_to_part vector of length num_cells(model).
 function _compute_xy_partition(model, nparts)
@@ -1511,7 +1541,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # first call to UniformlyRefinedForestOfOctreesDiscreteModel.
             _ensure_amr_loaded!()
             @outputrootonly begin
-                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
                 partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             end
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
@@ -1520,7 +1550,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         elseif ladaptive == true && linitial_refine == false
             _ensure_amr_loaded!()
             @outputrootonly begin
-                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
                 partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
             end
             function set_id_refined(flags, indices, target_gid)

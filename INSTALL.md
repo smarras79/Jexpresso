@@ -378,40 +378,44 @@ larger one-time investment that ships a pre-compiled `.dylib` and
 makes every cold `mpiexec` rank skip JIT too — but that is out of
 scope for this guide.
 
-## 7. AMR on macOS (Apple Silicon): use the patched GridapP4est fork
+## 7. AMR on macOS (Apple Silicon): the patched GridapP4est fork
 
-The registered `GridapP4est` (pinned at `=0.3.11`, see the package list at the
-bottom of this file) does not support adaptive mesh refinement on macOS —
-`@cfunction` closures aren't supported on ARM64, and there's a Julia/C struct
-stride mismatch for the p4est iterator structs on both ARM64 (Julia ≥ 1.11)
-and x86_64 (Julia ≥ 1.12). Both are fixed on a branch of a fork:
+The registered `GridapP4est` (`0.3.11`, see the package list at the bottom of
+this file) does not support adaptive mesh refinement on macOS — `@cfunction`
+closures aren't supported on ARM64, and there's a Julia/C struct stride
+mismatch for the p4est iterator structs on both ARM64 (Julia ≥ 1.11) and
+x86_64 (Julia ≥ 1.12). These surface during the refinement callbacks that run
+*after* the coarse octree model is built, so every
+`:lamr`/`:lpreadapt`/`:linitial_refine` case (see
+[docs/amr_setup.md](docs/amr_setup.md)) needs the patched fork on macOS.
+
+Both bugs are fixed on a branch of a fork:
 <https://github.com/Hwang1229/GridapP4est.jl/tree/arm64-cfunction-fix>.
 
-Any macOS user running an `:lamr`/`:lpreadapt`/`:linitial_refine` case (see
-[docs/amr_setup.md](docs/amr_setup.md)) needs to point their project at this
-branch instead of the registered version:
+> **Note:** the `AssertionError: A check failed` at
+> `OctreeDistributedDiscreteModels.jl:325` is a *different*, platform-independent
+> issue — a `Dp != Dc` coarse mesh — and is handled in code by
+> `_flatten_model_to_cell_dim` in `src/kernel/mesh/mesh.jl`; the fork does not
+> address it. See the
+> [FAQ entry](FAQ.md#amr-theta_amr-and-other-lamrlinitial_refine-cases-fails-with-assertionerror-a-check-failed-in-octreedistributeddiscretemodel).
 
-```bash
-julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/Hwang1229/GridapP4est.jl", rev="arm64-cfunction-fix")'
-julia --project=. -e 'using Pkg; Pkg.build("GridapP4est")'
-```
-
-`Manifest.toml` is gitignored in this repo, so this is a **per-machine, one-time**
-step — it's recorded only in your own local Manifest and does not need to be
-shared or committed. If you'd rather work from an editable local clone (e.g.
-to make further fixes yourself):
-
-```bash
-git clone -b arm64-cfunction-fix git@github.com:Hwang1229/GridapP4est.jl.git ~/GridapP4est.jl
-julia --project=. -e 'using Pkg; Pkg.develop(path=expanduser("~/GridapP4est.jl"))'
-```
-
-Verify it took effect:
+**You no longer need to install this fork by hand.** `Project.toml` pins it in a
+`[sources]` block (same package UUID and version `0.3.11`, plus the fixes), so a
+plain `Pkg.instantiate()` already resolves `GridapP4est` to the fork on every
+platform. Verify it took effect:
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
 # should show "https://github.com/Hwang1229/GridapP4est.jl#arm64-cfunction-fix"
-# (or the local path, if you used Pkg.develop)
+```
+
+If you'd rather work from an editable local clone (e.g. to make further fixes
+yourself), the `Pkg.develop` below overrides the `[sources]` pin for your
+machine only:
+
+```bash
+git clone -b arm64-cfunction-fix git@github.com:Hwang1229/GridapP4est.jl.git ~/GridapP4est.jl
+julia --project=. -e 'using Pkg; Pkg.develop(path=expanduser("~/GridapP4est.jl"))'
 ```
 
 If you hit a missing-file error (e.g. `libp4est`/`libjansson` failing to
@@ -420,6 +424,81 @@ If you hit a missing-file error (e.g. `libp4est`/`libjansson` failing to
 that's a separate, unrelated artifact-corruption issue — see the FAQ entry
 ["A package fails to precompile with a missing file inside a Julia artifact"](FAQ.md#a-package-fails-to-precompile-with-a-missing-file-inside-a-julia-artifact).
 
+### 7.1 AMR quick-start on macOS (clean build → `theta_amr`)
+
+A copy-pasteable path from nothing to a running AMR case on macOS. It reuses the
+detailed steps above ([§2](#2-link-the-sample-meshes) for the mesh link,
+[§5.2](#52-point-mpipreferences-at-your-mpi) / [§5.5](#55-macos-hostname-fix-mpich-and-mpich_jll-only)
+for MPI); the notes here call out only what AMR adds.
+
+```bash
+# 0. Prereqs: Julia 1.11.9, git+SSH to GitHub.
+julia --version                              # 1.11.9
+
+# 1. Clone Jexpresso + the mesh repo side by side, get on this branch
+git clone git@github.com:smarras79/Jexpresso.git
+git clone git@github.com:smarras79/JexpressoMeshes.git
+cd Jexpresso
+git checkout claude/theta-amr-osx-assertion-bi8ubv
+
+# 2. Link the sample meshes (provides hexa_TFI_10x10.msh — see Section 2)
+ln -s ../JexpressoMeshes/meshes .
+ls -l meshes/gmsh_grids/hexa_TFI_10x10.msh   # must resolve
+
+# 3. Instantiate. The [sources] pin clones the patched GridapP4est fork here,
+#    so this step needs network access. Precompile is deferred until after MPI.
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+
+# 4. Confirm the fork took effect (this is what makes the refinement steps work)
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
+#    expect: ...GridapP4est.jl#arm64-cfunction-fix
+
+# 5. Configure MPI — Route C (bundled MPICH_jll) is the reliable choice on macOS
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary()'
+
+# 6. macOS hostname fix (required for any MPICH-based MPI, incl. the JLL; Section 5.5)
+echo "127.0.0.1   $(hostname -s)" | sudo tee -a /etc/hosts
+echo "127.0.0.1   $(hostname)"    | sudo tee -a /etc/hosts
+
+# 7. Rebuild MPI against that choice, then precompile everything
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+
+# 8. Sanity-check a non-AMR case first (fast, proves the base build)
+julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler","theta")'
+
+# 9. Run the AMR case
+julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler","theta_amr")'
+```
+
+**Updating an existing clone** (you previously hand-added the fork with
+`Pkg.add`/`Pkg.develop`): force a clean re-resolve so the committed `[sources]`
+pin and the new mesh code are picked up.
+
+```bash
+cd Jexpresso
+git pull
+rm -f Manifest.toml            # gitignored; forces a from-scratch resolve
+julia --project=. -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true); Pkg.precompile()'
+```
+
+**Two AMR-specific checks** if `theta_amr` still misbehaves:
+
+```bash
+# a) What embedding dimension does the mesh report? Dp=3 is why the old
+#    AssertionError fired; _flatten_model_to_cell_dim now collapses it to Dp=Dc.
+julia --project=. -e 'using GridapGmsh; println(typeof(GmshDiscreteModel("./meshes/gmsh_grids/hexa_TFI_10x10.msh")))'
+#    {2,3,...} = Dp=3 (flattened at runtime);  {2,2,...} = already flat
+
+# b) Is the fork really in use? (step 4) — must show #arm64-cfunction-fix
+```
+
+Common macOS stumbles are covered in the FAQ: `dlopen`/`libjansson`/missing
+artifacts on instantiate, `MPI_Init … gethostbyname failed` (the hostname fix in
+step 6), and hangs at `MPI.Init` (stay on Route C, step 5). See
+[FAQ.md](FAQ.md#run).
+
 # To run other tests that are already in Jexpresso or to add your own new problem,
 see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md)
 
@@ -427,6 +506,12 @@ see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md)
 
 
 Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
+
+> **Note:** this list is an informational snapshot — the authoritative versions
+> live in [`Project.toml`](Project.toml). In particular `GridapP4est` is no
+> longer plain `=0.3.11`: it is pinned to the patched fork via a `[sources]`
+> block (see [Section 7](#7-amr-on-macos-apple-silicon-the-patched-gridapp4est-fork)),
+> so a `Pkg.instantiate()` resolves the fork automatically.
 
 ```
 [compat]

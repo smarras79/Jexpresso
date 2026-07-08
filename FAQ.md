@@ -95,32 +95,57 @@ Stacktrace:
     @ GridapP4est ~/.../GridapP4est.jl/src/OctreeDistributedDiscreteModels.jl:325
 ```
 
-**A.** This is a mesh-file issue, not a code bug: `GridapP4est`/p4est is not
-manifold-aware — it requires the cell dimension (`Dc`) and the point/embedding
-dimension (`Dp`) of the coarse mesh to be equal. Your `.msh` file has
-`Dp != Dc` (e.g. a mesh that is logically 2D but whose vertices carry a
-nonzero z-coordinate, so Gridap's GMSH reader reports `Dp=3`).
+**A.** That `@check` is a **dimensional guard**, not a corruption symptom: line
+325 asserts that the coarse model's point/embedding dimension `Dp` equals its
+cell dimension `Dc`. p4est is not manifold-aware and requires `Dp == Dc`. The
+mismatch comes from GridapGmsh: its `GmshDiscreteModel` reports `Dp=3` for **any**
+`.msh` whose nodes carry a non-zero z-coordinate — see `_setup_point_dim`, which
+returns 3 the moment one node has `z !≈ 0`, with no keyword to override it. So a
+logically-2D mesh with a stray non-zero z reads back as `{Dc=2, Dp=3}`: it loads
+fine for a **non-AMR** case (e.g. `theta` — plain `GridapDistributed` assembles
+happily on a `Dc=2, Dp=3` embedded model) but every AMR run aborts here. Because
+the forest is 2D (the p4est log shows `121 = 11×11` nodes), the *cell* check
+passes and it is always the *point-dim* check that fires.
 
-The same mesh loads without any problem for a **non-AMR** case (e.g. `theta`)
-because plain `GridapDistributed` happily assembles on `Dc=2, Dp=3` embedded
-meshes — the mismatch only breaks the octree/AMR path.
-
-To fix it at the source, check whether your mesh's z-coordinate is truly zero
-everywhere:
+**This is now handled in code.** `mod_mesh_read_gmsh!` projects the coarse Gmsh
+model down to `Dp=Dc` (`_flatten_model_to_cell_dim` in `src/kernel/mesh/mesh.jl`)
+before building the octree model, dropping the trailing coordinate component.
+Face/boundary numbering is derived from cell connectivity, not coordinates, so
+boundary tags are preserved; the flatten is a no-op when `Dp == Dc`. AMR cases
+on 2D-embedded-in-3D meshes therefore run without touching the `.msh`. If you
+still hit this after pulling, confirm you're running the patched
+`mod_mesh_read_gmsh!` and check what dimension your mesh reports:
 
 ```bash
 julia --project=. -e '
   using GridapGmsh
   m = GmshDiscreteModel("path/to/your.msh")
-  println(typeof(m))   # look for e.g. UnstructuredDiscreteModel{2,2,...}
-                        # if you see {2,3,...} instead, Dp != Dc
+  println(typeof(m))   # {2,3,...} means Dp=3 (the flatten handles it);
+                        # {2,2,...} means Dp already equals Dc
 '
 ```
 
-If it prints `{Dc,Dp,...}` with `Dp > Dc`, regenerate the mesh (or edit the
-`.geo`) so every `Point(...)` uses `0` for the extra coordinate rather than a
-nonzero constant — a common cause is a copy-paste bug where a mesh-spacing
-variable (e.g. `gridsize`) ends up in the z slot instead of `0`.
+**Separately, on macOS you still need the patched `GridapP4est` fork** — not for
+*this* assertion (it fires before any p4est callback runs) but for the actual
+refinement steps that follow it: the registered `0.3.11` lacks ARM64
+`@cfunction` support and has a p4est-iterator struct-stride mismatch (ARM64 on
+Julia ≥ 1.11, x86_64 on Julia ≥ 1.12). The fork is now **pinned automatically**
+via a `[sources]` block in `Project.toml`, so a fresh `Pkg.instantiate()`
+resolves it. Verify with:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
+# expected: "...#arm64-cfunction-fix"
+```
+
+See [INSTALL.md, Section 7](INSTALL.md#7-amr-on-macos-apple-silicon-the-patched-gridapp4est-fork)
+for details.
+
+The in-code flatten means you no longer *have* to fix the mesh, but if you'd
+rather remove the stray z at the source, regenerate it (or edit the `.geo`) so
+every `Point(...)` uses `0` for the extra coordinate rather than a nonzero
+constant — a common cause is a copy-paste bug where a mesh-spacing variable
+(e.g. `gridsize`) ends up in the z slot instead of `0`.
 
 ### A package fails to precompile with a missing file inside a Julia artifact
 
@@ -189,11 +214,13 @@ xattr -lr ~/.julia/artifacts | grep -i quarantine   # check first
 xattr -dr com.apple.quarantine ~/.julia/artifacts   # clear if present
 ```
 
-If you're on Apple Silicon and running an AMR case, also make sure you're on
-the patched `GridapP4est` fork, not the registered `=0.3.11` release — see
-[INSTALL.md, Section 7](INSTALL.md#7-amr-on-macos-apple-silicon-use-the-patched-gridapp4est-fork).
-That's a separate issue (missing ARM64 `@cfunction`/struct-stride support)
-from this artifact-corruption one, but both surface on the same machines.
+If you're on Apple Silicon and running an AMR case, the patched `GridapP4est`
+fork is already pinned for you via a `[sources]` block in `Project.toml` — see
+[INSTALL.md, Section 7](INSTALL.md#7-amr-on-macos-apple-silicon-the-patched-gridapp4est-fork).
+Its missing ARM64 `@cfunction`/struct-stride support is a separate issue from
+this artifact-corruption one, but both surface on the same machines, so verify
+`Pkg.status("GridapP4est")` shows the `#arm64-cfunction-fix` fork after
+reinstantiating.
 
 ### A run is "stuck" for ~30–60 s before the time loop advances
 
