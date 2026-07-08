@@ -92,6 +92,8 @@ using Gridap.Adaptivity
 using GridapDistributed
 using PartitionedArrays
 using GridapGmsh
+
+import Jansson_jll
 using GridapP4est
 using P4est_wrapper
 
