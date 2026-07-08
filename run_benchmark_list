@@ -12,6 +12,9 @@ Jexpresso.run_case("CompEuler", "wave1d_lag")
 Jexpresso.run_case("CompEuler", "theta")
 Jexpresso.run_case("CompEuler", "theta_laguerre")
 
+Jexpresso.run_case("CompEuler", "theta_amr")
+Jexpresso.run_case("CompEuler", "3d_amr")
+
 Jexpresso.run_case("Elliptic", "case1")
 Jexpresso.run_case("Helmholtz", "case1")
 Jexpresso.run_case("Helmholtz", "case1_laguerre")
