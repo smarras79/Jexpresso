@@ -551,7 +551,7 @@ function _build_rhs!(RHS, u, params, time)
                           params.q_el, params.q_el_pro,
                           params.cache_ghost_p, params.q_ghost_p,
                           params.cache_ghost_c, params.q_ghost_c,
-                          params.interp)
+                          params.interp; neqs = neqs)
     end
     
     @timeit_debug JEXPRESSO_TIMER "reset_bdyflux" resetbdyfluxToZero!(params)
