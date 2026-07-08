@@ -122,6 +122,79 @@ If it prints `{Dc,Dp,...}` with `Dp > Dc`, regenerate the mesh (or edit the
 nonzero constant — a common cause is a copy-paste bug where a mesh-spacing
 variable (e.g. `gridsize`) ends up in the z slot instead of `0`.
 
+### A package fails to precompile with a missing file inside a Julia artifact
+
+**Q.** `Pkg.instantiate()`/`Pkg.precompile()` (or a run that triggers a lazy
+precompile) fails with a missing file somewhere under `~/.julia/artifacts/`.
+Two examples seen in the wild:
+
+```
+ERROR: LoadError: could not load library ".../artifacts/.../lib/libp4est.4.dylib"
+dlopen(.../libp4est.4.dylib, 0x0001): Library not loaded: @rpath/libjansson.4.dylib
+  Referenced from: <...> .../libp4est.4.dylib
+  Reason: tried: '.../lib/./libjansson.4.dylib' (no such file), ...
+```
+
+```
+ERROR: LoadError: SystemError: opening file
+".../artifacts/.../lib/gmsh.jl": No such file or directory
+```
+
+The first is `P4est_jll` missing its `Jansson_jll` dependency's dylib; the
+second is `Gmsh_jll` (pulled in by `GridapGmsh`) missing its own bundled
+`gmsh.jl`. Different packages, same root cause — see below.
+
+**A.** This is a corrupted/incomplete Julia artifact on disk, not a code bug.
+Artifacts are content-addressed directories under `~/.julia/artifacts/<hash>/`
+that Pkg downloads once and then trusts are complete forever — if the
+download was interrupted, partial, or a file inside got deleted/modified
+after the fact, Pkg has no way to notice and will keep handing out the
+broken directory. On macOS specifically, Gatekeeper quarantining/stripping a
+freshly-downloaded artifact is a common trigger.
+
+Note Pkg.jl's live-updating progress bar can also *hide* which package
+actually failed and why — if you only see a generic "Failed to precompile
+X" with no real error above it, re-run that one package in isolation to see
+past the redraw, e.g. `julia --project=. -e 'using Pkg; Pkg.precompile("GridapGmsh")'`
+or just `julia --project=. -e 'using GridapGmsh'`.
+
+Fix, step by step:
+
+1. Quit any running Julia session first.
+2. Clear the artifact cache so Pkg redownloads everything cleanly (this
+   affects every Julia project on the machine, but is the most reliable
+   fix — artifacts are content-addressed and just redownload on demand):
+   ```bash
+   rm -rf ~/.julia/artifacts
+   ```
+3. From your Jexpresso project directory, reinstantiate:
+   ```bash
+   julia --project=. -e 'using Pkg; Pkg.instantiate()'
+   ```
+4. Rebuild the packages that link against native libraries:
+   ```bash
+   julia --project=. -e 'using Pkg; Pkg.build()'
+   ```
+5. Precompile:
+   ```bash
+   julia --project=. -e 'using Pkg; Pkg.precompile()'
+   ```
+6. Re-run whatever case failed originally.
+
+If the exact same error comes back immediately after step 2–3 (i.e. the
+redownloaded artifact is *still* missing the file), macOS Gatekeeper may be
+quarantining it. Check and clear the quarantine flag, then repeat steps 3–5:
+```bash
+xattr -lr ~/.julia/artifacts | grep -i quarantine   # check first
+xattr -dr com.apple.quarantine ~/.julia/artifacts   # clear if present
+```
+
+If you're on Apple Silicon and running an AMR case, also make sure you're on
+the patched `GridapP4est` fork, not the registered `=0.3.11` release — see
+[INSTALL.md, Section 7](INSTALL.md#7-amr-on-macos-apple-silicon-use-the-patched-gridapp4est-fork).
+That's a separate issue (missing ARM64 `@cfunction`/struct-stride support)
+from this artifact-corruption one, but both surface on the same machines.
+
 ### A run is "stuck" for ~30–60 s before the time loop advances
 
 **A.** That is the one-time JIT compilation cost (`sem_setup`, the SciML

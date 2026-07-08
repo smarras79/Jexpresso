@@ -378,6 +378,48 @@ larger one-time investment that ships a pre-compiled `.dylib` and
 makes every cold `mpiexec` rank skip JIT too — but that is out of
 scope for this guide.
 
+## 7. AMR on macOS (Apple Silicon): use the patched GridapP4est fork
+
+The registered `GridapP4est` (pinned at `=0.3.11`, see the package list at the
+bottom of this file) does not support adaptive mesh refinement on macOS —
+`@cfunction` closures aren't supported on ARM64, and there's a Julia/C struct
+stride mismatch for the p4est iterator structs on both ARM64 (Julia ≥ 1.11)
+and x86_64 (Julia ≥ 1.12). Both are fixed on a branch of a fork:
+<https://github.com/Hwang1229/GridapP4est.jl/tree/arm64-cfunction-fix>.
+
+Any macOS user running an `:lamr`/`:lpreadapt`/`:linitial_refine` case (see
+[docs/amr_setup.md](docs/amr_setup.md)) needs to point their project at this
+branch instead of the registered version:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/Hwang1229/GridapP4est.jl", rev="arm64-cfunction-fix")'
+julia --project=. -e 'using Pkg; Pkg.build("GridapP4est")'
+```
+
+`Manifest.toml` is gitignored in this repo, so this is a **per-machine, one-time**
+step — it's recorded only in your own local Manifest and does not need to be
+shared or committed. If you'd rather work from an editable local clone (e.g.
+to make further fixes yourself):
+
+```bash
+git clone -b arm64-cfunction-fix git@github.com:Hwang1229/GridapP4est.jl.git ~/GridapP4est.jl
+julia --project=. -e 'using Pkg; Pkg.develop(path=expanduser("~/GridapP4est.jl"))'
+```
+
+Verify it took effect:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.status("GridapP4est")'
+# should show "https://github.com/Hwang1229/GridapP4est.jl#arm64-cfunction-fix"
+# (or the local path, if you used Pkg.develop)
+```
+
+If you hit a missing-file error (e.g. `libp4est`/`libjansson` failing to
+`dlopen`, or `Pkg.instantiate()` failing to precompile a package with a
+`SystemError: opening file ".../artifacts/.../..."`) right after switching,
+that's a separate, unrelated artifact-corruption issue — see the FAQ entry
+["A package fails to precompile with a missing file inside a Julia artifact"](FAQ.md#a-package-fails-to-precompile-with-a-missing-file-inside-a-julia-artifact).
+
 # To run other tests that are already in Jexpresso or to add your own new problem,
 see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md)
 
