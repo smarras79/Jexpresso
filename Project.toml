@@ -93,8 +93,8 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 # makes AMR work out of the box on a fresh instantiate. (The separate
 # `AssertionError` at OctreeDistributedDiscreteModels.jl:325 is a Dp != Dc mesh
 # issue handled in code by _flatten_model_to_cell_dim in mesh.jl, not here.)
-[sources]
-GridapP4est = {url = "https://github.com/Hwang1229/GridapP4est.jl", rev = "arm64-cfunction-fix"}
+#[sources]
+#GridapP4est = {url = "https://github.com/Hwang1229/GridapP4est.jl", rev = "arm64-cfunction-fix"}
 
 [compat]
 AMD = "0.5.3"
