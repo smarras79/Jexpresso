@@ -60,7 +60,7 @@ function user_inputs()
         :outformat           => "vtk",
         :loverwrite_output   => false,
         :lwrite_initial      => true,
-        :output_dir          => "./output-mhd/",
+        :output_dir          => "./output/",
         :loutput_pert        => false,
         #---------------------------------------------------------------------------
         # AMR (off)
