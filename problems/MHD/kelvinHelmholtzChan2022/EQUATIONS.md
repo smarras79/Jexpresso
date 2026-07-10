@@ -132,6 +132,24 @@ condition below and $\gamma=5/3$ it evaluates to $c_h \approx 2.344$. The
 paper notes that smaller $c_h$ degrades robustness while larger $c_h$
 stiffens the system.
 
+**ψ damping (mixed cleaning).** Purely hyperbolic cleaning only *transports*
+divergence errors; nothing destroys $\psi$. In the paper's DG setting the
+interface Riemann fluxes upwind-damp the $\psi$ waves, but a continuous
+Galerkin discretization has no interface dissipation, so on a periodic
+domain the $\psi$ waves keep bouncing and alias into grid-scale (LGL
+odd–even) noise. We therefore use Dedner's *mixed*
+(hyperbolic–parabolic) GLM and damp $\psi$ with the source
+
+$$
+S_\psi = -\frac{c_h^2}{c_p^2}\,\psi = -\frac{c_h}{c_r}\,\psi,
+\qquad c_p^2 = c_h c_r,\quad c_r = 0.18 \ \text{(Dedner's value)},
+$$
+
+implemented in `user_source.jl` (`glm_cr_mhd` sets $c_r$). Only $\psi$ is
+damped: since $E$ carries $\tfrac{1}{2}\psi^2$, removing $\psi$ while
+leaving $E$ untouched converts the cleaned $\psi$-energy into heat, which is
+the entropy-consistent behavior (Derigs et al. 2018).
+
 ### 1.4 The non-conservative term (NOT included)
 
 The full non-conservative GLM-MHD system of the paper (Eq. 6–7) adds a term

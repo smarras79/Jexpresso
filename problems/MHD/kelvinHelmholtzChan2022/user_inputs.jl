@@ -11,11 +11,11 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(),
         :Δt                   => 2.0e-3,
         :tinit                => 0.0,
-        :tend                 => 15.0,   # T_final of the paper
+        :tend                 => 15.0,  # T_final of the paper
         :diagnostics_at_times => (0.0:0.5:15.0),
         :restart_time         => 0.0,
         :lrestart             => false,
-        :lsource              => false,  # Eq. (6): no source terms
+        :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning; see user_source.jl)
         :SOL_VARS_TYPE        => TOTAL(),
         :ode_adaptive_solver  => false,
         #---------------------------------------------------------------------------

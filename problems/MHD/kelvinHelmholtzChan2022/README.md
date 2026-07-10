@@ -22,6 +22,11 @@ the Smagorinsky stabilization and the test setup is in
   `ψ` is the GLM divergence-cleaning field; the cleaning speed `c_h` is set
   to the maximum wave speed of the initial condition and kept constant
   (computed in `initialize.jl`, stored in the `c_h_mhd` Ref).
+- **Mixed (damped) GLM cleaning**: `user_source.jl` adds Dedner's ψ-damping
+  source `S_ψ = -(c_h/c_r) ψ` (`c_r = 0.18`, tunable via the `glm_cr_mhd`
+  Ref). Without it, the undamped ψ waves have no dissipation mechanism in a
+  continuous Galerkin discretization (no interface Riemann fluxes) and
+  accumulate grid-scale noise on a periodic domain.
 - **Stabilization: Smagorinsky SGS** (`:visc_model => SMAG()`), not the
   entropy-stable / KEP two-point fluxes of the paper: `:lkep => false`,
   `:entropy_variables => false`. Momentum gets the full deviatoric stress,
