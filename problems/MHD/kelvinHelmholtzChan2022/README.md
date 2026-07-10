@@ -49,6 +49,21 @@ the Smagorinsky stabilization and the test setup is in
 - The sound-speed/CFL *printout* uses the Euler assumptions of the shared
   kernel (γ = 1.4, no magnetic pressure); it is diagnostic-only.
 
+## Known behavior of ψ
+
+With the mixed cleaning active, ψ is essentially zero away from the shear
+layers and concentrates in bounded, saturating patches (max|ψ| ~ 1e-3) at
+the rolled-up current sheets, where the CG discretization genuinely
+produces ∇·B error at grid scale — i.e. ψ is expected to look "speckly"
+*locally* there. This residual speckle is generation-limited: enabling the
+erf filter (`:lfilter => true`, `mu_x = mu_y = 0.05`) was tested and only
+improves it marginally at ~40% extra cost per step, so it is off by
+default. It shrinks with resolution, and would be removed at the source by
+a physical/SGS resistivity on **B** or by interface (Riemann-flux)
+dissipation, neither of which this simple setup includes. What must NOT
+happen is domain-wide ψ striping that grows in time — that is the undamped
+(`:lsource => false`) failure mode.
+
 ## Run
 
 ```bash
