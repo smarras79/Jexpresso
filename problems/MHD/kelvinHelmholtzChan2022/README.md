@@ -10,6 +10,10 @@ This case implements the two-dimensional ideal GLM-MHD equations of
 with the magnetized Kelvin-Helmholtz initial condition of **Section 3.2.1,
 Eq. (10)** on the doubly periodic domain [-1, 1]², T_final = 15.
 
+A full write-up of the governing equations, the GLM divergence cleaning,
+the Smagorinsky stabilization and the test setup is in
+[EQUATIONS.md](EQUATIONS.md); this file covers the implementation choices.
+
 ## What is (and is not) implemented
 
 - **Conservative GLM-MHD fluxes** (Eq. 6): 9 unknowns
