@@ -58,7 +58,7 @@ the Cartesian fluxes are
 
 $$
 \mathbf{F}_1 =
-\begin{pmatrix}
+\begin{bmatrix}
 \rho u \\
 \rho u^2 + p_{tot} - B_x^2 \\
 \rho u v - B_x B_y \\
@@ -68,10 +68,10 @@ c_h \psi \\
 u B_y - v B_x \\
 u B_z - w B_x \\
 c_h B_x
-\end{pmatrix},
+\end{bmatrix},
 \qquad
 \mathbf{F}_2 =
-\begin{pmatrix}
+\begin{bmatrix}
 \rho v \\
 \rho v u - B_y B_x \\
 \rho v^2 + p_{tot} - B_y^2 \\
@@ -81,7 +81,7 @@ v B_x - u B_y \\
 c_h \psi \\
 v B_z - w B_y \\
 c_h B_y
-\end{pmatrix},
+\end{bmatrix},
 $$
 
 written here in the row order used by the paper's state
