@@ -36,10 +36,14 @@ $$
 \rho\\
 \rho u\\
 \rho v\\
+\rho w\\
 \rho e\\
-\mathbf{B}\\
+B_x\\
+B_y\\
+B_z\\
 \psi
 \end{bmatrix}
+$$
 
 $$
 \mathbf{u} = \left(\rho,\; \rho\mathbf{v},\; E,\; \mathbf{B},\; \psi\right)^T,
