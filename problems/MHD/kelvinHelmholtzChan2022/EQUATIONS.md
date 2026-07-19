@@ -57,7 +57,7 @@ $$
 the Cartesian fluxes are
 
 $$
-\mathbf{f}_x =
+\mathbf{F}_1 =
 \begin{pmatrix}
 \rho u \\
 \rho u^2 + p_{tot} - B_x^2 \\
@@ -70,7 +70,7 @@ u B_z - w B_x \\
 c_h B_x
 \end{pmatrix},
 \qquad
-\mathbf{f}_y =
+\mathbf{F}_2 =
 \begin{pmatrix}
 \rho v \\
 \rho v u - B_y B_x \\
