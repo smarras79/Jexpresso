@@ -31,21 +31,6 @@ $$
 with state vector
 
 $$
-\mathbf{q} =
-\begin{bmatrix}
-\rho\\
-\rho u\\
-\rho v\\
-\rho w\\
-\rho e\\
-B_x\\
-B_y\\
-B_z\\
-\psi
-\end{bmatrix}
-$$
-
-$$
 \mathbf{u} = \left(\rho,\; \rho\mathbf{v},\; E,\; \mathbf{B},\; \psi\right)^T,
 \qquad
 \mathbf{v} = (u, v, w), \quad \mathbf{B} = (B_x, B_y, B_z),
