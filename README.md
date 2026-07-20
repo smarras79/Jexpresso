@@ -351,7 +351,7 @@ using Jexpresso
 Jexpresso.run_case("MHD", "kelvinHelmholtzChan2022")
 ```
 
-<img src="assets/MHD-By.png"
+<img src="assets/MHD_By.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
