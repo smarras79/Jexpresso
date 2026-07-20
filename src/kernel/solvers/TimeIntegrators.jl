@@ -430,7 +430,7 @@ function time_loop!(inputs, params, u, args...)
     # the time loop can advance. Without this Alya hangs and never
     # writes its VTS output.
     cb_coupling = is_coupled ? setup_coupling_callback(is_coupled, params, inputs) : nothing
-    CallbackSet(cb)#,cb_rad)
+    lrad = inputs[:RT_atmos_coupling] || inputs[:lphysics_grid]
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
@@ -493,15 +493,11 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
             nothing
 
-        callbacks_main = if is_coupled && cb_coupling !== nothing
-            cb_heartbeat === nothing ?
-                CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling) :
-                CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_coupling, cb_heartbeat)
-        else
-            cb_heartbeat === nothing ?
-                CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online) :
-                CallbackSet(cb, cb_restart, cb_les_stat, cb_les_online, cb_heartbeat)
-        end
+        _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
+        lrad                                  && push!(_cbs, cb_rad)
+        is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
+        cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
+        callbacks_main = CallbackSet(_cbs...)
 
         # PERF: SciML integrator warmup with the REAL callback set.
         #
