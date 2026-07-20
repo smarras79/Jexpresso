@@ -765,18 +765,17 @@ function find_corresponding_spatial_location(
         return i_child, j_child, k_child
     end
     
-    # Different spatial elements - find shared spatial node
-    ip_child = mesh.connijk[iel_child, i_child, j_child, k_child]
-    
-    # Find this node in parent element
+    # Different spatial elements - find shared spatial node.
+    # Compare by gip so periodic images (same gip, different local ip) are matched.
+    ip_child  = mesh.connijk[iel_child, i_child, j_child, k_child]
+    gip_child = mesh.ip2gip[ip_child]
+
     for k = 1:ngl, j = 1:ngl, i = 1:ngl
-        ip_parent = mesh.connijk[iel_parent, i, j, k]
-        if ip_parent == ip_child
+        if mesh.ip2gip[mesh.connijk[iel_parent, i, j, k]] == gip_child
             return i, j, k
         end
     end
-    
-    # Should not reach here if elements actually share this node
+
     @warn "Could not find corresponding spatial node in parent element"
     return i_child, j_child, k_child  # Fallback
 end
