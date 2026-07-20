@@ -249,7 +249,7 @@ function atmos_to_rad_shortwave(atmos_data, npoin)
         σ[ip] = σ_ray + σ_liq_sca + σ_ice_sca
 
         κ_abs_min = 1e-6
-        κ[ip]  = max(ρ * κ[ip], κ_abs_min)
+        κ[ip]  = max(κ[ip], κ_abs_min)
         g_eff[ip] = if σ[ip] > 1e-30
             (0.0 * σ_ray + 0.85 * σ_liq_sca + 0.80 * σ_ice_sca) / σ[ip]
         else

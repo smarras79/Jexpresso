@@ -144,6 +144,7 @@ where:
 function user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip,
                                      F_dir, σ_data, sw, g_eff)
 
+    sw.μ₀ > 0.0 || return 0.0  # no direct beam at horizon/night
     σ = σ_data[ip]
     σ < 1e-30 && return 0.0   # no scattering — no source
 
@@ -199,12 +200,14 @@ function user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ,
         #   I_lat(Ω) = ∫₀^{τ_z} σ Φ(Ω,Ω_sun) I_dir(τ') / κ_ext dτ'
         #
         # For a homogeneous atmosphere this simplifies to:
-        #   I_lat(Ω) = σ/κ_ext × Φ(Ω,Ω_sun) × (S₀/μ₀) × 
+        #   I_lat(Ω) = σ/κ_ext × Φ(Ω,Ω_sun) × (S₀/μ₀) ×
         #              ∫₀^{τ_z} exp(-τ'/μ₀) dτ'
         #            = σ/κ_ext × Φ(Ω,Ω_sun) × S₀ × (1 - exp(-τ_z/μ₀))
         #
         # This gives a physically consistent lateral inflow that matches
         # the interior scattering source at the boundary.
+
+        sw.μ₀ > 0.0 || return 0.0  # no direct beam at horizon/night
 
         θ_sun = π - acos(clamp(sw.μ₀, 0.0, 1.0))
         Φ_val = user_scattering_functions(θ, θ_sun, ϕ, sw.φ₀, g_eff)

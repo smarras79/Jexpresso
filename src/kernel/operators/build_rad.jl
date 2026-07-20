@@ -1752,7 +1752,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     nprocs = MPI.Comm_size(comm)
     rank   = MPI.Comm_rank(comm)
 
-    if(inputs[:lRT_from_data])
+    if inputs[:RT_shortwave] || inputs[:RT_longwave]
         sw  = SWParams(inputs[:RT_S0_flux], inputs[:RT_μ0], inputs[:RT_ϕ0], 0.35, z_prof, τ_from_TOA)
         lw  = LWParams(inputs[:RT_ϵ_surface], inputs[:RT_T_space])
     end
