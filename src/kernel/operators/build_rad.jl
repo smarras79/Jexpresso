@@ -3079,9 +3079,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     # nodes that sit on both a periodic face and a rigid face (e.g. top-corner)
     # still receive the rigid BC through the non-periodic normal, while pure
     # periodic nodes end up with an empty face_normals list and no BC is applied.
-    const _periodic_face_tags = ("periodicx", "periodic1",
-                                 "periodicy", "periodic2",
-                                 "periodicz", "periodic3")
+    _periodic_face_tags = ("periodicx", "periodic1",
+                           "periodicy", "periodic2",
+                           "periodicz", "periodic3")
     node_to_bdy_faces   = Dict{Int, Vector{Tuple{Int,Int,Int}}}()
     node_periodic_ifaces = Dict{Int, Set{Int}}()
     for iface = 1:mesh.nfaces_bdy
