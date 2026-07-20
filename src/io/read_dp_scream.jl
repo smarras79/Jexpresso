@@ -264,15 +264,19 @@ function interpolate_atmosphere_to_mesh(data, mesh)
     end
     
     atmos_data = (
-        t_lay = t_lay_interp,
-        p_lay = p_lay_interp,
-        t_lev = t_lev_interp,
-        p_lev = p_lev_interp,
-        vmr_h2o = vmr_h2o_interp,
-        vmr_o3 = vmr_o3_interp,
-        q_liq = q_liq_interp,
-        q_ice = q_ice_interp,
-        rho = rho_interp
+        # t_current / t_back: names expected by the RT solver (Atmosphere_State interface).
+        # For external data there is no perturbation/background split, so both fields
+        # map to the layer midpoint temperature from the file.
+        t_current = t_lay_interp,
+        t_back    = t_lay_interp,
+        p_lay     = p_lay_interp,
+        t_lev     = t_lev_interp,   # kept for any code that uses level temperatures directly
+        p_lev     = p_lev_interp,
+        vmr_h2o   = vmr_h2o_interp,
+        vmr_o3    = vmr_o3_interp,
+        q_liq     = q_liq_interp,
+        q_ice     = q_ice_interp,
+        rho       = rho_interp
     )
     diagnose_cloud_distribution(data, atmos_data, mesh)
     return atmos_data

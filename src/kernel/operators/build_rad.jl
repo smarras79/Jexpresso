@@ -3073,13 +3073,26 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         spatial_factor[ip] = gip * hip
     end
 
-    # Precompute boundary face lookup: spatial node → list of (iface, fi, fj)
-    node_to_bdy_faces = Dict{Int, Vector{Tuple{Int,Int,Int}}}()
+    # Precompute boundary face lookup: spatial node → list of (iface, fi, fj).
+    # Separately record which face indices are periodic so their normals can be
+    # excluded when building face_normals for each node.  This lets corner/edge
+    # nodes that sit on both a periodic face and a rigid face (e.g. top-corner)
+    # still receive the rigid BC through the non-periodic normal, while pure
+    # periodic nodes end up with an empty face_normals list and no BC is applied.
+    const _periodic_face_tags = ("periodicx", "periodic1",
+                                 "periodicy", "periodic2",
+                                 "periodicz", "periodic3")
+    node_to_bdy_faces   = Dict{Int, Vector{Tuple{Int,Int,Int}}}()
+    node_periodic_ifaces = Dict{Int, Set{Int}}()
     for iface = 1:mesh.nfaces_bdy
+        is_periodic = mesh.bdy_face_type[iface] ∈ _periodic_face_tags
         for iter_i = 1:ngl, iter_j = 1:ngl
             ip1  = mesh.poin_in_bdy_face[iface, iter_i, iter_j]
             list = get!(node_to_bdy_faces, ip1, Tuple{Int,Int,Int}[])
             push!(list, (iface, iter_i, iter_j))
+            if is_periodic
+                push!(get!(node_periodic_ifaces, ip1, Set{Int}()), iface)
+            end
         end
     end
 
@@ -3096,16 +3109,20 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             is_boundary = ip in mesh.poin_in_bdy_face
 
             if is_boundary && !haskey(bdy_normals, ip)
-                iface  = elem_to_face[iel, i, j, k, 1]
-                face_i = elem_to_face[iel, i, j, k, 2]
-                face_j = elem_to_face[iel, i, j, k, 3]
-
-                # Collect all distinct face normals directly from node_to_bdy_faces.
-                # This avoids the coordinate-equality fragility of the nmatches approach
-                # entirely — we just gather every distinct normal from every face that
-                # owns this node.
+                # Collect distinct face normals from non-periodic faces only.
+                # Periodic face normals are excluded so that:
+                #   - pure periodic nodes get an empty list → no BC applied
+                #   - corner/edge nodes shared by a periodic face and a rigid
+                #     face (e.g. top + periodic-y) get only the rigid normal,
+                #     preventing inflow BCs for angles that are only inflow
+                #     through the periodic face.
+                # No fallback is added when collected is empty: empty means the
+                # node lives entirely on periodic faces and should be treated as
+                # interior (the opposite-face outflow is already its inflow).
+                periodic_ifaces_ip = get(node_periodic_ifaces, ip, Set{Int}())
                 collected = NTuple{3,Float64}[]
                 for (iface2, fi2, fj2) in get(node_to_bdy_faces, ip, [])
+                    iface2 ∈ periodic_ifaces_ip && continue
                     nxyz = (nx[iface2, fi2, fj2],
                             ny[iface2, fi2, fj2],
                             nz[iface2, fi2, fj2])
@@ -3113,13 +3130,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                  abs(n[2]-nxyz[2]) < 1e-12 &&
                                  abs(n[3]-nxyz[3]) < 1e-12 for n in collected)
                     is_dup || push!(collected, nxyz)
-                end
-
-                # Fallback: if node_to_bdy_faces didn't cover this node's first face
-                if isempty(collected)
-                    push!(collected, (nx[iface, face_i, face_j],
-                                    ny[iface, face_i, face_j],
-                                    nz[iface, face_i, face_j]))
                 end
 
                 bdy_normals[ip] = collected
@@ -3143,11 +3153,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
                         Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
 
-                        if is_boundary && !(ip_g in all_hanging_nodes)
+                        if is_boundary && !(ip_g in all_hanging_nodes) && !isempty(face_normals)
                             # Find the most-inflow face normal for this direction:
                             # the one giving the most negative Ω·n.
                             # If the minimum dot product is < -1e-13 the direction
                             # is inflow through at least one face → apply BC.
+                            # face_normals is empty for pure-periodic nodes (handled above).
                             best_dot = 0.0
                             best_nx  = face_normals[1][1]
                             best_ny  = face_normals[1][2]
@@ -3220,7 +3231,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
                         Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
 
-                        if is_boundary && !(ip_g in spatial_hanging_nodes_all_angular)
+                        if is_boundary && !(ip_g in spatial_hanging_nodes_all_angular) && !isempty(face_normals)
                             best_dot = 0.0
                             best_nx  = face_normals[1][1]
                             best_ny  = face_normals[1][2]
@@ -3489,12 +3500,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
             precond     = :global_ilu,
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
+            asm_ilu_tau = 0.01,
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
             restart     = 100,
-            tol         = 1e-7)
+            tol         = 1e-4)
 
     elseif (inputs[:adaptive_extra_meshes] && inputs[:RT_longwave])
         x_warm = zeros(Float64,n_spa)
@@ -3543,7 +3554,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_g  = n_ext_spa,
             g_ip2gip = extended_parents_to_gid_spa,
             g_gip2ip = gid_to_extended_parents_spa,
-            precond     = :global_ilu,
+            precond     = :global_lu,
             asm_solver  = :rcmilu,
             asm_ilu_tau = 0.1,
             restart = 100,
@@ -3828,7 +3839,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 out_vectors[i,3] = dTdt[i]
                 out_vectors[i,4] = F_net[i]
                 out_vectors[i,5] = G[i]
-                out_vectors[i,6] = atmos_data.t_lev[i]
+                out_vectors[i,6] = atmos_data.t_back[i]
                 out_vectors[i,7] = atmos_data.q_liq[i]
                 out_vectors[i,8] = atmos_data.q_ice[i]
                 out_vectors[i,9] = κ[i]

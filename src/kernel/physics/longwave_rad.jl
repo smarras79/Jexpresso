@@ -52,7 +52,7 @@ absorption component returned from `atmos_to_rad_longwave`, not the sum
 function user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
 
     σ_SB  = 5.670374419e-8   # W m⁻² K⁻⁴
-    T     = atmos_data.t_lay[ip]
+    T     = atmos_data.t_current[ip]
     κ_abs = κ[ip]
 
     # Gray Planck radiance (W m⁻² sr⁻¹)
@@ -81,7 +81,7 @@ Called only at boundary nodes where Ω·n̂ < 0.
 
     I_sfc(Ω) = ε_sfc × σ_SB T_sfc⁴ / π    for Ωz > 0
 
-The surface temperature is taken from `atmos_data.t_lay[ip]` at the lowest
+The surface temperature is taken from `atmos_data.t_current[ip]` at the lowest
 model level. Downward-going directions at the bottom boundary (Ωz < 0) are
 not inflow and are never called here.
 
@@ -107,13 +107,18 @@ function user_rad_bc_longwave(x, y, z, θ, ϕ, nx_n, ny_n, nz_n,
         return σ_SB * lw.T_space^4 / π
 
     elseif bdy.is_bottom(z)
-        T_sfc = atmos_data.t_lev[ip]
+        T_sfc = atmos_data.t_current[ip]
         return lw.ε_surface * σ_SB * T_sfc^4 / π
 
     else
-        # Lateral face — periodic in x,y so this should rarely be reached,
-        # but emit as a blackbody wall for robustness
-        T_wall = atmos_data.t_lay[ip]
+        # Lateral face (rigid wall or periodic). Use the background-state
+        # temperature so that the wall represents the ambient atmosphere rather
+        # than the current perturbation. This avoids the warm-wall artifact
+        # where a positive temperature perturbation (e.g. rising bubble) would
+        # spuriously inject extra LW heating at lateral boundary nodes.
+        # For periodic boundaries these nodes are skipped by build_rad.jl before
+        # this function is reached.
+        T_wall = atmos_data.t_back[ip]
         return σ_SB * T_wall^4 / π
     end
 end

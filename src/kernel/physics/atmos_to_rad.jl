@@ -78,7 +78,7 @@ function atmos_to_rad_longwave(atmos_data, npoin)
     P_ref = 101325.0   # Pa
 
     for ip = 1:npoin
-        T    = atmos_data.t_lay[ip]     # K
+        T    = atmos_data.t_current[ip]     # K
         P    = atmos_data.p_lay[ip]     # Pa
         vmr  = atmos_data.vmr_h2o[ip]  # mol/mol
         qliq = atmos_data.q_liq[ip]    # kg/kg
@@ -211,7 +211,7 @@ function atmos_to_rad_shortwave(atmos_data, npoin)
     P_ref = 101325.0   # Pa
 
     for ip = 1:npoin
-        T    = atmos_data.t_lay[ip]
+        T    = atmos_data.t_current[ip]
         P    = atmos_data.p_lay[ip]     # Pa
         vmr  = atmos_data.vmr_h2o[ip]  # mol/mol
         vmro = atmos_data.vmr_o3[ip]   # mol/mol  (add this field if not present)
