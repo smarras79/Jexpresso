@@ -232,8 +232,6 @@ Jexpresso.run_case("CompEuler", "case1")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-
-
 Example 2: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```julia
 using Jexpresso
@@ -344,7 +342,20 @@ Jexpresso.run_case("CompEuler", "theta_laguerre")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6a: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
+Test 6: Magneto-Hydrodynamics (MHD):
+
+The problem is defined in [`problems/equations/MHD/kelvinHelmholtzChan2022`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/kelvinHelmholtzChan2022).
+
+```julia
+using Jexpresso
+Jexpresso.run_case("MHD", "kelvinHelmholtzChan2022")
+```
+
+<img src="assets/MHD-By.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 7a: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
 
@@ -357,14 +368,14 @@ Jexpresso.run_case("CompEuler", "HSmount_Lag")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6b: Non-hydrostatic mountain waves: comparison against WRF
+Test 7b: Non-hydrostatic mountain waves: comparison against WRF
 
 <img src="assets/NHjexpVSwrf.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
 
-Test 7: Shallow cumuli simulation with BOMEX conditions:
+Test 8: Shallow cumuli simulation with BOMEX conditions:
 
 ```julia
 using Jexpresso
