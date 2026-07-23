@@ -80,6 +80,13 @@ function apply_periodicity!(u, uaux, t,qe,
     nothing
 end
 
+function apply_periodicity!(u, uaux, t, qe,
+                            npoin_linear, ψ, dψ,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD::DiscGal, SD::NSD_1D)
+    # DG periodicity is a flux face (see surface_rhs_el!), not a node identification.
+    nothing
+end
 
 function apply_periodicity!(u, uaux, t,qe,
                             npoin_linear, ψ, dψ,

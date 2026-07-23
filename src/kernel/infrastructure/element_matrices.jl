@@ -884,6 +884,18 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
     
 end
 
+function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::DiscGal)
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for i = 1:ngl
+                I = connijk[iel,i,1]
+                RHS[I,ieq] += rhs_el[iel,i,ieq]   # non-summing: DG connijk gives each (iel,i) a unique I
+            end
+        end
+    end
+end
+
+
 function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
 
     for ieq = 1:neqs
@@ -975,6 +987,13 @@ function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, 
         RHS[ip] = Minv[ip]*RHS[ip]
     end
     
+end
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::DiscGal)
+
+    for ip = 1:npoin
+        RHS[ip] = Minv[ip]*RHS[ip]
+    end
 end
 
 function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
@@ -1368,6 +1387,15 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     
     return (; Me, De, Le, M, Minv, g_dss_cache, D, L, M_surf_inv, M_edge_inv)
+end
+
+function matrix_wrapper(::DiscGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
+                        ldss_laplace=false, ldss_differentiation=false, backend = CPU(), interp)
+    # DG mass is built from the DG connijk via the same DSS_mass! gather → the
+    # block/diagonal DG mass falls out automatically. Delegate to the ContGal flow.
+    return matrix_wrapper(ContGal(), SD, QT, basis, ω, mesh, metrics, N, Q, TFloat;
+                          ldss_laplace=ldss_laplace, ldss_differentiation=ldss_differentiation,
+                          backend=backend, interp=interp)
 end
 
 
