@@ -3152,7 +3152,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         ref[ip_g] = sf * sip * bip
 
                         Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
-
                         if is_boundary && !(ip_g in all_hanging_nodes) && !isempty(face_normals)
                             # Find the most-inflow face normal for this direction:
                             # the one giving the most negative Ω·n.
@@ -3189,23 +3188,27 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     end
                             else
                                 if is_owned
-                                    RHS[ip_g] = if inputs[:RT_shortwave]
-                                        user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
+                                    if inputs[:lmanufactured_solution]
+                                        RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                    elseif inputs[:RT_shortwave]
+                                        RHS[ip_g] = user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
                                     elseif inputs[:RT_longwave]
-                                        user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                        RHS[ip_g] = user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
                                     else
-                                        user_rhs(x, y, z, θ, ϕ)
+                                        RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
                                     end
                                 end
                             end
                         else
                             if is_owned
-                                RHS[ip_g] = if inputs[:RT_shortwave]
-                                    user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
+                                if inputs[:lmanufactured_solution]
+                                    RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                elseif inputs[:RT_shortwave]
+                                    RHS[ip_g] = user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
                                 elseif inputs[:RT_longwave]
-                                    user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                    RHS[ip_g] = user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
                                 else
-                                    user_rhs(x, y, z, θ, ϕ)
+                                    RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
                                 end
                             end
                         end
@@ -3230,7 +3233,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         ref[ip_g] = sf * sip * bip
 
                         Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
-
                         if is_boundary && !(ip_g in spatial_hanging_nodes_all_angular) && !isempty(face_normals)
                             best_dot = 0.0
                             best_nx  = face_normals[1][1]
@@ -3263,23 +3265,27 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                 
                             else
                                 if is_owned
-                                    RHS[ip_g] = if inputs[:RT_shortwave]
-                                        user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
+                                    if inputs[:lmanufactured_solution]
+                                        RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                    elseif inputs[:RT_shortwave]
+                                        RHS[ip_g] = user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
                                     elseif inputs[:RT_longwave]
-                                        user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                        RHS[ip_g] = user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
                                     else
-                                        user_rhs(x, y, z, θ, ϕ)
+                                        RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
                                     end
                                 end
                             end
                         else
                             if is_owned
-                                RHS[ip_g] = if inputs[:RT_shortwave]
-                                    user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
+                                if inputs[:lmanufactured_solution]
+                                    RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
+                                elseif inputs[:RT_shortwave]
+                                    RHS[ip_g] = user_rhs_shortwave_diffuse(x, y, z, θ, ϕ, ip, F_dir, σ, sw, inputs[:rad_HG_g][ip])
                                 elseif inputs[:RT_longwave]
-                                    user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
+                                    RHS[ip_g] = user_rhs_longwave(x, y, z, θ, ϕ, ip, κ, atmos_data)
                                 else
-                                    user_rhs(x, y, z, θ, ϕ)
+                                    RHS[ip_g] = user_rhs(x, y, z, θ, ϕ)
                                 end
                             end
                         end
@@ -3364,8 +3370,48 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
 
+    # ── Diagnostic: verify periodic y-nodes are skipped for BC ──────────────
+    if rank == 0 && !inputs[:adaptive_extra_meshes] && inputs[:RT_longwave]
+        _ymin = minimum(mesh.y)
+        _ymax = maximum(mesh.y)
+        _xc = 0.0; _zc = 2500.0
+        _n_ang = extra_mesh.extra_npoin
+        _n_pure_periodic = 0
+        _n_corner        = 0
+        _n_bdict_hits    = 0
+        for ip = 1:npoin
+            _y = mesh.y[ip]
+            (abs(_y - _ymin) < 1.0 || abs(_y - _ymax) < 1.0) || continue
+            _normals = get(bdy_normals, ip, NTuple{3,Float64}[])
+            if isempty(_normals)
+                _n_pure_periodic += 1
+            else
+                _n_corner += 1
+                _x = mesh.x[ip]; _z = mesh.z[ip]
+                _r = sqrt((_x - _xc)^2 + (_z - _zc)^2)
+                @info "  [BC-diag] corner y-bdy ip=$ip x=$(round(_x,digits=0)) z=$(round(_z,digits=0)) r=$(round(_r,digits=0)) normals=$(_normals)"
+            end
+            for ip_ext = 1:_n_ang
+                ip_g = (ip - 1) * _n_ang + ip_ext
+                if haskey(boundary_dict, ip_g)
+                    _n_bdict_hits += 1
+                    if _n_bdict_hits <= 5
+                        _x = mesh.x[ip]; _z = mesh.z[ip]
+                        _r = sqrt((_x - _xc)^2 + (_z - _zc)^2)
+                        @warn "[BC-diag] y-bdy ip=$ip (x=$(round(_x,digits=0)) z=$(round(_z,digits=0)) r=$(round(_r,digits=0))) ip_g=$ip_g IN boundary_dict val=$(boundary_dict[ip_g])"
+                    end
+                end
+            end
+        end
+        @info "=== Periodic BC skip diagnostic (LW) ==="
+        @info "  pure-periodic y-bdy nodes (empty face_normals, no BC): $_n_pure_periodic"
+        @info "  corner y-bdy nodes (non-empty face_normals, BC applied): $_n_corner"
+        @info "  y-bdy angular DOFs in boundary_dict (should be 0 for pure-periodic): $_n_bdict_hits"
+        @info "=== End periodic BC skip diagnostic ==="
+    end
+
     # ── Boundary condition application (modify matrix rows) ───────────────────
-        
+
         boundary_set = Set(keys(boundary_dict))
         rows_A = rowvals(A)
         vals_A = nonzeros(A)
@@ -3569,7 +3615,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             npoin_g  = n_ext_spa,
             g_ip2gip = extended_parents_to_gid_spa,
             g_gip2ip = gid_to_extended_parents_spa,
-            precond     = :global_ilu,
+            precond     = :global_lu,
             asm_solver  = :rcmilu,
             asm_ilu_tau = 0.1,
             restart = 60,

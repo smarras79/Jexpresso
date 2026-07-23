@@ -250,6 +250,7 @@ function compute_rt_radiative_heating(
             @info "  G_dif   extrema (W/m²): $(extrema(G_accum .- G_dir))"
             @info "  Q_dir   extrema (W/m³): $(extrema(Q_dir))"
         end
+
     end
 
     return Q_rad, dTdt_rad, F_net, G_accum
