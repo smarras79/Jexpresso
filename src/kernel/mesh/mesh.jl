@@ -3688,6 +3688,38 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     return 
 end
 
+function add_high_order_nodes_1D_native_mesh_dg!(mesh::St_mesh, interpolation_nodes, backend)
+    # DG (DiscGal) 1D numbering: every element owns its own ngl nodes, so the
+    # interface DOFs are DUPLICATED (npoin = nelem*ngl) and the solution may
+    # jump across faces — coupling is supplied by the numerical flux, not by a
+    # shared node. Contrast add_high_order_nodes_1D_native_mesh! (ContGal),
+    # which shares the interface node (connijk[iel,ngl] == connijk[iel+1,1]).
+    lgl   = basis_structs_ξ_ω!(interpolation_nodes, mesh.nop, backend)
+    ngl   = mesh.nop + 1
+    nelem = mesh.nelem
+
+    mesh.npoin        = nelem * ngl
+    mesh.npoin_linear = mesh.npoin          # no linear/high-order split under DG
+    mesh.npoin_el     = ngl
+
+    resize!(mesh.x, mesh.npoin)
+    mesh.coords  = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), 1)
+    mesh.conn    = KernelAbstractions.zeros(backend, TInt, Int64(nelem), Int64(ngl))
+    mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(nelem), Int64(ngl), 1, 1)
+
+    for iel = 1:nelem
+        x1 = mesh.xmin + (iel-1)*mesh.Δx[iel]        # element left vertex
+        for l = 1:ngl
+            ip = (iel-1)*ngl + l
+            ξ  = lgl.ξ[l]
+            mesh.x[ip]              = x1 + 0.5*(ξ + 1.0)*mesh.Δx[iel]
+            mesh.coords[ip,1]       = mesh.x[ip]
+            mesh.conn[iel,l]        = ip
+            mesh.connijk[iel,l,1,1] = ip
+        end
+    end
+    return
+end
 
 function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, edge2pedge)
     
@@ -5023,7 +5055,11 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     end
     
     #Add high-order nodes
-    add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+    if inputs[:AD] == DiscGal()
+        add_high_order_nodes_1D_native_mesh_dg!(mesh, interpolation_nodes, backend)
+    else
+        add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+    end
 
     mesh.nelem_semi_inf = 0
     if (inputs[:llaguerre_1d_right]) mesh.nelem_semi_inf +=1 end 
