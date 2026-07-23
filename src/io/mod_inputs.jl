@@ -942,8 +942,16 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :AD))
         inputs[:AD] = ContGal()
     else
-        if inputs[:AD] != ContGal() && inputs[:AD] != FD()
-            @mystop(" :AD can only be either ContGal() or FD() at the moment.")
+        if inputs[:AD] != ContGal() && inputs[:AD] != FD() && inputs[:AD] != DiscGal()
+            @mystop(" :AD can only be ContGal(), DiscGal(), or FD() at the moment.")
+        end
+    end
+
+    if(!haskey(inputs, :numerical_flux))
+        if inputs[:AD] == DiscGal()
+            inputs[:numerical_flux] = upwind_flux()
+        else
+            inputs[:numerical_flux] = nothing
         end
     end
     

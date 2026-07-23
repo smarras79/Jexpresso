@@ -81,6 +81,14 @@ struct artiano_tec <: AbstractVolumeFlux end
 struct kennedy_gruber <: AbstractVolumeFlux end
 struct central_euler <: AbstractVolumeFlux end
 struct central_theta <: AbstractVolumeFlux end
+
+#
+# Numerical (interface) fluxes for DG
+#
+abstract type AbstractNumericalFlux end
+struct upwind_flux <: AbstractNumericalFlux end
+struct rusanov_flux <: AbstractNumericalFlux end
+
 #
 # Boundary flags/conditions
 #

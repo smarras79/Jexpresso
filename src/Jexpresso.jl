@@ -190,6 +190,8 @@ include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "operators.jl"))
 
+include(joinpath( "kernel", "operators", "dg_fluxes.jl"))
+
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
