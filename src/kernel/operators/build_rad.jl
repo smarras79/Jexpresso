@@ -3370,46 +3370,6 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
 
-    # ── Diagnostic: verify periodic y-nodes are skipped for BC ──────────────
-    if rank == 0 && !inputs[:adaptive_extra_meshes] && inputs[:RT_longwave]
-        _ymin = minimum(mesh.y)
-        _ymax = maximum(mesh.y)
-        _xc = 0.0; _zc = 2500.0
-        _n_ang = extra_mesh.extra_npoin
-        _n_pure_periodic = 0
-        _n_corner        = 0
-        _n_bdict_hits    = 0
-        for ip = 1:npoin
-            _y = mesh.y[ip]
-            (abs(_y - _ymin) < 1.0 || abs(_y - _ymax) < 1.0) || continue
-            _normals = get(bdy_normals, ip, NTuple{3,Float64}[])
-            if isempty(_normals)
-                _n_pure_periodic += 1
-            else
-                _n_corner += 1
-                _x = mesh.x[ip]; _z = mesh.z[ip]
-                _r = sqrt((_x - _xc)^2 + (_z - _zc)^2)
-                @info "  [BC-diag] corner y-bdy ip=$ip x=$(round(_x,digits=0)) z=$(round(_z,digits=0)) r=$(round(_r,digits=0)) normals=$(_normals)"
-            end
-            for ip_ext = 1:_n_ang
-                ip_g = (ip - 1) * _n_ang + ip_ext
-                if haskey(boundary_dict, ip_g)
-                    _n_bdict_hits += 1
-                    if _n_bdict_hits <= 5
-                        _x = mesh.x[ip]; _z = mesh.z[ip]
-                        _r = sqrt((_x - _xc)^2 + (_z - _zc)^2)
-                        @warn "[BC-diag] y-bdy ip=$ip (x=$(round(_x,digits=0)) z=$(round(_z,digits=0)) r=$(round(_r,digits=0))) ip_g=$ip_g IN boundary_dict val=$(boundary_dict[ip_g])"
-                    end
-                end
-            end
-        end
-        @info "=== Periodic BC skip diagnostic (LW) ==="
-        @info "  pure-periodic y-bdy nodes (empty face_normals, no BC): $_n_pure_periodic"
-        @info "  corner y-bdy nodes (non-empty face_normals, BC applied): $_n_corner"
-        @info "  y-bdy angular DOFs in boundary_dict (should be 0 for pure-periodic): $_n_bdict_hits"
-        @info "=== End periodic BC skip diagnostic ==="
-    end
-
     # ── Boundary condition application (modify matrix rows) ───────────────────
 
         boundary_set = Set(keys(boundary_dict))
