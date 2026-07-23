@@ -621,6 +621,13 @@ function _build_rhs!(RHS, u, params, time)
                            params.mesh.pgip_local, ngl-1, neqs, params.interp)
 
     end
+
+    if AD == DiscGal()
+        @timeit_debug JEXPRESSO_TIMER "surface_rhs" surface_rhs_el!(
+            params, params.uaux, params.mesh.connijk, params.qp.qe, params.mesh,
+            nelem, ngl, neqs, CL, params.SOL_VARS_TYPE, params.inputs[:numerical_flux], SD)
+    end
+    
     @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
