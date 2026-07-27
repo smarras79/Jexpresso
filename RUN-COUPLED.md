@@ -461,8 +461,8 @@ julia --project=. -e '
 builds a PackageCompiler sysimage to remove Julia's cold-start JIT cost:
 
 ```bash
-./run_coupled.sh               # 1 Alya rank + 2 Julia ranks (default)
-./run_coupled.sh 1 4           # 1 Alya rank + 4 Julia ranks
+./run_coupled.sh               # 2 Alya ranks + 2 Julia ranks (default)
+./run_coupled.sh 2 4           # 2 Alya ranks + 4 Julia ranks
 REBUILD_SYSIMAGE=1 ./run_coupled.sh   # force sysimage rebuild first
 ```
 
@@ -474,6 +474,51 @@ the main reason a working run can look like a hang.
 For the full performance recipe on macOS — sysimage, rank counts against
 performance cores, thread settings, and what to avoid — see
 [INSTALL.md §6.1](INSTALL.md#61-fastest-parallel-execution-on-macos-with-mpich).
+
+### What a coupled run actually costs
+
+Do not calibrate your expectations on `Alya.x` run alone. With no Jexpresso
+ranks in the world it receives nothing and posts no receives, so its time loop
+is empty and finishes in about a second. Coupled, the wall-clock time is
+Jexpresso's: a full SEM right-hand side plus one coupling exchange **per
+timestep**, for `(tend - tinit) / Δt` steps — 2000 of them with the `3dAlya`
+defaults.
+
+**Telling "slow" from "deadlocked".** The `t=` lines only appear at
+`:diagnostics_at_times`, which for `3dAlya` is every 100 time units — 200
+timesteps apart. A run that is merely slow looks exactly like one that is stuck.
+Turn on the per-step heartbeat, which prints the first five steps and then every
+hundredth:
+
+```bash
+export JEXPRESSO_STEP_HEARTBEAT=1
+./run_coupled.sh 2 2
+```
+
+If the `#   step N   t = ...` lines keep coming, it is running and you are
+measuring throughput. If they stop, it is genuinely blocked — and the step
+number tells you where.
+
+Each exchange interpolates the solution from the Jexpresso SEM mesh to every
+Alya grid point. Locating those points — bin lookup, bounding-box test, Newton
+solve for the reference coordinates — depends only on the two geometries, so on
+a static mesh Jexpresso now does it **once** and reuses the result, leaving one
+dot product per point per equation each step. You will see this line on the
+first exchange:
+
+```
+[coupling] interpolation cache built: 1000/1000 points located in elements ...
+```
+
+The cache is disabled automatically when the mesh can change under it
+(`:ladapt` or `:lamr`), and can be turned off with
+`:lcouple_cache_interp => false` in `user_inputs.jl`.
+
+If it is still slower than you want, the exchange frequency is the next lever —
+but note that it currently happens on **every** step regardless of the
+`:Δt_couple` entry in the example `user_inputs.jl`, which nothing reads yet.
+Until that is implemented, use a larger `:Δt` or a shorter `:tend` while
+experimenting.
 
 ---
 
@@ -535,6 +580,29 @@ below apply.
   nothing on screen. Tag and flush per rank —
   OpenMPI: `mpirun --output tag …` (OpenMPI 4: `--tag-output`);
   MPICH: `mpiexec -prepend-rank …`.
+
+### The run starts, steps, then stops at the first diagnostic output
+
+Symptom: the `t=` line for the first `:diagnostics_at_times` entry prints, and
+nothing follows — no CFL lines, no `.pvtu` write, no further steps. Alya keeps
+whatever it had and waits.
+
+Cause: some Jexpresso code on the diagnostic path ran an **MPI collective on
+`MPI.COMM_WORLD`**. In a coupled run `COMM_WORLD` also contains Alya's ranks,
+which never execute Jexpresso's diagnostics, so every Jexpresso rank blocks in
+that collective forever.
+
+> **Rule for anyone adding MPI calls to Jexpresso:** never use
+> `MPI.COMM_WORLD` for a Jexpresso-internal collective. Use `get_mpi_comm()`,
+> which is the Jexpresso-only communicator under coupling and is `COMM_WORLD`
+> in standalone runs, so it is always correct. `MPI.COMM_WORLD` is right only
+> for the coupling handshake itself, where Alya participates too — those call
+> sites live in `src/kernel/coupling/couplingStructs.jl` and take `world`
+> explicitly.
+
+This is easy to introduce accidentally: an `Allreduce` added to a routine that
+used to compute a local maximum will pass every standalone test and deadlock
+only when coupled.
 
 ### Everything else
 

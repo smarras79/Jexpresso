@@ -22,8 +22,21 @@
 
 set -euo pipefail
 
-NALYA="${1:-1}"
+# Alya's rank 0 is a master that owns no grid points — the proxy splits the
+# grid over ranks 1..N-1. One Alya rank therefore means zero grid owners and no
+# coupling at all: Alya receives nothing, finishes its time loop immediately,
+# and writes its VTS files before Jexpresso has sent a thing. Two is the
+# minimum that couples.
+NALYA="${1:-2}"
 NJULIA="${2:-2}"
+
+if [ "$NALYA" -lt 2 ] 2>/dev/null; then
+    echo "ERROR: Alya needs at least 2 ranks, got $NALYA." >&2
+    echo "  Its rank 0 owns no grid points; the grid is split over ranks 1..N-1," >&2
+    echo "  so a single Alya rank assigns zero points and the codes never couple." >&2
+    echo "  Use:  ./run_coupled.sh 2 $NJULIA" >&2
+    exit 1
+fi
 EQS="${3:-CompEuler}"
 CASE="${4:-3dAlya}"
 

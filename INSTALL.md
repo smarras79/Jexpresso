@@ -743,17 +743,19 @@ mpiexec -np 4 -prepend-rank \
 #### For coupled runs
 
 Split the P-cores between the two codes rather than exceeding them — on a
-4-P-core machine, 1 Alya rank + 3 Jexpresso ranks, or 2 + 2. Alya is a proxy
-and does very little work, so give Jexpresso the majority:
+4-P-core machine that means 2 + 2. **Alya needs at least two ranks**: its rank
+0 is a master that owns no grid points, so a single Alya rank assigns zero
+points and the codes do not couple at all. Beyond that minimum, Alya does very
+little work, so spend extra ranks on Jexpresso:
 
 ```bash
 export JEXPRESSO_COUPLED=1
-mpiexec -np 1 ./AlyaProxy/Alya.x \
-      : -np 3 julia --project=. --sysimage jexpresso.so --startup-file=no \
+mpiexec -np 2 ./AlyaProxy/Alya.x \
+      : -np 2 julia --project=. --sysimage jexpresso.so --startup-file=no \
         ./src/Jexpresso.jl CompEuler 3dAlya
 ```
 
-or just `./run_coupled.sh 1 3`, which applies the sysimage and the preflight
+or just `./run_coupled.sh 2 2`, which applies the sysimage and the preflight
 checks for you.
 
 #### Things that cost you time
