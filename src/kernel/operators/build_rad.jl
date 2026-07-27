@@ -3376,6 +3376,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
             if ip in mesh.poin_in_bdy_face
                 face_normals = bdy_normals[ip]
+                isempty(face_normals) && continue  # periodic node: no inflow BC
                 best_dot = 0.0
                 best_nx  = face_normals[1][1]
                 best_ny  = face_normals[1][2]
@@ -4588,32 +4589,7 @@ end
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-"""
-    adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl,
-        nelem_ang, nop_ang, neighbors, npoin_ang, connijk_ang, coords_ang,
-        Je_ang, dξdx_ang, dxdξ_ang, dξdy_ang, dydξ_ang, dηdy_ang, dydη_ang,
-        dηdx_ang, dxdη_ang, connijk, x, y, z,
-        xmin_grid, ymin_grid, zmin_grid, xmax_grid, ymax_grid, zmax_grid, ψ, dψ)
 
-Perform one pass of h-adaptive refinement on the angular mesh.
-
-Each angular element whose criterion exceeds `thresholds[1]` is split into four
-child elements (bisection in both θ and ϕ).  Hanging nodes at the interface
-between refined and unrefined elements are identified by the subsequent call to
-`adaptive_spatial_angular_numbering_3D_2D!`.
-
-After refinement, ϕ-periodicity is enforced by merging points at ϕ=2π with
-their counterparts at ϕ=0.
-
-The `neighbors` array is updated to track which element pairs have non-
-conforming angular interfaces, which drives the constraint matrix construction
-in `build_restriction_matrices_local_and_ghost`.
-
-# Modifies in-place
-
-`connijk_ang`, `coords_ang`, `Je_ang`, all metric arrays, `nop_ang`,
-`nelem_ang`, `npoin_ang`, `ref_level`, `criterion`, `neighbors`.
-"""
 """
     interpolate_warm_start_to_adapted_mesh(rt_sol_old, ...)
 
@@ -4634,6 +4610,7 @@ children `e_new..e_new+3`; all subsequent old elements are offset by +3.
 
 Only called when `has_warm_start && adapted` (mesh actually changed).
 """
+
 function interpolate_warm_start_to_adapted_mesh(
     rt_sol_old,
     connijk_spa_pre,  connijk_spa_new,
@@ -4720,6 +4697,33 @@ function interpolate_warm_start_to_adapted_mesh(
 
     return x_warm_new
 end
+
+"""
+    adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl,
+        nelem_ang, nop_ang, neighbors, npoin_ang, connijk_ang, coords_ang,
+        Je_ang, dξdx_ang, dxdξ_ang, dξdy_ang, dydξ_ang, dηdy_ang, dydη_ang,
+        dηdx_ang, dxdη_ang, connijk, x, y, z,
+        xmin_grid, ymin_grid, zmin_grid, xmax_grid, ymax_grid, zmax_grid, ψ, dψ)
+
+Perform one pass of h-adaptive refinement on the angular mesh.
+
+Each angular element whose criterion exceeds `thresholds[1]` is split into four
+child elements (bisection in both θ and ϕ).  Hanging nodes at the interface
+between refined and unrefined elements are identified by the subsequent call to
+`adaptive_spatial_angular_numbering_3D_2D!`.
+
+After refinement, ϕ-periodicity is enforced by merging points at ϕ=2π with
+their counterparts at ϕ=0.
+
+The `neighbors` array is updated to track which element pairs have non-
+conforming angular interfaces, which drives the constraint matrix construction
+in `build_restriction_matrices_local_and_ghost`.
+
+# Modifies in-place
+
+`connijk_ang`, `coords_ang`, `Je_ang`, all metric arrays, `nop_ang`,
+`nelem_ang`, `npoin_ang`, `ref_level`, `criterion`, `neighbors`.
+"""
 
 function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl, nelem_ang, nop_ang, neighbors, npoin_ang,
         connijk_ang, coords_ang, Je_ang, dξdx_ang, dxdξ_ang, dξdy_ang, dydξ_ang, dηdy_ang, dydη_ang, dηdx_ang, dxdη_ang, connijk,
