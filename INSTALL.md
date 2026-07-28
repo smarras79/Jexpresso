@@ -588,6 +588,33 @@ Usage:
   mpif90 --version
   ```
 
+### 5.8 Running on a Slurm cluster
+
+For batch runs on many nodes, use the ready-made job script:
+
+```bash
+sbatch --export=ALL,EQS=CompEuler,CASE=theta \
+       auxiliary/slurm/submit_jexpresso_parallel.sh
+```
+
+Edit the `CHANGE_ME` lines in its `#SBATCH` block (account, partition, QoS)
+and the `module load` lines at the top; the rest is site-agnostic.
+
+The script splits the job into a **serial precompile phase** — one process on
+one node running `Pkg.instantiate()` + `Pkg.precompile()` — and a **parallel
+run phase** launched with precompilation disabled
+(`JULIA_PKG_PRECOMPILE_AUTO=0`, `--compiled-modules=existing`,
+`--pkgimages=existing`). That split is the whole point: with a cold depot,
+every rank otherwise discovers the same missing cache files at the same
+moment and they all compile into the same shared depot at once, which on a
+few hundred ranks costs far more wall time than the idle nodes during the
+serial phase.
+
+See [`auxiliary/slurm/README.md`](auxiliary/slurm/README.md) for the full set
+of knobs and the cluster-specific pitfalls (system-MPI binding,
+`JULIA_CPU_TARGET` on heterogeneous partitions, why you must *not* stage the
+depot to node-local disk).
+
 ## 6. Daily workflow — interactive REPL for fast iteration
 
 Every Julia process pays a one-time JIT compilation cost on first use of
