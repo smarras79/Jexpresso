@@ -14,6 +14,12 @@ analysis carried out in the reference paper:
 > S. Sánchez-Ramírez and M. Giordano, *“Extrae.jl: Julia bindings for the
 > Extrae HPC Profiler”*, Proceedings of JuliaCon (arXiv:2504.12087v1, 2025).
 
+> **Just want to capture and look at a trace?** See
+> [RUN-EXTRAE-TRACE.md](../../RUN-EXTRAE-TRACE.md) in the project root — a
+> step-by-step guide: run the test, extract the trace, open it in Paraver,
+> with a troubleshooting table. This file documents the *design* of the
+> instrumentation and the standalone examples.
+
 ---
 
 ## ⚠️ Important: macOS vs. Linux
