@@ -210,12 +210,15 @@ the solver is executing. Currently emitted:
 
 | Phase label | What it covers | Instrumented in |
 |-------------|----------------|-----------------|
-| `time_loop` | the whole main workload | `problems/drivers.jl` |
-| `rhs` | every RHS evaluation (each RK stage) | `src/kernel/operators/rhs.jl` |
-| `rhs_comm` | the RHS inter-rank assembly (`DSS_global_RHS!` → `assemble_mpi!`) *inside* each `rhs` region | `src/kernel/operators/rhs.jl` |
-| `coupling_setup` | one-time Jexpresso↔Alya handshake / data receive | `src/run.jl` |
-| `coupling_interp` | per-step interpolation of the solution to Alya points | `src/kernel/coupling/couplingStructs.jl` |
-| `coupling_comm` | per-step MPI send of the packed data to Alya | `src/kernel/coupling/couplingStructs.jl` |
+| `time_loop` | the whole main workload | [`drivers.jl:151`](problems/drivers.jl#L151) |
+| `rhs` | every RHS evaluation (each RK stage) | [`rhs.jl:128`](src/kernel/operators/rhs.jl#L128) |
+| `rhs_comm` | the RHS inter-rank assembly (`DSS_global_RHS!` → `assemble_mpi!`) *inside* each `rhs` region | [`rhs.jl:683`](src/kernel/operators/rhs.jl#L683) (CPU), [`rhs.jl:505`](src/kernel/operators/rhs.jl#L505) (GPU) |
+| `coupling_setup` | one-time Jexpresso↔Alya handshake / data receive | [`run.jl:263`](src/run.jl#L263) |
+| `coupling_interp` | per-step interpolation of the solution to Alya points | [`couplingStructs.jl:2056`](src/kernel/coupling/couplingStructs.jl#L2056) (2D), [`:2148`](src/kernel/coupling/couplingStructs.jl#L2148) (3D) |
+| `coupling_comm` | per-step MPI send of the packed data to Alya | [`couplingStructs.jl:2118`](src/kernel/coupling/couplingStructs.jl#L2118) (2D), [`:2211`](src/kernel/coupling/couplingStructs.jl#L2211) (3D) |
+
+The full, line-by-line index of every call site — including the coupling ones —
+is in [**"Where the Extrae calls live"**](#where-the-extrae-calls-live) below.
 
 Reading **compute vs. communication inside the RHS**: within an `rhs` region
 the phase event reads `rhs` during the volume/flux compute and switches to
@@ -319,6 +322,95 @@ Two caveats specific to the coupled case:
 - **This MPMD + Extrae combination is less well exercised** than the
   single-program path. Verify you actually get a `.prv` on a short case before
   spending a large allocation on it.
+
+---
+
+## Where the Extrae calls live
+
+Every Extrae call in the solver goes through the `Profiling` submodule — the
+solver never calls `Extrae.*` directly. This is the complete list of call sites,
+so you can jump straight to the code that produced a given block in the
+timeline. It is short on purpose: the instrumentation is being layered on
+incrementally, and the coupling regions in particular are still deliberately
+coarse first-pass markers.
+
+> Line numbers are accurate as of this commit but drift as the files change. If
+> a link lands in the wrong place, regenerate the list with:
+> ```bash
+> grep -rn "Profiling\." src/ problems/ --include=*.jl | grep -v infrastructure/Profiling.jl
+> ```
+
+### The module itself
+
+[`src/kernel/infrastructure/Profiling.jl`](src/kernel/infrastructure/Profiling.jl)
+— included from [`src/Jexpresso.jl:138`](src/Jexpresso.jl#L138).
+
+| API | Line | Purpose |
+|-----|------|---------|
+| [`enabled()`](src/kernel/infrastructure/Profiling.jl#L61) | 61 | reads `JEXPRESSO_EXTRAE` |
+| [`is_active()`](src/kernel/infrastructure/Profiling.jl#L81) | 81 | `true` only after a *successful* init; gate prints on this, never the instrumentation calls |
+| [`init(rank)`](src/kernel/infrastructure/Profiling.jl#L105) | 105 | loads Extrae lazily, registers the phase labels; skips `Extrae_init` if the preload already did it |
+| [`finish()`](src/kernel/infrastructure/Profiling.jl#L168) | 168 | closes the session, flushes the trace |
+| [`emit(tcode, value)`](src/kernel/infrastructure/Profiling.jl#L188) | 188 | punctual `(type, value)` event |
+| [`region(f, phase)`](src/kernel/infrastructure/Profiling.jl#L229) | 229 | `do`-block form: event + user region, closed even if `f` throws |
+| [`region_begin(phase)`](src/kernel/infrastructure/Profiling.jl#L250) / [`region_end()`](src/kernel/infrastructure/Profiling.jl#L257) | 250 / 257 | closure-free bracketing, for spans where a `do` block would change variable scope |
+| [`mark(phase)`](src/kernel/infrastructure/Profiling.jl#L271) | 271 | change the phase value *without* opening a nested user region |
+| [phase codes](src/kernel/infrastructure/Profiling.jl#L40) | 40–53 | `PHASE_*` constants; `EV_PHASE` (`6700000`) is at [line 37](src/kernel/infrastructure/Profiling.jl#L37) |
+
+### Session lifecycle
+
+| Call | Where |
+|------|-------|
+| `Profiling.init(rank)` — right after MPI init, so MPI auto-instrumentation and our events share one session | [`src/run.jl:93`](src/run.jl#L93) |
+| `Profiling.finish()` — end of the run | [`src/run.jl:325`](src/run.jl#L325) |
+
+### Time loop
+
+| Call | Where |
+|------|-------|
+| `Profiling.region(PHASE_TIMELOOP) do … time_loop!(…) end` | [`problems/drivers.jl:151`](problems/drivers.jl#L151), in [`driver()`](problems/drivers.jl#L11) |
+
+### RHS (per RK stage)
+
+| Call | Where |
+|------|-------|
+| `is_active()` fast-path bail-out, then `region_begin(PHASE_RHS)` / `region_end()` in the `rhs!` wrapper | [`rhs.jl:129–134`](src/kernel/operators/rhs.jl#L129) |
+| the real body, renamed `_rhs_impl!` (the integrator still calls `rhs!`, so the `ODEProblem` registration is unchanged) | [`rhs.jl:138`](src/kernel/operators/rhs.jl#L138) |
+| `mark(PHASE_RHS_COMM)` / `mark(PHASE_RHS)` around `DSS_global_RHS!` — **CPU** path, in [`_build_rhs!`](src/kernel/operators/rhs.jl#L517) | [`rhs.jl:683`](src/kernel/operators/rhs.jl#L683) and [`:685`](src/kernel/operators/rhs.jl#L685) |
+| same pair around `DSS_global_RHS!` — **GPU** path, in `_rhs_impl!` | [`rhs.jl:505`](src/kernel/operators/rhs.jl#L505) and [`:507`](src/kernel/operators/rhs.jl#L507) |
+
+### Coupling (Jexpresso ↔ Alya)
+
+These are the simple first-pass markers: one region around the interpolation,
+one around the MPI send, and one around the whole one-time handshake. They are
+enough to read interp-vs-comm per coupled step off the timeline, and are the
+obvious place to add finer regions next.
+
+| Call | Where |
+|------|-------|
+| `region_begin(PHASE_CPL_SETUP)` / `region_end()` around the one-time handshake, [`je_receive_alya_data`](src/kernel/coupling/couplingStructs.jl#L754), cache prefetch and early sync | [`src/run.jl:263`](src/run.jl#L263) and [`:270`](src/run.jl#L270) |
+| **2D** — `region_begin(PHASE_CPL_INTERP)` at the top of [`je_perform_coupling_exchange`](src/kernel/coupling/couplingStructs.jl#L2037) (so the one-time interpolation-cache build is counted inside it) | [`couplingStructs.jl:2056`](src/kernel/coupling/couplingStructs.jl#L2056) |
+| **2D** — `region_end()` after the interpolation, then `region_begin(PHASE_CPL_COMM)` / `region_end()` around [`coupling_exchange_data!`](src/kernel/coupling/couplingStructs.jl#L2023) | [`couplingStructs.jl:2117–2120`](src/kernel/coupling/couplingStructs.jl#L2117) |
+| **3D** — `region_begin(PHASE_CPL_INTERP)` at the top of [`je_perform_coupling_exchange_3d`](src/kernel/coupling/couplingStructs.jl#L2127) | [`couplingStructs.jl:2148`](src/kernel/coupling/couplingStructs.jl#L2148) |
+| **3D** — `region_end()` + `PHASE_CPL_COMM` pair around the send | [`couplingStructs.jl:2210–2213`](src/kernel/coupling/couplingStructs.jl#L2210) |
+
+Note the pairing rule: `region_begin`/`region_end` must not nest, and neither
+coupling function has an early `return` between them, so a region can never be
+left open. If you add instrumentation to a function that *can* return early, use
+the `region(f, phase)` `do`-block form (or `try`/`finally`, as the `rhs!` wrapper
+does) instead.
+
+### The standalone shim and its test calls
+
+Outside the solver, `tools/Extrae/` carries a portable copy of the same API plus
+runnable examples. These are the calls Step 1's test exercises:
+
+| Call site | Where |
+|-----------|-------|
+| `ExtraeShim` module — the portable twin of `Profiling` ([`init`](tools/Extrae/ExtraeShim.jl#L90), [`finish`](tools/Extrae/ExtraeShim.jl#L113), [`register`](tools/Extrae/ExtraeShim.jl#L137), [`emit`](tools/Extrae/ExtraeShim.jl#L168), [`user_function`](tools/Extrae/ExtraeShim.jl#L188), [`@user_function`](tools/Extrae/ExtraeShim.jl#L206)) | [`tools/Extrae/ExtraeShim.jl:37`](tools/Extrae/ExtraeShim.jl#L37) |
+| API smoke test — asserts every entry point is callable and never throws, on any platform | [`runtests.jl:49`](tools/Extrae/runtests.jl#L49) |
+| serial example: `init()`, `@user_function`, `emit`, `finish()` | [`extrae_axpy.jl:59`](tools/Extrae/extrae_axpy.jl#L59), [`:29`](tools/Extrae/extrae_axpy.jl#L29), [`:71`](tools/Extrae/extrae_axpy.jl#L71) |
+| MPI example: `init()`, then `@user_function` around the halo exchange, the stencil compute, and the `Allreduce` | [`extrae_mpi_jexpresso_pattern.jl:104`](tools/Extrae/extrae_mpi_jexpresso_pattern.jl#L104), [`:131`](tools/Extrae/extrae_mpi_jexpresso_pattern.jl#L131), [`:136`](tools/Extrae/extrae_mpi_jexpresso_pattern.jl#L136), [`:150`](tools/Extrae/extrae_mpi_jexpresso_pattern.jl#L150), [`:160`](tools/Extrae/extrae_mpi_jexpresso_pattern.jl#L160) |
 
 ---
 
