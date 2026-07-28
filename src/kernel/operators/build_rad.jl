@@ -1890,6 +1890,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
         @rankinfo rank "✓ Connectivity built: n_spa=$n_spa, n_non_global=$n_non_global_nodes"
         flush(stdout)
+        # Save base-mesh connectivity and DOF count for warm-start restriction.
+        # connijk_spa is rebound (not mutated) at adaptation time, so this alias is safe.
+        # NOTE: spatial AMR between time steps is not yet supported for warm-start.
+        n_spa_base       = n_spa
+        connijk_spa_base = connijk_spa
 
         @rankinfo rank "Building pre-adaptivity global numbering..."
         flush(stdout)
@@ -3895,7 +3900,21 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
 
     if (inputs[:RT_atmos_coupling])
-        return Q, dTdt, solution
+        # For the adaptive path, restrict the solution back to the base mesh before
+        # saving as warm start so that the *_pre snapshot (always base mesh) matches.
+        sol_to_save = if inputs[:adaptive_extra_meshes] && adapted
+            sol_r = restrict_solution_to_base_mesh(
+                solution_new, connijk_spa, connijk_spa_base,
+                extra_meshes_connijk, extra_meshes_ref_level,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                extra_meshes_coords, extra_mesh, nelem, ngl, n_spa_base)
+            connijk_spa_base = nothing
+            sol_r
+        else
+            connijk_spa_base = nothing
+            solution
+        end
+        return Q, dTdt, sol_to_save
     else
         # ── VTK output ────────────────────────────────────────────────────────────
         if (inputs[:RT_radiative_heating]) && (inputs[:RT_longwave] || inputs[:RT_shortwave])
@@ -4726,6 +4745,125 @@ function interpolate_warm_start_to_adapted_mesh(
     end
 
     return x_warm_new
+end
+
+"""
+    restrict_solution_to_base_mesh(solution_full, connijk_spa, connijk_spa_base,
+        extra_meshes_connijk, extra_meshes_ref_level, extra_meshes_extra_nops,
+        extra_meshes_extra_nelems, extra_meshes_coords, extra_mesh,
+        nelem, ngl, n_spa_base)
+
+Project an RT solution from the h-adapted angular mesh back to the uniform base mesh
+by interpolating each base GLL node from the child element that contains it.
+
+For unchanged angular elements the DOF values are copied directly via both
+`connijk_spa` arrays.  For refined elements each base node is located in one
+of the four child quadrants and the child polynomial is evaluated there by
+barycentric Lagrange interpolation in θ and ϕ independently.
+
+The child ordering produced by `adapt_angular_grid_3Dby2D!` is:
+  offset 0 → θ ∈ [θmin, θ_mid], ϕ ∈ [ϕmin, ϕ_mid]
+  offset 1 → θ ∈ [θ_mid, θmax], ϕ ∈ [ϕmin, ϕ_mid]
+  offset 2 → θ ∈ [θmin, θ_mid], ϕ ∈ [ϕ_mid, ϕmax]
+  offset 3 → θ ∈ [θ_mid, θmax], ϕ ∈ [ϕ_mid, ϕmax]
+
+`solution_full` must be the prolonged solution (hanging nodes filled) so that
+child boundary nodes carry valid values for interpolation.
+
+NOTE: multi-level refinement (ref_level > 1) is not supported here; the angular
+mesh is reset to base between time steps, so ref_level never exceeds 1.
+NOTE: spatial AMR between time steps is not yet supported for warm-start.
+"""
+function restrict_solution_to_base_mesh(
+    solution_full, connijk_spa, connijk_spa_base,
+    extra_meshes_connijk, extra_meshes_ref_level, extra_meshes_extra_nops,
+    extra_meshes_extra_nelems, extra_meshes_coords, extra_mesh,
+    nelem, ngl, n_spa_base)
+
+    solution_base = zeros(Float64, n_spa_base)
+
+    nop_max = maximum(maximum.(extra_meshes_extra_nops)) + 1
+    src_θ = zeros(nop_max); src_ϕ = zeros(nop_max)
+    ωθ_c  = zeros(nop_max); ωϕ_c  = zeros(nop_max)
+    Lθ    = zeros(1, nop_max)
+    Lϕ    = zeros(1, nop_max)
+
+    for iel = 1:nelem
+        e_adapted = 1
+        for e_base = 1:extra_mesh[iel].extra_nelem
+            nop_b = extra_mesh[iel].extra_nop[e_base]
+            ref_b = extra_mesh[iel].ref_level[e_base]  # always 0 on base mesh
+
+            refined = (e_adapted <= extra_meshes_extra_nelems[iel]) &&
+                      (extra_meshes_ref_level[iel][e_adapted] == ref_b + 1)
+
+            if refined
+                # Parent bounds for determining which child contains each base node
+                θmin_b = extra_mesh[iel].extra_coords[1, extra_mesh[iel].extra_connijk[e_base, 1,       1      ]]
+                θmax_b = extra_mesh[iel].extra_coords[1, extra_mesh[iel].extra_connijk[e_base, nop_b+1, 1      ]]
+                ϕmin_b = extra_mesh[iel].extra_coords[2, extra_mesh[iel].extra_connijk[e_base, 1,       1      ]]
+                ϕmax_b = extra_mesh[iel].extra_coords[2, extra_mesh[iel].extra_connijk[e_base, 1,       nop_b+1]]
+                ϕmax_b == 0.0 && (ϕmax_b = 2π)
+                θ_mid = (θmin_b + θmax_b) / 2
+                ϕ_mid = (ϕmin_b + ϕmax_b) / 2
+
+                for igl = 1:ngl, jgl = 1:ngl, kgl = 1:ngl
+                    for iθ_p = 1:nop_b+1, jθ_p = 1:nop_b+1
+                        ip_base = connijk_spa_base[iel][igl, jgl, kgl, e_base, iθ_p, jθ_p]
+                        ip_base == 0 && continue
+
+                        # Physical coords of this base-mesh node
+                        θ_p = extra_mesh[iel].extra_coords[1, extra_mesh[iel].extra_connijk[e_base, iθ_p, 1    ]]
+                        ϕ_p = extra_mesh[iel].extra_coords[2, extra_mesh[iel].extra_connijk[e_base, 1,    jθ_p ]]
+                        ϕ_p == 0.0 && jθ_p == nop_b+1 && (ϕ_p = 2π)
+
+                        # Identify the child that contains (θ_p, ϕ_p) from the known ordering
+                        child_offset = (θ_p > θ_mid ? 1 : 0) + (ϕ_p > ϕ_mid ? 2 : 0)
+                        e_c = e_adapted + child_offset
+                        nop_c = extra_meshes_extra_nops[iel][e_c]
+
+                        # Build child GLL node coordinates and barycentric weights
+                        for iθ = 1:nop_c+1
+                            src_θ[iθ] = extra_meshes_coords[iel][1, extra_meshes_connijk[iel][e_c, iθ, 1   ]]
+                            src_ϕ[iθ] = extra_meshes_coords[iel][2, extra_meshes_connijk[iel][e_c, 1,  iθ  ]]
+                        end
+                        extra_meshes_coords[iel][2, extra_meshes_connijk[iel][e_c, 1, nop_c+1]] == 0.0 &&
+                            (src_ϕ[nop_c+1] = 2π)
+                        BarycentricWeights!(view(src_θ, 1:nop_c+1), view(ωθ_c, 1:nop_c+1))
+                        BarycentricWeights!(view(src_ϕ, 1:nop_c+1), view(ωϕ_c, 1:nop_c+1))
+
+                        # Interpolation matrix: child nodes → single target point (θ_p, ϕ_p)
+                        PolynomialInterpolationMatrix!(
+                            view(src_θ, 1:nop_c+1), view(ωθ_c, 1:nop_c+1),
+                            [θ_p], view(Lθ, 1:1, 1:nop_c+1))
+                        PolynomialInterpolationMatrix!(
+                            view(src_ϕ, 1:nop_c+1), view(ωϕ_c, 1:nop_c+1),
+                            [ϕ_p], view(Lϕ, 1:1, 1:nop_c+1))
+
+                        u = 0.0
+                        for iθ_c = 1:nop_c+1, jθ_c = 1:nop_c+1
+                            ip_adapted = connijk_spa[iel][igl, jgl, kgl, e_c, iθ_c, jθ_c]
+                            u += Lθ[1, iθ_c] * Lϕ[1, jθ_c] * solution_full[ip_adapted]
+                        end
+                        solution_base[ip_base] = u
+                    end
+                end
+                e_adapted += 4
+            else
+                # Unchanged element: re-index via both connijk_spa arrays
+                for igl = 1:ngl, jgl = 1:ngl, kgl = 1:ngl
+                    for iθ = 1:nop_b+1, jθ = 1:nop_b+1
+                        ip_base    = connijk_spa_base[iel][igl, jgl, kgl, e_base,    iθ, jθ]
+                        ip_adapted = connijk_spa[iel][igl, jgl, kgl, e_adapted, iθ, jθ]
+                        solution_base[ip_base] = solution_full[ip_adapted]
+                    end
+                end
+                e_adapted += 1
+            end
+        end
+    end
+
+    return solution_base
 end
 
 """
