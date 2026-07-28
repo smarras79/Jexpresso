@@ -143,7 +143,7 @@ function build_restriction_matrices_local_and_ghost(
         constraint_entries = build_interior_hanging_constraint(
             ip_hanging, connijk_spa, extra_meshes_coords, extra_meshes_connijk,
             extra_meshes_extra_nops, extra_meshes_extra_nelems,
-            mesh, ngl, nelem, neighbors, interpolation_cache
+            mesh, ngl, nelem, neighbors, interpolation_cache, ip2gip_spa
         )
         
         # Add constraint equation to nc_mat (replaces identity)
@@ -181,7 +181,7 @@ function build_restriction_matrices_local_and_ghost(
             extra_meshes_coords, extra_meshes_connijk,
             extra_meshes_extra_nops,
             mesh, ngl, nelem,
-            gid_to_extended_local,
+            gid_to_extended_local, ip2gip_spa,
             rank
         )
         
@@ -333,12 +333,13 @@ function build_interior_hanging_constraint(
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
     mesh, ngl, nelem,
     neighbors,
-    interpolation_cache
+    interpolation_cache,
+    ip2gip_spa
 )
-    
+
     # Find which element and indices this hanging node belongs to
-    iel_child, i_child, j_child, k_child, e_ext_child, iθ_child, jθ_child = 
-        find_node_location(ip_hanging, connijk_spa, ngl, nelem)
+    iel_child, i_child, j_child, k_child, e_ext_child, iθ_child, jθ_child =
+        find_node_location(ip_hanging, connijk_spa, ngl, nelem, ip2gip_spa)
     
     if iel_child === nothing
         @warn "Could not find location for hanging node $ip_hanging"
@@ -350,7 +351,7 @@ function build_interior_hanging_constraint(
         iel_child, i_child, j_child, k_child, e_ext_child, mesh.connijk,
         extra_meshes_coords, extra_meshes_connijk,
         extra_meshes_extra_nops, extra_meshes_extra_nelems,
-        neighbors
+        neighbors, mesh.ip2gip
     )
     
     if iel_parent === nothing
@@ -417,12 +418,13 @@ function build_interface_hanging_constraint(
     extra_meshes_extra_nops,
     mesh, ngl, nelem,
     gid_to_extended_local,
+    ip2gip_spa,
     rank
 )
-    
+
     # Find which element and indices this hanging node belongs to
-    iel_child, i_child, j_child, k_child, e_ext_child, iθ_child, jθ_child = 
-        find_node_location(ip_hanging, connijk_spa, ngl, nelem)
+    iel_child, i_child, j_child, k_child, e_ext_child, iθ_child, jθ_child =
+        find_node_location(ip_hanging, connijk_spa, ngl, nelem, ip2gip_spa)
     
     if iel_child === nothing
         @warn "[Rank $rank] Could not find location for interface hanging node $ip_hanging"
@@ -501,20 +503,26 @@ end
 # Helper: Find node location in connectivity
 # =========================================================================
 
-function find_node_location(ip_spa, connijk_spa, ngl, nelem)
+function find_node_location(ip_spa, connijk_spa, ngl, nelem, ip2gip_spa)
+    # Match by global id so that periodic images (same gip, different local ip)
+    # are correctly identified. Without this, a hanging node at a periodic
+    # boundary whose local ip differs from the ip stored in connijk_spa would
+    # silently return nothing, breaking constraint construction.
+    gip_target = ip2gip_spa[ip_spa]
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
             for e_ext = 1:size(connijk_spa[iel], 4)
                 nop = size(connijk_spa[iel], 5) - 1
                 for jθ = 1:(nop+1), iθ = 1:(nop+1)
-                    if connijk_spa[iel][i, j, k, e_ext, iθ, jθ] == ip_spa
+                    ip_stored = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
+                    if ip2gip_spa[ip_stored] == gip_target
                         return iel, i, j, k, e_ext, iθ, jθ
                     end
                 end
             end
         end
     end
-    
+
     return nothing, 0, 0, 0, 0, 0, 0
 end
 
@@ -526,32 +534,37 @@ function find_parent_element_local(
     iel_child, i_child, j_child, k_child, e_ext_child, connijk,
     extra_meshes_coords, extra_meshes_connijk,
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
-    neighbors
+    neighbors, ip2gip
 )
-    ip_child = connijk[iel_child, i_child, j_child, k_child]
+    ip_child  = connijk[iel_child, i_child, j_child, k_child]
+    gip_child = ip2gip[ip_child]
+
     # Get child element bounds
     θmin_child, θmax_child, ϕmin_child, ϕmax_child = get_element_bounds_fast(
         iel_child, e_ext_child, extra_meshes_coords,
         extra_meshes_connijk, extra_meshes_extra_nops
     )
-    
+
     # Check neighbors (up to 26 in 3D)
     for ineighbor = 1:26
         iel_neighbor = neighbors[iel_child, ineighbor, 1]
         is_nonconforming = neighbors[iel_child, ineighbor, 2]
-        
+
         if iel_neighbor == 0
-            # No neighbor in this direction
-            continue
-        end
-        
-        if is_nonconforming == 0
-            # Conforming neighbor - no parent here
             continue
         end
 
-        if !(ip_child in connijk[iel_neighbor, :, :, :])
-            # non-conforming neighbor but the spatial node is not on this particular neighbor
+        if is_nonconforming == 0
+            # Conforming neighbor — no hanging interface here
+            continue
+        end
+
+        # Check whether the child spatial node lies on this neighbor's boundary.
+        # Use gip comparison so that periodic images (same gip, different local ip)
+        # are correctly identified as shared.
+        shared = any(ip2gip[connijk[iel_neighbor, ii, jj, kk]] == gip_child
+                     for ii in axes(connijk,2), jj in axes(connijk,3), kk in axes(connijk,4))
+        if !shared
             continue
         end
         
@@ -752,18 +765,17 @@ function find_corresponding_spatial_location(
         return i_child, j_child, k_child
     end
     
-    # Different spatial elements - find shared spatial node
-    ip_child = mesh.connijk[iel_child, i_child, j_child, k_child]
-    
-    # Find this node in parent element
+    # Different spatial elements - find shared spatial node.
+    # Compare by gip so periodic images (same gip, different local ip) are matched.
+    ip_child  = mesh.connijk[iel_child, i_child, j_child, k_child]
+    gip_child = mesh.ip2gip[ip_child]
+
     for k = 1:ngl, j = 1:ngl, i = 1:ngl
-        ip_parent = mesh.connijk[iel_parent, i, j, k]
-        if ip_parent == ip_child
+        if mesh.ip2gip[mesh.connijk[iel_parent, i, j, k]] == gip_child
             return i, j, k
         end
     end
-    
-    # Should not reach here if elements actually share this node
+
     @warn "Could not find corresponding spatial node in parent element"
     return i_child, j_child, k_child  # Fallback
 end

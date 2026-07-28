@@ -334,7 +334,7 @@ function add_micro_precip_sources!(S, q, qe, S_micro::Float64, qn::Float64, flux
     @inbounds ρqv_pert = ρ*qv - qe[6]
      
     @inbounds S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))
-    @inbounds S[5] += ρ*(flux_lw - flux_sw)
+    @inbounds S[5] += ρ*(flux_lw + flux_sw)
     @inbounds S[6] += -ρ*S_micro
     @inbounds S[7] += ρ*S_micro
 
@@ -350,7 +350,7 @@ function add_micro_precip_sources!(S, q, qe, S_micro::Float64, qn::Float64, flux
     @inbounds ρqv_pert = ρ*qv - qe[6]
     
     @inbounds S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
-    @inbounds S[5] += ρ*(flux_lw - flux_sw)
+    @inbounds S[5] += ρ*(flux_lw + flux_sw)
     @inbounds S[6] += -ρ*S_micro
     @inbounds S[7] += ρ*S_micro
 
@@ -366,7 +366,7 @@ function add_micro_precip_sources!(S, q, qe, S_micro::Float64, qn::Float64, flux
     @inbounds ρqv_pert = ρ*qv - qe[5]
 
     @inbounds S[3] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp)) 
-    @inbounds S[4] += ρ*(flux_lw - flux_sw)
+    @inbounds S[4] += ρ*(flux_lw + flux_sw)
     @inbounds S[5] += -ρ*S_micro
     @inbounds S[6] += ρ*S_micro
 
@@ -385,7 +385,7 @@ function add_micro_precip_sources!(S, q, qe, S_micro::Float64, qn::Float64, flux
     @inbounds ρqv_pert = ρ*qv - qe[5]
 
     @inbounds S[3] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
-    @inbounds S[4] += ρ*(flux_lw - flux_sw)
+    @inbounds S[4] += ρ*(flux_lw + flux_sw)
     @inbounds S[5] += -ρ*S_micro
     @inbounds S[6] += ρ*S_micro
 

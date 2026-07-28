@@ -1,5 +1,6 @@
 Base.@kwdef mutable struct Atmosphere_State{T <: AbstractFloat, dim}
-    t_lay = zeros(T, dim)
+    t_current = zeros(T, dim)   # full current temperature (perturbation + background)
+    t_back    = zeros(T, dim)   # background-state temperature (for lateral wall BCs)
     p_lay = zeros(T, dim)
     vmr_h2o = zeros(T, dim)
     q_liq = zeros(T, dim)
@@ -205,7 +206,7 @@ function compute_rt_radiative_heating(
 
     # ── Heating rate at each spatial node ─────────────────────────────────────
     for ip = 1:npoin
-        T   = atmos_data.t_lay[ip]
+        T   = atmos_data.t_current[ip]
         ρ   = atmos_data.rho[ip]
         κ_a = κ[ip]
         σ_a = σ[ip]
@@ -249,6 +250,7 @@ function compute_rt_radiative_heating(
             @info "  G_dif   extrema (W/m²): $(extrema(G_accum .- G_dir))"
             @info "  Q_dir   extrema (W/m³): $(extrema(Q_dir))"
         end
+
     end
 
     return Q_rad, dTdt_rad, F_net, G_accum
@@ -256,13 +258,15 @@ end
 
 function dycore_to_atmos_data!(q, qe, npoin, T, qc, qi, lmoist, atmos_data, PhysConst, ::TOTAL)
     for i=1:npoin
+        # Background T from reference state (same formula as t_current but using qe)
+        atmos_data.t_back[i] = (qe[i,5]/qe[i,1]) / ((PhysConst.pref/qe[i,end])^(PhysConst.Rair/PhysConst.cp))
         if (lmoist)
-            atmos_data.t_lay[i] =  T[i]
-            atmos_data.qv = ((q[i,6]/q[i,1])-qc[i]-qi[i])*PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            atmos_data.t_current[i] = T[i]
+            atmos_data.vmr_h2o[i] = ((q[i,6]/q[i,1])-qc[i]-qi[i])*PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
             atmos_data.q_liq[i] = qc[i]
             atmos_data.q_ice[i] = qi[i]
         else
-            atmos_data.t_lay[i] = (q[i,5]/q[i,1])/((PhysConst.pref/q[end])^(PhysConst.Rair/PhysConst.cp))
+            atmos_data.t_current[i] = (q[i,5]/q[i,1])/((PhysConst.pref/q[end])^(PhysConst.Rair/PhysConst.cp))
         end
         atmos_data.p_lay[i] = q[i,end]
         atmos_data.rho[i] = q[i,1]
@@ -276,13 +280,15 @@ function dycore_to_atmos_data!(q, qe, npoin, T, qc, qi, lmoist, atmos_data, Phys
         ρ = q[i,1]+qe[i,1]
         θ = (q[i,5]+qe[i,5])/ρ
         qt = (q[i,6]+qe[i,6])/ρ
+        # Background T from equilibrium state (same formula as t_current but using qe)
+        atmos_data.t_back[i] = (qe[i,5]/qe[i,1]) / ((PhysConst.pref/qe[i,end])^(PhysConst.Rair/PhysConst.cp))
         if (lmoist)
-            atmos_data.t_lay[i] =  T[i]
+            atmos_data.t_current[i] = T[i]
             atmos_data.vmr_h2o[i] = ((qt)-qc[i]-qi[i])*PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
             atmos_data.q_liq[i] = qc[i]
             atmos_data.q_ice[i] = qi[i]
         else
-            atmos_data.t_lay[i] = (θ)/((PhysConst.pref/q[i,end])^(PhysConst.Rair/PhysConst.cp))
+            atmos_data.t_current[i] = (θ)/((PhysConst.pref/q[i,end])^(PhysConst.Rair/PhysConst.cp))
         end
         atmos_data.p_lay[i] = q[i,end]
         atmos_data.rho[i] = ρ
@@ -312,9 +318,9 @@ function get_RT_heat_fluxes!(q, qe, mesh, micro, metrics, atmos_data, params, d�
                                      rt_sol_sw = micro.rt_sol_sw, rt_sol_sw_available = micro.rt_sol_sw_available)
 
     if !(inputs[:energy_equation] == "theta") || (inputs[:lmoist])
-        micro.flux_sw .= Q
+        micro.flux_sw .= PhysConst.cp .* dTdt   # J/(kg·s) = Q/ρ, positive for SW heating
     else
-        micro.flux_sw .= dTdt
+        micro.flux_sw .= dTdt                    # K/s, positive for SW heating
     end
 
     #Second do longwave
@@ -325,17 +331,17 @@ function get_RT_heat_fluxes!(q, qe, mesh, micro, metrics, atmos_data, params, d�
     inputs[:RT_longwave] = true
     inputs[:rad_HG_g] = 0.0
     Q, dTdt, micro.rt_sol_lw = build_radiative_transfer_problem(mesh, inputs, 1, mesh.ngl, dψ, ψ, ω, metrics.Je,
-                                     metrics.dξdx, metrics.dξdy, metrics.dξdz, 
+                                     metrics.dξdx, metrics.dξdy, metrics.dξdz,
                                      metrics.dηdx, metrics.dηdy, metrics.dηdz,
                                      metrics.dζdx, metrics.dζdy, metrics.dζdz,
-                                     metrics.nx, metrics.ny, metrics.nz, 
+                                     metrics.nx, metrics.ny, metrics.nz,
                                      mesh.elem_to_face, mesh.extra_mesh, κ, σ, atmos_data, z_prof, τ_from_TOA, params.QT, NSD_3D(), params.AD;
                                      rt_sol_lw = micro.rt_sol_lw, rt_sol_lw_available = micro.rt_sol_lw_available)
-                                     
+
     if !(inputs[:energy_equation] == "theta") || inputs[:lmoist]
-        micro.flux_lw .= -Q
+        micro.flux_lw .= PhysConst.cp .* dTdt   # J/(kg·s) = Q/ρ, negative for LW cooling
     else
-        micro.flux_lw .= -dTdt
+        micro.flux_lw .= dTdt                    # K/s, negative for LW cooling
     end
     micro.rt_sol_sw_available = true
     micro.rt_sol_lw_available = true

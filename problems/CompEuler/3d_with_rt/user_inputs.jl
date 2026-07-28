@@ -15,10 +15,10 @@ function user_inputs()
         # restart options
         #---------------------------------------------------------------------------
         # set restart_time to enable write restart files every [restart_time] seconds 
-        :restart_time         => 100.0, 
+        #:restart_time         => 100.0, 
         # the default restart output dir is $(your_output_dir)/restart but you can always specify
         # :restart_output_file_path => "./output/CompEuler/3d/output/restart",
-        :lrestart             => false,
+        #:lrestart             => false,
         # the default restart input dir is $(your_output_dir)/restart but you can always specify
         # :restart_input_file_path => "./output/CompEuler/3d/output/restart",
         #---------------------------------------------------------------------------
@@ -47,9 +47,9 @@ function user_inputs()
         :extra_dimensions    => 2,
         :adaptive_extra_meshes => false,
         :RT_amr_threshold => [0.99999],
-        :extra_dimensions_order => 4,
-        :extra_dimensions_nelemx => 4,
-        :extra_dimensions_nelemy => 4,
+        :extra_dimensions_order => 3,
+        :extra_dimensions_nelemx => 3,
+        :extra_dimensions_nelemy => 3,
         :lcubed_sphere_angular_mesh => false,
         :extra_dimensions_xmax => π,
         :extra_dimensions_ymax => 2*π,

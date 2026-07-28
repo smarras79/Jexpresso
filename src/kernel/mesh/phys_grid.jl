@@ -696,8 +696,8 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         for ilev = 1:phys_grid.nlev
             for icol = 1:phys_grid.ncol
                 if (ilev == phys_grid.nlev)
-                    d_flux_lw[ilev,icol] = -(flux_lw[ilev,icol] - flux_lw[ilev-1,icol])/(phys_grid.p[ilev,icol]-phys_grid.p[ilev-1,icol])
-                    d_flux_sw[ilev,icol] = -(flux_sw[ilev,icol] - flux_sw[ilev-1,icol])/(phys_grid.p[ilev,icol]-phys_grid.p[ilev-1,icol])
+                    d_flux_lw[ilev,icol] = (flux_lw[ilev,icol] - flux_lw[ilev-1,icol])/(phys_grid.p[ilev,icol]-phys_grid.p[ilev-1,icol])
+                    d_flux_sw[ilev,icol] = (flux_sw[ilev,icol] - flux_sw[ilev-1,icol])/(phys_grid.p[ilev,icol]-phys_grid.p[ilev-1,icol])
                 else
                     d_flux_lw[ilev,icol] = (flux_lw[ilev+1,icol] - flux_lw[ilev,icol])/(phys_grid.p[ilev+1,icol]-phys_grid.p[ilev,icol])
                     d_flux_sw[ilev,icol] = (flux_sw[ilev+1,icol] - flux_sw[ilev,icol])/(phys_grid.p[ilev+1,icol]-phys_grid.p[ilev,icol])
@@ -709,8 +709,11 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,d_flux_lw,flux_interp_lw,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
         flux_interp_sw = KernelAbstractions.zeros(backend,TFloat, mesh.npoin,1)
         interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,d_flux_sw,flux_interp_sw,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
-        mp.flux_lw .= flux_interp_lw
-        mp.flux_sw .= flux_interp_sw
+        # dF/dp has units W/(m²·Pa) = m/s; multiply by g to convert to cp·dTdt units (m²/s³)
+        # so that ρ·flux stored here equals Q_rad in W/m³ consistent with the RT solver path
+        g_phys = TFloat(9.80616)
+        mp.flux_lw .= g_phys .* flux_interp_lw
+        mp.flux_sw .= g_phys .* flux_interp_sw
         @info maximum(mp.flux_lw), maximum(mp.flux_sw), minimum(mp.flux_sw), minimum(mp.flux_lw)
     else
 

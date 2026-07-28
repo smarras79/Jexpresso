@@ -28,7 +28,8 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
-function user_uout!(ip, ::TOTAL, uout, u, qe; mp = mp)
+function user_uout!(ip, ::TOTAL, uout, u, qe; kwargs...)
+    mp = kwargs[:mp]
     uout[1] = u[1]
     uout[2] = u[2]/u[1]
     uout[3] = u[3]/u[1]
@@ -38,7 +39,8 @@ function user_uout!(ip, ::TOTAL, uout, u, qe; mp = mp)
     uout[7] = u[7]/u[1]
 end
 
-function user_uout!(ip, ::PERT, uout, u, qe; mp = mp)
+function user_uout!(ip, ::PERT, uout, u, qe; kwargs...)
+    mp = kwargs[:mp]
     uout[1] = u[1]+qe[1]
     uout[2] = u[2]/(u[1]+qe[1])
     uout[3] = u[3]/(u[1]+qe[1])
@@ -54,4 +56,6 @@ function user_uout!(ip, ::PERT, uout, u, qe; mp = mp)
     uout[13] = mp.qs[ip]
     uout[14] = mp.qg[ip]
     uout[15] = mp.qsatt[ip]
+    uout[16] = mp.flux_lw[ip]
+    uout[17] = mp.flux_sw[ip]
 end
