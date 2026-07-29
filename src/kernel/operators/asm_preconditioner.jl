@@ -187,6 +187,7 @@ end
 function _reorder_for_ilu(A::SparseMatrixCSC{Float64})
     A_sym = abs.(A) + abs.(A')
     perm  = AMD.amd(A_sym)
+    A_sym = nothing          # symmetry matrix no longer needed after AMD ordering
     iperm = invperm(perm)
     return A[perm, perm], perm, iperm
 end
@@ -361,20 +362,24 @@ function build_asm_preconditioner(
     solve_l2g     = ip2gip[solve_local]
     zerorow_l2g   = ip2gip[zerorow_local]
     zero_l2g      = ghost_gips
+    row_has_nz    = nothing   # classification done; free before extracting submatrix
 
     rank == 0 && @info "ASM DOF classification: $(length(solve_l2g)) solve, " *
                        "$(length(zerorow_l2g)) zero-row, $(length(zero_l2g)) true ghosts"
 
     A_reduced = A_complete[solve_local, solve_local]
+    A_complete = nothing; solve_local = nothing; zerorow_local = nothing
+    GC.gc()
 
     rank == 0 && @info "ASM A_reduced: $(size(A_reduced,1))×$(size(A_reduced,2)), " *
                        "nnz=$(nnz(A_reduced))"
 
     t_factor = @elapsed local_factor = _factorize_matrix(A_reduced, solver, ilu_tau)
+    A_reduced = nothing
     rank == 0 && @info "ASM factorization ($solver): $(round(t_factor,digits=3))s"
 
-    x_sub = zeros(Float64, length(solve_local))
-    y_sub = zeros(Float64, length(solve_local))
+    x_sub = zeros(Float64, length(solve_l2g))
+    y_sub = zeros(Float64, length(solve_l2g))
 
     prec = ASMPreconditioner(local_factor, solve_l2g, zerorow_l2g, zero_l2g,
                              x_sub, y_sub, gnpoin)
@@ -447,7 +452,7 @@ function build_global_factorization_preconditioner(
     ip2gip_g_loc[1:npoin] .= ip2gip
     if has_ghosts_g; ip2gip_g_loc[npoin+1:npoin_g] .= g_ip2gip; end
 
-    # Gather all entries from A_local
+    # Collect local matrix entries in global GID indexing
     local_I = Int[]; local_J = Int[]; local_V = Float64[]
     rows_sp = rowvals(A_local); vals_sp = nonzeros(A_local)
     for col_ip = 1:npoin_g
@@ -462,28 +467,40 @@ function build_global_factorization_preconditioner(
             push!(local_V, vals_sp[idx])
         end
     end
+    ip2gip_g_loc = nothing   # no longer needed after entry scan
 
-    # Allgatherv to all ranks
     n_local   = Int32(length(local_V))
     counts    = MPI.Allgather([n_local], comm)
     send_ij   = Vector{Int}(undef, 2*n_local)
     for k = 1:n_local
         send_ij[2k-1] = local_I[k]; send_ij[2k] = local_J[k]
     end
+    local_I = nothing; local_J = nothing   # free before gather
+
     all_ij = MPI.Allgatherv(send_ij, Int32.(counts .* 2), comm)
     all_v  = MPI.Allgatherv(local_V, counts, comm)
+    local_V = nothing; send_ij = nothing   # free send buffers; gathered data now in all_ij/all_v
+    GC.gc()
 
-    # Rank 0 assembles and factorizes
+    # Rank 0 assembles sparse matrix, factorizes, then frees all intermediates stage by stage.
+    # Non-root ranks free their (unused) copies of the global buffers immediately.
     global_factor = if rank == 0
         n_total = length(all_v)
-        GI = [all_ij[2k-1] for k=1:n_total]
-        GJ = [all_ij[2k]   for k=1:n_total]
+        GI = [all_ij[2k-1] for k = 1:n_total]
+        GJ = [all_ij[2k]   for k = 1:n_total]
+        all_ij = nothing               # free interleaved ij buffer before sparse() allocation
         A_global = sparse(GI, GJ, all_v, actual_gnpoin, actual_gnpoin)
+        GI = nothing; GJ = nothing; all_v = nothing
+        GC.gc()
         @info "Global matrix: $(actual_gnpoin)×$(actual_gnpoin), nnz=$(nnz(A_global))"
         t = @elapsed fac = _factorize_matrix(A_global, solver, ilu_tau)
+        A_global = nothing             # factorization retains only what it needs
+        GC.gc()
         @info "Global factorization ($solver): $(round(t,digits=3))s"
         fac
     else
+        all_ij = nothing; all_v = nothing   # non-root: received but never needed
+        GC.gc()
         nothing
     end
 
@@ -579,6 +596,7 @@ function build_mumps_preconditioner(
             push!(local_V, vals_sp[idx])
         end
     end
+    ip2gip_g_loc = nothing   # no longer needed after entry scan
 
     # Initialise MUMPS — all ranks participate
     mumps_handle = MUMPS.Mumps{Float64}(MUMPS.mumps_unsymmetric,
@@ -590,24 +608,35 @@ function build_mumps_preconditioner(
     MUMPS.set_icntl!(mumps_handle, 4,  1; displaylevel=0)
     # ICNTL(18)=0: matrix assembled on rank 0, factorization distributed across all ranks.
 
-    # Gather complete matrix to rank 0 for MUMPS (same as global_lu approach)
-    # Allgatherv of owned rows from all ranks
+    # Gather complete matrix to rank 0 for MUMPS
     n_local_m   = Int32(length(local_V))
     counts_m    = MPI.Allgather([n_local_m], comm)
     send_ij_m   = Vector{Int}(undef, 2*n_local_m)
     for k = 1:n_local_m
         send_ij_m[2k-1] = local_I[k]; send_ij_m[2k] = local_J[k]
     end
+    local_I = nothing; local_J = nothing   # free before gather
+
     all_ij_m = MPI.Allgatherv(send_ij_m, Int32.(counts_m .* 2), comm)
     all_v_m  = MPI.Allgatherv(local_V, counts_m, comm)
+    local_V = nothing; send_ij_m = nothing
+    GC.gc()
 
     if rank == 0
         n_total_m = length(all_v_m)
-        GI_m = [all_ij_m[2k-1] for k=1:n_total_m]
-        GJ_m = [all_ij_m[2k]   for k=1:n_total_m]
+        GI_m = [all_ij_m[2k-1] for k = 1:n_total_m]
+        GJ_m = [all_ij_m[2k]   for k = 1:n_total_m]
+        all_ij_m = nothing
         A_global_m = sparse(GI_m, GJ_m, all_v_m, actual_gnpoin, actual_gnpoin)
+        GI_m = nothing; GJ_m = nothing; all_v_m = nothing
+        GC.gc()
         @info "MUMPS dist: global matrix $(actual_gnpoin)×$(actual_gnpoin), nnz=$(nnz(A_global_m))"
         MUMPS.associate_matrix!(mumps_handle, A_global_m)
+        A_global_m = nothing   # MUMPS has copied the data internally
+        GC.gc()
+    else
+        all_ij_m = nothing; all_v_m = nothing   # non-root: received but never needed
+        GC.gc()
     end
 
     # Analysis phase — get memory estimate before factorization
