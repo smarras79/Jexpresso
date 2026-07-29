@@ -46,7 +46,11 @@ function user_inputs()
         :RT_radiative_heating => true,
         :extra_dimensions    => 2,
         :adaptive_extra_meshes => true,
-        :RT_amr_threshold => [0.3],
+        :RT_amr_threshold => [0.2],
+        #:RT_precond       => :global_lu,  # preconditioner for RT iterative solve; options: :global_lu (default), :global_ilu, :rcmilu, :rcmsplu, etc.
+        #:RT_gmres_tol     => 1e-4,        # GMRES convergence tolerance (default: 1e-4)
+        #:RT_gmres_restart => 100,         # GMRES restart parameter (default: 100)
+        #:RT_asm_ilu_tau   => 0.1,         # ILU drop tolerance for ASM preconditioner (default: 0.1)
         :extra_dimensions_order => 3,
         :extra_dimensions_nelemx => 1,
         :extra_dimensions_nelemy => 1,

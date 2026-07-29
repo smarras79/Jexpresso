@@ -529,10 +529,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     x_warm = zeros(Float64, npoin_ang_total)
     @time solution = solve_parallel_gmres_asm(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
-        npoin_g = npoin_ang_total,
-        precond = :global_ilu,
-        restart = 50,
-        tol     = 1e-6)
+        npoin_g     = npoin_ang_total,
+        precond     = inputs[:RT_precond],
+        restart     = inputs[:RT_gmres_restart],
+        tol         = inputs[:RT_gmres_tol],
+        asm_ilu_tau = inputs[:RT_asm_ilu_tau])
    
     MPI.Comm_rank(comm) == 0 && @info "radiation solved ($(npoin_ang_total) DOF)"
     A = nothing
@@ -3570,14 +3571,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             zeros(Float64, n_spa)
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
-            precond     = :global_lu,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.75,
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
-            restart     = 100,
-            tol         = 1e-4)
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
 
     elseif (inputs[:adaptive_extra_meshes] && inputs[:RT_longwave])
         x_warm = if !isempty(x_warm_interp)
@@ -3588,14 +3589,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             zeros(Float64, n_spa)
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
-            precond     = :global_lu,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.75,
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
-            restart     = 100,
-            tol         = 1e-4)
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
 
     elseif inputs[:adaptive_extra_meshes]
         # Row scaling (left) — normalize by row norm
@@ -3611,14 +3612,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin,
             n_spa, x_warm;
-            precond     = :global_lu,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
-            restart     = 100,
-            tol         = 1e-7)
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
 
     elseif (inputs[:RT_shortwave])
         x_warm = Float64[]
@@ -3626,14 +3627,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             x_warm = rt_sol_sw
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
-            npoin_g  = n_ext_spa,
-            g_ip2gip = extended_parents_to_gid_spa,
-            g_gip2ip = gid_to_extended_parents_spa,
-            precond     = :global_lu,
+            npoin_g     = n_ext_spa,
+            g_ip2gip    = extended_parents_to_gid_spa,
+            g_gip2ip    = gid_to_extended_parents_spa,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
-            restart = 100,
-            tol     = 1e-3)
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
 
     elseif (inputs[:RT_longwave])
         x_warm = Float64[]
@@ -3641,14 +3642,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             x_warm = rt_sol_lw
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
-            npoin_g  = n_ext_spa,
-            g_ip2gip = extended_parents_to_gid_spa,
-            g_gip2ip = gid_to_extended_parents_spa,
-            precond     = :global_lu,
+            npoin_g     = n_ext_spa,
+            g_ip2gip    = extended_parents_to_gid_spa,
+            g_gip2ip    = gid_to_extended_parents_spa,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
-            restart = 60,
-            tol     = 1e-7)
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
     else
         x_warm = Float64[]
         if (inputs[:lmanufactured_solution])
@@ -3660,14 +3661,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
-        npoin_g  = n_ext_spa,
-        g_ip2gip = extended_parents_to_gid_spa,
-        g_gip2ip = gid_to_extended_parents_spa,
-        precond  = :global_lu,
-        asm_solver = :rcmsplu,
-        asm_ilu_tau = 0.1,
-        restart  = 50,
-        tol      = 1e-7)
+        npoin_g     = n_ext_spa,
+        g_ip2gip    = extended_parents_to_gid_spa,
+        g_gip2ip    = gid_to_extended_parents_spa,
+        precond     = inputs[:RT_precond],
+        asm_solver  = :rcmsplu,
+        asm_ilu_tau = inputs[:RT_asm_ilu_tau],
+        restart     = inputs[:RT_gmres_restart],
+        tol         = inputs[:RT_gmres_tol])
 
     end
     

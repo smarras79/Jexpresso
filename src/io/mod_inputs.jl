@@ -137,6 +137,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
       inputs[:adaptive_extra_meshes] = false
     end
 
+    if(!haskey(inputs, :RT_precond))
+      inputs[:RT_precond] = :global_lu
+    end
+
+    if(!haskey(inputs, :RT_gmres_tol))
+      inputs[:RT_gmres_tol] = 1e-4
+    end
+
+    if(!haskey(inputs, :RT_gmres_restart))
+      inputs[:RT_gmres_restart] = 100
+    end
+
+    if(!haskey(inputs, :RT_asm_ilu_tau))
+      inputs[:RT_asm_ilu_tau] = 0.1
+    end
+
     if(!haskey(inputs, :extra_dimensions_order))
       inputs[:extra_dimensions_order] = 0
     end
