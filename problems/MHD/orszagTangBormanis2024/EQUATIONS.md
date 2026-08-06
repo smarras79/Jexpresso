@@ -373,8 +373,18 @@ Consequences to expect, in decreasing order of importance:
    the steepest fronts. Large-scale structure (the X pattern, the central
    island, the overall $\rho$ and $B$ morphology) should match the paper
    well; peak values across shocks will not match to the digit.
-2. **The solution is more dissipative** than the reference, so the finest
-   post-$t\approx0.7$ structures are damped relative to Figures 3 and 5–8.
+2. **Small-scale structure differs in character, not obviously in amount.**
+   Comparing the computed density at $t = 0.70,\ 0.80,\ 0.90,\ 1.00$ against
+   the "True" row of the paper's Figure 3 (same $[0.1, 0.4]$ color scale —
+   see `assets/MHD_OT_rho.png`): the large-scale features agree well, with
+   the same diagonal banding, the same dark high-density blobs near the
+   center at $t \approx 0.8$, and the same overall amplitude range. But this
+   solution is *more* filamentary than the reference, not less — the
+   4th-order SEM operator resolves thin density filaments that the reference
+   finite-volume scheme smooths into rounder blobs, despite the heavy SGS
+   viscosity. Do not expect this case to look uniformly smoother than the
+   paper's figures; expect it to look sharper in the filaments and smeared
+   across the shocks.
 3. **$\nabla\cdot\mathbf{B}$ is controlled, not zero.** Constrained transport
    holds a discrete divergence at machine precision; GLM cleaning instead
    holds it small and bounded. Expect $\psi$ to stay near zero away from the
@@ -407,6 +417,17 @@ The shipped configuration was run to $t = 1$ and produces, at $t = 1$:
 
 No non-finite values in any of the 21 snapshots. The $w = B_z = 0$ result is
 the free consistency check noted above, and it holds to the bit.
+
+The computed density at the paper's comparison times is reproduced in
+`assets/MHD_OT_rho.png` (repository root), on the same $[0.1, 0.4]$ color
+scale as the "True" row of its Figure 3:
+
+![Orszag-Tang density](../../../assets/MHD_OT_rho.png)
+
+This is a **qualitative** morphology check — same large-scale features, same
+amplitude band — not a quantitative validation. No pointwise or norm-based
+comparison against the reference data has been performed, and the paper's
+data set is not redistributed with Jexpresso.
 
 ## 5. Run
 

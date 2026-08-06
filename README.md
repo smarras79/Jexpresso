@@ -368,6 +368,13 @@ using Jexpresso
 Jexpresso.run_case("MHD", "orszagTangBormanis2024")
 ```
 
+Density at t = 0.7, 0.8, 0.9, 1.0, on the same 0.1-0.4 color scale as Fig. 3
+of the reference:
+
+<img src="assets/MHD_OT_rho.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
 Test 7a: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
