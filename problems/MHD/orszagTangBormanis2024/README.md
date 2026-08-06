@@ -112,8 +112,19 @@ knobs to tune.
   smallest LGL spacing ≈ 5.4e-3. The margin is deliberate — the vortex
   steepens into shocks and local wave speeds grow. The paper's finite-volume
   reference used Δt = 8e-4 on the same grid.
-- The sound-speed/CFL *printout* uses the Euler assumptions of the shared
-  kernel (γ = 1.4, no magnetic pressure); it is diagnostic-only.
+- **Ignore the CFL printout.** The shared diagnostic in
+  `src/kernel/physics/soundSpeed.jl` is written for CompEuler and is not
+  meaningful for this case:
+  - the *acoustic* CFL uses the Euler sound speed (γ = 1.4, no magnetic
+    pressure) and the nominal spacing `Δs = h/(N+1)`, not the MHD fast speed
+    and the smallest LGL spacing — so it reads ≈ 0.05 where the real MHD
+    number is ≈ 0.24;
+  - the *viscous* CFL uses `maximum(inputs[:μ])` — the per-equation
+    **multiplier**, here 1.0 — in place of the actual eddy viscosity, so it
+    prints ≈ 8.2. The true Smagorinsky $\mu_t \sim 10^{-6}$ here, i.e. a
+    viscous CFL of order $10^{-5}$. Nothing is unstable.
+
+  Both quirks are pre-existing and shared with the MHD KHI case.
 
 ## Mesh
 
