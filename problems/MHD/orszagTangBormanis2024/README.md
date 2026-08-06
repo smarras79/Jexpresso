@@ -73,14 +73,16 @@ startup).
   the `glm_cr_mhd` Ref); without it the undamped ψ waves have no dissipation
   mechanism in a CG discretization (no interface Riemann fluxes) and
   accumulate grid-scale noise on a periodic domain.
-- **Stabilization: Smagorinsky SGS** (`:visc_model => SMAG()`), not the
-  entropy-stable / KEP two-point fluxes (`:lkep => false`,
-  `:entropy_variables => false`). The paper solves *ideal* (inviscid,
-  non-resistive) MHD and gets its dissipation from a finite-volume Riemann
-  solver; a collocated CG scheme has none, and the Orszag–Tang shocks need
-  explicit regularization. Momentum gets the full deviatoric stress, the
+- **Stabilization: Smagorinsky SGS at 8× strength** (`:visc_model => SMAG()`,
+  `:μ = [0, 8, 8, …]`), not the entropy-stable / KEP two-point fluxes
+  (`:lkep => false`, `:entropy_variables => false`). The paper solves *ideal*
+  (inviscid, non-resistive) MHD and gets its dissipation from a finite-volume
+  Riemann solver; a collocated CG scheme has none, and the Orszag–Tang shocks
+  need explicit regularization. Momentum gets the full deviatoric stress, the
   energy gets `κ∇T` plus the `τ·u` viscous work, and `ρw`, `B`, `ψ` are
-  diffused as scalars (a turbulent resistivity for `B`).
+  diffused as scalars (a turbulent resistivity for `B`). The 8× multiplier is
+  not a tuned LES constant — it is the dissipation this discretization needs
+  to get through the shocks; see the next section.
 - **NOT implemented**: the non-conservative Powell / Galilean-GLM term Υ. It
   is only required for entropy stability of split-form discretizations, which
   are not used here.
@@ -92,6 +94,50 @@ Figures 3 and 5–8 well, while peak values across shocks are smeared and the
 finest late-time structures are damped. See §4 of
 [EQUATIONS.md](EQUATIONS.md) for the full list of expected departures and the
 knobs to tune.
+
+## Stabilization: what was actually tested
+
+The Orszag–Tang vortex steepens into shocks at $t \approx 0.5$, and that is
+where an under-dissipated run dies — the gas pressure is squeezed toward zero
+at a shock until `p = (γ-1)(ρE - ½ρ|v|² - ½|B|²)` goes negative and the
+sound speed takes a square root of a negative number. Every configuration
+below was run to $t = 1$ on the shipped mesh; "min p" is the minimum gas
+pressure over the domain at $t = 0.55$, the snapshot where the failures
+occur (initial pressure is $0.1326$, so it is also roughly the fraction of
+the initial value that survives at the strongest shock).
+
+| `:μ` | filter | result | min p @ t=0.55 | max\|Bx\| @ t=1 | max\|ψ\| |
+|---|---|---|---|---|---|
+| 1 | — | **aborts** at t ≈ 0.55 | — | — | — |
+| 2 | — | **aborts** at t ≈ 0.55 | — | — | — |
+| 4 | — | completes | 3.7e-2 | 0.460 | 1.2e-2 |
+| **8** | **—** | **completes (shipped)** | **4.3e-2** | **0.448** | **3.2e-3** |
+| 4 | erf 0.05 | completes | 3.8e-2 | 0.500 | 5.9e-3 |
+| 1 | erf 0.10 | completes, but barely | 5.1e-4 | 0.618 | 1.3e-2 |
+| 1 | erf 0.20 | **aborts** at t ≈ 0.55 | — | — | — |
+
+Three things worth knowing before changing these:
+
+1. **Plain Smagorinsky at `:μ = 1` does not survive this problem.** On this
+   grid $\mu_t = \rho C_s^2 \Delta^2 |S|$ is $O(10^{-6}$–$10^{-4})$, which is
+   essentially nothing against a shock. The 8× multiplier is an effective
+   $C_s \approx \sqrt{8}\,(0.23) \approx 0.65$, far above the usual
+   $0.1$–$0.23$. That is the honest cost of regularizing shocks with an
+   eddy-viscosity closure in a scheme that has no Riemann solver.
+2. **More filter is not monotonically safer.** The Boyd–Vandeven filter acts
+   on the *conservative* variables independently, so filtering $\rho$,
+   $\rho\mathbf{v}$ and $E$ separately can make $E - \frac12\rho|v|^2 -
+   \frac12|B|^2$ negative where the unfiltered state was fine — which is
+   exactly why `erf 0.2` fails while `erf 0.1` survives. Scaling `:μ` is
+   better targeted: it adds dissipation in proportion to $|S|$, i.e. at the
+   shocks and nowhere else.
+3. **Raising `:μ` also improves divergence control**, because the same eddy
+   viscosity acts on **B** as a turbulent resistivity: $\max|\psi|$ falls
+   from $1.3\times10^{-2}$ (filter route) to $3.2\times10^{-3}$ at `:μ = 8`.
+
+`:μ = 4` is the least dissipation measured to be stable and keeps noticeably
+more magnetic-field structure; it is only 2× above the observed failure
+point, so it is offered as the sharper alternative rather than the default.
 
 ## Notes
 

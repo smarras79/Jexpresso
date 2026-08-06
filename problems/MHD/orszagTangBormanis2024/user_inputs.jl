@@ -48,9 +48,24 @@ function user_inputs()
         # multipliers on the SGS coefficient for
         # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): no mass diffusion, everything
         # else on. The B/ψ entries act as a turbulent resistivity.
+        #
+        # The multiplier of 8 is NOT a tuned LES constant — it is what this
+        # discretization needs to survive the Orszag-Tang shocks. Effectively
+        # it raises the Smagorinsky constant to sqrt(8)·C_s ≈ 0.65, well above
+        # the usual 0.1-0.23. Measured on this grid (see README.md §
+        # "Stabilization: what was actually tested"), running to t = 1:
+        #
+        #     :μ = 1  -> ABORTS at t ≈ 0.55 (negative pressure at a shock)
+        #     :μ = 2  -> ABORTS at t ≈ 0.55
+        #     :μ = 4  -> completes; min p = 3.7e-2 at t = 0.55
+        #     :μ = 8  -> completes; min p = 4.3e-2  <-- shipped
+        #
+        # 8 rather than 4 buys a 4x margin over the observed failure point at
+        # a modest cost in magnetic-field sharpness. Lower it to 4 for a
+        # sharper (but closer to the edge) solution.
         #---------------------------------------------------------------------------
         :lvisc            => true,
-        :μ                => [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                => [0.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0],
         :visc_model       => SMAG(),
         :lrichardson      => false,      # no gravity/stratification in this problem
         # Slot 4 carries the TOTAL ENERGY ρE: "energy" keeps the kernel's τ·u
@@ -75,7 +90,18 @@ function user_inputs()
         :gmsh_filename       => "./problems/MHD/orszagTangBormanis2024/OT_32x32_periodic.msh",
         #:gmsh_filename      => "./meshes/gmsh_grids/OT_32x32_periodic.msh",
         #---------------------------------------------------------------------------
-        # Filter parameters (off: Smagorinsky provides the dissipation)
+        # Filter parameters.
+        #
+        # OFF on purpose. The Boyd-Vandeven "erf" filter is Jexpresso's other
+        # stabilization mechanism, but it filters the CONSERVATIVE variables
+        # independently, and filtering ρ, ρu and ρE separately can drive
+        # ρE - ½ρ|v|² - ½|B|² negative even where the unfiltered state was
+        # fine. Measured here: :mu_x = :mu_y = 0.1 (with :μ = 1) does reach
+        # t = 1, but only just — min p = 5.1e-4, a 0.4% margin — and turning
+        # it UP to 0.2 aborts at t ≈ 0.55 with sqrt(negative). Scaling the
+        # Smagorinsky coefficient above is both safer and better targeted:
+        # it adds dissipation in proportion to the local strain rate, i.e.
+        # at the shocks and nowhere else.
         #---------------------------------------------------------------------------
         :lfilter             => false,
         #---------------------------------------------------------------------------

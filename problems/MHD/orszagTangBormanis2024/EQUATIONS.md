@@ -222,7 +222,7 @@ S_{ij} = \tfrac{1}{2}\left(\partial_j v_i + \partial_i v_j\right),
 $$
 
   applied per equation through the per-equation multipliers
-  `:μ = [0, 1, 1, 1, 1, 1, 1, 1, 1]` (no mass diffusion):
+  `:μ = [0, 8, 8, 8, 8, 8, 8, 8, 8]` (no mass diffusion):
 
   | equation | SGS term |
   |---|---|
@@ -245,6 +245,17 @@ $$
   regularization that the Orszag–Tang shocks require. Smagorinsky is an
   eddy-viscosity closure, not a shock-capturing scheme, so shocks are
   smeared over a few points rather than resolved sharply. See §4.
+
+  The 8× multiplier is **not** a physically calibrated LES constant. On this
+  grid the bare $\mu_t = \rho C_s^2\Delta^2|S|$ is $O(10^{-6}$–$10^{-4})$,
+  far too small to keep the gas pressure positive through the shocks that
+  form at $t\approx 0.5$: with `:μ = 1` (or 2) the run aborts at
+  $t \approx 0.55$ when $p = (\gamma-1)(E - \frac12\rho|v|^2 -
+  \frac12|B|^2)$ goes negative. `:μ = 8` corresponds to an effective
+  $C_s \approx \sqrt{8}\,(0.23) \approx 0.65$. The measured stability
+  boundary and the alternatives (including why the Boyd–Vandeven filter is
+  *not* used) are tabulated in
+  [README.md](README.md#stabilization-what-was-actually-tested).
 
 ## 3. Test: 2D Orszag–Tang vortex
 
@@ -372,10 +383,30 @@ Consequences to expect, in decreasing order of importance:
    error. What must **not** happen is domain-wide $\psi$ striping that grows
    in time — that is the undamped (`:lsource => false`) failure mode.
 
-If the run needs more (or less) regularization, the knobs are, in order:
-`:μ` (per-equation SGS multipliers; raising the $B$ entries adds turbulent
-resistivity), `:nop` (lower order = more robust, less accurate), `:lfilter`
-with `:filter_type => "erf"`, and `:Δt`.
+If the run needs more (or less) regularization, the knob is `:μ` — the
+per-equation SGS multipliers. `:μ = 4` is the least dissipation measured to
+be stable here and retains more magnetic-field structure; below that the run
+aborts at the shocks. Prefer `:μ` over `:lfilter`: the Boyd–Vandeven filter
+acts on the conservative variables independently and can itself destroy
+pressure positivity (see
+[README.md](README.md#stabilization-what-was-actually-tested)). `:nop` (lower
+order = more robust, less accurate) and `:Δt` are the remaining knobs, but
+the failure mode here is Gibbs overshoot at shocks, not a CFL violation — the
+acoustic CFL is ≈ 0.24 and steady right up to the abort.
+
+### 4.1 Verified end state
+
+The shipped configuration was run to $t = 1$ and produces, at $t = 1$:
+
+| field | range |
+|---|---|
+| $\rho$ | $[0.084,\ 0.364]$ (paper's Fig. 3 colorbar: $\approx[0.1, 0.4]$) |
+| $p$ | $[0.047,\ 0.362]$ — positive everywhere |
+| $\psi$ | $[-3.2\times10^{-3},\ 2.5\times10^{-3}]$ |
+| $w,\ B_z$ | exactly $0$ |
+
+No non-finite values in any of the 21 snapshots. The $w = B_z = 0$ result is
+the free consistency check noted above, and it holds to the bit.
 
 ## 5. Run
 
