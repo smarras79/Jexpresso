@@ -612,8 +612,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             ρl = q[ip,1]
             ul = q[ip,2]/ρl
             el = q[ip,3]/ρl
-            Tl = max(el - TT(0.5)*ul*ul, zero(TT))
-            uTmx = max(uTmx, abs(ul) + sqrt(γ*Tl))
+            # Specific internal energy, then the sound speed. For a perfect
+            # gas p = (γ-1)ρ·e_int, so a² = γp/ρ = γ(γ-1)·e_int. The (γ-1)
+            # was previously missing, which inflated the wave-speed cap by
+            # 1/sqrt(γ-1) ≈ 1.58 at γ = 1.4 and let μ_res govern more often
+            # than the Marras bound intends.
+            eint = max(el - TT(0.5)*ul*ul, zero(TT))
+            uTmx = max(uTmx, abs(ul) + sqrt(γ*(γ - one(TT))*eint))
         end
 
         μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
@@ -748,15 +753,23 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         n1   = zero(TT); n2 = zero(TT)
         n3   = zero(TT); n4 = zero(TT)
         uTmx = zero(TT)
+        ρ_el = zero(TT)
 
         for j = 1:ngl
             @simd for i = 1:ngl
                 ip = connijk[ie,i,j,1]
+                Mi = Minv[ip]
 
-                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - rhs[ip,1])
-                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - rhs[ip,2])
-                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - rhs[ip,3])
-                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) - rhs[ip,4])
+                # Strong-form residual. rhs[] here is the DSS-assembled
+                # WEAK-form RHS (rhs! divides by the mass matrix later), so
+                # it must be multiplied by M⁻¹ for the difference to be
+                # dimensionally meaningful: ∂q/∂t has units q/time, the raw
+                # weak RHS has units (mass matrix)·q/time. The 1D path has
+                # always done this; the 2D path did not.
+                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - Mi*rhs[ip,1])
+                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - Mi*rhs[ip,2])
+                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - Mi*rhs[ip,3])
+                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) - Mi*rhs[ip,4])
                 n1 = max(n1, R1); n2 = max(n2, R2)
                 n3 = max(n3, R3); n4 = max(n4, R4)
 
@@ -768,25 +781,27 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 pl  = C0 * (ρl*θl)^γ
                 c_l = sqrt(max(γ*pl/ρl, zero(TT)))
                 uTmx = max(uTmx, sqrt(ul*ul + vl*vl) + c_l)
+                ρ_el += ρl
             end
         end
+        ρ_el /= TT(ngl*ngl)
 
         μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
         μ_max = C2*Δ*uTmx
-        μ     = max(zero(TT), min(μ_max, μ_res))
+        μ     = max(zero(TT), min(μ_max, μ_res))   # kinematic, m²/s
 
-        # Per-equation split (Marras eq. 10), scaled by the user-
-        # supplied inputs[:μ] multiplier so the case can be run with
-        # DSGS off (visc_coeff = [0,…]) to confirm whether DSGS itself
-        # is the cause of any instability.
+        # μ above is KINEMATIC. _expansion_visc! applies visc_coeff·∇²(prim)
+        # and user_primitives! hands this system (ρ, u, v, θ), so momentum
+        # and θ both need the DYNAMIC coefficient ρ̄·μ.
+        μ_dyn = ρ_el*μ
+
+        # Per-equation split (Marras eq. 10), scaled by the user-supplied
+        # inputs[:μ] multiplier so the case can be run with DSGS off
+        # (visc_coeff = [0,…]).
         μ_dsgs[ie,1] = zero(TT)                             # ρ : no mass diffusion
-        # DIAGNOSTIC: momentum DSGS forced to zero to isolate whether
-        # μ·∇²u/μ·∇²v on the LGL-discretized velocity field (u = ρu/ρ)
-        # is the cold-start blow-up source. Restore
-        # `visc_coeff[2:3] * μ` once the bad actor is identified.
-        μ_dsgs[ie,2] = zero(TT)                             # ρu (DIAG: disabled)
-        μ_dsgs[ie,3] = zero(TT)                             # ρv (DIAG: disabled)
-        μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ         # ρθ (eq. 10b)
+        μ_dsgs[ie,2] = visc_coeff[2] * μ_dyn                # ρu (eq. 10a)
+        μ_dsgs[ie,3] = visc_coeff[3] * μ_dyn                # ρv (eq. 10a)
+        μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ_dyn     # ρθ (eq. 10b)
     end
 
     return nothing

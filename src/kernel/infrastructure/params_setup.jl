@@ -350,7 +350,7 @@ function params_setup(sem,
     #
     # dsgs_avg / dsgs_denom are the per-equation domain-reduction scratch,
     # preallocated so compute_dsgs_viscosity! stays allocation-free.
-    if ldsgs_mhd
+    if ldsgs || ldsgs_mhd
         # Shaped like qp.qn / uaux, NOT (npoin, neqs): uaux carries one
         # extra trailing column (pressure) beyond the neqs solution slots,
         # which is why qp.qnm1/qnm2 are allocated from dims1 too. Sizing

@@ -633,7 +633,7 @@ function _build_rhs!(RHS, u, params, time)
     # step regardless of the stage layout. params.uaux is current here:
     # inviscid_rhs_el! refreshed it from u at the top of this call.
     #-----------------------------------------------------------------------------------
-    if params.VT == DSGS_MHD()
+    if params.VT == DSGS_MHD() || params.VT == DSGS()
         if time - params.dsgs_thist[] >= 0.999*params.Δt
             params.dsgs_qnm1 .= params.dsgs_qnm2
             params.dsgs_qnm2 .= params.uaux
@@ -974,7 +974,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     if params.VT == DSGS()
         TT = eltype(params.μ_dsgs)
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
-                                params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                 params.qp.qe,
                                 params.RHS, params.Minv, params.visc_coeff,
                                 TT(params.Δt),
@@ -1110,7 +1110,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # hydrostatic background.
         Pr_TT = TT(params.inputs[:Pr])
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
-                                params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                 params.qp.qe,
                                 params.RHS, params.Minv, params.visc_coeff,
                                 TT(params.Δt),
