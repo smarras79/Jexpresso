@@ -102,6 +102,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
                         legendfontsize = 14,
                         tickfontsize = 14,
                         legend = false,
+                        label = "Jexpresso",
                         show = false,
                         size = (600, 400))
 
