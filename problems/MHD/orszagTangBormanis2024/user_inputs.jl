@@ -43,30 +43,29 @@ function user_inputs()
         # The paper solves IDEAL MHD (no viscosity, no resistivity) with a
         # finite-volume scheme whose Riemann solver supplies the numerical
         # dissipation. A collocated continuous-Galerkin SEM has none, so the
-        # Orszag-Tang shocks must be regularized explicitly: plain weak form
-        # stabilized with Smagorinsky SGS viscosity. :μ are per-equation
-        # multipliers on the SGS coefficient for
+        # Orszag-Tang shocks must be regularized explicitly.
+        #
+        # Marras-Nazarov DynSGS: the eddy viscosity is set by the LOCAL
+        # RESIDUAL of the governing equations rather than by a tuned
+        # constant, so it appears at the shocks and stays near zero in the
+        # smooth 90% of the domain. That is exactly the failure mode of the
+        # Smagorinsky alternative here: ρ Cs² Δ² |S| cannot tell "resolved"
+        # from "unresolved", so it had to be scaled up 8x globally to survive
+        # the shocks, which over-damped everything else.
+        #
+        # :μ are per-equation multipliers on the DynSGS coefficient for
         # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): no mass diffusion, everything
-        # else on. The B/ψ entries act as a turbulent resistivity.
-        #
-        # The multiplier of 8 is NOT a tuned LES constant — it is what this
-        # discretization needs to survive the Orszag-Tang shocks. Effectively
-        # it raises the Smagorinsky constant to sqrt(8)·C_s ≈ 0.65, well above
-        # the usual 0.1-0.23. Measured on this grid (see README.md §
-        # "Stabilization: what was actually tested"), running to t = 1:
-        #
-        #     :μ = 1  -> ABORTS at t ≈ 0.55 (negative pressure at a shock)
-        #     :μ = 2  -> ABORTS at t ≈ 0.55
-        #     :μ = 4  -> completes; min p = 3.7e-2 at t = 0.55
-        #     :μ = 8  -> completes; min p = 4.3e-2  <-- shipped
-        #
-        # 8 rather than 4 buys a 4x margin over the observed failure point at
-        # a modest cost in magnetic-field sharpness. Lower it to 4 for a
-        # sharper (but closer to the edge) solution.
+        # else at full strength. The B entries act as a turbulent
+        # resistivity. C1/C2 are Marras's residual and wave-speed-cap
+        # coefficients; dsgs_gamma must match γ_mhd in user_flux.jl.
         #---------------------------------------------------------------------------
         :lvisc            => true,
-        :μ                => [0.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0],
-        :visc_model       => SMAG(),
+        :μ                => [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        :visc_model       => DSGS_MHD(),
+        :dsgs_C1          => 1.0,
+        :dsgs_C2          => 0.5,
+        :dsgs_gamma       => 5.0/3.0,
+        :dsgs_Prt         => 0.7,
         :lrichardson      => false,      # no gravity/stratification in this problem
         # Slot 4 carries the TOTAL ENERGY ρE: "energy" keeps the kernel's τ·u
         # viscous-work augmentation of the energy equation active.

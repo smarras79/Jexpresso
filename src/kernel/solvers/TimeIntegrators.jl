@@ -127,6 +127,11 @@ function precompile_warmup_run!(inputs, params, u,
     u_snapshot    = copy(u)
     qnm1_snapshot = copy(params.qp.qnm1)
     qnm2_snapshot = copy(params.qp.qnm2)
+    # DynSGS-MHD carries its own step-cadenced history plus the time stamp
+    # that gates it; the warm-up step would advance both.
+    dsgs_qnm1_snapshot = copy(params.dsgs_qnm1)
+    dsgs_qnm2_snapshot = copy(params.dsgs_qnm2)
+    dsgs_thist_snapshot = params.dsgs_thist[]
 
     # 1-step problem; same params and same FullSpecialize as the real
     # solve, so the compiled code is reused.
@@ -160,6 +165,9 @@ function precompile_warmup_run!(inputs, params, u,
     u .= u_snapshot
     params.qp.qnm1 .= qnm1_snapshot
     params.qp.qnm2 .= qnm2_snapshot
+    params.dsgs_qnm1 .= dsgs_qnm1_snapshot
+    params.dsgs_qnm2 .= dsgs_qnm2_snapshot
+    params.dsgs_thist[] = dsgs_thist_snapshot
 
     # The VTK write path is JIT-compiled on first use by the IC write in
     # time_loop! (when :lwrite_initial is true) or by the first diagnostic
@@ -259,7 +267,7 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe,
-                     μ_dsgs_pnode = (params.VT == DSGS()) ? params.μ_dsgs_pnode : nothing)
+                     μ_dsgs_pnode = (params.VT == DSGS() || params.VT == DSGS_MHD()) ? params.μ_dsgs_pnode : nothing)
         if (lwrite_time == true)
             append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
         end
@@ -396,7 +404,7 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe,
-                         μ_dsgs_pnode = (integrator.p.VT == DSGS()) ? integrator.p.μ_dsgs_pnode : nothing)
+                         μ_dsgs_pnode = (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD()) ? integrator.p.μ_dsgs_pnode : nothing)
             # The DSGS viscosity panel is rendered by the 1D PNG writer
             # itself (write_output -> plot_results, fed by μ_dsgs_pnode
             # above) so that the whole output time is a single GR render:
@@ -521,6 +529,9 @@ function time_loop!(inputs, params, u, args...)
             u_snap    = copy(u)
             qnm1_snap = copy(params.qp.qnm1)
             qnm2_snap = copy(params.qp.qnm2)
+            dsgs_qnm1_snap = copy(params.dsgs_qnm1)
+            dsgs_qnm2_snap = copy(params.dsgs_qnm2)
+            dsgs_thist_snap = params.dsgs_thist[]
             # If a callback ends up actually writing during the warmup
             # (only possible for cases whose first dosetime falls inside
             # [t0, t0+Δt]), redirect that output to a per-rank tempdir.
@@ -561,6 +572,9 @@ function time_loop!(inputs, params, u, args...)
             u .= u_snap
             params.qp.qnm1 .= qnm1_snap
             params.qp.qnm2 .= qnm2_snap
+            params.dsgs_qnm1 .= dsgs_qnm1_snap
+            params.dsgs_qnm2 .= dsgs_qnm2_snap
+            params.dsgs_thist[] = dsgs_thist_snap
             inputs isa Dict && saved_outdir !== nothing && (inputs[:output_dir] = saved_outdir)
             try; rm(warm_outdir; recursive = true, force = true); catch; end
             # Reset the heartbeat counter so the real solve gets its

@@ -466,6 +466,22 @@ end
 
 end
 
+# Same accessor for the MHD variant: compute_dsgs_viscosity!(::DSGS_MHD)
+# has already packed the per-element, per-equation coefficient into
+# visc_coeffieq, so the assembly loop just reads it back.
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               inputs,
+                               ::DSGS_MHD, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+
+    return visc_coeffieq[ieq]
+
+end
+
 # ---------------- 1D --------------------------------------------------
 #
 # Conservation form q = (ρ, ρu, ρE) on a 1D LGL mesh. The signature is
@@ -726,6 +742,231 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,2] = zero(TT)                             # ρu (DIAG: disabled)
         μ_dsgs[ie,3] = zero(TT)                             # ρv (DIAG: disabled)
         μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ         # ρθ (eq. 10b)
+    end
+
+    return nothing
+end
+
+# ================================================================================
+# Marras-Nazarov Dynamic SGS (DynSGS) — 2D, ideal GLM-MHD (nine fields)
+#
+#   S. Marras, M. Nazarov, F. X. Giraldo, "Stabilized high-order Galerkin
+#   methods based on a parameter-free dynamic SGS model for LES",
+#   J. Comput. Phys. 301 (2015) 77-101.
+#   M. Nazarov, J. Hoffman, "Residual-based artificial viscosity for
+#   simulation of turbulent compressible flow using adaptive FE methods",
+#   Int. J. Numer. Meth. Fluids 71 (2013) 339-357.
+#
+# The model is parameter-free in the sense that the eddy viscosity is set
+# by the local residual of the governing equations rather than by a tuned
+# constant: where the discrete solution satisfies the PDE the residual is
+# small and so is the viscosity; at shocks and under-resolved features the
+# residual spikes and viscosity appears exactly there. That is the whole
+# point of using it here instead of Smagorinsky, whose  ρ Cs² Δ² |S|  is
+# blind to whether the flow is resolved and therefore has to be scaled up
+# globally (8x on this grid) to survive the shocks — which then over-damps
+# the smooth 90% of the domain.
+#
+#     μ_res|e = C1 · Δ² · max_i ( ‖R_i‖_{∞,e} / ‖q_i − ⟨q_i⟩‖_{∞,Ω} )
+#     μ_max|e = C2 · Δ  · (‖v‖ + c_f)_{∞,e}
+#     μ|e     = max(0, min(μ_max, μ_res))
+#
+# with the BDF2 residual of equation i
+#
+#     R_i = (3qⁿ_i − 4qⁿ⁻¹_i + qⁿ⁻²_i)/(2Δt) − M⁻¹·RHS_i
+#
+# Notes specific to this implementation:
+#
+#  *  M⁻¹·RHS, not RHS.  R must have units of q/time for the ratio
+#     R/‖q−⟨q⟩‖ to be a frequency and μ_res to come out as m²/s. params.RHS
+#     inside viscous_rhs_el! is the DSS-assembled *weak-form* inviscid RHS
+#     (the mass-matrix division happens later in rhs!), so it is multiplied
+#     by Minv here — matching the 1D implementation.
+#
+#  *  Step-cadenced history.  params.qp.qnm1/qnm2 are advanced on every RK
+#     *stage*, so they are stage snapshots, not states one Δt apart, and a
+#     BDF2 stencil built on them does not approximate ∂q/∂t. DynSGS-MHD
+#     therefore carries its own pair (params.dsgs_qnm1/qnm2), advanced once
+#     per time step by rhs!.
+#
+#  *  Residual set.  The max runs over the eight genuine conservation laws
+#     (ρ, ρu, ρv, E, ρw, Bx, By, Bz) and EXCLUDES ψ: the GLM field is a
+#     numerical constraint carrier, not a conserved quantity, and its
+#     residual is dominated by the Dedner damping source rather than by any
+#     under-resolution of the flow.
+#
+#  *  Denominator floors.  ‖q_i − ⟨q_i⟩‖_{∞,Ω} is zero for any field that
+#     is uniform (all of them at t=0) or identically zero (ρw and Bz for
+#     Orszag-Tang, for all time). Each denominator is floored at a small
+#     fraction of that field's natural physical scale, built from the
+#     domain-mean state, so a degenerate field contributes 0/floor = 0
+#     instead of 0/eps = garbage.
+#
+#  *  Units.  μ as defined above is KINEMATIC (m²/s). _expansion_visc!
+#     applies visc_coeff·∇²(primitive) to each equation, so the momentum
+#     and energy slots — whose primitives are u, v, w and T — need the
+#     DYNAMIC coefficient ρ̄·μ, while the magnetic slots take μ directly
+#     as a turbulent resistivity (∇²B already carries the right units).
+#     ρ̄ is the element-mean density.
+#
+# Per-equation split (Marras eq. 10, adapted to the GLM-MHD field set):
+#     [1] ρ  : 0                       — mass stays conservative
+#     [2,3,5] ρu, ρv, ρw : ρ̄·μ
+#     [4] E  : ρ̄·μ·γ/((γ−1)·Pr_t)      — see below
+#     [6,7,8] B          : μ           — turbulent resistivity
+#     [9] ψ              : μ
+# each scaled by the user's inputs[:μ][ieq] multiplier.
+#
+# The energy factor: user_primitives! hands slot 4 the temperature
+# T = p/ρ (= R·T_phys), and the physical flux is ∇·(k∇T_phys) with
+# k = μ_dyn·cp/Pr_t. Rewriting in terms of T gives the coefficient
+# k/R = μ_dyn·γ/((γ−1)·Pr_t), since cp = γR/(γ−1).
+#
+# All reductions are MPI-global: ⟨q⟩ and ‖q−⟨q⟩‖_{∞,Ω} are domain norms by
+# definition, so a rank-local version would make the viscosity depend on
+# the partitioning.
+# ================================================================================
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
+                                 ::DSGS_MHD, ::NSD_2D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 avg::AbstractVector{TT},
+                                 denom::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δelem::AbstractVector{TT},
+                                 γ::TT, Pr_t::TT, C1::TT, C2::TT,
+                                 comm,
+                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs = size(μ_dsgs, 2)
+    NRES = min(neqs, 8)          # residual max excludes the ψ slot
+    γm1  = γ - one(TT)
+    eps  = TT(1.0e-16)
+
+    # --- Pass 1: domain means ⟨q_i⟩ ------------------------------------
+    @inbounds for ieq = 1:neqs
+        avg[ieq] = zero(TT)
+    end
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                for ieq = 1:neqs
+                    avg[ieq] += q[ip,ieq]
+                end
+            end
+        end
+    end
+    npts_local = TT(nelem*ngl*ngl)
+    npts_glob  = MPI.Allreduce(npts_local, MPI.SUM, comm)
+    MPI.Allreduce!(avg, MPI.SUM, comm)
+    inv_npts = one(TT)/max(npts_glob, one(TT))
+    @inbounds for ieq = 1:neqs
+        avg[ieq] *= inv_npts
+    end
+
+    # --- Pass 2: domain L∞ of |q_i − ⟨q_i⟩| ----------------------------
+    @inbounds for ieq = 1:neqs
+        denom[ieq] = zero(TT)
+    end
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                for ieq = 1:neqs
+                    denom[ieq] = max(denom[ieq], abs(q[ip,ieq] - avg[ieq]))
+                end
+            end
+        end
+    end
+    MPI.Allreduce!(denom, MPI.MAX, comm)
+
+    # Physical-scale floors (see header). Built from the mean state:
+    #   ρ̄, the mean sound-ish speed c̄, and the mean field strength.
+    ρ_avg = max(abs(avg[1]), eps)
+    p_avg = γm1*max(avg[4] - TT(0.5)*(avg[2]*avg[2] + avg[3]*avg[3] + avg[5]*avg[5])/ρ_avg
+                    - TT(0.5)*(avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]), zero(TT))
+    c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
+    rel   = TT(1.0e-3)
+    @inbounds begin
+        denom[1] = max(denom[1], rel*ρ_avg)                 # ρ
+        mom_fl   = rel*ρ_avg*c_avg
+        denom[2] = max(denom[2], mom_fl)                    # ρu
+        denom[3] = max(denom[3], mom_fl)                    # ρv
+        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)     # E
+        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end # ρw
+        b_fl = rel*sqrt(ρ_avg)*c_avg
+        for ieq = 6:min(neqs,8)
+            denom[ieq] = max(denom[ieq], b_fl)              # B
+        end
+        for ieq = 1:neqs
+            denom[ieq] += eps
+        end
+    end
+
+    # --- Pass 3: per-element residual L∞, wave-speed cap, split --------
+    inv2Δt = one(TT)/(2*Δt)
+    @inbounds for ie = 1:nelem
+
+        # Marras's element length scale: min edge / (N+1).
+        Δ = Δelem[ie]/ngl
+
+        ratio = zero(TT)      # max_i ‖R_i‖∞,e / denom_i
+        wmax  = zero(TT)      # (‖v‖ + c_f)∞,e
+        ρ_el  = zero(TT)      # element-mean density
+
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                Mi = Minv[ip]
+
+                for ieq = 1:NRES
+                    R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+                    r = R/denom[ieq]
+                    ratio = max(ratio, r)
+                end
+
+                ρl = max(q[ip,1], eps)
+                ul = q[ip,2]/ρl
+                vl = q[ip,3]/ρl
+                wl = (neqs >= 5) ? q[ip,5]/ρl : zero(TT)
+                B2 = q[ip,6]*q[ip,6] + q[ip,7]*q[ip,7] + q[ip,8]*q[ip,8]
+                ψl = (neqs >= 9) ? q[ip,9] : zero(TT)
+                pl = γm1*(q[ip,4] - TT(0.5)*ρl*(ul*ul + vl*vl + wl*wl)
+                          - TT(0.5)*B2 - TT(0.5)*ψl*ψl)
+                # c_f ≤ sqrt(a² + b²): the fast magnetosonic speed bounded
+                # over all propagation directions (a² = γp/ρ, b² = |B|²/ρ).
+                cf = sqrt(max(γ*pl/ρl + B2/ρl, zero(TT)))
+                wmax  = max(wmax, sqrt(ul*ul + vl*vl + wl*wl) + cf)
+                ρ_el += ρl
+            end
+        end
+        ρ_el /= TT(ngl*ngl)
+
+        μ_res = C1*Δ*Δ*ratio
+        μ_max = C2*Δ*wmax
+        μ     = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s
+
+        μ_dyn = ρ_el*μ                              # dynamic, for u/v/w/T
+
+        μ_dsgs[ie,1] = zero(TT)                                    # ρ
+        μ_dsgs[ie,2] = visc_coeff[2]*μ_dyn                         # ρu
+        μ_dsgs[ie,3] = visc_coeff[3]*μ_dyn                         # ρv
+        μ_dsgs[ie,4] = visc_coeff[4]*μ_dyn*γ/(γm1*Pr_t)            # E
+        if neqs >= 5
+            μ_dsgs[ie,5] = visc_coeff[5]*μ_dyn                     # ρw
+        end
+        for ieq = 6:min(neqs,8)
+            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ                     # B (resistivity)
+        end
+        if neqs >= 9
+            μ_dsgs[ie,9] = visc_coeff[9]*μ                         # ψ
+        end
     end
 
     return nothing
