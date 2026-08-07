@@ -633,7 +633,15 @@ function _build_rhs!(RHS, u, params, time)
     # step regardless of the stage layout. params.uaux is current here:
     # inviscid_rhs_el! refreshed it from u at the top of this call.
     #-----------------------------------------------------------------------------------
-    if params.VT == DSGS_MHD() || params.VT == DSGS()
+    # The :lvisc test is not redundant. params_setup only allocates the
+    # dsgs_qnm* buffers when lvisc is on, so a case that keeps
+    # visc_model = DSGS() but sets :lvisc => false -- the natural way to
+    # switch the model off for a comparison run -- would otherwise
+    # broadcast npoin×neqs into the 1×1 dummies and die with
+    # DimensionMismatch on the first RHS call. Keep this condition in step
+    # with the allocation condition in params_setup.jl.
+    if params.inputs[:lvisc] == true &&
+        (params.VT == DSGS_MHD() || params.VT == DSGS())
         if time - params.dsgs_thist[] >= 0.999*params.Δt
             params.dsgs_qnm1 .= params.dsgs_qnm2
             params.dsgs_qnm2 .= params.uaux

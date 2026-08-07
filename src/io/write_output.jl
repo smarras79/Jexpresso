@@ -122,12 +122,12 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # the same output time (the per-node broadcast is in μ_dsgs_pnode)
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
             if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
+                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
                 KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes)
+                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
             end
         #end
     end
@@ -166,8 +166,12 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     iout=iout, nvar=nvar,
                     smoothing_factor=inputs[:smoothing_factor], varnames=varnames)
     else
+        # DSGS runs render the per-equation eddy viscosity as extra panels
+        # of the same output time (the per-node broadcast is μ_dsgs_pnode).
+        μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
         plot_triangulation(SD, mesh, q, title, OUTPUT_DIR, inputs;
-                           iout=iout, nvar=nvar, varnames=varnames)
+                           iout=iout, nvar=nvar, varnames=varnames,
+                           μ_nodes=μ_nodes, μ_names=varnames)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)

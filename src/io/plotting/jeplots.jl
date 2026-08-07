@@ -47,7 +47,7 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     plt
 end
 
-function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::String, outvar, inputs; iout=1, nvar=1, PT=nothing, μ_nodes=nothing)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::String, outvar, inputs; iout=1, nvar=1, PT=nothing, μ_nodes=nothing, t=nothing)
 
     epsi = 1.1
     npoin = mesh.npoin
@@ -58,6 +58,36 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
     x_coords = mesh.coords[1:npoin, 1]
     sort_idx = sortperm(x_coords)
     plts = []
+
+    # Optional per-case reference/analytic solution.
+    #
+    # This 1D plotter is shared by every 1D case, and most have no closed
+    # form to compare against, so nothing is hardcoded here. Instead a case
+    # may define
+    #
+    #     user_analytic_solution(x, t, outvar, inputs) -> npoin × nvar matrix
+    #
+    # in its own problem directory (see problems/CompEuler/sod1d). Case files
+    # are included into this module, so the method simply exists for the case
+    # being run and is absent for every other one. Entries the case cannot
+    # supply should be NaN — Plots skips them, so a case can provide an exact
+    # solution for some variables and not others. Failures are reported once
+    # and never abort the run: a broken reference solution must not take the
+    # simulation output with it.
+    qref = nothing
+    if t !== nothing && get(inputs, :_has_analytic, false) &&
+        isdefined(@__MODULE__, :user_analytic_solution)
+        try
+            qref = user_analytic_solution(x_coords, t, outvar, inputs)
+            if qref !== nothing && size(qref) != (npoin, nvar)
+                @warn "user_analytic_solution returned $(size(qref)), expected $((npoin, nvar)); ignoring."
+                qref = nothing
+            end
+        catch err
+            @warn "user_analytic_solution failed; plotting numerical solution only." exception=err
+            qref = nothing
+        end
+    end
     for ivar=1:nvar
 
         idx = (ivar - 1)*npoin
@@ -74,6 +104,14 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
                         legend = false,
                         show = false,
                         size = (600, 400))
+
+        if qref !== nothing && any(isfinite, @view(qref[:, ivar]))
+            Plots.plot!(plt, x_coords[sort_idx], qref[sort_idx, ivar];
+                        line = (:black, 2, :dash),
+                        marker = :none,
+                        label = "exact",
+                        legend = :best)
+        end
 
         vlines = inputs[:plot_vlines]
         hlines = inputs[:plot_hlines]
@@ -309,7 +347,7 @@ function _grid_nearest(x, y, v, xg, yg)
     return z
 end
 
-function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing)
+function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing)
 
     """
         Plot arbitrarily gridded unstructured 2D nodal data as filled
@@ -413,6 +451,49 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
             _savefig_silent(plt, fout_name)
         end
         push!(plts, plt)
+    end
+
+    # DSGS runs: one extra filled-contour panel per equation showing the
+    # eddy viscosity actually applied, mirroring what the 1D plotter does
+    # with its μ_dsgs staircase. Slots that are identically zero (mass
+    # everywhere; ρw and Bz in a 2D MHD run) carry no information as a
+    # contour plot and are skipped rather than drawn as a blank map.
+    #
+    # NOTE the slots are not in a common unit — momentum/energy carry the
+    # dynamic ρ̄μ, magnetic and ψ slots the kinematic μ — so each panel is
+    # scaled to its own range and should be read against itself over time,
+    # not against a neighbouring panel.
+    if μ_nodes !== nothing
+        for ieq = 1:size(μ_nodes, 2)
+            μvar = @view μ_nodes[1:npoin, ieq]
+            μmax = maximum(μvar)
+            μmax > 0 || continue
+
+            name = (μ_names === nothing || length(μ_names) < ieq) ?
+                       string("μ_dsgs_", ieq) : string("μ_dsgs_", μ_names[ieq])
+
+            zgμ = _grid_nearest(xn, yn, μvar, xg, yg)
+            pltμ = Plots.contourf(xg, yg, zgμ';
+                                  color = cmap,
+                                  clims = (minimum(μvar), μmax),
+                                  levels = 30,
+                                  linewidth = 0,
+                                  colorbar = true,
+                                  legend = false,
+                                  aspect_ratio = :equal,
+                                  xlims = (xmin, xmax),
+                                  ylims = (ymin, ymax),
+                                  framestyle = :box,
+                                  xlabel = "x",
+                                  ylabel = "y",
+                                  title = string(name, "  ", title),
+                                  show = false,
+                                  size = (wfig, hfig))
+            if !lmatrix
+                _savefig_silent(pltμ, string(OUTPUT_DIR, "/", name, piece, "-it", iout, ".png"))
+            end
+            push!(plts, pltμ)
+        end
     end
 
     render_plot_matrix(lmatrix, plts, OUTPUT_DIR, iout; wfig=wfig, hfig=hfig)

@@ -109,6 +109,10 @@ user_source_file     = string(case_name_dir, "/user_source.jl")
 user_bc_file         = string(case_name_dir, "/user_bc.jl")
 user_initialize_file = string(case_name_dir, "/initialize.jl")
 user_primitives_file = string(case_name_dir, "/user_primitives.jl")
+# OPTIONAL per-case file: a closed-form/reference solution the 1D plotter
+# overlays on its output (see problems/CompEuler/sod1d/user_analytic.jl).
+# Most cases have none, so this one is included only when present.
+user_analytic_file   = string(case_name_dir, "/user_analytic.jl")
 
 # PERF: only (re-)include the driver + the case's user_*.jl files when
 # something actually changed since the last run in this session. Re-running
@@ -126,6 +130,7 @@ user_primitives_file = string(case_name_dir, "/user_primitives.jl")
 _case_load_files = [driver_file, user_input_file, user_flux_file,
                     user_source_file, user_bc_file, user_initialize_file,
                     user_primitives_file]
+isfile(user_analytic_file) && push!(_case_load_files, user_analytic_file)
 _need_case_reload = (_LOADED_CASE_DIR[] != case_name_dir) ||
     any(f -> get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f), _case_load_files)
 if _need_case_reload
@@ -148,6 +153,12 @@ inputs = user_inputs()
 # gmsh file keep separate caches and what makes "running a new case"
 # automatically miss the cache without any user-visible flag.
 inputs[:_case_dir]            = case_name_dir
+# Whether THIS case ships a reference solution. Checked by the 1D plotter
+# instead of a bare isdefined(): user_analytic_solution is a method on the
+# Jexpresso module, so once sod1d has been run in a session the definition
+# survives a switch to another 1D case, and a bare isdefined() would then
+# happily overlay Sod's exact solution on an unrelated problem.
+inputs[:_has_analytic]        = isfile(user_analytic_file)
 inputs[:_parsed_equations]    = parsed_equations
 inputs[:_parsed_case_name]    = parsed_equations_case_name
 inputs[:_user_input_file]     = user_input_file
