@@ -327,7 +327,9 @@ function params_setup(sem,
     #     [:,1] = ν_ρ (diagnostic, not applied)
     #     [:,2] = μ_ρu          [:,3] = μ_ρv
     #     [:,4] = κ_θ  (already scaled by Pr/(γ-1))
-    if inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
+    ldsgs     = inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
+    ldsgs_mhd = inputs[:lvisc] == true && inputs[:visc_model] == DSGS_MHD()
+    if ldsgs || ldsgs_mhd
         μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
                                                 Int64(sem.mesh.nelem), Int64(qp.neqs))
         μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat,
@@ -336,6 +338,40 @@ function params_setup(sem,
         μ_dsgs       = KernelAbstractions.zeros(backend, TFloat, 1, 1)
         μ_dsgs_pnode = KernelAbstractions.zeros(backend, TFloat, 1, 1)
     end
+
+    # DynSGS-MHD extras.
+    #
+    # dsgs_qnm1/qnm2 are the BDF2 history the residual is built on. They
+    # exist separately from qp.qnm1/qnm2 because those are advanced on
+    # every RK *stage* — fine as generic scratch, useless as a time
+    # derivative. rhs! advances this pair exactly once per time step, and
+    # dsgs_thist records when it last did. Both start at the initial state
+    # so the very first residual is identically zero rather than 3q/(2Δt).
+    #
+    # dsgs_avg / dsgs_denom are the per-equation domain-reduction scratch,
+    # preallocated so compute_dsgs_viscosity! stays allocation-free.
+    if ldsgs || ldsgs_mhd
+        # Shaped like qp.qn / uaux, NOT (npoin, neqs): uaux carries one
+        # extra trailing column (pressure) beyond the neqs solution slots,
+        # which is why qp.qnm1/qnm2 are allocated from dims1 too. Sizing
+        # these to neqs makes `dsgs_qnm2 .= uaux` a DimensionMismatch.
+        dsgs_qnm1 = KernelAbstractions.zeros(backend, TFloat,
+                                             Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
+        dsgs_qnm2 = KernelAbstractions.zeros(backend, TFloat,
+                                             Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
+        for i = 1:size(qp.qn,2)
+            dsgs_qnm1[:,i] = @view(qp.qn[:,i])
+            dsgs_qnm2[:,i] = @view(qp.qn[:,i])
+        end
+        dsgs_avg   = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+        dsgs_denom = KernelAbstractions.zeros(backend, TFloat, Int64(qp.neqs))
+    else
+        dsgs_qnm1  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        dsgs_qnm2  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+        dsgs_avg   = KernelAbstractions.zeros(backend, TFloat, 1)
+        dsgs_denom = KernelAbstractions.zeros(backend, TFloat, 1)
+    end
+    dsgs_thist = Ref{Float64}(-1.0e30)
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:
@@ -387,6 +423,7 @@ function params_setup(sem,
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
+                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
@@ -424,6 +461,7 @@ function params_setup(sem,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
+                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,
