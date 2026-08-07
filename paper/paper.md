@@ -222,7 +222,8 @@ transport of microplastics in Alya [@houzeaux2026coupling].
 # Problems shipped with the package
 
 The repository ships roughly one hundred ready-to-run directories, which double
-as regression tests and as templates. The most substantial are:
+as regression tests and as templates; \autoref{fig:collage} collects
+representative results. The most substantial are:
 
 - **Atmospheric dynamics with clouds:** shallow cumulus and stratocumulus LES
   (BOMEX, DYCOMS, RICO-type), 2D/3D squall lines with bulk microphysics, moist
@@ -244,6 +245,13 @@ as regression tests and as templates. The most substantial are:
 These have supported published work on unbounded-domain spectral elements
 [@tissaoui2024efficient], adaptive refinement for atmospheric radiation
 [@tissaoui2025parcfd], and the solver itself [@marras2025jexpresso].
+
+![A collage of representative results obtained with Jexpresso: atmospheric flows
+with cloud microphysics, mountain and gravity waves on unbounded domains,
+turbulent boundary layers, high-speed compressible flow, ideal MHD, and
+radiative transfer. Every panel comes from a problem directory of the form
+described above, run without modification to the
+solver.\label{fig:collage}](results_collage.png){ width=100% }
 
 # Acknowledgements
 

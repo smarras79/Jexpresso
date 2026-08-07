@@ -241,7 +241,8 @@ transport of microplastics in Alya (Houzeaux and Marras 2026).
 \section{Problems shipped with the package}\label{problems}
 
 The repository ships roughly one hundred ready-to-run directories, which double
-as regression tests and as templates. The most substantial are:
+as regression tests and as templates; Figure~\ref{fig:collage} collects
+representative results. The most substantial are:
 
 \begin{itemize}
 \tightlist
@@ -255,6 +256,30 @@ as regression tests and as templates. The most substantial are:
 \item \textbf{Radiative transfer:} 2D/3D transport with scattering, coupled to a dynamical core for atmospheric radiation.
 \item \textbf{Others:} shallow water with wetting/drying, elliptic and Helmholtz problems, advection--diffusion, Burgers, acoustics.
 \end{itemize}
+
+\begin{figure}[htbp]
+\centering
+% PLACEHOLDER -- replace results_collage.png with the composite figure.
+% The \IfFileExists guard keeps the document compiling before the image
+% is dropped in; delete the guard (keep the \includegraphics line) once
+% the real file is present.
+\IfFileExists{results_collage.png}{%
+  \includegraphics[width=\linewidth]{results_collage.png}%
+}{%
+  \setlength{\fboxsep}{0pt}%
+  \fbox{\begin{minipage}[c][0.30\textheight][c]{\linewidth}
+    \centering\sffamily\color{gray}
+    [ \textbf{placeholder}: results\_collage.png ]\\[0.6ex]
+    composite of representative \je~results
+  \end{minipage}}%
+}
+\caption{A collage of representative results obtained with \je: atmospheric
+flows with cloud microphysics, mountain and gravity waves on unbounded domains,
+turbulent boundary layers, high-speed compressible flow, ideal MHD, and
+radiative transfer. Every panel comes from a problem directory of the form
+described in Section~\ref{design}, run without modification to the solver.}
+\label{fig:collage}
+\end{figure}
 
 \section{Acknowledgements}\label{acknowledgements}
 

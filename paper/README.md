@@ -1,12 +1,31 @@
 # JOSS paper
 
-A JOSS-length (≤ 3 pages) paper for Jexpresso.
+The JOSS paper for Jexpresso.
 
 | file | contents |
 |---|---|
-| `paper.tex` | the paper |
+| `paper.md` | the paper, JOSS Markdown source (the submission path) |
+| `paper.tex` | the same paper in LaTeX |
 | `headers.tex` | preamble — **local build only** (see below) |
-| `paper.bib` | BibTeX for the same references, for the Markdown workflow |
+| `paper.bib` | BibTeX for the references, shared by both |
+
+## Figure to supply
+
+`results_collage.png` is **not in the repository** — it is a placeholder for a
+composite figure of representative results (atmospheric flows with cloud
+microphysics, mountain and gravity waves, turbulent boundary layers, high-speed
+compressible flow, MHD, radiative transfer). Drop the file into this directory
+and both sources pick it up.
+
+Until it exists, `paper.tex` draws a framed grey box in its place via
+`\IfFileExists`, so the document still compiles; once the real image is in,
+that guard can be reduced to the bare `\includegraphics` line. `paper.md`
+references the file directly, so **pandoc will fail to build a PDF until the
+image is present** — that is deliberate, so a missing figure cannot be
+submitted unnoticed.
+
+The JOSS logo is handled the same way: `joss-logo.png` (or `logo.png`) is
+expected in this directory and is gitignored rather than committed.
 
 ## Build
 
@@ -14,16 +33,36 @@ A JOSS-length (≤ 3 pages) paper for Jexpresso.
 cd paper && pdflatex paper.tex
 ```
 
-Produces `paper.pdf` at **3 pages**, which is the length this text is tuned to.
-Two things control that and are easy to disturb:
+## Length
 
-- The bibliography `\itemsep` in `headers.tex` (currently `0.18em`). The
-  reference list is ~13 entries, so a change here moves the last page boundary.
-- The `geometry` margins. The JOSS sidebar lives in a wide right margin
-  (`right=2.05in`, `marginparwidth=1.5in`); widening the text block reflows
-  everything.
+The binding JOSS constraint is the **word count, 1750 maximum** — not the page
+count. Current state, counting prose only (no code listings, display math or
+references):
 
-If you add a paragraph, expect to re-check the page count rather than assume it.
+| source | words |
+|---|---|
+| `paper.md` | ~1230 |
+| `paper.tex` | ~1220 |
+
+Check it after any edit with:
+
+```bash
+python3 - <<'EOF'
+import re
+s = open("paper.md").read().split('---', 2)[2]
+s = re.sub(r"```.*?```|\$\$.*?\$\$", " ", s, flags=re.S)
+s = re.sub(r"\$[^$]*\$|\[@[^\]]*\]|[#*`\[\]]", " ", s).replace("# References", "")
+print(len([w for w in s.split() if re.search(r"[A-Za-z]", w)]), "words / 1750")
+EOF
+```
+
+The local `pdflatex` build currently runs to 5 pages. That number is **not**
+meaningful for the submission: the Open Journals bot compiles `paper.md` with
+its own template, so its margins, fonts and bibliography sizing — not the ones
+in `headers.tex` — decide the real page count. If you nonetheless want the local
+build shorter, the cheapest cuts are the Key Features list (it partly restates
+the narrative) and the Euler display equation (the MHD listing already carries
+the "scaling up" argument).
 
 ## Note on `headers.tex`
 
