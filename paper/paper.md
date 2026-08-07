@@ -144,11 +144,52 @@ $-\rho g$; adding a third tracer means adding one row. The same recipe covers
 the quasi-1D Euler equations of a Laval nozzle, where the nozzle area appears in
 both $\mathbf{F}$ and $\mathbf{S}$; the Helmholtz equation
 $\mu(u_{xx}+u_{yy}) = \alpha^2u + f(x,y)$, which is the general form with
-$\delta = 0$, a Laplacian on the left and the rest coded as a source; ideal
-magnetohydrodynamics with hyperbolic divergence cleaning, a nine-field system;
-and the five-dimensional radiative transfer equation, whose solution depends on
-position $\mathbf{x}$ and direction $\mathbf{s}$ and whose scattering integral
-enters as a source.
+$\delta = 0$, a Laplacian on the left and the rest coded as a source; and the
+five-dimensional radiative transfer equation, whose solution depends on position
+$\mathbf{x}$ and direction $\mathbf{s}$ and whose scattering integral enters as
+a source.
+
+Ideal magnetohydrodynamics is the strongest test of that claim: nine coupled
+fields---mass, three momenta, total energy, three magnetic components and the
+Dedner cleaning potential $\psi$---a pressure depending on the magnetic and
+$\psi$ energies, and a $\nabla\cdot\mathbf{B}=0$ constraint to carry along. In
+Jexpresso it is nine entries of $\mathbf{F}$, nine of $\mathbf{G}$, and a source
+with one non-zero row.
+
+```julia
+function user_flux!(F, G, SD::NSD_2D, q, qe, mesh, ::CL, ::TOTAL; neqs=9)
+    # q = (rho, rho*u, rho*v, E, rho*w, Bx, By, Bz, psi)
+    rho, Bx, By, Bz, psi = q[1], q[6], q[7], q[8], q[9]
+    u, v, w = q[2]/rho, q[3]/rho, q[5]/rho
+
+    p    = pressure_mhd(q)                     # (gamma-1)(E - KE - MAG - psi^2/2)
+    magp = 0.5*(Bx*Bx + By*By + Bz*Bz)         # magnetic pressure
+    ptot = p + magp                            # total pressure
+    vdB  = u*Bx + v*By + w*Bz                  # v . B
+    enfl = 0.5*(q[2]*u + q[3]*v + q[5]*w) + gamma*p/(gamma-1) + 2*magp
+    c_h  = c_h_mhd[]                           # divergence-cleaning speed
+
+    F[1] = q[2];                     G[1] = q[3]
+    F[2] = q[2]*u + ptot - Bx*Bx;    G[2] = q[2]*v - By*Bx
+    F[3] = q[3]*u - Bx*By;           G[3] = q[3]*v + ptot - By*By
+    F[4] = u*enfl - Bx*vdB + c_h*psi*Bx
+    G[4] = v*enfl - By*vdB + c_h*psi*By
+    F[5] = q[5]*u - Bx*Bz;           G[5] = q[5]*v - By*Bz
+    F[6] = c_h*psi;                  G[6] = v*Bx - u*By
+    F[7] = u*By - v*Bx;              G[7] = c_h*psi
+    F[8] = u*Bz - w*Bx;              G[8] = v*Bz - w*By
+    F[9] = c_h*Bx;                   G[9] = c_h*By
+end
+
+function user_source!(S, q, qe, npoin, ::CL, ::TOTAL; neqs=9)
+    S .= 0.0                       # ideal MHD has no physical source ...
+    S[9] = -(c_h_mhd[]/c_r)*q[9]   # ... only Dedner damping of psi
+end
+```
+
+Nothing else was written to obtain a working MHD solver: the spectral element
+operators, the time integrator, the MPI exchange and the stabilization are all
+inherited unchanged.
 
 A problem lives entirely in its own directory: initial condition, fluxes,
 sources, boundary conditions, the conserved-to-primitive mapping, and a
@@ -173,8 +214,8 @@ strong form.
 
 # Problems shipped with the package
 
-The repository ships roughly one hundred ready-to-run problem directories, which
-double as regression tests and as templates. The most substantial are:
+The repository ships roughly one hundred ready-to-run directories, which double
+as regression tests and as templates. The most substantial are:
 
 - **Atmospheric dynamics with clouds:** shallow cumulus and stratocumulus LES
   (BOMEX, DYCOMS, RICO-type), 2D/3D squall lines with bulk microphysics, moist
