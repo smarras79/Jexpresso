@@ -405,9 +405,25 @@ path does not share them.
    The generic 2D `_expansion_visc!` calls `SGS_diffusion` two different ways —
    `(…, PhysConst, Δ2, VT, SD)` from the momentum and scalar branches, and
    `(…, PhysConst, Δ2, inputs, VT, SD)` from the τ·u viscous-work term — so the
-   momentum call has no matching method. (`DSGS_MHD` defines both; `SMAG` 2D is
-   unaffected because it goes through the separate cache-reading
-   `_expansion_visc!`.)
+   shorter call has no matching method.
+
+   Verified against a live run of `problems/CompEuler/theta_dsgs`: it raises
+
+   ```
+   MethodError: no method matching SGS_diffusion(::Vector{Float64}, ::Int64,
+     ::Float64, ::Float64, ::Float64, ::Float64, ::Float64,
+     ::PhysicalConst{Float64}, ::Float64, ::DSGS, ::NSD_2D)
+   ```
+
+   at `rhs.jl:2207` — the *"other scalars"* branch, reached by `ieq = 1`
+   (density) on the very first RHS call. So the 2D `DSGS()` path does not fail
+   partway through; **it cannot start at all**, and `theta_dsgs` has evidently
+   not been run since the calling convention diverged.
+
+   (`DSGS_MHD` defines both signatures; `SMAG`/`VREM` in 2D are unaffected
+   because they go through the separate cache-reading `_expansion_visc!` at
+   `rhs.jl:2249`, which calls the `(…, ρ, ip, sgs, ltheta_eqn, SD)` accessor
+   instead.)
 
 4. **The BDF2 history is stage-cadenced for the `DSGS()` paths.** As described
    in §4.4, `qp.qnm1/qnm2` advance every RK stage, so the 1D and 2D-θ residuals
