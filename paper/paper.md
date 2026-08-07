@@ -150,11 +150,47 @@ $\mathbf{x}$ and direction $\mathbf{s}$ and whose scattering integral enters as
 a source.
 
 Ideal magnetohydrodynamics is the strongest test of that claim: nine coupled
-fields---mass, three momenta, total energy, three magnetic components and the
-Dedner cleaning potential $\psi$---a pressure depending on the magnetic and
-$\psi$ energies, and a $\nabla\cdot\mathbf{B}=0$ constraint to carry along. In
-Jexpresso it is nine entries of $\mathbf{F}$, nine of $\mathbf{G}$, and a source
-with one non-zero row.
+fields, a pressure depending on the magnetic and $\psi$ energies, and a
+$\nabla\cdot\mathbf{B}=0$ constraint carried by the Dedner potential $\psi$. In
+the GLM form the two-dimensional system reads
+
+$$
+\partial_t\!
+\begin{pmatrix}\rho\\ \rho u\\ \rho v\\ E\\ \rho w\\ B_x\\ B_y\\ B_z\\ \psi\end{pmatrix}
+\!+\partial_x\!
+\begin{pmatrix}
+\rho u\\
+\rho u^2 + p_{t} - B_x^2\\
+\rho v u - B_xB_y\\
+u\,e_{F} - B_x(\mathbf{v}\!\cdot\!\mathbf{B}) + c_h\psi B_x\\
+\rho w u - B_xB_z\\
+c_h\psi\\
+uB_y - vB_x\\
+uB_z - wB_x\\
+c_hB_x
+\end{pmatrix}
+\!+\partial_y\!
+\begin{pmatrix}
+\rho v\\
+\rho u v - B_yB_x\\
+\rho v^2 + p_{t} - B_y^2\\
+v\,e_{F} - B_y(\mathbf{v}\!\cdot\!\mathbf{B}) + c_h\psi B_y\\
+\rho w v - B_yB_z\\
+vB_x - uB_y\\
+c_h\psi\\
+vB_z - wB_y\\
+c_hB_y
+\end{pmatrix}
+\!=\!
+\begin{pmatrix}0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ 0\\ -\tfrac{c_h}{c_r}\psi\end{pmatrix},
+$$
+
+with total pressure $p_{t} = p + \tfrac12\lVert\mathbf{B}\rVert^2$ and
+energy-flux prefactor
+$e_{F} = \tfrac12\rho\lVert\mathbf{v}\rVert^2 + \gamma p/(\gamma-1) + \lVert\mathbf{B}\rVert^2$.
+The listing below is that system transcribed row by row: nine entries of
+$\mathbf{F}$, nine of $\mathbf{G}$, and a source whose only non-zero row is the
+last.
 
 ```julia
 function user_flux!(F, G, SD::NSD_2D, q, qe, mesh, ::CL, ::TOTAL; neqs=9)
