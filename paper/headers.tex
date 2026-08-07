@@ -19,6 +19,11 @@
 \usepackage{fancyvrb}
 \usepackage{caption}
 \usepackage{enumitem}
+\usepackage{titlesec}
+% Tighter section spacing: the JOSS page budget is 3 pages and the heading
+% gaps of the stock article class cost the better part of one.
+\titlespacing*{\section}{0pt}{2.0ex plus .4ex minus .2ex}{1.0ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{1.4ex plus .3ex}{0.7ex plus .2ex}
 \usepackage[colorlinks=true,allcolors=blue]{hyperref}
 
 \definecolor{linky}{RGB}{0,110,190}
@@ -81,7 +86,7 @@
     \setlength{\labelwidth}{0pt}%
     \setlength{\labelsep}{0pt}%
     \setlength{\listparindent}{0pt}%
-    \setlength{\itemsep}{0.18em}%
+    \setlength{\itemsep}{0.4em}%
     \setlength{\parsep}{0pt}%
     \setlength{\topsep}{0.3em}%
   }%

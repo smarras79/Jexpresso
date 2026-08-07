@@ -23,6 +23,11 @@ Madison, WI, USA}
 \marginpar{
   \sffamily\small
 
+  \IfFileExists{joss-logo.png}{\includegraphics[width=\linewidth]{joss-logo.png}}{%
+   \IfFileExists{logo.png}{\includegraphics[width=\linewidth]{logo.png}}{}}
+
+  \vspace{2mm}
+
   {\bfseries DOI:} \href{https://doi.org/}{\color{linky}{}}
 
   \vspace{2mm}
@@ -74,14 +79,13 @@ KernelAbstractions.jl and JACC.jl (Valero-Lara et al.\ 2024).
 Systems of conservation laws underpin computational fluid dynamics, atmospheric
 and ocean modeling, radiative transfer, and astrophysics. Spectral element
 methods deliver high accuracy per degree of freedom, but their implementation
-complexity has historically kept them out of reach of researchers who are
-domain experts rather than numerical analysts. Mature frameworks such as
-Nek5000 (Fischer et al.\ 2008) and SPECFEM3D (Komatitsch and Tromp 2002) are
-written in Fortran or C++, which raises the cost of prototyping a new equation
-set. Julia packages for related problems---ClimateMachine.jl (Climate Modeling
-Alliance 2019) and TrixiAtmo.jl (Ranocha et al.\ 2024)---target specific
-equation sets or use discontinuous Galerkin rather than continuous spectral
-elements.
+complexity has kept them out of reach of researchers who are domain experts
+rather than numerical analysts. Mature frameworks such as Nek5000 (Fischer et
+al.\ 2008) and SPECFEM3D (Komatitsch and Tromp 2002) are written in Fortran or
+C++, which raises the cost of prototyping a new equation set; Julia packages for
+related problems---ClimateMachine.jl (Climate Modeling Alliance 2019) and
+TrixiAtmo.jl (Ranocha et al.\ 2024)---target specific equation sets or use
+discontinuous Galerkin rather than continuous spectral elements.
 
 \je~addresses the gap between ``a framework that solves my equations'' and ``a
 framework I can teach my equations''. Adding a system requires no modification of
@@ -94,18 +98,18 @@ elliptic and Helmholtz problems, ideal MHD, radiative transfer, shallow water
 and acoustics---serving both as regression tests and as templates.
 
 Two capabilities are, to our knowledge, not available together elsewhere in the
-Julia ecosystem. First, Laguerre-based semi-infinite spectral elements
-(Tissaoui et al.\ 2024) let a bounded computational domain be extended to
-infinity, removing spurious reflections at artificial boundaries---essential for
-atmospheric and oceanic problems. Second, a residual-based dynamic
-sub-grid-scale model (Marras et al.\ 2015) sets the artificial viscosity from the
-local residual of the governing equations rather than from a tuned constant, so
-dissipation appears at shocks and under-resolved features and vanishes where the
-solution is smooth. Because it reads only the residual, it applies unchanged to
-whatever system the user defined; alongside it \je~offers Smagorinsky, Vreman and
-WALE closures, artificial viscosity, and Boyd--Vandeven spectral filtering.
+Julia ecosystem. Laguerre-based semi-infinite spectral elements (Tissaoui et
+al.\ 2024) extend a bounded domain to infinity, removing spurious reflections at
+artificial boundaries---essential for atmospheric and oceanic problems. And a
+residual-based dynamic sub-grid-scale model (Marras et al.\ 2015) sets the
+artificial viscosity from the local residual of the governing equations rather
+than from a tuned constant, so dissipation appears at shocks and under-resolved
+features and vanishes where the solution is smooth; because it reads only the
+residual it applies unchanged to whatever system the user defined. Smagorinsky,
+Vreman and WALE closures, artificial viscosity and Boyd--Vandeven spectral
+filtering are also available.
 
-\section{Design: equations as fluxes and sources}\label{design}
+\section{Design: any system, written as it is on paper}\label{design}
 
 \je~is built around the general conservation law
 \begin{equation}
@@ -113,14 +117,18 @@ WALE closures, artificial viscosity, and Boyd--Vandeven spectral filtering.
 \left(\delta\,\partial_t {\bf q}\right) + \sum_{i=1}^{\rm nsd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf \hat{q}} + {\bf S}({\bf q}) + ~{\rm b.c.},
 \end{equation}
 where $\nabla = [\partial_{x_i}]$, $\bf q$ is the solution vector, ${\bf F}_i$
-and $\bf S$ are the flux and source vectors, and $\bf\hat q$ are the variables
-to be diffused. The time derivative is parenthesized because the system need not
-be time dependent, which is how elliptic and Helmholtz problems are expressed.
+and $\bf S$ are the flux and source vectors, and $\bf\hat q$ are the variables to
+be diffused (by default $\bf q$ itself). The time derivative is parenthesized
+because the system need not be time dependent, which is how elliptic and
+Helmholtz problems are expressed.
 
-Any problem in the form of (\ref{eq:CL}) is defined by populating $\bf q$,
-${\bf F}_i$, $\bf S$, $\bf\hat q$ and the boundary conditions. Two-dimensional
-transport, $\partial_t\rho + \partial_x(\rho u) + \partial_y(\rho v) = 0$, is
-the whole of the listing below.
+\textbf{Any problem that can be written in the form of (\ref{eq:CL}) is added to
+\je~by declaring $\bf q$, ${\bf F}_i$, $\bf S$, $\bf\hat q$ and the boundary
+conditions, in the same order and with the same content a user would write them
+on paper.} No solver, assembly routine, time integrator or communication
+pattern is touched. Two-dimensional linear transport,
+$\partial_t\rho + \partial_x(\rho u) + \partial_y(\rho v) = 0$, is the whole of
+Listing~1.
 
 \begin{lstlisting}[caption={Flux function for 2D scalar advection.}]
 function user_flux!(F, G, q, args...)
@@ -133,32 +141,79 @@ end
 \end{lstlisting}
 
 \noindent
-The compressible Euler equations with gravity and tracers, the quasi-1D Euler
-equations of a Laval nozzle, ideal magnetohydrodynamics with divergence
-cleaning, and the five-dimensional radiative transfer equation are expressed the
-same way, differing only in the length of $\bf q$ and the content of
-${\bf F}_i$ and $\bf S$. This mirrors the separation of concerns familiar from
-\texttt{OpenFOAM}, except that \je~asks for flux and source components rather
-than the strong form.
+Scaling up changes only the length of $\bf q$ and the content of ${\bf F}_i$ and
+$\bf S$. The compressible Euler equations with gravity and two passive tracers,
+\begin{equation}
+\label{eq:euler}
+\small
+\partial_t\!
+\begin{pmatrix}\rho\\ \rho u\\ \rho v\\ \rho\theta\\ \rho c_1\\ \rho c_2\end{pmatrix}
+\!+\partial_x\!
+\begin{pmatrix}\rho u\\ \rho u^2\!+\!p\\ \rho vu\\ \rho\theta u\\ \rho c_1u\\ \rho c_2u\end{pmatrix}
+\!+\partial_y\!
+\begin{pmatrix}\rho v\\ \rho uv\\ \rho v^2\!+\!p\\ \rho\theta v\\ \rho c_1v\\ \rho c_2v\end{pmatrix}
+\!=\!
+\begin{pmatrix}0\\ 0\\ -\rho g\\ 0\\ 0\\ 0\end{pmatrix},
+\end{equation}
+become a six-entry \texttt{user\_flux!} and a \texttt{user\_source!} whose only
+non-zero row is $-\rho g$; adding a third tracer means adding one row. The same
+recipe covers the quasi-1D Euler equations of a Laval nozzle, where the nozzle
+area appears in both $\bf F$ and $\bf S$; the Helmholtz equation
+$\mu(u_{xx}+u_{yy}) = \alpha^2u + f(x,y)$, which is (\ref{eq:CL}) with
+$\delta = 0$, a Laplacian on the left and the rest coded as a source; ideal
+magnetohydrodynamics with hyperbolic divergence cleaning, a nine-field system;
+and the five-dimensional radiative transfer equation, whose solution depends on
+position $\mathbf{x}$ and direction $\mathbf{s}$ and whose scattering integral
+enters as a source.
+
+A problem lives entirely in its own directory: initial condition, fluxes,
+sources, boundary conditions, the conserved-to-primitive mapping, and a
+parameter file. Nothing there knows the polynomial order, the element type, the
+rank count, or whether the run is on CPU or GPU, and nothing outside it is
+edited to add new physics---the separation of concerns familiar from
+\texttt{OpenFOAM}, except that \je~asks for flux and source \emph{components}
+rather than the strong form.
 
 \section{Key Features}\label{key-features}
 
 \begin{itemize}
 \tightlist
-\item \textbf{Dimensional flexibility:} 1D, 2D and 3D from a single problem definition.
-\item \textbf{High-order accuracy:} continuous spectral elements at arbitrary order; Laguerre semi-infinite elements for unbounded domains.
-\item \textbf{Stabilization:} residual-based dynamic SGS, Smagorinsky, Vreman, WALE, artificial viscosity, spectral filters.
-\item \textbf{Parallelism and adaptivity:} MPI decomposition with p4est adaptive refinement and load balancing.
-\item \textbf{Portability:} one set of kernels for threaded CPU and GPU execution.
-\item \textbf{Interoperability:} Gridap.jl meshing, Gmsh input, VTK and PNG output, and a CI suite of analytical and benchmark tests.
+\item \textbf{Generality:} a new system is added as fluxes, sources and boundary
+  conditions only; the same definition runs in 1D, 2D and 3D.
+\item \textbf{High-order accuracy:} continuous spectral elements at arbitrary
+  order, and Laguerre semi-infinite elements for unbounded domains.
+\item \textbf{Stabilization:} residual-based dynamic SGS, Smagorinsky, Vreman,
+  WALE, artificial viscosity, and spectral filters.
+\item \textbf{HPC:} MPI domain decomposition, p4est adaptive refinement and load
+  balancing, and one set of kernels for threaded CPU and GPU execution.
+\item \textbf{Interoperability:} Gridap.jl meshing, Gmsh input, VTK and PNG
+  output, and a continuous-integration suite of analytical and benchmark tests.
 \end{itemize}
 
-\je~has been applied by the authors to compressible and incompressible
-Navier--Stokes flows, wave propagation, 3D radiative transfer, gravity waves,
-shallow cumulus convection, and turbulent atmospheric boundary layers (Tissaoui
-et al.\ 2025; Marras et al.\ 2025), and is intended for researchers developing
-parameterizations, exploring numerical methods, or coupling problems across
-disciplines.
+\section{Problems shipped with the package}\label{problems}
+
+The repository ships roughly one hundred ready-to-run problem directories, which
+double as regression tests and as templates. The most substantial are:
+
+\begin{itemize}
+\tightlist
+\item \textbf{Atmospheric dynamics with clouds:} shallow cumulus and
+  stratocumulus LES (BOMEX, DYCOMS, RICO-type), 2D/3D squall lines with bulk
+  microphysics, moist and dry Rayleigh--B\'enard convection, rising thermal bubbles.
+\item \textbf{Mountain and gravity waves:} hydrostatic, non-hydrostatic and
+  Sch\"ar mountains, with Laguerre semi-infinite elements absorbing the
+  vertically propagating waves in place of a sponge layer.
+\item \textbf{Turbulent boundary layers:} wall-modelled and resolved LES with
+  Monin--Obukhov surface treatment, and urban-scale flow over buildings.
+\item \textbf{High-speed compressible flow:} Sod shock tube, quasi-1D Laval
+  nozzle, isentropic vortex.
+\item \textbf{Magnetohydrodynamics:} ideal GLM-MHD with divergence cleaning, on
+  the magnetized Kelvin--Helmholtz instability and the Orszag--Tang vortex.
+\item \textbf{Radiative transfer:} 2D/3D transport with scattering, coupled to a
+  dynamical core for atmospheric radiation.
+\item \textbf{Others:} shallow water with wetting/drying, elliptic and Helmholtz
+  problems, advection--diffusion, Burgers, acoustics.
+\end{itemize}
 
 \section{Acknowledgements}\label{acknowledgements}
 
