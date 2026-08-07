@@ -469,6 +469,26 @@ end
 # Same accessor for the MHD variant: compute_dsgs_viscosity!(::DSGS_MHD)
 # has already packed the per-element, per-equation coefficient into
 # visc_coeffieq, so the assembly loop just reads it back.
+#
+# TWO methods are needed because the 2D _expansion_visc! calls
+# SGS_diffusion with two different argument lists: the momentum/scalar
+# branches pass (…, PhysConst, Δ2, VT, SD) while the τ·u viscous-work
+# term in the total-energy branch passes (…, PhysConst, Δ2, inputs, VT, SD).
+# (The ::DSGS, ::NSD_2D pair above only defines the `inputs` form, so the
+# Euler-θ 2D DSGS path MethodErrors on the first call — it has evidently
+# never been exercised. Not touched here.)
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               ::DSGS_MHD, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+
+    return visc_coeffieq[ieq]
+
+end
+
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
                                u11, u22, u12, u21,
