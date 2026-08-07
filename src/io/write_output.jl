@@ -379,7 +379,27 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+
+        # DynSGS: write the per-equation eddy viscosity actually applied on
+        # this step, one field per equation, named after the solution
+        # variable it damps (mu_dsgs_ρu, mu_dsgs_Bx, ...). These are the
+        # per-element coefficients broadcast to nodes by
+        # broadcast_dsgs_to_nodes!, so they are piecewise constant per
+        # element by construction.
+        #
+        # NOTE the coefficients are not all in the same units: the momentum
+        # and energy slots carry the DYNAMIC coefficient ρ̄·μ (because their
+        # primitives are u, v, w, T) while the magnetic and ψ slots carry
+        # the KINEMATIC μ as a turbulent resistivity. Compare a slot against
+        # itself over time, not against a different slot.
+        if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
+            for ieq = 1:size(μ_dsgs_pnode, 2)
+                mu_name = (ieq <= length(varnames)) ?
+                    string("mu_dsgs_", varnames[ieq]) : string("mu_dsgs_", ieq)
+                vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
+            end
+        end
+
         vtkf
     end
     
@@ -472,7 +492,27 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
-        
+
+        # DynSGS: write the per-equation eddy viscosity actually applied on
+        # this step, one field per equation, named after the solution
+        # variable it damps (mu_dsgs_ρu, mu_dsgs_Bx, ...). These are the
+        # per-element coefficients broadcast to nodes by
+        # broadcast_dsgs_to_nodes!, so they are piecewise constant per
+        # element by construction.
+        #
+        # NOTE the coefficients are not all in the same units: the momentum
+        # and energy slots carry the DYNAMIC coefficient ρ̄·μ (because their
+        # primitives are u, v, w, T) while the magnetic and ψ slots carry
+        # the KINEMATIC μ as a turbulent resistivity. Compare a slot against
+        # itself over time, not against a different slot.
+        if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
+            for ieq = 1:size(μ_dsgs_pnode, 2)
+                mu_name = (ieq <= length(varnames)) ?
+                    string("mu_dsgs_", varnames[ieq]) : string("mu_dsgs_", ieq)
+                vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
+            end
+        end
+
         vtkf
     end
     
