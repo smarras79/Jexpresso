@@ -351,11 +351,15 @@ function params_setup(sem,
     # dsgs_avg / dsgs_denom are the per-equation domain-reduction scratch,
     # preallocated so compute_dsgs_viscosity! stays allocation-free.
     if ldsgs_mhd
+        # Shaped like qp.qn / uaux, NOT (npoin, neqs): uaux carries one
+        # extra trailing column (pressure) beyond the neqs solution slots,
+        # which is why qp.qnm1/qnm2 are allocated from dims1 too. Sizing
+        # these to neqs makes `dsgs_qnm2 .= uaux` a DimensionMismatch.
         dsgs_qnm1 = KernelAbstractions.zeros(backend, TFloat,
-                                             Int64(sem.mesh.npoin), Int64(qp.neqs))
+                                             Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
         dsgs_qnm2 = KernelAbstractions.zeros(backend, TFloat,
-                                             Int64(sem.mesh.npoin), Int64(qp.neqs))
-        for i = 1:qp.neqs
+                                             Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
+        for i = 1:size(qp.qn,2)
             dsgs_qnm1[:,i] = @view(qp.qn[:,i])
             dsgs_qnm2[:,i] = @view(qp.qn[:,i])
         end
