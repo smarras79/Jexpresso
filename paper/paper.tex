@@ -1,0 +1,254 @@
+\documentclass[10pt,onecolumn]{article}
+\include{headers}
+
+\title{Jexpresso.jl: An Extensible Julia Software for the
+Solution of Partial Differential Equations on CPUs \& GPUs with Minimal User
+Intervention}
+
+        \author[1, 2]{Simone Marras}
+        \author[3]{Yassine Tissaoui}
+        \author[1]{Hang Wang}
+
+      \affil[1]{Department of Mechanical \& Industrial Engineering, New
+Jersey Institute of Technology, Newark, NJ, USA}
+      \affil[2]{Department of Mathematical Sciences, New Jersey
+Institute of Technology, Newark, NJ, USA}
+      \affil[3]{Department of Mathematics, University of Wisconsin,
+Madison, WI, USA}
+  \date{\vspace{-5ex}}
+
+\begin{document}
+\maketitle
+
+\marginpar{
+  \sffamily\small
+
+  {\bfseries DOI:} \href{https://doi.org/}{\color{linky}{}}
+
+  \vspace{2mm}
+
+  {\bfseries Software}
+  \begin{itemize}
+    \setlength\itemsep{0em}
+    \item \href{https://github.com/openjournals/joss-reviews/issues/}{\color{linky}{Review}} \ExternalLink
+    \item \href{https://github.com/smarras79/Jexpresso/}{\color{linky}{Repository}} \ExternalLink
+    \item \href{https://github.com/smarras79/Jexpresso/}{\color{linky}{Archive}} \ExternalLink
+  \end{itemize}
+
+  \vspace{2mm}
+
+  {\bfseries Submitted:} \\
+  {\bfseries Published:}
+
+  \vspace{2mm}
+  {\bfseries License}\\
+  Authors of papers retain copyright and release the work under a Creative Commons Attribution 4.0 International License (\href{https://creativecommons.org/licenses/by/4.0/}{\color{linky}{CC BY 4.0}}).
+}
+
+\section{Summary}\label{summary}
+
+\je~is an open-source Julia package for solving systems of conservation laws in
+one, two, and three spatial dimensions. Its guiding idea is that a user should be
+able to add a new physical problem by writing down what they would write on
+paper---a solution vector, its fluxes, its sources, and its boundary
+conditions---and nothing else. Everything downstream, namely the spatial
+discretization, stabilization, time integration, parallel decomposition, and the
+choice of CPU or GPU execution, is supplied by the package and is deliberately
+invisible to the problem definition.
+
+The default spatial discretization is a continuous spectral element method (SEM)
+on Legendre--Gauss--Lobatto nodes at arbitrary polynomial order, which is most
+advantageous at fourth order and above, with a design that allows finite
+difference, finite volume, or discontinuous Galerkin operators to be added
+non-invasively. Time integration is delegated to the DifferentialEquations.jl
+ecosystem (Rackauckas and Nie 2017), giving access to explicit and implicit
+schemes without any solver code in \je~itself. Distributed-memory parallelism
+uses MPI.jl (Byrne et al.\ 2021) through the Gridap.jl ecosystem (Badia and
+Verdugo 2020), with meshes read via GridapGmsh.jl and adaptive refinement and
+load balancing handled by p4est (Schlottke-Lakemper et al.\ 2023). Threading and
+GPU offload are expressed once and dispatched to either target through
+KernelAbstractions.jl and JACC.jl (Valero-Lara et al.\ 2024).
+
+\section{Statement of Need}\label{statement-of-need}
+
+Systems of conservation laws underpin computational fluid dynamics, atmospheric
+and ocean modeling, radiative transfer, and astrophysics. Spectral element
+methods deliver high accuracy per degree of freedom, but their implementation
+complexity has historically kept them out of reach of researchers who are
+domain experts rather than numerical analysts. Mature frameworks such as
+Nek5000 (Fischer et al.\ 2008) and SPECFEM3D (Komatitsch and Tromp 2002) are
+written in Fortran or C++, which raises the cost of prototyping a new equation
+set. Julia packages for related problems---ClimateMachine.jl (Climate Modeling
+Alliance 2019) and TrixiAtmo.jl (Ranocha et al.\ 2024)---target specific
+equation sets or use discontinuous Galerkin rather than continuous spectral
+elements.
+
+\je~addresses the gap between ``a framework that solves my equations'' and ``a
+framework I can teach my equations''. Adding a system requires no modification of
+any solver: a self-contained problem directory supplies the initial condition,
+fluxes, sources, boundary conditions, and the conserved-to-primitive mapping, and
+that same directory then runs in 1D, 2D or 3D, in serial or under MPI, on CPU or
+GPU, with any time integrator in the ecosystem. The repository ships roughly one hundred such directories across nine
+equation families---from advection--diffusion and Burgers to compressible Euler,
+elliptic and Helmholtz problems, ideal MHD, radiative transfer, shallow water
+and acoustics---serving both as regression tests and as templates.
+
+Two capabilities are, to our knowledge, not available together elsewhere in the
+Julia ecosystem. First, Laguerre-based semi-infinite spectral elements
+(Tissaoui et al.\ 2024) let a bounded computational domain be extended to
+infinity, removing spurious reflections at artificial boundaries---essential for
+atmospheric and oceanic problems. Second, a residual-based dynamic
+sub-grid-scale model (Marras et al.\ 2015) sets the artificial viscosity from the
+local residual of the governing equations rather than from a tuned constant, so
+dissipation appears at shocks and under-resolved features and vanishes where the
+solution is smooth. Because it reads only the residual, it applies unchanged to
+whatever system the user defined; alongside it \je~offers Smagorinsky, Vreman and
+WALE closures, artificial viscosity, and Boyd--Vandeven spectral filtering.
+
+\section{Design: equations as fluxes and sources}\label{design}
+
+\je~is built around the general conservation law
+\begin{equation}
+\label{eq:CL}
+\left(\delta\,\partial_t {\bf q}\right) + \sum_{i=1}^{\rm nsd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf \hat{q}} + {\bf S}({\bf q}) + ~{\rm b.c.},
+\end{equation}
+where $\nabla = [\partial_{x_i}]$, $\bf q$ is the solution vector, ${\bf F}_i$
+and $\bf S$ are the flux and source vectors, and $\bf\hat q$ are the variables
+to be diffused. The time derivative is parenthesized because the system need not
+be time dependent, which is how elliptic and Helmholtz problems are expressed.
+
+Any problem in the form of (\ref{eq:CL}) is defined by populating $\bf q$,
+${\bf F}_i$, $\bf S$, $\bf\hat q$ and the boundary conditions. Two-dimensional
+transport, $\partial_t\rho + \partial_x(\rho u) + \partial_y(\rho v) = 0$, is
+the whole of the listing below.
+
+\begin{lstlisting}[caption={Flux function for 2D scalar advection.}]
+function user_flux!(F, G, q, args...)
+    # q = [rho];  F = [u * rho];  G = [v * rho]
+    u = 0.5   # x-velocity [m/s]
+    v = 1.0   # y-velocity [m/s]
+    F[1] = u * q[1]
+    G[1] = v * q[1]
+end
+\end{lstlisting}
+
+\noindent
+The compressible Euler equations with gravity and tracers, the quasi-1D Euler
+equations of a Laval nozzle, ideal magnetohydrodynamics with divergence
+cleaning, and the five-dimensional radiative transfer equation are expressed the
+same way, differing only in the length of $\bf q$ and the content of
+${\bf F}_i$ and $\bf S$. This mirrors the separation of concerns familiar from
+\texttt{OpenFOAM}, except that \je~asks for flux and source components rather
+than the strong form.
+
+\section{Key Features}\label{key-features}
+
+\begin{itemize}
+\tightlist
+\item \textbf{Dimensional flexibility:} 1D, 2D and 3D from a single problem definition.
+\item \textbf{High-order accuracy:} continuous spectral elements at arbitrary order; Laguerre semi-infinite elements for unbounded domains.
+\item \textbf{Stabilization:} residual-based dynamic SGS, Smagorinsky, Vreman, WALE, artificial viscosity, spectral filters.
+\item \textbf{Parallelism and adaptivity:} MPI decomposition with p4est adaptive refinement and load balancing.
+\item \textbf{Portability:} one set of kernels for threaded CPU and GPU execution.
+\item \textbf{Interoperability:} Gridap.jl meshing, Gmsh input, VTK and PNG output, and a CI suite of analytical and benchmark tests.
+\end{itemize}
+
+\je~has been applied by the authors to compressible and incompressible
+Navier--Stokes flows, wave propagation, 3D radiative transfer, gravity waves,
+shallow cumulus convection, and turbulent atmospheric boundary layers (Tissaoui
+et al.\ 2025; Marras et al.\ 2025), and is intended for researchers developing
+parameterizations, exploring numerical methods, or coupling problems across
+disciplines.
+
+\section{Acknowledgements}\label{acknowledgements}
+
+We acknowledge the continuous support and input of Samuel Stechmann (University
+of Wisconsin, Madison) on the extension of \je~beyond fluid dynamics, and
+discussions with Hendrik Ranocha (Johannes Gutenberg University Mainz) and the
+other authors of Trixi.jl.
+
+\section*{References}\label{references}
+\addcontentsline{toc}{section}{References}
+
+\protect\phantomsection\label{refs}
+\begin{CSLReferences}{1}{1}
+
+\bibitem[\citeproctext]{ref-badia2020gridap}
+Badia, Santiago, and Francesc Verdugo. 2020. {``Gridap: An Extensible
+Finite Element Toolbox in {J}ulia.''} \emph{Journal of Open Source
+Software} 5 (52): 2520. \url{https://doi.org/10.21105/joss.02520}.
+
+\bibitem[\citeproctext]{ref-byrne2021mpi}
+Byrne, Simon, Lucas C Wilcox, and Valentin Churavy. 2021. {``MPI. Jl:
+Julia Bindings for the Message Passing Interface.''} \emph{Proceedings
+of the JuliaCon Conferences} 1: 68.
+
+\bibitem[\citeproctext]{ref-clima2019}
+Climate Modeling Alliance. 2019. \emph{{ClimateMachine.jl}: A
+Julia-Based Climate Model}.
+\href{https://github.com/CliMA/ClimateMachine.jl}{Https://github.com/CliMA/ClimateMachine.jl}.
+
+\bibitem[\citeproctext]{ref-fischer2008nek5000}
+Fischer, Paul F., James W. Lottes, and Stefan G. Kerkemeier. 2008.
+{``Nek5000: Open Source Spectral Element {CFD} Solver.''} \emph{Argonne
+National Laboratory, Mathematics and Computer Science Division}.
+\url{https://nek5000.mcs.anl.gov}.
+
+\bibitem[\citeproctext]{ref-komatitsch2002spectral}
+Komatitsch, Dimitri, and Jeroen Tromp. 2002. {``Spectral-Element
+Simulations of Global Seismic Wave Propagation -- {I}. {V}alidation.''}
+\emph{Geophysical Journal International} 149: 390--412.
+\url{https://doi.org/10.1046/j.1365-246X.2002.01653.x}.
+
+\bibitem[\citeproctext]{ref-marras2015dynsgs}
+Marras, Simone, Murtazo Nazarov, and Francis X. Giraldo. 2015.
+{``Stabilized High-Order {G}alerkin Methods Based on a Parameter-Free
+Dynamic {SGS} Model for {LES}.''} \emph{Journal of Computational
+Physics} 301: 77--101. \url{https://doi.org/10.1016/j.jcp.2015.07.034}.
+
+\bibitem[\citeproctext]{ref-marras2025jexpresso}
+Marras, Simone, Yassine Tissaoui, Hang Wang, and Samuel Stechmann. 2025.
+\emph{{JEXPRESSO} V0.1: A {J}ulia-Language, User-Friendly, Multi-Physics
+Parallel Solver for the Solution of Conservation Laws on {CPU}s and
+{GPU}s}. UNAM.
+
+\bibitem[\citeproctext]{ref-rackauckas2017differentialequations}
+Rackauckas, Christopher, and Qing Nie. 2017.
+{``{DifferentialEquations.jl} -- a Performant and Feature-Rich Ecosystem
+for Solving Differential Equations in {J}ulia.''} \emph{Journal of Open
+Research Software} 5 (1): 15. \url{https://doi.org/10.5334/jors.151}.
+
+\bibitem[\citeproctext]{ref-ranocha2024trixiatmo}
+Ranocha, Hendrik, Michael Schlottke-Lakemper, Andrew R. Winters, Erik
+Faulhaber, Jesse Chan, and Gregor Gassner. 2024. \emph{{TrixiAtmo.jl}:
+Atmospheric Modeling with {T}rixi.jl Using a Discontinuous {G}alerkin
+Spectral Element Method}.
+\href{https://github.com/trixi-framework/TrixiAtmo.jl}{Https://github.com/trixi-framework/TrixiAtmo.jl}.
+
+\bibitem[\citeproctext]{ref-ranocha2023mpi}
+Schlottke-Lakemper, Michael, Hendrik Ranocha, and Joshua Lampert. 2023.
+\emph{{P4est.jl}: {J}ulia Bindings for the p4est Library}.
+\href{https://github.com/trixi-framework/P4est.jl}{Https://github.com/trixi-framework/P4est.jl}.
+
+\bibitem[\citeproctext]{ref-tissaoui2024efficient}
+Tissaoui, Yassine, James F. Kelly, and Simone Marras. 2024. {``Efficient
+Spectral Element Method for the {E}uler Equations on Unbounded
+Domains.''} \emph{Applied Mathematics and Computation} 487: 129080.
+\url{https://doi.org/10.1016/j.amc.2024.129080}.
+
+\bibitem[\citeproctext]{ref-tissaoui2025parcfd}
+Tissaoui, Yassine, Samuel Stechmann, Hang Wang, and Simone Marras. 2025.
+\emph{Adaptive Mesh Refinement as a Pathway to Including Realistic
+Radiation Models in Numerical Simulations of the Atmosphere}. UNAM.
+
+\bibitem[\citeproctext]{ref-JACC}
+Valero-Lara, Pedro, William F Godoy, Het Mankad, et al. 2024. {``{JACC:
+Leveraging HPC Meta-Programming and Performance Portability with the
+Just-in-Time and LLVM-based Julia Language}.''} \emph{Proceedings of the
+SC '24 Workshops of the International Conference on High Performance
+Computing, Network, Storage, and Analysis}.
+\url{https://doi.org/10.1109/SCW63240.2024.00245}.
+
+\end{CSLReferences}
+
+\end{document}
