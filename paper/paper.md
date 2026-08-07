@@ -194,10 +194,17 @@ inherited unchanged.
 A problem lives entirely in its own directory: initial condition, fluxes,
 sources, boundary conditions, the conserved-to-primitive mapping, and a
 parameter file. Nothing there knows the polynomial order, the element type, the
-rank count, or whether the run is on CPU or GPU, and nothing outside it is
-edited to add new physics---the separation of concerns familiar from `OpenFOAM`,
-except that Jexpresso asks for flux and source *components* rather than the
-strong form.
+rank count, or whether the run is on CPU or GPU---the separation of concerns
+familiar from `OpenFOAM`, except that Jexpresso asks for flux and source
+*components* rather than the strong form.
+
+Jexpresso also runs *coupled* to a legacy solver: the two codes launch as one
+MPMD job sharing an `MPI_COMM_WORLD`, each splits off its own communicator,
+exchanges grid metadata in a handshake, and then passes fields directly between
+ranks with the spatial search resolved once at setup. This lets a Julia
+dynamical core drive a code that would be impractical to rewrite, and has
+coupled large-scale atmospheric flow in Jexpresso to human-scale Lagrangian
+transport of micro-plastics in Alya [@houzeaux2026coupling].
 
 # Key features
 
@@ -209,8 +216,8 @@ strong form.
   artificial viscosity, and spectral filters.
 - **HPC:** MPI domain decomposition, p4est adaptive refinement and load
   balancing, and one set of kernels for threaded CPU and GPU execution.
-- **Interoperability:** Gridap.jl meshing, Gmsh input, VTK and PNG output, and a
-  continuous-integration suite of analytical and benchmark tests.
+- **Interoperability:** Gridap.jl meshing, Gmsh input, VTK and PNG output, MPMD
+  coupling to external MPI codes, and a CI suite of analytical and benchmark tests.
 
 # Problems shipped with the package
 
