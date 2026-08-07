@@ -9,7 +9,7 @@ the three equation sets that use it in Jexpresso:
 3. [2D CompEuler θ-form — `theta_dsgs`](#3-2d-compeuler-θ-form--theta_dsgs)
 4. [2D ideal GLM-MHD — `orszagTangBormanis2024`](#4-2d-ideal-glm-mhd--orszagtangbormanis2024)
 5. [Code map, inputs and output](#5-code-map-inputs-and-output)
-6. [Known issues](#6-known-issues)
+6. [Defects found and fixed](#6-defects-found-and-fixed)
 
 **References**
 
@@ -116,8 +116,9 @@ $$
 R_i = \frac{3q_i^n - 4q_i^{n-1} + q_i^{n-2}}{2\Delta t} - M^{-1}\,\mathrm{RHS}_i .
 $$
 
-The $M^{-1}$ is **required** for the units above to work out. See
-[§6](#6-known-issues) for where the code does and does not do this.
+The $M^{-1}$ is **required** for the units above to work out; all three paths
+apply it (see [§6](#6-defects-found-and-fixed) — the 2D θ-path did not until
+recently).
 
 ### 1.3 Per-equation split
 
@@ -153,8 +154,9 @@ R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
 initial condition already has an O(1) jump in every variable, so no denominator
 starts at zero.
 
-**Wave speed.** `uTmx = max(|u| + sqrt(γ*Tl))` with
-`Tl = max(e - ½u², 0)`, i.e. the specific internal energy.
+**Wave speed.** `uTmx = max(|u| + sqrt(γ(γ-1)·e_int))` with
+`e_int = max(e - ½u², 0)` the specific internal energy. For a perfect gas
+$p = (\gamma-1)\rho e_{int}$, hence $a^2 = \gamma p/\rho = \gamma(\gamma-1)e_{int}$.
 
 **Split.** One coefficient shared by all three equations, scaled per equation:
 
@@ -192,23 +194,19 @@ only `eps` to absorb it the ratio runs away and pins $\mu$ at the wave-speed cap
 before any flow exists, which drives $\rho\theta$ negative in the first RK
 substage.
 
-**Residual.** Uses the **weak-form** `rhs[ip,i]` directly, *without* $M^{-1}$ —
-see [§6](#6-known-issues).
+**Residual.** $R_i = (3q^n-4q^{n-1}+q^{n-2})/(2\Delta t) - M^{-1}\mathrm{RHS}_i$, as
+in §1.2. All four equations enter the max.
 
-**Split.** As committed:
+**Split.** `user_primitives!` hands `_expansion_visc!` the set
+$(\rho, u, v, \theta)$, so the momentum and $\theta$ slots both take the
+**dynamic** coefficient $\bar\rho\,\mu$ ($\bar\rho$ = element-mean density):
 
 $$
 \mu_{dsgs}[e,1] = 0,\quad
-\mu_{dsgs}[e,2] = 0,\quad
-\mu_{dsgs}[e,3] = 0,\quad
-\mu_{dsgs}[e,4] = \texttt{inputs[:μ][4]}\cdot\frac{Pr}{\gamma-1}\,\mu\big|_e
+\mu_{dsgs}[e,2] = \texttt{:μ}[2]\,\bar\rho\mu,\quad
+\mu_{dsgs}[e,3] = \texttt{:μ}[3]\,\bar\rho\mu,\quad
+\mu_{dsgs}[e,4] = \texttt{:μ}[4]\,\frac{Pr}{\gamma-1}\,\bar\rho\mu
 $$
-
-The two momentum slots are zeroed by an explicit diagnostic block left in the
-source (`# DIAG: momentum DSGS forced to zero to isolate whether …`), so **only
-the $\rho\theta$ equation is currently stabilized** on this path. That is a
-debugging state, not the intended model — Marras eq. (10) puts $\mu$ on both
-momentum components.
 
 ---
 
@@ -380,58 +378,90 @@ In 1D the same data also drives an extra panel in the PNG writer.
 
 ---
 
-## 6. Known issues
+## 6. Defects found and fixed
 
-These are pre-existing defects in the `DSGS()` (Euler) paths, recorded here
-because they matter to anyone reading or extending the model. The `DSGS_MHD()`
-path does not share them.
+Writing this document meant reading the three paths side by side, which turned
+up five defects. All are now fixed; they are recorded here because the fixes
+change the behaviour of `sod1d`, `case1` and `theta_dsgs`, and because the
+reasoning matters if the model is revisited.
 
-1. **The 2D θ-path drops $M^{-1}$ from the residual.** It uses the weak-form
-   `rhs[ip,i]` directly, which is dimensionally inconsistent with the
-   $\partial q/\partial t$ term it is subtracted from — the two differ by a
-   factor of the mass matrix. A source comment records that the
-   dimensionally-correct $M^{-1}\cdot$RHS "shrinks the residual by ~10³ on 2D
-   atmospheric meshes and effectively turns DSGS off", and the inconsistent
-   form was kept for that reason. The 1D path uses $M^{-1}$ correctly. If the
-   correct residual really does switch the model off, the coefficient $C_1$ is
-   the thing to raise, not the units.
+1. **The 2D θ-path dropped $M^{-1}$ from the residual.** It differenced the
+   BDF2 $\partial q/\partial t$ against the raw **weak-form** RHS, two
+   quantities separated by a factor of the mass matrix, so the "residual" was
+   not one. A source comment defended this: the dimensionally-correct
+   $M^{-1}\cdot$RHS "shrinks the residual by ~10³ on 2D atmospheric meshes and
+   effectively turns DSGS off".
 
-2. **The 2D θ-path has its momentum slots zeroed by a leftover diagnostic**
-   (`# DIAG: momentum DSGS forced to zero …`), so only $\rho\theta$ is
-   stabilized there. The source comment asks for
-   `visc_coeff[2:3] * μ` to be restored "once the bad actor is identified".
+   *Fixed*, and the concern turns out not to apply to the corrected code —
+   see the measurements below. The most likely explanation is that the old
+   comment was written while defect 4 was also present: with a stage-cadenced
+   history the BDF2 term is not a time derivative at all, so removing $M^{-1}$
+   was compensating for a broken numerator. Had it still under-stabilized, the
+   fix would have been to raise $C_1$, not to restore wrong units.
 
-3. **`SGS_diffusion(::DSGS, ::NSD_2D)` defines only the `inputs` signature.**
-   The generic 2D `_expansion_visc!` calls `SGS_diffusion` two different ways —
-   `(…, PhysConst, Δ2, VT, SD)` from the momentum and scalar branches, and
-   `(…, PhysConst, Δ2, inputs, VT, SD)` from the τ·u viscous-work term — so the
-   shorter call has no matching method.
+2. **The 2D θ-path had its momentum slots zeroed** by a leftover diagnostic
+   (`# DIAG: momentum DSGS forced to zero …`), so only $\rho\theta$ was
+   stabilized. *Fixed* — slots 2 and 3 now carry Marras eq. (10a).
 
-   Verified against a live run of `problems/CompEuler/theta_dsgs`: it raises
+   Doing so exposed a units bug that would otherwise have been silent: the
+   θ-path had the same kinematic-vs-dynamic mismatch as the MHD one. $\mu$ from
+   the model is kinematic, but `user_primitives!` supplies $(\rho,u,v,\theta)$,
+   so the momentum and θ slots need $\bar\rho\mu$. Restoring the momentum
+   slots without that factor would have applied a coefficient wrong by $\rho$.
+
+3. **`SGS_diffusion(::DSGS, ::NSD_2D)` defined only the `inputs` signature.**
+   The generic 2D `_expansion_visc!` calls it both ways —
+   `(…, PhysConst, Δ2, VT, SD)` from the momentum and scalar branches,
+   `(…, PhysConst, Δ2, inputs, VT, SD)` from the τ·u viscous-work term. Verified
+   against a live run: `theta_dsgs` raised
 
    ```
-   MethodError: no method matching SGS_diffusion(::Vector{Float64}, ::Int64,
-     ::Float64, ::Float64, ::Float64, ::Float64, ::Float64,
-     ::PhysicalConst{Float64}, ::Float64, ::DSGS, ::NSD_2D)
+   MethodError: no method matching SGS_diffusion(…, ::DSGS, ::NSD_2D)
    ```
 
    at `rhs.jl:2207` — the *"other scalars"* branch, reached by `ieq = 1`
-   (density) on the very first RHS call. So the 2D `DSGS()` path does not fail
-   partway through; **it cannot start at all**, and `theta_dsgs` has evidently
-   not been run since the calling convention diverged.
+   (density) on the very first RHS call. The path did not fail partway through;
+   **it could not start at all**, so `theta_dsgs` had evidently not been run
+   since the calling convention diverged. *Fixed* by adding the missing method;
+   the case now runs to its final time.
 
-   (`DSGS_MHD` defines both signatures; `SMAG`/`VREM` in 2D are unaffected
-   because they go through the separate cache-reading `_expansion_visc!` at
-   `rhs.jl:2249`, which calls the `(…, ρ, ip, sgs, ltheta_eqn, SD)` accessor
-   instead.)
+   (`SMAG`/`VREM` in 2D were unaffected — they go through the separate
+   cache-reading `_expansion_visc!` at `rhs.jl:2249`, which calls the
+   `(…, ρ, ip, sgs, ltheta_eqn, SD)` accessor instead.)
 
-4. **The BDF2 history is stage-cadenced for the `DSGS()` paths.** As described
-   in §4.4, `qp.qnm1/qnm2` advance every RK stage, so the 1D and 2D-θ residuals
-   difference stage snapshots over a full $\Delta t$. `DSGS_MHD` avoids this
-   with its own buffers; the Euler paths would need the same treatment.
+4. **The BDF2 history was stage-cadenced.** `qp.qnm1/qnm2` advance on every RK
+   *stage*, so the 1D and 2D-θ residuals differenced consecutive stage snapshots
+   over a full $\Delta t$ — not an approximation of $\partial q/\partial t$.
+   *Fixed*: the `dsgs_qnm1/qnm2` buffers built for `DSGS_MHD` (§4.4) are now
+   allocated and used for `DSGS()` as well.
 
-5. **1D wave speed.** The cap uses `sqrt(γ·Tl)` with `Tl` the specific internal
-   energy $e - \tfrac12u^2$. For a perfect gas $a^2 = \gamma(\gamma-1)e_{int}$,
-   so unless the case is nondimensionalized with $c_v = 1$ this overestimates
-   the sound speed by $1/\sqrt{\gamma-1}$ (≈ 1.58 at $\gamma = 1.4$). The effect
-   is a looser cap, so $\mu_{res}$ governs more often than it should.
+5. **The 1D wave-speed cap used `sqrt(γ·e_int)`.** For a perfect gas
+   $p = (\gamma-1)\rho e_{int}$, so $a^2 = \gamma(\gamma-1)e_{int}$; the cap was
+   inflated by $1/\sqrt{\gamma-1} \approx 1.58$ at $\gamma = 1.4$, letting
+   $\mu_{res}$ govern more often than the Marras bound intends. *Fixed.*
+
+### Verification
+
+All three cases run to completion with the fixes in place:
+
+| case | result |
+|---|---|
+| `CompEuler/sod1d` (1D) | completes, $t = 0.2$ |
+| `CompEuler/theta_dsgs` (2D θ) | completes, $t = 1000$ — previously could not start |
+| `MHD/orszagTangBormanis2024` (2D GLM-MHD) | completes, $t = 1$ |
+
+The corrected model is **active and residual-governed**, not switched off — the
+worry attached to defect 1. Measured DynSGS coefficients:
+
+| case | $\mu$ range | vs. the $C_2\Delta(\lVert v\rVert+c)$ cap |
+|---|---|---|
+| MHD, $t=0.55$ | mean 1.6e-4, max 9.9e-4 (kinematic) | ≈ 10% of cap |
+| `theta_dsgs`, $t=1000$ | mean 74, max 321 (dynamic $\bar\rho\mu$) | ≈ 10% of cap |
+
+In both cases $\mu$ sits an order of magnitude below the first-order-upwind
+bound, i.e. $\mu_{res}$ is doing the work and $\min(\mu_{max},\mu_{res})$ is not
+saturating — exactly the regime the model is designed for. `theta_dsgs` shows
+the expected cold-start spike (max $\mu \approx 9.7\times10^3$ at $t=0$, when
+every denominator is at its floor) decaying to $O(10^2)$ once the flow develops,
+and the rising thermal bubble itself behaves physically ($w$ up to 10 m/s, the
+2 K perturbation intact at 1.45 K after 1000 s).
