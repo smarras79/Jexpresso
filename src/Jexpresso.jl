@@ -8,14 +8,35 @@ module Jexpresso
 
 using QuadGK
 using MPI
-MPI.Init()
+# Initialise MPI when this file is evaluated as a real module body — i.e. the
+# script form `julia src/Jexpresso.jl CompEuler theta`, where run.jl is included
+# at the bottom and expects a live MPI.
+#
+# NOT while generating precompile output. A precompile worker that calls
+# MPI.Init() also runs MPI.jl's atexit MPI_Finalize when it exits, and that
+# finalize can fail and take the whole precompilation with it — MPICH on a
+# machine with a VPN interface aborts there because libfabric selected the
+# tunnel as its NIC:
+#
+#   Fatal error in internal_Finalize: Other MPI error
+#   MPIDI_OFI_mpi_finalize_hook(861): flush_send(771): OFI call tsenddata
+#   failed (default nic=utun7: No such file or directory
+#
+# Nothing in this module body needs an initialised MPI at precompile time. The
+# opt-in @compile_workload at the bottom of this file goes through run.jl,
+# which initialises MPI itself (and pins FI_PROVIDER first), so that path is
+# unaffected. `using Jexpresso` from a cache never evaluates this body at all;
+# those callers get MPI.Init() from run.jl / je_init_mpi_and_split_comm.
+if ccall(:jl_generating_output, Cint, ()) == 0
+    MPI.Init()
+end
 using KernelAbstractions
 # PERF: the following five `using`s eagerly load big package binaries
 # on every MPI rank (Revise ~150 MB, BenchmarkTools, SnoopCompile,
 # UnicodePlots, Geodesy) and were not referenced anywhere in the source
 # tree. Removed to cut the per-rank baseline. Re-add at the REPL if
 # you need them interactively.
-using Revise
+#using Revise
 # using BenchmarkTools
 using Dates
 using CSV, DataFrames
@@ -580,14 +601,27 @@ end
     #     JEXPRESSO_PRECOMPILE_WORKLOAD=1   (also: true / yes / on)
     #
     # When opted in the run is lean (drivers.jl caps it to 3 steps while
-    # generating precompile output) and uses FI_PROVIDER=shm for the
+    # generating precompile output) and pins a cheap libfabric provider for the
     # single-process worker.
+    #
+    # The provider is OS-dependent: libfabric's `shm` is LINUX-ONLY. Requesting
+    # it on macOS leaves libfabric with nothing to return and MPI_Init fails
+    # with `OFI call getinfo failed (default nic=(n/a))` — turning a
+    # precompilation that would have worked into a hard error. On macOS pin the
+    # tcp provider to loopback instead, which is equally network-free in
+    # practice and is a provider that actually exists there.
     _run_workload = lowercase(get(ENV, "JEXPRESSO_PRECOMPILE_WORKLOAD", "0")) in
                     ("1", "true", "yes", "on")
     _fi_provider_was_set = haskey(ENV, "FI_PROVIDER")
     _fi_provider_prev    = get(ENV, "FI_PROVIDER", "")
     if _run_workload && !_fi_provider_was_set
-        ENV["FI_PROVIDER"] = "shm"
+        # Linux: `shm` is the network-free happy path.
+        # macOS: `shm` does not exist there, and `tcp` needs an interface that
+        # can host an endpoint — loopback frequently cannot, failing with
+        # `ep_enable ... Bad file descriptor`. `sockets` needs no interface at
+        # all, so it is the one provider that is safe to pick blind. Anyone who
+        # has tuned FI_PROVIDER themselves keeps their setting (checked above).
+        ENV["FI_PROVIDER"] = Sys.islinux() ? "shm" : "sockets"
     end
 
     @compile_workload begin

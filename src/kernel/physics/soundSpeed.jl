@@ -1,6 +1,11 @@
 function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::TOTAL)
     
-    comm = MPI.COMM_WORLD
+    # Jexpresso's own communicator, NOT MPI.COMM_WORLD. Under MPMD coupling
+    # COMM_WORLD also contains Alya's ranks, which never call soundSpeed, so a
+    # collective on it deadlocks every Jexpresso rank at the first diagnostic
+    # output. get_mpi_comm() returns COMM_WORLD in standalone runs, so this is
+    # a no-op there.
+    comm = get_mpi_comm()
     # Physical constants
     PhysConst = PhysicalConst{Float32}()
     pos::TInt = 2
@@ -43,7 +48,12 @@ end
 
 function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::PERT)
 
-    comm = MPI.COMM_WORLD
+    # Jexpresso's own communicator, NOT MPI.COMM_WORLD. Under MPMD coupling
+    # COMM_WORLD also contains Alya's ranks, which never call soundSpeed, so a
+    # collective on it deadlocks every Jexpresso rank at the first diagnostic
+    # output. get_mpi_comm() returns COMM_WORLD in standalone runs, so this is
+    # a no-op there.
+    comm = get_mpi_comm()
     # Physical constants
     PhysConst = PhysicalConst{Float32}()
     pos::TInt = 2

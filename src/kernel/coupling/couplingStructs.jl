@@ -418,6 +418,38 @@ mutable struct CouplingData
     y_e_scratch::Union{Nothing, Vector{Float64}}
     z_e_scratch::Union{Nothing, Vector{Float64}}
 
+    # --------------------------------------------------------------------------
+    # Interpolation location cache (see build_interp_cache_*! below).
+    #
+    # Locating each Alya point in the Jexpresso mesh — bin lookup, bounding-box
+    # test, then a Newton solve in physical_to_reference[_3d] — depends only on
+    # the two geometries, not on the solution. On a static mesh the answer is
+    # identical at every timestep, so it is computed once and reused; the
+    # per-step cost then collapses to one dot product per point per equation.
+    #
+    #   interp_elem[ipt]     owning element, or 0 when the point fell back to
+    #                        nearest-node
+    #   interp_near[ipt]     nearest mesh node, used when interp_elem[ipt] == 0
+    #   interp_wts[idx, ipt] tensor-product Lagrange weight for the idx-th node
+    #   interp_conn[idx,ipt] the mesh node that weight multiplies
+    #
+    # Both are stored POINT-PER-COLUMN. Julia is column-major and the per-step
+    # loop runs over idx with ipt fixed, so this makes each point's weights and
+    # node indices contiguous. The transposed layout strides by n_points on
+    # every iteration, which for a few thousand points means a cache miss per
+    # multiply and can cost more than it saves.
+    #
+    # interp_conn holds elem_conn's row for the owning element, gathered once,
+    # so the hot loop touches neither elem_conn nor interp_elem.
+    #
+    # Left as `nothing` (and the original search path used every step) when the
+    # mesh can change under us — see _couple_cache_enabled.
+    # --------------------------------------------------------------------------
+    interp_elem::Union{Nothing, Vector{Int}}
+    interp_near::Union{Nothing, Vector{Int}}
+    interp_wts::Union{Nothing, Matrix{Float64}}
+    interp_conn::Union{Nothing, Matrix{Int}}
+
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
                           comm_world, lrank, neqs, ndime, send_coords=false)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
@@ -427,7 +459,8 @@ mutable struct CouplingData
             nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
             nothing, nothing,
             nothing, nothing, nothing, nothing, nothing, nothing, nothing,
-            nothing, nothing, nothing)
+            nothing, nothing, nothing,
+            nothing, nothing, nothing, nothing)
     end
 end
 
@@ -553,17 +586,45 @@ function je_prefetch_caches!(inputs, nparts::Int,
     _je_prefetch_geometry!(inputs, local_comm, world, rank)
 end
 
+# Agree across every Jexpresso rank on a local yes/no. Returns true only when
+# ALL ranks of `comm` passed `ok`. Used to keep collective-calling code paths
+# from being entered by a subset of the ranks: a rank that skips a collective
+# the others enter is a deadlock with no error message, which in a coupled run
+# also strands Alya (see je_early_coupling_sync! / _je_prefetch_geometry!).
+function _je_all_ranks(ok::Bool, comm::MPI.Comm)
+    return MPI.Allreduce(ok ? Int32(1) : Int32(0), MPI.MIN, comm) == Int32(1)
+end
+
 # Separated into its own function so the try/catch/return flow is clean.
 function _je_prefetch_geometry!(inputs, local_comm::MPI.Comm,
                                  world::MPI.Comm, rank::Int)
-    JEXPRESSO_PREFETCHED_MESH_CACHE[]  === nothing && return
-    JEXPRESSO_COUPLING_DATA[]          === nothing && return
-    JEXPRESSO_PREFETCHED_ALYA_COORDS[] !== nothing && return
+    already = JEXPRESSO_PREFETCHED_ALYA_COORDS[] !== nothing
 
-    raw = JEXPRESSO_PREFETCHED_MESH_CACHE[]
-    haskey(raw, "mesh_fields") || return
-    flds = raw["mesh_fields"]
+    raw  = JEXPRESSO_PREFETCHED_MESH_CACHE[]
+    flds = (raw !== nothing && haskey(raw, "mesh_fields")) ? raw["mesh_fields"] : nothing
 
+    # The prefetch is a pure optimisation, but extract_local_alya_coordinates
+    # below calls MPI.Allreduce on local_comm. The mesh cache is a PER-RANK
+    # file, so "do I have a usable cache?" can legitimately differ between
+    # ranks (one cache file deleted, half-written, or written by an older
+    # schema). Entering the geometry path on only some ranks would hang the
+    # rest inside that Allreduce. Decide collectively instead: unless every
+    # rank can prefetch, nobody does and all ranks fall back to the in-with_mpi
+    # path together. Every early return below is therefore taken by all ranks
+    # or none.
+    _je_all_ranks(already, local_comm) && return
+
+    have_inputs = (flds !== nothing) && (JEXPRESSO_COUPLING_DATA[] !== nothing)
+    if !_je_all_ranks(!already && have_inputs, local_comm)
+        JEXPRESSO_PREFETCHED_ALYA_COORDS[] = nothing
+        if rank == 0
+            println("[prefetch] geometry   … skipped (not all ranks can prefetch)")
+            flush(stdout)
+        end
+        return
+    end
+
+    ok = true
     try
         rank == 0 && (print("[prefetch] geometry   … "); flush(stdout))
         t0 = time_ns()
@@ -593,9 +654,24 @@ function _je_prefetch_geometry!(inputs, local_comm::MPI.Comm,
         JEXPRESSO_PREFETCHED_ALYA_COORDS[] = (coords, ids, owners)
         rank == 0 && @printf("%.2f s\n", (time_ns()-t0)/1e9)
     catch e
-        rank == 0 && @warn "[prefetch] geometry pre-computation failed" exception=e
+        ok = false
+        # Warn on EVERY failing rank, not just rank 0: when the failure is
+        # rank-local, silencing it on rank != 0 turns a diagnosable error into
+        # a silent hang.
+        @warn "[prefetch] geometry pre-computation failed (lrank=$rank)" exception=e
     end
     flush(stdout)
+
+    # If it failed anywhere, drop it everywhere — otherwise the ranks that
+    # succeeded would take the early-sync path (world collectives) while the
+    # ranks that failed would not.
+    if !_je_all_ranks(ok, local_comm)
+        JEXPRESSO_PREFETCHED_ALYA_COORDS[] = nothing
+        if rank == 0
+            println("[prefetch] geometry   … discarded on all ranks (failed on at least one)")
+            flush(stdout)
+        end
+    end
 end
 
 # ===========================================================================
@@ -614,12 +690,27 @@ end
 # the redundant Barrier/Alltoall/send.
 # ===========================================================================
 function je_early_coupling_sync!(local_comm::MPI.Comm, world::MPI.Comm)
-    JEXPRESSO_PREFETCHED_ALYA_COORDS[] === nothing && return
-    JEXPRESSO_EARLY_SYNC_DONE[]                   && return
-    JEXPRESSO_COUPLING_DATA[]          === nothing && return
+    JEXPRESSO_EARLY_SYNC_DONE[] && return
 
     rank  = MPI.Comm_rank(local_comm)
     wsize = MPI.Comm_size(world)
+
+    # MPI.Barrier(world) / MPI.Alltoall!(world) below are collectives over the
+    # FULL MPMD world — Alya is already blocked in the matching pair. Every
+    # Jexpresso rank must therefore make the same decision about entering them.
+    # The two conditions are per-rank state (the geometry prefetch can succeed
+    # on some ranks and not others), so reduce them before acting: if any rank
+    # cannot early-sync, no rank does, and the Barrier/Alltoall happens later
+    # in setup_coupling_and_mesh where all ranks reach it together.
+    ready = (JEXPRESSO_PREFETCHED_ALYA_COORDS[] !== nothing &&
+             JEXPRESSO_COUPLING_DATA[]          !== nothing)
+    if !_je_all_ranks(ready, local_comm)
+        if rank == 0
+            println("[early-sync] skipped — deferring Barrier/Alltoall/send to setup_coupling_and_mesh")
+            flush(stdout)
+        end
+        return
+    end
 
     alya_local_coords, alya_local_ids, alya_owner_ranks =
         JEXPRESSO_PREFETCHED_ALYA_COORDS[]
@@ -1092,6 +1183,205 @@ function interpolate_solution_to_alya_coords!(u_interp::Matrix{Float64},
 end
 
 # ===========================================================================
+# INTERPOLATION LOCATION CACHE
+# ===========================================================================
+#
+# interpolate_solution_to_alya_coords! locates every Alya point in the
+# Jexpresso mesh on every call: bin lookup, bounding-box rejection, then a
+# Newton solve (physical_to_reference[_3d]) to recover the reference
+# coordinates. That search is a function of the two GEOMETRIES only — it does
+# not involve the solution — so on a static mesh it produces the same answer at
+# every timestep, and redoing it 2000 times is pure waste.
+#
+# The builders below run that identical search once and store, per point, the
+# owning element and the tensor-product Lagrange weights. interpolate_cached!
+# then evaluates the same sum with the same weights, so the values produced are
+# those the search path would have produced.
+#
+# Disabled automatically when the mesh can change between steps (adaptivity /
+# AMR), and manually with :lcouple_cache_interp => false.
+# ===========================================================================
+
+_couple_cache_enabled(inputs) =
+    get(inputs, :lcouple_cache_interp, true) !== false &&
+    get(inputs, :ladapt, false) !== true &&
+    get(inputs, :lamr,   false) !== true
+
+function build_interp_cache_3d!(cpg::CouplingData,
+                                alya_coords::Matrix{Float64},
+                                ξ_nodes::Vector{Float64}, ω::Vector{Float64},
+                                elem_bboxes::Vector{NTuple{6,Float64}},
+                                bins::ElemBins3D,
+                                elem_conn::Matrix{Int},
+                                elem_x::Matrix{Float64},
+                                elem_y::Matrix{Float64},
+                                elem_z::Matrix{Float64},
+                                ψξ::Vector{Float64}, ψη::Vector{Float64}, ψζ::Vector{Float64},
+                                dψξ::Vector{Float64}, dψη::Vector{Float64}, dψζ::Vector{Float64},
+                                α::Vector{Float64},
+                                x_e::Vector{Float64}, y_e::Vector{Float64}, z_e::Vector{Float64},
+                                mesh_x::Vector{Float64},
+                                mesh_y::Vector{Float64},
+                                mesh_z::Vector{Float64})
+    n_points = size(alya_coords, 1)
+    ngl      = length(ξ_nodes)
+    nb       = ngl * ngl * ngl
+    npoin    = length(mesh_x)
+
+    elem = zeros(Int, n_points)
+    near = zeros(Int, n_points)
+    wts  = zeros(Float64, nb, n_points)
+    conn = zeros(Int, nb, n_points)
+
+    @inbounds for ipt in 1:n_points
+        px = alya_coords[ipt, 1]
+        py = alya_coords[ipt, 2]
+        pz = alya_coords[ipt, 3]
+        found = false
+        for e in _bin_candidates(bins, px, py, pz)
+            bb = elem_bboxes[e]
+            (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
+             py < bb[3]-1e-10 || py > bb[4]+1e-10 ||
+             pz < bb[5]-1e-10 || pz > bb[6]+1e-10) && continue
+            for k in 1:nb
+                x_e[k] = elem_x[e, k]; y_e[k] = elem_y[e, k]; z_e[k] = elem_z[e, k]
+            end
+            ξ_ref, η_ref, ζ_ref, converged = physical_to_reference_3d(
+                px, py, pz, x_e, y_e, z_e, ξ_nodes, ω, ngl,
+                ψξ, ψη, ψζ, dψξ, dψη, dψζ, α)
+            (!converged || abs(ξ_ref) > 1.0+1e-10 ||
+                            abs(η_ref) > 1.0+1e-10 ||
+                            abs(ζ_ref) > 1.0+1e-10) && continue
+            evaluate_lagrange_1d!(ψξ, ξ_ref, ξ_nodes, ω)
+            evaluate_lagrange_1d!(ψη, η_ref, ξ_nodes, ω)
+            evaluate_lagrange_1d!(ψζ, ζ_ref, ξ_nodes, ω)
+            idx = 1
+            for k in 1:ngl, j in 1:ngl, i in 1:ngl
+                wts[idx, ipt]  = ψξ[i] * ψη[j] * ψζ[k]
+                conn[idx, ipt] = elem_conn[e, idx]
+                idx += 1
+            end
+            elem[ipt] = e
+            found = true
+            break
+        end
+        if !found
+            nearest = 1
+            min_d2  = (mesh_x[1]-px)^2 + (mesh_y[1]-py)^2 + (mesh_z[1]-pz)^2
+            for ip in 2:npoin
+                d2 = (mesh_x[ip]-px)^2 + (mesh_y[ip]-py)^2 + (mesh_z[ip]-pz)^2
+                if d2 < min_d2; min_d2 = d2; nearest = ip; end
+            end
+            near[ipt] = nearest
+        end
+    end
+
+    cpg.interp_elem = elem
+    cpg.interp_near = near
+    cpg.interp_wts  = wts
+    cpg.interp_conn = conn
+    return count(!=(0), elem)
+end
+
+function build_interp_cache_2d!(cpg::CouplingData,
+                                alya_coords::Matrix{Float64},
+                                ξ_nodes::Vector{Float64}, ω::Vector{Float64},
+                                elem_bboxes::Vector{NTuple{4,Float64}},
+                                bins::ElemBins,
+                                elem_conn::Matrix{Int},
+                                elem_x::Matrix{Float64},
+                                elem_y::Matrix{Float64},
+                                ψξ::Vector{Float64}, ψη::Vector{Float64},
+                                dψξ::Vector{Float64}, dψη::Vector{Float64},
+                                α::Vector{Float64},
+                                x_e::Vector{Float64}, y_e::Vector{Float64},
+                                mesh_x::Vector{Float64},
+                                mesh_y::Vector{Float64})
+    n_points = size(alya_coords, 1)
+    ngl      = length(ξ_nodes)
+    nb       = ngl * ngl
+    npoin    = length(mesh_x)
+
+    elem = zeros(Int, n_points)
+    near = zeros(Int, n_points)
+    wts  = zeros(Float64, nb, n_points)
+    conn = zeros(Int, nb, n_points)
+
+    @inbounds for ipt in 1:n_points
+        px = alya_coords[ipt, 1]
+        py = alya_coords[ipt, 2]
+        found = false
+        for e in _bin_candidates(bins, px, py)
+            bb = elem_bboxes[e]
+            (px < bb[1]-1e-10 || px > bb[2]+1e-10 ||
+             py < bb[3]-1e-10 || py > bb[4]+1e-10) && continue
+            for k in 1:nb
+                x_e[k] = elem_x[e, k]; y_e[k] = elem_y[e, k]
+            end
+            ξ_ref, η_ref, converged = physical_to_reference(
+                px, py, x_e, y_e, ξ_nodes, ω, ngl, ψξ, ψη, dψξ, dψη, α)
+            (!converged || abs(ξ_ref) > 1.0+1e-10 || abs(η_ref) > 1.0+1e-10) && continue
+            evaluate_lagrange_1d!(ψξ, ξ_ref, ξ_nodes, ω)
+            evaluate_lagrange_1d!(ψη, η_ref, ξ_nodes, ω)
+            idx = 1
+            for j in 1:ngl, i in 1:ngl
+                wts[idx, ipt]  = ψξ[i] * ψη[j]
+                conn[idx, ipt] = elem_conn[e, idx]
+                idx += 1
+            end
+            elem[ipt] = e
+            found = true
+            break
+        end
+        if !found
+            nearest = 1
+            min_d2  = (mesh_x[1]-px)^2 + (mesh_y[1]-py)^2
+            for ip in 2:npoin
+                d2 = (mesh_x[ip]-px)^2 + (mesh_y[ip]-py)^2
+                if d2 < min_d2; min_d2 = d2; nearest = ip; end
+            end
+            near[ipt] = nearest
+        end
+    end
+
+    cpg.interp_elem = elem
+    cpg.interp_near = near
+    cpg.interp_wts  = wts
+    cpg.interp_conn = conn
+    return count(!=(0), elem)
+end
+
+# Per-step evaluation against the cache. Same arithmetic as the search path's
+# inner loop, with the search skipped.
+function interpolate_cached!(u_interp::Matrix{Float64},
+                             u_mat::Matrix{Float64},
+                             neqs::Int,
+                             interp_elem::Vector{Int},
+                             interp_near::Vector{Int},
+                             interp_wts::Matrix{Float64},
+                             interp_conn::Matrix{Int})
+    n_points = length(interp_elem)
+    nb       = size(interp_wts, 1)
+    @inbounds for ipt in 1:n_points
+        if interp_elem[ipt] == 0
+            ip = interp_near[ipt]
+            for q in 1:neqs
+                u_interp[ipt, q] = u_mat[ip, q]
+            end
+        else
+            for q in 1:neqs
+                val = 0.0
+                # Column ipt of both arrays: contiguous in idx.
+                for idx in 1:nb
+                    val += interp_wts[idx, ipt] * u_mat[interp_conn[idx, ipt], q]
+                end
+                u_interp[ipt, q] = val
+            end
+        end
+    end
+end
+
+# ===========================================================================
 # ALYA COORDINATE EXTRACTION
 # ===========================================================================
 
@@ -1118,18 +1408,31 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     alya_worker_indices = [k for k in 1:nranks_alya if alya2world[k] != Int32(0)]
     nworkers_alya = length(alya_worker_indices)
 
-    # Guard: if there are no Alya worker ranks (e.g. asize==1 so only the
-    # master rank exists, which has world rank 0 and is filtered out above),
-    # return empty arrays — no points can be assigned to Alya workers.
+    # Alya's local rank 0 is a master that owns no grid points — the proxy
+    # splits the grid over its ranks 1..asize-1 (see
+    # AlyaProxy/alya_all2all_time_loop.f90, "Alya local rank 0 owns no
+    # points"). So a single Alya rank has NO workers, no point is ever
+    # assigned, and the coupling silently degrades to nothing: Alya receives
+    # zero values, races through its time loop, writes its VTS files before
+    # Jexpresso has sent anything, and the two codes never actually couple.
+    #
+    # That used to be a warning and the run continued. It cannot produce a
+    # meaningful result, so fail loudly instead — the fix is one character in
+    # the launch line.
     if nworkers_alya == 0
-        @warn "extract_local_alya_coordinates: no Alya worker ranks found " *
-              "(alya2world=$(alya2world)). " *
-              "This happens when ALYA_PROCS==1 (only the master rank exists). " *
-              "Returning empty coordinate arrays."
-        empty_coords  = zeros(Float64, 0, ndime)
-        empty_ids     = Int32[]
-        empty_owners  = Int32[]
-        return empty_coords, empty_ids, empty_owners
+        error("""
+        Coupled run misconfigured: Alya has no worker ranks (alya2world=$(alya2world)).
+
+        Alya's rank 0 is a master that owns no grid points; the grid is split
+        over its ranks 1..N-1. Launching Alya with a single rank therefore
+        assigns zero points and the codes do not couple at all.
+
+        Give Alya at least TWO ranks:
+            ./run_coupled.sh 2 2
+            mpirun -np 2 ./AlyaProxy/Alya.x : -np 2 julia --project=. ./src/Jexpresso.jl <eqs> <case>
+
+        Alya's rank count must be (number of grid-owning workers + 1).
+        """)
     end
 
     r_w  = mod(nmax, nworkers_alya)
@@ -1750,6 +2053,22 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
                                       inputs, neqs::Int,
                                       elem_bboxes::Vector{NTuple{4,Float64}},
                                       bins::ElemBins)
+    # See the 3D variant / the cache section: the point search is geometry-only,
+    # so on a static mesh it is done once and reused.
+    use_cache = _couple_cache_enabled(inputs)
+    if use_cache && cpg.interp_elem === nothing
+        nloc = build_interp_cache_2d!(cpg, alya_coords, ξ_nodes, ω,
+                                      elem_bboxes, bins, e_conn, elem_x, elem_y,
+                                      ψξ, ψη, dψξ, dψη, α, x_e, y_e,
+                                      mesh_x, mesh_y)
+        if cpg.lrank == 0
+            println("[coupling] interpolation cache built: $nloc/$(size(alya_coords,1)) ",
+                    "points located in elements (rest use nearest-node). ",
+                    "Per-step point search now skipped.")
+            flush(stdout)
+        end
+    end
+
     if cpg.send_coords
         # Build a (npoin × ndime) matrix whose columns are the Jexpresso mesh
         # node coordinates, then interpolate those fields to Alya point locations
@@ -1761,25 +2080,37 @@ function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData,
             coord_mat[ip, 1] = mesh_x[ip]
             ndime >= 2 && (coord_mat[ip, 2] = mesh_y[ip])
         end
-        interpolate_solution_to_alya_coords!(
-            u_interp, alya_coords, coord_mat,
-            ξ_nodes, ω, ndime,
-            elem_bboxes, bins,
-            e_conn, elem_x, elem_y,
-            ψξ, ψη, dψξ, dψη, α, x_e, y_e,
-            mesh_x, mesh_y)
+        if use_cache
+            interpolate_cached!(u_interp, coord_mat, ndime,
+                                cpg.interp_elem, cpg.interp_near,
+                                cpg.interp_wts, cpg.interp_conn)
+        else
+            interpolate_solution_to_alya_coords!(
+                u_interp, alya_coords, coord_mat,
+                ξ_nodes, ω, ndime,
+                elem_bboxes, bins,
+                e_conn, elem_x, elem_y,
+                ψξ, ψη, dψξ, dψη, α, x_e, y_e,
+                mesh_x, mesh_y)
+        end
         pack_velocity_data!(cpg, @view(u_interp[:, 1:ndime]), owner_ranks)
     else
         npoin = size(qout, 1)
         u2uaux!(u_mat, u, neqs, npoin)
         call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
-        interpolate_solution_to_alya_coords!(
-            u_interp, alya_coords, qout,
-            ξ_nodes, ω, neqs,
-            elem_bboxes, bins,
-            e_conn, elem_x, elem_y,
-            ψξ, ψη, dψξ, dψη, α, x_e, y_e,
-            mesh_x, mesh_y)
+        if use_cache
+            interpolate_cached!(u_interp, qout, neqs,
+                                cpg.interp_elem, cpg.interp_near,
+                                cpg.interp_wts, cpg.interp_conn)
+        else
+            interpolate_solution_to_alya_coords!(
+                u_interp, alya_coords, qout,
+                ξ_nodes, ω, neqs,
+                elem_bboxes, bins,
+                e_conn, elem_x, elem_y,
+                ψξ, ψη, dψξ, dψη, α, x_e, y_e,
+                mesh_x, mesh_y)
+        end
         pack_velocity_data!(cpg, @view(u_interp[:, 2:neqs-1]), owner_ranks)
     end
     coupling_exchange_data!(cpg)
@@ -1810,6 +2141,23 @@ function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
                                           inputs, neqs::Int,
                                           elem_bboxes::Vector{NTuple{6,Float64}},
                                           bins::ElemBins3D)
+    # Build the location cache on the first exchange (see the cache section
+    # above). Doing it lazily here keeps it next to its only consumer and needs
+    # nothing from setup ordering.
+    use_cache = _couple_cache_enabled(inputs)
+    if use_cache && cpg.interp_elem === nothing
+        nloc = build_interp_cache_3d!(cpg, alya_coords, ξ_nodes, ω,
+                                      elem_bboxes, bins, e_conn, elem_x, elem_y, elem_z,
+                                      ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
+                                      x_e, y_e, z_e, mesh_x, mesh_y, mesh_z)
+        if cpg.lrank == 0
+            println("[coupling] interpolation cache built: $nloc/$(size(alya_coords,1)) ",
+                    "points located in elements (rest use nearest-node). ",
+                    "Per-step point search now skipped.")
+            flush(stdout)
+        end
+    end
+
     if cpg.send_coords
         ndime     = cpg.ndime
         npoin     = length(mesh_x)
@@ -1819,27 +2167,39 @@ function je_perform_coupling_exchange_3d(u, u_mat, t, cpg::CouplingData,
             coord_mat[ip, 2] = mesh_y[ip]
             coord_mat[ip, 3] = mesh_z[ip]
         end
-        interpolate_solution_to_alya_coords!(
-            u_interp, alya_coords, coord_mat,
-            ξ_nodes, ω, ndime,
-            elem_bboxes, bins,
-            e_conn, elem_x, elem_y, elem_z,
-            ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
-            x_e, y_e, z_e,
-            mesh_x, mesh_y, mesh_z)
+        if use_cache
+            interpolate_cached!(u_interp, coord_mat, ndime,
+                                cpg.interp_elem, cpg.interp_near,
+                                cpg.interp_wts, cpg.interp_conn)
+        else
+            interpolate_solution_to_alya_coords!(
+                u_interp, alya_coords, coord_mat,
+                ξ_nodes, ω, ndime,
+                elem_bboxes, bins,
+                e_conn, elem_x, elem_y, elem_z,
+                ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
+                x_e, y_e, z_e,
+                mesh_x, mesh_y, mesh_z)
+        end
         pack_velocity_data!(cpg, @view(u_interp[:, 1:ndime]), owner_ranks)
     else
         npoin = size(qout, 1)
         u2uaux!(u_mat, u, neqs, npoin)
         call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
-        interpolate_solution_to_alya_coords!(
-            u_interp, alya_coords, qout,
-            ξ_nodes, ω, neqs,
-            elem_bboxes, bins,
-            e_conn, elem_x, elem_y, elem_z,
-            ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
-            x_e, y_e, z_e,
-            mesh_x, mesh_y, mesh_z)
+        if use_cache
+            interpolate_cached!(u_interp, qout, neqs,
+                                cpg.interp_elem, cpg.interp_near,
+                                cpg.interp_wts, cpg.interp_conn)
+        else
+            interpolate_solution_to_alya_coords!(
+                u_interp, alya_coords, qout,
+                ξ_nodes, ω, neqs,
+                elem_bboxes, bins,
+                e_conn, elem_x, elem_y, elem_z,
+                ψξ, ψη, ψζ, dψξ, dψη, dψζ, α,
+                x_e, y_e, z_e,
+                mesh_x, mesh_y, mesh_z)
+        end
         pack_velocity_data!(cpg, @view(u_interp[:, 2:neqs-1]), owner_ranks)
     end
     coupling_exchange_data!(cpg)
