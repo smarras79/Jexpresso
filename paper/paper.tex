@@ -254,7 +254,11 @@ representative results. The most substantial are:
 \item \textbf{High-speed compressible flow:} Sod shock tube, quasi-1D Laval nozzle, isentropic vortex.
 \item \textbf{Magnetohydrodynamics:} ideal GLM-MHD with divergence cleaning, on the magnetized Kelvin--Helmholtz instability and the Orszag--Tang vortex.
 \item \textbf{Radiative transfer:} 2D/3D transport with scattering, coupled to a dynamical core for atmospheric radiation.
-\item \textbf{Others:} shallow water with wetting/drying, elliptic and Helmholtz problems, advection--diffusion, Burgers, acoustics.
+\item \textbf{2D shallow water with grid adaptivity:} solitary-wave run-up on a
+  conical island with wetting and drying, on a p4est forest refined and coarsened
+  on the water-level perturbation as the wave travels, with the time step
+  rescaled by the current refinement level; also the Williamson sphere test cases.
+\item \textbf{Others:} elliptic and Helmholtz problems, advection--diffusion, Burgers, acoustics.
 \end{itemize}
 
 \begin{figure}[htbp]

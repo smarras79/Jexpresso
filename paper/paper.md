@@ -239,8 +239,12 @@ representative results. The most substantial are:
   magnetized Kelvin--Helmholtz instability and the Orszag--Tang vortex.
 - **Radiative transfer:** 2D/3D transport with scattering, coupled to a
   dynamical core for atmospheric radiation.
-- **Others:** shallow water with wetting/drying, elliptic and Helmholtz
-  problems, advection--diffusion, Burgers, acoustics.
+- **2D shallow water with grid adaptivity:** solitary-wave run-up on a conical
+  island with wetting and drying, on a p4est forest refined and coarsened on the
+  water-level perturbation as the wave travels, with the time step rescaled by
+  the current refinement level; also the Williamson sphere test cases.
+- **Others:** elliptic and Helmholtz problems, advection--diffusion, Burgers,
+  acoustics.
 
 These have supported published work on unbounded-domain spectral elements
 [@tissaoui2024efficient], adaptive refinement for atmospheric radiation
