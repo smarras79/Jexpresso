@@ -466,6 +466,31 @@ end
 
 end
 
+# The no-`inputs` counterpart. The generic 2D _expansion_visc! calls
+# SGS_diffusion with two different argument lists — the momentum and
+# scalar branches pass (…, PhysConst, Δ2, VT, SD), only the τ·u
+# viscous-work term passes `inputs` before VT — and until this method
+# existed the 2D DSGS() path raised MethodError on its first call
+# (ieq = 1, the "other scalars" branch at rhs.jl:2207), i.e.
+# problems/CompEuler/theta_dsgs could not start at all.
+#
+# NOTE this makes that case *run*; it does not make it correct. Two
+# other defects on the same path are untouched and deliberate to leave
+# alone (see DSGS.md §6): the residual there omits M⁻¹, and the two
+# momentum slots are still zeroed by a leftover diagnostic block, so
+# only the ρθ equation is actually stabilized.
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               ::DSGS, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+
+    return visc_coeffieq[ieq]
+
+end
+
 # Same accessor for the MHD variant: compute_dsgs_viscosity!(::DSGS_MHD)
 # has already packed the per-element, per-equation coefficient into
 # visc_coeffieq, so the assembly loop just reads it back.
