@@ -204,7 +204,7 @@ exchanges grid metadata in a handshake, and then passes fields directly between
 ranks with the spatial search resolved once at setup. This lets a Julia
 dynamical core drive a code that would be impractical to rewrite, and has
 coupled large-scale atmospheric flow in Jexpresso to human-scale Lagrangian
-transport of micro-plastics in Alya [@houzeaux2026coupling].
+transport of microplastics in Alya [@houzeaux2026coupling].
 
 # Key features
 
