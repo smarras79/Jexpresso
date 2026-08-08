@@ -71,11 +71,30 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         with:
-          # The suite runs real simulations, so the two defaults of this
-          # action (bounds checking forced on, coverage instrumentation on)
-          # would multiply the wall time for no benefit here. Flip either
-          # back to debug a suspected out-of-bounds access.
-          check_bounds: 'no'
+          # This suite runs real simulations, so the test process must be in
+          # Julia's ORDINARY configuration — the same one a developer runs
+          # locally. All three of this action's defaults break that:
+          #
+          #   check_bounds: 'yes' (or 'no') sets a non-default cache flag
+          #     (Base.CacheFlags check_bounds 1 or 2 instead of 0), which
+          #     invalidates every precompiled pkgimage in the depot and makes
+          #     Pkg re-precompile the whole dependency tree — the
+          #     "579 dependencies successfully precompiled in 751 seconds"
+          #     step. 'auto' is Julia's default and matches the caches.
+          #
+          #   depwarn: 'yes' makes every call to a deprecated method capture
+          #     a backtrace to identify the caller — measured at ~49 µs per
+          #     call against ~123 ns with the default. Once per session that
+          #     is nothing; inside an RHS evaluated millions of times it is
+          #     the difference between seconds and hours.
+          #
+          #   coverage: true instruments every line of the solver.
+          #
+          # Flip check_bounds back to 'yes' when chasing a suspected
+          # out-of-bounds access, and depwarn to 'yes' when hunting
+          # deprecations — but not both, and not by default.
+          check_bounds: 'auto'
+          depwarn: 'no'
           coverage: false
       - name: Upload run output
         if: always()

@@ -228,20 +228,11 @@ if parsed_CI_mode == "true" &&
     end
     inputs[:lwrite_initial] = false
 
-    #----------------------------------------------------------
-    # Progress heartbeat.
-    #
-    # The consequence of the two settings above is that nothing is printed
-    # between "Solving ODE" and the single write at the end — thousands of
-    # steps of silence, which on a CI runner is indistinguishable from a
-    # hung job (and no way to tell, afterwards, how fast it was going).
-    # The heartbeat prints the first 5 steps and then every 100th, so a
-    # 2500-step run costs ~25 lines and shows both liveness and rate.
-    #
-    # JEXPRESSO_STEP_HEARTBEAT still wins over this (see TimeIntegrators),
-    # so JEXPRESSO_STEP_HEARTBEAT=0 turns it back off.
-    #----------------------------------------------------------
-    inputs[:lstep_heartbeat] = true
+    # NOTE: CI mode deliberately does NOT switch on :lstep_heartbeat. With a
+    # single write at :tend nothing is printed during the solve, so a slow run
+    # looks like a hung one — but per-step output is noise in a healthy run.
+    # Set JEXPRESSO_STEP_HEARTBEAT=1 when you need to see progress or measure
+    # the step rate (first 5 steps, then every 100th; see TimeIntegrators.jl).
 end
 
 if rank == 0

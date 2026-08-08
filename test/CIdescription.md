@@ -86,10 +86,13 @@ That script does every step of the old checklist for you:
 | copy `problems/<EQS>/<CASE>/` → `test/CI-runs/<EQS>/<CASE>/` (skipping any `output/`, symlinking any `.msh`) | `generate_ci_ref.jl` |
 | write HDF5, next to the case inputs, no timestamped directory | CI mode (`src/run.jl`) |
 | write **one** output, the final state, whatever cadence the deck asked for | CI mode (`src/run.jl`) |
-| print a step heartbeat — first 5 steps, then every 100th — so a long run shows progress instead of looking hung | CI mode (`src/run.jl`) |
 | run the case and publish `test/CI-ref/<EQS>/<CASE>/output/` | `generate_ci_ref.jl` |
 | add the `CICase(...)` line to `test/ci_cases.jl`, with a timeout from the measured run time | `generate_ci_ref.jl` |
 | commit | **you** — the diff is the new definition of "correct", so look at it |
+
+Nothing is printed during the solve (one write, at the end). To watch
+progress or measure the step rate, run with `JEXPRESSO_STEP_HEARTBEAT=1`,
+which prints the first 5 steps and then every 100th.
 
 The one judgement call left to you is **how long the case should run**. The
 copied deck keeps whatever `:tend` `problems/` had; if that is minutes of
