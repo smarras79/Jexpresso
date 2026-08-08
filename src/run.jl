@@ -227,6 +227,21 @@ if parsed_CI_mode == "true" &&
         delete!(inputs, :ndiagnostics_outputs)
     end
     inputs[:lwrite_initial] = false
+
+    #----------------------------------------------------------
+    # Progress heartbeat.
+    #
+    # The consequence of the two settings above is that nothing is printed
+    # between "Solving ODE" and the single write at the end — thousands of
+    # steps of silence, which on a CI runner is indistinguishable from a
+    # hung job (and no way to tell, afterwards, how fast it was going).
+    # The heartbeat prints the first 5 steps and then every 100th, so a
+    # 2500-step run costs ~25 lines and shows both liveness and rate.
+    #
+    # JEXPRESSO_STEP_HEARTBEAT still wins over this (see TimeIntegrators),
+    # so JEXPRESSO_STEP_HEARTBEAT=0 turns it back off.
+    #----------------------------------------------------------
+    inputs[:lstep_heartbeat] = true
 end
 
 if rank == 0
