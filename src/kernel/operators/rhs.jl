@@ -624,10 +624,36 @@ function _build_rhs!(RHS, u, params, time)
     @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
+    # DynSGS-MHD: advance the step-cadenced BDF2 history.
+    #
+    # params.qp.qnm1/qnm2 below are advanced on every RK *stage*, so a BDF2
+    # stencil built on them is not an approximation of ∂q/∂t at all. DynSGS
+    # keeps its own pair and rolls it exactly once per time step. `time`
+    # sweeps t + cᵢΔt within a step, so the >= 0.999Δt gate fires once per
+    # step regardless of the stage layout. params.uaux is current here:
+    # inviscid_rhs_el! refreshed it from u at the top of this call.
+    #-----------------------------------------------------------------------------------
+    # The :lvisc test is not redundant. params_setup only allocates the
+    # dsgs_qnm* buffers when lvisc is on, so a case that keeps
+    # visc_model = DSGS() but sets :lvisc => false -- the natural way to
+    # switch the model off for a comparison run -- would otherwise
+    # broadcast npoin×neqs into the 1×1 dummies and die with
+    # DimensionMismatch on the first RHS call. Keep this condition in step
+    # with the allocation condition in params_setup.jl.
+    if params.inputs[:lvisc] == true &&
+        (params.VT == DSGS_MHD() || params.VT == DSGS())
+        if time - params.dsgs_thist[] >= 0.999*params.Δt
+            params.dsgs_qnm1 .= params.dsgs_qnm2
+            params.dsgs_qnm2 .= params.uaux
+            params.dsgs_thist[] = time
+        end
+    end
+
+    #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
     if (params.inputs[:lvisc] == true)
-        
+
         @timeit_debug JEXPRESSO_TIMER "resetRHS_visc" resetRHSToZero_viscous!(params, SD)
         
         @timeit_debug JEXPRESSO_TIMER "viscous_rhs_el" viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
@@ -956,7 +982,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     if params.VT == DSGS()
         TT = eltype(params.μ_dsgs)
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
-                                params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                 params.qp.qe,
                                 params.RHS, params.Minv, params.visc_coeff,
                                 TT(params.Δt),
@@ -1038,6 +1064,50 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # _expansion_visc! is called for each element. The 2D _expansion_visc!
     # dispatches SGS_diffusion(::DSGS, ::NSD_2D) which simply returns
     # visc_coeffieq[ieq], so the per-element value flows straight through.
+    # Marras-Nazarov DynSGS for the 2D ideal GLM-MHD system. Same three-step
+    # shape as the Euler-θ DSGS path below — fill μ_dsgs, broadcast it to
+    # nodes for output, then assemble through the shared typed barrier —
+    # but the coefficient itself comes from compute_dsgs_viscosity!(::DSGS_MHD)
+    # which uses the MHD equation of state, the fast magnetosonic speed and
+    # its own step-cadenced BDF2 history. See the header of that function.
+    if params.VT == DSGS_MHD()
+        TT = eltype(params.μ_dsgs)
+
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
+                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                params.RHS, params.Minv, params.visc_coeff,
+                                params.dsgs_avg, params.dsgs_denom,
+                                TT(params.Δt),
+                                params.mesh.connijk, params.mesh.Δelem,
+                                TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
+                                TT(get(params.inputs, :dsgs_Prt,   0.7)),
+                                TT(get(params.inputs, :dsgs_C1,    1.0)),
+                                TT(get(params.inputs, :dsgs_C2,    0.5)),
+                                get_mpi_comm(),
+                                Int(params.mesh.nelem), Int(params.mesh.ngl))
+
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(params.mesh.nelem),
+                                 Int(params.mesh.ngl), SD)
+
+        _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
+                                 params.rhs_diffξ_el, params.rhs_diffη_el,
+                                 params.rhs_diff_el,
+                                 params.visc_coeff_dsgs, params.μ_dsgs,
+                                 params.ω,
+                                 params.mp.Tabs, params.mp.qn, params.mp.qsatt,
+                                 Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy,
+                                 params.metrics.dηdx, params.metrics.dηdy,
+                                 params.mesh.connijk, params.inputs, params.rhs_el,
+                                 Int64(params.mesh.nelem), Int64(params.neqs),
+                                 connijk, Float64(params.mesh.Δeffective_l),
+                                 params.QT, params.AD, params.SOL_VARS_TYPE,
+                                 DSGS_MHD())
+        return
+    end
+
     if params.VT == DSGS()
         TT = eltype(params.μ_dsgs)
 
@@ -1048,7 +1118,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # hydrostatic background.
         Pr_TT = TT(params.inputs[:Pr])
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
-                                params.uaux, params.qp.qnm2, params.qp.qnm1,
+                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                 params.qp.qe,
                                 params.RHS, params.Minv, params.visc_coeff,
                                 TT(params.Δt),
@@ -1124,7 +1194,8 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   connijk_mesh, inputs, rhs_el,
                                   nelem, neqs,
                                   connijk, Δ,
-                                  QT, AD, SOL_VARS_TYPE)
+                                  QT, AD, SOL_VARS_TYPE,
+                                  VT = DSGS())
 
     for iel = 1:nelem
         # Marras (10): mass conservation untouched.
@@ -1155,7 +1226,7 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                              connijk_mesh,
                              inputs, rhs_el,
                              iel, ieq,
-                             QT, DSGS(), NSD_2D(), AD; Δ=Δ)
+                             QT, VT, NSD_2D(), AD; Δ=Δ)
         end
     end
 

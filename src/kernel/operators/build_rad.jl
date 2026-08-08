@@ -529,10 +529,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
     x_warm = zeros(Float64, npoin_ang_total)
     @time solution = solve_parallel_gmres_asm(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, x_warm;
-        npoin_g = npoin_ang_total,
-        precond = :global_ilu,
-        restart = 50,
-        tol     = 1e-6)
+        npoin_g     = npoin_ang_total,
+        precond     = inputs[:RT_precond],
+        restart     = inputs[:RT_gmres_restart],
+        tol         = inputs[:RT_gmres_tol],
+        asm_ilu_tau = inputs[:RT_asm_ilu_tau])
    
     MPI.Comm_rank(comm) == 0 && @info "radiation solved ($(npoin_ang_total) DOF)"
     A = nothing
@@ -1876,6 +1877,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 ip2gip_dedup[child_ip] = parent_global_spa
                 push!(_remapped_ips, child_ip)
             end
+            _cache_pre = nothing
         end
 
         # ── Pre-adaptivity connectivity and numbering ─────────────────────────
@@ -1889,6 +1891,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
         @rankinfo rank "✓ Connectivity built: n_spa=$n_spa, n_non_global=$n_non_global_nodes"
         flush(stdout)
+        # Save base-mesh connectivity and DOF count for warm-start restriction.
+        # connijk_spa is rebound (not mutated) at adaptation time, so this alias is safe.
+        # NOTE: spatial AMR between time steps is not yet supported for warm-start.
+        n_spa_base       = n_spa
+        connijk_spa_base = connijk_spa
 
         @rankinfo rank "Building pre-adaptivity global numbering..."
         flush(stdout)
@@ -1899,6 +1906,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 extra_meshes_extra_nops, extra_meshes_extra_nelems,
                 n_spa, n_non_global_nodes, nc_non_global_nodes;
                 remapped_ips = _remapped_ips)
+        gip2ip = nothing
         @rankinfo rank "✓ Global numbering complete: gnpoin=$gnpoin"
         flush(stdout)
 
@@ -2001,6 +2009,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             n_forced_after == n_forced_before && break
         end
 
+        # Save pre-adaptation state for warm-start interpolation.
+        # Only copy if a previous solution exists to interpolate from;
+        # skip the deepcopy overhead on the first call.
+        has_warm_start   = rt_sol_lw_available || rt_sol_sw_available
+        connijk_spa_pre  = has_warm_start ? deepcopy(connijk_spa)             : nothing
+        connijk_ang_pre  = has_warm_start ? deepcopy(extra_meshes_connijk)    : nothing
+        coords_ang_pre   = has_warm_start ? deepcopy(extra_meshes_coords)     : nothing
+        ref_level_pre    = has_warm_start ? deepcopy(extra_meshes_ref_level)  : nothing
+        nelem_ang_pre    = has_warm_start ? copy(extra_meshes_extra_nelems)   : nothing
+        nop_ang_pre      = has_warm_start ? deepcopy(extra_meshes_extra_nops) : nothing
+        x_warm_interp    = Float64[]
+
         adapt_angular_grid_3Dby2D!(
             criterion, thresholds, extra_meshes_ref_level, nelem, ngl,
             extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors,
@@ -2014,6 +2034,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             mesh.xmin, mesh.ymin, mesh.zmin,
             mesh.xmax, mesh.ymax, mesh.zmax,
             extra_mesh[1].ψ, extra_mesh[1].dψ, ang_refine_mask)
+        criterion = nothing; pointwise_interaction = nothing
+        ang_refine_records = nothing; ang_refine_mask = nothing
+        GC.gc()
 
         nonowned_parent_indices = Set{Int}()
         nc_mat = sparse(I,n_spa,n_spa)
@@ -2045,7 +2068,26 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     
                 adapted = true
                 @rankinfo rank "Hanging nodes: $n_non_global_nodes"
-    
+
+                if has_warm_start
+                    sol_old = rt_sol_lw_available ? rt_sol_lw : rt_sol_sw
+                    @rankinfo rank "Interpolating warm start to adapted mesh..."
+                    x_warm_interp = interpolate_warm_start_to_adapted_mesh(
+                        sol_old,
+                        connijk_spa_pre, connijk_spa,
+                        connijk_ang_pre, extra_meshes_connijk,
+                        coords_ang_pre,  extra_meshes_coords,
+                        nop_ang_pre,     extra_meshes_extra_nops,
+                        nelem_ang_pre,   extra_meshes_extra_nelems,
+                        ref_level_pre,   extra_meshes_ref_level,
+                        nelem, ngl, n_spa)
+                    @rankinfo rank "✓ Warm start interpolated ($(length(x_warm_interp)) DOFs)"
+                end
+                connijk_spa_pre = nothing; connijk_ang_pre = nothing
+                coords_ang_pre  = nothing; ref_level_pre   = nothing
+                nelem_ang_pre   = nothing; nop_ang_pre     = nothing
+                GC.gc()
+
                 # ── Post-adaptivity global numbering ──────────────────────────────
                 @rankinfo rank "Building post-adaptivity global numbering..."
                 ip2gip_spa, gip2ip, gip2owner_spa, gnpoin =
@@ -2055,6 +2097,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                         extra_meshes_extra_nops, extra_meshes_extra_nelems,
                         n_spa, n_non_global_nodes, nc_non_global_nodes;
                         remapped_ips = _remapped_ips)
+                gip2ip = nothing
     
                 @rankinfo rank "Global DOF count (post-adapt): $gnpoin  (free: $(n_spa - n_non_global_nodes), hanging: $n_non_global_nodes)"
     
@@ -2080,7 +2123,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
                     extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
                     extra_meshes_ref_level, n_spa, neighbors)
-    
+                # Derivative metric arrays no longer needed after ghost layer build.
+                # extra_meshes_extra_Je is kept: required for angular integration at the end.
+                extra_meshes_extra_dξdx = nothing; extra_meshes_extra_dxdξ = nothing
+                extra_meshes_extra_dξdy = nothing; extra_meshes_extra_dydξ = nothing
+                extra_meshes_extra_dηdx = nothing; extra_meshes_extra_dxdη = nothing
+                extra_meshes_extra_dηdy = nothing; extra_meshes_extra_dydη = nothing
+                GC.gc()
+
                 @rankinfo rank "Building extended local numbering for ghost parents..."
                 gid_to_extended_local, extended_local_to_gid, _ =
                     build_extended_local_numbering(n_spa, ghost_layer, ip2gip_spa, rank)
@@ -2137,6 +2187,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 end
     
                 # ── LHS and mass matrix on adapted mesh ───────────────────────────
+                # Free pre-adaptation LHS/Md/M_inv before allocating adapted versions.
+                LHS = nothing; M_inv = nothing; Md = nothing; GC.gc()
                 @rankinfo rank "Assembling LHS on adapted mesh..."
                 LHS = sparse_lhs_assembly_3Dby2D_adaptive(
                     ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
@@ -2321,13 +2373,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
             M_inv = spdiagm(0 => 1.0 ./ Md)
             MLHS  = sparse(M_inv * LHS)
+            M_inv = nothing; LHS = nothing; Md = nothing; GC.gc()
             # ── All-reduce parent–parent entries across ranks ─────────────────────
             # Hanging-node constraint handling requires that (parent, parent) blocks
             # of M⁻¹LHS are globally consistent before restriction/prolongation.
             if nprocs > 1
                 @rankinfo rank "All-reducing parent-parent matrix entries..."
             end
-    
+
             # ── Parallel restriction: apply R from the left ───────────────────────
             # Interface hanging nodes on other ranks contribute row effects that must
             # be communicated before the local nc_mat application.
@@ -2336,44 +2389,49 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 compute_hanging_row_effects_before_restriction(
                     ghost_constraint_data, MLHS, ip2gip_spa, gip2owner_spa, rank,
                     gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
-    
+            MLHS = nothing
+            n_spa_g = size(MLHS_effects, 1)
+
             A_left_restricted = nc_mat * MLHS_effects
-    
+
             received_row_effects =
                 exchange_hanging_effects(row_effects_to_send, rank, comm)
-    
+
             A_with_row_effects = add_hanging_row_effects(
                 A_left_restricted, received_row_effects, ip2gip_spa,
-                size(MLHS_effects, 1), rank, gip_to_local)
-    
+                n_spa_g, rank, gip_to_local)
+            A_left_restricted = nothing; MLHS_effects = nothing
+
             # ── Parallel prolongation: apply P from the right ─────────────────────
             @rankinfo rank "Applying parallel prolongation (right multiply by P)..."
             col_effects_to_send, A_ghost_effects =
                 compute_hanging_col_effects_before_prolongation(
                     ghost_constraint_data, A_with_row_effects, ip2gip_spa, gip2owner_spa,
-                    n_spa, size(MLHS_effects, 1), all_hanging_nodes, rank,
+                    n_spa, n_spa_g, all_hanging_nodes, rank,
                     gid_to_extended_parents, extended_parents_to_gid, gip_to_local)
-    
+            A_with_row_effects = nothing
+
             A_both_restricted = A_ghost_effects * P
-    
+            A_ghost_effects = nothing
+
             received_col_effects =
                 exchange_hanging_effects(col_effects_to_send, rank, comm)
-    
-            n_spa_g = size(MLHS_effects, 1)
+
             A_with_col_effects = add_hanging_col_effects(
                 A_both_restricted, received_col_effects, ip2gip_spa,
                 n_spa_g, rank, gip_to_local)
-    
+            A_both_restricted = nothing; received_col_effects = nothing
+
             # ── Extract free-node submatrix ───────────────────────────────────────
             n_free = n_spa - length(all_hanging_nodes)
             @rankinfo rank "Extracting free-node submatrix (removing hanging rows/cols)..."
             A_free = extract_free_submatrix_remove_all_hanging(
                 A_with_col_effects, all_hanging_nodes, n_free, n_spa_g, rank)
-    
+            A_with_col_effects = nothing; GC.gc()
+
             A = sparse(A_free)
-    
-            A = sparse(A)
-    
+            A_free = nothing
+
             RHS = zeros(TFloat, n_spa_g)
             ref = zeros(TFloat, n_spa)
             BDY = zeros(TFloat, n_spa_g)
@@ -2755,9 +2813,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
 
         M_inv = spdiagm(0 => 1.0 ./ Md)
-        MLHS     = sparse(M_inv * LHS)
-        A = copy(MLHS)
-        M_inv = nothing; LHS = nothing
+        A = sparse(M_inv * LHS)
+        M_inv = nothing; LHS = nothing; Md = nothing
         GC.gc()
 
         BDY = zeros(TFloat, n_dofs)
@@ -3349,6 +3406,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             Ωx = sin(θ)*cos(ϕ); Ωy = sin(θ)*sin(ϕ); Ωz = cos(θ)
             if ip in mesh.poin_in_bdy_face
                 face_normals = bdy_normals[ip]
+                isempty(face_normals) && continue  # periodic node: no inflow BC
                 best_dot = 0.0
                 best_nx  = face_normals[1][1]
                 best_ny  = face_normals[1][2]
@@ -3362,7 +3420,13 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     end
                 end
                 if best_dot < -1e-13
-                    val = user_rad_bc(x, y, z, θ, ϕ)
+                    if inputs[:RT_shortwave]
+                        val = user_rad_bc_shortwave_diffuse(x, y, z, θ, ϕ, bdy, sw, F_dir[ip], τ_nodes[ip], sw_ω₀_lateral, inputs[:rad_HG_g][ip])
+                    elseif inputs[:RT_longwave]
+                        val = user_rad_bc_longwave(x, y, z, θ, ϕ, best_nx, best_ny, best_nz, ip, atmos_data, bdy, lw)
+                    else
+                        val = user_rad_bc(x, y, z, θ, ϕ)
+                    end
                     BDY[ip_g] = val
                     boundary_dict[ip_g] = val
                 end
@@ -3499,34 +3563,40 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     npoin_ang_total = size(B, 1)
 
     solution = if (inputs[:adaptive_extra_meshes] && inputs[:RT_shortwave])
-        x_warm = zeros(Float64,n_spa)
-        if (rt_sol_sw_available)
-            x_warm = rt_sol_sw
+        x_warm = if !isempty(x_warm_interp)
+            x_warm_interp
+        elseif rt_sol_sw_available && length(rt_sol_sw) == n_spa
+            rt_sol_sw
+        else
+            zeros(Float64, n_spa)
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
-            precond     = :global_ilu,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.01,
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
-            restart     = 100,
-            tol         = 1e-4)
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
 
     elseif (inputs[:adaptive_extra_meshes] && inputs[:RT_longwave])
-        x_warm = zeros(Float64,n_spa)
-        if (rt_sol_lw_available)
-            x_warm = rt_sol_lw
+        x_warm = if !isempty(x_warm_interp)
+            x_warm_interp
+        elseif rt_sol_lw_available && length(rt_sol_lw) == n_spa
+            rt_sol_lw
+        else
+            zeros(Float64, n_spa)
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_spa, x_warm;
-            precond     = :global_ilu,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
-            restart     = 100,
-            tol         = 1e-7)
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
 
     elseif inputs[:adaptive_extra_meshes]
         # Row scaling (left) — normalize by row norm
@@ -3542,14 +3612,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin,
             n_spa, x_warm;
-            precond     = :global_ilu,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
             npoin_g     = n_spa_g,
             g_ip2gip    = extended_parents_to_gid,
             g_gip2ip    = gid_to_extended_parents,
-            restart     = 100,
-            tol         = 1e-7)
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
 
     elseif (inputs[:RT_shortwave])
         x_warm = Float64[]
@@ -3557,14 +3627,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             x_warm = rt_sol_sw
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
-            npoin_g  = n_ext_spa,
-            g_ip2gip = extended_parents_to_gid_spa,
-            g_gip2ip = gid_to_extended_parents_spa,
-            precond     = :global_lu,
+            npoin_g     = n_ext_spa,
+            g_ip2gip    = extended_parents_to_gid_spa,
+            g_gip2ip    = gid_to_extended_parents_spa,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
-            restart = 100,
-            tol     = 1e-3)
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
 
     elseif (inputs[:RT_longwave])
         x_warm = Float64[]
@@ -3572,14 +3642,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             x_warm = rt_sol_lw
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
-            npoin_g  = n_ext_spa,
-            g_ip2gip = extended_parents_to_gid_spa,
-            g_gip2ip = gid_to_extended_parents_spa,
-            precond     = :global_lu,
+            npoin_g     = n_ext_spa,
+            g_ip2gip    = extended_parents_to_gid_spa,
+            g_gip2ip    = gid_to_extended_parents_spa,
+            precond     = inputs[:RT_precond],
             asm_solver  = :rcmilu,
-            asm_ilu_tau = 0.1,
-            restart = 60,
-            tol     = 1e-7)
+            asm_ilu_tau = inputs[:RT_asm_ilu_tau],
+            restart     = inputs[:RT_gmres_restart],
+            tol         = inputs[:RT_gmres_tol])
     else
         x_warm = Float64[]
         if (inputs[:lmanufactured_solution])
@@ -3591,14 +3661,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
         solve_parallel_gmres_asm(ip2gip_spa, gip2owner_extra, As, B, gnpoin, n_dofs, x_warm;
-        npoin_g  = n_ext_spa,
-        g_ip2gip = extended_parents_to_gid_spa,
-        g_gip2ip = gid_to_extended_parents_spa,
-        precond  = :global_ilu,
-        asm_solver = :rcmsplu,
-        asm_ilu_tau = 0.1,
-        restart  = 50,
-        tol      = 1e-7)
+        npoin_g     = n_ext_spa,
+        g_ip2gip    = extended_parents_to_gid_spa,
+        g_gip2ip    = gid_to_extended_parents_spa,
+        precond     = inputs[:RT_precond],
+        asm_solver  = :rcmsplu,
+        asm_ilu_tau = inputs[:RT_asm_ilu_tau],
+        restart     = inputs[:RT_gmres_restart],
+        tol         = inputs[:RT_gmres_tol])
 
     end
     
@@ -3831,7 +3901,21 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
 
 
     if (inputs[:RT_atmos_coupling])
-        return Q, dTdt, solution
+        # For the adaptive path, restrict the solution back to the base mesh before
+        # saving as warm start so that the *_pre snapshot (always base mesh) matches.
+        sol_to_save = if inputs[:adaptive_extra_meshes] && adapted
+            sol_r = restrict_solution_to_base_mesh(
+                solution_new, connijk_spa, connijk_spa_base,
+                extra_meshes_connijk, extra_meshes_ref_level,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                extra_meshes_coords, extra_mesh, nelem, ngl, n_spa_base)
+            connijk_spa_base = nothing
+            sol_r
+        else
+            connijk_spa_base = nothing
+            solution
+        end
+        return Q, dTdt, sol_to_save
     else
         # ── VTK output ────────────────────────────────────────────────────────────
         if (inputs[:RT_radiative_heating]) && (inputs[:RT_longwave] || inputs[:RT_shortwave])
@@ -4555,6 +4639,234 @@ end
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    interpolate_warm_start_to_adapted_mesh(rt_sol_old, ...)
+
+Re-index and interpolate a warm-start solution vector from the pre-adaptation
+angular mesh to the post-adaptation angular mesh.
+
+Two steps per spatial element:
+1. **Re-index** — for unchanged angular elements the DOF ordering has been
+   completely reshuffled by `adaptive_spatial_angular_numbering_3D_2D!`. Copy
+   old solution values using both the old and new `connijk_spa` as translators.
+2. **Interpolate** — for each parent element that was split into 4 children,
+   evaluate the parent's polynomial at the children's GLL points via
+   barycentric Lagrange interpolation in θ and ϕ independently.
+
+Refinement is detected by comparing `ref_level_pre[iel][e_old]` with
+`ref_level_new[iel][e_new]`: a +1 increment signals that `e_old` became
+children `e_new..e_new+3`; all subsequent old elements are offset by +3.
+
+Only called when `has_warm_start && adapted` (mesh actually changed).
+"""
+
+function interpolate_warm_start_to_adapted_mesh(
+    rt_sol_old,
+    connijk_spa_pre,  connijk_spa_new,
+    connijk_ang_pre,  connijk_ang_new,
+    coords_ang_pre,   coords_ang_new,
+    nop_ang_pre,      nop_ang_new,
+    nelem_ang_pre,    nelem_ang_new,
+    ref_level_pre,    ref_level_new,
+    nelem, ngl, n_spa_new)
+
+    x_warm_new = zeros(Float64, n_spa_new)
+
+    nop_max = maximum(maximum.(nop_ang_new)) + 1
+    src_θ = zeros(nop_max); src_ϕ = zeros(nop_max)
+    tgt_θ = zeros(nop_max); tgt_ϕ = zeros(nop_max)
+    ωθ    = zeros(nop_max); ωϕ    = zeros(nop_max)
+    Lθ    = zeros(nop_max, nop_max)
+    Lϕ    = zeros(nop_max, nop_max)
+
+    for iel = 1:nelem
+        e_new = 1
+        for e_old = 1:nelem_ang_pre[iel]
+            nop_p = nop_ang_pre[iel][e_old]
+
+            refined = e_new <= nelem_ang_new[iel] &&
+                      ref_level_new[iel][e_new] == ref_level_pre[iel][e_old] + 1
+
+            if refined
+                # Build parent GLL source coordinates (θ and ϕ independently)
+                for iθ = 1:nop_p+1
+                    src_θ[iθ] = coords_ang_pre[iel][1, connijk_ang_pre[iel][e_old, iθ, 1]]
+                    src_ϕ[iθ] = coords_ang_pre[iel][2, connijk_ang_pre[iel][e_old, 1, iθ]]
+                end
+                if coords_ang_pre[iel][2, connijk_ang_pre[iel][e_old, 1, nop_p+1]] == 0.0
+                    src_ϕ[nop_p+1] = 2π
+                end
+                BarycentricWeights!(view(src_θ, 1:nop_p+1), view(ωθ, 1:nop_p+1))
+                BarycentricWeights!(view(src_ϕ, 1:nop_p+1), view(ωϕ, 1:nop_p+1))
+
+                for e_child = e_new:e_new+3
+                    nop_c = nop_ang_new[iel][e_child]
+                    for iθ = 1:nop_c+1
+                        tgt_θ[iθ] = coords_ang_new[iel][1, connijk_ang_new[iel][e_child, iθ, 1]]
+                        tgt_ϕ[iθ] = coords_ang_new[iel][2, connijk_ang_new[iel][e_child, 1, iθ]]
+                    end
+                    if coords_ang_new[iel][2, connijk_ang_new[iel][e_child, 1, nop_c+1]] == 0.0
+                        tgt_ϕ[nop_c+1] = 2π
+                    end
+
+                    PolynomialInterpolationMatrix!(
+                        view(src_θ, 1:nop_p+1), view(ωθ, 1:nop_p+1),
+                        view(tgt_θ, 1:nop_c+1), view(Lθ, 1:nop_c+1, 1:nop_p+1))
+                    PolynomialInterpolationMatrix!(
+                        view(src_ϕ, 1:nop_p+1), view(ωϕ, 1:nop_p+1),
+                        view(tgt_ϕ, 1:nop_c+1), view(Lϕ, 1:nop_c+1, 1:nop_p+1))
+
+                    for igl = 1:ngl, jgl = 1:ngl, kgl = 1:ngl
+                        for iθ_c = 1:nop_c+1, jθ_c = 1:nop_c+1
+                            ip_new = connijk_spa_new[iel][igl, jgl, kgl, e_child, iθ_c, jθ_c]
+                            ip_new == 0 && continue
+                            u = 0.0
+                            for iθ_p = 1:nop_p+1, jθ_p = 1:nop_p+1
+                                ip_old = connijk_spa_pre[iel][igl, jgl, kgl, e_old, iθ_p, jθ_p]
+                                u += Lθ[iθ_c, iθ_p] * Lϕ[jθ_c, jθ_p] * rt_sol_old[ip_old]
+                            end
+                            x_warm_new[ip_new] = u
+                        end
+                    end
+                end
+                e_new += 4
+            else
+                # Unchanged element: re-index via both connijk_spa arrays
+                for igl = 1:ngl, jgl = 1:ngl, kgl = 1:ngl
+                    for iθ = 1:nop_p+1, jθ = 1:nop_p+1
+                        ip_new = connijk_spa_new[iel][igl, jgl, kgl, e_new, iθ, jθ]
+                        ip_old = connijk_spa_pre[iel][igl, jgl, kgl, e_old, iθ, jθ]
+                        x_warm_new[ip_new] = rt_sol_old[ip_old]
+                    end
+                end
+                e_new += 1
+            end
+        end
+    end
+
+    return x_warm_new
+end
+
+"""
+    restrict_solution_to_base_mesh(solution_full, connijk_spa, connijk_spa_base,
+        extra_meshes_connijk, extra_meshes_ref_level, extra_meshes_extra_nops,
+        extra_meshes_extra_nelems, extra_meshes_coords, extra_mesh,
+        nelem, ngl, n_spa_base)
+
+Project an RT solution from the h-adapted angular mesh back to the uniform base mesh
+by interpolating each base GLL node from the child element that contains it.
+
+For unchanged angular elements the DOF values are copied directly via both
+`connijk_spa` arrays.  For refined elements each base node is located in one
+of the four child quadrants and the child polynomial is evaluated there by
+barycentric Lagrange interpolation in θ and ϕ independently.
+
+The child ordering produced by `adapt_angular_grid_3Dby2D!` is:
+  offset 0 → θ ∈ [θmin, θ_mid], ϕ ∈ [ϕmin, ϕ_mid]
+  offset 1 → θ ∈ [θ_mid, θmax], ϕ ∈ [ϕmin, ϕ_mid]
+  offset 2 → θ ∈ [θmin, θ_mid], ϕ ∈ [ϕ_mid, ϕmax]
+  offset 3 → θ ∈ [θ_mid, θmax], ϕ ∈ [ϕ_mid, ϕmax]
+
+`solution_full` must be the prolonged solution (hanging nodes filled) so that
+child boundary nodes carry valid values for interpolation.
+
+NOTE: multi-level refinement (ref_level > 1) is not supported here; the angular
+mesh is reset to base between time steps, so ref_level never exceeds 1.
+NOTE: spatial AMR between time steps is not yet supported for warm-start.
+"""
+function restrict_solution_to_base_mesh(
+    solution_full, connijk_spa, connijk_spa_base,
+    extra_meshes_connijk, extra_meshes_ref_level, extra_meshes_extra_nops,
+    extra_meshes_extra_nelems, extra_meshes_coords, extra_mesh,
+    nelem, ngl, n_spa_base)
+
+    solution_base = zeros(Float64, n_spa_base)
+
+    nop_max = maximum(maximum.(extra_meshes_extra_nops)) + 1
+    src_θ = zeros(nop_max); src_ϕ = zeros(nop_max)
+    ωθ_c  = zeros(nop_max); ωϕ_c  = zeros(nop_max)
+    Lθ    = zeros(1, nop_max)
+    Lϕ    = zeros(1, nop_max)
+
+    for iel = 1:nelem
+        e_adapted = 1
+        for e_base = 1:extra_mesh[iel].extra_nelem
+            nop_b = extra_mesh[iel].extra_nop[e_base]
+            ref_b = extra_mesh[iel].ref_level[e_base]  # always 0 on base mesh
+
+            refined = (e_adapted <= extra_meshes_extra_nelems[iel]) &&
+                      (extra_meshes_ref_level[iel][e_adapted] == ref_b + 1)
+
+            if refined
+                # Parent bounds for determining which child contains each base node
+                θmin_b = extra_mesh[iel].extra_coords[1, extra_mesh[iel].extra_connijk[e_base, 1,       1      ]]
+                θmax_b = extra_mesh[iel].extra_coords[1, extra_mesh[iel].extra_connijk[e_base, nop_b+1, 1      ]]
+                ϕmin_b = extra_mesh[iel].extra_coords[2, extra_mesh[iel].extra_connijk[e_base, 1,       1      ]]
+                ϕmax_b = extra_mesh[iel].extra_coords[2, extra_mesh[iel].extra_connijk[e_base, 1,       nop_b+1]]
+                ϕmax_b == 0.0 && (ϕmax_b = 2π)
+                θ_mid = (θmin_b + θmax_b) / 2
+                ϕ_mid = (ϕmin_b + ϕmax_b) / 2
+
+                for igl = 1:ngl, jgl = 1:ngl, kgl = 1:ngl
+                    for iθ_p = 1:nop_b+1, jθ_p = 1:nop_b+1
+                        ip_base = connijk_spa_base[iel][igl, jgl, kgl, e_base, iθ_p, jθ_p]
+                        ip_base == 0 && continue
+
+                        # Physical coords of this base-mesh node
+                        θ_p = extra_mesh[iel].extra_coords[1, extra_mesh[iel].extra_connijk[e_base, iθ_p, 1    ]]
+                        ϕ_p = extra_mesh[iel].extra_coords[2, extra_mesh[iel].extra_connijk[e_base, 1,    jθ_p ]]
+                        ϕ_p == 0.0 && jθ_p == nop_b+1 && (ϕ_p = 2π)
+
+                        # Identify the child that contains (θ_p, ϕ_p) from the known ordering
+                        child_offset = (θ_p > θ_mid ? 1 : 0) + (ϕ_p > ϕ_mid ? 2 : 0)
+                        e_c = e_adapted + child_offset
+                        nop_c = extra_meshes_extra_nops[iel][e_c]
+
+                        # Build child GLL node coordinates and barycentric weights
+                        for iθ = 1:nop_c+1
+                            src_θ[iθ] = extra_meshes_coords[iel][1, extra_meshes_connijk[iel][e_c, iθ, 1   ]]
+                            src_ϕ[iθ] = extra_meshes_coords[iel][2, extra_meshes_connijk[iel][e_c, 1,  iθ  ]]
+                        end
+                        extra_meshes_coords[iel][2, extra_meshes_connijk[iel][e_c, 1, nop_c+1]] == 0.0 &&
+                            (src_ϕ[nop_c+1] = 2π)
+                        BarycentricWeights!(view(src_θ, 1:nop_c+1), view(ωθ_c, 1:nop_c+1))
+                        BarycentricWeights!(view(src_ϕ, 1:nop_c+1), view(ωϕ_c, 1:nop_c+1))
+
+                        # Interpolation matrix: child nodes → single target point (θ_p, ϕ_p)
+                        PolynomialInterpolationMatrix!(
+                            view(src_θ, 1:nop_c+1), view(ωθ_c, 1:nop_c+1),
+                            [θ_p], view(Lθ, 1:1, 1:nop_c+1))
+                        PolynomialInterpolationMatrix!(
+                            view(src_ϕ, 1:nop_c+1), view(ωϕ_c, 1:nop_c+1),
+                            [ϕ_p], view(Lϕ, 1:1, 1:nop_c+1))
+
+                        u = 0.0
+                        for iθ_c = 1:nop_c+1, jθ_c = 1:nop_c+1
+                            ip_adapted = connijk_spa[iel][igl, jgl, kgl, e_c, iθ_c, jθ_c]
+                            u += Lθ[1, iθ_c] * Lϕ[1, jθ_c] * solution_full[ip_adapted]
+                        end
+                        solution_base[ip_base] = u
+                    end
+                end
+                e_adapted += 4
+            else
+                # Unchanged element: re-index via both connijk_spa arrays
+                for igl = 1:ngl, jgl = 1:ngl, kgl = 1:ngl
+                    for iθ = 1:nop_b+1, jθ = 1:nop_b+1
+                        ip_base    = connijk_spa_base[iel][igl, jgl, kgl, e_base,    iθ, jθ]
+                        ip_adapted = connijk_spa[iel][igl, jgl, kgl, e_adapted, iθ, jθ]
+                        solution_base[ip_base] = solution_full[ip_adapted]
+                    end
+                end
+                e_adapted += 1
+            end
+        end
+    end
+
+    return solution_base
+end
+
 """
     adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl,
         nelem_ang, nop_ang, neighbors, npoin_ang, connijk_ang, coords_ang,
@@ -4581,6 +4893,7 @@ in `build_restriction_matrices_local_and_ghost`.
 `connijk_ang`, `coords_ang`, `Je_ang`, all metric arrays, `nop_ang`,
 `nelem_ang`, `npoin_ang`, `ref_level`, `criterion`, `neighbors`.
 """
+
 function adapt_angular_grid_3Dby2D!(criterion, thresholds, ref_level, nelem, ngl, nelem_ang, nop_ang, neighbors, npoin_ang,
         connijk_ang, coords_ang, Je_ang, dξdx_ang, dxdξ_ang, dξdy_ang, dydξ_ang, dηdy_ang, dydη_ang, dηdx_ang, dxdη_ang, connijk,
         x, y, z, xmin_grid, ymin_grid, zmin_grid, xmax_grid, ymax_grid, zmax_grid, ψ, dψ,

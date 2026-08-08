@@ -1,85 +1,68 @@
-# Compares HDF5 output produced by the CI benchmark runs against committed
-# reference solutions in test/CI-ref/.
-#
-# Pass/fail criteria:
-#   - SKIP  : no reference files exist yet (run generate-ci-ref workflow first)
-#   - FAIL  : simulation produced no HDF5 output (code crashed or wrong format)
-#   - FAIL  : any field differs from the reference beyond atol=1e-5
-#   - PASS  : all fields match within tolerance
+#==============================================================================
+ test/compare_benchmarks.jl
 
+ Compares the HDF5 output of one or more CI cases against the reference
+ solutions committed in test/CI-ref/. Used by the `benchmarks` workflow,
+ which runs the simulation in one step and this script in the next, so that
+ the comparison does not have to load the whole Jexpresso package (only
+ HDF5.jl is needed here).
+
+     julia --project=. test/compare_benchmarks.jl                  # all cases
+     julia --project=. test/compare_benchmarks.jl CompEuler/theta  # one case
+
+ Options:
+   --ref DIR   compare against the reference tree in DIR (laid out as
+               <eqs>/<case>/output/) instead of test/CI-ref. Use it to check
+               a reference produced somewhere else — e.g. the ciref-* artifact
+               of a generate-ci-ref run on Linux, against your local output —
+               without committing it first.
+
+ The list of known cases and their tolerances lives in test/ci_cases.jl.
+ Exit status is non-zero when any comparison fails.
+==============================================================================#
 module BenchmarkComparison
 
-using HDF5
 using Test
 
-project_root = dirname(Base.current_project())
+include(joinpath(@__DIR__, "ci_compare.jl"))
+using .CICompare
+using .CICompare.CICases
 
-const BENCHMARKS = [
-    ("CompEuler",    "theta"),
-    ("CompEuler",    "3d"),
-    ("CompEuler",    "wave1d"),
-    ("Burgers",      "case1"),
-    ("Burgers",      "case2d"),
-    ("Elliptic",     "2dlaplace"),
-    ("ShallowWater", "TC2"),
-]
+function parse_args(args::AbstractVector{<:AbstractString})
+    cases    = String[]
+    ref_root = joinpath(CICases.project_root(), "test", "CI-ref")
 
-function find_h5_files(dir::String)
-    isdir(dir) || return String[]
-    sort(filter(f -> endswith(f, ".h5"), readdir(dir, join=true)))
+    i = 1
+    while i <= length(args)
+        arg = String(args[i])
+        if arg == "--ref"
+            i == length(args) && error("--ref needs a directory")
+            ref_root = String(args[i + 1])
+            i += 1
+        elseif startswith(arg, "--ref=")
+            ref_root = String(split(arg, '=', limit = 2)[2])
+        elseif startswith(arg, "-")
+            error("unknown option \"$arg\" — usage: " *
+                  "julia --project=. test/compare_benchmarks.jl " *
+                  "[--ref DIR] [<eqs>/<case> ...]")
+        else
+            push!(cases, arg)
+        end
+        i += 1
+    end
+
+    return (isempty(cases) ? "all" : join(cases, ","), abspath(ref_root))
 end
 
-function compare_h5_files(ref_path::String, gen_path::String)::Bool
-    ref_data = h5open(ref_path, "r") do f
-        Dict(k => read(f[k]) for k in keys(f))
-    end
-    gen_data = h5open(gen_path, "r") do f
-        Dict(k => read(f[k]) for k in keys(f))
-    end
-    for key in keys(ref_data)
-        if !haskey(gen_data, key)
-            @error "Field '$key' missing from generated output"
-            return false
-        end
-        vr, vg = ref_data[key], gen_data[key]
-        ok = vr isa Array{Float64} ? isapprox(vr, vg; atol=1e-5) : vr == vg
-        if !ok
-            @error "Field '$key' differs from reference"
-            return false
-        end
-    end
-    return true
-end
+const SELECTION, REF_ROOT = parse_args(ARGS)
+const CASES = select_cases(SELECTION)
+
+isempty(CASES) && @warn "no CI cases selected — nothing to compare"
+isdir(REF_ROOT) || @warn "reference tree $REF_ROOT does not exist"
+println("Comparing against references in ", REF_ROOT)
 
 @testset "Benchmark comparisons" begin
-    for (eqs, case) in BENCHMARKS
-        @testset "$eqs/$case" begin
-            ref_dir = joinpath(project_root, "test", "CI-ref",  eqs, case, "output")
-            gen_dir = joinpath(project_root, "test", "CI-runs", eqs, case, "output")
-
-            ref_files = find_h5_files(ref_dir)
-            gen_files = find_h5_files(gen_dir)
-
-            if isempty(ref_files)
-                @warn "$eqs/$case: no reference HDF5 files in $ref_dir — " *
-                      "run the 'generate-ci-ref' workflow to create them"
-                @test_skip "no reference files"
-            elseif isempty(gen_files)
-                @error "$eqs/$case: simulation produced no HDF5 output in $gen_dir"
-                @test false
-            elseif length(ref_files) != length(gen_files)
-                @error "$eqs/$case: file count mismatch " *
-                       "(ref=$(length(ref_files)), gen=$(length(gen_files)))"
-                @test false
-            else
-                for (ref_f, gen_f) in zip(ref_files, gen_files)
-                    @testset "$(basename(gen_f))" begin
-                        @test compare_h5_files(ref_f, gen_f)
-                    end
-                end
-            end
-        end
-    end
+    compare_cases(CASES; ref_root = REF_ROOT)
 end
 
-end # module
+end # module BenchmarkComparison

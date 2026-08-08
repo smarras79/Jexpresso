@@ -137,6 +137,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
       inputs[:adaptive_extra_meshes] = false
     end
 
+    if(!haskey(inputs, :RT_precond))
+      inputs[:RT_precond] = :global_lu
+    end
+
+    if(!haskey(inputs, :RT_gmres_tol))
+      inputs[:RT_gmres_tol] = 1e-4
+    end
+
+    if(!haskey(inputs, :RT_gmres_restart))
+      inputs[:RT_gmres_restart] = 100
+    end
+
+    if(!haskey(inputs, :RT_asm_ilu_tau))
+      inputs[:RT_asm_ilu_tau] = 0.1
+    end
+
     if(!haskey(inputs, :extra_dimensions_order))
       inputs[:extra_dimensions_order] = 0
     end
@@ -786,6 +802,27 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:Pr] = 0.7
     end
 
+    #
+    # Marras-Nazarov DynSGS (visc_model = DSGS_MHD()) parameters.
+    #   :dsgs_C1    coefficient of the residual viscosity  C1·Δ²·‖R‖/‖q−⟨q⟩‖
+    #   :dsgs_C2    coefficient of the wave-speed cap      C2·Δ·(|v|+c_f)
+    #   :dsgs_gamma ratio of specific heats used by the MHD EOS and the fast
+    #               magnetosonic speed (5/3 for the monatomic plasma cases;
+    #               deliberately NOT PhysConst.γ, which is air's 1.4)
+    #   :dsgs_Prt   turbulent Prandtl number for the energy slot
+    #
+    if(!haskey(inputs, :dsgs_C1))
+        inputs[:dsgs_C1] = 1.0
+    end
+    if(!haskey(inputs, :dsgs_C2))
+        inputs[:dsgs_C2] = 0.5
+    end
+    if(!haskey(inputs, :dsgs_gamma))
+        inputs[:dsgs_gamma] = 5.0/3.0
+    end
+    if(!haskey(inputs, :dsgs_Prt))
+        inputs[:dsgs_Prt] = 0.7
+    end
 
     #
     # Viscous models:

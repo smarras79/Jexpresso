@@ -147,6 +147,86 @@ every `Point(...)` uses `0` for the extra coordinate rather than a nonzero
 constant — a common cause is a copy-paste bug where a mesh-spacing variable
 (e.g. `gridsize`) ends up in the z slot instead of `0`.
 
+### AMR fails with `could not load library "libp4est.4.dylib"` / `Library not loaded: @rpath/libmpi.12.dylib`
+
+**Q.** An AMR case (`theta_amr`, or anything with `:lamr`/`:linitial_refine`)
+aborts immediately after reading the mesh:
+
+```
+Info    : Done reading './meshes/gmsh_grids/hexa_TFI_10x10.msh'
+ERROR: LoadError: could not load library ".../artifacts/904c551e.../lib/libp4est.4.dylib"
+dlopen(...): Library not loaded: @rpath/libmpi.12.dylib
+  Reason: tried: '.../lib/./libmpi.12.dylib' (no such file),
+          '/Applications/Julia-1.11.app/Contents/Resources/julia/lib/libmpi.12.dylib' (no such file),
+          '/usr/local/lib/libmpi.12.dylib' (no such file),
+          '/usr/lib/libmpi.12.dylib' (no such file, not in dyld cache)
+Stacktrace:
+  [1] p4est_connectivity_new
+    @ ~/.julia/packages/P4est_wrapper/.../src/bindings/p4est_api.jl:361 [inlined]
+  [2] setup_pXest_connectivity_from_geometry(...)
+    @ GridapP4est ...
+```
+
+Non-AMR cases run fine on the same machine, and often the *same* case runs on a
+different machine.
+
+**A.** This is an **MPI binding mismatch**, not a p4est or mesh problem. Read the
+soname: `libmpi.12` is the **MPICH** ABI (OpenMPI is `libmpi.40`). `P4est_jll` is
+built against `MPICH_jll`, and the `MPICH_jll` artifact directory only lands on
+the loader's `@rpath` when `MPICH_jll` is *actually loaded* — which happens only
+when `MPI.jl` is bound to the JLL binary. If `MPIPreferences` points at a
+**system** MPI, `MPICH_jll` is never loaded, nothing supplies
+`libmpi.12.dylib`, and `dlopen` fails exactly as above. The dyld search list in
+the error is the giveaway: artifact dir, Julia's own lib dirs, `/usr/local/lib`,
+`/usr/lib` — no `MPICH_jll` artifact, no Homebrew prefix.
+
+Two things follow from this, and they explain the usual symptoms:
+
+- **Only AMR breaks.** `GridapP4est`/`P4est_wrapper` are the only packages that
+  dlopen `libp4est`. Every non-AMR case avoids p4est entirely and runs happily
+  on a system-MPI binding.
+- **It differs between your own machines.** `LocalPreferences.toml` — the file
+  that records the binding — is in `.gitignore`, so it is per-machine and never
+  travels with a clone. One laptop on `use_jll_binary()` and one desktop on
+  `use_system_binary()` is the common way to see this.
+
+First confirm the binding ([INSTALL.md §5.4](INSTALL.md#54-verify-the-binding)):
+
+```bash
+julia --project=. -e '
+  using MPIPreferences; println("binary  = ", MPIPreferences.binary)
+  using MPI;            println("impl    = ", MPI.identify_implementation())
+                        println("libmpi  = ", MPI.API.libmpi)'
+```
+
+If `binary` is anything other than `MPICH_jll`, that is the cause. Rebind with
+[INSTALL.md §5.2 Route C](INSTALL.md#route-c--mpich_jll-native) and rebuild —
+**the cache clearing is not optional**, or you keep the old library under the
+new preference:
+
+```bash
+rm -f LocalPreferences.toml
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_jll_binary()'
+julia --project=. -e 'using Pkg; Pkg.build("MPI"; verbose=true)'
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+If you must keep a system MPI on that machine (e.g. for coupled Alya runs, which
+need a system `mpif90` anyway), it has to be **MPICH**, not OpenMPI: Homebrew
+`mpich` provides `libmpi.12.dylib`, `open-mpi` provides `libmpi.40.dylib` and can
+never satisfy `P4est_jll`. Even with MPICH you will usually also need its lib
+directory on the loader path, since Homebrew's prefix is not in the list dyld
+searched above:
+
+```bash
+export DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix mpich)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+```
+
+`bash tools/check_mpi_setup.sh` walks the whole binding end to end and reports
+which implementation each layer resolved to. See also
+[Which MPI route should I use](#which-mpi-route-should-i-use--openmpi-mpich-or-the-bundled-mpich_jll)
+and [I switched MPI and now things behave strangely](#i-switched-mpi-and-now-things-behave-strangely--wont-bind).
+
 ### A package fails to precompile with a missing file inside a Julia artifact
 
 **Q.** `Pkg.instantiate()`/`Pkg.precompile()` (or a run that triggers a lazy

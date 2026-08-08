@@ -4,7 +4,7 @@
 |:------------ |
  [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) |
 |**Build Status** |
-| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI)
+| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg?branch=master&event=push)](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml?query=branch%3Amaster) [![Documentation](https://github.com/smarras79/Jexpresso/actions/workflows/Documentation.yml/badge.svg?branch=master&event=push)](https://github.com/smarras79/Jexpresso/actions/workflows/Documentation.yml?query=branch%3Amaster)
 | **Contacts**  |
 | [![Simone Marras](https://img.shields.io/badge/Simone%20Marras-smarras%40njit.edu-8e7cc3)](mailto:smarras@njit.edu) |
 | [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-tissaoui%40wisc.edu-8e7cc3)](mailto:tissaoui@wisc.edu) |
@@ -342,7 +342,7 @@ Jexpresso.run_case("CompEuler", "theta_laguerre")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6: Magneto-Hydrodynamics (MHD):
+Test 6a: Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
 
 The problem is defined in [`problems/equations/MHD/kelvinHelmholtzChan2022`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/kelvinHelmholtzChan2022).
 
@@ -352,6 +352,26 @@ Jexpresso.run_case("MHD", "kelvinHelmholtzChan2022")
 ```
 
 <img src="assets/MHD_By.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 6b: Magneto-Hydrodynamics (MHD), Orszag-Tang vortex:
+
+The classical 2D MHD benchmark, with the setup of Bormanis, Leon & Scheinker,
+*Phys. Plasmas* **31**, 012101 (2024): doubly periodic unit square, γ = 5/3,
+128×128 points, t ∈ [0, 1]. The problem is defined in
+[`problems/equations/MHD/orszagTangBormanis2024`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/orszagTangBormanis2024)
+(see its `README.md` and `EQUATIONS.md`).
+
+```julia
+using Jexpresso
+Jexpresso.run_case("MHD", "orszagTangBormanis2024")
+```
+
+Density at t = 0.7, 0.8, 0.9, 1.0, on the same 0.1-0.4 color scale as Fig. 3
+of the reference:
+
+<img src="assets/MHD_OT_rho.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 

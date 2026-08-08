@@ -109,6 +109,10 @@ user_source_file     = string(case_name_dir, "/user_source.jl")
 user_bc_file         = string(case_name_dir, "/user_bc.jl")
 user_initialize_file = string(case_name_dir, "/initialize.jl")
 user_primitives_file = string(case_name_dir, "/user_primitives.jl")
+# OPTIONAL per-case file: a closed-form/reference solution the 1D plotter
+# overlays on its output (see problems/CompEuler/sod1d/user_analytic.jl).
+# Most cases have none, so this one is included only when present.
+user_analytic_file   = string(case_name_dir, "/user_analytic.jl")
 
 # PERF: only (re-)include the driver + the case's user_*.jl files when
 # something actually changed since the last run in this session. Re-running
@@ -126,6 +130,7 @@ user_primitives_file = string(case_name_dir, "/user_primitives.jl")
 _case_load_files = [driver_file, user_input_file, user_flux_file,
                     user_source_file, user_bc_file, user_initialize_file,
                     user_primitives_file]
+isfile(user_analytic_file) && push!(_case_load_files, user_analytic_file)
 _need_case_reload = (_LOADED_CASE_DIR[] != case_name_dir) ||
     any(f -> get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f), _case_load_files)
 if _need_case_reload
@@ -148,9 +153,94 @@ inputs = user_inputs()
 # gmsh file keep separate caches and what makes "running a new case"
 # automatically miss the cache without any user-visible flag.
 inputs[:_case_dir]            = case_name_dir
+# Whether THIS case ships a reference solution. Checked by the 1D plotter
+# instead of a bare isdefined(): user_analytic_solution is a method on the
+# Jexpresso module, so once sod1d has been run in a session the definition
+# survives a switch to another 1D case, and a bare isdefined() would then
+# happily overlay Sod's exact solution on an unrelated problem.
+inputs[:_has_analytic]        = isfile(user_analytic_file)
 inputs[:_parsed_equations]    = parsed_equations
 inputs[:_parsed_case_name]    = parsed_equations_case_name
 inputs[:_user_input_file]     = user_input_file
+
+#--------------------------------------------------------
+# CI output conventions.
+#
+# A CI run is only useful if the comparison can find its result: the CI
+# machinery reads the .h5 files in test/CI-runs/<eqs>/<case>/output/ and
+# checks them against test/CI-ref/<eqs>/<case>/output/. That requires
+# three things of the deck, and a deck copied straight out of problems/
+# typically satisfies none of them — it asks for VTK, in an output
+# directory of its own, in a timestamped subdirectory:
+#
+#   :outformat         => "hdf5"   the comparison reads HDF5
+#   :output_dir        => "none"   put output next to the case inputs
+#   :loverwrite_output => true     "output", not "output-05Aug2025-181233"
+#
+# So CI mode forces them, and says so, rather than leaving the user to
+# discover an empty output directory an hour later. Everything else in
+# the deck (tend, diagnostics, mesh, …) is the case author's business.
+#
+# Set JEXPRESSO_CI_OUTPUT=0 to keep the deck's own settings — e.g. to get
+# VTK out of a CI deck for visualisation.
+#--------------------------------------------------------
+if parsed_CI_mode == "true" &&
+   !(lowercase(get(ENV, "JEXPRESSO_CI_OUTPUT", "1")) in ("0", "false", "no", "off"))
+
+    # The comparison reads HDF5, so that is the default. The VTK smoke test
+    # (test/runtests.jl --vtk) sets JEXPRESSO_CI_OUTFORMAT=vtk to exercise the
+    # writer production runs actually use, with every other CI convention —
+    # output next to the case, no timestamp, one write at :tend — unchanged.
+    ci_outformat = lowercase(strip(get(ENV, "JEXPRESSO_CI_OUTFORMAT", "hdf5")))
+
+    for (ci_key, ci_value) in (:outformat         => ci_outformat,
+                               :output_dir        => "none",
+                               :loverwrite_output => true)
+        previous = get(inputs, ci_key, nothing)
+        unchanged = previous isa AbstractString && ci_value isa AbstractString ?
+                    lowercase(previous) == ci_value : previous == ci_value
+        inputs[ci_key] = ci_value
+        if !unchanged && rank == 0
+            println(" # CI_MODE: forcing :", ci_key, " => ", repr(ci_value),
+                    previous === nothing ? " (deck left it unset)" :
+                                           string(" (deck asked for ", repr(previous), ")"))
+        end
+    end
+
+    #----------------------------------------------------------
+    # Output cadence: one write, at the end of the run.
+    #
+    # A reference solution is the final state; intermediate dumps cost
+    # wall time and, since write_hdf5 names its files var_<i>_<rank>.h5
+    # with no time index, every one of them is overwritten by the next
+    # anyway. A deck asking for `:diagnostics_at_times => (0:10:1000)`
+    # would therefore write 101 times to produce the one snapshot that
+    # survives — and add 101 integrator tstops on the way.
+    #
+    # Setting :diagnostics_at_times makes mod_inputs_user_inputs! zero
+    # :ndiagnostics_outputs (its else branch), which is why the deck's
+    # value is dropped here rather than overwritten.
+    #----------------------------------------------------------
+    if haskey(inputs, :tend) && inputs[:tend] isa Number
+        ci_final_time = [Float64(inputs[:tend])]
+        if get(inputs, :diagnostics_at_times, nothing) != ci_final_time && rank == 0
+            println(" # CI_MODE: forcing a single output at t=", inputs[:tend],
+                    " (deck asked for ",
+                    repr(get(inputs, :diagnostics_at_times,
+                             get(inputs, :ndiagnostics_outputs, "nothing"))), ")")
+        end
+        inputs[:diagnostics_at_times] = ci_final_time
+        delete!(inputs, :ndiagnostics_outputs)
+    end
+    inputs[:lwrite_initial] = false
+
+    # NOTE: CI mode deliberately does NOT switch on :lstep_heartbeat. With a
+    # single write at :tend nothing is printed during the solve, so a slow run
+    # looks like a hung one — but per-step output is noise in a healthy run.
+    # Set JEXPRESSO_STEP_HEARTBEAT=1 when you need to see progress or measure
+    # the step rate (first 5 steps, then every 100th; see TimeIntegrators.jl).
+end
+
 if rank == 0
     print(" # mod_inputs_user_inputs! (filling defaults) ......... ")
     flush(stdout)

@@ -251,6 +251,39 @@ This is **not** required for the solver to find and run your case.
 | `user_bc.jl` | Boundary conditions |
 | `user_primitives.jl` | Conversion from conserved to output variables |
 
+---
+
+## Adding your case to CI
+
+Running locally is enough for a new problem — CI is opt-in. When you do want
+your case guarded by CI, it is one command:
+
+```bash
+julia --project=. test/generate_ci_ref.jl YourEquationSet/your_case
+
+git add test/CI-ref test/CI-runs test/ci_cases.jl
+git commit -m "Add your_case to CI"
+git push
+```
+
+That copies your deck into `test/CI-runs/`, runs it (forcing HDF5 output with
+a single write at `:tend`, whatever your deck asks for), stores the result as
+the reference solution CI will compare against, and registers the case in
+`test/ci_cases.jl`. The only thing left to your judgement is `:tend` — shorten
+it in the copied deck if the case takes too long, and re-run the script.
+
+**If your case reads a GMSH mesh**, commit the mesh next to the deck and point
+`:gmsh_filename` at it, relative to the repository root:
+
+```julia
+:gmsh_filename => "./problems/YourEquationSet/your_case/your_mesh.msh",
+```
+
+`meshes/` is your local link to `smarras79/JexpressoMeshes`; a CI runner
+clones Jexpresso alone, so a case pointing in there cannot find its mesh.
+
+The full description is in [`test/CIdescription.md`](test/CIdescription.md).
+
 # Some examples of existing tests:
 
 ## Example 1: Shock tube with dynamic SGS for shock capturing:

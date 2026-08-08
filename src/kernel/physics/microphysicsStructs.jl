@@ -57,6 +57,7 @@ Base.@kwdef mutable struct St_SamMicrophysics{T <:AbstractFloat, dims1, dims2, d
     rt_sol_sw = []
     rt_sol_lw_available = false
     rt_sol_sw_available = false
+    rt_nelem_saved::Int = 0
 end
 
 function allocate_SamMicrophysics(nelem, npoin, ngl, T, backend , SD; lmoist=false)
