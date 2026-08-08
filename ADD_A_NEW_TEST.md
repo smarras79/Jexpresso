@@ -256,31 +256,23 @@ This is **not** required for the solver to find and run your case.
 ## Adding your case to CI
 
 Running locally is enough for a new problem — CI is opt-in. When you do want
-your case guarded by CI:
+your case guarded by CI, it is one command:
 
-1. Copy the deck into `test/CI-runs/YourEquationSet/your_case/` and shorten it
-   (a small `:tend`, diagnostics to match). Leave the output settings alone:
-   CI mode forces HDF5 output into `test/CI-runs/.../output/` regardless of
-   what the deck asks for, so a straight copy of your `problems/` deck works.
-2. Add **one line** to `CI_CASES` in [`test/ci_cases.jl`](test/ci_cases.jl):
+```bash
+julia --project=. test/generate_ci_ref.jl YourEquationSet/your_case
 
-   ```julia
-   CICase(eqs = "YourEquationSet", case = "your_case", timeout = 20),
-   ```
+git add test/CI-ref test/CI-runs test/ci_cases.jl
+git commit -m "Add your_case to CI"
+git push
+```
 
-3. Create the reference solution your future runs will be compared against:
+That copies your deck into `test/CI-runs/`, runs it (forcing HDF5 output with
+a single write at `:tend`, whatever your deck asks for), stores the result as
+the reference solution CI will compare against, and registers the case in
+`test/ci_cases.jl`. The only thing left to your judgement is `:tend` — shorten
+it in the copied deck if the case takes too long, and re-run the script.
 
-   ```bash
-   julia --project=. test/generate_ci_ref.jl YourEquationSet/your_case
-   git add test/CI-ref && git commit -m "Add CI reference for your_case" && git push
-   ```
-
-   (Or push first and run the **Generate CI Reference Solutions** workflow,
-   which runs that same script on a runner and commits the result for you.)
-
-That is the whole registration: the GitHub Actions job matrices are built from
-that file, so no workflow needs editing. The full checklist is in
-[`test/CIdescription.md`](test/CIdescription.md).
+The full description is in [`test/CIdescription.md`](test/CIdescription.md).
 
 # Some examples of existing tests:
 

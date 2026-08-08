@@ -200,6 +200,33 @@ if parsed_CI_mode == "true" &&
                                            string(" (deck asked for ", repr(previous), ")"))
         end
     end
+
+    #----------------------------------------------------------
+    # Output cadence: one write, at the end of the run.
+    #
+    # A reference solution is the final state; intermediate dumps cost
+    # wall time and, since write_hdf5 names its files var_<i>_<rank>.h5
+    # with no time index, every one of them is overwritten by the next
+    # anyway. A deck asking for `:diagnostics_at_times => (0:10:1000)`
+    # would therefore write 101 times to produce the one snapshot that
+    # survives — and add 101 integrator tstops on the way.
+    #
+    # Setting :diagnostics_at_times makes mod_inputs_user_inputs! zero
+    # :ndiagnostics_outputs (its else branch), which is why the deck's
+    # value is dropped here rather than overwritten.
+    #----------------------------------------------------------
+    if haskey(inputs, :tend) && inputs[:tend] isa Number
+        ci_final_time = [Float64(inputs[:tend])]
+        if get(inputs, :diagnostics_at_times, nothing) != ci_final_time && rank == 0
+            println(" # CI_MODE: forcing a single output at t=", inputs[:tend],
+                    " (deck asked for ",
+                    repr(get(inputs, :diagnostics_at_times,
+                             get(inputs, :ndiagnostics_outputs, "nothing"))), ")")
+        end
+        inputs[:diagnostics_at_times] = ci_final_time
+        delete!(inputs, :ndiagnostics_outputs)
+    end
+    inputs[:lwrite_initial] = false
 end
 
 if rank == 0

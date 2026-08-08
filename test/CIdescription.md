@@ -1,7 +1,11 @@
 # The Jexpresso CI test suite
 
 Everything CI runs is declared in **one file**: [`test/ci_cases.jl`](ci_cases.jl).
-Adding a test to CI is adding one line to it; no workflow file has to change.
+No workflow file ever has to change — the GitHub Actions job matrices are
+generated from that registry. And you do not edit it by hand either: adding a
+test to CI is one command,
+`julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>`
+([details below](#add-a-new-test-to-ci)).
 
 The suite currently contains a single case:
 
@@ -42,7 +46,7 @@ Outcome of a case:
 | Result | Meaning |
 |---|---|
 | ✅ pass | the run finished and every field matches the reference within `atol` |
-| ⏭️ skipped | no reference solution committed yet — run **Generate CI Reference Solutions** |
+| ⏭️ skipped | no reference solution committed yet — run `test/generate_ci_ref.jl` |
 | ❌ fail | the run crashed, produced no HDF5 output, or a field drifted beyond `atol` |
 
 ### Which workflow runs when
@@ -61,100 +65,59 @@ cases there. Uncomment the `pull_request:` trigger in
 
 ## Add a new test to CI
 
-Assuming `problems/<EQS>/<CASE>/` already exists and runs (see
-[ADD_A_NEW_TEST.md](../ADD_A_NEW_TEST.md)):
-
-### 1. Create the CI version of the deck
-
-```bash
-mkdir -p test/CI-runs/<EQS>
-cp -r problems/<EQS>/<CASE> test/CI-runs/<EQS>/<CASE>
-```
-
-The only thing you have to edit in
-`test/CI-runs/<EQS>/<CASE>/user_inputs.jl` is the run length:
-
-| Key | CI value | Why |
-|---|---|---|
-| `:tend` | a few time steps' worth | keep CI wall-time short |
-| `:ndiagnostics_outputs` / `:diagnostics_at_times` | consistent with `:tend` | at least one output file must be written |
-
-You do **not** need to touch the output settings. CI mode overrides them for
-you (`src/run.jl`), so a deck copied straight out of `problems/` works as-is
-even though it asks for VTK in its own directory:
-
-| Key | Forced to | Why |
-|---|---|---|
-| `:outformat` | `"hdf5"` | the comparison reads `.h5` files |
-| `:output_dir` | `"none"` | output goes to `test/CI-runs/<EQS>/<CASE>/output/`, where the comparison looks |
-| `:loverwrite_output` | `true` | `output/`, not `output-05Aug2025-181233/` |
-
-Each override that changes something is announced on stdout
-(`# CI_MODE: forcing :outformat => "hdf5" (deck asked for "vtk")`). Set
-`JEXPRESSO_CI_OUTPUT=0` to suppress all three and keep the deck's own
-settings — useful to get VTK out of a CI deck for visualisation, useless for
-generating references.
-
-All six `user_*.jl` / `initialize.jl` files must be present — the solver
-includes them unconditionally.
-
-### 2. Register the case — the one line
-
-In `test/ci_cases.jl`:
-
-```julia
-const CI_CASES = CICase[
-    CICase(eqs = "CompEuler", case = "theta", timeout = 40, atol = 1e-5),
-    CICase(eqs = "<EQS>",     case = "<CASE>", timeout = 20),   # ← new
-]
-```
-
-`timeout` is the per-case limit in minutes; `atol` defaults to `1e-5`.
-
-Check the registry locally:
-
-```bash
-julia test/ci_cases.jl validate    # dirs and files present?
-julia test/ci_cases.jl list        # what will run
-julia test/ci_cases.jl matrix      # the JSON the workflows consume
-```
-
-### 3. Generate the reference solution
-
-Until a reference exists the case is reported as *skipped*, not passing.
-Create it either locally or on GitHub — both produce the same files.
-
-**Locally** (recommended: you see the run, and you review the diff before it
-becomes the golden answer):
+One command. Assuming `problems/<EQS>/<CASE>/` exists and runs:
 
 ```bash
 julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>
 
-git status --short test/CI-ref     # look at what appeared
-git add test/CI-ref
-git commit -m "Add CI reference solution for <EQS>/<CASE>"
+git add test/CI-ref test/CI-runs test/ci_cases.jl
+git commit -m "Add <EQS>/<CASE> to CI"
 git push
 ```
 
-That is all there is to it: the script runs the case with `CI_MODE=true` and
-copies the resulting `.h5` files (plus the `user_inputs.jl` they came from)
-into `test/CI-ref/<EQS>/<CASE>/output/`. It does not touch git — committing
-and pushing is yours to do, deliberately, because a reference solution is the
-definition of "correct" from then on.
+That script does every step of the old checklist for you:
 
-**On GitHub**: commit and push first, then **Actions → Generate CI Reference
-Solutions → Run workflow** on your branch (leave `cases` as `all`, or pass
-just `<EQS>/<CASE>`). The workflow runs the same script and pushes one commit
-with the references back to your branch, marked `[skip ci]`.
+| Step | Done by |
+|---|---|
+| copy `problems/<EQS>/<CASE>/` → `test/CI-runs/<EQS>/<CASE>/` (skipping any `output/`) | `generate_ci_ref.jl` |
+| write HDF5, next to the case inputs, no timestamped directory | CI mode (`src/run.jl`) |
+| write **one** output, the final state, whatever cadence the deck asked for | CI mode (`src/run.jl`) |
+| run the case and publish `test/CI-ref/<EQS>/<CASE>/output/` | `generate_ci_ref.jl` |
+| add the `CICase(...)` line to `test/ci_cases.jl`, with a timeout from the measured run time | `generate_ci_ref.jl` |
+| commit | **you** — the diff is the new definition of "correct", so look at it |
 
-### 4. Verify
+The one judgement call left to you is **how long the case should run**. The
+copied deck keeps whatever `:tend` `problems/` had; if that is minutes of
+wall time, shorten `:tend` in
+`test/CI-runs/<EQS>/<CASE>/user_inputs.jl` and run the script again. Nothing
+else in the deck needs editing.
+
+Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `--refresh-deck` | re-copy the deck from `problems/`, discarding edits to the CI copy |
+| `--copy-only` | publish output from a run you already did by hand (needs no packages) |
+| `--no-register` | leave `test/ci_cases.jl` alone |
+| `--dest DIR` | write the references elsewhere, e.g. to diff before overwriting |
+
+### Verify
 
 ```bash
 julia --project=. test/runtests.jl <EQS>/<CASE>   # run + compare, locally
+julia test/ci_cases.jl list                       # what CI will run
 ```
 
 or trigger **Actions → Benchmarks → Run workflow** and confirm the new row is
 green.
+
+### Doing it on GitHub instead
+
+Push the deck first, then **Actions → Generate CI Reference Solutions → Run
+workflow** on your branch. It runs the same script and pushes one commit with
+the references. Note that the workflow only knows about *registered* cases —
+a brand new case is easier to add locally, where the script registers it for
+you.
 
 ---
 
@@ -184,17 +147,21 @@ julia --project=. test/generate_ci_ref.jl [options] [<EQS>/<CASE> ...]
                           in test/CI-runs/<EQS>/<CASE>/output/ — use it after
                           having run a case by hand. Needs no packages, so
                           plain `julia` (no --project) is enough.
+  --refresh-deck          re-copy the deck from problems/ even when the CI
+                          copy exists (discards edits to that copy)
+  --no-register           leave test/ci_cases.jl alone
   --dest DIR              write somewhere other than test/CI-ref/ (this is how
                           the workflow stages references before committing
                           them from a single job)
   -h, --help              usage
 ```
 
-Per case it runs the case, clears the stale `.h5` files from the destination
-(a reference set must correspond to exactly one run — a leftover file from an
-older run would be reported as missing output forever), then copies the fresh
-ones in. It exits non-zero if a case crashed or produced no HDF5 output, and
-prints a summary table of what was published.
+Per case it copies the deck from `problems/` if `test/CI-runs/` has none, runs
+the case, clears the stale `.h5` files from the destination (a reference set
+must correspond to exactly one run — a leftover file from an older run would
+be reported as missing output forever), copies the fresh ones in, and
+registers the case if it is new. It exits non-zero if a case crashed or
+produced no HDF5 output, and prints a summary table of what was published.
 
 The `generate-ci-ref` workflow calls this same script, so the local and the
 CI paths cannot drift apart.

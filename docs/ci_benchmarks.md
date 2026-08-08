@@ -172,22 +172,28 @@ what changed.
 
 ## Adding a case
 
-Full checklist in [`test/CIdescription.md`](../test/CIdescription.md). In brief:
+One command, from a case that already exists and runs under `problems/`:
 
-1. Copy the deck: `cp -r problems/<EQS>/<CASE> test/CI-runs/<EQS>/<CASE>`, then
-   shorten it: a small `:tend` and diagnostics settings that still write at
-   least one output file. The output settings need no editing — CI mode forces
-   `:outformat => "hdf5"`, `:output_dir => "none"` and
-   `:loverwrite_output => true`.
-2. Add one line to `CI_CASES` in `test/ci_cases.jl`.
-3. Create its reference solution:
-   `julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>`, then commit
-   `test/CI-ref/`. (Or push first and run **Generate CI Reference Solutions**
-   on GitHub.)
-4. Confirm the case is green in **Benchmarks** (and no longer skipped).
+```bash
+julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>
 
-Nothing else — no workflow edit, no list to keep in sync in the comparison
-script.
+git add test/CI-ref test/CI-runs test/ci_cases.jl
+git commit -m "Add <EQS>/<CASE> to CI"
+git push
+```
+
+It copies `problems/<EQS>/<CASE>/` into `test/CI-runs/` (leaving out any
+`output/`), runs it in CI mode — which forces HDF5 output, next to the case
+inputs, one write at `:tend` — publishes the result as the reference, and
+appends the `CICase(...)` line to `test/ci_cases.jl` with a timeout derived
+from the measured run time. From the next push, CI runs the case.
+
+What it cannot decide for you: how long the case should run. The copied deck
+keeps the `:tend` from `problems/`; shorten it in
+`test/CI-runs/<EQS>/<CASE>/user_inputs.jl` if the case is slow, then run the
+script again.
+
+Full checklist and flags in [`test/CIdescription.md`](../test/CIdescription.md).
 
 ---
 
