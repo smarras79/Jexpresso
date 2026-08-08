@@ -79,10 +79,12 @@ typo in the registry fails in seconds instead of after a 40-minute run.
 ### Current suite
 
 Only **`CompEuler/theta`** is enabled. The cases that were in the suite
-previously are listed, commented out, at the bottom of `CI_CASES`; their input
-decks are still in `test/CI-runs/` and several still have reference solutions
-in `test/CI-ref/`. Re-enabling one is: uncomment the line, run
-**Generate CI Reference Solutions** for it, done.
+previously are listed, commented out, at the bottom of `CI_CASES`. Re-enabling
+one is: uncomment the line, then run
+`julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>` — it recreates the CI
+deck from `problems/` when that deck is no longer under `test/CI-runs/`, and
+regenerates the reference (any reference still sitting in `test/CI-ref/` for
+those cases predates the current HDF5 file naming and cannot be reused).
 
 ---
 

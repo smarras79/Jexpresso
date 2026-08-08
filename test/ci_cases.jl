@@ -69,8 +69,14 @@ const CI_CASES = CICase[
 
     #--------------------------------------------------------------------------
     # Cases that used to be in the suite and are waiting to be re-enabled.
-    # Uncomment a line once the case has been verified and its reference
-    # solution regenerated with the `generate-ci-ref` workflow.
+    #
+    # To bring one back: uncomment its line and run
+    #     julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>
+    # which recreates the CI deck from problems/<EQS>/<CASE>/ if it is no
+    # longer under test/CI-runs/, and generates the reference solution. Some
+    # of these decks have been removed and some still have (stale) references
+    # under test/CI-ref/ — either way the reference has to be regenerated,
+    # since it predates the current HDF5 file naming.
     #
     # CICase(eqs = "CompEuler",    case = "thetaTracers",   timeout = 40),
     # CICase(eqs = "CompEuler",    case = "theta_laguerre", timeout = 40),

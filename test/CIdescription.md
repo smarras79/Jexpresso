@@ -14,9 +14,10 @@ The suite currently contains a single case:
 | `CompEuler/theta` | 40 min | `atol = 1e-5` |
 
 The other cases that used to be in the suite are listed, commented out, at the
-bottom of `CI_CASES` in `test/ci_cases.jl`, and their input decks are still in
-`test/CI-runs/`. Re-enabling one is a matter of uncommenting its line and
-regenerating its reference solution.
+bottom of `CI_CASES` in `test/ci_cases.jl`. Re-enabling one is uncommenting its
+line and running `test/generate_ci_ref.jl` for it — that recreates the CI deck
+from `problems/` if it is no longer under `test/CI-runs/`, and generates the
+reference solution.
 
 ---
 
