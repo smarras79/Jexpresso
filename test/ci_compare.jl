@@ -117,14 +117,19 @@ end
 # Compare
 #------------------------------------------------------------------------------
 """
-    compare_case(c::CICase; root = project_root())
+    compare_case(c::CICase; root = project_root(), ref_root = <root>/test/CI-ref)
 
 Compare the output of case `c` against its reference solution inside a
 `@testset` named after the case.
+
+`ref_root` points the comparison at a different reference tree — that is how
+a reference produced elsewhere (the `ciref-*` artifact of a `generate-ci-ref`
+run, say) is checked against a local run without being committed first.
 """
-function compare_case(c::CICase; root::AbstractString = CICases.project_root())
+function compare_case(c::CICase; root::AbstractString = CICases.project_root(),
+                      ref_root::AbstractString = joinpath(root, "test", "CI-ref"))
     @testset "compare $(case_name(c))" begin
-        reference = ref_dir(c, root)
+        reference = joinpath(ref_root, c.eqs, c.case, "output")
         generated = CICases.output_dir(c, root)
 
         ref_files = find_h5_files(reference)
@@ -132,8 +137,7 @@ function compare_case(c::CICase; root::AbstractString = CICases.project_root())
 
         if isempty(ref_files)
             @warn "$(case_name(c)): no reference HDF5 files in " *
-                  "$(relpath(reference, root)) — run the 'generate-ci-ref' " *
-                  "workflow to create them"
+                  "$reference — generate them with test/generate_ci_ref.jl"
             @test_skip "no reference files"
         elseif isempty(gen_files)
             @error "$(case_name(c)): the run produced no HDF5 output in " *
@@ -159,14 +163,15 @@ function compare_case(c::CICase; root::AbstractString = CICases.project_root())
 end
 
 """
-    compare_cases(cases; root = project_root())
+    compare_cases(cases; root = project_root(), ref_root = <root>/test/CI-ref)
 
 `compare_case` for every case in `cases`.
 """
 function compare_cases(cases::AbstractVector{CICase};
-                       root::AbstractString = CICases.project_root())
+                       root::AbstractString = CICases.project_root(),
+                       ref_root::AbstractString = joinpath(root, "test", "CI-ref"))
     for c in cases
-        compare_case(c; root = root)
+        compare_case(c; root = root, ref_root = ref_root)
     end
     return nothing
 end

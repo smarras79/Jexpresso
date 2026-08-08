@@ -168,6 +168,24 @@ Re-run it whenever a physics or numerics change intentionally moves the
 expected answer — and review the resulting diff, since it is the record of
 what changed.
 
+### Is my local reference good enough for Linux CI?
+
+References are compared, in CI, against a run on `ubuntu-latest` x64. A
+reference generated on macOS can drift past `atol = 1e-5` over a few thousand
+time steps. To check before spending a CI run: dispatch **Generate CI
+Reference Solutions** on your branch, download the `ciref-<EQS>-<CASE>`
+artifact from the run page (it is uploaded before anything is committed), and
+compare it against your local output at the CI tolerance:
+
+```bash
+unzip ~/Downloads/ciref-CompEuler-theta.zip -d /tmp/linux-ref
+julia --project=. test/compare_benchmarks.jl --ref /tmp/linux-ref CompEuler/theta
+```
+
+Pass: keep your reference. Fail: `git pull` — the workflow already committed
+the runner's version to your branch — and use that one. Step-by-step in
+[`test/CIdescription.md`](../test/CIdescription.md#checking-a-reference-across-platforms).
+
 ---
 
 ## Adding a case

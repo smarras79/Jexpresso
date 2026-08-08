@@ -121,6 +121,80 @@ you.
 
 ---
 
+## Checking a reference across platforms
+
+A reference generated on your machine is compared, in CI, against a run on
+`ubuntu-latest` x64. Different libm, different BLAS, different vectorisation
+— after a few thousand nonlinear time steps the two can disagree by more than
+`atol = 1e-5`, and a reference generated on macOS (especially arm64) is the
+usual suspect when CI fails on tolerance while everything passes locally.
+
+Rather than discovering that from a 40-minute red CI run, have the runner
+produce its own copy and compare the two **before** committing yours.
+
+### 1. Get the runner's version
+
+Push your branch (the case must be registered in `test/ci_cases.jl`; if you
+generated locally, `test/generate_ci_ref.jl` already added it), then:
+
+**Actions → Generate CI Reference Solutions → Run workflow**, branch = yours,
+`cases` = `<EQS>/<CASE>`.
+
+### 2. Download it without adopting it
+
+Each case job uploads its result as an artifact **before** the commit job
+touches the repository. On the run page, under **Artifacts**, download
+`ciref-<EQS>-<CASE>` and unpack it:
+
+```bash
+unzip ~/Downloads/ciref-CompEuler-theta.zip -d /tmp/linux-ref
+ls /tmp/linux-ref/CompEuler/theta/output/     # t.h5, var_1_0.h5, …
+```
+
+### 3. Diff it against your run
+
+Your own output is still in `test/CI-runs/<EQS>/<CASE>/output/` from when you
+generated the reference. Compare the Linux reference against it, at the
+tolerance CI uses:
+
+```bash
+julia --project=. test/compare_benchmarks.jl --ref /tmp/linux-ref CompEuler/theta
+```
+
+| Result | Meaning | What to do |
+|---|---|---|
+| all tests pass | the platforms agree within `atol` | keep your reference, commit it, open the PR |
+| `field 'q' differs … max │Δ│ = …` | genuine cross-platform drift | use the Linux reference instead (below) |
+| `… is missing from the run output` | the two runs produced different *files*, not different numbers — usually one side is stale | regenerate locally and re-check |
+
+A byte-level look, when you want one:
+
+```bash
+h5diff -v /tmp/linux-ref/CompEuler/theta/output/var_1_0.h5 \
+          test/CI-runs/CompEuler/theta/output/var_1_0.h5
+```
+
+### 4. If they disagree, adopt the Linux reference
+
+The workflow's commit job already pushed it to your branch, so:
+
+```bash
+git pull                                   # brings in the runner's references
+julia --project=. test/runtests.jl CompEuler/theta   # now expected to FAIL locally
+```
+
+That local failure is normal and is the point: the reference now matches the
+machine that gates the merge, not yours. If you would rather have a single
+reference both platforms accept, widen the tolerance for that case instead —
+`CICase(eqs = …, case = …, timeout = …, atol = 1e-4)` — and regenerate.
+
+A shortcut worth knowing: the commit job only commits when the files actually
+changed. If the workflow run reports *"No reference files changed — nothing to
+commit"*, the runner reproduced your files byte for byte and there is nothing
+left to check.
+
+---
+
 ## Regenerating references after an intentional change
 
 If a physics or numerics change moves the expected answer, regenerate the
