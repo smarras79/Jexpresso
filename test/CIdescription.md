@@ -23,6 +23,7 @@ test/ci_cases.jl          ← the registry: which cases run, timeout, tolerance
       │
       ├── test/runtests.jl           `Pkg.test()` → run + compare every case
       ├── test/compare_benchmarks.jl compare only (no solver load)
+      ├── test/generate_ci_ref.jl    (re)generate the reference solutions
       ├── test/ci_compare.jl         shared run/compare helpers
       │
       ├── .github/workflows/CI.yml               merge gate (Pkg.test)
@@ -107,11 +108,31 @@ julia test/ci_cases.jl matrix      # the JSON the workflows consume
 
 ### 3. Generate the reference solution
 
-Commit and push, then run **Actions → Generate CI Reference Solutions → Run
-workflow** on your branch (leave `cases` as `all`, or pass just
-`<EQS>/<CASE>`). It runs the case, commits `test/CI-ref/<EQS>/<CASE>/output/`
-back to your branch with `[skip ci]`, and the case stops being reported as
-skipped.
+Until a reference exists the case is reported as *skipped*, not passing.
+Create it either locally or on GitHub — both produce the same files.
+
+**Locally** (recommended: you see the run, and you review the diff before it
+becomes the golden answer):
+
+```bash
+julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>
+
+git status --short test/CI-ref     # look at what appeared
+git add test/CI-ref
+git commit -m "Add CI reference solution for <EQS>/<CASE>"
+git push
+```
+
+That is all there is to it: the script runs the case with `CI_MODE=true` and
+copies the resulting `.h5` files (plus the `user_inputs.jl` they came from)
+into `test/CI-ref/<EQS>/<CASE>/output/`. It does not touch git — committing
+and pushing is yours to do, deliberately, because a reference solution is the
+definition of "correct" from then on.
+
+**On GitHub**: commit and push first, then **Actions → Generate CI Reference
+Solutions → Run workflow** on your branch (leave `cases` as `all`, or pass
+just `<EQS>/<CASE>`). The workflow runs the same script and pushes one commit
+with the references back to your branch, marked `[skip ci]`.
 
 ### 4. Verify
 
@@ -126,11 +147,44 @@ green.
 
 ## Regenerating references after an intentional change
 
-If a physics or numerics change moves the expected answer, run **Generate CI
-Reference Solutions** on the branch that carries the change (pass a
-comma-separated list to regenerate only the affected cases). The new `.h5`
-files become the golden reference. Review that diff carefully — it is the
-record of what changed.
+If a physics or numerics change moves the expected answer, regenerate the
+affected cases — locally:
+
+```bash
+julia --project=. test/generate_ci_ref.jl CompEuler/theta   # or several, or all
+git add test/CI-ref && git commit -m "Update CI reference solutions" && git push
+```
+
+or with **Actions → Generate CI Reference Solutions** on the branch carrying
+the change (pass a comma-separated list in `cases` to regenerate only some).
+
+Either way the new `.h5` files become the golden reference. Review that diff
+carefully — it is the record of what your change did to the solution.
+
+### `test/generate_ci_ref.jl` in full
+
+```
+julia --project=. test/generate_ci_ref.jl [options] [<EQS>/<CASE> ...]
+
+  (no case given)         every case registered in test/ci_cases.jl
+  --copy-only, --no-run   skip the simulation and publish the output already
+                          in test/CI-runs/<EQS>/<CASE>/output/ — use it after
+                          having run a case by hand. Needs no packages, so
+                          plain `julia` (no --project) is enough.
+  --dest DIR              write somewhere other than test/CI-ref/ (this is how
+                          the workflow stages references before committing
+                          them from a single job)
+  -h, --help              usage
+```
+
+Per case it runs the case, clears the stale `.h5` files from the destination
+(a reference set must correspond to exactly one run — a leftover file from an
+older run would be reported as missing output forever), then copies the fresh
+ones in. It exits non-zero if a case crashed or produced no HDF5 output, and
+prints a summary table of what was published.
+
+The `generate-ci-ref` workflow calls this same script, so the local and the
+CI paths cannot drift apart.
 
 ---
 

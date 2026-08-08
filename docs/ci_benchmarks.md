@@ -122,7 +122,32 @@ fields.
 References live in `test/CI-ref/<EQS>/<CASE>/output/` and are committed to the
 repository.
 
-To create or update them:
+### Locally
+
+```bash
+# run the case(s) and copy the output into test/CI-ref/
+julia --project=. test/generate_ci_ref.jl CompEuler/theta   # or no argument: all cases
+
+# review, then commit — the script never touches git
+git status --short test/CI-ref
+git add test/CI-ref
+git commit -m "Update CI reference solutions"
+git push
+```
+
+Useful variants:
+
+| Command | Effect |
+|---|---|
+| `julia --project=. test/generate_ci_ref.jl` | regenerate every registered case |
+| `julia test/generate_ci_ref.jl --copy-only CompEuler/theta` | publish the output of a run you already did by hand (no packages needed) |
+| `julia --project=. test/generate_ci_ref.jl --dest /tmp/refs CompEuler/theta` | write elsewhere, e.g. to diff against the committed set before overwriting it |
+
+The script clears stale `.h5` files from the destination before copying, so a
+reference set always corresponds to exactly one run, and exits non-zero if a
+case crashed or produced no HDF5 output.
+
+### With the workflow
 
 1. **Actions → Generate CI Reference Solutions → Run workflow**.
 2. Choose the branch holding the intended baseline code.
@@ -149,7 +174,10 @@ Full checklist in [`test/CIdescription.md`](../test/CIdescription.md). In brief:
    `:loverwrite_output => true`, a small `:tend`, and diagnostics settings that
    still write at least one output file.
 2. Add one line to `CI_CASES` in `test/ci_cases.jl`.
-3. Push, then run **Generate CI Reference Solutions** for the new case.
+3. Create its reference solution:
+   `julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>`, then commit
+   `test/CI-ref/`. (Or push first and run **Generate CI Reference Solutions**
+   on GitHub.)
 4. Confirm the case is green in **Benchmarks** (and no longer skipped).
 
 Nothing else — no workflow edit, no list to keep in sync in the comparison
@@ -164,6 +192,7 @@ test/ci_cases.jl              registry + matrix generator + validator
 test/ci_compare.jl            run/compare helpers shared by everything below
 test/runtests.jl              Pkg.test() entry point: run + compare each case
 test/compare_benchmarks.jl    comparison only (HDF5 only, no solver load)
+test/generate_ci_ref.jl       (re)generate the reference solutions
 test/CI-runs/<EQS>/<CASE>/    shortened input decks; output/ is written here
 test/CI-ref/<EQS>/<CASE>/     committed reference solutions
 ```

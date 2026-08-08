@@ -111,35 +111,20 @@ jobs:
                                CI_MODE = true)
           '
 
-      # Staged under the exact path it must end up at, so the collecting job
-      # can merge every artifact straight into test/CI-ref/.
+      # Same script you would run locally (test/generate_ci_ref.jl), here in
+      # --copy-only mode and pointed at a staging tree whose layout matches
+      # test/CI-ref/, so the collecting job can merge the artifacts straight
+      # into it. No project needed: copying touches no package.
       - name: Stage reference files
         id: stage
         if: always()
+        continue-on-error: true
         env:
-          EQS:  ${{ matrix.eqs }}
-          CASE: ${{ matrix.case }}
-        run: |
-          src="test/CI-runs/${EQS}/${CASE}/output"
-          dst="staging/${EQS}/${CASE}/output"
-
-          shopt -s nullglob
-          h5=("$src"/*.h5)
-          if [ ${#h5[@]} -eq 0 ]; then
-            echo "::warning title=${EQS}/${CASE}::no HDF5 output produced — no reference generated"
-            echo "generated=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          mkdir -p "$dst"
-          cp "${h5[@]}" "$dst"/
-          # Keep a copy of the inputs the reference was produced with.
-          [ -f "$src/user_inputs.jl" ] && cp "$src/user_inputs.jl" "$dst"/
-          echo "Staged ${#h5[@]} file(s) for ${EQS}/${CASE}"
-          echo "generated=true" >> "$GITHUB_OUTPUT"
+          CASE_NAME: ${{ matrix.name }}
+        run: julia test/generate_ci_ref.jl --copy-only --dest staging "$CASE_NAME"
 
       - name: Upload reference candidate
-        if: always() && steps.stage.outputs.generated == 'true'
+        if: always() && steps.stage.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: ciref-${{ matrix.slug }}
@@ -150,11 +135,11 @@ jobs:
       - name: Report case outcome
         if: always()
         env:
-          GEN:       ${{ steps.gen.outcome }}
-          GENERATED: ${{ steps.stage.outputs.generated }}
+          GEN:   ${{ steps.gen.outcome }}
+          STAGE: ${{ steps.stage.outcome }}
         run: |
-          if [ "$GEN" != "success" ] || [ "$GENERATED" != "true" ]; then
-            echo "::error title=${{ matrix.name }}::run=$GEN, reference generated=$GENERATED"
+          if [ "$GEN" != "success" ] || [ "$STAGE" != "success" ]; then
+            echo "::error title=${{ matrix.name }}::run=$GEN, staging=$STAGE"
             exit 1
           fi
           echo "${{ matrix.name }}: reference generated."

@@ -267,8 +267,15 @@ your case guarded by CI:
    CICase(eqs = "YourEquationSet", case = "your_case", timeout = 20),
    ```
 
-3. Push, then run the **Generate CI Reference Solutions** workflow once to
-   create the reference solution your runs will be compared against.
+3. Create the reference solution your future runs will be compared against:
+
+   ```bash
+   julia --project=. test/generate_ci_ref.jl YourEquationSet/your_case
+   git add test/CI-ref && git commit -m "Add CI reference for your_case" && git push
+   ```
+
+   (Or push first and run the **Generate CI Reference Solutions** workflow,
+   which runs that same script on a runner and commits the result for you.)
 
 That is the whole registration: the GitHub Actions job matrices are built from
 that file, so no workflow needs editing. The full checklist is in
