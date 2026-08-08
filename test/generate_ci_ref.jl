@@ -99,14 +99,21 @@ problems_dir(c::CICase) =
     joinpath(CICases.project_root(), "problems", c.eqs, c.case)
 
 """
-Recursive copy that skips output directories, so a deck that has been run
-locally does not drag its own results into test/CI-runs (they would be
-mistaken for the CI run's output and published as a reference).
+Recursive copy of a case deck, skipping
+
+  * output directories — a deck that has been run locally would otherwise
+    drag its own results into test/CI-runs, where they would be mistaken for
+    the CI run's output and published as a reference;
+  * meshes — `:gmsh_filename` is resolved from the repository root, so the
+    copy would read the original file anyway (typically
+    problems/<eqs>/<case>/<mesh>.msh) and duplicating a mesh in git buys
+    nothing.
 """
 function copy_deck(source::AbstractString, target::AbstractString)
     mkpath(target)
     for entry in readdir(source)
         startswith(entry, "output") && continue
+        endswith(entry, ".msh")     && continue
         from, to = joinpath(source, entry), joinpath(target, entry)
         isdir(from) ? copy_deck(from, to) : cp(from, to; force = true)
     end

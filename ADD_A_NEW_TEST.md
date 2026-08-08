@@ -272,6 +272,16 @@ the reference solution CI will compare against, and registers the case in
 `test/ci_cases.jl`. The only thing left to your judgement is `:tend` — shorten
 it in the copied deck if the case takes too long, and re-run the script.
 
+**If your case reads a GMSH mesh**, commit the mesh next to the deck and point
+`:gmsh_filename` at it, relative to the repository root:
+
+```julia
+:gmsh_filename => "./problems/YourEquationSet/your_case/your_mesh.msh",
+```
+
+`meshes/` is your local link to `smarras79/JexpressoMeshes`; a CI runner
+clones Jexpresso alone, so a case pointing in there cannot find its mesh.
+
 The full description is in [`test/CIdescription.md`](test/CIdescription.md).
 
 # Some examples of existing tests:

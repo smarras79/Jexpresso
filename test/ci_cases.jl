@@ -235,18 +235,25 @@ function validate(root::AbstractString = project_root())
                 push!(problems, "$name: missing $(relpath(joinpath(dir, f), root))")
         end
 
-        # The mesh has to be IN THE REPOSITORY, not merely on the machine the
-        # deck was written on: meshes/ is gitignored, so a mesh that was never
-        # force-added does not exist on a CI runner, and the case dies a
-        # quarter of an hour into the job with "Msh file not found".
+        # The mesh has to be IN THIS REPOSITORY. meshes/ is the developer's
+        # link to smarras79/JexpressoMeshes and does not exist on a runner, so
+        # a case pointing there dies a quarter of an hour into the job with
+        # "Msh file not found". A CI case keeps its mesh next to its deck.
         mesh = deck_mesh(dir)
         if mesh !== nothing && !isfile(normpath(joinpath(root, mesh)))
+            deck = relpath(joinpath(dir, "user_inputs.jl"), root)
+            hint = occursin(r"(^|/)meshes/", mesh) ?
+                "That path is inside meshes/, the link to the " *
+                "smarras79/JexpressoMeshes repository, which a CI runner does " *
+                "not have. Commit the mesh into this repository next to the " *
+                "case deck — problems/$(c.eqs)/$(c.case)/ — and point " *
+                ":gmsh_filename at it, e.g. " *
+                "\"./problems/$(c.eqs)/$(c.case)/$(basename(mesh))\"." :
+                "Commit it, or point :gmsh_filename at a mesh that is tracked " *
+                "in this repository."
             push!(problems,
-                  "$name: mesh $mesh does not exist. It is required by " *
-                  ":gmsh_filename in $(relpath(joinpath(dir, "user_inputs.jl"), root)). " *
-                  "Note that meshes/ is listed in .gitignore, so a mesh that " *
-                  "only lives on your machine is invisible to CI — commit it " *
-                  "(git add -f $mesh) or point the case at a mesh that is tracked")
+                  "$name: mesh $mesh does not exist (:gmsh_filename in $deck). " *
+                  hint * " Paths are resolved from the repository root.")
         end
 
         c.timeout > 0 || push!(problems, "$name: timeout must be positive")

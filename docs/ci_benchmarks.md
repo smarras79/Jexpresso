@@ -211,6 +211,22 @@ keeps the `:tend` from `problems/`; shorten it in
 `test/CI-runs/<EQS>/<CASE>/user_inputs.jl` if the case is slow, then run the
 script again.
 
+### Meshes
+
+`meshes/` is the developer's link to
+[`smarras79/JexpressoMeshes`](https://github.com/smarras79/JexpressoMeshes)
+and does not exist on a CI runner. A case that CI runs must keep its mesh
+committed **in this repository, next to its deck**:
+
+```julia
+:gmsh_filename => "./problems/<EQS>/<CASE>/<mesh>.msh",
+```
+
+The path is resolved from the repository root, so the `test/CI-runs/` copy
+reads that same file — the mesh is not duplicated into the CI deck.
+`julia test/ci_cases.jl validate` fails in seconds when the mesh is missing,
+instead of letting the job burn 15 minutes and die in `sem_setup`.
+
 Full checklist and flags in [`test/CIdescription.md`](../test/CIdescription.md).
 
 ---

@@ -35,6 +35,9 @@ test/ci_cases.jl          ← the registry: which cases run, timeout, tolerance
       └── .github/workflows/generate-ci-ref.yml  (re)generate references
 ```
 
+A CI case is self-contained inside this repository — deck, mesh and reference
+solution are all committed, because a runner has nothing else.
+
 A case is run in **CI mode**, i.e. the solver reads its inputs from
 `test/CI-runs/<EQS>/<CASE>/` (a reduced version of the deck in
 `problems/<EQS>/<CASE>/`: short `:tend`, `hdf5` output) and writes to
@@ -100,6 +103,39 @@ Useful flags:
 | `--copy-only` | publish output from a run you already did by hand (needs no packages) |
 | `--no-register` | leave `test/ci_cases.jl` alone |
 | `--dest DIR` | write the references elsewhere, e.g. to diff before overwriting |
+
+### If the case reads a GMSH mesh
+
+`meshes/` is each developer's link to
+[`smarras79/JexpressoMeshes`](https://github.com/smarras79/JexpressoMeshes).
+A CI runner clones Jexpresso and nothing else, so that directory does not
+exist there and a case pointing into it fails with `Msh file not found`
+about fifteen minutes into the job.
+
+A case that CI runs keeps its mesh **in this repository, next to its deck**:
+
+```
+problems/<EQS>/<CASE>/
+├── user_inputs.jl
+├── initialize.jl
+├── …
+└── <mesh>.msh          ← committed here
+```
+
+```julia
+:lread_gmsh    => true,
+:gmsh_filename => "./problems/<EQS>/<CASE>/<mesh>.msh",
+```
+
+Paths are resolved from the **repository root**, not from the deck — which is
+why the CI copy under `test/CI-runs/` reads that same file, and why
+`generate_ci_ref.jl` does not copy `.msh` files when it copies a deck. Prefer
+the smallest mesh that still exercises the case: it becomes permanent history
+and CI wall-time.
+
+`julia test/ci_cases.jl validate` checks the mesh exists, so a mesh left
+behind in `meshes/` fails the registry job in seconds instead of a quarter of
+an hour into the run.
 
 ### Verify
 
