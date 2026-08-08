@@ -311,6 +311,17 @@ function publish_case(c::CICase, dest::AbstractString)
         return 0
     end
 
+    # t.h5 alone is not a solution: write_hdf5 writes the time stamp first and
+    # one var_<i>_<rank>.h5 per variable after it, so "only t.h5" means the
+    # per-variable writes failed. Publishing that would replace a good
+    # reference with an empty one.
+    if !any(startswith(f, "var_") for f in h5)
+        println(stderr, "WARNING: $(case_name(c)): $source has no var_*.h5 ",
+                "files, only $(join(h5, ", ")) — the per-variable writes did ",
+                "not happen, so there is no solution to publish")
+        return 0
+    end
+
     target = joinpath(dest, c.eqs, c.case, "output")
     mkpath(target)
 

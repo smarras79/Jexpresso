@@ -729,10 +729,18 @@ function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, t, t
         fout_name = string(OUTPUT_DIR, "/var_", ivar,"_",rank, ".h5")
         idx = (ivar - 1)*mesh.npoin
 
-        Base.invokelatest(h5open, fout_name, "w") do fid
-            write(fid, "q",  q[idx+1:ivar*mesh.npoin]);
-            write(fid, "qe", qe[1:mesh.npoin, ivar]);
+        # NOTE the shape of this call. `invokelatest(h5open, name, "w") do fid`
+        # would pass the do-block as invokelatest's FIRST argument, i.e. call
+        # the closure with (h5open, name, "w") and fail with
+        #   MethodError: no method matching (::var"#…")(::typeof(h5open), …)
+        # The closure has to be invokelatest's second argument, so that it
+        # lands where h5open(f, name, mode) expects it — as at the t.h5 write
+        # above.
+        write_var = function (fid)
+            write(fid, "q",  q[idx+1:ivar*mesh.npoin])
+            write(fid, "qe", qe[1:mesh.npoin, ivar])
         end
+        Base.invokelatest(h5open, write_var, fout_name, "w")
 
     end
 end

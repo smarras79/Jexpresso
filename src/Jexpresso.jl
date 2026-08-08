@@ -409,12 +409,21 @@ const _HDF5_LOADED = Ref(false)
 """
     Jexpresso._ensure_hdf5_loaded!()
 
-Lazily `using HDF5`. Called from write_hdf5/read_hdf5 before the first
-`h5open`/`h5read`.
+Lazily bring HDF5.jl's entry points into scope. Called from
+write_hdf5/read_hdf5 before the first `h5open`/`h5read`.
+
+Only the functions are imported, never the package binding: `using HDF5`
+would bring in the name `HDF5`, which this module already uses for its own
+output-format dispatch tag (abstractTypes.jl), and Julia would print
+
+    WARNING: using HDF5.HDF5 in module Jexpresso conflicts with an existing
+    identifier.
+
+on the first HDF5 write of every run.
 """
 function _ensure_hdf5_loaded!()
     _HDF5_LOADED[] && return nothing
-    @eval Jexpresso using HDF5
+    @eval Jexpresso import HDF5: h5open, h5read, h5write
     _HDF5_LOADED[] = true
     return nothing
 end
