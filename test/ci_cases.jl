@@ -176,6 +176,33 @@ const REQUIRED_CASE_FILES = ("user_inputs.jl", "initialize.jl", "user_flux.jl",
                              "user_source.jl", "user_bc.jl", "user_primitives.jl")
 
 """
+    deck_mesh(case_dir) -> String or nothing
+
+The GMSH file a deck reads, or `nothing` when it builds its mesh itself
+(`:lread_gmsh` absent or false — the solver then enforces a 1D problem).
+
+Read textually rather than by evaluating `user_inputs()`, so the check costs
+nothing and runs before any package is instantiated. Commented-out lines are
+skipped: decks routinely keep alternative meshes commented above the live one.
+"""
+function deck_mesh(case_dir::AbstractString)
+    file = joinpath(case_dir, "user_inputs.jl")
+    isfile(file) || return nothing
+
+    reads_gmsh = false
+    mesh       = nothing
+    for line in eachline(file)
+        code = lstrip(line)
+        startswith(code, "#") && continue
+        m = match(r":lread_gmsh\s*=>\s*(true|false)", code)
+        m === nothing || (reads_gmsh = (m.captures[1] == "true"))
+        m = match(r":gmsh_filename\s*=>\s*\"([^\"]+)\"", code)
+        m === nothing || (mesh = String(m.captures[1]))
+    end
+    return reads_gmsh ? mesh : nothing
+end
+
+"""
     validate([root]) -> Vector{String}
 
 Check every registered case against the repository: the `test/CI-runs`
@@ -206,6 +233,20 @@ function validate(root::AbstractString = project_root())
         for f in REQUIRED_CASE_FILES
             isfile(joinpath(dir, f)) ||
                 push!(problems, "$name: missing $(relpath(joinpath(dir, f), root))")
+        end
+
+        # The mesh has to be IN THE REPOSITORY, not merely on the machine the
+        # deck was written on: meshes/ is gitignored, so a mesh that was never
+        # force-added does not exist on a CI runner, and the case dies a
+        # quarter of an hour into the job with "Msh file not found".
+        mesh = deck_mesh(dir)
+        if mesh !== nothing && !isfile(normpath(joinpath(root, mesh)))
+            push!(problems,
+                  "$name: mesh $mesh does not exist. It is required by " *
+                  ":gmsh_filename in $(relpath(joinpath(dir, "user_inputs.jl"), root)). " *
+                  "Note that meshes/ is listed in .gitignore, so a mesh that " *
+                  "only lives on your machine is invisible to CI — commit it " *
+                  "(git add -f $mesh) or point the case at a mesh that is tracked")
         end
 
         c.timeout > 0 || push!(problems, "$name: timeout must be positive")
