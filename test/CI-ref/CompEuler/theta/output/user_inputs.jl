@@ -8,7 +8,7 @@ function user_inputs()
         :Δt                   => 0.5,
         :tinit                => 0.0,
         :tend                 => 1000.0,
-        :diagnostics_at_times => (1000),
+        :diagnostics_at_times => (0:100:1000),
         :restart_time         => 50000,
         :lrestart             => false,
         #:CL                   => NCL(),
@@ -49,8 +49,8 @@ function user_inputs()
         :outformat           => "vtk",
         :loverwrite_output   => true,
         :lwrite_initial      => true,
-        #:output_dir          => "./output",
-        :output_dir          => "./test/CI-run",
+        :output_dir          => "./output",
+        #:output_dir          => "./test/CI-run",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
         # init_refinement
