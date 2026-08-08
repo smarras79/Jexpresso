@@ -15,7 +15,7 @@
 # JEXPRESSO
 A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
 
-Suggested Julia version: 1.11.2 or higher.
+Suggested Julia version: 1.11.9
 
 # Installation:
 Follow the instructins in [INSTALL.md](INSTALL.md)
