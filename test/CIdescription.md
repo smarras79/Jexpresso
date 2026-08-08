@@ -127,11 +127,28 @@ problems/<EQS>/<CASE>/
 :gmsh_filename => "./problems/<EQS>/<CASE>/<mesh>.msh",
 ```
 
-Paths are resolved from the **repository root**, not from the deck — which is
-why the CI copy under `test/CI-runs/` reads that same file, and why
-`generate_ci_ref.jl` does not copy `.msh` files when it copies a deck. Prefer
-the smallest mesh that still exercises the case: it becomes permanent history
-and CI wall-time.
+`generate_ci_ref.jl` **symlinks** that mesh into the CI deck and retargets
+`:gmsh_filename` at the link, so the CI case has the mesh at its own path
+without a second copy of the bytes in git:
+
+```
+test/CI-runs/<EQS>/<CASE>/
+├── user_inputs.jl      :gmsh_filename => "./test/CI-runs/<EQS>/<CASE>/<mesh>.msh"
+└── <mesh>.msh          → ../../../../problems/<EQS>/<CASE>/<mesh>.msh
+```
+
+The link is relative, so it resolves in every clone and in the archive a
+runner unpacks; git stores it as a link (mode 120000), the same trick
+`test/meshes` uses. Paths inside a deck are resolved from the **repository
+root**, never from the deck itself.
+
+Because it is a link and not a copy, refining the mesh under `problems/`
+changes what CI runs — the comparison against the old reference will fail,
+which is the point: regenerate the reference deliberately rather than have
+the two drift apart silently.
+
+Prefer the smallest mesh that still exercises the case: it is committed
+history and it is CI wall-time.
 
 `julia test/ci_cases.jl validate` checks the mesh exists, so a mesh left
 behind in `meshes/` fails the registry job in seconds instead of a quarter of

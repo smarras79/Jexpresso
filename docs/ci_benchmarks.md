@@ -222,10 +222,12 @@ committed **in this repository, next to its deck**:
 :gmsh_filename => "./problems/<EQS>/<CASE>/<mesh>.msh",
 ```
 
-The path is resolved from the repository root, so the `test/CI-runs/` copy
-reads that same file — the mesh is not duplicated into the CI deck.
-`julia test/ci_cases.jl validate` fails in seconds when the mesh is missing,
-instead of letting the job burn 15 minutes and die in `sem_setup`.
+`generate_ci_ref.jl` symlinks that mesh into `test/CI-runs/<EQS>/<CASE>/`
+(relative link, stored by git as mode 120000 — no second copy of the bytes)
+and retargets `:gmsh_filename` at the link. Paths inside a deck are resolved
+from the repository root, never from the deck. `julia test/ci_cases.jl
+validate` fails in seconds when the mesh is missing, instead of letting the
+job burn 15 minutes and die in `sem_setup`.
 
 Full checklist and flags in [`test/CIdescription.md`](../test/CIdescription.md).
 

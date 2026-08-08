@@ -14,8 +14,9 @@
 
  What it does, per case:
    0. copies problems/<eqs>/<case>/ to test/CI-runs/<eqs>/<case>/ if that CI
-      deck does not exist yet (output directories are not copied), so adding
-      a case is just naming it here;
+      deck does not exist yet — meshes are symlinked rather than copied, and
+      :gmsh_filename is retargeted at the link (output directories are not
+      copied) — so adding a case is just naming it here;
    1. runs it with CI_MODE=true, i.e. from test/CI-runs/<eqs>/<case>/, which
       writes HDF5 output into test/CI-runs/<eqs>/<case>/output/. CI mode
       forces the deck's output settings — HDF5, next to the case inputs, no
@@ -104,10 +105,7 @@ Recursive copy of a case deck, skipping
   * output directories — a deck that has been run locally would otherwise
     drag its own results into test/CI-runs, where they would be mistaken for
     the CI run's output and published as a reference;
-  * meshes — `:gmsh_filename` is resolved from the repository root, so the
-    copy would read the original file anyway (typically
-    problems/<eqs>/<case>/<mesh>.msh) and duplicating a mesh in git buys
-    nothing.
+  * meshes — `link_meshes!` symlinks those instead of duplicating them.
 """
 function copy_deck(source::AbstractString, target::AbstractString)
     mkpath(target)
@@ -117,6 +115,81 @@ function copy_deck(source::AbstractString, target::AbstractString)
         from, to = joinpath(source, entry), joinpath(target, entry)
         isdir(from) ? copy_deck(from, to) : cp(from, to; force = true)
     end
+    return nothing
+end
+
+"""
+    link_meshes!(c)
+
+Symlink every mesh of `problems/<eqs>/<case>/` into the CI deck, so the CI
+case has the mesh at its own path without a second copy of the bytes in git
+(a mesh is the largest thing a case owns). The link is *relative*, so it
+resolves in every clone and in the source archive a runner unpacks; git
+stores it as a link (mode 120000), which is the same trick test/meshes uses.
+
+Falls back to a real copy where symlinks cannot be created (Windows without
+developer mode), which is correct if wasteful.
+"""
+function link_meshes!(c::CICase)
+    source = problems_dir(c)
+    target = runs_dir(c)
+    isdir(source) || return nothing
+
+    for entry in readdir(source)
+        endswith(entry, ".msh") || continue
+
+        link = joinpath(target, entry)
+        # test/CI-runs/<eqs>/<case>/<mesh> → four levels up is the repo root.
+        destination = joinpath("..", "..", "..", "..",
+                               "problems", c.eqs, c.case, entry)
+
+        (islink(link) || ispath(link)) && rm(link; force = true)
+        try
+            symlink(destination, link)
+            println("   linked $entry → problems/$(c.eqs)/$(c.case)/$entry")
+        catch err
+            @warn "$(case_name(c)): cannot symlink $entry " *
+                  "($(sprint(showerror, err))) — copying it instead"
+            cp(joinpath(source, entry), link; force = true)
+        end
+    end
+    return nothing
+end
+
+"""
+    retarget_mesh!(c)
+
+Point the copied deck's `:gmsh_filename` at the mesh link that now sits in
+the CI deck, rather than at the original path under problems/.
+
+`:gmsh_filename` is resolved from the repository root, so without this the
+link beside the deck would be dead weight and the CI deck would depend on the
+problems/ path staying exactly as it is. Only a live (uncommented) entry whose
+file is actually present in the CI deck is rewritten; a deck pointing
+somewhere else entirely is left alone for `validate()` to judge.
+"""
+function retarget_mesh!(c::CICase)
+    deck = joinpath(runs_dir(c), "user_inputs.jl")
+    isfile(deck) || return nothing
+
+    lines   = readlines(deck)
+    changed = false
+    for (i, line) in enumerate(lines)
+        startswith(lstrip(line), "#") && continue
+        m = match(r"^(.*:gmsh_filename\s*=>\s*\")([^\"]+)(\".*)$", line)
+        m === nothing && continue
+
+        mesh = basename(m.captures[2])
+        isfile(joinpath(runs_dir(c), mesh)) || continue
+
+        retargeted = "./test/CI-runs/$(c.eqs)/$(c.case)/$mesh"
+        m.captures[2] == retargeted && continue
+        lines[i] = string(m.captures[1], retargeted, m.captures[3])
+        changed  = true
+        println("   :gmsh_filename → $retargeted (the mesh link in the CI deck)")
+    end
+
+    changed && write(deck, join(lines, "\n") * "\n")
     return nothing
 end
 
@@ -149,6 +222,8 @@ function ensure_deck!(c::CICase; refresh::Bool = false)
     action = isdir(ci_deck) ? "refreshing" : "creating"
     println(" # $action $(relative(ci_deck)) from $(relative(original))")
     copy_deck(original, ci_deck)
+    link_meshes!(c)
+    retarget_mesh!(c)
 
     isdir(ci_deck) && !isfile(joinpath(ci_deck, "user_inputs.jl")) &&
         println(stderr, "WARNING: $(case_name(c)): the copied deck has no ",
@@ -375,7 +450,7 @@ function main(args::AbstractVector{<:AbstractString})
             error("$(case_name(c)): no case deck to run")
     end
 
-    problems = validate()
+    problems = validate(cases = cases)
     isempty(problems) || error("test/ci_cases.jl is inconsistent with the " *
                                "repository:\n  " * join(problems, "\n  "))
 

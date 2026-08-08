@@ -203,24 +203,29 @@ function deck_mesh(case_dir::AbstractString)
 end
 
 """
-    validate([root]) -> Vector{String}
+    validate(; cases = CI_CASES, root = project_root()) -> Vector{String}
 
-Check every registered case against the repository: the `test/CI-runs`
-directory must exist and contain the six `user_*.jl` files the solver
-includes unconditionally. A missing reference solution is reported as a
-note, not an error — the `generate-ci-ref` workflow creates it.
+Check cases against the repository: the `test/CI-runs` directory must exist
+and contain the six `user_*.jl` files the solver includes unconditionally,
+and any mesh the deck reads must be present. A missing reference solution is
+reported as a note, not an error — `test/generate_ci_ref.jl` creates it.
 
-Returns the list of problems found (empty when the registry is healthy).
+`cases` defaults to the whole registry, which is what the CI job checks. Pass
+a subset when acting on specific cases, so that an unrelated broken entry
+does not block the work at hand.
+
+Returns the list of problems found (empty when everything checks out).
 """
-function validate(root::AbstractString = project_root())
+function validate(; cases::AbstractVector{CICase} = CI_CASES,
+                    root::AbstractString = project_root())
     problems = String[]
 
-    if isempty(CI_CASES)
-        push!(problems, "CI_CASES is empty — no test would run")
+    if isempty(cases)
+        push!(problems, "no cases to validate — CI_CASES is empty")
     end
 
     seen = Set{String}()
-    for c in CI_CASES
+    for c in cases
         name = case_name(c)
         name in seen && push!(problems, "$name: duplicate entry in CI_CASES")
         push!(seen, name)

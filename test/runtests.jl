@@ -25,7 +25,7 @@ using .CICompare.CICases
 const SELECTION = isempty(ARGS) ? "all" : join(ARGS, ",")
 const CASES     = select_cases(SELECTION)
 
-problems = validate()
+problems = validate(cases = CASES)
 isempty(problems) || error("test/ci_cases.jl is inconsistent with the " *
                            "repository:\n  " * join(problems, "\n  "))
 
