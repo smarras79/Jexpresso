@@ -31,9 +31,11 @@ Each case runs in **CI mode**: the solver reads
 `test/CI-runs/<EQS>/<CASE>/user_inputs.jl` (a shortened deck) instead of
 `problems/<EQS>/<CASE>/`, and writes to `test/CI-runs/<EQS>/<CASE>/output/`.
 
-CI mode also forces the three output settings the comparison depends on —
-`:outformat => "hdf5"`, `:output_dir => "none"`, `:loverwrite_output => true`
-— announcing each override it actually applies. A deck copied out of
+CI mode also forces the settings the comparison depends on —
+`:outformat => "hdf5"`, `:output_dir => "none"`, `:loverwrite_output => true`,
+a single write at `:tend`, and the per-step heartbeat (without it a run prints
+nothing between the start of the solve and its end, and a live job is
+indistinguishable from a hung one) — announcing each override it applies. A deck copied out of
 `problems/` therefore produces comparable output even though it asks for VTK
 somewhere else. `JEXPRESSO_CI_OUTPUT=0` disables the overrides.
 

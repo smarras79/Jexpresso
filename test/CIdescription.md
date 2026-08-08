@@ -83,9 +83,10 @@ That script does every step of the old checklist for you:
 
 | Step | Done by |
 |---|---|
-| copy `problems/<EQS>/<CASE>/` → `test/CI-runs/<EQS>/<CASE>/` (skipping any `output/`) | `generate_ci_ref.jl` |
+| copy `problems/<EQS>/<CASE>/` → `test/CI-runs/<EQS>/<CASE>/` (skipping any `output/`, symlinking any `.msh`) | `generate_ci_ref.jl` |
 | write HDF5, next to the case inputs, no timestamped directory | CI mode (`src/run.jl`) |
 | write **one** output, the final state, whatever cadence the deck asked for | CI mode (`src/run.jl`) |
+| print a step heartbeat — first 5 steps, then every 100th — so a long run shows progress instead of looking hung | CI mode (`src/run.jl`) |
 | run the case and publish `test/CI-ref/<EQS>/<CASE>/output/` | `generate_ci_ref.jl` |
 | add the `CICase(...)` line to `test/ci_cases.jl`, with a timeout from the measured run time | `generate_ci_ref.jl` |
 | commit | **you** — the diff is the new definition of "correct", so look at it |
