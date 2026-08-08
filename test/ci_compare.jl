@@ -95,7 +95,16 @@ test failure instead of an aborted suite.
 """
 function run_ci_case(c::CICase)
     @testset "run $(case_name(c))" begin
+        previous_dir = pwd()
         try
+            # Decks address their mesh relative to the repository root
+            # (`:gmsh_filename => "./meshes/gmsh_grids/…"`), but `Pkg.test()`
+            # runs with the working directory set to test/. Run from the root
+            # so a case behaves identically however the suite was started.
+            # (test/meshes is a symlink to ../meshes, which papers over this
+            # for the mesh specifically — nothing else is symlinked.)
+            cd(CICases.project_root())
+
             # Load the package lazily (this file is also included by
             # compare_benchmarks.jl, which must stay HDF5-only and fast) and
             # call through invokelatest because the module is loaded at run
@@ -108,6 +117,8 @@ function run_ci_case(c::CICase)
             println("Error while running $(case_name(c)): ",
                     message[1:min(2000, end)])
             @test false
+        finally
+            cd(previous_dir)
         end
     end
     return nothing

@@ -127,3 +127,14 @@ TrixiBase = "0.1.8"
 UUIDs = "1.11.0"
 UnicodePlots = "=3.7.2"
 julia = "1.11.5"
+
+# Test-only dependencies. `Pkg.test()` resolves the test suite in its own
+# sandbox environment built from [deps] plus the "test" target below; Test is
+# a stdlib but still has to be declared here, or test/runtests.jl fails with
+#   ArgumentError: Package Test not found in current path
+# Everything else the suite needs (HDF5) is a regular dependency above.
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

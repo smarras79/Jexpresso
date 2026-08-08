@@ -232,8 +232,13 @@ function run_case(c::CICase)
     println("\n", "="^78)
     println("Running $(case_name(c))  (CI_MODE = true)")
     println("="^78)
-    started = time()
+    started      = time()
+    previous_dir = pwd()
     try
+        # Decks address their mesh relative to the repository root, so run
+        # from there no matter where this script was invoked from.
+        cd(CICases.project_root())
+
         # Loaded lazily so that --copy-only works with a bare `julia`, i.e.
         # without instantiating the project.
         jexpresso = Base.require(Main, :Jexpresso)
@@ -244,6 +249,8 @@ function run_case(c::CICase)
         showerror(stderr, err)
         println(stderr)
         return false, time() - started
+    finally
+        cd(previous_dir)
     end
 end
 
