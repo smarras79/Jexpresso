@@ -244,8 +244,18 @@ function vtk_smoke_case(c::CICase)
             @test true
         catch err
             message = sprint(showerror, err)
-            println("Error while running $(case_name(c)) with VTK output: ",
-                    message[1:min(2000, end)])
+            if err isa MethodError && occursin("write_vtk", message)
+                # Jexpresso implements write_vtk for NSD_2D and NSD_3D only;
+                # 1D cases write PNG/ASCII (and HDF5). There is nothing to
+                # smoke-test, so say that instead of dumping a MethodError.
+                println("$(case_name(c)): this case has no VTK writer — " *
+                        "Jexpresso implements write_vtk for 2D and 3D only, " *
+                        "1D cases write PNG/ASCII. Drop `vtk_smoke = true` " *
+                        "(or --vtk) for this case.")
+            else
+                println("Error while running $(case_name(c)) with VTK output: ",
+                        message[1:min(2000, end)])
+            end
             @test false
         finally
             previous_fmt === nothing ? delete!(ENV, "JEXPRESSO_CI_OUTFORMAT") :

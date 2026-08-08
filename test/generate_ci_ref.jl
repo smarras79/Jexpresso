@@ -77,6 +77,9 @@ function usage(io::IO = stdout)
       --dest DIR              destination tree (default: test/CI-ref)
       -h, --help              show this message
 
+    Cases may be written CompEuler/sod1d, or as a bare pair CompEuler sod1d,
+    or as "CompEuler", "sod1d" — quotes and commas are ignored.
+
     With no case given, every case registered in test/ci_cases.jl is used.
     A case that is not registered yet still works: its deck is copied from
     problems/<eqs>/<case>/ and its reference is generated, and you are told
@@ -268,8 +271,47 @@ function parse_options(args::AbstractVector{<:AbstractString})
         i += 1
     end
 
-    return Options(isempty(cases) ? "all" : join(cases, ","),
+    return Options(isempty(cases) ? "all" : join(normalize_case_names(cases), ","),
                    abspath(dest), run_sim, refresh, register)
+end
+
+"""
+    normalize_case_names(tokens) -> Vector{String}
+
+Accept a case list written any of the ways people actually write one:
+
+    CompEuler/sod1d                     the canonical form
+    CompEuler sod1d                     a bare eqs/case pair
+    "CompEuler", "sod1d"                copied out of Julia or a run command
+    CompEuler/sod1d,CompEuler/theta     comma separated
+
+Quotes and stray commas are stripped, and two consecutive bare words (neither
+containing a `/`) are joined into one `eqs/case` name.
+"""
+function normalize_case_names(tokens::AbstractVector{<:AbstractString})
+    cleaned = String[]
+    for t in tokens, piece in split(t, ',')
+        word = strip(piece, [' ', '"', '\'', ',', '\t'])
+        isempty(word) || push!(cleaned, String(word))
+    end
+
+    names = String[]
+    i = 1
+    while i <= length(cleaned)
+        word = cleaned[i]
+        if occursin('/', word)
+            push!(names, word)
+            i += 1
+        elseif i < length(cleaned) && !occursin('/', cleaned[i + 1])
+            # "CompEuler", "sod1d" → CompEuler/sod1d
+            push!(names, string(word, "/", cleaned[i + 1]))
+            i += 2
+        else
+            push!(names, word)   # let resolve_cases produce the error
+            i += 1
+        end
+    end
+    return names
 end
 
 """

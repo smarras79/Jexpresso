@@ -7,11 +7,12 @@ test to CI is one command,
 `julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>`
 ([details below](#add-a-new-test-to-ci)).
 
-The suite currently contains a single case:
+The suite currently contains:
 
-| Case | Timeout | Tolerance | VTK check |
-|---|---|---|---|
-| `CompEuler/theta` | 40 min | `atol = 1e-5` | off |
+| Case | Dim | Timeout | Tolerance | VTK check |
+|---|---|---|---|---|
+| `CompEuler/theta` | 2D | 40 min | `atol = 1e-5` | off |
+| `CompEuler/sod1d` | 1D | 10 min | `atol = 1e-5` | n/a (1D has no VTK writer) |
 
 The other cases that used to be in the suite are listed, commented out, at the
 bottom of `CI_CASES` in `test/ci_cases.jl`. Re-enabling one is uncommenting its
@@ -123,6 +124,10 @@ though, write **VTK** — so nothing in CI would notice `write_vtk` breaking.
 The VTK smoke test closes that gap. It runs the case a second time with VTK
 output and checks the writer produced non-empty `.vtu`/`.pvtu` files. It
 asserts nothing about the numbers: no reference, no tolerance.
+
+Only for **2D and 3D** cases: `write_vtk` has methods for `NSD_2D` and
+`NSD_3D` only, so a 1D case (which writes PNG/ASCII, plus HDF5 in CI) has no
+VTK output to check and the test reports that rather than a `MethodError`.
 
 **Run it for a case, one command:**
 
