@@ -1,48 +1,87 @@
- 
-  name: CI
+#==============================================================================
+# CI — the merge gate.
+#
+# Runs `Pkg.test()`, i.e. test/runtests.jl, which runs every case registered
+# in test/ci_cases.jl with CI_MODE=true and compares the HDF5 output against
+# the reference solution in test/CI-ref/.
+#
+# To add a case to this workflow, add one line to test/ci_cases.jl.
+# Nothing in this file has to change.
+#==============================================================================
+name: CI
 
-  on:
-    pull_request:
-      branches:
-        - master
-    push:
-      branches:
-        - master
-      tags:
-        - '*'  
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
 
-  jobs:
-    test:
-      name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
-      runs-on: ${{ matrix.os }}
-      env:
-        JULIA_TEST_MODE: true  # Setting environment variable
-      strategy:
-        fail-fast: false
-        matrix:
-          version:
-            - '1.11.2'
-          arch:
-            - x64
-          os:
-            - ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
-        - uses: julia-actions/setup-julia@v1
-          with:
-            version: ${{ matrix.version }}
-            arch: ${{ matrix.arch }}
-        - uses: actions/cache@v3
-          with:
-            path: ~/.julia/artifacts
-            key: ${{ runner.os }}-test-${{ hashFiles('**/Project.toml', '**/Manifest.toml') }}
-            restore-keys: |
-              ${{ runner.os }}-test-${{ env.cache-name }}-
-              ${{ runner.os }}-test-
-              ${{ runner.os }}-
-        - uses: julia-actions/julia-buildpkg@v1
-        - uses: julia-actions/julia-runtest@v1
-        # - uses: julia-actions/julia-processcoverage@v1
-        # - uses: codecov/codecov-action@v3
-        #   with:
-        #     file: lcov.info          
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  registry:
+    name: Validate CI registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.11'
+      # Cheap sanity check (no package instantiation): every case listed in
+      # test/ci_cases.jl must have its six user_*.jl files in test/CI-runs/.
+      - name: Check test/ci_cases.jl against the repository
+        run: julia test/ci_cases.jl validate
+
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
+    needs: registry
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      JULIA_TEST_MODE: true
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1.11'
+        arch:
+          - x64
+        os:
+          - ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      # Caches ~/.julia/artifacts, packages and the precompile cache, keyed
+      # on Project.toml/Manifest.toml.
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          # The suite runs real simulations, so the two defaults of this
+          # action (bounds checking forced on, coverage instrumentation on)
+          # would multiply the wall time for no benefit here. Flip either
+          # back to debug a suspected out-of-bounds access.
+          check_bounds: 'no'
+          coverage: false
+      - name: Upload run output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-run-output
+          path: test/CI-runs/**/output/
+          if-no-files-found: ignore
+          retention-days: 14

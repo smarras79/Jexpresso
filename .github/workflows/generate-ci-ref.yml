@@ -1,198 +1,222 @@
+#==============================================================================
+# Generate CI reference solutions.
+#
+# Run this manually to (re)create the golden HDF5 files in test/CI-ref/:
+#   * once for a newly registered case, so the benchmarks/CI comparison has
+#     something to compare against;
+#   * again whenever a physics or numerics change intentionally moves the
+#     expected answer.
+#
+# Like the benchmarks workflow, the job matrix comes from test/ci_cases.jl —
+# a new case needs no change here. By default every registered case is
+# regenerated; pass a comma-separated list to regenerate only some of them.
+#
+# What happens:
+#   1. One job per selected case runs it with CI_MODE=true; the HDF5 output
+#      lands in test/CI-runs/<eqs>/<case>/output/.
+#   2. That output is staged as test/CI-ref/<eqs>/<case>/output/ and uploaded
+#      as an artifact.
+#   3. A single final job downloads every artifact, merges the tree into
+#      test/CI-ref/ and pushes ONE commit to the branch the workflow ran on
+#      (one job pushing avoids the races of parallel jobs pushing).
+#==============================================================================
 name: Generate CI Reference Solutions
-
-# Run this workflow ONCE (manually) to populate test/CI-ref/ with golden .h5
-# files.  Re-run it whenever you intentionally change a benchmark's expected
-# output (e.g. after a physics or numerics change).
-#
-# What it does:
-#   1. Runs each benchmark with CI_MODE=true so the reduced CI-runs
-#      user_inputs.jl is used (short tend, hdf5 output).
-#   2. The .h5 files land in test/CI-runs/<EQ>/<CASE>/output/.
-#   3. They are copied to   test/CI-ref/<EQ>/<CASE>/output/.
-#   4. The CI-ref tree is committed and pushed to the triggering branch.
-#
-# After this workflow completes, the benchmarks workflow will compare future
-# runs against these committed reference files.
 
 on:
   workflow_dispatch:
     inputs:
+      cases:
+        description: 'Cases to regenerate: "all" or a comma-separated list such as "CompEuler/theta"'
+        required: false
+        default: 'all'
       commit_message:
         description: 'Commit message for the reference update'
         required: false
         default: 'Update CI reference solutions'
 
+concurrency:
+  group: generate-ci-ref-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
-  generate-references:
-    name: Generate reference solutions
+  #----------------------------------------------------------------------------
+  # Turn test/ci_cases.jl into the job matrix.
+  #----------------------------------------------------------------------------
+  setup:
+    name: Build case matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 300
-
-    # Grant write permission so the bot can push the reference files.
-    permissions:
-      contents: write
-
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.cases.outputs.matrix }}
+      count:  ${{ steps.cases.outputs.count }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Use a PAT or the default GITHUB_TOKEN; push works with write perms.
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: julia-actions/setup-julia@v1
+      - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.11.2'
+          version: '1.11'
+
+      - name: Validate registry
+        run: julia test/ci_cases.jl validate
+
+      - name: Select cases
+        id: cases
+        env:
+          CASES: ${{ github.event.inputs.cases || 'all' }}
+        run: |
+          matrix=$(julia test/ci_cases.jl matrix "$CASES")
+          count=$(julia test/ci_cases.jl count  "$CASES")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "count=$count"   >> "$GITHUB_OUTPUT"
+          echo "Selected $count case(s): $matrix"
+
+  #----------------------------------------------------------------------------
+  # One job per case: run it and stage its output as a reference candidate.
+  #----------------------------------------------------------------------------
+  generate:
+    name: ${{ matrix.name }}
+    needs: setup
+    if: needs.setup.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.job_timeout }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.11'
           arch: x64
 
-      - uses: actions/cache@v3
-        with:
-          path: ~/.julia/artifacts
-          key: ${{ runner.os }}-benchmarks-${{ hashFiles('**/Project.toml', '**/Manifest.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-benchmarks-
-            ${{ runner.os }}-
+      - uses: julia-actions/cache@v2
 
       - uses: julia-actions/julia-buildpkg@v1
 
-      # -----------------------------------------------------------------------
-      # Run each benchmark separately so a crash in one does not block others.
-      # continue-on-error keeps the workflow going; missing .h5 files for a
-      # failed benchmark are simply not committed (no reference is created).
-      # -----------------------------------------------------------------------
-
-      - name: "Generate: CompEuler/theta"
-        id: gen_compeuler_theta
+      - name: Generate
+        id: gen
         continue-on-error: true
-        timeout-minutes: 40
+        timeout-minutes: ${{ matrix.timeout }}
+        env:
+          JEXPRESSO_EQS:  ${{ matrix.eqs }}
+          JEXPRESSO_CASE: ${{ matrix.case }}
         run: |
           julia --project=. -e '
-            push!(empty!(ARGS), "CompEuler", "theta", "true")
-            include("src/Jexpresso.jl")
+            using Jexpresso
+            Jexpresso.run_case(ENV["JEXPRESSO_EQS"], ENV["JEXPRESSO_CASE"];
+                               CI_MODE = true)
           '
 
-      - name: "Generate: CompEuler/3d"
-        id: gen_compeuler_3d
-        continue-on-error: true
-        timeout-minutes: 40
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "CompEuler", "3d", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Generate: CompEuler/wave1d"
-        id: gen_compeuler_wave1d
-        continue-on-error: true
-        timeout-minutes: 20
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "CompEuler", "wave1d", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Generate: Burgers/case1"
-        id: gen_burgers_case1
-        continue-on-error: true
-        timeout-minutes: 20
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "Burgers", "case1", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Generate: Burgers/case2d"
-        id: gen_burgers_case2d
-        continue-on-error: true
-        timeout-minutes: 30
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "Burgers", "case2d", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Generate: Elliptic/2dlaplace"
-        id: gen_elliptic_2dlaplace
-        continue-on-error: true
-        timeout-minutes: 20
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "Elliptic", "2dlaplace", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      - name: "Generate: ShallowWater/TC2"
-        id: gen_shallowwater_tc2
-        continue-on-error: true
-        timeout-minutes: 40
-        run: |
-          julia --project=. -e '
-            push!(empty!(ARGS), "ShallowWater", "TC2", "true")
-            include("src/Jexpresso.jl")
-          '
-
-      # -----------------------------------------------------------------------
-      # Copy .h5 files from CI-runs output directories to CI-ref.
-      # Each copy is silent if the source directory doesn't exist (benchmark
-      # failed above), so partial reference sets are handled gracefully.
-      # -----------------------------------------------------------------------
-      - name: Collect reference files
+      # Staged under the exact path it must end up at, so the collecting job
+      # can merge every artifact straight into test/CI-ref/.
+      - name: Stage reference files
+        id: stage
         if: always()
+        env:
+          EQS:  ${{ matrix.eqs }}
+          CASE: ${{ matrix.case }}
         run: |
-          copy_ref() {
-            local eqs="$1" case="$2"
-            local src="test/CI-runs/${eqs}/${case}/output"
-            local dst="test/CI-ref/${eqs}/${case}/output"
-            if compgen -G "${src}/*.h5" > /dev/null 2>&1; then
-              mkdir -p "$dst"
-              cp "${src}"/*.h5 "$dst"/
-              echo "Copied $(ls ${src}/*.h5 | wc -l) file(s) → ${dst}"
-            else
-              echo "WARNING: no .h5 files found in ${src} — skipping ${eqs}/${case}"
-            fi
-          }
+          src="test/CI-runs/${EQS}/${CASE}/output"
+          dst="staging/${EQS}/${CASE}/output"
 
-          copy_ref CompEuler    theta
-          copy_ref CompEuler    3d
-          copy_ref CompEuler    wave1d
-          copy_ref Burgers      case1
-          copy_ref Burgers      case2d
-          copy_ref Elliptic     2dlaplace
-          copy_ref ShallowWater TC2
+          shopt -s nullglob
+          h5=("$src"/*.h5)
+          if [ ${#h5[@]} -eq 0 ]; then
+            echo "::warning title=${EQS}/${CASE}::no HDF5 output produced — no reference generated"
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-      # -----------------------------------------------------------------------
-      # Commit and push.  If nothing changed (all benchmarks failed or ref
-      # files are identical), the commit is skipped cleanly.
-      # -----------------------------------------------------------------------
-      - name: Commit and push reference files
+          mkdir -p "$dst"
+          cp "${h5[@]}" "$dst"/
+          # Keep a copy of the inputs the reference was produced with.
+          [ -f "$src/user_inputs.jl" ] && cp "$src/user_inputs.jl" "$dst"/
+          echo "Staged ${#h5[@]} file(s) for ${EQS}/${CASE}"
+          echo "generated=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload reference candidate
+        if: always() && steps.stage.outputs.generated == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ciref-${{ matrix.slug }}
+          path: staging/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Report case outcome
         if: always()
+        env:
+          GEN:       ${{ steps.gen.outcome }}
+          GENERATED: ${{ steps.stage.outputs.generated }}
+        run: |
+          if [ "$GEN" != "success" ] || [ "$GENERATED" != "true" ]; then
+            echo "::error title=${{ matrix.name }}::run=$GEN, reference generated=$GENERATED"
+            exit 1
+          fi
+          echo "${{ matrix.name }}: reference generated."
+
+  #----------------------------------------------------------------------------
+  # Collect every generated reference and push a single commit.
+  #----------------------------------------------------------------------------
+  commit:
+    name: Commit reference solutions
+    needs: [setup, generate]
+    if: always() && needs.setup.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Download generated references
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ciref-*
+          path: test/CI-ref
+          merge-multiple: true
+
+      - name: Commit and push
+        env:
+          COMMIT_MESSAGE: ${{ github.event.inputs.commit_message || 'Update CI reference solutions' }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add test/CI-ref/
+
           if git diff --staged --quiet; then
-            echo "No changes to reference files — nothing to commit."
-          else
-            git commit -m "${{ github.event.inputs.commit_message }} [skip ci]"
-            git push
-            echo "Reference files committed and pushed."
+            echo "No reference files changed — nothing to commit." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
-      # -----------------------------------------------------------------------
-      # Summary
-      # -----------------------------------------------------------------------
-      - name: Generation report
-        if: always()
-        run: |
-          icon() { [ "$1" = "success" ] && echo "✅" || echo "❌"; }
           {
-            echo "## Reference Generation Results"
+            echo "## Reference solutions updated"
             echo ""
-            echo "| Benchmark | Generated |"
-            echo "|-----------|-----------|"
-            echo "| CompEuler/theta    | $(icon '${{ steps.gen_compeuler_theta.outcome }}') |"
-            echo "| CompEuler/3d       | $(icon '${{ steps.gen_compeuler_3d.outcome }}') |"
-            echo "| CompEuler/wave1d   | $(icon '${{ steps.gen_compeuler_wave1d.outcome }}') |"
-            echo "| Burgers/case1      | $(icon '${{ steps.gen_burgers_case1.outcome }}') |"
-            echo "| Burgers/case2d     | $(icon '${{ steps.gen_burgers_case2d.outcome }}') |"
-            echo "| Elliptic/2dlaplace | $(icon '${{ steps.gen_elliptic_2dlaplace.outcome }}') |"
-            echo "| ShallowWater/TC2   | $(icon '${{ steps.gen_shallowwater_tc2.outcome }}') |"
+            echo '```'
+            git diff --staged --name-status
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          git commit -m "${COMMIT_MESSAGE} [skip ci]"
+
+          # Retry the push: another job may have moved the branch meanwhile.
+          for attempt in 1 2 3 4; do
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "Reference files pushed to ${GITHUB_REF_NAME}."
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt) — rebasing and retrying."
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            sleep $((2 ** attempt))
+          done
+          echo "::error::could not push the reference solutions"
+          exit 1

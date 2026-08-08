@@ -1,62 +1,151 @@
-# Add a new test to CI:
-Follow these simple steps to add your new PROBLEM_NAME/YOUR_TEST_DIR_NAME to the CI suite:
+# The Jexpresso CI test suite
 
-       1. Set the following keys in problems/equations/PROBLEM_NAME/YOUR_TEST_DIR_NAME/user_inputs.jl
-       	  - :output_format     => "hdf5",
-	  - :output_dir        => "./test/CI-ref",
-	  - :loverwrite_output => true,
-	                      
-       2. Run your test as usual
-       
-       3. cp -rf problems/equations/PROBLEM_NAME/YOUR_TEST_DIR_NAME test/CI-runs/PROBLEM_NAME/
+Everything CI runs is declared in **one file**: [`test/ci_cases.jl`](ci_cases.jl).
+Adding a test to CI is adding one line to it; no workflow file has to change.
 
-       4. Edit user_inputs.jl to replace 
-       	     :output_dir => "./test/CI-ref",
-	  with
-    	     :output_dir => "./test/CI-runs",
-       
-       5. Open test/runtests.jl and add the following line if necessary:
-           `@time @testset "PROBLEM_NAME" begin include("CI-runs/PROBLEM_NAME/runtests.jl") end`
-           Replace PROBLEM_NAME with the one that contains YOUR_TEST_DIR_NAME. 
-           Notice that you do not need to add this new line if YOUR_TEST_DIR_NAME is already there.
-        
-       6. cp test/CI-runs/CompEuler/thetaTracers/Tests.jl test/CI-runs/PROBLEM_NAME/YOUR_TEST_DIR_NAME/
-        
-       7. edit test/CI-runs/CompEuler/thetaTracers/Tests.jl and replace 
-          @testset "JEXPRESSO Examples" begin run_example("CompEuler", "thetaTracers") end
-          with
-          @testset "JEXPRESSO Examples" begin run_example("PROBLEM_NAME", "YOUR_TEST_DIR_NAME") end
-	  
-	Done. At this point the CI will run when you push the code.
+The suite currently contains a single case:
 
-# General notes:
-    The `runtest.jl` file is part of a Julia package's continuous integration (CI) testing framework. 
-    It uses Julia's built-in `Test` module to define and execute test sets for "Jexpresso". 
-    Here’s a breakdown of how it is structured and how it contributes to the CI process:
+| Case | Timeout | Tolerance |
+|---|---|---|
+| `CompEuler/theta` | 40 min | `atol = 1e-5` |
 
-    1. **Importing Dependencies**: At the beginning of the file, there are `using` statements for `Test` and `Jexpresso`. 
-        This means the test file relies on these three packages. 
-        `Test` is used for writing the test cases and `Jexpresso` is the main package being tested.
+The other cases that used to be in the suite are listed, commented out, at the
+bottom of `CI_CASES` in `test/ci_cases.jl`, and their input decks are still in
+`test/CI-runs/`. Re-enabling one is a matter of uncommenting its line and
+regenerating its reference solution.
 
-    2. **`run_example`**: 
-        This function takes two arguments: `parsed_equations` and `parsed_equations_case_name`, which are the names for specific test cases or example scenarios within the Jexpresso framework. 
-        The function sets up an environment, navigates to a specific directory where the test case resides, clears any existing command-line arguments, and then simulates the running of a Jexpresso application by pushing the relevant arguments and including the main Jexpresso script. 
-        It wraps the execution within a `@testset`, allowing for grouped test reporting and isolation. If the script runs without throwing an error, a test within this set passes; otherwise, it captures the error, prints a portion of it, and fails the test.
+---
 
-    3. **Setting Up Environment Variables**: 
-        Inside the `run_example` function, it adjusts the `ENV["JEXPRESSO_HOME"]` to ensure it points to the correct base directory for the Jexpresso framework.
+## How it fits together
 
-    4. **Error Handling**:
-        It includes a `try-catch` block. If the Jexpresso example runs successfully, it proceeds without interruption. 
-        If there's an error, it prints out a portion of the error message and fails the current test by asserting `@test false`.
+```
+test/ci_cases.jl          ← the registry: which cases run, timeout, tolerance
+      │
+      ├── test/runtests.jl           `Pkg.test()` → run + compare every case
+      ├── test/compare_benchmarks.jl compare only (no solver load)
+      ├── test/ci_compare.jl         shared run/compare helpers
+      │
+      ├── .github/workflows/CI.yml               merge gate (Pkg.test)
+      ├── .github/workflows/benchmarks.yml       one job per case + report
+      └── .github/workflows/generate-ci-ref.yml  (re)generate references
+```
 
-    5. **Running Test Sets for Examples**: 
-        After defining `run_example`, the script defines a larger `@testset` titled "JEXPRESSO Examples". 
-        Within this set, it iterates over a predefined list of example scenarios, grouped by problem names and case names. 
-        Each of these scenarios is passed to the `run_example` function to be run as part of the overall test suite.
+A case is run in **CI mode**, i.e. the solver reads its inputs from
+`test/CI-runs/<EQS>/<CASE>/` (a reduced version of the deck in
+`problems/<EQS>/<CASE>/`: short `:tend`, `hdf5` output) and writes to
+`test/CI-runs/<EQS>/<CASE>/output/`. That output is compared field by field
+against the committed reference in `test/CI-ref/<EQS>/<CASE>/output/`.
 
-    6. **Integration with CI**: 
-        This file is integrated into the CI pipeline via GitHub Actions. The CI pipeline will report success if all tests pass, or failure if any test fails, preventing merging broken code into main branches or tagging releases with failing tests.
+Outcome of a case:
 
-    This structure allows for automated testing of various scenarios within the Jexpresso framework, ensuring that any new changes don't break existing functionality and that all the defined examples work as expected.
+| Result | Meaning |
+|---|---|
+| ✅ pass | the run finished and every field matches the reference within `atol` |
+| ⏭️ skipped | no reference solution committed yet — run **Generate CI Reference Solutions** |
+| ❌ fail | the run crashed, produced no HDF5 output, or a field drifted beyond `atol` |
 
+### Which workflow runs when
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| **CI** | push/PR to `master`, tags, manual | validates the registry, then `Pkg.test()` — this is the merge gate |
+| **Benchmarks** | push to `master`, weekly (Sun 02:00 UTC), manual | one job per case, per-case artifacts and a summary table |
+| **Generate CI Reference Solutions** | manual only | runs the cases and commits their output as the new references |
+
+Benchmarks does not run on pull requests, because CI already runs the same
+cases there. Uncomment the `pull_request:` trigger in
+`.github/workflows/benchmarks.yml` if you want the per-case table on PRs too.
+
+---
+
+## Add a new test to CI
+
+Assuming `problems/<EQS>/<CASE>/` already exists and runs (see
+[ADD_A_NEW_TEST.md](../ADD_A_NEW_TEST.md)):
+
+### 1. Create the CI version of the deck
+
+```bash
+mkdir -p test/CI-runs/<EQS>
+cp -r problems/<EQS>/<CASE> test/CI-runs/<EQS>/<CASE>
+```
+
+Edit `test/CI-runs/<EQS>/<CASE>/user_inputs.jl` so the run is short and
+writes HDF5:
+
+| Key | CI value | Why |
+|---|---|---|
+| `:outformat` | `"hdf5"` | the comparison reads `.h5` files |
+| `:output_dir` | `"none"` | output goes to `test/CI-runs/<EQS>/<CASE>/output/` |
+| `:loverwrite_output` | `true` | no timestamped subdirectory |
+| `:tend` | a few time steps' worth | keep CI wall-time short |
+| `:ndiagnostics_outputs` / `:diagnostics_at_times` | consistent with `:tend` | at least one output file must be written |
+
+All six `user_*.jl` / `initialize.jl` files must be present — the solver
+includes them unconditionally.
+
+### 2. Register the case — the one line
+
+In `test/ci_cases.jl`:
+
+```julia
+const CI_CASES = CICase[
+    CICase(eqs = "CompEuler", case = "theta", timeout = 40, atol = 1e-5),
+    CICase(eqs = "<EQS>",     case = "<CASE>", timeout = 20),   # ← new
+]
+```
+
+`timeout` is the per-case limit in minutes; `atol` defaults to `1e-5`.
+
+Check the registry locally:
+
+```bash
+julia test/ci_cases.jl validate    # dirs and files present?
+julia test/ci_cases.jl list        # what will run
+julia test/ci_cases.jl matrix      # the JSON the workflows consume
+```
+
+### 3. Generate the reference solution
+
+Commit and push, then run **Actions → Generate CI Reference Solutions → Run
+workflow** on your branch (leave `cases` as `all`, or pass just
+`<EQS>/<CASE>`). It runs the case, commits `test/CI-ref/<EQS>/<CASE>/output/`
+back to your branch with `[skip ci]`, and the case stops being reported as
+skipped.
+
+### 4. Verify
+
+```bash
+julia --project=. test/runtests.jl <EQS>/<CASE>   # run + compare, locally
+```
+
+or trigger **Actions → Benchmarks → Run workflow** and confirm the new row is
+green.
+
+---
+
+## Regenerating references after an intentional change
+
+If a physics or numerics change moves the expected answer, run **Generate CI
+Reference Solutions** on the branch that carries the change (pass a
+comma-separated list to regenerate only the affected cases). The new `.h5`
+files become the golden reference. Review that diff carefully — it is the
+record of what changed.
+
+---
+
+## Running things locally
+
+```bash
+# whole suite (run + compare), exactly what CI does
+julia --project=. -e 'using Pkg; Pkg.test()'
+
+# a single registered case
+julia --project=. test/runtests.jl CompEuler/theta
+
+# comparison only, against whatever is already in test/CI-runs/**/output
+julia --project=. test/compare_benchmarks.jl CompEuler/theta
+
+# run a case by hand
+julia --project=. -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "theta"; CI_MODE = true)'
+```

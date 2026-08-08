@@ -251,6 +251,29 @@ This is **not** required for the solver to find and run your case.
 | `user_bc.jl` | Boundary conditions |
 | `user_primitives.jl` | Conversion from conserved to output variables |
 
+---
+
+## Adding your case to CI
+
+Running locally is enough for a new problem — CI is opt-in. When you do want
+your case guarded by CI:
+
+1. Copy the deck into `test/CI-runs/YourEquationSet/your_case/` and shorten it
+   (`:outformat => "hdf5"`, `:output_dir => "none"`,
+   `:loverwrite_output => true`, a small `:tend`).
+2. Add **one line** to `CI_CASES` in [`test/ci_cases.jl`](test/ci_cases.jl):
+
+   ```julia
+   CICase(eqs = "YourEquationSet", case = "your_case", timeout = 20),
+   ```
+
+3. Push, then run the **Generate CI Reference Solutions** workflow once to
+   create the reference solution your runs will be compared against.
+
+That is the whole registration: the GitHub Actions job matrices are built from
+that file, so no workflow needs editing. The full checklist is in
+[`test/CIdescription.md`](test/CIdescription.md).
+
 # Some examples of existing tests:
 
 ## Example 1: Shock tube with dynamic SGS for shock capturing:
