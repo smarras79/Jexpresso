@@ -187,7 +187,13 @@ inputs[:_user_input_file]     = user_input_file
 if parsed_CI_mode == "true" &&
    !(lowercase(get(ENV, "JEXPRESSO_CI_OUTPUT", "1")) in ("0", "false", "no", "off"))
 
-    for (ci_key, ci_value) in (:outformat         => "hdf5",
+    # The comparison reads HDF5, so that is the default. The VTK smoke test
+    # (test/runtests.jl --vtk) sets JEXPRESSO_CI_OUTFORMAT=vtk to exercise the
+    # writer production runs actually use, with every other CI convention —
+    # output next to the case, no timestamp, one write at :tend — unchanged.
+    ci_outformat = lowercase(strip(get(ENV, "JEXPRESSO_CI_OUTFORMAT", "hdf5")))
+
+    for (ci_key, ci_value) in (:outformat         => ci_outformat,
                                :output_dir        => "none",
                                :loverwrite_output => true)
         previous = get(inputs, ci_key, nothing)

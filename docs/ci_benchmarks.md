@@ -64,6 +64,23 @@ const CI_CASES = CICase[
 | `eqs`, `case` | directory names under `test/CI-runs/` |
 | `timeout` | per-case limit in minutes, used for the GitHub Actions job |
 | `atol` | absolute tolerance of the field-by-field comparison |
+| `vtk_smoke` | also check the VTK writer for this case (default `false`) |
+
+### Checking the VTK writer
+
+CI compares HDF5, so a break in `write_vtk` — the format production runs
+actually use — would go unnoticed. The VTK smoke test runs a case a second
+time with VTK output and asserts the writer produced non-empty
+`.vtu`/`.pvtu` files (no reference, no tolerance — the numbers are the HDF5
+comparison's job). One command:
+
+```bash
+julia --project=. test/runtests.jl --vtk CompEuler/theta
+```
+
+It is off by default because it doubles the case's run time; set
+`vtk_smoke = true` on a `CICase` to have CI do it every time. Details in
+[`test/CIdescription.md`](../test/CIdescription.md#checking-the-vtk-writer).
 
 The registry has a small command line interface, used by the workflows and
 useful locally:

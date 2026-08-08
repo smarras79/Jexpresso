@@ -9,9 +9,9 @@ test to CI is one command,
 
 The suite currently contains a single case:
 
-| Case | Timeout | Tolerance |
-|---|---|---|
-| `CompEuler/theta` | 40 min | `atol = 1e-5` |
+| Case | Timeout | Tolerance | VTK check |
+|---|---|---|---|
+| `CompEuler/theta` | 40 min | `atol = 1e-5` | off |
 
 The other cases that used to be in the suite are listed, commented out, at the
 bottom of `CI_CASES` in `test/ci_cases.jl`. Re-enabling one is uncommenting its
@@ -108,6 +108,55 @@ Useful flags:
 | `--copy-only` | publish output from a run you already did by hand (needs no packages) |
 | `--no-register` | leave `test/ci_cases.jl` alone |
 | `--dest DIR` | write the references elsewhere, e.g. to diff before overwriting |
+
+And on `test/runtests.jl`:
+
+| Flag | Effect |
+|---|---|
+| `--vtk` | also run the [VTK writer check](#checking-the-vtk-writer) for the selected cases |
+
+### Checking the VTK writer
+
+The comparison reads HDF5, because that is the format that holds the solution
+as `Float64` arrays with no geometry wrapped around it. Production runs,
+though, write **VTK** — so nothing in CI would notice `write_vtk` breaking.
+The VTK smoke test closes that gap. It runs the case a second time with VTK
+output and checks the writer produced non-empty `.vtu`/`.pvtu` files. It
+asserts nothing about the numbers: no reference, no tolerance.
+
+**Run it for a case, one command:**
+
+```bash
+julia --project=. test/runtests.jl --vtk CompEuler/theta
+```
+
+That does the normal run-and-compare *and* the VTK check. Drop the case name
+to do it for every registered case:
+
+```bash
+julia --project=. test/runtests.jl --vtk
+```
+
+**Turn it on permanently for a case** (it is off by default — it doubles that
+case's CI wall time) by setting the flag in `test/ci_cases.jl`:
+
+```julia
+CICase(eqs = "CompEuler", case = "theta", timeout = 40, vtk_smoke = true),
+```
+
+with `timeout` raised to cover two runs. Output goes to the case's usual
+`test/CI-runs/<EQS>/<CASE>/output/`, which is gitignored, and the Benchmarks
+workflow uploads it as an artifact you can open in ParaView.
+
+Under the hood the smoke run sets `JEXPRESSO_CI_OUTFORMAT=vtk`, which is the
+one CI output convention that is *not* hardcoded; everything else (output
+next to the case, no timestamped directory, a single write at `:tend`) still
+applies. You can use it directly for a one-off:
+
+```bash
+JEXPRESSO_CI_OUTFORMAT=vtk julia --project=. \
+    -e 'using Jexpresso; Jexpresso.run_case("CompEuler", "theta"; CI_MODE = true)'
+```
 
 ### If the case reads a GMSH mesh
 

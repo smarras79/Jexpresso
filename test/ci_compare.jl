@@ -27,7 +27,8 @@ using Test
 include(joinpath(@__DIR__, "ci_cases.jl"))
 using .CICases
 
-export run_ci_case, compare_case, compare_cases
+export run_ci_case, run_in_ci_mode, compare_case, compare_cases,
+       vtk_smoke_case
 
 #------------------------------------------------------------------------------
 # Helpers
@@ -86,6 +87,29 @@ end
 # Run
 #------------------------------------------------------------------------------
 """
+    run_in_ci_mode(c::CICase)
+
+Call `Jexpresso.run_case(...; CI_MODE = true)` for `c`. Throws on failure —
+the callers below decide what a failure means.
+
+Two details it takes care of. Decks address their mesh relative to the
+repository root (`:gmsh_filename => "./problems/…/x.msh"`) while `Pkg.test()`
+runs with the working directory set to test/, so the run happens from the
+root; and the package is loaded lazily through `Base.require` +
+`invokelatest`, because this file is also included by compare_benchmarks.jl,
+which must stay HDF5-only and fast, and because a module loaded at run time
+lives in a newer world age than this function.
+
+The caller is responsible for restoring the working directory.
+"""
+function run_in_ci_mode(c::CICase)
+    cd(CICases.project_root())
+    jexpresso = Base.require(Main, :Jexpresso)
+    Base.invokelatest(jexpresso.run_case, c.eqs, c.case; CI_MODE = true)
+    return nothing
+end
+
+"""
     run_ci_case(c::CICase)
 
 Run one registered case with `CI_MODE=true`, i.e. from
@@ -97,20 +121,7 @@ function run_ci_case(c::CICase)
     @testset "run $(case_name(c))" begin
         previous_dir = pwd()
         try
-            # Decks address their mesh relative to the repository root
-            # (`:gmsh_filename => "./meshes/gmsh_grids/…"`), but `Pkg.test()`
-            # runs with the working directory set to test/. Run from the root
-            # so a case behaves identically however the suite was started.
-            # (test/meshes is a symlink to ../meshes, which papers over this
-            # for the mesh specifically — nothing else is symlinked.)
-            cd(CICases.project_root())
-
-            # Load the package lazily (this file is also included by
-            # compare_benchmarks.jl, which must stay HDF5-only and fast) and
-            # call through invokelatest because the module is loaded at run
-            # time, i.e. in a newer world age than this function.
-            jexpresso = Base.require(Main, :Jexpresso)
-            Base.invokelatest(jexpresso.run_case, c.eqs, c.case; CI_MODE = true)
+            run_in_ci_mode(c)
             @test true
         catch err
             message = sprint(showerror, err)
@@ -183,6 +194,79 @@ function compare_cases(cases::AbstractVector{CICase};
                        ref_root::AbstractString = joinpath(root, "test", "CI-ref"))
     for c in cases
         compare_case(c; root = root, ref_root = ref_root)
+    end
+    return nothing
+end
+
+#------------------------------------------------------------------------------
+# VTK writer smoke test
+#------------------------------------------------------------------------------
+"Every .vtu/.pvtu file under `dir`, at any depth (pvtk_grid writes a subdirectory)."
+function find_vtk_files(dir::AbstractString)
+    found = String[]
+    isdir(dir) || return found
+    for (root, _, files) in walkdir(dir), f in files
+        (endswith(f, ".vtu") || endswith(f, ".pvtu")) && push!(found, joinpath(root, f))
+    end
+    return sort(found)
+end
+
+"""
+    vtk_smoke_case(c::CICase)
+
+Run `c` a second time with VTK output and check that the writer produced
+non-empty files.
+
+This is deliberately NOT a numerical comparison. VTK is the format production
+runs use, so a break in `write_vtk` — a bad variable list, a malformed .pvtu,
+an exception on some `SOL_VARS_TYPE` — would otherwise sail through a suite
+that only ever writes HDF5. What is asserted is only that the writer ran and
+produced output; the numbers are the HDF5 comparison's job.
+
+Enable per case with `vtk_smoke = true` in test/ci_cases.jl, or for one run
+with `julia --project=. test/runtests.jl --vtk <eqs>/<case>`.
+"""
+function vtk_smoke_case(c::CICase)
+    @testset "vtk writer $(case_name(c))" begin
+        output       = CICases.output_dir(c)
+        previous_dir = pwd()
+        previous_fmt = get(ENV, "JEXPRESSO_CI_OUTFORMAT", nothing)
+
+        # Clear any .vtu left by an earlier run, so what is checked is what
+        # this run wrote and not a leftover.
+        for stale in find_vtk_files(output)
+            rm(stale; force = true)
+        end
+
+        try
+            ENV["JEXPRESSO_CI_OUTFORMAT"] = "vtk"
+            run_in_ci_mode(c)
+            @test true
+        catch err
+            message = sprint(showerror, err)
+            println("Error while running $(case_name(c)) with VTK output: ",
+                    message[1:min(2000, end)])
+            @test false
+        finally
+            previous_fmt === nothing ? delete!(ENV, "JEXPRESSO_CI_OUTFORMAT") :
+                                       (ENV["JEXPRESSO_CI_OUTFORMAT"] = previous_fmt)
+            cd(previous_dir)
+        end
+
+        written = find_vtk_files(output)
+        if isempty(written)
+            @error "$(case_name(c)): the VTK run wrote no .vtu/.pvtu in $output"
+            @test false
+        else
+            empties = filter(f -> filesize(f) == 0, written)
+            isempty(empties) ||
+                @error "$(case_name(c)): empty VTK file(s): " *
+                       join(map(basename, empties), ", ")
+            @test isempty(empties)
+            println("   VTK writer produced $(length(written)) file(s): ",
+                    join(map(basename, written[1:min(4, end)]), ", "),
+                    length(written) > 4 ? ", …" : "")
+        end
     end
     return nothing
 end

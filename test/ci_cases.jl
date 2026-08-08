@@ -44,12 +44,18 @@ One CI test case.
   * `timeout` : per-case timeout in MINUTES used by the GitHub Actions jobs.
   * `atol`    : absolute tolerance used when comparing the HDF5 output
                 against the reference solution in `test/CI-ref/`.
+  * `vtk_smoke`: also run the case a second time writing VTK, and check that
+                the writer produced non-empty files. Off by default: it is a
+                second full run of the case, and it is a check on the writer,
+                not on the solution (no reference, no tolerance). Turn it on
+                for a case whose VTK output you care about keeping working.
 """
 Base.@kwdef struct CICase
     eqs::String
     case::String
     timeout::Int     = 30
     atol::Float64    = 1e-5
+    vtk_smoke::Bool  = false
 end
 
 CICase(eqs::AbstractString, case::AbstractString; kwargs...) =
