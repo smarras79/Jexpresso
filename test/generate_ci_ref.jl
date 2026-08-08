@@ -14,7 +14,11 @@
 
  What it does, per case:
    1. runs it with CI_MODE=true, i.e. from test/CI-runs/<eqs>/<case>/, which
-      writes HDF5 output into test/CI-runs/<eqs>/<case>/output/;
+      writes HDF5 output into test/CI-runs/<eqs>/<case>/output/. CI mode
+      forces :outformat => "hdf5", :output_dir => "none" and
+      :loverwrite_output => true, so a deck copied straight out of problems/
+      (typically VTK, own output directory) needs no editing for this to
+      work — see src/run.jl;
    2. deletes the stale .h5 files in test/CI-ref/<eqs>/<case>/output/ (a
       reference set must match the run exactly — a leftover file from an
       older run would be reported as missing output forever);
@@ -123,7 +127,10 @@ function publish_case(c::CICase, dest::AbstractString)
 
     if isempty(h5)
         println(stderr, "WARNING: $(case_name(c)): no .h5 files in $source — ",
-                "nothing to publish (did the run write :outformat => \"hdf5\"?)")
+                "nothing to publish. CI mode forces HDF5 output, so this means ",
+                "the run wrote nothing at all: it failed early, its diagnostics ",
+                "settings produce no output, or it was run with ",
+                "JEXPRESSO_CI_OUTPUT=0.")
         return 0
     end
 

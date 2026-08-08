@@ -162,6 +162,46 @@ inputs[:_has_analytic]        = isfile(user_analytic_file)
 inputs[:_parsed_equations]    = parsed_equations
 inputs[:_parsed_case_name]    = parsed_equations_case_name
 inputs[:_user_input_file]     = user_input_file
+
+#--------------------------------------------------------
+# CI output conventions.
+#
+# A CI run is only useful if the comparison can find its result: the CI
+# machinery reads the .h5 files in test/CI-runs/<eqs>/<case>/output/ and
+# checks them against test/CI-ref/<eqs>/<case>/output/. That requires
+# three things of the deck, and a deck copied straight out of problems/
+# typically satisfies none of them — it asks for VTK, in an output
+# directory of its own, in a timestamped subdirectory:
+#
+#   :outformat         => "hdf5"   the comparison reads HDF5
+#   :output_dir        => "none"   put output next to the case inputs
+#   :loverwrite_output => true     "output", not "output-05Aug2025-181233"
+#
+# So CI mode forces them, and says so, rather than leaving the user to
+# discover an empty output directory an hour later. Everything else in
+# the deck (tend, diagnostics, mesh, …) is the case author's business.
+#
+# Set JEXPRESSO_CI_OUTPUT=0 to keep the deck's own settings — e.g. to get
+# VTK out of a CI deck for visualisation.
+#--------------------------------------------------------
+if parsed_CI_mode == "true" &&
+   !(lowercase(get(ENV, "JEXPRESSO_CI_OUTPUT", "1")) in ("0", "false", "no", "off"))
+
+    for (ci_key, ci_value) in (:outformat         => "hdf5",
+                               :output_dir        => "none",
+                               :loverwrite_output => true)
+        previous = get(inputs, ci_key, nothing)
+        unchanged = previous isa AbstractString && ci_value isa AbstractString ?
+                    lowercase(previous) == ci_value : previous == ci_value
+        inputs[ci_key] = ci_value
+        if !unchanged && rank == 0
+            println(" # CI_MODE: forcing :", ci_key, " => ", repr(ci_value),
+                    previous === nothing ? " (deck left it unset)" :
+                                           string(" (deck asked for ", repr(previous), ")"))
+        end
+    end
+end
+
 if rank == 0
     print(" # mod_inputs_user_inputs! (filling defaults) ......... ")
     flush(stdout)

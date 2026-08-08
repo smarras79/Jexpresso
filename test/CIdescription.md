@@ -71,16 +71,29 @@ mkdir -p test/CI-runs/<EQS>
 cp -r problems/<EQS>/<CASE> test/CI-runs/<EQS>/<CASE>
 ```
 
-Edit `test/CI-runs/<EQS>/<CASE>/user_inputs.jl` so the run is short and
-writes HDF5:
+The only thing you have to edit in
+`test/CI-runs/<EQS>/<CASE>/user_inputs.jl` is the run length:
 
 | Key | CI value | Why |
 |---|---|---|
-| `:outformat` | `"hdf5"` | the comparison reads `.h5` files |
-| `:output_dir` | `"none"` | output goes to `test/CI-runs/<EQS>/<CASE>/output/` |
-| `:loverwrite_output` | `true` | no timestamped subdirectory |
 | `:tend` | a few time steps' worth | keep CI wall-time short |
 | `:ndiagnostics_outputs` / `:diagnostics_at_times` | consistent with `:tend` | at least one output file must be written |
+
+You do **not** need to touch the output settings. CI mode overrides them for
+you (`src/run.jl`), so a deck copied straight out of `problems/` works as-is
+even though it asks for VTK in its own directory:
+
+| Key | Forced to | Why |
+|---|---|---|
+| `:outformat` | `"hdf5"` | the comparison reads `.h5` files |
+| `:output_dir` | `"none"` | output goes to `test/CI-runs/<EQS>/<CASE>/output/`, where the comparison looks |
+| `:loverwrite_output` | `true` | `output/`, not `output-05Aug2025-181233/` |
+
+Each override that changes something is announced on stdout
+(`# CI_MODE: forcing :outformat => "hdf5" (deck asked for "vtk")`). Set
+`JEXPRESSO_CI_OUTPUT=0` to suppress all three and keep the deck's own
+settings — useful to get VTK out of a CI deck for visualisation, useless for
+generating references.
 
 All six `user_*.jl` / `initialize.jl` files must be present — the solver
 includes them unconditionally.

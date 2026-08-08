@@ -259,8 +259,9 @@ Running locally is enough for a new problem — CI is opt-in. When you do want
 your case guarded by CI:
 
 1. Copy the deck into `test/CI-runs/YourEquationSet/your_case/` and shorten it
-   (`:outformat => "hdf5"`, `:output_dir => "none"`,
-   `:loverwrite_output => true`, a small `:tend`).
+   (a small `:tend`, diagnostics to match). Leave the output settings alone:
+   CI mode forces HDF5 output into `test/CI-runs/.../output/` regardless of
+   what the deck asks for, so a straight copy of your `problems/` deck works.
 2. Add **one line** to `CI_CASES` in [`test/ci_cases.jl`](test/ci_cases.jl):
 
    ```julia

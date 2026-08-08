@@ -28,9 +28,14 @@ want the per-case table on PRs as well.
 ### What a case run means
 
 Each case runs in **CI mode**: the solver reads
-`test/CI-runs/<EQS>/<CASE>/user_inputs.jl` (a shortened deck, `hdf5` output)
-instead of `problems/<EQS>/<CASE>/`, and writes to
-`test/CI-runs/<EQS>/<CASE>/output/`.
+`test/CI-runs/<EQS>/<CASE>/user_inputs.jl` (a shortened deck) instead of
+`problems/<EQS>/<CASE>/`, and writes to `test/CI-runs/<EQS>/<CASE>/output/`.
+
+CI mode also forces the three output settings the comparison depends on —
+`:outformat => "hdf5"`, `:output_dir => "none"`, `:loverwrite_output => true`
+— announcing each override it actually applies. A deck copied out of
+`problems/` therefore produces comparable output even though it asks for VTK
+somewhere else. `JEXPRESSO_CI_OUTPUT=0` disables the overrides.
 
 Pass/fail has two layers:
 
@@ -170,9 +175,10 @@ what changed.
 Full checklist in [`test/CIdescription.md`](../test/CIdescription.md). In brief:
 
 1. Copy the deck: `cp -r problems/<EQS>/<CASE> test/CI-runs/<EQS>/<CASE>`, then
-   shorten it — `:outformat => "hdf5"`, `:output_dir => "none"`,
-   `:loverwrite_output => true`, a small `:tend`, and diagnostics settings that
-   still write at least one output file.
+   shorten it: a small `:tend` and diagnostics settings that still write at
+   least one output file. The output settings need no editing — CI mode forces
+   `:outformat => "hdf5"`, `:output_dir => "none"` and
+   `:loverwrite_output => true`.
 2. Add one line to `CI_CASES` in `test/ci_cases.jl`.
 3. Create its reference solution:
    `julia --project=. test/generate_ci_ref.jl <EQS>/<CASE>`, then commit
