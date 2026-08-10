@@ -1,9 +1,20 @@
 # SWsphere — shallow water equations on a spherical shell
 
-**Status: GRID ONLY.** This case builds the high-order spectral-element grid on a
-closed spherical shell, verifies it, writes it to VTK, and stops. There is no
-initial condition and no time integration yet — that is what `:lgrid_only => true`
-in `user_inputs.jl` is for.
+**Status: GRID + INITIAL CONDITION.** This case builds the high-order
+spectral-element grid on a closed spherical shell, verifies it, builds the
+Galewsky et al. (2004) barotropically unstable jet on it, writes both to VTK, and
+stops. There is no time integration yet — the equations and the metric terms on
+the manifold are still missing.
+
+Two stopping points, both in `user_inputs.jl`:
+
+| flag | stops after |
+|---|---|
+| `:lgrid_only => true` | the grid. `initialize.jl` is never called. |
+| `:linit_only => true` | the grid **and** the initial condition. This is what the shipped deck does. |
+
+`:lgrid_only` wins if both are set. Flip both to `false` once the flux/source
+kernels exist.
 
 ## Run it
 
@@ -32,7 +43,7 @@ Output, in `problems/ShallowWater/SWsphere/output/`:
 
 | file | what it is |
 |---|---|
-| `sphere_grid_ho.vtu` | the high-order grid: **(ngl-1)² sub-elements per spectral element**, exactly as `write_vtk_grid_only` does for the flat cases. Every LGL node is a corner of a sub-cell — the linear elements are never written on their own. |
+| `sphere_grid_ho.vtu` | the high-order grid: **(ngl-1)² sub-elements per spectral element**, exactly as `write_vtk_grid_only` does for the flat cases. Every LGL node is a corner of a sub-cell — the linear elements are never written on their own. Carries the initial condition as point data when one has been built: `h`, `u`, `v`, plus `velocity`, the Cartesian form of `(u,v)` for glyphs and streamlines. |
 
 One file per run, like the other cases. View it with representation **"Surface
 With Edges"**: the edges drawn are the sub-element boundaries, so the LGL point
@@ -48,6 +59,7 @@ builder:
 
 * `src/kernel/mesh/sphere_mesh.jl` — reads the linear quad shell (`MSH 2.2` and
   `MSH 4.1` ASCII), populates it with LGL points, verifies it.
+* `initialize.jl` — the Galewsky et al. (2004) jet (see below).
 * `src/io/write_output.jl` — `write_vtk_sphere_grid`, next to the existing
   `write_vtk_grid_only` writers.
 * `tools/generate_cubed_sphere.jl` — equiangular gnomonic cubed-sphere generator.
@@ -115,6 +127,67 @@ sides carry different node numbers, i.e. the shell was torn open. `node_type`
 (0 vertex / 1 edge / 2 interior), `lon`, `lat` and `radius` are written too, and
 the cell field `panel` shows the gmsh physical tag of each panel.
 
+## The initial condition
+
+**Galewsky, Scott & Polvani (2004)**, *An initial-value problem for testing
+numerical models of the global shallow-water equations*, Tellus **56A**, 429-440
+— the barotropically unstable mid-latitude jet.
+
+State vector, in the **local tangent basis** of the shell:
+
+```
+q = [h, u, v]      h  depth [m]
+                   u  zonal      (eastward, +λ) [m/s]
+                   v  meridional (northward, +φ) [m/s]
+```
+
+with `e_λ = (-sin λ, cos λ, 0)` and `e_φ = (-sin φ cos λ, -sin φ sin λ, cos φ)`,
+so the Cartesian velocity is `u·e_λ + v·e_φ` — written to the VTK file as
+`velocity` because ParaView cannot interpret tangent components on its own.
+
+The jet is confined to `φ ∈ [π/7, π/2 - π/7]` and is `C^∞`: every derivative
+vanishes at both edges, so it joins the motionless fluid smoothly.
+
+```
+u(φ) = (u_max/e_n) exp[ 1/((φ-φ₀)(φ-φ₁)) ]   in the band, 0 outside
+v    = 0
+h(φ) = h₀ - (1/g) ∫ a u [ f + tan(φ) u/a ] dφ',   f = 2Ω sin φ
+```
+
+`h₀` is **not hard-coded**. It is fixed by requiring the global mean depth to be
+10 km, and since `h` is zonally symmetric that mean is a 1-D integral whose order
+of integration can be swapped, collapsing the double integral to a single
+quadrature:
+
+```
+mean(h) = ½ ∫ h cos φ dφ = h₀ - (1/2g) ∫ a u [f + tan(φ)u/a] (1 - sin φ) dφ
+```
+
+With the published parameters this returns **10158.1861704546 m**, the constant
+quoted in the literature — which is the sharpest available check that the
+parameters and the quadrature agree with the paper, and `test/test_sphere_mesh.jl`
+asserts it to 1e-6 m. The balance integral itself is verified there too, by
+finite-differencing `h(φ)` and comparing against its own integrand: that is what
+certifies `h` and `u` are a *balanced pair* rather than two independently
+plausible profiles.
+
+The instability is seeded by
+
+```
+h'(λ,φ) = ĥ cos φ exp[-(λ/α)²] exp[-((φ₂-φ)/β)²],  ĥ=120 m, α=1/3, β=1/15, φ₂=π/4
+```
+
+Set `:lgalewsky_perturbation => false` for the **balanced control run** — an
+exact steady solution, and the natural first test of the scheme once it exists.
+The unperturbed state is stored in `q.qe` either way, so the drift can be
+measured directly.
+
+Every parameter (`:galewsky_umax`, `:galewsky_phi0`, `:galewsky_hhat`, …) is
+overridable from `user_inputs.jl`; `initialize.jl` falls back to the published
+values. `:sphere_radius => 6.37122e6` in the deck pins the shell to the Galewsky
+Earth radius whatever the `.msh` carries — the balance is computed on the radius
+the grid actually has, and `initialize.jl` warns if that is not the Earth.
+
 ## What comes next
 
 The pieces still missing before this becomes a solver, in order:
@@ -123,10 +196,8 @@ The pieces still missing before this becomes a solver, in order:
    Jacobian, curvature) — the equivalent of `src/kernel/mesh/metric_terms.jl`
    for a 2D surface in 3D;
 2. the tangent-plane velocity basis and the mass/differentiation matrices on it;
-3. `initialize.jl` — the Williamson et al. (1992) test cases. The grid already
-   carries `mesh.lon`, `mesh.lat` and `mesh.radius` per node, which is what they
-   need;
-4. `user_flux.jl` / `user_source.jl` — the shallow water fluxes with the surface
-   metric, the full Coriolis term `f = 2Ω sin φ`, and the curvature term.
+3. `user_flux.jl` / `user_source.jl` — the shallow water fluxes with the surface
+   metric, the full Coriolis term `f = 2Ω sin φ`, and the curvature term that
+   keeps the momentum tangent to the shell.
 
-Then flip `:lgrid_only` to `false`.
+Then flip `:linit_only` to `false`.

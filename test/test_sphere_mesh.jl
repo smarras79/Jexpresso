@@ -193,4 +193,114 @@ end
         end
         @test all(touched)
     end
+
+    #
+    # The Galewsky et al. (2004) initial condition.
+    #
+    # problems/ShallowWater/SWsphere/initialize.jl is a Jexpresso-module file
+    # (it uses NSD_2D, St_mesh_sphere, define_q), so evaluate it there, the way
+    # run.jl does for a real run.
+    #
+    @testset "Galewsky initial condition" begin
+
+        Jexpresso.MPI.Initialized() || Jexpresso.MPI.Init()
+        Base.include(Jexpresso, joinpath(@__DIR__, "..", "problems",
+                                         "ShallowWater", "SWsphere", "initialize.jl"))
+
+        cc, qq, tt = generate_cubed_sphere(8, 6.37122e6)
+        fn = joinpath(dir, "cs_ic.msh")
+        write_msh22(fn, cc, qq, tt)
+        mesh = build_sphere_shell_mesh(fn, 4; radius = 6.37122e6, verbose = false)
+
+        inputs = Dict{Symbol,Any}(:backend => Jexpresso.CPU())
+        p      = Jexpresso.galewsky_params(mesh, inputs)
+        h0     = Jexpresso.galewsky_h0(p)
+
+        # THE constant of integration quoted in the literature. Reproducing it
+        # to 1e-6 m means the parameters AND the quadrature agree with the
+        # paper — it is the sharpest single check on this initial condition.
+        @test isapprox(h0, 10158.1861704546; atol = 1.0e-6)
+
+        # the jet: zero outside the band, u_max exactly at the band midpoint
+        # (φ0 + φ1 = π/2, so the midpoint is π/4)
+        uj(φ) = Jexpresso.galewsky_ujet(φ, p.umax, p.φ0, p.φ1, p.en)
+        @test uj(p.φ0)            == 0.0
+        @test uj(p.φ1)            == 0.0
+        @test uj(p.φ0 - 0.1)      == 0.0
+        @test uj(p.φ1 + 0.1)      == 0.0
+        @test uj(-0.5)            == 0.0
+        @test isapprox(uj((p.φ0 + p.φ1)/2), p.umax; rtol = 1.0e-12)
+        @test all(uj(φ) > 0 for φ in range(p.φ0 + 1e-3, p.φ1 - 1e-3; length = 50))
+
+        # the balanced height: flat south of the jet, flat north of it
+        hb(φ) = Jexpresso.galewsky_hbalance(φ, p)
+        @test hb(-π/2)      == 0.0
+        @test hb(p.φ0)      == 0.0
+        @test hb(p.φ0 - 0.2) == 0.0
+        @test isapprox(hb(π/2), hb(p.φ1); rtol = 1.0e-12)
+        @test hb(π/2) < 0                       # depth drops across the jet
+
+        # GEOSTROPHIC BALANCE: g dh/dφ must equal -a u (f + tan(φ) u / a).
+        # Finite-difference the integral and compare against its own integrand
+        # — this is what certifies h and u are a balanced pair rather than two
+        # independently plausible profiles.
+        δ = 1.0e-5
+        for φ in range(p.φ0 + 0.05, p.φ1 - 0.05; length = 12)
+            dhdφ = (hb(φ + δ) - hb(φ - δ))/(2δ)
+            @test isapprox(dhdφ,
+                           -Jexpresso.galewsky_balance_integrand(φ, p)/p.g;
+                           rtol = 1.0e-4)
+        end
+
+        # now the field on the mesh
+        qs = Jexpresso.initialize(mesh.SD, 0, mesh, inputs, dir, Float64)
+
+        h = @view qs.qn[1:mesh.npoin, 1]
+        u = @view qs.qn[1:mesh.npoin, 2]
+        v = @view qs.qn[1:mesh.npoin, 3]
+
+        @test all(v .== 0.0)                                  # v ≡ 0
+        @test all(0.0 .<= u .<= p.umax*(1 + 1.0e-12))         # jet, no overshoot
+        @test maximum(u) > 0.9*p.umax                         # the jet is resolved
+        @test all(h .> 0.0)
+        @test minimum(h) > h0 + hb(π/2) - 1.0                 # bounded below by the northern plateau
+        @test maximum(h) < h0 + p.hhat + 1.0
+
+        # the perturbation is a positive bump and never exceeds ĥ
+        d = qs.qn[1:mesh.npoin, 1] .- qs.qe[1:mesh.npoin, 1]
+        @test minimum(d) >= 0.0
+        @test maximum(d) <= p.hhat
+        @test maximum(d) > 0.0                                # it IS switched on
+
+        # the unperturbed reference is zonally symmetric: h depends on latitude
+        # only. Bin by latitude and check the spread inside each bin.
+        nb   = 200
+        lo   = fill(Inf,  nb)
+        hi   = fill(-Inf, nb)
+        for ip = 1:mesh.npoin
+            b = clamp(1 + floor(Int, (mesh.lat[ip] + π/2)/π*nb), 1, nb)
+            lo[b] = min(lo[b], qs.qe[ip, 1])
+            hi[b] = max(hi[b], qs.qe[ip, 1])
+        end
+        # each bin spans π/nb in latitude; |dh/dφ| <= max|integrand|/g, so the
+        # spread inside a bin is bounded by that times the bin width
+        slope = maximum(abs(Jexpresso.galewsky_balance_integrand(φ, p))/p.g
+                        for φ in range(p.φ0, p.φ1; length = 2000))
+        @test all(hi[b] - lo[b] <= 1.01*slope*(π/nb) + 1.0e-6 for b = 1:nb if isfinite(lo[b]))
+
+        # switching the perturbation off must give exactly the balanced state
+        inputs[:lgalewsky_perturbation] = false
+        qb = Jexpresso.initialize(mesh.SD, 0, mesh, inputs, dir, Float64)
+        @test qb.qn[1:mesh.npoin, 1] == qb.qe[1:mesh.npoin, 1]
+
+        # the writer carries the fields onto the same single grid file
+        icdir = joinpath(dir, "ic")
+        write_vtk_sphere_grid(mesh, "sphere_grid_ho", icdir; q = qs, verbose = false)
+        @test length(filter(endswith(".vtu"), readdir(icdir))) == 1
+        bytes = read(joinpath(icdir, "sphere_grid_ho.vtu"))
+        hdr   = String(bytes[1:min(lastindex(bytes), 20000)])
+        for name in ("\"h\"", "\"u\"", "\"v\"", "\"velocity\"")
+            @test occursin(name, hdr)
+        end
+    end
 end
