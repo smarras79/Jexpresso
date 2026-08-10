@@ -678,6 +678,7 @@ export write_vtk_sphere_grid
 function write_vtk_sphere_grid(mesh::St_mesh_sphere,
                                file_name::String,
                                OUTPUT_DIR::String;
+                               q       = nothing,
                                verbose = true)
 
     if !isdir(OUTPUT_DIR)
@@ -733,10 +734,52 @@ function write_vtk_sphere_grid(mesh::St_mesh_sphere,
     vtkf["iel",   VTKCellData()] = cell_iel
     vtkf["panel", VTKCellData()] = cell_pan
 
+    #
+    # Solution fields, when a state vector is handed in (the initial condition,
+    # for now). They ride on the SAME file as the grid — one file per run, like
+    # write_vtk_grid_only for the flat cases.
+    #
+    nq = 0
+    if q !== nothing
+        for ieq = 1:length(q.qvars)
+            name = q.qvars[ieq]
+            name === nothing && continue
+            vtkf[String(name), VTKPointData()] = Float64.(@view q.qn[1:mesh.npoin, ieq])
+            nq += 1
+        end
+
+        #
+        # (u, v) are components in the LOCAL TANGENT BASIS of the shell, which
+        # ParaView has no way to interpret: glyphing them directly would point
+        # the arrows in meaningless Cartesian directions. Emit the Cartesian
+        # velocity as well, u·e_λ + v·e_φ with
+        #     e_λ = (-sin λ,        cos λ,       0    )
+        #     e_φ = (-sin φ cos λ, -sin φ sin λ, cos φ)
+        # so "velocity" can be glyphed or streamlined straight away.
+        #
+        iu = findfirst(isequal("u"), q.qvars)
+        iv = findfirst(isequal("v"), q.qvars)
+        if iu !== nothing && iv !== nothing
+            vx = Vector{Float64}(undef, mesh.npoin)
+            vy = Vector{Float64}(undef, mesh.npoin)
+            vz = Vector{Float64}(undef, mesh.npoin)
+            for ip = 1:mesh.npoin
+                sλ, cλ = sincos(mesh.lon[ip])
+                sφ, cφ = sincos(mesh.lat[ip])
+                uu, vv = q.qn[ip, iu], q.qn[ip, iv]
+                vx[ip] = -uu*sλ - vv*sφ*cλ
+                vy[ip] =  uu*cλ - vv*sφ*sλ
+                vz[ip] =           vv*cφ
+            end
+            vtkf["velocity", VTKPointData()] = (vx, vy, vz)
+        end
+    end
+
     out = vtk_save(vtkf)
 
     verbose && println(" # Wrote high-order spherical shell grid: ", fout_name, ".vtu  (",
-                       mesh.npoin, " nodes, ", nsub, " sub-cells)")
+                       mesh.npoin, " nodes, ", nsub, " sub-cells",
+                       nq == 0 ? "" : string(", ", nq, " solution fields"), ")")
 
     return out
 end

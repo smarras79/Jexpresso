@@ -776,12 +776,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      initial condition, no time integration. This is the
     #                      switch a user flips while the equations for a new
     #                      geometry are still being written.
+    #   :linit_only        one step further: build the grid AND the initial
+    #                      condition, write both, and STOP before the time
+    #                      integration. :lgrid_only wins if both are set.
     #
     if(!haskey(inputs, :lspherical_shell))
         inputs[:lspherical_shell] = false
     end
     if(!haskey(inputs, :lgrid_only))
         inputs[:lgrid_only] = false
+    end
+    if(!haskey(inputs, :linit_only))
+        inputs[:linit_only] = false
     end
     if(!haskey(inputs, :lcheck_grid))
         inputs[:lcheck_grid] = true

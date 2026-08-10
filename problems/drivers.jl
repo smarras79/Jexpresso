@@ -43,9 +43,15 @@ function driver(nparts,
     # boundary — numbers the high-order nodes once per UNIQUE edge so the
     # panel seams stay stitched together.
     #
-    # Until the shallow-water-on-the-sphere kernels exist, this path is only
-    # useful with :lgrid_only => true: build the grid, write it to VTK for
-    # inspection, and return.
+    # Two early stopping points, since the equations on the manifold do not
+    # exist yet:
+    #
+    #   :lgrid_only => true   build the grid, write it, return.
+    #   :linit_only => true   build the grid AND the initial condition, write
+    #                         both (into ONE file: the fields ride on the grid),
+    #                         return.
+    #
+    # :lgrid_only wins if both are set.
     #---------------------------------------------------------
     if get(inputs, :lspherical_shell, false) == true
 
@@ -77,21 +83,32 @@ function driver(nparts,
 
         smesh = mod_mesh_sphere_driver(inputs, TFloat)
 
-        if rank == 0
-            # ONE grid file, as (ngl-1)² sub-elements per spectral element —
-            # the same convention as write_vtk_grid_only for the flat cases.
-            write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR)
-        end
-
+        # ONE file per run, as (ngl-1)² sub-elements per spectral element — the
+        # same convention as write_vtk_grid_only for the flat cases. When the
+        # initial condition has been built its fields ride on that same file.
         if get(inputs, :lgrid_only, false) == true
+            rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR)
             if rank == 0
                 println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
             end
             return smesh
         end
 
-        error(" # ERROR drivers.jl: the shallow water equations on a spherical shell are not implemented yet. " *
-              "Set :lgrid_only => true in user_inputs.jl to stop after the grid is built.")
+        qsphere = initialize(smesh.SD, 0, smesh, inputs, OUTPUT_DIR, TFloat)
+
+        rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; q = qsphere)
+
+        if get(inputs, :linit_only, false) == true
+            if rank == 0
+                println(" # :linit_only => true — grid + initial condition written to ", OUTPUT_DIR, ". Stopping here.")
+            end
+            return smesh, qsphere
+        end
+
+        error(" # ERROR drivers.jl: the shallow water equations on a spherical shell are not implemented yet " *
+              "(no metric terms on the manifold, no flux/source kernels). " *
+              "Set :linit_only => true in user_inputs.jl to stop after the initial condition, " *
+              "or :lgrid_only => true to stop after the grid.")
     end
 
     #---------------------------------------------------------
