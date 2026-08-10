@@ -669,16 +669,11 @@ end
 #     iel        owning element
 #     panel      gmsh physical/entity tag (the cubed-sphere panel)
 #
-# See also, below:
-#   write_vtk_sphere_wireframe()  every LGL grid line of every element, as
-#                                 explicit segments (so the high-order point
-#                                 distribution shows regardless of the ParaView
-#                                 representation selected);
-#   write_vtk_sphere_points()     the LGL nodes themselves, one VTK_VERTEX each.
+# ONE file per run, like write_vtk_grid_only for the flat cases. The
+# sub-elements carry the high-order structure: open it in ParaView with
+# representation "Surface With Edges" and the LGL point distribution is drawn.
 #---------------------------------------------------------------------------------
 export write_vtk_sphere_grid
-export write_vtk_sphere_wireframe
-export write_vtk_sphere_points
 
 function write_vtk_sphere_grid(mesh::St_mesh_sphere,
                                file_name::String,
@@ -742,164 +737,6 @@ function write_vtk_sphere_grid(mesh::St_mesh_sphere,
 
     verbose && println(" # Wrote high-order spherical shell grid: ", fout_name, ".vtu  (",
                        mesh.npoin, " nodes, ", nsub, " sub-cells)")
-
-    return out
-end
-
-
-#---------------------------------------------------------------------------------
-# The SUB-ELEMENT WIREFRAME of the spherical shell: every LGL grid line of
-# every spectral element, as VTK_LINE segments.
-#
-# write_vtk_sphere_grid above already writes the (ngl-1)² sub-cells, so the
-# sub-element structure is visible there under ParaView's "Surface With
-# Edges". This file is the version that does not depend on the representation
-# you happen to have selected: load it alongside the surface (representation
-# "Wireframe") and the high-order point distribution is drawn explicitly.
-#
-# Segments are emitted ONCE each, never twice:
-#   * lines that lie on a spectral-element boundary come from the UNIQUE edge
-#     table, so the two elements sharing that edge do not each draw it;
-#   * lines strictly inside an element come from the element.
-#
-#   cell data
-#     line_type  1 = the segment lies on a spectral-element boundary
-#                0 = interior LGL grid line
-#                → threshold on line_type == 1 to get the old element-outline
-#                  skeleton back.
-#     iedge      unique edge id for boundary segments, 0 for interior lines.
-#                Colour by it and every seam of the closed shell must be
-#                covered by a SINGLE edge — two overlapping polylines with
-#                different ids there mean the panel-seam vertices were never
-#                merged.
-#     iel        owning element for interior lines, 0 for boundary segments.
-#---------------------------------------------------------------------------------
-function write_vtk_sphere_wireframe(mesh::St_mesh_sphere,
-                                    file_name::String,
-                                    OUTPUT_DIR::String;
-                                    verbose = true)
-
-    if !isdir(OUTPUT_DIR)
-        mkpath(OUTPUT_DIR)
-    end
-
-    ngl  = mesh.ngl
-
-    # nedges*(ngl-1) boundary segments + 2*(ngl-2)*(ngl-1) interior lines per
-    # element (the (ngl-2) interior rows and columns, each cut into ngl-1)
-    nseg = mesh.nedges*(ngl-1) + mesh.nelem*2*(ngl-2)*(ngl-1)
-
-    cells  = [MeshCell(VTKCellTypes.VTK_LINE, Int64[1, 2]) for _ = 1:nseg]
-    ltype  = Vector{Float64}(undef, nseg)
-    cid    = Vector{Float64}(undef, nseg)
-    celid  = Vector{Float64}(undef, nseg)
-
-    is = 1
-
-    # element-boundary lines: once per UNIQUE edge
-    for ie = 1:mesh.nedges
-        for l = 1:ngl-1
-            cells[is] = MeshCell(VTKCellTypes.VTK_LINE,
-                                 Int64[mesh.poin_in_edge[ie, l], mesh.poin_in_edge[ie, l+1]])
-            ltype[is] = 1.0
-            cid[is]   = Float64(ie)
-            celid[is] = 0.0
-            is += 1
-        end
-    end
-
-    # interior LGL grid lines, per element
-    for iel = 1:mesh.nelem
-        for j = 2:ngl-1                      # interior rows: i-direction lines
-            for i = 1:ngl-1
-                cells[is] = MeshCell(VTKCellTypes.VTK_LINE,
-                                     Int64[mesh.connijk[iel, i, j], mesh.connijk[iel, i+1, j]])
-                ltype[is] = 0.0
-                cid[is]   = 0.0
-                celid[is] = Float64(iel)
-                is += 1
-            end
-        end
-        for i = 2:ngl-1                      # interior columns: j-direction lines
-            for j = 1:ngl-1
-                cells[is] = MeshCell(VTKCellTypes.VTK_LINE,
-                                     Int64[mesh.connijk[iel, i, j], mesh.connijk[iel, i, j+1]])
-                ltype[is] = 0.0
-                cid[is]   = 0.0
-                celid[is] = Float64(iel)
-                is += 1
-            end
-        end
-    end
-
-    fout_name = string(OUTPUT_DIR, "/", file_name)
-
-    vtkf = vtk_grid(fout_name,
-                    mesh.x[1:mesh.npoin],
-                    mesh.y[1:mesh.npoin],
-                    mesh.z[1:mesh.npoin],
-                    cells, compress = false)
-
-    vtkf["line_type", VTKCellData()]  = ltype
-    vtkf["iedge",     VTKCellData()]  = cid
-    vtkf["iel",       VTKCellData()]  = celid
-    vtkf["ip",        VTKPointData()] = Float64.(collect(1:mesh.npoin))
-    vtkf["node_type", VTKPointData()] = Float64.(mesh.node_type)
-
-    out = vtk_save(vtkf)
-
-    verbose && println(" # Wrote spherical shell wireframe:      ", fout_name, ".vtu  (",
-                       nseg, " segments: ", mesh.nedges*(ngl-1), " on element edges, ",
-                       mesh.nelem*2*(ngl-2)*(ngl-1), " interior LGL lines)")
-
-    return out
-end
-
-
-#---------------------------------------------------------------------------------
-# The LGL NODES THEMSELVES, one VTK_VERTEX per node.
-#
-# The most direct answer to "where are the high-order points?": open this with
-# representation "Points", set a point size, and every LGL node of the grid is
-# drawn — clustered towards the element boundaries the way LGL nodes are, and
-# lying ON the sphere (edge nodes are placed by great-circle interpolation,
-# element interiors by a Coons patch projected radially, so `radius` is flat
-# at R for every one of them).
-#
-# Colour by `node_type` to separate the three families the numbering is built
-# from: 0 = linear gmsh vertex, 1 = edge node, 2 = element interior.
-#---------------------------------------------------------------------------------
-function write_vtk_sphere_points(mesh::St_mesh_sphere,
-                                 file_name::String,
-                                 OUTPUT_DIR::String;
-                                 verbose = true)
-
-    if !isdir(OUTPUT_DIR)
-        mkpath(OUTPUT_DIR)
-    end
-
-    cells = [MeshCell(VTKCellTypes.VTK_VERTEX, Int64[ip]) for ip = 1:mesh.npoin]
-
-    fout_name = string(OUTPUT_DIR, "/", file_name)
-
-    vtkf = vtk_grid(fout_name,
-                    mesh.x[1:mesh.npoin],
-                    mesh.y[1:mesh.npoin],
-                    mesh.z[1:mesh.npoin],
-                    cells, compress = false)
-
-    vtkf["ip",        VTKPointData()] = Float64.(collect(1:mesh.npoin))
-    vtkf["node_type", VTKPointData()] = Float64.(mesh.node_type)
-    vtkf["lon",       VTKPointData()] = mesh.lon .* (180.0/π)
-    vtkf["lat",       VTKPointData()] = mesh.lat .* (180.0/π)
-    vtkf["radius",    VTKPointData()] = sqrt.(mesh.x.^2 .+ mesh.y.^2 .+ mesh.z.^2)
-
-    out = vtk_save(vtkf)
-
-    verbose && println(" # Wrote spherical shell LGL nodes:      ", fout_name, ".vtu  (",
-                       mesh.npoin, " points: ", mesh.npoin_linear, " vertices, ",
-                       mesh.nedges*(mesh.ngl-2), " edge, ",
-                       mesh.nelem*(mesh.ngl-2)^2, " interior)")
 
     return out
 end

@@ -153,7 +153,7 @@ end
     #
     # VTK output: the files must be produced and be non-empty.
     #
-    @testset "VTK writers" begin
+    @testset "VTK writer" begin
         c, q, t = generate_cubed_sphere(3, R_EARTH)
         fn = joinpath(dir, "cs_vtk.msh")
         write_msh22(fn, c, q, t)
@@ -161,14 +161,13 @@ end
         mesh = build_sphere_shell_mesh(fn, nop; verbose = false)
 
         outdir = joinpath(dir, "out")
-        write_vtk_sphere_grid(mesh,      "sphere_grid_ho",        outdir; verbose = false)
-        write_vtk_sphere_wireframe(mesh, "sphere_grid_wireframe", outdir; verbose = false)
-        write_vtk_sphere_points(mesh,    "sphere_grid_points",    outdir; verbose = false)
+        write_vtk_sphere_grid(mesh, "sphere_grid_ho", outdir; verbose = false)
 
-        for f in ("sphere_grid_ho", "sphere_grid_wireframe", "sphere_grid_points")
-            @test isfile(joinpath(outdir, f * ".vtu"))
-            @test filesize(joinpath(outdir, f * ".vtu")) > 0
-        end
+        @test isfile(joinpath(outdir, "sphere_grid_ho.vtu"))
+        @test filesize(joinpath(outdir, "sphere_grid_ho.vtu")) > 0
+
+        # exactly ONE grid file, like the rest of the cases
+        @test length(filter(endswith(".vtu"), readdir(outdir))) == 1
 
         #
         # The surface file must carry the HIGH-ORDER sub-elements, not the
