@@ -71,6 +71,7 @@ case_name(c::CICase) = string(c.eqs, "/", c.case)
 #------------------------------------------------------------------------------
 const CI_CASES = CICase[
     CICase(eqs = "CompEuler", case = "theta", timeout = 40, atol = 1e-5),
+    CICase(eqs = "CompEuler", case = "sod1d", timeout = 10),
     #<< test/generate_ci_ref.jl inserts new cases above this line >>
 
     #--------------------------------------------------------------------------
@@ -89,7 +90,6 @@ const CI_CASES = CICase[
     # CICase(eqs = "CompEuler",    case = "3d",             timeout = 40),
     # CICase(eqs = "CompEuler",    case = "wave1d",         timeout = 20),
     # CICase(eqs = "CompEuler",    case = "wave1d_lag",     timeout = 20),
-    # CICase(eqs = "CompEuler",    case = "sod1d",          timeout = 20),
     # CICase(eqs = "Burgers",      case = "case1",          timeout = 20),
     # CICase(eqs = "Burgers",      case = "case2d",         timeout = 30),
     # CICase(eqs = "Elliptic",     case = "2dlaplace",      timeout = 20),
