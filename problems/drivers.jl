@@ -49,6 +49,27 @@ function driver(nparts,
     #---------------------------------------------------------
     if get(inputs, :lspherical_shell, false) == true
 
+        #
+        # A live Julia session keeps the ALREADY-COMPILED Jexpresso module.
+        # run.jl re-includes THIS file on every run_case, but
+        # src/kernel/mesh/sphere_mesh.jl and src/io/write_output.jl are only
+        # evaluated when the module itself is (re)loaded. Pulling new code into
+        # a running session therefore leaves a fresh drivers.jl calling
+        # functions the stale module has never seen — which surfaces as a bare
+        # `UndefVarError: <name> not defined in Jexpresso` from the line below.
+        # Say what it actually means.
+        #
+        for _w in (:mod_mesh_sphere_driver, :write_vtk_sphere_grid,
+                   :write_vtk_sphere_wireframe, :write_vtk_sphere_points)
+            isdefined(@__MODULE__, _w) && continue
+            error(" # ERROR drivers.jl: `", _w, "` is not defined in the loaded Jexpresso module.\n",
+                  " #   The module in this Julia session is older than the source tree on disk.\n",
+                  " #   Restart Julia and run the case in a fresh session:\n",
+                  " #     julia --project=.\n",
+                  " #     julia> using Jexpresso\n",
+                  " #     julia> Jexpresso.run_case(\"ShallowWater\", \"SWsphere\")")
+        end
+
         if rank == 0
             println()
             println(" # :lspherical_shell => true — skipping sem_setup, building the shell grid instead")
