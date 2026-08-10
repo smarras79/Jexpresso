@@ -4,13 +4,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # SWsphere — shallow water equations on a spherical shell.
         #
-        # STATUS: GRID + INITIAL CONDITION.
+        # Galewsky, Scott & Polvani (2004) barotropically unstable jet, solved
+        # with the shallow water equations of Marras, Kopera & Giraldo (2015),
+        # QJRMS 141: 1727-1739, Eq. (8), on a cubed-sphere shell.
         #
-        # This deck builds the high-order (LGL) spectral-element grid on the
-        # closed spherical shell read from :gmsh_filename, verifies it, builds
-        # the Galewsky et al. (2004) barotropically unstable jet on it, writes
-        # both to VTK, and STOPS. The equations and the metric terms on the
-        # manifold are not written yet.
+        # The run: grid -> manifold metrics -> initial condition -> SSP-RK3.
         #
         #   :lspherical_shell => true   use src/kernel/mesh/sphere_mesh.jl (a
         #                               2D manifold embedded in 3D: x, y AND z)
@@ -19,18 +17,15 @@ function user_inputs()
         #                               would collapse the sphere onto its
         #                               equatorial disc.
         #
-        #   :linit_only       => true   <<<< stop after the grid AND the initial
-        #                               condition are built and written. Set it
-        #                               to false once the flux/source kernels
-        #                               and the manifold metrics exist.
-        #
-        #   :lgrid_only       => true   stop one step earlier, right after the
-        #                               grid, without touching initialize.jl.
-        #                               Takes precedence over :linit_only.
+        #   :lgrid_only       => true   stop right after the grid, without
+        #                               touching initialize.jl.
+        #   :linit_only       => true   stop after the initial condition,
+        #                               without integrating. :lgrid_only wins if
+        #                               both are set.
         #---------------------------------------------------------------------------
         :lspherical_shell     => true,
         :lgrid_only           => false,
-        :linit_only           => true,
+        :linit_only           => false,
         #---------------------------------------------------------------------------
         # Grid checks (see check_sphere_mesh in src/kernel/mesh/sphere_mesh.jl).
         #
@@ -120,7 +115,7 @@ function user_inputs()
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  => "lgl",
-        :nop                  => 4,
+        :nop                  => 5,
         #---------------------------------------------------------------------------
         # Mesh parameters and files:
         #
@@ -137,12 +132,33 @@ function user_inputs()
         :lread_gmsh           => true,
         :gmsh_filename        => "./meshes/gmsh_grids/cubed_sphere.msh",
         #---------------------------------------------------------------------------
-        # Time integration — placeholders, unused while :lgrid_only => true.
+        # Time integration.
+        #
+        # SSP-RK3 (Shu-Osher), the scheme of the paper's section 4.2, is applied
+        # by src/kernel/solvers/sphere_time_loop.jl -- the shell does not go
+        # through Jexpresso's SciML integrators because the Lagrange projection
+        # has to run after EVERY RK stage. :ode_solver is therefore ignored here
+        # and kept only so the deck reads like every other one.
+        #
+        # :lcfl_dt => true (the default) takes the step from the CFL condition,
+        # Δt = :cfl * Δmin / max(|u| + sqrt(φ)), with Δmin the smallest LGL node
+        # spacing. Set it false to use a :Δt of your own.
+        #
+        # It is an explicit switch rather than "omit :Δt and you get the CFL
+        # step" because mod_inputs_user_inputs! fills a missing :Δt with 0.1 s,
+        # so an absent :Δt cannot be told from a deliberate one — and taking
+        # 0.1 s literally turns this one-day run into 864 000 steps.
+        #
+        # The published test runs to 144 h. This deck stops at 24 h so a first
+        # run finishes quickly; raise :tend to 518400.0 for the real thing.
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(),
-        :Δt                   => 1.0,
+        :ode_solver           => SSPRK54(),      # ignored: see above
+        :lcfl_dt              => true,           # take Δt from the CFL condition
+        :cfl                  => 0.35,
         :tinit                => 0.0,
-        :tend                 => 1.0,
+        :tend                 => 86400.0,        # 1 day (the test uses 518400.0 = 6 days)
+        :ndiagnostics_outputs => 8,              # VTK dumps between tinit and tend
+        :ndiagnostics_prints  => 25,             # steps between diagnostic lines
         :case                 => "swsphere",
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,
@@ -156,6 +172,20 @@ function user_inputs()
         :lvisc                => false,
         :ivisc_equations      => [1, 2, 3, 4],
         :μ                    => 0.0,      # set to 1.0e5 together with :lvisc => true
+        #---------------------------------------------------------------------------
+        # Stabilization: the modal filter, the stand-in for the Boyd-Vandeven
+        # filter of the paper's section 4.2 ("chosen to reduce by 5% the highest
+        # modes only" -- hence :filter_alpha => 0.05). Applied after every step
+        # and followed by a mass-weighted DSS average, so it conserves ∫φ.
+        #
+        # The paper shows the inviscid solution is badly resolution-sensitive on
+        # the cubed sphere, so leave this on unless you are deliberately
+        # measuring the unfiltered behaviour.
+        #---------------------------------------------------------------------------
+        :lfilter              => true,
+        :filter_alpha         => 0.05,     # damping of the HIGHEST mode
+        :filter_order         => 8,        # exponent: larger = sharper cutoff
+        :filter_kcut          => 2/3,      # first damped mode, as a fraction of nop
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

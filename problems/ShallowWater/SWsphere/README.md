@@ -1,24 +1,21 @@
 # SWsphere — shallow water equations on a spherical shell
 
-**Status: GRID + INITIAL CONDITION + RHS.** This case builds the high-order
-spectral-element grid on a closed spherical shell, verifies it, builds the
-Galewsky et al. (2004) barotropically unstable jet on it, writes it to VTK, and
-stops. The fluxes and sources of the shallow water equations — including the
-Lagrange multiplier that keeps the flow on the shell — are written in
-`user_flux.jl` / `user_source.jl`. What is still missing before it can be
-integrated in time is the **metric terms of the manifold**: the surface
-divergence `∇ₛ·F` needs the 3×2 Jacobian of the (ξ,η) → (x,y,z) map, which the
-flat 2-D metric machinery does not provide.
+**Status: RUNS.** Grid → manifold metrics → initial condition → time
+integration. The case solves the Galewsky et al. (2004) barotropically unstable
+jet with the shallow water equations of Marras, Kopera & Giraldo (2015) on a
+cubed-sphere shell, by continuous-Galerkin SEM in space and SSP-RK3 in time,
+with the Lagrange multiplier keeping the flow on the shell.
 
-Two stopping points, both in `user_inputs.jl`:
+Two early exits remain, for working on one stage at a time:
+`:lgrid_only => true` stops after the grid, `:linit_only => true` after the
+initial condition.
 
 | flag | stops after |
 |---|---|
 | `:lgrid_only => true` | the grid. `initialize.jl` is never called. |
-| `:linit_only => true` | the grid **and** the initial condition. This is what the shipped deck does. |
+| `:linit_only => true` | the grid **and** the initial condition, without integrating. |
 
-`:lgrid_only` wins if both are set. Flip both to `false` once the flux/source
-kernels exist.
+`:lgrid_only` wins if both are set. The shipped deck has both `false` — it runs.
 
 ## Run it
 
@@ -47,11 +44,23 @@ Output, in `problems/ShallowWater/SWsphere/output/`:
 
 | file | what it is |
 |---|---|
-| `sphere_grid_ho.vtu` | the high-order grid: **(ngl-1)² sub-elements per spectral element**, exactly as `write_vtk_grid_only` does for the flat cases. Every LGL node is a corner of a sub-cell — the linear elements are never written on their own. Carries the initial condition as point data when one has been built: `h`, `u`, `v`, plus `velocity`, the Cartesian form of `(u,v)` for glyphs and streamlines. |
+| `sphere_grid_ho.vtu` | the initial state |
+| `sphere_0001.vtu` … | one per output time, `:ndiagnostics_outputs` of them |
 
-One file per run, like the other cases. View it with representation **"Surface
-With Edges"**: the edges drawn are the sub-element boundaries, so the LGL point
-distribution is what you see.
+Each file is the high-order grid — **(ngl-1)² sub-elements per spectral
+element**, exactly as `write_vtk_grid_only` does for the flat cases, so every
+LGL node is a corner of a sub-cell and the linear elements are never written on
+their own — carrying the solution as point data:
+
+* `phi, phiu, phiv, phiw` — the conservative state actually integrated
+* `h, u, v, w` — the primitives, what you plot
+* `velocity` — a true VTK vector, ready to glyph or streamline
+* `momentum_normal` = `(φu)·x̂` — the constraint; **this is how you see whether
+  the flow is leaving the shell**
+* `ip`, `node_type`, `lon`, `lat`, `radius`, and the cell fields `iel`, `panel`
+
+View with representation **"Surface With Edges"**: the edges drawn are the
+sub-element boundaries, so the LGL point distribution is what you see.
 
 ## What was actually added
 
@@ -63,6 +72,12 @@ builder:
 
 * `src/kernel/mesh/sphere_mesh.jl` — reads the linear quad shell (`MSH 2.2` and
   `MSH 4.1` ASCII), populates it with LGL points, verifies it.
+* `src/kernel/mesh/sphere_metrics.jl` — the **metric terms of the manifold**
+  (contravariant basis, surface Jacobian) and the diagonal mass matrix.
+* `src/kernel/operators/sphere_rhs.jl` — the **SEM right-hand side**: surface
+  divergence + direct stiffness summation + `M⁻¹`, plus the modal filter.
+* `src/kernel/solvers/sphere_time_loop.jl` — **SSP-RK3**, with the Lagrange
+  projection applied after every stage, CFL time step, diagnostics and output.
 * `initialize.jl` — the Galewsky et al. (2004) jet (see below).
 * `user_flux.jl` / `user_source.jl` — the equations (see below).
 * `src/io/write_output.jl` — `write_vtk_sphere_grid`, next to the existing
@@ -138,17 +153,18 @@ the cell field `panel` shows the gmsh physical tag of each panel.
 numerical models of the global shallow-water equations*, Tellus **56A**, 429-440
 — the barotropically unstable mid-latitude jet.
 
-State vector, in the **local tangent basis** of the shell:
+The jet is naturally written in the tangent basis,
 
 ```
-q = [h, u, v]      h  depth [m]
-                   u  zonal      (eastward, +λ) [m/s]
-                   v  meridional (northward, +φ) [m/s]
+u(φ) zonal (eastward, +λ),   v = 0
 ```
 
-with `e_λ = (-sin λ, cos λ, 0)` and `e_φ = (-sin φ cos λ, -sin φ sin λ, cos φ)`,
-so the Cartesian velocity is `u·e_λ + v·e_φ` — written to the VTK file as
-`velocity` because ParaView cannot interpret tangent components on its own.
+and then pushed to the conservative Cartesian state `q = [φ, φu, φv, φw]` that
+the equations use, through `e_λ = (-sin λ, cos λ, 0)` and
+`e_φ = (-sin φ cos λ, -sin φ sin λ, cos φ)`. Being a combination of `e_λ` and
+`e_φ`, the result is tangential to the shell **by construction** —
+`initialize.jl` asserts `max|(φu)·x̂|` is at round-off before returning, and
+refuses to start otherwise.
 
 The jet is confined to `φ ∈ [π/7, π/2 - π/7]` and is `C^∞`: every derivative
 vanishes at both edges, so it joins the motionless fluid smoothly.
@@ -283,18 +299,83 @@ individual terms that cancel. Each term is also checked separately against its
 closed form, and the projection against its defining properties (kills the
 normal component, leaves a tangential field untouched, idempotent).
 
+## Space and time discretization
+
+**Metrics** (`sphere_metrics.jl`). On a flat grid the map (ξ,η) → (x,y) is
+square and `metric_terms.jl` stores its inverse. On a shell the map is
+(ξ,η) → (x,y,z): a 3×2 Jacobian with no inverse. What replaces it is the
+contravariant basis of the surface,
+
+```
+a_ξ = ∂x/∂ξ,  a_η = ∂x/∂η,  n = a_ξ × a_η,  J = |n|
+a¹  = (a_η × n)/J²,          a² = (n × a_ξ)/J²
+```
+
+so `∇ₛf = a¹ ∂f/∂ξ + a² ∂f/∂η`, i.e. `a¹ = (dξdx, dξdy, dξdz)` — Jexpresso's
+own naming with a third component. Both are tangential, which is why the
+conservative pressure term produces no spurious normal force. The mass matrix is
+diagonal (LGL/inexact integration) and assembled by direct stiffness summation.
+
+**RHS** (`sphere_rhs.jl`). Continuous Galerkin, strong form, exactly the
+convention of `_expansion_inviscid!` with the third flux component added:
+
+```
+rhs_el -= ω_i ω_j J [ (∂F/∂x + ∂G/∂y + ∂H/∂z) − S ]      then DSS, then M⁻¹
+```
+
+No boundary term: the shell is closed, so `∫_Γ` vanishes identically (the paper
+notes this for the CG case). **All of it is SEM** — the differentiation is the
+LGL differentiation matrix contracted with the metric terms; there are no finite
+differences anywhere in the solver.
+
+**Time** (`sphere_time_loop.jl`). SSP-RK3 (Shu-Osher), the paper's section 4.2.
+The Lagrange projection runs **after every stage**, not only at the end of the
+step: each stage is a full Euler update and can push momentum off the shell, and
+projecting only at the end would feed an off-manifold state into the next
+stage's flux evaluation. `:Δt` is optional — omit it and the step comes from
+`Δt = :cfl · Δmin / max(|u| + √φ)`.
+
+Diagnostics printed every `:ndiagnostics_prints` steps: mass, energy,
+`max|(φu)·x̂|` (the constraint), and the largest `φ`.
+
+## How this was checked
+
+Everything below was **run**, in Julia:
+
+| what | result |
+|---|---|
+| metric identities `aⁱ·a_j = δⁱⱼ` | 6.7e-16 |
+| contravariant basis tangential | 2.7e-15 |
+| `Σ M[ip]` vs `4πR²` (SEM quadrature of the area) | 1.7e-12 relative |
+| curvature identity `∇ₛ·(J aⁱ)/J = −(2/R)n̂` | 1.2e-5 at nop=4, 1.3e-8 at nop=6, 2.4e-11 at nop=8 |
+| steady-state residual of the SEM operator | 6.2e-3 → 2.5e-3 → 2.7e-4 under refinement |
+| mass conservation over a run | 6e-11 |
+| `max\|(φu)·x̂\|` after integrating | 4e-10 against a momentum scale of 8e6 — **5e-17 relative** |
+| error on the balanced (steady) jet | 60 m → 37 m → 3.3 m as resolution rises |
+| filter mass conservation | 4e-13 |
+
+The **curvature identity** deserves a note. On a flat grid the free-stream
+condition is `∇·(J aⁱ) = 0`. On a curved surface that is false: the surface
+divergence of a constant vector leaves the mean-curvature term, `∇ₛ·c =
+−H(c·n̂)` with `H = 2/R`. Asserting the flat identity flags correct metrics as
+broken — it reads exactly `2/R`. This is not a formality: it is the *same*
+curvature that produces `x·[∇ₛ·(φu⊗u)] = −φ|u|²`, which is what the multiplier
+`μ = −φ|u|²/r²` cancels. If the discrete metrics got the curvature wrong, the
+multiplier would not balance the discrete flux divergence and the flow would
+leave the shell.
+
+The unperturbed jet is an exact steady solution, so the residual of the SEM
+operator on it must converge to zero — and it does, spectrally. That single test
+covers the flux, the pressure term, the Coriolis sign, the multiplier *and* the
+metrics at once.
+
 ## What comes next
 
-The pieces still missing before this becomes a solver, in order:
-
-1. **metric terms of the manifold** — the 3×2 Jacobian of (ξ,η) → (x,y,z), i.e.
-   `dξdx, dξdy, dξdz, dηdx, dηdy, dηdz` and the surface Jacobian, the equivalent
-   of `src/kernel/mesh/metric_terms.jl` for a 2-D surface in 3-D. This is what
-   turns the `F, G, H` of `user_flux.jl` into a surface divergence;
-2. the mass and differentiation matrices on the manifold, and an
-   `_expansion_inviscid!` for the (2 reference directions, 3 flux components)
-   case;
-3. the projection applied at the end of every RK stage, rather than once after
-   the initial condition as it is now.
-
-Then flip `:linit_only` to `false`.
+1. Fold the shell into `sem_setup`, so it uses `params_setup` and Jexpresso's
+   own SciML integrators (with the projection as a stage callback) instead of
+   the self-contained SSP-RK3 here.
+2. The viscous term `δν∇²(φu)` of Eq. (8b) — `:lvisc` is wired to the deck but
+   the Laplacian on the manifold is not implemented.
+3. MPI: the shell path is serial today (`mod_mesh_sphere_driver` says so).
+4. The reference diagnostic of the test is relative vorticity at day 6; that
+   needs `∇ₛ×u` on the manifold, which the metrics now make straightforward.
