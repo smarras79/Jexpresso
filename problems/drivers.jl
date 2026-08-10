@@ -65,7 +65,8 @@ function driver(nparts,
         # `UndefVarError: <name> not defined in Jexpresso` from the line below.
         # Say what it actually means.
         #
-        for _w in (:mod_mesh_sphere_driver, :write_vtk_sphere_grid)
+        for _w in (:mod_mesh_sphere_driver, :write_vtk_sphere_grid,
+                   :project_momentum_to_sphere!, :sphere_normal_momentum)
             isdefined(@__MODULE__, _w) && continue
             error(" # ERROR drivers.jl: `", _w, "` is not defined in the loaded Jexpresso module.\n",
                   " #   The module in this Julia session is older than the source tree on disk.\n",
@@ -96,6 +97,37 @@ function driver(nparts,
 
         qsphere = initialize(smesh.SD, 0, smesh, inputs, OUTPUT_DIR, TFloat)
 
+        #
+        # Lagrange-multiplier projection, Marras/Kopera/Giraldo Eq. (9)-(11).
+        #
+        # In a real run this belongs at the end of every time step (or RK
+        # stage): it removes the momentum component NORMAL to the shell that
+        # the discrete operators accumulate, which is what keeps the fluid on
+        # the sphere. There is no time loop yet, so applying it here does two
+        # useful things instead — it reports how far off the manifold the
+        # initial state is (it should be at round-off, since the Galewsky jet
+        # is built from tangential unit vectors), and it guarantees that
+        # whatever is written to VTK is exactly tangential.
+        #
+        if get(inputs, :llagrange_projection, true) == true
+
+            drift = project_momentum_to_sphere!(qsphere.qn, smesh; ivar = 2)
+
+            # qout (the primitives written to VTK) was derived from qn BEFORE
+            # the projection, so refresh it through the case's own user_uout!
+            # rather than shipping output that disagrees with the state.
+            for ip = 1:smesh.npoin
+                user_uout!(ip, inputs[:SOL_VARS_TYPE],
+                           @view(qsphere.qout[ip, :]),
+                           @view(qsphere.qn[ip, :]),
+                           @view(qsphere.qe[ip, :]))
+            end
+
+            if rank == 0
+                @printf(" # Lagrange projection P = I - xxᵀ/r²: removed max|(φu)·x̂| = %.3e\n", drift)
+            end
+        end
+
         rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; q = qsphere)
 
         if get(inputs, :linit_only, false) == true
@@ -105,8 +137,11 @@ function driver(nparts,
             return smesh, qsphere
         end
 
-        error(" # ERROR drivers.jl: the shallow water equations on a spherical shell are not implemented yet " *
-              "(no metric terms on the manifold, no flux/source kernels). " *
+        error(" # ERROR drivers.jl: the shallow water equations on a spherical shell cannot be " *
+              "integrated yet. The fluxes and sources are written (user_flux.jl / user_source.jl, " *
+              "Marras/Kopera/Giraldo Eq. 8, Lagrange multiplier included), but the METRIC TERMS of " *
+              "the manifold are missing: the surface divergence needs the 3x2 Jacobian of the " *
+              "(ξ,η) -> (x,y,z) map, which the flat 2D metric machinery does not provide. " *
               "Set :linit_only => true in user_inputs.jl to stop after the initial condition, " *
               "or :lgrid_only => true to stop after the grid.")
     end

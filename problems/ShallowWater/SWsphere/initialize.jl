@@ -12,22 +12,28 @@
 # balanced field must stay put, and the perturbed field must produce the
 # published relative-vorticity pattern.
 #
-# STATE VECTOR (tangent basis of the shell)
+# STATE VECTOR — the CONSERVATIVE CARTESIAN form of
+#   Marras, Kopera & Giraldo (2015), QJRMS 141: 1727-1739, Eq. (8):
 #
-#   q = [h, u, v]
+#   q = [φ, φu, φv, φw]ᵀ
 #
-#     h  fluid depth                              [m]
-#     u  ZONAL      velocity (eastward, +λ)       [m/s]
-#     v  MERIDIONAL velocity (northward, +φ)      [m/s]
+#     φ = g h            geopotential                 [m²/s²]
+#     (u, v, w)          FULL 3-D CARTESIAN velocity  [m/s]
 #
-# (u, v) are components in the LOCAL TANGENT BASIS at each node,
+# Not the tangent-plane pair: the Lagrange multiplier that keeps the fluid on
+# the shell (user_source.jl) exists precisely to kill the velocity component
+# NORMAL to the sphere, and in a two-component tangent basis that component
+# does not exist, so there would be nothing to constrain.
 #
-#     e_λ = (-sin λ,           cos λ,          0     )
-#     e_φ = (-sin φ cos λ,    -sin φ sin λ,    cos φ )
+# The Galewsky jet is naturally written in the tangent basis, so it is built
+# there and then pushed to Cartesian through the local unit vectors
 #
-# so the Cartesian velocity is u·e_λ + v·e_φ. The writer emits that Cartesian
-# vector alongside the components, because ParaView cannot interpret tangent
-# components on its own.
+#     e_λ = (-sin λ,           cos λ,          0     )      eastward
+#     e_φ = (-sin φ cos λ,    -sin φ sin λ,    cos φ )      northward
+#
+# giving u_cart = u e_λ + v e_φ, which is tangential to the shell BY
+# CONSTRUCTION — u_cart·x = 0 to round-off. That is asserted before this
+# function returns.
 #
 # THE FIELDS
 #
@@ -61,6 +67,10 @@
 #     h'(λ,φ) = ĥ cos φ exp[-(λ/α)²] exp[-((φ₂-φ)/β)²]
 #
 #     ĥ = 120 m, α = 1/3, β = 1/15, φ₂ = π/4, λ ∈ (-π, π] centred on λ = 0.
+#
+#   (Eq. 23 of Marras et al. prints the second exponent as (φ₂-φ₁)², which is
+#   a typo — it is independent of φ and would make the bump a zonal ring. The
+#   original Galewsky form (φ₂-φ)² is what is used here.)
 #
 # The UNPERTURBED balanced state is stored in q.qe: it is the steady solution
 # the scheme has to preserve, so it is the natural reference to difference
@@ -169,10 +179,14 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh_sphere, inputs, OUTPUT_DIR::St
     end
 
     #---------------------------------------------------------------------------------
-    # Solution variables: q = [h, u, v]
+    # Solution variables: the conservative Cartesian state of Eq. (8),
+    #   q = [φ, φu, φv, φw],  φ = g h.
+    #
+    # q.qout carries the PRIMITIVE fields for output, [h, u, v, w], because a
+    # plot of φu is unreadable and a plot of h is what the test is judged on.
     #---------------------------------------------------------------------------------
-    qvars    = ["h", "u", "v"]
-    qoutvars = ["h", "u", "v"]
+    qvars    = ["phi", "phiu", "phiv", "phiw"]
+    qoutvars = ["h", "u", "v", "w"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend];
                  neqs = length(qvars), qoutvars = qoutvars)
 
@@ -196,7 +210,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh_sphere, inputs, OUTPUT_DIR::St
     end
 
     #---------------------------------------------------------------------------------
-    # Fill q. h depends on latitude only; the perturbation breaks that symmetry.
+    # Fill q. h and u depend on latitude only; the perturbation breaks that
+    # symmetry. The zonal jet is rotated into Cartesian components through the
+    # local eastward unit vector e_λ; the meridional component is zero, so e_φ
+    # never enters here (it is written out anyway for the record).
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())
 
@@ -205,27 +222,65 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh_sphere, inputs, OUTPUT_DIR::St
             λ = mesh.lon[ip]
             φ = mesh.lat[ip]
 
-            hb = h0 + galewsky_hbalance(φ, p)
-            uu = galewsky_ujet(φ, p.umax, p.φ0, p.φ1, p.en)
+            hb  = h0 + galewsky_hbalance(φ, p)
+            hn  = lpert ? hb + galewsky_hpert(λ, φ, p) : hb
+            uu  = galewsky_ujet(φ, p.umax, p.φ0, p.φ1, p.en)
+            vv  = 0.0
 
-            # the balanced, unperturbed state: a steady solution, kept as the
-            # reference the scheme has to preserve
-            q.qe[ip, 1] = hb
-            q.qe[ip, 2] = uu
-            q.qe[ip, 3] = 0.0
+            sλ, cλ = sincos(λ)
+            sφ, cφ = sincos(φ)
 
-            q.qn[ip, 1] = lpert ? hb + galewsky_hpert(λ, φ, p) : hb
-            q.qn[ip, 2] = uu
-            q.qn[ip, 3] = 0.0
+            # u_cart = u e_λ + v e_φ  (tangential to the shell by construction)
+            ux = -uu*sλ - vv*sφ*cλ
+            uy =  uu*cλ - vv*sφ*sλ
+            uz =          vv*cφ
+
+            # the balanced, unperturbed state: a steady solution of the
+            # equations, and the reference the scheme has to preserve
+            φe = p.g*hb
+            q.qe[ip, 1] = φe
+            q.qe[ip, 2] = φe*ux
+            q.qe[ip, 3] = φe*uy
+            q.qe[ip, 4] = φe*uz
+
+            φn = p.g*hn
+            q.qn[ip, 1] = φn
+            q.qn[ip, 2] = φn*ux
+            q.qn[ip, 3] = φn*uy
+            q.qn[ip, 4] = φn*uz
+
+            # primitives, for output only
+            q.qout[ip, 1] = hn
+            q.qout[ip, 2] = ux
+            q.qout[ip, 3] = uy
+            q.qout[ip, 4] = uz
         end
     else
         error(" # ERROR problems/ShallowWater/SWsphere/initialize.jl: only the CPU backend is implemented.")
     end
 
+    #---------------------------------------------------------------------------------
+    # The state must start ON the shell: (φu)·x = 0 at every node. It does, by
+    # construction (u_cart is a combination of e_λ and e_φ, both tangential), so
+    # this is a check rather than a correction — but it is the very quantity the
+    # Lagrange multiplier exists to hold at zero, so it is worth measuring here
+    # and refusing to start if the initial state is already off the manifold.
+    #---------------------------------------------------------------------------------
+    drift = sphere_normal_momentum(q.qn, mesh; ivar = 2)
+    scale = maximum(abs, @view q.qn[1:mesh.npoin, 2:4]) + eps()
+    if drift > 1.0e-10*scale
+        error(string(" # ERROR initialize.jl: the initial momentum is not tangential to the shell: ",
+                     "max|(φu)·x̂| = ", drift, " against a momentum scale of ", scale, "."))
+    end
+
     if rank == 0
-        hmin, hmax = extrema(@view q.qn[1:mesh.npoin, 1])
-        uminv, umaxv = extrema(@view q.qn[1:mesh.npoin, 2])
-        @printf(" #   h ∈ [%.4f, %.4f] m ; u ∈ [%.4f, %.4f] m/s ; v ≡ 0\n", hmin, hmax, uminv, umaxv)
+        hmin, hmax   = extrema(@view q.qout[1:mesh.npoin, 1])
+        φmin, φmax   = extrema(@view q.qn[1:mesh.npoin, 1])
+        umag         = maximum(sqrt(q.qout[ip,2]^2 + q.qout[ip,3]^2 + q.qout[ip,4]^2)
+                               for ip = 1:mesh.npoin)
+        @printf(" #   h ∈ [%.4f, %.4f] m ; φ = gh ∈ [%.2f, %.2f] m²/s² ; max|u| = %.4f m/s\n",
+                hmin, hmax, φmin, φmax, umag)
+        @printf(" #   max|(φu)·x̂| = %.3e  (the initial state is on the shell)\n", drift)
         println(" # INITIAL CONDITION: Galewsky et al. (2004) barotropically unstable jet ... DONE")
     end
 

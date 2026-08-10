@@ -739,39 +739,57 @@ function write_vtk_sphere_grid(mesh::St_mesh_sphere,
     # for now). They ride on the SAME file as the grid — one file per run, like
     # write_vtk_grid_only for the flat cases.
     #
+    # BOTH sets are written:
+    #   q.qn   under q.qvars      the CONSERVATIVE state actually integrated
+    #                             (for SWsphere: phi, phiu, phiv, phiw)
+    #   q.qout under q.qoutvars   the PRIMITIVE fields a human reads
+    #                             (for SWsphere: h, u, v, w)
+    # A plot of phiu is unreadable; a plot of h is what the test is judged on,
+    # and keeping the conservative state too means what the scheme integrates
+    # is never hidden.
+    #
     nq = 0
     if q !== nothing
-        for ieq = 1:length(q.qvars)
-            name = q.qvars[ieq]
-            name === nothing && continue
-            vtkf[String(name), VTKPointData()] = Float64.(@view q.qn[1:mesh.npoin, ieq])
-            nq += 1
+
+        for (vars, data) in ((q.qvars, q.qn), (q.qoutvars, q.qout))
+            for ieq = 1:length(vars)
+                name = vars[ieq]
+                name === nothing && continue
+                ieq <= size(data, 2) || continue
+                vtkf[String(name), VTKPointData()] = Float64.(@view data[1:mesh.npoin, ieq])
+                nq += 1
+            end
         end
 
         #
-        # (u, v) are components in the LOCAL TANGENT BASIS of the shell, which
-        # ParaView has no way to interpret: glyphing them directly would point
-        # the arrows in meaningless Cartesian directions. Emit the Cartesian
-        # velocity as well, u·e_λ + v·e_φ with
-        #     e_λ = (-sin λ,        cos λ,       0    )
-        #     e_φ = (-sin φ cos λ, -sin φ sin λ, cos φ)
-        # so "velocity" can be glyphed or streamlined straight away.
+        # The velocity as a genuine VTK VECTOR, so it can be glyphed or
+        # streamlined without a Calculator filter. The SWsphere state carries
+        # the FULL CARTESIAN velocity — that is the whole point of the
+        # formulation, since the Lagrange multiplier exists to constrain its
+        # normal component — so the three output components are already the
+        # Cartesian ones and go out as they are.
         #
-        iu = findfirst(isequal("u"), q.qvars)
-        iv = findfirst(isequal("v"), q.qvars)
-        if iu !== nothing && iv !== nothing
-            vx = Vector{Float64}(undef, mesh.npoin)
-            vy = Vector{Float64}(undef, mesh.npoin)
-            vz = Vector{Float64}(undef, mesh.npoin)
+        iu = findfirst(isequal("u"), q.qoutvars)
+        iv = findfirst(isequal("v"), q.qoutvars)
+        iw = findfirst(isequal("w"), q.qoutvars)
+        if iu !== nothing && iv !== nothing && iw !== nothing && iw <= size(q.qout, 2)
+            vtkf["velocity", VTKPointData()] = (Float64.(@view q.qout[1:mesh.npoin, iu]),
+                                                Float64.(@view q.qout[1:mesh.npoin, iv]),
+                                                Float64.(@view q.qout[1:mesh.npoin, iw]))
+        end
+
+        #
+        # The off-shell momentum, (phi u)·x̂. This is the quantity the Lagrange
+        # multiplier holds at zero; plotting it is how you SEE the flow leaving
+        # the spherical shell if it ever does.
+        #
+        if length(q.qvars) >= 4
+            nrm = Vector{Float64}(undef, mesh.npoin)
             for ip = 1:mesh.npoin
-                sλ, cλ = sincos(mesh.lon[ip])
-                sφ, cφ = sincos(mesh.lat[ip])
-                uu, vv = q.qn[ip, iu], q.qn[ip, iv]
-                vx[ip] = -uu*sλ - vv*sφ*cλ
-                vy[ip] =  uu*cλ - vv*sφ*sλ
-                vz[ip] =           vv*cφ
+                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                nrm[ip] = (q.qn[ip,2]*x + q.qn[ip,3]*y + q.qn[ip,4]*z)/sqrt(x*x + y*y + z*z)
             end
-            vtkf["velocity", VTKPointData()] = (vx, vy, vz)
+            vtkf["momentum_normal", VTKPointData()] = nrm
         end
     end
 
