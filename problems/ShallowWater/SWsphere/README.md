@@ -38,7 +38,8 @@ builder:
 
 * `src/kernel/mesh/sphere_mesh.jl` — reads the linear quad shell (`MSH 2.2` and
   `MSH 4.1` ASCII), populates it with LGL points, verifies it.
-* `src/io/write_vtk_sphere.jl` — VTK output of the resulting grid.
+* `src/io/write_output.jl` — `write_vtk_sphere_grid` / `write_vtk_sphere_edges`,
+  next to the existing `write_vtk_grid_only` writers.
 * `tools/generate_cubed_sphere.jl` — equiangular gnomonic cubed-sphere generator.
 * `test/test_sphere_mesh.jl` — standalone tests (`julia --project=. test/test_sphere_mesh.jl`).
 
