@@ -17,9 +17,16 @@ julia --project=. tools/generate_cubed_sphere.jl 10 6.371e6 ./meshes/gmsh_grids/
 
 # 2. build the high-order grid
 julia --project=.
-julia> push!(empty!(ARGS), "ShallowWater", "SWsphere");
-julia> include("./src/Jexpresso.jl")
+julia> using Jexpresso
+julia> Jexpresso.run_case("ShallowWater", "SWsphere")
 ```
+
+> **Run this in a fresh Julia session after pulling.** `run_case` re-includes
+> `run.jl`, `problems/drivers.jl` and the case's `user_*.jl`, but *not* the rest
+> of the module: `src/kernel/mesh/sphere_mesh.jl` and `src/io/write_output.jl`
+> are only evaluated when `Jexpresso` itself is loaded. A session opened before
+> you pulled will run the new `drivers.jl` against the old module and die with
+> `UndefVarError: write_vtk_sphere_… not defined in Jexpresso`.
 
 Output, in `problems/ShallowWater/SWsphere/output/`:
 
