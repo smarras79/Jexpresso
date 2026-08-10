@@ -3067,8 +3067,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             println_rank(" # Periodic NCF parent elements detected: $(total_peri_ncf) (will be refined by amr_strategy!)"; msg_rank = rank, suppress = false)
         end
         MPI.Barrier(comm)
-        restructure4periodicity_2D(mesh, norx, "periodicx")
-        restructure4periodicity_2D(mesh, nory, "periodicz")
+        # DG (DiscGal) keeps duplicated interface DOFs: periodic coupling is
+        # carried by the numerical flux over a face-pair list, not by merging
+        # the two boundaries into shared points. restructure4periodicity_2D is
+        # a node merge with no :AD awareness (it also consumes ip2gip/gip2owner,
+        # which are CG shared-entity constructs), so under DiscGal it would weld
+        # both periodic boundaries -- the 1D defect fixed in 586e7ba3, at 2D
+        # scale. Guarded at the call site rather than inside the function
+        # because restructure4periodicity_2D does not receive `inputs`.
+        if inputs[:AD] != DiscGal()
+            restructure4periodicity_2D(mesh, norx, "periodicx")
+            restructure4periodicity_2D(mesh, nory, "periodicz")
+        end
         # restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
         # restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
         mesh.gel2owner = find_gip_owner(mesh.el2gel)

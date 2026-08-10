@@ -14,6 +14,13 @@ function restructure4periodicity_1D!(mesh,
     connijk_spare = zeros(nelem,ngl,ngl,ngl)
     poin_in_bdy_face_spare = zeros(size(poin_in_bdy_face,1),ngl,ngl)
     if (nsd == 2)
+        # DG (DiscGal) never wants the CG node collapse: periodic coupling is
+        # carried by the numerical flux over a face-pair list (see the guarded
+        # restructure4periodicity_2D calls in mod_mesh_read_gmsh!). This arm is
+        # reachable only via :lperiodic_1d, which no shipped 2D case sets, so
+        # this is defensive -- but the same hazard has now been found twice on
+        # paths believed unreachable.
+        if inputs[:AD] != DiscGal()
 	if (inputs[:lperiodic_laguerre] && "Laguerre" in bdy_edge_type)
             xmin = minimum(coords[:,1])
             xmax = maximum(coords[:,1])
@@ -330,6 +337,7 @@ function restructure4periodicity_1D!(mesh,
                     end
                 end
             end
+        end
         end
         mesh.npoin = npoin
     elseif (nsd == 3)
