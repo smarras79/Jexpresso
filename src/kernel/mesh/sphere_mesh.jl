@@ -47,7 +47,7 @@
 #      test on the FINAL high-order grid (check_sphere_mesh).
 #
 # The result is a St_mesh_sphere struct + a VTK writer
-# (write_vtk_sphere_grid / write_vtk_sphere_edges in src/io/write_output.jl,
+# (write_vtk_sphere_grid / _wireframe / _points in src/io/write_output.jl,
 # next to write_vtk_grid_only) so that the grid can be inspected in ParaView
 # before any equation is solved on it.
 #

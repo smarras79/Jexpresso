@@ -153,19 +153,45 @@ end
     #
     # VTK output: the files must be produced and be non-empty.
     #
-    @testset "VTK writer" begin
+    @testset "VTK writers" begin
         c, q, t = generate_cubed_sphere(3, R_EARTH)
         fn = joinpath(dir, "cs_vtk.msh")
         write_msh22(fn, c, q, t)
-        mesh = build_sphere_shell_mesh(fn, 4; verbose = false)
+        nop  = 4
+        mesh = build_sphere_shell_mesh(fn, nop; verbose = false)
 
         outdir = joinpath(dir, "out")
-        write_vtk_sphere_grid(mesh,  "sphere_grid_ho",    outdir; verbose = false)
-        write_vtk_sphere_edges(mesh, "sphere_grid_edges", outdir; verbose = false)
+        write_vtk_sphere_grid(mesh,      "sphere_grid_ho",        outdir; verbose = false)
+        write_vtk_sphere_wireframe(mesh, "sphere_grid_wireframe", outdir; verbose = false)
+        write_vtk_sphere_points(mesh,    "sphere_grid_points",    outdir; verbose = false)
 
-        @test isfile(joinpath(outdir, "sphere_grid_ho.vtu"))
-        @test isfile(joinpath(outdir, "sphere_grid_edges.vtu"))
-        @test filesize(joinpath(outdir, "sphere_grid_ho.vtu"))    > 0
-        @test filesize(joinpath(outdir, "sphere_grid_edges.vtu")) > 0
+        for f in ("sphere_grid_ho", "sphere_grid_wireframe", "sphere_grid_points")
+            @test isfile(joinpath(outdir, f * ".vtu"))
+            @test filesize(joinpath(outdir, f * ".vtu")) > 0
+        end
+
+        #
+        # The surface file must carry the HIGH-ORDER sub-elements, not the
+        # linear elements: (ngl-1)² VTK_QUADs per spectral element, and every
+        # LGL node must appear as a corner of one of them. Read the cell count
+        # straight out of the .vtu header rather than trusting the writer.
+        #
+        ngl  = nop + 1
+        nsub = mesh.nelem*(ngl-1)^2
+        bytes = read(joinpath(outdir, "sphere_grid_ho.vtu"))
+        hdr   = String(bytes[1:min(lastindex(bytes), 4000)])
+        mp    = match(r"NumberOfPoints=\"(\d+)\"", hdr)
+        mc    = match(r"NumberOfCells=\"(\d+)\"",  hdr)
+        @test mp !== nothing && mc !== nothing
+        @test parse(Int, mp.captures[1]) == mesh.npoin
+        @test parse(Int, mc.captures[1]) == nsub
+        @test nsub > mesh.nelem                       # i.e. NOT one cell per element
+
+        # and the sub-cells really do touch every high-order node
+        touched = falses(mesh.npoin)
+        for iel = 1:mesh.nelem, j = 1:ngl, i = 1:ngl
+            touched[mesh.connijk[iel, i, j]] = true
+        end
+        @test all(touched)
     end
 end
