@@ -43,13 +43,19 @@ function driver(nparts,
     # boundary — numbers the high-order nodes once per UNIQUE edge so the
     # panel seams stay stitched together.
     #
-    # Two early stopping points, since the equations on the manifold do not
-    # exist yet:
+    # The full path is
+    #
+    #   grid (sphere_mesh.jl)  →  metrics (sphere_metrics.jl)  →  initial
+    #   condition (the case's initialize.jl)  →  SSP-RK3 time loop
+    #   (sphere_time_loop.jl), whose RHS is the SEM surface divergence in
+    #   sphere_rhs.jl fed by the case's user_flux! / user_source!.
+    #
+    # Two early exits, for working on the grid or the initial state alone:
     #
     #   :lgrid_only => true   build the grid, write it, return.
     #   :linit_only => true   build the grid AND the initial condition, write
     #                         both (into ONE file: the fields ride on the grid),
-    #                         return.
+    #                         return without integrating.
     #
     # :lgrid_only wins if both are set.
     #---------------------------------------------------------
@@ -66,7 +72,8 @@ function driver(nparts,
         # Say what it actually means.
         #
         for _w in (:mod_mesh_sphere_driver, :write_vtk_sphere_grid,
-                   :project_momentum_to_sphere!, :sphere_normal_momentum)
+                   :project_momentum_to_sphere!, :sphere_normal_momentum,
+                   :build_sphere_metrics, :build_sphere_params, :sphere_time_loop!)
             isdefined(@__MODULE__, _w) && continue
             error(" # ERROR drivers.jl: `", _w, "` is not defined in the loaded Jexpresso module.\n",
                   " #   The module in this Julia session is older than the source tree on disk.\n",
@@ -93,6 +100,19 @@ function driver(nparts,
                 println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
             end
             return smesh
+        end
+
+        #
+        # Metric terms of the manifold: the contravariant basis that turns the
+        # (F,G,H) of user_flux.jl into a SURFACE divergence, plus the diagonal
+        # mass matrix. This is what the flat 2D metric machinery cannot supply.
+        #
+        smetrics = build_sphere_metrics(smesh, inputs; verbose = (rank == 0))
+        if get(inputs, :lcheck_grid, true) == true
+            ok = check_sphere_metrics(smesh, smetrics; verbose = (rank == 0))
+            if !ok && get(inputs, :lstop_on_bad_grid, true) == true
+                error(" # ERROR drivers.jl: the spherical shell metrics failed their consistency checks.")
+            end
         end
 
         qsphere = initialize(smesh.SD, 0, smesh, inputs, OUTPUT_DIR, TFloat)
@@ -128,22 +148,25 @@ function driver(nparts,
             end
         end
 
-        rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; q = qsphere)
-
         if get(inputs, :linit_only, false) == true
+            rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; q = qsphere)
             if rank == 0
                 println(" # :linit_only => true — grid + initial condition written to ", OUTPUT_DIR, ". Stopping here.")
             end
             return smesh, qsphere
         end
 
-        error(" # ERROR drivers.jl: the shallow water equations on a spherical shell cannot be " *
-              "integrated yet. The fluxes and sources are written (user_flux.jl / user_source.jl, " *
-              "Marras/Kopera/Giraldo Eq. 8, Lagrange multiplier included), but the METRIC TERMS of " *
-              "the manifold are missing: the surface divergence needs the 3x2 Jacobian of the " *
-              "(ξ,η) -> (x,y,z) map, which the flat 2D metric machinery does not provide. " *
-              "Set :linit_only => true in user_inputs.jl to stop after the initial condition, " *
-              "or :lgrid_only => true to stop after the grid.")
+        #
+        # Time integration. sphere_time_loop! writes the initial condition and
+        # then one VTK file per output time, and applies the Lagrange projection
+        # after every RK stage.
+        #
+        sparams = build_sphere_params(smesh, smetrics, inputs; neqs = qsphere.neqs)
+
+        @time tfinal = sphere_time_loop!(smesh, smetrics, sparams, qsphere,
+                                         inputs, OUTPUT_DIR; verbose = (rank == 0))
+
+        return smesh, qsphere, tfinal
     end
 
     #---------------------------------------------------------

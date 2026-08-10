@@ -193,6 +193,9 @@ include(joinpath( "kernel", "mesh", "pole_handling.jl"))
 # Self-contained on purpose: the flat 2D reader in mesh.jl stores only (x,y).
 include(joinpath( "kernel", "mesh", "sphere_mesh.jl"))
 
+# Metric terms of the 2D manifold + the diagonal mass matrix.
+include(joinpath( "kernel", "mesh", "sphere_metrics.jl"))
+
 include(joinpath( "kernel", "bases", "basis_structs.jl"))
 
 include(joinpath( "kernel", "mesh", "metric_terms.jl"))
@@ -217,6 +220,9 @@ include(joinpath( "kernel", "operators", "operators.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
+# SEM right-hand side on the spherical shell (+ the modal filter).
+include(joinpath( "kernel", "operators", "sphere_rhs.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
@@ -228,6 +234,10 @@ include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 include(joinpath( "kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
+
+# SSP-RK3 time loop for the spherical shell, with the Lagrange projection
+# applied at every stage.
+include(joinpath( "kernel", "solvers", "sphere_time_loop.jl"))
 
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 

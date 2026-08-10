@@ -995,7 +995,8 @@ end
 # diagnostic: watch it grow and you are watching the discretization leave the
 # manifold.
 #---------------------------------------------------------------------------------
-function project_momentum_to_sphere!(u::AbstractArray, mesh::St_mesh_sphere; ivar::Int = 2)
+function project_momentum_to_sphere!(u::AbstractMatrix{TF}, mesh::St_mesh_sphere{TF,TI};
+                                     ivar::Int = 2) where {TF,TI}
 
     dmax = 0.0
 
@@ -1029,7 +1030,8 @@ end
 # still on the sphere; project_momentum_to_sphere! returns the same quantity as
 # it removes it.
 #---------------------------------------------------------------------------------
-function sphere_normal_momentum(u::AbstractArray, mesh::St_mesh_sphere; ivar::Int = 2)
+function sphere_normal_momentum(u::AbstractMatrix{TF}, mesh::St_mesh_sphere{TF,TI};
+                                ivar::Int = 2) where {TF,TI}
 
     dmax = 0.0
     @inbounds for ip = 1:mesh.npoin
