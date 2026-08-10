@@ -59,8 +59,7 @@ function driver(nparts,
         # `UndefVarError: <name> not defined in Jexpresso` from the line below.
         # Say what it actually means.
         #
-        for _w in (:mod_mesh_sphere_driver, :write_vtk_sphere_grid,
-                   :write_vtk_sphere_wireframe, :write_vtk_sphere_points)
+        for _w in (:mod_mesh_sphere_driver, :write_vtk_sphere_grid)
             isdefined(@__MODULE__, _w) && continue
             error(" # ERROR drivers.jl: `", _w, "` is not defined in the loaded Jexpresso module.\n",
                   " #   The module in this Julia session is older than the source tree on disk.\n",
@@ -79,12 +78,9 @@ function driver(nparts,
         smesh = mod_mesh_sphere_driver(inputs, TFloat)
 
         if rank == 0
-            # the surface, as (ngl-1)² sub-elements per spectral element;
-            # the same grid as an explicit wireframe of every LGL line; and
-            # the LGL nodes themselves as points.
-            write_vtk_sphere_grid(smesh,      "sphere_grid_ho",        OUTPUT_DIR)
-            write_vtk_sphere_wireframe(smesh, "sphere_grid_wireframe", OUTPUT_DIR)
-            write_vtk_sphere_points(smesh,    "sphere_grid_points",    OUTPUT_DIR)
+            # ONE grid file, as (ngl-1)² sub-elements per spectral element —
+            # the same convention as write_vtk_grid_only for the flat cases.
+            write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR)
         end
 
         if get(inputs, :lgrid_only, false) == true
