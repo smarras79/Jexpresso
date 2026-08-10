@@ -60,6 +60,8 @@ export build_sphere_shell_mesh
 export read_gmsh_quad_surface
 export check_sphere_mesh
 export sphere_mesh_area
+export project_momentum_to_sphere!
+export sphere_normal_momentum
 export merge_coincident_nodes
 export build_unique_edges
 
@@ -958,6 +960,84 @@ function sphere_mesh_area(mesh::St_mesh_sphere)
         end
     end
     return A
+end
+
+
+#---------------------------------------------------------------------------------
+# project_momentum_to_sphere!(u, mesh; ivar = 2)
+#
+# The Lagrange-multiplier projection of Marras, Kopera & Giraldo (2015), QJRMS
+# 141: 1727-1739, section 3.2 (after Coté 1988). Their Eqs (9)-(11):
+#
+#   (φu)ⁿ⁺¹_c = (φu)ⁿ⁺¹_u + μx ,   μ = -(φu)ⁿ⁺¹_u · x / r² ,
+#
+# i.e.
+#
+#   (φu)_c = P (φu)_u ,   P = I - x xᵀ / r² ,
+#
+# the orthogonal projector onto the tangent plane at x. Applying it removes the
+# component of the momentum NORMAL to the shell, which is what keeps the fluid
+# on the sphere: a three-component velocity on a two-dimensional surface has one
+# redundant degree of freedom, and nothing in the discrete operators guarantees
+# it stays zero.
+#
+# The paper applies this at the end of every time step. The CONTINUOUS
+# counterpart — the μx term with the closed form μ = -φ|u|²/r² — lives in the
+# case's user_source.jl; see the derivation there. The two are complementary:
+# the source keeps the PDE consistent, this removes the drift the DISCRETE
+# operators accumulate regardless.
+#
+# `u` is the solution array indexed [ip, ivar], with the three Cartesian
+# momentum (or velocity) components in columns ivar, ivar+1, ivar+2 — so
+# ivar = 2 for the SWsphere state q = [φ, φu, φv, φw].
+#
+# Returns the largest normal component removed, max|(φu)·x̂|, as a drift
+# diagnostic: watch it grow and you are watching the discretization leave the
+# manifold.
+#---------------------------------------------------------------------------------
+function project_momentum_to_sphere!(u::AbstractArray, mesh::St_mesh_sphere; ivar::Int = 2)
+
+    dmax = 0.0
+
+    @inbounds for ip = 1:mesh.npoin
+
+        x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+        r2      = x*x + y*y + z*z
+
+        mx = u[ip, ivar]
+        my = u[ip, ivar+1]
+        mz = u[ip, ivar+2]
+
+        # μ = -(m·x)/r² ; the normal component removed is (m·x)/r
+        mdotx = mx*x + my*y + mz*z
+        μ     = -mdotx/r2
+
+        u[ip, ivar]   = mx + μ*x
+        u[ip, ivar+1] = my + μ*y
+        u[ip, ivar+2] = mz + μ*z
+
+        dmax = max(dmax, abs(mdotx)/sqrt(r2))
+    end
+
+    return dmax
+end
+
+
+#---------------------------------------------------------------------------------
+# The largest normal (off-shell) momentum component in the field, max|(φu)·x̂|,
+# WITHOUT modifying anything. This is the number that says whether the flow is
+# still on the sphere; project_momentum_to_sphere! returns the same quantity as
+# it removes it.
+#---------------------------------------------------------------------------------
+function sphere_normal_momentum(u::AbstractArray, mesh::St_mesh_sphere; ivar::Int = 2)
+
+    dmax = 0.0
+    @inbounds for ip = 1:mesh.npoin
+        x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+        dmax = max(dmax, abs(u[ip, ivar]*x + u[ip, ivar+1]*y + u[ip, ivar+2]*z) /
+                         sqrt(x*x + y*y + z*z))
+    end
+    return dmax
 end
 
 

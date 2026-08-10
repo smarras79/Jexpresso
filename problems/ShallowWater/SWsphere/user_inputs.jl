@@ -93,6 +93,30 @@ function user_inputs()
         :galewsky_phi2          => π/4,
         :galewsky_nquad         => 512,
         #---------------------------------------------------------------------------
+        # Keeping the flow ON the shell — Marras, Kopera & Giraldo (2015),
+        # QJRMS 141: 1727-1739, section 3.2 (after Coté 1988).
+        #
+        # The velocity is a full 3-D Cartesian vector on a 2-D surface, so one
+        # degree of freedom is redundant and must be constrained: u·x = 0.
+        # Two complementary mechanisms:
+        #
+        #   the μx SOURCE          in user_source.jl, with the closed form
+        #                          μ = -φ|u|²/r² (a centripetal force). Keeps
+        #                          the CONTINUOUS equation consistent. It has no
+        #                          switch here because user_source! receives no
+        #                          `inputs` — comment the two μ lines out in
+        #                          user_source.jl to run without it.
+        #
+        #   :llagrange_projection  the P = I - xxᵀ/r² projection of Eq.(9)-(11),
+        #                          applied to the momentum. Removes the normal
+        #                          drift the DISCRETE operators accumulate. In a
+        #                          real run this belongs at the end of every
+        #                          step; with :linit_only it is applied once,
+        #                          after the initial condition, and reports the
+        #                          drift it removed.
+        #---------------------------------------------------------------------------
+        :llagrange_projection   => true,
+        #---------------------------------------------------------------------------
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  => "lgl",
@@ -122,7 +146,16 @@ function user_inputs()
         :case                 => "swsphere",
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,
+        #---------------------------------------------------------------------------
+        # Artificial viscosity, the δν∇²(φu) term of Eq. (8b). The paper uses
+        # ν = 1e5 m²/s and shows the inviscid solution is badly resolution-
+        # sensitive on the cubed sphere, so this is likely to be needed once the
+        # equations run. It is a second derivative, not a pointwise source, so
+        # it goes through Jexpresso's viscous path rather than user_source.jl.
+        #---------------------------------------------------------------------------
         :lvisc                => false,
+        :ivisc_equations      => [1, 2, 3, 4],
+        :μ                    => 0.0,      # set to 1.0e5 together with :lvisc => true
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

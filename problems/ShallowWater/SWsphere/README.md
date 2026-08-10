@@ -1,10 +1,14 @@
 # SWsphere — shallow water equations on a spherical shell
 
-**Status: GRID + INITIAL CONDITION.** This case builds the high-order
+**Status: GRID + INITIAL CONDITION + RHS.** This case builds the high-order
 spectral-element grid on a closed spherical shell, verifies it, builds the
-Galewsky et al. (2004) barotropically unstable jet on it, writes both to VTK, and
-stops. There is no time integration yet — the equations and the metric terms on
-the manifold are still missing.
+Galewsky et al. (2004) barotropically unstable jet on it, writes it to VTK, and
+stops. The fluxes and sources of the shallow water equations — including the
+Lagrange multiplier that keeps the flow on the shell — are written in
+`user_flux.jl` / `user_source.jl`. What is still missing before it can be
+integrated in time is the **metric terms of the manifold**: the surface
+divergence `∇ₛ·F` needs the 3×2 Jacobian of the (ξ,η) → (x,y,z) map, which the
+flat 2-D metric machinery does not provide.
 
 Two stopping points, both in `user_inputs.jl`:
 
@@ -60,6 +64,7 @@ builder:
 * `src/kernel/mesh/sphere_mesh.jl` — reads the linear quad shell (`MSH 2.2` and
   `MSH 4.1` ASCII), populates it with LGL points, verifies it.
 * `initialize.jl` — the Galewsky et al. (2004) jet (see below).
+* `user_flux.jl` / `user_source.jl` — the equations (see below).
 * `src/io/write_output.jl` — `write_vtk_sphere_grid`, next to the existing
   `write_vtk_grid_only` writers.
 * `tools/generate_cubed_sphere.jl` — equiangular gnomonic cubed-sphere generator.
@@ -188,16 +193,108 @@ values. `:sphere_radius => 6.37122e6` in the deck pins the shell to the Galewsky
 Earth radius whatever the `.msh` carries — the balance is computed on the radius
 the grid actually has, and `initialize.jl` warns if that is not the Earth.
 
+## The equations
+
+**Marras, Kopera & Giraldo (2015)**, *Simulation of shallow-water jets with a
+unified element-based continuous/discontinuous Galerkin model with grid
+flexibility on the sphere*, QJRMS **141**: 1727-1739, Eq. (8):
+
+```
+∂φ/∂t    + ∇·(φu)   = 0
+∂(φu)/∂t + ∇·(φu⊗u) = -φ∇φ - f(x × φu) + μx + δν∇²(φu)
+```
+
+`φ = gh` is the geopotential, `u = (u,v,w)` the **full Cartesian** velocity,
+`x` the position vector, `f = 2ωz/r²`, and `μ` the Lagrange multiplier.
+
+State vector: `q = [φ, φu, φv, φw]` — four equations. Not the tangent-plane pair
+`(u,v)`: the multiplier exists precisely to remove the velocity component
+**normal** to the shell, and in a two-component tangent basis that component
+does not exist, so there would be nothing to constrain. The price is one
+redundant degree of freedom, which is what `μ` and the projection deal with.
+
+### Where each term lives
+
+| term | where | why |
+|---|---|---|
+| `∇·(φu)`, `∇·(φu⊗u)` | `user_flux.jl` | under a divergence |
+| `φ∇φ` | `user_flux.jl` | as `∇·((φ²/2)I)` — see below |
+| `-f(x × φu)` | `user_source.jl` | pointwise |
+| `μx` | `user_source.jl` | pointwise, closed form — see below |
+| `δν∇²(φu)` | `:lvisc`, `:μ` | a second derivative, Jexpresso's viscous path |
+
+The paper carries the pressure as the **source** `-φ∇φ`. Jexpresso's
+`user_source!` is a pointwise callback — one node, no derivatives — so that form
+cannot be evaluated there. The identity `∇·((φ²/2)I) = φ∇φ` moves it into the
+flux instead, giving the standard conservative momentum flux tensor
+`T_ij = φ u_i u_j + (φ²/2)δ_ij`. Algebraically the same equation, and it fits
+Jexpresso's split exactly. On the manifold it stays correct because the RHS
+differentiates the **Cartesian components with surface derivatives**:
+`∂ⱼ(δᵢⱼφ²/2) = ∂ᵢ(φ²/2)` is then the surface gradient, tangential by
+construction, so no spurious normal pressure force appears.
+
+### The Lagrange multiplier — two mechanisms, both needed
+
+The paper (section 3.2, after Coté 1988) presents `μ` as a **projection applied
+to the state** after each step, Eqs (9)-(11):
+
+```
+(φu)ⁿ⁺¹_c = P (φu)ⁿ⁺¹_u ,   P = I - x xᵀ/r² ,   μ = -(φu)ⁿ⁺¹_u·x / r²
+```
+
+That is `project_momentum_to_sphere!` in `src/kernel/mesh/sphere_mesh.jl`.
+
+But `μ` also has a **closed pointwise form**, which is what lets it live in a
+pointwise source at all. Requiring `x·∂(φu)/∂t = 0` and taking `x·` of the
+momentum equation kills the Coriolis term (`x·(x × φu) = 0`) and the pressure
+term (a surface gradient is tangential), and leaves only the curvature part of
+the flux divergence, `x·[∇ₛ·(φu⊗u)] = -φ|u|²`. Hence
+
+```
+μ = -φ|u|²/r²        μx = -(φ|u|²/r) n̂
+```
+
+— a **centripetal** force of magnitude `φ|u|²/r`, exactly what is needed to bend
+a parcel of "mass" `φ` moving at speed `|u|` around a circle of radius `r`. That
+physical reading is the quickest check on the sign: `μ` must be negative.
+
+The two are complementary, not redundant. `μx` keeps the **continuous** equation
+consistent, so the exact solution never leaves the shell and the discretization
+is not fighting a wrong PDE. The projection removes the normal drift the
+**discrete** operators accumulate anyway (`μ` above is exact only if the discrete
+divergence is). `:llagrange_projection` controls the second; the first has no
+switch because `user_source!` receives no `inputs` — comment the two `μ*` terms
+out to run without it.
+
+The VTK file carries `momentum_normal` = `(φu)·x̂`, the very quantity being held
+at zero: plot it and you can see whether the flow is leaving the shell.
+
+### How this was checked
+
+The unperturbed Galewsky jet is an **exact steady solution**, so the whole
+right-hand side must vanish on it — which only happens if the flux, the pressure
+term, the Coriolis sign *and* the multiplier are all right at once.
+`test/test_sphere_mesh.jl` evaluates `-∇ₛ·F(q) + S(q)` on the analytic balanced
+state using the real `user_flux!` and `user_source!` with a finite-difference
+surface divergence, and checks that the residual **converges to zero at second
+order** under refinement (it cannot be exactly zero — it carries the stencil's
+truncation error). Measured rate: 2.00, residual ~1e-4 of the size of the
+individual terms that cancel. Each term is also checked separately against its
+closed form, and the projection against its defining properties (kills the
+normal component, leaves a tangential field untouched, idempotent).
+
 ## What comes next
 
 The pieces still missing before this becomes a solver, in order:
 
-1. metric terms of the manifold (covariant/contravariant basis, surface
-   Jacobian, curvature) — the equivalent of `src/kernel/mesh/metric_terms.jl`
-   for a 2D surface in 3D;
-2. the tangent-plane velocity basis and the mass/differentiation matrices on it;
-3. `user_flux.jl` / `user_source.jl` — the shallow water fluxes with the surface
-   metric, the full Coriolis term `f = 2Ω sin φ`, and the curvature term that
-   keeps the momentum tangent to the shell.
+1. **metric terms of the manifold** — the 3×2 Jacobian of (ξ,η) → (x,y,z), i.e.
+   `dξdx, dξdy, dξdz, dηdx, dηdy, dηdz` and the surface Jacobian, the equivalent
+   of `src/kernel/mesh/metric_terms.jl` for a 2-D surface in 3-D. This is what
+   turns the `F, G, H` of `user_flux.jl` into a surface divergence;
+2. the mass and differentiation matrices on the manifold, and an
+   `_expansion_inviscid!` for the (2 reference directions, 3 flux components)
+   case;
+3. the projection applied at the end of every RK stage, rather than once after
+   the initial condition as it is now.
 
 Then flip `:linit_only` to `false`.
