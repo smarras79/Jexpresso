@@ -765,7 +765,41 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     end #lread_gmsh
 
-    
+    #
+    # Grid-only runs and the spherical-shell (2D manifold in 3D) grid.
+    #
+    #   :lspherical_shell  read :gmsh_filename as a CLOSED quadrilateral shell
+    #                      and populate it with high-order LGL points through
+    #                      src/kernel/mesh/sphere_mesh.jl instead of the flat
+    #                      2D reader in mesh.jl (which keeps only x and y).
+    #   :lgrid_only        build the grid, dump it to VTK, and STOP — no
+    #                      initial condition, no time integration. This is the
+    #                      switch a user flips while the equations for a new
+    #                      geometry are still being written.
+    #
+    if(!haskey(inputs, :lspherical_shell))
+        inputs[:lspherical_shell] = false
+    end
+    if(!haskey(inputs, :lgrid_only))
+        inputs[:lgrid_only] = false
+    end
+    if(!haskey(inputs, :lcheck_grid))
+        inputs[:lcheck_grid] = true
+    end
+    if(!haskey(inputs, :lstop_on_bad_grid))
+        inputs[:lstop_on_bad_grid] = true
+    end
+    if(!haskey(inputs, :lmerge_coincident_nodes))
+        inputs[:lmerge_coincident_nodes] = true
+    end
+    if(!haskey(inputs, :node_merge_tol))
+        inputs[:node_merge_tol] = 1.0e-8
+    end
+    if(!haskey(inputs, :lproject_to_sphere))
+        inputs[:lproject_to_sphere] = true
+    end
+
+
     if (!haskey(inputs, :lwarmup))
         inputs[:lwarmup] = false
     else
