@@ -32,6 +32,48 @@ function driver(nparts,
     _t_sem = time_ns()
 
     #---------------------------------------------------------
+    # Spherical shell (2D manifold embedded in 3D).
+    #
+    # A closed shell is NOT what sem_setup/mod_mesh_read_gmsh! build: their
+    # 2D path stores only (x,y) for every node and interpolates only (x,y)
+    # when adding the high-order points, which collapses a sphere onto its
+    # equatorial disc. The shell therefore gets its own grid builder
+    # (src/kernel/mesh/sphere_mesh.jl), which keeps (x,y,z), places the LGL
+    # points ON the sphere, and — the part that matters on a surface with no
+    # boundary — numbers the high-order nodes once per UNIQUE edge so the
+    # panel seams stay stitched together.
+    #
+    # Until the shallow-water-on-the-sphere kernels exist, this path is only
+    # useful with :lgrid_only => true: build the grid, write it to VTK for
+    # inspection, and return.
+    #---------------------------------------------------------
+    if get(inputs, :lspherical_shell, false) == true
+
+        if rank == 0
+            println()
+            println(" # :lspherical_shell => true — skipping sem_setup, building the shell grid instead")
+            flush(stdout)
+        end
+
+        smesh = mod_mesh_sphere_driver(inputs, TFloat)
+
+        if rank == 0
+            write_vtk_sphere_grid(smesh,  "sphere_grid_ho",    OUTPUT_DIR)
+            write_vtk_sphere_edges(smesh, "sphere_grid_edges", OUTPUT_DIR)
+        end
+
+        if get(inputs, :lgrid_only, false) == true
+            if rank == 0
+                println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
+            end
+            return smesh
+        end
+
+        error(" # ERROR drivers.jl: the shallow water equations on a spherical shell are not implemented yet. " *
+              "Set :lgrid_only => true in user_inputs.jl to stop after the grid is built.")
+    end
+
+    #---------------------------------------------------------
     # Mesh + initial state (+ coupling object in MPMD mode).
     #
     #   - Coupled path:  setup_coupling_and_mesh does sem_setup +
@@ -70,6 +112,22 @@ function driver(nparts,
 
         if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_sem) / 1e9)
+            flush(stdout)
+        end
+
+        # Grid-only run: dump the high-order grid and stop before the initial
+        # condition. Same switch as the spherical-shell branch above, for the
+        # cases that DO go through sem_setup.
+        if get(inputs, :lgrid_only, false) == true
+            write_vtk_grid_only(sem.mesh.SD, sem.mesh, "grid_ho", OUTPUT_DIR,
+                                distribute(LinearIndices((nparts,))), nparts)
+            if rank == 0
+                println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
+            end
+            return sem
+        end
+
+        if rank == 0
             print(" # initialize() ......... ")
             flush(stdout)
         end

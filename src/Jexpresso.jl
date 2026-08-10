@@ -189,6 +189,10 @@ include(joinpath( "kernel", "mesh", "extra_mesh_spatial_amr.jl"))
 
 include(joinpath( "kernel", "mesh", "pole_handling.jl"))
 
+# High-order grid on a CLOSED spherical shell (2D manifold embedded in 3D).
+# Self-contained on purpose: the flat 2D reader in mesh.jl stores only (x,y).
+include(joinpath( "kernel", "mesh", "sphere_mesh.jl"))
+
 include(joinpath( "kernel", "bases", "basis_structs.jl"))
 
 include(joinpath( "kernel", "mesh", "metric_terms.jl"))
@@ -260,6 +264,8 @@ include(joinpath( "io", "les_statistics.jl"))
 include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
+
+include(joinpath( "io", "write_vtk_sphere.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
 
