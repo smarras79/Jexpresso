@@ -107,7 +107,7 @@ end
 # so moving the repo or switching to a relative-vs-absolute path doesn't
 # spuriously invalidate the cache.
 const _CACHE_FINGERPRINT_KEYS = (
-    :nop, :nsd, :backend,
+    :nop, :nsd, :backend, :AD,
     :lexact_integration, :interpolation_nodes, :quadrature_nodes,
     :llump, :ldss_laplace, :ldss_differentiation,
     :llaguerre_1d_right, :llaguerre_1d_left,
@@ -128,7 +128,12 @@ const _CACHE_FINGERPRINT_KEYS = (
 # called with the dead "periodicy" tag) — caches written before the
 # fix carry a mesh with no top/bottom periodic pairing and must be
 # rebuilt.
-const _CACHE_SCHEMA_VERSION = 3
+# v4: :AD added to the fingerprint. The discretization determines the
+# numbering itself — ContGal shares interface nodes, DiscGal duplicates
+# them — so a cached mesh or SEM file is only valid for the AD it was
+# built under. Without this key, flipping :AD inside one case directory
+# silently loads the other numbering's cache.
+const _CACHE_SCHEMA_VERSION = 4
 
 function _cache_fingerprint(inputs, nparts::Int)
     fp = Dict{String,Any}()
