@@ -58,8 +58,12 @@ function driver(nparts,
         smesh = mod_mesh_sphere_driver(inputs, TFloat)
 
         if rank == 0
-            write_vtk_sphere_grid(smesh,  "sphere_grid_ho",    OUTPUT_DIR)
-            write_vtk_sphere_edges(smesh, "sphere_grid_edges", OUTPUT_DIR)
+            # the surface, as (ngl-1)² sub-elements per spectral element;
+            # the same grid as an explicit wireframe of every LGL line; and
+            # the LGL nodes themselves as points.
+            write_vtk_sphere_grid(smesh,      "sphere_grid_ho",        OUTPUT_DIR)
+            write_vtk_sphere_wireframe(smesh, "sphere_grid_wireframe", OUTPUT_DIR)
+            write_vtk_sphere_points(smesh,    "sphere_grid_points",    OUTPUT_DIR)
         end
 
         if get(inputs, :lgrid_only, false) == true

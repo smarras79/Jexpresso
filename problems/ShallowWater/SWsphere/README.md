@@ -25,8 +25,9 @@ Output, in `problems/ShallowWater/SWsphere/output/`:
 
 | file | what it is |
 |---|---|
-| `sphere_grid_ho.vtu`    | the high-order grid — every LGL node is a corner of a sub-cell |
-| `sphere_grid_edges.vtu` | the unique-edge skeleton, one polyline per edge |
+| `sphere_grid_ho.vtu`        | the high-order grid: **(ngl-1)² sub-elements per spectral element**, exactly as `write_vtk_grid_only` does for the flat cases. Every LGL node is a corner of a sub-cell — the linear elements are never written on their own. |
+| `sphere_grid_wireframe.vtu` | the same grid as explicit line segments: every LGL grid line of every element. `line_type == 1` are the spectral-element boundaries, `line_type == 0` the interior LGL lines. |
+| `sphere_grid_points.vtu`    | the LGL nodes themselves, one vertex each. Representation "Points", colour by `node_type` (0 vertex / 1 edge / 2 interior). |
 
 ## What was actually added
 
@@ -38,8 +39,8 @@ builder:
 
 * `src/kernel/mesh/sphere_mesh.jl` — reads the linear quad shell (`MSH 2.2` and
   `MSH 4.1` ASCII), populates it with LGL points, verifies it.
-* `src/io/write_output.jl` — `write_vtk_sphere_grid` / `write_vtk_sphere_edges`,
-  next to the existing `write_vtk_grid_only` writers.
+* `src/io/write_output.jl` — `write_vtk_sphere_grid` / `write_vtk_sphere_wireframe` /
+  `write_vtk_sphere_points`, next to the existing `write_vtk_grid_only` writers.
 * `tools/generate_cubed_sphere.jl` — equiangular gnomonic cubed-sphere generator.
 * `test/test_sphere_mesh.jl` — standalone tests (`julia --project=. test/test_sphere_mesh.jl`).
 
