@@ -912,6 +912,20 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
 end
 
 
+function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::DiscGal)
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for j = 1:ngl
+                for i = 1:ngl
+                    I = connijk[iel,i,j]
+                    RHS[I,ieq] += rhs_el[iel,i,j,ieq]   # non-summing: DG connijk gives each (iel,i,j) a unique I
+                end
+            end
+        end
+    end
+end
+
+
 function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
 
     for ieq = 1:neqs
