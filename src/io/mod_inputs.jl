@@ -768,10 +768,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     # Grid-only runs and the spherical-shell (2D manifold in 3D) grid.
     #
-    #   :lspherical_shell  read :gmsh_filename as a CLOSED quadrilateral shell
-    #                      and populate it with high-order LGL points through
-    #                      src/kernel/mesh/sphere_mesh.jl instead of the flat
-    #                      2D reader in mesh.jl (which keeps only x and y).
+    #   :lspherical_shell  solve on a CLOSED quadrilateral shell: the manifold
+    #                      metrics, RHS and time loop replace the flat ones.
+    #                      The GRID itself is read by the ordinary gmsh path in
+    #                      mesh.jl, which detects a 2D manifold embedded in 3D
+    #                      from the model and keeps z (see `lmanifold` there).
     #   :lgrid_only        build the grid, dump it to VTK, and STOP — no
     #                      initial condition, no time integration. This is the
     #                      switch a user flips while the equations for a new
@@ -795,12 +796,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lstop_on_bad_grid))
         inputs[:lstop_on_bad_grid] = true
     end
-    if(!haskey(inputs, :lmerge_coincident_nodes))
-        inputs[:lmerge_coincident_nodes] = true
-    end
-    if(!haskey(inputs, :node_merge_tol))
-        inputs[:node_merge_tol] = 1.0e-8
-    end
+    # NOTE :lmerge_coincident_nodes / :node_merge_tol are gone with the bespoke
+    # shell reader. A watertight gmsh grid carries one node per seam location
+    # already, and Gridap's topology is built from the node ids in the file, so
+    # there is nothing to merge. A grid that really does duplicate its seam
+    # nodes is a broken grid: fix it in gmsh (share the curves between panels)
+    # rather than stitching it back together at read time.
     if(!haskey(inputs, :lproject_to_sphere))
         inputs[:lproject_to_sphere] = true
     end

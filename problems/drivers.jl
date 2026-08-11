@@ -34,21 +34,20 @@ function driver(nparts,
     #---------------------------------------------------------
     # Spherical shell (2D manifold embedded in 3D).
     #
-    # A closed shell is NOT what sem_setup/mod_mesh_read_gmsh! build: their
-    # 2D path stores only (x,y) for every node and interpolates only (x,y)
-    # when adding the high-order points, which collapses a sphere onto its
-    # equatorial disc. The shell therefore gets its own grid builder
-    # (src/kernel/mesh/sphere_mesh.jl), which keeps (x,y,z), places the LGL
-    # points ON the sphere, and — the part that matters on a surface with no
-    # boundary — numbers the high-order nodes once per UNIQUE edge so the
-    # panel seams stay stitched together.
+    # The GRID is built by the ordinary gmsh path, exactly like every other
+    # case: mod_mesh_mesh_driver → mod_mesh_read_gmsh!. That reader recognises
+    # a 2D manifold embedded in 3D from the model itself (see `lmanifold` in
+    # src/kernel/mesh/mesh.jl), keeps z through the high-order node placement,
+    # and snaps the LGL points onto the shell. Gridap's topology already gives
+    # one entry per UNIQUE edge, so the panel seams of a watertight cubed
+    # sphere stitch together with no special handling.
     #
-    # The full path is
+    # What stays specific to the manifold is downstream of the grid:
     #
-    #   grid (sphere_mesh.jl)  →  metrics (sphere_metrics.jl)  →  initial
-    #   condition (the case's initialize.jl)  →  SSP-RK3 time loop
-    #   (sphere_time_loop.jl), whose RHS is the SEM surface divergence in
-    #   sphere_rhs.jl fed by the case's user_flux! / user_source!.
+    #   metrics (sphere_metrics.jl)  →  initial condition (the case's
+    #   initialize.jl)  →  SSP-RK3 time loop (sphere_time_loop.jl), whose RHS
+    #   is the SEM surface divergence in sphere_rhs.jl fed by the case's
+    #   user_flux! / user_source!.
     #
     # Two early exits, for working on the grid or the initial state alone:
     #
@@ -63,15 +62,14 @@ function driver(nparts,
 
         #
         # A live Julia session keeps the ALREADY-COMPILED Jexpresso module.
-        # run.jl re-includes THIS file on every run_case, but
-        # src/kernel/mesh/sphere_mesh.jl and src/io/write_output.jl are only
-        # evaluated when the module itself is (re)loaded. Pulling new code into
-        # a running session therefore leaves a fresh drivers.jl calling
+        # run.jl re-includes THIS file on every run_case, but the src/ files are
+        # only evaluated when the module itself is (re)loaded. Pulling new code
+        # into a running session therefore leaves a fresh drivers.jl calling
         # functions the stale module has never seen — which surfaces as a bare
         # `UndefVarError: <name> not defined in Jexpresso` from the line below.
         # Say what it actually means.
         #
-        for _w in (:mod_mesh_sphere_driver, :write_vtk_sphere_grid,
+        for _w in (:write_vtk_sphere_grid,
                    :project_momentum_to_sphere!, :sphere_normal_momentum,
                    :build_sphere_metrics, :build_sphere_params, :sphere_time_loop!)
             isdefined(@__MODULE__, _w) && continue
@@ -83,13 +81,20 @@ function driver(nparts,
                   " #     julia> Jexpresso.run_case(\"ShallowWater\", \"SWsphere\")")
         end
 
+        if MPI.Comm_size(comm) > 1
+            error(" # ERROR drivers.jl: the spherical-shell path is serial for now. Run it on a single MPI rank.")
+        end
+
         if rank == 0
             println()
-            println(" # :lspherical_shell => true — skipping sem_setup, building the shell grid instead")
+            println(" # :lspherical_shell => true — reading the shell grid through the ordinary gmsh path")
             flush(stdout)
         end
 
-        smesh = mod_mesh_sphere_driver(inputs, TFloat)
+        smesh, _ = mod_mesh_mesh_driver(inputs, nparts, distribute)
+
+        smesh.lmanifold || error(" # ERROR drivers.jl: :lspherical_shell => true but ",
+                                 inputs[:gmsh_filename], " is not a curved 2D surface embedded in 3D.")
 
         # ONE file per run, as (ngl-1)² sub-elements per spectral element — the
         # same convention as write_vtk_grid_only for the flat cases. When the

@@ -10,12 +10,12 @@ function user_inputs()
         #
         # The run: grid -> manifold metrics -> initial condition -> SSP-RK3.
         #
-        #   :lspherical_shell => true   use src/kernel/mesh/sphere_mesh.jl (a
-        #                               2D manifold embedded in 3D: x, y AND z)
-        #                               instead of the flat 2D gmsh reader in
-        #                               mesh.jl, which keeps only (x,y) and
-        #                               would collapse the sphere onto its
-        #                               equatorial disc.
+        #   :lspherical_shell => true   solve on the shell: manifold metrics,
+        #                               surface-divergence RHS and the SSP-RK3
+        #                               loop replace the flat ones. The GRID is
+        #                               read by the ordinary gmsh path, which
+        #                               detects a 2D manifold embedded in 3D
+        #                               and keeps z (`lmanifold` in mesh.jl).
         #
         #   :lgrid_only       => true   stop right after the grid, without
         #                               touching initialize.jl.
@@ -27,24 +27,20 @@ function user_inputs()
         :lgrid_only           => false,
         :linit_only           => false,
         #---------------------------------------------------------------------------
-        # Grid checks (see check_sphere_mesh in src/kernel/mesh/sphere_mesh.jl).
+        # Grid checks (see check_sphere_metrics in src/kernel/mesh/sphere_metrics.jl).
         #
         # A spherical shell is CLOSED: no boundary, every edge shared by exactly
         # two elements, and gmsh files built panel-by-panel routinely carry
         # duplicated nodes along the panel seams. These switches control what is
         # done about that.
         #
-        #   :lmerge_coincident_nodes  fuse geometrically coincident vertices
         #                             before the topology is built (this is what
         #                             turns "six panels that look joined" into
         #                             one watertight shell)
-        #   :node_merge_tol           merge tolerance RELATIVE to the radius
         #   :lcheck_grid              run the T1..T9 consistency tests
         #   :lstop_on_bad_grid        abort if any of them fails
         #   :lproject_to_sphere       snap every node radially onto the shell
         #---------------------------------------------------------------------------
-        :lmerge_coincident_nodes => true,
-        :node_merge_tol          => 1.0e-8,
         :lcheck_grid             => true,
         :lstop_on_bad_grid       => true,
         :lproject_to_sphere      => true,
@@ -119,18 +115,19 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh parameters and files:
         #
-        # A CLOSED all-quadrilateral surface grid of the sphere. Generate one
-        # without needing gmsh:
-        #
-        #   julia tools/generate_cubed_sphere.jl 10 6.371e6 ./meshes/gmsh_grids/cubed_sphere.msh
-        #
-        # or with gmsh, from the .geo shipped next to this file:
+        # A CLOSED all-quadrilateral surface grid of the sphere. The one that
+        # ships with this case is a 10x10-per-panel cubed sphere (600 quads,
+        # 602 vertices, V - E + F = 2). Regenerate it with gmsh from the .geo
+        # shipped next to it:
         #
         #   gmsh -2 problems/ShallowWater/SWsphere/cubed_sphere.geo \
-        #        -format msh2 -o ./meshes/gmsh_grids/cubed_sphere.msh
+        #        -o problems/ShallowWater/SWsphere/cubed_sphere.msh
+        #
+        # Any gmsh format works (MSH 2.2 or 4.1, parametric nodes or not): the
+        # file is read by GridapGmsh, i.e. by gmsh itself.
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./meshes/gmsh_grids/cubed_sphere.msh",
+        :gmsh_filename        => "./problems/ShallowWater/SWsphere/cubed_sphere.msh",
         #---------------------------------------------------------------------------
         # Time integration.
         #

@@ -61,7 +61,7 @@ mutable struct St_sphere_params{TFloat}
 end
 
 
-function build_sphere_params(mesh::St_mesh_sphere, metrics::St_sphere_metrics, inputs;
+function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                              neqs = 4, TF = TFloat)
 
     ngl = Int(mesh.ngl)
@@ -89,35 +89,65 @@ end
 # q    npoin × (neqs+1) conservative state (only the first neqs columns are read)
 # qe   npoin × (neqs+1) reference state handed to the user callbacks
 #---------------------------------------------------------------------------------
+#
+# TYPED FUNCTION BARRIER — the same pattern as _viscous_rhs_el_2d! in
+# src/kernel/operators/rhs.jl, and it is not optional here.
+#
+# St_mesh is a Base.@kwdef struct whose fields carry NO type annotation, so
+# `mesh.x`, `mesh.connijk`, `mesh.npoin` … are all `::Any`. Reading them inside
+# the element loop makes every access a dynamic lookup that boxes its result:
+# on the Galewsky run that cost 63 G allocations / 1.1 TiB and roughly 10x the
+# runtime. Hoisting them into concretely-typed arguments once per call lets
+# Julia specialise the kernel below, and the inner loops become allocation-free.
+#
+# Anything read per element or per node belongs in the signature. Anything read
+# once per call (SD, the user callbacks' `mesh` argument) can stay dynamic.
+#
 function sphere_rhs!(RHS, q, qe,
-                     mesh::St_mesh_sphere,
+                     mesh::St_mesh,
                      metrics::St_sphere_metrics,
                      sp::St_sphere_params,
                      SVT)
 
-    ngl  = Int(mesh.ngl)
-    neqs = sp.neqs
-    dψ   = metrics.dψ
-    ω    = metrics.ω
+    _sphere_rhs_kernel!(RHS, q, qe,
+                        mesh.connijk, mesh.x, mesh.y, mesh.z,
+                        Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
+                        mesh, mesh.SD,
+                        metrics.Je, metrics.Minv,
+                        metrics.dξdx, metrics.dξdy, metrics.dξdz,
+                        metrics.dηdx, metrics.dηdy, metrics.dηdz,
+                        metrics.dψ, metrics.ω,
+                        sp.F, sp.G, sp.H, sp.S, Int(sp.neqs), SVT)
+    return RHS
+end
 
-    F, G, H, S = sp.F, sp.G, sp.H, sp.S
+function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
+                             connijk, xn::AbstractVector{TF},
+                             yn::AbstractVector{TF}, zn::AbstractVector{TF},
+                             nelem::Int, ngl::Int, npoin::Int,
+                             mesh, SD,
+                             Je, Minv::AbstractVector{TF},
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dψ, ω,
+                             F, G, H, S, neqs::Int, SVT) where {TF}
 
-    fill!(RHS, zero(eltype(RHS)))
+    fill!(RHS, zero(TF))
 
-    @inbounds for iel = 1:mesh.nelem
+    @inbounds for iel = 1:nelem
 
         #--- fluxes and sources at the element's LGL nodes
         for j = 1:ngl, i = 1:ngl
-            ip = mesh.connijk[iel,i,j]
+            ip = connijk[iel,i,j]
 
             user_flux!(@view(F[i,j,:]), @view(G[i,j,:]), @view(H[i,j,:]),
-                       mesh.SD, @view(q[ip,:]), @view(qe[ip,:]),
+                       SD, @view(q[ip,:]), @view(qe[ip,:]),
                        mesh, CL(), SVT; neqs = neqs, ip = ip)
 
             user_source!(@view(S[i,j,:]), @view(q[ip,:]), @view(qe[ip,:]),
-                         mesh.npoin, CL(), SVT;
+                         npoin, CL(), SVT;
                          neqs = neqs,
-                         x = mesh.x[ip], y = mesh.y[ip], z = mesh.z[ip])
+                         x = xn[ip], y = yn[ip], z = zn[ip])
         end
 
         #--- surface divergence + direct stiffness summation
@@ -126,12 +156,12 @@ function sphere_rhs!(RHS, q, qe,
                 ωj = ω[j]
                 for i = 1:ngl
 
-                    Jij  = metrics.Je[iel,i,j]
+                    Jij  = Je[iel,i,j]
                     ωJac = ω[i]*ωj*Jij
 
-                    dFdξ = dFdη = 0.0
-                    dGdξ = dGdη = 0.0
-                    dHdξ = dHdη = 0.0
+                    dFdξ = dFdη = zero(TF)
+                    dGdξ = dGdη = zero(TF)
+                    dHdξ = dHdη = zero(TF)
                     for k = 1:ngl
                         dξ_ki = dψ[k,i]
                         dη_kj = dψ[k,j]
@@ -140,19 +170,19 @@ function sphere_rhs!(RHS, q, qe,
                         dHdξ += dξ_ki*H[k,j,ieq];  dHdη += dη_kj*H[i,k,ieq]
                     end
 
-                    dFdx = dFdξ*metrics.dξdx[iel,i,j] + dFdη*metrics.dηdx[iel,i,j]
-                    dGdy = dGdξ*metrics.dξdy[iel,i,j] + dGdη*metrics.dηdy[iel,i,j]
-                    dHdz = dHdξ*metrics.dξdz[iel,i,j] + dHdη*metrics.dηdz[iel,i,j]
+                    dFdx = dFdξ*dξdx[iel,i,j] + dFdη*dηdx[iel,i,j]
+                    dGdy = dGdξ*dξdy[iel,i,j] + dGdη*dηdy[iel,i,j]
+                    dHdz = dHdξ*dξdz[iel,i,j] + dHdη*dηdz[iel,i,j]
 
-                    RHS[mesh.connijk[iel,i,j], ieq] -= ωJac*((dFdx + dGdy + dHdz) - S[i,j,ieq])
+                    RHS[connijk[iel,i,j], ieq] -= ωJac*((dFdx + dGdy + dHdz) - S[i,j,ieq])
                 end
             end
         end
     end
 
     #--- M⁻¹ : the mass matrix is diagonal under LGL (inexact) integration
-    @inbounds for ieq = 1:neqs, ip = 1:mesh.npoin
-        RHS[ip,ieq] *= metrics.Minv[ip]
+    @inbounds for ieq = 1:neqs, ip = 1:npoin
+        RHS[ip,ieq] *= Minv[ip]
     end
 
     return RHS
@@ -218,27 +248,32 @@ end
 # which is the L² projection back onto the continuous space and therefore
 # conserves ∫q exactly — the filter must not create or destroy mass.
 #---------------------------------------------------------------------------------
-function sphere_filter!(q, mesh::St_mesh_sphere, metrics::St_sphere_metrics, sp::St_sphere_params)
+function sphere_filter!(q, mesh::St_mesh, metrics::St_sphere_metrics, sp::St_sphere_params)
 
     sp.lfilter || return q
 
-    ngl  = Int(mesh.ngl)
-    neqs = sp.neqs
-    Fm   = sp.Filt
-    ω    = metrics.ω
-    acc  = sp.acc
-    qf   = sp.qf
+    # Typed function barrier; see the note above _sphere_rhs_kernel!.
+    _sphere_filter_kernel!(q, mesh.connijk, Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
+                           metrics.Je, metrics.Minv, metrics.ω,
+                           sp.Filt, sp.acc, sp.qf, sp.S, Int(sp.neqs))
+    return q
+end
 
-    fill!(acc, zero(eltype(acc)))
+function _sphere_filter_kernel!(q::AbstractMatrix{TF}, connijk,
+                                nelem::Int, ngl::Int, npoin::Int,
+                                Je, Minv::AbstractVector{TF}, ω,
+                                Fm, acc, qf, S, neqs::Int) where {TF}
 
-    @inbounds for iel = 1:mesh.nelem
+    fill!(acc, zero(TF))
+
+    @inbounds for iel = 1:nelem
 
         # filter along ξ, then along η
         for ieq = 1:neqs
             for j = 1:ngl, i = 1:ngl
-                t = 0.0
+                t = zero(TF)
                 for k = 1:ngl
-                    t += Fm[i,k]*q[mesh.connijk[iel,k,j], ieq]
+                    t += Fm[i,k]*q[connijk[iel,k,j], ieq]
                 end
                 qf[i,j,ieq] = t
             end
@@ -246,23 +281,23 @@ function sphere_filter!(q, mesh::St_mesh_sphere, metrics::St_sphere_metrics, sp:
         for ieq = 1:neqs
             for i = 1:ngl
                 for j = 1:ngl
-                    t = 0.0
+                    t = zero(TF)
                     for k = 1:ngl
                         t += Fm[j,k]*qf[i,k,ieq]
                     end
-                    sp.S[i,j,ieq] = t          # reuse S as scratch
+                    S[i,j,ieq] = t             # reuse S as scratch
                 end
             end
         end
 
         # mass-weighted accumulation
         for ieq = 1:neqs, j = 1:ngl, i = 1:ngl
-            acc[mesh.connijk[iel,i,j], ieq] += ω[i]*ω[j]*metrics.Je[iel,i,j]*sp.S[i,j,ieq]
+            acc[connijk[iel,i,j], ieq] += ω[i]*ω[j]*Je[iel,i,j]*S[i,j,ieq]
         end
     end
 
-    @inbounds for ieq = 1:neqs, ip = 1:mesh.npoin
-        q[ip,ieq] = acc[ip,ieq]*metrics.Minv[ip]
+    @inbounds for ieq = 1:neqs, ip = 1:npoin
+        q[ip,ieq] = acc[ip,ieq]*Minv[ip]
     end
 
     return q
@@ -286,47 +321,60 @@ end
 # same mass-weighted direct stiffness average used by the filter, so ζ is a
 # proper nodal field on the shell rather than a discontinuous per-element one.
 #---------------------------------------------------------------------------------
-function sphere_relative_vorticity!(ζ, q, mesh::St_mesh_sphere,
+function sphere_relative_vorticity!(ζ, q, mesh::St_mesh,
                                     metrics::St_sphere_metrics, sp::St_sphere_params)
+    # Typed function barrier; see the note above _sphere_rhs_kernel!. Without it
+    # this cost 86 MB per call (mesh.connijk / mesh.nelem / mesh.npoin are ::Any),
+    # and it is called at every diagnostics print and every output.
+    _sphere_vorticity_kernel!(ζ, q, mesh.connijk,
+                              Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
+                              metrics.dξdx, metrics.dξdy, metrics.dξdz,
+                              metrics.dηdx, metrics.dηdy, metrics.dηdz,
+                              metrics.nx, metrics.ny, metrics.nz,
+                              metrics.Je, metrics.Minv, metrics.dψ, metrics.ω,
+                              sp.acc)
+    return ζ
+end
 
-    ngl = Int(mesh.ngl)
-    dψ  = metrics.dψ
-    ω   = metrics.ω
+function _sphere_vorticity_kernel!(ζ::AbstractVector{TF}, q::AbstractMatrix{TF},
+                                   connijk, nelem::Int, ngl::Int, npoin::Int,
+                                   dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                                   nx, ny, nz, Je, Minv::AbstractVector{TF},
+                                   dψ, ω, acc::AbstractMatrix{TF}) where {TF}
 
-    acc = sp.acc                      # npoin × neqs scratch (column 1 only)
-    fill!(acc, zero(eltype(acc)))
+    fill!(acc, zero(TF))
 
-    @inbounds for iel = 1:mesh.nelem
+    @inbounds for iel = 1:nelem
         for j = 1:ngl, i = 1:ngl
 
             # ∂u/∂ξ and ∂u/∂η of the CARTESIAN velocity
-            dξx = dξy = dξz = 0.0
-            dηx = dηy = dηz = 0.0
+            dξx = dξy = dξz = zero(TF)
+            dηx = dηy = dηz = zero(TF)
             for k = 1:ngl
-                ipk = mesh.connijk[iel,k,j]
+                ipk = connijk[iel,k,j]
                 φk  = q[ipk,1]
                 dξx += dψ[k,i]*q[ipk,2]/φk; dξy += dψ[k,i]*q[ipk,3]/φk; dξz += dψ[k,i]*q[ipk,4]/φk
 
-                ipl = mesh.connijk[iel,i,k]
+                ipl = connijk[iel,i,k]
                 φl  = q[ipl,1]
                 dηx += dψ[k,j]*q[ipl,2]/φl; dηy += dψ[k,j]*q[ipl,3]/φl; dηz += dψ[k,j]*q[ipl,4]/φl
             end
 
-            a1x, a1y, a1z = metrics.dξdx[iel,i,j], metrics.dξdy[iel,i,j], metrics.dξdz[iel,i,j]
-            a2x, a2y, a2z = metrics.dηdx[iel,i,j], metrics.dηdy[iel,i,j], metrics.dηdz[iel,i,j]
+            a1x, a1y, a1z = dξdx[iel,i,j], dξdy[iel,i,j], dξdz[iel,i,j]
+            a2x, a2y, a2z = dηdx[iel,i,j], dηdy[iel,i,j], dηdz[iel,i,j]
 
             cx = (a1y*dξz - a1z*dξy) + (a2y*dηz - a2z*dηy)
             cy = (a1z*dξx - a1x*dξz) + (a2z*dηx - a2x*dηz)
             cz = (a1x*dξy - a1y*dξx) + (a2x*dηy - a2y*dηx)
 
-            zt = cx*metrics.nx[iel,i,j] + cy*metrics.ny[iel,i,j] + cz*metrics.nz[iel,i,j]
+            zt = cx*nx[iel,i,j] + cy*ny[iel,i,j] + cz*nz[iel,i,j]
 
-            acc[mesh.connijk[iel,i,j], 1] += ω[i]*ω[j]*metrics.Je[iel,i,j]*zt
+            acc[connijk[iel,i,j], 1] += ω[i]*ω[j]*Je[iel,i,j]*zt
         end
     end
 
-    @inbounds for ip = 1:mesh.npoin
-        ζ[ip] = acc[ip,1]*metrics.Minv[ip]
+    @inbounds for ip = 1:npoin
+        ζ[ip] = acc[ip,1]*Minv[ip]
     end
 
     return ζ

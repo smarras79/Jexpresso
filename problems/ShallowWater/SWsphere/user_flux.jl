@@ -58,7 +58,7 @@
 #---------------------------------------------------------------------------------
 
 function user_flux!(F, G, H, SD::NSD_2D, q, qe,
-                    mesh::St_mesh_sphere, ::CL, ::TOTAL; neqs=4, ip=1)
+                    mesh::St_mesh, ::CL, ::TOTAL; neqs=4, ip=1)
 
     φ  = q[1]
     φu = q[2]
@@ -93,7 +93,7 @@ end
 
 
 function user_flux!(F, G, H, SD::NSD_2D, q, qe,
-                    mesh::St_mesh_sphere, ::CL, ::PERT; neqs=4, ip=1)
+                    mesh::St_mesh, ::CL, ::PERT; neqs=4, ip=1)
     #
     # No perturbation form for this case: the Galewsky initial state is stored
     # as a full field (q.qe holds the unperturbed BALANCED state, which is a
