@@ -53,8 +53,8 @@ export sphere_diagnostics
 # smallest LGL node spacing, which for a spectral element clusters like 1/nop²
 # towards the edges and is what actually limits the step.
 #---------------------------------------------------------------------------------
-function sphere_cfl_dt(q::AbstractMatrix{TF}, mesh::St_mesh_sphere{TF,TI},
-                       metrics::St_sphere_metrics{TF}; cfl = 0.35) where {TF,TI}
+function sphere_cfl_dt(q::AbstractMatrix{TF}, mesh::St_mesh,
+                       metrics::St_sphere_metrics{TF}; cfl = 0.35) where {TF}
 
     cmax = 0.0
     @inbounds for ip = 1:mesh.npoin
@@ -71,8 +71,8 @@ end
 #---------------------------------------------------------------------------------
 # Conserved quantities and the constraint drift.
 #---------------------------------------------------------------------------------
-function sphere_diagnostics(q::AbstractMatrix{TF}, mesh::St_mesh_sphere{TF,TI},
-                            metrics::St_sphere_metrics{TF}) where {TF,TI}
+function sphere_diagnostics(q::AbstractMatrix{TF}, mesh::St_mesh,
+                            metrics::St_sphere_metrics{TF}) where {TF}
 
     mass = 0.0
     ener = 0.0
@@ -93,7 +93,7 @@ end
 #
 # Advances q from :tinit to :tend and writes VTK output. Returns the final time.
 #---------------------------------------------------------------------------------
-function sphere_time_loop!(mesh::St_mesh_sphere,
+function sphere_time_loop!(mesh::St_mesh,
                            metrics::St_sphere_metrics,
                            sp::St_sphere_params,
                            q,
@@ -119,7 +119,7 @@ function sphere_time_loop!(mesh::St_mesh_sphere,
 end
 
 
-function _sphere_march!(mesh::St_mesh_sphere,
+function _sphere_march!(mesh::St_mesh,
                         metrics::St_sphere_metrics,
                         sp::St_sphere_params,
                         q,
@@ -287,7 +287,7 @@ end
 # Refresh the primitive output fields through the case's own user_uout! and
 # write one VTK file. Numbered files, one per output time, as the flat cases do.
 #
-function _sphere_write!(q, mesh::St_mesh_sphere, inputs, OUTPUT_DIR::String,
+function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
                         iout::Int, t::Float64, SVT; verbose = true, lwrite = true,
                         extra = nothing)
 

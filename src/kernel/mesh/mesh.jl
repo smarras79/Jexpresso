@@ -1368,8 +1368,108 @@ const get_glue_components = GridapDistributed.get_glue_components
 # same face ordering and the original FaceLabeling (boundary tags) stays valid.
 # No-op when `Dp == Dc`, so 3D meshes and already-flat 2D meshes pass through
 # untouched.
+# True when the node cloud is NOT coplanar, i.e. the grid is genuinely a curved
+# surface rather than a flat patch with a constant (or stray) z. Uses the
+# smallest eigenvalue of the node-coordinate covariance: for a plane it is zero
+# up to round-off, for a shell it is O(extent²). Deciding this from the geometry
+# keeps `_flatten_model_to_cell_dim` free to squash the logically-2D meshes it
+# was written for, while a cubed sphere is recognised without a case input.
+function _is_curved_surface(node_coords; rtol = 1.0e-6)
+    n = length(node_coords)
+    n < 4 && return false
+    cx = sum(p[1] for p in node_coords)/n
+    cy = sum(p[2] for p in node_coords)/n
+    cz = sum(p[3] for p in node_coords)/n
+    C  = zeros(Float64, 3, 3)
+    for p in node_coords
+        d = (p[1] - cx, p[2] - cy, p[3] - cz)
+        for i = 1:3, j = 1:3
+            C[i,j] += d[i]*d[j]
+        end
+    end
+    C ./= n
+    λ = eigvals(Symmetric(C))          # ascending, all ≥ 0
+    return λ[1] > rtol*λ[3]
+end
+
+#---------------------------------------------------------------------------------
+# Snap every node of a spherical shell radially onto the sphere and fill
+# (lon, lat).
+#
+# The high-order LGL nodes are interpolated on the straight-sided element, so
+# they land on the chord — inside the sphere by O(h²). Pushing them back out
+# along the radius is all that is needed to make them conform to the shell: the
+# gnomonic/great-circle structure of the panels is already carried by the linear
+# vertices that gmsh placed on the sphere.
+#
+# The radius is taken from `:sphere_radius` when the case sets it (so a unit
+# sphere .msh can be blown up to the Earth) and otherwise measured from the
+# linear vertices, which is what the grid file itself says. A shell whose
+# vertices are not all at one radius is not a sphere, and is left alone rather
+# than silently deformed.
+#---------------------------------------------------------------------------------
+function project_nodes_to_shell!(mesh::St_mesh, inputs::Dict{Symbol,Any})
+
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+
+    rmin, rmax = Inf, 0.0
+    for ip = 1:mesh.npoin_linear
+        r = sqrt(mesh.x[ip]^2 + mesh.y[ip]^2 + mesh.z[ip]^2)
+        rmin = min(rmin, r); rmax = max(rmax, r)
+    end
+    rmin = MPI.Allreduce(rmin, MPI.MIN, comm)
+    rmax = MPI.Allreduce(rmax, MPI.MAX, comm)
+
+    if rmin <= 0.0 || (rmax - rmin) > 1.0e-6*rmax
+        # Not a sphere: an embedded surface of some other shape. Keep the
+        # interpolated coordinates and skip both the snap and (lon, lat).
+        println_rank(string(" #   embedded surface is not a sphere (r ∈ [", rmin, ", ", rmax,
+                            "]) — high-order nodes left on the element chords");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+        return nothing
+    end
+
+    R = get(inputs, :sphere_radius, nothing)
+    mesh.radius = (R === nothing) ? 0.5*(rmin + rmax) : TFloat(R)
+
+    lproject = get(inputs, :lproject_to_sphere, true)
+
+    mesh.lon = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+    mesh.lat = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+
+    dmax = 0.0
+    for ip = 1:mesh.npoin
+        r = sqrt(mesh.x[ip]^2 + mesh.y[ip]^2 + mesh.z[ip]^2)
+        r > 0.0 || continue
+        if lproject
+            s = mesh.radius/r
+            dmax = max(dmax, abs(r - mesh.radius))
+            mesh.x[ip] *= s; mesh.y[ip] *= s; mesh.z[ip] *= s
+        end
+        mesh.lon[ip] = atan(mesh.y[ip], mesh.x[ip])
+        mesh.lat[ip] = asin(clamp(mesh.z[ip]/mesh.radius, -1.0, 1.0))
+    end
+
+    if lproject
+        println_rank(string(" #   spherical shell R = ", mesh.radius,
+                            " ; largest radial correction applied to a node = ",
+                            MPI.Allreduce(dmax, MPI.MAX, comm));
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+    end
+
+    return nothing
+end
+
+
 function _flatten_model_to_cell_dim(model::Gridap.Geometry.DiscreteModel{Dc,Dp}) where {Dc,Dp}
     Dc == Dp && return model
+    # Squashing a curved surface would silently collapse it (a sphere onto its
+    # equatorial disc). Say so instead: AMR on a manifold is not supported.
+    if Dc == 2 && Dp == 3 && _is_curved_surface(get_node_coordinates(get_grid(model)))
+        error(" # ERROR mesh.jl: this grid is a curved 2D surface embedded in 3D, and AMR " *
+              "(:linitial_refine / :ladapt) would flatten it onto a plane. Run it without AMR.")
+    end
     grid        = get_grid(model)
     coords_flat = [Gridap.Point(ntuple(i -> p[i], Dc)...) for p in get_node_coordinates(grid)]
     grid_flat   = Gridap.Geometry.UnstructuredGrid(coords_flat,
@@ -1635,7 +1735,22 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     end 
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
-    
+
+    # A 2D grid whose nodes carry a genuine third coordinate is a 2D MANIFOLD
+    # embedded in 3D — a cubed sphere, a shell — and not a flat patch that
+    # happens to sit off the z = 0 plane. The distinction matters because the
+    # flat 2D path stores only (x,y) and interpolates only (x,y) when it adds
+    # the high-order points, which would collapse a shell onto its equatorial
+    # disc. It is decided here from the geometry alone (coplanar node cloud =
+    # flat patch, non-coplanar = manifold), so a spherical grid is read by this
+    # same ordinary gmsh path with no case input and no separate reader.
+    mesh.lmanifold = (mesh.nsd == 2) && (num_point_dims(model) == 3) &&
+                     _is_curved_surface(get_node_coordinates(get_grid(model)))
+    if mesh.lmanifold
+        println_rank(string(" #   2D manifold embedded in 3D: keeping z and placing the LGL nodes on the surface");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+    end
+
     POIN_flg = 0
     EDGE_flg = 1
     FACE_flg = 2
@@ -2017,6 +2132,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
                 mesh.x[ip] = node_coords[ip][1]
                 mesh.y[ip] = node_coords[ip][2]
+                # On a 2D manifold embedded in 3D the third coordinate is part
+                # of the geometry, not a stray offset — keep it.
+                if mesh.lmanifold
+                    mesh.z[ip] = node_coords[ip][3]
+                end
 
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
@@ -2125,9 +2245,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         mesh.x[ip] = mesh.x_ho[ip]
         mesh.y[ip] = mesh.y_ho[ip]
         mesh.z[ip] = 0.0
-        if (mesh.nsd > 2)
+        if (mesh.nsd > 2 || mesh.lmanifold)
             mesh.z[ip] = mesh.z_ho[ip]
         end
+    end
+
+    # The high-order nodes above were interpolated on the straight-sided
+    # element; on a shell that puts them on the chord, inside the sphere. Snap
+    # them back out and fill (lon, lat). Nothing here runs for a flat grid.
+    if mesh.lmanifold
+        project_nodes_to_shell!(mesh, inputs)
     end
 
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
@@ -3717,11 +3844,15 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         #resize!(mesh.x_ho, (mesh.npoin))
         mesh.x_ho = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
     end
-    if length(mesh.y_ho) < mesh.npoin        
+    if length(mesh.y_ho) < mesh.npoin
         #resize!(mesh.y_ho, (mesh.npoin))
        mesh.y_ho = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
     end
-    
+    # z_ho is unused by a flat 2D grid; a manifold needs it like the 3D path does.
+    if mesh.lmanifold && length(mesh.z_ho) < mesh.npoin
+        mesh.z_ho = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
+    end
+
     #poin_in_edge::Array{TInt, 2}  = zeros(mesh.nedges, mesh.ngl)
     #open("./COORDS_HO_edges_$rank.dat", "w") do f
         #
@@ -3739,7 +3870,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
             
             x1, y1 = mesh.x[ip1], mesh.y[ip1]
             x2, y2 = mesh.x[ip2], mesh.y[ip2]
-            
+            z1, z2 = mesh.z[ip1], mesh.z[ip2]
+
             gip1, gip2 = mesh.ip2gip[ip1], mesh.ip2gip[ip2]
             if gip1 > gip2
                 gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
@@ -3755,7 +3887,13 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
                 
                 mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
 	            mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-                
+                # A manifold edge is a chord in 3D: carry z, then (for a shell)
+                # push the new node back out onto the surface — see
+                # project_nodes_to_shell! at the end of mod_mesh_read_gmsh!.
+                if mesh.lmanifold
+                    mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
+                end
+
                 mesh.poin_in_edge[iedge_g, l] = ip
                 mesh.ip2gip[ip] = gip
                 # mesh.gip2owner[ip] = 1
@@ -4238,6 +4376,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
     if length(mesh.y_ho) < mesh.npoin
         resize!(mesh.y_ho, (mesh.npoin))
     end
+    if mesh.lmanifold && length(mesh.z_ho) < mesh.npoin
+        resize!(mesh.z_ho, (mesh.npoin))
+    end
 
     #open("./COORDS_HO_faces.dat", "w") do f
         #
@@ -4267,22 +4408,33 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
             x2, y2 = mesh.x[ip2], mesh.y[ip2]
             x3, y3 = mesh.x[ip3], mesh.y[ip3]
             x4, y4 = mesh.x[ip4], mesh.y[ip4]
-            
+            z1, z2 = mesh.z[ip1], mesh.z[ip2]
+            z3, z4 = mesh.z[ip3], mesh.z[ip4]
+
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
-                
+
                 for m=2:ngl-1
                     ζ = lgl.ξ[m];
-                    
+
                     mesh.x_ho[ip] = (x1*(1 - ξ)*(1 - ζ)*0.25
                                         + x2*(1 + ξ)*(1 - ζ)*0.25
-                                + x3*(1 + ξ)*(1 + ζ)*0.25			
+                                + x3*(1 + ξ)*(1 + ζ)*0.25
                                 + x4*(1 - ξ)*(1 + ζ)*0.25)
-                    
+
                     mesh.y_ho[ip] =  (y1*(1 - ξ)*(1 - ζ)*0.25
 		                      + y2*(1 + ξ)*(1 - ζ)*0.25
 		                      + y3*(1 + ξ)*(1 + ζ)*0.25
 		                      + y4*(1 - ξ)*(1 + ζ)*0.25)
+
+                    # Bilinear in 3D for a manifold element; the radial snap
+                    # onto the shell happens once, afterwards.
+                    if mesh.lmanifold
+                        mesh.z_ho[ip] = (z1*(1 - ξ)*(1 - ζ)*0.25
+                                       + z2*(1 + ξ)*(1 - ζ)*0.25
+                                       + z3*(1 + ξ)*(1 + ζ)*0.25
+                                       + z4*(1 - ξ)*(1 + ζ)*0.25)
+                    end
 
                     mesh.poin_in_face[iface_g, l, m] = ip
                     #NEW ORDERING
@@ -5324,11 +5476,13 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
 
 
         # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
+        # A 2D manifold needs three columns even though nsd == 2.
+        ncoord = mesh.lmanifold ? 3 : Int64(mesh.nsd)
+        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), ncoord)
         mesh.coords[:,1] = mesh.x[:]
-        if mesh.nsd > 1
+        if ncoord > 1
             mesh.coords[:,2] = mesh.y[:]
-            if mesh.nsd > 2
+            if ncoord > 2
                 mesh.coords[:,3] = mesh.z[:]
             end
         end

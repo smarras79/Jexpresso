@@ -61,7 +61,7 @@ mutable struct St_sphere_params{TFloat}
 end
 
 
-function build_sphere_params(mesh::St_mesh_sphere, metrics::St_sphere_metrics, inputs;
+function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                              neqs = 4, TF = TFloat)
 
     ngl = Int(mesh.ngl)
@@ -90,7 +90,7 @@ end
 # qe   npoin × (neqs+1) reference state handed to the user callbacks
 #---------------------------------------------------------------------------------
 function sphere_rhs!(RHS, q, qe,
-                     mesh::St_mesh_sphere,
+                     mesh::St_mesh,
                      metrics::St_sphere_metrics,
                      sp::St_sphere_params,
                      SVT)
@@ -218,7 +218,7 @@ end
 # which is the L² projection back onto the continuous space and therefore
 # conserves ∫q exactly — the filter must not create or destroy mass.
 #---------------------------------------------------------------------------------
-function sphere_filter!(q, mesh::St_mesh_sphere, metrics::St_sphere_metrics, sp::St_sphere_params)
+function sphere_filter!(q, mesh::St_mesh, metrics::St_sphere_metrics, sp::St_sphere_params)
 
     sp.lfilter || return q
 
@@ -286,7 +286,7 @@ end
 # same mass-weighted direct stiffness average used by the filter, so ζ is a
 # proper nodal field on the shell rather than a discontinuous per-element one.
 #---------------------------------------------------------------------------------
-function sphere_relative_vorticity!(ζ, q, mesh::St_mesh_sphere,
+function sphere_relative_vorticity!(ζ, q, mesh::St_mesh,
                                     metrics::St_sphere_metrics, sp::St_sphere_params)
 
     ngl = Int(mesh.ngl)

@@ -168,7 +168,7 @@ function galewsky_params(mesh, inputs)
 end
 
 
-function initialize(SD::NSD_2D, PT, mesh::St_mesh_sphere, inputs, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)

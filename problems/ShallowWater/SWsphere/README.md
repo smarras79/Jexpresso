@@ -19,26 +19,32 @@ initial condition.
 
 ## Run it
 
+The cubed-sphere grid ships with the case (`cubed_sphere.msh`: 600 quads, 602
+vertices, 10 elements per panel edge), so there is nothing to generate first.
+
 ```bash
-# 1. get a closed, all-quadrilateral cubed-sphere grid (no gmsh needed)
-julia --project=. tools/generate_cubed_sphere.jl 10 6.371e6 ./meshes/gmsh_grids/cubed_sphere.msh
-
-#    ...or build it with gmsh from the .geo next to this README
-# gmsh -2 problems/ShallowWater/SWsphere/cubed_sphere.geo \
-#      -format msh2 -o ./meshes/gmsh_grids/cubed_sphere.msh
-
-# 2. build the high-order grid
 julia --project=.
 julia> using Jexpresso
 julia> Jexpresso.run_case("ShallowWater", "SWsphere")
 ```
 
+To regenerate the grid at a different resolution, edit `n` in the `.geo` next
+to this README and run gmsh:
+
+```bash
+gmsh -2 problems/ShallowWater/SWsphere/cubed_sphere.geo \
+     -o problems/ShallowWater/SWsphere/cubed_sphere.msh
+```
+
+Any gmsh output format works — MSH 2.2 or 4.1, parametric nodes or not — because
+the file is read by GridapGmsh, i.e. by gmsh itself, exactly like every other
+Jexpresso case.
+
 > **Run this in a fresh Julia session after pulling.** `run_case` re-includes
 > `run.jl`, `problems/drivers.jl` and the case's `user_*.jl`, but *not* the rest
-> of the module: `src/kernel/mesh/sphere_mesh.jl` and `src/io/write_output.jl`
-> are only evaluated when `Jexpresso` itself is loaded. A session opened before
-> you pulled will run the new `drivers.jl` against the old module and die with
-> `UndefVarError: mod_mesh_sphere_driver not defined in Jexpresso`.
+> of the module, which is only evaluated when `Jexpresso` itself is loaded. A
+> session opened before you pulled will run the new `drivers.jl` against the old
+> module and die with `UndefVarError`.
 
 Output, in `problems/ShallowWater/SWsphere/output/`:
 
@@ -77,11 +83,14 @@ sub-element boundaries, so the LGL point distribution is what you see.
 A spherical shell is a **2D manifold embedded in 3D**, and the existing 2D gmsh
 path in `src/kernel/mesh/mesh.jl` cannot represent one: it stores only `(x,y)`
 per node and interpolates only `(x,y)` when it adds the high-order points, which
-would collapse the sphere onto its equatorial disc. So the shell gets its own
-builder:
+would collapse the sphere onto its equatorial disc. The **grid** is therefore
+read by the ordinary gmsh path, which recognises a 2D manifold embedded in 3D
+from the model itself and keeps `z`; everything downstream of the grid is what
+stays specific to the manifold:
 
-* `src/kernel/mesh/sphere_mesh.jl` — reads the linear quad shell (`MSH 2.2` and
-  `MSH 4.1` ASCII), populates it with LGL points, verifies it.
+* `src/kernel/mesh/mesh.jl` — `mod_mesh_read_gmsh!` sets `mesh.lmanifold`,
+  interpolates the LGL nodes in (x,y,z) and snaps them onto the shell
+  (`project_nodes_to_shell!`). No separate reader, no separate mesh type.
 * `src/kernel/mesh/sphere_metrics.jl` — the **metric terms of the manifold**
   (contravariant basis, surface Jacobian) and the diagonal mass matrix.
 * `src/kernel/operators/sphere_rhs.jl` — the **SEM right-hand side**: surface
@@ -92,54 +101,61 @@ builder:
 * `user_flux.jl` / `user_source.jl` — the equations (see below).
 * `src/io/write_output.jl` — `write_vtk_sphere_grid`, next to the existing
   `write_vtk_grid_only` writers.
-* `tools/generate_cubed_sphere.jl` — equiangular gnomonic cubed-sphere generator.
 * `test/test_sphere_mesh.jl` — standalone tests (`julia --project=. test/test_sphere_mesh.jl`).
 
 ### The node numbering, which is the delicate part
 
 The shell is **closed**: it has no boundary, so there is no "outer edge" to
 anchor a numbering to, and every edge is an interior edge shared by exactly two
-elements. Four things are done about that.
+elements. Get this wrong and the panel seams are numbered twice: the grid still
+*looks* watertight in ParaView, but CG/SEM assembly across every seam is
+silently wrong.
 
-1. **Coincident vertices are merged first.** A cubed-sphere `.msh` produced
-   panel by panel very often carries *duplicate* nodes along the panel seams.
-   Read naively, such a grid is six disconnected patches that merely look
-   watertight, and every CG/SEM assembly across a seam is silently wrong. The
-   merge (spatial hash, tolerance `:node_merge_tol` relative to the radius) is
-   what turns it into one shell. If your file is already watertight the merge is
-   a no-op and says so.
+None of it needs special handling. Gridap builds the element/edge topology from
+the node ids in the `.msh`, so a **unique edge table is what the reader already
+has**, and `add_high_order_nodes_edges!` creates the LGL points once per unique
+edge and hands the same ids to both neighbouring elements. Continuity across a
+seam is therefore *node identity*, exactly as it is in the interior of any flat
+grid — there is nothing special about a seam.
 
-2. **High-order edge nodes are created once per _unique_ edge**, in a canonical
-   direction, and the two neighbouring elements both point at those same nodes —
-   reversing their traversal when they walk the edge the other way. Continuity
-   across a seam is therefore *node identity*, not a floating-point coincidence.
-   Creating the points per element instead would duplicate every seam node,
-   which is the classic failure mode on a closed surface.
+Two consequences worth knowing:
 
-3. **Every quad is re-oriented outward** (normal away from the centre), because
-   gmsh gives no global orientation guarantee on a multi-panel surface, and the
-   metric terms and the tangent-plane velocity basis to come will need a
-   right-handed `(i,j) → outward normal` frame in every element.
+1. **Your `.msh` must be watertight.** It is the grid file, not the reader, that
+   decides whether the six panels share their seam nodes. The `.geo` shipped
+   here builds all six surfaces on the *same* twelve arcs and eight corner
+   points, so gmsh emits one node per seam location. A file built panel by panel
+   as six independent surfaces is six disconnected patches, and Jexpresso will
+   read it faithfully as six disconnected patches. Fix it in gmsh (share the
+   curves) rather than stitching it back together at read time — which is what
+   the old `:lmerge_coincident_nodes` did, and why it is gone.
 
-4. **Everything is then verified** (`check_sphere_mesh`, switch `:lcheck_grid`).
-   Each test prints `PASS`/`FAIL`:
+2. **The node count is the check.** On a closed shell
+
+   ```
+   npoin = npoin_linear + nedges*(ngl-2) + nelem*(ngl-2)²
+   ```
+
+   holds *only* if every unique edge contributed its high-order nodes exactly
+   once. For the shipped grid at `:nop => 5`: `602 + 1200·4 + 600·16 = 15002`,
+   with `V - E + F = 602 - 1200 + 600 = 2`. `test/test_sphere_mesh.jl` asserts
+   both, plus that no two nodes are coincident, at several polynomial orders and
+   for both `MSH 2.2` and `MSH 4.1`-with-parametric-nodes files.
+
+The metrics are verified separately at run time (`check_sphere_metrics`, switch
+`:lcheck_grid`), and each test prints `PASS`/`FAIL`:
 
    | test | what it proves |
    |---|---|
-   | T1 | every unique edge is used by exactly 2 elements → closed, manifold |
-   | T2 | `V - E + F = 2` → a genus-0 closed surface, not a torn/duplicated one |
-   | T3 | every edge traversed once in each direction → globally consistent orientation |
-   | T4 | the element graph is one connected component → the panels really are joined |
-   | T5 | every index in `1:npoin` is used, and `npoin` is exactly `npoin_linear + nedges*(ngl-2) + nelem*(ngl-2)²` |
-   | T6 | no two distinct node indices sit at the same point → no seam numbered twice |
-   | T7 | every node lies on the shell to round-off |
-   | T8 | no folded/inverted sub-cell |
-   | T9 | two elements sharing an edge list the **same** node ids along it |
+   | M1 | metric identities `aⁱ·a_j = δⁱⱼ` |
+   | M2 | the contravariant basis is tangential to the shell |
+   | M3 | the outward unit normal satisfies `n̂·x̂ = 1` |
+   | M4 | `Σ M[ip] = 4πR²` — the SEM quadrature integrates the sphere exactly |
+   | M5 | curvature identity `∇ₛ·(J aⁱ)/J = -(2/R) n̂` |
 
-   T5, T6 and T9 are the ones that catch a torn seam. `:lstop_on_bad_grid`
-   (default `true`) aborts the run if any of them fails.
+   M4 is the sharpest of these: it is a single number that fails immediately if
+   any high-order node is misplaced or any seam is numbered twice.
+   `:lstop_on_bad_grid` (default `true`) aborts the run if any test fails.
 
-   The shell area is also reported against `4πR²`; it converges with `:nop`.
 
 ### Geometry of the high-order points
 
@@ -268,7 +284,7 @@ to the state** after each step, Eqs (9)-(11):
 (φu)ⁿ⁺¹_c = P (φu)ⁿ⁺¹_u ,   P = I - x xᵀ/r² ,   μ = -(φu)ⁿ⁺¹_u·x / r²
 ```
 
-That is `project_momentum_to_sphere!` in `src/kernel/mesh/sphere_mesh.jl`.
+That is `project_momentum_to_sphere!` in `src/kernel/mesh/sphere_metrics.jl`.
 
 But `μ` also has a **closed pointwise form**, which is what lets it live in a
 pointwise source at all. Requiring `x·∂(φu)/∂t = 0` and taking `x·` of the
@@ -396,6 +412,6 @@ metrics at once.
    the self-contained SSP-RK3 here.
 2. The viscous term `δν∇²(φu)` of Eq. (8b) — `:lvisc` is wired to the deck but
    the Laplacian on the manifold is not implemented.
-3. MPI: the shell path is serial today (`mod_mesh_sphere_driver` says so).
+3. MPI: the shell path is serial today (the `:lspherical_shell` branch of `problems/drivers.jl` says so).
 4. The reference diagnostic of the test is relative vorticity at day 6; that
    needs `∇ₛ×u` on the manifold, which the metrics now make straightforward.

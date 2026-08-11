@@ -649,20 +649,20 @@ end
 
 
 #---------------------------------------------------------------------------------
-# VTK output of the HIGH-ORDER SPHERICAL SHELL grid built by
-# src/kernel/mesh/sphere_mesh.jl.
+# VTK output of the HIGH-ORDER SPHERICAL SHELL grid.
 #
-# The shell is a 2D manifold embedded in 3D and is carried by its own struct
-# (St_mesh_sphere), not by St_mesh, so these are separate methods rather than
-# another write_vtk_grid_only dispatch. The convention is otherwise identical
+# The shell is an ordinary St_mesh with `lmanifold == true`, built by the same
+# gmsh path as every other grid. This is a separate writer only because it
+# draws the LGL sub-cells in 3D and adds the shell diagnostics below; the
+# convention is otherwise identical
 # to write_vtk_grid_only above: each spectral element (ngl × ngl LGL nodes) is
 # written as (ngl-1)² linear VTK_QUAD sub-cells whose corners ARE the LGL
 # nodes. That is what lets you SEE the actual node distribution in ParaView —
 # a VTK_LAGRANGE_QUADRILATERAL would be re-tessellated by ParaView and would
 # hide exactly the thing we want to inspect.
 #
-# Serial (vtk_grid, not pvtk_grid) because the shell grid builder itself is
-# serial for now; see mod_mesh_sphere_driver.
+# Serial (vtk_grid, not pvtk_grid) because the shell path itself is serial for
+# now; see the :lspherical_shell branch of problems/drivers.jl.
 #
 # What is written, and why it is the useful thing to look at when debugging
 # the numbering of a CLOSED shell:
@@ -677,7 +677,7 @@ end
 #     radius     |x|; must be flat at R everywhere.
 #   cell data
 #     iel        owning element
-#     panel      gmsh physical/entity tag (the cubed-sphere panel)
+#     panel      cubed-sphere panel 1..6, derived from the element centroid
 #
 # ONE file per run, like write_vtk_grid_only for the flat cases. The
 # sub-elements carry the high-order structure: open it in ParaView with
@@ -685,7 +685,27 @@ end
 #---------------------------------------------------------------------------------
 export write_vtk_sphere_grid
 
-function write_vtk_sphere_grid(mesh::St_mesh_sphere,
+# Which of the six cubed-sphere panels an element belongs to: the face of the
+# inscribed cube its centroid points at, i.e. whichever Cartesian component
+# dominates, and its sign. 1..6 = +x, -x, +y, -y, +z, -z.
+function _cubed_sphere_panel(mesh::St_mesh, iel::Int)
+    ngl = mesh.ngl
+    cx = cy = cz = 0.0
+    @inbounds for j = 1:ngl, i = 1:ngl
+        ip = mesh.connijk[iel, i, j]
+        cx += mesh.x[ip]; cy += mesh.y[ip]; cz += mesh.z[ip]
+    end
+    ax, ay, az = abs(cx), abs(cy), abs(cz)
+    if ax >= ay && ax >= az
+        return cx >= 0 ? 1 : 2
+    elseif ay >= az
+        return cy >= 0 ? 3 : 4
+    else
+        return cz >= 0 ? 5 : 6
+    end
+end
+
+function write_vtk_sphere_grid(mesh::St_mesh,
                                file_name::String,
                                OUTPUT_DIR::String;
                                q       = nothing,
@@ -722,7 +742,13 @@ function write_vtk_sphere_grid(mesh::St_mesh_sphere,
 
                 cells[isel]    = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 cell_iel[isel] = Float64(iel)
-                cell_pan[isel] = Float64(mesh.elem_tag[iel])
+                # Cubed-sphere panel id, derived from the element centroid
+                # rather than carried on the mesh: the panel is whichever
+                # Cartesian axis dominates, and its sign. This used to be the
+                # gmsh physical tag stored in St_mesh_sphere.elem_tag; deriving
+                # it here keeps the panel field in ParaView without putting a
+                # sphere-only column on the shared St_mesh.
+                cell_pan[isel] = Float64(_cubed_sphere_panel(mesh, iel))
                 isel += 1
             end
         end
@@ -737,7 +763,14 @@ function write_vtk_sphere_grid(mesh::St_mesh_sphere,
                     cells, compress = false)
 
     vtkf["ip",        VTKPointData()] = Float64.(collect(1:mesh.npoin))
-    vtkf["node_type", VTKPointData()] = Float64.(mesh.node_type)
+    # 0 = linear vertex, 1 = edge node, 2 = element interior. Read off the
+    # global numbering rather than stored: mod_mesh_read_gmsh! lays the nodes
+    # out as [vertices | edge nodes | interior nodes], in that order.
+    _nedge_nodes = mesh.nedges*(mesh.ngl - 2)
+    vtkf["node_type", VTKPointData()] =
+        [ip <= mesh.npoin_linear                 ? 0.0 :
+         ip <= mesh.npoin_linear + _nedge_nodes  ? 1.0 : 2.0
+         for ip = 1:mesh.npoin]
     vtkf["lon",       VTKPointData()] = mesh.lon .* (180.0/π)
     vtkf["lat",       VTKPointData()] = mesh.lat .* (180.0/π)
     vtkf["radius",    VTKPointData()] = sqrt.(mesh.x.^2 .+ mesh.y.^2 .+ mesh.z.^2)
