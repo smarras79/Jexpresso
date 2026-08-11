@@ -56,8 +56,9 @@ export sphere_diagnostics
 function sphere_cfl_dt(q::AbstractMatrix{TF}, mesh::St_mesh,
                        metrics::St_sphere_metrics{TF}; cfl = 0.35) where {TF}
 
-    cmax = 0.0
-    @inbounds for ip = 1:mesh.npoin
+    cmax = zero(TF)
+    npoin = Int(mesh.npoin)          # ::Any field -> hoist out of the loop bound
+    @inbounds for ip = 1:npoin
         φ = q[ip,1]
         φ > 0 || error(string(" # ERROR sphere_time_loop.jl: non-positive geopotential φ = ", φ,
                               " at node ", ip, ". The state has gone unphysical."))
@@ -74,13 +75,15 @@ end
 function sphere_diagnostics(q::AbstractMatrix{TF}, mesh::St_mesh,
                             metrics::St_sphere_metrics{TF}) where {TF}
 
-    mass = 0.0
-    ener = 0.0
-    @inbounds for ip = 1:mesh.npoin
+    mass  = zero(TF)
+    ener  = zero(TF)
+    npoin = Int(mesh.npoin)          # ::Any field -> hoist out of the loop bound
+    M     = metrics.M
+    @inbounds for ip = 1:npoin
         φ  = q[ip,1]
         m2 = q[ip,2]^2 + q[ip,3]^2 + q[ip,4]^2
-        mass += metrics.M[ip]*φ
-        ener += metrics.M[ip]*(0.5*m2/φ + 0.5*φ*φ)
+        mass += M[ip]*φ
+        ener += M[ip]*(0.5*m2/φ + 0.5*φ*φ)
     end
     drift = sphere_normal_momentum(q, mesh; ivar = 2)
 

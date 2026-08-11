@@ -371,12 +371,23 @@ largest component removed, max|(φu)·x̂| — a drift diagnostic: watch it grow
 you are watching the discretization leave the manifold.
 """
 function project_momentum_to_sphere!(u::AbstractMatrix, mesh::St_mesh; ivar::Int = 2)
+    # Typed function barrier: St_mesh fields are ::Any (Base.@kwdef with no
+    # annotations), so reading mesh.x[ip] in the node loop would box on every
+    # access. This runs four times per time step.
+    return _project_momentum_kernel!(u, mesh.x, mesh.y, mesh.z, Int(mesh.npoin), ivar)
+end
 
-    dmax = 0.0
+function _project_momentum_kernel!(u::AbstractMatrix{TF},
+                                   xn::AbstractVector{TF},
+                                   yn::AbstractVector{TF},
+                                   zn::AbstractVector{TF},
+                                   npoin::Int, ivar::Int) where {TF}
 
-    @inbounds for ip = 1:mesh.npoin
+    dmax = zero(TF)
 
-        x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+    @inbounds for ip = 1:npoin
+
+        x, y, z = xn[ip], yn[ip], zn[ip]
         r2      = x*x + y*y + z*z
 
         mx = u[ip, ivar]
@@ -405,10 +416,17 @@ WITHOUT modifying anything. `project_momentum_to_sphere!` returns the same
 quantity as it removes it.
 """
 function sphere_normal_momentum(u::AbstractMatrix, mesh::St_mesh; ivar::Int = 2)
+    return _sphere_normal_momentum(u, mesh.x, mesh.y, mesh.z, Int(mesh.npoin), ivar)
+end
 
-    dmax = 0.0
-    @inbounds for ip = 1:mesh.npoin
-        x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+function _sphere_normal_momentum(u::AbstractMatrix{TF},
+                                 xn::AbstractVector{TF},
+                                 yn::AbstractVector{TF},
+                                 zn::AbstractVector{TF},
+                                 npoin::Int, ivar::Int) where {TF}
+    dmax = zero(TF)
+    @inbounds for ip = 1:npoin
+        x, y, z = xn[ip], yn[ip], zn[ip]
         dmax = max(dmax, abs(u[ip, ivar]*x + u[ip, ivar+1]*y + u[ip, ivar+2]*z) /
                          sqrt(x*x + y*y + z*z))
     end
