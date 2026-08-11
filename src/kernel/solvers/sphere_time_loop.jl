@@ -190,6 +190,15 @@ function _sphere_march!(mesh::St_mesh_sphere,
     RHS = zeros(Float64, npoin, neqs)
     q1  = copy(q.qn)
     q2  = copy(q.qn)
+    # relative vorticity: the field the Galewsky test is judged on. h barely
+    # moves while the instability develops, so a height plot makes the roll-up
+    # nearly invisible; ζ shows it.
+    ζ   = zeros(Float64, npoin)
+    # ζ at t=0, so the diagnostics can report the PERTURBATION vorticity.
+    # max|ζ| alone is dominated by the jet's own shear (~1e-4 everywhere in the
+    # band from the start) and barely moves; max|ζ-ζ₀| isolates what the
+    # instability is actually doing and grows by orders of magnitude.
+    ζ0  = zeros(Float64, npoin)
     qn  = q.qn
     qe  = q.qe
 
@@ -197,8 +206,11 @@ function _sphere_march!(mesh::St_mesh_sphere,
     h0max = maximum(@view qn[1:npoin, 1])
 
     # the initial condition
+    sphere_relative_vorticity!(ζ, q.qn, mesh, metrics, sp)
+    copyto!(ζ0, ζ)
     _sphere_write!(q, mesh, inputs, OUTPUT_DIR, iout, t, SVT; verbose = verbose,
-                   lwrite = get(inputs, :lwrite_initial, true) == true)
+                   lwrite = get(inputs, :lwrite_initial, true) == true,
+                   extra = ("vorticity" => ζ,))
 
     driftmax = 0.0
 
@@ -234,9 +246,18 @@ function _sphere_march!(mesh::St_mesh_sphere,
         #--- diagnostics
         if verbose && (istep % nprint == 0 || istep == nsteps)
             mass, ener, drift = sphere_diagnostics(qn, mesh, metrics)
-            hmax = maximum(@view qn[1:npoin, 1])
-            @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max φ = %.4f\n",
-                    istep, t, t/86400, (mass-mass0)/mass0, (ener-ener0)/ener0, drift, hmax)
+            # max|ζ| is the instability indicator: for the Galewsky test the
+            # height field barely moves while the perturbation grows, so |ζ|
+            # rising by orders of magnitude is how the barotropic instability
+            # announces itself long before it is visible in h.
+            sphere_relative_vorticity!(ζ, qn, mesh, metrics, sp)
+            ζmax = maximum(abs, ζ)
+            dζ   = 0.0
+            for ip = 1:npoin
+                dζ = max(dζ, abs(ζ[ip] - ζ0[ip]))
+            end
+            @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max|ζ| = %9.3e  max|ζ-ζ₀| = %9.3e\n",
+                    istep, t, t/86400, (mass-mass0)/mass0, (ener-ener0)/ener0, drift, ζmax, dζ)
             flush(stdout)
             isfinite(mass) || error(" # ERROR sphere_time_loop.jl: the solution has gone non-finite. Reduce :cfl, or switch :lfilter on.")
         end
@@ -244,7 +265,9 @@ function _sphere_march!(mesh::St_mesh_sphere,
         #--- output
         if t >= tnext - 1.0e-9*Δt && iout < nout
             iout += 1
-            _sphere_write!(q, mesh, inputs, OUTPUT_DIR, iout, t, SVT; verbose = verbose)
+            sphere_relative_vorticity!(ζ, qn, mesh, metrics, sp)
+            _sphere_write!(q, mesh, inputs, OUTPUT_DIR, iout, t, SVT; verbose = verbose,
+                           extra = ("vorticity" => ζ,))
             tnext += outdt
         end
     end
@@ -265,16 +288,20 @@ end
 # write one VTK file. Numbered files, one per output time, as the flat cases do.
 #
 function _sphere_write!(q, mesh::St_mesh_sphere, inputs, OUTPUT_DIR::String,
-                        iout::Int, t::Float64, SVT; verbose = true, lwrite = true)
+                        iout::Int, t::Float64, SVT; verbose = true, lwrite = true,
+                        extra = nothing)
 
     lwrite || return nothing
 
+    # λ and φ let user_uout! write the velocity PROJECTED ONTO THE SHELL
+    # (zonal, meridional, radial) instead of raw Cartesian components.
     for ip = 1:mesh.npoin
-        user_uout!(ip, SVT, @view(q.qout[ip,:]), @view(q.qn[ip,:]), @view(q.qe[ip,:]))
+        user_uout!(ip, SVT, @view(q.qout[ip,:]), @view(q.qn[ip,:]), @view(q.qe[ip,:]);
+                   lon = mesh.lon[ip], lat = mesh.lat[ip])
     end
 
     fname = iout == 0 ? "sphere_grid_ho" : @sprintf("sphere_%04d", iout)
-    write_vtk_sphere_grid(mesh, fname, OUTPUT_DIR; q = q, verbose = false)
+    write_vtk_sphere_grid(mesh, fname, OUTPUT_DIR; q = q, extra = extra, verbose = false)
 
     verbose && @printf(" #   wrote %s.vtu at t = %.1f s\n", fname, t)
     return nothing

@@ -53,8 +53,18 @@ LGL node is a corner of a sub-cell and the linear elements are never written on
 their own — carrying the solution as point data:
 
 * `phi, phiu, phiv, phiw` — the conservative state actually integrated
-* `h, u, v, w` — the primitives, what you plot
-* `velocity` — a true VTK vector, ready to glyph or streamline
+* `h, u, v, w` — the primitives, **with the velocity PROJECTED ONTO THE SHELL**:
+  `u` is zonal (eastward), `v` meridional (northward), `w` radial. Plotting the
+  raw Cartesian `uₓ` over a sphere shows a dipole straddling the prime meridian
+  — an artefact of the frame, not the flow — where the zonal component shows the
+  jet as the band it actually is. `w` is the velocity form of the constraint and
+  must be ~0 everywhere.
+* `vorticity` — relative vorticity `ζ = n̂·(∇ₛ×u)`. **This is the field the test
+  is judged on**: `h` barely moves while the instability develops, so a height
+  plot makes the roll-up nearly invisible.
+* `velocity` — a true VTK vector for glyphs/streamlines. Built from the
+  conservative state, so it is genuinely Cartesian; `u,v,w` above are tangent
+  components and glyphing *those* would point every arrow nowhere.
 * `momentum_normal` = `(φu)·x̂` — the constraint; **this is how you see whether
   the flow is leaving the shell**
 * `ip`, `node_type`, `lon`, `lat`, `radius`, and the cell fields `iel`, `panel`
@@ -336,7 +346,17 @@ stage's flux evaluation. `:Δt` is optional — omit it and the step comes from
 `Δt = :cfl · Δmin / max(|u| + √φ)`.
 
 Diagnostics printed every `:ndiagnostics_prints` steps: mass, energy,
-`max|(φu)·x̂|` (the constraint), and the largest `φ`.
+`max|(φu)·x̂|` (the constraint), `max|ζ|`, and `max|ζ-ζ₀|`.
+
+The last one is the instability indicator. `max|ζ|` on its own is dominated by
+the jet's own shear (~1e-4 across the band from t=0) and only rises ~30% over
+six days, which understates what is happening; differencing against the initial
+field isolates the growing perturbation.
+
+The deck runs the full **144 h** of the published test. The perturbation is
+linearly unstable but grows slowly: at one day the jet still looks laminar, and
+the vortex train only appears around day 4–6. Shortening `:tend` hides the very
+thing the test exists to show.
 
 ## How this was checked
 

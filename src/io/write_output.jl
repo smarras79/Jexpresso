@@ -679,6 +679,7 @@ function write_vtk_sphere_grid(mesh::St_mesh_sphere,
                                file_name::String,
                                OUTPUT_DIR::String;
                                q       = nothing,
+                               extra   = nothing,
                                verbose = true)
 
     if !isdir(OUTPUT_DIR)
@@ -763,19 +764,27 @@ function write_vtk_sphere_grid(mesh::St_mesh_sphere,
 
         #
         # The velocity as a genuine VTK VECTOR, so it can be glyphed or
-        # streamlined without a Calculator filter. The SWsphere state carries
-        # the FULL CARTESIAN velocity — that is the whole point of the
-        # formulation, since the Lagrange multiplier exists to constrain its
-        # normal component — so the three output components are already the
-        # Cartesian ones and go out as they are.
+        # streamlined without a Calculator filter.
         #
-        iu = findfirst(isequal("u"), q.qoutvars)
-        iv = findfirst(isequal("v"), q.qoutvars)
-        iw = findfirst(isequal("w"), q.qoutvars)
-        if iu !== nothing && iv !== nothing && iw !== nothing && iw <= size(q.qout, 2)
-            vtkf["velocity", VTKPointData()] = (Float64.(@view q.qout[1:mesh.npoin, iu]),
-                                                Float64.(@view q.qout[1:mesh.npoin, iv]),
-                                                Float64.(@view q.qout[1:mesh.npoin, iw]))
+        # It is built from the CONSERVATIVE state, u = (φu,φv,φw)/φ, NOT from
+        # q.qout: qout holds the velocity projected onto the shell (zonal,
+        # meridional, radial), which is what a human wants to read but is NOT a
+        # Cartesian triple — glyphing it would point every arrow in a
+        # meaningless direction.
+        #
+        iφ  = findfirst(isequal("phi"),  q.qvars)
+        iφu = findfirst(isequal("phiu"), q.qvars)
+        if iφ !== nothing && iφu !== nothing && iφu+2 <= size(q.qn, 2)
+            vx = Vector{Float64}(undef, mesh.npoin)
+            vy = Vector{Float64}(undef, mesh.npoin)
+            vz = Vector{Float64}(undef, mesh.npoin)
+            for ip = 1:mesh.npoin
+                φp = q.qn[ip, iφ]
+                vx[ip] = q.qn[ip, iφu]/φp
+                vy[ip] = q.qn[ip, iφu+1]/φp
+                vz[ip] = q.qn[ip, iφu+2]/φp
+            end
+            vtkf["velocity", VTKPointData()] = (vx, vy, vz)
         end
 
         #
@@ -790,6 +799,16 @@ function write_vtk_sphere_grid(mesh::St_mesh_sphere,
                 nrm[ip] = (q.qn[ip,2]*x + q.qn[ip,3]*y + q.qn[ip,4]*z)/sqrt(x*x + y*y + z*z)
             end
             vtkf["momentum_normal", VTKPointData()] = nrm
+        end
+    end
+
+    #
+    # Anything else the caller wants on the file (relative vorticity, …).
+    #
+    if extra !== nothing
+        for (name, vals) in extra
+            vtkf[String(name), VTKPointData()] = Float64.(@view vals[1:mesh.npoin])
+            nq += 1
         end
     end
 
