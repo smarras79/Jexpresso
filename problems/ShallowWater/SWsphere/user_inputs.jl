@@ -149,16 +149,19 @@ function user_inputs()
         # so an absent :Δt cannot be told from a deliberate one — and taking
         # 0.1 s literally turns this one-day run into 864 000 steps.
         #
-        # The published test runs to 144 h. This deck stops at 24 h so a first
-        # run finishes quickly; raise :tend to 518400.0 for the real thing.
+        # The instability needs TIME: the perturbation is linearly unstable but
+        # grows slowly, and the jet only rolls up into the published train of
+        # vortices around day 4-6. A one-day run shows a laminar jet and looks
+        # like nothing is happening. :tend is therefore the full 144 h of the
+        # test (Galewsky et al. 2004; Marras et al. section 5).
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(),      # ignored: see above
         :lcfl_dt              => true,           # take Δt from the CFL condition
         :cfl                  => 0.35,
         :tinit                => 0.0,
-        :tend                 => 86400.0,        # 1 day (the test uses 518400.0 = 6 days)
-        :ndiagnostics_outputs => 8,              # VTK dumps between tinit and tend
-        :ndiagnostics_prints  => 25,             # steps between diagnostic lines
+        :tend                 => 518400.0,       # 144 h = 6 days, as in the test
+        :ndiagnostics_outputs => 24,             # a VTK dump every 6 h
+        :ndiagnostics_prints  => 200,            # steps between diagnostic lines
         :case                 => "swsphere",
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,

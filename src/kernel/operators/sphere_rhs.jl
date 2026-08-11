@@ -42,6 +42,7 @@ export build_sphere_params
 export sphere_rhs!
 export sphere_filter!
 export build_sphere_filter_matrix
+export sphere_relative_vorticity!
 
 
 #---------------------------------------------------------------------------------
@@ -265,4 +266,68 @@ function sphere_filter!(q, mesh::St_mesh_sphere, metrics::St_sphere_metrics, sp:
     end
 
     return q
+end
+
+
+#---------------------------------------------------------------------------------
+# sphere_relative_vorticity!(ζ, q, mesh, metrics)
+#
+# The RELATIVE VORTICITY of the tangential flow,
+#
+#   ζ = n̂ · (∇ₛ × u) ,   ∇ₛ × u = a¹ × ∂u/∂ξ + a² × ∂u/∂η ,
+#
+# with u = φu/φ the Cartesian velocity. This is the field the Galewsky test is
+# judged on — the paper (and Galewsky et al.) plot relative vorticity at day 6,
+# where the barotropic instability has rolled the jet into a train of vortices.
+# The height field barely moves by comparison, so h alone makes a developing
+# instability almost invisible.
+#
+# Computed element-wise from the metric terms and then made continuous with the
+# same mass-weighted direct stiffness average used by the filter, so ζ is a
+# proper nodal field on the shell rather than a discontinuous per-element one.
+#---------------------------------------------------------------------------------
+function sphere_relative_vorticity!(ζ, q, mesh::St_mesh_sphere,
+                                    metrics::St_sphere_metrics, sp::St_sphere_params)
+
+    ngl = Int(mesh.ngl)
+    dψ  = metrics.dψ
+    ω   = metrics.ω
+
+    acc = sp.acc                      # npoin × neqs scratch (column 1 only)
+    fill!(acc, zero(eltype(acc)))
+
+    @inbounds for iel = 1:mesh.nelem
+        for j = 1:ngl, i = 1:ngl
+
+            # ∂u/∂ξ and ∂u/∂η of the CARTESIAN velocity
+            dξx = dξy = dξz = 0.0
+            dηx = dηy = dηz = 0.0
+            for k = 1:ngl
+                ipk = mesh.connijk[iel,k,j]
+                φk  = q[ipk,1]
+                dξx += dψ[k,i]*q[ipk,2]/φk; dξy += dψ[k,i]*q[ipk,3]/φk; dξz += dψ[k,i]*q[ipk,4]/φk
+
+                ipl = mesh.connijk[iel,i,k]
+                φl  = q[ipl,1]
+                dηx += dψ[k,j]*q[ipl,2]/φl; dηy += dψ[k,j]*q[ipl,3]/φl; dηz += dψ[k,j]*q[ipl,4]/φl
+            end
+
+            a1x, a1y, a1z = metrics.dξdx[iel,i,j], metrics.dξdy[iel,i,j], metrics.dξdz[iel,i,j]
+            a2x, a2y, a2z = metrics.dηdx[iel,i,j], metrics.dηdy[iel,i,j], metrics.dηdz[iel,i,j]
+
+            cx = (a1y*dξz - a1z*dξy) + (a2y*dηz - a2z*dηy)
+            cy = (a1z*dξx - a1x*dξz) + (a2z*dηx - a2x*dηz)
+            cz = (a1x*dξy - a1y*dξx) + (a2x*dηy - a2y*dηx)
+
+            zt = cx*metrics.nx[iel,i,j] + cy*metrics.ny[iel,i,j] + cz*metrics.nz[iel,i,j]
+
+            acc[mesh.connijk[iel,i,j], 1] += ω[i]*ω[j]*metrics.Je[iel,i,j]*zt
+        end
+    end
+
+    @inbounds for ip = 1:mesh.npoin
+        ζ[ip] = acc[ip,1]*metrics.Minv[ip]
+    end
+
+    return ζ
 end
