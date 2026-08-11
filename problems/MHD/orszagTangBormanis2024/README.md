@@ -31,7 +31,76 @@ julia> Jexpresso.run_case("MHD", "orszagTangBormanis2024")
 ```
 
 Output is VTK in `./output/`, written every 0.05 time units:
-`ρ, u, v, w, p, Bx, By, Bz, ψ, T`.
+`ρ, u, v, w, p, Bx, By, Bz, ψ, T`, plus — because this case runs with
+`:visc_model => DSGS_MHD()` — one `mu_dsgs_<var>` point-data field per equation
+holding the DynSGS eddy viscosity actually applied on that step. Each file also
+carries the simulation time as `TimeValue` field data, so ParaView shows the
+physical time rather than the output counter.
+
+## Figures
+
+**The solver does not write the PNGs in this README.** With
+`:outformat => "vtk"` a run produces `iter_*.pvtu` (+ the `.vtu` pieces) and
+nothing else; the figures are rendered off-line from those files by
+
+```bash
+julia --project=. tools/plot_orszag_tang.jl
+```
+
+which picks the newest run under `output/MHD/orszagTangBormanis2024/`, reads the
+snapshots nearest $t = 0.7, 0.8, 0.9, 1.0$, and writes three 2×2 panels into
+`assets/`:
+
+| file | contents |
+|---|---|
+| `assets/MHD_OT_rho.png` | density, on the $[0.1,0.4]$ scale of Fig. 3 of the reference |
+| `assets/MHD_OT_By.png` | $B_y$, on a symmetric diverging scale shared by the four panels |
+| `assets/MHD_OT_mu_dsgs_By.png` | the DynSGS viscosity of the $B_y$ equation (log scale) with $B_y$ isolines on top |
+
+The third figure exists to answer a specific question — does the residual-based
+coefficient track the large gradients of $B_y$? — and a blocky log-scaled map is
+easy to over-read, so the script answers it numerically as well. Every run it
+prints these columns for the four times it plotted, comparing the per-element
+$\mu$ against the element-max $\lvert\nabla B_y\rvert$ on the $32\times32$
+element grid (Spearman rank correlation, because both fields are heavy-tailed
+and only the ordering is meaningful). Covering the whole run — re-run with
+`--times` to reproduce any row:
+
+| $t$ | $\min\mu$ | $\max\mu$ | decades spanned | fraction of elements within 1 decade of max | Spearman $\rho(\mu,\lvert\nabla B_y\rvert)$ |
+|---|---|---|---|---|---|
+| 0.05 | 9.8e-6 | 8.1e-4 | 1.9 | 0.19 | 0.41 |
+| 0.15 | 2.4e-6 | 9.2e-4 | 2.6 | 0.15 | **0.64** |
+| 0.25 | 3.1e-6 | 2.1e-3 | 2.8 | 0.27 | 0.41 |
+| 0.45 | 6.6e-6 | 1.8e-3 | 2.4 | 0.41 | 0.39 |
+| 0.65 | 8.4e-6 | 6.7e-4 | 1.9 | 0.66 | 0.32 |
+| 0.80 | 7.1e-6 | 1.2e-3 | 2.2 | 0.44 | 0.45 |
+| 1.00 | 1.8e-5 | 6.2e-4 | 1.5 | 0.75 | 0.26 |
+
+Read it as follows. The correlation is **positive at every time sampled**, so
+the coefficient does follow the magnetic-field gradients — but at $\rho = 0.26$
+to $0.64$ it is a moderate, not a tight, relationship, and that is the correct
+expectation: the sensor is the equation residual, i.e. local *under-resolution*,
+and a large gradient that the 4th-order operator resolves cleanly does not raise
+it. The correlation is strongest at $t \approx 0.15$, while the fronts are
+steepening and are the only under-resolved thing in the domain, and weakest at
+$t = 1$, by which time $128^2$ under-resolves the turbulence nearly everywhere —
+the same trend the "fraction within one decade of the max" column shows, rising
+from $0.15$ to $0.75$.
+
+What stays true throughout is the property that motivated the model: $\mu$ spans
+1.5–2.8 decades across the domain at every output time. A Smagorinsky constant
+spans none.
+
+Useful flags — `--dir` to point at a specific run, `--times a,b,c,d` for other
+snapshots, `--out` for a different destination, `--t0/--dtout` for output written
+before `TimeValue` was recorded (`iter_n` is then taken to be at
+`t0 + (n-1)·dtout`). Run with no arguments first; it prints the run directory and
+the time range it found.
+
+Jexpresso can also write a PNG per variable per output time directly, without
+post-processing, by setting `:outformat => "png"` in `user_inputs.jl` — that path
+already renders a `μ_dsgs_<var>` panel alongside the solution fields. It is a
+per-snapshot diagnostic, not the multi-time composite above.
 
 ## Initial condition (paper Eqs. 6–9)
 

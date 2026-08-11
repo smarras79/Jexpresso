@@ -368,12 +368,38 @@ using Jexpresso
 Jexpresso.run_case("MHD", "orszagTangBormanis2024")
 ```
 
+Stabilized with **DynSGS** — the residual-based, parameter-free dynamic SGS
+model of Marras, Nazarov & Giraldo (see [DSGS.md](DSGS.md)).
+
 Density at t = 0.7, 0.8, 0.9, 1.0, on the same 0.1-0.4 color scale as Fig. 3
 of the reference:
 
 <img src="assets/MHD_OT_rho.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
+
+The y magnetic field at the same times, on a symmetric color scale shared by
+the four panels:
+
+<img src="assets/MHD_OT_By.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+And the DynSGS eddy viscosity applied to the By equation (log scale), with By
+isolines drawn on top. The coefficient spans 1.5–2.8 decades across the domain —
+a global Smagorinsky constant spans none — and its rank correlation with |∇By|
+is positive at every output time (0.26–0.64, strongest while the fronts are
+steepening). See the
+[case README](problems/MHD/orszagTangBormanis2024/README.md#figures) for the
+measured table, which the plotting script reprints on every run.
+
+<img src="assets/MHD_OT_mu_dsgs_By.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+The solver writes VTK, not PNG. These three figures are rendered from a
+finished run by `julia --project=. tools/plot_orszag_tang.jl`; see the
+[case README](problems/MHD/orszagTangBormanis2024/README.md#figures).
 
 Test 7a: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
 
