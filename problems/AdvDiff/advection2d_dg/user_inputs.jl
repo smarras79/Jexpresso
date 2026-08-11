@@ -22,7 +22,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false, # DG Phase 5: inviscid; the viscous path is flag-gated (rhs.jl), not μ-gated
+        :lvisc                => false, # DG Phase 5: inviscid; the viscous path is flag-gated (rhs.jl), not μ-gated. 
+        # NOTE: :lkep must stay unset/false under DiscGal — the KEP volume path
+        # (_expansion_inviscid_KEP!) dispatches on AD and has no DiscGal method.
         :ivisc_equations      => [1],
         :μ                    => [0.1], #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
