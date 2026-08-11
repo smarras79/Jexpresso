@@ -133,7 +133,9 @@ const _CACHE_FINGERPRINT_KEYS = (
 # them — so a cached mesh or SEM file is only valid for the AD it was
 # built under. Without this key, flipping :AD inside one case directory
 # silently loads the other numbering's cache.
-const _CACHE_SCHEMA_VERSION = 4
+const _CACHE_SCHEMA_VERSION = 5 
+# 5: dg_face_* fields added to St_mesh — a pre-fields cache would restore 
+# them empty (haskey-skip) and silently decouple every element
 
 function _cache_fingerprint(inputs, nparts::Int)
     fp = Dict{String,Any}()
