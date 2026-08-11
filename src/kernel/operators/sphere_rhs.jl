@@ -323,45 +323,58 @@ end
 #---------------------------------------------------------------------------------
 function sphere_relative_vorticity!(ζ, q, mesh::St_mesh,
                                     metrics::St_sphere_metrics, sp::St_sphere_params)
+    # Typed function barrier; see the note above _sphere_rhs_kernel!. Without it
+    # this cost 86 MB per call (mesh.connijk / mesh.nelem / mesh.npoin are ::Any),
+    # and it is called at every diagnostics print and every output.
+    _sphere_vorticity_kernel!(ζ, q, mesh.connijk,
+                              Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
+                              metrics.dξdx, metrics.dξdy, metrics.dξdz,
+                              metrics.dηdx, metrics.dηdy, metrics.dηdz,
+                              metrics.nx, metrics.ny, metrics.nz,
+                              metrics.Je, metrics.Minv, metrics.dψ, metrics.ω,
+                              sp.acc)
+    return ζ
+end
 
-    ngl = Int(mesh.ngl)
-    dψ  = metrics.dψ
-    ω   = metrics.ω
+function _sphere_vorticity_kernel!(ζ::AbstractVector{TF}, q::AbstractMatrix{TF},
+                                   connijk, nelem::Int, ngl::Int, npoin::Int,
+                                   dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                                   nx, ny, nz, Je, Minv::AbstractVector{TF},
+                                   dψ, ω, acc::AbstractMatrix{TF}) where {TF}
 
-    acc = sp.acc                      # npoin × neqs scratch (column 1 only)
-    fill!(acc, zero(eltype(acc)))
+    fill!(acc, zero(TF))
 
-    @inbounds for iel = 1:mesh.nelem
+    @inbounds for iel = 1:nelem
         for j = 1:ngl, i = 1:ngl
 
             # ∂u/∂ξ and ∂u/∂η of the CARTESIAN velocity
-            dξx = dξy = dξz = 0.0
-            dηx = dηy = dηz = 0.0
+            dξx = dξy = dξz = zero(TF)
+            dηx = dηy = dηz = zero(TF)
             for k = 1:ngl
-                ipk = mesh.connijk[iel,k,j]
+                ipk = connijk[iel,k,j]
                 φk  = q[ipk,1]
                 dξx += dψ[k,i]*q[ipk,2]/φk; dξy += dψ[k,i]*q[ipk,3]/φk; dξz += dψ[k,i]*q[ipk,4]/φk
 
-                ipl = mesh.connijk[iel,i,k]
+                ipl = connijk[iel,i,k]
                 φl  = q[ipl,1]
                 dηx += dψ[k,j]*q[ipl,2]/φl; dηy += dψ[k,j]*q[ipl,3]/φl; dηz += dψ[k,j]*q[ipl,4]/φl
             end
 
-            a1x, a1y, a1z = metrics.dξdx[iel,i,j], metrics.dξdy[iel,i,j], metrics.dξdz[iel,i,j]
-            a2x, a2y, a2z = metrics.dηdx[iel,i,j], metrics.dηdy[iel,i,j], metrics.dηdz[iel,i,j]
+            a1x, a1y, a1z = dξdx[iel,i,j], dξdy[iel,i,j], dξdz[iel,i,j]
+            a2x, a2y, a2z = dηdx[iel,i,j], dηdy[iel,i,j], dηdz[iel,i,j]
 
             cx = (a1y*dξz - a1z*dξy) + (a2y*dηz - a2z*dηy)
             cy = (a1z*dξx - a1x*dξz) + (a2z*dηx - a2x*dηz)
             cz = (a1x*dξy - a1y*dξx) + (a2x*dηy - a2y*dηx)
 
-            zt = cx*metrics.nx[iel,i,j] + cy*metrics.ny[iel,i,j] + cz*metrics.nz[iel,i,j]
+            zt = cx*nx[iel,i,j] + cy*ny[iel,i,j] + cz*nz[iel,i,j]
 
-            acc[mesh.connijk[iel,i,j], 1] += ω[i]*ω[j]*metrics.Je[iel,i,j]*zt
+            acc[connijk[iel,i,j], 1] += ω[i]*ω[j]*Je[iel,i,j]*zt
         end
     end
 
-    @inbounds for ip = 1:mesh.npoin
-        ζ[ip] = acc[ip,1]*metrics.Minv[ip]
+    @inbounds for ip = 1:npoin
+        ζ[ip] = acc[ip,1]*Minv[ip]
     end
 
     return ζ

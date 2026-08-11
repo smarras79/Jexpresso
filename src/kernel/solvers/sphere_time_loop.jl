@@ -122,6 +122,45 @@ function sphere_time_loop!(mesh::St_mesh,
 end
 
 
+
+#---------------------------------------------------------------------------------
+# The three SSP-RK3 stage updates, as TYPED FUNCTION BARRIERS.
+#
+# `q.qn` is a field of St_SolutionVars, which — like St_mesh — is a Base.@kwdef
+# struct with no type annotations, so `qn = q.qn` is inferred `::Any` and so are
+# `q1`/`q2` (copies of it). Written inline in _sphere_march! these three loops
+# are npoin*neqs*3 dynamic getindex/setindex per step — 1.24e9 boxed element
+# accesses over the 6-day Galewsky run, which was 8.3 G of the allocations.
+# Passing the arrays as arguments lets Julia specialise on their real types and
+# makes the updates allocation-free.
+#---------------------------------------------------------------------------------
+function _ssprk3_stage1!(q1::AbstractMatrix{TF}, qn::AbstractMatrix{TF},
+                         RHS::AbstractMatrix{TF}, Δt::TF,
+                         npoin::Int, neqs::Int) where {TF}
+    @inbounds for ieq = 1:neqs, ip = 1:npoin
+        q1[ip,ieq] = qn[ip,ieq] + Δt*RHS[ip,ieq]
+    end
+    return q1
+end
+
+function _ssprk3_stage2!(q2::AbstractMatrix{TF}, qn::AbstractMatrix{TF},
+                         q1::AbstractMatrix{TF}, RHS::AbstractMatrix{TF}, Δt::TF,
+                         npoin::Int, neqs::Int) where {TF}
+    @inbounds for ieq = 1:neqs, ip = 1:npoin
+        q2[ip,ieq] = TF(0.75)*qn[ip,ieq] + TF(0.25)*(q1[ip,ieq] + Δt*RHS[ip,ieq])
+    end
+    return q2
+end
+
+function _ssprk3_stage3!(qn::AbstractMatrix{TF}, q2::AbstractMatrix{TF},
+                         RHS::AbstractMatrix{TF}, Δt::TF,
+                         npoin::Int, neqs::Int) where {TF}
+    @inbounds for ieq = 1:neqs, ip = 1:npoin
+        qn[ip,ieq] = (qn[ip,ieq] + TF(2.0)*(q2[ip,ieq] + Δt*RHS[ip,ieq]))/TF(3.0)
+    end
+    return qn
+end
+
 function _sphere_march!(mesh::St_mesh,
                         metrics::St_sphere_metrics,
                         sp::St_sphere_params,
@@ -221,23 +260,17 @@ function _sphere_march!(mesh::St_mesh,
 
         #--- stage 1
         sphere_rhs!(RHS, qn, qe, mesh, metrics, sp, SVT)
-        @inbounds for ieq = 1:neqs, ip = 1:npoin
-            q1[ip,ieq] = qn[ip,ieq] + Δt*RHS[ip,ieq]
-        end
+        _ssprk3_stage1!(q1, qn, RHS, Δt, npoin, neqs)
         lproject && (driftmax = max(driftmax, project_momentum_to_sphere!(q1, mesh; ivar = 2)))
 
         #--- stage 2
         sphere_rhs!(RHS, q1, qe, mesh, metrics, sp, SVT)
-        @inbounds for ieq = 1:neqs, ip = 1:npoin
-            q2[ip,ieq] = 0.75*qn[ip,ieq] + 0.25*(q1[ip,ieq] + Δt*RHS[ip,ieq])
-        end
+        _ssprk3_stage2!(q2, qn, q1, RHS, Δt, npoin, neqs)
         lproject && (driftmax = max(driftmax, project_momentum_to_sphere!(q2, mesh; ivar = 2)))
 
         #--- stage 3
         sphere_rhs!(RHS, q2, qe, mesh, metrics, sp, SVT)
-        @inbounds for ieq = 1:neqs, ip = 1:npoin
-            qn[ip,ieq] = (qn[ip,ieq] + 2.0*(q2[ip,ieq] + Δt*RHS[ip,ieq]))/3.0
-        end
+        _ssprk3_stage3!(qn, q2, RHS, Δt, npoin, neqs)
         lproject && (driftmax = max(driftmax, project_momentum_to_sphere!(qn, mesh; ivar = 2)))
 
         #--- stabilization
