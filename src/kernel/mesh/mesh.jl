@@ -3507,6 +3507,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         if inputs[:AD] != DiscGal()
             restructure4periodicity_2D(mesh, norx, "periodicx")
             restructure4periodicity_2D(mesh, nory, "periodicz")
+        else
+            # DG: periodic coupling is a numerical flux over face pairs, not a
+            # node merge. Build the interior + periodic face list here — same
+            # inputs in scope, inside the cached region (its Gridap inputs are
+            # cache-skip-listed; its flat-array products are cached).
+            build_dg_faces_2D!(mesh)
         end
         # restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
         # restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
@@ -5316,6 +5322,222 @@ function add_high_order_nodes_2D_gmsh_dg!(mesh::St_mesh, lgl, model)
         end
     end
     return nothing
+end
+
+#
+# DG (DiscGal) interior + periodic face list, 2D — Phase-5 step 6.
+#
+# Builds the flat face-pair arrays on St_mesh that surface_rhs_el!(::NSD_2D)
+# loops over. One list; periodic pairs are ordinary rows found by centroid
+# matching (the detect_periodic_ncf_parent_gels_2D! recipe with the filter
+# inverted: keep the conforming pairs it discards). Local facet ids use the
+# slice convention over the (i,j) lattice —
+#     1 → connijk[e, 1, :]     2 → connijk[e, ngl, :]
+#     3 → connijk[e, :, 1]     4 → connijk[e, :, ngl]
+# — determined GEOMETRICALLY per face (slice-coincidence test), never from
+# Gridap's cell_face_ids ordering: the Gridap reference-polytope edge order
+# and the p4est glue order need not agree, and this list depends on neither.
+# Must run inside the cached region of mod_mesh_read_gmsh! (its inputs
+# facet_cell_ids / bdy_edge_* are cache-skip-listed and do not survive a
+# cache hit; the flat-array products are cached). Serial semantics only for
+# now (parallel DG indexing is Phase 10).
+#
+function build_dg_faces_2D!(mesh::St_mesh)
+    ngl = mesh.ngl
+    TF  = eltype(mesh.dg_face_nx)
+
+    empty!(mesh.dg_face_eL);  empty!(mesh.dg_face_eR)
+    empty!(mesh.dg_face_lfL); empty!(mesh.dg_face_lfR)
+    empty!(mesh.dg_face_revR)
+    empty!(mesh.dg_face_nx);  empty!(mesh.dg_face_ny); empty!(mesh.dg_face_Jf)
+
+    slice_ip(e, lfid, k) = lfid == 1 ? mesh.connijk[e, 1,   k] :
+                           lfid == 2 ? mesh.connijk[e, ngl, k] :
+                           lfid == 3 ? mesh.connijk[e, k,   1] :
+                                       mesh.connijk[e, k, ngl]
+
+    function cent(e)
+        cx = zero(TF); cy = zero(TF)
+        for (a, b) in ((1, 1), (1, ngl), (ngl, ngl), (ngl, 1))
+            ip = mesh.connijk[e, a, b]
+            cx += mesh.x[ip] / 4; cy += mesh.y[ip] / 4
+        end
+        return (cx, cy)
+    end
+
+    # Do slices (a,la) and (b,lb) hold the same physical nodes, forward or
+    # reversed? usex/usey select which coordinates to compare (both for
+    # interior faces; tangential-only for periodic pairs).
+    function slices_match(a, la, b, lb; usex::Bool=true, usey::Bool=true)
+        ip1 = slice_ip(a, la, 1); ipn = slice_ip(a, la, ngl)
+        Lf  = hypot(mesh.x[ipn] - mesh.x[ip1], mesh.y[ipn] - mesh.y[ip1])
+        tol = 1.0e-8 * Lf
+        fwd = true; rev = true
+        for k = 1:ngl
+            ipa = slice_ip(a, la, k)
+            ipf = slice_ip(b, lb, k)
+            ipr = slice_ip(b, lb, ngl - k + 1)
+            if usex
+                fwd &= abs(mesh.x[ipa] - mesh.x[ipf]) <= tol
+                rev &= abs(mesh.x[ipa] - mesh.x[ipr]) <= tol
+            end
+            if usey
+                fwd &= abs(mesh.y[ipa] - mesh.y[ipf]) <= tol
+                rev &= abs(mesh.y[ipa] - mesh.y[ipr]) <= tol
+            end
+            (fwd || rev) || return (false, false)
+        end
+        return (true, !fwd && rev)
+    end
+
+    function push_face!(eL, lfL, eR, lfR, rev)
+        # normal from eL's slice tangent; sign chosen outward from eL
+        # (interior: toward eR; periodic: out of the domain, toward eR
+        # across the wrap — same convention either way).
+        ip1 = slice_ip(eL, lfL, 1); ipn = slice_ip(eL, lfL, ngl)
+        tx = mesh.x[ipn] - mesh.x[ip1]; ty = mesh.y[ipn] - mesh.y[ip1]
+        Lf = hypot(tx, ty)
+        nx = ty / Lf; ny = -tx / Lf
+        fcx = zero(TF); fcy = zero(TF)
+        for k = 1:ngl
+            ip = slice_ip(eL, lfL, k)
+            fcx += mesh.x[ip] / ngl; fcy += mesh.y[ip] / ngl
+        end
+        ecx, ecy = cent(eL)
+        if nx * (fcx - ecx) + ny * (fcy - ecy) < 0
+            nx = -nx; ny = -ny
+        end
+        push!(mesh.dg_face_eL,  eL);  push!(mesh.dg_face_eR,  eR)
+        push!(mesh.dg_face_lfL, lfL); push!(mesh.dg_face_lfR, lfR)
+        push!(mesh.dg_face_revR, rev)
+        push!(mesh.dg_face_nx, nx);   push!(mesh.dg_face_ny, ny)
+        push!(mesh.dg_face_Jf, Lf / 2)
+    end
+
+    # --- interior faces: facet_cell_ids entries with two cells --------------
+    conv_map = zeros(Int, 4)   # cell_face_ids position g → slice lfid (report once)
+    n_int = 0
+    for f = 1:length(mesh.facet_cell_ids)
+        cells = mesh.facet_cell_ids[f]
+        length(cells) == 2 || continue
+        a = cells[1]; b = cells[2]
+        a != b || error("build_dg_faces_2D!: facet $f joins element $a to itself — mesh is one element wide in a periodic direction (2×2-class pathology; see the Phase-5 gate-mesh note)")
+        found = 0; mla = 0; mlb = 0; mrev = false
+        for la = 1:4, lb = 1:4
+            ok, rev = slices_match(a, la, b, lb)
+            if ok
+                found += 1; mla = la; mlb = lb; mrev = rev
+            end
+        end
+        found == 1 || error("build_dg_faces_2D!: facet $f (elements $a, $b) matched $found slice pairs, expected exactly 1 — numbering/geometry inconsistency")
+        push_face!(a, mla, b, mlb, mrev)
+        n_int += 1
+        # optional cross-check: discover Gridap's local edge order empirically
+        if length(mesh.cell_face_ids) >= a && length(mesh.cell_face_ids[a]) == 4
+            g = findfirst(==(f), mesh.cell_face_ids[a])
+            if g !== nothing && conv_map[g] == 0
+                conv_map[g] = mla
+            end
+        end
+    end
+    println(" # build_dg_faces_2D!: cell_face_ids order → slice lfid map (1=x-min, 2=x-max, 3=y-min, 4=y-max; 0 = never observed): ", conv_map)
+
+    # --- periodic pairs: upstream's centroid match, filter inverted ---------
+    function periodic_pairs!(tag::String)
+        # Which axis is NORMAL to this tag's faces? Never inferred from the
+        # tag's name — measured 2026-08-11 on hexa_TFI_10x20_periodic: the tag
+        # names the axis the edge RUNS ALONG ("periodicx" = bottom/top edges,
+        # y-normal; "periodicz" = left/right, x-normal — 2D remaps y→z),
+        # matching detect_periodic_ncf_parent_gels_2D!'s branch (x tangential
+        # for "periodicx"). Derived geometrically regardless: each tagged
+        # element votes for the axis on which it has a constant-coordinate
+        # slice at that axis's domain extremum; corner elements vote both,
+        # the rest disambiguate; a tie is a hard error.
+        xlo, xhi = extrema(mesh.x); ylo, yhi = extrema(mesh.y)
+        tolx = 1.0e-8 * (xhi - xlo); toly = 1.0e-8 * (yhi - ylo)
+        vx = 0; vy = 0
+        seen = Set{Int}()
+        for iedge_bdy = 1:length(mesh.bdy_edge_type)
+            mesh.bdy_edge_type[iedge_bdy] == tag || continue
+            e = mesh.bdy_edge_in_elem[iedge_bdy]
+            (e in seen) && continue
+            push!(seen, e)
+            for lf = 1:4
+                sxlo = TF(Inf); sxhi = TF(-Inf); sylo = TF(Inf); syhi = TF(-Inf)
+                for k = 1:ngl
+                    ip = slice_ip(e, lf, k)
+                    sxlo = min(sxlo, mesh.x[ip]); sxhi = max(sxhi, mesh.x[ip])
+                    sylo = min(sylo, mesh.y[ip]); syhi = max(syhi, mesh.y[ip])
+                end
+                if (sxhi - sxlo) <= tolx && (abs(sxlo - xlo) <= tolx || abs(sxhi - xhi) <= tolx)
+                    vx += 1
+                end
+                if (syhi - sylo) <= toly && (abs(sylo - ylo) <= toly || abs(syhi - yhi) <= toly)
+                    vy += 1
+                end
+            end
+        end
+        (vx + vy) == 0 && return 0                # tag absent from this mesh
+        vx == vy && error("build_dg_faces_2D!: cannot decide normal axis for tag $tag (votes x=$vx, y=$vy)")
+        xnormal = vx > vy
+        println(" # build_dg_faces_2D!: tag \"$tag\" → $(xnormal ? "x" : "y")-normal faces (votes x=$vx, y=$vy)")
+        nc(ip) = xnormal ? mesh.x[ip] : mesh.y[ip]
+        tc(ip) = xnormal ? mesh.y[ip] : mesh.x[ip]
+
+        els = Int[]; lfs = Int[]; ncm = TF[]; tcm = TF[]
+        for iedge_bdy = 1:length(mesh.bdy_edge_type)
+            mesh.bdy_edge_type[iedge_bdy] == tag || continue
+            e = mesh.bdy_edge_in_elem[iedge_bdy]
+            for lf = 1:4                           # normal-constant slices of e
+                ip1 = slice_ip(e, lf, 1); ipn = slice_ip(e, lf, ngl)
+                Lf  = hypot(mesh.x[ipn] - mesh.x[ip1], mesh.y[ipn] - mesh.y[ip1])
+                ncsum = zero(TF); tcsum = zero(TF); nclo = TF(Inf); nchi = TF(-Inf)
+                for k = 1:ngl
+                    ip = slice_ip(e, lf, k)
+                    ncsum += nc(ip) / ngl; tcsum += tc(ip) / ngl
+                    nclo = min(nclo, nc(ip)); nchi = max(nchi, nc(ip))
+                end
+                (nchi - nclo) <= 1.0e-8 * Lf || continue
+                push!(els, e); push!(lfs, lf); push!(ncm, ncsum); push!(tcm, tcsum)
+            end
+        end
+        isempty(els) && return 0
+        lo_val, hi_val = extrema(ncm)
+        span = hi_val - lo_val
+        span > 0 || error("build_dg_faces_2D!: $tag candidates all at one coordinate — mesh/tag inconsistency")
+        tolside = 1.0e-8 * span
+        lo = Dict{Float64, Int}(); hi = Dict{Float64, Int}()
+        for idx = 1:length(els)
+            key = round(Float64(tcm[idx]); sigdigits=6)   # upstream's convention (stretched-mesh safe)
+            if abs(ncm[idx] - lo_val) <= tolside
+                haskey(lo, key) && error("build_dg_faces_2D!: duplicate $tag tangential key on the min side — degenerate/1-wide mesh")
+                lo[key] = idx
+            elseif abs(ncm[idx] - hi_val) <= tolside
+                haskey(hi, key) && error("build_dg_faces_2D!: duplicate $tag tangential key on the max side — degenerate/1-wide mesh")
+                hi[key] = idx
+            end   # element-interior normal-constant slices fall through — correct
+        end
+        length(lo) == length(hi) || error("build_dg_faces_2D!: $tag side counts differ ($(length(lo)) vs $(length(hi)))")
+        n = 0
+        for (key, imax) in hi
+            haskey(lo, key) || error("build_dg_faces_2D!: no $tag partner for tangential key $key")
+            imin = lo[key]
+            eL = els[imax]; lfL = lfs[imax]        # L = max side → outward normal points +direction
+            eR = els[imin]; lfR = lfs[imin]
+            eL != eR || error("build_dg_faces_2D!: $tag pairs element $eL with itself — 1-element-wide direction (2×2-class pathology)")
+            ok, rev = xnormal ? slices_match(eL, lfL, eR, lfR; usex=false, usey=true) :
+                                slices_match(eL, lfL, eR, lfR; usex=true,  usey=false)
+            ok || error("build_dg_faces_2D!: $tag pair (elements $eL, $eR) does not align in either orientation — numbering inconsistency")
+            push_face!(eL, lfL, eR, lfR, rev)
+            n += 1
+        end
+        return n
+    end
+
+    n_per = periodic_pairs!("periodicx") + periodic_pairs!("periodicz")
+
+    println(" # build_dg_faces_2D!: ", n_int, " interior + ", n_per, " periodic = ",
+            length(mesh.dg_face_eL), " faces")
 end
 
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm)
