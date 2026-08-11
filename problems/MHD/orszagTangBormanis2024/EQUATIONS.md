@@ -429,6 +429,38 @@ amplitude band — not a quantitative validation. No pointwise or norm-based
 comparison against the reference data has been performed, and the paper's
 data set is not redistributed with Jexpresso.
 
+The $y$ magnetic field over the same four times, for direct comparison against
+the paper's magnetic-field figures, on a symmetric color scale shared by the
+four panels:
+
+![Orszag-Tang By](../../../assets/MHD_OT_By.png)
+
+And the DynSGS eddy viscosity applied to the $B_y$ equation — log scale,
+piecewise constant per element by construction — with $B_y$ isolines drawn on
+top:
+
+![Orszag-Tang DynSGS viscosity of the By equation](../../../assets/MHD_OT_mu_dsgs_By.png)
+
+The figure is drawn to answer whether the coefficient tracks the large gradients
+of $B_y$, and `tools/plot_orszag_tang.jl` prints the measurement alongside it:
+the Spearman rank correlation between the per-element $\mu$ and the element-max
+$\lvert\nabla B_y\rvert$ is **positive at every output time**, between $0.26$
+and $0.64$. It peaks at $t \approx 0.15$, while the fronts are steepening and
+are the only under-resolved feature in the domain, and decays toward $t = 1$ as
+$128^2$ becomes under-resolved nearly everywhere. Over the same interval $\mu$
+spans 1.5–2.8 decades across the domain — the property a global Smagorinsky
+constant cannot have. The full table is in [README.md](README.md#figures).
+
+None of these three figures is written by the solver — with
+`:outformat => "vtk"` a run produces only `iter_*.pvtu`. They are rendered
+off-line from those files by
+
+```bash
+julia --project=. tools/plot_orszag_tang.jl
+```
+
+See [README.md](README.md#figures) for its options.
+
 ## 5. Run
 
 ```bash

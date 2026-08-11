@@ -378,7 +378,14 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        
+
+        # Simulation time of this snapshot. The file name only carries the
+        # output counter (iter_1, iter_2, ...), so without this the physical
+        # time is not recoverable from the output alone. "TimeValue" is the
+        # name ParaView looks for; tools/plot_orszag_tang.jl reads it back to
+        # match a snapshot to a requested time.
+        vtkf["TimeValue", VTKFieldData()] = t
+
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
@@ -491,6 +498,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf["gel_id", VTKCellData()] = gelm_id
         vtkf["ad_lvl", VTKCellData()] = ad_lvl
+
+        # Simulation time of this snapshot; see the 2D writer above.
+        vtkf["TimeValue", VTKFieldData()] = t
 
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
