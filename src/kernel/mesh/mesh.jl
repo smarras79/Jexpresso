@@ -1872,6 +1872,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
     #Update number of grid points from linear count to total high-order points
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + (mesh.nsd - 2)*tot_vol_internal_nodes
+    # DG (DiscGal): duplicated interface DOFs (D-059) — every element owns its
+    # full ngl^2 point set, npoin = nelem*ngl^2. Set here, ahead of the
+    # "Resize as needed" block, so every downstream allocation (x/y/z/coords,
+    # ip2gip, ...) is sized for the DG point set. npoin_linear keeps its
+    # Gridap vertex meaning (D-068). The CG builders below still run for
+    # their side effects (poin_in_edge, conn, boundary lists) and connijk/
+    # coordinates are overwritten by the DG numbering block after them.
+    if inputs[:AD] == DiscGal() && mesh.nsd == 2
+        mesh.npoin = mesh.nelem * ngl * ngl
+    end
     
     if (mesh.nop > 1) && (!lamr_mesh)
         println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -2120,14 +2130,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #         
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD, elm2pelm)
 
-    
-    for ip = mesh.npoin_linear+1:mesh.npoin
-        mesh.x[ip] = mesh.x_ho[ip]
-        mesh.y[ip] = mesh.y_ho[ip]
-        mesh.z[ip] = 0.0
-        if (mesh.nsd > 2)
-            mesh.z[ip] = mesh.z_ho[ip]
+    # DG writes mesh.x/mesh.y for all nelem*ngl^2 points directly in
+    # add_high_order_nodes_2D_gmsh_dg! below; x_ho carries CG-numbered
+    # points, so the copy is skipped under DiscGal.
+    if !(inputs[:AD] == DiscGal() && mesh.nsd == 2)
+        for ip = mesh.npoin_linear+1:mesh.npoin
+            mesh.x[ip] = mesh.x_ho[ip]
+            mesh.y[ip] = mesh.y_ho[ip]
+            mesh.z[ip] = 0.0
+            if (mesh.nsd > 2)
+                mesh.z[ip] = mesh.z_ho[ip]
+            end
         end
+    end
+
+    # DG (DiscGal) numbering: must run after the CG builders (kept for side
+    # effects) and BEFORE the extrema Allreduce below, the IPc/IPp mortar
+    # lists, elem_to_edge, and the periodicity block — all consume connijk
+    # or coordinates.
+    if inputs[:AD] == DiscGal() && mesh.nsd == 2
+        add_high_order_nodes_2D_gmsh_dg!(mesh, lgl, model)
     end
 
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
@@ -4800,6 +4822,53 @@ end
 
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_2D, elm2pelm)
     nothing
+end
+
+function add_high_order_nodes_2D_gmsh_dg!(mesh::St_mesh, lgl, model)
+    # DG numbering with duplicated interface DOFs (D-059 at 2D):
+    #   ip = (iel-1)*ngl^2 + (j-1)*ngl + i;  connijk[iel,i,j] = ip
+    # Tensor lattice matches the CG convention (i ascending in x, j in y),
+    # so compute_element_size! returns the same Delem and dt is unchanged.
+    # Corners via the same node_ids->slot map mod_mesh_read_gmsh! uses;
+    # interiors by bilinear interpolation over (lgl.ksi[i], lgl.ksi[j]).
+    # Coordinates written to mesh.x/mesh.y directly (npoin_linear keeps its
+    # Gridap vertex meaning). Corner coords are read from Gridap node_coords,
+    # NOT mesh.x: DG ids overlap the vertex id range and mesh.x is being
+    # overwritten in this very loop.
+    # Re-assert the DG count: the CG builders recompute mesh.npoin from CG
+    # arithmetic internally (add_high_order_nodes_edges!/faces!), clobbering
+    # the pre-allocation override. This builder runs last, so this assignment
+    # is what every downstream consumer sees.
+    mesh.npoin = mesh.nelem * mesh.ngl * mesh.ngl
+    node_coords = get_node_coordinates(get_grid(model))
+    ngl = mesh.ngl
+    _cache_node_ids = array_cache(mesh.cell_node_ids)
+    for iel = 1:mesh.nelem
+        node_ids = getindex!(_cache_node_ids, mesh.cell_node_ids, iel)
+        x11, y11 = node_coords[node_ids[2]][1], node_coords[node_ids[2]][2]  # slot [1,1]
+        x1n, y1n = node_coords[node_ids[1]][1], node_coords[node_ids[1]][2]  # slot [1,ngl]
+        xnn, ynn = node_coords[node_ids[3]][1], node_coords[node_ids[3]][2]  # slot [ngl,ngl]
+        xn1, yn1 = node_coords[node_ids[4]][1], node_coords[node_ids[4]][2]  # slot [ngl,1]
+        for j = 1:ngl, i = 1:ngl
+            ip = (iel-1)*ngl*ngl + (j-1)*ngl + i
+            mesh.connijk[iel, i, j] = ip
+            # Serial DG global indexing: every duplicated DOF is its own
+            # global point, so ip2gip is the identity. This overwrites the
+            # CG shared-entity gids the builders wrote and keeps the
+            # gnpoin/gip2ip/gip2owner block downstream consistent without
+            # gating it. Real DG global indexing for MPI is the Phase-10
+            # parallel item.
+            mesh.ip2gip[ip] = ip
+            ξ = lgl.ξ[i];  ζ = lgl.ξ[j]
+            w11 = (1-ξ)*(1-ζ)*0.25;  wn1 = (1+ξ)*(1-ζ)*0.25
+            w1n = (1-ξ)*(1+ζ)*0.25;  wnn = (1+ξ)*(1+ζ)*0.25
+            mesh.x[ip] = w11*x11 + wn1*xn1 + w1n*x1n + wnn*xnn
+            mesh.y[ip] = w11*y11 + wn1*yn1 + w1n*y1n + wnn*ynn
+            mesh.coords[ip, 1] = mesh.x[ip]
+            mesh.coords[ip, 2] = mesh.y[ip]
+        end
+    end
+    return nothing
 end
 
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm)
