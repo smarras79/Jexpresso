@@ -55,9 +55,12 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
     return T(q[1]*u), T(q[1]*v)
 end
 
-function user_max_wave_speed(q, qe, SD::NSD_2D, ::TOTAL; neqs=1)
+# Rusanov λ per face: |c·n|, the wave speed in the face-normal direction.
+# (nx, ny) is the face unit normal supplied by surface_rhs_el!(::NSD_2D);
+# the defaults keep any normal-free call meaningful (they reduce λ to |u|).
+# Settled 2026-08-11 (Q3): the hook carries the normal so that at Euler/SWE,
+# where λ = |u·n| + a genuinely needs it, no signature change is required.
+function user_max_wave_speed(q, qe, SD::NSD_2D, ::TOTAL; nx::Float64=1.0, ny::Float64=0.0, neqs=1)
     u, v = advection_velocity()
-    return sqrt(u*u + v*v)  # provisional global bound; the 2D surface term
-                            # (Phase 5 step 6) decides whether this hook gains
-                            # a face-normal argument for |c·n| per face
+    return abs(u*nx + v*ny)
 end
