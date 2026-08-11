@@ -103,6 +103,18 @@ function apply_periodicity!(u, uaux, t,qe,
     nothing
 end
 
+
+function apply_periodicity!(u, uaux, t,qe,
+                            npoin_linear, ψ, dψ,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD::DiscGal, SD::NSD_2D)
+    # DG periodicity is a flux face (see surface_rhs_el!), not a node identification.
+    # NOTE: currently unreachable in 2D — the single call site (this file, dirichlet
+    # wrapper) gates on lperiodic_1d && NSD_1D. Defensive, mirroring the ContGal
+    # 2D method above.
+    nothing
+end
+
 function apply_boundary_conditions_lin_solve!(L, t, qe,
                                               coords,
                                               nx, ny, nz,

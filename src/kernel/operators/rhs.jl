@@ -1546,6 +1546,21 @@ function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
 end
 
 function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
+                              F, G, S,
+                              Je,
+                              dξdx, dξdy,
+                              dηdx, dηdy,
+                              rhs_el, iel,
+                              CLT::CL, QT::Inexact, SD::NSD_2D, AD::DiscGal)
+    # The volume weak form is discretization-agnostic — delegate to the ContGal
+    # body rather than copying the ~110-line metric-terms kernel (same idiom as
+    # matrix_wrapper(::DiscGal)).
+    _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S, Je,
+                         dξdx, dξdy, dηdx, dηdy, rhs_el, iel,
+                         CLT, QT, SD, ContGal())
+end
+
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                               F, G, H, S,
                               Je,
                               dξdx, dξdy, dξdz,
