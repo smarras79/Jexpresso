@@ -391,9 +391,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.coords[1:mesh.npoin,1],
-                         mesh.coords[1:mesh.npoin,2],
-                         mesh.coords[1:mesh.npoin,2]*TFloat(0.0),
+                         mesh.coords[1, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin]*TFloat(0.0),
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
@@ -509,9 +509,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.coords[1:mesh.npoin,1],
-                         mesh.coords[1:mesh.npoin,2],
-                         mesh.coords[1:mesh.npoin,3],
+                         mesh.coords[1, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin],
+                         mesh.coords[3, 1:mesh.npoin],
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))

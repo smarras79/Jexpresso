@@ -23,7 +23,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     x      = KernelAbstractions.zeros(backend, TFloat, 2)
     y      = KernelAbstractions.zeros(backend, TFloat, 2)
     z      = KernelAbstractions.zeros(backend, TFloat, 2)
-    coords = KernelAbstractions.zeros(backend, TFloat, 2, 1)
+    # LAYOUT: coords is (nsd, npoin) -- a node's coordinates are ADJACENT in
+    # memory, so touching a node costs one cache line instead of nsd of them.
+    coords = KernelAbstractions.zeros(backend, TFloat, 1, 2)
     
     x_ho = KernelAbstractions.zeros(backend, TFloat, 2)
     y_ho = KernelAbstractions.zeros(backend, TFloat, 2)

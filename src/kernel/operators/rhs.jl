@@ -575,7 +575,7 @@ function _build_rhs!(RHS, u, params, time)
         @timeit_debug JEXPRESSO_TIMER "do_micro_physics" do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
                           params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
                           params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
-                          params.uaux, @view(params.mesh.coords[:,end]),
+                          params.uaux, @view(params.mesh.coords[end, :]),
                           params.qp.qe, SD, params.SOL_VARS_TYPE)
 
         # if inputs[:ladapt] == true
@@ -744,7 +744,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
+                             neqs=params.neqs, x=coords[1, ip], y=0.0, xmax=xmax,xmin=xmin)
             end
         end
 
@@ -806,7 +806,7 @@ function inviscid_rhs_el!(u, params,
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
-                             x=coords[ip,1], y=coords[ip,2], ymax=ymax)
+                             x=coords[1, ip], y=coords[2, ip], ymax=ymax)
 
                 if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
@@ -918,7 +918,7 @@ function _inviscid_rhs_el_3d!(u, uaux, qe,
                              npoin,
                              CL, SOL_VARS_TYPE;
                              neqs=neqs,
-                             x=coords[ip,1], y=coords[ip,2], z=coords[ip,3],
+                             x=coords[1, ip], y=coords[2, ip], z=coords[3, ip],
                              xmax=xmax, xmin=xmin, zmax=zmax)
 
                 if (lmoist)
@@ -2501,7 +2501,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     Je_klm = Je[iel,k,l,m]
                     ωJac   = ω[k] * ωlm * Je_klm
                     # ip     = conn_el[k,l,m]
-                    # z      = coords[ip,3]
+                    # z      = coords[3, ip]
                     
                     σμ     = 1.0
                     # if (z > zs) && (ieq > 4)
@@ -2592,7 +2592,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
             for k = 1:ngl
 
                 ip     = connijk[iel,k,l,m]
-                z      = coords[ip,3]
+                z      = coords[3, ip]
                 
                 σμ     = 1.0
                 # if (z > zs) && (ieq > 4)

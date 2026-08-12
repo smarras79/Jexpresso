@@ -65,7 +65,7 @@ function build_les_bottom_cache(mesh, metrics, inputs)
     PhysConst_b = PhysicalConst{Float64}()
     κ_v = PhysConst_b.karman
 
-    coords       = Array(mesh.coords)      # (npoin, 3)
+    coords       = Array(mesh.coords)      # (3, npoin)
     gip2owner    = Array(mesh.gip2owner)
     connijk_arr  = Array(mesh.connijk)
     poin_bdy     = Array(mesh.poin_in_bdy_face)
@@ -79,7 +79,7 @@ function build_les_bottom_cache(mesh, metrics, inputs)
     nfaces_bdy   = mesh.nfaces_bdy
     ngl          = mesh.ngl
 
-    xr = round.(coords[:, 1]; digits=6)
+    xr = round.(coords[1, :]; digits=6)
 
     # Scan MOST faces; mirror BCs.jl exactly:
     #   ip_sfc = bottom surface node (connijk[e,i,j,1])
@@ -98,9 +98,9 @@ function build_les_bottom_cache(mesh, metrics, inputs)
             nx_f = metrics_nx[iface, i, j]
             ny_f = metrics_ny[iface, i, j]
             nz_f = metrics_nz[iface, i, j]
-            Δx = coords[ip1, 1] - coords[ip_sfc, 1]
-            Δy = coords[ip1, 2] - coords[ip_sfc, 2]
-            Δz = coords[ip1, 3] - coords[ip_sfc, 3]
+            Δx = coords[1, ip1] - coords[1, ip_sfc]
+            Δy = coords[2, ip1] - coords[2, ip_sfc]
+            Δz = coords[3, ip1] - coords[3, ip_sfc]
             z_in = abs(Δx*nx_f + Δy*ny_f + Δz*nz_f)
             ip1_zin[ip1] = z_in
             xk = xr[ip_sfc]

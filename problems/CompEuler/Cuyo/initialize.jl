@@ -63,7 +63,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 
                 for ip = 1:npoin
                     
-                    z = mesh.coords[ip,3]
+                    z = mesh.coords[3, ip]
 
                     if z <= zi
                         θ = θ1
