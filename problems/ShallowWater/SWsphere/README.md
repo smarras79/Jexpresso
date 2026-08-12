@@ -430,6 +430,9 @@ Everything below was **run**, in Julia:
 | `max\|(φu)·x̂\|` after integrating | 4e-10 against a momentum scale of 8e6 — **5e-17 relative** |
 | error on the balanced (steady) jet | 60 m → 37 m → 3.3 m as resolution rises |
 | filter mass conservation | 4e-13 |
+| surface Laplacian vs `−l(l+1)/R²` for `l = 1…4` | 2.5e-7 → 2.9e-6 at nop=5; 1.5e-8 → 1.3e-7 at nop=6 |
+| surface Laplacian annihilates constants | 1e-12 (times `R²`) |
+| surface Laplacian symmetric / negative definite | 5e-15 asymmetry; `qᵀLq < 0` |
 
 The **curvature identity** deserves a note. On a flat grid the free-stream
 condition is `∇·(J aⁱ) = 0`. On a curved surface that is false: the surface

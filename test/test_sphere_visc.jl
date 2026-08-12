@@ -135,6 +135,16 @@ l2(v, M) = sqrt(sum(M[ip]*v[ip]^2 for ip = 1:length(v)))
             err   = l2(Δq .- exact, M) / l2(exact, M)
 
             @info @sprintf("  l = %d : relative L² error of Δₛ = %.3e", l, err)
+            #
+            # An independent numpy reimplementation of the same kernel on an
+            # equiangular cubed sphere gives 2.5e-7 (l=1) … 2.9e-6 (l=4) at this
+            # resolution, and 1.5e-8 … 1.3e-7 at nop=6 — spectral, as it should
+            # be. The bound here is loose against those because Jexpresso places
+            # its high-order nodes by interpolating linearly and projecting
+            # radially rather than in the angular parameters, which moves them
+            # slightly; it is still two orders below what a wrong index
+            # convention or a dropped metric component would produce.
+            #
             @test err < 1.0e-4
         end
 
