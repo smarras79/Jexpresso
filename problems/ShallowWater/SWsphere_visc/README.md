@@ -68,6 +68,34 @@ dissipation**, not too large a step. `ν = 1e5` sits three orders below the
 diffusive stability ceiling (`Δmin²/ν ≈ 1e5 s` against a 75 s step), so lowering
 `:cfl` does nothing for it — which is exactly the symptom that identifies it.
 
+## The deck as shipped, run to the end
+
+`:tend` is the full 144 h of the published test, and that is what was run — not
+a shortened proxy:
+
+```
+ #   Δt = 74.9892 s ; 6913 steps to t = 518400.0 s (6.000 days) ; CFL = 0.35
+ #   filter: ON
+ #   artificial viscosity: ON, ν = [0, 1e+05, 1e+05, 1e+05] m²/s per equation
+ #   step 6913  t = 518400.0 s (6.000 d)  δmass/mass = 4.81e-11  δE/E = -5.49e-04
+ #              |(φu)·x̂| = 6.90e-10  max|ζ| = 9.226e-05  max|ζ-ζ₀| = 1.882e-04
+```
+
+All 24 VTK outputs written. Mass to 5e-11 over 6913 steps, the tangency
+constraint flat at 7e-10, energy monotonically down.
+
+The line to watch is `max|ζ-ζ₀|`, the perturbation vorticity:
+
+| day | 1.0 | 2.1 | 3.1 | 4.2 | 5.0 | 6.0 |
+|---|---|---|---|---|---|---|
+| `max\\|ζ-ζ₀\\|` | 9.6e-06 | 1.9e-05 | 3.5e-05 | 8.3e-05 | 1.6e-04 | 1.9e-04 |
+
+Flat and small for three days, then accelerating from day 4 and overtaking
+`max|ζ|` itself — the barotropic instability rolling the jet up, on the day 4-6
+schedule Galewsky et al. describe. `max|ζ|` meanwhile holds at ~9.2e-05 rather
+than decaying away, which is the point of not over-damping: the stabilisation
+is quiet enough to leave the physics.
+
 ## The term
 
 The surface (Laplace-Beltrami) Laplacian, built from the same 3×2 manifold
