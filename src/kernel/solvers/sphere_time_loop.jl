@@ -60,14 +60,22 @@ export sphere_diagnostics
 #---------------------------------------------------------------------------------
 # Δt from the CFL condition.
 #
-#   Δt = CFL Δmin / max(|u| + √φ)
+#   Δt = CFL min( Δmin / max(|u| + √φ) ,  Δmin² / ν )
 #
 # √φ = √(gh) is the gravity-wave speed, |u| the advective speed; Δmin is the
 # smallest LGL node spacing, which for a spectral element clusters like 1/nop²
 # towards the edges and is what actually limits the step.
+#
+# The SECOND branch is the diffusive limit of the artificial viscosity: it is a
+# second derivative, so it is explicit-stable only for Δt ~ Δ²/ν and not Δ/u.
+# For the Galewsky test at the shipped resolution the two are 1e2 s and 1e5 s,
+# so the wave speed wins by three orders of magnitude and ν = 1e5 m²/s costs
+# nothing — but ν is a free parameter, and raising it far enough silently turns
+# a stable run into an exponentially growing one. Taking the min is what makes
+# "the step is too big for this ν" impossible rather than mysterious.
 #---------------------------------------------------------------------------------
 function sphere_cfl_dt(q::AbstractMatrix{TF}, mesh::St_mesh,
-                       metrics::St_sphere_metrics{TF}; cfl = 0.35) where {TF}
+                       metrics::St_sphere_metrics{TF}; cfl = 0.35, μmax = 0.0) where {TF}
 
     cmax = zero(TF)
     #
@@ -85,7 +93,15 @@ function sphere_cfl_dt(q::AbstractMatrix{TF}, mesh::St_mesh,
         umag = sqrt(q[ip,2]^2 + q[ip,3]^2 + q[ip,4]^2)/φ
         cmax = max(cmax, umag + sqrt(φ))
     end
-    return cfl*metrics.Δmin/cmax
+
+    Δt::TF = cfl*metrics.Δmin/cmax
+
+    ν::TF = TF(μmax)
+    if ν > zero(TF)
+        Δt = min(Δt, cfl*metrics.Δmin*metrics.Δmin/ν)
+    end
+
+    return Δt
 end
 
 
@@ -265,7 +281,7 @@ function (mon::St_sphere_monitor)(integrator)
                 istep, t, t/86400, (mass-mon.mass0)/mon.mass0, (ener-mon.ener0)/mon.ener0,
                 drift, ζmax, dζ)
         flush(stdout)
-        isfinite(mass) || error(" # ERROR sphere_time_loop.jl: the solution has gone non-finite. Reduce :cfl, or switch :lfilter on.")
+        isfinite(mass) || error(" # ERROR sphere_time_loop.jl: the solution has gone non-finite. Reduce :cfl, or switch on :lfilter and/or :lvisc (with :μ > 0).")
     end
 
     #--- output
@@ -343,9 +359,13 @@ function _sphere_march!(mesh::St_mesh,
     cfl::Float64 = Float64(get(inputs, :cfl, 0.35))
     lcfl         = get(inputs, :lcfl_dt, true) == true
 
+    # the largest artificial viscosity in play, for the diffusive branch of the
+    # CFL condition (0 when :lvisc is off, and then that branch is skipped)
+    μmax::Float64 = Float64(maximum(sp.μ))
+
     local Δt::Float64
     if lcfl
-        Δt = sphere_cfl_dt(q.qn, mesh, metrics; cfl = cfl)
+        Δt = sphere_cfl_dt(q.qn, mesh, metrics; cfl = cfl, μmax = μmax)
     else
         haskey(inputs, :Δt) && Float64(inputs[:Δt]) > 0 ||
             error(" # ERROR sphere_time_loop.jl: :lcfl_dt => false requires a positive :Δt in user_inputs.jl.")
@@ -364,7 +384,7 @@ function _sphere_march!(mesh::St_mesh,
         error(string(" # ERROR sphere_time_loop.jl: ", nsteps, " steps requested (Δt = ", Δt,
                      " s to t = ", tend, " s), above :max_steps = ", maxsteps, ".\n",
                      " #   Set :lcfl_dt => true to take the CFL step (",
-                     @sprintf("%.2f", sphere_cfl_dt(q.qn, mesh, metrics; cfl = cfl)),
+                     @sprintf("%.2f", sphere_cfl_dt(q.qn, mesh, metrics; cfl = cfl, μmax = μmax)),
                      " s here), or raise :max_steps if you really mean it."))
 
     #--- the integrator, with the projection and the filter installed
@@ -391,6 +411,14 @@ function _sphere_march!(mesh::St_mesh,
         @printf(" #   Δt = %.4f s ; %d steps to t = %.1f s (%.3f days) ; CFL = %.2f\n",
                 Δt, nsteps, tend, tend/86400, cfl)
         println(" #   filter: ", sp.lfilter ? "ON" : "OFF")
+        if sp.lvisc
+            @printf(" #   artificial viscosity: ON, ν = [%s] m²/s per equation\n",
+                    join((@sprintf("%.3g", ν) for ν in sp.μ), ", "))
+        else
+            println(" #   artificial viscosity: OFF")
+        end
+        sp.lfilter || sp.lvisc ||
+            @warn " # sphere_time_loop.jl: BOTH :lfilter and :lvisc are off. The inviscid unfiltered shell solution grows grid-scale modes and is expected to blow up (Marras/Kopera/Giraldo 2015, section 4.2)."
     end
 
     # relative vorticity: the field the Galewsky test is judged on. h barely

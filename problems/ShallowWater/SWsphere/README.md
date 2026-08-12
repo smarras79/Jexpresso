@@ -94,14 +94,17 @@ stays specific to the manifold:
 * `src/kernel/mesh/sphere_metrics.jl` — the **metric terms of the manifold**
   (contravariant basis, surface Jacobian) and the diagonal mass matrix.
 * `src/kernel/operators/sphere_rhs.jl` — the **SEM right-hand side**: surface
-  divergence + direct stiffness summation + `M⁻¹`, plus the modal filter.
+  divergence + direct stiffness summation + `M⁻¹`, the artificial diffusion
+  `δν∇ₛ²(φu)` in weak form, and the modal filter.
 * `src/kernel/solvers/sphere_time_loop.jl` — **SSP-RK3**, with the Lagrange
   projection applied after every stage, CFL time step, diagnostics and output.
 * `initialize.jl` — the Galewsky et al. (2004) jet (see below).
 * `user_flux.jl` / `user_source.jl` — the equations (see below).
 * `src/io/write_output.jl` — `write_vtk_sphere_grid`, next to the existing
   `write_vtk_grid_only` writers.
-* `test/test_sphere_mesh.jl` — standalone tests (`julia --project=. test/test_sphere_mesh.jl`).
+* `test/test_sphere_mesh.jl`, `test/test_sphere_visc.jl` — standalone tests
+  (`julia --project=. test/test_sphere_mesh.jl`). The second one checks the
+  surface Laplacian against the spherical-harmonic eigenvalues `−l(l+1)/R²`.
 
 ### The node numbering, which is the delicate part
 
@@ -354,6 +357,38 @@ notes this for the CG case). **All of it is SEM** — the differentiation is the
 LGL differentiation matrix contracted with the metric terms; there are no finite
 differences anywhere in the solver.
 
+**Stabilization** (`sphere_rhs.jl`). Two independent mechanisms, and the run
+needs **at least one** of them — the inviscid unfiltered high-order solution
+grows grid-scale modes and blows up, which is exactly what the paper reports
+for the cubed sphere. The time loop prints which are active at startup and
+warns if both are off.
+
+| deck | what it does |
+|---|---|
+| `:lfilter => true` | the exponential modal filter, applied once per step as the integrator's `step_limiter!`, followed by a mass-weighted DSS average, so it conserves `∫φ` exactly. The stand-in for the paper's Boyd-Vandeven filter; `:filter_alpha => 0.05` is its "reduce the highest modes by 5%". |
+| `:lvisc => true`, `:μ => 1e5` | the artificial diffusion `δν∇²(φu)` of Eq. (8b), `ν = 1e5 m²/s` in the paper. `:ivisc_equations => [2,3,4]` puts it on the momentum only, where the paper has it. |
+
+The diffusion is the **surface (Laplace-Beltrami) Laplacian**, built from the
+same 3×2 manifold metrics as the divergence, and assembled in **weak** form —
+integration by parts leaves no boundary term on a closed shell:
+
+```
+∫ ψ ν∇ₛ²q dΩ = −∫ ∇ₛψ·(ν ∇ₛq) dΩ ,     ∇ₛq = a¹ ∂q/∂ξ + a² ∂q/∂η
+```
+
+which needs only one derivative of the C⁰ solution and is symmetric negative
+semi-definite by construction, so the term can only ever remove energy. This is
+why it cannot go through the viscous path in `src/kernel/operators/rhs.jl`: that
+one builds `∇q` from the flat 2×2 inverse Jacobian, which has no third metric
+direction. Dropping the third component is not an approximation but a different
+operator — it differentiates along the projection of the shell onto `z = 0`,
+singular at the equator.
+
+Diffusion is a second derivative, so it is explicit-stable only for
+`Δt ~ Δ²/ν`; `sphere_cfl_dt` takes the min of that and the wave-speed limit. At
+the shipped resolution the two are ~1e5 s and ~1e2 s, so `ν = 1e5` costs no time
+step at all — the wave speed still sets `Δt`.
+
 **Time** (`sphere_time_loop.jl`). SSP-RK3 (Shu-Osher), the paper's section 4.2.
 The Lagrange projection runs **after every stage**, not only at the end of the
 step: each stage is a full Euler update and can push momentum off the shell, and
@@ -410,8 +445,6 @@ metrics at once.
 1. Fold the shell into `sem_setup`, so it uses `params_setup` and Jexpresso's
    own SciML integrators (with the projection as a stage callback) instead of
    the self-contained SSP-RK3 here.
-2. The viscous term `δν∇²(φu)` of Eq. (8b) — `:lvisc` is wired to the deck but
-   the Laplacian on the manifold is not implemented.
-3. MPI: the shell path is serial today (the `:lspherical_shell` branch of `problems/drivers.jl` says so).
-4. The reference diagnostic of the test is relative vorticity at day 6; that
+2. MPI: the shell path is serial today (the `:lspherical_shell` branch of `problems/drivers.jl` says so).
+3. The reference diagnostic of the test is relative vorticity at day 6; that
    needs `∇ₛ×u` on the manifold, which the metrics now make straightforward.

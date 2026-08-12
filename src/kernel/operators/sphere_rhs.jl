@@ -28,6 +28,10 @@
 # through the ordinary Jexpresso callbacks — this file never hard-codes an
 # equation.
 #
+# ALSO HERE: the ARTIFICIAL DIFFUSION δν∇²q of Eq. (8b), assembled in weak form
+# with the SURFACE (Laplace-Beltrami) gradient. See _sphere_visc! below for why
+# the flat viscous path of rhs.jl cannot supply it.
+#
 # ALSO HERE: the modal filter. The paper applies a Boyd-Vandeven filter at every
 # step, "chosen to reduce by 5% the highest modes only", because the inviscid
 # high-order solution of an advective problem grows spurious grid-scale modes.
@@ -58,6 +62,10 @@ mutable struct St_sphere_params{TFloat}
     qf   ::Array{TFloat, 3}    # ngl × ngl × neqs filter scratch
     acc  ::Array{TFloat, 2}    # npoin × neqs   filter accumulator
     lfilter ::Bool
+    μ    ::Array{TFloat, 1}    # neqs : artificial viscosity, per equation (0 = off)
+    lvisc   ::Bool             # any μ[ieq] > 0
+    gξ   ::Array{TFloat, 3}    # ngl × ngl × neqs  ν ∇ₛq · a¹  at the LGL nodes
+    gη   ::Array{TFloat, 3}    # ngl × ngl × neqs  ν ∇ₛq · a²
 end
 
 
@@ -70,6 +78,9 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
     Filt    = lfilter ? build_sphere_filter_matrix(metrics.ξ, inputs, TF) :
                         Matrix{TF}(I, ngl, ngl)
 
+    μ     = build_sphere_viscosity(inputs, neqs, TF)
+    lvisc = any(>(zero(TF)), μ)
+
     return St_sphere_params{TF}(neqs,
                                 zeros(TF, ngl, ngl, neqs),
                                 zeros(TF, ngl, ngl, neqs),
@@ -78,7 +89,53 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                                 Filt,
                                 zeros(TF, ngl, ngl, neqs),
                                 zeros(TF, Int(mesh.npoin), neqs),
-                                lfilter)
+                                lfilter,
+                                μ,
+                                lvisc,
+                                zeros(TF, ngl, ngl, neqs),
+                                zeros(TF, ngl, ngl, neqs))
+end
+
+
+#---------------------------------------------------------------------------------
+# build_sphere_viscosity(inputs, neqs, TF)
+#
+# The per-equation artificial viscosity ν of Eq. (8b), read from the deck with
+# the SAME switches the flat cases use:
+#
+#   :lvisc            => false   master switch. Off ⇒ ν ≡ 0, whatever :μ says.
+#   :μ                          the coefficient, in m²/s. A scalar applies to
+#                               every equation listed in :ivisc_equations; a
+#                               vector of length neqs is taken per equation and
+#                               :ivisc_equations then only selects from it.
+#   :ivisc_equations  => 2:neqs which equations are diffused. The paper puts
+#                               δν∇²(φu) in the MOMENTUM equation only — the
+#                               continuity equation ∂φ/∂t + ∇·(φu) = 0 carries no
+#                               diffusion, and diffusing φ leaks mass across the
+#                               shell's height gradients for no physical reason.
+#                               Hence the default, which is deliberately NOT
+#                               "all equations".
+#---------------------------------------------------------------------------------
+function build_sphere_viscosity(inputs, neqs::Int, TF = TFloat)
+
+    μ = zeros(TF, neqs)
+
+    get(inputs, :lvisc, false) == true || return μ
+
+    μin = get(inputs, :μ, 0.0)
+    ieq_visc = get(inputs, :ivisc_equations, 2:neqs)
+
+    for ieq in ieq_visc
+        1 <= ieq <= neqs ||
+            error(string(" # ERROR sphere_rhs.jl: :ivisc_equations lists equation ", ieq,
+                         ", but this case has ", neqs, " equations."))
+        μ[ieq] = TF(μin isa Number ? μin : μin[ieq])
+    end
+
+    any(<(zero(TF)), μ) &&
+        error(" # ERROR sphere_rhs.jl: :μ must be non-negative; a negative viscosity is anti-diffusive and blows up immediately.")
+
+    return μ
 end
 
 
@@ -117,7 +174,8 @@ function sphere_rhs!(RHS, q, qe,
                         metrics.dξdx, metrics.dξdy, metrics.dξdz,
                         metrics.dηdx, metrics.dηdy, metrics.dηdz,
                         metrics.dψ, metrics.ω,
-                        sp.F, sp.G, sp.H, sp.S, Int(sp.neqs), SVT)
+                        sp.F, sp.G, sp.H, sp.S, Int(sp.neqs), SVT,
+                        sp.lvisc, sp.μ, sp.gξ, sp.gη)
     return RHS
 end
 
@@ -129,7 +187,8 @@ function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
                              dξdx, dξdy, dξdz,
                              dηdx, dηdy, dηdz,
                              dψ, ω,
-                             F, G, H, S, neqs::Int, SVT) where {TF}
+                             F, G, H, S, neqs::Int, SVT,
+                             lvisc::Bool, μ::AbstractVector{TF}, gξ, gη) where {TF}
 
     fill!(RHS, zero(TF))
 
@@ -177,11 +236,120 @@ function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
                 end
             end
         end
+
+        #--- artificial diffusion, δν∇ₛ²q, in weak form
+        lvisc && _sphere_visc_el!(RHS, q, connijk, iel, ngl,
+                                  Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                                  dψ, ω, μ, gξ, gη, neqs)
     end
 
     #--- M⁻¹ : the mass matrix is diagonal under LGL (inexact) integration
     @inbounds for ieq = 1:neqs, ip = 1:npoin
         RHS[ip,ieq] *= Minv[ip]
+    end
+
+    return RHS
+end
+
+
+#---------------------------------------------------------------------------------
+# _sphere_visc_el!  — the δν∇²(φu) of Marras/Kopera/Giraldo Eq. (8b), one element.
+#
+# WHY THIS IS NOT THE FLAT VISCOUS PATH
+# -------------------------------------
+# ∇² on a shell is the LAPLACE-BELTRAMI operator, and it is built from the same
+# 3×2 manifold metrics as the divergence in the kernel above:
+#
+#   ∇ₛq = a¹ ∂q/∂ξ + a² ∂q/∂η ,   a¹ = (dξdx,dξdy,dξdz) , a² = (dηdx,dηdy,dηdz)
+#
+# The viscous machinery in src/kernel/operators/rhs.jl builds ∇q from the flat
+# 2×2 inverse Jacobian (dξdx, dξdy, dηdx, dηdy — no z), so it cannot even be
+# CALLED here: the shell's metric has a third component and the flat one has no
+# slot for it. Dropping that component is not an approximation, it is a
+# different operator — it differentiates along the projection of the shell onto
+# the z = 0 plane, which is singular at the equator. Hence a kernel of its own,
+# and hence the fact that setting :lvisc => true did nothing at all before this:
+# the shell RHS simply never had a viscous branch.
+#
+# WEAK FORM
+# ---------
+# The shell is CLOSED, so integration by parts leaves no boundary term at all —
+# the same argument the inviscid part makes:
+#
+#   ∫ ψ ν∇ₛ²q dΩ = -∫ ∇ₛψ · (ν ∇ₛq) dΩ .
+#
+# This is the form to use, not the strong ν∇ₛ·(∇ₛq): it needs only ONE
+# derivative of the (only C⁰-continuous) solution, it is symmetric negative
+# semi-definite by construction — so the term can only ever REMOVE energy, never
+# add it, which is exactly what "artificial diffusion that stabilises" has to
+# mean — and it is exactly what the flat CG path does.
+#
+# With the tensor-product nodal basis, ∂ψ_{ij}/∂ξ|_{kl} = dψ[i,k] δ_{jl} and
+# ∂ψ_{ij}/∂η|_{kl} = δ_{ik} dψ[j,l], the double sum collapses to two lines:
+#
+#   ∫∇ₛψ_{ij}·(ν∇ₛq) = Σ_k ω_k ω_j J_{kj} dψ[i,k] gξ_{kj}
+#                    + Σ_l ω_i ω_l J_{il} dψ[j,l] gη_{il}
+#
+#   gξ = ν ∇ₛq·a¹ ,  gη = ν ∇ₛq·a²        (evaluated once per node, per equation)
+#
+# and it is subtracted from RHS with the sign above, i.e. with the SAME sign as
+# the divergence, since the kernel writes `RHS -= ω J (∇·F - S)` and this is
+# `RHS -= ∫∇ψ·(ν∇q)`.
+#
+# THE VECTOR LAPLACIAN, AND WHY COMPONENTWISE IS RIGHT HERE
+# ---------------------------------------------------------
+# q[2:4] are the CARTESIAN components of φu, and this diffuses each of them
+# separately with the scalar Laplace-Beltrami operator — literally what "∇²(φu)"
+# means when ∇ = (∂x,∂y,∂z)ᵀ, as it is defined in the paper. It is not the
+# covariant (Bochner) vector Laplacian: the two differ by curvature terms of
+# order ν|φu|/r², i.e. ~1e5 × 8e6 / 4e13 ≈ 2e-8 m/s² against a Coriolis term of
+# ~1e-4 × 8e6 ≈ 8e2 in the same units — ten orders of magnitude down, and this
+# is an artificial term whose coefficient is itself a modelling choice. The part
+# of it that matters, the small NORMAL component the componentwise operator
+# leaves behind, is removed exactly by the Lagrange projection that already runs
+# after every RK stage.
+#---------------------------------------------------------------------------------
+function _sphere_visc_el!(RHS::AbstractMatrix{TF}, q, connijk, iel::Int, ngl::Int,
+                          Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                          dψ, ω, μ::AbstractVector{TF}, gξ, gη, neqs::Int) where {TF}
+
+    @inbounds for ieq = 1:neqs
+
+        ν = μ[ieq]
+        ν > zero(TF) || continue
+
+        #--- ν ∇ₛq at every node of the element, in the contravariant basis
+        for j = 1:ngl, i = 1:ngl
+
+            dqdξ = dqdη = zero(TF)
+            for k = 1:ngl
+                dqdξ += dψ[k,i]*q[connijk[iel,k,j], ieq]
+                dqdη += dψ[k,j]*q[connijk[iel,i,k], ieq]
+            end
+
+            a1x = dξdx[iel,i,j]; a1y = dξdy[iel,i,j]; a1z = dξdz[iel,i,j]
+            a2x = dηdx[iel,i,j]; a2y = dηdy[iel,i,j]; a2z = dηdz[iel,i,j]
+
+            # ∇ₛq, tangential by construction (a¹ and a² are tangent vectors)
+            qx = dqdξ*a1x + dqdη*a2x
+            qy = dqdξ*a1y + dqdη*a2y
+            qz = dqdξ*a1z + dqdη*a2z
+
+            gξ[i,j,ieq] = ν*(qx*a1x + qy*a1y + qz*a1z)
+            gη[i,j,ieq] = ν*(qx*a2x + qy*a2y + qz*a2z)
+        end
+
+        #--- -∫ ∇ₛψ·(ν∇ₛq), then direct stiffness summation
+        for j = 1:ngl, i = 1:ngl
+
+            t = zero(TF)
+            for k = 1:ngl
+                t += ω[k]*ω[j]*Je[iel,k,j]*dψ[i,k]*gξ[k,j,ieq] +
+                     ω[i]*ω[k]*Je[iel,i,k]*dψ[j,k]*gη[i,k,ieq]
+            end
+
+            RHS[connijk[iel,i,j], ieq] -= t
+        end
     end
 
     return RHS

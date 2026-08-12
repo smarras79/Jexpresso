@@ -171,14 +171,25 @@ function user_inputs()
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,
         #---------------------------------------------------------------------------
-        # Artificial viscosity, the δν∇²(φu) term of Eq. (8b). The paper uses
-        # ν = 1e5 m²/s and shows the inviscid solution is badly resolution-
-        # sensitive on the cubed sphere, so this is likely to be needed once the
-        # equations run. It is a second derivative, not a pointwise source, so
-        # it goes through Jexpresso's viscous path rather than user_source.jl.
+        # Artificial viscosity, the δν∇²(φu) term of Eq. (8b), with ν the paper's
+        # 1e5 m²/s. On the shell this is the SURFACE (Laplace-Beltrami)
+        # Laplacian, assembled in weak form from the manifold metrics in
+        # src/kernel/operators/sphere_rhs.jl — the flat viscous path of rhs.jl is
+        # built on the 2×2 inverse Jacobian and has no third metric direction, so
+        # it cannot be used here.
+        #
+        # :ivisc_equations selects which equations are diffused. [2,3,4] is the
+        # MOMENTUM only, which is where the paper puts it: the continuity
+        # equation ∂φ/∂t + ∇·(φu) = 0 carries no diffusion. (Adding 1 diffuses
+        # the geopotential too — stable, but not the published equation set, and
+        # it smooths the height field for no physical reason.)
+        #
+        # This is a genuine ALTERNATIVE to :lfilter, not an addition to it:
+        # either one on its own keeps the run stable, both on is simply more
+        # dissipative. What does not work is both off — see the filter below.
         #---------------------------------------------------------------------------
         :lvisc                => false,
-        :ivisc_equations      => [1, 2, 3, 4],
+        :ivisc_equations      => [2, 3, 4],
         :μ                    => 0.0,      # set to 1.0e5 together with :lvisc => true
         #---------------------------------------------------------------------------
         # Stabilization: the modal filter, the stand-in for the Boyd-Vandeven
@@ -188,7 +199,10 @@ function user_inputs()
         #
         # The paper shows the inviscid solution is badly resolution-sensitive on
         # the cubed sphere, so leave this on unless you are deliberately
-        # measuring the unfiltered behaviour.
+        # measuring the unfiltered behaviour — or you have switched the
+        # artificial viscosity above on instead, which stabilizes the run the
+        # same way. With BOTH off the run is expected to blow up, and the time
+        # loop warns at startup that it will.
         #---------------------------------------------------------------------------
         :lfilter              => true,
         :filter_alpha         => 0.05,     # damping of the HIGHEST mode
