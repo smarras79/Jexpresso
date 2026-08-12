@@ -39,6 +39,31 @@ something runnable.
 
 Note that a run with **both** on is perfectly legitimate — the two mechanisms
 compose, they are simply both dissipative. It just would not isolate either one.
+Worth knowing: the paper itself runs **both**, filtering at every step (§4.2)
+*and* carrying `ν = 1e5`. Viscosity alone, as this deck has it, is a deliberate
+isolation of the term, not a reproduction of the published configuration.
+
+## What a healthy run looks like
+
+One simulated day at the shipped resolution, `:lfilter => false`, `ν = 1e5`,
+against the same run with **neither** mechanism:
+
+| step (t) | `δE/E` with ν | `δE/E` with neither | `max\|ζ\|` with ν | `max\|ζ\|` with neither |
+|---|---|---|---|---|
+| 200 (0.17 d) | −2.07e-05 | +3.98e-08 | 1.128e-04 | 1.148e-04 |
+| 600 (0.52 d) | −6.09e-05 | +4.96e-07 | 1.099e-04 | 1.235e-04 |
+| 1000 (0.87 d) | −9.96e-05 | +1.32e-05 | 1.122e-04 | 4.866e-04 |
+| 1153 (1.00 d) | −1.14e-04 | +2.37e-04 | 1.125e-04 | 1.880e-03 |
+
+The **sign of `δE/E` is the whole story**. With the diffusion, energy decreases
+monotonically — that is what a correctly-signed dissipative term does, and it is
+the negative semi-definiteness of the weak form showing up in a run. With
+neither, energy is *created*, roughly ten-fold per 0.17 d by the end, and
+`max|ζ|` has grown 16× while the viscous run's is flat. That is the grid-scale
+instability, and it is what eventually blows up.
+
+Mass is conserved to 3e-12 and the constraint `max|(φu)·x̂|` stays at 4e-10
+throughout the viscous run.
 
 ## The term
 
