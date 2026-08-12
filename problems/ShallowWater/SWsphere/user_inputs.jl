@@ -180,13 +180,17 @@ function user_inputs()
         #
         # :ivisc_equations selects which equations are diffused. [2,3,4] is the
         # MOMENTUM only, which is where the paper puts it: the continuity
-        # equation ∂φ/∂t + ∇·(φu) = 0 carries no diffusion. (Adding 1 diffuses
-        # the geopotential too — stable, but not the published equation set, and
-        # it smooths the height field for no physical reason.)
+        # equation ∂φ/∂t + ∇·(φu) = 0 carries no diffusion. Adding 1 diffuses
+        # the geopotential too; it makes almost no difference to stability here
+        # (measured — see problems/ShallowWater/SWsphere_visc/README.md).
         #
-        # This is a genuine ALTERNATIVE to :lfilter, not an addition to it:
-        # either one on its own keeps the run stable, both on is simply more
-        # dissipative. What does not work is both off — see the filter below.
+        # IT IS AN ADDITION TO :lfilter, NOT A SUBSTITUTE FOR IT. At this
+        # resolution ν = 1e5 with the filter off blows up at 2 days: the coarse
+        # elements sit at ~219 km, i.e. a grid Reynolds number of ~175, and
+        # viscosity alone does not hold that until about ν = 5e5 — which by then
+        # has erased half of max|ζ|, the field the test is judged on. The paper
+        # runs the filter AND ν = 1e5, and so should you; ShallowWater/
+        # SWsphere_visc is that configuration, verified to 3 days.
         #---------------------------------------------------------------------------
         :lvisc                => false,
         :ivisc_equations      => [2, 3, 4],
@@ -198,11 +202,11 @@ function user_inputs()
         # and followed by a mass-weighted DSS average, so it conserves ∫φ.
         #
         # The paper shows the inviscid solution is badly resolution-sensitive on
-        # the cubed sphere, so leave this on unless you are deliberately
-        # measuring the unfiltered behaviour — or you have switched the
-        # artificial viscosity above on instead, which stabilizes the run the
-        # same way. With BOTH off the run is expected to blow up, and the time
-        # loop warns at startup that it will.
+        # the cubed sphere, so LEAVE THIS ON. Switching on the artificial
+        # viscosity above is not a licence to switch this off: at this
+        # resolution that combination fails at 2 days (see the note there). With
+        # both off the run blows up sooner still, and the time loop warns at
+        # startup that it will.
         #---------------------------------------------------------------------------
         :lfilter              => true,
         :filter_alpha         => 0.05,     # damping of the HIGHEST mode

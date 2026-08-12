@@ -2,24 +2,36 @@ function user_inputs()
 
     inputs = Dict(
         #---------------------------------------------------------------------------
-        # SWsphere_visc — the Galewsky jet on the shell, stabilised by the
-        # ARTIFICIAL DIFFUSION of Eq. (8b) instead of by the modal filter.
+        # SWsphere_visc — the Galewsky jet on the shell with the ARTIFICIAL
+        # DIFFUSION of Eq. (8b) added to the modal filter: the PAPER'S OWN
+        # configuration (Marras, Kopera & Giraldo 2015, QJRMS 141: 1727-1739),
+        # which filters every step AND carries ν = 1e5 m²/s.
         #
         # Same equations, same grid, same initial condition as
         # ShallowWater/SWsphere — the five other user_*.jl files in this
         # directory are one-line includes of that case's. What differs is
-        # exactly two switches at the bottom:
+        # exactly one switch at the bottom:
         #
         #     SWsphere        :lfilter => true    :lvisc => false
-        #     SWsphere_visc   :lfilter => false   :lvisc => true, :μ => 1e5
+        #     SWsphere_visc   :lfilter => true    :lvisc => true, :μ => 1e5
         #
-        # WHY IT IS A SEPARATE CASE. The run needs at least ONE of the two: the
-        # inviscid unfiltered high-order solution on the cubed sphere grows
-        # grid-scale modes and blows up (Marras, Kopera & Giraldo 2015, QJRMS
-        # 141: 1727-1739, section 4.2). SWsphere keeps the filter because that
-        # is the paper's own choice for the published test; this case exercises
-        # the other branch, so both paths are covered by something runnable
-        # rather than by a comment saying "set these two flags".
+        # WHY NOT VISCOSITY ALONE, which is what this case first shipped as.
+        # It does not survive this grid. Measured, 3 days, all else equal:
+        #
+        #   ν = 1e5, filter OFF   NaN at 2.005 d, whether the diffusion is on
+        #                         the momentum only or on all four equations
+        #                         (both were run; they die within 0.4% of each
+        #                         other, so it is not the undiffused φ)
+        #   ν = 5e5, filter OFF   survives 3 d — but max|ζ| falls 1.12e-4 →
+        #                         5.65e-5, HALF the vorticity gone, and
+        #                         vorticity is the field this test is judged on
+        #   ν = 1e5, filter ON    survives 3 d with max|ζ| 1.11e-4 → 9.58e-5,
+        #                         a 13% loss  ← this deck
+        #
+        # The grid is the reason: 10 elements per panel at nop=5 leaves the
+        # coarse elements at ~219 km effective resolution, i.e. a grid Reynolds
+        # number uΔ/ν ≈ 175 at ν = 1e5. Viscosity alone can hold that only by
+        # being strong enough to erase the answer.
         #
         # Physics, provenance and the discretization: see the README next to
         # problems/ShallowWater/SWsphere/user_inputs.jl. Everything down to the
@@ -92,23 +104,29 @@ function user_inputs()
         # :ivisc_equations => [2,3,4] is the MOMENTUM only, where the paper puts
         # it: the continuity equation ∂φ/∂t + ∇·(φu) = 0 carries no diffusion.
         #
-        # ν costs no time step here. Diffusion is a second derivative, so it is
+        # ν costs no time step here, and that is worth being precise about
+        # because it is the opposite of the intuition that a blow-up means the
+        # step is too big. Diffusion is a second derivative, so it is
         # explicit-stable only for Δt ~ Δ²/ν, and sphere_cfl_dt takes the min of
         # that and the wave-speed limit — but at this resolution the two are
-        # ~1e5 s and ~1e2 s, so the gravity waves still set Δt by three orders
-        # of magnitude. Raising ν far enough WILL start to cut the step, which
-        # is the intended behaviour: the alternative is a silent blow-up.
+        # ~1e5 s and ~75 s, so the gravity waves set Δt by three orders of
+        # magnitude. ν = 1e5 is nowhere near the stability CEILING; the trouble
+        # is the FLOOR, i.e. whether it damps enough. Reducing :cfl does not
+        # help a run that fails this way, which is the tell.
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
         :μ                    => 1.0e5,
         #---------------------------------------------------------------------------
-        # ... and the modal filter is OFF, which is what makes this a test of the
-        # diffusion rather than a test of the two together. Switching it back on
-        # is legitimate — the two mechanisms compose, they are simply both
-        # dissipative — but then the case no longer isolates anything.
+        # ... AND the modal filter, which is what actually keeps the run alive
+        # here (see the table at the top). The two mechanisms compose, and the
+        # paper uses both.
+        #
+        # To isolate the diffusion instead, set :lfilter => false and raise :μ to
+        # at least 5e5 — that combination does complete 3 days. Just do not read
+        # the vorticity off it: at 5e5 half of max|ζ| is gone by day 3.
         #---------------------------------------------------------------------------
-        :lfilter              => false,
+        :lfilter              => true,
         :filter_alpha         => 0.05,
         :filter_order         => 8,
         :filter_kcut          => 2/3,
