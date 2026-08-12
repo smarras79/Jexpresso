@@ -969,8 +969,6 @@ end
 
 function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_1D)
 
-    Δ = params.mesh.Δeffective_l
-
     nelem::Int = params.mesh.nelem
     ngl::Int   = params.mesh.ngl
     neqs::Int  = params.neqs
@@ -1010,12 +1008,12 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  params.uprimitive,
                                  μ_el,
                                  params.ω,
-                                 params.mesh.ngl,
+                                 ngl,
                                  params.basis.dψ,
                                  params.metrics.Je,
                                  params.metrics.dξdx,
                                  params.inputs, params.rhs_el,
-                                 iel, ieq, params.QT, DSGS(), SD, params.AD; Δ=Δ)
+                                 iel, ieq, params.QT, DSGS(), SD, params.AD)
             end
         else
             for ieq = 1:neqs
@@ -1023,12 +1021,12 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  params.uprimitive,
                                  params.visc_coeff,
                                  params.ω,
-                                 params.mesh.ngl,
+                                 ngl,
                                  params.basis.dψ,
                                  params.metrics.Je,
                                  params.metrics.dξdx,
                                  params.inputs, params.rhs_el,
-                                 iel, ieq, params.QT, params.VT, SD, params.AD; Δ=Δ)
+                                 iel, ieq, params.QT, params.VT, SD, params.AD)
             end
         end
 
