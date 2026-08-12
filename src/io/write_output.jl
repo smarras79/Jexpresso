@@ -77,6 +77,26 @@ end
 # END Callback for missing user_uout!()
 #------------------------------------------------------------------
 
+
+function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::NONE;
+                      nvar=1, qexact=zeros(1,nvar), case="")
+    nothing
+end
+
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::NONE;
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
+    nothing
+end
+
+
 function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
@@ -178,6 +198,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
 end
 
 
+
 function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
@@ -214,7 +235,6 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
     MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
 
 end
-
 
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
