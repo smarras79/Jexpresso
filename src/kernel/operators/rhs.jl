@@ -967,6 +967,53 @@ end
 
 
 
+
+#
+# TYPED FUNCTION BARRIER for the 1D viscous element loop.
+#
+# `params` is a very large NamedTuple and is inferred ::Any inside
+# viscous_rhs_el!, so every params.<field> read in this loop was a dynamic
+# lookup and the call to _expansion_visc! could not be resolved at compile
+# time. A dynamically dispatched call has to BOX EVERY ARGUMENT, including the
+# scalar viscosity -- which is why Float64 was the most-allocated type in the
+# sod1d profile, and why declaring the scalar ::Float64 at the call site changed
+# nothing: the box is created by the call, not by the read.
+#
+# Passing the values positionally into this single-method function lets Julia
+# specialise on their concrete runtime types, so the dispatch inside becomes
+# static and the boxing disappears. Same trick as the shell kernels in
+# sphere_rhs.jl.
+#
+function _visc_el_loop_1d!(rhs_diffxi_el, uprimitive, mu_dsgs, visc_coeff,
+                           omega, ngl::Int, dpsi, Je, dxidx, inputs, rhs_el,
+                           nelem::Int, neqs::Int, connijk, uaux, qe, SVT,
+                           QT, VT, AD, SD, ldsgs::Bool)
+
+    for iel = 1:nelem
+
+        for i = 1:ngl
+            ip = connijk[iel,i]
+            user_primitives!(@view(uaux[ip,:]), @view(qe[ip,:]),
+                             @view(uprimitive[i,:]), SVT)
+        end
+
+        if ldsgs
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffxi_el, uprimitive, mu_dsgs[iel, ieq],
+                                 omega, ngl, dpsi, Je, dxidx, inputs, rhs_el,
+                                 iel, ieq, QT, DSGS(), SD, AD)
+            end
+        else
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffxi_el, uprimitive, visc_coeff,
+                                 omega, ngl, dpsi, Je, dxidx, inputs, rhs_el,
+                                 iel, ieq, QT, VT, SD, AD)
+            end
+        end
+    end
+    return nothing
+end
+
 function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_1D)
 
     nelem::Int = params.mesh.nelem
@@ -994,43 +1041,14 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  Int(nelem), Int(ngl), SD)
     end
 
-    for iel=1:nelem
-
-        for i=1:ngl
-            ip = connijk[iel,i]
-            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
-        end
-
-        if params.VT == DSGS()
-            for ieq = 1:neqs
-                μ_el = params.μ_dsgs[iel, ieq]
-                _expansion_visc!(params.rhs_diffξ_el,
-                                 params.uprimitive,
-                                 μ_el,
-                                 params.ω,
-                                 ngl,
-                                 params.basis.dψ,
-                                 params.metrics.Je,
-                                 params.metrics.dξdx,
-                                 params.inputs, params.rhs_el,
-                                 iel, ieq, params.QT, DSGS(), SD, params.AD)
-            end
-        else
-            for ieq = 1:neqs
-                _expansion_visc!(params.rhs_diffξ_el,
-                                 params.uprimitive,
-                                 params.visc_coeff,
-                                 params.ω,
-                                 ngl,
-                                 params.basis.dψ,
-                                 params.metrics.Je,
-                                 params.metrics.dξdx,
-                                 params.inputs, params.rhs_el,
-                                 iel, ieq, params.QT, params.VT, SD, params.AD)
-            end
-        end
-
-    end
+    _visc_el_loop_1d!(params.rhs_diffξ_el, params.uprimitive,
+                      params.μ_dsgs, params.visc_coeff,
+                      params.ω, ngl, params.basis.dψ,
+                      params.metrics.Je, params.metrics.dξdx,
+                      params.inputs, params.rhs_el,
+                      nelem, neqs, connijk, params.uaux, qe,
+                      params.SOL_VARS_TYPE, params.QT, params.VT, params.AD, SD,
+                      params.VT == DSGS())
 
     params.rhs_diff_el .= @views (params.rhs_diffξ_el)
 
