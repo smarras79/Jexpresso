@@ -62,7 +62,8 @@ using LinearSolve
 using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
-                 SplitODEProblem, FullSpecialize
+                 SplitODEProblem, FullSpecialize,
+                 successful_retcode
 # PERF: `using HDF5` moved into Jexpresso._ensure_hdf5_loaded!() —
 # only `write_hdf5`/`read_hdf5` in src/io/write_output.jl reference
 # h5* functions, and both call the loader before touching them. The

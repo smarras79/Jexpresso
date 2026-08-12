@@ -465,6 +465,35 @@ function _sphere_march!(mesh::St_mesh,
     copyto!(q.qn, solution.u[end])
     tfinal = Float64(solution.t[end])
 
+    #
+    # DID IT ACTUALLY GET THERE?
+    #
+    # When the solution blows up, OrdinaryDiffEq does not throw: it stops early
+    # and RETURNS, with a retcode saying why (:DtNaN, :Unstable, :MaxIters …).
+    # Without this check the run then printed
+    #
+    #   # TIME INTEGRATION ......... DONE
+    #   #   final: t = 173274.9 s ; δmass/mass = -6.643e+144 ; δE/E = NaN
+    #
+    # — the word DONE on a solution that had gone to NaN a day short of :tend.
+    # The diagnostics callback only catches it if a print step happens to fall
+    # after the blow-up and before the integrator gives up, which is a race:
+    # here the last print was at 1.736 d, the run died at 2.005 d, and nothing
+    # said so. An early stop is a FAILURE and has to be reported as one.
+    #
+    if !successful_retcode(solution)
+        error(string(" # ERROR sphere_time_loop.jl: the integration stopped at t = ",
+                     @sprintf("%.1f", tfinal), " s of the requested ", @sprintf("%.1f", tend),
+                     " s (retcode :", solution.retcode, ").\n",
+                     " #   The solution blew up. On the shell that almost always means too\n",
+                     " #   little stabilisation rather than too large a step, so try, in order:\n",
+                     " #     * :lfilter => true — the modal filter damps ALL the fields;\n",
+                     " #     * :ivisc_equations => [1,2,3,4] — with the filter off, leaving the\n",
+                     " #       continuity equation out gives φ no dissipation at all, and CG\n",
+                     " #       has no upwinding to supply any;\n",
+                     " #     * a larger :μ, or a smaller :cfl if the step really is the problem."))
+    end
+
     if verbose
         mass, ener, drift = sphere_diagnostics(q.qn, mesh, metrics)
         println(" # TIME INTEGRATION ............................................ DONE")
