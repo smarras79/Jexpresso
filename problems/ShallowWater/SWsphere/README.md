@@ -368,6 +368,12 @@ warns if both are off.
 | `:lfilter => true` | the exponential modal filter, applied once per step as the integrator's `step_limiter!`, followed by a mass-weighted DSS average, so it conserves `∫φ` exactly. The stand-in for the paper's Boyd-Vandeven filter; `:filter_alpha => 0.05` is its "reduce the highest modes by 5%". |
 | `:lvisc => true`, `:μ => 1e5` | the artificial diffusion `δν∇²(φu)` of Eq. (8b), `ν = 1e5 m²/s` in the paper. `:ivisc_equations => [2,3,4]` puts it on the momentum only, where the paper has it. |
 
+This deck keeps the **filter**, which is the paper's own choice for the
+published test. The other branch is a case of its own —
+[`../SWsphere_visc`](../SWsphere_visc/README.md), identical but for those two
+switches — so both are covered by something runnable rather than by a comment.
+Running with both on is legitimate too; it is simply more dissipative.
+
 The diffusion is the **surface (Laplace-Beltrami) Laplacian**, built from the
 same 3×2 manifold metrics as the divergence, and assembled in **weak** form —
 integration by parts leaves no boundary term on a closed shell:
