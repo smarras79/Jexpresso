@@ -8,11 +8,11 @@ function user_inputs()
         # with the shallow water equations of Marras, Kopera & Giraldo (2015),
         # QJRMS 141: 1727-1739, Eq. (8), on a cubed-sphere shell.
         #
-        # The run: grid -> manifold metrics -> initial condition -> SSP-RK3.
+        # The run: grid -> manifold metrics -> initial condition -> :ode_solver.
         #
         #   :lspherical_shell => true   solve on the shell: manifold metrics,
-        #                               surface-divergence RHS and the SSP-RK3
-        #                               loop replace the flat ones. The GRID is
+        #                               surface-divergence RHS and the shell
+        #                               time loop replace the flat ones. The GRID is
         #                               read by the ordinary gmsh path, which
         #                               detects a 2D manifold embedded in 3D
         #                               and keeps z (`lmanifold` in mesh.jl).
@@ -131,11 +131,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Time integration.
         #
-        # SSP-RK3 (Shu-Osher), the scheme of the paper's section 4.2, is applied
-        # by src/kernel/solvers/sphere_time_loop.jl -- the shell does not go
-        # through Jexpresso's SciML integrators because the Lagrange projection
-        # has to run after EVERY RK stage. :ode_solver is therefore ignored here
-        # and kept only so the deck reads like every other one.
+        # src/kernel/solvers/sphere_time_loop.jl builds an ODEProblem and solves
+        # it with :ode_solver, like every other case. The Lagrange projection has
+        # to run after EVERY RK stage, which is exactly what an integrator's
+        # stage_limiter! hook is for; the modal filter is the step_limiter!.
+        # :ode_solver must therefore name an integrator that takes limiters.
         #
         # :lcfl_dt => true (the default) takes the step from the CFL condition,
         # Δt = :cfl * Δmin / max(|u| + sqrt(φ)), with Δmin the smallest LGL node
@@ -152,7 +152,15 @@ function user_inputs()
         # like nothing is happening. :tend is therefore the full 144 h of the
         # test (Galewsky et al. 2004; Marras et al. section 5).
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(),      # ignored: see above
+        # The integrator is now HONOURED: sphere_time_loop.jl builds an
+        # ODEProblem and hands it to OrdinaryDiffEq, with the Lagrange
+        # projection as the stage_limiter! and the modal filter as the
+        # step_limiter!. Any SSPRK integrator works — it has to be one that
+        # takes limiters, because the projection must run after every stage.
+        # SSPRK33 is the Shu-Osher SSP-RK3 of Marras et al. (2015) section 4.2,
+        # i.e. the published scheme for this test; SSPRK54 costs 5 RHS
+        # evaluations per step instead of 3 and permits a larger CFL.
+        :ode_solver           => SSPRK33(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
         :cfl                  => 0.35,
         :tinit                => 0.0,
@@ -163,14 +171,29 @@ function user_inputs()
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,
         #---------------------------------------------------------------------------
-        # Artificial viscosity, the δν∇²(φu) term of Eq. (8b). The paper uses
-        # ν = 1e5 m²/s and shows the inviscid solution is badly resolution-
-        # sensitive on the cubed sphere, so this is likely to be needed once the
-        # equations run. It is a second derivative, not a pointwise source, so
-        # it goes through Jexpresso's viscous path rather than user_source.jl.
+        # Artificial viscosity, the δν∇²(φu) term of Eq. (8b), with ν the paper's
+        # 1e5 m²/s. On the shell this is the SURFACE (Laplace-Beltrami)
+        # Laplacian, assembled in weak form from the manifold metrics in
+        # src/kernel/operators/sphere_rhs.jl — the flat viscous path of rhs.jl is
+        # built on the 2×2 inverse Jacobian and has no third metric direction, so
+        # it cannot be used here.
+        #
+        # :ivisc_equations selects which equations are diffused. [2,3,4] is the
+        # MOMENTUM only, which is where the paper puts it: the continuity
+        # equation ∂φ/∂t + ∇·(φu) = 0 carries no diffusion. Adding 1 diffuses
+        # the geopotential too; it makes almost no difference to stability here
+        # (measured — see problems/ShallowWater/SWsphere_visc/README.md).
+        #
+        # IT IS AN ADDITION TO :lfilter, NOT A SUBSTITUTE FOR IT. At this
+        # resolution ν = 1e5 with the filter off blows up at 2 days: the coarse
+        # elements sit at ~219 km, i.e. a grid Reynolds number of ~175, and
+        # viscosity alone does not hold that until about ν = 5e5 — which by then
+        # has erased half of max|ζ|, the field the test is judged on. The paper
+        # runs the filter AND ν = 1e5, and so should you; ShallowWater/
+        # SWsphere_visc is that configuration, verified to 3 days.
         #---------------------------------------------------------------------------
         :lvisc                => false,
-        :ivisc_equations      => [1, 2, 3, 4],
+        :ivisc_equations      => [2, 3, 4],
         :μ                    => 0.0,      # set to 1.0e5 together with :lvisc => true
         #---------------------------------------------------------------------------
         # Stabilization: the modal filter, the stand-in for the Boyd-Vandeven
@@ -179,8 +202,11 @@ function user_inputs()
         # and followed by a mass-weighted DSS average, so it conserves ∫φ.
         #
         # The paper shows the inviscid solution is badly resolution-sensitive on
-        # the cubed sphere, so leave this on unless you are deliberately
-        # measuring the unfiltered behaviour.
+        # the cubed sphere, so LEAVE THIS ON. Switching on the artificial
+        # viscosity above is not a licence to switch this off: at this
+        # resolution that combination fails at 2 days (see the note there). With
+        # both off the run blows up sooner still, and the time loop warns at
+        # startup that it will.
         #---------------------------------------------------------------------------
         :lfilter              => true,
         :filter_alpha         => 0.05,     # damping of the HIGHEST mode

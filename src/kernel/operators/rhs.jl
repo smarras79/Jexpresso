@@ -575,7 +575,7 @@ function _build_rhs!(RHS, u, params, time)
         @timeit_debug JEXPRESSO_TIMER "do_micro_physics" do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
                           params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
                           params.mp.S_micro, params.mp.qsatt, params.mesh.npoin,
-                          params.uaux, @view(params.mesh.coords[:,end]),
+                          params.uaux, @view(params.mesh.coords[end, :]),
                           params.qp.qe, SD, params.SOL_VARS_TYPE)
 
         # if inputs[:ladapt] == true
@@ -711,15 +711,18 @@ function _build_rhs!(RHS, u, params, time)
 end
 # end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
+function inviscid_rhs_el!(u, params,
+                          connijk::Array{Int64,4},
+                          qe::Matrix{Float64},
+                          coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
     
     @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    ngl   = params.mesh.ngl
-    npoin = params.mesh.npoin
-    nelem = params.mesh.nelem
-    neqs  = params.neqs
-    
+    ngl::Int   = params.mesh.ngl
+    npoin::Int = params.mesh.npoin
+    nelem::Int = params.mesh.nelem
+    neqs::Int  = params.neqs
+
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     
     for iel=1:nelem   
@@ -744,7 +747,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
+                             neqs=params.neqs, x=coords[1, ip], y=0.0, xmax=xmax,xmin=xmin)
             end
         end
 
@@ -806,7 +809,7 @@ function inviscid_rhs_el!(u, params,
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
-                             x=coords[ip,1], y=coords[ip,2], ymax=ymax)
+                             x=coords[1, ip], y=coords[2, ip], ymax=ymax)
 
                 if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
@@ -918,7 +921,7 @@ function _inviscid_rhs_el_3d!(u, uaux, qe,
                              npoin,
                              CL, SOL_VARS_TYPE;
                              neqs=neqs,
-                             x=coords[ip,1], y=coords[ip,2], z=coords[ip,3],
+                             x=coords[1, ip], y=coords[2, ip], z=coords[3, ip],
                              xmax=xmax, xmin=xmin, zmax=zmax)
 
                 if (lmoist)
@@ -964,13 +967,58 @@ end
 
 
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
 
-    Δ = params.mesh.Δeffective_l
+#
+# TYPED FUNCTION BARRIER for the 1D viscous element loop.
+#
+# `params` is a very large NamedTuple and is inferred ::Any inside
+# viscous_rhs_el!, so every params.<field> read in this loop was a dynamic
+# lookup and the call to _expansion_visc! could not be resolved at compile
+# time. A dynamically dispatched call has to BOX EVERY ARGUMENT, including the
+# scalar viscosity -- which is why Float64 was the most-allocated type in the
+# sod1d profile, and why declaring the scalar ::Float64 at the call site changed
+# nothing: the box is created by the call, not by the read.
+#
+# Passing the values positionally into this single-method function lets Julia
+# specialise on their concrete runtime types, so the dispatch inside becomes
+# static and the boxing disappears. Same trick as the shell kernels in
+# sphere_rhs.jl.
+#
+function _visc_el_loop_1d!(rhs_diffxi_el, uprimitive, mu_dsgs, visc_coeff,
+                           omega, ngl::Int, dpsi, Je, dxidx, inputs, rhs_el,
+                           nelem::Int, neqs::Int, connijk, uaux, qe, SVT,
+                           QT, VT, AD, SD, ldsgs::Bool)
 
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    neqs  = params.neqs
+    for iel = 1:nelem
+
+        for i = 1:ngl
+            ip = connijk[iel,i]
+            user_primitives!(@view(uaux[ip,:]), @view(qe[ip,:]),
+                             @view(uprimitive[i,:]), SVT)
+        end
+
+        if ldsgs
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffxi_el, uprimitive, mu_dsgs[iel, ieq],
+                                 omega, ngl, dpsi, Je, dxidx, inputs, rhs_el,
+                                 iel, ieq, QT, DSGS(), SD, AD)
+            end
+        else
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffxi_el, uprimitive, visc_coeff,
+                                 omega, ngl, dpsi, Je, dxidx, inputs, rhs_el,
+                                 iel, ieq, QT, VT, SD, AD)
+            end
+        end
+    end
+    return nothing
+end
+
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_1D)
+
+    nelem::Int = params.mesh.nelem
+    ngl::Int   = params.mesh.ngl
+    neqs::Int  = params.neqs
 
     # Marras-style Dynamic SGS: fill the pre-allocated per-element
     # μ_dsgs[1:nelem, 1:neqs] buffer (sized in params_setup.jl) before
@@ -993,43 +1041,14 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
                                  Int(nelem), Int(ngl), SD)
     end
 
-    for iel=1:nelem
-
-        for i=1:ngl
-            ip = connijk[iel,i]
-            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
-        end
-
-        if params.VT == DSGS()
-            for ieq = 1:neqs
-                μ_el = params.μ_dsgs[iel, ieq]
-                _expansion_visc!(params.rhs_diffξ_el,
-                                 params.uprimitive,
-                                 μ_el,
-                                 params.ω,
-                                 params.mesh.ngl,
-                                 params.basis.dψ,
-                                 params.metrics.Je,
-                                 params.metrics.dξdx,
-                                 params.inputs, params.rhs_el,
-                                 iel, ieq, params.QT, DSGS(), SD, params.AD; Δ=Δ)
-            end
-        else
-            for ieq = 1:neqs
-                _expansion_visc!(params.rhs_diffξ_el,
-                                 params.uprimitive,
-                                 params.visc_coeff,
-                                 params.ω,
-                                 params.mesh.ngl,
-                                 params.basis.dψ,
-                                 params.metrics.Je,
-                                 params.metrics.dξdx,
-                                 params.inputs, params.rhs_el,
-                                 iel, ieq, params.QT, params.VT, SD, params.AD; Δ=Δ)
-            end
-        end
-
-    end
+    _visc_el_loop_1d!(params.rhs_diffξ_el, params.uprimitive,
+                      params.μ_dsgs, params.visc_coeff,
+                      params.ω, ngl, params.basis.dψ,
+                      params.metrics.Je, params.metrics.dξdx,
+                      params.inputs, params.rhs_el,
+                      nelem, neqs, connijk, params.uaux, qe,
+                      params.SOL_VARS_TYPE, params.QT, params.VT, params.AD, SD,
+                      params.VT == DSGS())
 
     params.rhs_diff_el .= @views (params.rhs_diffξ_el)
 
@@ -2501,7 +2520,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     Je_klm = Je[iel,k,l,m]
                     ωJac   = ω[k] * ωlm * Je_klm
                     # ip     = conn_el[k,l,m]
-                    # z      = coords[ip,3]
+                    # z      = coords[3, ip]
                     
                     σμ     = 1.0
                     # if (z > zs) && (ieq > 4)
@@ -2592,7 +2611,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
             for k = 1:ngl
 
                 ip     = connijk[iel,k,l,m]
-                z      = coords[ip,3]
+                z      = coords[3, ip]
                 
                 σμ     = 1.0
                 # if (z > zs) && (ieq > 4)

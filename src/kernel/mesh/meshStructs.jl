@@ -23,7 +23,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     x      = KernelAbstractions.zeros(backend, TFloat, 2)
     y      = KernelAbstractions.zeros(backend, TFloat, 2)
     z      = KernelAbstractions.zeros(backend, TFloat, 2)
-    coords = KernelAbstractions.zeros(backend, TFloat, 2, 1)
+    # LAYOUT: coords is (nsd, npoin) -- a node's coordinates are ADJACENT in
+    # memory, so touching a node costs one cache line instead of nsd of them.
+    coords = KernelAbstractions.zeros(backend, TFloat, 1, 2)
     
     x_ho = KernelAbstractions.zeros(backend, TFloat, 2)
     y_ho = KernelAbstractions.zeros(backend, TFloat, 2)
@@ -167,7 +169,11 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     bdy_face_type             = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id          = KernelAbstractions.zeros(backend, TInt, 0)
 
-    Δelem                = KernelAbstractions.zeros(backend, TInt, 0)
+    # TFloat, not TInt: Δelem holds the shortest corner-to-corner distance in
+    # each element (mesh.jl fills it with a TFloat array), and SGS.jl consumes
+    # it as Δelem::AbstractVector{TT} with Δ = Δelem[ie]/ngl. The TInt default
+    # was the odd one out — Δelem_s/Δelem_l next to it are already 0.0.
+    Δelem                = KernelAbstractions.zeros(backend, TFloat, 0)
     Δelem_s              = 0.0
     Δelem_l              = 0.0
     Δeffective_s         = 0.0

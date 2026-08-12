@@ -138,9 +138,10 @@ end
                                         mesh.nelem*(ngl-2)^2
 
                     # (4) every node lands ON the sphere
-                    r = sqrt.(mesh.x[1:mesh.npoin].^2 .+
-                              mesh.y[1:mesh.npoin].^2 .+
-                              mesh.z[1:mesh.npoin].^2)
+                    crd = mesh.coords
+                    r = sqrt.(crd[1, 1:mesh.npoin].^2 .+
+                              crd[2, 1:mesh.npoin].^2 .+
+                              crd[3, 1:mesh.npoin].^2)
                     @test maximum(abs.(r .- mesh.radius))/mesh.radius < 1.0e-12
 
                     # (5) nothing duplicated: no two nodes closer than a small
@@ -148,9 +149,9 @@ end
                     #     (rather than per-unique-edge) numbering would put two
                     #     coincident nodes on every seam and fail here.
                     tolabs = 1.0e-4*mesh.radius/(mesh.nelem^0.5 * ngl)
-                    key(ip) = (round(Int, mesh.x[ip]/tolabs),
-                               round(Int, mesh.y[ip]/tolabs),
-                               round(Int, mesh.z[ip]/tolabs))
+                    key(ip) = (round(Int, crd[1, ip]/tolabs),
+                               round(Int, crd[2, ip]/tolabs),
+                               round(Int, crd[3, ip]/tolabs))
                     seen = Set{NTuple{3,Int}}()
                     dup  = 0
                     for ip = 1:mesh.npoin
@@ -177,7 +178,7 @@ end
                     shell_inputs(flat, 4; lspherical = false),
                     1, distribute)
                 @test mesh.lmanifold == false
-                @test all(mesh.z[1:mesh.npoin] .== 0.0)
+                @test size(mesh.coords, 1) == 2      # no third row on a flat grid
             end
         end
     end

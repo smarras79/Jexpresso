@@ -1175,7 +1175,7 @@ function kessler(mp::St_Microphysics, params, q, qref, mesh)
                       @view(q[:,mesh.nsd+3]), #qc
                       @view(q[:,mesh.nsd+4]), #qr
                       qref,
-                      @view(mesh.coords[:,end]),
+                      @view(mesh.coords[end, :]),
                       params.Δt)
 
     #for ip in 1:npoin

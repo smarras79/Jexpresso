@@ -486,18 +486,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # Plotting parameters:
     #
     if(!haskey(inputs, :outformat))
-        inputs[:outformat] = ASCII()
+        inputs[:outformat] = NONE()
     else
         if lowercase(inputs[:outformat]) == "png"
             inputs[:outformat] = PNG()
-        elseif lowercase(inputs[:outformat]) == "ascii"
-            inputs[:outformat] = ASCII()
         elseif lowercase(inputs[:outformat]) == "vtk"
             inputs[:outformat] = VTK()
         elseif lowercase(inputs[:outformat]) == "hdf5" || lowercase(inputs[:outformat]) == "h5"
             inputs[:outformat] = HDF5()
         elseif lowercase(inputs[:outformat]) == "netcdf" || lowercase(inputs[:outformat]) == "netcdf"
             inputs[:outformat] = NETCDF()
+        else
+            inputs[:outformat] = NONE()
         end
     end
 

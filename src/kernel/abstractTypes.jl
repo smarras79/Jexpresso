@@ -103,3 +103,4 @@ struct ASCII <: AbstractOutFormat end
 struct VTK <: AbstractOutFormat end
 struct HDF5 <: AbstractOutFormat end
 struct NETCDF <: AbstractOutFormat end
+struct NONE <: AbstractOutFormat end

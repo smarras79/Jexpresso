@@ -323,9 +323,9 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
                                max_level)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
     tol         = 1e-4
-    x           = coords[:,1]
-    y           = coords[:,2]
-    z           = coords[:,3]
+    x           = coords[1, :]
+    y           = coords[2, :]
+    z           = coords[3, :]
 
     preadapt_max_lvl = inputs[:preadapt_max_level]
     for iel = 1:nelem

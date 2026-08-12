@@ -45,7 +45,7 @@ function driver(nparts,
     # What stays specific to the manifold is downstream of the grid:
     #
     #   metrics (sphere_metrics.jl)  →  initial condition (the case's
-    #   initialize.jl)  →  SSP-RK3 time loop (sphere_time_loop.jl), whose RHS
+    #   initialize.jl)  →  the :ode_solver time loop (sphere_time_loop.jl), whose RHS
     #   is the SEM surface divergence in sphere_rhs.jl fed by the case's
     #   user_flux! / user_source!.
     #
