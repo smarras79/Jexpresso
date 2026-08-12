@@ -103,6 +103,7 @@ function build_sphere_metrics(mesh::St_mesh,
                               verbose = true,
                               TF      = TFloat)
 
+    crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
     ngl   = Int(mesh.ngl)
     nelem = Int(mesh.nelem)
     npoin = Int(mesh.npoin)
@@ -136,10 +137,10 @@ function build_sphere_metrics(mesh::St_mesh,
             a2x = a2y = a2z = zero(TF)
             @inbounds for k = 1:ngl
                 ipk = mesh.connijk[iel, k, j]
-                a1x += dψ[k,i]*mesh.x[ipk]; a1y += dψ[k,i]*mesh.y[ipk]; a1z += dψ[k,i]*mesh.z[ipk]
+                a1x += dψ[k,i]*crd[1, ipk]; a1y += dψ[k,i]*crd[2, ipk]; a1z += dψ[k,i]*crd[3, ipk]
 
                 ipl = mesh.connijk[iel, i, k]
-                a2x += dψ[k,j]*mesh.x[ipl]; a2y += dψ[k,j]*mesh.y[ipl]; a2z += dψ[k,j]*mesh.z[ipl]
+                a2x += dψ[k,j]*crd[1, ipl]; a2y += dψ[k,j]*crd[2, ipl]; a2z += dψ[k,j]*crd[3, ipl]
             end
 
             # n = a_ξ × a_η ; J = |n|
@@ -183,11 +184,11 @@ function build_sphere_metrics(mesh::St_mesh,
     for iel = 1:nelem
         for j = 1:ngl, i = 1:ngl-1
             ip = mesh.connijk[iel,i,j]; iq = mesh.connijk[iel,i+1,j]
-            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+            Δmin = min(Δmin, sqrt((crd[1, ip]-crd[1, iq])^2 + (crd[2, ip]-crd[2, iq])^2 + (crd[3, ip]-crd[3, iq])^2))
         end
         for j = 1:ngl-1, i = 1:ngl
             ip = mesh.connijk[iel,i,j]; iq = mesh.connijk[iel,i,j+1]
-            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+            Δmin = min(Δmin, sqrt((crd[1, ip]-crd[1, iq])^2 + (crd[2, ip]-crd[2, iq])^2 + (crd[3, ip]-crd[3, iq])^2))
         end
     end
 
@@ -227,6 +228,7 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
                               verbose = true, atol_area = 1.0e-6, atol_normal = 1.0e-6,
                               atol_curvature = 5.0e-2)
 
+    crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
     allok = true
     line(name, ok, extra="") = begin
         verbose && println("     ", ok ? "PASS" : "FAIL", "  ", name, extra == "" ? "" : string("  [", extra, "]"))
@@ -250,9 +252,9 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
             a2x = a2y = a2z = 0.0
             for k = 1:ngl
                 ipk = mesh.connijk[iel, k, j]
-                a1x += dψ[k,i]*mesh.x[ipk]; a1y += dψ[k,i]*mesh.y[ipk]; a1z += dψ[k,i]*mesh.z[ipk]
+                a1x += dψ[k,i]*crd[1, ipk]; a1y += dψ[k,i]*crd[2, ipk]; a1z += dψ[k,i]*crd[3, ipk]
                 ipl = mesh.connijk[iel, i, k]
-                a2x += dψ[k,j]*mesh.x[ipl]; a2y += dψ[k,j]*mesh.y[ipl]; a2z += dψ[k,j]*mesh.z[ipl]
+                a2x += dψ[k,j]*crd[1, ipl]; a2y += dψ[k,j]*crd[2, ipl]; a2z += dψ[k,j]*crd[3, ipl]
             end
 
             c1x, c1y, c1z = metrics.dξdx[iel,i,j], metrics.dξdy[iel,i,j], metrics.dξdz[iel,i,j]
@@ -270,9 +272,9 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
                             abs(c2x*nxi + c2y*nyi + c2z*nzi)*mesh.radius)
 
             ip = mesh.connijk[iel,i,j]
-            rr = sqrt(mesh.x[ip]^2 + mesh.y[ip]^2 + mesh.z[ip]^2)
+            rr = sqrt(crd[1, ip]^2 + crd[2, ip]^2 + crd[3, ip]^2)
             worst_nrm = max(worst_nrm,
-                            abs((nxi*mesh.x[ip] + nyi*mesh.y[ip] + nzi*mesh.z[ip])/rr - 1.0))
+                            abs((nxi*crd[1, ip] + nyi*crd[2, ip] + nzi*crd[3, ip])/rr - 1.0))
         end
     end
 
@@ -372,22 +374,19 @@ you are watching the discretization leave the manifold.
 """
 function project_momentum_to_sphere!(u::AbstractMatrix, mesh::St_mesh; ivar::Int = 2)
     # Typed function barrier: St_mesh fields are ::Any (Base.@kwdef with no
-    # annotations), so reading mesh.x[ip] in the node loop would box on every
+    # annotations), so reading mesh.coords[ip,1] in the node loop would box on every
     # access. This runs four times per time step.
-    return _project_momentum_kernel!(u, mesh.x, mesh.y, mesh.z, Int(mesh.npoin), ivar)
+    return _project_momentum_kernel!(u, mesh.coords, Int(mesh.npoin), ivar)
 end
 
-function _project_momentum_kernel!(u::AbstractMatrix{TF},
-                                   xn::AbstractVector{TF},
-                                   yn::AbstractVector{TF},
-                                   zn::AbstractVector{TF},
+function _project_momentum_kernel!(u::AbstractMatrix{TF}, crd::AbstractMatrix{TF},
                                    npoin::Int, ivar::Int) where {TF}
 
     dmax = zero(TF)
 
     @inbounds for ip = 1:npoin
 
-        x, y, z = xn[ip], yn[ip], zn[ip]
+        x, y, z = crd[1, ip], crd[2, ip], crd[3, ip]
         r2      = x*x + y*y + z*z
 
         mx = u[ip, ivar]
@@ -416,17 +415,14 @@ WITHOUT modifying anything. `project_momentum_to_sphere!` returns the same
 quantity as it removes it.
 """
 function sphere_normal_momentum(u::AbstractMatrix, mesh::St_mesh; ivar::Int = 2)
-    return _sphere_normal_momentum(u, mesh.x, mesh.y, mesh.z, Int(mesh.npoin), ivar)
+    return _sphere_normal_momentum(u, mesh.coords, Int(mesh.npoin), ivar)
 end
 
-function _sphere_normal_momentum(u::AbstractMatrix{TF},
-                                 xn::AbstractVector{TF},
-                                 yn::AbstractVector{TF},
-                                 zn::AbstractVector{TF},
+function _sphere_normal_momentum(u::AbstractMatrix{TF}, crd::AbstractMatrix{TF},
                                  npoin::Int, ivar::Int) where {TF}
     dmax = zero(TF)
     @inbounds for ip = 1:npoin
-        x, y, z = xn[ip], yn[ip], zn[ip]
+        x, y, z = crd[1, ip], crd[2, ip], crd[3, ip]
         dmax = max(dmax, abs(u[ip, ivar]*x + u[ip, ivar+1]*y + u[ip, ivar+2]*z) /
                          sqrt(x*x + y*y + z*z))
     end

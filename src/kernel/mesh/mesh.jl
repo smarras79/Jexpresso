@@ -1408,6 +1408,13 @@ end
 # vertices are not all at one radius is not a sphere, and is left alone rather
 # than silently deformed.
 #---------------------------------------------------------------------------------
+# NOTE this is the one place in the shell path that still writes mesh.x/y/z
+# rather than mesh.coords. It is deliberate: it runs inside the x/y/z
+# construction chain of mod_mesh_read_gmsh! (right after the high-order nodes
+# are copied back into x/y/z) and mesh.coords is not allocated until the end of
+# that function, where it is filled FROM x/y/z. The projection therefore
+# propagates into coords automatically. Everything downstream of the grid —
+# sphere_metrics.jl, sphere_rhs.jl, the VTK writer — reads mesh.coords.
 function project_nodes_to_shell!(mesh::St_mesh, inputs::Dict{Symbol,Any})
 
     comm = get_mpi_comm()

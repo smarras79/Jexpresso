@@ -710,10 +710,11 @@ export write_vtk_sphere_grid
 # dominates, and its sign. 1..6 = +x, -x, +y, -y, +z, -z.
 function _cubed_sphere_panel(mesh::St_mesh, iel::Int)
     ngl = mesh.ngl
+    crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
     cx = cy = cz = 0.0
     @inbounds for j = 1:ngl, i = 1:ngl
         ip = mesh.connijk[iel, i, j]
-        cx += mesh.x[ip]; cy += mesh.y[ip]; cz += mesh.z[ip]
+        cx += crd[1, ip]; cy += crd[2, ip]; cz += crd[3, ip]
     end
     ax, ay, az = abs(cx), abs(cy), abs(cz)
     if ax >= ay && ax >= az
@@ -777,9 +778,9 @@ function write_vtk_sphere_grid(mesh::St_mesh,
     fout_name = string(OUTPUT_DIR, "/", file_name)
 
     vtkf = vtk_grid(fout_name,
-                    mesh.x[1:mesh.npoin],
-                    mesh.y[1:mesh.npoin],
-                    mesh.z[1:mesh.npoin],
+                    mesh.coords[1, 1:mesh.npoin],
+                    mesh.coords[2, 1:mesh.npoin],
+                    mesh.coords[3, 1:mesh.npoin],
                     cells, compress = false)
 
     vtkf["ip",        VTKPointData()] = Float64.(collect(1:mesh.npoin))
@@ -793,7 +794,7 @@ function write_vtk_sphere_grid(mesh::St_mesh,
          for ip = 1:mesh.npoin]
     vtkf["lon",       VTKPointData()] = mesh.lon .* (180.0/π)
     vtkf["lat",       VTKPointData()] = mesh.lat .* (180.0/π)
-    vtkf["radius",    VTKPointData()] = sqrt.(mesh.x.^2 .+ mesh.y.^2 .+ mesh.z.^2)
+    vtkf["radius",    VTKPointData()] = sqrt.(mesh.coords[1,:].^2 .+ mesh.coords[2,:].^2 .+ mesh.coords[3,:].^2)
 
     vtkf["iel",   VTKCellData()] = cell_iel
     vtkf["panel", VTKCellData()] = cell_pan
@@ -858,7 +859,7 @@ function write_vtk_sphere_grid(mesh::St_mesh,
         if length(q.qvars) >= 4
             nrm = Vector{Float64}(undef, mesh.npoin)
             for ip = 1:mesh.npoin
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
                 nrm[ip] = (q.qn[ip,2]*x + q.qn[ip,3]*y + q.qn[ip,4]*z)/sqrt(x*x + y*y + z*z)
             end
             vtkf["momentum_normal", VTKPointData()] = nrm

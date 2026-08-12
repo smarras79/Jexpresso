@@ -94,7 +94,7 @@ end
 # src/kernel/operators/rhs.jl, and it is not optional here.
 #
 # St_mesh is a Base.@kwdef struct whose fields carry NO type annotation, so
-# `mesh.x`, `mesh.connijk`, `mesh.npoin` … are all `::Any`. Reading them inside
+# `mesh.coords`, `mesh.connijk`, `mesh.npoin` … are all `::Any`. Reading them inside
 # the element loop makes every access a dynamic lookup that boxes its result:
 # on the Galewsky run that cost 63 G allocations / 1.1 TiB and roughly 10x the
 # runtime. Hoisting them into concretely-typed arguments once per call lets
@@ -110,7 +110,7 @@ function sphere_rhs!(RHS, q, qe,
                      SVT)
 
     _sphere_rhs_kernel!(RHS, q, qe,
-                        mesh.connijk, mesh.x, mesh.y, mesh.z,
+                        mesh.connijk, mesh.coords,
                         Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
                         mesh, mesh.SD,
                         metrics.Je, metrics.Minv,
@@ -122,8 +122,7 @@ function sphere_rhs!(RHS, q, qe,
 end
 
 function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
-                             connijk, xn::AbstractVector{TF},
-                             yn::AbstractVector{TF}, zn::AbstractVector{TF},
+                             connijk, crd::AbstractMatrix{TF},
                              nelem::Int, ngl::Int, npoin::Int,
                              mesh, SD,
                              Je, Minv::AbstractVector{TF},
@@ -147,7 +146,7 @@ function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
             user_source!(@view(S[i,j,:]), @view(q[ip,:]), @view(qe[ip,:]),
                          npoin, CL(), SVT;
                          neqs = neqs,
-                         x = xn[ip], y = yn[ip], z = zn[ip])
+                         x = crd[1, ip], y = crd[2, ip], z = crd[3, ip])
         end
 
         #--- surface divergence + direct stiffness summation
