@@ -329,13 +329,15 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     ngl            = mesh.ngl
     ngr            = mesh.ngr
     
-    if (nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1)]
-    else
-        subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(ngl-1)^2]
-    end
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    ncells = nelem*(ngl-1)^2 + nelem_semi_inf*(ngl-1)*(ngr-1)
+    cells  = Vector{typeof(MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 4, 3]))}(undef, ncells)
     
     isel = 1
     for iel = 1:nelem
@@ -345,12 +347,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
                 ip4 = mesh.connijk[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -364,12 +361,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
                 ip4 = mesh.connijk_lag[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -453,8 +445,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     noutvar = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
     
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
-    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[1, 2, 3, 4, 5, 6, 7, 8]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^3)
 
     gelm_id = zeros(mesh.nelem*(mesh.ngl-1)^3)
     ad_lvl  = zeros(mesh.nelem*(mesh.ngl-1)^3)
@@ -474,16 +473,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
                     ip8 = mesh.connijk[iel,i,j+1,k+1]
 
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip5, ip6, ip7, ip8])
 
                     gelm_id[isel] = mesh.el2gel[iel]
                     ad_lvl[isel]  = mesh.ad_lvl[iel]
@@ -556,9 +546,15 @@ end
 
 function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
     
-    #nothing
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 4, 3]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^2)
     
     isel = 1
     for iel = 1:mesh.nelem
@@ -568,12 +564,7 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
                 ip4 = mesh.connijk[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -587,12 +578,7 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
                 ip4 = mesh.connijk_lag[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -618,8 +604,15 @@ end
 
 function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
 
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
-    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[1, 2, 3, 4, 5, 6, 7, 8]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^3)
         
     isel = 1
     for iel = 1:mesh.nelem
@@ -636,16 +629,7 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
                     ip8 = mesh.connijk[iel,i,j+1,k+1]
 
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip5, ip6, ip7, ip8])
                     
                     isel = isel + 1
                 end
