@@ -711,15 +711,18 @@ function _build_rhs!(RHS, u, params, time)
 end
 # end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
+function inviscid_rhs_el!(u, params,
+                          connijk::Array{Int64,4},
+                          qe::Matrix{Float64},
+                          coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
     
     @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    ngl   = params.mesh.ngl
-    npoin = params.mesh.npoin
-    nelem = params.mesh.nelem
-    neqs  = params.neqs
-    
+    ngl::Int   = params.mesh.ngl
+    npoin::Int = params.mesh.npoin
+    nelem::Int = params.mesh.nelem
+    neqs::Int  = params.neqs
+
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     
     for iel=1:nelem   
@@ -964,13 +967,13 @@ end
 
 
 
-function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
+function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_1D)
 
     Δ = params.mesh.Δeffective_l
 
-    nelem = params.mesh.nelem
-    ngl   = params.mesh.ngl
-    neqs  = params.neqs
+    nelem::Int = params.mesh.nelem
+    ngl::Int   = params.mesh.ngl
+    neqs::Int  = params.neqs
 
     # Marras-style Dynamic SGS: fill the pre-allocated per-element
     # μ_dsgs[1:nelem, 1:neqs] buffer (sized in params_setup.jl) before
