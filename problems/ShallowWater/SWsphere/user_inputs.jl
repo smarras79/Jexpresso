@@ -8,11 +8,11 @@ function user_inputs()
         # with the shallow water equations of Marras, Kopera & Giraldo (2015),
         # QJRMS 141: 1727-1739, Eq. (8), on a cubed-sphere shell.
         #
-        # The run: grid -> manifold metrics -> initial condition -> SSP-RK3.
+        # The run: grid -> manifold metrics -> initial condition -> :ode_solver.
         #
         #   :lspherical_shell => true   solve on the shell: manifold metrics,
-        #                               surface-divergence RHS and the SSP-RK3
-        #                               loop replace the flat ones. The GRID is
+        #                               surface-divergence RHS and the shell
+        #                               time loop replace the flat ones. The GRID is
         #                               read by the ordinary gmsh path, which
         #                               detects a 2D manifold embedded in 3D
         #                               and keeps z (`lmanifold` in mesh.jl).
@@ -131,11 +131,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Time integration.
         #
-        # SSP-RK3 (Shu-Osher), the scheme of the paper's section 4.2, is applied
-        # by src/kernel/solvers/sphere_time_loop.jl -- the shell does not go
-        # through Jexpresso's SciML integrators because the Lagrange projection
-        # has to run after EVERY RK stage. :ode_solver is therefore ignored here
-        # and kept only so the deck reads like every other one.
+        # src/kernel/solvers/sphere_time_loop.jl builds an ODEProblem and solves
+        # it with :ode_solver, like every other case. The Lagrange projection has
+        # to run after EVERY RK stage, which is exactly what an integrator's
+        # stage_limiter! hook is for; the modal filter is the step_limiter!.
+        # :ode_solver must therefore name an integrator that takes limiters.
         #
         # :lcfl_dt => true (the default) takes the step from the CFL condition,
         # Δt = :cfl * Δmin / max(|u| + sqrt(φ)), with Δmin the smallest LGL node
@@ -152,7 +152,15 @@ function user_inputs()
         # like nothing is happening. :tend is therefore the full 144 h of the
         # test (Galewsky et al. 2004; Marras et al. section 5).
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(),      # ignored: see above
+        # The integrator is now HONOURED: sphere_time_loop.jl builds an
+        # ODEProblem and hands it to OrdinaryDiffEq, with the Lagrange
+        # projection as the stage_limiter! and the modal filter as the
+        # step_limiter!. Any SSPRK integrator works — it has to be one that
+        # takes limiters, because the projection must run after every stage.
+        # SSPRK33 is the Shu-Osher SSP-RK3 of Marras et al. (2015) section 4.2,
+        # i.e. the published scheme for this test; SSPRK54 costs 5 RHS
+        # evaluations per step instead of 3 and permits a larger CFL.
+        :ode_solver           => SSPRK33(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
         :cfl                  => 0.35,
         :tinit                => 0.0,
