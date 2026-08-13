@@ -125,7 +125,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
-        :μ                    => 5.0e5,
+        :μ                    => 1.0e5,
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the
