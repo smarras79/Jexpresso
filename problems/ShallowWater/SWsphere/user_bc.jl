@@ -1,35 +1,13 @@
 #---------------------------------------------------------------------------------
-# SWsphere — boundary conditions.
+# SWsphere_visc — the SAME equations as ShallowWater/SWsphere.
 #
-# There are none, and that is the whole point of this case: a spherical shell
-# is a CLOSED 2D manifold. It has no boundary, so there is no boundary
-# condition to impose anywhere — the "periodicity" is the topology itself, and
-# it is enforced by the node numbering built in
-# src/kernel/mesh/sphere_mesh.jl (every edge shared by exactly two elements,
-# every seam node created once and re-used by both neighbours).
+# This case differs from SWsphere in its user_inputs.jl ALONE: the artificial
+# diffusion of Eq. (8b) replaces the modal filter as the stabilisation. Nothing
+# about the equations, the initial condition or the boundary treatment changes,
+# so this file is the SWsphere one — included rather than copied, so the two
+# cases cannot drift apart.
 #
-# These stubs exist only because problems/drivers.jl loads a user_bc.jl for
-# every case.
+# (src/run.jl includes exactly six user_*.jl per case directory and does not
+# look for them anywhere else, which is why the file has to exist at all.)
 #---------------------------------------------------------------------------------
-function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny, qe, ::TOTAL)
-    # No boundary on a closed shell.
-end
-
-function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat, qe, ::PERT)
-    # No boundary on a closed shell.
-end
-
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs)
-    flux = zeros(size(q,2), 1)
-    return flux
-end
-
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, inputs)
-    flux = zeros(size(q,2), 1)
-    return flux
-end
-
-function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
-    T = eltype(q)
-    return T(qbdy[1]), T(qbdy[2]), T(qbdy[3])
-end
+include(joinpath(@__DIR__, "..", "SWsphere", "user_bc.jl"))
