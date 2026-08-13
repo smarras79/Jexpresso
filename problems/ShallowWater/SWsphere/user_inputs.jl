@@ -192,9 +192,9 @@ function user_inputs()
         # runs the filter AND ν = 1e5, and so should you; ShallowWater/
         # SWsphere_visc is that configuration, verified to 3 days.
         #---------------------------------------------------------------------------
-        :lvisc                => false,
+        :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
-        :μ                    => 0.0,      # set to 1.0e5 together with :lvisc => true
+        :μ                    => 2.0e5,      # set to 1.0e5 together with :lvisc => true
         #---------------------------------------------------------------------------
         # Stabilization: the modal filter, the stand-in for the Boyd-Vandeven
         # filter of the paper's section 4.2 ("chosen to reduce by 5% the highest
@@ -208,7 +208,7 @@ function user_inputs()
         # both off the run blows up sooner still, and the time loop warns at
         # startup that it will.
         #---------------------------------------------------------------------------
-        :lfilter              => true,
+        :lfilter              => false,
         :filter_alpha         => 0.05,     # damping of the HIGHEST mode
         :filter_order         => 8,        # exponent: larger = sharper cutoff
         :filter_kcut          => 2/3,      # first damped mode, as a fraction of nop
