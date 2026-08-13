@@ -2,21 +2,21 @@ function user_inputs()
 
     inputs = Dict(
         #---------------------------------------------------------------------------
-        # SWsphere_visc — the Galewsky jet on the shell with the ARTIFICIAL
-        # DIFFUSION of Eq. (8b) added to the modal filter: the PAPER'S OWN
-        # configuration (Marras, Kopera & Giraldo 2015, QJRMS 141: 1727-1739),
-        # which filters every step AND carries ν = 1e5 m²/s.
+        # SWsphere — the Galewsky jet on the shell.
         #
-        # Same equations, same grid, same initial condition as
-        # ShallowWater/SWsphere — the five other user_*.jl files in this
-        # directory are one-line includes of that case's. What differs is
-        # exactly one switch at the bottom:
+        # The stabilization is chosen by the two switches at the bottom of this
+        # file. The PAPER'S OWN configuration (Marras, Kopera & Giraldo 2015,
+        # QJRMS 141: 1727-1739) filters every step AND carries the artificial
+        # diffusion of Eq. (8b) with ν = 1e5 m²/s:
         #
-        #     SWsphere        :lfilter => true    :lvisc => false
-        #     SWsphere_visc   :lfilter => true    :lvisc => true, :μ => 1e5
+        #     filter only     :lfilter => true    :lvisc => false
+        #     paper's own     :lfilter => true    :lvisc => true, :μ => 1e5
         #
-        # WHY NOT VISCOSITY ALONE, which is what this case first shipped as.
-        # It does not survive this grid. Measured, 3 days, all else equal:
+        # (These used to be two cases, SWsphere and SWsphere_visc, sharing one
+        # set of user_*.jl files. They are one deck now — flip the switches.)
+        #
+        # WHY NOT VISCOSITY ALONE, which is what the viscous case first shipped
+        # as. It does not survive this grid. Measured, 3 days, all else equal:
         #
         #   ν = 1e5, filter OFF   NaN at 2.005 d, whether the diffusion is on
         #                         the momentum only or on all four equations
@@ -34,8 +34,7 @@ function user_inputs()
         # being strong enough to erase the answer.
         #
         # Physics, provenance and the discretization: see the README next to
-        # problems/ShallowWater/SWsphere/user_inputs.jl. Everything down to the
-        # STABILIZATION block below is that deck, unchanged.
+        # this file.
         #---------------------------------------------------------------------------
         :lspherical_shell     => true,
         :lgrid_only           => false,
@@ -84,9 +83,8 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         :nop                  => 5,
         #---------------------------------------------------------------------------
-        # Mesh: the cubed sphere that ships with SWsphere (600 quads, 602
-        # vertices, 10 elements per panel edge). Pointed at rather than copied —
-        # the two cases are the same grid by construction.
+        # Mesh: the cubed sphere that ships with this case (600 quads, 602
+        # vertices, 10 elements per panel edge).
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/ShallowWater/SWsphere/cubed_sphere.msh",
@@ -100,7 +98,7 @@ function user_inputs()
         :tend                 => 10*24*3600,       # 144 h = 6 days, as in the test
         :ndiagnostics_outputs => 24,             # a VTK dump every 6 h
         :ndiagnostics_prints  => 200,            # steps between diagnostic lines
-        :case                 => "swsphere_visc",
+        :case                 => "swsphere",
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,
         #---------------------------------------------------------------------------
