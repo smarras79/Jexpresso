@@ -1250,6 +1250,8 @@ _decode_optstrings(v) = Array{Union{Nothing,String}}(
 function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), nparts::Int;
                                 gmsh_path::String="", inputs=nothing)
     rank = MPI.Comm_rank(get_mpi_comm())
+    # An adaptive run does not execute on the mesh this cache describes.
+    _adaptive_mesh_run(inputs) && return false
     # Pre-load validity check: reads only the fingerprint Dict, so
     # it survives custom-struct shape changes that would crash
     # JLD2.load(). Deletes the file on mismatch so the next save
@@ -1267,7 +1269,9 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
     try
         # Use pre-fetched data when available (populated by je_prefetch_caches!
         # before with_mpi to keep JLD2 JIT + disk I/O off the Alya-blocking path).
-        raw = JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing ?
+        # Only when it was prefetched for THIS case: the Ref outlives a single
+        # run_case, so a second case in the same session must not inherit it.
+        raw = (JEXPRESSO_PREFETCHED_MESH_CACHE[] !== nothing && _prefetch_usable(inputs)) ?
               JEXPRESSO_PREFETCHED_MESH_CACHE[] : JLD2.load(path)
         haskey(raw, "mesh_fields") || begin
             rank == 0 && println(" # Mesh cache $path has old format — discarding and rebuilding")
@@ -1287,6 +1291,21 @@ function _try_load_mesh_cache!(mesh, path::String, @nospecialize(distribute), np
             return false
         end
         flds = raw["mesh_fields"]
+        # Completeness gate. The copy loop below skips fields the cache does
+        # not carry, which silently leaves them at their St_mesh constructor
+        # defaults — a 1×2 `coords` on a mesh with npoin nodes, say. That is
+        # not a cache miss, it is a corrupt mesh, and it surfaces far away
+        # from here (a DimensionMismatch deep inside params_setup). A cache
+        # written before a field was added to St_mesh must be rebuilt, not
+        # partially applied.
+        missing_fields = [string(f) for f in fieldnames(typeof(mesh))
+                          if !(f ∈ _MESH_CACHE_SKIP_FIELDS) && !haskey(flds, string(f))]
+        if !isempty(missing_fields)
+            rank == 0 && println(" # Mesh cache $path predates St_mesh fields ",
+                                 join(missing_fields, ", "), " — discarding and rebuilding")
+            try; isfile(path) && rm(path; force=true); catch _; end
+            return false
+        end
         for f in fieldnames(typeof(mesh))
             f ∈ _MESH_CACHE_SKIP_FIELDS && continue
             haskey(flds, string(f)) || continue
@@ -1551,7 +1570,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # save, or rebuilding only some files), every rank rebuilds from
     # scratch. This prevents silent inconsistency where one rank loads a
     # stale partition and the others build a fresh one.
-    if isnothing(adapt_flags) && !ladaptive && !linitial_refine
+    if isnothing(adapt_flags) && !ladaptive && !linitial_refine && !_adaptive_mesh_run(inputs)
         _mesh_cache = _mesh_cache_path(inputs, nparts)
         gmsh_path   = get(inputs, :gmsh_filename, "")
         local_loaded = _try_load_mesh_cache!(mesh, _mesh_cache, distribute, nparts;
