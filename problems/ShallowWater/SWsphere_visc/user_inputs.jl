@@ -48,13 +48,14 @@ function user_inputs()
         :lproject_to_sphere      => true,
         :sphere_radius        => 6.37122e6,
         #---------------------------------------------------------------------------
-        # Metric terms of the 2D manifold. :curl_invariant is Kopriva (2006)
-        # Eq. (15), i.e. Sec. 3.2.3 of Kelly, Alves, Eckermann et al. (JCP 552,
-        # 2026, 114683): the contravariant vectors are written as a discrete
-        # curl, so the metric identity closes to round-off instead of to O(hᴺ).
-        # :cross_product restores the pre-switch behaviour (their Eq. 21).
+        # Metric terms of the 2D manifold. Kopriva's curl-invariant form
+        # degenerates on a surface — see the header of sphere_metrics.jl — and
+        # leaves only the direction v in which the surface is extended off
+        # itself. :cross_product is v = n̂ (and is what the textbook formulas
+        # give); :radial is v = x̂. Both are curl-invariant; they differ in which
+        # exact property they keep.
         #---------------------------------------------------------------------------
-        :sphere_metrics       => :curl_invariant,
+        :sphere_metrics       => :cross_product,
         #---------------------------------------------------------------------------
         # Initial condition: Galewsky, Scott & Polvani (2004), Tellus 56A,
         # 429-440 — barotropically unstable mid-latitude jet.

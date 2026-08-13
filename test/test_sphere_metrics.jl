@@ -4,19 +4,27 @@
 #
 #   julia --project=. test/test_sphere_metrics.jl
 #
-# The point of the CURL-INVARIANT form (Kopriva, J. Sci. Comput. 26(3), 301-327,
-# 2006, Eq. (15); Sec. 3.2.3 / Eq. (23) of Kelly, Alves, Eckermann et al., JCP
-# 552, 2026, 114683) is one identity:
+# Kopriva's curl-invariant form (J. Sci. Comput. 26(3), 301-327, 2006, Eq. (15);
+# Sec. 3.2.3 / Eq. (23) of Kelly, Alves, Eckermann et al., JCP 552, 2026,
+# 114683) DEGENERATES on a 2-D manifold: it fixes the two in-surface metric
+# terms only up to the direction v in which the surface is extended off itself,
 #
-#   ∂_ξ(J a¹) + ∂_η(J a²) + (2/R)(J n̂) = 0
+#   J a¹ = a_η × v ,   J a² = v × a_ξ ,   J = v·(a_ξ × a_η) ,
 #
-# — the curved-surface metric identity, the 2/R being the mean curvature of the
-# shell. Under the cross-product form it holds to the ORDER OF THE
-# APPROXIMATION and improves as nop grows. Under the curl-invariant form the
-# three metric terms are three parts of one discrete curl, so it is an algebraic
-# cancellation and holds to ROUND-OFF at every order, on any grid. That contrast
-# is what this file measures: not "CI is smaller" but "CI is at round-off while
-# CP is at truncation error, and the gap widens as the grid coarsens".
+# and v = n̂ recovers the textbook cross-product formulas. So BOTH forms this
+# file exercises are curl-invariant, and the tests below are written to hold
+# that distinction straight. In particular:
+#
+#   * the curved-surface metric identity
+#         ∂_ξ(J a¹) + ∂_η(J a²) + (2/R)(J n̂) = 0
+#     is at ROUND-OFF FOR BOTH, because J n̂ is DEFINED as the curl. It is a
+#     check on sphere_metrics.jl, not a ranking — asserting otherwise (by
+#     comparing it against the same identity computed with J n̂ = a_ξ × a_η)
+#     measures the definition of the third term and nothing else;
+#
+#   * what DOES separate them is the strong-form annihilation of a rigid
+#     rotation, ∇ₛ·(Ω × x) = 0, which is exact only for v = n̂ — the manifold
+#     analogue of free-stream preservation for the chain-rule RHS.
 #
 # Everything else — aⁱ·a_j = δⁱⱼ, tangency, orientation, the area — has to keep
 # holding under both, and is checked for both.
@@ -68,9 +76,7 @@ end
 #
 #   ∂_ξ(J a¹) + ∂_η(J a²) + (2/R)(J n̂) = 0 ,
 #
-# normalised by the size of the curvature term itself, (2/R)J. This is M5 of
-# check_sphere_metrics, recomputed here so the number can be compared between
-# the two forms rather than only thresholded.
+# normalised by the size of the curvature term itself, (2/R)J.
 #
 function curvature_identity_residual(mesh, metrics)
 
@@ -142,16 +148,47 @@ function basis_residuals(mesh, metrics)
 end
 
 
-@testset "spherical shell: curl-invariant vs cross-product metric terms" begin
+#
+# strong-form ∇ₛ·(Ω × x) for a 40 m/s solid-body rotation — exactly zero in the
+# continuum on any sphere, and D_ξ(Ω × x) = Ω × a_ξ holds exactly for the nodal
+# interpolant, so whatever comes out is pure metric error.
+#
+function rigid_rotation_divergence(mesh, metrics)
+
+    ngl = Int(mesh.ngl); crd = mesh.coords; dψ = metrics.dψ
+    Ω = (0.3, -0.7, 0.5) ./ sqrt(0.83) .* (40.0/mesh.radius)
+    worst = 0.0
+
+    for iel = 1:Int(mesh.nelem), j = 1:ngl, i = 1:ngl
+        d = 0.0
+        for c = 1:3
+            dξ = dη = 0.0
+            for k = 1:ngl
+                ipk = mesh.connijk[iel,k,j]; ipl = mesh.connijk[iel,i,k]
+                dξ += dψ[k,i]*(Ω[mod1(c+1,3)]*crd[mod1(c+2,3),ipk] - Ω[mod1(c+2,3)]*crd[mod1(c+1,3),ipk])
+                dη += dψ[k,j]*(Ω[mod1(c+1,3)]*crd[mod1(c+2,3),ipl] - Ω[mod1(c+2,3)]*crd[mod1(c+1,3),ipl])
+            end
+            c1 = c == 1 ? metrics.dξdx[iel,i,j] : c == 2 ? metrics.dξdy[iel,i,j] : metrics.dξdz[iel,i,j]
+            c2 = c == 1 ? metrics.dηdx[iel,i,j] : c == 2 ? metrics.dηdy[iel,i,j] : metrics.dηdz[iel,i,j]
+            d += dξ*c1 + dη*c2
+        end
+        worst = max(worst, abs(d))
+    end
+    return worst
+end
+
+
+@testset "spherical shell: the two extension directions of the metric terms" begin
 
     isfile(CASE_MSH) || error("missing $CASE_MSH — it ships with the SWsphere case")
 
     with_mpi() do distribute
 
-        @test sphere_metrics_form(Dict{Symbol,Any}())                             == :curl_invariant
-        @test sphere_metrics_form(Dict(:sphere_metrics => "CI"))                  == :curl_invariant
-        @test sphere_metrics_form(Dict(:sphere_metrics => :cross_product))        == :cross_product
-        @test sphere_metrics_form(Dict(:sphere_metrics => "cp"))                  == :cross_product
+        @test sphere_metrics_form(Dict{Symbol,Any}())                      == :cross_product
+        @test sphere_metrics_form(Dict(:sphere_metrics => "cp"))           == :cross_product
+        @test sphere_metrics_form(Dict(:sphere_metrics => :normal))        == :cross_product
+        @test sphere_metrics_form(Dict(:sphere_metrics => :radial))        == :radial
+        @test sphere_metrics_form(Dict(:sphere_metrics => "CI"))           == :radial   # alias
         @test_throws ErrorException sphere_metrics_form(Dict(:sphere_metrics => :nonsense))
 
         for nop in (3, 5, 7)
@@ -159,8 +196,9 @@ end
             @testset "nop = $nop" begin
 
                 res = Dict{Symbol,Float64}()
+                rot = Dict{Symbol,Float64}()
 
-                for form in (:cross_product, :curl_invariant)
+                for form in (:cross_product, :radial)
 
                     inputs  = shell_inputs(nop, form)
                     mesh, _ = mod_mesh_mesh_driver(inputs, 1, distribute)
@@ -188,7 +226,7 @@ end
                     #     x̂ itself; only O(hᴺ) for the cross-product form, which
                     #     is tangent to the polynomial interpolant instead.
                     #-------------------------------------------------------------
-                    if form === :curl_invariant
+                    if form === :radial
                         @test worst_rad < 1.0e-8
                     end
 
@@ -200,20 +238,30 @@ end
                     @test aerr < 1.0e-6
 
                     #-------------------------------------------------------------
-                    # (5) THE identity
+                    # (5) the curved-surface metric identity. Round-off for BOTH
+                    #     forms: J n̂ is DEFINED as the curl, so this closes by
+                    #     algebra whatever v is. It ranks nothing — it checks
+                    #     that (†) and (‡) were coded consistently.
                     #-------------------------------------------------------------
                     res[form] = curvature_identity_residual(mesh, metrics)
+                    @test res[form] < 1.0e-11
 
-                    @info @sprintf("  nop=%d %-15s : metric identity %.3e, aⁱ·a_j-δ %.3e, aⁱ·x̂ %.3e, area %.3e",
-                                   nop, string(form), res[form], worst_id, worst_rad, aerr)
+                    #-------------------------------------------------------------
+                    # (6) the rigid rotation — the property that DOES separate
+                    #     the two, and the strong-form analogue of free-stream
+                    #     preservation on a manifold.
+                    #-------------------------------------------------------------
+                    rot[form] = rigid_rotation_divergence(mesh, metrics)
+
+                    @info @sprintf("  nop=%d %-14s : identity %.3e, rigid-rot %.3e s⁻¹, aⁱ·a_j-δ %.3e, aⁱ·x̂ %.3e, area %.3e",
+                                   nop, string(form), res[form], rot[form], worst_id, worst_rad, aerr)
                 end
 
-                # round-off, independent of nop and of the grid
-                @test res[:curl_invariant] < 1.0e-11
-
-                # and strictly better than the cross-product form, which carries
-                # the truncation error of the sphere at this order
-                @test res[:curl_invariant] < res[:cross_product]
+                # v = n̂ annihilates a rigid rotation exactly; v = x̂ does not,
+                # but only at the level of the truncation error of the sphere.
+                @test rot[:cross_product] < 1.0e-16
+                @test rot[:radial] > rot[:cross_product]
+                @test rot[:radial] < 1.0e-8
             end
         end
     end

@@ -20,74 +20,93 @@
 #
 #   a_ξ = ∂x/∂ξ ,   a_η = ∂x/∂η        (3-vectors, tangent to the shell)
 #
-# From those, two DIFFERENT forms of the contravariant basis are available, and
-# both are implemented here — pick one with
+# From those the contravariant basis is built. Kopriva, "Metric identities and
+# the discontinuous spectral element method on curvilinear meshes", J. Sci.
+# Comput. 26(3), 301-327 (2006), Eq. (15) — Sec. 3.2.3 / Eq. (23) of Kelly,
+# Alves, Eckermann et al., JCP 552 (2026) 114683 — writes the metric terms of a
+# 3-D map as a CURL,
 #
-#   :sphere_metrics => :curl_invariant   (default)
-#   :sphere_metrics => :cross_product
+#   J aⁱ = ½ [ ∂_ξk (∂x/∂ξʲ × x) − ∂_ξj (∂x/∂ξᵏ × x) ] ,  (i,j,k) cyclic,
 #
-# in the case's user_inputs.jl. They agree in the continuum and differ, at any
-# finite polynomial order, by the interpolation error of the sphere. Which one
-# is used matters, and Section 3.2 of Kelly, Alves, Eckermann et al. (JCP 552,
-# 2026, 114683) compares exactly these two (their CP and CI) inside NUMA and
-# NEPTUNE, concluding that the curl-invariant form is the one to prefer for
-# global-scale spectral-element simulation.
+# which is divergence-free by inspection, so the metric identities
+# Σᵢ ∂_ξi (J aⁱ) = 0 survive DISCRETELY — the discrete divergence of a discrete
+# curl vanishes identically when the same differentiation matrix is used for
+# both. In 3-D that is a real constraint and it is what makes a scheme
+# constant-state preserving.
 #
-# (1) CROSS-PRODUCT FORM  (:cross_product) — the textbook one, Eq. (21) of
-#     Kelly et al. The cross product of the tangents is normal to the surface
-#     and its length is the surface Jacobian, i.e. the area element:
+# WHAT THAT FORM DEGENERATES TO ON A 2-D MANIFOLD  (read this before changing
+# :sphere_metrics — it is not what one expects)
+# ---------------------------------------------------------------------------
+# A surface has no third reference coordinate to take the curl in, so one has
+# to be invented: extend the surface off itself in some direction v(ξ,η),
 #
-#       n = a_ξ × a_η ,   J = |n| ,   n̂ = n/J
+#   X(ξ,η,ζ) = x(ξ,η) + (ζ − ζ₀) v(ξ,η) ,
 #
-#     and the contravariant basis is
+# and evaluate Kopriva's formula on ζ = ζ₀. Doing that for i = 1 and i = 2, the
+# ∂_η(v × x) terms cancel between the two halves of the curl and what is left is
 #
-#       a¹ = (a_η × n)/J² ,   a² = (n × a_ξ)/J² .
+#   J a¹ = a_η × v ,   J a² = v × a_ξ ,   J = v·(a_ξ × a_η)          (†)
 #
-# (2) CURL-INVARIANT FORM  (:curl_invariant) — Kopriva, "Metric identities and
-#     the discontinuous spectral element method on curvilinear meshes",
-#     J. Sci. Comput. 26(3), 301-327 (2006), Eq. (15); Eq. (23) of Kelly et al.
-#     In three dimensions the metric terms are written as a CURL,
+# for ANY v. The curl structure imposes NOTHING on the two in-surface metric
+# terms: (†) is the ordinary cross-product formula with v standing in for the
+# surface normal. Choosing v = n̂ = (a_ξ × a_η)/|a_ξ × a_η| gives back exactly
+# the textbook cross-product metrics — so on a 2-D manifold the cross-product
+# form ALREADY IS the curl-invariant form, for the natural extension.
 #
-#       J aⁱ = ½ [ ∂_ξk (∂x/∂ξʲ × x) − ∂_ξj (∂x/∂ξᵏ × x) ] ,  (i,j,k) cyclic,
+# The only object the curl does produce is the third metric term,
 #
-#     which is divergence-free by inspection, so the metric identities
-#     Σᵢ ∂_ξi (J aⁱ) = 0 survive DISCRETELY: the discrete divergence of a
-#     discrete curl vanishes identically whenever the same differentiation
-#     matrix is used for both, whereas the cross-product form only satisfies
-#     them to the order of the approximation. That is Kopriva's whole point and
-#     it is what "constant-state preservation" rests on.
+#   J a³ = J n̂ = (R/2) [ ∂_η (a_ξ × v) − ∂_ξ (a_η × v) ] ,          (‡)
 #
-#     On a 2-D manifold there is no third reference coordinate to take that
-#     curl in, so one has to be supplied. The shell has an obvious one: extend
-#     the surface radially, x(ξ,η,ζ) = (ζ/R) x(ξ,η), so that ζ = r is the
-#     radius and the shell is the level set ζ = R. Feeding that into the
-#     formula above and evaluating on the shell collapses the ζ-derivatives
-#     analytically and leaves, with x̂ = x/|x| the unit radial,
+# and by construction (†) and (‡) satisfy the curved-surface metric identity
 #
-#       J a¹ = a_η × x̂ ,   J a² = x̂ × a_ξ ,   J = x̂·(a_ξ × a_η) ,
+#   ∂_ξ(J a¹) + ∂_η(J a²) + (2/R)(J a³) = 0                          (**)
 #
-#       J a³ = J n̂ = (R/2) [ ∂_η (a_ξ × x̂) − ∂_ξ (a_η × x̂) ]      (*)
+# to round-off — again for ANY v (1.2e-16 measured directly on (†)/(‡), 1e-14
+# once J a¹ is reassembled as J·a¹ the way the RHS stores it, at nop = 3, 5 and
+# 7 under both choices below). The 2/R is the mean curvature of the sphere;
+# (**), not the flat ∇·(J aⁱ) = 0, is the identity that holds on a curved
+# surface.
 #
-#     — the first two are pointwise products of nodal values, the third is the
-#     surviving discrete curl. (*) is NOT a_ξ × a_η discretely, and that is the
-#     entire content of the method: the three of them together satisfy the
-#     metric identity of the extended map to machine precision,
+# So (**) cannot be used to rank the two choices, and J a³ never enters the
+# surface RHS. This is worth stating plainly because it is easy to get wrong:
+# comparing (**) computed with J a³ from (‡) against (**) computed with
+# J a³ = a_ξ × a_η measures the DEFINITION of the third term, not the quality
+# of the metrics.
 #
-#       ∂_ξ(J a¹) + ∂_η(J a²) + (2/R) (J n̂) = 0 ,                  (**)
+# WHAT ACTUALLY DIFFERS, AND THE TWO CHOICES OFFERED
+# --------------------------------------------------
+# What (†) leaves free is the extension direction v, and that choice is not
+# empty — it decides which exact discrete properties hold.
 #
-#     which is the curved-surface statement — the 2/R is the mean curvature of
-#     the sphere; see M5 of check_sphere_metrics for why a flat ∇·(J aⁱ) = 0
-#     would be the wrong identity to assert here. J n̂ is stored alongside the
-#     rest (Jnx, Jny, Jnz) precisely so that (**) can be checked, and so that
-#     the RHS has the curl-consistent normal available rather than a
-#     recomputed cross product.
+#   :sphere_metrics => :cross_product   (default)   v = n̂, the discrete normal
+#   :sphere_metrics => :radial                      v = x̂ = x/|x|, exact radial
 #
-#     Two by-products come for free and are worth naming, because the
-#     cross-product form has neither: J a¹ and J a² are cross products with the
-#     EXACT radial direction, so aⁱ·x̂ = 0 to round-off — the contravariant
-#     basis is tangent to the true sphere, not merely to the polynomial
-#     interpolant of it — and aⁱ·a_j = δⁱⱼ holds exactly by the choice
-#     J = x̂·(a_ξ × a_η) that goes with them.
+#   v = n̂  · aⁱ·n̂ = 0 and J = |a_ξ × a_η| is the true area element of the
+#           discrete surface;
+#         · and, uniquely, the strong-form divergence ANNIHILATES A RIGID
+#           ROTATION exactly. With u = Ω × x, D_ξu = Ω × a_ξ exactly, so
+#             ∇ₛ·u = Ω·(a_ξ × a¹) + Ω·(a_η × a²)
+#                  = Ω·[a_η(a_ξ·v) − a_ξ(a_η·v)]/J ,
+#           which vanishes identically iff v ⊥ a_ξ, a_η, i.e. iff v ∥ a_ξ × a_η.
+#           This is the manifold analogue of free-stream preservation for the
+#           chain-rule form the RHS uses, and no other v has it.
+#
+#   v = x̂  · aⁱ·x̂ = 0, so ∇ₛ of a scalar is tangent to the TRUE sphere rather
+#           than to the polynomial interpolant of it (radial leakage of the
+#           surface gradient measured 2e-16 against 3e-7 for v = n̂ at nop=5) —
+#           which is the property the Lagrange projection in user_source.jl is
+#           there to enforce;
+#         · but the rigid rotation is then only annihilated to O(hᴺ): for a
+#           40 m/s rotation, 2.5e-9 / 6.0e-12 / 1.3e-14 s⁻¹ at nop = 3 / 5 / 7,
+#           against 1e-19 flat for v = n̂.
+#
+# Measured on the shipped cubed sphere, the two are otherwise a wash: the
+# surface divergence of the Galewsky jet and of φu agree to four significant
+# figures, both dominated by the interpolation error of the jet itself
+# (2.3e-2 relative at nop=5), and 6-day Galewsky runs finish with identical
+# δE/E = -1.460e-03 and δmass/mass ~ 6e-12. The default is v = n̂ because it is
+# the extension that keeps the exact property, and because it is what every
+# result in this repository was produced with.
 #
 # Either way a¹ = (dξdx, dξdy, dξdz) and a² = (dηdx, dηdy, dηdz) are what the
 # RHS wants:
@@ -168,24 +187,30 @@ end
 """
     sphere_metrics_form(inputs) -> Symbol
 
-Which form of the manifold metric terms the case asked for, `:curl_invariant`
-(the default, Kopriva 2006 Eq. (15) / Kelly et al. Eq. (23)) or
-`:cross_product` (Kelly et al. Eq. (21)). Strings and the short names "ci"/"cp"
-are accepted too, so that `:sphere_metrics => "CI"` in a user_inputs.jl does
-what it looks like it does.
+Which extension direction `v` of Eq. (†) in the header the case asked for:
+
+  * `:cross_product` (default) — `v = n̂`, the discrete surface normal. This is
+    Kopriva's curl-invariant form with the natural extension, and it reduces to
+    the textbook cross-product metrics.
+  * `:radial` — `v = x̂`, the exact radial direction.
+
+`:curl_invariant` / `:ci` are accepted as aliases of `:radial`: on a 2-D
+manifold BOTH choices are curl-invariant (see the header), so that name can
+only mean "the one that is not the cross product". `:normal` / `:cp` are
+aliases of `:cross_product`. Strings work too.
 """
 function sphere_metrics_form(inputs)
 
-    raw = get(inputs, :sphere_metrics, :curl_invariant)
+    raw = get(inputs, :sphere_metrics, :cross_product)
     key = Symbol(lowercase(string(raw)))
 
-    if key in (:curl_invariant, :curlinvariant, :ci, :curl, :invariant)
-        return :curl_invariant
-    elseif key in (:cross_product, :crossproduct, :cp, :cross)
+    if key in (:cross_product, :crossproduct, :cp, :cross, :normal)
         return :cross_product
+    elseif key in (:radial, :curl_invariant, :curlinvariant, :ci, :curl, :invariant)
+        return :radial
     else
         error(string(" # ERROR sphere_metrics.jl: :sphere_metrics => ", repr(raw),
-                     " is not a known form. Use :curl_invariant or :cross_product."))
+                     " is not a known form. Use :cross_product or :radial."))
     end
 end
 
@@ -204,10 +229,8 @@ function build_sphere_metrics(mesh::St_mesh,
 
     verbose && println(" # ")
     verbose && println(" # SPHERICAL SHELL METRICS .....................................")
-    verbose && println(" #   metric terms: ",
-                       form === :curl_invariant ?
-                       "CURL-INVARIANT (Kopriva 2006 Eq. 15; Kelly et al. Eq. 23)" :
-                       "CROSS-PRODUCT (Kelly et al. Eq. 21)")
+    verbose && println(" #   Kopriva-form metric terms, extension direction v = ",
+                       form === :radial ? "x̂ (radial)" : "n̂ (discrete normal; = the cross-product metrics)")
 
     #-----------------------------------------------------------------------------
     # LGL points, weights and the differentiation matrix — the repo's own
@@ -231,17 +254,10 @@ function build_sphere_metrics(mesh::St_mesh,
     # Typed function barrier: St_mesh fields carry no type annotation, so
     # mesh.connijk / mesh.coords read inside the node loops would box on every
     # access (the same reason the RHS kernels take their arrays as arguments).
-    if form === :curl_invariant
-        _sphere_metrics_curl_invariant!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
-                                        nx, ny, nz, Jnx, Jny, Jnz, M,
-                                        crd, mesh.connijk, dψ, ω,
-                                        nelem, ngl, TF(mesh.radius))
-    else
-        _sphere_metrics_cross_product!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
-                                       nx, ny, nz, Jnx, Jny, Jnz, M,
-                                       crd, mesh.connijk, dψ, ω,
-                                       nelem, ngl)
-    end
+    _sphere_metrics!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                     nx, ny, nz, Jnx, Jny, Jnz, M,
+                     crd, mesh.connijk, dψ, ω,
+                     nelem, ngl, TF(mesh.radius), form === :radial)
 
     minimum(M) > 0 || error(" # ERROR sphere_metrics.jl: a node has zero mass — the grid is not covered by the elements.")
     Minv = one(TF) ./ M
@@ -275,99 +291,41 @@ end
 
 
 #---------------------------------------------------------------------------------
-# _sphere_metrics_cross_product!  —  Kelly et al. Eq. (21).
+# _sphere_metrics!  —  Eq. (†) and (‡) of the header, for either extension
+# direction v:
 #
-#   n = a_ξ × a_η ,  J = |n| ,  n̂ = n/J ,  J n̂ = n
-#   a¹ = (a_η × n)/J² ,  a² = (n × a_ξ)/J²
+#   A_ξ = a_ξ × v ,  A_η = a_η × v                      (pointwise, nodal)
 #
-# aⁱ·a_j = δⁱⱼ and aⁱ·n̂ = 0 hold to round-off; the metric identity (**) holds
-# only to the order of the polynomial approximation of the sphere.
-#---------------------------------------------------------------------------------
-function _sphere_metrics_cross_product!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
-                                        nx, ny, nz, Jnx, Jny, Jnz,
-                                        M::AbstractVector{TF},
-                                        crd::AbstractMatrix{TF}, connijk,
-                                        dψ::AbstractMatrix{TF}, ω::AbstractVector{TF},
-                                        nelem::Int, ngl::Int) where {TF}
-
-    @inbounds for iel = 1:nelem
-        for j = 1:ngl, i = 1:ngl
-
-            a1x, a1y, a1z, a2x, a2y, a2z =
-                _sphere_tangents(crd, connijk, dψ, iel, i, j, ngl, TF)
-
-            # n = a_ξ × a_η ; J = |n|
-            vx = a1y*a2z - a1z*a2y
-            vy = a1z*a2x - a1x*a2z
-            vz = a1x*a2y - a1y*a2x
-            J  = sqrt(vx*vx + vy*vy + vz*vz)
-
-            J > 0 || error(string(" # ERROR sphere_metrics.jl: zero surface Jacobian in element ", iel,
-                                  " at node (", i, ",", j, "). The element is degenerate."))
-
-            Je[iel,i,j]  = J
-            nx[iel,i,j]  = vx/J; ny[iel,i,j]  = vy/J; nz[iel,i,j]  = vz/J
-            Jnx[iel,i,j] = vx;   Jny[iel,i,j] = vy;   Jnz[iel,i,j] = vz
-
-            invJ2 = one(TF)/(J*J)
-
-            # a¹ = (a_η × n)/J²
-            dξdx[iel,i,j] = (a2y*vz - a2z*vy)*invJ2
-            dξdy[iel,i,j] = (a2z*vx - a2x*vz)*invJ2
-            dξdz[iel,i,j] = (a2x*vy - a2y*vx)*invJ2
-
-            # a² = (n × a_ξ)/J²
-            dηdx[iel,i,j] = (vy*a1z - vz*a1y)*invJ2
-            dηdy[iel,i,j] = (vz*a1x - vx*a1z)*invJ2
-            dηdz[iel,i,j] = (vx*a1y - vy*a1x)*invJ2
-
-            # direct stiffness summation of the diagonal mass matrix
-            M[connijk[iel,i,j]] += ω[i]*ω[j]*J
-        end
-    end
-
-    return nothing
-end
-
-
-#---------------------------------------------------------------------------------
-# _sphere_metrics_curl_invariant!  —  Kopriva (2006) Eq. (15), Kelly et al.
-# Eq. (23), specialised to the shell by the radial extension x → (ζ/R)x of the
-# file header. Written out, with x̂ = x/|x| the unit radial at the node:
+#   J a¹ =  A_η ,   J a² = -A_ξ ,   J = a_ξ·A_η = v·(a_ξ × a_η)
 #
-#   A_ξ = a_ξ × x̂ ,  A_η = a_η × x̂                (pointwise, nodal)
+#   J n̂ = (R/2) [ ∂_η A_ξ - ∂_ξ A_η ]                   (the curl third term)
 #
-#   J a¹ =  A_η ,   J a² = -A_ξ ,   J = a_ξ·A_η = x̂·(a_ξ × a_η)
-#
-#   J n̂ = (R/2) [ ∂_η A_ξ - ∂_ξ A_η ]              (the surviving curl)
+# lradial = false  ⟹  v = n̂ = (a_ξ × a_η)/|a_ξ × a_η| — J is then |a_ξ × a_η|
+#                     and J a¹ = (a_η × n)/J, i.e. the textbook cross-product
+#                     metrics, unchanged from before :sphere_metrics existed.
+# lradial = true   ⟹  v = x̂ = x/|x|.
 #
 # The last line is the one that has to be DIFFERENTIATED, so it needs A_ξ and
 # A_η at every node of the element before it can be formed: hence the two
-# passes below. Because the same dψ differentiates both, the identity
+# passes. Because the same dψ differentiates both,
 #
 #   ∂_ξ(J a¹) + ∂_η(J a²) + (2/R)(J n̂)
 #     = ∂_ξ A_η - ∂_η A_ξ + [∂_η A_ξ - ∂_ξ A_η] = 0
 #
-# is an algebraic cancellation of the discrete derivatives — no smoothness of
-# the grid, no accuracy of the interpolant, and no property of the sphere is
-# used, which is exactly why it survives at finite order.
-#
-# Note also that J a¹ and J a² are cross products with x̂, so aⁱ·x̂ = 0 exactly
-# (the basis is tangent to the TRUE sphere), and J is chosen as x̂·(a_ξ × a_η)
-# rather than |a_ξ × a_η| so that aⁱ·a_j = δⁱⱼ is exact as well. n̂ is then x̂
-# itself: on a shell the exact unit normal is known, and it is a better normal
-# than any discrete cross product. The curl-form AREA normal J n̂ is a genuinely
-# different vector and is kept separately, in Jnx/Jny/Jnz.
+# identically — for EITHER v, which is the point made at length in the header:
+# on a 2-D manifold that identity ranks nothing. What the choice of v does
+# decide is which of the two exact properties holds, aⁱ·v = 0 with v the true
+# normal (v = x̂) or the exact annihilation of a rigid rotation (v = n̂).
 #---------------------------------------------------------------------------------
-function _sphere_metrics_curl_invariant!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
-                                         nx, ny, nz, Jnx, Jny, Jnz,
-                                         M::AbstractVector{TF},
-                                         crd::AbstractMatrix{TF}, connijk,
-                                         dψ::AbstractMatrix{TF}, ω::AbstractVector{TF},
-                                         nelem::Int, ngl::Int, R::TF) where {TF}
+function _sphere_metrics!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                          nx, ny, nz, Jnx, Jny, Jnz,
+                          M::AbstractVector{TF},
+                          crd::AbstractMatrix{TF}, connijk,
+                          dψ::AbstractMatrix{TF}, ω::AbstractVector{TF},
+                          nelem::Int, ngl::Int, R::TF, lradial::Bool) where {TF}
 
-    Aξ = zeros(TF, ngl, ngl, 3)      # a_ξ × x̂ at every node of the element
-    Aη = zeros(TF, ngl, ngl, 3)      # a_η × x̂
+    Aξ = zeros(TF, ngl, ngl, 3)      # a_ξ × v at every node of the element
+    Aη = zeros(TF, ngl, ngl, 3)      # a_η × v
 
     halfR = TF(0.5)*R
 
@@ -380,24 +338,32 @@ function _sphere_metrics_curl_invariant!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, 
                 _sphere_tangents(crd, connijk, dψ, iel, i, j, ngl, TF)
 
             ip = connijk[iel,i,j]
-            xx, xy, xz = crd[1,ip], crd[2,ip], crd[3,ip]
-            r  = sqrt(xx*xx + xy*xy + xz*xz)
-            r > 0 || error(string(" # ERROR sphere_metrics.jl: node ", ip,
-                                  " sits at the centre of the sphere."))
-            xx /= r; xy /= r; xz /= r                       # x̂
 
-            b1x = a1y*xz - a1z*xy                           # A_ξ = a_ξ × x̂
-            b1y = a1z*xx - a1x*xz
-            b1z = a1x*xy - a1y*xx
+            if lradial
+                vx, vy, vz = crd[1,ip], crd[2,ip], crd[3,ip]
+            else
+                vx = a1y*a2z - a1z*a2y
+                vy = a1z*a2x - a1x*a2z
+                vz = a1x*a2y - a1y*a2x
+            end
+            vn = sqrt(vx*vx + vy*vy + vz*vz)
+            vn > 0 || error(string(" # ERROR sphere_metrics.jl: degenerate element ", iel,
+                                   " at node (", i, ",", j,
+                                   ") — zero surface normal, or a node at the centre of the sphere."))
+            vx /= vn; vy /= vn; vz /= vn                     # v̂
 
-            b2x = a2y*xz - a2z*xy                           # A_η = a_η × x̂
-            b2y = a2z*xx - a2x*xz
-            b2z = a2x*xy - a2y*xx
+            b1x = a1y*vz - a1z*vy                            # A_ξ = a_ξ × v
+            b1y = a1z*vx - a1x*vz
+            b1z = a1x*vy - a1y*vx
+
+            b2x = a2y*vz - a2z*vy                            # A_η = a_η × v
+            b2y = a2z*vx - a2x*vz
+            b2z = a2x*vy - a2y*vx
 
             Aξ[i,j,1] = b1x; Aξ[i,j,2] = b1y; Aξ[i,j,3] = b1z
             Aη[i,j,1] = b2x; Aη[i,j,2] = b2y; Aη[i,j,3] = b2z
 
-            # J = a_ξ·(a_η × x̂) = x̂·(a_ξ × a_η)
+            # J = a_ξ·(a_η × v) = v·(a_ξ × a_η)
             J = a1x*b2x + a1y*b2y + a1z*b2z
 
             J > 0 || error(string(" # ERROR sphere_metrics.jl: non-positive surface Jacobian in element ",
@@ -405,7 +371,7 @@ function _sphere_metrics_curl_invariant!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, 
                                   "). The element is degenerate or wound inward."))
 
             Je[iel,i,j] = J
-            nx[iel,i,j] = xx; ny[iel,i,j] = xy; nz[iel,i,j] = xz
+            nx[iel,i,j] = vx; ny[iel,i,j] = vy; nz[iel,i,j] = vz
 
             invJ = one(TF)/J
             dξdx[iel,i,j] =  b2x*invJ; dξdy[iel,i,j] =  b2y*invJ; dξdz[iel,i,j] =  b2z*invJ
@@ -479,24 +445,27 @@ end
 #   M3  outward normal ....... the AREA normal J n̂ points straight up,
 #                              (J n̂/|J n̂|)·x̂ = 1 (the element orientation from
 #                              orient_elements_outward! survived into the
-#                              metrics). Under :cross_product J n̂ is J times the
-#                              stored unit normal, so this is the same check it
-#                              always was; under :curl_invariant the stored n̂ is
-#                              x̂ by construction and it is the CURL-form area
-#                              normal that has something to say here.
+#                              metrics).
 #   M4  mass matrix .......... Σ M[ip] is the SEM quadrature of the shell area
 #                              and must equal 4πR². This one check exercises the
 #                              Jacobian, the weights AND the direct stiffness
 #                              summation at once.
-#   M5  metric identity ...... ∂_ξ(J a¹) + ∂_η(J a²) + (2/R)(J n̂) = 0, the
-#                              curved-surface form of the identity that makes a
-#                              scheme constant-state preserving. Round-off under
-#                              :curl_invariant — that is what the form is FOR —
-#                              and O(hᴺ) under :cross_product.
+#   M5  metric identity ...... ∂_ξ(J a¹) + ∂_η(J a²) + (2/R)(J n̂) = 0. Round-off
+#                              under BOTH forms — it is an algebraic property of
+#                              the curl definition of J n̂, so it checks THIS
+#                              FILE, not the geometry, and it ranks nothing.
+#   M6  geometry ............. the curl third term J a³ against the plain area
+#                              normal a_ξ × a_η. This is the truncation error of
+#                              the element geometry — the number M5 would report
+#                              if J a³ were not defined by the curl.
+#   M7  rigid rotation ....... ∇ₛ·(Ω × x) = 0 in the strong form. The manifold
+#                              analogue of free-stream preservation, and the one
+#                              check that really does separate the two forms:
+#                              exact for :cross_product, O(hᴺ) for :radial.
 #---------------------------------------------------------------------------------
 function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
                               verbose = true, atol_area = 1.0e-6, atol_normal = 1.0e-6,
-                              atol_curvature = nothing)
+                              atol_curvature = nothing, atol_geometry = 5.0e-2)
 
     crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
     allok = true
@@ -515,6 +484,7 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
     worst_id  = 0.0
     worst_tan = 0.0
     worst_nrm = 0.0
+    worst_geo = 0.0
 
     for iel = 1:nelem
         for j = 1:ngl, i = 1:ngl
@@ -546,11 +516,52 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
             rr = sqrt(crd[1, ip]^2 + crd[2, ip]^2 + crd[3, ip]^2)
 
             # M3 reads the AREA normal J n̂, not the stored unit normal: under
-            # :curl_invariant the latter IS x̂ and the check would be vacuous.
+            # :radial the latter IS x̂ and the check would be vacuous.
             Jnxi, Jnyi, Jnzi = metrics.Jnx[iel,i,j], metrics.Jny[iel,i,j], metrics.Jnz[iel,i,j]
             Jnmag = sqrt(Jnxi^2 + Jnyi^2 + Jnzi^2)
             worst_nrm = max(worst_nrm,
                             abs((Jnxi*crd[1, ip] + Jnyi*crd[2, ip] + Jnzi*crd[3, ip])/(Jnmag*rr) - 1.0))
+
+            # M6: the curl third term (‡) against the plain area normal
+            # a_ξ × a_η. They agree only in the continuum, so this is the honest
+            # measure of how well the element resolves the curvature — the
+            # number that M5 would report if J a³ were NOT defined by the curl.
+            worst_geo = max(worst_geo,
+                            sqrt((Jnxi - (a1y*a2z - a1z*a2y))^2 +
+                                 (Jnyi - (a1z*a2x - a1x*a2z))^2 +
+                                 (Jnzi - (a1x*a2y - a1y*a2x))^2)/metrics.Je[iel,i,j])
+        end
+    end
+
+    #--- M7: does the strong-form surface divergence annihilate a RIGID
+    # ROTATION? u = Ω × x is tangential and divergence free on any sphere, and
+    # D_ξu = Ω × a_ξ holds exactly for the nodal interpolant, so whatever comes
+    # out is pure metric error. This is the manifold analogue of free-stream
+    # preservation for the chain-rule form the RHS uses — the flat "constant
+    # flux stays constant" test is empty here, because a constant flux has zero
+    # discrete derivative whatever the metrics are.
+    #
+    # It is EXACT for :cross_product and only O(hᴺ) for :radial; see the header
+    # for why v ∥ a_ξ × a_η is the unique choice that has it.
+    worst_rot = 0.0
+    Ω = (0.3, -0.7, 0.5) ./ sqrt(0.83) .* (40.0/mesh.radius)   # a 40 m/s rotation
+    for iel = 1:nelem
+        for j = 1:ngl, i = 1:ngl
+            d = 0.0
+            for c = 1:3
+                dξ = dη = 0.0
+                for k = 1:ngl
+                    ipk = mesh.connijk[iel,k,j]; ipl = mesh.connijk[iel,i,k]
+                    uk = Ω[mod1(c+1,3)]*crd[mod1(c+2,3), ipk] - Ω[mod1(c+2,3)]*crd[mod1(c+1,3), ipk]
+                    ul = Ω[mod1(c+1,3)]*crd[mod1(c+2,3), ipl] - Ω[mod1(c+2,3)]*crd[mod1(c+1,3), ipl]
+                    dξ += dψ[k,i]*uk
+                    dη += dψ[k,j]*ul
+                end
+                c1 = c == 1 ? metrics.dξdx[iel,i,j] : c == 2 ? metrics.dξdy[iel,i,j] : metrics.dξdz[iel,i,j]
+                c2 = c == 1 ? metrics.dηdx[iel,i,j] : c == 2 ? metrics.dηdy[iel,i,j] : metrics.dηdz[iel,i,j]
+                d += dξ*c1 + dη*c2
+            end
+            worst_rot = max(worst_rot, abs(d))
         end
     end
 
@@ -609,37 +620,41 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
         end
     end
     #
-    # THIS is where the two forms part company, and it is the reason
-    # :curl_invariant is the default.
+    # Round-off for BOTH forms, at every order and on any grid: J a¹, J a² and
+    # J n̂ are three parts of one discrete curl, so this is an algebraic
+    # cancellation between them and not an approximation (Kopriva 2006, Sec. 7,
+    # specialised in the header). Measured 1.5e-14 / 3.9e-14 / 7.0e-14 at
+    # nop = 3 / 5 / 7 under :cross_product and 1.6e-14 / 3.9e-14 / 6.8e-14 under
+    # :radial — flat in nop, and at the level of the arithmetic (it is 1.2e-16
+    # on the raw J aⁱ; the extra two digits are the J·(J aⁱ/J) round trip this
+    # check has to make, since the metrics are stored split).
     #
-    #   :curl_invariant — round-off, at every order and on any grid. J a¹, J a²
-    #       and J n̂ are three parts of one discrete curl, so the identity is an
-    #       algebraic cancellation between them rather than an approximation
-    #       (Kopriva 2006, Sec. 7). It does not converge with nop because there
-    #       is nothing to converge: measured on the shipped 10x10-per-panel
-    #       cubed sphere, 1.6e-14 at nop=3, 3.9e-14 at nop=5, 6.8e-14 at nop=7,
-    #       i.e. flat and at the level of the arithmetic. The tolerance below is
-    #       1e-10: anything above that means the construction is broken, not
-    #       that the grid is coarse.
+    # It therefore CANNOT be used to rank the two forms — it is a check on this
+    # file, not on the geometry. What it does catch, and catch hard, is a sign
+    # slip or a missing term in (†)/(‡), which give O(1). The number that DOES
+    # measure how well the element resolves the curvature is M6.
     #
-    #   :cross_product — resolution-dependent, because the discrete metric
-    #       terms are polynomials of degree nop on a CURVED element, so the
-    #       identity holds only to the order of the approximation. It converges
-    #       spectrally with nop — same grid: 2.2e-2 at nop=3, 1.4e-4 at nop=5,
-    #       5.4e-7 at nop=7 — which is twelve orders of magnitude worse than the
-    #       curl form at nop=3 and still seven at nop=7. The tolerance is
-    #       therefore loose on purpose: it is here to catch a WRONG identity — a
-    #       sign slip or a missing term gives O(1), forty times the threshold —
-    #       not to certify an accuracy.
-    #
-    # Pass atol_curvature explicitly to override either default.
-    #
-    atol_fs = atol_curvature === nothing ?
-              (metrics.form === :curl_invariant ? 1.0e-10 : 5.0e-2) : atol_curvature
+    atol_fs = atol_curvature === nothing ? 1.0e-10 : atol_curvature
     allok &= line("M5 metric identity ∇ₛ·(J aⁱ) = -(2/R)(J n̂)", worst_fs < atol_fs,
-                  @sprintf("rel err = %.3e, tol = %.1e (%s)", worst_fs, atol_fs,
-                           metrics.form === :curl_invariant ? "exact by construction" :
-                                                              "spectral in nop"))
+                  @sprintf("rel err = %.3e, tol = %.1e (exact by construction)", worst_fs, atol_fs))
+
+    #--- M6 the curl third term against the plain area normal a_ξ × a_η. These
+    # agree only in the continuum, so this is the truncation error of the
+    # element geometry, and it converges spectrally. Measured on the shipped
+    # cubed sphere: :cross_product 2.2e-2 / 1.4e-4 / 5.4e-7 at nop = 3/5/7, and
+    # :radial 3.4e-4 / 1.1e-6 / 2.8e-9. Loose on purpose — it is here to catch a
+    # WRONG third term, which is O(1), not to certify an accuracy.
+    allok &= line("M6 curl normal J a³ vs a_ξ × a_η", worst_geo < atol_geometry,
+                  @sprintf("rel err = %.3e (spectral in nop)", worst_geo))
+
+    #--- M7 rigid-rotation annihilation, computed above. Normalised by |Ω|,
+    # i.e. by the reciprocal time scale of the rotation, so the number is the
+    # spurious divergence a 40 m/s solid-body flow would feel, in s⁻¹.
+    atol_rot = metrics.form === :cross_product ? 1.0e-16 : 1.0e-8
+    allok &= line("M7 ∇ₛ·(Ω × x) = 0 (rigid rotation, 40 m/s)", worst_rot < atol_rot,
+                  @sprintf("max = %.3e s⁻¹, tol = %.1e (%s)", worst_rot, atol_rot,
+                           metrics.form === :cross_product ? "exact for v = n̂" :
+                                                             "O(hᴺ) for v = x̂"))
 
     verbose && println(" # CHECK SPHERICAL SHELL METRICS ............................... ",
                        allok ? "ALL TESTS PASSED" : "FAILED")

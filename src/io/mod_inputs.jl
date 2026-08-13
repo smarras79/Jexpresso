@@ -806,22 +806,26 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lproject_to_sphere] = true
     end
     #
-    #   :sphere_metrics    which form of the 2D-manifold metric terms
-    #                      build_sphere_metrics uses:
+    #   :sphere_metrics    the 2D-manifold metric terms of build_sphere_metrics.
+    #                      Kopriva's curl-invariant form (J. Sci. Comput. 26(3),
+    #                      301, 2006, Eq. 15; Sec. 3.2.3 of Kelly, Alves,
+    #                      Eckermann et al., JCP 552, 2026, 114683) DEGENERATES
+    #                      on a surface: it fixes the in-surface metric terms
+    #                      only up to the direction v in which the surface is
+    #                      extended off itself, and both choices below are
+    #                      curl-invariant. See the header of sphere_metrics.jl.
     #
-    #     :curl_invariant  (default) Kopriva, J. Sci. Comput. 26(3), 301 (2006)
-    #                      Eq. (15); Sec. 3.2.3 / Eq. (23) of Kelly, Alves,
-    #                      Eckermann et al., JCP 552 (2026) 114683. The metric
-    #                      terms are a discrete CURL, so the metric identity
-    #                      holds to round-off at any order and the scheme is
-    #                      constant-state preserving.
-    #     :cross_product   the textbook a_η × n form, Eq. (21) of Kelly et al.
-    #                      Satisfies the identity only to O(hᴺ). Kept because it
-    #                      is what every result before this switch was produced
-    #                      with.
+    #     :cross_product   (default) v = n̂, the discrete surface normal — which
+    #                      is what the textbook cross-product formulas give.
+    #                      Uniquely, its strong-form divergence annihilates a
+    #                      rigid rotation exactly.
+    #     :radial          v = x̂, the exact radial. ∇ₛ is then tangent to the
+    #                      TRUE sphere rather than to the interpolant of it, at
+    #                      the cost of the rigid-rotation property.
+    #                      (:curl_invariant is an accepted alias.)
     #
     if(!haskey(inputs, :sphere_metrics))
-        inputs[:sphere_metrics] = :curl_invariant
+        inputs[:sphere_metrics] = :cross_product
     end
 
 
