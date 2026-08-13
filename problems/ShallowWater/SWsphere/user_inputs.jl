@@ -40,10 +40,20 @@ function user_inputs()
         #   :lcheck_grid              run the T1..T9 consistency tests
         #   :lstop_on_bad_grid        abort if any of them fails
         #   :lproject_to_sphere       snap every node radially onto the shell
+        #   :sphere_metrics           which form of the manifold metric terms to
+        #                             build: :curl_invariant (default) is
+        #                             Kopriva (2006) Eq. (15), i.e. Sec. 3.2.3 of
+        #                             Kelly, Alves, Eckermann et al. (JCP 552,
+        #                             2026, 114683) — the contravariant vectors
+        #                             are written as a discrete curl, so the
+        #                             metric identity closes to round-off instead
+        #                             of to O(hᴺ). :cross_product restores the
+        #                             pre-switch behaviour (their Eq. 21).
         #---------------------------------------------------------------------------
         :lcheck_grid             => true,
         :lstop_on_bad_grid       => true,
         :lproject_to_sphere      => true,
+        :sphere_metrics          => :curl_invariant,
         # Radius of the shell. Setting it explicitly RESCALES the grid onto a
         # sphere of that radius (a unit-sphere .msh is blown up to the Earth);
         # comment it out to take the radius from the gmsh file instead, as the

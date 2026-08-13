@@ -805,6 +805,24 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lproject_to_sphere))
         inputs[:lproject_to_sphere] = true
     end
+    #
+    #   :sphere_metrics    which form of the 2D-manifold metric terms
+    #                      build_sphere_metrics uses:
+    #
+    #     :curl_invariant  (default) Kopriva, J. Sci. Comput. 26(3), 301 (2006)
+    #                      Eq. (15); Sec. 3.2.3 / Eq. (23) of Kelly, Alves,
+    #                      Eckermann et al., JCP 552 (2026) 114683. The metric
+    #                      terms are a discrete CURL, so the metric identity
+    #                      holds to round-off at any order and the scheme is
+    #                      constant-state preserving.
+    #     :cross_product   the textbook a_η × n form, Eq. (21) of Kelly et al.
+    #                      Satisfies the identity only to O(hᴺ). Kept because it
+    #                      is what every result before this switch was produced
+    #                      with.
+    #
+    if(!haskey(inputs, :sphere_metrics))
+        inputs[:sphere_metrics] = :curl_invariant
+    end
 
 
     if (!haskey(inputs, :lwarmup))
