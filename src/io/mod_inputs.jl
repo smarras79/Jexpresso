@@ -805,6 +805,28 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lproject_to_sphere))
         inputs[:lproject_to_sphere] = true
     end
+    #
+    #   :sphere_metrics    the 2D-manifold metric terms of build_sphere_metrics.
+    #                      Kopriva's curl-invariant form (J. Sci. Comput. 26(3),
+    #                      301, 2006, Eq. 15; Sec. 3.2.3 of Kelly, Alves,
+    #                      Eckermann et al., JCP 552, 2026, 114683) DEGENERATES
+    #                      on a surface: it fixes the in-surface metric terms
+    #                      only up to the direction v in which the surface is
+    #                      extended off itself, and both choices below are
+    #                      curl-invariant. See the header of sphere_metrics.jl.
+    #
+    #     :cross_product   (default) v = n̂, the discrete surface normal — which
+    #                      is what the textbook cross-product formulas give.
+    #                      Uniquely, its strong-form divergence annihilates a
+    #                      rigid rotation exactly.
+    #     :radial          v = x̂, the exact radial. ∇ₛ is then tangent to the
+    #                      TRUE sphere rather than to the interpolant of it, at
+    #                      the cost of the rigid-rotation property.
+    #                      (:curl_invariant is an accepted alias.)
+    #
+    if(!haskey(inputs, :sphere_metrics))
+        inputs[:sphere_metrics] = :cross_product
+    end
 
 
     if (!haskey(inputs, :lwarmup))

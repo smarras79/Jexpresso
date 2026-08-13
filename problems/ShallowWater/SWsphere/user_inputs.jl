@@ -2,74 +2,64 @@ function user_inputs()
 
     inputs = Dict(
         #---------------------------------------------------------------------------
-        # SWsphere — shallow water equations on a spherical shell.
+        # SWsphere_visc — the Galewsky jet on the shell with the ARTIFICIAL
+        # DIFFUSION of Eq. (8b) added to the modal filter: the PAPER'S OWN
+        # configuration (Marras, Kopera & Giraldo 2015, QJRMS 141: 1727-1739),
+        # which filters every step AND carries ν = 1e5 m²/s.
         #
-        # Galewsky, Scott & Polvani (2004) barotropically unstable jet, solved
-        # with the shallow water equations of Marras, Kopera & Giraldo (2015),
-        # QJRMS 141: 1727-1739, Eq. (8), on a cubed-sphere shell.
+        # Same equations, same grid, same initial condition as
+        # ShallowWater/SWsphere — the five other user_*.jl files in this
+        # directory are one-line includes of that case's. What differs is
+        # exactly one switch at the bottom:
         #
-        # The run: grid -> manifold metrics -> initial condition -> :ode_solver.
+        #     SWsphere        :lfilter => true    :lvisc => false
+        #     SWsphere_visc   :lfilter => true    :lvisc => true, :μ => 1e5
         #
-        #   :lspherical_shell => true   solve on the shell: manifold metrics,
-        #                               surface-divergence RHS and the shell
-        #                               time loop replace the flat ones. The GRID is
-        #                               read by the ordinary gmsh path, which
-        #                               detects a 2D manifold embedded in 3D
-        #                               and keeps z (`lmanifold` in mesh.jl).
+        # WHY NOT VISCOSITY ALONE, which is what this case first shipped as.
+        # It does not survive this grid. Measured, 3 days, all else equal:
         #
-        #   :lgrid_only       => true   stop right after the grid, without
-        #                               touching initialize.jl.
-        #   :linit_only       => true   stop after the initial condition,
-        #                               without integrating. :lgrid_only wins if
-        #                               both are set.
+        #   ν = 1e5, filter OFF   NaN at 2.005 d, whether the diffusion is on
+        #                         the momentum only or on all four equations
+        #                         (both were run; they die within 0.4% of each
+        #                         other, so it is not the undiffused φ)
+        #   ν = 5e5, filter OFF   survives 3 d — but max|ζ| falls 1.12e-4 →
+        #                         5.65e-5, HALF the vorticity gone, and
+        #                         vorticity is the field this test is judged on
+        #   ν = 1e5, filter ON    survives 3 d with max|ζ| 1.11e-4 → 9.58e-5,
+        #                         a 13% loss  ← this deck
+        #
+        # The grid is the reason: 10 elements per panel at nop=5 leaves the
+        # coarse elements at ~219 km effective resolution, i.e. a grid Reynolds
+        # number uΔ/ν ≈ 175 at ν = 1e5. Viscosity alone can hold that only by
+        # being strong enough to erase the answer.
+        #
+        # Physics, provenance and the discretization: see the README next to
+        # problems/ShallowWater/SWsphere/user_inputs.jl. Everything down to the
+        # STABILIZATION block below is that deck, unchanged.
         #---------------------------------------------------------------------------
         :lspherical_shell     => true,
         :lgrid_only           => false,
         :linit_only           => false,
         #---------------------------------------------------------------------------
-        # Grid checks (see check_sphere_metrics in src/kernel/mesh/sphere_metrics.jl).
-        #
-        # A spherical shell is CLOSED: no boundary, every edge shared by exactly
-        # two elements, and gmsh files built panel-by-panel routinely carry
-        # duplicated nodes along the panel seams. These switches control what is
-        # done about that.
-        #
-        #                             before the topology is built (this is what
-        #                             turns "six panels that look joined" into
-        #                             one watertight shell)
-        #   :lcheck_grid              run the T1..T9 consistency tests
-        #   :lstop_on_bad_grid        abort if any of them fails
-        #   :lproject_to_sphere       snap every node radially onto the shell
+        # Grid checks (see check_sphere_metrics in src/kernel/mesh/sphere_metrics.jl)
         #---------------------------------------------------------------------------
         :lcheck_grid             => true,
         :lstop_on_bad_grid       => true,
         :lproject_to_sphere      => true,
-        # Radius of the shell. Setting it explicitly RESCALES the grid onto a
-        # sphere of that radius (a unit-sphere .msh is blown up to the Earth);
-        # comment it out to take the radius from the gmsh file instead, as the
-        # mean |x| over its nodes.
-        #
-        # Pinned here to the Galewsky Earth radius so the test is the published
-        # one whatever the .msh happens to carry.
         :sphere_radius        => 6.37122e6,
+        #---------------------------------------------------------------------------
+        # Metric terms of the 2D manifold. Kopriva's curl-invariant form
+        # degenerates on a surface — see the header of sphere_metrics.jl — and
+        # leaves only the direction v in which the surface is extended off
+        # itself. :cross_product is v = n̂ (and is what the textbook formulas
+        # give); :radial is v = x̂. Both are curl-invariant; they differ in which
+        # exact property they keep.
+        #---------------------------------------------------------------------------
+        #:sphere_metrics       => :cross_product,
+        :sphere_metrics       => :curl_invariant,
         #---------------------------------------------------------------------------
         # Initial condition: Galewsky, Scott & Polvani (2004), Tellus 56A,
         # 429-440 — barotropically unstable mid-latitude jet.
-        #
-        # All of these are optional: initialize.jl falls back to the published
-        # values shown. They are spelled out so a parameter sweep never needs to
-        # touch the source.
-        #
-        #   the jet          u_max, and the band φ ∈ [φ0, φ1]
-        #   the balance      Ω, g, and the global mean depth h_mean that fixes
-        #                    the constant of integration h₀
-        #   the trigger      ĥ cos φ exp[-(λ/α)²] exp[-((φ2-φ)/β)²]
-        #   :galewsky_nquad  Simpson intervals for the balance integral. 512
-        #                    gives ~5e-8 m on a 10 km depth; the answer is
-        #                    unchanged to 10 digits from 128.
-        #
-        # Set :lgalewsky_perturbation => false for the BALANCED control run: an
-        # exact steady solution, which is the natural first test of the scheme.
         #---------------------------------------------------------------------------
         :lgalewsky_perturbation => true,
         :galewsky_umax          => 80.0,
@@ -84,27 +74,8 @@ function user_inputs()
         :galewsky_phi2          => π/4,
         :galewsky_nquad         => 512,
         #---------------------------------------------------------------------------
-        # Keeping the flow ON the shell — Marras, Kopera & Giraldo (2015),
-        # QJRMS 141: 1727-1739, section 3.2 (after Coté 1988).
-        #
-        # The velocity is a full 3-D Cartesian vector on a 2-D surface, so one
-        # degree of freedom is redundant and must be constrained: u·x = 0.
-        # Two complementary mechanisms:
-        #
-        #   the μx SOURCE          in user_source.jl, with the closed form
-        #                          μ = -φ|u|²/r² (a centripetal force). Keeps
-        #                          the CONTINUOUS equation consistent. It has no
-        #                          switch here because user_source! receives no
-        #                          `inputs` — comment the two μ lines out in
-        #                          user_source.jl to run without it.
-        #
-        #   :llagrange_projection  the P = I - xxᵀ/r² projection of Eq.(9)-(11),
-        #                          applied to the momentum. Removes the normal
-        #                          drift the DISCRETE operators accumulate. In a
-        #                          real run this belongs at the end of every
-        #                          step; with :linit_only it is applied once,
-        #                          after the initial condition, and reports the
-        #                          drift it removed.
+        # Keeping the flow ON the shell: the μx source of user_source.jl and the
+        # P = I - xxᵀ/r² projection, applied after every RK stage.
         #---------------------------------------------------------------------------
         :llagrange_projection   => true,
         #---------------------------------------------------------------------------
@@ -113,53 +84,15 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         :nop                  => 5,
         #---------------------------------------------------------------------------
-        # Mesh parameters and files:
-        #
-        # A CLOSED all-quadrilateral surface grid of the sphere. The one that
-        # ships with this case is a 10x10-per-panel cubed sphere (600 quads,
-        # 602 vertices, V - E + F = 2). Regenerate it with gmsh from the .geo
-        # shipped next to it:
-        #
-        #   gmsh -2 problems/ShallowWater/SWsphere/cubed_sphere.geo \
-        #        -o problems/ShallowWater/SWsphere/cubed_sphere.msh
-        #
-        # Any gmsh format works (MSH 2.2 or 4.1, parametric nodes or not): the
-        # file is read by GridapGmsh, i.e. by gmsh itself.
+        # Mesh: the cubed sphere that ships with SWsphere (600 quads, 602
+        # vertices, 10 elements per panel edge). Pointed at rather than copied —
+        # the two cases are the same grid by construction.
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/ShallowWater/SWsphere/cubed_sphere.msh",
         #---------------------------------------------------------------------------
         # Time integration.
-        #
-        # src/kernel/solvers/sphere_time_loop.jl builds an ODEProblem and solves
-        # it with :ode_solver, like every other case. The Lagrange projection has
-        # to run after EVERY RK stage, which is exactly what an integrator's
-        # stage_limiter! hook is for; the modal filter is the step_limiter!.
-        # :ode_solver must therefore name an integrator that takes limiters.
-        #
-        # :lcfl_dt => true (the default) takes the step from the CFL condition,
-        # Δt = :cfl * Δmin / max(|u| + sqrt(φ)), with Δmin the smallest LGL node
-        # spacing. Set it false to use a :Δt of your own.
-        #
-        # It is an explicit switch rather than "omit :Δt and you get the CFL
-        # step" because mod_inputs_user_inputs! fills a missing :Δt with 0.1 s,
-        # so an absent :Δt cannot be told from a deliberate one — and taking
-        # 0.1 s literally turns this one-day run into 864 000 steps.
-        #
-        # The instability needs TIME: the perturbation is linearly unstable but
-        # grows slowly, and the jet only rolls up into the published train of
-        # vortices around day 4-6. A one-day run shows a laminar jet and looks
-        # like nothing is happening. :tend is therefore the full 144 h of the
-        # test (Galewsky et al. 2004; Marras et al. section 5).
         #---------------------------------------------------------------------------
-        # The integrator is now HONOURED: sphere_time_loop.jl builds an
-        # ODEProblem and hands it to OrdinaryDiffEq, with the Lagrange
-        # projection as the stage_limiter! and the modal filter as the
-        # step_limiter!. Any SSPRK integrator works — it has to be one that
-        # takes limiters, because the projection must run after every stage.
-        # SSPRK33 is the Shu-Osher SSP-RK3 of Marras et al. (2015) section 4.2,
-        # i.e. the published scheme for this test; SSPRK54 costs 5 RHS
-        # evaluations per step instead of 3 and permits a larger CFL.
         :ode_solver           => SSPRK33(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
         :cfl                  => 0.35,
@@ -167,51 +100,50 @@ function user_inputs()
         :tend                 => 10*24*3600,       # 144 h = 6 days, as in the test
         :ndiagnostics_outputs => 24,             # a VTK dump every 6 h
         :ndiagnostics_prints  => 200,            # steps between diagnostic lines
-        :case                 => "swsphere",
+        :case                 => "swsphere_visc",
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,
         #---------------------------------------------------------------------------
-        # Artificial viscosity, the δν∇²(φu) term of Eq. (8b), with ν the paper's
-        # 1e5 m²/s. On the shell this is the SURFACE (Laplace-Beltrami)
+        # STABILIZATION — this is the whole point of the case.
+        #
+        # The artificial diffusion δν∇²(φu) of Eq. (8b), with the paper's
+        # ν = 1e5 m²/s. On the shell this is the SURFACE (Laplace-Beltrami)
         # Laplacian, assembled in weak form from the manifold metrics in
-        # src/kernel/operators/sphere_rhs.jl — the flat viscous path of rhs.jl is
-        # built on the 2×2 inverse Jacobian and has no third metric direction, so
-        # it cannot be used here.
+        # src/kernel/operators/sphere_rhs.jl.
         #
-        # :ivisc_equations selects which equations are diffused. [2,3,4] is the
-        # MOMENTUM only, which is where the paper puts it: the continuity
-        # equation ∂φ/∂t + ∇·(φu) = 0 carries no diffusion. Adding 1 diffuses
-        # the geopotential too; it makes almost no difference to stability here
-        # (measured — see problems/ShallowWater/SWsphere_visc/README.md).
+        # :ivisc_equations => [2,3,4] is the MOMENTUM only, where the paper puts
+        # it: the continuity equation ∂φ/∂t + ∇·(φu) = 0 carries no diffusion.
         #
-        # IT IS AN ADDITION TO :lfilter, NOT A SUBSTITUTE FOR IT. At this
-        # resolution ν = 1e5 with the filter off blows up at 2 days: the coarse
-        # elements sit at ~219 km, i.e. a grid Reynolds number of ~175, and
-        # viscosity alone does not hold that until about ν = 5e5 — which by then
-        # has erased half of max|ζ|, the field the test is judged on. The paper
-        # runs the filter AND ν = 1e5, and so should you; ShallowWater/
-        # SWsphere_visc is that configuration, verified to 3 days.
+        # ν costs no time step here, and that is worth being precise about
+        # because it is the opposite of the intuition that a blow-up means the
+        # step is too big. Diffusion is a second derivative, so it is
+        # explicit-stable only for Δt ~ Δ²/ν, and sphere_cfl_dt takes the min of
+        # that and the wave-speed limit — but at this resolution the two are
+        # ~1e5 s and ~75 s, so the gravity waves set Δt by three orders of
+        # magnitude. ν = 1e5 is nowhere near the stability CEILING; the trouble
+        # is the FLOOR, i.e. whether it damps enough. Reducing :cfl does not
+        # help a run that fails this way, which is the tell.
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
+<<<<<<< HEAD
         :μ                    => 1.5e5,      # set to 1.0e5 together with :lvisc => true
+=======
+        :μ                    => 1.0e5,
+>>>>>>> sm/newmaster_metrics
         #---------------------------------------------------------------------------
-        # Stabilization: the modal filter, the stand-in for the Boyd-Vandeven
-        # filter of the paper's section 4.2 ("chosen to reduce by 5% the highest
-        # modes only" -- hence :filter_alpha => 0.05). Applied after every step
-        # and followed by a mass-weighted DSS average, so it conserves ∫φ.
+        # ... AND the modal filter, which is what actually keeps the run alive
+        # here (see the table at the top). The two mechanisms compose, and the
+        # paper uses both.
         #
-        # The paper shows the inviscid solution is badly resolution-sensitive on
-        # the cubed sphere, so LEAVE THIS ON. Switching on the artificial
-        # viscosity above is not a licence to switch this off: at this
-        # resolution that combination fails at 2 days (see the note there). With
-        # both off the run blows up sooner still, and the time loop warns at
-        # startup that it will.
+        # To isolate the diffusion instead, set :lfilter => false and raise :μ to
+        # at least 5e5 — that combination does complete 3 days. Just do not read
+        # the vorticity off it: at 5e5 half of max|ζ| is gone by day 3.
         #---------------------------------------------------------------------------
         :lfilter              => false,
-        :filter_alpha         => 0.05,     # damping of the HIGHEST mode
-        :filter_order         => 8,        # exponent: larger = sharper cutoff
-        :filter_kcut          => 2/3,      # first damped mode, as a fraction of nop
+        :filter_alpha         => 0.05,
+        :filter_order         => 8,
+        :filter_kcut          => 2/3,
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
