@@ -72,6 +72,7 @@ case_name(c::CICase) = string(c.eqs, "/", c.case)
 const CI_CASES = CICase[
     CICase(eqs = "CompEuler", case = "theta", timeout = 40, atol = 1e-5),
     #CICase(eqs = "CompEuler", case = "sod1d", timeout = 10),
+    CICase(eqs = "ShallowWater", case = "SoliWaveIsland", timeout = 11),
     #<< test/generate_ci_ref.jl inserts new cases above this line >>
 
     #--------------------------------------------------------------------------
