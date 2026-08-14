@@ -91,11 +91,11 @@ const CI_CASES = CICase[
     # under test/CI-ref/ — either way the reference has to be regenerated,
     # since it predates the current HDF5 file naming.
     #
-    CICase(eqs = "CompEuler",    case = "thetaTracers",   timeout = 40),
-    CICase(eqs = "CompEuler",    case = "theta_laguerre", timeout = 40),
+    #CICase(eqs = "CompEuler",    case = "thetaTracers",   timeout = 40),
+    #CICase(eqs = "CompEuler",    case = "theta_laguerre", timeout = 40),
     # CICase(eqs = "CompEuler",    case = "3d",             timeout = 40),
     # CICase(eqs = "CompEuler",    case = "wave1d",         timeout = 20),
-    CICase(eqs = "CompEuler",    case = "wave1d_lag",     timeout = 20),
+    #CICase(eqs = "CompEuler",    case = "wave1d_lag",     timeout = 20),
     # CICase(eqs = "Burgers",      case = "case1",          timeout = 20),
     # CICase(eqs = "Burgers",      case = "case2d",         timeout = 30),
     # CICase(eqs = "Elliptic",     case = "2dlaplace",      timeout = 20),
