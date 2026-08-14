@@ -23,7 +23,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     x      = KernelAbstractions.zeros(backend, TFloat, 2)
     y      = KernelAbstractions.zeros(backend, TFloat, 2)
     z      = KernelAbstractions.zeros(backend, TFloat, 2)
-    coords = KernelAbstractions.zeros(backend, TFloat, 2, 1)
+    # LAYOUT: coords is (nsd, npoin) -- a node's coordinates are ADJACENT in
+    # memory, so touching a node costs one cache line instead of nsd of them.
+    coords = KernelAbstractions.zeros(backend, TFloat, 1, 2)
     
     x_ho = KernelAbstractions.zeros(backend, TFloat, 2)
     y_ho = KernelAbstractions.zeros(backend, TFloat, 2)
@@ -32,7 +34,26 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     Δx = KernelAbstractions.zeros(backend, TFloat, 2)
     Δy = KernelAbstractions.zeros(backend, TFloat, 2)
     Δz = KernelAbstractions.zeros(backend, TFloat, 2)
-    
+
+    # ---------------------------------------------------------------------
+    # Surface grids embedded in 3D: a 2D MANIFOLD (cell dimension 2, point
+    # dimension 3), e.g. a cubed sphere. Such a grid is read by the ordinary
+    # gmsh path like every other grid — mod_mesh_read_gmsh! sets `lmanifold`
+    # from the Gridap model itself, and it changes exactly two things: the
+    # linear nodes keep their z, and the high-order LGL nodes are interpolated
+    # in (x,y,z) instead of (x,y).
+    #
+    # `radius > 0` additionally snaps every node radially onto the shell, so
+    # the LGL points sit ON the sphere rather than on the chord of the linear
+    # element. `lon`/`lat` are then filled from (x,y,z); all four stay at their
+    # defaults for ordinary flat grids.
+    # ---------------------------------------------------------------------
+    lmanifold::Bool = false
+    radius::TFloat  = 0.0
+    lon = KernelAbstractions.zeros(backend, TFloat, 0)
+    lat = KernelAbstractions.zeros(backend, TFloat, 0)
+
+
     xmin::Union{TFloat, Missing} = -1.0;
     xmax::Union{TFloat, Missing} = +1.0;
     
@@ -148,7 +169,11 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     bdy_face_type             = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id          = KernelAbstractions.zeros(backend, TInt, 0)
 
-    Δelem                = KernelAbstractions.zeros(backend, TInt, 0)
+    # TFloat, not TInt: Δelem holds the shortest corner-to-corner distance in
+    # each element (mesh.jl fills it with a TFloat array), and SGS.jl consumes
+    # it as Δelem::AbstractVector{TT} with Δ = Δelem[ie]/ngl. The TInt default
+    # was the odd one out — Δelem_s/Δelem_l next to it are already 0.0.
+    Δelem                = KernelAbstractions.zeros(backend, TFloat, 0)
     Δelem_s              = 0.0
     Δelem_l              = 0.0
     Δeffective_s         = 0.0

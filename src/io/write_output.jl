@@ -77,6 +77,26 @@ end
 # END Callback for missing user_uout!()
 #------------------------------------------------------------------
 
+
+function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::NONE;
+                      nvar=1, qexact=zeros(1,nvar), case="")
+    nothing
+end
+
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs,
+                      varnames, outvarnames,
+                      outformat::NONE;
+                      nvar=1, qexact=zeros(1,nvar), case="",
+                      μ_dsgs_pnode=nothing)
+    nothing
+end
+
+
 function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
@@ -178,6 +198,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
 end
 
 
+
 function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
                       OUTPUT_DIR::String, inputs,
                       varnames, outvarnames,
@@ -214,7 +235,6 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
     MPI.Comm_rank(get_mpi_comm()) == 0 && println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.pvtu ... DONE") )
 
 end
-
 
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
@@ -309,13 +329,15 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     ngl            = mesh.ngl
     ngr            = mesh.ngr
     
-    if (nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1), 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:nelem*(ngl-1)^2+nelem_semi_inf*(ngl-1)*(ngr-1)]
-    else
-        subelem = Array{Int64}(undef, nelem*(ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(ngl-1)^2]
-    end
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    ncells = nelem*(ngl-1)^2 + nelem_semi_inf*(ngl-1)*(ngr-1)
+    cells  = Vector{typeof(MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 4, 3]))}(undef, ncells)
     
     isel = 1
     for iel = 1:nelem
@@ -325,12 +347,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
                 ip4 = mesh.connijk[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -344,12 +361,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
                 ip4 = mesh.connijk_lag[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -371,14 +383,21 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.coords[1:mesh.npoin,1],
-                         mesh.coords[1:mesh.npoin,2],
-                         mesh.coords[1:mesh.npoin,2]*TFloat(0.0),
+                         mesh.coords[1, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin]*TFloat(0.0),
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        
+
+        # Simulation time of this snapshot. The file name only carries the
+        # output counter (iter_1, iter_2, ...), so without this the physical
+        # time is not recoverable from the output alone. "TimeValue" is the
+        # name ParaView looks for; tools/plot_orszag_tang.jl reads it back to
+        # match a snapshot to a requested time.
+        vtkf["TimeValue", VTKFieldData()] = t
+
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
@@ -426,8 +445,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     noutvar = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
     
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
-    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[1, 2, 3, 4, 5, 6, 7, 8]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^3)
 
     gelm_id = zeros(mesh.nelem*(mesh.ngl-1)^3)
     ad_lvl  = zeros(mesh.nelem*(mesh.ngl-1)^3)
@@ -447,16 +473,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
                     ip8 = mesh.connijk[iel,i,j+1,k+1]
 
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip5, ip6, ip7, ip8])
 
                     gelm_id[isel] = mesh.el2gel[iel]
                     ad_lvl[isel]  = mesh.ad_lvl[iel]
@@ -482,15 +499,18 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
         vtkf = pvtk_grid(fout_name,
-                         mesh.coords[1:mesh.npoin,1],
-                         mesh.coords[1:mesh.npoin,2],
-                         mesh.coords[1:mesh.npoin,3],
+                         mesh.coords[1, 1:mesh.npoin],
+                         mesh.coords[2, 1:mesh.npoin],
+                         mesh.coords[3, 1:mesh.npoin],
                          cells,
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf["gel_id", VTKCellData()] = gelm_id
         vtkf["ad_lvl", VTKCellData()] = ad_lvl
+
+        # Simulation time of this snapshot; see the 2D writer above.
+        vtkf["TimeValue", VTKFieldData()] = t
 
         for ivar = 1:noutvar
             idx = (ivar - 1)*npoin
@@ -526,9 +546,15 @@ end
 
 function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
     
-    #nothing
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 4, 3]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^2)
     
     isel = 1
     for iel = 1:mesh.nelem
@@ -538,12 +564,7 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
                 ip2 = mesh.connijk[iel,i+1,j]
                 ip3 = mesh.connijk[iel,i+1,j+1]
                 ip4 = mesh.connijk[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -557,12 +578,7 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
                 ip2 = mesh.connijk_lag[iel,i+1,j]
                 ip3 = mesh.connijk_lag[iel,i+1,j+1]
                 ip4 = mesh.connijk_lag[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 
                 isel = isel + 1
             end
@@ -588,8 +604,15 @@ end
 
 function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
 
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
-    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    #
+    # PERF: ONE allocation per sub-element instead of three. This list used to be
+    # built by a comprehension and then have every entry overwritten in the loop
+    # below, and each overwrite allocated again for the `subelem[isel, :]` slice.
+    # write_vtk runs once per output snapshot, so on a 100-element nop=4 grid that
+    # was ~4800 throw-away allocations per file. `subelem` itself was write-only.
+    #
+    cells = Vector{typeof(MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[1, 2, 3, 4, 5, 6, 7, 8]))}(
+                undef, mesh.nelem*(mesh.ngl-1)^3)
         
     isel = 1
     for iel = 1:mesh.nelem
@@ -606,16 +629,7 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
                     ip7 = mesh.connijk[iel,i+1,j+1,k+1]
                     ip8 = mesh.connijk[iel,i,j+1,k+1]
 
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip5, ip6, ip7, ip8])
                     
                     isel = isel + 1
                 end
@@ -636,6 +650,225 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPU
     outfiles = map(vtk_save, vtkfile)
     # outfiles = vtk_save(vtkfile)
 end
+
+
+#---------------------------------------------------------------------------------
+# VTK output of the HIGH-ORDER SPHERICAL SHELL grid.
+#
+# The shell is an ordinary St_mesh with `lmanifold == true`, built by the same
+# gmsh path as every other grid. This is a separate writer only because it
+# draws the LGL sub-cells in 3D and adds the shell diagnostics below; the
+# convention is otherwise identical
+# to write_vtk_grid_only above: each spectral element (ngl × ngl LGL nodes) is
+# written as (ngl-1)² linear VTK_QUAD sub-cells whose corners ARE the LGL
+# nodes. That is what lets you SEE the actual node distribution in ParaView —
+# a VTK_LAGRANGE_QUADRILATERAL would be re-tessellated by ParaView and would
+# hide exactly the thing we want to inspect.
+#
+# Serial (vtk_grid, not pvtk_grid) because the shell path itself is serial for
+# now; see the :lspherical_shell branch of problems/drivers.jl.
+#
+# What is written, and why it is the useful thing to look at when debugging
+# the numbering of a CLOSED shell:
+#
+#   point data
+#     ip         global node index — colour by it and the seams between gmsh
+#                panels must show a CONTINUOUS field: a jump means the two
+#                sides of the seam carry different node numbers, i.e. the
+#                shell was silently torn open.
+#     node_type  0 = linear vertex, 1 = edge node, 2 = element interior.
+#     lon, lat   degrees.
+#     radius     |x|; must be flat at R everywhere.
+#   cell data
+#     iel        owning element
+#     panel      cubed-sphere panel 1..6, derived from the element centroid
+#
+# ONE file per run, like write_vtk_grid_only for the flat cases. The
+# sub-elements carry the high-order structure: open it in ParaView with
+# representation "Surface With Edges" and the LGL point distribution is drawn.
+#---------------------------------------------------------------------------------
+export write_vtk_sphere_grid
+
+# Which of the six cubed-sphere panels an element belongs to: the face of the
+# inscribed cube its centroid points at, i.e. whichever Cartesian component
+# dominates, and its sign. 1..6 = +x, -x, +y, -y, +z, -z.
+function _cubed_sphere_panel(mesh::St_mesh, iel::Int)
+    ngl = mesh.ngl
+    crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
+    cx = cy = cz = 0.0
+    @inbounds for j = 1:ngl, i = 1:ngl
+        ip = mesh.connijk[iel, i, j]
+        cx += crd[1, ip]; cy += crd[2, ip]; cz += crd[3, ip]
+    end
+    ax, ay, az = abs(cx), abs(cy), abs(cz)
+    if ax >= ay && ax >= az
+        return cx >= 0 ? 1 : 2
+    elseif ay >= az
+        return cy >= 0 ? 3 : 4
+    else
+        return cz >= 0 ? 5 : 6
+    end
+end
+
+function write_vtk_sphere_grid(mesh::St_mesh,
+                               file_name::String,
+                               OUTPUT_DIR::String;
+                               q       = nothing,
+                               extra   = nothing,
+                               verbose = true)
+
+    if !isdir(OUTPUT_DIR)
+        mkpath(OUTPUT_DIR)
+    end
+
+    ngl    = mesh.ngl
+    nelem  = mesh.nelem
+    nsub   = nelem*(ngl-1)*(ngl-1)
+
+    cells    = [MeshCell(VTKCellTypes.VTK_QUAD, Int64[1, 2, 3, 4]) for _ = 1:nsub]
+    cell_iel = Vector{Float64}(undef, nsub)
+    cell_pan = Vector{Float64}(undef, nsub)
+
+    isel = 1
+    for iel = 1:nelem
+        for j = 1:ngl-1
+            for i = 1:ngl-1
+                #
+                # Counter-clockwise as seen from OUTSIDE the sphere, because
+                # the elements were re-oriented that way in
+                # orient_elements_outward!. Keeping that order here means the
+                # VTK normals also point outward and ParaView's "backface
+                # culling"/lighting shows a lit sphere, not a black one.
+                #
+                ip1 = mesh.connijk[iel, i,   j  ]
+                ip2 = mesh.connijk[iel, i+1, j  ]
+                ip3 = mesh.connijk[iel, i+1, j+1]
+                ip4 = mesh.connijk[iel, i,   j+1]
+
+                cells[isel]    = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
+                cell_iel[isel] = Float64(iel)
+                # Cubed-sphere panel id, derived from the element centroid
+                # rather than carried on the mesh: the panel is whichever
+                # Cartesian axis dominates, and its sign. This used to be the
+                # gmsh physical tag stored in St_mesh_sphere.elem_tag; deriving
+                # it here keeps the panel field in ParaView without putting a
+                # sphere-only column on the shared St_mesh.
+                cell_pan[isel] = Float64(_cubed_sphere_panel(mesh, iel))
+                isel += 1
+            end
+        end
+    end
+
+    fout_name = string(OUTPUT_DIR, "/", file_name)
+
+    vtkf = vtk_grid(fout_name,
+                    mesh.coords[1, 1:mesh.npoin],
+                    mesh.coords[2, 1:mesh.npoin],
+                    mesh.coords[3, 1:mesh.npoin],
+                    cells, compress = false)
+
+    vtkf["ip",        VTKPointData()] = Float64.(collect(1:mesh.npoin))
+    # 0 = linear vertex, 1 = edge node, 2 = element interior. Read off the
+    # global numbering rather than stored: mod_mesh_read_gmsh! lays the nodes
+    # out as [vertices | edge nodes | interior nodes], in that order.
+    _nedge_nodes = mesh.nedges*(mesh.ngl - 2)
+    vtkf["node_type", VTKPointData()] =
+        [ip <= mesh.npoin_linear                 ? 0.0 :
+         ip <= mesh.npoin_linear + _nedge_nodes  ? 1.0 : 2.0
+         for ip = 1:mesh.npoin]
+    vtkf["lon",       VTKPointData()] = mesh.lon .* (180.0/π)
+    vtkf["lat",       VTKPointData()] = mesh.lat .* (180.0/π)
+    vtkf["radius",    VTKPointData()] = sqrt.(mesh.coords[1,:].^2 .+ mesh.coords[2,:].^2 .+ mesh.coords[3,:].^2)
+
+    vtkf["iel",   VTKCellData()] = cell_iel
+    vtkf["panel", VTKCellData()] = cell_pan
+
+    #
+    # Solution fields, when a state vector is handed in (the initial condition,
+    # for now). They ride on the SAME file as the grid — one file per run, like
+    # write_vtk_grid_only for the flat cases.
+    #
+    # BOTH sets are written:
+    #   q.qn   under q.qvars      the CONSERVATIVE state actually integrated
+    #                             (for SWsphere: phi, phiu, phiv, phiw)
+    #   q.qout under q.qoutvars   the PRIMITIVE fields a human reads
+    #                             (for SWsphere: h, u, v, w)
+    # A plot of phiu is unreadable; a plot of h is what the test is judged on,
+    # and keeping the conservative state too means what the scheme integrates
+    # is never hidden.
+    #
+    nq = 0
+    if q !== nothing
+
+        for (vars, data) in ((q.qvars, q.qn), (q.qoutvars, q.qout))
+            for ieq = 1:length(vars)
+                name = vars[ieq]
+                name === nothing && continue
+                ieq <= size(data, 2) || continue
+                vtkf[String(name), VTKPointData()] = Float64.(@view data[1:mesh.npoin, ieq])
+                nq += 1
+            end
+        end
+
+        #
+        # The velocity as a genuine VTK VECTOR, so it can be glyphed or
+        # streamlined without a Calculator filter.
+        #
+        # It is built from the CONSERVATIVE state, u = (φu,φv,φw)/φ, NOT from
+        # q.qout: qout holds the velocity projected onto the shell (zonal,
+        # meridional, radial), which is what a human wants to read but is NOT a
+        # Cartesian triple — glyphing it would point every arrow in a
+        # meaningless direction.
+        #
+        iφ  = findfirst(isequal("phi"),  q.qvars)
+        iφu = findfirst(isequal("phiu"), q.qvars)
+        if iφ !== nothing && iφu !== nothing && iφu+2 <= size(q.qn, 2)
+            vx = Vector{Float64}(undef, mesh.npoin)
+            vy = Vector{Float64}(undef, mesh.npoin)
+            vz = Vector{Float64}(undef, mesh.npoin)
+            for ip = 1:mesh.npoin
+                φp = q.qn[ip, iφ]
+                vx[ip] = q.qn[ip, iφu]/φp
+                vy[ip] = q.qn[ip, iφu+1]/φp
+                vz[ip] = q.qn[ip, iφu+2]/φp
+            end
+            vtkf["velocity", VTKPointData()] = (vx, vy, vz)
+        end
+
+        #
+        # The off-shell momentum, (phi u)·x̂. This is the quantity the Lagrange
+        # multiplier holds at zero; plotting it is how you SEE the flow leaving
+        # the spherical shell if it ever does.
+        #
+        if length(q.qvars) >= 4
+            nrm = Vector{Float64}(undef, mesh.npoin)
+            for ip = 1:mesh.npoin
+                x, y, z = mesh.coords[1,ip], mesh.coords[2,ip], mesh.coords[3,ip]
+                nrm[ip] = (q.qn[ip,2]*x + q.qn[ip,3]*y + q.qn[ip,4]*z)/sqrt(x*x + y*y + z*z)
+            end
+            vtkf["momentum_normal", VTKPointData()] = nrm
+        end
+    end
+
+    #
+    # Anything else the caller wants on the file (relative vorticity, …).
+    #
+    if extra !== nothing
+        for (name, vals) in extra
+            vtkf[String(name), VTKPointData()] = Float64.(@view vals[1:mesh.npoin])
+            nq += 1
+        end
+    end
+
+    out = vtk_save(vtkf)
+
+    verbose && println(" # Wrote high-order spherical shell grid: ", fout_name, ".vtu  (",
+                       mesh.npoin, " nodes, ", nsub, " sub-cells",
+                       nq == 0 ? "" : string(", ", nq, " solution fields"), ")")
+
+    return out
+end
+
 
 #------------
 # HDF5 writer/reader

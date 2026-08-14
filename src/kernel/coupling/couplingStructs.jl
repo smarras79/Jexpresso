@@ -16,14 +16,30 @@ using JLD2
 # Cache files live in a hidden directory next to user_inputs.jl
 # (case_name_dir/.jexpresso_cache/).  This is what makes "running a new
 # case" automatically miss — different cases have different case_name_dirs.
-# A shared gmsh file used by two cases does NOT cross-contaminate.
+# A shared gmsh file used by two cases does NOT cross-contaminate: the case
+# tag (<equations>_<case>) is part of the file NAME as well, so even the
+# fallback location (used when Jexpresso is driven outside run.jl) keeps two
+# cases that read the same .msh apart.  Running `SoliWaveIsland_amr` right
+# after `SoliWaveIsland` must never reuse the latter's mesh/metrics.
 #
-# Three invalidation triggers (any one fires → cache discarded):
-#   1. cache file path differs (different gmsh basename, different :nop,
-#      different rank count) — handled by encoding those in the filename
+# Five invalidation triggers (any one fires → cache discarded):
+#   1. cache file path differs (different case, different gmsh basename,
+#      different :nop, different rank count) — handled by encoding all of
+#      those in the directory + filename
 #   2. gmsh file mtime newer than cache mtime — handled by _cache_is_stale
 #   3. fingerprint of preprocessing-relevant inputs does not match — handled
 #      by _cache_fingerprint stored inside the JLD2 and checked on load.
+#   4. the CACHED STRUCTS themselves changed shape (a field added to St_mesh
+#      or St_metrics — e.g. `coords`) — handled by __struct_schema__ in the
+#      fingerprint, which is derived from the field sets at run time so no
+#      one has to remember to bump a version by hand.
+#   5. the loaded payload does not match the mesh actually in hand (wrong
+#      npoin / nelem / quadrature order) — handled by the shape gates in
+#      _try_load_mesh_cache! (mesh.jl) and _sem_cache_shape_ok (sem_setup.jl).
+#
+# Adaptive runs (:lamr / :ladapt / :lpreadapt / :linitial_refine /
+# :lrestart_amr) neither read nor write these caches: the mesh they run on is
+# not the mesh either cache was built from.  See _adaptive_mesh_run.
 #
 # In coupled mode rank0 is Alya, but get_mpi_comm() returns Jexpresso's
 # LOCAL communicator, so MPI.Comm_rank(get_mpi_comm()) is the local rank
@@ -32,19 +48,66 @@ using JLD2
 # ───────────────────────────────────────────────────────────────────────────
 _use_mesh_cache(inputs) = get(inputs, :luse_mesh_cache, true) !== false
 
+# True when the run adapts the mesh in space — pre-adaptation before t=0,
+# initial refinement, runtime AMR, or an AMR restart off a p4est checkpoint.
+# Such a run does NOT execute on the mesh that mod_mesh_read_gmsh! /
+# sem_setup would build from the deck alone, so neither the mesh-topology
+# cache nor the SEM preprocess cache describes it: they are skipped on BOTH
+# read and write.  (Historically only the write side was guarded, so an AMR
+# case could load metrics/matrices built on the un-adapted base mesh and then
+# fail with a DimensionMismatch far downstream.)
+function _adaptive_mesh_run(inputs)
+    inputs === nothing && return false
+    for k in (:lamr, :ladapt, :lpreadapt, :linitial_refine, :lrestart_amr)
+        get(inputs, k, false) == true && return true
+    end
+    return false
+end
+
+# Keep cache path components filesystem-safe: anything that is not a letter,
+# digit, dash or underscore becomes an underscore.
+_sanitize_tag(s::AbstractString) = replace(String(s), r"[^A-Za-z0-9_-]" => "_")
+
+# Identity of the CASE being run: "<equations>_<case>", e.g.
+# "ShallowWater_SoliWaveIsland_amr".  run.jl always supplies
+# :_parsed_equations / :_parsed_case_name; when Jexpresso is driven directly
+# (tests, coupled drivers) fall back to the last two components of
+# :_case_dir.  Returns "" when the case cannot be identified at all — the
+# callers then refuse to share a cache location rather than guess.
+function _case_tag(inputs)
+    inputs === nothing && return ""
+    eqs  = string(get(inputs, :_parsed_equations, ""))
+    case = string(get(inputs, :_parsed_case_name, ""))
+    if !isempty(eqs) || !isempty(case)
+        return _sanitize_tag(string(eqs, "_", case))
+    end
+    if haskey(inputs, :_case_dir)
+        d = String(inputs[:_case_dir])
+        if !isempty(d)
+            parts = splitpath(rstrip(d, '/'))
+            return _sanitize_tag(join(parts[max(1, end-1):end], "_"))
+        end
+    end
+    return ""
+end
+
 # Resolve the directory where cache files live.  Prefer the per-case
-# directory (set in run.jl as inputs[:_case_dir]); fall back to the
-# directory of the gmsh file if the case dir is not available (e.g. when
-# Jexpresso is driven outside run.jl).  Returns "" if neither is known —
-# callers treat that as "no cache".
+# directory (set in run.jl as inputs[:_case_dir]).  When the case dir is not
+# available (e.g. when Jexpresso is driven outside run.jl) fall back to a
+# per-case SUBDIRECTORY of the gmsh directory — never the bare gmsh
+# directory, which is shared by every case that reads the same .msh.
+# Returns "" when neither a case dir nor a case tag is known; callers treat
+# that as "no cache" (correctness beats a cache hit we cannot attribute).
 function _cache_dir(inputs)
     if haskey(inputs, :_case_dir)
         d = String(inputs[:_case_dir])
         isempty(d) || return joinpath(d, ".jexpresso_cache")
     end
+    tag = _case_tag(inputs)
+    isempty(tag) && return ""
     if haskey(inputs, :gmsh_filename)
         d = dirname(String(inputs[:gmsh_filename]))
-        return isempty(d) ? "." : d
+        return joinpath(isempty(d) ? "." : d, ".jexpresso_cache", tag)
     end
     return ""
 end
@@ -56,24 +119,35 @@ function _gmsh_stem(inputs)
     return splitext(basename(String(inputs[:gmsh_filename])))[1]
 end
 
+# "<case-tag>_" prefix for cache file names.  Belt and braces with
+# _cache_dir: the case is in the directory AND in the file name, so two
+# cases can never end up reading the same file even if a future caller
+# hands us a shared directory.
+function _cache_name_prefix(inputs)
+    tag = _case_tag(inputs)
+    return isempty(tag) ? "" : string(tag, "_")
+end
+
 function _mesh_cache_path(inputs, nparts::Int)
     _use_mesh_cache(inputs) || return ""
+    _adaptive_mesh_run(inputs) && return ""
     dir = _cache_dir(inputs)
     isempty(dir) && return ""
     rank   = MPI.Comm_rank(get_mpi_comm())
     stem   = _gmsh_stem(inputs)
     suffix = nparts > 1 ? "_rank$(rank)of$(nparts)" : ""
-    return joinpath(dir, "MESH_$(stem)_nop$(inputs[:nop])$(suffix).jld2")
+    return joinpath(dir, "MESH_$(_cache_name_prefix(inputs))$(stem)_nop$(inputs[:nop])$(suffix).jld2")
 end
 
 function _preprocess_cache_path(inputs, Nξ::Int, Qξ::Int, nparts::Int)
     _use_mesh_cache(inputs) || return ""
+    _adaptive_mesh_run(inputs) && return ""
     dir = _cache_dir(inputs)
     isempty(dir) && return ""
     rank   = MPI.Comm_rank(get_mpi_comm())
     stem   = _gmsh_stem(inputs)
     suffix = nparts > 1 ? "_rank$(rank)of$(nparts)" : ""
-    return joinpath(dir, "PREPROCESS_$(stem)_nop$(Nξ)_Q$(Qξ)$(suffix).jld2")
+    return joinpath(dir, "PREPROCESS_$(_cache_name_prefix(inputs))$(stem)_nop$(Nξ)_Q$(Qξ)$(suffix).jld2")
 end
 
 # Make sure the .jexpresso_cache directory exists before a save.  Called
@@ -111,28 +185,87 @@ const _CACHE_FINGERPRINT_KEYS = (
     :lexact_integration, :interpolation_nodes, :quadrature_nodes,
     :llump, :ldss_laplace, :ldss_differentiation,
     :llaguerre_1d_right, :llaguerre_1d_left,
-    :laguerre_beta, :llaguerre_bc,
+    :laguerre_beta, :llaguerre_bc, :nop_laguerre,
     :lperiodic_1d, :lperiodic_laguerre,
     :lphysics_grid, :nlay_pg, :nx_pg, :ny_pg,
     :ladapt, :linitial_refine, :init_refine_lvl, :lamr,
+    :lpreadapt, :preadapt_max_level, :amr_max_level, :lrestart_amr,
     :lxy_partition, :lwarp,
     :xscale, :yscale, :zscale, :xdisp, :ydisp, :zdisp,
+    # Natively-built (non-gmsh) grids: the deck's element counts and domain
+    # bounds ARE the mesh, and the cache file name only carries "native".
+    :lread_gmsh, :nelx, :nely, :nelz,
+    :xmin, :xmax, :ymin, :ymax, :zmin, :zmax,
+    # 2D manifold / spherical shell: :sphere_metrics selects which metric
+    # terms build_sphere_metrics produces, so cached metrics built with the
+    # other choice must not be reused.
+    :lspherical_shell, :sphere_metrics,
     :_parsed_equations, :_parsed_case_name,
 )
 
-# Bump this any time the cache schema or any cached struct field-set
-# changes - on-disk caches written with an older schema will then fail
-# the fingerprint check and be regenerated automatically. No manual
-# `rm -rf .jexpresso_cache` needed.
+# Bump this any time the cache schema changes in a way the automatic
+# struct signature below cannot see (a change in what a cached FIELD
+# MEANS rather than in the set of fields). On-disk caches written with an
+# older schema then fail the fingerprint check and are regenerated
+# automatically — no manual `rm -rf .jexpresso_cache` needed.
 # v3: 2D y-periodicity fix in mod_mesh_read_gmsh! (restructure was
 # called with the dead "periodicy" tag) — caches written before the
 # fix carry a mesh with no top/bottom periodic pairing and must be
 # rebuilt.
-const _CACHE_SCHEMA_VERSION = 3
+# v4: cache identity reworked — per-case paths, adaptive runs never read a
+# cache, struct-shape signature added to the fingerprint.
+const _CACHE_SCHEMA_VERSION = 4
+
+# Signature of the field sets of the structs that get serialized into the
+# caches (St_mesh in the mesh cache, St_metrics in the SEM cache).
+#
+# This is what makes "someone added a field to St_mesh" invalidate every
+# on-disk cache automatically. The mesh loader copies field-by-field and
+# skips fields the cache does not carry, so a cache written before, say,
+# `coords` was added would otherwise load a mesh whose `coords` silently
+# keeps its 1×2 constructor default — and the failure surfaces much later
+# as a broadcast/dimension error in code that has nothing to do with
+# caching.
+#
+# Deterministic FNV-1a over the sorted field names, so the value does not
+# depend on the Julia version's `hash` seed and stays comparable across
+# sessions and machines.
+function _fnv1a(s::AbstractString, h::UInt64 = UInt64(0xcbf29ce484222325))
+    for b in codeunits(s)
+        h = (h ⊻ UInt64(b)) * UInt64(0x100000001b3)
+    end
+    return h
+end
+
+const _STRUCT_SCHEMA_SIGNATURE = Ref{Union{Nothing,String}}(nothing)
+
+function _struct_schema_signature()
+    sig = _STRUCT_SCHEMA_SIGNATURE[]
+    sig === nothing || return sig
+    h = UInt64(0xcbf29ce484222325)
+    for tname in (:St_mesh, :St_metrics)
+        h = _fnv1a(string(tname), h)
+        try
+            T = getfield(@__MODULE__, tname)
+            for f in sort!(collect(string.(fieldnames(T))))
+                h = _fnv1a(f, h)
+            end
+        catch
+            # Type not defined yet / not introspectable: fall back to the
+            # name alone. Still stable, just coarser.
+            h = _fnv1a("__unknown__", h)
+        end
+    end
+    sig = string(h, base = 16)
+    _STRUCT_SCHEMA_SIGNATURE[] = sig
+    return sig
+end
 
 function _cache_fingerprint(inputs, nparts::Int)
     fp = Dict{String,Any}()
     fp["__schema_version__"] = _CACHE_SCHEMA_VERSION
+    fp["__struct_schema__"]  = _struct_schema_signature()
+    fp["__case_tag__"]       = _case_tag(inputs)
     fp["__nparts__"] = nparts
     for k in _CACHE_FINGERPRINT_KEYS
         if haskey(inputs, k)
@@ -254,6 +387,30 @@ const JEXPRESSO_PREFETCHED_SEM_CACHE   = Ref{Union{Nothing, Tuple}}(nothing)
 # Pre-computed Alya point geometry (coords, ids, owner_ranks) — avoids running
 # extract_local_alya_coordinates inside with_mpi where Alya is already waiting.
 const JEXPRESSO_PREFETCHED_ALYA_COORDS = Ref{Union{Nothing, Tuple}}(nothing)
+# Case the prefetched payloads above belong to. These Refs live for the whole
+# Julia session, so a second run_case() in the same session would otherwise
+# inherit the first case's mesh/metrics without any path or fingerprint check.
+# Consumers compare this against _case_tag(inputs) and ignore a payload that
+# was prefetched for a different case.
+const JEXPRESSO_PREFETCHED_CASE_TAG    = Ref{String}("")
+
+# Drop any prefetched cache payload. Called by run.jl at the start of every
+# run so nothing carries over between cases in a long-lived session.
+function je_clear_prefetched_caches!()
+    JEXPRESSO_PREFETCHED_MESH_CACHE[]  = nothing
+    JEXPRESSO_PREFETCHED_SEM_CACHE[]   = nothing
+    JEXPRESSO_PREFETCHED_ALYA_COORDS[] = nothing
+    JEXPRESSO_PREFETCHED_CASE_TAG[]    = ""
+    return nothing
+end
+
+# True when a prefetched payload may be used for `inputs`. An untagged
+# payload (prefetched by code that predates the tag) is refused: we cannot
+# attribute it to a case, and a wrong mesh is worse than a slow start.
+function _prefetch_usable(inputs)
+    tag = _case_tag(inputs)
+    return !isempty(tag) && JEXPRESSO_PREFETCHED_CASE_TAG[] == tag
+end
 
 # Early coupling sync: Barrier + Alltoall + send done BEFORE with_mpi when
 # geometry is available, so Alya unblocks from MPI_Barrier right after geometry
@@ -501,6 +658,12 @@ function je_prefetch_caches!(inputs, nparts::Int,
     rank = MPI.Comm_rank(local_comm)
 
     gmsh_path = get(inputs, :gmsh_filename, "")
+
+    # Payloads left over from a previous case in this session are not ours.
+    if JEXPRESSO_PREFETCHED_CASE_TAG[] != _case_tag(inputs)
+        je_clear_prefetched_caches!()
+    end
+    JEXPRESSO_PREFETCHED_CASE_TAG[] = _case_tag(inputs)
 
     # ── 1. Mesh topology cache ──────────────────────────────────────────────
     if JEXPRESSO_PREFETCHED_MESH_CACHE[] === nothing

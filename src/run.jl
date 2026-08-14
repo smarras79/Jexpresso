@@ -146,6 +146,11 @@ end
 mod_inputs_print_welcome(rank)
 inputs = Dict{}()
 
+# Prefetched mesh/SEM payloads (coupled runs) live in module-level Refs that
+# outlive a single run_case. Drop whatever the previous case left behind so a
+# new case can never start from another case's mesh or metrics.
+je_clear_prefetched_caches!()
+
 inputs = user_inputs()
 # Make the case directory available to the mesh/SEM cache helpers so cache
 # files live next to user_inputs.jl (per-case), not next to the shared

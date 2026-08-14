@@ -243,7 +243,7 @@ function build_imex_rhs_explicit_simple!(u, params, connijk, qe, coords, lsource
                           params.mesh, params.thermo_params,
                           params.CL, params.SOL_VARS_TYPE;
                           neqs=params.neqs, ip=ip,
-                          x=coords[ip,1], y=coords[ip,2], z=coords[ip,3])
+                          x=coords[1, ip], y=coords[2, ip], z=coords[3, ip])
             end
             
             # Remove pressure from fluxes for explicit treatment
@@ -258,7 +258,7 @@ function build_imex_rhs_explicit_simple!(u, params, connijk, qe, coords, lsource
                             params.mesh.npoin,
                             params.CL, params.SOL_VARS_TYPE;
                             neqs=params.neqs,
-                            x=coords[ip,1], y=coords[ip,2], z=coords[ip,3],
+                            x=coords[1, ip], y=coords[2, ip], z=coords[3, ip],
                             xmax=params.xmax, xmin=params.xmin, zmax=params.zmax)
             end
         end

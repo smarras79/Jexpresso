@@ -32,6 +32,149 @@ function driver(nparts,
     _t_sem = time_ns()
 
     #---------------------------------------------------------
+    # Spherical shell (2D manifold embedded in 3D).
+    #
+    # The GRID is built by the ordinary gmsh path, exactly like every other
+    # case: mod_mesh_mesh_driver → mod_mesh_read_gmsh!. That reader recognises
+    # a 2D manifold embedded in 3D from the model itself (see `lmanifold` in
+    # src/kernel/mesh/mesh.jl), keeps z through the high-order node placement,
+    # and snaps the LGL points onto the shell. Gridap's topology already gives
+    # one entry per UNIQUE edge, so the panel seams of a watertight cubed
+    # sphere stitch together with no special handling.
+    #
+    # What stays specific to the manifold is downstream of the grid:
+    #
+    #   metrics (sphere_metrics.jl)  →  initial condition (the case's
+    #   initialize.jl)  →  the :ode_solver time loop (sphere_time_loop.jl), whose RHS
+    #   is the SEM surface divergence in sphere_rhs.jl fed by the case's
+    #   user_flux! / user_source!.
+    #
+    # Two early exits, for working on the grid or the initial state alone:
+    #
+    #   :lgrid_only => true   build the grid, write it, return.
+    #   :linit_only => true   build the grid AND the initial condition, write
+    #                         both (into ONE file: the fields ride on the grid),
+    #                         return without integrating.
+    #
+    # :lgrid_only wins if both are set.
+    #---------------------------------------------------------
+    if get(inputs, :lspherical_shell, false) == true
+
+        #
+        # A live Julia session keeps the ALREADY-COMPILED Jexpresso module.
+        # run.jl re-includes THIS file on every run_case, but the src/ files are
+        # only evaluated when the module itself is (re)loaded. Pulling new code
+        # into a running session therefore leaves a fresh drivers.jl calling
+        # functions the stale module has never seen — which surfaces as a bare
+        # `UndefVarError: <name> not defined in Jexpresso` from the line below.
+        # Say what it actually means.
+        #
+        for _w in (:write_vtk_sphere_grid,
+                   :project_momentum_to_sphere!, :sphere_normal_momentum,
+                   :build_sphere_metrics, :build_sphere_params, :sphere_time_loop!)
+            isdefined(@__MODULE__, _w) && continue
+            error(" # ERROR drivers.jl: `", _w, "` is not defined in the loaded Jexpresso module.\n",
+                  " #   The module in this Julia session is older than the source tree on disk.\n",
+                  " #   Restart Julia and run the case in a fresh session:\n",
+                  " #     julia --project=.\n",
+                  " #     julia> using Jexpresso\n",
+                  " #     julia> Jexpresso.run_case(\"ShallowWater\", \"SWsphere\")")
+        end
+
+        if MPI.Comm_size(comm) > 1
+            error(" # ERROR drivers.jl: the spherical-shell path is serial for now. Run it on a single MPI rank.")
+        end
+
+        if rank == 0
+            println()
+            println(" # :lspherical_shell => true — reading the shell grid through the ordinary gmsh path")
+            flush(stdout)
+        end
+
+        smesh, _ = mod_mesh_mesh_driver(inputs, nparts, distribute)
+
+        smesh.lmanifold || error(" # ERROR drivers.jl: :lspherical_shell => true but ",
+                                 inputs[:gmsh_filename], " is not a curved 2D surface embedded in 3D.")
+
+        # ONE file per run, as (ngl-1)² sub-elements per spectral element — the
+        # same convention as write_vtk_grid_only for the flat cases. When the
+        # initial condition has been built its fields ride on that same file.
+        if get(inputs, :lgrid_only, false) == true
+            rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR)
+            if rank == 0
+                println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
+            end
+            return smesh
+        end
+
+        #
+        # Metric terms of the manifold: the contravariant basis that turns the
+        # (F,G,H) of user_flux.jl into a SURFACE divergence, plus the diagonal
+        # mass matrix. This is what the flat 2D metric machinery cannot supply.
+        #
+        smetrics = build_sphere_metrics(smesh, inputs; verbose = (rank == 0))
+        if get(inputs, :lcheck_grid, true) == true
+            ok = check_sphere_metrics(smesh, smetrics; verbose = (rank == 0))
+            if !ok && get(inputs, :lstop_on_bad_grid, true) == true
+                error(" # ERROR drivers.jl: the spherical shell metrics failed their consistency checks.")
+            end
+        end
+
+        qsphere = initialize(smesh.SD, 0, smesh, inputs, OUTPUT_DIR, TFloat)
+
+        #
+        # Lagrange-multiplier projection, Marras/Kopera/Giraldo Eq. (9)-(11).
+        #
+        # In a real run this belongs at the end of every time step (or RK
+        # stage): it removes the momentum component NORMAL to the shell that
+        # the discrete operators accumulate, which is what keeps the fluid on
+        # the sphere. There is no time loop yet, so applying it here does two
+        # useful things instead — it reports how far off the manifold the
+        # initial state is (it should be at round-off, since the Galewsky jet
+        # is built from tangential unit vectors), and it guarantees that
+        # whatever is written to VTK is exactly tangential.
+        #
+        if get(inputs, :llagrange_projection, true) == true
+
+            drift = project_momentum_to_sphere!(qsphere.qn, smesh; ivar = 2)
+
+            # qout (the primitives written to VTK) was derived from qn BEFORE
+            # the projection, so refresh it through the case's own user_uout!
+            # rather than shipping output that disagrees with the state.
+            for ip = 1:smesh.npoin
+                user_uout!(ip, inputs[:SOL_VARS_TYPE],
+                           @view(qsphere.qout[ip, :]),
+                           @view(qsphere.qn[ip, :]),
+                           @view(qsphere.qe[ip, :]))
+            end
+
+            if rank == 0
+                @printf(" # Lagrange projection P = I - xxᵀ/r²: removed max|(φu)·x̂| = %.3e\n", drift)
+            end
+        end
+
+        if get(inputs, :linit_only, false) == true
+            rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; q = qsphere)
+            if rank == 0
+                println(" # :linit_only => true — grid + initial condition written to ", OUTPUT_DIR, ". Stopping here.")
+            end
+            return smesh, qsphere
+        end
+
+        #
+        # Time integration. sphere_time_loop! writes the initial condition and
+        # then one VTK file per output time, and applies the Lagrange projection
+        # after every RK stage.
+        #
+        sparams = build_sphere_params(smesh, smetrics, inputs; neqs = qsphere.neqs)
+
+        @time tfinal = sphere_time_loop!(smesh, smetrics, sparams, qsphere,
+                                         inputs, OUTPUT_DIR; verbose = (rank == 0))
+
+        return smesh, qsphere, tfinal
+    end
+
+    #---------------------------------------------------------
     # Mesh + initial state (+ coupling object in MPMD mode).
     #
     #   - Coupled path:  setup_coupling_and_mesh does sem_setup +
@@ -70,6 +213,22 @@ function driver(nparts,
 
         if rank == 0
             @printf("DONE (%.2f s)\n", (time_ns() - _t_sem) / 1e9)
+            flush(stdout)
+        end
+
+        # Grid-only run: dump the high-order grid and stop before the initial
+        # condition. Same switch as the spherical-shell branch above, for the
+        # cases that DO go through sem_setup.
+        if get(inputs, :lgrid_only, false) == true
+            write_vtk_grid_only(sem.mesh.SD, sem.mesh, "grid_ho", OUTPUT_DIR,
+                                distribute(LinearIndices((nparts,))), nparts)
+            if rank == 0
+                println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
+            end
+            return sem
+        end
+
+        if rank == 0
             print(" # initialize() ......... ")
             flush(stdout)
         end

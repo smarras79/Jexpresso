@@ -486,18 +486,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # Plotting parameters:
     #
     if(!haskey(inputs, :outformat))
-        inputs[:outformat] = ASCII()
+        inputs[:outformat] = NONE()
     else
         if lowercase(inputs[:outformat]) == "png"
             inputs[:outformat] = PNG()
-        elseif lowercase(inputs[:outformat]) == "ascii"
-            inputs[:outformat] = ASCII()
         elseif lowercase(inputs[:outformat]) == "vtk"
             inputs[:outformat] = VTK()
         elseif lowercase(inputs[:outformat]) == "hdf5" || lowercase(inputs[:outformat]) == "h5"
             inputs[:outformat] = HDF5()
         elseif lowercase(inputs[:outformat]) == "netcdf" || lowercase(inputs[:outformat]) == "netcdf"
             inputs[:outformat] = NETCDF()
+        else
+            inputs[:outformat] = NONE()
         end
     end
 
@@ -765,7 +765,70 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     end #lread_gmsh
 
-    
+    #
+    # Grid-only runs and the spherical-shell (2D manifold in 3D) grid.
+    #
+    #   :lspherical_shell  solve on a CLOSED quadrilateral shell: the manifold
+    #                      metrics, RHS and time loop replace the flat ones.
+    #                      The GRID itself is read by the ordinary gmsh path in
+    #                      mesh.jl, which detects a 2D manifold embedded in 3D
+    #                      from the model and keeps z (see `lmanifold` there).
+    #   :lgrid_only        build the grid, dump it to VTK, and STOP — no
+    #                      initial condition, no time integration. This is the
+    #                      switch a user flips while the equations for a new
+    #                      geometry are still being written.
+    #   :linit_only        one step further: build the grid AND the initial
+    #                      condition, write both, and STOP before the time
+    #                      integration. :lgrid_only wins if both are set.
+    #
+    if(!haskey(inputs, :lspherical_shell))
+        inputs[:lspherical_shell] = false
+    end
+    if(!haskey(inputs, :lgrid_only))
+        inputs[:lgrid_only] = false
+    end
+    if(!haskey(inputs, :linit_only))
+        inputs[:linit_only] = false
+    end
+    if(!haskey(inputs, :lcheck_grid))
+        inputs[:lcheck_grid] = true
+    end
+    if(!haskey(inputs, :lstop_on_bad_grid))
+        inputs[:lstop_on_bad_grid] = true
+    end
+    # NOTE :lmerge_coincident_nodes / :node_merge_tol are gone with the bespoke
+    # shell reader. A watertight gmsh grid carries one node per seam location
+    # already, and Gridap's topology is built from the node ids in the file, so
+    # there is nothing to merge. A grid that really does duplicate its seam
+    # nodes is a broken grid: fix it in gmsh (share the curves between panels)
+    # rather than stitching it back together at read time.
+    if(!haskey(inputs, :lproject_to_sphere))
+        inputs[:lproject_to_sphere] = true
+    end
+    #
+    #   :sphere_metrics    the 2D-manifold metric terms of build_sphere_metrics.
+    #                      Kopriva's curl-invariant form (J. Sci. Comput. 26(3),
+    #                      301, 2006, Eq. 15; Sec. 3.2.3 of Kelly, Alves,
+    #                      Eckermann et al., JCP 552, 2026, 114683) DEGENERATES
+    #                      on a surface: it fixes the in-surface metric terms
+    #                      only up to the direction v in which the surface is
+    #                      extended off itself, and both choices below are
+    #                      curl-invariant. See the header of sphere_metrics.jl.
+    #
+    #     :cross_product   (default) v = n̂, the discrete surface normal — which
+    #                      is what the textbook cross-product formulas give.
+    #                      Uniquely, its strong-form divergence annihilates a
+    #                      rigid rotation exactly.
+    #     :radial          v = x̂, the exact radial. ∇ₛ is then tangent to the
+    #                      TRUE sphere rather than to the interpolant of it, at
+    #                      the cost of the rigid-rotation property.
+    #                      (:curl_invariant is an accepted alias.)
+    #
+    if(!haskey(inputs, :sphere_metrics))
+        inputs[:sphere_metrics] = :cross_product
+    end
+
+
     if (!haskey(inputs, :lwarmup))
         inputs[:lwarmup] = false
     else

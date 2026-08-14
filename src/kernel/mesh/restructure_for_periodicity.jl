@@ -15,8 +15,8 @@ function restructure4periodicity_1D!(mesh,
     poin_in_bdy_face_spare = zeros(size(poin_in_bdy_face,1),ngl,ngl)
     if (nsd == 2)
 	if (inputs[:lperiodic_laguerre] && "Laguerre" in bdy_edge_type)
-            xmin = minimum(coords[:,1])
-            xmax = maximum(coords[:,1])
+            xmin = minimum(coords[1, :])
+            xmax = maximum(coords[1, :])
             e1 = 0
             e = 1
             i1 = 0
@@ -24,11 +24,11 @@ function restructure4periodicity_1D!(mesh,
             while (e1 == 0)
                 ip_temp = connijk_lag[e,1,1]
                 ip_temp1 = connijk_lag[e,ngl,1]
-                if (AlmostEqual(coords[ip_temp,1],xmin))
+                if (AlmostEqual(coords[1, ip_temp],xmin))
                     e1 = e
                     i1 = 1
                 end
-                if (AlmostEqual(coords[ip_temp1,1],xmin))
+                if (AlmostEqual(coords[1, ip_temp1],xmin))
                     e1 = e
                     i1 = ngl
                 end
@@ -40,11 +40,11 @@ function restructure4periodicity_1D!(mesh,
             while (e2 == 0)
                 ip_temp = connijk_lag[e,1,1]
                 ip_temp1 = connijk_lag[e,ngl,1]
-                if (AlmostEqual(coords[ip_temp,1],xmax))
+                if (AlmostEqual(coords[1, ip_temp],xmax))
                     e2 = e
                     i2 = 1
                 end
-                if (AlmostEqual(coords[ip_temp1,1],xmax))
+                if (AlmostEqual(coords[1, ip_temp1],xmax))
                     e2 = e
                     i2 = ngl
                 end
@@ -54,10 +54,10 @@ function restructure4periodicity_1D!(mesh,
             for j = 1:ngr
                 ip1 = connijk_lag[e1,i1,j]
                 ip2 = connijk_lag[e2,i2,j]
-                if (coords[ip1,1] < coords[ip2,1])
+                if (coords[1, ip1] < coords[1, ip2])
                     ip_dest = ip1
                     ip_kill = ip2
-                elseif(coords[ip1,1] > coords[ip2,1])
+                elseif(coords[1, ip1] > coords[1, ip2])
                     ip_dest = ip2
                     ip_kill = ip1
                 end
@@ -65,8 +65,8 @@ function restructure4periodicity_1D!(mesh,
                 connijk_lag[e2,i2,j] = ip_dest
 	        if (j > 1)
                     for ip = ip_kill:npoin-1
-                        coords[ip,1] = coords[ip+1,1]
-                        coords[ip,2] = coords[ip+1,2]
+                        coords[1, ip] = coords[1, ip+1]
+                        coords[2, ip] = coords[2, ip+1]
                     end
                     for e=1:nelem_semi_inf
                         for i=1:ngl
@@ -79,7 +79,7 @@ function restructure4periodicity_1D!(mesh,
                         end
                     end
                 else
-                    #  coords[ip_dest,1] = xmin
+                    #  coords[1, ip_dest] = xmin
                 end
             end
             npoin -= (ngr-1)
@@ -91,7 +91,7 @@ function restructure4periodicity_1D!(mesh,
                 if (bdy_edge_type[iedge_bdy] == "periodicx")
                     ip = poin_in_bdy_edge[iedge_bdy,1]
                     ip1 = poin_in_bdy_edge[iedge_bdy,2]
-                    per1 = [coords[ip,1] - coords[ip1,1], coords[ip,2] - coords[ip1,2]]
+                    per1 = [coords[1, ip] - coords[1, ip1], coords[2, ip] - coords[2, ip1]]
                     finder = true
                 else
                     iedge_bdy +=1
@@ -107,7 +107,7 @@ function restructure4periodicity_1D!(mesh,
                 if (bdy_edge_type[iedge_bdy] == "periodicz")
                     ip = poin_in_bdy_edge[iedge_bdy,1]
                     ip1 = poin_in_bdy_edge[iedge_bdy,2]
-                    per2 = [coords[ip,1] - coords[ip1,1], coords[ip,2] - coords[ip1,2]]
+                    per2 = [coords[1, ip] - coords[1, ip1], coords[2, ip] - coords[2, ip1]]
                     finder = true
                 else
                     iedge_bdy +=1
@@ -116,11 +116,11 @@ function restructure4periodicity_1D!(mesh,
         else
             per2 = [1.0, 0.0]
         end     
-        xx = zeros(TFloat, size(coords[:,1],1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(x,1),1)
-        yy = zeros(TFloat, size(coords[:,2],1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(y,1),1)
+        xx = zeros(TFloat, size(coords[1, :],1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(x,1),1)
+        yy = zeros(TFloat, size(coords[2, :],1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(y,1),1)
         poin_bdy= zeros(TInt, size(poin_in_bdy_edge))#KernelAbstractions.zeros(CPU(), TInt,size(poin_in_bdy_edge))
-        xx .= coords[:,1]
-        yy .= coords[:,2]
+        xx .= coords[1, :]
+        yy .= coords[2, :]
         poin_bdy .=poin_in_bdy_edge
         interval = [2,3,4]
         for iedge_bdy =1:size(bdy_edge_type,1)
@@ -141,8 +141,8 @@ function restructure4periodicity_1D!(mesh,
                             end
                         end
                         for i=ip_kill:npoin-1
-                            coords[i,1] = coords[i+1,1]
-                            coords[i,2] = coords[i+1,2]
+                            coords[1, i] = coords[1, i+1]
+                            coords[2, i] = coords[2, i+1]
                         end
                         npoin = npoin-1
                         for iedge =1:size(poin_in_bdy_edge,1)
@@ -198,8 +198,8 @@ function restructure4periodicity_1D!(mesh,
                 for k =1:ngl
                     ip = poin_bdy[iedge_bdy, k]
                     ip_true = poin_in_bdy_edge[iedge_bdy,k]
-                    x1 = coords[ip,1]
-                    y1 = coords[ip,2]
+                    x1 = coords[1, ip]
+                    y1 = coords[2, ip]
                     m=1
                     l=1
                     for ii=1:ngl
@@ -215,8 +215,8 @@ function restructure4periodicity_1D!(mesh,
                     else
                         ip1 = poin_bdy[iedge_bdy,k-1]
                     end
-                    x3 = coords[ip1,1]
-                    y3 = coords[ip1,2]
+                    x3 = coords[1, ip1]
+                    y3 = coords[2, ip1]
                     vec_bdy = [x1-x3,y1-y3]
                     #@info vec_bdy, per1, per2, determine_colinearity(vec_bdy,per2), determine_colinearity(vec_bdy,per1),x1, x3, y1, y3
                     if (determine_colinearity(vec_bdy,per1))
@@ -260,14 +260,14 @@ function restructure4periodicity_1D!(mesh,
                                         end
                                     end
 
-                                    if (coords[ip_true,1] < coords[ip_true1,1])
+                                    if (coords[1, ip_true] < coords[1, ip_true1])
                                         ip_dest = ip_true
                                         ip_kill = ip_true1
-                                    elseif (coords[ip_true,1] >= coords[ip_true1,1])
+                                    elseif (coords[1, ip_true] >= coords[1, ip_true1])
                                         ip_dest = ip_true1
                                         ip_kill = ip_true
                                     end
-                                    if (coords[ip_true,1]*abs(coords[ip_true,2]) < coords[ip_true1,1]*abs(coords[ip_true1,2]) || coords[ip_true,2]*abs(coords[ip_true,1]) < coords[ip_true1,2]*abs(coords[ip_true1,1]) )
+                                    if (coords[1, ip_true]*abs(coords[2, ip_true]) < coords[1, ip_true1]*abs(coords[2, ip_true1]) || coords[2, ip_true]*abs(coords[1, ip_true]) < coords[2, ip_true1]*abs(coords[1, ip_true1]) )
                                         ip_dest = ip_true
                                         ip_kill = ip_true1
                                     else
@@ -282,8 +282,8 @@ function restructure4periodicity_1D!(mesh,
                                     if !(ip_kill in connijk)
 
                                         for i=ip_kill:npoin-1
-                                            coords[i,1] = coords[i+1,1]
-                                            coords[i,2] = coords[i+1,2]
+                                            coords[1, i] = coords[1, i+1]
+                                            coords[2, i] = coords[2, i+1]
                                         end
                                         npoin = npoin-1
                                         for iedge =1:size(poin_in_bdy_edge,1)
@@ -341,8 +341,8 @@ function restructure4periodicity_1D!(mesh,
                     ip = poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = poin_in_bdy_face[iface_bdy,2,1]
-                    t1 = [coords[ip,1] - coords[ip1,1], coords[ip,2] - coords[ip1,2], coords[ip,3] - coords[ip1,3]]
-                    t2 = [coords[ip,1] - coords[ip2,1], coords[ip,2] - coords[ip2,2], coords[ip,3] - coords[ip2,3]]
+                    t1 = [coords[1, ip] - coords[1, ip1], coords[2, ip] - coords[2, ip1], coords[3, ip] - coords[3, ip1]]
+                    t2 = [coords[1, ip] - coords[1, ip2], coords[2, ip] - coords[2, ip2], coords[3, ip] - coords[3, ip2]]
                     s1 = t1[2]*t2[3] - t1[3]*t2[2]
                     s2 = t1[3]*t2[1] - t1[1]*t2[3]
                     s3 = t1[1]*t2[2] - t1[2]*t2[1]
@@ -364,8 +364,8 @@ function restructure4periodicity_1D!(mesh,
                     ip = poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = poin_in_bdy_face[iface_bdy,2,1]
-                    t1 = [coords[ip,1] - coords[ip1,1],coords[ip,2] - coords[ip1,2], coords[ip,3] - coords[ip1,3]]
-                    t2 = [coords[ip,1] - coords[ip2,1],coords[ip,2] - coords[ip2,2], coords[ip,3] - coords[ip2,3]]
+                    t1 = [coords[1, ip] - coords[1, ip1],coords[2, ip] - coords[2, ip1], coords[3, ip] - coords[3, ip1]]
+                    t2 = [coords[1, ip] - coords[1, ip2],coords[2, ip] - coords[2, ip2], coords[3, ip] - coords[3, ip2]]
                     s1 = t1[2]*t2[3] - t1[3]*t2[2]
                     s2 = t1[3]*t2[1] - t1[1]*t2[3]
                     s3 = t1[1]*t2[2] - t1[2]*t2[1]
@@ -387,8 +387,8 @@ function restructure4periodicity_1D!(mesh,
                     ip = poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = poin_in_bdy_face[iface_bdy,2,1]
-                    t1 = [coords[ip,1] - coords[ip1,1], coords[ip,2] - coords[ip1,2], coords[ip,3] - coords[ip1,3]]
-                    t2 = [coords[ip,1] - coords[ip2,1], coords[ip,2] - coords[ip2,2], coords[ip,3] - coords[ip2,3]]
+                    t1 = [coords[1, ip] - coords[1, ip1], coords[2, ip] - coords[2, ip1], coords[3, ip] - coords[3, ip1]]
+                    t2 = [coords[1, ip] - coords[1, ip2], coords[2, ip] - coords[2, ip2], coords[3, ip] - coords[3, ip2]]
                     s1 = t1[2]*t2[3] - t1[3]*t2[2]
                     s2 = t1[3]*t2[1] - t1[1]*t2[3]
                     s3 = t1[1]*t2[2] - t1[2]*t2[1]
@@ -426,9 +426,9 @@ function restructure4periodicity_1D!(mesh,
                                 end
                             end
                             for i=ip_kill:npoin-1
-                                coords[i,1] = coords[i+1,1]
-                                coords[i,2] = coords[i+1,2]
-                                coords[i,3] = coords[i+1,3]
+                                coords[1, i] = coords[1, i+1]
+                                coords[2, i] = coords[2, i+1]
+                                coords[3, i] = coords[3, i+1]
                             end
                             npoin = npoin-1
                             for iface =1:size(poin_in_bdy_face,1)
@@ -503,7 +503,7 @@ if (nperiodic == 2) ## if we have triple periodicity this is handled above, for 
     plane2_idx = 1
     plane1_idx = 2
     for i=2:8
-        vec = [coords[1,1] - coords[i,1], coords[1,2] - coords[i,2], coords[1,3] - coords[i,3]]
+        vec = [coords[1, 1] - coords[1, i], coords[2, 1] - coords[2, i], coords[3, 1] - coords[3, i]]
         if (determine_colinearity(vec,double1) || determine_colinearity(vec,double2) || determine_colinearity(vec,abs.(double1+double2)))
             plane1[plane1_idx] = i
             plane1_idx += 1
@@ -517,7 +517,7 @@ if (nperiodic == 2) ## if we have triple periodicity this is handled above, for 
     for i =1:3
         interval[i] = plane1[i+1]
     end
-    #@info coords[target_idx], coords[target_idx,2],z[target_idx]
+    #@info coords[target_idx], coords[2, target_idx],z[target_idx]
     for i in interval
         ip_kill=i
         ip_dest=target_idx
@@ -533,9 +533,9 @@ if (nperiodic == 2) ## if we have triple periodicity this is handled above, for 
             end
         end
         for i=ip_kill:npoin-1
-            coords[i,1] = coords[i+1,1]
-            coords[i,2] = coords[i+1,2]
-            coords[i,3] = coords[i+1,3]
+            coords[1, i] = coords[1, i+1]
+            coords[2, i] = coords[2, i+1]
+            coords[3, i] = coords[3, i+1]
         end
         npoin = npoin-1
         for iface =1:size(poin_in_bdy_face,1)
@@ -580,24 +580,24 @@ if (nperiodic == 2) ## if we have triple periodicity this is handled above, for 
     end
     target_idx = plane2[1]
     p2_idx = 1
-    x_dest = coords[target_idx,1]
-    y_dest = coords[target_idx,2]
-    z_dest = coords[target_idx,3]
+    x_dest = coords[1, target_idx]
+    y_dest = coords[2, target_idx]
+    z_dest = coords[3, target_idx]
     for i=2:size(plane2,1)
         ii= plane2[i]
-        x_dest = min(x_dest,coords[ii,1])
-        y_dest = min(y_dest,coords[ii,2])
-        z_dest = min(z_dest,coords[ii,3])
+        x_dest = min(x_dest,coords[1, ii])
+        y_dest = min(y_dest,coords[2, ii])
+        z_dest = min(z_dest,coords[3, ii])
     end
     #make sure to pick a corner consistent with the vtk unwrap
     #=for i=2:size(plane2,1)
     ii = plane2[i]
-    xt = coords[target_idx,1]
-    yt = coords[target_idx,2]
-    zt = coords[target_idx,3]
-    xi = coords[ii,1]
-    yi = coords[ii,2]
-    zi = coords[ii,3]
+    xt = coords[1, target_idx]
+    yt = coords[2, target_idx]
+    zt = coords[3, target_idx]
+    xi = coords[1, ii]
+    yi = coords[2, ii]
+    zi = coords[3, ii]
     if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
     comp1 = xi < xt
     elseif (yi == 0 && yt == 0)
@@ -656,13 +656,13 @@ if (nperiodic == 2) ## if we have triple periodicity this is handled above, for 
                 end
             end
         end
-        coords[ip_dest,1] = x_dest
-        coords[ip_dest,2] = y_dest
-        coords[ip_dest,3] = z_dest
+        coords[1, ip_dest] = x_dest
+        coords[2, ip_dest] = y_dest
+        coords[3, ip_dest] = z_dest
         for i=ip_kill:npoin-1
-            coords[i,1] = coords[i+1,1]
-            coords[i,2] = coords[i+1,2]
-            coords[i,3] = coords[i+1,3]
+            coords[1, i] = coords[1, i+1]
+            coords[2, i] = coords[2, i+1]
+            coords[3, i] = coords[3, i+1]
         end
         npoin = npoin-1
         for iface =1:size(poin_in_bdy_face,1)
@@ -734,16 +734,16 @@ if (size(per1_points,1) > 1)
         while (i1 <= size(per1_points,1) && found == false)
             ip = per1_points[i]
             ip1 = per1_points[i1]
-            vec = [coords[ip,1] - coords[ip1,1], coords[ip,2] - coords[ip1,2], coords[ip,3] - coords[ip1,3]]
+            vec = [coords[1, ip] - coords[1, ip1], coords[2, ip] - coords[2, ip1], coords[3, ip] - coords[3, ip1]]
             if (determine_colinearity(vec, nor1))
-                #@info "found a match", vec, nor1, ip, ip1, coords[ip,1], coords[ip1,1]
+                #@info "found a match", vec, nor1, ip, ip1, coords[1, ip], coords[1, ip1]
                 found = true
-                xt = coords[ip1,1]
-                yt = coords[ip1,2]
-                zt = coords[ip1,3]
-                xi = coords[ip,1]
-                yi = coords[ip,2]
-                zi = coords[ip,3]
+                xt = coords[1, ip1]
+                yt = coords[2, ip1]
+                zt = coords[3, ip1]
+                xi = coords[1, ip]
+                yi = coords[2, ip]
+                zi = coords[3, ip]
                 if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
                     comp1 = xi < xt
                 elseif (yi == 0 && yt == 0)
@@ -771,9 +771,9 @@ if (size(per1_points,1) > 1)
                 else
                     comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
                 end
-                #cond1 = coords[ip,1]*abs(coords[ip,2])*abs(coords[ip,3]) < coords[ip1,1]*abs(coords[ip1,2])*abs(coords[ip1,3])
-                #cond2 = coords[ip,2]*abs(coords[ip,1])*abs(coords[ip,3]) < coords[ip1,2]*abs(coords[ip1,1])*abs(coords[ip1,3])
-                #cond3 = coords[ip,3]*abs(coords[ip,1])*abs(coords[ip,2]) < coords[ip1,3]*abs(coords[ip1,1])*abs(coords[ip1,2])
+                #cond1 = coords[1, ip]*abs(coords[2, ip])*abs(coords[3, ip]) < coords[1, ip1]*abs(coords[2, ip1])*abs(coords[3, ip1])
+                #cond2 = coords[2, ip]*abs(coords[1, ip])*abs(coords[3, ip]) < coords[2, ip1]*abs(coords[1, ip1])*abs(coords[3, ip1])
+                #cond3 = coords[3, ip]*abs(coords[1, ip])*abs(coords[2, ip]) < coords[3, ip1]*abs(coords[1, ip1])*abs(coords[2, ip1])
                 if (comp1 || comp2 || comp3)    
                     ip_dest = ip
                     ip_kill = ip1
@@ -808,18 +808,18 @@ if (size(per1_points,1) > 1)
                 if !(ip_kill in connijk)
                     connijk_spare .= connijk .- ip_kill
                     poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
-                    x_spare .= coords[:,1]
-                    y_spare .= coords[:,2]
-                    z_spare .= coords[:,3]
-                    coords[ip_dest,1] = min(coords[ip_kill,1], coords[ip_dest,1])
-                    coords[ip_dest,2] = min(coords[ip_kill,2], coords[ip_dest,2])
-                    coords[ip_dest,3] = min(coords[ip_kill,3], coords[ip_dest,3])
-                    @view(coords[ip_kill:npoin-1,1]) .= @view(x_spare[ip_kill+1:npoin])
-                    @view(coords[ip_kill:npoin-1,2]) .= @view(y_spare[ip_kill+1:npoin])
-                    @view(coords[ip_kill:npoin-1,3]) .= @view(z_spare[ip_kill+1:npoin])
-                    x_spare .= coords[:,1]
-                    y_spare .= coords[:,2]
-                    z_spare .= coords[:,3]
+                    x_spare .= coords[1, :]
+                    y_spare .= coords[2, :]
+                    z_spare .= coords[3, :]
+                    coords[1, ip_dest] = min(coords[1, ip_kill], coords[1, ip_dest])
+                    coords[2, ip_dest] = min(coords[2, ip_kill], coords[2, ip_dest])
+                    coords[3, ip_dest] = min(coords[3, ip_kill], coords[3, ip_dest])
+                    @view(coords[1, ip_kill:npoin-1]) .= @view(x_spare[ip_kill+1:npoin])
+                    @view(coords[2, ip_kill:npoin-1]) .= @view(y_spare[ip_kill+1:npoin])
+                    @view(coords[3, ip_kill:npoin-1]) .= @view(z_spare[ip_kill+1:npoin])
+                    x_spare .= coords[1, :]
+                    y_spare .= coords[2, :]
+                    z_spare .= coords[3, :]
                     npoin = npoin-1
                     mesh.npoin = mesh.npoin-1
                     for iface =1:size(poin_in_bdy_face,1)
@@ -894,16 +894,16 @@ if (size(per2_points,1) > 1)
         while (i1 <= size(per2_points,1) && found == false)
             ip = per2_points[i]
             ip1 = per2_points[i1]
-            vec = [coords[ip,1] - coords[ip1,1], coords[ip,2] - coords[ip1,2], coords[ip,3] - coords[ip1,3]]
+            vec = [coords[1, ip] - coords[1, ip1], coords[2, ip] - coords[2, ip1], coords[3, ip] - coords[3, ip1]]
             if (determine_colinearity(vec, nor2))
-                #@info "found a match", vec, nor2, ip, ip1,coords[ip,3], coords[ip1,3], coords[ip,2], coords[ip1,2], coords[ip,1], coords[ip1,1]
+                #@info "found a match", vec, nor2, ip, ip1,coords[3, ip], coords[3, ip1], coords[2, ip], coords[2, ip1], coords[1, ip], coords[1, ip1]
                 found = true
-                xt = coords[ip1,1]
-                yt = coords[ip1,2]
-                zt = coords[ip1,3]
-                xi = coords[ip,1]
-                yi = coords[ip,2]
-                zi = coords[ip,3]
+                xt = coords[1, ip1]
+                yt = coords[2, ip1]
+                zt = coords[3, ip1]
+                xi = coords[1, ip]
+                yi = coords[2, ip]
+                zi = coords[3, ip]
                 if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
                     comp1 = xi < xt
                 elseif (yi == 0 && yt == 0)
@@ -931,9 +931,9 @@ if (size(per2_points,1) > 1)
                 else
                     comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
                 end
-                #cond1 = coords[ip,1]*abs(coords[ip,2])*abs(coords[ip,3]) < coords[ip1,1]*abs(coords[ip1,2])*abs(coords[ip1,3])
-                #cond2 = coords[ip,2]*abs(coords[ip,1])*abs(coords[ip,3]) < coords[ip1,2]*abs(coords[ip1,1])*abs(coords[ip1,3])
-                #cond3 = coords[ip,3]*abs(coords[ip,1])*abs(coords[ip,2]) < coords[ip1,3]*abs(coords[ip1,1])*abs(coords[ip1,2])
+                #cond1 = coords[1, ip]*abs(coords[2, ip])*abs(coords[3, ip]) < coords[1, ip1]*abs(coords[2, ip1])*abs(coords[3, ip1])
+                #cond2 = coords[2, ip]*abs(coords[1, ip])*abs(coords[3, ip]) < coords[2, ip1]*abs(coords[1, ip1])*abs(coords[3, ip1])
+                #cond3 = coords[3, ip]*abs(coords[1, ip])*abs(coords[2, ip]) < coords[3, ip1]*abs(coords[1, ip1])*abs(coords[2, ip1])
                 if (comp1 || comp2 || comp3)
                     ip_dest = ip
                     ip_kill = ip1
@@ -968,18 +968,18 @@ if (size(per2_points,1) > 1)
                 if !(ip_kill in connijk)
                     connijk_spare .= connijk .- ip_kill
                     poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
-                    x_spare .= coords[:,1]
-                    y_spare .= coords[:,2]
-                    z_spare .= coords[:,3]
-                    coords[ip_dest,1] = min(coords[ip_kill,1], coords[ip_dest,1])
-                    coords[ip_dest,2] = min(coords[ip_kill,2], coords[ip_dest,2])
-                    coords[ip_dest,3] = min(coords[ip_kill,3], coords[ip_dest,3])
-                    @view(coords[ip_kill:npoin-1,1]) .= @view(x_spare[ip_kill+1:npoin])
-                    @view(coords[ip_kill:npoin-1,2]) .= @view(y_spare[ip_kill+1:npoin])
-                    @view(coords[ip_kill:npoin-1,3]) .= @view(z_spare[ip_kill+1:npoin])
-                    x_spare .= coords[:,1]
-                    y_spare .= coords[:,2]
-                    z_spare .= coords[:,3]
+                    x_spare .= coords[1, :]
+                    y_spare .= coords[2, :]
+                    z_spare .= coords[3, :]
+                    coords[1, ip_dest] = min(coords[1, ip_kill], coords[1, ip_dest])
+                    coords[2, ip_dest] = min(coords[2, ip_kill], coords[2, ip_dest])
+                    coords[3, ip_dest] = min(coords[3, ip_kill], coords[3, ip_dest])
+                    @view(coords[1, ip_kill:npoin-1]) .= @view(x_spare[ip_kill+1:npoin])
+                    @view(coords[2, ip_kill:npoin-1]) .= @view(y_spare[ip_kill+1:npoin])
+                    @view(coords[3, ip_kill:npoin-1]) .= @view(z_spare[ip_kill+1:npoin])
+                    x_spare .= coords[1, :]
+                    y_spare .= coords[2, :]
+                    z_spare .= coords[3, :]
                     npoin = npoin-1
                     for iface =1:size(poin_in_bdy_face,1)
                         for kk=1:ngl
@@ -1053,16 +1053,16 @@ if (size(per3_points,1) > 1)
         while (i1 <= size(per3_points,1) && found == false)
             ip = per3_points[i]
             ip1 = per3_points[i1]
-            vec = [coords[ip,1] - coords[ip1,1], coords[ip,2] - coords[ip1,2], coords[ip,3] - coords[ip1,3]]
+            vec = [coords[1, ip] - coords[1, ip1], coords[2, ip] - coords[2, ip1], coords[3, ip] - coords[3, ip1]]
             if (determine_colinearity(vec, nor3))
-                #@info "found a match", vec, nor3, ip, ip1, coords[ip,2], coords[ip1,2], coords[ip,1], coords[ip1,1], coords[ip,3], coords[ip1,3]
+                #@info "found a match", vec, nor3, ip, ip1, coords[2, ip], coords[2, ip1], coords[1, ip], coords[1, ip1], coords[3, ip], coords[3, ip1]
                 found = true
-                xt = coords[ip1,1]
-                yt = coords[ip1,2]
-                zt = coords[ip1,3]
-                xi = coords[ip,1]
-                yi = coords[ip,2]
-                zi = coords[ip,3]
+                xt = coords[1, ip1]
+                yt = coords[2, ip1]
+                zt = coords[3, ip1]
+                xi = coords[1, ip]
+                yi = coords[2, ip]
+                zi = coords[3, ip]
                 if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
                     comp1 = xi < xt
                 elseif (yi == 0 && yt == 0)
@@ -1090,9 +1090,9 @@ if (size(per3_points,1) > 1)
                 else
                     comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
                 end
-                #cond1 = coords[ip,1]*abs(coords[ip,2])*abs(coords[ip,3]) < coords[ip1,1]*abs(coords[ip1,2])*abs(coords[ip1,3])
-                #cond2 = coords[ip,2]*abs(coords[ip,1])*abs(coords[ip,3]) < coords[ip1,2]*abs(coords[ip1,1])*abs(coords[ip1,3])
-                #cond3 = coords[ip,3]*abs(coords[ip,1])*abs(coords[ip,2]) < coords[ip1,3]*abs(coords[ip1,1])*abs(coords[ip1,2])
+                #cond1 = coords[1, ip]*abs(coords[2, ip])*abs(coords[3, ip]) < coords[1, ip1]*abs(coords[2, ip1])*abs(coords[3, ip1])
+                #cond2 = coords[2, ip]*abs(coords[1, ip])*abs(coords[3, ip]) < coords[2, ip1]*abs(coords[1, ip1])*abs(coords[3, ip1])
+                #cond3 = coords[3, ip]*abs(coords[1, ip])*abs(coords[2, ip]) < coords[3, ip1]*abs(coords[1, ip1])*abs(coords[2, ip1])
                 if (comp1 || comp2 || comp3)
                     ip_dest = ip
                     ip_kill = ip1
@@ -1127,26 +1127,26 @@ if (size(per3_points,1) > 1)
                 if !(ip_kill in connijk)
                     connijk_spare .= connijk .- ip_kill
                     poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
-                    x_spare .= coords[:,1]
-                    y_spare .= coords[:,2]
-                    z_spare .= coords[:,3]
-                    coords[ip_dest,1] = min(coords[ip_kill,1], coords[ip_dest,1])
-                    coords[ip_dest,2] = min(coords[ip_kill,2], coords[ip_dest,2])
-                    coords[ip_dest,3] = min(coords[ip_kill,3], coords[ip_dest,3])
-                    @view(coords[ip_kill:npoin-1,1]) .= @view(x_spare[ip_kill+1:npoin])
-                    @view(coords[ip_kill:npoin-1,2]) .= @view(y_spare[ip_kill+1:npoin])
-                    @view(coords[ip_kill:npoin-1,3]) .= @view(z_spare[ip_kill+1:npoin])
-                    x_spare .= coords[:,1]
-                    y_spare .= coords[:,2]
-                    z_spare .= coords[:,3]
+                    x_spare .= coords[1, :]
+                    y_spare .= coords[2, :]
+                    z_spare .= coords[3, :]
+                    coords[1, ip_dest] = min(coords[1, ip_kill], coords[1, ip_dest])
+                    coords[2, ip_dest] = min(coords[2, ip_kill], coords[2, ip_dest])
+                    coords[3, ip_dest] = min(coords[3, ip_kill], coords[3, ip_dest])
+                    @view(coords[1, ip_kill:npoin-1]) .= @view(x_spare[ip_kill+1:npoin])
+                    @view(coords[2, ip_kill:npoin-1]) .= @view(y_spare[ip_kill+1:npoin])
+                    @view(coords[3, ip_kill:npoin-1]) .= @view(z_spare[ip_kill+1:npoin])
+                    x_spare .= coords[1, :]
+                    y_spare .= coords[2, :]
+                    z_spare .= coords[3, :]
                     npoin = npoin-1
-                    #=coords[ip_dest] = min(coords[ip_kill,1],coords[ip_dest,1])
-                    coords[ip_dest,2] = min(coords[ip_kill,2],coords[ip_dest,2])
-                    coords[ip_dest,3] = min(coords[ip_kill,3],coords[ip_dest,3])
+                    #=coords[ip_dest] = min(coords[1, ip_kill],coords[1, ip_dest])
+                    coords[2, ip_dest] = min(coords[2, ip_kill],coords[2, ip_dest])
+                    coords[3, ip_dest] = min(coords[3, ip_kill],coords[3, ip_dest])
                     for ii=ip_kill:npoin-1
-                    coords[ii,1] = coords[ii+1,1]
-                    coords[ii,2] = coords[ii+1,2]
-                    coords[ii,3] = coords[ii+1,3]
+                    coords[1, ii] = coords[1, ii+1]
+                    coords[2, ii] = coords[2, ii+1]
+                    coords[3, ii] = coords[3, ii+1]
                     end
                     npoin = npoin-1=#
                     for iface =1:size(poin_in_bdy_face,1)
@@ -1240,7 +1240,7 @@ if inputs[:AD] != FD()
         end
     end
     for ip=ip_kill:npoin-1
-        coords[ip,1] = coords[ip+1,1]
+        coords[1, ip] = coords[1, ip+1]
     end
     npoin = npoin-1
 end

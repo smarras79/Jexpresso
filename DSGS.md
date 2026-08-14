@@ -349,6 +349,8 @@ should look like.
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
 | `src/io/mod_inputs.jl` | `:dsgs_C1`, `:dsgs_C2`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
 | `src/io/write_output.jl` | the `mu_dsgs_*` VTK fields |
+| `tools/plot_orszag_tang.jl` | off-line figures from a finished MHD run, including the viscosity map |
+| `tools/vtu_reader.jl` | the minimal `.pvtu`/`.vtu` reader that script uses |
 
 **Case inputs**
 
@@ -374,7 +376,18 @@ element that writes them — fine for visualization, not a nodal field.
 carry the dynamic $\bar\rho\mu$, the magnetic and $\psi$ slots the kinematic
 $\mu$. Compare a slot against itself over time, not against a different slot.
 
-In 1D the same data also drives an extra panel in the PNG writer.
+In 1D the same data also drives an extra panel in the PNG writer. In 2D, setting
+`:outformat => "png"` renders one `μ_dsgs_<var>` filled-contour panel per output
+time alongside the solution fields; with the default `:outformat => "vtk"` the
+fields go to the `.pvtu` only, and
+
+```bash
+julia --project=. tools/plot_orszag_tang.jl
+```
+
+renders the multi-time composite used in the documentation
+(`assets/MHD_OT_mu_dsgs_By.png`, the viscosity of the $B_y$ equation with $B_y$
+isolines on top) from a finished Orszag–Tang run.
 
 ---
 

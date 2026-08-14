@@ -21,3 +21,6 @@ mesh.log
 # the reference in test/CI-ref/, never the run itself — so that `git add
 # test/CI-runs` after adding a case picks up the deck only.
 test/CI-runs/**/output/
+
+# SEM preprocess caches written next to a case (mod_mesh: MESH_<grid>_nop<N>.jld2)
+MESH_*.jld2

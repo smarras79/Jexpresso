@@ -55,7 +55,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
     lmatrix = get(inputs, :plot_matrix, true)
 
     qout = reshape(q, npoin, nvar)   # 2D view (3x4) - NO allocation
-    x_coords = mesh.coords[1:npoin, 1]
+    x_coords = mesh.coords[1, 1:npoin]
     sort_idx = sortperm(x_coords)
     plts = []
 
@@ -257,7 +257,7 @@ function plot_dsgs_1d(mesh::St_mesh, μ_dsgs::AbstractMatrix, t, OUTPUT_DIR::Str
     @inbounds for ie = 1:nelem
         for i = 1:ngl
             ip = mesh.connijk[ie, i, 1, 1]
-            xs[(ie-1)*ngl + i] = mesh.coords[ip, 1]
+            xs[(ie-1)*ngl + i] = mesh.coords[1, ip]
             ys[(ie-1)*ngl + i] = μ_dsgs[ie, ieq]
         end
     end
