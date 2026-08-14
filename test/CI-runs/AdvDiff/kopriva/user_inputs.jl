@@ -24,7 +24,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename         => "./problems/AdvDiff/kopriva/kopriva_periodic.msh",
+        :gmsh_filename         => "./test/CI-runs/AdvDiff/kopriva/kopriva_periodic.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 

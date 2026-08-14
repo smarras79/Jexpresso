@@ -1484,7 +1484,6 @@ function _expansion_inviscid!(u, neqs, ngl,
                               F, S,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-
     for ieq = 1:neqs
         for i=1:ngl
             dFdξ = 0.0
