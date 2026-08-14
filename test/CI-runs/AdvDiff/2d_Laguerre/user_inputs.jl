@@ -31,7 +31,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename         => "./problems/AdvDiff/2d_Laguerre/2d_laguerre.msh",
+        :gmsh_filename         => "./test/CI-runs/AdvDiff/2d_Laguerre/2d_laguerre.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 

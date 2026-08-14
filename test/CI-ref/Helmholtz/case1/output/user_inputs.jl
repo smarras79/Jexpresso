@@ -30,7 +30,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./problems/Helmholtz/case1/hexa_TFI_helmholtz.msh", #for nop=4
+        :gmsh_filename       => "./test/CI-runs/Helmholtz/case1/hexa_TFI_helmholtz.msh", #for nop=4
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------

@@ -8,7 +8,8 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
-        :ldss_laplace         => true,
+        :ldss_laplace         => true,       
+        :lsparese             => false, # NOTICE, LAguerre not modified yet for sparse storage
         :ldss_differentiation => false,
         :rconst               => (10.0),
         #:lelementLearning     => true,
@@ -30,7 +31,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./problems/Helmholtz/case1/hexa_TFI_helmholtz.msh", #for nop=4
+        :gmsh_filename       => "./test/CI-runs/Helmholtz/case1_laguerre/hexa_TFI_helmholtz_laguerre.msh", #for nop=4
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------
@@ -41,7 +42,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "png",
         :output_dir          => "./output/",
         :loverwrite_output   => true,
         :plot_vlines         => [5.0],

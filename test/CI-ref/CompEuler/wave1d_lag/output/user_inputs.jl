@@ -1,51 +1,48 @@
 function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
+        #
         # User define your inputs below: the order doesn't matter
+        # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 1000.0,
-        :ode_solver           => "BICGSTABLE", #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :ndiagnostics_outputs => 1,
-        :lsource              => true, 
-        :llinsolve            => true,
-        :ldss_laplace         => true,
-        :ldss_differentiation => false,
-        :rconst               => (10.0),
-        #:lelementLearning     => true,
+        :ode_solver          => SSPRK33(),
+        :tend                 => 9.0,
+        :Δt                   => 1.0e-3,
+        :diagnostics_at_times => (0:0.25:9),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes =>"lgl",
-        :nop                 => 10,      # Polynomial order
-        :nop_laguerre        => 14,
-        :xfac_laguerre       => 0.25,
-        :yfac_laguerre       => 0.0,
+        :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
+        :nop                 => 6,     # Polynomial order
+        :nop_laguerre        => 24,
+        :lexact_integration  => false,
+        :lsource             => true,
+        :llaguerre_1d_right  => true,
+        :llaguerre_1d_left   => true,
+        :laguerre_beta       => 1.0,
+        :yfac_laguerre       => 0.05,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default NOTICE: works only for Inexact
-        #:ivisc_equations      => (1, 2, 3, 4),
-        #:μ                   => (0.0, 75.0, 75.0, 75.0), #horizontal viscosity constant for momentum
+        :lvisc                => false,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./problems/Helmholtz/case1/hexa_TFI_helmholtz.msh", #for nop=4
+        :lread_gmsh          => false, #If false, a 1D problem will be enforced
         #---------------------------------------------------------------------------
-        # grid modification parameters
+        # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :xscale              => 5.0,
-        :yscale              => 3.14,
-        :xdisp               => 1.0,
-        :ydisp               => 0.0,
+        :outformat         => "png",
+        :loverwrite_output => true,
+        :output_dir        => "./output",
+        :plot_vlines       => [-2.5,2.5],
+        :plot_axis         => [-0.05,0.55, -0.35,0.35],
         #---------------------------------------------------------------------------
-        # Plotting parameters
+        # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-        :output_dir          => "./output/",
-        :loverwrite_output   => true,
-        :plot_vlines         => [5.0],
-        #---------------------------------------------------------------------------
+        :xmin          =>   -2.5,
+        :xmax          =>   2.5,
+        :nelx          =>   50,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
