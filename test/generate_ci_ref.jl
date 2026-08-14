@@ -197,12 +197,107 @@ function retarget_mesh!(c::CICase)
 end
 
 """
+    deck_drift(c) -> Vector{String}
+
+The case files that differ, byte for byte, between `problems/<eqs>/<case>/`
+and the CI copy in `test/CI-runs/<eqs>/<case>/`.
+"""
+function deck_drift(c::CICase)
+    original, ci_deck = problems_dir(c), runs_dir(c)
+    (isdir(original) && isdir(ci_deck)) || return String[]
+
+    files = (CICases.REQUIRED_CASE_FILES..., "user_analytic.jl")
+    return filter(collect(files)) do f
+        a, b = joinpath(original, f), joinpath(ci_deck, f)
+        isfile(a) && isfile(b) ? read(a) != read(b) : (isfile(a) || isfile(b))
+    end
+end
+
+"""
+    deck_keys(user_inputs_file) -> Set{Symbol}
+
+The `:key =>` entries a deck actually sets, read textually — commented-out
+lines skipped, since decks routinely keep alternatives commented above the
+live one. Nothing here evaluates `user_inputs()`, so it costs nothing and
+works before any package is instantiated.
+"""
+function deck_keys(file::AbstractString)
+    found = Set{Symbol}()
+    isfile(file) || return found
+    for line in eachline(file)
+        code = lstrip(line)
+        startswith(code, "#") && continue
+        m = match(r"^:([A-Za-z_][A-Za-z0-9_!]*)\s*=>", code)
+        m === nothing || push!(found, Symbol(m.captures[1]))
+    end
+    return found
+end
+
+"""
+    report_deck_drift(c)
+
+Say which files the CI deck and the development deck disagree on.
+
+The CI copy is authoritative once it exists (see `ensure_deck!`), so a fix
+made in `problems/<eqs>/<case>/` does not reach CI on its own — the case
+carries on being tested from the copy taken the day it was added. That is the
+right default (the CI deck is deliberately a reduced version, with a shorter
+`:tend` and its mesh retargeted), and it is also how a case silently stops
+testing what its author is developing.
+
+`user_inputs.jl` differing is therefore expected and gets no comment beyond
+the listing. Any other file differing means the CI case runs different
+physics from the case in `problems/`, which is worth saying out loud.
+"""
+function report_deck_drift(c::CICase)
+    drifted = deck_drift(c)
+    isempty(drifted) && return nothing
+
+    println(" # note: $(case_name(c)) is run from its CI deck, ",
+            "test/CI-runs/$(c.eqs)/$(c.case)/, which differs from ",
+            "problems/$(c.eqs)/$(c.case)/ in: ", join(drifted, ", "))
+
+    # The dangerous half of a user_inputs.jl drift is not a value that was
+    # deliberately changed (:tend is MEANT to be shorter here) — it is a key
+    # the development deck has and the CI copy does not. That key does not
+    # announce itself: mod_inputs_user_inputs! quietly fills in the default,
+    # and the case runs with different numerics from the one being developed.
+    # :visc_model is the cautionary example. Its default is AV(), while
+    # CompEuler/sod1d needs DSGS() to keep the shock from ringing, so a CI
+    # copy predating that line diverges and writes no output at all.
+    if "user_inputs.jl" in drifted
+        missing_keys = setdiff(deck_keys(joinpath(problems_dir(c), "user_inputs.jl")),
+                               deck_keys(joinpath(runs_dir(c),     "user_inputs.jl")))
+        if !isempty(missing_keys)
+            println("   set in problems/ but NOT in the CI deck: ",
+                    join(sort!(collect(missing_keys)), ", "))
+            println("   Those fall back to their defaults, silently. If the CI ",
+                    "deck is simply out of date, re-copy it with --refresh-deck.")
+        end
+    end
+
+    physics = filter(!isequal("user_inputs.jl"), drifted)
+    isempty(physics) ||
+        println("   ", join(physics, ", "), " differ too, so CI is exercising ",
+                "different physics from the case you develop in problems/. ",
+                "--refresh-deck re-copies the deck (discarding edits to the CI copy).")
+    return nothing
+end
+
+"""
     ensure_deck!(c; refresh = false) -> Bool
 
 Make sure `test/CI-runs/<eqs>/<case>/` exists, copying it from
 `problems/<eqs>/<case>/` when it does not (or when `refresh` is set). This is
 step one of adding a case to CI, done for you. Returns `false` if neither
 directory exists.
+
+Note what this does NOT do: refresh an existing CI deck. Once the copy
+exists it is what the case is run from, and `problems/` is not consulted
+again — so a setting added to the development deck (`:visc_model => DSGS()`,
+say) never reaches CI, and the case quietly runs with the default instead
+(`AV()`). `report_deck_drift` names the files that have diverged;
+`--refresh-deck` re-copies them.
 """
 function ensure_deck!(c::CICase; refresh::Bool = false)
     ci_deck  = runs_dir(c)
@@ -210,6 +305,7 @@ function ensure_deck!(c::CICase; refresh::Bool = false)
     relative = path -> relpath(path, CICases.project_root())
 
     if isdir(ci_deck) && !refresh
+        report_deck_drift(c)
         return true
     end
 
@@ -394,14 +490,50 @@ timeout is a safety net, not a target.
 suggest_timeout(seconds::Real) = max(10, ceil(Int, 3 * seconds / 60))
 
 """
+    reenable_case!(c) -> Bool
+
+Uncomment the `CICase(...)` line for `c` in test/ci_cases.jl, if there is a
+commented-out one, and return `true`.
+
+A case that was disabled in place ("commented out sod1d for now") is
+re-enabled where it stands rather than appended a second time: the registry
+would otherwise carry two lines for the same case, one live and one dead, and
+the next reader could not tell which one CI obeys. It also preserves the
+timeout and tolerance the disabled line was carrying.
+"""
+function reenable_case!(c::CICase)
+    lines = readlines(REGISTRY_FILE)
+    for (i, line) in enumerate(lines)
+        code = lstrip(line)
+        startswith(code, "#") || continue
+        body = lstrip(code, ['#', ' ', '\t'])
+        startswith(body, "CICase(") || continue
+
+        m_eqs  = match(r"eqs\s*=\s*\"([^\"]+)\"",  body)
+        m_case = match(r"case\s*=\s*\"([^\"]+)\"", body)
+        (m_eqs === nothing || m_case === nothing) && continue
+        (m_eqs.captures[1] == c.eqs && m_case.captures[1] == c.case) || continue
+
+        indent   = line[1:something(findfirst(!isspace, line), 1) - 1]
+        lines[i] = string(indent, body)
+        write(REGISTRY_FILE, join(lines, "\n") * "\n")
+        println(" # re-enabled in test/ci_cases.jl:\n    ", body)
+        return true
+    end
+    return false
+end
+
+"""
     register_case!(c, timeout) -> Bool
 
 Add `c` to `CI_CASES` in test/ci_cases.jl, in place, so CI actually runs it.
-Already-registered cases are left alone. Returns `true` if the file was
-modified.
+Already-registered cases are left alone; a commented-out one is uncommented
+rather than duplicated. Returns `true` if the file was modified.
 """
 function register_case!(c::CICase, timeout::Int)
     any(registered -> case_name(registered) == case_name(c), CI_CASES) && return false
+
+    reenable_case!(c) && return true
 
     # The anchor carries its own indentation in the file, so the entry is
     # inserted unindented and the anchor is pushed onto the next line.
@@ -434,11 +566,22 @@ function publish_case(c::CICase, dest::AbstractString)
          sort(filter(f -> endswith(f, ".h5"), readdir(source))) : String[]
 
     if isempty(h5)
+        # The most common cause by far is a solve that diverged. It does not
+        # throw: the integrator prints "Instability detected. Aborting",
+        # run_case returns as if nothing were wrong, and the only symptom is
+        # this empty directory. Say so, rather than leaving the reader to
+        # scroll back through a few thousand lines of solver output looking
+        # for something that does not announce itself as an error.
         println(stderr, "WARNING: $(case_name(c)): no .h5 files in $source — ",
-                "nothing to publish. CI mode forces HDF5 output, so this means ",
-                "the run wrote nothing at all: it failed early, its diagnostics ",
-                "settings produce no output, or it was run with ",
-                "JEXPRESSO_CI_OUTPUT=0.")
+                "nothing to publish. CI mode forces HDF5 output and one write ",
+                "at :tend, so this means the solve never reached :tend.\n",
+                "  Look above for \"Instability detected. Aborting\": the ",
+                "solution diverged, which is what a wrong RHS, too large a ",
+                ":Δt or too little viscosity does. If you have been editing ",
+                "the solver, check that the working tree is clean:\n",
+                "      git status --short src/\n",
+                "  Other causes: the run failed early (look for a stacktrace), ",
+                "or it was run with JEXPRESSO_CI_OUTPUT=0.")
         return 0
     end
 
@@ -492,7 +635,10 @@ function main(args::AbstractVector{<:AbstractString})
             error("$(case_name(c)): no case deck to run")
     end
 
-    problems = validate(cases = cases)
+    # orphans = false: this script is the fix for an unregistered reference
+    # (register_case! below adds or re-enables the entry), so it must not be
+    # stopped by one. Everything else — decks, meshes, timeouts — still counts.
+    problems = validate(cases = cases, orphans = false)
     isempty(problems) || error("test/ci_cases.jl is inconsistent with the " *
                                "repository:\n  " * join(problems, "\n  "))
 

@@ -13,12 +13,47 @@ The suite currently contains:
 |---|---|---|---|---|
 | `CompEuler/theta` | 2D | 40 min | `atol = 1e-5` | off |
 | `CompEuler/sod1d` | 1D | 10 min | `atol = 1e-5` | n/a (1D has no VTK writer) |
+| `AdvDiff/Wave_Train` | 1D | 10 min | `atol = 1e-5` | n/a (1D has no VTK writer) |
 
 The other cases that used to be in the suite are listed, commented out, at the
 bottom of `CI_CASES` in `test/ci_cases.jl`. Re-enabling one is uncommenting its
 line and running `test/generate_ci_ref.jl` for it — that recreates the CI deck
 from `problems/` if it is no longer under `test/CI-runs/`, and generates the
 reference solution.
+
+### A reference nobody runs against is an error
+
+`test/runtests.jl` iterates `CI_CASES`. A case that is not in it is not run —
+no failure, no warning, no line in the test summary — and committing its
+reference solution does not change that. So the dangerous state is not a
+missing reference, it is a **present reference with no registry entry**: the
+deck, the golden files and this table all say the case is covered, and CI
+reports "all passed" without ever having evaluated it. That is exactly what
+happened to `CompEuler/sod1d`, disabled in place ("commented out sod1d for
+now") while its reference stayed committed, so a deliberately broken 1D RHS
+still produced a green suite.
+
+`validate()` now checks that direction too, and `julia test/ci_cases.jl
+validate` — the `registry` job that gates the whole CI workflow — fails on it:
+
+```
+ERROR: CompEuler/sod1d: test/CI-ref/CompEuler/sod1d/output/ holds a reference
+solution, but the case is not in CI_CASES, so nothing ever compares against it
+and the suite stays green however far the solution drifts. The registry has it
+commented out — uncomment that line:
+      CICase(eqs = "CompEuler", case = "sod1d", timeout = 10),
+      If the reference is obsolete instead, delete test/CI-ref/CompEuler/sod1d/.
+```
+
+Disabling a case therefore means deciding what happens to its reference:
+uncomment the line to keep the coverage, or delete `test/CI-ref/<EQS>/<CASE>/`
+to say plainly that the case is not tested. `test/generate_ci_ref.jl`
+re-enables a commented-out line in place rather than adding a second one for
+the same case, so the registry never carries a live entry and a dead one
+together.
+
+The reverse case is only a note: a **registered case with no reference yet**
+prints one from `validate`, and the comparison reports itself skipped.
 
 ---
 
