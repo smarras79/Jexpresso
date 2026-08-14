@@ -75,6 +75,8 @@ const CI_CASES = CICase[
     CICase(eqs = "AdvDiff", case = "kopriva", timeout = 10),
     CICase(eqs = "Helmholtz", case = "case1_laguerre", timeout = 10),
     CICase(eqs = "Helmholtz", case = "case1", timeout = 10),
+    CICase(eqs = "AdvDiff", case = "2d_Laguerre", timeout = 18),
+    CICase(eqs = "ShallowWater", case = "SoliWaveIsland", timeout = 11),
     #<< test/generate_ci_ref.jl inserts new cases above this line >>
 
     #--------------------------------------------------------------------------
