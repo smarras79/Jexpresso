@@ -1605,7 +1605,7 @@ function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
                 dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
 
                 for ieq=1:neqs
-                    rhs_el[iel,i,j,ieq] -= ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
+                    rhs_el[iel,i,j,ieq] -= 1.5*ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
                 end
             end
         end
