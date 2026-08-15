@@ -211,8 +211,10 @@ Below are just a few pre-packaged examples available in Jexpresso.
 To add your own new problem, see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
 
 
-## Shock tube with dynamic SGS (DynSGS) for shock capturing:
-DynSGS by Marras et al. 2015 and later.
+## 1D shock tube with dynamic SGS (DynSGS) for shock capturing:
+Classical Sod's tube with shock and expansion.
+The DynSGS SGS model by Marras et al. 2015 and later is used to capture the shock.
+
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "sod1d")
@@ -225,22 +227,21 @@ Jexpresso.run_case("CompEuler", "sod1d")
 ## 1D acoustic wave:
 ```julia
 using Jexpresso
-Jexpresso.run_case("CompEuler", "ffs_step")
-```
-
-<img src="assets/ffs_shocks.jpg"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-
-## Flow at Mach 3 with forward-facing step
-Mach 3 with DynSGS shock capturing
-```julia
-using Jexpresso
 Jexpresso.run_case("CompEuler", "case1")
 ```
 
 <img src="assets/1dacoustic.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+## Flow at Mach 3 with forward-facing step
+Classical flow at Mach 3 with DynSGS shock capturing
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "ffs_step")
+```
+
+<img src="assets/ffs_shocks.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
