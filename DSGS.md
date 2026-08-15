@@ -2,14 +2,15 @@
 
 This document describes the Marras–Nazarov Dynamic SGS model (`DSGS`), how it is
 formulated for a general conservation law, and how it is implemented for each of
-the three equation sets that use it in Jexpresso:
+the four equation sets that use it in Jexpresso:
 
 1. [The general conservation law](#1-the-general-conservation-law)
 2. [1D CompEuler — `sod1d`, `case1`](#2-1d-compeuler--sod1d-case1)
 3. [2D CompEuler θ-form — `theta_dsgs`](#3-2d-compeuler-θ-form--theta_dsgs)
 4. [2D ideal GLM-MHD — `orszagTangBormanis2024`](#4-2d-ideal-glm-mhd--orszagtangbormanis2024)
-5. [Code map, inputs and output](#5-code-map-inputs-and-output)
-6. [Defects found and fixed](#6-defects-found-and-fixed)
+5. [Shallow water on the spherical shell — `SWsphereDSGS`](#5-shallow-water-on-the-spherical-shell--swspheredsgs)
+6. [Code map, inputs and output](#6-code-map-inputs-and-output)
+7. [Defects found and fixed](#7-defects-found-and-fixed)
 
 **References**
 
@@ -117,7 +118,7 @@ R_i = \frac{3q_i^n - 4q_i^{n-1} + q_i^{n-2}}{2\Delta t} - M^{-1}\,\mathrm{RHS}_i
 $$
 
 The $M^{-1}$ is **required** for the units above to work out; all three paths
-apply it (see [§6](#6-defects-found-and-fixed) — the 2D θ-path did not until
+apply it (see [§7](#7-defects-found-and-fixed) — the 2D θ-path did not until
 recently).
 
 ### 1.3 Per-equation split
@@ -339,16 +340,172 @@ should look like.
 
 ---
 
-## 5. Code map, inputs and output
+## 5. Shallow water on the spherical shell — `SWsphereDSGS`
+
+`compute_dsgs_viscosity!(::DSGS_SW, ::NSD_2D)` in `src/kernel/physics/SGS.jl`,
+selected with `:visc_model => DSGS_SW()`. The case is
+[`problems/ShallowWater/SWsphereDSGS`](problems/ShallowWater/SWsphereDSGS/README.md),
+whose README carries the measurements and the deck; this section is the model.
+
+**State.** $\mathbf{q} = (\varphi,\ \varphi u,\ \varphi v,\ \varphi w)$,
+`neqs = 4`, with $\varphi = gh$ the geopotential and $(u,v,w)$ the full
+**Cartesian** velocity of the Marras/Kopera/Giraldo Eq. (8) formulation.
+
+**Coefficients.** `:dsgs_C1` (1.0), `:dsgs_C2` (0.5). `:dsgs_gamma` and
+`:dsgs_Prt` are ignored — this system has neither an equation of state nor an
+energy equation for them to act on.
+
+**Element scale.** $\Delta = \Delta_{elem,e}/n_{gl}$ with $\Delta_{elem}$ the
+shorter of the two element chords, built by `build_sphere_element_size` in
+`sphere_rhs.jl`. `mesh.Δelem` is not reused: it is the flat routine's
+`min(dx, dy)` over Cartesian axis extents, which on a manifold measures the
+projection of an element onto a coordinate plane rather than its size.
+
+**Wave speed.** The **gravity** wave, $c = \sqrt{\varphi} = \sqrt{gh}$ — the
+same speed `sphere_cfl_dt` uses — so $\mu_{max} = C_2\Delta(\lVert u\rVert +
+\sqrt{\varphi})$. There is no sound speed here.
+
+**Residual.** $R_i = (3q^n-4q^{n-1}+q^{n-2})/(2\Delta t) - M^{-1}\mathrm{RHS}_i$,
+as in §1.2, with all four equations in the max. Unlike $\psi$ in the GLM-MHD
+system, $\varphi w$ is not a constraint carrier: the three Cartesian momentum
+components are one vector equation and none of them is distinguished. What *is*
+special about the normal direction is removed by the Lagrange projection, not by
+this model.
+
+### 5.1 One shared denominator for the three momentum slots
+
+This is the one structural difference from the other three paths, and it is not
+cosmetic.
+
+On a sphere the split of one tangent momentum vector into three Cartesian
+components is a property of the **frame**. A purely zonal jet — the Galewsky
+test, and most classic shallow-water test cases — has
+$\mathbf{u} = u\,\mathbf{e}_\lambda$ with
+$\mathbf{e}_\lambda = (-\sin\lambda, \cos\lambda, 0)$, so $\varphi w \equiv 0$
+everywhere and for all time. Its component-wise
+$\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$ is exactly zero.
+
+Its residual is not: the $\varphi w$ equation carries a large Coriolis source,
+$-f(\mathbf{x}\times\varphi\mathbf{u})|_z \approx -2\Omega\sin\phi\,r\cos\phi\,\varphi u$,
+that the flux divergence cancels only to discretization error. Normalizing that
+by a floor inflates the ratio by the ratio of the floor to the real momentum
+scale — measured on this case, **~260×** — so $\max_i$ is won by $\varphi w$ on
+every element, $\mu_{res}$ saturates the cap everywhere, and the model
+degenerates into uniform first-order-upwind dissipation. On the shipped grid
+that also sits at the explicit diffusive stability limit, and the run dies at
+$t \approx 1100$ s.
+
+The three momentum slots therefore share
+
+$$
+\lVert \varphi\mathbf{u} - \langle\varphi\mathbf{u}\rangle\rVert_{\infty,\Omega}
+= \max_x \big|(\varphi\mathbf{u} - \langle\varphi\mathbf{u}\rangle)(x)\big|
+$$
+
+the Euclidean norm of the deviation of the one vector they are components of,
+which is frame-independent. With it, $\nu$ sits at ~1.5% of the cap and the
+Galewsky run completes six days.
+
+### 5.2 Floors
+
+| slot | floor |
+|---|---|
+| $\varphi$ | $10^{-3}\bar\varphi$ |
+| $\varphi u,\varphi v,\varphi w$ | $10^{-3}\bar\varphi\,\bar c$, $\bar c = \sqrt{\bar\varphi}$ |
+
+Both are non-binding on the Galewsky jet; they exist so a shell case started
+from rest (a resting-balance test, a bump on a flat ocean) does not divide a
+zero residual by machine `eps` in its first stage.
+
+### 5.3 Per-equation split, and no ρ factor
+
+$\mu$ from the model is **kinematic**, and on the shell it is applied by
+`_sphere_visc_el!` directly to the **conservative** variables:
+$\nu\nabla_s^2(\varphi\mathbf{u})$, which is literally the
+$\delta\nu\nabla^2(\varphi\mathbf{u})$ of Eq. (8b). So, unlike §3 and §4, there
+is **no** $\bar\rho$ factor — the Euler-θ and MHD paths need one only because
+their `user_primitives!` hands the viscous operator $(u,v,\theta)$ instead.
+
+$$
+\mu_{dsgs}[e,i] = \texttt{:μ}[i]\cdot\mu\big|_e,\qquad i = 1\dots4
+$$
+
+with `:μ` here a **dimensionless** per-equation multiplier (see §6, "Case inputs"), built from
+the deck by `build_sphere_viscosity` out of `:μ` and `:ivisc_equations`.
+`[2,3,4]` reproduces the paper's placement, momentum only; `[1,2,3,4]` also
+damps $\varphi$, which is what a shell run with **no modal filter** needs, since
+continuous Galerkin gives $\varphi$ no upwinding and hence no dissipation of its
+own.
+
+### 5.4 Assembly order
+
+`sphere_rhs!` assembles the inviscid RHS over **all** elements, sizes $\nu$,
+then runs a **second** element loop for the viscous term. The order is forced:
+the residual is $\partial q/\partial t - M^{-1}\mathrm{RHS}_{inviscid}$, and RHS
+is the complete inviscid right-hand side only after every element has
+contributed through direct stiffness summation. Folding the viscous term into
+the first loop — which the constant-$\nu$ path does, correctly, because its
+$\nu$ does not depend on RHS — would size $\nu$ from a partially assembled RHS
+whose value at a shared node depends on the element numbering.
+
+### 5.5 Step-cadenced history and $\Delta t$
+
+The buffers `sp.qnm1/qnm2` are rolled once per time step by a gate in
+`_sphere_ode_rhs!` that fires on the first stage of each step (`t` sweeps
+$t + c_i\Delta t$ within a step), for the reason in §4.4. Both start at the
+initial state.
+
+$\Delta t$ is published to `sp.Δt[]` **after** the "land exactly on `tend`"
+adjustment, since a residual built on the requested step rather than the taken
+one is wrong by that rounding on every step. `sphere_rhs!` errors rather than
+proceeding if it is unset: an unset $\Delta t$ does not degrade the model, it
+inverts it — $R\to\infty$ everywhere and $\mu$ pins at the cap.
+
+### 5.6 MPI
+
+The shell path is single-rank by construction (`drivers.jl` refuses
+`MPI.Comm_size > 1`), so $\langle q_i\rangle$ and
+$\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$ are computed without
+collectives. They are **domain** norms by definition, so the day the shell path
+is parallelised those two passes need `MPI.Allreduce` exactly as §4.5 already
+does.
+
+### 5.7 Measured effect
+
+Galewsky jet, nop = 5, 10 elements per cubed-sphere panel edge, `:cfl => 0.35`,
+at $t = 5.90$ d (full table in the case README):
+
+| | filter + $\nu = 2\times10^5$ (`SWsphere`) | **DynSGS** (`SWsphereDSGS`) |
+|---|---|---|
+| $\max\lvert\zeta\rvert$ | 6.79e-5 | **9.25e-5** |
+| $\max\lvert\zeta-\zeta_0\rvert$ | 8.88e-5 | **1.50e-4** |
+| $\delta E/E$ | −8.84e-4 | −8.14e-4 |
+| $\nu$ (momentum) | 2e5 everywhere | mean 8.6e4, max 4.5e5 (1.6% of cap) |
+
+The initial jet carries $\max\lvert\zeta_0\rvert = 1.12\times10^{-4}$, so the
+filtered constant-$\nu$ deck has destroyed 39% of the vorticity by day 6 against
+DynSGS's 17%, while carrying a *larger* mean viscosity and decaying slightly
+more energy. The difference is not how much dissipation each adds but where.
+
+$\mu_{res}$ governs throughout — $\nu$ never approaches the
+$C_2\Delta(\lVert u\rVert+c)$ cap — which is the same regime §7 reports for the
+other two 2D paths.
+
+---
+
+## 6. Code map, inputs and output
 
 | file | contents |
 |---|---|
-| `src/kernel/abstractTypes.jl` | `struct DSGS`, `struct DSGS_MHD` |
-| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-MHD), `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
+| `src/kernel/abstractTypes.jl` | `struct DSGS`, `struct DSGS_MHD`, `struct DSGS_SW` |
+| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-MHD, 2D-SW-sphere), `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
 | `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
-| `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
+| `src/kernel/operators/sphere_rhs.jl` | the shell path: `sphere_dsgs_requested`, `build_sphere_element_size`, the DynSGS pass in `_sphere_rhs_kernel!`, `sphere_dsgs_nodal!`/`sphere_dsgs_extra` |
+| `src/kernel/solvers/sphere_time_loop.jl` | `sphere_dsgs_mu_bound` (the CFL bound), `sphere_dsgs_init_history!`, `sphere_dsgs_roll_history!`, the banner and diagnostics lines |
+| `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` (flat paths) |
 | `src/io/mod_inputs.jl` | `:dsgs_C1`, `:dsgs_C2`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
 | `src/io/write_output.jl` | the `mu_dsgs_*` VTK fields |
+| `test/test_sphere_dsgs.jl` | the shell model: cap, formula, locality, selectivity, the zonal regression, deck switches |
 | `tools/plot_orszag_tang.jl` | off-line figures from a finished MHD run, including the viscosity map |
 | `tools/vtu_reader.jl` | the minimal `.pvtu`/`.vtu` reader that script uses |
 
@@ -358,12 +515,20 @@ should look like.
 :lvisc      => true,
 :visc_model => DSGS(),        # 1D CompEuler / 2D CompEuler θ
 :visc_model => DSGS_MHD(),    # 2D ideal GLM-MHD
+:visc_model => DSGS_SW(),     # shallow water on the spherical shell
 :μ          => [0.0, 1.0, …], # per-equation multipliers, length neqs
-:dsgs_C1    => 1.0,           # DSGS_MHD only
+:dsgs_C1    => 1.0,           # DSGS_MHD and DSGS_SW
 :dsgs_C2    => 0.5,
-:dsgs_gamma => 5.0/3.0,
-:dsgs_Prt   => 0.7,
+:dsgs_gamma => 5.0/3.0,       # DSGS_MHD only
+:dsgs_Prt   => 0.7,           # DSGS_MHD only
 ```
+
+⚠ On the shell, `:μ` is the **dimensionless** multiplier of §5.3, not a
+viscosity in m²/s — the model supplies $\nu$ itself. It defaults to 1.0 there
+(rather than 0.0), and `build_sphere_viscosity` rejects values above 100 so that
+a constant-$\nu$ value left over from a `SWsphere` deck is an error rather than
+a $10^5\times$ overdose. Which equations it applies to is chosen with
+`:ivisc_equations`, as on the constant-$\nu$ path.
 
 **Output.** The per-element coefficients are broadcast to nodes by
 `broadcast_dsgs_to_nodes!` and written to VTK as one point-data field per
@@ -391,7 +556,7 @@ isolines on top) from a finished Orszag–Tang run.
 
 ---
 
-## 6. Defects found and fixed
+## 7. Defects found and fixed
 
 Writing this document meant reading the three paths side by side, which turned
 up five defects. All are now fixed; they are recorded here because the fixes

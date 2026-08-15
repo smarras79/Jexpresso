@@ -17,6 +17,12 @@ initial condition.
 
 `:lgrid_only` wins if both are set. The shipped deck has both `false` — it runs.
 
+> **A residual-based alternative to this deck's stabilization** —
+> [`SWsphereDSGS`](../SWsphereDSGS/README.md) — solves the same problem on the
+> same grid with the Marras–Nazarov DynSGS model in place of the modal filter
+> and the constant ν. At day 6 it retains max\|ζ\| = 9.3·10⁻⁵ against this
+> deck's 6.8·10⁻⁵, on a *smaller* mean viscosity.
+
 ## Run it
 
 The cubed-sphere grid ships with the case (`cubed_sphere.msh`: 600 quads, 602

@@ -32,6 +32,16 @@
 # with the SURFACE (Laplace-Beltrami) gradient. See _sphere_visc! below for why
 # the flat viscous path of rhs.jl cannot supply it.
 #
+# ν is either the CONSTANT of the deck's :μ, or — with :visc_model => DSGS_SW()
+# — the residual-based Marras-Nazarov DynSGS coefficient, recomputed per element
+# and per RK stage from how badly the discrete solution fails to satisfy the
+# equations. The model itself is compute_dsgs_viscosity!(::DSGS_SW, ::NSD_2D) in
+# src/kernel/physics/SGS.jl; what lives here is the plumbing — the per-element Δ,
+# the second element loop the residual forces (see the DynSGS block in
+# _sphere_rhs_kernel! for why it cannot be folded into the first), and the nodal
+# broadcast for output. DSGS.md §5 is the write-up; the case is
+# problems/ShallowWater/SWsphereDSGS.
+#
 # ALSO HERE: the modal filter. The paper applies a Boyd-Vandeven filter at every
 # step, "chosen to reduce by 5% the highest modes only", because the inviscid
 # high-order solution of an advective problem grows spurious grid-scale modes.
@@ -47,6 +57,10 @@ export sphere_rhs!
 export sphere_filter!
 export build_sphere_filter_matrix
 export sphere_relative_vorticity!
+export sphere_dsgs_requested
+export build_sphere_element_size
+export sphere_dsgs_nodal!
+export sphere_dsgs_extra
 
 
 #---------------------------------------------------------------------------------
@@ -66,13 +80,30 @@ mutable struct St_sphere_params{TFloat}
     lvisc   ::Bool             # any μ[ieq] > 0
     gξ   ::Array{TFloat, 3}    # ngl × ngl × neqs  ν ∇ₛq · a¹  at the LGL nodes
     gη   ::Array{TFloat, 3}    # ngl × ngl × neqs  ν ∇ₛq · a²
+
+    #--- DynSGS (:visc_model => DSGS_SW()). All sized 1 and unused when off.
+    ldsgs   ::Bool             # residual-based ν, recomputed every RK stage
+    Δelem   ::Array{TFloat, 1} # nelem : shortest element chord, the Δ of the model
+    μ_dsgs  ::Array{TFloat, 2} # nelem × neqs : ν|e per equation, this stage
+    μ_pnode ::Array{TFloat, 2} # npoin × neqs : the same, broadcast to nodes for VTK
+    qnm1    ::Array{TFloat, 2} # npoin × neqs : qⁿ⁻² of the BDF2 residual
+    qnm2    ::Array{TFloat, 2} # npoin × neqs : qⁿ⁻¹  (see the roll in sphere_time_loop.jl)
+    davg    ::Array{TFloat, 1} # neqs : ⟨q_i⟩ scratch
+    ddenom  ::Array{TFloat, 1} # neqs : ‖q_i − ⟨q_i⟩‖_{∞,Ω} scratch
+    νel     ::Array{TFloat, 1} # neqs : μ_dsgs[iel,:] unpacked, handed to _sphere_visc_el!
+    C1      ::TFloat           # :dsgs_C1, the residual coefficient
+    C2      ::TFloat           # :dsgs_C2, the wave-speed cap coefficient
+    Δt      ::Base.RefValue{Float64}    # the step, filled in by sphere_time_loop!
+    thist   ::Base.RefValue{Float64}    # when the BDF2 history was last rolled
 end
 
 
 function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                              neqs = 4, TF = TFloat)
 
-    ngl = Int(mesh.ngl)
+    ngl   = Int(mesh.ngl)
+    nelem = Int(mesh.nelem)
+    npoin = Int(mesh.npoin)
 
     lfilter = get(inputs, :lfilter, false) == true
     Filt    = lfilter ? build_sphere_filter_matrix(metrics.ξ, inputs, TF) :
@@ -80,6 +111,18 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
 
     μ     = build_sphere_viscosity(inputs, neqs, TF)
     lvisc = any(>(zero(TF)), μ)
+    # `&& lvisc`: a DSGS_SW deck whose multipliers are all zero has asked for a
+    # model whose output is discarded. Turning it off here skips the residual
+    # pass rather than computing it and multiplying it by nothing.
+    ldsgs = sphere_dsgs_requested(inputs) && lvisc
+
+    #
+    # DynSGS carries a per-element Δ and a residual history; a constant-ν run
+    # needs neither, so everything below is sized 1 when the model is off.
+    #
+    ndsgs_e = ldsgs ? nelem : 1
+    ndsgs_p = ldsgs ? npoin : 1
+    Δelem   = ldsgs ? build_sphere_element_size(mesh, TF) : zeros(TF, 1)
 
     return St_sphere_params{TF}(neqs,
                                 zeros(TF, ngl, ngl, neqs),
@@ -88,12 +131,84 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                                 zeros(TF, ngl, ngl, neqs),
                                 Filt,
                                 zeros(TF, ngl, ngl, neqs),
-                                zeros(TF, Int(mesh.npoin), neqs),
+                                zeros(TF, npoin, neqs),
                                 lfilter,
                                 μ,
                                 lvisc,
                                 zeros(TF, ngl, ngl, neqs),
-                                zeros(TF, ngl, ngl, neqs))
+                                zeros(TF, ngl, ngl, neqs),
+                                ldsgs,
+                                Δelem,
+                                zeros(TF, ndsgs_e, neqs),
+                                zeros(TF, ndsgs_p, neqs),
+                                zeros(TF, ndsgs_p, neqs),
+                                zeros(TF, ndsgs_p, neqs),
+                                zeros(TF, neqs),
+                                zeros(TF, neqs),
+                                zeros(TF, neqs),
+                                TF(get(inputs, :dsgs_C1, 1.0)),
+                                TF(get(inputs, :dsgs_C2, 0.5)),
+                                Ref(0.0),
+                                Ref(-1.0e30))
+end
+
+
+#---------------------------------------------------------------------------------
+# sphere_dsgs_requested(inputs) -> Bool
+#
+# `:visc_model => DSGS_SW()` together with `:lvisc => true`. The model is a
+# viscosity, so it is off whenever the master viscosity switch is off — the same
+# rule build_sphere_viscosity applies to the constant ν.
+#---------------------------------------------------------------------------------
+function sphere_dsgs_requested(inputs)
+    get(inputs, :lvisc, false) == true || return false
+    return get(inputs, :visc_model, nothing) isa DSGS_SW
+end
+
+
+#---------------------------------------------------------------------------------
+# build_sphere_element_size(mesh, TF) -> Vector, one entry per element
+#
+# The Δ_elem of the DynSGS model: the SHORTEST of the two element chords,
+#
+#   d_ξ = |x(ngl,1) − x(1,1)| ,   d_η = |x(1,ngl) − x(1,1)| ,
+#
+# which is the manifold counterpart of mesh.Δelem in the flat cases (min corner-
+# to-corner distance inside the element). Chords, not arcs: the ratio of the two
+# is 1 − O((Δ/r)²) ≈ 1 − 1e-4 on a cubed sphere with elements of a few hundred
+# km, i.e. far below the modelling uncertainty in C1 itself.
+#
+# The model then uses Δ = Δ_elem/(N+1), the per-node effective resolution — done
+# at the point of use, exactly as the 1D/2D/MHD paths do.
+#---------------------------------------------------------------------------------
+function build_sphere_element_size(mesh::St_mesh, TF = TFloat)
+
+    nelem = Int(mesh.nelem)
+    ngl   = Int(mesh.ngl)
+    crd   = mesh.coords
+    conn  = mesh.connijk
+
+    Δelem = zeros(TF, nelem)
+
+    @inbounds for iel = 1:nelem
+        i00 = conn[iel, 1,   1  ]
+        i10 = conn[iel, ngl, 1  ]
+        i01 = conn[iel, 1,   ngl]
+
+        dξ = sqrt((crd[1,i10] - crd[1,i00])^2 +
+                  (crd[2,i10] - crd[2,i00])^2 +
+                  (crd[3,i10] - crd[3,i00])^2)
+        dη = sqrt((crd[1,i01] - crd[1,i00])^2 +
+                  (crd[2,i01] - crd[2,i00])^2 +
+                  (crd[3,i01] - crd[3,i00])^2)
+
+        Δelem[iel] = TF(min(dξ, dη))
+    end
+
+    minimum(Δelem) > 0 ||
+        error(" # ERROR sphere_rhs.jl: an element of the shell grid has zero size; DynSGS cannot build Δ.")
+
+    return Δelem
 end
 
 
@@ -115,6 +230,16 @@ end
 #                               shell's height gradients for no physical reason.
 #                               Hence the default, which is deliberately NOT
 #                               "all equations".
+#
+# UNDER DynSGS (:visc_model => DSGS_SW()) THE SAME TWO SWITCHES MEAN SOMETHING
+# SLIGHTLY DIFFERENT, and it is worth being explicit about it because the key is
+# spelled the same. The coefficient is no longer a viscosity: the model supplies
+# ν|e itself, per element and per stage, and what is read here is the
+# DIMENSIONLESS per-equation MULTIPLIER of Marras eq. (10) — the factor that
+# scales (or switches off) each equation's share of the one element coefficient.
+# Hence the default of 1.0 rather than 0.0: "DynSGS on, nothing rescaled". A
+# deck that leaves :μ at the constant-ν value 1e5 by accident would otherwise
+# multiply the model's output by 1e5, so the value is range-checked below.
 #---------------------------------------------------------------------------------
 function build_sphere_viscosity(inputs, neqs::Int, TF = TFloat)
 
@@ -122,7 +247,8 @@ function build_sphere_viscosity(inputs, neqs::Int, TF = TFloat)
 
     get(inputs, :lvisc, false) == true || return μ
 
-    μin = get(inputs, :μ, 0.0)
+    ldsgs    = sphere_dsgs_requested(inputs)
+    μin      = get(inputs, :μ, ldsgs ? 1.0 : 0.0)
     ieq_visc = get(inputs, :ivisc_equations, 2:neqs)
 
     for ieq in ieq_visc
@@ -134,6 +260,20 @@ function build_sphere_viscosity(inputs, neqs::Int, TF = TFloat)
 
     any(<(zero(TF)), μ) &&
         error(" # ERROR sphere_rhs.jl: :μ must be non-negative; a negative viscosity is anti-diffusive and blows up immediately.")
+
+    #
+    # See the note above: under DynSGS :μ is a dimensionless multiplier, so a
+    # value carried over from a constant-ν deck (1e5 m²/s) is an error rather
+    # than a strong setting. 100 is far above any sensible rescaling of eq. (10)
+    # and far below the smallest physical ν anyone writes here.
+    #
+    if ldsgs && any(>(TF(100.0)), μ)
+        error(string(" # ERROR sphere_rhs.jl: :visc_model => DSGS_SW() makes :μ a DIMENSIONLESS per-equation\n",
+                     " #   multiplier of the model's own ν|e, and this deck asks for ", maximum(μ), ".\n",
+                     " #   That looks like a constant-viscosity value in m²/s left over from a\n",
+                     " #   :visc_model-free deck. Use :μ => 1.0 (or a per-equation vector near 1),\n",
+                     " #   or drop :visc_model to get the constant-ν path back."))
+    end
 
     return μ
 end
@@ -175,7 +315,10 @@ function sphere_rhs!(RHS, q, qe,
                         metrics.dηdx, metrics.dηdy, metrics.dηdz,
                         metrics.dψ, metrics.ω,
                         sp.F, sp.G, sp.H, sp.S, Int(sp.neqs), SVT,
-                        sp.lvisc, sp.μ, sp.gξ, sp.gη)
+                        sp.lvisc, sp.μ, sp.gξ, sp.gη,
+                        sp.ldsgs, sp.μ_dsgs, sp.Δelem,
+                        sp.qnm1, sp.qnm2, sp.davg, sp.ddenom, sp.νel,
+                        sp.C1, sp.C2, sp.Δt[])
     return RHS
 end
 
@@ -188,7 +331,13 @@ function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
                              dηdx, dηdy, dηdz,
                              dψ, ω,
                              F, G, H, S, neqs::Int, SVT,
-                             lvisc::Bool, μ::AbstractVector{TF}, gξ, gη) where {TF}
+                             lvisc::Bool, μ::AbstractVector{TF}, gξ, gη,
+                             ldsgs::Bool, μ_dsgs::AbstractMatrix{TF},
+                             Δelem::AbstractVector{TF},
+                             qnm1::AbstractMatrix{TF}, qnm2::AbstractMatrix{TF},
+                             davg::AbstractVector{TF}, ddenom::AbstractVector{TF},
+                             νel::AbstractVector{TF},
+                             C1::TF, C2::TF, Δt::Float64) where {TF}
 
     fill!(RHS, zero(TF))
 
@@ -238,9 +387,55 @@ function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
         end
 
         #--- artificial diffusion, δν∇ₛ²q, in weak form
-        lvisc && _sphere_visc_el!(RHS, q, connijk, iel, ngl,
-                                  Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
-                                  dψ, ω, μ, gξ, gη, neqs)
+        #
+        # CONSTANT ν only. DynSGS needs the assembled inviscid RHS of the WHOLE
+        # domain before it can size ν, so it runs in its own pass below.
+        #
+        (lvisc && !ldsgs) &&
+            _sphere_visc_el!(RHS, q, connijk, iel, ngl,
+                             Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                             dψ, ω, μ, gξ, gη, neqs)
+    end
+
+    #--- DynSGS: size ν from the residual, THEN diffuse with it
+    #
+    # WHY A SECOND ELEMENT LOOP. The residual R = ∂q/∂t − M⁻¹·RHS_inviscid is
+    # what sets ν, and RHS is only the complete inviscid right-hand side once
+    # every element has contributed to it (direct stiffness summation). So the
+    # order is forced: assemble everything, measure, then diffuse. Folding the
+    # viscous term into the loop above would size ν from a partially assembled
+    # RHS whose value at a shared node depends on the element numbering.
+    #
+    # RHS is still in WEAK form here — the M⁻¹ below is the only place it is
+    # applied — which is exactly what compute_dsgs_viscosity! expects: it
+    # multiplies by Minv itself when forming the residual, and the viscous term
+    # it then adds must go in in weak form like everything else.
+    #
+    if ldsgs
+        #
+        # Δt is the denominator of the BDF2 residual, so an unset one does not
+        # degrade the model, it inverts it: R → ∞ everywhere and μ pins at the
+        # C2·Δ·(|u|+c) cap on every element, i.e. uniform first-order-upwind
+        # dissipation dressed up as a residual sensor. sphere_time_loop! fills
+        # sp.Δt[] before the first stage; anything else calling sphere_rhs!
+        # with DynSGS on has to as well.
+        #
+        Δt > 0 ||
+            error(" # ERROR sphere_rhs.jl: DynSGS is on but sp.Δt[] is unset. Set it to the time step before calling sphere_rhs!.")
+
+        compute_dsgs_viscosity!(μ_dsgs, DSGS_SW(), NSD_2D(),
+                                q, qnm2, qnm1, RHS, Minv, μ,
+                                davg, ddenom, TF(Δt),
+                                connijk, Δelem, C1, C2, nelem, ngl)
+
+        @inbounds for iel = 1:nelem
+            for ieq = 1:neqs
+                νel[ieq] = μ_dsgs[iel,ieq]
+            end
+            _sphere_visc_el!(RHS, q, connijk, iel, ngl,
+                             Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                             dψ, ω, νel, gξ, gη, neqs)
+        end
     end
 
     #--- M⁻¹ : the mass matrix is diagonal under LGL (inexact) integration
@@ -353,6 +548,41 @@ function _sphere_visc_el!(RHS::AbstractMatrix{TF}, q, connijk, iel::Int, ngl::In
     end
 
     return RHS
+end
+
+
+#---------------------------------------------------------------------------------
+# sphere_dsgs_nodal!(sp, mesh)  and  sphere_dsgs_extra(sp, mesh, qvars)
+#
+# The per-element coefficients broadcast onto nodes and packaged as VTK point
+# fields named after the equation each one damps — `mu_dsgs_phi`,
+# `mu_dsgs_phiu`, … — the same convention the flat DSGS paths use for their
+# `.pvtu` output (DSGS.md §6).
+#
+# The values are PIECEWISE CONSTANT PER ELEMENT by construction, and a shared
+# (DSS) node takes whichever element writes it last. That is fine for looking at
+# where the model is active and useless as a nodal field; do not differentiate
+# it. What it is written for is the question the model exists to answer — is the
+# viscosity sitting on the fronts, or is it smeared over the whole shell?
+#
+# They are the coefficients of the LAST RK stage of the last completed step, not
+# a step average. Since the output cadence is hours and the step is ~a minute,
+# that is a snapshot of a quantity that varies from stage to stage; compare a
+# field against itself over time rather than reading a single value as exact.
+#---------------------------------------------------------------------------------
+function sphere_dsgs_nodal!(sp::St_sphere_params, mesh::St_mesh)
+    sp.ldsgs || return sp.μ_pnode
+    broadcast_dsgs_to_nodes!(sp.μ_pnode, sp.μ_dsgs, mesh.connijk,
+                             Int(mesh.nelem), Int(mesh.ngl), NSD_2D())
+    return sp.μ_pnode
+end
+
+function sphere_dsgs_extra(sp::St_sphere_params, mesh::St_mesh, qvars)
+    sp.ldsgs || return ()
+    sphere_dsgs_nodal!(sp, mesh)
+    neqs = Int(sp.neqs)
+    return ntuple(ieq -> string("mu_dsgs_", ieq <= length(qvars) ? String(qvars[ieq]) : string(ieq)) =>
+                         @view(sp.μ_pnode[:, ieq]), neqs)
 end
 
 

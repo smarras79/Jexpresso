@@ -866,13 +866,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     #
-    # Marras-Nazarov DynSGS (visc_model = DSGS_MHD()) parameters.
+    # Marras-Nazarov DynSGS (visc_model = DSGS_MHD(), DSGS_SW()) parameters.
     #   :dsgs_C1    coefficient of the residual viscosity  C1·Δ²·‖R‖/‖q−⟨q⟩‖
     #   :dsgs_C2    coefficient of the wave-speed cap      C2·Δ·(|v|+c_f)
     #   :dsgs_gamma ratio of specific heats used by the MHD EOS and the fast
     #               magnetosonic speed (5/3 for the monatomic plasma cases;
     #               deliberately NOT PhysConst.γ, which is air's 1.4)
     #   :dsgs_Prt   turbulent Prandtl number for the energy slot
+    #
+    # C1 and C2 are the only two that DSGS_SW() (shallow water on the spherical
+    # shell) reads: that system has no equation of state and no energy equation,
+    # so its wave speed is the gravity-wave speed √φ and :dsgs_gamma/:dsgs_Prt
+    # have nothing to act on.
     #
     if(!haskey(inputs, :dsgs_C1))
         inputs[:dsgs_C1] = 1.0

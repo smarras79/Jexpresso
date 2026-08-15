@@ -76,6 +76,12 @@ struct DSGS  <: AbstractVT end
 # because the residual set, the equation-of-state and the wave speed all
 # differ from the Euler-theta system DSGS() is written for.
 struct DSGS_MHD <: AbstractVT end
+# Marras-Nazarov residual-based Dynamic SGS for the SHALLOW WATER equations
+# on the spherical shell, q = (φ, φu, φv, φw). Its own tag for the same
+# reason DSGS_MHD is: the state, the wave speed (√φ, not a sound speed) and
+# the assembly path (the Laplace-Beltrami operator of sphere_rhs.jl, not the
+# flat viscous path of rhs.jl) all differ from the Euler-theta system.
+struct DSGS_SW <: AbstractVT end
 
 
 abstract type AbstractVolumeFlux end

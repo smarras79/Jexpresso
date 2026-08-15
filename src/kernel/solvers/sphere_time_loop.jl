@@ -55,6 +55,9 @@
 export sphere_time_loop!
 export sphere_cfl_dt
 export sphere_diagnostics
+export sphere_dsgs_mu_bound
+export sphere_dsgs_init_history!
+export sphere_dsgs_roll_history!
 
 
 #---------------------------------------------------------------------------------
@@ -106,6 +109,106 @@ end
 
 
 #---------------------------------------------------------------------------------
+# DynSGS support: the ν bound, and the BDF2 history.
+#---------------------------------------------------------------------------------
+#
+# sphere_dsgs_mu_bound(q, mesh, sp)
+#
+# The LARGEST ν the model can ever return on this state,
+#
+#   ν ≤ μ_max|e = C2 · (Δ_elem,e/(N+1)) · (‖u‖ + √φ)_{∞,e} ,
+#
+# which is what the diffusive branch of the CFL condition needs. DynSGS sizes ν
+# per element and per stage, so there is no constant to hand sphere_cfl_dt the
+# way a fixed-ν deck does; the model's OWN cap is the bound, and it is a genuine
+# one — μ = max(0, min(μ_max, μ_res)) can never exceed it, whatever the residual
+# does. Evaluated once, on the initial state, for the same reason Δt is: the
+# step is fixed for the run.
+#
+# The bound is not tight (μ_res is normally an order of magnitude below the cap,
+# see DSGS.md §7), so this over-estimates ν and therefore under-estimates the
+# diffusive Δt. That is the safe direction, and on the shipped grid the
+# advective limit still wins by a wide margin — the printout says by how much.
+#
+function sphere_dsgs_mu_bound(q::AbstractMatrix{TF}, mesh::St_mesh,
+                              sp::St_sphere_params) where {TF}
+
+    sp.ldsgs || return 0.0
+
+    nelem::Int = Int(mesh.nelem)
+    ngl::Int   = Int(mesh.ngl)
+    conn       = mesh.connijk
+
+    μmax = zero(TF)
+    @inbounds for iel = 1:nelem
+        Δ = sp.Δelem[iel]/ngl
+        w = zero(TF)
+        for j = 1:ngl, i = 1:ngl
+            ip = conn[iel,i,j]
+            φ  = q[ip,1]
+            φ > 0 || continue
+            umag = sqrt(q[ip,2]^2 + q[ip,3]^2 + q[ip,4]^2)/φ
+            w = max(w, umag + sqrt(φ))
+        end
+        μmax = max(μmax, sp.C2*Δ*w)
+    end
+
+    return Float64(μmax)
+end
+
+#
+# The BDF2 history the residual is built on.
+#
+# BOTH buffers start at the initial state, so the first residual is
+# −M⁻¹·RHS(q⁰) — the actual ∂q/∂t of the initial condition — rather than the
+# 3q⁰/(2Δt) an empty history would give. For the Galewsky jet that is nearly
+# zero, because the balanced state is a steady solution.
+#
+# q.qn carries one column beyond the neqs solution slots (define_q allocates
+# npoin × (neqs+1)), so these copies are column-wise rather than a whole-array
+# `.=`, which would be a DimensionMismatch.
+#
+function sphere_dsgs_init_history!(sp::St_sphere_params, qn::AbstractMatrix,
+                                   npoin::Int, neqs::Int)
+    sp.ldsgs || return nothing
+    @inbounds for ieq = 1:neqs, ip = 1:npoin
+        sp.qnm1[ip,ieq] = qn[ip,ieq]
+        sp.qnm2[ip,ieq] = qn[ip,ieq]
+    end
+    sp.thist[] = -1.0e30
+    return nothing
+end
+
+#
+# Roll it ONCE PER TIME STEP — not once per RK stage.
+#
+# The RHS is evaluated at every stage, and `t` sweeps t + c_i·Δt inside a step,
+# so the gate below fires on the first stage of each step and is quiet for the
+# rest. Rolling per stage instead would difference consecutive INTERMEDIATE
+# states over a full Δt, which is not an approximation of ∂q/∂t at all — the
+# defect the flat paths carried until the dsgs_qnm1/qnm2 pair was introduced
+# for them (DSGS.md §4.4, §7.4). The 0.999 absorbs the round-off in c_i·Δt.
+#
+# After the roll, qnm2 holds qⁿ (the state this step starts from) and qnm1 holds
+# qⁿ⁻¹, which is what compute_dsgs_viscosity! is handed as (q1, q2).
+#
+function sphere_dsgs_roll_history!(sp::St_sphere_params, u::AbstractMatrix,
+                                   npoin::Int, neqs::Int, t::Float64)
+    sp.ldsgs || return nothing
+    Δt = sp.Δt[]
+    Δt > 0 || return nothing
+    t - sp.thist[] >= 0.999*Δt || return nothing
+
+    @inbounds for ieq = 1:neqs, ip = 1:npoin
+        sp.qnm1[ip,ieq] = sp.qnm2[ip,ieq]
+        sp.qnm2[ip,ieq] = u[ip,ieq]
+    end
+    sp.thist[] = t
+    return nothing
+end
+
+
+#---------------------------------------------------------------------------------
 # Conserved quantities and the constraint drift.
 #---------------------------------------------------------------------------------
 function sphere_diagnostics(q::AbstractMatrix{TF}, mesh::St_mesh,
@@ -147,6 +250,8 @@ struct St_sphere_ode_params{TMesh, TMetrics, TParams, TQe, TSVT}
     SVT::TSVT
     lproject::Bool
     driftmax::Base.RefValue{Float64}
+    npoin::Int
+    neqs::Int
 end
 
 
@@ -154,6 +259,10 @@ end
 # R(q). OrdinaryDiffEq calls this once per stage.
 #
 function _sphere_ode_rhs!(du, u, p::St_sphere_ode_params, t)
+    # DynSGS only: advance the BDF2 history on the FIRST stage of each step.
+    # The gate lives here rather than in a limiter because the residual is read
+    # inside sphere_rhs!, so the history has to be current before it runs.
+    sphere_dsgs_roll_history!(p.sp, u, p.npoin, p.neqs, Float64(t))
     sphere_rhs!(du, u, p.qe, p.mesh, p.metrics, p.sp, p.SVT)
     return nothing
 end
@@ -280,6 +389,20 @@ function (mon::St_sphere_monitor)(integrator)
         @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max|ζ| = %9.3e  max|ζ-ζ₀| = %9.3e\n",
                 istep, t, t/86400, (mass-mon.mass0)/mon.mass0, (ener-mon.ener0)/mon.ener0,
                 drift, ζmax, dζ)
+        #
+        # What the model is actually doing. Reported as the range over the
+        # MOMENTUM slot, which is the one every configuration switches on, and
+        # against the C2·Δ·(|u|+c) cap: μ saturating at the cap means DynSGS has
+        # degraded to first-order-upwind dissipation everywhere and is no longer
+        # discriminating, which is the failure mode to watch for. In the regime
+        # the model is designed for it sits an order of magnitude below it.
+        #
+        if mon.sp.ldsgs
+            νmom = @view mon.sp.μ_dsgs[:, min(2, size(mon.sp.μ_dsgs,2))]
+            @printf(" #     DynSGS ν(momentum): mean = %9.3e  max = %9.3e m²/s  (cap = %9.3e)\n",
+                    sum(νmom)/length(νmom), maximum(νmom),
+                    sphere_dsgs_mu_bound(u, mon.mesh, mon.sp))
+        end
         flush(stdout)
         isfinite(mass) || error(" # ERROR sphere_time_loop.jl: the solution has gone non-finite. Reduce :cfl, or switch on :lfilter and/or :lvisc (with :μ > 0).")
     end
@@ -292,7 +415,9 @@ function (mon::St_sphere_monitor)(integrator)
         copyto!(mon.q.qn, u)
         sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
         _sphere_write!(mon.q, mon.mesh, mon.inputs, mon.OUTPUT_DIR, mon.iout, t, mon.SVT;
-                       verbose = mon.verbose, extra = ("vorticity" => mon.ζ,))
+                       verbose = mon.verbose,
+                       extra = ("vorticity" => mon.ζ,
+                                sphere_dsgs_extra(mon.sp, mon.mesh, mon.q.qvars)...))
         mon.tnext += mon.outdt
     end
 
@@ -360,8 +485,13 @@ function _sphere_march!(mesh::St_mesh,
     lcfl         = get(inputs, :lcfl_dt, true) == true
 
     # the largest artificial viscosity in play, for the diffusive branch of the
-    # CFL condition (0 when :lvisc is off, and then that branch is skipped)
-    μmax::Float64 = Float64(maximum(sp.μ))
+    # CFL condition (0 when :lvisc is off, and then that branch is skipped).
+    #
+    # Under DynSGS sp.μ is a dimensionless per-equation multiplier, not a
+    # viscosity, so the bound has to come from the model's own wave-speed cap —
+    # see sphere_dsgs_mu_bound.
+    μmax::Float64 = sp.ldsgs ? maximum(sp.μ)*sphere_dsgs_mu_bound(q.qn, mesh, sp) :
+                               Float64(maximum(sp.μ))
 
     local Δt::Float64
     if lcfl
@@ -387,6 +517,16 @@ function _sphere_march!(mesh::St_mesh,
                      @sprintf("%.2f", sphere_cfl_dt(q.qn, mesh, metrics; cfl = cfl, μmax = μmax)),
                      " s here), or raise :max_steps if you really mean it."))
 
+    #
+    # DynSGS reads Δt (the BDF2 denominator) and the history buffers from sp
+    # inside the RHS, so both have to be set before the first stage. Δt is
+    # published only once the "land exactly on tend" adjustment above is done —
+    # a residual built on the requested step rather than the taken one is wrong
+    # by that rounding on every step of the run.
+    #
+    sp.Δt[] = Δt
+    sphere_dsgs_init_history!(sp, q.qn, npoin, neqs)
+
     #--- the integrator, with the projection and the filter installed
     haskey(inputs, :ode_solver) ||
         error(" # ERROR sphere_time_loop.jl: :ode_solver is missing from user_inputs.jl.")
@@ -411,7 +551,12 @@ function _sphere_march!(mesh::St_mesh,
         @printf(" #   Δt = %.4f s ; %d steps to t = %.1f s (%.3f days) ; CFL = %.2f\n",
                 Δt, nsteps, tend, tend/86400, cfl)
         println(" #   filter: ", sp.lfilter ? "ON" : "OFF")
-        if sp.lvisc
+        if sp.ldsgs
+            @printf(" #   DynSGS: ON, C1 = %.3g, C2 = %.3g, per-equation multipliers = [%s]\n",
+                    sp.C1, sp.C2, join((@sprintf("%.3g", m) for m in sp.μ), ", "))
+            @printf(" #     Δ_elem = [%.3g, %.3g] m ; ν ≤ %.3g m²/s (the C2·Δ·(|u|+c) cap at t = 0)\n",
+                    minimum(sp.Δelem), maximum(sp.Δelem), μmax)
+        elseif sp.lvisc
             @printf(" #   artificial viscosity: ON, ν = [%s] m²/s per equation\n",
                     join((@sprintf("%.3g", ν) for ν in sp.μ), ", "))
         else
@@ -436,11 +581,15 @@ function _sphere_march!(mesh::St_mesh,
     # the initial condition
     sphere_relative_vorticity!(ζ, q.qn, mesh, metrics, sp)
     copyto!(ζ0, ζ)
+    # μ_dsgs is all zeros at t = 0 (no RHS has been assembled yet), and it is
+    # written anyway so the field exists on every file of the series and
+    # ParaView can animate it without a gap at frame 0.
     _sphere_write!(q, mesh, inputs, OUTPUT_DIR, 0, t, SVT; verbose = verbose,
                    lwrite = get(inputs, :lwrite_initial, true) == true,
-                   extra = ("vorticity" => ζ,))
+                   extra = ("vorticity" => ζ, sphere_dsgs_extra(sp, mesh, q.qvars)...))
 
-    params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0))
+    params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0),
+                                  npoin, neqs)
 
     monitor = St_sphere_monitor(q, mesh, metrics, sp, inputs, SVT, OUTPUT_DIR,
                                 ζ, ζ0, mass0, ener0, npoin, nsteps, nprint,

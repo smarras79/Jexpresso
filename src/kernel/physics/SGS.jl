@@ -476,7 +476,7 @@ end
 #
 # NOTE this makes that case *run*; it does not make it correct. Two
 # other defects on the same path are untouched and deliberate to leave
-# alone (see DSGS.md §6): the residual there omits M⁻¹, and the two
+# alone (see DSGS.md §7): the residual there omits M⁻¹, and the two
 # momentum slots are still zeroed by a leftover diagnostic block, so
 # only the ρθ equation is actually stabilized.
 @inline function SGS_diffusion(visc_coeffieq, ieq,
@@ -1026,6 +1026,236 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         if neqs >= 9
             μ_dsgs[ie,9] = visc_coeff[9]*μ                         # ψ
+        end
+    end
+
+    return nothing
+end
+
+# ================================================================================
+# Marras-Nazarov Dynamic SGS (DynSGS) — SHALLOW WATER on the SPHERICAL SHELL
+#
+#   S. Marras, M. Nazarov, F. X. Giraldo, "Stabilized high-order Galerkin
+#   methods based on a parameter-free dynamic SGS model for LES",
+#   J. Comput. Phys. 301 (2015) 77-101.
+#   S. Marras, M. A. Kopera, F. X. Giraldo, "Simulation of shallow-water jets
+#   with a unified element-based continuous/discontinuous Galerkin model with
+#   grid flexibility on the sphere", QJRMS 141 (2015) 1727-1739.
+#
+# STATE   q = (φ, φu, φv, φw),  φ = gh the geopotential and (u,v,w) the FULL
+# CARTESIAN velocity of the shell case (problems/ShallowWater/SWsphereDSGS).
+# neqs = 4.
+#
+#     μ_res|e = C1 · Δ² · max_i ( ‖R_i‖_{∞,e} / ‖q_i − ⟨q_i⟩‖_{∞,Ω} )
+#     μ_max|e = C2 · Δ  · (‖u‖ + c)_{∞,e}
+#     μ|e     = max(0, min(μ_max, μ_res))
+#
+#     R_i = (3qⁿ_i − 4qⁿ⁻¹_i + qⁿ⁻²_i)/(2Δt) − M⁻¹·RHS_i
+#
+# WHAT IS DIFFERENT FROM THE EULER-θ AND MHD PATHS, and why this is its own tag:
+#
+#  *  WAVE SPEED.  There is no sound speed here. The fast wave of the shallow
+#     water system is the GRAVITY wave, c = √φ = √(gh) — the same speed
+#     sphere_cfl_dt uses for the advective step — so μ_max = C2·Δ·(|u| + √φ).
+#     Reusing the Euler c = √(γp/ρ) would need an equation of state this system
+#     does not have.
+#
+#  *  NO ρ FACTOR.  μ above is KINEMATIC [m²/s], and on the shell it is applied
+#     by _sphere_visc_el! (src/kernel/operators/sphere_rhs.jl) directly to the
+#     CONSERVATIVE variables — ν∇ₛ²(φu), which is literally the δν∇²(φu) of the
+#     paper's Eq. (8b). The Euler-θ and MHD paths need the extra ρ̄ because
+#     their user_primitives! hands the viscous operator (u, v, θ) instead, so
+#     the coefficient there has to be dynamic. Here it must NOT be: multiplying
+#     by a "density" would be a units error, and φ is not one anyway.
+#
+#  *  ALL FOUR EQUATIONS ENTER THE RESIDUAL MAX. Unlike ψ in the GLM-MHD system,
+#     the fourth slot φw is not a numerical constraint carrier: the three
+#     Cartesian momentum components are one vector equation and none of them is
+#     distinguished. (What IS special about the normal direction is removed by
+#     the Lagrange projection, not by this model.)
+#
+#  *  ONE SHARED DENOMINATOR FOR THE THREE MOMENTUM SLOTS, and this is not a
+#     detail — it is what makes the model usable on the shell at all.
+#
+#     The normalization ‖q_i − ⟨q_i⟩‖_{∞,Ω} exists to turn each residual into a
+#     frequency, and it only means something if q_i actually has a scale. On a
+#     sphere the split of one tangent momentum vector into three CARTESIAN
+#     components is a property of the FRAME, not of the flow: a purely ZONAL
+#     jet — the Galewsky test, and every classic shallow-water test case with
+#     it — has u = u·e_λ with e_λ = (−sinλ, cosλ, 0), so its third component
+#     φw is IDENTICALLY ZERO everywhere and for all time. Its component-wise
+#     denominator is therefore exactly 0, while its residual is NOT: the φw
+#     equation carries a large Coriolis source, −f(x × φu)|_z ≈ −2Ω sinφ · r
+#     cosφ · φu, that the flux divergence cancels only to discretization error.
+#
+#     Normalizing that residual by a floor rather than by a scale inflates the
+#     φw ratio by the ratio of the two — measured on this case, ~260× — so the
+#     max_i is won by φw everywhere, μ_res saturates the C2·Δ·(|u|+c) cap on
+#     every element, and the model degenerates into uniform first-order-upwind
+#     dissipation. Which is exactly what it is designed NOT to be, and which on
+#     the shipped grid puts ν within a few percent of the diffusive stability
+#     limit: measured, the run reaches the cap at step 2 and dies at t ≈ 1100 s.
+#
+#     So the three momentum slots share
+#
+#         ‖φu − ⟨φu⟩‖_{∞,Ω} = max_x |(φu − ⟨φu⟩)(x)|   (Euclidean, 3-vector)
+#
+#     which is the norm of the one vector equation they are components of, and
+#     is frame-independent. A zonal jet then normalizes φw by the jet's own
+#     momentum scale, the φw ratio drops to the same order as the other three,
+#     and the max_i goes back to being a statement about the flow.
+#
+#  *  DENOMINATOR FLOORS built from the shallow-water scales rather than from a
+#     gas EOS:
+#
+#         φ           floor 1e-3 · φ̄
+#         φu, φv, φw  floor 1e-3 · φ̄ · c̄ ,   c̄ = √φ̄  (the shared value above)
+#
+#     Both are nonzero from t = 0 for the Galewsky jet, so on that case the
+#     floors never bind; they exist so a shell case started from a state of rest
+#     (a resting-atmosphere balance test, a bump on a flat ocean) does not
+#     divide a zero residual by machine eps in its first stage.
+#
+#  *  SERIAL. The shell path is single-rank by construction (drivers.jl refuses
+#     MPI.Comm_size > 1), so ⟨q_i⟩ and ‖q_i − ⟨q_i⟩‖_{∞,Ω} are computed without
+#     collectives. They are DOMAIN norms by definition, so the day the shell
+#     path is parallelised these two passes need MPI.Allreduce exactly as
+#     compute_dsgs_viscosity!(::DSGS_MHD) already does.
+#
+# PER-EQUATION SPLIT.  One coefficient per element, scaled slot by slot by the
+# deck's per-equation multiplier (built from :μ and :ivisc_equations in
+# build_sphere_viscosity):
+#
+#     μ_dsgs[e, ieq] = visc_coeff[ieq] · μ|e ,   ieq = 1..4
+#
+# so :ivisc_equations => [2,3,4] reproduces the paper's placement (momentum
+# only, continuity left strictly conservative) and [1,2,3,4] additionally damps
+# φ — which is what a shell run with NO modal filter needs, since continuous
+# Galerkin gives φ no upwinding and hence no dissipation of its own.
+#
+# Same function-barrier discipline as the other three paths: concrete argument
+# types, no params.* lookups, no allocations.
+# ================================================================================
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
+                                 ::DSGS_SW, ::NSD_2D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 avg::AbstractVector{TT},
+                                 denom::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δelem::AbstractVector{TT},
+                                 C1::TT, C2::TT,
+                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs = size(μ_dsgs, 2)
+    eps  = TT(1.0e-16)
+
+    # --- Pass 1: domain means ⟨q_i⟩ ------------------------------------
+    @inbounds for ieq = 1:neqs
+        avg[ieq] = zero(TT)
+    end
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                for ieq = 1:neqs
+                    avg[ieq] += q[ip,ieq]
+                end
+            end
+        end
+    end
+    inv_npts = one(TT)/TT(nelem*ngl*ngl)
+    @inbounds for ieq = 1:neqs
+        avg[ieq] *= inv_npts
+    end
+
+    # --- Pass 2: domain L∞ of |q_i − ⟨q_i⟩| ----------------------------
+    #
+    # NOTE this is a node-count mean over the LGL points, not the mass-weighted
+    # ∫q dΩ/∫dΩ. It is only ever used to CENTRE the L∞ norm below, so what it
+    # has to be is a representative value of the field, not a conserved
+    # integral — and the same choice is what the 1D, 2D-θ and MHD paths make.
+    #
+    # φ takes its own L∞; the momentum slots share the L∞ of the 3-vector
+    # deviation |φu − ⟨φu⟩|, for the frame-independence reason in the header.
+    denom_φ   = zero(TT)
+    denom_mom = zero(TT)
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                denom_φ = max(denom_φ, abs(q[ip,1] - avg[1]))
+                d2 = zero(TT)
+                for ieq = 2:neqs
+                    dq  = q[ip,ieq] - avg[ieq]
+                    d2 += dq*dq
+                end
+                denom_mom = max(denom_mom, d2)
+            end
+        end
+    end
+    denom_mom = sqrt(denom_mom)
+
+    # Physical-scale floors, from the mean state: φ̄ and the mean gravity-wave
+    # speed c̄ = √φ̄. See the header for when these bind.
+    φ_avg = max(abs(avg[1]), eps)
+    c_avg = sqrt(φ_avg)
+    rel   = TT(1.0e-3)
+    @inbounds begin
+        denom[1] = max(denom_φ, rel*φ_avg) + eps
+        mom_d    = max(denom_mom, rel*φ_avg*c_avg) + eps
+        for ieq = 2:neqs
+            denom[ieq] = mom_d
+        end
+    end
+
+    # --- Pass 3: per-element residual L∞, wave-speed cap, split --------
+    inv2Δt = one(TT)/(2*Δt)
+    @inbounds for ie = 1:nelem
+
+        # Marras's element length scale: shortest element chord / (N+1).
+        Δ = Δelem[ie]/ngl
+
+        ratio = zero(TT)      # max_i ‖R_i‖∞,e / denom_i
+        wmax  = zero(TT)      # (‖u‖ + √φ)∞,e
+
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                Mi = Minv[ip]
+
+                # Strong-form residual: rhs[] is the DSS-assembled WEAK-form
+                # RHS (sphere_rhs! divides by the mass matrix only after the
+                # viscous term is built), so it needs M⁻¹ for the difference
+                # with ∂q/∂t to be dimensionally meaningful.
+                for ieq = 1:neqs
+                    R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+                    ratio = max(ratio, R/denom[ieq])
+                end
+
+                # Gravity-wave speed c = √φ, exactly as in sphere_cfl_dt.
+                φl = max(q[ip,1], eps)
+                ul = q[ip,2]/φl
+                vl = q[ip,3]/φl
+                wl = q[ip,4]/φl
+                wmax = max(wmax, sqrt(ul*ul + vl*vl + wl*wl) + sqrt(φl))
+            end
+        end
+
+        μ_res = C1*Δ*Δ*ratio
+        μ_max = C2*Δ*wmax
+        μ     = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s
+
+        # One coefficient per element, scaled per equation by the deck's
+        # multiplier. NO ρ̄ factor: _sphere_visc_el! diffuses the CONSERVATIVE
+        # variables, so ν∇ₛ²(φu) wants the kinematic coefficient (header).
+        for ieq = 1:neqs
+            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ
         end
     end
 
