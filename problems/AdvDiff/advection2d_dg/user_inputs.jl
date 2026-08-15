@@ -7,6 +7,7 @@ function user_inputs()
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.025,
         :ndiagnostics_outputs => 10,
+        :diagnostics_at_times => collect(0.0:0.25:4.0),  # 17 frames: iter_1 (IC) … iter_17 (t=4); drives VTK cadence
         :lsource              => false,
         #:backend              => MetalBackend(),
         #:CL                   => NCL(), #CL() is defaults
@@ -26,7 +27,7 @@ function user_inputs()
         # NOTE: :lkep must stay unset/false under DiscGal — the KEP volume path
         # (_expansion_inviscid_KEP!) dispatches on AD and has no DiscGal method.
         :ivisc_equations      => [1],
-        :μ                    => [0.1], #kinematic viscosity constant for θ equation
+        :μ                    => [0.0], #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
