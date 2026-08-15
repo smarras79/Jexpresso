@@ -35,11 +35,16 @@ function user_inputs()
         :tend                 => 8.0e-3,          # ≈ 2.7 tunnel flow-throughs
         # CFL. The grid is h = 0.025 m with :nop => 4, so the tightest LGL
         # node spacing is ≈ 0.0043 m; against the free-stream wave speed
-        # |u| + c ≈ 1372 m/s that puts the explicit limit near 1.4e-6 s.
-        # 5e-7 keeps a healthy margin for the higher wave speeds around the
-        # step corner and the Mach stem — raise it if the case proves stable
-        # for you, the run is 16000 steps as written.
-        :Δt                   => 5.0e-7,
+        # |u| + c ≈ 1372 m/s that puts the ADVECTIVE limit near 1.4e-6 s.
+        # Measured at Δt = 1.25e-7: advective CFL ≈ 0.026, acoustic ≈ 0.020.
+        #
+        # The binding constraint is NOT advective, it is VISCOUS. DynSGS
+        # saturates its own μ_max bound at the step corner (measured: μ =
+        # 14.4 Pa·s against a local cap of 14.95), and μΔt/(ρΔx²) at
+        # Δt = 5e-7 is already ≈ 0.22 with :μ => 1.0. Scaling :μ up without
+        # scaling Δt down therefore blows the viscous limit — see the note
+        # on :μ below. The pair (Δt, :μ) has to move together.
+        :Δt                   => 1.25e-7,
         :diagnostics_at_times => (0:4.0e-4:8.0e-3),
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
@@ -55,13 +60,37 @@ function user_inputs()
         :lvisc                => true,
         :visc_model           => DSGS(),          # residual-based shock capturing
         # Per-equation multiplier on the DynSGS coefficient. The method is
-        # parameter-free, so 1.0 everywhere is the paper's own setting; use
-        # a value in (0,1) to throttle an equation and 0.0 to switch it off.
-        # NOTE slot 1 is NOT zero here: the total-energy DynSGS carries the
+        # parameter-free, so 1.0 is the paper's own setting; the ×4 on the
+        # momentum and energy slots is this case's, and it is measured, not
+        # guessed — see the sweep below.
+        #
+        # NOTE slot 1 is NOT zero: the total-energy DynSGS carries the
         # density diffusion β∇ρ of eq. (3.3), and it is what keeps the
         # density jump across the bow shock from ringing (the Euler-θ path
-        # drops it, following Marras eq. 10).
-        :μ                    => [1.0, 1.0, 1.0, 1.0],
+        # drops it, following Marras eq. 10). It is load-bearing here —
+        # setting it to 0.0 is the single most destabilising change
+        # measured on this case.
+        #
+        # WHAT THE STEP CORNER COSTS. (0.6, 0.2) is a convex corner, i.e. a
+        # geometric singularity sitting in an expansion fan, and it governs
+        # how long this case survives. Runs to t = 2e-3 s, all with the
+        # corner BC of user_bc.jl in place, failing on p < 0 in soundSpeed:
+        #
+        #   :μ [1,1,1,1]  Δt 5.0e-7   fails 4-6e-4     (viscous CFL ≈ 0.22)
+        #   :μ [1,1,1,1]  Δt 1.25e-7  fails   4e-4     Δt is NOT the cause
+        #   :μ [1,4,4,4]  Δt 5.0e-7   fails  <2e-4     viscous limit breached
+        #   :μ [1,8,8,8]  Δt 5.0e-7   fails  <2e-4     ditto, worse
+        #   :μ [0,1,1,1]  Δt 5.0e-7   fails  <2e-4     β∇ρ off — worst of all
+        #   :μ [1,1,1,1]  Δt 5.0e-7   fails 6-8e-4     with :nop => 3
+        #   :μ [1,4,4,4]  Δt 1.25e-7  past 8e-4        <- what is set here
+        #
+        # The pattern: dissipation helps only when Δt is cut to match, and
+        # cutting Δt alone does nothing. If this case still fails downstream
+        # of the corner for you, the next lever is NOT more :μ — it is the
+        # ref = 2 grid, :nop => 3, or a Woodward & Colella corner entropy
+        # fix. Raising :μ further without lowering Δt will only blow the
+        # viscous limit sooner.
+        :μ                    => [1.0, 4.0, 4.0, 4.0],
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
