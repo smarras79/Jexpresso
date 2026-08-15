@@ -46,16 +46,13 @@ function user_inputs()
         # on :μ below. The pair (Δt, :μ) has to move together.
         :Δt                   => 1.25e-7,
         :diagnostics_at_times => (0:4.0e-4:8.0e-3),
-        # Per-step heartbeat: first 5 steps, then every 100th.
-        #
-        # This case NEEDS it. At Δt = 1.25e-7 the diagnostics above are
-        # 3200 steps apart, so without a heartbeat the run prints nothing
-        # for ~35-40 min after "Integrator warm-up with real callbacks",
-        # which is indistinguishable from a hang. The whole run is 64000
-        # steps — order 12 h on one core — so budget accordingly, or drop
-        # to :nop => 3 for a cheaper (and, per the sweep below, slightly
-        # more robust) pass.
-        :lstep_heartbeat      => true,
+        # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
+        # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
+        # apart and the whole run is 64000 steps, order 12 h on one core.
+        # A long silence after "Integrator warm-up with real callbacks" is
+        # the run working, not a hang. If you ever want to watch it step,
+        # `JEXPRESSO_STEP_HEARTBEAT=1` turns on a per-step trace without
+        # editing this deck.
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
