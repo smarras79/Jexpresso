@@ -77,6 +77,21 @@ const CI_CASES = CICase[
     CICase(eqs = "Helmholtz", case = "case1", timeout = 10),
     CICase(eqs = "AdvDiff", case = "2d_Laguerre", timeout = 18),
     CICase(eqs = "ShallowWater", case = "SoliWaveIsland", timeout = 11),
+    # The spherical shell. These two are the same Galewsky jet on the same
+    # cubed sphere, differing only in the stabilization (modal filter + constant
+    # ν vs. the residual-based DynSGS model), so running both is what keeps the
+    # comparison between them honest.
+    #
+    # ~170 s and ~140 s of solve respectively on a developer machine, plus
+    # process start-up; the timeout is set well above that because a GitHub
+    # runner is the slower machine. Their references carry, besides the
+    # conservative state, the RELATIVE VORTICITY — the field the Galewsky test
+    # is judged on, since h barely moves while the instability develops — and,
+    # for the DynSGS case, the four per-equation eddy viscosities the model
+    # produced. Checking the state alone would leave the thing each case exists
+    # to compute uncovered.
+    CICase(eqs = "ShallowWater", case = "SWsphere",     timeout = 20),
+    CICase(eqs = "ShallowWater", case = "SWsphereDSGS", timeout = 20),
     #<< test/generate_ci_ref.jl inserts new cases above this line >>
 
     #--------------------------------------------------------------------------

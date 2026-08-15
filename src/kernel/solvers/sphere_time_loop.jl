@@ -751,7 +751,8 @@ function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
     outformat = get(inputs, :outformat, VTK())
 
     if outformat isa HDF5
-        _sphere_write_hdf5!(q, mesh, inputs, OUTPUT_DIR, iout, t; verbose = verbose)
+        _sphere_write_hdf5!(q, mesh, inputs, OUTPUT_DIR, iout, t;
+                            verbose = verbose, extra = extra)
         return nothing
     elseif !(outformat isa VTK)
         return nothing
@@ -787,8 +788,20 @@ end
 # copy is deliberate: a @view of the first neqs columns is not contiguous, and
 # `vec` of it would not be the layout write_hdf5 indexes into.
 #
+# THE DERIVED FIELDS GO IN TOO, one file each — the same `extra` set the VTK
+# writer receives, i.e. the relative vorticity and, under DynSGS, the
+# per-equation eddy viscosity mu_dsgs_<var>. They are not solution variables, so
+# they do not belong in the var_<ieq> series that read_hdf5 walks on restart;
+# they get their own <name>_<rank>.h5 alongside it.
+#
+# This is not decoration. ζ is the field the Galewsky test is actually judged on
+# — h barely moves while the instability develops — and ν(x,t) IS the DynSGS
+# model's output, so a reference solution that omits them checks the state and
+# not the two things the cases exist to produce. test/ci_compare.jl compares
+# every .h5 it finds, so writing them here is also what puts them under CI.
+#
 function _sphere_write_hdf5!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
-                             iout::Int, t::Float64; verbose = true)
+                             iout::Int, t::Float64; verbose = true, extra = nothing)
 
     npoin = Int(mesh.npoin)
     neqs  = Int(q.neqs)
@@ -798,6 +811,36 @@ function _sphere_write_hdf5!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
                OUTPUT_DIR, inputs, q.qvars;
                iout = iout, nvar = neqs, case = string(get(inputs, :case, "")))
 
-    verbose && @printf(" #   wrote var_1..%d_<rank>.h5 at t = %.1f s\n", neqs, t)
+    nextra = _sphere_write_hdf5_extra!(extra, OUTPUT_DIR, npoin)
+
+    verbose && @printf(" #   wrote var_1..%d_<rank>.h5%s at t = %.1f s\n",
+                       neqs, nextra == 0 ? "" : string(" + ", nextra, " derived field(s)"), t)
     return nothing
+end
+
+#
+# One .h5 per derived field, holding the nodal values under "q" — the same
+# dataset name the var_ files use, so test/ci_compare.jl's read_h5 needs no
+# special case and reports the field by its file name when it moves.
+#
+# Base.invokelatest for the same reason write_hdf5 uses it: _ensure_hdf5_loaded!
+# @eval's `using HDF5` at run time, which bumps the world age past the one this
+# function was compiled in.
+#
+function _sphere_write_hdf5_extra!(extra, OUTPUT_DIR::String, npoin::Int)
+
+    extra === nothing && return 0
+    isempty(extra)    && return 0
+
+    _ensure_hdf5_loaded!()
+    rank = MPI.Comm_rank(get_mpi_comm())
+
+    n = 0
+    for (name, vals) in extra
+        vec_out   = Float64.(@view vals[1:npoin])
+        fout_name = string(OUTPUT_DIR, "/", String(name), "_", rank, ".h5")
+        Base.invokelatest(h5open, fid -> write(fid, "q", vec_out), fout_name, "w")
+        n += 1
+    end
+    return n
 end
