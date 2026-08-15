@@ -55,6 +55,7 @@
 export sphere_time_loop!
 export sphere_cfl_dt
 export sphere_diagnostics
+export sphere_output_times
 export sphere_dsgs_mu_bound
 export sphere_dsgs_init_history!
 export sphere_dsgs_roll_history!
@@ -105,6 +106,57 @@ function sphere_cfl_dt(q::AbstractMatrix{TF}, mesh::St_mesh,
     end
 
     return Δt
+end
+
+
+#---------------------------------------------------------------------------------
+# sphere_output_times(inputs, tinit, tend) -> Vector{Float64}, ascending
+#
+# WHEN the run writes. Two schedules, in priority order, because Jexpresso has
+# two ways of asking and the shell has to understand BOTH:
+#
+#   :ndiagnostics_outputs => n > 0    n equally spaced writes, the last at :tend.
+#                                     What the decks in problems/ use.
+#   :diagnostics_at_times => times    an explicit list. What the flat time loop
+#                                     (TimeIntegrators.jl) has always used, and
+#                                     what CI_MODE sets — see below.
+#
+# THIS FUNCTION IS WHY ShallowWater/SWsphere COULD NOT RUN UNDER CI. The shell
+# loop used to read :ndiagnostics_outputs and nothing else, and the two keys are
+# not independent: setting :diagnostics_at_times makes mod_inputs_user_inputs!
+# zero :ndiagnostics_outputs (mod_inputs.jl, the else branch at ~line 560), on
+# the reasoning that a deck naming explicit times does not also want a uniform
+# cadence. CI_MODE sets :diagnostics_at_times => [tend] (run.jl) to force the
+# single reference write. So under CI the shell saw
+#
+#     :ndiagnostics_outputs = 0   ⇒   nout = 0   ⇒   no write ever fires
+#
+# and, with CI_MODE's :lwrite_initial => false killing the initial write too,
+# the case solved all the way to :tend and produced NOT ONE FILE. The failure
+# surfaced as run_ci_case's "the solver returned without writing any HDF5
+# output", which reads like a blow-up and is not one: the solve is fine, the
+# schedule was empty.
+#
+# Times at or before :tinit are dropped — the initial state is written
+# separately, by :lwrite_initial — and the list is sorted and de-duplicated so
+# the monitor can walk it with a single index.
+#---------------------------------------------------------------------------------
+function sphere_output_times(inputs, tinit::Float64, tend::Float64)
+
+    nout = Int(get(inputs, :ndiagnostics_outputs, 0))
+    if nout > 0
+        outdt = (tend - tinit)/nout
+        return Float64[tinit + k*outdt for k = 1:nout]
+    end
+
+    raw = get(inputs, :diagnostics_at_times, nothing)
+    raw === nothing && return Float64[]
+
+    times = raw isa Number ? Float64[Float64(raw)] : collect(Float64, raw)
+    # `> tinit`, strictly: mod_inputs_user_inputs! defaults
+    # :diagnostics_at_times to :tend, so a deck that sets neither key still gets
+    # exactly one write, at the end.
+    return sort!(unique!(filter(x -> x > tinit, times)))
 end
 
 
@@ -344,9 +396,7 @@ mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT}
     npoin::Int
     nsteps::Int
     nprint::Int
-    nout::Int
-    outdt::Float64
-    tnext::Float64
+    touts::Vector{Float64}     # the output times, ascending (see sphere_output_times)
     iout::Int
     verbose::Bool
 end
@@ -364,7 +414,8 @@ function (due::St_sphere_monitor_due)(u, t, integrator)
     mon   = due.mon
     istep = integrator.stats.naccept
     return (mon.verbose && (istep % mon.nprint == 0 || istep >= mon.nsteps)) ||
-           (mon.iout < mon.nout && t >= mon.tnext - 1.0e-9*integrator.dt)
+           (mon.iout < length(mon.touts) &&
+            t >= mon.touts[mon.iout+1] - 1.0e-9*integrator.dt)
 end
 
 function (mon::St_sphere_monitor)(integrator)
@@ -408,7 +459,15 @@ function (mon::St_sphere_monitor)(integrator)
     end
 
     #--- output
-    if t >= mon.tnext - 1.0e-9*integrator.dt && mon.iout < mon.nout
+    #
+    # `while`, not `if`: two requested output times can fall inside one step
+    # (:diagnostics_at_times is arbitrary, and the shell takes a fixed Δt with
+    # no tstops), and skipping the second would silently drop a file the deck
+    # asked for. Each pass writes its own numbered file, all with the state at
+    # this step.
+    #
+    while mon.iout < length(mon.touts) &&
+          t >= mon.touts[mon.iout+1] - 1.0e-9*integrator.dt
         mon.iout += 1
         # _sphere_write! reads q.qn (through user_uout!), and the integrator
         # works on its own copy of the state, so refresh it first.
@@ -418,7 +477,6 @@ function (mon::St_sphere_monitor)(integrator)
                        verbose = mon.verbose,
                        extra = ("vorticity" => mon.ζ,
                                 sphere_dsgs_extra(mon.sp, mon.mesh, mon.q.qvars)...))
-        mon.tnext += mon.outdt
     end
 
     return nothing
@@ -541,8 +599,7 @@ function _sphere_march!(mesh::St_mesh,
         @warn " # sphere_time_loop.jl: :ode_adaptive_solver is ignored on the shell; the CFL step is fixed."
 
     #--- output times
-    nout   = Int(get(inputs, :ndiagnostics_outputs, 10))
-    outdt  = nout > 0 ? (tend - t)/nout : Inf
+    touts  = sphere_output_times(inputs, t, tend)
     nprint = Int(get(inputs, :ndiagnostics_prints, max(1, nsteps ÷ 20)))
 
     if verbose
@@ -564,6 +621,25 @@ function _sphere_march!(mesh::St_mesh,
         end
         sp.lfilter || sp.lvisc ||
             @warn " # sphere_time_loop.jl: BOTH :lfilter and :lvisc are off. The inviscid unfiltered shell solution grows grid-scale modes and is expected to blow up (Marras/Kopera/Giraldo 2015, section 4.2)."
+        #
+        # Say the schedule out loud. An empty one is a legitimate request
+        # (:lgrid_only-style runs, a timing measurement) and an easy accident —
+        # it is how ShallowWater/SWsphere silently produced nothing under CI —
+        # so it is reported rather than left to be discovered by an empty
+        # directory at the end of the run.
+        #
+        _fmt = get(inputs, :outformat, VTK())
+        if isempty(touts)
+            println(" #   output: none scheduled — no :ndiagnostics_outputs > 0 and no :diagnostics_at_times",
+                    get(inputs, :lwrite_initial, true) == true ?
+                        " (the initial state is still written)" : ", and :lwrite_initial is false")
+        elseif !(_fmt isa VTK || _fmt isa HDF5)
+            println(" #   output: ", length(touts), " time(s) scheduled but :outformat => ",
+                    nameof(typeof(_fmt)), " writes nothing on the shell (VTK and HDF5 are implemented)")
+        else
+            @printf(" #   output: %d × %s, first at t = %.1f s, last at t = %.1f s\n",
+                    length(touts), nameof(typeof(_fmt)), first(touts), last(touts))
+        end
     end
 
     # relative vorticity: the field the Galewsky test is judged on. h barely
@@ -593,7 +669,7 @@ function _sphere_march!(mesh::St_mesh,
 
     monitor = St_sphere_monitor(q, mesh, metrics, sp, inputs, SVT, OUTPUT_DIR,
                                 ζ, ζ0, mass0, ener0, npoin, nsteps, nprint,
-                                nout, outdt, t + outdt, 0, verbose)
+                                touts, 0, verbose)
 
     # save_positions = (false,false): the monitor only reads the state, so there
     # is no need to snapshot it around the callback.
@@ -655,14 +731,31 @@ end
 
 
 #
-# Refresh the primitive output fields through the case's own user_uout! and
-# write one VTK file. Numbered files, one per output time, as the flat cases do.
+# One output time. Numbered files, as the flat cases do.
+#
+# THE FORMAT IS THE DECK'S :outformat, not VTK unconditionally. VTK is what a
+# human wants and what every deck in problems/ asks for, but it is not the only
+# consumer: CI_MODE forces :outformat => "hdf5" because the reference comparison
+# in test/ci_compare.jl reads HDF5, and a shell case that wrote .vtu anyway
+# produced output the suite could not see. (That was the second half of why
+# ShallowWater/SWsphere could not run under CI — see sphere_output_times for the
+# first.) Anything else, including the default NONE(), writes nothing; a deck
+# that names no format is asking for none.
 #
 function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
                         iout::Int, t::Float64, SVT; verbose = true, lwrite = true,
                         extra = nothing)
 
     lwrite || return nothing
+
+    outformat = get(inputs, :outformat, VTK())
+
+    if outformat isa HDF5
+        _sphere_write_hdf5!(q, mesh, inputs, OUTPUT_DIR, iout, t; verbose = verbose)
+        return nothing
+    elseif !(outformat isa VTK)
+        return nothing
+    end
 
     # λ and φ let user_uout! write the velocity PROJECTED ONTO THE SHELL
     # (zonal, meridional, radial) instead of raw Cartesian components.
@@ -675,5 +768,36 @@ function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
     write_vtk_sphere_grid(mesh, fname, OUTPUT_DIR; q = q, extra = extra, verbose = false)
 
     verbose && @printf(" #   wrote %s.vtu at t = %.1f s\n", fname, t)
+    return nothing
+end
+
+
+#
+# The HDF5 branch: the CONSERVATIVE state, through the same write_hdf5 the flat
+# cases use, so the files are the var_<ieq>_<rank>.h5 + t.h5 set that
+# test/ci_compare.jl knows how to read and diff.
+#
+# Conservative (q.qn), not the shell-projected primitives of q.qout: this is a
+# reference solution, so what belongs in it is what the scheme integrates, and
+# it is also what the flat path writes (TimeIntegrators.jl hands write_output
+# the solution vector with params.qp.qvars as the names).
+#
+# q.qn is npoin × (neqs+1) and write_hdf5 wants a flat npoin*nvar vector laid
+# out variable by variable, so the extra trailing column is dropped here. The
+# copy is deliberate: a @view of the first neqs columns is not contiguous, and
+# `vec` of it would not be the layout write_hdf5 indexes into.
+#
+function _sphere_write_hdf5!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
+                             iout::Int, t::Float64; verbose = true)
+
+    npoin = Int(mesh.npoin)
+    neqs  = Int(q.neqs)
+
+    title = @sprintf("Spherical shell solution at t=%.6f", t)
+    write_hdf5(mesh.SD, mesh, vec(q.qn[1:npoin, 1:neqs]), q.qe, t, title,
+               OUTPUT_DIR, inputs, q.qvars;
+               iout = iout, nvar = neqs, case = string(get(inputs, :case, "")))
+
+    verbose && @printf(" #   wrote var_1..%d_<rank>.h5 at t = %.1f s\n", neqs, t)
     return nothing
 end

@@ -59,6 +59,15 @@ Output, in `problems/ShallowWater/SWsphere/output/`:
 | `sphere_grid_ho.vtu` | the initial state |
 | `sphere_0001.vtu` … | one per output time, `:ndiagnostics_outputs` of them |
 
+**When** the run writes is `:ndiagnostics_outputs => n` (n equally spaced times,
+the last at `:tend`) or, if that is zero, the explicit list `:diagnostics_at_times`
+— the same two keys the flat time loop honours, and the same precedence. They are
+coupled: `mod_inputs_user_inputs!` zeroes the first whenever the deck sets the
+second. **In what format** is `:outformat`; the shell implements `"vtk"` and
+`"hdf5"`, the latter being what `CI_MODE=true` forces so `test/ci_compare.jl` can
+diff the run against a reference. The banner prints the resulting schedule, so a
+run that is about to write nothing says so before it starts rather than after.
+
 Each file is the high-order grid — **(ngl-1)² sub-elements per spectral
 element**, exactly as `write_vtk_grid_only` does for the flat cases, so every
 LGL node is a corner of a sub-cell and the linear elements are never written on
