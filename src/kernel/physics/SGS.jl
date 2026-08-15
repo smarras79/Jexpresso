@@ -643,6 +643,21 @@ end
 # function-barrier discipline as the 1D variant — no params accesses,
 # no struct constructions, no allocations.
 #
+# `ltheta` selects which system slot 4 belongs to, and is passed down
+# from inputs[:energy_equation] by the rhs.jl call site:
+#
+#   ltheta = true  (default, :energy_equation => "theta")
+#       q = (ρ, ρu, ρv, ρθ), the Marras et al. (2015) Euler-θ form
+#       implemented in the body below.
+#
+#   ltheta = false (:energy_equation => "energy")
+#       q = (ρ, ρu, ρv, ρE), the total-energy form of Nazarov &
+#       Hoffman, Int. J. Numer. Meth. Fluids 71 (2013) 339-357,
+#       eq. (3.4)-(3.7) — see _dsgs_2d_energy! below. This is the
+#       variant to use for shock capturing: across a shock ρθ is not
+#       conserved, so the θ system cannot carry the right shock speed
+#       in the first place.
+#
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_2D,
                                  q::AbstractMatrix{TT},
@@ -657,7 +672,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Δelem::AbstractVector{TT},
                                  PhysConst::PhysicalConst{TT},
                                  Pr::TT,
-                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+                                 nelem::Int, ngl::Int;
+                                 ltheta::Bool=true) where {TT<:AbstractFloat, TI<:Integer}
+
+    if !ltheta
+        _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs, Minv, visc_coeff,
+                         Δt, connijk, Δelem, PhysConst, Pr, nelem, ngl)
+        return nothing
+    end
 
     # Marras et al. (JCP 2015) eq. (8-10), implemented exactly as in
     # the lineage from fp/mymaster — the version that was already
@@ -802,6 +824,196 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,2] = visc_coeff[2] * μ_dyn                # ρu (eq. 10a)
         μ_dsgs[ie,3] = visc_coeff[3] * μ_dyn                # ρv (eq. 10a)
         μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ_dyn     # ρθ (eq. 10b)
+    end
+
+    return nothing
+end
+
+# ================================================================================
+# Residual-based artificial viscosity (DynSGS) — 2D, compressible Euler in
+# TOTAL-ENERGY form q = (ρ, ρu, ρv, ρE).
+#
+#   M. Nazarov, J. Hoffman, "Residual-based artificial viscosity for
+#   simulation of turbulent compressible flow using adaptive finite element
+#   methods", Int. J. Numer. Meth. Fluids 71 (2013) 339-357.
+#
+# This is the shock-capturing variant. The Euler-θ version above transports
+# ρθ, which is an entropy variable: it is constant across a contact but NOT
+# conserved across a shock, so no amount of stabilization makes that system
+# produce the right shock speed. Slot 4 here is ρE, the conserved total
+# energy, and the viscosity is built from the residual of that system.
+#
+# Per element K, with a constant Δt and the BDF2 stencil over the three
+# stored states (qⁿ, qⁿ⁻¹, qⁿ⁻²)  —  paper eq. (3.4):
+#
+#     R_ρ = (3ρⁿ − 4ρⁿ⁻¹ + ρⁿ⁻²)/(2Δt) + ∇·(ρu)
+#     R_m = (3mⁿ − 4mⁿ⁻¹ + mⁿ⁻²)/(2Δt) + ∇·(m⊗u + pI)
+#     R_E = (3Eⁿ − 4Eⁿ⁻¹ + Eⁿ⁻²)/(2Δt) + ∇·((E + p)u)
+#
+# The divergence terms are read off the assembled inviscid RHS: `rhs` is
+# the DSS-assembled WEAK-form residual (rhs! divides by the mass matrix
+# later), so it is multiplied by M⁻¹ here to get ∂q/∂t units — same
+# convention as the 1D and MHD implementations in this file.
+#
+# Then eq. (3.5)-(3.7):
+#
+#     μ₁|K   = C1·h_K²·‖ρ−ρ̄‖_{∞,Ω}·max( ‖R_ρ‖_{∞,K}/‖ρ−ρ̄‖_{∞,Ω},
+#                                        ‖R_m‖_{∞,K}/‖m−m̄‖_{∞,Ω},
+#                                        ‖R_E‖_{∞,K}/‖E−Ē‖_{∞,Ω} )
+#     μ_max|K = C2·h_K·‖ρ‖_{∞,K}·‖ |u| + √(γT) ‖_{∞,K}
+#     μ|K     = min(μ_max|K, μ₁|K)
+#     κ|K     = P/(γ−1)·μ|K            (heat conduction, on ∇T)
+#     β|K     = μ|K/‖ρ‖_{∞,K}          (density diffusion, on ∇ρ)
+#
+# with C1 = 1, C2 = 0.5 and P ≈ 0.1 the artificial Prandtl number
+# (inputs[:Pr]). NOTE that the leading ‖ρ−ρ̄‖_{∞,Ω} factor in μ₁ and the
+# ‖ρ‖_{∞,K} factor in μ_max make μ a DYNAMIC viscosity, which is what
+# _expansion_visc! wants for the momentum slots — so, unlike the θ path
+# above, there is no separate ρ̄_el multiplication at the end.
+#
+# T is the paper's temperature, T = E/ρ − |u|²/2, i.e. the specific
+# internal energy in the paper's cv = 1 scaling (p = (γ−1)ρT, eq. 2.3).
+# It stays dimensionally consistent in SI: T = p/((γ−1)ρ) = cv·T_physical.
+# The case's user_primitives! must therefore put THAT quantity in slot 4
+# for the κ·∇T flux to match eq. (3.3) — see
+# problems/CompEuler/ffs_step/user_primitives.jl.
+#
+# Unlike the θ path, ρ is NOT left undiffused: eq. (3.3) carries β∇ρ in
+# the mass flux, and for shock capturing it is what keeps the density
+# jump from ringing. The user's inputs[:μ][1] multiplier scales it and
+# can switch it off with 0.0.
+#
+# ⟨q⟩ and ‖q−⟨q⟩‖_{∞,Ω} are DOMAIN norms by definition, so the two
+# reductions are MPI-global — a rank-local version would make the
+# viscosity depend on the partitioning. That costs the only two
+# allocations in this routine (a 5- and a 3-element reduction buffer, once
+# per RHS call, NOT per node); everything inside the element loops is
+# allocation-free, same discipline as the other implementations here.
+# ================================================================================
+function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
+                          q::AbstractMatrix{TT},
+                          q1::AbstractMatrix{TT},
+                          q2::AbstractMatrix{TT},
+                          rhs::AbstractMatrix{TT},
+                          Minv::AbstractVector{TT},
+                          visc_coeff::AbstractVector{TT},
+                          Δt::TT,
+                          connijk::AbstractArray{TI,4},
+                          Δelem::AbstractVector{TT},
+                          PhysConst::PhysicalConst{TT},
+                          Pr::TT,
+                          nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+
+    γ    = PhysConst.γ
+    γm1  = γ - one(TT)
+    C1   = TT(1.0)
+    C2   = TT(0.5)
+    eps  = TT(1.0e-16)
+    comm = MPI.COMM_WORLD
+
+    # --- Pass 1: domain means ⟨ρ⟩, ⟨ρu⟩, ⟨ρv⟩, ⟨ρE⟩ --------------------
+    ρ_avg = zero(TT); ρu_avg = zero(TT)
+    ρv_avg = zero(TT); ρE_avg = zero(TT)
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                ρ_avg  += q[ip,1]
+                ρu_avg += q[ip,2]
+                ρv_avg += q[ip,3]
+                ρE_avg += q[ip,4]
+            end
+        end
+    end
+    sums = TT[ρ_avg, ρu_avg, ρv_avg, ρE_avg, TT(nelem*ngl*ngl)]
+    MPI.Allreduce!(sums, MPI.SUM, comm)
+    inv_npts = one(TT)/max(sums[5], one(TT))
+    ρ_avg  = sums[1]*inv_npts; ρu_avg = sums[2]*inv_npts
+    ρv_avg = sums[3]*inv_npts; ρE_avg = sums[4]*inv_npts
+
+    # --- Pass 2: domain L∞ of |q − ⟨q⟩| --------------------------------
+    #
+    # The momentum norm is the one the paper writes, ‖m − m̄‖_{∞,Ω} on the
+    # momentum VECTOR, not two independent per-component norms.
+    dρ = zero(TT); dm = zero(TT); dE = zero(TT)
+    @inbounds for ie = 1:nelem
+        for j = 1:ngl
+            for i = 1:ngl
+                ip  = connijk[ie,i,j,1]
+                du  = q[ip,2] - ρu_avg
+                dv  = q[ip,3] - ρv_avg
+                dρ  = max(dρ, abs(q[ip,1] - ρ_avg))
+                dm  = max(dm, sqrt(du*du + dv*dv))
+                dE  = max(dE, abs(q[ip,4] - ρE_avg))
+            end
+        end
+    end
+    norms = TT[dρ, dm, dE]
+    MPI.Allreduce!(norms, MPI.MAX, comm)
+    dρ = norms[1]; dm = norms[2]; dE = norms[3]
+
+    # Physical-scale floors. A uniform free stream — which is exactly the
+    # t = 0 state of a shock-tube or a supersonic-inflow problem — has
+    # ‖q−⟨q⟩‖_{∞,Ω} = 0 identically, and R/eps would then blow the ratio
+    # up and pin μ at the μ_max cap over the whole domain before any
+    # flow structure exists. Each denominator is floored at a small
+    # fraction (1e-3) of that field's natural scale, built from the mean
+    # state; the floor vanishes from the picture as soon as real
+    # perturbations grow past it.
+    ρ_ref = max(abs(ρ_avg), eps)
+    p_avg = γm1*max(ρE_avg - TT(0.5)*(ρu_avg*ρu_avg + ρv_avg*ρv_avg)/ρ_ref, zero(TT))
+    c_avg = sqrt(max(γ*p_avg/ρ_ref, eps))
+    rel   = TT(1.0e-3)
+    dρ = max(dρ, rel*ρ_ref)              + eps
+    dm = max(dm, rel*ρ_ref*c_avg)        + eps
+    dE = max(dE, rel*ρ_ref*c_avg*c_avg)  + eps
+
+    # --- Pass 3: per-element residual L∞, wave-speed cap, split --------
+    inv2Δt = one(TT)/(2*Δt)
+    @inbounds for ie = 1:nelem
+
+        # Marras's element length scale: min edge / (N+1). Δelem[ie] is
+        # the min corner-to-corner distance in the element, ngl = N+1.
+        h = Δelem[ie]/ngl
+
+        ratio = zero(TT)   # max_i ‖R_i‖_{∞,K}/‖q_i − ⟨q_i⟩‖_{∞,Ω}
+        wmax  = zero(TT)   # ‖ |u| + √(γT) ‖_{∞,K}
+        ρmax  = zero(TT)   # ‖ρ‖_{∞,K}
+
+        for j = 1:ngl
+            for i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                Mi = Minv[ip]
+
+                Rρ  = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
+                Rmu = (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
+                Rmv = (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+                Rm  = sqrt(Rmu*Rmu + Rmv*Rmv)
+                RE  = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - Mi*rhs[ip,4])
+
+                ratio = max(ratio, Rρ/dρ, Rm/dm, RE/dE)
+
+                ρl = max(q[ip,1], eps)
+                ul = q[ip,2]/ρl
+                vl = q[ip,3]/ρl
+                # T = E/ρ − |u|²/2 (paper eq. 3.2, cv = 1 scaling), clamped
+                # at zero so a transient negative internal energy in an
+                # under-resolved cell cannot produce a NaN wave speed.
+                Tl = max(q[ip,4]/ρl - TT(0.5)*(ul*ul + vl*vl), zero(TT))
+                wmax = max(wmax, sqrt(ul*ul + vl*vl) + sqrt(γ*Tl))
+                ρmax = max(ρmax, ρl)
+            end
+        end
+
+        # eq. (3.5)-(3.7). Both branches carry a density, so μ is DYNAMIC.
+        μ_res = C1*h*h*dρ*ratio
+        μ_cap = C2*h*ρmax*wmax
+        μ     = max(zero(TT), min(μ_cap, μ_res))
+
+        μ_dsgs[ie,1] = visc_coeff[1] * μ/max(ρmax, eps)   # β on ∇ρ
+        μ_dsgs[ie,2] = visc_coeff[2] * μ                  # μ on ∇u
+        μ_dsgs[ie,3] = visc_coeff[3] * μ                  # μ on ∇v
+        μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ       # κ on ∇T
     end
 
     return nothing
