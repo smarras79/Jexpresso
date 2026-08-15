@@ -38,8 +38,8 @@
 # equations. The model itself is compute_dsgs_viscosity!(::DSGS_SW, ::NSD_2D) in
 # src/kernel/physics/SGS.jl; what lives here is the plumbing — the per-element Δ,
 # the second element loop the residual forces (see the DynSGS block in
-# _sphere_rhs_kernel! for why it cannot be folded into the first), and the nodal
-# broadcast for output. DSGS.md §5 is the write-up; the case is
+# _sphere_rhs_kernel! for why it cannot be folded into the first), and the
+# packaging of ν|e for output. DSGS.md §5 is the write-up; the case is
 # problems/ShallowWater/SWsphereDSGS.
 #
 # ALSO HERE: the modal filter. The paper applies a Boyd-Vandeven filter at every
@@ -59,7 +59,6 @@ export build_sphere_filter_matrix
 export sphere_relative_vorticity!
 export sphere_dsgs_requested
 export build_sphere_element_size
-export sphere_dsgs_nodal!
 export sphere_dsgs_extra
 
 
@@ -85,7 +84,6 @@ mutable struct St_sphere_params{TFloat}
     ldsgs   ::Bool             # residual-based ν, recomputed every RK stage
     Δelem   ::Array{TFloat, 1} # nelem : shortest element chord, the Δ of the model
     μ_dsgs  ::Array{TFloat, 2} # nelem × neqs : ν|e per equation, this stage
-    μ_pnode ::Array{TFloat, 2} # npoin × neqs : the same, broadcast to nodes for VTK
     qnm1    ::Array{TFloat, 2} # npoin × neqs : qⁿ⁻² of the BDF2 residual
     qnm2    ::Array{TFloat, 2} # npoin × neqs : qⁿ⁻¹  (see the roll in sphere_time_loop.jl)
     davg    ::Array{TFloat, 1} # neqs : ⟨q_i⟩ scratch
@@ -140,7 +138,6 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                                 ldsgs,
                                 Δelem,
                                 zeros(TF, ndsgs_e, neqs),
-                                zeros(TF, ndsgs_p, neqs),
                                 zeros(TF, ndsgs_p, neqs),
                                 zeros(TF, ndsgs_p, neqs),
                                 zeros(TF, neqs),
@@ -552,37 +549,47 @@ end
 
 
 #---------------------------------------------------------------------------------
-# sphere_dsgs_nodal!(sp, mesh)  and  sphere_dsgs_extra(sp, mesh, qvars)
+# sphere_dsgs_extra(sp, qvars) -> tuple of name => per-ELEMENT vector
 #
-# The per-element coefficients broadcast onto nodes and packaged as VTK point
-# fields named after the equation each one damps — `mu_dsgs_phi`,
-# `mu_dsgs_phiu`, … — the same convention the flat DSGS paths use for their
-# `.pvtu` output (DSGS.md §6).
+# The DynSGS coefficients, packaged for the writers. PER ELEMENT, one value
+# each, because that is exactly what they are: the model produces one ν|e per
+# element and per RK stage. `write_vtk_sphere_grid` takes these as `extra_cell`
+# and writes them as VTK CELL data.
 #
-# The values are PIECEWISE CONSTANT PER ELEMENT by construction, and a shared
-# (DSS) node takes whichever element writes it last. That is fine for looking at
-# where the model is active and useless as a nodal field; do not differentiate
-# it. What it is written for is the question the model exists to answer — is the
-# viscosity sitting on the fronts, or is it smeared over the whole shell?
+# They used to be broadcast onto nodes and written as point data, which is how
+# a field that tracks the jet closely (measured: r = +0.79 against both |∇ₛφ|
+# and |ζ|, and 5.2× more viscosity inside the jet band than outside) came out
+# looking like noise: a node on an element boundary can hold only one of its
+# elements' values, and the renderer then interpolates between those arbitrary
+# picks, speckling every seam.
+#
+# HOW MANY FIELDS. Marras eq. (10) is one element coefficient scaled per
+# equation by the deck's multiplier, so when those multipliers are all equal —
+# which is the shipped SWsphereDSGS deck, :μ => 1.0 on all four equations —
+# every slot holds the SAME NUMBER and writing four copies of it is noise that
+# invites the reader to look for a difference that cannot exist. One field,
+# `mu_dsgs`, is written in that case. When the multipliers differ (the paper's
+# :ivisc_equations => [2,3,4] leaves slot 1 at zero, say) the per-equation
+# fields carry real information and are written individually as
+# `mu_dsgs_<var>`, the same names the flat DSGS paths use (DSGS.md §6).
 #
 # They are the coefficients of the LAST RK stage of the last completed step, not
 # a step average. Since the output cadence is hours and the step is ~a minute,
 # that is a snapshot of a quantity that varies from stage to stage; compare a
 # field against itself over time rather than reading a single value as exact.
 #---------------------------------------------------------------------------------
-function sphere_dsgs_nodal!(sp::St_sphere_params, mesh::St_mesh)
-    sp.ldsgs || return sp.μ_pnode
-    broadcast_dsgs_to_nodes!(sp.μ_pnode, sp.μ_dsgs, mesh.connijk,
-                             Int(mesh.nelem), Int(mesh.ngl), NSD_2D())
-    return sp.μ_pnode
-end
+function sphere_dsgs_extra(sp::St_sphere_params, qvars)
 
-function sphere_dsgs_extra(sp::St_sphere_params, mesh::St_mesh, qvars)
     sp.ldsgs || return ()
-    sphere_dsgs_nodal!(sp, mesh)
+
     neqs = Int(sp.neqs)
-    return ntuple(ieq -> string("mu_dsgs_", ieq <= length(qvars) ? String(qvars[ieq]) : string(ieq)) =>
-                         @view(sp.μ_pnode[:, ieq]), neqs)
+    uniform = all(ieq -> sp.μ[ieq] == sp.μ[1], 1:neqs)
+
+    uniform && return ("mu_dsgs" => @view(sp.μ_dsgs[:, 1]),)
+
+    return ntuple(ieq -> string("mu_dsgs_",
+                                ieq <= length(qvars) ? String(qvars[ieq]) : string(ieq)) =>
+                         @view(sp.μ_dsgs[:, ieq]), neqs)
 end
 
 

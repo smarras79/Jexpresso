@@ -713,9 +713,10 @@ end
 function write_vtk_sphere_grid(mesh::St_mesh,
                                file_name::String,
                                OUTPUT_DIR::String;
-                               q       = nothing,
-                               extra   = nothing,
-                               verbose = true)
+                               q          = nothing,
+                               extra      = nothing,
+                               extra_cell = nothing,
+                               verbose    = true)
 
     if !isdir(OUTPUT_DIR)
         mkpath(OUTPUT_DIR)
@@ -851,11 +852,41 @@ function write_vtk_sphere_grid(mesh::St_mesh,
     end
 
     #
-    # Anything else the caller wants on the file (relative vorticity, …).
+    # Anything else the caller wants on the file (relative vorticity, …), as
+    # NODAL fields.
     #
     if extra !== nothing
         for (name, vals) in extra
             vtkf[String(name), VTKPointData()] = Float64.(@view vals[1:mesh.npoin])
+            nq += 1
+        end
+    end
+
+    #
+    # PER-ELEMENT fields, written as VTK CELL data — one value per spectral
+    # element, repeated over that element's (ngl-1)² sub-cells.
+    #
+    # This is for quantities that ARE piecewise constant per element, the DynSGS
+    # eddy viscosity being the case in point. Writing such a field as point data
+    # is actively misleading: a node on an element boundary belongs to several
+    # elements and can only carry one value, so it takes whichever element wrote
+    # it last, and the renderer then interpolates between those arbitrary picks.
+    # The result is speckle along every element seam — a field that tracks the
+    # flow perfectly well LOOKS like noise. As cell data it renders as the flat
+    # per-element patches it actually is.
+    #
+    if extra_cell !== nothing
+        for (name, vals) in extra_cell
+            length(vals) == nelem ||
+                error(string(" # ERROR write_output.jl: cell field '", name, "' has ",
+                             length(vals), " entries, but the mesh has ", nelem,
+                             " elements. Per-element fields go in `extra_cell`, nodal ones in `extra`."))
+            cell_vals = Vector{Float64}(undef, nsub)
+            isel = 1
+            for iel = 1:nelem, _ = 1:(ngl-1)*(ngl-1)
+                cell_vals[isel] = Float64(vals[iel]); isel += 1
+            end
+            vtkf[String(name), VTKCellData()] = cell_vals
             nq += 1
         end
     end

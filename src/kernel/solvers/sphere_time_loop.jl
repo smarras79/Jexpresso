@@ -475,8 +475,8 @@ function (mon::St_sphere_monitor)(integrator)
         sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
         _sphere_write!(mon.q, mon.mesh, mon.inputs, mon.OUTPUT_DIR, mon.iout, t, mon.SVT;
                        verbose = mon.verbose,
-                       extra = ("vorticity" => mon.ζ,
-                                sphere_dsgs_extra(mon.sp, mon.mesh, mon.q.qvars)...))
+                       extra      = ("vorticity" => mon.ζ,),
+                       extra_cell = sphere_dsgs_extra(mon.sp, mon.q.qvars))
     end
 
     return nothing
@@ -662,7 +662,8 @@ function _sphere_march!(mesh::St_mesh,
     # ParaView can animate it without a gap at frame 0.
     _sphere_write!(q, mesh, inputs, OUTPUT_DIR, 0, t, SVT; verbose = verbose,
                    lwrite = get(inputs, :lwrite_initial, true) == true,
-                   extra = ("vorticity" => ζ, sphere_dsgs_extra(sp, mesh, q.qvars)...))
+                   extra      = ("vorticity" => ζ,),
+                   extra_cell = sphere_dsgs_extra(sp, q.qvars))
 
     params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0),
                                   npoin, neqs)
@@ -744,7 +745,7 @@ end
 #
 function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
                         iout::Int, t::Float64, SVT; verbose = true, lwrite = true,
-                        extra = nothing)
+                        extra = nothing, extra_cell = nothing)
 
     lwrite || return nothing
 
@@ -752,7 +753,7 @@ function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
 
     if outformat isa HDF5
         _sphere_write_hdf5!(q, mesh, inputs, OUTPUT_DIR, iout, t;
-                            verbose = verbose, extra = extra)
+                            verbose = verbose, extra = extra, extra_cell = extra_cell)
         return nothing
     elseif !(outformat isa VTK)
         return nothing
@@ -766,7 +767,8 @@ function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
     end
 
     fname = iout == 0 ? "sphere_grid_ho" : @sprintf("sphere_%04d", iout)
-    write_vtk_sphere_grid(mesh, fname, OUTPUT_DIR; q = q, extra = extra, verbose = false)
+    write_vtk_sphere_grid(mesh, fname, OUTPUT_DIR; q = q, extra = extra,
+                          extra_cell = extra_cell, verbose = false)
 
     verbose && @printf(" #   wrote %s.vtu at t = %.1f s\n", fname, t)
     return nothing
@@ -801,7 +803,8 @@ end
 # every .h5 it finds, so writing them here is also what puts them under CI.
 #
 function _sphere_write_hdf5!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
-                             iout::Int, t::Float64; verbose = true, extra = nothing)
+                             iout::Int, t::Float64; verbose = true,
+                             extra = nothing, extra_cell = nothing)
 
     npoin = Int(mesh.npoin)
     neqs  = Int(q.neqs)
@@ -811,7 +814,8 @@ function _sphere_write_hdf5!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
                OUTPUT_DIR, inputs, q.qvars;
                iout = iout, nvar = neqs, case = string(get(inputs, :case, "")))
 
-    nextra = _sphere_write_hdf5_extra!(extra, OUTPUT_DIR, npoin)
+    nextra  = _sphere_write_hdf5_extra!(extra,      OUTPUT_DIR)
+    nextra += _sphere_write_hdf5_extra!(extra_cell, OUTPUT_DIR)
 
     verbose && @printf(" #   wrote var_1..%d_<rank>.h5%s at t = %.1f s\n",
                        neqs, nextra == 0 ? "" : string(" + ", nextra, " derived field(s)"), t)
@@ -827,7 +831,7 @@ end
 # @eval's `using HDF5` at run time, which bumps the world age past the one this
 # function was compiled in.
 #
-function _sphere_write_hdf5_extra!(extra, OUTPUT_DIR::String, npoin::Int)
+function _sphere_write_hdf5_extra!(extra, OUTPUT_DIR::String)
 
     extra === nothing && return 0
     isempty(extra)    && return 0
@@ -837,7 +841,7 @@ function _sphere_write_hdf5_extra!(extra, OUTPUT_DIR::String, npoin::Int)
 
     n = 0
     for (name, vals) in extra
-        vec_out   = Float64.(@view vals[1:npoin])
+        vec_out   = Float64.(vals)
         fout_name = string(OUTPUT_DIR, "/", String(name), "_", rank, ".h5")
         Base.invokelatest(h5open, fid -> write(fid, "q", vec_out), fout_name, "w")
         n += 1

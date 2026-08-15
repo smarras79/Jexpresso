@@ -153,10 +153,13 @@ function user_inputs()
         :filter_order         => 8,
         :filter_kcut          => 2/3,
         #---------------------------------------------------------------------------
-        # Plotting parameters. The VTK files carry, on top of the SWsphere
-        # fields, one `mu_dsgs_<var>` point field per equation: the element
-        # coefficient the model chose, broadcast to nodes. That is the field to
-        # look at to see whether the viscosity is tracking the fronts.
+        # Plotting parameters. On top of the SWsphere fields the VTK files
+        # carry `mu_dsgs` as CELL data — the element coefficient the model
+        # chose, one value per element, which is what it is. One field and not
+        # four because :μ below is the same on all four equations, so the four
+        # per-equation slots hold the same number; set :μ to a non-uniform
+        # vector and they are written separately. See the README for what the
+        # field correlates with (the jet, r = 0.79; the grid, r = 0.01).
         #---------------------------------------------------------------------------
         :outformat            => "vtk",
         :loverwrite_output    => true,

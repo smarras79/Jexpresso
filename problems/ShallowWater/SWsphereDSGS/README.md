@@ -52,14 +52,73 @@ output time, carrying everything the `SWsphere` files carry —
 
 | field | what it is |
 |---|---|
-| `mu_dsgs_phi` | ν the model chose for the continuity equation |
-| `mu_dsgs_phiu`, `mu_dsgs_phiv`, `mu_dsgs_phiw` | ν for the three momentum components |
+| `mu_dsgs` | ν the model chose, **VTK cell data**, one value per element |
 
-These are **piecewise constant per element** by construction (a shared node
-takes whichever element writes it last), and they are the coefficients of the
-last RK stage of the last completed step. Look at them to answer the question
-the model exists to answer: *is the viscosity sitting on the fronts, or is it
-smeared over the whole shell?* Do not differentiate them.
+**One field, not four, and cell data rather than point data.** Both are worth
+explaining, because the obvious alternatives are actively misleading.
+
+*One field*: Marras eq. (10) produces **one** coefficient per element, which is
+then scaled per equation by the deck's `:μ` multiplier. This deck sets
+`:μ => 1.0` on all four equations, so all four slots hold the **same number** —
+writing `mu_dsgs_phi`, `mu_dsgs_phiu`, … would be four identical copies,
+inviting you to look for a difference that cannot exist. When the multipliers
+*do* differ (the paper's `:ivisc_equations => [2,3,4]` leaves the continuity
+slot at zero) the per-equation fields carry real information and are written
+individually as `mu_dsgs_<var>`.
+
+*Cell data*: ν is piecewise constant per element, and that is exactly what VTK
+cell data represents. Written as **point** data it has to be broadcast to
+nodes, and a node on an element boundary belongs to several elements, so it can
+only hold one of their values — whichever wrote it last — after which the
+renderer interpolates between those arbitrary picks. The result is speckle
+along every element seam: **a field that tracks the jet closely comes out
+looking like noise.** As cell data it renders as the flat per-element patches
+it actually is.
+
+They are the coefficients of the last RK stage of the last completed step, not
+a step average. Do not differentiate them.
+
+### What ν is actually tracking
+
+Measured on the day-6 state (`tools`-free: read the run's own
+`mu_dsgs_0.h5`, `var_1_0.h5` and `vorticity_0.h5` and correlate per element):
+
+| ν against | Pearson r |
+|---|---|
+| Δ_e² — the grid's own element-size pattern | **+0.01** |
+| \|∇ₛφ\| — the height gradient, i.e. where the jet is | **+0.79** |
+| \|ζ\| | **+0.79** |
+| \|∇ₛζ\| | +0.57 |
+| \|latitude\| | +0.26 |
+
+and, splitting the shell by the jet band (25.7°–64.3° N, the Galewsky profile's
+own support, 148 of 600 elements):
+
+| | mean ν |
+|---|---|
+| inside the jet band | 2.01·10⁵ |
+| outside | 3.89·10⁴ |
+| **ratio** | **5.2×** |
+
+So the model is not decorating the mesh: its correlation with the grid is
+**zero to two decimal places**, and it puts five times more viscosity on the
+quarter of the shell the jet occupies. The ten elements carrying the most ν all
+sit between 31° and 57° latitude, inside the jet.
+
+Two honest caveats on how strong a statement that is:
+
+* **max/mean ν is only 5.2** (range 7.7·10³ to 4.1·10⁵). For a shock-capturing
+  sensor you would want orders of magnitude. There is **no shock in this test** —
+  the Galewsky jet is a smooth, well-resolved shear flow — so a broad ν tracking
+  the jet's shear is the correct behaviour here, not a weak version of shock
+  capturing. This case demonstrates that the sensor is *selective*, not that it
+  is *sharp*; `test/test_sphere_dsgs.jl` measures the sharp behaviour separately
+  by putting an actual sub-element front on the shell (~34× the smooth-flow
+  viscosity, concentrated: mean/max ≈ 0.12).
+* ν correlates better with the jet's **amplitude** (|ζ|, |∇ₛφ|) than with its
+  sharpest **gradients** (|∇ₛζ|, r = 0.57). That is what the residual is: in a
+  balanced jet the Coriolis and pressure-gradient terms nearly cancel, and what
+  survives scales with the jet strength.
 
 The run also prints, every `:ndiagnostics_prints` steps:
 

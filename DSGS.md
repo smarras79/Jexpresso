@@ -523,6 +523,17 @@ other two 2D paths.
 :dsgs_Prt   => 0.7,           # DSGS_MHD only
 ```
 
+On the **shell** the same coefficients are written as VTK **cell** data — one
+value per element, which is what they are — under the single name `mu_dsgs`
+when the `:μ` multipliers are uniform, and as `mu_dsgs_<var>` per equation when
+they are not. Writing a piecewise-constant-per-element field as point data
+makes a shared node take whichever element wrote it last and the renderer
+interpolate between those picks, which speckles every element seam and makes a
+field that tracks the flow closely look like noise. Measured on the Galewsky
+jet at day 6, ν correlates at r = +0.79 with both |∇ₛφ| and |ζ| and at r =
++0.01 with the element size, and is 5.2× larger inside the jet band than
+outside — see the case README.
+
 ⚠ On the shell, `:μ` is the **dimensionless** multiplier of §5.3, not a
 viscosity in m²/s — the model supplies $\nu$ itself. It defaults to 1.0 there
 (rather than 0.0), and `build_sphere_viscosity` rejects values above 100 so that
