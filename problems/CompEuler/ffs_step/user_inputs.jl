@@ -46,6 +46,16 @@ function user_inputs()
         # on :μ below. The pair (Δt, :μ) has to move together.
         :Δt                   => 1.25e-7,
         :diagnostics_at_times => (0:4.0e-4:8.0e-3),
+        # Per-step heartbeat: first 5 steps, then every 100th.
+        #
+        # This case NEEDS it. At Δt = 1.25e-7 the diagnostics above are
+        # 3200 steps apart, so without a heartbeat the run prints nothing
+        # for ~35-40 min after "Integrator warm-up with real callbacks",
+        # which is indistinguishable from a hang. The whole run is 64000
+        # steps — order 12 h on one core — so budget accordingly, or drop
+        # to :nop => 3 for a cheaper (and, per the sweep below, slightly
+        # more robust) pass.
+        :lstep_heartbeat      => true,
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
@@ -113,6 +123,19 @@ function user_inputs()
         :lwrite_initial       => true,
         :output_dir           => "./output",
         :loutput_pert         => false,           # plot the total state
+        # Numerical schlieren from ρ, computed at output times only
+        # (kernel/physics/schlieren.jl). Adds two point-data fields to the
+        # VTU on top of :outvars —
+        #   schlieren_grad_rho  |∇ρ| [kg/m⁴], quantitative
+        #   schlieren           exp(-k|∇ρ|/max|∇ρ|), the picture
+        # For the familiar dark-shock look, colour "schlieren" with a
+        # REVERSED greyscale in ParaView. This is the field to look at on
+        # this case: the bow shock, its reflection off the roof, the Mach
+        # stem and the slip line downstream of the triple point are all
+        # density features, and the exponential map keeps the weak ones
+        # visible next to the strong bow shock.
+        :lschlieren           => true,
+        :schlieren_k          => 20.0,            # contrast; Hadjadj uses 10-100
         #---------------------------------------------------------------------------
         # AMR off: the mesh already resolves the shocks at h/nop = 1/80, and
         # DynSGS is what handles what is left under-resolved.

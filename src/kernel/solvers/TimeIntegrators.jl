@@ -267,7 +267,8 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe,
-                     μ_dsgs_pnode = (params.VT == DSGS() || params.VT == DSGS_MHD()) ? params.μ_dsgs_pnode : nothing)
+                     μ_dsgs_pnode = (params.VT == DSGS() || params.VT == DSGS_MHD()) ? params.μ_dsgs_pnode : nothing,
+                     schlieren = maybe_compute_schlieren(inputs, params, u))
         if (lwrite_time == true)
             append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
         end
@@ -404,7 +405,8 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe,
-                         μ_dsgs_pnode = (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD()) ? integrator.p.μ_dsgs_pnode : nothing)
+                         μ_dsgs_pnode = (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD()) ? integrator.p.μ_dsgs_pnode : nothing,
+                         schlieren = maybe_compute_schlieren(inputs, integrator.p, integrator.u))
             # The DSGS viscosity panel is rendered by the 1D PNG writer
             # itself (write_output -> plot_results, fed by μ_dsgs_pnode
             # above) so that the whole output time is a single GR render:

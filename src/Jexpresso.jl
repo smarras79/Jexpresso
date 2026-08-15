@@ -155,6 +155,7 @@ include(joinpath( "kernel", "physics", "microphysics.jl"))
 include(joinpath( "kernel", "physics", "saturation.jl"))
 
 include(joinpath( "kernel", "physics", "soundSpeed.jl"))
+include(joinpath( "kernel", "physics", "schlieren.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 

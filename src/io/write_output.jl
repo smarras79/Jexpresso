@@ -92,7 +92,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::NONE;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
     nothing
 end
 
@@ -111,7 +111,7 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -160,7 +160,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
 
     #
     # 2D PNG of q(t): one colored map per variable and output time.
@@ -242,7 +242,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -254,7 +254,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
                   iout=iout, nvar=nvar, qexact=qexact, case=case,
-                  μ_dsgs_pnode=μ_dsgs_pnode)
+                  μ_dsgs_pnode=μ_dsgs_pnode, schlieren=schlieren)
         
     else
         #VERIFY THIS on GPU
@@ -276,7 +276,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     varnames, outvarnames,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="",
-                    μ_dsgs_pnode=nothing)
+                    μ_dsgs_pnode=nothing, schlieren=nothing)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -314,7 +314,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="",
-                   μ_dsgs_pnode=nothing)
+                   μ_dsgs_pnode=nothing, schlieren=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -423,20 +423,35 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
             end
         end
 
+        # Numerical schlieren (see kernel/physics/schlieren.jl). Written
+        # straight to the file rather than through user_uout!, so switching
+        # it on is one line in user_inputs.jl and needs no change to the
+        # case's qoutvars or its user_uout! — which matters because not
+        # every case's user_uout! accepts extra keyword arguments.
+        #
+        #   schlieren_grad_rho : |∇ρ| [kg/m⁴], quantitative
+        #   schlieren          : exp(-k|∇ρ|/max|∇ρ|) ∈ [e^-k, 1], the image
+        #                        — plot greyscale REVERSED for the familiar
+        #                        dark-shock schlieren look
+        if schlieren !== nothing && size(schlieren, 1) == npoin
+            vtkf["schlieren_grad_rho", VTKPointData()] = @view(schlieren[1:npoin, 1])
+            vtkf["schlieren",          VTKPointData()] = @view(schlieren[1:npoin, 2])
+        end
+
         vtkf
     end
-    
+
     outfiles = map(vtk_save, vtkfile)
-    
+
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs,
                    varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="",
-                   μ_dsgs_pnode=nothing)
+                   μ_dsgs_pnode=nothing, schlieren=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -879,7 +894,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::HDF5;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
