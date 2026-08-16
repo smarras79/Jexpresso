@@ -431,8 +431,8 @@ end
 # is multiplied by Minv[ip] inline before the BDF2 minus, which makes
 # μ_dsgs dimensionally a kinematic viscosity (m²/s) regardless of SD.
 #
-# Both numerators and denominators are global L∞ norms so the
-# coefficient cannot be inlined into the (k,l) loop the way
+# Both numerators and denominators are L∞ norms over the rank's whole
+# subdomain, so the coefficient cannot be inlined into the (k,l) loop the way
 # SMAG/VREM are — it is precomputed once per RHS call into the
 # pre-allocated μ_dsgs[1:nelem] buffer. SGS_diffusion(::DSGS, ::SD)
 # is the standard per-quadrature-point accessor — the caller updates
@@ -883,12 +883,20 @@ end
 # jump from ringing. The user's inputs[:μ][1] multiplier scales it and
 # can switch it off with 0.0.
 #
-# ⟨q⟩ and ‖q−⟨q⟩‖_{∞,Ω} are DOMAIN norms by definition, so the two
-# reductions are MPI-global — a rank-local version would make the
-# viscosity depend on the partitioning. That costs the only two
-# allocations in this routine (a 5- and a 3-element reduction buffer, once
-# per RHS call, NOT per node); everything inside the element loops is
-# allocation-free, same discipline as the other implementations here.
+# ⟨q⟩ and ‖q−⟨q⟩‖ are RANK-LOCAL, as they already are in the 1D and Euler-θ
+# implementations above. They are only the normalising scale of the residual
+# indicator: what the model needs from them is the order of magnitude of the
+# solution's variation, and a partition of a connected domain sees that scale
+# just as well as the whole domain does. Making them MPI-global cost two
+# Allreduce per RHS call — ten per step under a five-stage RK, on the critical
+# path of every rank — which at scale dominated the model. The price is that μ
+# is no longer bit-identical across different rank counts; it is a subgrid
+# indicator that is bounded by min(μ_res, μ_max) either way, so the flow
+# solution is unaffected beyond the usual round-off divergence.
+#
+# Everything in this routine is allocation-free, including these norms now
+# that the reduction buffers are gone — same discipline as the other
+# implementations here.
 # ================================================================================
 function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           q::AbstractMatrix{TT},
@@ -909,9 +917,8 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
     C1   = TT(1.0)
     C2   = TT(0.5)
     eps  = TT(1.0e-16)
-    comm = MPI.COMM_WORLD
 
-    # --- Pass 1: domain means ⟨ρ⟩, ⟨ρu⟩, ⟨ρv⟩, ⟨ρE⟩ --------------------
+    # --- Pass 1: rank-local means ⟨ρ⟩, ⟨ρu⟩, ⟨ρv⟩, ⟨ρE⟩ ----------------
     ρ_avg = zero(TT); ρu_avg = zero(TT)
     ρv_avg = zero(TT); ρE_avg = zero(TT)
     @inbounds for ie = 1:nelem
@@ -925,13 +932,11 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
-    sums = TT[ρ_avg, ρu_avg, ρv_avg, ρE_avg, TT(nelem*ngl*ngl)]
-    MPI.Allreduce!(sums, MPI.SUM, comm)
-    inv_npts = one(TT)/max(sums[5], one(TT))
-    ρ_avg  = sums[1]*inv_npts; ρu_avg = sums[2]*inv_npts
-    ρv_avg = sums[3]*inv_npts; ρE_avg = sums[4]*inv_npts
+    inv_npts = one(TT)/max(TT(nelem*ngl*ngl), one(TT))
+    ρ_avg  *= inv_npts; ρu_avg *= inv_npts
+    ρv_avg *= inv_npts; ρE_avg *= inv_npts
 
-    # --- Pass 2: domain L∞ of |q − ⟨q⟩| --------------------------------
+    # --- Pass 2: rank-local L∞ of |q − ⟨q⟩| ----------------------------
     #
     # The momentum norm is the one the paper writes, ‖m − m̄‖_{∞,Ω} on the
     # momentum VECTOR, not two independent per-component norms.
@@ -948,9 +953,6 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
-    norms = TT[dρ, dm, dE]
-    MPI.Allreduce!(norms, MPI.MAX, comm)
-    dρ = norms[1]; dm = norms[2]; dE = norms[3]
 
     # Physical-scale floors. A uniform free stream — which is exactly the
     # t = 0 state of a shock-tube or a supersonic-inflow problem — has
@@ -1094,9 +1096,13 @@ end
 # k = μ_dyn·cp/Pr_t. Rewriting in terms of T gives the coefficient
 # k/R = μ_dyn·γ/((γ−1)·Pr_t), since cp = γR/(γ−1).
 #
-# All reductions are MPI-global: ⟨q⟩ and ‖q−⟨q⟩‖_{∞,Ω} are domain norms by
-# definition, so a rank-local version would make the viscosity depend on
-# the partitioning.
+# All reductions are RANK-LOCAL, matching _dsgs_2d_energy! and the 1D and
+# Euler-θ implementations. ⟨q⟩ and ‖q−⟨q⟩‖ are only the normalising scale of
+# the residual indicator, and a partition of a connected domain resolves that
+# scale as well as the whole domain does; three Allreduce per RHS call —
+# fifteen per step under a five-stage RK — is not worth making μ bit-identical
+# across rank counts. `comm` is kept in the signature for callers and for a
+# future opt-in global mode.
 # ================================================================================
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS_MHD, ::NSD_2D,
@@ -1120,7 +1126,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     γm1  = γ - one(TT)
     eps  = TT(1.0e-16)
 
-    # --- Pass 1: domain means ⟨q_i⟩ ------------------------------------
+    # --- Pass 1: rank-local means ⟨q_i⟩ --------------------------------
     @inbounds for ieq = 1:neqs
         avg[ieq] = zero(TT)
     end
@@ -1134,15 +1140,12 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
-    npts_local = TT(nelem*ngl*ngl)
-    npts_glob  = MPI.Allreduce(npts_local, MPI.SUM, comm)
-    MPI.Allreduce!(avg, MPI.SUM, comm)
-    inv_npts = one(TT)/max(npts_glob, one(TT))
+    inv_npts = one(TT)/max(TT(nelem*ngl*ngl), one(TT))
     @inbounds for ieq = 1:neqs
         avg[ieq] *= inv_npts
     end
 
-    # --- Pass 2: domain L∞ of |q_i − ⟨q_i⟩| ----------------------------
+    # --- Pass 2: rank-local L∞ of |q_i − ⟨q_i⟩| ------------------------
     @inbounds for ieq = 1:neqs
         denom[ieq] = zero(TT)
     end
@@ -1156,7 +1159,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
-    MPI.Allreduce!(denom, MPI.MAX, comm)
 
     # Physical-scale floors (see header). Built from the mean state:
     #   ρ̄, the mean sound-ish speed c̄, and the mean field strength.

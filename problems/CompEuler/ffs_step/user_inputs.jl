@@ -38,7 +38,8 @@ function user_inputs()
         # CFL. The grid is h = 0.025 m with :nop => 4, so the tightest LGL
         # node spacing is ≈ 0.0043 m; against the free-stream wave speed
         # |u| + c ≈ 1372 m/s that puts the ADVECTIVE limit near 1.4e-6 s.
-        # Measured at Δt = 1.25e-7: advective CFL ≈ 0.026, acoustic ≈ 0.020.
+        # With :init_refine_lvl => 2 below, every one of those numbers
+        # shrinks by 4 (element size) and the viscous one by 16 (Δx²).
         #
         # The binding constraint is NOT advective, it is VISCOUS. DynSGS
         # saturates its own μ_max bound at the step corner (measured: μ =
@@ -46,6 +47,21 @@ function user_inputs()
         # Δt = 5e-7 is already ≈ 0.22 with :μ => 1.0. Scaling :μ up without
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
+        #
+        # NOTE on the CFL lines this run prints. Until the fix in
+        # kernel/physics/soundSpeed.jl they were all wrong, and all in the
+        # reassuring direction: the advective one was built from max(ρu),
+        # the acoustic one from c alone instead of |u|+c, the length scale
+        # was Δelem/nop instead of the (1.45x smaller) LGL node gap, and —
+        # worst — the viscous one used maximum(inputs[:μ]) = 4.0 as if the
+        # multiplier below were a viscosity, so it printed 4.0·Δt/Δs² and
+        # was unrelated to the DynSGS field the run applies. Corrected, the
+        # viscous number here is the largest of the three and roughly 2x
+        # what used to be printed. It is still O(0.1), so do NOT read a
+        # small max(CFL) on this case as headroom: what actually kills the
+        # run at larger Δt is the step corner (p < 0), not linear stability
+        # — see the sweep under :μ below, where cutting Δt alone changes
+        # nothing.
         :Δt                   => 0.5e-7,
         :diagnostics_at_times => (0:5.0e-5:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
