@@ -886,6 +886,25 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_Prt))
         inputs[:dsgs_Prt] = 0.7
     end
+    # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖.
+    #
+    #   false (default) : rank-local. No communication at all.
+    #   true            : the domain norms of Marras eq. (9) / Nazarov &
+    #                     Hoffman eq. (3.5). Costs 2-3 MPI Allreduce per RHS
+    #                     call — 10-15 per step under a five-stage RK — on
+    #                     every rank's critical path.
+    #
+    # These two quantities only set the SCALE the element residual is measured
+    # against, and a partition of a connected domain resolves that scale as
+    # well as the whole domain does, so the default costs nothing and changes
+    # the solution only at round-off level. Set it true when μ has to be
+    # reproducible across rank counts (bit-for-bit regression tests), or when
+    # a rank's subdomain genuinely cannot see the solution's scale. Serial
+    # runs are unaffected either way. See kernel/physics/SGS.jl
+    # (_dsgs_norm_scope) and ENVIRONMENT_VARIABLES.md.
+    if(!haskey(inputs, :ldsgs_global_norms))
+        inputs[:ldsgs_global_norms] = false
+    end
 
     #
     # Viscous models:

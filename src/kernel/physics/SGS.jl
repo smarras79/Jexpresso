@@ -431,8 +431,10 @@ end
 # is multiplied by Minv[ip] inline before the BDF2 minus, which makes
 # μ_dsgs dimensionally a kinematic viscosity (m²/s) regardless of SD.
 #
-# Both numerators and denominators are L∞ norms over the rank's whole
-# subdomain, so the coefficient cannot be inlined into the (k,l) loop the way
+# Both numerators and denominators are L∞ norms over a region larger than
+# one element — the rank's subdomain by default, the whole domain under
+# :ldsgs_global_norms (see _dsgs_norm_scope below) — so the coefficient
+# cannot be inlined into the (k,l) loop the way
 # SMAG/VREM are — it is precomputed once per RHS call into the
 # pre-allocated μ_dsgs[1:nelem] buffer. SGS_diffusion(::DSGS, ::SD)
 # is the standard per-quadrature-point accessor — the caller updates
@@ -527,6 +529,40 @@ end
 
 end
 
+# ================================================================================
+# _dsgs_norm_scope — how far the DynSGS normalising scales reach
+#
+# Every implementation below normalises the element residual by a mean ⟨q_i⟩
+# and an L∞ spread ‖q_i − ⟨q_i⟩‖. Marras eq. (9) and Nazarov & Hoffman
+# eq. (3.5) write both over the whole domain Ω. Under MPI that is a
+# collective, and it is on the critical path of every rank on EVERY RHS call
+# — five times per step under CarpenterKennedy2N54, times two or three
+# reductions each.
+#
+# Default: RANK-LOCAL (`lglobal_norms = false`). These two quantities only set
+# the SCALE the residual indicator is measured against; what the model needs
+# from them is the order of magnitude of the solution's variation, and a
+# partition of a connected domain resolves that as well as the whole domain
+# does. μ is bounded by min(μ_res, μ_max) either way, so the flow solution
+# differs only at the level of the usual round-off divergence. No
+# communication at all.
+#
+# Opt-in: the paper's domain norms, with
+#
+#     :ldsgs_global_norms => true      # in user_inputs.jl
+#
+# threaded down from rhs.jl. Use it when you want μ reproducible across rank
+# counts — a regression test that compares fields bit-for-bit between a
+# 1-rank and an N-rank run — or when a subdomain genuinely cannot see the
+# solution's scale (a partition that lies entirely inside a uniform region
+# while the interesting structure lives on another rank). Costs 2-3
+# Allreduce per RHS call.
+#
+# The communicator is Jexpresso's own get_mpi_comm(), NOT MPI.COMM_WORLD:
+# under MPMD coupling COMM_WORLD also carries Alya's ranks, which never call
+# into DynSGS, so a collective on it deadlocks every Jexpresso rank.
+# ================================================================================
+
 # ---------------- 1D --------------------------------------------------
 #
 # Conservation form q = (ρ, ρu, ρE) on a 1D LGL mesh. The signature is
@@ -545,7 +581,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Δt::TT,
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
-                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+                                 nelem::Int, ngl::Int;
+                                 lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     # 1D CompEuler in total-energy form q = (ρ, ρu, ρE). Marras's
     # unified formula gives ONE residual-based coefficient per element;
@@ -567,7 +604,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     # but the 1D test cases (case1, sod1d) have qe ≈ 0 so subtracting
     # it would not change the denominators meaningfully.
 
-    # --- Pass 1: domain averages of q ----------------------------------
+    # --- Pass 1: averages of q (see _dsgs_norm_scope) -------------------
     ρ_avg  = zero(TT); ρu_avg = zero(TT); ρE_avg = zero(TT)
     @inbounds for ie = 1:nelem
         for i = 1:ngl
@@ -577,11 +614,18 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             ρE_avg += q[ip,3]
         end
     end
-    ρ_avg  *= invnp
-    ρu_avg *= invnp
-    ρE_avg *= invnp
+    if lglobal_norms
+        sums = TT[ρ_avg, ρu_avg, ρE_avg, TT(nelem*ngl)]
+        MPI.Allreduce!(sums, MPI.SUM, get_mpi_comm())
+        invnp_g = one(TT)/max(sums[4], one(TT))
+        ρ_avg = sums[1]*invnp_g; ρu_avg = sums[2]*invnp_g; ρE_avg = sums[3]*invnp_g
+    else
+        ρ_avg  *= invnp
+        ρu_avg *= invnp
+        ρE_avg *= invnp
+    end
 
-    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    # --- Pass 2: L∞ norms of |q - ⟨q⟩| ---------------------------------
     denom1 = zero(TT); denom2 = zero(TT); denom3 = zero(TT)
     @inbounds for ie = 1:nelem
         for i = 1:ngl
@@ -590,6 +634,11 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
             denom3 = max(denom3, abs(q[ip,3] - ρE_avg))
         end
+    end
+    if lglobal_norms
+        norms = TT[denom1, denom2, denom3]
+        MPI.Allreduce!(norms, MPI.MAX, get_mpi_comm())
+        denom1 = norms[1]; denom2 = norms[2]; denom3 = norms[3]
     end
     denom1 += eps; denom2 += eps; denom3 += eps
 
@@ -673,11 +722,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  PhysConst::PhysicalConst{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int;
-                                 ltheta::Bool=true) where {TT<:AbstractFloat, TI<:Integer}
+                                 ltheta::Bool=true,
+                                 lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     if !ltheta
         _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs, Minv, visc_coeff,
-                         Δt, connijk, Δelem, PhysConst, Pr, nelem, ngl)
+                         Δt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
+                         lglobal_norms)
         return nothing
     end
 
@@ -712,7 +763,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     γm1   = γ - one(TT)
     eps   = TT(1.0e-16)
 
-    # --- Pass 1: domain averages of (ρ, ρu, ρv, ρθ) --------------------
+    # --- Pass 1: averages of (ρ, ρu, ρv, ρθ) — see _dsgs_norm_scope -----
     ρ_avg  = zero(TT); ρu_avg = zero(TT)
     ρv_avg = zero(TT); ρθ_avg = zero(TT)
     @inbounds for ie = 1:nelem
@@ -726,10 +777,18 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
-    ρ_avg  *= invnp; ρu_avg *= invnp
-    ρv_avg *= invnp; ρθ_avg *= invnp
+    if lglobal_norms
+        sums = TT[ρ_avg, ρu_avg, ρv_avg, ρθ_avg, TT(nelem*ngl*ngl)]
+        MPI.Allreduce!(sums, MPI.SUM, get_mpi_comm())
+        invnp_g = one(TT)/max(sums[5], one(TT))
+        ρ_avg  = sums[1]*invnp_g; ρu_avg = sums[2]*invnp_g
+        ρv_avg = sums[3]*invnp_g; ρθ_avg = sums[4]*invnp_g
+    else
+        ρ_avg  *= invnp; ρu_avg *= invnp
+        ρv_avg *= invnp; ρθ_avg *= invnp
+    end
 
-    # --- Pass 2: domain L∞ norms of |q - ⟨q⟩| --------------------------
+    # --- Pass 2: L∞ norms of |q - ⟨q⟩| ---------------------------------
     denom1 = zero(TT); denom2 = zero(TT)
     denom3 = zero(TT); denom4 = zero(TT)
     @inbounds for ie = 1:nelem
@@ -742,6 +801,12 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 denom4 = max(denom4, abs(q[ip,4] - ρθ_avg))
             end
         end
+    end
+    if lglobal_norms
+        norms = TT[denom1, denom2, denom3, denom4]
+        MPI.Allreduce!(norms, MPI.MAX, get_mpi_comm())
+        denom1 = norms[1]; denom2 = norms[2]
+        denom3 = norms[3]; denom4 = norms[4]
     end
     # Machine-zero floor on every denominator (Marras eq. 9 prescribes
     # ‖q − ⟨q⟩‖∞,Ω in the denominator; we add eps to guarantee a finite
@@ -883,20 +948,11 @@ end
 # jump from ringing. The user's inputs[:μ][1] multiplier scales it and
 # can switch it off with 0.0.
 #
-# ⟨q⟩ and ‖q−⟨q⟩‖ are RANK-LOCAL, as they already are in the 1D and Euler-θ
-# implementations above. They are only the normalising scale of the residual
-# indicator: what the model needs from them is the order of magnitude of the
-# solution's variation, and a partition of a connected domain sees that scale
-# just as well as the whole domain does. Making them MPI-global cost two
-# Allreduce per RHS call — ten per step under a five-stage RK, on the critical
-# path of every rank — which at scale dominated the model. The price is that μ
-# is no longer bit-identical across different rank counts; it is a subgrid
-# indicator that is bounded by min(μ_res, μ_max) either way, so the flow
-# solution is unaffected beyond the usual round-off divergence.
-#
-# Everything in this routine is allocation-free, including these norms now
-# that the reduction buffers are gone — same discipline as the other
-# implementations here.
+# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :ldsgs_global_norms is set — see
+# _dsgs_norm_scope above. In the default (rank-local) mode everything in this
+# routine is allocation-free, same discipline as the other implementations
+# here; the global mode allocates the two small reduction buffers, once per
+# RHS call and not per node.
 # ================================================================================
 function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           q::AbstractMatrix{TT},
@@ -910,7 +966,8 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           Δelem::AbstractVector{TT},
                           PhysConst::PhysicalConst{TT},
                           Pr::TT,
-                          nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+                          nelem::Int, ngl::Int,
+                          lglobal_norms::Bool) where {TT<:AbstractFloat, TI<:Integer}
 
     γ    = PhysConst.γ
     γm1  = γ - one(TT)
@@ -932,11 +989,19 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
             end
         end
     end
-    inv_npts = one(TT)/max(TT(nelem*ngl*ngl), one(TT))
-    ρ_avg  *= inv_npts; ρu_avg *= inv_npts
-    ρv_avg *= inv_npts; ρE_avg *= inv_npts
+    if lglobal_norms
+        sums = TT[ρ_avg, ρu_avg, ρv_avg, ρE_avg, TT(nelem*ngl*ngl)]
+        MPI.Allreduce!(sums, MPI.SUM, get_mpi_comm())
+        inv_npts = one(TT)/max(sums[5], one(TT))
+        ρ_avg  = sums[1]*inv_npts; ρu_avg = sums[2]*inv_npts
+        ρv_avg = sums[3]*inv_npts; ρE_avg = sums[4]*inv_npts
+    else
+        inv_npts = one(TT)/max(TT(nelem*ngl*ngl), one(TT))
+        ρ_avg  *= inv_npts; ρu_avg *= inv_npts
+        ρv_avg *= inv_npts; ρE_avg *= inv_npts
+    end
 
-    # --- Pass 2: rank-local L∞ of |q − ⟨q⟩| ----------------------------
+    # --- Pass 2: L∞ of |q − ⟨q⟩| ---------------------------------------
     #
     # The momentum norm is the one the paper writes, ‖m − m̄‖_{∞,Ω} on the
     # momentum VECTOR, not two independent per-component norms.
@@ -952,6 +1017,11 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                 dE  = max(dE, abs(q[ip,4] - ρE_avg))
             end
         end
+    end
+    if lglobal_norms
+        norms = TT[dρ, dm, dE]
+        MPI.Allreduce!(norms, MPI.MAX, get_mpi_comm())
+        dρ = norms[1]; dm = norms[2]; dE = norms[3]
     end
 
     # Physical-scale floors. A uniform free stream — which is exactly the
@@ -1096,13 +1166,8 @@ end
 # k = μ_dyn·cp/Pr_t. Rewriting in terms of T gives the coefficient
 # k/R = μ_dyn·γ/((γ−1)·Pr_t), since cp = γR/(γ−1).
 #
-# All reductions are RANK-LOCAL, matching _dsgs_2d_energy! and the 1D and
-# Euler-θ implementations. ⟨q⟩ and ‖q−⟨q⟩‖ are only the normalising scale of
-# the residual indicator, and a partition of a connected domain resolves that
-# scale as well as the whole domain does; three Allreduce per RHS call —
-# fifteen per step under a five-stage RK — is not worth making μ bit-identical
-# across rank counts. `comm` is kept in the signature for callers and for a
-# future opt-in global mode.
+# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :ldsgs_global_norms is set — see
+# _dsgs_norm_scope above. `comm` is what the global mode reduces over.
 # ================================================================================
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS_MHD, ::NSD_2D,
@@ -1119,7 +1184,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Δelem::AbstractVector{TT},
                                  γ::TT, Pr_t::TT, C1::TT, C2::TT,
                                  comm,
-                                 nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+                                 nelem::Int, ngl::Int;
+                                 lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
@@ -1141,11 +1207,16 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
     end
     inv_npts = one(TT)/max(TT(nelem*ngl*ngl), one(TT))
+    if lglobal_norms
+        npts_glob = MPI.Allreduce(TT(nelem*ngl*ngl), MPI.SUM, comm)
+        MPI.Allreduce!(avg, MPI.SUM, comm)
+        inv_npts  = one(TT)/max(npts_glob, one(TT))
+    end
     @inbounds for ieq = 1:neqs
         avg[ieq] *= inv_npts
     end
 
-    # --- Pass 2: rank-local L∞ of |q_i − ⟨q_i⟩| ------------------------
+    # --- Pass 2: L∞ of |q_i − ⟨q_i⟩| -----------------------------------
     @inbounds for ieq = 1:neqs
         denom[ieq] = zero(TT)
     end
@@ -1158,6 +1229,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 end
             end
         end
+    end
+    if lglobal_norms
+        MPI.Allreduce!(denom, MPI.MAX, comm)
     end
 
     # Physical-scale floors (see header). Built from the mean state:

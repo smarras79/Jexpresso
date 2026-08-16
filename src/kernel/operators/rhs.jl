@@ -1035,7 +1035,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 params.RHS, params.Minv, params.visc_coeff,
                                 TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δx,
-                                Int(nelem), Int(ngl))
+                                Int(nelem), Int(ngl);
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
                                  Int(nelem), Int(ngl), SD)
@@ -1103,7 +1104,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 TT(get(params.inputs, :dsgs_C1,    1.0)),
                                 TT(get(params.inputs, :dsgs_C2,    0.5)),
                                 get_mpi_comm(),
-                                Int(params.mesh.nelem), Int(params.mesh.ngl))
+                                Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -1144,7 +1146,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 params.mesh.connijk, params.mesh.Δelem,
                                 PHYS_CONST, Pr_TT,
                                 Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                ltheta = (params.inputs[:energy_equation] == "theta"))
+                                ltheta = (params.inputs[:energy_equation] == "theta"),
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
 
         # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
