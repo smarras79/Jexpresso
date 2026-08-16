@@ -38,7 +38,8 @@ function user_inputs()
         # CFL. The grid is h = 0.025 m with :nop => 4, so the tightest LGL
         # node spacing is ≈ 0.0043 m; against the free-stream wave speed
         # |u| + c ≈ 1372 m/s that puts the ADVECTIVE limit near 1.4e-6 s.
-        # Measured at Δt = 1.25e-7: advective CFL ≈ 0.026, acoustic ≈ 0.020.
+        # With :init_refine_lvl => 2 below, every one of those numbers
+        # shrinks by 4 (element size) and the viscous one by 16 (Δx²).
         #
         # The binding constraint is NOT advective, it is VISCOUS. DynSGS
         # saturates its own μ_max bound at the step corner (measured: μ =
@@ -47,7 +48,7 @@ function user_inputs()
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
         :Δt                   => 0.25e-7,
-        :diagnostics_at_times => (0:1.0e-5:8.0e-3),
+        :diagnostics_at_times => (0:5.0e-5:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
         # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
         # apart and the whole run is 64000 steps, order 12 h on one core.

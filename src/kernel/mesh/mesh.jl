@@ -5612,11 +5612,75 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
     mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
 
+    # Δelem_s/nop is an EQUISPACED estimate of the nodal resolution and the
+    # LGL grid is not equispaced: the nodes crowd towards the element edges,
+    # so the smallest gap is smaller than Δelem/nop — by 1.45x at nop = 4, and
+    # by more as the order goes up (the clustering is O(1/nop²)). That gap,
+    # not Δelem/nop, is what an explicit time step has to resolve, so measure
+    # it directly and let computeCFL report against it. Same quantity, and the
+    # same reasoning, as the Δmin of kernel/mesh/sphere_metrics.jl.
+    Δnode_local  = compute_min_node_spacing(mesh, mesh.SD, T)
+    Δnode_global = MPI.Allreduce(Δnode_local, MPI.MIN, comm)
+    # Inf comes back from the 1D no-op (and from a run with no elements at
+    # all); store 0.0 = "not measured" so consumers take their fallback.
+    mesh.Δnode_s = isfinite(Δnode_global) ? TFloat(Δnode_global) : TFloat(0.0)
+
     println_rank(" # "; msg_rank = rank, suppress = false)
     println_rank(" # ELEMENT SIZES:"; msg_rank = rank, suppress = false)
     println_rank(" #   The smallest element has size: ", mesh.Δelem_s, " and effective resolution ", mesh.Δeffective_s; msg_rank = rank, suppress = false)
     println_rank(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l; msg_rank = rank, suppress = false)
+    println_rank(" #   Smallest LGL node spacing:     ", mesh.Δnode_s, " (this is the CFL length scale)"; msg_rank = rank, suppress = false)
     println_rank(" # "; msg_rank = rank, suppress = false)
+end
+
+#------------------------------------------------------------------------------------
+# Smallest distance between two adjacent LGL nodes, taken along the element's
+# own ξ/η/ζ lines. Measured on the grid as it stands, so a refined mesh —
+# :linitial_refine or an adapted one — reports its own, smaller, spacing.
+#
+# Returns Inf on a rank that owns no elements; the caller MIN-reduces, and Inf
+# is the identity of MIN.
+#------------------------------------------------------------------------------------
+compute_min_node_spacing(mesh::St_mesh, SD::NSD_1D, T) = T(Inf)
+
+function compute_min_node_spacing(mesh::St_mesh, SD::NSD_2D, T)
+
+    ngl  = mesh.ngl
+    Δmin = T(Inf)
+    @inbounds for ie = 1:mesh.nelem
+        for j = 1:ngl, i = 1:ngl-1
+            ip = mesh.connijk[ie,i,j]; iq = mesh.connijk[ie,i+1,j]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2))
+        end
+        for j = 1:ngl-1, i = 1:ngl
+            ip = mesh.connijk[ie,i,j]; iq = mesh.connijk[ie,i,j+1]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2))
+        end
+    end
+
+    return Δmin
+end
+
+function compute_min_node_spacing(mesh::St_mesh, SD::NSD_3D, T)
+
+    ngl  = mesh.ngl
+    Δmin = T(Inf)
+    @inbounds for ie = 1:mesh.nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl-1
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i+1,j,k]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+        for k = 1:ngl, j = 1:ngl-1, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i,j+1,k]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+        for k = 1:ngl-1, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i,j,k+1]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+    end
+
+    return Δmin
 end
 
 #------------------------------------------------------------------------------------
