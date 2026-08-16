@@ -5059,22 +5059,34 @@ function build_dg_faces_2D!(mesh::St_mesh)
         span = hi_val - lo_val
         span > 0 || error("build_dg_faces_2D!: $tag candidates all at one coordinate — mesh/tag inconsistency")
         tolside = 1.0e-8 * span
-        lo = Dict{Float64, Int}(); hi = Dict{Float64, Int}()
+        lo = Int[]; hi = Int[]
         for idx = 1:length(els)
-            key = round(Float64(tcm[idx]); sigdigits=6)   # upstream's convention (stretched-mesh safe)
             if abs(ncm[idx] - lo_val) <= tolside
-                haskey(lo, key) && error("build_dg_faces_2D!: duplicate $tag tangential key on the min side — degenerate/1-wide mesh")
-                lo[key] = idx
+                push!(lo, idx)
             elseif abs(ncm[idx] - hi_val) <= tolside
-                haskey(hi, key) && error("build_dg_faces_2D!: duplicate $tag tangential key on the max side — degenerate/1-wide mesh")
-                hi[key] = idx
+                push!(hi, idx)
             end   # element-interior normal-constant slices fall through — correct
         end
         length(lo) == length(hi) || error("build_dg_faces_2D!: $tag side counts differ ($(length(lo)) vs $(length(hi)))")
+        # Pair by sorted tangential order — no float-keyed Dict. The former sigdigits=6
+        # key was RELATIVE rounding, which cannot collapse ~1e-12 arithmetic noise around
+        # a tangential centroid at exactly 0 (any domain-symmetric mesh, e.g. 5 elements
+        # on [-5,5]), so the two sides produced distinct keys and pairing failed.
+        # Sorted-order pairing needs no quantization; alignment is asserted per pair
+        # with an ABSOLUTE tolerance below.
+        sort!(lo; by = idx -> tcm[idx])
+        sort!(hi; by = idx -> tcm[idx])
+        tspan = length(lo) > 1 ?
+            max(Float64(tcm[lo[end]] - tcm[lo[1]]), Float64(tcm[hi[end]] - tcm[hi[1]])) : 0.0
+        tolt = 1.0e-6 * max(tspan, Float64(span))
+        for k = 2:length(lo)
+            (tcm[lo[k]] - tcm[lo[k-1]]) > tolt || error("build_dg_faces_2D!: duplicate $tag tangential key on the min side — degenerate/1-wide mesh")
+            (tcm[hi[k]] - tcm[hi[k-1]]) > tolt || error("build_dg_faces_2D!: duplicate $tag tangential key on the max side — degenerate/1-wide mesh")
+        end
         n = 0
-        for (key, imax) in hi
-            haskey(lo, key) || error("build_dg_faces_2D!: no $tag partner for tangential key $key")
-            imin = lo[key]
+        for k = 1:length(lo)
+            imin = lo[k]; imax = hi[k]
+            abs(tcm[imax] - tcm[imin]) <= tolt || error("build_dg_faces_2D!: $tag sorted-order pair mismatch at k=$k ($(tcm[imin]) vs $(tcm[imax])) — non-conforming periodic boundary?")
             eL = els[imax]; lfL = lfs[imax]        # L = max side → outward normal points +direction
             eR = els[imin]; lfR = lfs[imin]
             eL != eR || error("build_dg_faces_2D!: $tag pairs element $eL with itself — 1-element-wide direction (2×2-class pathology)")
