@@ -246,6 +246,19 @@ Jexpresso.run_case("CompEuler", "ffs_step")
      style="float: left; margin-right: 7px;" />
 
 
+## Kelvin-Helmholtz instability
+Classical shear-triggered instability test.
+
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
+```
+
+<img src="assets/KH-EC-SGSsmag.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
 ## Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
 
 The problem is defined in [`problems/equations/MHD/kelvinHelmholtzChan2022`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/kelvinHelmholtzChan2022).

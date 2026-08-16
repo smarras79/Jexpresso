@@ -30,7 +30,7 @@ function user_inputs()
         #     domain. The total-energy branch of compute_dsgs_viscosity! (2D)
         #     is selected by :energy_equation above.
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(),
+        :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
         :tend                 => 8.0e-3,          # ≈ 2.7 tunnel flow-throughs
         # CFL. The grid is h = 0.025 m with :nop => 4, so the tightest LGL
@@ -44,8 +44,8 @@ function user_inputs()
         # Δt = 5e-7 is already ≈ 0.22 with :μ => 1.0. Scaling :μ up without
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
-        :Δt                   => 1.25e-7,
-        :diagnostics_at_times => (0:4.0e-4:8.0e-3),
+        :Δt                   => 0.5e-7,
+        :diagnostics_at_times => (0:5.0e-6:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
         # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
         # apart and the whole run is 64000 steps, order 12 h on one core.
@@ -137,7 +137,8 @@ function user_inputs()
         # AMR off: the mesh already resolves the shocks at h/nop = 1/80, and
         # DynSGS is what handles what is left under-resolved.
         #---------------------------------------------------------------------------
-        :linitial_refine      => false,
+        :linitial_refine      => true,
+        :init_refine_lvl      => 1,
         :ladapt               => false,
     ) #Dict
 
