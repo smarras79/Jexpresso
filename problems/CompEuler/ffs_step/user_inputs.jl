@@ -33,6 +33,8 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
         :tend                 => 8.0e-3,          # ≈ 2.7 tunnel flow-throughs
+        :lrestart             => false,
+        :restart_time         => 0.0,
         # CFL. The grid is h = 0.025 m with :nop => 4, so the tightest LGL
         # node spacing is ≈ 0.0043 m; against the free-stream wave speed
         # |u| + c ≈ 1372 m/s that puts the ADVECTIVE limit near 1.4e-6 s.
@@ -45,7 +47,7 @@ function user_inputs()
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
         :Δt                   => 0.5e-7,
-        :diagnostics_at_times => (0:5.0e-6:8.0e-3),
+        :diagnostics_at_times => (0:5.0e-5:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
         # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
         # apart and the whole run is 64000 steps, order 12 h on one core.
@@ -138,7 +140,7 @@ function user_inputs()
         # DynSGS is what handles what is left under-resolved.
         #---------------------------------------------------------------------------
         :linitial_refine      => true,
-        :init_refine_lvl      => 1,
+        :init_refine_lvl      => 2,
         :ladapt               => false,
     ) #Dict
 

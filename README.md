@@ -256,7 +256,7 @@ Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
 
 <img src="assets/KH-EC-SGSsmag.jpg"
      alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
+     style="float: left; margin-right: 3.5px;" />
 
 
 ## Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
