@@ -61,10 +61,15 @@ function user_inputs()
         # "Changing the cube-face → sphere map" and
         # src/kernel/mesh/cubed_sphere_maps.jl.
         #
-        #   :equiangular  most homogeneous — largest min grid distance, so the
-        #                 largest explicit Δt (Ronchi et al. 1996)
-        #   :conformal    locally orthogonal away from the cube corners
-        #                 (Rančić, Purser & Mesinger 1996)
+        #   :equiangular  more even node spacing along a panel EDGE
+        #                 (Ronchi et al. 1996). NOTE it is the most expensive
+        #                 of the three on this grid: min element edge 562 km
+        #                 against the gnomonic 710 km, i.e. 0.79x the Δt.
+        #   :conformal    grid lines meet at 90° right up to a cube corner
+        #                 instead of degenerating to 120°, which is what the
+        #                 other two do (Rančić, Purser & Mesinger 1996).
+        #                 Smoothest corners AND, on this grid, the cheapest:
+        #                 min edge 722 km, 1.02x the gnomonic Δt.
         #---------------------------------------------------------------------------
         #:cubed_sphere_map => :none        # default — grid exactly as the .msh has it
         #:cubed_sphere_map => :gnomonic    # equidistant central projection (Sadourny 1972) — no-op, it already is this

@@ -193,16 +193,45 @@ and getting it wrong would silently produce a grid that is neither map.
 | value | map | what it buys |
 |---|---|---|
 | `:gnomonic` | equidistant central projection — Sadourny (1972) | nothing; this is what the file already is, so it is a no-op |
-| `:equiangular` | face coordinate measured as an angle, `u = tan α`, `α ∈ [-π/4, π/4]` — Ronchi, Iacono & Paolucci (1996) | the most **homogeneous** of the three: largest minimum grid distance, hence the largest explicit Δt |
-| `:conformal` | Rančić, Purser & Mesinger (1996) | locally **orthogonal** everywhere except the cube corners, so the metric terms are diagonal — at the cost of a more variable cell size |
+| `:equiangular` | face coordinate measured as an angle, `u = tan α`, `α ∈ [-π/4, π/4]` — Ronchi, Iacono & Paolucci (1996) | a more even node spacing along a panel EDGE than the gnomonic one |
+| `:conformal` | Rančić, Purser & Mesinger (1996) | locally **orthogonal** everywhere except the eight cube corners, so grid lines meet at 90° right up to a corner instead of degenerating to 120° |
 
-Measured on this grid (`|r_u|` over the face, larger ratio = more distorted):
+### Corner behaviour, which is what actually distinguishes them
 
-| map | max angle defect | cell-size ratio | min node separation |
+Angle between the two families of grid lines, walking the face diagonal
+`u = v = t` in to a cube corner. 90° is orthogonal:
+
+| `t` | gnomonic | equiangular | conformal |
 |---|---|---|---|
-| gnomonic | 0.48 | 2.07 | — |
-| equiangular | 0.48 | **1.38** | 562 km |
-| conformal | **4e-9** | 2.74 | **722 km** |
+| 0.0 (face centre) | 90.0° | 90.0° | 90.0° |
+| 0.9 | 116.6° | 114.9° | **90.000°** |
+| 0.99 | 119.7° | 119.5° | **90.000°** |
+| 0.9999 | 120.0° | 120.0° | **90.000°** |
+
+Gnomonic and equiangular both collapse to a 120° corner — the three panels
+meeting there each contribute 120°, and neither map fights it. Only the
+conformal map holds 90° all the way in. Over the whole panel the worst
+deviation from orthogonality is 29.3° (gnomonic), 29.0° (equiangular),
+**0.000°** (conformal).
+
+### What it costs, measured on the shipped grid
+
+Element edge lengths over all 600 quads. The minimum is what sets the explicit
+time step under `:lcfl_dt`:
+
+| map | min edge | max edge | ratio | Δt vs gnomonic |
+|---|---|---|---|---|
+| gnomonic | 710.2 km | 999.7 km | 1.41 | 1.00× |
+| equiangular | 561.7 km | 1365.7 km | 2.43 | 0.79× |
+| conformal | **721.6 km** | 1322.3 km | 1.83 | **1.02×** |
+
+So on THIS grid the conformal map is both the smoothest at the corners and
+marginally the cheapest — `:equiangular` is the one that costs 21% of the time
+step. Do not generalise the Δt column to finer grids: the conformal map's cell
+scale falls off toward a corner (`|r_u|` is 0.55 of its face-centre value at
+`t = 0.9`, 0.25 at `t = 0.99`), so the more elements per panel edge, the closer
+the corner-adjacent nodes sit to the singular point and the more of that
+shrinkage a refined grid will see. Re-measure if you refine.
 
 The mechanics — the panel frames, the Rančić Table B1 coefficients and the
 series reversion that gives the inverse — are in
