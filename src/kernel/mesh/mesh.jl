@@ -2232,11 +2232,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     
     #Update number of grid points from linear count to total high-order points
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + (mesh.nsd - 2)*tot_vol_internal_nodes
-    # DG (DiscGal): duplicated interface DOFs (D-059) — every element owns its
+    # DG (DiscGal): duplicated interface DOFs — every element owns its
     # full ngl^2 point set, npoin = nelem*ngl^2. Set here, ahead of the
     # "Resize as needed" block, so every downstream allocation (x/y/z/coords,
     # ip2gip, ...) is sized for the DG point set. npoin_linear keeps its
-    # Gridap vertex meaning (D-068). The CG builders below still run for
+    # Gridap vertex meaning. The CG builders below still run for
     # their side effects (poin_in_edge, conn, boundary lists) and connijk/
     # coordinates are overwritten by the DG numbering block after them.
     if inputs[:AD] == DiscGal() && mesh.nsd == 2
@@ -5276,7 +5276,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_2D, elm2pelm
 end
 
 function add_high_order_nodes_2D_gmsh_dg!(mesh::St_mesh, lgl, model)
-    # DG numbering with duplicated interface DOFs at 2D:
+    # DG numbering with duplicated interface DOFs, matching the 1D DG builder:
     #   ip = (iel-1)*ngl^2 + (j-1)*ngl + i;  connijk[iel,i,j] = ip
     # Tensor lattice matches the CG convention (i ascending in x, j in y),
     # so compute_element_size! returns the same Delem and dt is unchanged.
