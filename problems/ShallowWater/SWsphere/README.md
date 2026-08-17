@@ -194,7 +194,7 @@ and getting it wrong would silently produce a grid that is neither map.
 |---|---|---|
 | `:gnomonic` | equidistant central projection — Sadourny (1972) | nothing; this is what the file already is, so it is a no-op |
 | `:equiangular` | face coordinate measured as an angle, `u = tan α`, `α ∈ [-π/4, π/4]` — Ronchi, Iacono & Paolucci (1996) | a more even node spacing along a panel EDGE than the gnomonic one |
-| `:conformal` | Rančić, Purser & Mesinger (1996) | locally **orthogonal** everywhere except the eight cube corners, so grid lines meet at 90° right up to a corner instead of degenerating to 120° |
+| `:conformal` | Rančić, Purser & Mesinger (1996) | keeps grid lines at 90° into a corner — but is **rejected on this grid**, see below |
 
 ### Corner behaviour, which is what actually distinguishes them
 
@@ -213,6 +213,45 @@ meeting there each contribute 120°, and neither map fights it. Only the
 conformal map holds 90° all the way in. Over the whole panel the worst
 deviation from orthogonality is 29.3° (gnomonic), 29.0° (equiangular),
 **0.000°** (conformal).
+
+### Why `:conformal` is refused here
+
+It is the only one of the three that keeps the grid orthogonal into a cube
+corner, and it is nonetheless unusable with this case. Three panels meet at a
+cube corner, so each must open **120°** there. An angle-preserving map can only
+reconcile that with the square's 90° corner by letting its derivative vanish:
+near a corner the conformal map behaves like `ζ^(4/3)`, so the local scale
+`|∂r/∂u|` falls off as `d^(1/3)`. Measured, as a fraction of the face-centre
+value:
+
+| `d = 1-u` | 1e-1 | 1e-2 | 1e-3 | 1e-4 | 1e-5 |
+|---|---|---|---|---|---|
+| conformal | 0.546 | 0.253 | 0.118 | 0.0546 | 0.0253 |
+| equiangular | 0.925 | 0.940 | 0.943 | 0.943 | 0.943 |
+
+Fitted exponent 0.333 over five decades — it goes to **zero** at the corner.
+
+`cubed_sphere.geo` puts a mesh vertex on each of the eight cube corners
+(`Point(2)`…`Point(9)`, shared by the panels), so those nodes end up with zero
+surface Jacobian and `build_sphere_metrics` rejects their elements:
+
+```
+ERROR sphere_metrics.jl: non-positive surface Jacobian in element 1
+at node (1,1). The element is degenerate or wound inward.
+```
+
+`remap_cubed_sphere_nodes!` now detects this up front and refuses with an
+explanation rather than letting it surface there. The map itself is correct —
+`test/test_cubed_sphere_maps.jl` shows it is conformal to 4e-9 — it is the
+combination of that map with a node ON the singular point that does not work.
+This is why conformal cubed spheres are used by cell-centred finite-volume
+codes (Rančić's own model, CCAM), where the singular point is a cell corner
+nobody evaluates at, and not by nodal spectral elements.
+
+**There is no map that gives a 90° corner without a singularity.** The 120° is
+topological: three panels, 360° to share. `:equiangular` and `:gnomonic` both
+take the 120° and stay non-degenerate; `:conformal` takes the 90° and pays with
+a zero. Those are the only two options.
 
 ### What it costs, measured on the shipped grid
 

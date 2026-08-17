@@ -1533,6 +1533,55 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
     end
 
     R = mesh.radius
+
+    #
+    # THE CONFORMAL MAP IS SINGULAR AT THE EIGHT CUBE CORNERS, and a grid with a
+    # node sitting on one cannot use it.
+    #
+    # Three panels meet at a cube corner, so each has to open 120° there. A
+    # conformal map preserves angles, so the only way it can take the 90° corner
+    # of the square to a 120° corner of the sphere is by having its derivative
+    # VANISH at that point: near a corner it behaves like ζ^(4/3), so the local
+    # scale |∂r/∂u| falls off as d^(1/3) with d the distance to the corner.
+    # (Measured: 0.546, 0.253, 0.118, 0.0546, 0.0253 of the face-centre value at
+    # d = 1e-1 … 1e-5, i.e. exponent 0.333 over five decades.)
+    #
+    # cubed_sphere.geo puts a mesh vertex exactly on each of the eight corners,
+    # so those nodes get zero metric, and build_sphere_metrics then dies with
+    #
+    #   ERROR sphere_metrics.jl: non-positive surface Jacobian in element 1
+    #   at node (1,1). The element is degenerate or wound inward.
+    #
+    # which says nothing about the real cause. Catch it here instead. This is
+    # why conformal cubed spheres are used by cell-centred finite-volume codes
+    # (Rančić's own model, CCAM) and not by nodal spectral elements: the
+    # singular point is a cell corner nobody evaluates at, rather than a
+    # solution node.
+    #
+    if to === :conformal
+        ncorner = 0
+        for ip = 1:mesh.npoin
+            ax = abs(mesh.x[ip]); ay = abs(mesh.y[ip]); az = abs(mesh.z[ip])
+            hi = max(ax, ay, az); lo = min(ax, ay, az)
+            (hi > 0.1*R && (hi - lo) < 1.0e-6*R) && (ncorner += 1)
+        end
+        ncorner = MPI.Allreduce(ncorner, MPI.SUM, comm)
+        if ncorner > 0
+            error(" # ERROR mesh.jl: :cubed_sphere_map => :conformal cannot be used with " *
+                  "this grid.\n" *
+                  " #   It has " * string(ncorner) * " node(s) sitting exactly on a cube corner, " *
+                  "and the conformal\n" *
+                  " #   map of Rančić, Purser & Mesinger (1996) is SINGULAR there: its local " *
+                  "scale\n" *
+                  " #   goes as d^(1/3), so the surface Jacobian at such a node is zero and\n" *
+                  " #   build_sphere_metrics will reject the element as degenerate.\n" *
+                  " #   That is a property of the map, not a bug — three panels meet at a cube\n" *
+                  " #   corner and each must open 120°, which a conformal map can only do by\n" *
+                  " #   collapsing its derivative there.\n" *
+                  " #   Use :equiangular or :gnomonic, which stay non-degenerate at the corner\n" *
+                  " #   (at the cost of grid lines meeting at 120° rather than 90°).")
+        end
+    end
     dmax = 0.0
     for ip = 1:mesh.npoin
         x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]

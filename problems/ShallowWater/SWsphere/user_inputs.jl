@@ -65,11 +65,20 @@ function user_inputs()
         #                 (Ronchi et al. 1996). NOTE it is the most expensive
         #                 of the three on this grid: min element edge 562 km
         #                 against the gnomonic 710 km, i.e. 0.79x the Δt.
-        #   :conformal    grid lines meet at 90° right up to a cube corner
-        #                 instead of degenerating to 120°, which is what the
-        #                 other two do (Rančić, Purser & Mesinger 1996).
-        #                 Smoothest corners AND, on this grid, the cheapest:
-        #                 min edge 722 km, 1.02x the gnomonic Δt.
+        #   :conformal    NOT USABLE ON THIS GRID, and the code refuses it.
+        #                 It does keep grid lines at 90° into a cube corner
+        #                 where the other two degenerate to 120°, but it pays
+        #                 for that with a SINGULARITY at the eight corners: the
+        #                 local map scale falls off as d^(1/3), so a node
+        #                 sitting exactly on a corner — and cubed_sphere.geo
+        #                 puts one on each of the eight — gets zero surface
+        #                 Jacobian and build_sphere_metrics rejects the element.
+        #                 Three panels meet at a corner and each must open 120°;
+        #                 an angle-preserving map can only manage that by
+        #                 collapsing its derivative there. This is why conformal
+        #                 cubed spheres are used by cell-centred finite-volume
+        #                 codes and not by nodal spectral elements.
+        #                 (Rančić, Purser & Mesinger 1996)
         #---------------------------------------------------------------------------
         # NOTE the trailing comma belongs BEFORE the # on whichever line is live.
         # Without it Julia reads the NEXT line's leading `:` as the range
@@ -77,8 +86,8 @@ function user_inputs()
         # `UndefVarError: sphere_metrics`, naming the line AFTER the mistake.
         #:cubed_sphere_map => :none,        # default — grid exactly as the .msh has it
         #:cubed_sphere_map => :gnomonic,    # equidistant central projection (Sadourny 1972) — no-op, it already is this
-        #:cubed_sphere_map => :equiangular, # u = tan α, α ∈ [-π/4, π/4] (Ronchi, Iacono & Paolucci 1996). Costs 21% of Δt on this grid.
-        :cubed_sphere_map => :conformal,   # Rančić, Purser & Mesinger (1996) — SMOOTHEST CORNERS: grid lines stay at 90° into a corner
+        :cubed_sphere_map => :equiangular, # u = tan α, α ∈ [-π/4, π/4] (Ronchi, Iacono & Paolucci 1996). Costs 21% of Δt on this grid.
+        #:cubed_sphere_map => :conformal,  # UNUSABLE with this grid — see the note above
         #---------------------------------------------------------------------------
         # Metric terms of the 2D manifold. Kopriva's curl-invariant form
         # degenerates on a surface — see the header of sphere_metrics.jl — and
