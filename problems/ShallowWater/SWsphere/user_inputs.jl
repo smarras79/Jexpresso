@@ -126,11 +126,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
-<<<<<<< HEAD
         :μ                    => 1.5e5,      # set to 1.0e5 together with :lvisc => true
-=======
-        :μ                    => 1.0e5,
->>>>>>> sm/newmaster_metrics
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the
