@@ -35,7 +35,7 @@ using Test
 
 include(joinpath(@__DIR__, "..", "src", "kernel", "mesh", "cubed_sphere_maps.jl"))
 
-const MAPS = (:gnomonic, :equiangular, :conformal)
+const MAPS = (:gnomonic, :equiangular, :conformal, :conformal_exact)
 
 # Central-difference Jacobian of a face map and the two conformality residuals.
 function _conformality(f, u, v; h = 1.0e-5)
@@ -110,20 +110,49 @@ end
         end
     end
 
-    # THE test: only :conformal preserves angles.
-    @testset "conformality" begin
+    # THE test. Two distinct properties, and the two conformal variants differ in
+    # exactly one of them:
+    #
+    #   ORTHOGONALITY  r_u . r_v = 0. What makes the metric terms diagonal, and
+    #                  what "grid lines meet at 90 degrees" means. Held by BOTH
+    #                  :conformal and :conformal_exact, everywhere.
+    #   ISOTROPY       |r_u| = |r_v|. Held only by :conformal_exact — and it is
+    #                  precisely what the corner regularisation trades away to
+    #                  keep the Jacobian finite.
+    @testset "orthogonality and isotropy" begin
         worst = Dict(m => (0.0, 0.0) for m in MAPS)
         for m in MAPS, u in range(-0.97, 0.97, length = 33), v in range(-0.97, 0.97, length = 33)
             iso, orth = _conformality((a, b) -> _map_forward(m, a, b), u, v)
             worst[m] = (max(worst[m][1], iso), max(worst[m][2], orth))
         end
-        # conformal: at the central-difference floor
-        @test worst[:conformal][1] < 1.0e-6
-        @test worst[:conformal][2] < 1.0e-6
-        # the other two are genuinely not conformal — this is what gives the
-        # test above its meaning
-        @test worst[:gnomonic][1]    > 0.1
-        @test worst[:equiangular][1] > 0.1
+        # both conformal variants are ORTHOGONAL to the differencing floor
+        @test worst[:conformal][2]       < 1.0e-6
+        @test worst[:conformal_exact][2] < 1.0e-6
+        # only the exact one is also ISOTROPIC
+        @test worst[:conformal_exact][1] < 1.0e-6
+        # the regularised one deliberately is not, and the other two are neither
+        @test worst[:conformal][1]   > 0.1
+        @test worst[:gnomonic][2]    > 0.1
+        @test worst[:equiangular][2] > 0.1
+    end
+
+    # The corner regularisation exists for ONE reason: the pure map's Jacobian
+    # vanishes at a cube corner and a structured panel grid puts a node there.
+    @testset "corner Jacobian is non-degenerate" begin
+        function jac(m, u, v; h = 1.0e-6)
+            p(a, b) = collect(_map_forward(m, a, b))
+            ru = (p(u+h, v) .- p(u-h, v)) ./ (2h)
+            rv = (p(u, v+h) .- p(u, v-h)) ./ (2h)
+            cr = (ru[2]*rv[3]-ru[3]*rv[2], ru[3]*rv[1]-ru[1]*rv[3], ru[1]*rv[2]-ru[2]*rv[1])
+            sqrt(sum(cr.^2))
+        end
+        # at the corner the pure map collapses; the regularised one does not
+        @test jac(:conformal_exact, 1.0-1.0e-5, 1.0-1.0e-5) < 1.0e-3
+        @test jac(:conformal,       1.0-1.0e-5, 1.0-1.0e-5) > 0.3
+        # and nothing folds anywhere on the face
+        for m in MAPS, u in range(-0.999, 0.999, length = 41), v in range(-0.999, 0.999, length = 41)
+            @test jac(m, u, v) > 1.0e-3
+        end
     end
 
     @testset "panel assignment" begin

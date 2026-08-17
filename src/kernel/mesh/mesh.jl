@@ -1587,7 +1587,7 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
     # singular point is a cell corner nobody evaluates at, rather than a
     # solution node.
     #
-    if to === :conformal
+    if to === :conformal_exact
         ncorner = 0
         for ip = 1:mesh.npoin
             ax = abs(mesh.x[ip]); ay = abs(mesh.y[ip]); az = abs(mesh.z[ip])
@@ -1596,7 +1596,7 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
         end
         ncorner = MPI.Allreduce(ncorner, MPI.SUM, comm)
         if ncorner > 0
-            error(" # ERROR mesh.jl: :cubed_sphere_map => :conformal cannot be used with " *
+            error(" # ERROR mesh.jl: :cubed_sphere_map => :conformal_exact cannot be used with " *
                   "this grid.\n" *
                   " #   It has " * string(ncorner) * " node(s) sitting exactly on a cube corner, " *
                   "and the conformal\n" *
@@ -1607,8 +1607,8 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
                   " #   That is a property of the map, not a bug — three panels meet at a cube\n" *
                   " #   corner and each must open 120°, which a conformal map can only do by\n" *
                   " #   collapsing its derivative there.\n" *
-                  " #   Use :equiangular or :gnomonic, which stay non-degenerate at the corner\n" *
-                  " #   (at the cost of grid lines meeting at 120° rather than 90°).")
+                  " #   Use :conformal, which keeps the 90° grid lines by stretching the face\n" *
+                  " #   coordinate near the corners so the Jacobian stays finite.")
         end
     end
     dmax = 0.0

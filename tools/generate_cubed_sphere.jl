@@ -8,7 +8,7 @@
 #   n     elements per panel edge        (default 10  -> 6n² = 600 quads)
 #   R     sphere radius in metres        (default 6.371e6, Earth)
 #   out   output file                    (default ./cubed_sphere.msh)
-#   map   gnomonic | equiangular         (default equiangular)
+#   map   gnomonic | equiangular | conformal   (default equiangular)
 #
 #   julia tools/generate_cubed_sphere.jl 10 6.371e6 cubed_sphere.msh equiangular
 #
@@ -50,11 +50,11 @@
 # The counts that follow, for free: V = 6n²+2, F = 6n², E = 12n², so
 # V - E + F = 2 exactly. The script asserts all of it before writing.
 #
-# NOT OFFERED: :conformal. It is singular at the eight cube corners — the local
-# map scale goes as d^(1/3) — and a structured n×n panel grid necessarily puts a
-# node on every corner, so the surface Jacobian there is zero and
-# build_sphere_metrics rejects the element. See the note in
-# remap_cubed_sphere_nodes! (src/kernel/mesh/mesh.jl).
+# :conformal here is the CORNER-REGULARISED map (see cubed_sphere_maps.jl): the
+# conformal coordinate curves, so grid lines meet at 90° everywhere, with the
+# face coordinate stretched near the corners so the Jacobian stays finite. The
+# pure RPM96 map, :conformal_exact, is NOT offered — a structured n×n panel grid
+# puts a node on every cube corner, where its Jacobian is zero.
 #---------------------------------------------------------------------------------
 
 # Printf first: @printf expands at PARSE time, so the `using` has to precede
@@ -63,7 +63,7 @@ using Printf
 
 include(joinpath(@__DIR__, "..", "src", "kernel", "mesh", "cubed_sphere_maps.jl"))
 
-const SUPPORTED_MAPS = (:gnomonic, :equidistant, :equiangular)
+const SUPPORTED_MAPS = (:gnomonic, :equidistant, :equiangular, :conformal)
 
 """
     build_cubed_sphere(n, R, map) -> (nodes, quads)
@@ -77,9 +77,10 @@ function build_cubed_sphere(n::Int, R::Float64, mapname::Symbol)
     R > 0   || error("R must be > 0, got $R")
     mapname in SUPPORTED_MAPS ||
         error("map must be one of $SUPPORTED_MAPS, got :$mapname" *
-              (mapname === :conformal ?
-               "\n  :conformal is singular at the eight cube corners and a structured" *
-               "\n  panel grid puts a node on every one of them — see the file header." : ""))
+              (mapname === :conformal_exact ?
+               "\n  :conformal_exact is singular at the eight cube corners and a structured" *
+               "\n  panel grid puts a node on every one of them. Use :conformal, which is" *
+               "\n  the corner-regularised version — see the file header." : ""))
 
     idof   = Dict{NTuple{3,Int},Int}()          # exact integer identity -> node id
     nodes  = NTuple{3,Float64}[]
