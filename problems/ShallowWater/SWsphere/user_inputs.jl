@@ -68,7 +68,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #:cubed_sphere_map => :none        # default — grid exactly as the .msh has it
         #:cubed_sphere_map => :gnomonic    # equidistant central projection (Sadourny 1972) — no-op, it already is this
-        :cubed_sphere_map => :equiangular # u = tan α, α ∈ [-π/4, π/4] (Ronchi, Iacono & Paolucci 1996)
+        :cubed_sphere_map => :equiangular, # u = tan α, α ∈ [-π/4, π/4] (Ronchi, Iacono & Paolucci 1996)
         #:cubed_sphere_map => :conformal   # Rančić, Purser & Mesinger (1996)
         #---------------------------------------------------------------------------
         # Metric terms of the 2D manifold. Kopriva's curl-invariant form
