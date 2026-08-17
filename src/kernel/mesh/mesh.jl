@@ -3219,29 +3219,44 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # end
         end
         
+        # PERF: elem_to_face by hash lookup, not by scanning. The 3D twin of the
+        # elem_to_edge rewrite in the mesh.nsd == 2 branch above, and the worse
+        # of the two: `ip in mesh.poin_in_bdy_face` scans the whole
+        # (nfaces_bdy x ngl x ngl) array for every one of the nelem*ngl^3
+        # element nodes — paid in full even when the answer is false — and the
+        # `while` then scans it again. That is nelem*ngl^3*nfaces_bdy*ngl^2, so
+        # ngl^5 sits inside the element loop.
+        #
+        # For CompEuler/3d at nop=4 (ngl=5) on hexa_TFI_10x10x10 that is
+        # 1000*125*600*25 ~ 1.9e9 operations for a 1000-element grid; it is what
+        # makes a large 3D read appear to hang after the spectral-node stage.
+        #
+        # Same answer, built by walking the boundary faces ONCE into a
+        # (node, element) -> (face, i, j) map. The old tie-breaking is preserved
+        # exactly: the `while` stopped at the FIRST iface that matched, while the
+        # inner j1/i1 loops ran to completion, so the LAST matching (i1, j1) in
+        # j1-outer/i1-inner order won.
+        _e2f = Dict{Tuple{TInt,TInt},Tuple{TInt,TInt,TInt}}()
+        for iface = 1:mesh.nfaces_bdy
+            e1 = mesh.bdy_face_in_elem[iface]
+            for j1 = 1:mesh.ngl
+                for i1 = 1:mesh.ngl
+                    key  = (mesh.poin_in_bdy_face[iface, i1, j1], e1)
+                    prev = get(_e2f, key, nothing)
+                    # unseen, or still on the same face -> later (i1,j1) wins
+                    (prev === nothing || prev[1] == iface) && (_e2f[key] = (iface, i1, j1))
+                end
+            end
+        end
         for e = 1:mesh.nelem
             for k=1:mesh.ngl
                 for j=1:mesh.ngl
                     for i = 1:mesh.ngl
-                        ip = mesh.connijk[e, i, j, k]
-                        if (ip in mesh.poin_in_bdy_face)
-                            found = false
-                            iface = 1
-                            while (iface <= mesh.nfaces_bdy && found == false)
-                                for j1 = 1:mesh.ngl
-                                    for i1 = 1:mesh.ngl
-                                        ip1 = mesh.poin_in_bdy_face[iface, i1, j1]
-                                        e1 = mesh.bdy_face_in_elem[iface]
-                                        if (ip1 == ip && e1 == e)
-                                            mesh.elem_to_face[e,i,j,k,1] = iface
-                                            mesh.elem_to_face[e,i,j,k,2] = i1
-                                            mesh.elem_to_face[e,i,j,k,3] = j1
-                                            found = true
-                                        end
-                                    end
-                                end
-                                iface += 1
-                            end
+                        hit = get(_e2f, (mesh.connijk[e, i, j, k], e), nothing)
+                        if hit !== nothing
+                            mesh.elem_to_face[e,i,j,k,1] = hit[1]
+                            mesh.elem_to_face[e,i,j,k,2] = hit[2]
+                            mesh.elem_to_face[e,i,j,k,3] = hit[3]
                         end
                     end
                 end
