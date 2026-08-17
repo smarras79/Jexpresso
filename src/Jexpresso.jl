@@ -305,6 +305,67 @@ include(joinpath( "auxiliary", "checks.jl"))
 const _LOADED_CASE_DIR  = Ref{String}("")
 const _CASE_FILE_MTIMES = Dict{String,Float64}()
 
+"""
+    _purge_case_methods!(old_case_dir) -> Int
+
+Delete every method that was defined by the user_*.jl files of
+`old_case_dir`, returning how many were removed.
+
+WHY: `include`ing a case's user_*.jl only *replaces* a method when the
+new definition has the EXACT same signature. Two cases that implement
+the same hook with different — but overlapping — signatures therefore
+end up with BOTH methods live in the table, and dispatch picks the more
+specific one, i.e. the stale one from the case that is no longer
+running. Concretely:
+
+    problems/CompEuler/theta   → user_source!(S,q,qe,npoin,::CL,::PERT)
+    problems/AdvDiff/kopriva   → user_source!(S,q,qe,npoin,::CL,::AbstractPert)
+
+`PERT <: AbstractPert`, so after `run_case("CompEuler","theta")` a
+subsequent `run_case("AdvDiff","kopriva")` (which sets
+`:SOL_VARS_TYPE => PERT()`) still dispatched into theta's method and
+died with a BoundsError writing `S[2]` of a 1-equation source vector.
+
+Cleaning the previously-loaded case out of the method table before the
+new one is included removes that whole class of cross-case bleed for
+every hook (user_source!, user_flux!, user_bc_*!, user_primitives!,
+initialize, …) without each case having to defensively spell out every
+signature its predecessors might have used.
+
+Methods are matched by their definition file living directly inside
+`old_case_dir`, so nothing defined under src/ is ever touched — only the
+per-case hooks that run.jl re-`include`s a few lines later.
+
+Cost: only paid when run.jl decides to reload the case files, which
+already invalidates and recompiles the hooks anyway. Re-running the same
+case unchanged still short-circuits before this and stays
+launch-cost-only.
+"""
+function _purge_case_methods!(old_case_dir::AbstractString)
+    isempty(old_case_dir) && return 0
+    old = abspath(old_case_dir)
+    ndeleted = 0
+    for name in names(@__MODULE__; all = true)
+        isdefined(@__MODULE__, name) || continue
+        f = getfield(@__MODULE__, name)
+        f isa Function || continue
+        for m in collect(methods(f))
+            dirname(abspath(String(m.file))) == old || continue
+            try
+                Base.delete_method(m)
+                ndeleted += 1
+            catch
+                # A method that cannot be deleted (e.g. sealed by the
+                # precompile image) is left alone: the include that
+                # follows still redefines any exact-signature match, so
+                # this degrades to the pre-existing behaviour instead of
+                # aborting the run.
+            end
+        end
+    end
+    return ndeleted
+end
+
 # ──────────────────────────────────────────────────────────────────────
 # Lazy dependency loaders.
 #

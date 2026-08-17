@@ -134,6 +134,16 @@ isfile(user_analytic_file) && push!(_case_load_files, user_analytic_file)
 _need_case_reload = (_LOADED_CASE_DIR[] != case_name_dir) ||
     any(f -> get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f), _case_load_files)
 if _need_case_reload
+    # CORRECTNESS: when we are switching AWAY from another case, evict that
+    # case's hook methods first. `include` alone only overwrites a method
+    # whose signature matches exactly, so a hook the two cases spell
+    # differently (e.g. theta's `user_source!(…, ::CL, ::PERT)` vs
+    # kopriva's `user_source!(…, ::CL, ::AbstractPert)`) leaves the stale,
+    # more-specific method winning dispatch in the new run. The same holds
+    # for a re-run of the SAME case whose hook signature the user just
+    # edited, so purge on every reload — we are recompiling either way.
+    # See _purge_case_methods! in Jexpresso.jl.
+    _purge_case_methods!(_LOADED_CASE_DIR[])
     for _f in _case_load_files
         include(_f)
         _CASE_FILE_MTIMES[_f] = mtime(_f)
