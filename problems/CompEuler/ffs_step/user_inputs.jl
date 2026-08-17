@@ -104,6 +104,12 @@ function user_inputs()
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
+        # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖. Default
+        # false = rank-local, which costs no MPI communication. Uncomment for
+        # the paper's domain norms — 2 Allreduce per RHS call, 10 per step
+        # here — when μ has to be identical across rank counts. No effect on a
+        # serial run. See ENVIRONMENT_VARIABLES.md.
+        # :ldsgs_global_norms   => true,
         #---------------------------------------------------------------------------
         # Mesh
         #
