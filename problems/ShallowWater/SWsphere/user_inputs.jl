@@ -2,18 +2,24 @@ function user_inputs()
 
     inputs = Dict(
         #---------------------------------------------------------------------------
-        # SWsphere_visc — the Galewsky jet on the shell with the ARTIFICIAL
-        # DIFFUSION of Eq. (8b) added to the modal filter: the PAPER'S OWN
-        # configuration (Marras, Kopera & Giraldo 2015, QJRMS 141: 1727-1739),
-        # which filters every step AND carries ν = 1e5 m²/s.
+        # SWsphere — the Galewsky jet on the shell, shipped in the ARTIFICIAL
+        # DIFFUSION configuration of Eq. (8b) added to the modal filter: the
+        # PAPER'S OWN setup (Marras, Kopera & Giraldo 2015, QJRMS 141:
+        # 1727-1739), which filters every step AND carries ν = 1e5 m²/s.
         #
-        # Same equations, same grid, same initial condition as
-        # ShallowWater/SWsphere — the five other user_*.jl files in this
-        # directory are one-line includes of that case's. What differs is
-        # exactly one switch at the bottom:
+        # This deck is what used to be the separate SWsphere_visc case, folded
+        # in here so there is ONE spherical shallow-water case; flip :lvisc at
+        # the bottom to get back the filter-only configuration:
         #
-        #     SWsphere        :lfilter => true    :lvisc => false
-        #     SWsphere_visc   :lfilter => true    :lvisc => true, :μ => 1e5
+        #     filter only    :lfilter => true    :lvisc => false
+        #     + diffusion    :lfilter => true    :lvisc => true, :μ => 1e5   ← as shipped
+        #
+        # The five sibling user_*.jl in this directory are the REAL
+        # implementations. They were briefly one-line `include`s of the (then
+        # separate) SWsphere case's files; when the two cases were merged those
+        # shims ended up pointing at themselves and every run died with a
+        # StackOverflowError. Do not reintroduce them — a case directory owns
+        # its six files outright.
         #
         # WHY NOT VISCOSITY ALONE, which is what this case first shipped as.
         # It does not survive this grid. Measured, 3 days, all else equal:
