@@ -172,6 +172,43 @@ end
         end
     end
 
+
+    # The source map is MEASURED, not assumed. This is the test that would have
+    # caught the shipped grid being equiangular rather than gnomonic, which made
+    # :cubed_sphere_map => :equiangular warp an already-warped grid.
+    @testset "source-map detection" begin
+        # synthesise the linear vertices of an n-per-panel grid under a known map
+        function lattice(n, m)
+            seen = Set{NTuple{3,Int}}(); xs=Float64[]; ys=Float64[]; zs=Float64[]
+            for p = 1:6, j = 0:n, i = 0:n
+                eu, ev, ew = _PANEL_FRAMES[p]
+                si, sj = 2i-n, 2j-n
+                T = (round(Int, si*eu[1]+sj*ev[1]+n*ew[1]),
+                     round(Int, si*eu[2]+sj*ev[2]+n*ew[2]),
+                     round(Int, si*eu[3]+sj*ev[3]+n*ew[3]))
+                T in seen && continue
+                push!(seen, T)
+                U, V, W = _map_forward(m, si/n, sj/n)
+                x, y, z = _panel_to_cartesian(U, V, W, p)
+                push!(xs, x); push!(ys, y); push!(zs, z)
+            end
+            xs, ys, zs
+        end
+        for n in (4, 10), m in (:gnomonic, :equiangular)
+            xs, ys, zs = lattice(n, m)
+            @test length(xs) == 6n^2 + 2          # the lattice really is watertight
+            best, res = detect_cubed_sphere_map(xs, ys, zs)
+            @test best === m                       # right answer
+            @test res[m] < 1.0e-12                 # and decisively so
+            for other in (:gnomonic, :equiangular)
+                other === m || @test res[other] > 1.0e-3
+            end
+        end
+        # a node cloud that is not 6n^2+2 is reported as :unknown, not guessed at
+        best, _ = detect_cubed_sphere_map([1.0,0.0,0.0], [0.0,1.0,0.0], [0.0,0.0,1.0])
+        @test best === :unknown
+    end
+
     @testset "remap_direction on the SWsphere grid" begin
         msh = joinpath(@__DIR__, "..", "problems", "ShallowWater", "SWsphere", "cubed_sphere.msh")
         if !isfile(msh)
@@ -186,7 +223,7 @@ end
             R = sqrt(sum(pts[1].^2))
 
             for to in (:equiangular, :conformal)
-                moved = [remap_direction(x, y, z, to) for (x, y, z) in pts]
+                moved = [remap_direction(x, y, z, :gnomonic, to) for (x, y, z) in pts]
                 # still on the sphere
                 for p in moved
                     @test sqrt(sum(p.^2)) ≈ 1.0 atol = 1.0e-12
@@ -203,7 +240,7 @@ end
             # remapping to :gnomonic — the map the grid already carries — is
             # the identity, node for node
             for (x, y, z) in pts
-                p = remap_direction(x, y, z, :gnomonic)
+                p = remap_direction(x, y, z, :gnomonic, :gnomonic)
                 @test all(isapprox.(R .* p, (x, y, z); atol = 1.0e-6))
             end
         end

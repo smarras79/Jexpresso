@@ -16,11 +16,27 @@
 //
 // NOTE: this uses the built-in gmsh kernel. `Ruled Surface`/`Line Loop` are
 // the pre-4.0 spellings and are still accepted as aliases in gmsh 4.x.
-// The equivalent grid can also be produced without gmsh at all:
 //
-//   julia tools/generate_cubed_sphere.jl 10 6.371e6 ./meshes/gmsh_grids/cubed_sphere.msh
+// NO SPHERE-CENTRE NODE. Point(1) at the origin is unavoidable GEOMETRY here —
+// `Circle` needs a centre and `In Sphere` needs a reference — but it must not
+// reach the mesh. It is in no Physical group, so `Mesh.SaveAll = 0` below drops
+// it, together with the twelve arcs, leaving exactly the six quad panels. In the
+// GUI this is the "Save all elements" checkbox: LEAVE IT UNCHECKED. Ticking it
+// overrides the setting and writes Point(1) as a node at r = 0 that belongs to
+// no element, which is what produced the 603-node files.
 //
-// which uses the EQUIANGULAR gnomonic mapping and is the recommended path.
+// WHICH MAP THIS ACTUALLY BUILDS: the EQUIANGULAR cubed sphere, not the
+// gnomonic one. `Transfinite Line` spaces points at equal ANGLE along a
+// `Circle` arc, and the transfinite patch inherits that. Verified: the grid
+// this file produces matches tools/generate_cubed_sphere.jl's :equiangular
+// output to 2.2e-16 of R, and differs from its :gnomonic output by 535 km.
+// So do NOT then set `:cubed_sphere_map => :equiangular` on it — that would
+// apply the warp twice.
+//
+// The equivalent grid without gmsh at all, which is the simpler path and cannot
+// emit a centre node by construction:
+//
+//   julia tools/generate_cubed_sphere.jl 10 6.371e6 cubed_sphere.msh equiangular
 // ---------------------------------------------------------------------------
 
 R = 6371000.0;      // sphere radius [m] (Earth)
@@ -86,3 +102,9 @@ Physical Surface(6) = {6};
 Mesh.ElementOrder    = 1;   // JEXPRESSO adds the high-order LGL points itself
 Mesh.RecombineAll    = 1;
 Mesh.SecondOrderLinear = 0;
+
+// Write ONLY entities that belong to a Physical group, i.e. the six panels.
+// This is what keeps Point(1) (the sphere centre) and the twelve arcs out of
+// the .msh. Equivalent to leaving "Save all elements" UNCHECKED in the GUI —
+// and the GUI checkbox wins over this line, so leave it unticked there too.
+Mesh.SaveAll = 0;

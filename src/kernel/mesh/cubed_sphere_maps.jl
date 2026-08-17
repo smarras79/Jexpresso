@@ -368,17 +368,90 @@ end
     error(" # ERROR cubed_sphere_maps.jl: unknown cubed-sphere map ", name)
 end
 
+#---------------------------------------------------------------------------------
+# Which map a grid ALREADY carries — measured, not assumed.
+#
+# This started life as an input, :cubed_sphere_map_source, defaulting to
+# :gnomonic "because that is what cubed_sphere.geo emits". BOTH halves of that
+# were wrong. The input was an unverifiable claim about the .msh (which is why
+# it was removed), and the default was false: gmsh's `Transfinite Line` spaces
+# points at equal ANGLE along a `Circle` arc, so the .geo produces the
+# EQUIANGULAR grid. Measured against tools/generate_cubed_sphere.jl, the shipped
+# cubed_sphere.msh matches the generated equiangular grid to 2.2e-16 of R, and
+# differs from the gnomonic one by 535 km.
+#
+# Assuming gnomonic therefore made `:cubed_sphere_map => :equiangular` apply the
+# equiangular warp to an already-equiangular grid — squeezing the minimum
+# element edge from 710 km to 562 km, a 21% cut in the explicit time step, for
+# a grid the user believed was being improved.
+#
+# So detect it. For the correct source map M, pushing every node's face
+# coordinate back through M's inverse must land on the UNIFORM lattice the
+# panels were built from, {-1, -1+2/n, …, 1}. Fitting that lattice and measuring
+# the residual separates the candidates by orders of magnitude, so the answer is
+# a measurement rather than a declaration.
+#---------------------------------------------------------------------------------
+"""
+    detect_cubed_sphere_map(xs, ys, zs) -> (map::Symbol, residuals::Dict)
+
+Best-fitting source map for the LINEAR VERTICES of a cubed-sphere grid, with the
+per-candidate lattice residual so a caller can see how decisive the fit was.
+
+Pass only the linear vertices (`1:mesh.npoin_linear`): the high-order LGL nodes
+do not sit on the panel lattice and would wash the test out.
+
+`n` is taken from the vertex count, `V = 6n²+2`, rather than by counting distinct
+levels — round-off makes the shipped grid show 12 apparent levels where the
+generated one shows 11, and an `n` off by one turns a 1e-16 residual into 1e-1.
+"""
+function detect_cubed_sphere_map(xs, ys, zs)
+    res = Dict{Symbol,Float64}(:gnomonic => Inf, :equiangular => Inf, :conformal => Inf)
+    V = length(xs)
+    n2 = (V - 2)/6
+    n  = round(Int, sqrt(n2))
+    (n >= 1 && 6n^2 + 2 == V) || return (:unknown, res)   # not a structured cubed sphere
+
+    h = 2.0/n
+    for m in (:gnomonic, :equiangular, :conformal)
+        worst = 0.0
+        for k in eachindex(xs)
+            r = sqrt(xs[k]^2 + ys[k]^2 + zs[k]^2)
+            r > 0 || continue
+            p = cubed_sphere_panel_of(xs[k]/r, ys[k]/r, zs[k]/r)
+            ug, vg = _panel_face_coords(xs[k]/r, ys[k]/r, zs[k]/r, p)
+            u, v = _map_inverse(m, clamp(ug, -1.0, 1.0), clamp(vg, -1.0, 1.0))
+            for t in (u, v)
+                worst = max(worst, abs(t - (-1.0 + h*round((t + 1.0)/h))))
+            end
+        end
+        res[m] = worst
+    end
+    return argmin(res), res
+end
+
+
 #
 # The composite the remap actually applies: a Cartesian direction in, a
-# Cartesian direction out, both on the unit sphere.
+# Cartesian direction out, both on the unit sphere. `from` is the map the grid
+# already carries — pass what detect_cubed_sphere_map found, never a guess.
 #
-# The SOURCE map is always the gnomonic one. That is not a limitation dressed
-# up as a default: reading a node's face coordinate back off the sphere,
-# (u, v) = (r̂·êu, r̂·êv)/(r̂·êw), IS the gnomonic inverse, and it is what
-# cubed_sphere.geo produces. Offering a "source map" input instead would be a
-# claim about the .msh that nothing in the code can verify, and getting it
-# wrong yields a grid that is neither map — with no error.
-#
+function remap_direction(x::Real, y::Real, z::Real, from::Symbol, to::Symbol)
+    r = sqrt(x*x + y*y + z*z)
+    r > 0.0 || return (x, y, z)
+    xn, yn, zn = x/r, y/r, z/r
+
+    panel  = cubed_sphere_panel_of(xn, yn, zn)
+    ug, vg = _panel_face_coords(xn, yn, zn, panel)
+    # clamp: a node exactly on a cube edge can land at 1+ε through round-off,
+    # and the conformal series rejects anything outside the closed square.
+    u, v   = _map_inverse(from, clamp(ug, -1.0, 1.0), clamp(vg, -1.0, 1.0))
+    U, V, W = _map_forward(to, clamp(u, -1.0, 1.0), clamp(v, -1.0, 1.0))
+    return _panel_to_cartesian(U, V, W, panel)
+end
+
+# Back-compatible 4-argument form, for callers that know the grid is gnomonic
+# (tools/generate_cubed_sphere.jl builds from the face lattice directly and does
+# not use this).
 function remap_direction(x::Real, y::Real, z::Real, to::Symbol)
     r = sqrt(x*x + y*y + z*z)
     r > 0.0 || return (x, y, z)

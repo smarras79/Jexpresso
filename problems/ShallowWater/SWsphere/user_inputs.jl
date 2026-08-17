@@ -54,17 +54,24 @@ function user_inputs()
         :lproject_to_sphere      => true,
         :sphere_radius        => 6.37122e6,
         #---------------------------------------------------------------------------
-        # Which cube-face → sphere map the panels carry. cubed_sphere.geo builds
-        # the classical GNOMONIC one (Sadourny 1972); this switch slides the
+        # Which cube-face → sphere map the panels carry. This switch slides the
         # nodes onto a different map after the grid is read, leaving the
         # connectivity and the panel boundaries alone. See the README section
         # "Changing the cube-face → sphere map" and
         # src/kernel/mesh/cubed_sphere_maps.jl.
         #
-        #   :equiangular  more even node spacing along a panel EDGE
-        #                 (Ronchi et al. 1996). NOTE it is the most expensive
-        #                 of the three on this grid: min element edge 562 km
-        #                 against the gnomonic 710 km, i.e. 0.79x the Δt.
+        # cubed_sphere.geo does NOT build the gnomonic grid, despite what the
+        # comments here used to say. gmsh spaces Transfinite Line points at
+        # equal ANGLE along a Circle arc, so the .msh is already EQUIANGULAR —
+        # it reproduces tools/generate_cubed_sphere.jl's :equiangular output to
+        # 2.2e-16 of R. Hence :none below: there is nothing to improve, and
+        # asking for :equiangular would have applied the warp a second time
+        # (min element edge 710 km -> 562 km, 21% of the time step, silently).
+        # The remap now MEASURES the map the grid carries rather than assuming,
+        # so that mistake is no longer possible — it reports what it found.
+        #
+        #   :equiangular  what this grid already is (Ronchi et al. 1996):
+        #                 min element edge 710 km, max 1000 km, ratio 1.41.
         #   :conformal    NOT USABLE ON THIS GRID, and the code refuses it.
         #                 It does keep grid lines at 90° into a cube corner
         #                 where the other two degenerate to 120°, but it pays
@@ -84,9 +91,9 @@ function user_inputs()
         # Without it Julia reads the NEXT line's leading `:` as the range
         # operator and the run dies with a baffling
         # `UndefVarError: sphere_metrics`, naming the line AFTER the mistake.
-        #:cubed_sphere_map => :none,        # default — grid exactly as the .msh has it
-        #:cubed_sphere_map => :gnomonic,    # equidistant central projection (Sadourny 1972) — no-op, it already is this
-        :cubed_sphere_map => :equiangular, # u = tan α, α ∈ [-π/4, π/4] (Ronchi, Iacono & Paolucci 1996). Costs 21% of Δt on this grid.
+        :cubed_sphere_map => :none,        # THIS GRID IS ALREADY EQUIANGULAR — see the note above
+        #:cubed_sphere_map => :gnomonic,   # would UN-warp it to the equidistant projection (Sadourny 1972)
+        #:cubed_sphere_map => :equiangular,# no-op here; the remap detects that and says so
         #:cubed_sphere_map => :conformal,  # UNUSABLE with this grid — see the note above
         #---------------------------------------------------------------------------
         # Metric terms of the 2D manifold. Kopriva's curl-invariant form

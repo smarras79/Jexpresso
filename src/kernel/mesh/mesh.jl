@@ -1524,15 +1524,44 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
               "asks for them to be left on the element chords. Set one or the other.")
     end
 
-    # :gnomonic is what the grid already is, so asking for it is the identity.
-    if to === :gnomonic || to === :equidistant
+    R = mesh.radius
+
+    #
+    # MEASURE the map the grid already carries; do not assume it.
+    #
+    # This used to assume :gnomonic, "because that is what cubed_sphere.geo
+    # emits". It is not: gmsh spaces `Transfinite Line` points at equal ANGLE
+    # along a `Circle` arc, so the .geo produces the EQUIANGULAR grid — verified
+    # against tools/generate_cubed_sphere.jl, which reproduces the shipped
+    # cubed_sphere.msh to 2.2e-16 of R and differs from gnomonic by 535 km.
+    # Assuming gnomonic made `:cubed_sphere_map => :equiangular` apply the warp
+    # to an already-warped grid and cut the minimum element edge from 710 km to
+    # 562 km — a 21% loss of time step, silently.
+    #
+    # Only the LINEAR vertices lie on the panel lattice, so the fit uses those.
+    # It separates the candidates by ~14 orders of magnitude (2e-16 against
+    # 1e-1), so this is a measurement, not a guess.
+    #
+    nlin = Int(mesh.npoin_linear)
+    from, resid = detect_cubed_sphere_map(@view(mesh.x[1:nlin]),
+                                          @view(mesh.y[1:nlin]),
+                                          @view(mesh.z[1:nlin]))
+    if from === :unknown
+        error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) *
+              " needs a structured cubed sphere, but this grid has " * string(nlin) *
+              " linear vertices,\n #   which is not 6n²+2 for any n. Remove the switch, " *
+              "or build the grid with tools/generate_cubed_sphere.jl.")
+    end
+    println_rank(string(" #   cubed-sphere grid detected as :", from,
+                        " (lattice residual ", @sprintf("%.1e", resid[from]), ")");
+                 msg_rank = rank, suppress = mesh.msg_suppress)
+
+    if to === from || (to in (:gnomonic, :equidistant) && from in (:gnomonic, :equidistant))
         println_rank(string(" #   :cubed_sphere_map => ", to,
                             " is the map the grid already carries — left as read.");
                      msg_rank = rank, suppress = mesh.msg_suppress)
         return nothing
     end
-
-    R = mesh.radius
 
     #
     # THE CONFORMAL MAP IS SINGULAR AT THE EIGHT CUBE CORNERS, and a grid with a
@@ -1585,7 +1614,7 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
     dmax = 0.0
     for ip = 1:mesh.npoin
         x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
-        nx, ny, nz = remap_direction(x, y, z, to)
+        nx, ny, nz = remap_direction(x, y, z, from, to)
         X, Y, Z = R*nx, R*ny, R*nz
         dmax = max(dmax, sqrt((X-x)^2 + (Y-y)^2 + (Z-z)^2))
         mesh.x[ip], mesh.y[ip], mesh.z[ip] = X, Y, Z
@@ -1593,7 +1622,7 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
         mesh.lat[ip] = asin(clamp(Z/R, -1.0, 1.0))
     end
 
-    println_rank(string(" #   cubed-sphere remap: gnomonic → ", to,
+    println_rank(string(" #   cubed-sphere remap: ", from, " → ", to,
                         " ; largest node displacement = ",
                         MPI.Allreduce(dmax, MPI.MAX, comm), " m");
                  msg_rank = rank, suppress = mesh.msg_suppress)
