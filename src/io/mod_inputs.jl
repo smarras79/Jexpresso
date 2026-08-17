@@ -824,25 +824,19 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                   everywhere except the eight cube corners, at the cost of
     #                   a more variable cell size.
     #
-    #   :cubed_sphere_map_source  which map the grid ALREADY carries, i.e. how a
-    #                             node's logical face coordinate is read back.
-    #                             :gnomonic by default, which is what
-    #                             problems/ShallowWater/SWsphere/cubed_sphere.geo
-    #                             produces.
+    # The grid the remap starts FROM is always the gnomonic one — that is what
+    # cubed_sphere.geo emits, and reading a node's face coordinate back off the
+    # sphere IS the gnomonic inverse. There is deliberately no second input for
+    # it: a "source map" switch is a claim about the .msh that nothing can
+    # check, and getting it wrong silently produces a grid that is neither map.
     #
     if(!haskey(inputs, :cubed_sphere_map))
         inputs[:cubed_sphere_map] = :none
     end
-    if(!haskey(inputs, :cubed_sphere_map_source))
-        inputs[:cubed_sphere_map_source] = :gnomonic
-    end
-    let _m = inputs[:cubed_sphere_map], _s = inputs[:cubed_sphere_map_source]
+    let _m = inputs[:cubed_sphere_map]
         (_m === :none || _m in CUBED_SPHERE_MAPS) ||
             error(string(" # ERROR mod_inputs.jl: :cubed_sphere_map => ", _m,
                          " is not recognised. Use :none or one of ", CUBED_SPHERE_MAPS, "."))
-        _s in CUBED_SPHERE_MAPS ||
-            error(string(" # ERROR mod_inputs.jl: :cubed_sphere_map_source => ", _s,
-                         " is not recognised. Use one of ", CUBED_SPHERE_MAPS, "."))
     end
     #
     #   :sphere_metrics    the 2D-manifold metric terms of build_sphere_metrics.

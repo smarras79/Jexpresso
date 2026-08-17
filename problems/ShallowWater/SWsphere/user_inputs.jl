@@ -49,8 +49,8 @@ function user_inputs()
         :sphere_radius        => 6.37122e6,
         #---------------------------------------------------------------------------
         # Which cube-face → sphere map the panels carry. cubed_sphere.geo builds
-        # the classical GNOMONIC one (Sadourny 1972); these two switches slide
-        # the nodes onto a different map after the grid is read, leaving the
+        # the classical GNOMONIC one (Sadourny 1972); this switch slides the
+        # nodes onto a different map after the grid is read, leaving the
         # connectivity and the panel boundaries alone. See the README section
         # "Changing the cube-face → sphere map" and
         # src/kernel/mesh/cubed_sphere_maps.jl.
@@ -60,8 +60,7 @@ function user_inputs()
         #   :conformal    locally orthogonal away from the cube corners
         #                 (Rančić, Purser & Mesinger 1996)
         #---------------------------------------------------------------------------
-        #:cubed_sphere_map        => :conformal,
-        #:cubed_sphere_map_source => :gnomonic,
+        #:cubed_sphere_map     => :conformal,
         #---------------------------------------------------------------------------
         # Metric terms of the 2D manifold. Kopriva's curl-invariant form
         # degenerates on a surface — see the header of sphere_metrics.jl — and

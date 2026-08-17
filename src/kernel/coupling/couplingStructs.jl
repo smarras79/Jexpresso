@@ -116,6 +116,7 @@ const _CACHE_FINGERPRINT_KEYS = (
     :lphysics_grid, :nlay_pg, :nx_pg, :ny_pg,
     :ladapt, :linitial_refine, :init_refine_lvl, :lamr,
     :lxy_partition, :lwarp,
+    :lproject_to_sphere, :sphere_radius, :cubed_sphere_map,
     :xscale, :yscale, :zscale, :xdisp, :ydisp, :zdisp,
     :_parsed_equations, :_parsed_case_name,
 )

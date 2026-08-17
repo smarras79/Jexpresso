@@ -175,19 +175,24 @@ panels are the central projection of the faces of an inscribed cube
 (Sadourny 1972). That is the simplest map and the worst conditioned — all of
 its distortion piles up at the eight cube corners.
 
-Two inputs slide the nodes onto a different map *after* the grid is read.
+One input slides the nodes onto a different map *after* the grid is read.
 Connectivity, the panel decomposition and the panel boundaries are untouched;
 only where the nodes sit **inside** each panel changes, so this is safe to do
 once `mod_mesh_read_gmsh!` has already built the topology.
 
 ```julia
-:cubed_sphere_map        => :conformal,   # :none (default) | :gnomonic | :equiangular | :conformal
-:cubed_sphere_map_source => :gnomonic,    # what the .msh already carries
+:cubed_sphere_map => :conformal,   # :none (default) | :gnomonic | :equiangular | :conformal
 ```
+
+The map the nodes come **from** is always the gnomonic one, and there is
+deliberately no input for it: reading a node's face coordinate back off the
+sphere *is* the gnomonic inverse, and it is what `cubed_sphere.geo` emits. A
+"source map" switch would be a claim about the `.msh` that nothing can check,
+and getting it wrong would silently produce a grid that is neither map.
 
 | value | map | what it buys |
 |---|---|---|
-| `:gnomonic` | equidistant central projection — Sadourny (1972) | nothing; this is what the file already is |
+| `:gnomonic` | equidistant central projection — Sadourny (1972) | nothing; this is what the file already is, so it is a no-op |
 | `:equiangular` | face coordinate measured as an angle, `u = tan α`, `α ∈ [-π/4, π/4]` — Ronchi, Iacono & Paolucci (1996) | the most **homogeneous** of the three: largest minimum grid distance, hence the largest explicit Δt |
 | `:conformal` | Rančić, Purser & Mesinger (1996) | locally **orthogonal** everywhere except the cube corners, so the metric terms are diagonal — at the cost of a more variable cell size |
 
@@ -205,6 +210,10 @@ series reversion that gives the inverse — are in
 checks them (including that the conformal map really is conformal, and that
 the two panels sharing a cube edge move a seam node to the same place, so the
 shell stays watertight).
+
+`:cubed_sphere_map` is part of the mesh-cache fingerprint, so changing it
+re-reads and re-remaps the grid instead of reusing the previous run's node
+positions out of `.jexpresso_cache/`.
 
 ### Inspecting the numbering in ParaView
 

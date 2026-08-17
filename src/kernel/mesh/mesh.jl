@@ -1476,13 +1476,19 @@ end
 # project_nodes_to_shell! has put every node on the sphere and filled
 # (lon, lat). Rewrites mesh.x/y/z in place and refreshes (lon, lat).
 #
-# Controlled by two case inputs:
+# ONE case input drives it:
 #
-#   :cubed_sphere_map         the map to move the nodes ONTO. :none (default)
-#                             leaves the grid exactly as read.
-#   :cubed_sphere_map_source  the map the grid ALREADY carries, i.e. how to read
-#                             a node's logical (u, v). :gnomonic by default,
-#                             which is what cubed_sphere.geo produces.
+#   :cubed_sphere_map   the map to move the nodes ONTO. :none (default) leaves
+#                       the grid exactly as read. The map they come FROM is
+#                       always the gnomonic one — see remap_direction in
+#                       cubed_sphere_maps.jl for why that is fixed and not a
+#                       second input.
+#
+# NOTE :cubed_sphere_map is in _CACHE_FINGERPRINT_KEYS (couplingStructs.jl).
+# It has to be: a cache hit returns from mod_mesh_read_gmsh! BEFORE this
+# function is reached, so without it in the fingerprint, changing the map and
+# re-running the same case would silently reuse the previous run's node
+# positions.
 #
 # Like project_nodes_to_shell! this writes mesh.x/y/z rather than mesh.coords:
 # it runs inside the x/y/z construction chain, before mesh.coords is filled from
@@ -1493,13 +1499,8 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
     to = get(inputs, :cubed_sphere_map, :none)
     (to === :none || to === nothing) && return nothing
 
-    from = get(inputs, :cubed_sphere_map_source, :gnomonic)
-
-    to   in CUBED_SPHERE_MAPS ||
-        error(" # ERROR cubed_sphere_maps.jl: :cubed_sphere_map => ", to,
-              " is not one of ", CUBED_SPHERE_MAPS, ".")
-    from in CUBED_SPHERE_MAPS ||
-        error(" # ERROR cubed_sphere_maps.jl: :cubed_sphere_map_source => ", from,
+    to in CUBED_SPHERE_MAPS ||
+        error(" # ERROR mesh.jl: :cubed_sphere_map => ", to,
               " is not one of ", CUBED_SPHERE_MAPS, ".")
 
     comm = get_mpi_comm()
@@ -1523,11 +1524,10 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
               "asks for them to be left on the element chords. Set one or the other.")
     end
 
-    # A remap to the map the grid already carries is a no-op that would still
-    # cost a round trip through the series; say so and skip it.
-    if to === from || (to in (:gnomonic, :equidistant) && from in (:gnomonic, :equidistant))
+    # :gnomonic is what the grid already is, so asking for it is the identity.
+    if to === :gnomonic || to === :equidistant
         println_rank(string(" #   :cubed_sphere_map => ", to,
-                            " matches :cubed_sphere_map_source — grid left as read.");
+                            " is the map the grid already carries — left as read.");
                      msg_rank = rank, suppress = mesh.msg_suppress)
         return nothing
     end
@@ -1536,7 +1536,7 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
     dmax = 0.0
     for ip = 1:mesh.npoin
         x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
-        nx, ny, nz = remap_direction(x, y, z, from, to)
+        nx, ny, nz = remap_direction(x, y, z, to)
         X, Y, Z = R*nx, R*ny, R*nz
         dmax = max(dmax, sqrt((X-x)^2 + (Y-y)^2 + (Z-z)^2))
         mesh.x[ip], mesh.y[ip], mesh.z[ip] = X, Y, Z
@@ -1544,7 +1544,7 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
         mesh.lat[ip] = asin(clamp(Z/R, -1.0, 1.0))
     end
 
-    println_rank(string(" #   cubed-sphere remap: ", from, " → ", to,
+    println_rank(string(" #   cubed-sphere remap: gnomonic → ", to,
                         " ; largest node displacement = ",
                         MPI.Allreduce(dmax, MPI.MAX, comm), " m");
                  msg_rank = rank, suppress = mesh.msg_suppress)

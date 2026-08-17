@@ -46,13 +46,12 @@ function _conformality(f, u, v; h = 1.0e-5)
     return abs(nu - nv)/max(nu, nv), abs(sum(ru .* rv))/(nu*nv)
 end
 
-# The remap with the panel FORCED, so the two panels sharing an edge can be
-# compared against each other.
-function _remap_forced(x, y, z, panel, from, to)
+# remap_direction with the panel FORCED instead of tie-broken, so the two
+# panels sharing a cube edge can be compared against each other.
+function _remap_forced(x, y, z, panel, to)
     r = sqrt(x^2 + y^2 + z^2)
     xn, yn, zn = x/r, y/r, z/r
-    ug, vg = _panel_face_coords(xn, yn, zn, panel)
-    u, v   = _map_inverse(from, clamp(ug, -1, 1), clamp(vg, -1, 1))
+    u, v = _panel_face_coords(xn, yn, zn, panel)
     U, V, W = _map_forward(to, clamp(u, -1, 1), clamp(v, -1, 1))
     return _panel_to_cartesian(U, V, W, panel)
 end
@@ -163,9 +162,9 @@ end
                 a[2] >= m - 1.0e-12 && push!(cands, yn >= 0 ? 3 : 4)
                 a[3] >= m - 1.0e-12 && push!(cands, zn >= 0 ? 5 : 6)
                 length(cands) < 2 && continue
-                ref = _remap_forced(xn, yn, zn, cands[1], :gnomonic, to)
+                ref = _remap_forced(xn, yn, zn, cands[1], to)
                 for k = 2:length(cands)
-                    other = _remap_forced(xn, yn, zn, cands[k], :gnomonic, to)
+                    other = _remap_forced(xn, yn, zn, cands[k], to)
                     worst = max(worst, maximum(abs.(other .- ref)))
                 end
             end
@@ -187,7 +186,7 @@ end
             R = sqrt(sum(pts[1].^2))
 
             for to in (:equiangular, :conformal)
-                moved = [remap_direction(x, y, z, :gnomonic, to) for (x, y, z) in pts]
+                moved = [remap_direction(x, y, z, to) for (x, y, z) in pts]
                 # still on the sphere
                 for p in moved
                     @test sqrt(sum(p.^2)) ≈ 1.0 atol = 1.0e-12
@@ -201,9 +200,10 @@ end
                 @test R*sqrt(mind) > 1.0e5     # > 100 km on a ~1000 km grid
             end
 
-            # a :gnomonic -> :gnomonic remap must not move anything
+            # remapping to :gnomonic — the map the grid already carries — is
+            # the identity, node for node
             for (x, y, z) in pts
-                p = remap_direction(x, y, z, :gnomonic, :gnomonic)
+                p = remap_direction(x, y, z, :gnomonic)
                 @test all(isapprox.(R .* p, (x, y, z); atol = 1.0e-6))
             end
         end

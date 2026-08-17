@@ -13,8 +13,9 @@
 # What this file adds is a POST-READ REMAP. Every node is
 #
 #   1. assigned to the panel whose outward face normal its position points at;
-#   2. pushed back through the INVERSE of the source map to recover the node's
-#      logical coordinate (u, v) ∈ [-1,1]² on that cube face;
+#   2. read back to its logical coordinate (u, v) ∈ [-1,1]² on that cube face,
+#      which is the gnomonic inverse — see remap_direction on why the source
+#      map is fixed rather than selectable;
 #   3. pushed forward through a DIFFERENT map to give the new position.
 #
 # Step 2/3 leave (u, v) — the node's LOGICAL identity — alone, so the element
@@ -371,16 +372,22 @@ end
 # The composite the remap actually applies: a Cartesian direction in, a
 # Cartesian direction out, both on the unit sphere.
 #
-function remap_direction(x::Real, y::Real, z::Real, from::Symbol, to::Symbol)
+# The SOURCE map is always the gnomonic one. That is not a limitation dressed
+# up as a default: reading a node's face coordinate back off the sphere,
+# (u, v) = (r̂·êu, r̂·êv)/(r̂·êw), IS the gnomonic inverse, and it is what
+# cubed_sphere.geo produces. Offering a "source map" input instead would be a
+# claim about the .msh that nothing in the code can verify, and getting it
+# wrong yields a grid that is neither map — with no error.
+#
+function remap_direction(x::Real, y::Real, z::Real, to::Symbol)
     r = sqrt(x*x + y*y + z*z)
     r > 0.0 || return (x, y, z)
     xn, yn, zn = x/r, y/r, z/r
 
-    panel  = cubed_sphere_panel_of(xn, yn, zn)
-    ug, vg = _panel_face_coords(xn, yn, zn, panel)
+    panel = cubed_sphere_panel_of(xn, yn, zn)
+    u, v  = _panel_face_coords(xn, yn, zn, panel)
     # clamp: a node exactly on a cube edge can land at 1+ε through round-off,
     # and the conformal series rejects anything outside the closed square.
-    u, v   = _map_inverse(from, clamp(ug, -1.0, 1.0), clamp(vg, -1.0, 1.0))
     U, V, W = _map_forward(to, clamp(u, -1.0, 1.0), clamp(v, -1.0, 1.0))
     return _panel_to_cartesian(U, V, W, panel)
 end
