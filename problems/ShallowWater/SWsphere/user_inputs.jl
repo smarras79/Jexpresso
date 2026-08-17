@@ -71,10 +71,14 @@ function user_inputs()
         #                 Smoothest corners AND, on this grid, the cheapest:
         #                 min edge 722 km, 1.02x the gnomonic Δt.
         #---------------------------------------------------------------------------
-        #:cubed_sphere_map => :none        # default — grid exactly as the .msh has it
-        #:cubed_sphere_map => :gnomonic    # equidistant central projection (Sadourny 1972) — no-op, it already is this
-        :cubed_sphere_map => :equiangular, # u = tan α, α ∈ [-π/4, π/4] (Ronchi, Iacono & Paolucci 1996)
-        #:cubed_sphere_map => :conformal   # Rančić, Purser & Mesinger (1996)
+        # NOTE the trailing comma belongs BEFORE the # on whichever line is live.
+        # Without it Julia reads the NEXT line's leading `:` as the range
+        # operator and the run dies with a baffling
+        # `UndefVarError: sphere_metrics`, naming the line AFTER the mistake.
+        #:cubed_sphere_map => :none,        # default — grid exactly as the .msh has it
+        #:cubed_sphere_map => :gnomonic,    # equidistant central projection (Sadourny 1972) — no-op, it already is this
+        #:cubed_sphere_map => :equiangular, # u = tan α, α ∈ [-π/4, π/4] (Ronchi, Iacono & Paolucci 1996). Costs 21% of Δt on this grid.
+        :cubed_sphere_map => :conformal,   # Rančić, Purser & Mesinger (1996) — SMOOTHEST CORNERS: grid lines stay at 90° into a corner
         #---------------------------------------------------------------------------
         # Metric terms of the 2D manifold. Kopriva's curl-invariant form
         # degenerates on a surface — see the header of sphere_metrics.jl — and
