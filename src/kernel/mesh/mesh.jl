@@ -2951,25 +2951,40 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             end
         end
 
+        # PERF: elem_to_edge by hash lookup, not by scanning.
+        #
+        # This used to be, for every one of the nelem*ngl^2 element nodes:
+        # `ip in mesh.poin_in_bdy_edge` — a linear scan of the WHOLE
+        # (nedges_bdy x ngl) matrix, paid in full even when the answer is false
+        # — and then a second scan of the same matrix to find the match. Cost
+        # nelem*ngl^2*nedges_bdy*ngl, i.e. quadratic in the grid size.
+        #
+        # Measured on the cubed sphere at nop=5: ~3e8 operations at 10 elements
+        # per panel (seconds), ~2.5e10 at 30 per panel — which is the "hang"
+        # after "spherical shell R = ..." with no further output. 
+        #
+        # Same answer, built by walking the boundary edges ONCE into a
+        # (node, element) -> (edge, position) map. The tie-breaking of the old
+        # code is preserved exactly: the `while` stopped at the FIRST iedge that
+        # matched, while the inner `for i1` ran to completion and so kept the
+        # LAST matching i1 within that edge.
+        _e2e = Dict{Tuple{TInt,TInt},Tuple{TInt,TInt}}()
+        for iedge = 1:mesh.nedges_bdy
+            e1 = mesh.bdy_edge_in_elem[iedge]
+            for i1 = 1:mesh.ngl
+                k = (mesh.poin_in_bdy_edge[iedge, i1], e1)
+                prev = get(_e2e, k, nothing)
+                # unseen, or still on the same edge -> later i1 wins, as before
+                (prev === nothing || prev[1] == iedge) && (_e2e[k] = (iedge, i1))
+            end
+        end
         for e = 1:mesh.nelem
             for j = 1:mesh.ngl
                 for i = 1:mesh.ngl
-                    ip = mesh.connijk[e, i, j]
-                    if (ip in mesh.poin_in_bdy_edge)
-                        found = false
-                        iedge = 1
-                        while (iedge <= mesh.nedges_bdy && found == false)
-                            for i1 = 1:mesh.ngl
-                                ip1 = mesh.poin_in_bdy_edge[iedge, i1]
-                                e1 = mesh.bdy_edge_in_elem[iedge]
-                                if (ip1 == ip && e1 == e)
-                                    mesh.elem_to_edge[e,i,j,1] = iedge
-                                    mesh.elem_to_edge[e,i,j,2] = i1
-                                    found = true
-                                end
-                            end
-                            iedge += 1
-                        end
+                    hit = get(_e2e, (mesh.connijk[e, i, j], e), nothing)
+                    if hit !== nothing
+                        mesh.elem_to_edge[e,i,j,1] = hit[1]
+                        mesh.elem_to_edge[e,i,j,2] = hit[2]
                     end
                 end
             end
