@@ -241,7 +241,7 @@ using Jexpresso
 Jexpresso.run_case("CompEuler", "ffs_step")
 ```
 
-<img src="assets/ffs_shocks.jpg"
+<img src="assets/shock-MrhoSchielern.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
