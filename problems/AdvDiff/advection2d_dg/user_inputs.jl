@@ -17,7 +17,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
-        :lexact_integration  => false,  # collocated LGL — required for the D-064 operator gate
+        :lexact_integration  => false,  # collocated LGL — required for the entrywise operator verification
         :AD                  => DiscGal(),
         :numerical_flux      => upwind_flux(),
         #---------------------------------------------------------------------------

@@ -79,7 +79,7 @@ end
 # ω_k·J_face is applied HERE; only the volume mass ω_i·ω_j·J_vol is supplied
 # by the later divide_by_mass_matrix! — the 1D method adds the bare flux
 # difference because a 1D face is a point, and carrying that idiom to 2D
-# drops the face quadrature (roadmap §5.15(f)).
+# drops the face quadrature — a silent wrong operator.
 function surface_rhs_el!(params, uaux, connijk, qe, mesh,
                          nelem, ngl, neqs, CL, SVT, nflux, SD::NSD_2D)
 

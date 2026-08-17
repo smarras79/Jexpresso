@@ -6,7 +6,7 @@ function user_inputs()
         #     ∂q/∂t + ∂(U q)/∂x = 0,   U = 2,   periodic on [-1, 1]
         #
         # This case is the Jexpresso-side twin of the validated Python 1D DG
-        # reference (drl-amr/backends/python_1d). The configuration below
+        # reference. The configuration below
         # deliberately mirrors that reference so the two discretizations are
         # the *same discrete problem*: identical domain, wave speed, initial
         # condition, polynomial order, flux, and boundary treatment. That is
