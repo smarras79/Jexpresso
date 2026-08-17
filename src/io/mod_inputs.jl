@@ -806,6 +806,45 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lproject_to_sphere] = true
     end
     #
+    #   :cubed_sphere_map         move the shell's nodes onto a different
+    #                             cube-face → sphere map after the grid is read.
+    #                             Connectivity, panel decomposition and panel
+    #                             boundaries are untouched — only where the
+    #                             nodes sit inside each panel changes. See
+    #                             src/kernel/mesh/cubed_sphere_maps.jl.
+    #
+    #     :none         (default) leave the grid exactly as the .msh has it.
+    #     :gnomonic     equidistant central projection, Sadourny (1972).
+    #                   (:equidistant is an accepted alias.)
+    #     :equiangular  central projection with the face coordinate measured as
+    #                   an angle, Ronchi, Iacono & Paolucci (1996). The most
+    #                   HOMOGENEOUS of the three: largest minimum grid distance,
+    #                   so the largest explicit time step.
+    #     :conformal    Rančić, Purser & Mesinger (1996). Locally ORTHOGONAL
+    #                   everywhere except the eight cube corners, at the cost of
+    #                   a more variable cell size.
+    #
+    #   :cubed_sphere_map_source  which map the grid ALREADY carries, i.e. how a
+    #                             node's logical face coordinate is read back.
+    #                             :gnomonic by default, which is what
+    #                             problems/ShallowWater/SWsphere/cubed_sphere.geo
+    #                             produces.
+    #
+    if(!haskey(inputs, :cubed_sphere_map))
+        inputs[:cubed_sphere_map] = :none
+    end
+    if(!haskey(inputs, :cubed_sphere_map_source))
+        inputs[:cubed_sphere_map_source] = :gnomonic
+    end
+    let _m = inputs[:cubed_sphere_map], _s = inputs[:cubed_sphere_map_source]
+        (_m === :none || _m in CUBED_SPHERE_MAPS) ||
+            error(string(" # ERROR mod_inputs.jl: :cubed_sphere_map => ", _m,
+                         " is not recognised. Use :none or one of ", CUBED_SPHERE_MAPS, "."))
+        _s in CUBED_SPHERE_MAPS ||
+            error(string(" # ERROR mod_inputs.jl: :cubed_sphere_map_source => ", _s,
+                         " is not recognised. Use one of ", CUBED_SPHERE_MAPS, "."))
+    end
+    #
     #   :sphere_metrics    the 2D-manifold metric terms of build_sphere_metrics.
     #                      Kopriva's curl-invariant form (J. Sci. Comput. 26(3),
     #                      301, 2006, Eq. 15; Sec. 3.2.3 of Kelly, Alves,

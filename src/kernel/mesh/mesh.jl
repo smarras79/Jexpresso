@@ -1469,6 +1469,90 @@ function project_nodes_to_shell!(mesh::St_mesh, inputs::Dict{Symbol,Any})
 end
 
 
+#---------------------------------------------------------------------------------
+# remap_cubed_sphere_nodes!(mesh, inputs)
+#
+# The entry point, called from mod_mesh_read_gmsh! immediately after
+# project_nodes_to_shell! has put every node on the sphere and filled
+# (lon, lat). Rewrites mesh.x/y/z in place and refreshes (lon, lat).
+#
+# Controlled by two case inputs:
+#
+#   :cubed_sphere_map         the map to move the nodes ONTO. :none (default)
+#                             leaves the grid exactly as read.
+#   :cubed_sphere_map_source  the map the grid ALREADY carries, i.e. how to read
+#                             a node's logical (u, v). :gnomonic by default,
+#                             which is what cubed_sphere.geo produces.
+#
+# Like project_nodes_to_shell! this writes mesh.x/y/z rather than mesh.coords:
+# it runs inside the x/y/z construction chain, before mesh.coords is filled from
+# them at the end of mod_mesh_read_gmsh!.
+#---------------------------------------------------------------------------------
+function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
+
+    to = get(inputs, :cubed_sphere_map, :none)
+    (to === :none || to === nothing) && return nothing
+
+    from = get(inputs, :cubed_sphere_map_source, :gnomonic)
+
+    to   in CUBED_SPHERE_MAPS ||
+        error(" # ERROR cubed_sphere_maps.jl: :cubed_sphere_map => ", to,
+              " is not one of ", CUBED_SPHERE_MAPS, ".")
+    from in CUBED_SPHERE_MAPS ||
+        error(" # ERROR cubed_sphere_maps.jl: :cubed_sphere_map_source => ", from,
+              " is not one of ", CUBED_SPHERE_MAPS, ".")
+
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+
+    # radius is only set (and lon/lat only allocated) when
+    # project_nodes_to_shell! decided the grid really is a sphere.
+    if mesh.radius <= 0.0
+        println_rank(string(" #   :cubed_sphere_map => ", to,
+                            " ignored: the grid is not a sphere.");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+        return nothing
+    end
+
+    # The remap re-places every node BY DIRECTION, which necessarily puts it on
+    # the exact sphere. That is the opposite of what :lproject_to_sphere =>
+    # false asks for, so refuse rather than silently overriding it.
+    if get(inputs, :lproject_to_sphere, true) != true
+        error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) *
+              " needs the nodes ON the sphere, but :lproject_to_sphere => false " *
+              "asks for them to be left on the element chords. Set one or the other.")
+    end
+
+    # A remap to the map the grid already carries is a no-op that would still
+    # cost a round trip through the series; say so and skip it.
+    if to === from || (to in (:gnomonic, :equidistant) && from in (:gnomonic, :equidistant))
+        println_rank(string(" #   :cubed_sphere_map => ", to,
+                            " matches :cubed_sphere_map_source — grid left as read.");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+        return nothing
+    end
+
+    R = mesh.radius
+    dmax = 0.0
+    for ip = 1:mesh.npoin
+        x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+        nx, ny, nz = remap_direction(x, y, z, from, to)
+        X, Y, Z = R*nx, R*ny, R*nz
+        dmax = max(dmax, sqrt((X-x)^2 + (Y-y)^2 + (Z-z)^2))
+        mesh.x[ip], mesh.y[ip], mesh.z[ip] = X, Y, Z
+        mesh.lon[ip] = atan(Y, X)
+        mesh.lat[ip] = asin(clamp(Z/R, -1.0, 1.0))
+    end
+
+    println_rank(string(" #   cubed-sphere remap: ", from, " → ", to,
+                        " ; largest node displacement = ",
+                        MPI.Allreduce(dmax, MPI.MAX, comm), " m");
+                 msg_rank = rank, suppress = mesh.msg_suppress)
+
+    return nothing
+end
+
+
 function _flatten_model_to_cell_dim(model::Gridap.Geometry.DiscreteModel{Dc,Dp}) where {Dc,Dp}
     Dc == Dp && return model
     # Squashing a curved surface would silently collapse it (a sphere onto its
@@ -2262,6 +2346,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # them back out and fill (lon, lat). Nothing here runs for a flat grid.
     if mesh.lmanifold
         project_nodes_to_shell!(mesh, inputs)
+        # Optionally slide the nodes along the shell onto a DIFFERENT
+        # cube-face → sphere map (equiangular, conformal). Connectivity and the
+        # panel decomposition are untouched; only where the nodes sit within
+        # each panel changes. No-op unless :cubed_sphere_map is set.
+        remap_cubed_sphere_nodes!(mesh, inputs)
     end
 
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)

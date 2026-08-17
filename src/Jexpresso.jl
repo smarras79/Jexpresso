@@ -194,6 +194,10 @@ include(joinpath( "kernel", "mesh", "pole_handling.jl"))
 # High-order grid on a CLOSED spherical shell (2D manifold embedded in 3D).
 # Self-contained on purpose: the flat 2D reader in mesh.jl stores only (x,y).
 
+# Cube-face -> sphere maps (gnomonic / equiangular / conformal) and the
+# post-read node remap that switches a cubed-sphere grid from one to another.
+include(joinpath( "kernel", "mesh", "cubed_sphere_maps.jl"))
+
 # Metric terms of the 2D manifold + the diagonal mass matrix.
 include(joinpath( "kernel", "mesh", "sphere_metrics.jl"))
 

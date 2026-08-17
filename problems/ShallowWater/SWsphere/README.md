@@ -168,6 +168,44 @@ four great-circle edges, then projected radially onto the shell. Both are exactl
 on the sphere, and the edge construction depends only on the edge's two
 endpoints, so the two sides of a seam agree.
 
+### Changing the cube-face → sphere map
+
+`cubed_sphere.geo` builds the **classical gnomonic** cubed sphere: the six
+panels are the central projection of the faces of an inscribed cube
+(Sadourny 1972). That is the simplest map and the worst conditioned — all of
+its distortion piles up at the eight cube corners.
+
+Two inputs slide the nodes onto a different map *after* the grid is read.
+Connectivity, the panel decomposition and the panel boundaries are untouched;
+only where the nodes sit **inside** each panel changes, so this is safe to do
+once `mod_mesh_read_gmsh!` has already built the topology.
+
+```julia
+:cubed_sphere_map        => :conformal,   # :none (default) | :gnomonic | :equiangular | :conformal
+:cubed_sphere_map_source => :gnomonic,    # what the .msh already carries
+```
+
+| value | map | what it buys |
+|---|---|---|
+| `:gnomonic` | equidistant central projection — Sadourny (1972) | nothing; this is what the file already is |
+| `:equiangular` | face coordinate measured as an angle, `u = tan α`, `α ∈ [-π/4, π/4]` — Ronchi, Iacono & Paolucci (1996) | the most **homogeneous** of the three: largest minimum grid distance, hence the largest explicit Δt |
+| `:conformal` | Rančić, Purser & Mesinger (1996) | locally **orthogonal** everywhere except the cube corners, so the metric terms are diagonal — at the cost of a more variable cell size |
+
+Measured on this grid (`|r_u|` over the face, larger ratio = more distorted):
+
+| map | max angle defect | cell-size ratio | min node separation |
+|---|---|---|---|
+| gnomonic | 0.48 | 2.07 | — |
+| equiangular | 0.48 | **1.38** | 562 km |
+| conformal | **4e-9** | 2.74 | **722 km** |
+
+The mechanics — the panel frames, the Rančić Table B1 coefficients and the
+series reversion that gives the inverse — are in
+`src/kernel/mesh/cubed_sphere_maps.jl`, and `test/test_cubed_sphere_maps.jl`
+checks them (including that the conformal map really is conformal, and that
+the two panels sharing a cube edge move a seam node to the same place, so the
+shell stays watertight).
+
 ### Inspecting the numbering in ParaView
 
 Colour `sphere_grid_ho.vtu` by the point field **`ip`** (the global node index).
