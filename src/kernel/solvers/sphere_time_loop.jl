@@ -499,6 +499,13 @@ function _sphere_march!(mesh::St_mesh,
         println(" # TIME INTEGRATION ............................................ DONE")
         @printf(" #   final: t = %.1f s ; δmass/mass = %.3e ; δE/E = %.3e ; max drift removed = %.3e\n",
                 tfinal, (mass-mass0)/mass0, (ener-ener0)/ener0, params.driftmax[])
+        # Where the results are. Repeated here so the location is on screen at
+        # the end of the run instead of only next to the individual writes.
+        println(" # Output written to: ", abspath(OUTPUT_DIR))
+        get(inputs, :lwrite_initial, true) == true &&
+            println(" #   sphere_grid_ho.vtu   grid + initial condition")
+        @printf(" #   sphere_0001..%04d.vtu   %d output time%s\n",
+                nout, nout, nout == 1 ? "" : "s")
     end
 
     return tfinal
@@ -525,6 +532,11 @@ function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
     fname = iout == 0 ? "sphere_grid_ho" : @sprintf("sphere_%04d", iout)
     write_vtk_sphere_grid(mesh, fname, OUTPUT_DIR; q = q, extra = extra, verbose = false)
 
-    verbose && @printf(" #   wrote %s.vtu at t = %.1f s\n", fname, t)
+    # Print the FULL path, as the flat cases do in write_output (" # writing
+    # <OUTPUT_DIR>/iter_N.pvtu ... DONE"). `abspath` because :output_dir is
+    # typically relative ("./output"), so the bare string does not tell you
+    # where the file actually landed.
+    verbose && @printf(" #   writing %s.vtu at t = %.1f s ... DONE\n",
+                       joinpath(abspath(OUTPUT_DIR), fname), t)
     return nothing
 end

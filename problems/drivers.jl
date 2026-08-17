@@ -102,7 +102,7 @@ function driver(nparts,
         if get(inputs, :lgrid_only, false) == true
             rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR)
             if rank == 0
-                println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
+                println(" # :lgrid_only => true — grid built and written to ", abspath(OUTPUT_DIR), ". Stopping here.")
             end
             return smesh
         end
@@ -156,7 +156,7 @@ function driver(nparts,
         if get(inputs, :linit_only, false) == true
             rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; q = qsphere)
             if rank == 0
-                println(" # :linit_only => true — grid + initial condition written to ", OUTPUT_DIR, ". Stopping here.")
+                println(" # :linit_only => true — grid + initial condition written to ", abspath(OUTPUT_DIR), ". Stopping here.")
             end
             return smesh, qsphere
         end
