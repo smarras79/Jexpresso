@@ -29,6 +29,17 @@
 #
 #   4. Published anchor points of the conformal map: the face centre goes to
 #      the pole, the face corner to the cube corner.
+#
+#   5. THE 120° CORNER, the constraint that decides which maps are usable at all:
+#      three panels meet at a cube corner, so each opens 360°/3 = 120°, and a map
+#      differentiable there with non-singular differential A must therefore send
+#      the two grid lines to that same 120° — 30° off orthogonal. A map that holds
+#      90° into the corner has det A = 0 there. Both halves are asserted, which is
+#      what pins :conformal as unusable by a nodal grid with a node on a corner
+#      (mesh.jl refuses it) and :equiangular as the map to use instead. Any future
+#      "regularisation" has to break one of those two tests to be worth trying —
+#      the corner-stretched variant that shipped briefly broke neither and still
+#      failed the shell metric checks by O(1).
 #---------------------------------------------------------------------------------
 
 using Test
@@ -110,35 +121,55 @@ end
         end
     end
 
-    # THE test. Two distinct properties, and the two conformal variants differ in
-    # exactly one of them:
+    # THE test. Two properties, both held by the conformal map and by neither of
+    # the other two:
     #
     #   ORTHOGONALITY  r_u . r_v = 0. What makes the metric terms diagonal, and
-    #                  what "grid lines meet at 90 degrees" means. Held by BOTH
-    #                  :conformal and :conformal_exact, everywhere.
-    #   ISOTROPY       |r_u| = |r_v|. Held only by :conformal_exact — and it is
-    #                  precisely what the corner regularisation trades away to
-    #                  keep the Jacobian finite.
+    #                  what "grid lines meet at 90 degrees" means.
+    #   ISOTROPY       |r_u| = |r_v|. Together with orthogonality this is what
+    #                  "conformal" means: the Jacobian is a scalar times a
+    #                  rotation.
+    #
+    # :conformal_exact is a deprecated ALIAS of :conformal — the corner-stretched
+    # variant that used to make the two names differ is gone (see THE 120° CORNER
+    # in cubed_sphere_maps.jl), so both must measure identically here.
     @testset "orthogonality and isotropy" begin
         worst = Dict(m => (0.0, 0.0) for m in MAPS)
         for m in MAPS, u in range(-0.97, 0.97, length = 33), v in range(-0.97, 0.97, length = 33)
             iso, orth = _conformality((a, b) -> _map_forward(m, a, b), u, v)
             worst[m] = (max(worst[m][1], iso), max(worst[m][2], orth))
         end
-        # both conformal variants are ORTHOGONAL to the differencing floor
-        @test worst[:conformal][2]       < 1.0e-6
-        @test worst[:conformal_exact][2] < 1.0e-6
-        # only the exact one is also ISOTROPIC
-        @test worst[:conformal_exact][1] < 1.0e-6
-        # the regularised one deliberately is not, and the other two are neither
-        @test worst[:conformal][1]   > 0.1
+        for m in (:conformal, :conformal_exact)
+            @test worst[m][1] < 1.0e-6      # isotropic
+            @test worst[m][2] < 1.0e-6      # and orthogonal
+        end
         @test worst[:gnomonic][2]    > 0.1
         @test worst[:equiangular][2] > 0.1
     end
 
-    # The corner regularisation exists for ONE reason: the pure map's Jacobian
-    # vanishes at a cube corner and a structured panel grid puts a node there.
-    @testset "corner Jacobian is non-degenerate" begin
+    # :conformal_exact is the same function as :conformal, not a near-copy.
+    @testset ":conformal_exact is an alias of :conformal" begin
+        for u in range(-1, 1, length = 21), v in range(-1, 1, length = 21)
+            @test _map_forward(:conformal_exact, u, v) === _map_forward(:conformal, u, v)
+            @test _map_inverse(:conformal_exact, u, v) === _map_inverse(:conformal, u, v)
+        end
+        @test :conformal in CUBED_SPHERE_CORNER_SINGULAR_MAPS
+        @test :conformal_exact in CUBED_SPHERE_CORNER_SINGULAR_MAPS
+        @test !(:equiangular in CUBED_SPHERE_CORNER_SINGULAR_MAPS)
+    end
+
+    # THE 120° CORNER, as a test rather than as a paragraph.
+    #
+    # Three panels meet at a cube corner, so each opens 360°/3 = 120°. A map that
+    # is differentiable there with a non-singular differential A sends the two
+    # grid lines to the two cube-edge arcs, so its grid lines meet at 120° — 30°
+    # off orthogonal, and that is the BEST a nodal scheme can do. A map that holds
+    # the square's 90° into the corner must therefore have det A = 0 there.
+    #
+    # Both halves are asserted below, which is what pins :conformal as unusable by
+    # build_sphere_metrics and :equiangular as the map to use instead. Any future
+    # "regularisation" has to break one of these two tests to be worth trying.
+    @testset "the 120° corner" begin
         function jac(m, u, v; h = 1.0e-6)
             p(a, b) = collect(_map_forward(m, a, b))
             ru = (p(u+h, v) .- p(u-h, v)) ./ (2h)
@@ -146,11 +177,30 @@ end
             cr = (ru[2]*rv[3]-ru[3]*rv[2], ru[3]*rv[1]-ru[1]*rv[3], ru[1]*rv[2]-ru[2]*rv[1])
             sqrt(sum(cr.^2))
         end
-        # at the corner the pure map collapses; the regularised one does not
-        @test jac(:conformal_exact, 1.0-1.0e-5, 1.0-1.0e-5) < 1.0e-3
-        @test jac(:conformal,       1.0-1.0e-5, 1.0-1.0e-5) > 0.3
-        # and nothing folds anywhere on the face
-        for m in MAPS, u in range(-0.999, 0.999, length = 41), v in range(-0.999, 0.999, length = 41)
+        function corner_angle(m, d; h = 1.0e-9)
+            u = 1.0 - d
+            p(a, b) = collect(_map_forward(m, a, b))
+            ru = (p(u+h, u) .- p(u-h, u)) ./ (2h)
+            rv = (p(u, u+h) .- p(u, u-h)) ./ (2h)
+            acosd(clamp(sum(ru .* rv)/(sqrt(sum(ru.^2))*sqrt(sum(rv.^2))), -1.0, 1.0))
+        end
+
+        # the smooth maps open to 120° and keep a non-degenerate Jacobian
+        for m in (:gnomonic, :equiangular)
+            @test corner_angle(m, 1.0e-4) ≈ 120.0 atol = 0.1
+            @test jac(m, 1.0 - 1.0e-5, 1.0 - 1.0e-5) > 0.1
+        end
+        # the conformal map holds 90° and pays with a Jacobian that collapses
+        @test corner_angle(:conformal, 1.0e-4) ≈ 90.0 atol = 1.0e-3
+        @test jac(:conformal, 1.0 - 1.0e-5, 1.0 - 1.0e-5) < 1.0e-3
+        # ... as d^(1/3) in the scale, so d^(2/3) in the Jacobian: halving the
+        # exponent of d must divide the Jacobian by 10^(2/3) = 4.64
+        j1 = jac(:conformal, 1.0 - 1.0e-3, 1.0 - 1.0e-3; h = 1.0e-8)
+        j2 = jac(:conformal, 1.0 - 1.0e-4, 1.0 - 1.0e-4; h = 1.0e-9)
+        @test j1/j2 ≈ 10.0^(2/3) rtol = 0.05
+
+        # and nothing folds anywhere else on the face, for any map
+        for m in MAPS, u in range(-0.99, 0.99, length = 41), v in range(-0.99, 0.99, length = 41)
             @test jac(m, u, v) > 1.0e-3
         end
     end

@@ -820,15 +820,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                   an angle, Ronchi, Iacono & Paolucci (1996). The most
     #                   HOMOGENEOUS of the three: largest minimum grid distance,
     #                   so the largest explicit time step.
-    #     :conformal    Rančić, Purser & Mesinger (1996). Locally ORTHOGONAL
-    #                   everywhere except the eight cube corners, at the cost of
-    #                   a more variable cell size.
+    #     :conformal    Rančić, Purser & Mesinger (1996). ORTHOGONAL AND ISOTROPIC
+    #                   everywhere, corner included — and REFUSED on any grid with
+    #                   a node on a cube corner, which is every structured panel
+    #                   grid, because its Jacobian is zero there. Three panels meet
+    #                   at a corner and each opens 120°, so a map that keeps the
+    #                   square's 90° can only do it by collapsing its derivative;
+    #                   there is no regularisation of it a nodal scheme can use
+    #                   (THE 120° CORNER in src/kernel/mesh/cubed_sphere_maps.jl
+    #                   has the argument and the measurements). Use :equiangular.
+    #                   (:conformal_exact is a deprecated alias.)
     #
-    # The grid the remap starts FROM is always the gnomonic one — that is what
-    # cubed_sphere.geo emits, and reading a node's face coordinate back off the
-    # sphere IS the gnomonic inverse. There is deliberately no second input for
-    # it: a "source map" switch is a claim about the .msh that nothing can
-    # check, and getting it wrong silently produces a grid that is neither map.
+    # The grid the remap starts FROM is MEASURED by detect_cubed_sphere_map, not
+    # assumed, so there is deliberately no input for it: a "source map" switch is
+    # a claim about the .msh that nothing can check, and getting it wrong silently
+    # produces a grid that is neither map. (It used to be assumed gnomonic, and
+    # that was wrong — gmsh spaces `Transfinite Line` points at equal ANGLE along
+    # a `Circle` arc, so cubed_sphere.geo emits the EQUIANGULAR grid.)
     #
     if(!haskey(inputs, :cubed_sphere_map))
         inputs[:cubed_sphere_map] = :none

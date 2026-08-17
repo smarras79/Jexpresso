@@ -77,15 +77,26 @@ function user_inputs()
         #                 where the other two degenerate to 120°, but it pays
         #                 for that with a SINGULARITY at the eight corners: the
         #                 local map scale falls off as d^(1/3), so a node
-        #                 sitting exactly on a corner — and cubed_sphere.geo
-        #                 puts one on each of the eight — gets zero surface
-        #                 Jacobian and build_sphere_metrics rejects the element.
+        #                 sitting on a corner — and cubed_sphere.geo puts one on
+        #                 each of the eight — gets a surface Jacobian that
+        #                 collapses with it: measured 1/27, 1/51, 1/93 of the
+        #                 grid median at nop = 3, 5, 8, and the metric checks
+        #                 then fail by O(1) (M6 = 0.10 to 1.8 against 5e-2).
         #                 Three panels meet at a corner and each must open 120°;
         #                 an angle-preserving map can only manage that by
         #                 collapsing its derivative there. This is why conformal
         #                 cubed spheres are used by cell-centred finite-volume
         #                 codes and not by nodal spectral elements.
         #                 (Rančić, Purser & Mesinger 1996)
+        #                 A corner-STRETCHED variant of it was tried, shipped
+        #                 briefly, and removed: it does make the corner Jacobian
+        #                 finite, and it still fails check_sphere_metrics by O(1)
+        #                 (M6 = 0.41) at every nop from 3 to 7 and every spacing
+        #                 from n = 5 to 40. Forcing 90° with a non-zero Jacobian
+        #                 turns the corner into a cone point, and a separable
+        #                 stretch also blows |r_u| up along the WHOLE cube edge
+        #                 as (1-u)^(-1/4). Do not reach for it again — THE 120°
+        #                 CORNER in cubed_sphere_maps.jl has the numbers.
         #---------------------------------------------------------------------------
         # NOTE the trailing comma belongs BEFORE the # on whichever line is live.
         # Without it Julia reads the NEXT line's leading `:` as the range

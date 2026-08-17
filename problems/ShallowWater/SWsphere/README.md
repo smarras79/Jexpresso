@@ -170,10 +170,12 @@ endpoints, so the two sides of a seam agree.
 
 ### Changing the cube-face → sphere map
 
-`cubed_sphere.geo` builds the **classical gnomonic** cubed sphere: the six
-panels are the central projection of the faces of an inscribed cube
-(Sadourny 1972). That is the simplest map and the worst conditioned — all of
-its distortion piles up at the eight cube corners.
+`cubed_sphere.geo` does **not** build the gnomonic cubed sphere, despite what
+this section used to say: gmsh spaces `Transfinite Line` points at equal *angle*
+along a `Circle` arc, so the shipped `.msh` is already the **equiangular** map of
+Ronchi, Iacono & Paolucci (1996). It reproduces
+`tools/generate_cubed_sphere.jl`'s `:equiangular` output to 2.2e-16 of `R`, and
+differs from the gnomonic grid by 535 km.
 
 One input slides the nodes onto a different map *after* the grid is read.
 Connectivity, the panel decomposition and the panel boundaries are untouched;
@@ -181,20 +183,25 @@ only where the nodes sit **inside** each panel changes, so this is safe to do
 once `mod_mesh_read_gmsh!` has already built the topology.
 
 ```julia
-:cubed_sphere_map => :conformal,   # :none (default) | :gnomonic | :equiangular | :conformal
+:cubed_sphere_map => :none,   # :none (default) | :gnomonic | :equiangular | :conformal
 ```
 
-The map the nodes come **from** is always the gnomonic one, and there is
-deliberately no input for it: reading a node's face coordinate back off the
-sphere *is* the gnomonic inverse, and it is what `cubed_sphere.geo` emits. A
-"source map" switch would be a claim about the `.msh` that nothing can check,
-and getting it wrong would silently produce a grid that is neither map.
+The map the nodes come **from** is *measured*, by `detect_cubed_sphere_map`,
+which pushes every linear vertex back through each candidate's inverse and
+reports which one lands on the uniform panel lattice (residual 2e-16 for the
+right map against 1e-1 for the wrong ones). There is deliberately no input for
+it: a "source map" switch is a claim about the `.msh` that nothing can check,
+and getting it wrong silently produces a grid that is neither map — which is
+exactly what happened while the source was *assumed* gnomonic, since asking for
+`:equiangular` then warped an already-warped grid and cut the minimum element
+edge from 710 km to 562 km, 21% of the time step, in silence.
 
 | value | map | what it buys |
 |---|---|---|
-| `:gnomonic` | equidistant central projection — Sadourny (1972) | nothing; this is what the file already is, so it is a no-op |
-| `:equiangular` | face coordinate measured as an angle, `u = tan α`, `α ∈ [-π/4, π/4]` — Ronchi, Iacono & Paolucci (1996) | a more even node spacing along a panel EDGE than the gnomonic one |
-| `:conformal` | Rančić, Purser & Mesinger (1996) | keeps grid lines at 90° into a corner — but is **rejected on this grid**, see below |
+| `:none` | leave the grid as read | what this deck ships with — the grid is already equiangular |
+| `:gnomonic` | equidistant central projection — Sadourny (1972) | nothing here; it *un-warps* the grid to the coarser-cornered projection |
+| `:equiangular` | face coordinate as an angle, `u = tan α`, `α ∈ [-π/4, π/4]` — Ronchi, Iacono & Paolucci (1996) | a no-op on this grid; the remap detects that and says so |
+| `:conformal` | Rančić, Purser & Mesinger (1996) | grid lines at 90° into a cube corner — and **refused on this grid**, see below |
 
 ### Corner behaviour, which is what actually distinguishes them
 
@@ -203,74 +210,126 @@ Angle between the two families of grid lines, walking the face diagonal
 
 | `t` | gnomonic | equiangular | conformal |
 |---|---|---|---|
-| 0.0 (face centre) | 90.0° | 90.0° | 90.0° |
-| 0.9 | 116.6° | 114.9° | **90.000°** |
-| 0.99 | 119.7° | 119.5° | **90.000°** |
-| 0.9999 | 120.0° | 120.0° | **90.000°** |
+| 0.0 (face centre) | 90.000° | 90.000° | 90.000° |
+| 0.9 | 116.584° | 114.947° | **90.000°** |
+| 0.99 | 119.668° | 119.482° | **90.000°** |
+| 0.9999 | 119.997° | 119.995° | **90.000°** |
 
-Gnomonic and equiangular both collapse to a 120° corner — the three panels
-meeting there each contribute 120°, and neither map fights it. Only the
-conformal map holds 90° all the way in. Over the whole panel the worst
-deviation from orthogonality is 29.3° (gnomonic), 29.0° (equiangular),
-**0.000°** (conformal).
+Gnomonic and equiangular both open to a 120° corner; only the conformal map
+holds 90° all the way in. Over the whole face the worst deviation from
+orthogonality is 30.000° for both of the first two — attained *at* the corner —
+and below the finite-difference floor (1e-6) for the conformal map.
 
-### Why `:conformal` is refused here
+### Why `:conformal` is refused here, and why no regularisation of it works
 
-It is the only one of the three that keeps the grid orthogonal into a cube
-corner, and it is nonetheless unusable with this case. Three panels meet at a
-cube corner, so each must open **120°** there. An angle-preserving map can only
-reconcile that with the square's 90° corner by letting its derivative vanish:
-near a corner the conformal map behaves like `ζ^(4/3)`, so the local scale
-`|∂r/∂u|` falls off as `d^(1/3)`. Measured, as a fraction of the face-centre
-value:
+**The 120° is topological.** Three panels meet at a cube corner and 360° is all
+there is to share, so each panel opens 120° there. Now let `r` be a face map that
+is *differentiable* at the corner with a *non-singular* differential `A`. The two
+grid lines through the corner are `u ↦ r(u,1)` and `v ↦ r(1,v)`, their tangents
+are `A e₁` and `A e₂`, and those two curves are the two cube-edge arcs. Hence
 
-| `d = 1-u` | 1e-1 | 1e-2 | 1e-3 | 1e-4 | 1e-5 |
-|---|---|---|---|---|---|
-| conformal | 0.546 | 0.253 | 0.118 | 0.0546 | 0.0253 |
-| equiangular | 0.925 | 0.940 | 0.943 | 0.943 | 0.943 |
+> `∠(A e₁, A e₂) = 120°` for **every** differentiable, non-degenerate map.
 
-Fitted exponent 0.333 over five decades — it goes to **zero** at the corner.
+So **30° is the smallest deviation from orthogonality any usable map can have at
+a cube corner** — `:gnomonic` and `:equiangular` both attain it — and a map that
+keeps the square's 90° there must have `det A = 0`. That is what the conformal
+map does: near a corner it behaves like `ζ^(4/3)`, so its local scale `|∂r/∂u|`
+falls off as `d^(1/3)`. Measured, as a fraction of the face-centre value:
 
-`cubed_sphere.geo` puts a mesh vertex on each of the eight cube corners
-(`Point(2)`…`Point(9)`, shared by the panels), so those nodes end up with zero
-surface Jacobian and `build_sphere_metrics` rejects their elements:
+| `d = 1-u` | 1e-1 | 1e-2 | 1e-3 | 1e-4 |
+|---|---|---|---|---|
+| conformal | 0.444 | 0.206 | 0.0957 | 0.0444 |
+| equiangular | 0.925 | 0.940 | 0.943 | 0.943 |
+
+Fitted exponent 0.333 over four decades — it goes to **zero** at the corner, and
+the grid puts a mesh vertex on each of the eight cube corners (`Point(2)`…
+`Point(9)`, shared by the panels). Measured on this grid remapped to the pure
+map, the surface Jacobian at a corner node comes out *positive but collapsing* —
+1/27, 1/51, 1/93 of the grid median at `nop = 3, 5, 8`, smaller the finer the
+grid, because the nearest LGL node keeps closing on the singular point — so
+`build_sphere_metrics` does not necessarily reject the element as degenerate. It
+builds wrong metrics instead, and `check_sphere_metrics` says so: M6 = 0.10,
+0.14, 0.17 (`:radial`) and 1.5, 1.8, 1.7 (`:cross_product`) at those same orders,
+against a 5e-2 tolerance. A node landing exactly on the zero would give the
+blunter failure,
 
 ```
 ERROR sphere_metrics.jl: non-positive surface Jacobian in element 1
 at node (1,1). The element is degenerate or wound inward.
 ```
 
-`remap_cubed_sphere_nodes!` now detects this up front and refuses with an
-explanation rather than letting it surface there. The map itself is correct —
+Either way the run is worthless, so `remap_cubed_sphere_nodes!` refuses up front,
+where the cause can be named. The map itself is correct —
 `test/test_cubed_sphere_maps.jl` shows it is conformal to 4e-9 — it is the
 combination of that map with a node ON the singular point that does not work.
 This is why conformal cubed spheres are used by cell-centred finite-volume
 codes (Rančić's own model, CCAM), where the singular point is a cell corner
 nobody evaluates at, and not by nodal spectral elements.
 
-**There is no map that gives a 90° corner without a singularity.** The 120° is
-topological: three panels, 360° to share. `:equiangular` and `:gnomonic` both
-take the 120° and stay non-degenerate; `:conformal` takes the 90° and pays with
-a zero. Those are the only two options.
+**A corner-stretched `:conformal` was shipped briefly and has been removed.** It
+reparametrised the face coordinate diagonally, `r(u,v) = C(φ(u), φ(v))` with
+`φ(t) = sign(t)(1-(1-|t|)^(3/4))`, the exponent picked to cancel the `d^(1/3)`
+collapse. It does make the Jacobian at the corner node finite, and because `φ`
+acts on each coordinate separately the grid lines stay orthogonal wherever the
+derivatives exist. Both of those are true and neither is enough:
+
+* orthogonality *plus* a non-zero Jacobian at the corner is precisely what the
+  argument above forbids, so the 30° of shear gets spread over the angular
+  sector and the corner becomes a **cone point** — the map turns positively
+  homogeneous of degree 1 instead of differentiable. Measured `|dr/ds|` along
+  the ray `(1-u, 1-v) = t(cos θ, sin θ)`: 0.639, 0.673, 0.705, 0.717 at
+  `θ = 0°, 15°, 30°, 45°`, flat in `t` over `1e-2 … 1e-6`. No linear map fits
+  that, so no polynomial element can represent it;
+* a **separable** stretch cannot be confined to the corner. `φ` acts on `u`
+  alone, so `φ'(1) = ∞` hits the whole cube edge: at `v = 0.5`,
+  `|r_u| = 0.523·(1-u)^(-1/4)` — 0.94, 1.65, 2.94, 5.23, 9.30 at
+  `1-u = 1e-1 … 1e-5`, against a flat 0.783 for `:equiangular`. The map is not
+  `C¹` on any of the twelve cube edges.
+
+`check_sphere_metrics` measures both, on this grid remapped
+equiangular → stretched-conformal (`:radial`, tolerances in `sphere_metrics.jl`):
+
+| nop | 3 | 4 | 5 | 7 | equiangular, nop = 4 |
+|---|---|---|---|---|---|
+| M3 `(J n̂)·x̂` | 3.2e-04 | 3.0e-04 | 8.3e-05 | 3.3e-05 | 1.5e-10 |
+| M4 area | 2.8e-05 | 8.5e-06 | 3.3e-06 | 8.0e-07 | 1.3e-11 |
+| M6 curl normal | 0.414 | 0.408 | 0.403 | 0.399 | 2.7e-05 |
+| M7 rigid rotation | 1.3e-07 | 1.1e-07 | 7.0e-08 | 4.4e-08 | 2.3e-12 |
+
+M6 does not move with `nop`, and it does not move with `h` either — 0.403,
+0.408, 0.410, 0.412 at `n = 5, 10, 20, 40` elements per panel edge — and all of
+it sits in the 24 corner elements (edge elements 2.6e-03, interior 4.3e-05 at
+`nop = 4`). An O(1) error that neither `p`- nor `h`-refinement touches is not a
+tolerance that needs loosening: the same tolerances leave the equiangular grid
+four to nine orders of margin at every `nop` from 3 to 8.
+
+Blending the conformal face coordinate into the equiangular one near the corners
+— which the argument above says is the only direction left — does pass all seven
+checks (best case, weight `w = u²v²`: M3 1.6e-08, M4 1.0e-12, M6 2.0e-03, M7
+7.4e-10 at `nop = 5`), and is still not worth shipping: M6 stays ~100× the
+equiangular grid's and converges only first-order in `nop`, and the blend has to
+be wide enough that the map is no longer conformal over most of the panel. What
+is left at that point is a worse `:equiangular`. **Use `:equiangular`** — i.e.
+this grid, as read.
 
 ### What it costs, measured on the shipped grid
 
-Element edge lengths over all 600 quads. The minimum is what sets the explicit
-time step under `:lcfl_dt`:
+Element edge lengths over a panel (all six are congruent), `n = 10`,
+`R = 6.37122e6` m. The minimum is what sets the explicit time step under
+`:lcfl_dt`:
 
-| map | min edge | max edge | ratio | Δt vs gnomonic |
+| map | min edge | max edge | ratio | Δt vs the grid as shipped |
 |---|---|---|---|---|
-| gnomonic | 710.2 km | 999.7 km | 1.41 | 1.00× |
-| equiangular | 561.7 km | 1365.7 km | 2.43 | 0.79× |
-| conformal | **721.6 km** | 1322.3 km | 1.83 | **1.02×** |
+| equiangular (as shipped) | **710.2 km** | 999.8 km | **1.41** | 1.00× |
+| gnomonic | 641.1 km | 1255.6 km | 1.96 | 0.90× |
+| conformal | 476.0 km | 1033.0 km | 2.17 | 0.67× (and refused) |
 
-So on THIS grid the conformal map is both the smoothest at the corners and
-marginally the cheapest — `:equiangular` is the one that costs 21% of the time
-step. Do not generalise the Δt column to finer grids: the conformal map's cell
-scale falls off toward a corner (`|r_u|` is 0.55 of its face-centre value at
-`t = 0.9`, 0.25 at `t = 0.99`), so the more elements per panel edge, the closer
-the corner-adjacent nodes sit to the singular point and the more of that
-shrinkage a refined grid will see. Re-measure if you refine.
+So the grid as shipped is both the most homogeneous and the cheapest of the
+three, and `:cubed_sphere_map` has nothing to add to it. Do not generalise the
+Δt column to finer grids: the conformal map's cell scale falls off toward a
+corner, so the more elements per panel edge, the closer the corner-adjacent
+nodes sit to the singular point and the more shrinkage a refined grid sees.
+Re-measure if you refine.
 
 The mechanics — the panel frames, the Rančić Table B1 coefficients and the
 series reversion that gives the inverse — are in

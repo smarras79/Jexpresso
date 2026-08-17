@@ -8,7 +8,8 @@
 #   n     elements per panel edge        (default 10  -> 6n² = 600 quads)
 #   R     sphere radius in metres        (default 6.371e6, Earth)
 #   out   output file                    (default ./cubed_sphere.msh)
-#   map   gnomonic | equiangular | conformal   (default equiangular)
+#   map   gnomonic | equiangular | conformal   (default equiangular; conformal is
+#         NOT runnable by Jexpresso — see the note at the end of this header)
 #
 #   julia tools/generate_cubed_sphere.jl 10 6.371e6 cubed_sphere.msh equiangular
 #
@@ -50,11 +51,14 @@
 # The counts that follow, for free: V = 6n²+2, F = 6n², E = 12n², so
 # V - E + F = 2 exactly. The script asserts all of it before writing.
 #
-# :conformal here is the CORNER-REGULARISED map (see cubed_sphere_maps.jl): the
-# conformal coordinate curves, so grid lines meet at 90° everywhere, with the
-# face coordinate stretched near the corners so the Jacobian stays finite. The
-# pure RPM96 map, :conformal_exact, is NOT offered — a structured n×n panel grid
-# puts a node on every cube corner, where its Jacobian is zero.
+# :conformal is the pure RPM96 map, and a grid written with it CANNOT BE RUN by
+# Jexpresso's nodal spectral elements: a structured n×n panel grid puts a node on
+# every cube corner, and the conformal Jacobian is zero there (see THE 120°
+# CORNER in cubed_sphere_maps.jl). mod_mesh_read_gmsh! refuses such a grid rather
+# than letting build_sphere_metrics die on a degenerate element, so the option is
+# kept here only for a cell-centred consumer, which never evaluates at a corner —
+# and the script says so loudly when it is asked for. Use :equiangular for a grid
+# meant to be run.
 #---------------------------------------------------------------------------------
 
 # Printf first: @printf expands at PARSE time, so the `using` has to precede
@@ -63,7 +67,8 @@ using Printf
 
 include(joinpath(@__DIR__, "..", "src", "kernel", "mesh", "cubed_sphere_maps.jl"))
 
-const SUPPORTED_MAPS = (:gnomonic, :equidistant, :equiangular, :conformal)
+const SUPPORTED_MAPS = (:gnomonic, :equidistant, :equiangular,
+                        :conformal, :conformal_exact)
 
 """
     build_cubed_sphere(n, R, map) -> (nodes, quads)
@@ -76,11 +81,19 @@ function build_cubed_sphere(n::Int, R::Float64, mapname::Symbol)
     n >= 1 || error("n must be >= 1, got $n")
     R > 0   || error("R must be > 0, got $R")
     mapname in SUPPORTED_MAPS ||
-        error("map must be one of $SUPPORTED_MAPS, got :$mapname" *
-              (mapname === :conformal_exact ?
-               "\n  :conformal_exact is singular at the eight cube corners and a structured" *
-               "\n  panel grid puts a node on every one of them. Use :conformal, which is" *
-               "\n  the corner-regularised version — see the file header." : ""))
+        error("map must be one of $SUPPORTED_MAPS, got :$mapname")
+
+    # A conformal grid is legitimate output — for a cell-centred code. It is not
+    # runnable by this repository's nodal SEM, and saying so here is cheaper than
+    # having the reader refuse the file later.
+    if mapname in CUBED_SPHERE_CORNER_SINGULAR_MAPS
+        @printf("%s", " # WARNING: the conformal map is SINGULAR at the eight cube corners, and\n" *
+                      " #          this grid puts a node on every one of them (Jacobian = 0).\n" *
+                      " #          Jexpresso will refuse it — three panels meet at a corner, so\n" *
+                      " #          each opens 120°, and a map that keeps the square's 90° there\n" *
+                      " #          can only do it by collapsing its derivative. Use equiangular\n" *
+                      " #          for a grid to run; this one is for a cell-centred consumer.\n")
+    end
 
     idof   = Dict{NTuple{3,Int},Int}()          # exact integer identity -> node id
     nodes  = NTuple{3,Float64}[]

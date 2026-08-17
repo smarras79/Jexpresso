@@ -366,9 +366,27 @@ function _sphere_metrics!(Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
             # J = a_ξ·(a_η × v) = v·(a_ξ × a_η)
             J = a1x*b2x + a1y*b2y + a1z*b2z
 
-            J > 0 || error(string(" # ERROR sphere_metrics.jl: non-positive surface Jacobian in element ",
-                                  iel, " at node (", i, ",", j,
-                                  "). The element is degenerate or wound inward."))
+            if !(J > 0)
+                # A node that sits on a CUBE CORNER is the one degeneracy with a
+                # known cause: the conformal cubed-sphere map has zero Jacobian
+                # there and nothing can rescue it (THE 120° CORNER in
+                # cubed_sphere_maps.jl). remap_cubed_sphere_nodes! refuses to
+                # PRODUCE such a grid, but a grid READ with that map already
+                # baked in arrives here, so name the suspect.
+                x, y, z = crd[1,ip], crd[2,ip], crd[3,ip]
+                r = sqrt(x*x + y*y + z*z)
+                hi = max(abs(x), abs(y), abs(z)); lo = min(abs(x), abs(y), abs(z))
+                oncorner = r > 0 && (hi - lo) < 1.0e-6*r
+                error(string(" # ERROR sphere_metrics.jl: non-positive surface Jacobian in element ",
+                             iel, " at node (", i, ",", j,
+                             "). The element is degenerate or wound inward.",
+                             oncorner ?
+                             string("\n #   That node sits on a CUBE CORNER. If this grid carries the conformal",
+                                    "\n #   cubed-sphere map, that is the map's own singularity — its Jacobian is",
+                                    "\n #   zero at all eight corners — and it cannot be regularised away; see THE",
+                                    "\n #   120° CORNER in src/kernel/mesh/cubed_sphere_maps.jl. Rebuild the grid",
+                                    "\n #   with the equiangular map (tools/generate_cubed_sphere.jl).") : ""))
+            end
 
             Je[iel,i,j] = J
             nx[iel,i,j] = vx; ny[iel,i,j] = vy; nz[iel,i,j] = vz
@@ -574,6 +592,22 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
     # 6x6-per-panel grid). The defaults are loose enough to hold at low order
     # and still tight enough that a wrong normal or a wrong mass matrix, both
     # O(1) errors, cannot pass.
+    #
+    # THESE TOLERANCES ARE NOT MIS-CALIBRATED — the question comes up whenever a
+    # bad grid fails them. On the shipped 10-per-panel equiangular cubed sphere
+    # they hold with four to nine orders of margin at every order, :radial:
+    #
+    #   nop      3        4        5        6        7        8
+    #   M3    1.5e-07  1.5e-10  1.3e-12  1.3e-15  5.6e-16  4.4e-16   (tol 1e-6)
+    #   M4    2.2e-08  1.3e-11  4.4e-14  4.2e-14  2.7e-14  3.6e-14   (tol 1e-6)
+    #   M6    4.5e-04  2.7e-05  1.2e-06  7.8e-08  2.9e-09  1.9e-10   (tol 5e-2)
+    #   M7    2.5e-09  2.3e-12  6.0e-12  5.3e-15  1.3e-14  1.3e-17   (tol 1e-8)
+    #
+    # M6 falling by ~1.5 orders per order of nop is the spectral convergence a
+    # SMOOTH map has to show. A map that fails these checks and does NOT converge
+    # in nop is not being judged too harshly; it is not smooth. That is exactly
+    # what happened to the corner-stretched conformal map (M6 = 0.41 flat in both
+    # nop and h) — see THE 120° CORNER in cubed_sphere_maps.jl.
     allok &= line("M3 outward area normal (J n̂)·x̂ = |J n̂|", worst_nrm < atol_normal,
                   @sprintf("max err = %.3e", worst_nrm))
 

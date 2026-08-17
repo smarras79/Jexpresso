@@ -37,21 +37,19 @@
 #                 modern cubed-sphere codes actually run.
 #
 #   :conformal    the conformal coordinates of Rančić, Purser & Mesinger (1996),
-#                 QJRMS 122, 959-982, with the face coordinate stretched near the
-#                 corners so the Jacobian does not vanish there. The two families
-#                 of grid lines meet at 90° EVERYWHERE, corner included (measured
-#                 3e-6 degrees), which is what makes the metric terms diagonal.
-#                 See the block above CONFORMAL_CORNER_BETA for the construction
-#                 and for why the pure map cannot be used by a nodal scheme.
-#                 On the shipped grid it carries the largest minimum element edge
-#                 of the three, 739.9 km against equiangular's 710.2.
-#
-#   :conformal_exact
-#                 the pure RPM96 map, angle- AND scale-preserving. UNUSABLE by a
-#                 grid with a node on a cube corner — the Jacobian there is zero
-#                 — and rejected as such. Kept because it is what the
-#                 conformality test can assert, and because a cell-centred
-#                 finite-volume code never evaluates at the singular point.
+#                 QJRMS 122, 959-982. Angle- AND scale-preserving: the two
+#                 families of grid lines meet at 90° everywhere, corner included,
+#                 which no other map here does. The price is that its Jacobian
+#                 VANISHES at the eight cube corners, so a grid with a node on a
+#                 corner — which every structured n×n panel grid has — cannot use
+#                 it, and remap_cubed_sphere_nodes! refuses it. A cell-centred
+#                 finite-volume code, which never evaluates at a cell corner,
+#                 can. :conformal_exact is a deprecated alias of this same map.
+#                 READ "THE 120° CORNER" BELOW before trying to regularise it:
+#                 the corner-stretched variant that used to be offered here as
+#                 :conformal is gone, because it does not work, and the block
+#                 says what it did to the metrics and why no separable stretch
+#                 can do better.
 #
 # THE CONFORMAL MAP, and where its numbers come from
 #
@@ -357,61 +355,97 @@ end
 
 
 #---------------------------------------------------------------------------------
-# The CORNER-REGULARISED conformal map — what :conformal actually means here.
+# THE 120° CORNER — why :conformal is refused on a nodal grid, and why the
+# corner-stretch regularisation that used to live here has been removed.
 #
-# The pure RPM96 map above cannot be used by a nodal scheme whose grid has a node
-# ON a cube corner, and a structured n×n panel grid always does. Three panels
-# meet at a corner, so each must open 120°; an angle-preserving map reconciles
-# that with the square's 90° corner only by letting its derivative vanish, like
-# ζ^(4/3). The local scale then falls off as d^(1/3) (measured: exponent 0.333
-# over five decades), the surface Jacobian at the corner node is zero, and
-# build_sphere_metrics rejects the element.
+# THE OBSTRUCTION IS GEOMETRIC, not numerical. Let r: [-1,1]² → S² be a face
+# map that is DIFFERENTIABLE at the corner (1,1) with a NONSINGULAR differential
+# A. The two grid lines through the corner are u ↦ r(u,1) and v ↦ r(1,v); their
+# tangents there are A e₁ and A e₂. But those two curves are the two cube-edge
+# arcs, three panels tile a neighbourhood of the corner, and by symmetry each
+# opens the same angle, so each opens 360°/3 = 120°. Hence
 #
-# THE FIX, and why it costs less than it sounds. Reparametrise the face
-# coordinate DIAGONALLY — apply the same φ to u and to v, separately:
+#     ∠(A e₁, A e₂) = 120°   for EVERY differentiable, non-degenerate map.
 #
-#     r(u, v) = C(φ(u), φ(v)),     φ(t) = sign(t)·(1 - (1-|t|)^β)
+# So 30° is the SMALLEST deviation from orthogonality a differentiable map can
+# have at a cube corner — :gnomonic and :equiangular both attain it, measured
+# 30.0000° at the corner and less everywhere else — and a map that holds 90° in
+# corner must have det A = 0 there. That is not a defect of RPM96's series; it
+# is what angle preservation costs. Measured on the pure map, |r_u| as a
+# fraction of its face-centre value along u = v = 1-d:
 #
-# Because φ acts on each coordinate on its own, the images of u = const and
-# v = const are the SAME CURVES as before. Only the spacing along them changes.
-# So r_u ∥ C_1 and r_v ∥ C_2, and since C is conformal those are orthogonal:
+#     d      1e-1    1e-2    1e-3    1e-4     →  exponent 1/3, i.e. |r_u| → 0
+#     |r_u|  0.444   0.206   0.0957  0.0444      (0.811 at d = 0.9)
 #
-#     THE GRID STAYS ORTHOGONAL EVERYWHERE, corner included. Measured max
-#     deviation from 90°: 3e-6 degrees, i.e. the finite-difference floor.
+# ON A NODAL GRID that is what a corner element has to interpolate, and the
+# metrics come out wrong rather than merely inexact. Measured on the shipped
+# 10-per-panel grid remapped equiangular → pure conformal: the surface Jacobian
+# at a corner node is POSITIVE (the discrete tangents are derivatives of the
+# element's polynomial, not of the map) but collapsing — 1/27, 1/51, 1/93 of the
+# grid median at nop = 3, 5, 8, smaller the finer the grid — and
+# check_sphere_metrics fails with M6 = 0.103, 0.141, 0.170 under :radial and 1.53,
+# 1.75, 1.71 under :cross_product at those orders, against a 5e-2 tolerance. So
+# the failure is NOT reliably the blunt "non-positive surface Jacobian" one; it is
+# a run that starts and is wrong. mesh.jl refuses the map instead.
 #
-# What is given up is isotropy — |r_u| ≠ |r_v| — so this is orthogonal-conformal
-# COORDINATES rather than a conformal map in the strict sense. That is the right
-# trade: orthogonality is what makes the metric terms diagonal and what "grid
-# lines meet at 90° into the corner" means; isotropy is what the singularity was
-# being paid for.
+# WHAT THE STRETCH DID. The removed variant reparametrised the face coordinate
+# diagonally, r(u,v) = C(φ(u), φ(v)) with φ(t) = sign(t)(1-(1-|t|)^(3/4)), the
+# exponent chosen to cancel the d^(1/3) collapse. It does make the Jacobian at
+# the corner NODE finite, and because φ acts on each coordinate separately the
+# grid lines stay orthogonal wherever the derivatives exist. Both of those are
+# true, and both are beside the point:
 #
-# β = 3/4 is not tuned, it is the exponent that exactly cancels d^(1/3): with
-# 1-φ ~ (1-t)^(3/4) the conformal scale ~ d^(1/3) ~ (1-t)^(1/4) meets
-# φ' ~ (1-t)^(-1/4) and the product is bounded. Measured on the face:
+#   1. THE CORNER BECOMES A CONE POINT. Orthogonality plus a non-vanishing
+#      Jacobian is exactly what the argument above forbids, so the 30° of shear
+#      has to go somewhere: it is spread over the angular sector, and the map
+#      turns positively homogeneous of degree 1 about the corner instead of
+#      differentiable. Measured |dr/ds| along the ray (1-u, 1-v) = t(cosθ, sinθ),
+#      for t = 1e-2, 1e-4, 1e-6 — flat in t, so it is a genuine cone, and
+#      θ-dependent, so no linear map fits it:
 #
-#     map                    max angle err   J at corner   min J   max aniso
-#     conformal (pure)            2e-6 deg      0.000425   0.0092       1.00
-#     equiangular                 29.9 deg      0.474852   0.4365       1.41
-#     conformal + φ(3/4)          3e-6 deg      0.515099   0.3721       5.62
+#          θ =  0°  0.63917    θ = 15°  0.67323
+#          θ = 30°  0.70544    θ = 45°  0.71744
 #
-# and on the shipped 10-per-panel grid it has the LARGEST minimum element edge
-# of any of the maps — 739.9 km against equiangular's 710.2 — so it also carries
-# the largest explicit time step.
+#   2. A SEPARABLE STRETCH CANNOT BE LOCALISED AT THE CORNER. φ acts on u alone,
+#      so φ'(1) = ∞ hits the WHOLE cube edge, not the corner: at v = 0.5,
+#      |r_u| = 0.523·(1-u)^(-1/4) — 0.94, 1.65, 2.94, 5.23, 9.30 at
+#      1-u = 1e-1 … 1e-5, against a flat 0.783 for :equiangular. The map is not
+#      C¹ on any of the twelve cube edges.
+#
+# A polynomial element cannot represent either one, and the shell metrics say so.
+# On the shipped 10-per-panel grid, remapped equiangular → stretched-conformal,
+# check_sphere_metrics gives (:radial, tolerances in sphere_metrics.jl):
+#
+#     nop        3         4         5         7        equiangular, nop = 4
+#     M3      3.2e-04   3.0e-04   8.3e-05   3.3e-05          1.5e-10
+#     M4      2.8e-05   8.5e-06   3.3e-06   8.0e-07          1.3e-11
+#     M6      0.414     0.408     0.403     0.399            2.7e-05
+#     M7      1.3e-07   1.1e-07   7.0e-08   4.4e-08          2.3e-12
+#
+# M6 does not move with nop, and it does not move with h either — 0.403, 0.408,
+# 0.410, 0.412 at n = 5, 10, 20, 40 elements per panel edge, all of it in the 24
+# corner elements (edge elements 2.6e-03, interior 4.3e-05 at nop = 4). An O(1)
+# error that neither p- nor h-refinement touches is the signature of a point the
+# interpolant cannot see around, which is what a cone point is. It is not a
+# tolerance that needs loosening: the same tolerances leave the equiangular grid
+# four to nine orders of margin at every nop from 3 to 8.
+#
+# WHAT WAS TRIED INSTEAD, so it is not tried again. Give up orthogonality only
+# near the corners — the argument above says one has to — by blending the
+# conformal face coordinate into the equiangular one:
+#
+#     f = f_conf + w·(f_equi - f_conf),   forward = gnomonic(f)
+#
+# which is watertight for ANY weight w that is symmetric in (u,v) and even in
+# each, because f_conf and f_equi already agree on the panel boundary. Both a
+# compactly supported corner-disc w and the analytic w = u²v² do pass all seven
+# checks (best case, w = u²v²: M3 1.6e-08, M4 1.0e-12, M6 2.0e-03, M7 7.4e-10 at
+# nop = 5). Neither is worth shipping: M6 is still ~100× the equiangular grid's
+# and converges only first-order in nop, the residual sitting in the blend band;
+# and to get there the blend has to be wide enough that the map is no longer
+# conformal over most of the panel — at which point what is left is a worse
+# :equiangular. Use :equiangular.
 #---------------------------------------------------------------------------------
-const CONFORMAL_CORNER_BETA = 0.75
-
-@inline _corner_stretch(t::Real)     = sign(t)*(1.0 - (1.0 - abs(t))^CONFORMAL_CORNER_BETA)
-@inline _corner_stretch_inv(s::Real) = sign(s)*(1.0 - (1.0 - abs(s))^(1.0/CONFORMAL_CORNER_BETA))
-
-@inline function _conformal_reg_forward(u::Real, v::Real)
-    return _conformal_forward(clamp(_corner_stretch(u), -1.0, 1.0),
-                              clamp(_corner_stretch(v), -1.0, 1.0))
-end
-
-@inline function _conformal_reg_inverse(u::Real, v::Real)
-    a, b = _conformal_inverse(u, v)          # undo the conformal map first
-    return _corner_stretch_inv(a), _corner_stretch_inv(b)
-end
 
 
 #---------------------------------------------------------------------------------
@@ -419,27 +453,29 @@ end
 # `inverse` takes the EQUIDISTANT gnomonic face coordinate of a point (which is
 # what _panel_face_coords hands out) back to that map's own face coordinate.
 #
-# :conformal is the CORNER-REGULARISED map — the usable one. :conformal_exact is
-# the pure RPM96 map, kept because it is the thing the conformality test can
-# actually assert and because a cell-centred code, which never evaluates at the
-# corner, can use it.
+# :conformal and :conformal_exact are the SAME map — the pure RPM96 one. The
+# second name is kept only so decks and scripts written when :conformal meant the
+# corner-stretched variant keep running; it is deprecated, and both names are
+# refused by remap_cubed_sphere_nodes! on a grid with a node on a cube corner.
 #---------------------------------------------------------------------------------
 const CUBED_SPHERE_MAPS = (:gnomonic, :equidistant, :equiangular,
                            :conformal, :conformal_exact)
 
+# The maps whose Jacobian vanishes at a cube corner, so a nodal grid with a node
+# there cannot carry them. Read by remap_cubed_sphere_nodes! in mesh.jl.
+const CUBED_SPHERE_CORNER_SINGULAR_MAPS = (:conformal, :conformal_exact)
+
 @inline function _map_forward(name::Symbol, u::Real, v::Real)
-    name === :gnomonic || name === :equidistant ? _gnomonic_forward(u, v)       :
-    name === :equiangular                       ? _equiangular_forward(u, v)    :
-    name === :conformal                         ? _conformal_reg_forward(u, v)  :
-    name === :conformal_exact                   ? _conformal_forward(u, v)      :
+    name === :gnomonic || name === :equidistant     ? _gnomonic_forward(u, v)    :
+    name === :equiangular                           ? _equiangular_forward(u, v) :
+    name === :conformal || name === :conformal_exact ? _conformal_forward(u, v)  :
     error(" # ERROR cubed_sphere_maps.jl: unknown cubed-sphere map ", name)
 end
 
 @inline function _map_inverse(name::Symbol, u::Real, v::Real)
-    name === :gnomonic || name === :equidistant ? _gnomonic_inverse(u, v)      :
-    name === :equiangular                       ? _equiangular_inverse(u, v)   :
-    name === :conformal                         ? _conformal_reg_inverse(u, v) :
-    name === :conformal_exact                   ? _conformal_inverse(u, v)     :
+    name === :gnomonic || name === :equidistant     ? _gnomonic_inverse(u, v)    :
+    name === :equiangular                           ? _equiangular_inverse(u, v) :
+    name === :conformal || name === :conformal_exact ? _conformal_inverse(u, v)  :
     error(" # ERROR cubed_sphere_maps.jl: unknown cubed-sphere map ", name)
 end
 
