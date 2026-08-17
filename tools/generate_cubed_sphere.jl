@@ -177,7 +177,13 @@ function write_msh(path::String, nodes, quads)
         println(io, "\$EndPhysicalNames")
         println(io, "\$Nodes\n", length(nodes))
         for (k, p) in enumerate(nodes)
-            @printf(io, "%d %.17g %.17g %.17g\n", k, p[1], p[2], p[3])
+            # `string(::Float64)` is the SHORTEST decimal that reads back
+            # bit-identical. "%.17g" is 17 significant digits, which sounds
+            # sufficient and is not: it lost 1 ulp on 108 of 602 nodes here.
+            # Harmless for the geometry, but the metric checks in
+            # sphere_metrics.jl quote round-off at 1e-14, so do not spend any of
+            # it in the writer.
+            println(io, k, " ", string(p[1]), " ", string(p[2]), " ", string(p[3]))
         end
         println(io, "\$EndNodes")
         println(io, "\$Elements\n", length(quads))
