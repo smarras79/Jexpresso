@@ -47,7 +47,7 @@ function user_inputs()
         # Δt = 5e-7 is already ≈ 0.22 with :μ => 1.0. Scaling :μ up without
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
-        :Δt                   => 0.25e-7,
+        :Δt                   => 0.5e-7,
         :diagnostics_at_times => (0:5.0e-5:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
         # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
@@ -121,8 +121,8 @@ function user_inputs()
         :outformat            => "vtk",
         :loverwrite_output    => true,
         :lwrite_initial       => true,
-        :output_dir           => "/scratch/smarras/smarras/output/shock/",
-        #:output_dir           => "./output",
+        #:output_dir           => "/scratch/smarras/smarras/output/shock/",
+        :output_dir           => "./output",
         :loutput_pert         => false,           # plot the total state
         # Numerical schlieren from ρ, computed at output times only
         # (kernel/physics/schlieren.jl). Adds two point-data fields to the
@@ -142,7 +142,7 @@ function user_inputs()
         # DynSGS is what handles what is left under-resolved.
         #---------------------------------------------------------------------------
         :linitial_refine      => true,
-        :init_refine_lvl      => 2,
+        :init_refine_lvl      => 1,
         :ladapt               => false,
     ) #Dict
 
