@@ -53,7 +53,8 @@ function user_bc_neumann(q, gradq, x, t, inputs)
     return flux
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,t,lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, lpert)
+    x = coords[1]
     T = eltype(q)
     return T(q[1]), T(q[2])
 end

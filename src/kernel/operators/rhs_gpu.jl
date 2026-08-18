@@ -1,4 +1,4 @@
-@kernel function _build_rhs_gpu_v0!(RHS, u, uaux, qe, x, t, connijk, dψ, ω, Minv, flux, source, PhysConst, xmax, xmin, n_x, neq, lpert, lperiodic_1d, npoin_linear, npoin)
+@kernel function _build_rhs_gpu_v0!(RHS, u, uaux, qe, x, coords, t, connijk, dψ, ω, Minv, flux, source, PhysConst, xmax, xmin, n_x, neq, lpert, lperiodic_1d, npoin_linear, npoin)
     ie = @index(Group, Linear)
     i = @index(Local, Linear)
     ip = connijk[ie,i,1]
@@ -14,7 +14,7 @@
     qeip = @view(qe[ip,1:neq+1])
     
     if (ip == 1 || ip == npoin_linear) && !(lperiodic_1d)
-        @inbounds uaux[ip,1:neq] .= user_bc_dirichlet_gpu(uip,qeip,x[ip],t,lpert)
+        @inbounds uaux[ip,1:neq] .= user_bc_dirichlet_gpu(uip,qeip,@view(coords[:,ip]),t,lpert)
         for ieq =1:neq
 
             idx = ip + (ieq-1)*npoin
@@ -685,7 +685,7 @@ end
 end
 
 
-@kernel function apply_boundary_conditions_gpu!(uaux,u,qe,x,y,t,nx,ny,poin_in_bdy_edge,qbdy,ngl,neq,npoin,lpert)
+@kernel function apply_boundary_conditions_gpu!(uaux,u,qe,coords,t,nx,ny,poin_in_bdy_edge,qbdy,ngl,neq,npoin,lpert)
 
     iedge = @index(Group, Linear)
     ik = @index(Local, Linear)
@@ -693,7 +693,7 @@ end
    
     T = eltype(u)
     @inbounds qbdy[iedge,ik,1:neq] .= T(1234567)
-    @inbounds qbdy[iedge,ik,1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,nx[iedge,ik],ny[iedge,ik],@view(qbdy[iedge,ik,:]),lpert)
+    @inbounds qbdy[iedge,ik,1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),@view(coords[:,ip]),t,nx[iedge,ik],ny[iedge,ik],@view(qbdy[iedge,ik,:]),lpert)
     for ieq =1:neq
         if !(qbdy[iedge,ik,ieq] == T(1234567)) && !(qbdy[iedge,ik,ieq] == uaux[ip,ieq])
             # if use the commented line in CUDA, somehow get errors
@@ -703,7 +703,7 @@ end
     end
 end
 
-@kernel function apply_boundary_conditions_gpu_3D!(uaux,u,qe,x,y,z,t,nx,ny,nz,poin_in_bdy_face,qbdy,ngl,neq,npoin,lpert)
+@kernel function apply_boundary_conditions_gpu_3D!(uaux,u,qe,coords,t,nx,ny,nz,poin_in_bdy_face,qbdy,ngl,neq,npoin,lpert)
 
     iface = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -713,7 +713,7 @@ end
 
     T = eltype(u)
     @inbounds qbdy[iface,i_x,i_y,1:neq] .= T(123456.0)
-    @inbounds qbdy[iface,i_x,i_y,1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],z[ip],t,nx[iface,i_x,i_y],ny[iface,i_x,i_y],nz[iface,i_x,i_y],
+    @inbounds qbdy[iface,i_x,i_y,1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),@view(coords[:,ip]),t,nx[iface,i_x,i_y],ny[iface,i_x,i_y],nz[iface,i_x,i_y],
                                                                  @view(qbdy[iface,i_x,i_y,:]),lpert)
     for ieq =1:neq
         if !(qbdy[iface,i_x,i_y,ieq] == T(123456.0)) && !(qbdy[iface,i_x,i_y,ieq] == uaux[ip,ieq])

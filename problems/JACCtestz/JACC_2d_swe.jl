@@ -102,7 +102,8 @@ function user_primitives_gpu(u, qe, lpert)
     return T(u[1] - qe[1]), T(u[2]), T(u[3])
 end
 
-function user_bc_dirichlet_gpu(q, qe, x, y, t, nx, ny, qbdy, lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
+    x, y = coords[1], coords[2]
     T  = eltype(q)
     Hu = q[2]
     Hv = q[3]
@@ -195,6 +196,7 @@ end
 struct TestMesh
     npoin::Int; nelem::Int; ngl::Int; nelx::Int; nely::Int
     x::Vector{Float64}; y::Vector{Float64}
+    coords::Matrix{Float64}      # (2, npoin) — as St_mesh stores it
     connijk::Array{Int,3}
     dξdx::Array{Float64,3}; dξdy::Array{Float64,3}
     dηdx::Array{Float64,3}; dηdy::Array{Float64,3}
@@ -310,7 +312,9 @@ function build_test_mesh(nelx::Int, nely::Int, nop::Int;
     end
     e == nedges_bdy || error("boundary edge count mismatch: $e vs $nedges_bdy")
 
-    return TestMesh(npoin, nelem, ngl, nelx, nely, x, y, connijk,
+    coords = permutedims(hcat(x, y))          # (2, npoin)
+
+    return TestMesh(npoin, nelem, ngl, nelx, nely, x, y, coords, connijk,
                     dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv,
                     poin_in_bdy_edge, nxb, nyb, nedges_bdy,
                     minimum(x), maximum(x), minimum(y), maximum(y))
@@ -369,7 +373,7 @@ function reference_rhs(m::TestMesh, uaux::Matrix{Float64}, qe::Matrix{Float64},
         ip = m.poin_in_bdy_edge[iedge,k]
         qb = fill(1234567.0, neq)
         vals = user_bc_dirichlet_gpu(view(uaux, ip, :), view(qe, ip, :),
-                                     m.x[ip], m.y[ip], t,
+                                     view(m.coords, :, ip), t,
                                      m.nx[iedge,k], m.ny[iedge,k], qb, false)
         for ieq = 1:neq
             v = vals[ieq]
@@ -476,6 +480,7 @@ function jacc_cache_from_test_mesh(m::TestMesh, qe::Matrix{Float64};
                      bn_ip_host = bn_ip,
                      RHS_stage  = mixed ? Base.zeros(TW, m.npoin, neq) : Base.zeros(TW, 0, 0),
                      connijk = _jacc_copy(m.connijk),
+                     coords = _jacc_copy(TW.(m.coords)),
                      x = _jacc_copy(TW.(m.x)), y = _jacc_copy(TW.(m.y)),
                      dξdx = _jacc_copy(TW.(m.dξdx)), dξdy = _jacc_copy(TW.(m.dξdy)),
                      dηdx = _jacc_copy(TW.(m.dηdx)), dηdy = _jacc_copy(TW.(m.dηdy)),

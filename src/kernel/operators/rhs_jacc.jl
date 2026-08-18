@@ -204,7 +204,8 @@ Base.@kwdef mutable struct St_jacc2d
 
     # --- mesh / metrics / basis (read-only on the device) -------------------
     connijk
-    x
+    coords               # nsd × npoin — the canonical coordinate storage
+    x                    # kept: user_source_gpu still takes x, y as scalars
     y
     dξdx
     dξdy
@@ -427,7 +428,7 @@ end
 # the first time step, because the wall is then enforced in one trajectory and not
 # in the other.
 #
-function _jacc_bc_2d!(ib, uaux, qe, x, y, t,
+function _jacc_bc_2d!(ib, uaux, qe, coords, t,
                       bn_ip, bn_ptr, bn_edge, bn_loc, bdy_nx, bdy_ny, qbdy, bout,
                       neq, lpert)
 
@@ -446,7 +447,7 @@ function _jacc_bc_2d!(ib, uaux, qe, x, y, t,
         end
 
         qbdy[ib, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip, :]), @view(qe[ip, :]),
-                                                 x[ip], y[ip], t,
+                                                 @view(coords[:, ip]), t,
                                                  bdy_nx[iedge, k], bdy_ny[iedge, k],
                                                  @view(qbdy[ib, :]), lpert)
 
@@ -651,7 +652,7 @@ function jacc_rhs_2d!(c::St_jacc2d, u, t)
 
     if c.nbnode > 0
         JACC.parallel_for(c.nbnode, _jacc_bc_2d!,
-                          c.uaux, c.qe, c.x, c.y, T(t),
+                          c.uaux, c.qe, c.coords, T(t),
                           c.bn_ip, c.bn_ptr, c.bn_edge, c.bn_loc,
                           c.bdy_nx, c.bdy_ny, c.qbdy, c.bout,
                           neq, c.lpert)
@@ -931,6 +932,7 @@ function build_jacc_cache_2D(sem, qp, inputs, T; rank = 0)
                      RHS_stage  = mixed ? Base.zeros(TW, npoin, neq) : Base.zeros(TW, 0, 0),
 
                      connijk = _jacc_stage(mesh.connijk, Int, (nelem, ngl, ngl)),
+                     coords  = _jacc_stage(mesh.coords, TW, (Int(size(mesh.coords,1)), npoin)),
                      x       = _jacc_stage(mesh.x,    TW, (npoin,)),
                      y       = _jacc_stage(mesh.y,    TW, (npoin,)),
                      dξdx    = _jacc_stage(metrics.dξdx, TW, (nelem, ngl, ngl)),

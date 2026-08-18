@@ -48,7 +48,8 @@ end
 # the mismatch was invisible only because this case had never been run off the CPU
 # path. Same fix as problems/ShallowWater/SoliWaveIsland/user_bc.jl.
 #
-function user_bc_dirichlet_gpu(q, qe, x, y, t, nx, ny, qbdy, lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
+    x, y = coords[1], coords[2]
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])

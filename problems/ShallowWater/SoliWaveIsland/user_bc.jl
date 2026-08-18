@@ -46,7 +46,8 @@ end
 # component alone", and returning qbdy[1] for the depth is how H is declared free
 # at a free-slip wall: only the momentum components are constrained.
 #
-function user_bc_dirichlet_gpu(q, qe, x, y, t, nx, ny, qbdy, lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
+    x, y = coords[1], coords[2]
     T  = eltype(q)
     Hu = q[2]
     Hv = q[3]

@@ -163,7 +163,7 @@ function rhs!(du, u, params, time)
                workgroupsize = (params.neqs))
 
             k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngl)))
-            k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time),
+            k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, params.mesh.coords, TFloat(time),
               params.mesh.connijk , params.basis.dψ, params.ω, params.Minv, 
               params.flux_gpu, params.source_gpu, 
               PHYS_CONST, params.xmax, params.xmin, params.mesh.ngl, params.neqs,
@@ -173,7 +173,7 @@ function rhs!(du, u, params, time)
             if (params.laguerre)
                 params.RHS_lag .= TFloat(0.0)
                 k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngr)))
-                k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time),
+                k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, params.mesh.coords, TFloat(time),
                   params.mesh.connijk_lag , params.basis_lag.dψ, params.ω_lag, params.Minv, 
                   params.flux_lag_gpu, params.source_lag_gpu,
                   PHYS_CONST, params.xmax, params.xmin, params.mesh.ngr, params.neqs,
@@ -216,7 +216,7 @@ function rhs!(du, u, params, time)
             end
 
             k = apply_boundary_conditions_gpu_3D!(backend)
-            k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z,
+            k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.coords,
               TFloat(time),params.metrics.nx,params.metrics.ny, params.metrics.nz,
               params.mesh.poin_in_bdy_face,params.qbdy_gpu,params.mesh.ngl,TInt(params.neqs),
               params.mesh.npoin, lpert;
@@ -393,7 +393,7 @@ function rhs!(du, u, params, time)
             end
             k = apply_boundary_conditions_gpu!(backend)
             k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe,
-              params.mesh.x, params.mesh.y, TFloat(time),
+              params.mesh.coords, TFloat(time),
               params.metrics.nx, params.metrics.ny,
               params.mesh.poin_in_bdy_edge,params.qbdy_gpu,
               params.mesh.ngl, TInt(params.neqs), params.mesh.npoin,lpert;
@@ -405,7 +405,7 @@ function rhs!(du, u, params, time)
 
                 k = apply_boundary_conditions_lag_gpu!(backend)
                 k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe,
-                  params.mesh.x, params.mesh.y, TFloat(time),
+                  params.mesh.coords, TFloat(time),
                   params.mesh.connijk_lag,
                   params.qbdy_lag_gpu,
                   params.mesh.ngl, params.mesh.ngr,

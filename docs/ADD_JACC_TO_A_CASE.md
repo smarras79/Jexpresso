@@ -99,7 +99,7 @@ pointer:
 |---|---|---|
 | `user_flux_gpu(q, qe, PhysConst, lpert)` | always | `user_flux.jl` |
 | `user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)` | `:lsource` | `user_source.jl` |
-| `user_bc_dirichlet_gpu(q, qe, x, y, t, nx, ny, qbdy, lpert)` | mesh has boundary edges | `user_bc.jl` |
+| `user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)` | mesh has boundary edges | `user_bc.jl` |
 | `user_primitives_gpu(u, qe, lpert)` | `:lvisc` | `user_primitives.jl` |
 
 Check yours:
@@ -111,26 +111,35 @@ for f in user_flux_gpu user_source_gpu user_primitives_gpu user_bc_dirichlet_gpu
 done
 ```
 
-### The one gotcha: `user_bc_dirichlet_gpu`'s signature
+### `user_bc_dirichlet_gpu` takes `coords`, not `x, y, z`
 
-In 2D the kernels pass the two coordinates **separately**, as `x[ip], y[ip]` —
-nine arguments. Several decks in the tree carry an eight-argument version with a
-single `coords` slot:
-
-```julia
-function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)   # WRONG
-```
-
-No caller in the tree has ever matched that form, so the mismatch is invisible
-until the case is first run off the CPU path — at which point it is a
-`MethodError`. The fix is the parameter list only; the body is unchanged:
+The kernels hand the callback **one node's coordinates as a column view**,
+`@view(coords[:, ip])` — `mesh.coords` is `(nsd, npoin)` precisely so a node costs
+one cache line instead of `nsd` of them. Index it positionally:
 
 ```julia
-function user_bc_dirichlet_gpu(q, qe, x, y, t, nx, ny, qbdy, lpert)     # RIGHT
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)      # 2D
+    x, y = coords[1], coords[2]
+    ...
 ```
 
-This is the single line `CompEuler/theta` needed. `ShallowWater/SoliWaveIsland`
-needed the same one.
+```julia
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, nz, qbdy, lpert)  # 3D
+    x, y, z = coords[1], coords[2], coords[3]
+    ...
+```
+
+1D is `(q, qe, coords, t, lpert)`.
+
+Getting this wrong is not a compile error and not a test failure — these callbacks
+are resolved inside a kernel at run time, so a mismatched signature is a
+`MethodError` the first time somebody points a GPU at that deck. `test/
+test_gpu_callback_signatures.jl` checks every case in the tree for exactly this,
+and is worth running after touching any `user_bc.jl`:
+
+```bash
+julia --project=. test/test_gpu_callback_signatures.jl
+```
 
 Two conventions inside that callback are worth knowing:
 
@@ -287,7 +296,8 @@ standalone in seconds with no MPI, no gmsh and no `using Jexpresso`, and
 [ ] step 1  case is 2D, AV() viscosity, no filter/moisture/AMR/Laguerre/shell
 [ ] step 1  user_bc_neumann returns zero
 [ ] step 2  the four *_gpu callbacks exist
-[ ] step 2  user_bc_dirichlet_gpu takes (q, qe, x, y, t, nx, ny, qbdy, lpert)
+[ ] step 2  user_bc_dirichlet_gpu takes (q, qe, coords, t, nx, ny[, nz], qbdy, lpert)
+[ ] step 2  julia --project=. test/test_gpu_callback_signatures.jl passes
 [ ] step 3  :ljacc => true, :backend left at CPU()
 [ ] step 4  julia -t <n>
 [ ] step 5  banner appears, and the answer matches the CPU run to round-off

@@ -52,7 +52,8 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     return flux
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,y,z,t,nx,ny,nz,qbdy,lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, nz, qbdy, lpert)
+    x, y, z = coords[1], coords[2], coords[3]
     T = eltype(q)
     if ((z < T(0.1) || z > T(24000) - T(10)) && ( x < T(-40000) + T(10) || x > T(40000) - T(10)) ) || (abs(nx) >T(0.1))
         return T(0.0), T(0.0), T(0.0), T(0.0), T(0.0), T(0.0), T(0.0)

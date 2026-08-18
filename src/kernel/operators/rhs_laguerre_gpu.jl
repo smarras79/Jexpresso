@@ -122,7 +122,7 @@ end
 
 end
 
-@kernel function apply_boundary_conditions_lag_gpu!(uaux,u,qe,x,y,t,connijk,qbdy,ngl,ngr,neq,npoin,nelem_semi_inf,lperiodic,lpert)
+@kernel function apply_boundary_conditions_lag_gpu!(uaux,u,qe,coords,t,connijk,qbdy,ngl,ngr,neq,npoin,nelem_semi_inf,lperiodic,lpert)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -133,7 +133,7 @@ end
     if (i_ngr == ngr)
         ip = connijk[ie,i_ngl,ngr]
         @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= T(1234567)
-        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,T(0.0),T(1.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),@view(coords[:,ip]),t,T(0.0),T(1.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
         for ieq =1:neq
             if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
             # if use the commented line in CUDA, somehow get errors
@@ -147,7 +147,7 @@ end
         if (ie == Ti(1))
             ip = connijk[ie,1,i_ngr]
             @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= T(1234567)
-            @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,T(-1.0),T(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
+            @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),@view(coords[:,ip]),t,T(-1.0),T(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
             for ieq =1:neq
                 if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
                 # if use the commented line in CUDA, somehow get errors
@@ -160,7 +160,7 @@ end
         if (ie == nelem_semi_inf)
             ip = connijk[ie,ngl,i_ngr]
             @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= T(1234567)
-            @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,T(1.0),T(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
+            @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),@view(coords[:,ip]),t,T(1.0),T(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
             for ieq =1:neq
                 if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
                 # if use the commented line in CUDA, somehow get errors

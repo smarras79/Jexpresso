@@ -15,6 +15,7 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     nothing
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,y,t,nx,ny,qbdy,lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
+    x, y = coords[1], coords[2]
     nothing
 end

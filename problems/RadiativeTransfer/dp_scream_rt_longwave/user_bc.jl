@@ -36,7 +36,8 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     return flux
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,y,z,t,nx,ny,nz,qbdy,lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, nz, qbdy, lpert)
+    x, y, z = coords[1], coords[2], coords[3]
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])

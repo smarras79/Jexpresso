@@ -242,8 +242,9 @@ KernelAbstractions path uses:
 | `user_bc_dirichlet_gpu`   | when the mesh has boundary edges |
 | `user_primitives_gpu`     | when `:lvisc`       |
 
-In 2D, `user_bc_dirichlet_gpu` takes `(q, qe, x, y, t, nx, ny, qbdy, lpert)` —
-the two coordinates **separately**. `qbdy` arrives pre-filled with a sentinel;
+In 2D, `user_bc_dirichlet_gpu` takes `(q, qe, coords, t, nx, ny, qbdy, lpert)`,
+where `coords` is `@view(mesh.coords[:, ip])` — one node's coordinates as a column
+view, indexed `coords[1]`, `coords[2]`. `qbdy` arrives pre-filled with a sentinel;
 returning it in a slot means "leave this component alone" (that is how the depth
 `H` is left free at a free-slip wall).
 
