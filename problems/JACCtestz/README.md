@@ -79,7 +79,78 @@ per node instead of scatter per element), and floating-point addition is not
 associative. What *is* bit-for-bit is any two JACC runs of the same deck — see
 "No atomics" below.
 
-### 3. On a GPU
+### 3. Threads are not automatic
+
+`:ljacc => true` chooses *which* kernels run. It does not give Julia any threads —
+Julia starts with **one** unless told otherwise, and nothing in Jexpresso changes
+that. The thread count is fixed at process startup; there is no way to raise it
+from inside a running REPL.
+
+```bash
+julia --project=. -t auto                 # or -t 8
+julia> using Jexpresso
+julia> Jexpresso.run_case("ShallowWater", "SoliWaveIsland")
+```
+
+or `export JULIA_NUM_THREADS=auto` before launching (VS Code: `"julia.NumThreads": "auto"`).
+
+Running the JACC path on one thread is worse than not using it at all, because
+JACC's threads backend takes a different code path below and above
+`nthreads() == 1` — a plain loop versus `Polyester.@batch`. Measured on this RHS,
+32×16 elements at nop=5:
+
+| threads | RHS/s |
+|---------|-------|
+| 1 | 51.5 |
+| 2 | 397.6 |
+| 4 | 520.8 |
+| 8 | 576.9 |
+
+The 1→2 jump is the code-path switch, not the second thread. The startup banner
+prints the count, and warns if it is 1.
+
+### 3b. Working precision, and Apple GPUs
+
+Apple GPUs have no double precision at all: Metal.jl's array constructor refuses
+Float64 outright (`"Metal does not support Float64 values"`, `src/array.jl`), and
+JACC agrees, declaring `default_float(::MetalBackend) = Float32`. So the device
+arrays carry their own float type, set by `:jacc_float`:
+
+| value | meaning |
+|-------|---------|
+| `:auto` (default) | Float64 where the backend has it; the backend's own default where it does not, with a warning |
+| `Float32` | opt in explicitly, no warning |
+| `Float64` | demand it; an error naming the backend if it has none |
+
+`Float32` is **mixed** precision, not a single-precision solver:
+
+| | precision |
+|---|---|
+| state `u`, `du`, time integrator, MPI assembly | Float64 |
+| residual — fluxes, source, viscosity, DSS | Float32, on device |
+
+The state never loses digits to repeated rounding; the Float32 residual is added
+back into a Float64 state, so the error is O(eps32) in the *tendency* rather than
+accumulating in the solution. Measured on this deck, 5 steps of SSPRK54, against
+the serial CPU run:
+
+| `:jacc_float` | H | Hu |
+|---------------|---|-----|
+| Float64 | 4.4e-16 | 7.7e-16 |
+| Float32 | 1.6e-07 | 2.0e-07 |
+
+i.e. about 1.3 × eps32, and not compounding. The lake-at-rest equilibrium stays
+*exact* in Float32 — H and He are equal before the cast, so they are equal after
+it — which `test/test_jacc_rhs.jl` asserts.
+
+Two things to be clear about. Float32 is a **portability** feature, not a speed
+one: on a CPU it is slower (0.434 vs 0.328 ms/call here), since there is no
+bandwidth win at this size and the host casts cost extra passes. And four
+significant digits of a 2e-3 relative wave perturbation is fine for a demo or a
+throughput measurement, and not something to trust for a vorticity-sensitive run
+such as Galewsky on the sphere.
+
+### 4. On a GPU
 
 The backend is **not** a deck setting. JACC reads it from a `Preferences` value,
 so it is written once per project and needs a restart:

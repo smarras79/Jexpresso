@@ -457,39 +457,46 @@ end
 =================================================================================#
 function jacc_cache_from_test_mesh(m::TestMesh, qe::Matrix{Float64};
                                    neq = 3, lvisc = false, μ = Float64[],
-                                   lsource = true)
-    T = Float64
+                                   lsource = true, TW = Float64)
+    T     = Float64                       # the host type, as in Jexpresso
+    mixed = TW !== T
     p2e_ptr, p2e_e, p2e_i, p2e_j = _jacc_build_p2e(m.connijk, m.npoin, m.nelem, m.ngl)
     bn_ip, bn_ptr, bn_edge, bn_loc = _jacc_build_bnodes(m.poin_in_bdy_edge,
                                                         m.nedges_bdy, m.ngl)
     nb   = length(bn_ip)
     vdim = lvisc ? (m.nelem, m.ngl, m.ngl, neq) : (1,1,1,1)
-    coef = lvisc ? collect(T, μ) : zeros(T, neq)
+    coef = lvisc ? collect(TW, μ) : Base.zeros(TW, neq)
 
     return St_jacc2d(npoin = m.npoin, nelem = m.nelem, ngl = m.ngl, neq = neq,
                      nbnode = nb,
+                     TW = TW, mixed = mixed,
+                     u_stage    = mixed ? Base.zeros(TW, m.npoin*neq) : Base.zeros(TW, 0),
+                     bout       = _jacc_zeros(TW, max(nb,1), neq),
+                     bout_host  = Base.zeros(TW, max(nb,1), neq),
+                     bn_ip_host = bn_ip,
+                     RHS_stage  = mixed ? Base.zeros(TW, m.npoin, neq) : Base.zeros(TW, 0, 0),
                      connijk = _jacc_copy(m.connijk),
-                     x = _jacc_copy(m.x), y = _jacc_copy(m.y),
-                     dξdx = _jacc_copy(m.dξdx), dξdy = _jacc_copy(m.dξdy),
-                     dηdx = _jacc_copy(m.dηdx), dηdy = _jacc_copy(m.dηdy),
-                     Je = _jacc_copy(m.Je), dψ = _jacc_copy(m.dψ),
-                     ω = _jacc_copy(m.ω), Minv = _jacc_copy(m.Minv),
-                     qe = _jacc_copy(qe),
+                     x = _jacc_copy(TW.(m.x)), y = _jacc_copy(TW.(m.y)),
+                     dξdx = _jacc_copy(TW.(m.dξdx)), dξdy = _jacc_copy(TW.(m.dξdy)),
+                     dηdx = _jacc_copy(TW.(m.dηdx)), dηdy = _jacc_copy(TW.(m.dηdy)),
+                     Je = _jacc_copy(TW.(m.Je)), dψ = _jacc_copy(TW.(m.dψ)),
+                     ω = _jacc_copy(TW.(m.ω)), Minv = _jacc_copy(TW.(m.Minv)),
+                     qe = _jacc_copy(TW.(qe)),
                      p2e_ptr = _jacc_copy(p2e_ptr), p2e_e = _jacc_copy(p2e_e),
                      p2e_i = _jacc_copy(p2e_i), p2e_j = _jacc_copy(p2e_j),
                      bn_ip = _jacc_copy(bn_ip), bn_ptr = _jacc_copy(bn_ptr),
                      bn_edge = _jacc_copy(bn_edge), bn_loc = _jacc_copy(bn_loc),
-                     bdy_nx = _jacc_copy(m.nx), bdy_ny = _jacc_copy(m.ny),
-                     u = _jacc_zeros(T, m.npoin*neq),
-                     uaux = _jacc_zeros(T, m.npoin, neq+1),
-                     flux = _jacc_zeros(T, m.nelem, m.ngl, m.ngl, 2neq),
-                     source = _jacc_zeros(T, m.nelem, m.ngl, m.ngl, neq),
-                     uprim = _jacc_zeros(T, vdim...),
-                     gξ = _jacc_zeros(T, vdim...), gη = _jacc_zeros(T, vdim...),
-                     rhs_el = _jacc_zeros(T, m.nelem, m.ngl, m.ngl, neq),
-                     qbdy = _jacc_zeros(T, max(nb,1), neq),
-                     RHS = _jacc_zeros(T, m.npoin, neq),
-                     RHS_host = zeros(T, m.npoin, neq),
+                     bdy_nx = _jacc_copy(TW.(m.nx)), bdy_ny = _jacc_copy(TW.(m.ny)),
+                     u = _jacc_zeros(TW, m.npoin*neq),
+                     uaux = _jacc_zeros(TW, m.npoin, neq+1),
+                     flux = _jacc_zeros(TW, m.nelem, m.ngl, m.ngl, 2neq),
+                     source = _jacc_zeros(TW, m.nelem, m.ngl, m.ngl, neq),
+                     uprim = _jacc_zeros(TW, vdim...),
+                     gξ = _jacc_zeros(TW, vdim...), gη = _jacc_zeros(TW, vdim...),
+                     rhs_el = _jacc_zeros(TW, m.nelem, m.ngl, m.ngl, neq),
+                     qbdy = _jacc_zeros(TW, max(nb,1), neq),
+                     RHS = _jacc_zeros(TW, m.npoin, neq),
+                     RHS_host = Base.zeros(T, m.npoin, neq),
                      visc_coeff = _jacc_copy(coef),
                      lvisc = lvisc, lsource = lsource, lpert = false,
                      PhysConst = nothing,

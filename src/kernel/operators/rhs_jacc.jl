@@ -61,6 +61,35 @@
 # point addition is not associative. Measured on SoliWaveIsland, five steps of
 # SSPRK54: 4.4e-16 relative on H, 7.7e-16 on Hu.
 #
+# WORKING PRECISION, AND WHY IT IS A SEPARATE KNOB
+# ------------------------------------------------
+# Jexpresso carries its state in Float64. Some devices cannot: Apple GPUs have no
+# double precision at all — Metal.jl's array constructor refuses Float64 outright
+# ("Metal does not support Float64 values"), and JACC agrees with it, declaring
+# `default_float(::MetalBackend) = Float32`.
+#
+# So the device arrays here carry their own float type, `TW`, chosen by
+# `:jacc_float` (default: whatever the active backend can do). When TW is Float32
+# the scheme is MIXED precision, not single precision:
+#
+#     state u, du, the MPI assembly, the time integrator   Float64   (untouched)
+#     the residual evaluation — fluxes, source, viscosity  Float32   (on device)
+#
+# That is the useful arrangement, and it is not the same as running the solver in
+# single precision. The state never loses digits to repeated rounding: it is read
+# down to Float32 once per call and the Float32 residual is added back into a
+# Float64 state, so the error is O(eps32) per step in the TENDENCY rather than
+# O(eps32) accumulating in the solution. What it costs is the accuracy of the
+# residual itself: on this deck the solitary wave is η ≈ 6e-4 riding on
+# h0 = 0.32, a relative perturbation of 2e-3, so with eps32 ≈ 1.2e-7 about four
+# significant digits of the signal survive. Fine for a demo or a throughput
+# measurement, and NOT something to trust for a vorticity-sensitive run.
+#
+# The lake-at-rest equilibrium does survive the conversion exactly: H and He are
+# equal before the cast, so they are equal after it, and the well-balanced
+# flux/source split still cancels term by term. That is checked, in Float32, by
+# test/test_jacc_rhs.jl.
+#
 # WHAT IS AND IS NOT COVERED
 # --------------------------
 #   yes   2D flat CG-SEM, `neqs` conservation laws, TOTAL() or PERT()
@@ -201,6 +230,15 @@ Base.@kwdef mutable struct St_jacc2d
     bdy_nx
     bdy_ny
 
+    # --- working precision --------------------------------------------------
+    TW                   # element type of every device float array
+    mixed::Bool          # TW !== Float64, so the host↔device hops must convert
+    u_stage              # npoin*neq host buffer in TW   (mixed only)
+    bout                 # nbnode × neq device: the corrected boundary values
+    bout_host            # nbnode × neq host mirror of the above
+    bn_ip_host           # nbnode host copy of bn_ip, to scatter bout into u
+    RHS_stage            # npoin × neq host buffer in TW (mixed only)
+
     # --- work arrays --------------------------------------------------------
     u                    # npoin*neq, device copy of the ODE state
     uaux                 # npoin × (neq+1)
@@ -339,22 +377,6 @@ function _jacc_u2uaux!(ip, u, uaux, npoin, neq)
 end
 
 
-#--- uaux → u, the whole field --------------------------------------------------
-#
-# The counterpart of uaux2u! (rhs.jl), and it exists for the same reason: the
-# boundary kernel corrects `uaux`, and the CPU path pushes the corrected field
-# back into the integrator's state at the tail of build_custom_bcs_dirichlet!
-# (BCs.jl, last line before its `end`). Everywhere except the boundary nodes this
-# writes back exactly what it read, so the field-wide form and a boundary-only
-# form agree — the field-wide one is what the CPU does, so it is what is done here.
-#
-function _jacc_uaux2u!(ip, u, uaux, npoin, neq)
-    @inbounds for ieq = 1:neq
-        u[(ieq-1)*npoin + ip] = uaux[ip, ieq]
-    end
-    return nothing
-end
-
 
 #---------------------------------------------------------------------------------
 # _jacc_almost_equal(a, b) — Kopriva's algorithm 139, the SAME test
@@ -406,7 +428,7 @@ end
 # in the other.
 #
 function _jacc_bc_2d!(ib, uaux, qe, x, y, t,
-                      bn_ip, bn_ptr, bn_edge, bn_loc, bdy_nx, bdy_ny, qbdy,
+                      bn_ip, bn_ptr, bn_edge, bn_loc, bdy_nx, bdy_ny, qbdy, bout,
                       neq, lpert)
 
     T = eltype(uaux)
@@ -434,6 +456,14 @@ function _jacc_bc_2d!(ib, uaux, qe, x, y, t,
                 uaux[ip, ieq] = qb
             end
         end
+    end
+
+    # The corrected values, packed nbnode-wide so the driver can hand them back
+    # to the integrator with a transfer the size of the BOUNDARY rather than the
+    # size of the field. Away from the boundary uaux2u! is the identity, so this
+    # carries exactly the information the CPU's whole-field write carries.
+    @inbounds for ieq = 1:neq
+        bout[ib, ieq] = uaux[ip, ieq]
     end
     return nothing
 end
@@ -603,9 +633,19 @@ end
 function jacc_rhs_2d!(c::St_jacc2d, u, t)
 
     npoin = c.npoin; nelem = c.nelem; ngl = c.ngl; neq = c.neq
-    T     = eltype(c.RHS)
+    T     = c.TW
 
-    copyto!(c.u, u)
+    #--- state in: Float64 host → TW device ---------------------------------
+    # The `mixed` branch is the whole cost of reduced precision on the way in:
+    # one host-side cast into a preallocated buffer, then the usual transfer. In
+    # the Float64 case there is no cast and no extra buffer, so the common path
+    # is exactly what it was.
+    if c.mixed
+        c.u_stage .= u
+        copyto!(c.u, c.u_stage)
+    else
+        copyto!(c.u, u)
+    end
 
     JACC.parallel_for(npoin, _jacc_u2uaux!, c.u, c.uaux, npoin, neq)
 
@@ -613,9 +653,8 @@ function jacc_rhs_2d!(c::St_jacc2d, u, t)
         JACC.parallel_for(c.nbnode, _jacc_bc_2d!,
                           c.uaux, c.qe, c.x, c.y, T(t),
                           c.bn_ip, c.bn_ptr, c.bn_edge, c.bn_loc,
-                          c.bdy_nx, c.bdy_ny, c.qbdy,
+                          c.bdy_nx, c.bdy_ny, c.qbdy, c.bout,
                           neq, c.lpert)
-        JACC.parallel_for(npoin, _jacc_uaux2u!, c.u, c.uaux, npoin, neq)
     end
 
     JACC.parallel_for((nelem, ngl, ngl), _jacc_volume_2d!,
@@ -641,10 +680,27 @@ function jacc_rhs_2d!(c::St_jacc2d, u, t)
 
     JACC.synchronize()
 
-    # Hand the boundary-corrected field back to the integrator, which is what
-    # uaux2u! does at the tail of the CPU's Dirichlet builder. Only the boundary
-    # nodes actually differ from what was read in.
-    c.nbnode > 0 && copyto!(u, c.u)
+    #--- boundary values back into the integrator's state -------------------
+    #
+    # uaux2u! at the tail of the CPU's Dirichlet builder writes the WHOLE field
+    # back. Away from the boundary that writes back exactly what it read, so
+    # scattering the nbnode corrected rows is the same operation — and it moves
+    # nbnode×neq numbers instead of npoin×neq (≈440 vs ≈37000 on this deck).
+    #
+    # It also keeps mixed precision honest. A whole-field write-back would round
+    # every node of a Float64 state through Float32 on every RHS call, which is
+    # the one thing the mixed scheme is supposed to avoid; only the boundary
+    # nodes, whose values the device actually computed, are demoted.
+    #
+    if c.nbnode > 0
+        copyto!(c.bout_host, c.bout)
+        @inbounds for ieq = 1:neq
+            off = (ieq-1)*npoin
+            for ib = 1:c.nbnode
+                u[off + c.bn_ip_host[ib]] = c.bout_host[ib, ieq]
+            end
+        end
+    end
 
     return c.RHS
 end
@@ -664,18 +720,28 @@ function build_rhs_jacc_2D!(du, u, params, t)
 
     jacc_rhs_2d!(c, u, t)
 
-    copyto!(c.RHS_host, c.RHS)
+    #--- RHS out: TW device → Float64 host -----------------------------------
+    if c.mixed
+        copyto!(c.RHS_stage, c.RHS)
+        c.RHS_host .= c.RHS_stage
+    else
+        copyto!(c.RHS_host, c.RHS)
+    end
 
     #
     # params.uaux is the CPU path's scratch, and things downstream of rhs! read it
     # as if rhs! had just refreshed it — _build_rhs! fills it from u on every call,
     # so diagnostics, the LES statistics and some of the writers assume it holds
-    # the current state plus the boundary values. The JACC path keeps its own copy
-    # on the device, so hand it back, or those consumers silently see whatever the
-    # last CPU-path call left behind (the initial condition, on a run that never
-    # took the CPU path at all).
+    # the current state plus the boundary values. Without this they silently see
+    # whatever the last CPU-path call left behind (the initial condition, on a run
+    # that never took the CPU path at all).
     #
-    copyto!(params.uaux, c.uaux)
+    # Rebuilt from `u` rather than copied off the device: jacc_rhs_2d! has just
+    # scattered the boundary values into `u`, so u2uaux! reproduces exactly the
+    # field the device kernels worked on — for the price of one host pass and no
+    # transfer at all.
+    #
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     DSS_global_RHS!(@view(c.RHS_host[:,:]), params.g_dss_cache, params.neqs)
 
@@ -688,6 +754,63 @@ end
 #=================================================================================
                                      SETUP
 =================================================================================#
+
+#---------------------------------------------------------------------------------
+# jacc_working_float(inputs; rank) — which float type the DEVICE arrays carry.
+#
+#   :jacc_float => :auto      (default) Float64 where the backend can do it, and
+#                             the backend's own default where it cannot.
+#   :jacc_float => Float32    ask for it explicitly, no warning.
+#   :jacc_float => Float64    demand it; an error if the backend has no Float64.
+#
+# `JACC.default_float()` is the backend's own declaration — Float64 for threads,
+# CUDA, AMDGPU and oneAPI, Float32 for Metal, whose hardware has no double
+# precision at all.
+#
+# The :auto fallback WARNS rather than falling back silently. Quietly halving the
+# precision of a geophysical solve because of the machine it happened to be
+# launched on is not a convenience.
+#---------------------------------------------------------------------------------
+function jacc_working_float(inputs; rank = 0)
+
+    backend_float = JACC.default_float()
+    want = get(inputs, :jacc_float, :auto)
+
+    if want === :auto || want == "auto"
+        if backend_float !== Float64 && rank == 0
+            @warn string("rhs_jacc.jl: the active JACC backend (\"", JACC.backend,
+                         "\") has no Float64, so the RHS will be evaluated in ",
+                         backend_float, ".\n",
+                         "The state, the time integrator and the MPI assembly stay in ",
+                         "Float64 — this is a MIXED-precision residual, not a ",
+                         "single-precision solver — but the tendency now carries only ",
+                         "~", round(Int, -log10(eps(backend_float))), " significant digits.\n",
+                         "Set :jacc_float => Float32 in the deck to accept this ",
+                         "silently, or run on a backend with double precision.")
+        end
+        return backend_float
+    end
+
+    TW = want isa Type ? want :
+         (want in (:f32, "f32", :Float32, "Float32") ? Float32 :
+          want in (:f64, "f64", :Float64, "Float64") ? Float64 : nothing)
+
+    TW in (Float32, Float64) ||
+        error(" # ERROR rhs_jacc.jl: :jacc_float must be :auto, Float32 or Float64;\n",
+              " #   got ", repr(want), ".")
+
+    TW === Float64 && backend_float !== Float64 &&
+        error(" # ERROR rhs_jacc.jl: the deck asks for :jacc_float => Float64, but the\n",
+              " #   active JACC backend (\"", JACC.backend, "\") has no double precision",
+              " — JACC\n #   itself reports default_float() = ", backend_float,
+              ", and Metal.jl refuses a Float64\n",
+              " #   array outright. Use :jacc_float => Float32 (mixed precision: the\n",
+              " #   state stays Float64, only the residual is evaluated in single), or\n",
+              " #   pick a backend that has Float64.")
+
+    return TW
+end
+
 
 #---------------------------------------------------------------------------------
 # jacc_check_inputs(inputs, sem, neqs)
@@ -745,7 +868,15 @@ end
 # Stage the mesh, the metrics, the basis and the reference state onto the device
 # and allocate the work arrays. Called ONCE, from params_setup.
 #---------------------------------------------------------------------------------
-function build_jacc_cache_2D(sem, qp, inputs, T)
+function build_jacc_cache_2D(sem, qp, inputs, T; rank = 0)
+
+    #
+    # T is the HOST float type (TFloat, i.e. Float64). TW is what the device
+    # arrays carry — the same thing on every backend that has double precision,
+    # Float32 on Metal. See jacc_working_float.
+    #
+    TW    = jacc_working_float(inputs; rank = rank)
+    mixed = TW !== T
 
     mesh    = sem.mesh
     metrics = sem.metrics
@@ -791,18 +922,26 @@ function build_jacc_cache_2D(sem, qp, inputs, T)
     return St_jacc2d(npoin = npoin, nelem = nelem, ngl = ngl, neq = neq,
                      nbnode = nbnode,
 
+                     TW      = TW,
+                     mixed   = mixed,
+                     u_stage    = mixed ? Base.zeros(TW, npoin*neq) : Base.zeros(TW, 0),
+                     bout       = _jacc_zeros(TW, max(nbnode,1), neq),
+                     bout_host  = Base.zeros(TW, max(nbnode,1), neq),
+                     bn_ip_host = bn_ip,
+                     RHS_stage  = mixed ? Base.zeros(TW, npoin, neq) : Base.zeros(TW, 0, 0),
+
                      connijk = _jacc_stage(mesh.connijk, Int, (nelem, ngl, ngl)),
-                     x       = _jacc_stage(mesh.x,    T, (npoin,)),
-                     y       = _jacc_stage(mesh.y,    T, (npoin,)),
-                     dξdx    = _jacc_stage(metrics.dξdx, T, (nelem, ngl, ngl)),
-                     dξdy    = _jacc_stage(metrics.dξdy, T, (nelem, ngl, ngl)),
-                     dηdx    = _jacc_stage(metrics.dηdx, T, (nelem, ngl, ngl)),
-                     dηdy    = _jacc_stage(metrics.dηdy, T, (nelem, ngl, ngl)),
-                     Je      = _jacc_stage(metrics.Je,   T, (nelem, ngl, ngl)),
-                     dψ      = _jacc_stage(basis.dψ,     T, (ngl, ngl)),
-                     ω       = _jacc_stage(ω,            T, (ngl,)),
-                     Minv    = _jacc_stage(sem.matrix.Minv, T, (npoin,)),
-                     qe      = _jacc_stage(qp.qe, T, (npoin, neq+1)),
+                     x       = _jacc_stage(mesh.x,    TW, (npoin,)),
+                     y       = _jacc_stage(mesh.y,    TW, (npoin,)),
+                     dξdx    = _jacc_stage(metrics.dξdx, TW, (nelem, ngl, ngl)),
+                     dξdy    = _jacc_stage(metrics.dξdy, TW, (nelem, ngl, ngl)),
+                     dηdx    = _jacc_stage(metrics.dηdx, TW, (nelem, ngl, ngl)),
+                     dηdy    = _jacc_stage(metrics.dηdy, TW, (nelem, ngl, ngl)),
+                     Je      = _jacc_stage(metrics.Je,   TW, (nelem, ngl, ngl)),
+                     dψ      = _jacc_stage(basis.dψ,     TW, (ngl, ngl)),
+                     ω       = _jacc_stage(ω,            TW, (ngl,)),
+                     Minv    = _jacc_stage(sem.matrix.Minv, TW, (npoin,)),
+                     qe      = _jacc_stage(qp.qe, TW, (npoin, neq+1)),
 
                      p2e_ptr = _jacc_copy(p2e_ptr),
                      p2e_e   = _jacc_copy(p2e_e),
@@ -814,29 +953,29 @@ function build_jacc_cache_2D(sem, qp, inputs, T)
                      bn_edge = _jacc_copy(bn_edge),
                      bn_loc  = _jacc_copy(bn_loc),
                      bdy_nx  = nedges_bdy > 0 ?
-                               _jacc_stage(metrics.nx, T, (nedges_bdy, ngl)) :
-                               _jacc_zeros(T, 1, 1),
+                               _jacc_stage(metrics.nx, TW, (nedges_bdy, ngl)) :
+                               _jacc_zeros(TW, 1, 1),
                      bdy_ny  = nedges_bdy > 0 ?
-                               _jacc_stage(metrics.ny, T, (nedges_bdy, ngl)) :
-                               _jacc_zeros(T, 1, 1),
+                               _jacc_stage(metrics.ny, TW, (nedges_bdy, ngl)) :
+                               _jacc_zeros(TW, 1, 1),
 
-                     u        = _jacc_zeros(T, npoin*neq),
-                     uaux     = _jacc_zeros(T, npoin, neq+1),
-                     flux     = _jacc_zeros(T, nelem, ngl, ngl, 2*neq),
-                     source   = _jacc_zeros(T, nelem, ngl, ngl, neq),
-                     uprim    = _jacc_zeros(T, vdim...),
-                     gξ       = _jacc_zeros(T, vdim...),
-                     gη       = _jacc_zeros(T, vdim...),
-                     rhs_el   = _jacc_zeros(T, nelem, ngl, ngl, neq),
-                     qbdy     = _jacc_zeros(T, max(nbnode,1), neq),
-                     RHS      = _jacc_zeros(T, npoin, neq),
-                     RHS_host = zeros(T, npoin, neq),
+                     u        = _jacc_zeros(TW, npoin*neq),
+                     uaux     = _jacc_zeros(TW, npoin, neq+1),
+                     flux     = _jacc_zeros(TW, nelem, ngl, ngl, 2*neq),
+                     source   = _jacc_zeros(TW, nelem, ngl, ngl, neq),
+                     uprim    = _jacc_zeros(TW, vdim...),
+                     gξ       = _jacc_zeros(TW, vdim...),
+                     gη       = _jacc_zeros(TW, vdim...),
+                     rhs_el   = _jacc_zeros(TW, nelem, ngl, ngl, neq),
+                     qbdy     = _jacc_zeros(TW, max(nbnode,1), neq),
+                     RHS      = _jacc_zeros(TW, npoin, neq),
+                     RHS_host = Base.zeros(T, npoin, neq),
 
-                     visc_coeff = _jacc_copy(coeffs),
+                     visc_coeff = _jacc_copy(TW.(coeffs)),
                      lvisc = lvisc,
                      lsource = get(inputs, :lsource, false) == true,
                      lpert = lpert,
-                     PhysConst = PHYS_CONST,
+                     PhysConst = TW === Float64 ? PHYS_CONST : PhysicalConst{TW}(),
                      xmin = Float64(mesh.xmin), xmax = Float64(mesh.xmax),
                      ymin = Float64(mesh.ymin), ymax = Float64(mesh.ymax))
 end
@@ -857,6 +996,30 @@ function jacc_banner(c::St_jacc2d; rank = 0)
             ",  arrays = ", nameof(typeof(c.RHS)))
     println(" #   npoin = ", c.npoin, ",  nelem = ", c.nelem, ",  ngl = ", c.ngl,
             ",  neqs = ", c.neq, ",  viscous = ", c.lvisc)
+    println(" #   residual precision = ", c.TW,
+            c.mixed ? "   (MIXED: state, integrator and MPI assembly stay in Float64)" :
+                      "")
+
+    #
+    # The single-thread trap. `:ljacc => true` says WHICH kernels run; it does not
+    # give Julia any threads — Julia starts with one unless -t / JULIA_NUM_THREADS
+    # says otherwise, and nothing in Jexpresso changes that.
+    #
+    # It is worth a warning and not just a doc line because the cost is not the
+    # obvious one. JACC's threads backend runs a plain loop at nthreads() == 1 and
+    # Polyester.@batch above it, and the two are not the same code. Measured on
+    # this RHS, 32x16 elements at nop=5: 51.5 RHS/s on one thread against 397.6 on
+    # two — 7.7x, which is not something two threads can do. So a one-thread JACC
+    # run is slower than leaving :ljacc off altogether.
+    #
+    if JACC.backend == "threads" && nthr == 1
+        @warn string("rhs_jacc.jl: :ljacc => true, but Julia is running with ONE thread, ",
+                     "so the JACC path has no parallelism at all — and it is slower than ",
+                     "the serial CPU path, because JACC takes a different (unbatched) ",
+                     "code path at nthreads() == 1.\n",
+                     "Start Julia with `-t <n>` or JULIA_NUM_THREADS=<n>. On an n-core ",
+                     "machine, -t n.")
+    end
     return nothing
 end
 

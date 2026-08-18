@@ -60,6 +60,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ljacc] = false
     end
 
+    #
+    # :jacc_float — the float type the DEVICE arrays carry under :ljacc.
+    #   :auto     (default) Float64 wherever the backend has it, the backend's
+    #             own default where it does not (Metal, which has no Float64).
+    #   Float32   opt in to a mixed-precision residual explicitly.
+    #   Float64   demand double precision; an error if the backend lacks it.
+    # The state, the time integrator and the MPI assembly are Float64 either way.
+    #
+    if(!haskey(inputs, :jacc_float))
+        inputs[:jacc_float] = :auto
+    end
+
     if(!haskey(inputs, :RT_atmos_coupling))
        inputs[:RT_atmos_coupling] = false
     end

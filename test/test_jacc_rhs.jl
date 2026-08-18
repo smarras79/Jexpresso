@@ -104,6 +104,56 @@ const MU  = [0.05, 0.05, 0.05]
         end
     end
 
+    @testset "mixed precision (Float32 residual)" begin
+        # This is the mode Metal needs, and it is exercised here on the threads
+        # backend so it is covered on machines that have no Apple GPU. Nothing in
+        # the staging is backend-specific: the cache carries TW-typed device
+        # arrays and the driver converts on the two host hops, whatever TW is.
+
+        c32 = jacc_cache_from_test_mesh(m, qe; neq = NEQ, lvisc = true, μ = MU,
+                                        TW = Float32)
+        @test c32.mixed
+        @test eltype(Array(c32.RHS)) === Float32
+        @test eltype(c32.RHS_host)   === Float64   # the host mirror stays double
+
+        # 1. the lake at rest is STILL an exact steady state. H and He are equal
+        #    before the cast so they are equal after it, and the well-balanced
+        #    flux/source split cancels term by term in any precision. If this ever
+        #    fails, the conversion is being applied to H and He inconsistently.
+        crest = jacc_cache_from_test_mesh(m, qe; neq = NEQ, lvisc = false,
+                                          TW = Float32)
+        jacc_rhs_2d!(crest, pack_u(copy(qe), m.npoin, NEQ), 0.0)
+        @test maximum(abs, Array(crest.RHS)) == 0.0
+
+        # 2. against the Float64 residual, single-precision accuracy — and no
+        #    worse. The bound is loose on purpose: what is being asserted is that
+        #    the answer degrades by eps32 and not by something structural.
+        c64 = jacc_cache_from_test_mesh(m, qe; neq = NEQ, lvisc = true, μ = MU)
+        jacc_rhs_2d!(c64, pack_u(q, m.npoin, NEQ), 0.0)
+        jacc_rhs_2d!(c32, pack_u(q, m.npoin, NEQ), 0.0)
+        r64 = Array(c64.RHS)
+        r32 = Float64.(Array(c32.RHS))
+        rel = maximum(abs, r32 .- r64) / maximum(abs, r64)
+        @test rel < 1e-5
+        @test rel > 0            # it really did run in single, not silently in double
+
+        # 3. the state stays Float64 and only the boundary nodes are written back
+        u  = pack_u(q, m.npoin, NEQ)
+        b4 = copy(u)
+        jacc_rhs_2d!(c32, u, 0.0)
+        @test eltype(u) === Float64
+        bnodes  = Set(vec(m.poin_in_bdy_edge))
+        changed = findall(!=(0.0), u .- b4)
+        @test !isempty(changed)
+        @test all(k -> ((k - 1) % m.npoin + 1) in bnodes, changed)
+
+        # 4. still deterministic
+        c32b = jacc_cache_from_test_mesh(m, qe; neq = NEQ, lvisc = true, μ = MU,
+                                         TW = Float32)
+        jacc_rhs_2d!(c32b, pack_u(q, m.npoin, NEQ), 0.0)
+        @test Array(c32.RHS) == Array(c32b.RHS)
+    end
+
     @testset "bitwise reproducible" begin
         r = map(1:2) do _
             c = jacc_cache_from_test_mesh(m, qe; neq = NEQ, lvisc = true, μ = MU)

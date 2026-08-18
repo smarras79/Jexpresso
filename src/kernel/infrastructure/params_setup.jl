@@ -404,7 +404,7 @@ function params_setup(sem,
     # non-conforming nodes.
     #------------------------------------------------------------------------------------
     jacc = get(inputs, :ljacc, false) == true ?
-           build_jacc_cache_2D(sem, qp, inputs, TFloat) : nothing
+           build_jacc_cache_2D(sem, qp, inputs, TFloat; rank = rank) : nothing
     if jacc !== nothing
         jacc_banner(jacc; rank = rank)
     end
