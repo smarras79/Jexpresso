@@ -84,47 +84,37 @@ mirrored node would otherwise be counted once per rank), the drift, `max|ζ|`,
 and every residual in `check_sphere_metrics`, whose verdict is therefore the
 same everywhere.
 
-MEASURED, on the shipped 10-per-panel grid at `nop = 5`. Every diagnostic the
-run prints agrees across rank counts to all the digits printed:
+MEASURED, by running THIS deck — the full 10-day Galewsky integration, 11 521
+steps at `nop = 5` — on 1, 2 and 4 ranks. Every diagnostic it prints agrees on
+all three, to every digit printed:
 
-| after 1 h (49 steps) | 1 rank | 2 ranks | 4 ranks |
+| after 10 days | 1 rank | 2 ranks | 4 ranks |
 |---|---|---|---|
-| `δE/E` | -7.503e-06 | -7.503e-06 | -7.503e-06 |
-| `max\|ζ-ζ₀\|` | 4.388e-06 | 4.388e-06 | 4.388e-06 |
-| max drift removed | 6.153e+01 | 6.153e+01 | 6.153e+01 |
-| `δmass/mass` | -4.553e-14 | -4.454e-14 | -4.422e-14 |
-| M4, `Σ M[ip]` vs 4πR² | 4.9e-14 | 5.7e-14 | 5.1e-14 |
+| `δE/E` | -1.008e-03 | -1.008e-03 | -1.008e-03 |
+| `max\|ζ\|` | 8.737e-05 | 8.737e-05 | 8.737e-05 |
+| `max\|ζ-ζ₀\|` | 1.623e-04 | 1.623e-04 | 1.623e-04 |
+| max drift removed | 1.361e+03 | 1.361e+03 | 1.361e+03 |
+| `δmass/mass` | 9.555e-12 | 9.559e-12 | 9.561e-12 |
 
-and again at 6 h (289 steps), 1 rank against 4: `δE/E` -4.425e-05 both,
-`max|ζ-ζ₀|` 1.262e-05 both, `δmass/mass` -2.160e-13 against -2.116e-13. The mass
-residual is the only column that moves, in its last digits, because the order of
-summation changes with the partition — that is round-off, not a different
-answer. All seven metric checks pass at every rank count. `test/test_sphere_parallel.jl` pins this down without needing a serial
-run to compare against: it checks that the area comes out 4πR², that shared
-nodes agree on `M`, on the RHS and on the vorticity, and that `∫ ∂φ/∂t dΩ = 0`
-on the closed shell — which is the invariant a half-assembled seam cannot
-satisfy.
+The mass residual is the only column that moves, in its last digits, because the
+order of summation changes with the partition — that is round-off, not a
+different answer. All seven metric checks pass at every rank count (M4, the
+area, at 4.9e-14 / 5.7e-14 / 5.1e-14).
 
-```bash
-mpiexec -n 4 julia --project=. test/test_sphere_parallel.jl
-```
-
-WHAT IT COSTS. Timed on a 4-core sandbox, one simulated day (1153 steps) on the
-shipped 600-element grid at `nop = 5` — 600, 300 and 150 elements per rank:
+WHAT IT BUYS. Same runs, wall time of the time loop, on a 4-core sandbox — 600,
+300 and 150 elements per rank:
 
 | ranks | time loop | of which compiling | speed-up |
 |---|---|---|---|
-| 1 | 21.4 s | 34 % | — |
-| 2 | 15.1 s | 52 % | **1.9×** |
-| 4 | 22.5 s | 46 % | 1.2× |
+| 1 | 152.4 s | 5.0 % | — |
+| 2 | 81.3 s | 9.6 % | **1.87×** |
+| 4 | 46.9 s | 16.6 % | **3.25×** |
 
-Two ranks is close to ideal; four buys nothing more *here*, where each rank is
-down to 150 elements and four MPI processes are contending for four cores. Do
-not read that last row as a property of the code — it is a property of this box
-and this grid. Note also that total wall time (106 / 102 / 168 s) is dominated by
-per-process JIT: every rank compiles the whole RHS chain for itself, ~35 s of it
-inside the first `with_mpi` call. Measure scaling on a real machine, with a grid
-big enough that a rank has thousands of elements.
+— 1.97× and 3.71× on the compute alone, i.e. close to ideal for a grid this
+small. Do measure on a short run and you will see none of it: at one simulated
+day the per-process JIT (~35 s a rank, most of it the first `with_mpi` call)
+swamps the integration and four ranks come out no faster than one. The
+integration is what scales; the startup does not.
 
 THE PARTITION is the generic one (`_compute_xy_partition`, a box decomposition
 of the projected x-y plane), so a part of a SPHERE wraps around the far side
