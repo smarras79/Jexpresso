@@ -228,6 +228,12 @@ include(joinpath( "kernel", "operators", "rhs.jl"))
 # SEM right-hand side on the spherical shell (+ the modal filter).
 include(joinpath( "kernel", "operators", "sphere_rhs.jl"))
 
+# Portable (CPU threads / CUDA / AMDGPU / oneAPI / Metal) shell RHS. AFTER
+# sphere_rhs.jl (it reuses _sphere_dss_scale!) and it also uses the staging
+# helpers and jacc_working_float from rhs_jacc.jl, which is included further down
+# — fine, since those are only referenced from function bodies.
+include(joinpath( "kernel", "operators", "sphere_rhs_jacc.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))

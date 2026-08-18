@@ -264,7 +264,8 @@ Not supported — and refused **by name at setup**, loudly, rather than quietly
 solving a different equation:
 
 - 1D / 3D
-- the spherical shell (`:lspherical_shell`)
+- the spherical shell via `:ljacc` on the FLAT path — the shell has its own JACC
+  residual instead, `sphere_rhs_jacc.jl`; see below
 - Laguerre semi-infinite elements
 - the CG filter (`:lfilter`)
 - microphysics (`:lmoist`)
@@ -275,28 +276,77 @@ solving a different equation:
   can only be known by calling it. A case with a real Neumann condition must not
   set `:ljacc`.
 
-## Next: the shallow water equations on the sphere
+## The shallow water equations on the sphere — done
 
-`problems/ShallowWater/SWsphere` does **not** go through `rhs!`. It has its own
-right-hand side (`sphere_rhs!`, `src/kernel/operators/sphere_rhs.jl`) and its own
-time loop (`src/kernel/solvers/sphere_time_loop.jl`), so it needs its own JACC
-entry point rather than the `:ljacc` switch.
+`problems/ShallowWater/SWsphere` now has a JACC path too, in
+`src/kernel/operators/sphere_rhs_jacc.jl`. Same switch:
 
-The port is the same three kernels as here, with one change of substance: the
-shell's metric is 3×2, so `a¹` and `a²` each carry a z component and the surface
-divergence is `dFdx + dGdy + dHdz` with a third flux component `H`. Concretely:
+```julia
+:ljacc => true,
+```
 
-- `_jacc_element_rhs_2d!` gains one term and one metric triple;
-- the viscous kernel becomes Laplace-Beltrami — the same weak form, with
-  `gξ = ν∇ₛq·a¹`, `gη = ν∇ₛq·a²` over three components instead of two
-  (`_sphere_visc_el!` is the serial original to match);
-- the CSR gather, the cache and the driver are unchanged;
-- a closed shell has no boundary, so `nbnode` is zero and the boundary kernel
-  never launches;
-- the Lagrange projection applied after every RK stage
-  (`_sphere_stage_limiter!`) and the modal filter (`sphere_filter!`) are the two
-  remaining pieces that would also want porting, or the state has to come back to
-  the host every stage and the transfers eat the win.
+```bash
+julia --project=. -t 8 src/Jexpresso.jl ShallowWater SWsphere
+```
+
+It needed a file of its own because the shell does **not** go through `rhs!` — it
+has its own residual (`sphere_rhs!`) and its own time loop. What differs from the
+flat kernels:
+
+- the metric is 3×2, so `a¹` and `a²` each carry a z component, the flux has a
+  third component `H`, and the divergence is `dFdx + dGdy + dHdz`;
+- the viscous term is Laplace–Beltrami, not the flat Laplacian;
+- the flux tuple is **equation-major** — `(F₁,G₁,H₁, F₂,G₂,H₂, …)` — following the
+  host `user_flux!(F, G, H, …)`, not the flat path's all-F-then-all-G;
+- a closed shell has no boundary, so there is no boundary kernel at all;
+- the state is a matrix, so there is no `u → uaux` repacking;
+- it finishes with the same `_sphere_dss_scale!` the serial path uses, so the
+  cross-rank semantics are identical by construction rather than by argument.
+
+Measured on the shipped cubed sphere, 600 elements / 15002 nodes / 4 equations,
+per RHS evaluation, against the serial shell residual it replaces:
+
+| threads | serial | JACC | speedup |
+|---------|--------|------|---------|
+| 1 | 3.96 ms | 21.92 ms | 0.18× |
+| 2 | 3.79 ms | 3.46 ms | 1.09× |
+| 4 | 3.73 ms | **2.25 ms** | **1.66×** |
+
+The residual matches the serial one to 2.7e-16 relative, inviscid and viscous.
+`test/test_sphere_jacc.jl` is the check.
+
+The one-thread row is the usual JACC threads-backend code-path switch, and it is
+worth restating because it bites harder here than on the flat cases: **do not run
+the shell under `:ljacc` on one thread.** The serial shell residual is already
+well optimised — typed function barriers, per-element scratch that fits in L1 —
+so JACC has to beat a good baseline, and it only does so from two threads up.
+
+### A trap worth knowing about
+
+The first working version of this ran at **21.9 ms on four threads**, five times
+slower than serial, with only 1680 bytes allocated per call and the four kernels
+themselves summing to 4.1 ms. The cause was that `sp.jacc` is an untyped field, so
+`c.ngl` and `c.neq` came out `::Any` and every `for k = 1:ngl` inside every kernel
+became a dynamically-typed loop. A one-line typed function barrier —
+
+```julia
+return _sphere_rhs_jacc!(RHS, q, sp.jacc::St_jacc_sphere, mesh, metrics, sp)
+```
+
+— took it to 2.25 ms, a 9.7× improvement. `sphere_rhs.jl` already spells this
+lesson out for `_sphere_rhs_kernel!` ("TYPED FUNCTION BARRIER … and it is not
+optional here"); it applies just as much to anything reading a cache out of an
+untyped field.
+
+## Still to come
+
+- The per-stage Lagrange projection and the modal filter on the shell still run on
+  the host, once per RK stage. They are cheap relative to the residual, but on a
+  GPU they would each cost a round trip; porting them is the next thing worth
+  doing there.
+- 1D and 3D flat kernels.
+- The CG filter, moisture and Laguerre elements on the flat path.
+
 
 ## A measured note on the `threads` backend
 

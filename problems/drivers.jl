@@ -169,6 +169,20 @@ function driver(nparts,
         #
         sparams = build_sphere_params(smesh, smetrics, inputs; neqs = qsphere.neqs)
 
+        #
+        # JACC.jl portable RHS for the shell (:ljacc => true). Attached here and
+        # not inside build_sphere_params because this is the only place that has
+        # the reference state qsphere.qe and the SOL_VARS_TYPE to hand, and the
+        # staging is O(npoin) work that must not happen inside a time step.
+        #
+        if get(inputs, :ljacc, false) == true
+            sparams.jacc = build_jacc_cache_sphere(smesh, smetrics, sparams,
+                                                   qsphere.qe, inputs,
+                                                   inputs[:SOL_VARS_TYPE], TFloat;
+                                                   rank = rank)
+            jacc_sphere_banner(sparams.jacc; rank = rank)
+        end
+
         @time tfinal = sphere_time_loop!(smesh, smetrics, sparams, qsphere,
                                          inputs, OUTPUT_DIR; verbose = (rank == 0))
 

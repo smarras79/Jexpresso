@@ -716,8 +716,13 @@ end
 # only scalar setindex!, so it must not be written with a range or a broadcast.
 #---------------------------------------------------------------------------------
 function build_rhs_jacc_2D!(du, u, params, t)
+    # Typed function barrier — see the note in sphere_rhs_jacc.jl. params is a
+    # NamedTuple, so params.jacc is inferred, but the assertion costs nothing and
+    # keeps the two drivers honest about the same hazard.
+    return _build_rhs_jacc_2D!(du, u, params, t, params.jacc::St_jacc2d)
+end
 
-    c = params.jacc
+function _build_rhs_jacc_2D!(du, u, params, t, c::St_jacc2d)
 
     jacc_rhs_2d!(c, u, t)
 
@@ -839,8 +844,10 @@ function jacc_check_inputs(inputs, mesh, VT)
 
     get(inputs, :lspherical_shell, false) == false ||
         error(" # ERROR rhs_jacc.jl: :lspherical_shell => true does not go through rhs! at all —\n",
-              " #   the shell has its own RHS (sphere_rhs!) and its own time loop. Porting it\n",
-              " #   is the next step; see \"Extending\" at the bottom of this file.")
+              " #   the shell has its own RHS (sphere_rhs!) and its own time loop, and its own\n",
+              " #   JACC path in src/kernel/operators/sphere_rhs_jacc.jl, which the SAME\n",
+              " #   :ljacc switch turns on. Nothing to do here — this branch only means the\n",
+              " #   flat entry point was reached for a shell case, which should not happen.")
 
     get(inputs, :ladapt, false) == false && get(inputs, :lamr, false) == false ||
         error(" # ERROR rhs_jacc.jl: the JACC cache is staged onto the device ONCE, at setup.\n",

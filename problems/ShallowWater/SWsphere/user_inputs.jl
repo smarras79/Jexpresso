@@ -194,6 +194,35 @@ function user_inputs()
         # the vorticity off it: at 5e5 half of max|ζ| is gone by day 3.
         #---------------------------------------------------------------------------
         :lfilter              => false,
+        #---------------------------------------------------------------------------
+        # JACC.jl portable RHS for the shell.
+        #
+        # Flip to true to evaluate the surface divergence, the source and the
+        # Laplace-Beltrami diffusion through src/kernel/operators/sphere_rhs_jacc.jl
+        # -- ONE kernel body that runs on multi-core CPU, NVIDIA, AMD, Intel or
+        # Apple hardware. Everything else is unchanged: same grid, same Float64
+        # state, same SSPRK, same Lagrange projection every stage, same output.
+        #
+        # THREADS ARE NOT AUTOMATIC. This switch says which kernels run; Julia
+        # still starts with one thread unless told otherwise, and on ONE thread
+        # the JACC path is several times SLOWER than the serial one (JACC's
+        # threads backend takes a different, unbatched code path there). Measured
+        # on this grid, 600 elements / 15002 nodes, per RHS evaluation:
+        #
+        #     threads      serial      JACC
+        #        1        3.96 ms    21.92 ms     <- do not do this
+        #        2        3.79 ms     3.46 ms
+        #        4        3.73 ms     2.25 ms
+        #
+        # so:  julia --project=. -t 8 src/Jexpresso.jl ShallowWater SWsphere
+        #
+        # The JACC residual matches the serial one to 2.7e-16 relative, so turning
+        # it on cannot change the answer. Its direct stiffness summation is a
+        # gather over a fixed map rather than an atomic scatter, and it finishes
+        # with the same _sphere_dss_scale! the serial path uses, so the parallel
+        # semantics are identical by construction.
+        #---------------------------------------------------------------------------
+        :ljacc                => false,
         :filter_alpha         => 0.05,
         :filter_order         => 8,
         :filter_kcut          => 2/3,

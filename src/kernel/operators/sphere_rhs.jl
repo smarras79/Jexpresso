@@ -106,6 +106,12 @@ mutable struct St_sphere_params{TFloat, TDSS, TDSS1}
     # either way.
     dss  ::TDSS
     dss1 ::TDSS1
+
+    # JACC.jl device cache, or nothing when :ljacc is off. Untyped on purpose:
+    # St_jacc_sphere is defined in sphere_rhs_jacc.jl, which is included AFTER
+    # this file, so the type does not exist yet here. It is read once per RHS
+    # call, never inside a kernel.
+    jacc
 end
 
 
@@ -132,6 +138,9 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
 
     # Not St_sphere_params{TF}(...): TF is inferred from the arrays, and the two
     # assembler-cache parameters are inferred from dss/dss1.
+    # The cache itself is built by build_jacc_cache_sphere and attached by the
+    # caller (drivers.jl), which is the only place that has `inputs` and the
+    # reference state to hand.
     return St_sphere_params(neqs,
                             zeros(TF, ngl, ngl, neqs),
                             zeros(TF, ngl, ngl, neqs),
@@ -145,7 +154,8 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                             lvisc,
                             zeros(TF, ngl, ngl, neqs),
                             zeros(TF, ngl, ngl, neqs),
-                            dss, dss1)
+                            dss, dss1,
+                            nothing)
 end
 
 
@@ -249,6 +259,17 @@ function sphere_rhs!(RHS, q, qe,
                      metrics::St_sphere_metrics,
                      sp::St_sphere_params,
                      SVT)
+
+    #
+    # JACC.jl portable path (:ljacc => true). It owns the whole shell residual —
+    # surface divergence, source and Laplace-Beltrami diffusion — and finishes
+    # with the SAME _sphere_dss_scale! the serial path uses, so the cross-rank
+    # semantics are identical by construction.
+    # See src/kernel/operators/sphere_rhs_jacc.jl.
+    #
+    if sp.jacc !== nothing
+        return sphere_rhs_jacc!(RHS, q, qe, mesh, metrics, sp, SVT)
+    end
 
     _sphere_rhs_kernel!(RHS, q, qe,
                         mesh.connijk, mesh.coords,
