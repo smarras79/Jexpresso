@@ -330,6 +330,17 @@ Jexpresso.run_case("CompEuler", "3d_bomex")
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
+## Shallow water on a spherical shell
+Benchmark: classical Galewki and Polvani's barotropic jet
+```julia
+using Jexpresso
+Jexpresso.run_case("ShallowWater", "SWsphere")
+```
+<img src="assets/SWsphere-Galewki-visc1e5-36x36.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+
 
 ##  2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```julia
