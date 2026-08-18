@@ -85,6 +85,24 @@
 
 using JACC
 
+#
+# Bring the vendor package for the ACTIVE backend into scope.
+#
+# JACC.set_backend("cuda") adds CUDA.jl to the project's [deps] and records the
+# choice in LocalPreferences.toml, but it does not import it — and the CUDA
+# array type, the CUDA parallel_for and everything else backend-specific live in
+# a JACC package EXTENSION that only loads once CUDA itself is imported. Without
+# this line a GPU run gets a MethodError on `JACC.array_type()` at cache-build
+# time instead of a GPU.
+#
+# On the default "threads" backend the macro expands to a single @info line and
+# imports nothing. It has to sit at top level (a macro expands where it is
+# written), and it is recompiled automatically when the preference changes:
+# JACC reads the backend with @load_preference, so Preferences.jl invalidates
+# JACC's cache — and transitively Jexpresso's — the moment set_backend runs.
+#
+JACC.@init_backend
+
 
 #---------------------------------------------------------------------------------
 # Device-array staging.
@@ -548,6 +566,17 @@ function build_rhs_jacc_2D!(du, u, params, t)
     jacc_rhs_2d!(c, u, t)
 
     copyto!(c.RHS_host, c.RHS)
+
+    #
+    # params.uaux is the CPU path's scratch, and things downstream of rhs! read it
+    # as if rhs! had just refreshed it — _build_rhs! fills it from u on every call,
+    # so diagnostics, the LES statistics and some of the writers assume it holds
+    # the current state plus the boundary values. The JACC path keeps its own copy
+    # on the device, so hand it back, or those consumers silently see whatever the
+    # last CPU-path call left behind (the initial condition, on a run that never
+    # took the CPU path at all).
+    #
+    copyto!(params.uaux, c.uaux)
 
     DSS_global_RHS!(@view(c.RHS_host[:,:]), params.g_dss_cache, params.neqs)
 
