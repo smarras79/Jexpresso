@@ -21,21 +21,47 @@ touch mesh generation, the metric terms, the time integrator, the I/O, or the
 JIT. So it can only speed up the fraction of your wall clock that is spent in
 `rhs!`.
 
-Two things routinely make the answer "no":
+`CompEuler/theta` is a case where the answer is **no**, and it is worth seeing why
+before you spend an afternoon on your own deck. Measured, 100 elements, 1681
+nodes, 4 equations, one RHS evaluation:
 
-* **The case is small.** Measured on `CompEuler/theta` — 100 elements, 1681
-  nodes, 4 equations — the serial CPU RHS and the 2-thread JACC RHS are within
-  noise of each other. There is not enough work per kernel launch to pay for the
-  thread barriers, and the whole run is dominated by startup and JIT anyway.
+| threads | CPU RHS | JACC RHS | JACC speedup |
+|---------|---------|----------|--------------|
+| 1 | 0.718 ms | 3.107 ms | **0.23×** — four times *slower* |
+| 2 | 0.821 ms | 0.661 ms | 1.24× |
+| 4 | 0.784 ms | 0.386 ms | 2.03× |
+
+Now put that in context. The shipped deck is `tend = 1000`, `Δt = 0.5`, and
+CarpenterKennedy2N54 has five stages — 2000 steps × 5 = 10 000 RHS calls:
+
+| | total time in the RHS |
+|---|---|
+| CPU | 10 000 × 0.821 ms ≈ **8.2 s** |
+| JACC, 2 threads | 10 000 × 0.661 ms ≈ **6.6 s** |
+
+A 1.6 s difference, inside a run whose wall clock is dominated by the mesh read,
+the metric terms, JIT and eleven VTK writes. Switch `:ljacc` on for this case with
+`-t 2` and **the wall clock will not visibly move**. That is the expected result,
+not a symptom of anything being wrong.
+
+So, two things routinely make the answer "no":
+
+* **The case is small.** 100 elements is not enough work per `parallel_for` to pay
+  for the thread barriers. JACC starts paying when the element count is large
+  enough that each kernel launch has real work in it.
 * **The run is short.** A case that takes 40 s of which 35 s is compilation will
   look identical whatever you do to the RHS.
 
-Time the RHS before you invest. The quickest honest check is to run the case
-twice, once with `:ljacc => false` and once with `true`, and compare *the time
-integration line* Jexpresso prints — not the wall clock of the whole process.
+Time the RHS before you invest — not the wall clock of the whole process. The
+honest check is to compare *the time-integration line* Jexpresso prints with
+`:ljacc` off and on, or to call `rhs!` in a loop yourself.
 
-JACC starts paying off when the element count is large enough that each
-`parallel_for` has real work in it, and it is the only way to reach a GPU at all.
+And note the first row of that table: at **one** thread the JACC path is four
+times slower than the serial CPU path. See step 4 — this is the single most
+common way to get a disappointing result.
+
+JACC is also the only way to reach a GPU at all, which for a large enough case is
+the real reason to do this.
 
 ---
 
@@ -157,15 +183,11 @@ or `export JULIA_NUM_THREADS=auto` before launching. In VS Code, set
 
 Running the JACC path on **one** thread is worse than not using it at all: JACC's
 threads backend runs a plain loop at `nthreads() == 1` and `Polyester.@batch`
-above it, and the two are not the same code. Measured on `CompEuler/theta`'s RHS:
+above it, and the two are not the same code. On `CompEuler/theta`'s RHS that is
+3.107 ms against 0.661 ms — and against 0.821 ms for the serial CPU path it never
+left. The 1→2 jump is the code-path switch, not the second thread.
 
-| threads | ms per RHS |
-|---------|-----------|
-| 1 | 3.307 |
-| 2 | 0.508 |
-
-The 1→2 jump is the code-path switch, not the second thread. Jexpresso warns if
-it catches you at one thread.
+Jexpresso warns if it catches you at one thread with `:ljacc` on.
 
 ---
 
