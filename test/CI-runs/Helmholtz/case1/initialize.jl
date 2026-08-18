@@ -17,15 +17,15 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     
     if (inputs[:backend] == CPU())        
         for ip =1:mesh.npoin
-            x=mesh.x[ip]
-            y=mesh.y[ip]           
+            x=mesh.coords[1, ip]
+            y=mesh.coords[2, ip]           
             q.qn[ip,1] = sin(x/2)*exp(-x/2)*cos(y)
 
             q.qe[ip,1] = sin(x/2)*exp(-x/2)*cos(y)
         end
     else
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y; ndrange = mesh.npoin)
+        k(q.qn, q.qe, view(mesh.coords, 1, :), view(mesh.coords, 2, :); ndrange = mesh.npoin)
     end
         
     

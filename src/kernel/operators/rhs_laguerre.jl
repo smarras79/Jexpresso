@@ -40,7 +40,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     
     #filter!(u, params, SD)
      
-    inviscid_rhs_el_laguerre!(u, params, params.mesh.connijk_lag, params.qp.qe, params.mesh.x, params.mesh.y, lsource, SD)
+    inviscid_rhs_el_laguerre!(u, params, params.mesh.connijk_lag, params.qp.qe, view(params.mesh.coords, 1, :), view(params.mesh.coords, 2, :), lsource, SD)
     DSS_rhs_laguerre!(params.RHS_lag, params.rhs_el_lag, params.mesh.connijk_lag, params.mesh.nelem_semi_inf, ngl, params.mesh.ngr, neqs, SD, params.AD)
     #@info params.rhs_el_lag[1,1,2,2], params.mesh.connijk_lag[1,1,2]
     #@info params.rhs_el_lag[20,5,2,2], params.mesh.connijk_lag[20,5,2]

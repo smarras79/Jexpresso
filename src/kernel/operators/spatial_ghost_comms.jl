@@ -92,7 +92,7 @@ function fetch_parent_face_coordinates(
         gip > length(mesh.gip2ip) && continue
         lip = Int(mesh.gip2ip[gip])
         lip >= 1 && lip <= mesh.npoin || continue
-        coord_cache[gip] = (mesh.x[lip], mesh.y[lip], mesh.z[lip])
+        coord_cache[gip] = (mesh.coords[1, lip], mesh.coords[2, lip], mesh.coords[3, lip])
     end
 
     nprocs = MPI.Comm_size(comm)
@@ -134,9 +134,9 @@ function fetch_parent_face_coordinates(
         resp_gips[k] = gip
         lip = (gip >= 1 && gip <= length(mesh.gip2ip)) ? Int(mesh.gip2ip[gip]) : 0
         if lip >= 1 && lip <= mesh.npoin
-            resp_x[k] = mesh.x[lip]
-            resp_y[k] = mesh.y[lip]
-            resp_z[k] = mesh.z[lip]
+            resp_x[k] = mesh.coords[1, lip]
+            resp_y[k] = mesh.coords[2, lip]
+            resp_z[k] = mesh.coords[3, lip]
         else
             # GIP requested from us but not in our local mesh — should not happen
             # if pgip_owner is correct. Respond with zeros as fallback.

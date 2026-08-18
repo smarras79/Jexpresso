@@ -1612,10 +1612,10 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     r_w  = mod(nmax, nworkers_alya)
     np_w = div(nmax, nworkers_alya)
 
-    xmin_local = minimum(mesh.x); xmax_local = maximum(mesh.x)
-    ymin_local = minimum(mesh.y); ymax_local = maximum(mesh.y)
-    zmin_local = ndime == 3 ? minimum(mesh.z) : 0.0
-    zmax_local = ndime == 3 ? maximum(mesh.z) : 0.0
+    xmin_local = minimum(view(mesh.coords, 1, :)); xmax_local = maximum(view(mesh.coords, 1, :))
+    ymin_local = minimum(view(mesh.coords, 2, :)); ymax_local = maximum(view(mesh.coords, 2, :))
+    zmin_local = ndime == 3 ? minimum(view(mesh.coords, 3, :)) : 0.0
+    zmax_local = ndime == 3 ? maximum(view(mesh.coords, 3, :)) : 0.0
     tol = 1e-10
 
     lrank = MPI.Comm_rank(local_comm)
@@ -1632,8 +1632,8 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         local_elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem_loc)
         @inbounds for e in 1:nelem_loc
             ns = gc_loc(e)
-            local_elem_bboxes[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                                    minimum(mesh.y[ns]), maximum(mesh.y[ns]))
+            local_elem_bboxes[e] = (minimum(mesh.coords[1, ns]), maximum(mesh.coords[1, ns]),
+                                    minimum(mesh.coords[2, ns]), maximum(mesh.coords[2, ns]))
         end
         local_elem_bins = _build_elem_bins(local_elem_bboxes; bins_per_dim=64)
 
@@ -1642,8 +1642,8 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         @inbounds for e in 1:nelem_loc
             ns = gc_loc(e)
             for k in 1:ngl2_loc
-                local_ex[e, k] = mesh.x[ns[k]]
-                local_ey[e, k] = mesh.y[ns[k]]
+                local_ex[e, k] = mesh.coords[1, ns[k]]
+                local_ey[e, k] = mesh.coords[2, ns[k]]
             end
         end
 
@@ -1855,10 +1855,10 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
             (rem_max[idim]-rem_min[idim])/(rem_nx[idim]-1) : 0.0
     end
     nmax   = rem_nx[1]*rem_nx[2]*rem_nx[3]
-    xmin_l = minimum(mesh.x); xmax_l = maximum(mesh.x)
-    ymin_l = minimum(mesh.y); ymax_l = maximum(mesh.y)
-    zmin_l = ndime==3 ? minimum(mesh.z) : 0.0
-    zmax_l = ndime==3 ? maximum(mesh.z) : 0.0
+    xmin_l = minimum(view(mesh.coords, 1, :)); xmax_l = maximum(view(mesh.coords, 1, :))
+    ymin_l = minimum(view(mesh.coords, 2, :)); ymax_l = maximum(view(mesh.coords, 2, :))
+    zmin_l = ndime==3 ? minimum(view(mesh.coords, 3, :)) : 0.0
+    zmax_l = ndime==3 ? maximum(view(mesh.coords, 3, :)) : 0.0
     tol    = 1e-10
     local_coords      = zeros(Float64, nmax, ndime)
     local_owner_jrank = fill(Int32(-1), nmax)
@@ -2073,9 +2073,9 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
             bb3     = Vector{NTuple{6,Float64}}(undef, nelem)
             @inbounds for e in 1:nelem
                 ns = gc(e)
-                bb3[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                          minimum(mesh.y[ns]), maximum(mesh.y[ns]),
-                          minimum(mesh.z[ns]), maximum(mesh.z[ns]))
+                bb3[e] = (minimum(mesh.coords[1, ns]), maximum(mesh.coords[1, ns]),
+                          minimum(mesh.coords[2, ns]), maximum(mesh.coords[2, ns]),
+                          minimum(mesh.coords[3, ns]), maximum(mesh.coords[3, ns]))
             end
             coupling.elem_bboxes = bb3
             coupling.interp_bins = _build_elem_bins(bb3; bins_per_dim=64)
@@ -2088,9 +2088,9 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
                 ns = gc(e)
                 for k in 1:ngln
                     conn_mat[e,k] = ns[k]
-                    ex_mat[e,k]   = mesh.x[ns[k]]
-                    ey_mat[e,k]   = mesh.y[ns[k]]
-                    ez_mat[e,k]   = mesh.z[ns[k]]
+                    ex_mat[e,k]   = mesh.coords[1, ns[k]]
+                    ey_mat[e,k]   = mesh.coords[2, ns[k]]
+                    ez_mat[e,k]   = mesh.coords[3, ns[k]]
                 end
             end
             coupling.elem_conn = conn_mat
@@ -2102,8 +2102,8 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
             bb = Vector{NTuple{4,Float64}}(undef, nelem)
             @inbounds for e in 1:nelem
                 ns = gc(e)
-                bb[e] = (minimum(mesh.x[ns]), maximum(mesh.x[ns]),
-                         minimum(mesh.y[ns]), maximum(mesh.y[ns]))
+                bb[e] = (minimum(mesh.coords[1, ns]), maximum(mesh.coords[1, ns]),
+                         minimum(mesh.coords[2, ns]), maximum(mesh.coords[2, ns]))
             end
             coupling.elem_bboxes = bb
             coupling.interp_bins = _build_elem_bins(bb; bins_per_dim=64)
@@ -2115,8 +2115,8 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
                 ns = gc(e)
                 for k in 1:ngl2
                     conn_mat[e,k] = ns[k]
-                    ex_mat[e,k]   = mesh.x[ns[k]]
-                    ey_mat[e,k]   = mesh.y[ns[k]]
+                    ex_mat[e,k]   = mesh.coords[1, ns[k]]
+                    ey_mat[e,k]   = mesh.coords[2, ns[k]]
                 end
             end
             coupling.elem_conn = conn_mat
@@ -2481,15 +2481,15 @@ function setup_coupling_callback(is_coupled, params, inputs)
     _y_e         = cpg.y_e_scratch::Vector{Float64}
     _alya_coords = cpg.alya_local_coords::Matrix{Float64}
     _owner_ranks = cpg.alya_owner_ranks::Vector{Int32}
-    _mesh_x      = mesh.x::Vector{Float64}
-    _mesh_y      = mesh.y::Vector{Float64}
+    _mesh_x      = view(mesh.coords, 1, :)::Vector{Float64}
+    _mesh_y      = view(mesh.coords, 2, :)::Vector{Float64}
 
     if cpg.ndime == 3
         _elem_z      = cpg.elem_z::Matrix{Float64}
         _ψζ          = cpg.ψζ_scratch::Vector{Float64}
         _dψζ         = cpg.dψζ_scratch::Vector{Float64}
         _z_e         = cpg.z_e_scratch::Vector{Float64}
-        _mesh_z      = mesh.z::Vector{Float64}
+        _mesh_z      = view(mesh.coords, 3, :)::Vector{Float64}
         _elem_bboxes3 = cpg.elem_bboxes::Vector{NTuple{6,Float64}}
         _bins3        = cpg.interp_bins::ElemBins3D
 

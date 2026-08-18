@@ -167,7 +167,7 @@ function build_element_refinement_records(
     # ── 3. Bounding boxes for all local elements ──────────────────────────────
     bboxes = Vector{NTuple{6,Float64}}(undef, nelem)
     for iel = 1:nelem
-        bboxes[iel] = _element_bbox(iel, mesh.connijk, mesh.x, mesh.y, mesh.z, ngl)
+        bboxes[iel] = _element_bbox(iel, mesh.connijk, view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :), ngl)
     end
 
     # ── 4. AllGather bounding boxes + levels from all ranks ───────────────────

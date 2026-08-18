@@ -25,7 +25,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
             for j=1:mesh.ngl, i=1:mesh.ngl
             
                 ip = mesh.connijk[iel_g,i,j]
-                y = mesh.y[ip]
+                y = mesh.coords[2, ip]
                 θ    = θref*exp(N2*y/PhysConst.g)         
                 p    = p0*(1.0 + PhysConst.g2*(exp(-y*N2/PhysConst.g) - 1.0)/(PhysConst.cp*θref*N2))^PhysConst.cpoverR
                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p) #kg/m³
@@ -70,7 +70,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
         N2   = TFloat(N*N)
 
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, θref, θ0, T0, p0, N, N2, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, view(mesh.coords, 1, :), view(mesh.coords, 2, :), θref, θ0, T0, p0, N, N2, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     println("Initialize fields for system of 2D CompEuler with θ equation ........................ DONE")
     

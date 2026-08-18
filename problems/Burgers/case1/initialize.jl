@@ -27,7 +27,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         for i = 1:mesh.ngl
 
             ip = mesh.connijk[iel_g,i,1]
-            x  = mesh.x[ip]
+            x  = mesh.coords[1, ip]
 
             q.qn[ip,1] = sin(2.0*π*(x - xmin)/L)
 

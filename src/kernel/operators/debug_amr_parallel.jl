@@ -728,9 +728,9 @@ spatial-AMR system.
 function dof_coords_spatial_amr(i::Int, mesh, extra_mesh, n_ang::Int)
     ip_spa = div(i - 1, n_ang) + 1
     ip_ang = mod(i - 1, n_ang) + 1
-    return (Float64(mesh.x[ip_spa]),
-            Float64(mesh.y[ip_spa]),
-            Float64(mesh.z[ip_spa]),
+    return (Float64(mesh.coords[1, ip_spa]),
+            Float64(mesh.coords[2, ip_spa]),
+            Float64(mesh.coords[3, ip_spa]),
             Float64(extra_mesh.extra_coords[1, ip_ang]),
             Float64(extra_mesh.extra_coords[2, ip_ang]))
 end

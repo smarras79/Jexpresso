@@ -11,7 +11,7 @@ function stretch_mesh!(mesh,inputs,npoin)
     
     for ip = 1:npoin
         stretching_factor = inputs[:stretch_factor]
-        sigma = mesh.y[ip]
+        sigma = mesh.coords[2, ip]
 
         # Normalize the sigma coordinate to the range [0, 1]
         sigma_normalized = sigma / ztop
@@ -26,7 +26,7 @@ function stretch_mesh!(mesh,inputs,npoin)
         z = zsurf[ip] + z_normalized * (ztop - zsurf[ip])
 
         # Update the grid point's vertical position with the new stretched value.
-        mesh.y[ip] = z
+        mesh.coords[2, ip] = z
     end
     
 end
@@ -45,7 +45,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
     if inputs[:stretch_type] == "powerlaw"
         for ip = 1:npoin
             stretching_factor = inputs[:stretch_factor]
-            sigma = mesh.z[ip]
+            sigma = mesh.coords[3, ip]
             
             # Normalize the sigma coordinate to the range [0, 1]
             sigma_normalized = sigma / ztop
@@ -60,7 +60,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             z = zsurf[ip] + z_normalized * (ztop - zsurf[ip])
             
             # Update the grid point's vertical position with the new stretched value.
-            mesh.z[ip] = z
+            mesh.coords[3, ip] = z
         end
         
     elseif inputs[:stretch_type] == "fixed_first"
@@ -75,7 +75,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
         # Store a copy of the original, uniform z-coordinates to use as the sigma field.
         # This is crucial because we will be overwriting mesh.z in the loop.
-        sigma_coords = copy(mesh.z)
+        sigma_coords = copy(view(mesh.coords, 3, :))
 
         # Find the maximum height of the domain.
         ztop = mesh.zmax #maximum(sigma_coords)
@@ -104,7 +104,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
             if sigma == 0.0
                 # A point at the bottom surface remains at the bottom surface.
-                mesh.z[ip] = zsurf[ip]
+                mesh.coords[3, ip] = zsurf[ip]
                 continue
             end
 
@@ -118,7 +118,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             z = zsurf[ip] + z_normalized * (ztop - zsurf[ip])
 
             # Update the grid point's vertical position.
-            mesh.z[ip] = z
+            mesh.coords[3, ip] = z
         end
 
     elseif inputs[:stretch_type] == "fixed_first_twoblocks_weak"
@@ -136,7 +136,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         # --- Pre-computation Step ---
 
         # Store a copy of the original, uniform z-coordinates to use as the sigma field.
-        sigma_coords = copy(mesh.z)
+        sigma_coords = copy(view(mesh.coords, 3, :))
 
         
         # 1. Initialize local minimum to positive infinity.
@@ -196,7 +196,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
             # Handle the point at the surface.
             if sigma == 0.0
-                mesh.z[ip] = zsurf[ip]
+                mesh.coords[3, ip] = zsurf[ip]
                 continue
             end
 
@@ -219,7 +219,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             end
 
             # Update the grid point's vertical position.
-            mesh.z[ip] = z
+            mesh.coords[3, ip] = z
         end
         
     elseif inputs[:stretch_type] == "fixed_first_twoblocks_strong"
@@ -237,7 +237,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         # --- Pre-computation Step ---
 
         # Store a copy of the original, uniform z-coordinates to use as the sigma field.
-        sigma_coords = copy(mesh.z)
+        sigma_coords = copy(view(mesh.coords, 3, :))
 
         # Find the maximum height and the first layer's height in the original grid.
         ztop = mesh.zmax
@@ -285,7 +285,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
             # Handle the point at the surface.
             if sigma == 0.0
-                mesh.z[ip] = zsurf[ip]
+                mesh.coords[3, ip] = zsurf[ip]
                 continue
             end
 
@@ -312,7 +312,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             end
 
             # Update the grid point's vertical position.
-            mesh.z[ip] = z
+            mesh.coords[3, ip] = z
         end
         
     end

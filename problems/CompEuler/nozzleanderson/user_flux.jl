@@ -6,7 +6,7 @@ function user_flux!(F, G, SD::NSD_1D,
     γ = 1.4
     γm1 = 0.4
 
-    A  = 1.0 + 2.2*(mesh.x[ip] - 1.5)^2
+    A  = 1.0 + 2.2*(mesh.coords[1, ip] - 1.5)^2
 
     ρ  = q[1]/A
     u  = q[2]/q[1]

@@ -36,7 +36,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 amp = 0.25
                 for ip = 1:mesh.npoin
                     
-                    z = mesh.z[ip]
+                    z = mesh.coords[3, ip]
 
                     if z <= zi
                         θ = θ1
@@ -98,8 +98,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 # INITIAL STATE from scratch:
                 #
                 comm = MPI.COMM_WORLD
-                max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-                min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+                max_x = MPI.Allreduce(maximum(view(mesh.coords, 1, :)), MPI.MAX, comm)
+                min_x = MPI.Allreduce(minimum(view(mesh.coords, 1, :)), MPI.MIN, comm)
                 
                 PhysConst = PhysicalConst{Float64}()
                 
@@ -108,10 +108,10 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 amp  = 0.25
                 for ip = 1:mesh.npoin
                     
-                    x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                    x, y, z = mesh.coords[1, ip], mesh.coords[2, ip], mesh.coords[3, ip]
                     
                     randnoise = 0.0
-                    if mesh.z[ip] < 800.0
+                    if mesh.coords[3, ip] < 800.0
                         randnoise = 2*amp*(rand() - 1.0)
                     end
                     
@@ -339,12 +339,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         data_with_p[:, sounding_nvars+1] .= pressure
         
         #Interpolate
-        data_interpolate = interpolate_sounding(inputs[:backend], mesh.npoin, mesh.z, data_with_p)
+        data_interpolate = interpolate_sounding(inputs[:backend], mesh.npoin, view(mesh.coords, 3, :), data_with_p)
 
         amp = 0.25
         for ip = 1:mesh.npoin
             randnoise = 0.0
-            if mesh.z[ip] < 800.0
+            if mesh.coords[3, ip] < 800.0
                 randnoise = 2*amp*(rand() - 1.0)
             end
             θ     = data_interpolate[ip,1] + randnoise  # theta from column 2

@@ -39,7 +39,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             u0   = 10.0    # m/s
 
             for ip = 1:mesh.npoin
-                x, y = mesh.x[ip], mesh.y[ip]
+                x, y = mesh.coords[1, ip], mesh.coords[2, ip]
 
                 θ    = θref
                 p    = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θ))^(PhysConst.cpoverR)

@@ -154,12 +154,12 @@ function store_element_maxima!(mesh,el_max,el_min,nelem,ngl)
             for j=1:ngl
                 for k=1:ngl
                     ip = mesh.connijk[e,i,j,k]
-                    xmin = min(xmin,mesh.x[ip])
-                    xmax = max(xmax,mesh.x[ip])
-                    ymin = min(ymin,mesh.y[ip])
-                    ymax = max(ymax,mesh.y[ip])
-                    zmin = min(zmin,mesh.z[ip])
-                    zmax = max(zmax,mesh.z[ip])
+                    xmin = min(xmin,mesh.coords[1, ip])
+                    xmax = max(xmax,mesh.coords[1, ip])
+                    ymin = min(ymin,mesh.coords[2, ip])
+                    ymax = max(ymax,mesh.coords[2, ip])
+                    zmin = min(zmin,mesh.coords[3, ip])
+                    zmax = max(zmax,mesh.coords[3, ip])
                 end
             end
         end
@@ -179,12 +179,12 @@ end
     @inbounds i_y = il[2]
     @inbounds i_z = il[3]
     ip = connijk[e,i_x,i_y,i_z]
-    @inbounds KernelAbstractions.@atomic el_min[e,1] = min(el_min[e,1],mesh.x[ip])
-    @inbounds KernelAbstractions.@atomic el_max[e,1] = max(el_max[e,1],mesh.x[ip])
-    @inbounds KernelAbstractions.@atomic el_min[e,2] = min(el_min[e,2],mesh.y[ip])
-    @inbounds KernelAbstractions.@atomic el_max[e,2] = max(el_max[e,2],mesh.y[ip])
-    @inbounds KernelAbstractions.@atomic el_min[e,3] = min(el_min[e,3],mesh.x[ip])
-    @inbounds KernelAbstractions.@atomic el_max[e,3] = max(el_max[e,3],mesh.z[ip])
+    @inbounds KernelAbstractions.@atomic el_min[e,1] = min(el_min[e,1],mesh.coords[1, ip])
+    @inbounds KernelAbstractions.@atomic el_max[e,1] = max(el_max[e,1],mesh.coords[1, ip])
+    @inbounds KernelAbstractions.@atomic el_min[e,2] = min(el_min[e,2],mesh.coords[2, ip])
+    @inbounds KernelAbstractions.@atomic el_max[e,2] = max(el_max[e,2],mesh.coords[2, ip])
+    @inbounds KernelAbstractions.@atomic el_min[e,3] = min(el_min[e,3],mesh.coords[1, ip])
+    @inbounds KernelAbstractions.@atomic el_max[e,3] = max(el_max[e,3],mesh.coords[3, ip])
 end
 
 function store_mesh_to_phys_grid_correspondance!(phys_grid,el_max,el_min,nelem,ncol,nlay,mesh)
@@ -214,11 +214,11 @@ function store_mesh_to_phys_grid_correspondance!(phys_grid,el_max,el_min,nelem,n
                 for j=1:mesh.ngl
                     for k=1:mesh.ngl
                         ip = mesh.connijk[e,i,j,k]
-                        if (AlmostEqual(x, mesh.x[ip]) && AlmostEqual(y, mesh.y[ip]) && AlmostEqual(z, mesh.z[ip]))
+                        if (AlmostEqual(x, mesh.coords[1, ip]) && AlmostEqual(y, mesh.coords[2, ip]) && AlmostEqual(z, mesh.coords[3, ip]))
                             match_found = true
                             phys_grid.ω_dyn[ilay,icol,i,j,k] = 1
                         else 
-                            phys_grid.ω_dyn[ilay,icol,i,j,k] = 1/ (sqrt((mesh.x[ip] - x)^2 + (mesh.y[ip] - y)^2 + (mesh.z[ip] - z)^2))
+                            phys_grid.ω_dyn[ilay,icol,i,j,k] = 1/ (sqrt((mesh.coords[1, ip] - x)^2 + (mesh.coords[2, ip] - y)^2 + (mesh.coords[3, ip] - z)^2))
                         end
                     end
                 end
@@ -706,9 +706,9 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         end
         @info maximum(d_flux_lw),minimum(d_flux_lw), maximum(d_flux_sw),minimum(d_flux_sw)
         flux_interp_lw = KernelAbstractions.zeros(backend,TFloat, mesh.npoin,1)
-        interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,d_flux_lw,flux_interp_lw,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
+        interpolate_from_phys_grid_cpu!(view(mesh.coords, 1, :),view(mesh.coords, 2, :),view(mesh.coords, 3, :),mesh.connijk,phys_grid,d_flux_lw,flux_interp_lw,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
         flux_interp_sw = KernelAbstractions.zeros(backend,TFloat, mesh.npoin,1)
-        interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,d_flux_sw,flux_interp_sw,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
+        interpolate_from_phys_grid_cpu!(view(mesh.coords, 1, :),view(mesh.coords, 2, :),view(mesh.coords, 3, :),mesh.connijk,phys_grid,d_flux_sw,flux_interp_sw,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
         # dF/dp has units W/(m²·Pa) = m/s; multiply by g to convert to cp·dTdt units (m²/s³)
         # so that ρ·flux stored here equals Q_rad in W/m³ consistent with the RT solver path
         g_phys = TFloat(9.80616)
@@ -737,7 +737,7 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         flux = rand(TFloat,phys_grid.nlev,phys_grid.ncol)
         
         flux_interp = KernelAbstractions.zeros(backend,TFloat, 1, mesh.npoin)
-        interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,flux,flux_interp,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
+        interpolate_from_phys_grid_cpu!(view(mesh.coords, 1, :),view(mesh.coords, 2, :),view(mesh.coords, 3, :),mesh.connijk,phys_grid,flux,flux_interp,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
     else
 
     end

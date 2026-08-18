@@ -41,8 +41,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             #
             # INITIAL STATE from scratch:
             #
-            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+            max_x = MPI.Allreduce(maximum(view(mesh.coords, 1, :)), MPI.MAX, comm)
+            min_x = MPI.Allreduce(minimum(view(mesh.coords, 1, :)), MPI.MIN, comm)
             xc = (max_x + min_x)/2
             zc = 2500.0 #m
             r0 = 2000.0 #m
@@ -51,7 +51,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             θc   =   2.0 #K
             for ip = 1:mesh.npoin
 
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1, ip], mesh.coords[2, ip], mesh.coords[3, ip]
 
                 r = sqrt( (x - xc)^2 + (z - zc)^2 )
 
@@ -130,14 +130,14 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             lpert = false
         end
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(view(mesh.coords, 1, :)) + minimum(view(mesh.coords, 1, :)))/2)
         zc = TFloat(2500.0) #m
         rθ = TFloat(2000.0) #m
 
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, xc, rθ, zc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :), xc, rθ, zc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     if rank == 0
         println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")

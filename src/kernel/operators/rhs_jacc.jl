@@ -940,8 +940,8 @@ function build_jacc_cache_2D(sem, qp, inputs, T; rank = 0)
 
                      connijk = _jacc_stage(mesh.connijk, Int, (nelem, ngl, ngl)),
                      coords  = _jacc_stage(mesh.coords, TW, (Int(size(mesh.coords,1)), npoin)),
-                     x       = _jacc_stage(mesh.x,    TW, (npoin,)),
-                     y       = _jacc_stage(mesh.y,    TW, (npoin,)),
+                     x       = _jacc_stage(view(mesh.coords, 1, :),    TW, (npoin,)),
+                     y       = _jacc_stage(view(mesh.coords, 2, :),    TW, (npoin,)),
                      dξdx    = _jacc_stage(metrics.dξdx, TW, (nelem, ngl, ngl)),
                      dξdy    = _jacc_stage(metrics.dξdy, TW, (nelem, ngl, ngl)),
                      dηdx    = _jacc_stage(metrics.dηdx, TW, (nelem, ngl, ngl)),

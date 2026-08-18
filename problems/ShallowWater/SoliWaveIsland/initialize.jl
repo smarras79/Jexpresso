@@ -76,8 +76,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
 
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
-            y = mesh.y[ip]
+            x = mesh.coords[1, ip]
+            y = mesh.coords[2, ip]
 
             # surface displacement at t=0 (sech² profile)
             arg   = γ * (x - xc_wave)

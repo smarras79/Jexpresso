@@ -96,10 +96,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     n_non_global_nodes = 0 
     n_spa = 0
     begin_time = time()
-    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-    mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
-    mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+    mesh.xmax = MPI.Allreduce(maximum(view(mesh.coords, 1, :)), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(view(mesh.coords, 1, :)), MPI.MIN, comm)
+    mesh.ymax = MPI.Allreduce(maximum(view(mesh.coords, 2, :)), MPI.MAX, comm)
+    mesh.ymin = MPI.Allreduce(minimum(view(mesh.coords, 2, :)), MPI.MIN, comm)
     if (inputs[:adaptive_extra_meshes])
         extra_meshes_coords = [Vector{Float64}(undef, size(extra_mesh[e].extra_coords,1)) for e in 1:nelem]
         extra_meshes_connijk = [Array{Int}(undef, extra_mesh[e].extra_nelem, extra_mesh[e].extra_nop[1]+1) for e in 1:nelem]
@@ -130,14 +130,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         
         nc_mat, nc_mat_div, nc_non_global_nodes, n_non_global_nodes, n_spa  = adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, mesh.connijk, 
                                                                                                      extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                                                  extra_meshes_coords, mesh.x, mesh.y,extra_meshes_ref_level, neighbors, adapted)
+                                                  extra_meshes_coords, view(mesh.coords, 1, :), view(mesh.coords, 2, :),extra_meshes_ref_level, neighbors, adapted)
         MPI.Comm_rank(comm) == 0 && @info "built initial adaptive spatial angular connectivity"
-        @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
+        @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, view(mesh.coords, 1, :), view(mesh.coords, 2, :), ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl, extra_meshes_extra_nelems,
                                    dξdx, dξdy, dηdx, dηdy, extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes,
                                   n_spa)
-        @time M = sparse_mass_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
+        @time M = sparse_mass_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, view(mesh.coords, 1, :), view(mesh.coords, 2, :), ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelems,
                                    extra_meshes_extra_npoins, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
@@ -152,24 +152,24 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         MPI.Comm_rank(comm) == 0 && @info "criterion computed"
         @time adapt_angular_grid_2Dby1D!(criterion,inputs[:RT_amr_threshold], extra_meshes_ref_level,nelem,ngl,extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors, extra_meshes_extra_npoins,
                                   extra_meshes_connijk, extra_meshes_coords, extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dxdξ, mesh.connijk,
-                                  mesh.x, mesh.y, mesh.xmin, mesh.ymin, mesh.xmax, mesh.ymax) 
+                                  view(mesh.coords, 1, :), view(mesh.coords, 2, :), mesh.xmin, mesh.ymin, mesh.xmax, mesh.ymax) 
         MPI.Comm_rank(comm) == 0 && @info "angular mesh adapted"
         if !(maximum(extra_meshes_ref_level[:][:]) == 0)
             connijk_spa = [Array{Int}(undef, ngl, ngl, extra_meshes_extra_nelems[iel], extra_meshes_extra_nops[iel][1]+1) for iel = 1:nelem]
             @time nc_mat, nc_mat_div, nc_non_global_nodes, n_non_global_nodes, n_spa  = adaptive_spatial_angular_numbering_2D_1D!(connijk_spa,nelem, ngl, mesh.connijk, 
                                                                extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                                                                extra_meshes_coords, mesh.x, mesh.y, extra_meshes_ref_level, neighbors, adapted)
+                                                                extra_meshes_coords, view(mesh.coords, 1, :), view(mesh.coords, 2, :), extra_meshes_ref_level, neighbors, adapted)
             
             MPI.Comm_rank(comm) == 0 && @info "adapted connectivity ($(n_non_global_nodes) hanging nodes)"
             adapted = true
-            @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
+            @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, view(mesh.coords, 1, :), view(mesh.coords, 2, :), ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl, extra_meshes_extra_nelems,
                                    dξdx, dξdy, dηdx, dηdy, extra_meshes_extra_npoins, inputs[:rad_HG_g], connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
 
             A_test = nc_mat*LHS*nc_mat'
 
-            @time M = sparse_mass_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
+            @time M = sparse_mass_assembly_2Dby1D_adaptive(extra_meshes_ref_level, ω, Je, mesh.connijk, extra_mesh[1].ωθ, view(mesh.coords, 1, :), view(mesh.coords, 2, :), ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelems,
                                    extra_meshes_extra_npoins, connijk_spa, nc_mat, nc_mat_div, adapted, nc_non_global_nodes, n_non_global_nodes, n_spa)
@@ -223,12 +223,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         BDY = zeros(TFloat, n_spa)
     else
         npoin_ang_total = npoin*extra_mesh.extra_npoin
-        @time LHS = sparse_lhs_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk, 
+        @time LHS = sparse_lhs_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, view(mesh.coords, 1, :), view(mesh.coords, 2, :), ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk, 
                                     extra_mesh.extra_metrics.Je, 
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    dξdx, dξdy, dηdx, dηdy, extra_mesh.extra_npoin, inputs[:rad_HG_g])
         MPI.Comm_rank(comm) == 0 && @info "assembled LHS"
-        @time M = sparse_mass_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk,
+        @time M = sparse_mass_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, view(mesh.coords, 1, :), view(mesh.coords, 2, :), ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk,
                                     extra_mesh.extra_metrics.Je,
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    extra_mesh.extra_npoin)
@@ -297,8 +297,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         for i=1:ngl
             for j =1:ngl
                 ip = mesh.connijk[iel,i,j]
-                x = mesh.x[ip]
-                y = mesh.y[ip]
+                x = mesh.coords[1, ip]
+                y = mesh.coords[2, ip]
                 if (inputs[:adaptive_extra_meshes])
                     for e_ext = 1:extra_meshes_extra_nelems[iel]
                         for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
@@ -475,8 +475,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             for i=1:ngl
                 for j =1:ngl
                     ip = mesh.connijk[iel,i,j]
-                    x = mesh.x[ip]
-                    y = mesh.y[ip]
+                    x = mesh.coords[1, ip]
+                    y = mesh.coords[2, ip]
                     for e_ext = 1:extra_meshes_extra_nelems[iel]
                         for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
                             ip_ext = extra_meshes_connijk[iel][e_ext,iθ]
@@ -596,7 +596,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         for iel = 1:nelem
             for j = 1:ngl, i = 1:ngl
                 ip    = mesh.connijk[iel, i, j]
-                x_ip  = mesh.x[ip]; y_ip = mesh.y[ip]
+                x_ip  = mesh.coords[1, ip]; y_ip = mesh.coords[2, ip]
                 matchx  = abs(x_ip - mesh.xmin) < 1e-10 || abs(x_ip - mesh.xmax) < 1e-10
                 matchy  = abs(y_ip - mesh.ymin) < 1e-10 || abs(y_ip - mesh.ymax) < 1e-10
                 nmatches = matchx + matchy
@@ -1762,15 +1762,15 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         κ_ext_sw      = κ .+ σ
         F_dir, τ_nodes = compute_tau_direct_3D(mesh, κ_ext_sw, sw, comm)
         G_dir, Q_dir = compute_direct_radiation(F_dir, τ_nodes, κ, σ, sw, mesh)
-        ip_toa = argmax(mesh.z)
-        ip_sfc = argmin(mesh.z)
+        ip_toa = argmax(view(mesh.coords, 3, :))
+        ip_sfc = argmin(view(mesh.coords, 3, :))
         mfp = 1.0 / mean(κ_ext_sw)
         sw_ω₀_lateral  = mean(σ ./ max.(κ_ext_sw, 1e-30))
         @rankinfo rank "SW domain-mean ω₀: $(round(sw_ω₀_lateral, digits=4))"
         @rankinfo rank "Mean free path: $(round(mfp/1000, digits=2)) km"
         @rankinfo rank "Domain width:   $(round((mesh.xmax-mesh.xmin)/1000, digits=2)) km"
-        @rankinfo rank "τ at TOA (z=$(round(mesh.z[ip_toa],digits=0))m): $(round(τ_nodes[ip_toa],digits=4))"
-        @rankinfo rank "τ at sfc (z=$(round(mesh.z[ip_sfc],digits=0))m): $(round(τ_nodes[ip_sfc],digits=4))"
+        @rankinfo rank "τ at TOA (z=$(round(mesh.coords[3, ip_toa],digits=0))m): $(round(τ_nodes[ip_toa],digits=4))"
+        @rankinfo rank "τ at sfc (z=$(round(mesh.coords[3, ip_sfc],digits=0))m): $(round(τ_nodes[ip_sfc],digits=4))"
     end
 
     # ── Initialize Spatial AMR Cache ─────────────────────────────────────────────
@@ -1887,7 +1887,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             adaptive_spatial_angular_numbering_3D_2D!(
                 connijk_spa, nelem, ngl, mesh.connijk,
                 extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                extra_meshes_coords, mesh.x, mesh.y, mesh.z,
+                extra_meshes_coords, view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :),
                 extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
         @rankinfo rank "✓ Connectivity built: n_spa=$n_spa, n_non_global=$n_non_global_nodes"
         flush(stdout)
@@ -1941,7 +1941,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         @rankinfo rank "Assembling pre-adaptivity LHS and mass matrix..."
         LHS = sparse_lhs_assembly_3Dby2D_adaptive(
             ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
-            mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ,
+            view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :), ψ, dψ, extra_mesh[1].ψ,
             extra_meshes_connijk, extra_meshes_extra_Je,
             extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
             extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
@@ -2030,7 +2030,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             extra_meshes_extra_dξdy, extra_meshes_extra_dydξ,
             extra_meshes_extra_dηdy, extra_meshes_extra_dydη,
             extra_meshes_extra_dηdx, extra_meshes_extra_dxdη,
-            mesh.connijk, mesh.x, mesh.y, mesh.z,
+            mesh.connijk, view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :),
             mesh.xmin, mesh.ymin, mesh.zmin,
             mesh.xmax, mesh.ymax, mesh.zmax,
             extra_mesh[1].ψ, extra_mesh[1].dψ, ang_refine_mask)
@@ -2063,7 +2063,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     adaptive_spatial_angular_numbering_3D_2D!(
                         connijk_spa, nelem, ngl, mesh.connijk,
                         extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                        extra_meshes_coords, mesh.x, mesh.y, mesh.z,
+                        extra_meshes_coords, view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :),
                         extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
     
                 adapted = true
@@ -2192,7 +2192,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 @rankinfo rank "Assembling LHS on adapted mesh..."
                 LHS = sparse_lhs_assembly_3Dby2D_adaptive(
                     ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
-                    mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ,
+                    view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :), ψ, dψ, extra_mesh[1].ψ,
                     extra_meshes_connijk, extra_meshes_extra_Je,
                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl,
                     extra_meshes_extra_nelems, dξdx, dξdy, dξdz,
@@ -2268,7 +2268,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 for iel_d = 1:nelem
                     for kk_d = 1:ngl, jj_d = 1:ngl, ii_d = 1:ngl
                         ip_s_d = mesh.connijk[iel_d, ii_d, jj_d, kk_d]
-                        x_d = mesh.x[ip_s_d]; y_d = mesh.y[ip_s_d]; z_d = mesh.z[ip_s_d]
+                        x_d = mesh.coords[1, ip_s_d]; y_d = mesh.coords[2, ip_s_d]; z_d = mesh.coords[3, ip_s_d]
                         for e_d = 1:extra_meshes_extra_nelems[iel_d]
                             nop_d = extra_meshes_extra_nops[iel_d][e_d]
                             for jθ_d = 1:nop_d+1, iθ_d = 1:nop_d+1
@@ -2577,7 +2577,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 for iel_c = 1:nelem
                     for kc = 1:ngl, jc = 1:ngl, ic = 1:ngl
                         ip_c = mesh.connijk[iel_c, ic, jc, kc]
-                        x_c = mesh.x[ip_c]; y_c = mesh.y[ip_c]; z_c = mesh.z[ip_c]
+                        x_c = mesh.coords[1, ip_c]; y_c = mesh.coords[2, ip_c]; z_c = mesh.coords[3, ip_c]
                         for e_ext_c = 1:extra_mesh.extra_nelem
                             nop_c = extra_mesh.extra_nop[1]
                             for jθ_c = 1:nop_c+1, iθ_c = 1:nop_c+1
@@ -2607,7 +2607,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 nc_non_global_nodes_spa = Int[]
                 nc_set_spa = Set{Int}()
                 for hanging_ip in keys(spatial_amr_cache.parent_weights)
-                    x_h = mesh.x[hanging_ip]; y_h = mesh.y[hanging_ip]; z_h = mesh.z[hanging_ip]
+                    x_h = mesh.coords[1, hanging_ip]; y_h = mesh.coords[2, hanging_ip]; z_h = mesh.coords[3, hanging_ip]
                     for e_ext_h = 1:extra_mesh.extra_nelem
                         nop_h = extra_mesh.extra_nop[1]
                         for jθ_h = 1:nop_h+1, iθ_h = 1:nop_h+1
@@ -2627,7 +2627,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                     end
                 end
                 for hanging_ip in keys(spatial_amr_cache.cross_rank_parent_weights)
-                    x_h = mesh.x[hanging_ip]; y_h = mesh.y[hanging_ip]; z_h = mesh.z[hanging_ip]
+                    x_h = mesh.coords[1, hanging_ip]; y_h = mesh.coords[2, hanging_ip]; z_h = mesh.coords[3, hanging_ip]
                     for e_ext_h = 1:extra_mesh.extra_nelem
                         nop_h = extra_mesh.extra_nop[1]
                         for jθ_h = 1:nop_h+1, iθ_h = 1:nop_h+1
@@ -2676,7 +2676,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @rankinfo rank "Assembling LHS ($n_spa_new deduplicated DOF, spatial AMR)..."
             LHS = sparse_lhs_assembly_3Dby2D_spatial_amr(
                 ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
-                mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh.ψ,
+                view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :), ψ, dψ, extra_mesh.ψ,
                 extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
                 extra_mesh.extra_coords, extra_mesh.extra_nop,
                 n_spa_new, nelem, ngl, extra_mesh.extra_nelem,
@@ -2764,7 +2764,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 _lip == 0 && continue
                 push!(_seen_cg_c, _cg)
                 push!(_local_cdata, Float64(_cg),
-                      mesh.x[_lip], mesh.y[_lip], mesh.z[_lip],
+                      mesh.coords[1, _lip], mesh.coords[2, _lip], mesh.coords[3, _lip],
                       extra_mesh.extra_coords[1, _ai], extra_mesh.extra_coords[2, _ai])
             end
             _nc_local  = Int32(length(_local_cdata) ÷ 6)
@@ -2786,7 +2786,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @rankinfo rank "Assembling LHS ($npoin_ang_total DOF)..."
             LHS = sparse_lhs_assembly_3Dby2D(
                 ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ,
-                mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh.ψ,
+                view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :), ψ, dψ, extra_mesh.ψ,
                 extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je,
                 extra_mesh.extra_coords, extra_mesh.extra_nop,
                 npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
@@ -2862,7 +2862,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             # Used to convert old-formula DOF indices to the new coordinate-dedup indices.
             old_to_new_dof = zeros(Int, npoin * n_ang)
             for ip_s = 1:npoin
-                x_s = mesh.x[ip_s]; y_s = mesh.y[ip_s]; z_s = mesh.z[ip_s]
+                x_s = mesh.coords[1, ip_s]; y_s = mesh.coords[2, ip_s]; z_s = mesh.coords[3, ip_s]
                 for ip_a = 1:n_ang
                     θ_a = extra_mesh.extra_coords[1, ip_a]
                     ϕ_a = extra_mesh.extra_coords[2, ip_a]
@@ -3125,8 +3125,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     # ── Precompute spatial factors (shared by RHS and BC loops) ──────────────
     spatial_factor = Vector{Float64}(undef, npoin)
     for ip = 1:npoin
-        gip = exp(-((1/3) * (mesh.x[ip] - 1.0))^2)
-        hip = exp(-4.0  * (2 - mesh.y[ip]) / 2)
+        gip = exp(-((1/3) * (mesh.coords[1, ip] - 1.0))^2)
+        hip = exp(-4.0  * (2 - mesh.coords[2, ip]) / 2)
         spatial_factor[ip] = gip * hip
     end
 
@@ -3161,7 +3161,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     for iel = 1:nelem
         for i = 1:ngl, j = 1:ngl, k = 1:ngl
             ip  = mesh.connijk[iel, i, j, k]
-            x   = mesh.x[ip]; y = mesh.y[ip]; z = mesh.z[ip]
+            x   = mesh.coords[1, ip]; y = mesh.coords[2, ip]; z = mesh.coords[3, ip]
             sf  = spatial_factor[ip]
             is_boundary = ip in mesh.poin_in_bdy_face
 

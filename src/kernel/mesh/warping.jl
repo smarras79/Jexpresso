@@ -5,22 +5,22 @@ function warp_mesh!(mesh,inputs)
     am = inputs[:a_mount]
     hm = inputs[:h_mount]
     xc = inputs[:c_mount]
-    ztop = maximum(mesh.y)
+    ztop = maximum(view(mesh.coords, 2, :))
     zsurf = zeros(Float64,mesh.npoin)
     sigma = zeros(Float64,mesh.npoin)
     for i=1:mesh.npoin
-        sigma[i] = mesh.z[i]
+        sigma[i] = mesh.coords[3, i]
         
         z = (ztop - zsurf[i])/ztop * sigma[i] + zsurf[i]
         
-        mesh.z[i] = z
+        mesh.coords[3, i] = z
     end
     if (inputs[:mount_type] == "agnesi")
         am = inputs[:a_mount]
         hm = inputs[:h_mount]
         xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
+            x = mesh.coords[1, ip]
             zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
             #zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
         end
@@ -29,7 +29,7 @@ function warp_mesh!(mesh,inputs)
         hc = inputs[:h_mount]
         lambdac = inputs[:lambda_mount]
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
+            x = mesh.coords[1, ip]
             zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2 
         end
     end
@@ -37,7 +37,7 @@ function warp_mesh!(mesh,inputs)
     if inputs[:lstretch]
         for ip = 1:mesh.npoin
             stretching_factor = inputs[:stretch_factor]
-            sigma = mesh.y[ip]
+            sigma = mesh.coords[2, ip]
 
             # Normalize the sigma coordinate to the range [0, 1]
             sigma_normalized = sigma / ztop
@@ -52,18 +52,18 @@ function warp_mesh!(mesh,inputs)
             z = zsurf[ip] + z_normalized * (ztop - zsurf[ip])
 
             # Update the grid point's vertical position with the new stretched value.
-            mesh.y[ip] = z
+            mesh.coords[2, ip] = z
         end
     else
         for ip = 1:mesh.npoin
-            sigma[ip] = mesh.y[ip]
+            sigma[ip] = mesh.coords[2, ip]
             #if (mesh.y[ip] < 10000.0)  
             z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-            mesh.y[ip] = z
+            mesh.coords[2, ip] = z
             #=elseif (mesh.y[ip] < 15000.0)
-            factor = (15000-mesh.y[ip])/5000.0
+            factor = (15000-mesh.coords[2, ip])/5000.0
             z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
-            mesh.y[ip] = z 
+            mesh.coords[2, ip] = z 
             end=#
         end
     end
@@ -76,11 +76,11 @@ function warp_mesh!(mesh,inputs)
     #if (mesh.bdy_edge_type[iedge] == "free_slip")
     tag = mesh.bdy_edge_type[iedge]
     ip = mesh.poin_in_bdy_edge[iedge,k]
-    @info "prewarp", mesh.y[ip]
-    if (mesh.y[ip] < 10.0)
-    mesh.y[ip] = (hm*(am^2))/((mesh.x[ip]-xc)^2 + am^2)
+    @info "prewarp", mesh.coords[2, ip]
+    if (mesh.coords[2, ip] < 10.0)
+    mesh.coords[2, ip] = (hm*(am^2))/((mesh.coords[1, ip]-xc)^2 + am^2)
     end
-    @info "postwarp", mesh.y[ip]
+    @info "postwarp", mesh.coords[2, ip]
     #end
     end
     end=#
@@ -105,14 +105,14 @@ function warp_mesh_3D!(mesh,inputs)
         x_topo, y_topo = Map_lat_lon_onto_simulation_domain(lat,lon,xmin,xmax,ymin,ymax,zone)
         zsurf = zeros(mesh.npoin)
         
-        interpolate_topography_onto_grid!(mesh.x, mesh.y, zsurf, x_topo, y_topo, z_topo)
+        interpolate_topography_onto_grid!(view(mesh.coords, 1, :), view(mesh.coords, 2, :), zsurf, x_topo, y_topo, z_topo)
         ### sigma coordinate topography
         ztop = mesh.zmax
         sigma = zeros(mesh.npoin)
         for ip = 1:mesh.npoin
-            sigma[ip] = mesh.z[ip]
+            sigma[ip] = mesh.coords[3, ip]
             z_new = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-            mesh.z[ip] = z_new
+            mesh.coords[3, ip] = z_new
         end
 
     elseif (inputs[:mount_type] == "agnesi")
@@ -123,7 +123,7 @@ function warp_mesh_3D!(mesh,inputs)
         hm = inputs[:h_mount]
         xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
+            x = mesh.coords[1, ip]
             zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
         end
         
@@ -136,7 +136,7 @@ function warp_mesh_3D!(mesh,inputs)
       	hm = inputs[:h_mount]
         xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
+            x = mesh.coords[1, ip]
             ####zsurf[ip] = hm*(sech(x - xc)/am)^2 #not working
             zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*(x)/am))
         end
@@ -148,7 +148,7 @@ function warp_mesh_3D!(mesh,inputs)
         am = mesh.xmax - mesh.xmin
       	hm = inputs[:h_mount]
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
+            x = mesh.coords[1, ip]
             zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*x/am))
         end
                 
@@ -157,20 +157,20 @@ function warp_mesh_3D!(mesh,inputs)
         hc = inputs[:h_mount]
         lambdac = inputs[:lambda_mount]
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
+            x = mesh.coords[1, ip]
             zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2
         end
     end
 
     #=for ip = 1:mesh.npoin
-        sigma[ip] = mesh.z[ip]
+        sigma[ip] = mesh.coords[3, ip]
 
-        factor = (ztop - mesh.z[ip])/ztop
+        factor = (ztop - mesh.coords[3, ip])/ztop
         
         #z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
         z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
         
-        mesh.z[ip] = z
+        mesh.coords[3, ip] = z
     end=#
 
 
@@ -179,7 +179,7 @@ function warp_mesh_3D!(mesh,inputs)
     z_transition_end = inputs[:z_transition_end]    # Height where grid becomes fully flat (60% of domain)
     
     for ip = 1:mesh.npoin
-        sigma[ip] = mesh.z[ip]
+        sigma[ip] = mesh.coords[3, ip]
         
         # Original warped coordinate (follows topography)
         z_warped = zsurf[ip] + sigma[ip] * (ztop - zsurf[ip]) / ztop
@@ -210,7 +210,7 @@ function warp_mesh_3D!(mesh,inputs)
             # else: damping_factor remains 1.0 for sigma[ip] < z_transition_start
         end
 
-        mesh.z[ip] = sigma[ip] + damping_factor * (z_warped - sigma[ip])
+        mesh.coords[3, ip] = sigma[ip] + damping_factor * (z_warped - sigma[ip])
        
     end
     
@@ -219,7 +219,7 @@ function warp_mesh_3D!(mesh,inputs)
     sigma_transition_end = 0.7    # Fully flat at 60% of vertical domain
 
     for ip = 1:mesh.npoin
-        sigma[ip] = mesh.z[ip]
+        sigma[ip] = mesh.coords[3, ip]
         zbottom = zsurf[ip]
         ztop    = mesh.zmax
         
@@ -246,7 +246,7 @@ function warp_mesh_3D!(mesh,inputs)
         z_flat = sigma[ip]
         
         # Blend warped and flat coordinates using damping factor
-        mesh.z[ip] = damping_factor * z_warped + (1.0 - damping_factor) * z_flat
+        mesh.coords[3, ip] = damping_factor * z_warped + (1.0 - damping_factor) * z_flat
     end=#
     
 end

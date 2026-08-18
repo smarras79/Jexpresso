@@ -216,14 +216,14 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
 
         if !(p==[])
             # Add to existing plot without decorations
-            Plots.scatter!(fig, mesh.x[1:mesh.npoin_original],
+            Plots.scatter!(fig, mesh.coords[1, 1:mesh.npoin_original],
                          q[idx+1:(ivar-1)*npoin+mesh.npoin_original];
                          marker = marker,
                          markersize = 5,
                          color = color,
                          label = "")
         else
-            Plots.scatter!(fig, mesh.x[1:mesh.npoin_original],
+            Plots.scatter!(fig, mesh.coords[1, 1:mesh.npoin_original],
                          q[idx+1:(ivar-1)*npoin+mesh.npoin_original];
                          marker = marker,
                          markersize = 5,
@@ -286,7 +286,7 @@ function plot_1d_grid(mesh::St_mesh)
 
     plt = Plots.plot() #Clear plot
     for i=1:mesh.npoin
-        display(Plots.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin),
+        display(Plots.scatter(mesh.coords[1, 1:mesh.npoin], zeros(mesh.npoin),
                              markersize = 4,
                              color = :blue,
                              legend = false))
@@ -372,8 +372,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     piece   = mpisize > 1 ? string("-rank", rank) : ""
 
     npoin = mesh.npoin
-    xn = view(mesh.x, 1:npoin)
-    yn = view(mesh.y, 1:npoin)
+    xn = view(view(mesh.coords, 1, :), 1:npoin)
+    yn = view(view(mesh.coords, 2, :), 1:npoin)
     xmin, xmax = extrema(xn)
     ymin, ymax = extrema(yn)
     Lx = xmax - xmin
@@ -504,8 +504,8 @@ function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, 
 
 function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3, varnames=nothing)
 
-    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    ymin = minimum(mesh.y); ymax = maximum(mesh.y);
+    xmin = minimum(view(mesh.coords, 1, :)); xmax = maximum(view(mesh.coords, 1, :));
+    ymin = minimum(view(mesh.coords, 2, :)); ymax = maximum(view(mesh.coords, 2, :));
 
     comm    = get_mpi_comm()
     rank    = MPI.Comm_rank(comm)
@@ -522,7 +522,7 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         fout_name = string(OUTPUT_DIR, "/", var, piece, "-it", iout, ".png")
 
         #Spline2d
-        spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:idx+npoin]; kx=4, ky=4, s=smoothing_factor)
+        spl = Spline2D(mesh.coords[1, 1:npoin], mesh.coords[2, 1:npoin], q[idx+1:idx+npoin]; kx=4, ky=4, s=smoothing_factor)
         xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi);
         zspl = evalgrid(spl, xg, yg);
         #End spline2d

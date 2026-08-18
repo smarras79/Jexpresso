@@ -82,8 +82,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
 
         for ip = 1:mesh.npoin
-            x = mesh.x[ip]
-            y = mesh.y[ip]
+            x = mesh.coords[1, ip]
+            y = mesh.coords[2, ip]
 
             # surface displacement at t=0 (sech² profile)
             arg   = γ * (x - xc_wave)
@@ -206,7 +206,7 @@ function user_get_preadapt_flags!(adapt_flags, inputs, mesh, old_ad_lvl, connijk
         for i = 1:ngl
             for j = 1:ngl
                 ips = connijk[iel, i, j]
-                if abs(mesh.x[ips] - xc_wave) < half_band
+                if abs(mesh.coords[1, ips] - xc_wave) < half_band
                     refine = true
                 end
             end

@@ -29,7 +29,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
 
         if (inputs[:lwrite_initial] == true)
             for ivar=1:length(qvars)
-                plot_initial(SD, mesh.x, q.qn[:,ivar], ivar, OUTPUT_DIR)
+                plot_initial(SD, view(mesh.coords, 1, :), q.qn[:,ivar], ivar, OUTPUT_DIR)
             end
         end
         

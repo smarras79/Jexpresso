@@ -202,7 +202,7 @@ Named tuple with interpolated fields at mesh points:
 - `t_lay`, `p_lay`, `vmr_h2o`, `q_liq`, `q_ice`, `rho`: vectors of length npoin
 """
 function interpolate_atmosphere_to_mesh(data, mesh)
-    npoin = length(mesh.x)
+    npoin = length(view(mesh.coords, 1, :))
     
     # Initialize output arrays
     t_lay_interp = zeros(Float64, npoin)
@@ -219,47 +219,47 @@ function interpolate_atmosphere_to_mesh(data, mesh)
     for i in 1:npoin
         t_lay_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.t_lay,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
         
         p_lay_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.p_lay,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
 
          t_lev_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z_lev, data.t_lev,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
 
         p_lev_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.p_lev,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
  
         vmr_h2o_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.vmr_h2o,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
 
         vmr_o3_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.vmr_o3,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
         
         q_liq_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.q_liq,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
         
         q_ice_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.q_ice,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
         
         rho_interp[i] = trilinear_interpolate(
             data.x, data.y, data.z, data.rho,
-            mesh.x[i], mesh.y[i], mesh.z[i]
+            mesh.coords[1, i], mesh.coords[2, i], mesh.coords[3, i]
         )
     end
     
@@ -447,7 +447,7 @@ function diagnose_cloud_distribution(data, atmos_mesh, mesh)
     println("Cloudy mesh points: $(length(cloud_pts))")
     
     if !isempty(cloud_pts)
-        z_mesh_cloud = mesh.z[cloud_pts]
+        z_mesh_cloud = mesh.coords[3, cloud_pts]
         println("Cloud z range on mesh: $(extrema(z_mesh_cloud)) m")
         println("Cloud z mean on mesh:  $(sum(z_mesh_cloud)/length(z_mesh_cloud)) m")
         

@@ -185,7 +185,7 @@ function build_les_stat_cache(mesh, nprofiles::Int, nstress::Int, T, backend)
 
     comm = get_mpi_comm()
 
-    z         = Array(mesh.z)  # ensure CPU array
+    z         = Array(view(mesh.coords, 3, :))  # ensure CPU array
     gip2owner = Array(mesh.gip2owner)
 
     # Gather all unique z values across all ranks
@@ -682,7 +682,7 @@ function compute_les_spectra!(cs, uaux, qe, mesh, ET, comm, params)
     sc   = cs.spec_cache
     rank = MPI.Comm_rank(comm)
     nxz  = length(cs.xz_coords)
-    y    = Array(mesh.y)
+    y    = Array(view(mesh.coords, 2, :))
 
     # --- Pack local data: 6 floats per point = (ixz_float, y, u, v, w, θ) ---
     n_local   = sum(length(cs.xz_groups[ixz]) for ixz in 1:nxz)
@@ -804,8 +804,8 @@ function build_les_cross_section(mesh, nprofiles::Int, nstress::Int, T)
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
-    x         = Array(mesh.x)
-    z         = Array(mesh.z)
+    x         = Array(view(mesh.coords, 1, :))
+    z         = Array(view(mesh.coords, 3, :))
     gip2owner = Array(mesh.gip2owner)
     npoin_local = length(x)
 
@@ -868,8 +868,8 @@ function build_les_cross_section(mesh, nprofiles::Int, nstress::Int, T)
 
     connijk_arr = Array(mesh.connijk)  # (nelem, ngl, ngl, ngl)
     ngl_c       = mesh.ngl
-    x_arr       = Array(mesh.x)
-    z_arr       = Array(mesh.z)
+    x_arr       = Array(view(mesh.coords, 1, :))
+    z_arr       = Array(view(mesh.coords, 3, :))
 
     seen_quads = Set{NTuple{4,Int64}}()
     xz_cells   = NTuple{4,Int64}[]

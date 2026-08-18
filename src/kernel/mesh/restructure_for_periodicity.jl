@@ -1291,8 +1291,8 @@ function restructure4periodicity_2D(mesh, norm, periodic_direction)
 
     ### remove duplicates
     unique!(per_ip)
-    x_local  = mesh.x[per_ip]
-    y_local  = mesh.y[per_ip]
+    x_local  = mesh.coords[1, per_ip]
+    y_local  = mesh.coords[2, per_ip]
     per_gip  = mesh.ip2gip[per_ip]
     ip_owner = mesh.gip2owner[per_ip]
     # @info  mesh.x[per_ip]
@@ -1409,9 +1409,9 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
 
 
 
-    x_local  = mesh.x[per_ip]
-    y_local  = mesh.y[per_ip]
-    z_local  = mesh.z[per_ip]
+    x_local  = mesh.coords[1, per_ip]
+    y_local  = mesh.coords[2, per_ip]
+    z_local  = mesh.coords[3, per_ip]
     per_gip  = mesh.ip2gip[per_ip]
     ip_owner = mesh.gip2owner[per_ip]
     is_corner_local = Int8[ip_is_corner[ip] ? 1 : 0 for ip in per_ip]
@@ -1598,9 +1598,9 @@ function restructure_el2gel_for_periodicity_3D!(mesh, _norm, periodic_direction)
             cx = 0.0; cy = 0.0; cz = 0.0
             for k = 1:ngl, l = 1:ngl
                 ip  = mesh.poin_in_bdy_face[iface_bdy, k, l]
-                cx += mesh.x[ip]
-                cy += mesh.y[ip]
-                cz += mesh.z[ip]
+                cx += mesh.coords[1, ip]
+                cy += mesh.coords[2, ip]
+                cz += mesh.coords[3, ip]
             end
             npts = Float64(ngl * ngl)
             push!(per_faces_iel, iel)
@@ -1712,8 +1712,8 @@ function restructure_el2gel_for_periodicity_2D!(mesh, _norm, periodic_direction)
             cx = 0.0; cy = 0.0
             for k = 1:ngl
                 ip  = mesh.poin_in_bdy_edge[iedge_bdy, k]
-                cx += mesh.x[ip]
-                cy += mesh.y[ip]
+                cx += mesh.coords[1, ip]
+                cy += mesh.coords[2, ip]
             end
             push!(per_edges_iel, iel)
             push!(per_edges_gel, gel)
@@ -1835,7 +1835,7 @@ function collect_periodic_ncf_pairs_3D!(mesh, periodic_direction, elm2pelm)
         x1mn = Inf; x1mx = -Inf; x2mn = Inf; x2mx = -Inf
         for kk = 1:ngl, ll = 1:ngl
             ip = mesh.poin_in_bdy_face[iface_bdy, kk, ll]
-            xx = mesh.x[ip]; yy = mesh.y[ip]; zz = mesh.z[ip]
+            xx = mesh.coords[1, ip]; yy = mesh.coords[2, ip]; zz = mesh.coords[3, ip]
             cx += xx; cy += yy; cz += zz
             if periodic_direction == "periodicx"
                 x1mn = min(x1mn, yy); x1mx = max(x1mx, yy)
@@ -2280,9 +2280,9 @@ function print_periodic_ncf_debug!(mesh)
             ips = reshape(mesh.connijk[iel, ngl, 1:ngl, 1:ngl], :)
         end
         n  = length(ips)
-        cx = sum(mesh.x[ip] for ip in ips) / n
-        cy = sum(mesh.y[ip] for ip in ips) / n
-        cz = sum(mesh.z[ip] for ip in ips) / n
+        cx = sum(mesh.coords[1, ip] for ip in ips) / n
+        cy = sum(mesh.coords[2, ip] for ip in ips) / n
+        cz = sum(mesh.coords[3, ip] for ip in ips) / n
         return cx, cy, cz
     end
 
@@ -2408,7 +2408,7 @@ function print_ncf_ip_coords!(mesh)
             cip = mesh.IPc_list[j, idx]
             pip = mesh.IPp_list[j, idx]
             cgip = mesh.ip2gip[cip]; pgip = mesh.ip2gip[pip]
-            println("   $(lpad(j,2)) | ip=$(lpad(cip,6)) gip=$(lpad(cgip,6))  ($(r3(mesh.x[cip])),$(r3(mesh.y[cip])),$(r3(mesh.z[cip])))  | ip=$(lpad(pip,6)) gip=$(lpad(pgip,6))  ($(r3(mesh.x[pip])),$(r3(mesh.y[pip])),$(r3(mesh.z[pip])))")
+            println("   $(lpad(j,2)) | ip=$(lpad(cip,6)) gip=$(lpad(cgip,6))  ($(r3(mesh.coords[1, cip])),$(r3(mesh.coords[2, cip])),$(r3(mesh.coords[3, cip])))  | ip=$(lpad(pip,6)) gip=$(lpad(pgip,6))  ($(r3(mesh.coords[1, pip])),$(r3(mesh.coords[2, pip])),$(r3(mesh.coords[3, pip])))")
         end
     end
 
@@ -2437,11 +2437,11 @@ function print_ncf_ip_coords!(mesh)
         for j = 1:ngl2
             pip  = mesh.IPp_list[j, pairs[1]]
             pgip = mesh.ip2gip[pip]
-            row  = "  $(lpad(j,2)) | ip=$(lpad(pip,6)) gip=$(lpad(pgip,6))  ($(r3(mesh.x[pip])),$(r3(mesh.y[pip])),$(r3(mesh.z[pip])))  "
+            row  = "  $(lpad(j,2)) | ip=$(lpad(pip,6)) gip=$(lpad(pgip,6))  ($(r3(mesh.coords[1, pip])),$(r3(mesh.coords[2, pip])),$(r3(mesh.coords[3, pip])))  "
             for idx in pairs
                 cip  = mesh.IPc_list[j, idx]
                 cgip = mesh.ip2gip[cip]
-                row *= "| ip=$(lpad(cip,6)) gip=$(lpad(cgip,6))  ($(r3(mesh.x[cip])),$(r3(mesh.y[cip])),$(r3(mesh.z[cip])))  "
+                row *= "| ip=$(lpad(cip,6)) gip=$(lpad(cgip,6))  ($(r3(mesh.coords[1, cip])),$(r3(mesh.coords[2, cip])),$(r3(mesh.coords[3, cip])))  "
             end
             println(row)
         end
@@ -2484,7 +2484,7 @@ function detect_periodic_ncf_parent_gels!(mesh, periodic_direction, elm2pelm)
         x1mn = Inf; x1mx = -Inf; x2mn = Inf; x2mx = -Inf
         for kk = 1:ngl, ll = 1:ngl
             ip = mesh.poin_in_bdy_face[iface_bdy, kk, ll]
-            xx = mesh.x[ip]; yy = mesh.y[ip]; zz = mesh.z[ip]
+            xx = mesh.coords[1, ip]; yy = mesh.coords[2, ip]; zz = mesh.coords[3, ip]
             cx += xx; cy += yy; cz += zz
             if periodic_direction == "periodicx"
                 x1mn = min(x1mn, yy); x1mx = max(x1mx, yy)
@@ -2624,7 +2624,7 @@ function detect_periodic_ncf_parent_gels_2D!(mesh, periodic_direction, elm2pelm)
         x1mn = Inf; x1mx = -Inf
         for k = 1:ngl
             ip = mesh.poin_in_bdy_edge[iedge_bdy, k]
-            xx = mesh.x[ip]; yy = mesh.y[ip]
+            xx = mesh.coords[1, ip]; yy = mesh.coords[2, ip]
             cx += xx; cy += yy
             if periodic_direction == "periodicx"
                 x1mn = min(x1mn, yy); x1mx = max(x1mx, yy)

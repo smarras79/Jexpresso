@@ -108,7 +108,7 @@ function build_mesh(casedir, msh; nop = 4, extra = Dict{Symbol,Any}())
     return mesh
 end
 
-@testset verbose = true "mesh.coords <-> mesh.x/y/z" begin
+@testset verbose = true "mesh.coords rows vs the x/y/z views" begin
 
     for (label, casedir, msh, nsd) in CASES
         path = joinpath(ROOT, casedir, msh)
@@ -125,13 +125,13 @@ end
             @test size(mesh.coords, 2) == npoin
 
             # the duplicates must be the same length as the thing they duplicate
-            @test length(mesh.x) == npoin
-            @test length(mesh.y) == npoin
-            @test length(mesh.z) == npoin
+            @test length(view(mesh.coords, 1, :)) == npoin
+            @test length(view(mesh.coords, 2, :)) == npoin
+            @test length(view(mesh.coords, 3, :)) == npoin
 
             # ...and hold the same numbers, exactly. Not approximately: these are
             # copies of each other, so any difference at all is a missed sync.
-            for (r, v, nm) in ((1, mesh.x, "x"), (2, mesh.y, "y"), (3, mesh.z, "z"))
+            for (r, v, nm) in ((1, view(mesh.coords, 1, :), "x"), (2, view(mesh.coords, 2, :), "y"), (3, view(mesh.coords, 3, :), "z"))
                 d = maximum(abs, mesh.coords[r, :] .- v)
                 d == 0 || @info "coords row $r disagrees with mesh.$nm" maxdiff=d
                 @test mesh.coords[r, :] == v
@@ -144,8 +144,8 @@ end
         npoin = Int(mesh.npoin)
         @test size(mesh.coords, 1) == NSD_MAX
         @test size(mesh.coords, 2) == npoin
-        @test length(mesh.x) == npoin
-        for (r, v, nm) in ((1, mesh.x, "x"), (2, mesh.y, "y"), (3, mesh.z, "z"))
+        @test length(view(mesh.coords, 1, :)) == npoin
+        for (r, v, nm) in ((1, view(mesh.coords, 1, :), "x"), (2, view(mesh.coords, 2, :), "y"), (3, view(mesh.coords, 3, :), "z"))
             length(v) == npoin || @info "mesh.$nm has the wrong length" length(v) npoin
             @test length(v) == npoin
             d = maximum(abs, mesh.coords[r, 1:min(end,length(v))] .- v[1:min(end,npoin)])

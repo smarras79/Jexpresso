@@ -24,7 +24,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
         
     	for ip = 1:mesh.npoin
             
-            x  = mesh.x[ip]
+            x  = mesh.coords[1, ip]
 
             if abs(x - 1) < 0.25
 		ρ = 1.1691

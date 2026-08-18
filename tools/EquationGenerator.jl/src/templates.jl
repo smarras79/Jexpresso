@@ -31,7 +31,7 @@ function initialize(SD::NSD_{{spatial_dim}}D, PT, mesh::St_mesh, inputs::Dict, O
                 for j=1:mesh.ngl, i=1:mesh.ngl
 
                     ip = mesh.connijk[iel_g,i,j]
-                    x, y = mesh.x[ip], mesh.y[ip]
+                    x, y = mesh.coords[1, ip], mesh.coords[2, ip]
 
                     # Initialize variables
 {{#variables}}
@@ -70,7 +70,7 @@ function initialize(SD::NSD_{{spatial_dim}}D, PT, mesh::St_mesh, inputs::Dict, O
         PhysConst = PhysicalConst{TFloat}()
 
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, view(mesh.coords, 1, :), view(mesh.coords, 2, :), PhysConst, lpert; ndrange = (mesh.npoin))
     end
     @info " Initialize fields for {{spatial_dim}}D {{problem_name}} ........................ DONE "
 

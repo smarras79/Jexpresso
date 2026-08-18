@@ -12,7 +12,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
     
     if (inputs[:case] === "rtb")
 
-        xc = (maximum(mesh.x) + minimum(mesh.x))/2
+        xc = (maximum(view(mesh.coords, 1, :)) + minimum(view(mesh.coords, 1, :)))/2
         yc = 2500.0 #m
         r0 = 2000.0 #m
         
@@ -22,7 +22,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
             for j=1:mesh.ngl, i=1:mesh.ngl
                 
                 ip = mesh.connijk[iel_g,i,j]
-                x, y = mesh.x[ip], mesh.y[ip]
+                x, y = mesh.coords[1, ip], mesh.coords[2, ip]
                 r = sqrt( (x - xc)^2 + (y - yc)^2 )
                 
                 Δθ = 0.0 #K

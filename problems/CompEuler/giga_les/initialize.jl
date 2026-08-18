@@ -43,26 +43,26 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             #
             # INITIAL STATE from scratch:
             #
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            xc = (maximum(view(mesh.coords, 1, :)) + minimum(view(mesh.coords, 1, :)))/2
             zc = 2000.0 #m
         
             θc   =   0.0 #K
             rx = 10000.0
             rz = 1500.0
             data = read_sounding(inputs[:sounding_file])
-            background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data) 
+            background = interpolate_sounding(inputs[:backend],mesh.npoin,view(mesh.coords, 3, :),data) 
             
             data_u  = read_sounding("./data_files/GLES_initial_u.dat")
             data_u_reordered = zeros(size(data_u))
             data_u_reordered[:,1] .= data_u[:,2]*1000
             data_u_reordered[:,2] .= data_u[:,1]
-            background_u = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_u_reordered)
+            background_u = interpolate_sounding(inputs[:backend],mesh.npoin,view(mesh.coords, 3, :),data_u_reordered)
 
             data_qv  = read_sounding("./data_files/GLES_initial_qv.dat")
             data_qv_reordered = zeros(size(data_qv))
             data_qv_reordered[:,1] .= data_qv[:,2]*1000
             data_qv_reordered[:,2] .= data_qv[:,1]
-            background_qv = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_qv_reordered)
+            background_qv = interpolate_sounding(inputs[:backend],mesh.npoin,view(mesh.coords, 3, :),data_qv_reordered)
             println(maximum(background_qv), minimum(background_qv), maximum(data_qv_reordered[:,1]), minimum(data_qv_reordered[:,1]), maximum(data_qv_reordered[:,2]), minimum(data_qv_reordered[:,2]))
             println(maximum(data_qv[:,2]*1000), minimum(data_qv[:,2]*1000), maximum(data_qv[:,1]), minimum(data_qv[:,1]))
             balanced = zeros(mesh.npoin,1)
@@ -82,13 +82,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                                 end
                                 if (k > 1 && k < mesh.ngl)
                                     ip2 = mesh.connijk[e,i,j,k-1]
-                                    dz = (abs(mesh.z[ip] - mesh.z[ip1]) + abs(mesh.z[ip] -mesh.z[ip2]))/2
+                                    dz = (abs(mesh.coords[3, ip] - mesh.coords[3, ip1]) + abs(mesh.coords[3, ip] -mesh.coords[3, ip2]))/2
                                     balanced[ip] = abs((-2*background[ip,5] + background[ip2,5] + background[ip1,5]))/(2*dz*PhysConst.g)
                                 else
                                     if (balanced[ip] == 0)
-                                        balanced[ip] = abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.z[ip]-mesh.z[ip1]))
+                                        balanced[ip] = abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.coords[3, ip]-mesh.coords[3, ip1]))
                                     else
-                                        balanced[ip] = (abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.z[ip]-mesh.z[ip1])) + balanced[ip])/2
+                                        balanced[ip] = (abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.coords[3, ip]-mesh.coords[3, ip1])) + balanced[ip])/2
                                     end
                                 end
                             end
@@ -97,7 +97,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 end
                 println(maximum(balanced), minimum(balanced))
                 for ip=1:mesh.nelem
-                    if (mesh.z[ip] < 24000.0 -1)
+                    if (mesh.coords[3, ip] < 24000.0 -1)
                     T = background[ip,1] / (PhysConst.pref/background[ip,5])^(PhysConst.Rair/PhysConst.cp)
                     old = background[ip,5]
                     background[ip,5] = balanced[ip]*PhysConst.Rair*T
@@ -114,7 +114,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             println(diff) =#
             for ip = 1:mesh.npoin
             
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1, ip], mesh.coords[2, ip], mesh.coords[3, ip]
             
                 r = sqrt( (x - xc)^2/(rx^2) + (z - zc)^2/(rz^2) )
             
@@ -213,16 +213,16 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             lpert = false
         end
         data = read_sounding(inputs[:sounding_file])
-        background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data)
+        background = interpolate_sounding(inputs[:backend],mesh.npoin,view(mesh.coords, 3, :),data)
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(view(mesh.coords, 1, :)) + minimum(view(mesh.coords, 1, :)))/2)
         zc = TFloat(2000.0) #m
         rz = TFloat(1500.0) #m
         rx = TFloat(10000.0)
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, background, mesh.x, mesh.y, mesh.z, xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, background, view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :), xc, rx, rz, zc, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     println(maximum(q.qe[:,end]), minimum(q.qe[:,end]))
     println(" Initialize fields for 3D CompEuler with θ equation ........................ DONE ")

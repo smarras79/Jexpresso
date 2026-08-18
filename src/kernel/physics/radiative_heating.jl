@@ -180,9 +180,9 @@ function compute_rt_radiative_heating(
 
     if splitting
         bdy_nodes = [ip for ip = 1:mesh.npoin 
-             if mesh.z[ip] ≈ mesh.zmin || 
-                mesh.x[ip] ≈ mesh.xmin || mesh.x[ip] ≈ mesh.xmax ||
-                mesh.y[ip] ≈ mesh.ymin || mesh.y[ip] ≈ mesh.ymax]
+             if mesh.coords[3, ip] ≈ mesh.zmin || 
+                mesh.coords[1, ip] ≈ mesh.xmin || mesh.coords[1, ip] ≈ mesh.xmax ||
+                mesh.coords[2, ip] ≈ mesh.ymin || mesh.coords[2, ip] ≈ mesh.ymax]
                 
         G_total = G_accum .+ G_dir
         if MPI.Comm_rank(MPI.COMM_WORLD) == 0

@@ -15,7 +15,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())
-        xc = (maximum(mesh.x) + minimum(mesh.x))/2
+        xc = (maximum(view(mesh.coords, 1, :)) + minimum(view(mesh.coords, 1, :)))/2
         yc = 8.0 #m
         sx = 1.0
         sy = 1.0
@@ -24,7 +24,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             for j=1:mesh.ngl, i=1:mesh.ngl
             
                 ip = mesh.connijk[iel_g,i,j]
-                x, y = mesh.x[ip], mesh.y[ip]
+                x, y = mesh.coords[1, ip], mesh.coords[2, ip]
             
                 a1 = -((x - xc)/sx)^2
                 a2 = -((y - yc)/sy)^2
@@ -35,13 +35,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             end
         end
     else
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(view(mesh.coords, 1, :)) + minimum(view(mesh.coords, 1, :)))/2)
         yc = TFloat(8.0)
         sx = TFloat(1.0)
         sy = TFloat(1.0)
         A = TFloat(1.0)
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, xc, yc, sx, sy, A; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, view(mesh.coords, 1, :), view(mesh.coords, 2, :), xc, yc, sx, sy, A; ndrange = (mesh.npoin))
     end
     println(" Initialize fields for 2D AD ........................ DONE ")
 

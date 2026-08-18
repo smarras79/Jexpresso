@@ -24,7 +24,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
         for j=1:mesh.ngl, i=1:mesh.ngl
             
             ip = mesh.connijk[iel_g,i,j]
-            y = mesh.y[ip]
+            y = mesh.coords[2, ip]
             θ    = θref*exp(N2*y/PhysConst.g)         
             #if (y > 0.1) 
               p    = p0*(1.0 + PhysConst.g2*(exp(-y*N2/PhysConst.g) - 1.0)/(PhysConst.cp*θref*N2))^PhysConst.cpoverR
@@ -69,7 +69,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs, OUTPUT_DIR
         for j=1:mesh.ngr, i=1:mesh.ngl
 
             ip = mesh.connijk_lag[iel_g,i,j]
-            y = mesh.y[ip]
+            y = mesh.coords[2, ip]
             θ    = θref*exp(N2*y/PhysConst.g)
             #if (y > 0.1)
               p    = p0*(1.0 + PhysConst.g2*(exp(-y*N2/PhysConst.g) - 1.0)/(PhysConst.cp*θref*N2))^PhysConst.cpoverR

@@ -124,7 +124,7 @@ function build_metric_terms_1D_Laguerre!(metrics, mesh::St_mesh, basis::St_Lagra
         @inbounds for iel = 1:mesh.nelem_semi_inf  # PERF: Added @inbounds
             for i = 1:mesh.ngr
                 ip = mesh.connijk_lag[iel,i,1]
-                xij = mesh.x[ip]
+                xij = mesh.coords[1, ip]
 
                 for k = 1:mesh.ngr
                     metrics.dxdξ[iel, k,1]  += dψ[i,k] * (xij) * inputs[:yfac_laguerre]
@@ -140,7 +140,7 @@ function build_metric_terms_1D_Laguerre!(metrics, mesh::St_mesh, basis::St_Lagra
     else
         x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem_semi_inf),Int64(mesh.ngr))
-        KernelAbstractions.copyto!(backend, x, mesh.x)
+        KernelAbstractions.copyto!(backend, x, view(mesh.coords, 1, :))
         KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
         k = build_1D_gpu_metrics_laguerre!(backend,(Int64(mesh.ngr)))
         k(metrics.dxdξ, metrics.Je, metrics.dξdx, basis.ψ, basis.dψ, x, connijk_lag, TFloat(inputs[:yfac_laguerre]), Q; ndrange = (mesh.nelem_semi_inf*(mesh.ngr)), workgroupsize = (mesh.ngr))
@@ -184,7 +184,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem),N+1)
         Δx = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.nelem))
-        KernelAbstractions.copyto!(backend, x, mesh.x)
+        KernelAbstractions.copyto!(backend, x, view(mesh.coords, 1, :))
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         KernelAbstractions.copyto!(backend, Δx, mesh.Δx)
         k = build_1D_gpu_metrics!(backend,(N+1))
@@ -215,8 +215,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             for j = 1:N+1
                 for i = 1:N+1
                     ip = connijk_iel[i, j]
-                    xij = mesh.x[ip]
-                    yij = mesh.y[ip]
+                    xij = mesh.coords[1, ip]
+                    yij = mesh.coords[2, ip]
                     
                     # Unroll and optimize the inner loops
                     @turbo for l=1:Q+1
@@ -265,8 +265,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             # Pre-compute edge endpoints for Jef calculation
             ip_first = poin_edge[1]
             ip_last = poin_edge[N+1]
-            edge_length = sqrt((mesh.x[ip_first] - mesh.x[ip_last])^2 + 
-                (mesh.y[ip_first] - mesh.y[ip_last])^2)
+            edge_length = sqrt((mesh.coords[1, ip_first] - mesh.coords[1, ip_last])^2 + 
+                (mesh.coords[2, ip_first] - mesh.coords[2, ip_last])^2)
             Jef_val = edge_length * 0.5  # Avoid division by 2
             
             for k = 1:N+1
@@ -276,8 +276,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 ip1 = (k < N+1) ? poin_edge[k+1] : poin_edge[k-1]
                 
                 # Cache coordinates
-                x1, y1 = mesh.x[ip], mesh.y[ip]
-                x2, y2 = mesh.x[ip1], mesh.y[ip1]
+                x1, y1 = mesh.coords[1, ip], mesh.coords[2, ip]
+                x2, y2 = mesh.coords[1, ip1], mesh.coords[2, ip1]
                 
                 # Compute normal vector components
                 dx, dy = x1 - x2, y1 - y2
@@ -300,7 +300,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                     end
                 end=#
                 #if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
-                if (metrics.nx[iedge, k]*(mesh.x[ip2]-mesh.x[ip]) + metrics.ny[iedge, k]*(mesh.y[ip2] -mesh.y[ip]) > 0)
+                if (metrics.nx[iedge, k]*(mesh.coords[1, ip2]-mesh.coords[1, ip]) + metrics.ny[iedge, k]*(mesh.coords[2, ip2] -mesh.coords[2, ip]) > 0)
                     metrics.nx[iedge, k] = - metrics.nx[iedge, k]
                     metrics.ny[iedge, k] = - metrics.ny[iedge, k]
                 end
@@ -311,8 +311,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem),N+1,N+1)
-        KernelAbstractions.copyto!(backend, x, mesh.x)
-        KernelAbstractions.copyto!(backend, y, mesh.y)
+        KernelAbstractions.copyto!(backend, x, view(mesh.coords, 1, :))
+        KernelAbstractions.copyto!(backend, y, view(mesh.coords, 2, :))
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k = build_2D_gpu_metrics!(backend,(N+1,N+1))
         k(metrics.dxdξ,metrics.dxdη,metrics.dydξ,metrics.dydη, ψ, dψ, x, y, connijk, Q; ndrange = (mesh.nelem*(N+1),mesh.ngl), workgroupsize = (N+1,N+1))
@@ -358,7 +358,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             coord_idx = 1
             for k = 1:N1, j = 1:N1, i = 1:N1
                 ip = connijk_iel[i, j, k]
-                temp_coords[coord_idx] = (mesh.x[ip], mesh.y[ip], mesh.z[ip])
+                temp_coords[coord_idx] = (mesh.coords[1, ip], mesh.coords[2, ip], mesh.coords[3, ip])
                 coord_idx += 1
             end
             
@@ -482,7 +482,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             coord_idx = 1
             for j = 1:ngl, i = 1:ngl
                 ip = poin_face[i, j]
-                temp_face_coords[coord_idx] = (mesh.x[ip], mesh.y[ip], mesh.z[ip])
+                temp_face_coords[coord_idx] = (mesh.coords[1, ip], mesh.coords[2, ip], mesh.coords[3, ip])
                 coord_idx += 1
             end
             
@@ -542,8 +542,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 ip2 = poin_face[i, j_neighbor]
                 
                 # Vectorized coordinate differences
-                dx1, dy1, dz1 = x1 - mesh.x[ip1], y1 - mesh.y[ip1], z1 - mesh.z[ip1]
-                dx2, dy2, dz2 = x1 - mesh.x[ip2], y1 - mesh.y[ip2], z1 - mesh.z[ip2]
+                dx1, dy1, dz1 = x1 - mesh.coords[1, ip1], y1 - mesh.coords[2, ip1], z1 - mesh.coords[3, ip1]
+                dx2, dy2, dz2 = x1 - mesh.coords[1, ip2], y1 - mesh.coords[2, ip2], z1 - mesh.coords[3, ip2]
                 
                 # Cross product for normal vector
                 nx_comp = dy1 * dz2 - dz1 * dy2
@@ -599,7 +599,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                     end
                 end=#
                 #if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
-                if (metrics.nx[iface, i, j]*(mesh.x[ip3]-mesh.x[ip])+ metrics.ny[iface, i, j]*(mesh.y[ip3]-mesh.y[ip]) + metrics.nz[iface, i, j]*(mesh.z[ip3]-mesh.z[ip]) > 0)
+                if (metrics.nx[iface, i, j]*(mesh.coords[1, ip3]-mesh.coords[1, ip])+ metrics.ny[iface, i, j]*(mesh.coords[2, ip3]-mesh.coords[2, ip]) + metrics.nz[iface, i, j]*(mesh.coords[3, ip3]-mesh.coords[3, ip]) > 0)
                     metrics.nx[iface, i, j] = - metrics.nx[iface, i, j]
                     metrics.ny[iface, i, j] = - metrics.ny[iface, i, j]
                     metrics.nz[iface, i, j] = - metrics.nz[iface, i, j] 
@@ -612,9 +612,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         z = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem),N+1,N+1,N+1)
-        KernelAbstractions.copyto!(backend, x, mesh.x)
-        KernelAbstractions.copyto!(backend, y, mesh.y)
-        KernelAbstractions.copyto!(backend, z, mesh.z)
+        KernelAbstractions.copyto!(backend, x, view(mesh.coords, 1, :))
+        KernelAbstractions.copyto!(backend, y, view(mesh.coords, 2, :))
+        KernelAbstractions.copyto!(backend, z, view(mesh.coords, 3, :))
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k = build_3D_gpu_metrics!(backend,(N+1,N+1,N+1))
         k(metrics.dxdξ,metrics.dxdη,metrics.dxdζ,metrics.dydξ,metrics.dydη,metrics.dydζ,metrics.dzdξ,metrics.dzdη,metrics.dzdζ, ψ, dψ, x, y, z, connijk, Q;
@@ -787,8 +787,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
                 for j=1:mesh.ngr
                     for i =1:mesh.ngl
                         ip = mesh.connijk_lag[iel,i,j]
-                        xij = mesh.x[ip]
-                        yij = mesh.y[ip]
+                        xij = mesh.coords[1, ip]
+                        yij = mesh.coords[2, ip]
                         for l=1:mesh.ngr
                             for k=1:mesh.ngl
                                 if (inputs[:xfac_laguerre] == 0.0)
@@ -828,8 +828,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
             y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
             connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem_semi_inf),mesh.ngl,mesh.ngr)
 
-            KernelAbstractions.copyto!(backend, x, mesh.x)
-            KernelAbstractions.copyto!(backend, y, mesh.y)
+            KernelAbstractions.copyto!(backend, x, view(mesh.coords, 1, :))
+            KernelAbstractions.copyto!(backend, y, view(mesh.coords, 2, :))
             KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
             k = build_2D_gpu_metrics_lag!(backend)
             k(metrics.dxdξ, metrics.dxdη, metrics.dydξ, metrics.dydη, ψ, dψ, ψ1, dψ1, x, y, connijk_lag, mesh.ngl, mesh.ngr, TFloat(inputs[:xfac_laguerre]), TFloat(inputs[:yfac_laguerre]);

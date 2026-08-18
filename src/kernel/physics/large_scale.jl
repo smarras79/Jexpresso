@@ -7,7 +7,7 @@ function read_large_scale!(backend, flist, LST, mesh)
         data_reordered = zeros(TFloat, size(data))
         data_reordered[:,1] .= data[:,2]*1000
         data_reordered[:,2] .= data[:,1]
-        data_out[i,:] = interpolate_sounding(backend,mesh.npoin,mesh.z,data_reordered)
+        data_out[i,:] = interpolate_sounding(backend,mesh.npoin,view(mesh.coords, 3, :),data_reordered)
     end
 
     LST.Rad_cool .= data_out[2,:]

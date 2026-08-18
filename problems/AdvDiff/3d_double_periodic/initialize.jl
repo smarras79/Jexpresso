@@ -50,7 +50,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             θc   =   1.0 #K
             for ip = 1:mesh.npoin
             
-                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+                x, y, z = mesh.coords[1, ip], mesh.coords[2, ip], mesh.coords[3, ip]
             
                 r = sqrt( (x - xc)^2 + (y - yc)^2 + (z - zc)^2 )
             

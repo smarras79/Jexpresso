@@ -141,7 +141,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
                 P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
                 exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
                 T =  θ*exner
-                z = mesh.z[ip]                                        #Only valid for flow in a box
+                z = mesh.coords[3, ip]                                        #Only valid for flow in a box
                 ke = 0.5*ρ*(u*u + v*v)
                 ie = ρ*PhysConst.cv*T
                 pe = ρ*PhysConst.g*z
@@ -160,7 +160,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
                 P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
                 exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
                 T =  θ*exner
-                z = mesh.z[ip]                                        #Only valid for flow in a box
+                z = mesh.coords[3, ip]                                        #Only valid for flow in a box
                 ke = 0.5*ρ*(u*u + v*v)
                 ie = ρ*PhysConst.cv*T
                 pe = ρ*PhysConst.g*z
@@ -180,7 +180,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
                 P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
 	        exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
                 T =  θ*exner  
-                z = mesh.z[ip]                                        #Only valid for flow in a box
+                z = mesh.coords[3, ip]                                        #Only valid for flow in a box
 	        ke = 0.5*ρ*(u*u + v*v)
                 ie = ρ*PhysConst.cv*T
                 pe = ρ*PhysConst.g*z 
@@ -212,7 +212,7 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs,QT::Exact,Q,ψ)
               P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
 	      exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
               T =  θ*exner  
-              z = mesh.z[ip]                                        #Only valid for flow in a box
+              z = mesh.coords[3, ip]                                        #Only valid for flow in a box
 	      ke = 0.5*ρ*(u*u + v*v)
               ie = ρ*PhysConst.cv*T
               pe = ρ*PhysConst.g*z 

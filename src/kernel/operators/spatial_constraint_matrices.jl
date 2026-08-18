@@ -177,30 +177,30 @@ function build_spatial_interpolation_matrices_from_facet_nodes(
     if local_facet_id in [1, 2]
         # z-faces: x and y vary, z constant
         # Line 1 varies in x, Line 2 varies in y
-        parent_x = [mesh.x[n] for n in parent_line_2 if n > 0]
-        child_x = [mesh.x[n] for n in child_line_2 if n > 0]
-        parent_z = [mesh.z[n] for n in parent_line_1 if n > 0]
-        child_z = [mesh.z[n] for n in child_line_1 if n > 0]
+        parent_x = [mesh.coords[1, n] for n in parent_line_2 if n > 0]
+        child_x = [mesh.coords[1, n] for n in child_line_2 if n > 0]
+        parent_z = [mesh.coords[3, n] for n in parent_line_1 if n > 0]
+        child_z = [mesh.coords[3, n] for n in child_line_1 if n > 0]
         
         L1 = build_1d_lagrange_matrix(parent_x, child_x)  # x-direction
         L2 = build_1d_lagrange_matrix(parent_z, child_z)  # y-direction
     elseif local_facet_id in [3, 4]
         # y-faces: x and z vary, y constant
         # Line 1 varies in x, Line 2 varies in z
-        parent_x = [mesh.x[n] for n in parent_line_2 if n > 0]
-        child_x = [mesh.x[n] for n in child_line_2 if n > 0]
-        parent_y = [mesh.y[n] for n in parent_line_1 if n > 0]
-        child_y = [mesh.y[n] for n in child_line_1 if n > 0]
+        parent_x = [mesh.coords[1, n] for n in parent_line_2 if n > 0]
+        child_x = [mesh.coords[1, n] for n in child_line_2 if n > 0]
+        parent_y = [mesh.coords[2, n] for n in parent_line_1 if n > 0]
+        child_y = [mesh.coords[2, n] for n in child_line_1 if n > 0]
         
         L1 = build_1d_lagrange_matrix(parent_x, child_x)  # x-direction
         L2 = build_1d_lagrange_matrix(parent_y, child_y)  # z-direction
     elseif local_facet_id in [5, 6]
         # x-faces: y and z vary, x constant
         # Line 1 varies in y, Line 2 varies in z
-        parent_y = [mesh.y[n] for n in parent_line_2 if n > 0]
-        child_y = [mesh.y[n] for n in child_line_2 if n > 0]
-        parent_z = [mesh.z[n] for n in parent_line_1 if n > 0]
-        child_z = [mesh.z[n] for n in child_line_1 if n > 0]
+        parent_y = [mesh.coords[2, n] for n in parent_line_2 if n > 0]
+        child_y = [mesh.coords[2, n] for n in child_line_2 if n > 0]
+        parent_z = [mesh.coords[3, n] for n in parent_line_1 if n > 0]
+        child_z = [mesh.coords[3, n] for n in child_line_1 if n > 0]
         
         L1 = build_1d_lagrange_matrix(parent_y, child_y)  # y-direction
         L2 = build_1d_lagrange_matrix(parent_z, child_z)  # z-direction
@@ -222,7 +222,7 @@ end
 
 Like `build_spatial_interpolation_matrices_from_facet_nodes` but uses a
 `coord_cache::Dict{Int,NTuple{3,Float64}}` (keyed by GLOBAL IP) for parent
-node coordinates instead of `mesh.x/y/z[local_ip]`.
+node coordinates instead of `view(mesh.coords, 1, :)/y/z[local_ip]`.
 
 Child node coordinates still come from the local mesh (child is always local).
 """
@@ -258,7 +258,7 @@ function build_spatial_interpolation_matrices_with_coord_cache(
     end
 
     get_coord(gip::Int, dim::Int) = coord_cache[gip][dim]
-    get_child(lip::Int, dim::Int) = dim == 1 ? mesh.x[lip] : (dim == 2 ? mesh.y[lip] : mesh.z[lip])
+    get_child(lip::Int, dim::Int) = dim == 1 ? mesh.coords[1, lip] : (dim == 2 ? mesh.coords[2, lip] : mesh.coords[3, lip])
 
     if local_facet_id in [1, 2]       # z-faces: x and y vary
         parent_x = [get_coord(g, 1) for g in parent_line_2 if g > 0]
@@ -684,15 +684,15 @@ function build_spatial_restriction_and_prolongation(
     # present at the hanging location — including newly-refined ones from angular
     # AMR that are absent from the base extra_mesh.
     for (hanging_node_id, parent_list) in spatial_amr_cache.parent_weights
-        x_child = mesh.x[hanging_node_id]
-        y_child = mesh.y[hanging_node_id]
-        z_child = mesh.z[hanging_node_id]
+        x_child = mesh.coords[1, hanging_node_id]
+        y_child = mesh.coords[2, hanging_node_id]
+        z_child = mesh.coords[3, hanging_node_id]
         xyz_key_h = (round(x_child, digits=12), round(y_child, digits=12), round(z_child, digits=12))
         ang_dofs_h = get(xyz_ang_map, xyz_key_h, Tuple{Float64,Float64,Int}[])
         for (θ, ϕ, col_hanging) in ang_dofs_h
             col_hanging > 0 || continue
             for (parent_node_id, weight) in parent_list
-                x_p = mesh.x[parent_node_id]; y_p = mesh.y[parent_node_id]; z_p = mesh.z[parent_node_id]
+                x_p = mesh.coords[1, parent_node_id]; y_p = mesh.coords[2, parent_node_id]; z_p = mesh.coords[3, parent_node_id]
                 key_p = (round(x_p, digits=12), round(y_p, digits=12),
                          round(z_p, digits=12), round(θ, digits=12), round(ϕ, digits=12))
                 row_parent = get(point_dict_spa, key_p, 0)
@@ -707,9 +707,9 @@ function build_spatial_restriction_and_prolongation(
     # Phase 3: cross-rank parents that are locally present.
     gip_to_local_r = Dict{Int,Int}(Int(mesh.ip2gip[ip]) => ip for ip = 1:mesh.npoin)
     for (hanging_node_id, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
-        x_child = mesh.x[hanging_node_id]
-        y_child = mesh.y[hanging_node_id]
-        z_child = mesh.z[hanging_node_id]
+        x_child = mesh.coords[1, hanging_node_id]
+        y_child = mesh.coords[2, hanging_node_id]
+        z_child = mesh.coords[3, hanging_node_id]
         xyz_key_h = (round(x_child, digits=12), round(y_child, digits=12), round(z_child, digits=12))
         ang_dofs_h = get(xyz_ang_map, xyz_key_h, Tuple{Float64,Float64,Int}[])
         for (θ, ϕ, col_hanging) in ang_dofs_h
@@ -717,7 +717,7 @@ function build_spatial_restriction_and_prolongation(
             for (parent_gip, weight) in cross_weights
                 local_ip = get(gip_to_local_r, parent_gip, 0)
                 local_ip == 0 && continue
-                x_p = mesh.x[local_ip]; y_p = mesh.y[local_ip]; z_p = mesh.z[local_ip]
+                x_p = mesh.coords[1, local_ip]; y_p = mesh.coords[2, local_ip]; z_p = mesh.coords[3, local_ip]
                 key_p = (round(x_p, digits=12), round(y_p, digits=12),
                          round(z_p, digits=12), round(θ, digits=12), round(ϕ, digits=12))
                 row_parent = get(point_dict_spa, key_p, 0)
@@ -786,9 +786,9 @@ function _exchange_spatial_parent_combined_gids(
     for lip = 1:mesh.npoin
         sp_gip = Int(mesh.ip2gip[lip])
         sp_gip in all_needed_set || continue
-        xyz_key = (round(mesh.x[lip], digits=12),
-                   round(mesh.y[lip], digits=12),
-                   round(mesh.z[lip], digits=12))
+        xyz_key = (round(mesh.coords[1, lip], digits=12),
+                   round(mesh.coords[2, lip], digits=12),
+                   round(mesh.coords[3, lip], digits=12))
         ang_dofs = get(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[])
         for (θ_k, ϕ_k, ip_comb) in ang_dofs
             key_t = (sp_gip, θ_k, ϕ_k)
@@ -1021,9 +1021,9 @@ function build_spatial_constraints_for_combined_path(
     nc_non_global_nodes_spa = Int[]
     nc_set_spa = Set{Int}()
     for hanging_ip in keys(spatial_amr_cache.parent_weights)
-        xyz_key = (round(mesh.x[hanging_ip], digits=12),
-                   round(mesh.y[hanging_ip], digits=12),
-                   round(mesh.z[hanging_ip], digits=12))
+        xyz_key = (round(mesh.coords[1, hanging_ip], digits=12),
+                   round(mesh.coords[2, hanging_ip], digits=12),
+                   round(mesh.coords[3, hanging_ip], digits=12))
         for (_, _, ip_spa_h) in get(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[])
             ip_spa_h in nc_set_spa && continue
             push!(nc_non_global_nodes_spa, ip_spa_h)
@@ -1031,9 +1031,9 @@ function build_spatial_constraints_for_combined_path(
         end
     end
     for hanging_ip in keys(spatial_amr_cache.cross_rank_parent_weights)
-        xyz_key = (round(mesh.x[hanging_ip], digits=12),
-                   round(mesh.y[hanging_ip], digits=12),
-                   round(mesh.z[hanging_ip], digits=12))
+        xyz_key = (round(mesh.coords[1, hanging_ip], digits=12),
+                   round(mesh.coords[2, hanging_ip], digits=12),
+                   round(mesh.coords[3, hanging_ip], digits=12))
         for (_, _, ip_spa_h) in get(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[])
             ip_spa_h in nc_set_spa && continue
             push!(nc_non_global_nodes_spa, ip_spa_h)
@@ -1062,9 +1062,9 @@ function build_spatial_constraints_for_combined_path(
     # ── _rhs_handled_dofs: combined DOFs whose RHS is covered by local parents ─
     _rhs_handled_dofs = Set{Int}()
     for (hsp, _) in spatial_amr_cache.parent_weights
-        xyz_key = (round(mesh.x[hsp], digits=12),
-                   round(mesh.y[hsp], digits=12),
-                   round(mesh.z[hsp], digits=12))
+        xyz_key = (round(mesh.coords[1, hsp], digits=12),
+                   round(mesh.coords[2, hsp], digits=12),
+                   round(mesh.coords[3, hsp], digits=12))
         for (_, _, d) in get(xyz_ang_map, xyz_key, Tuple{Float64,Float64,Int}[])
             d == 0 && continue
             push!(_rhs_handled_dofs, d)
@@ -1079,9 +1079,9 @@ function build_spatial_constraints_for_combined_path(
     # Source 1: cross-rank parents — iterate over all adapted angular DOFs at the
     # hanging location via xyz_ang_map; match parent by (θ, ϕ) key.
     for (hanging_local_spa, cross_weights) in spatial_amr_cache.cross_rank_parent_weights
-        xyz_key_h = (round(mesh.x[hanging_local_spa], digits=12),
-                     round(mesh.y[hanging_local_spa], digits=12),
-                     round(mesh.z[hanging_local_spa], digits=12))
+        xyz_key_h = (round(mesh.coords[1, hanging_local_spa], digits=12),
+                     round(mesh.coords[2, hanging_local_spa], digits=12),
+                     round(mesh.coords[3, hanging_local_spa], digits=12))
         for (θ_k, ϕ_k, hanging_dof) in get(xyz_ang_map, xyz_key_h, Tuple{Float64,Float64,Int}[])
             (hanging_dof == 0 || hanging_dof > n_spa) && continue
             ang_key = (θ_k, ϕ_k)
@@ -1111,15 +1111,15 @@ function build_spatial_constraints_for_combined_path(
         end
     end
     for (hanging_local_spa, local_weights) in spatial_amr_cache.parent_weights
-        xyz_key_h = (round(mesh.x[hanging_local_spa], digits=12),
-                     round(mesh.y[hanging_local_spa], digits=12),
-                     round(mesh.z[hanging_local_spa], digits=12))
+        xyz_key_h = (round(mesh.coords[1, hanging_local_spa], digits=12),
+                     round(mesh.coords[2, hanging_local_spa], digits=12),
+                     round(mesh.coords[3, hanging_local_spa], digits=12))
         for (θ_k, ϕ_k, hanging_dof) in get(xyz_ang_map, xyz_key_h, Tuple{Float64,Float64,Int}[])
             (hanging_dof == 0 || hanging_dof > n_spa) && continue
             for (parent_local_spa, weight) in local_weights
-                key_p = (round(mesh.x[parent_local_spa], digits=12),
-                         round(mesh.y[parent_local_spa], digits=12),
-                         round(mesh.z[parent_local_spa], digits=12),
+                key_p = (round(mesh.coords[1, parent_local_spa], digits=12),
+                         round(mesh.coords[2, parent_local_spa], digits=12),
+                         round(mesh.coords[3, parent_local_spa], digits=12),
                          round(θ_k, digits=12), round(ϕ_k, digits=12))
                 parent_dof = get(point_dict_combined_adapted, key_p, 0)
                 (parent_dof == 0 || parent_dof > n_spa) && continue

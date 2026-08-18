@@ -29,7 +29,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
         for ip = 1:mesh.npoin
 
-            x, y = mesh.x[ip], mesh.y[ip]
+            x, y = mesh.coords[1, ip], mesh.coords[2, ip]
 
             B      = tanh(15.0*y + 7.5) - tanh(15.0*y - 7.5)
             ρ      = 0.5 + 3.0*B/4.0
@@ -119,14 +119,14 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             lpert = false
         end
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(view(mesh.coords, 1, :)) + minimum(view(mesh.coords, 1, :)))/2)
         yc = TFloat(2500.0) #m
         rθ = TFloat(2000.0) #m
 
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, view(mesh.coords, 1, :), view(mesh.coords, 2, :), xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
     end
     if rank == 0
         @info " Initialize fields for 2D CompEuler........................ DONE "

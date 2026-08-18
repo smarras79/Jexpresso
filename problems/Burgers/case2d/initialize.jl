@@ -24,15 +24,15 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     qvars = ["q"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
 
-    xmin = minimum(mesh.x); xmax = maximum(mesh.x); x_mid = 0.5*(xmin + xmax)
-    ymin = minimum(mesh.y); ymax = maximum(mesh.y); y_mid = 0.5*(ymin + ymax)
+    xmin = minimum(view(mesh.coords, 1, :)); xmax = maximum(view(mesh.coords, 1, :)); x_mid = 0.5*(xmin + xmax)
+    ymin = minimum(view(mesh.coords, 2, :)); ymax = maximum(view(mesh.coords, 2, :)); y_mid = 0.5*(ymin + ymax)
 
     for iel_g = 1:mesh.nelem
         for j = 1:mesh.ngl, i = 1:mesh.ngl
 
             ip = mesh.connijk[iel_g, i, j]
-            x  = mesh.x[ip]
-            y  = mesh.y[ip]
+            x  = mesh.coords[1, ip]
+            y  = mesh.coords[2, ip]
 
             if x < x_mid && y > y_mid
                 q.qn[ip,1] = -0.2

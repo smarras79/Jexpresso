@@ -1441,7 +1441,7 @@ function project_nodes_to_shell!(mesh::St_mesh, inputs::Dict{Symbol,Any})
 
     rmin, rmax = Inf, 0.0
     for ip = 1:mesh.npoin_linear
-        r = sqrt(mesh.x[ip]^2 + mesh.y[ip]^2 + mesh.z[ip]^2)
+        r = sqrt(mesh.coords[1, ip]^2 + mesh.coords[2, ip]^2 + mesh.coords[3, ip]^2)
         rmin = min(rmin, r); rmax = max(rmax, r)
     end
     rmin = MPI.Allreduce(rmin, MPI.MIN, comm)
@@ -1466,15 +1466,15 @@ function project_nodes_to_shell!(mesh::St_mesh, inputs::Dict{Symbol,Any})
 
     dmax = 0.0
     for ip = 1:mesh.npoin
-        r = sqrt(mesh.x[ip]^2 + mesh.y[ip]^2 + mesh.z[ip]^2)
+        r = sqrt(mesh.coords[1, ip]^2 + mesh.coords[2, ip]^2 + mesh.coords[3, ip]^2)
         r > 0.0 || continue
         if lproject
             s = mesh.radius/r
             dmax = max(dmax, abs(r - mesh.radius))
-            mesh.x[ip] *= s; mesh.y[ip] *= s; mesh.z[ip] *= s
+            mesh.coords[1, ip] *= s; mesh.coords[2, ip] *= s; mesh.coords[3, ip] *= s
         end
-        mesh.lon[ip] = atan(mesh.y[ip], mesh.x[ip])
-        mesh.lat[ip] = asin(clamp(mesh.z[ip]/mesh.radius, -1.0, 1.0))
+        mesh.lon[ip] = atan(mesh.coords[2, ip], mesh.coords[1, ip])
+        mesh.lat[ip] = asin(clamp(mesh.coords[3, ip]/mesh.radius, -1.0, 1.0))
     end
 
     if lproject
@@ -1586,7 +1586,7 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
     if to in CUBED_SPHERE_CORNER_SINGULAR_MAPS
         ncorner = 0
         for ip = 1:mesh.npoin
-            ax = abs(mesh.x[ip]); ay = abs(mesh.y[ip]); az = abs(mesh.z[ip])
+            ax = abs(mesh.coords[1, ip]); ay = abs(mesh.coords[2, ip]); az = abs(mesh.coords[3, ip])
             hi = max(ax, ay, az); lo = min(ax, ay, az)
             (hi > 0.1*R && (hi - lo) < 1.0e-6*R) && (ncorner += 1)
         end
@@ -1648,9 +1648,9 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
         end
         nvert = MPI.Allreduce(nown, MPI.SUM, comm)
     end
-    from, resid = detect_cubed_sphere_map(@view(mesh.x[1:nlin]),
-                                          @view(mesh.y[1:nlin]),
-                                          @view(mesh.z[1:nlin]); nvert = nvert)
+    from, resid = detect_cubed_sphere_map(@view(mesh.coords[1, 1:nlin]),
+                                          @view(mesh.coords[2, 1:nlin]),
+                                          @view(mesh.coords[3, 1:nlin]); nvert = nvert)
     if nparts > 1
         for k in keys(resid)
             resid[k] = MPI.Allreduce(resid[k], MPI.MAX, comm)
@@ -1677,11 +1677,11 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
 
     dmax = 0.0
     for ip = 1:mesh.npoin
-        x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+        x, y, z = mesh.coords[1, ip], mesh.coords[2, ip], mesh.coords[3, ip]
         nx, ny, nz = remap_direction(x, y, z, from, to)
         X, Y, Z = R*nx, R*ny, R*nz
         dmax = max(dmax, sqrt((X-x)^2 + (Y-y)^2 + (Z-z)^2))
-        mesh.x[ip], mesh.y[ip], mesh.z[ip] = X, Y, Z
+        mesh.coords[1, ip], mesh.coords[2, ip], mesh.coords[3, ip] = X, Y, Z
         mesh.lon[ip] = atan(Y, X)
         mesh.lat[ip] = asin(clamp(Z/R, -1.0, 1.0))
     end
@@ -2372,12 +2372,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             node_coords = get_node_coordinates(get_grid(model))
             for ip = 1:mesh.npoin_linear
 
-                mesh.x[ip] = node_coords[ip][1]
-                mesh.y[ip] = node_coords[ip][2]
+                mesh.coords[1, ip] = node_coords[ip][1]
+                mesh.coords[2, ip] = node_coords[ip][2]
                 # On a 2D manifold embedded in 3D the third coordinate is part
                 # of the geometry, not a stray offset — keep it.
                 if mesh.lmanifold
-                    mesh.z[ip] = node_coords[ip][3]
+                    mesh.coords[3, ip] = node_coords[ip][3]
                 end
 
                 mesh.ip2gip[ip] = point2ppoint[ip]
@@ -2437,9 +2437,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # across all per-node iterations, no point re-fetching it.
             node_coords = get_node_coordinates(get_grid(model))
             for ip = 1:mesh.npoin_linear
-                mesh.x[ip] = node_coords[ip][1]
-                mesh.y[ip] = node_coords[ip][2]
-                mesh.z[ip] = node_coords[ip][3]
+                mesh.coords[1, ip] = node_coords[ip][1]
+                mesh.coords[2, ip] = node_coords[ip][2]
+                mesh.coords[3, ip] = node_coords[ip][3]
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
                 #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, point2ppoint[ip])
@@ -2484,11 +2484,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
     
     for ip = mesh.npoin_linear+1:mesh.npoin
-        mesh.x[ip] = mesh.x_ho[ip]
-        mesh.y[ip] = mesh.y_ho[ip]
-        mesh.z[ip] = 0.0
+        mesh.coords[1, ip] = mesh.x_ho[ip]
+        mesh.coords[2, ip] = mesh.y_ho[ip]
+        mesh.coords[3, ip] = 0.0
         if (mesh.nsd > 2 || mesh.lmanifold)
-            mesh.z[ip] = mesh.z_ho[ip]
+            mesh.coords[3, ip] = mesh.z_ho[ip]
         end
     end
 
@@ -2504,13 +2504,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         remap_cubed_sphere_nodes!(mesh, inputs)
     end
 
-    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-    mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
-    mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+    mesh.xmax = MPI.Allreduce(maximum(view(mesh.coords, 1, :)), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(view(mesh.coords, 1, :)), MPI.MIN, comm)
+    mesh.ymax = MPI.Allreduce(maximum(view(mesh.coords, 2, :)), MPI.MAX, comm)
+    mesh.ymin = MPI.Allreduce(minimum(view(mesh.coords, 2, :)), MPI.MIN, comm)
     if (mesh.nsd > 2)
-        mesh.zmax = MPI.Allreduce(maximum(mesh.z), MPI.MAX, comm)
-        mesh.zmin = MPI.Allreduce(minimum(mesh.z), MPI.MIN, comm)
+        mesh.zmax = MPI.Allreduce(maximum(view(mesh.coords, 3, :)), MPI.MAX, comm)
+        mesh.zmin = MPI.Allreduce(minimum(view(mesh.coords, 3, :)), MPI.MIN, comm)
     end
 
     gpelm_ghost    = KernelAbstractions.zeros(backend, TInt, 0)
@@ -3082,8 +3082,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             iter = mesh.npoin + 1
             x_new = KernelAbstractions.zeros(backend, TFloat, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
             y_new = KernelAbstractions.zeros(backend, TFloat, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
-            x_new[1:mesh.npoin] .= mesh.x[:]
-            y_new[1:mesh.npoin] .= mesh.y[:]
+            x_new[1:mesh.npoin] .= mesh.coords[1, :]
+            y_new[1:mesh.npoin] .= mesh.coords[2, :]
             for iedge = 1:size(mesh.bdy_edge_type,1)
                 if (mesh.bdy_edge_type[iedge] == "Laguerre") 
                     iel = mesh.bdy_edge_in_elem[iedge]
@@ -3092,12 +3092,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     ip1 = mesh.poin_in_bdy_edge[iedge,2]
                     ipend = mesh.poin_in_bdy_edge[iedge,mesh.ngl]
                     #tangent vector 
-                    x = mesh.x[ip]
-                    x1 = mesh.x[ip1]
-                    y = mesh.y[ip]
-                    y1 = mesh.y[ip1]
-                    xend = mesh.x[ipend]
-                    yend = mesh.y[ipend]
+                    x = mesh.coords[1, ip]
+                    x1 = mesh.coords[1, ip1]
+                    y = mesh.coords[2, ip]
+                    y1 = mesh.coords[2, ip1]
+                    xend = mesh.coords[1, ipend]
+                    yend = mesh.coords[2, ipend]
                     tan = [x-x1, y-y1]
                     # deduce normal vector components
                     if (tan[2] > 1e-7)
@@ -3135,7 +3135,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     else
                         ip2 = mesh.connijk[iel,l,3]
                     end
-                    v = [mesh.x[ip2]-x, mesh.y[ip2]-y]
+                    v = [mesh.coords[1, ip2]-x, mesh.coords[2, ip2]-y]
                     if (dot(v,nor) > 0.0)
                         nor .= -nor
                     end
@@ -3155,14 +3155,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                             gip = Int64(mesh.gnpoin + (ord-1)*(mesh.ngl-1)*(mesh.ngr-1) + (mesh.ngr-1)*(i-1) + j-1)
 			    #@info ord, gip, mesh.gnpoin, x, xend, mesh.xmax, mesh.xmin
                             if (inputs[:xscale]==1.0)
-                                x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                                x_temp = mesh.coords[1, ip] + nor[1]*gr.ξ[j]*factorx
                             else
-                                x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
+                                x_temp = mesh.coords[1, ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
 			    end
                             if (inputs[:yscale] == 1.0)
-			                    y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+			                    y_temp = mesh.coords[2, ip] + nor[2]*gr.ξ[j]*factory
 			                else 
-                                y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
+                                y_temp = mesh.coords[2, ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
                             end
 			                matched = 0
                             if (i == mesh.ngl || i == 1)
@@ -3290,7 +3290,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                             s = """
                             Check boundary elements! size(mesh.facet_cell_ids[iface],1) ≠ 1 
                                 """
-                            @info iface_bdy, mesh.face_type[iface], mesh.x[mesh.poin_in_face[iface, igl,jgl]], mesh.y[mesh.poin_in_face[iface, igl,jgl]], mesh.z[mesh.poin_in_face[iface, igl,jgl]]
+                            @info iface_bdy, mesh.face_type[iface], mesh.coords[1, mesh.poin_in_face[iface, igl,jgl]], mesh.coords[2, mesh.poin_in_face[iface, igl,jgl]], mesh.coords[3, mesh.poin_in_face[iface, igl,jgl]]
                             @error s
                         end
                         # @info "face point number", mesh.poin_in_face[iface,igl,jgl],iface,igl,jgl
@@ -3348,7 +3348,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
                     ip = mesh.poin_in_bdy_face[iface,i,j]
-                    @info "bdy points coords", mesh.x[ip],mesh.y[ip],mesh.z[ip]
+                    @info "bdy points coords", mesh.coords[1, ip],mesh.coords[2, ip],mesh.coords[3, ip]
                 end
             end
         end=#
@@ -3436,7 +3436,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 if (mesh.bdy_edge_type[iedge_bdy] == "periodicx")
                     ip = mesh.poin_in_bdy_edge[iedge_bdy,1]
                     ip1 = mesh.poin_in_bdy_edge[iedge_bdy,2]
-                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
+                    t1 = [mesh.coords[1, ip] - mesh.coords[1, ip1],mesh.coords[2, ip] - mesh.coords[2, ip1]]
                     mag = sqrt(t1[1]^2 + t1[2]^2)
                     norx .= [-t1[2]/mag, t1[1]/mag]
                     finder = true
@@ -3462,7 +3462,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 if (mesh.bdy_edge_type[iedge_bdy] == "periodicz")
                     ip = mesh.poin_in_bdy_edge[iedge_bdy,1]
                     ip1 = mesh.poin_in_bdy_edge[iedge_bdy,2]
-                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
+                    t1 = [mesh.coords[1, ip] - mesh.coords[1, ip1],mesh.coords[2, ip] - mesh.coords[2, ip1]]
                     mag = sqrt(t1[1]^2 + t1[2]^2)
                     nory .= [-t1[2]/mag, t1[1]/mag]
                     finder = true
@@ -3499,8 +3499,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
-                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
-                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    t1 = [mesh.coords[1, ip] - mesh.coords[1, ip1],mesh.coords[2, ip] - mesh.coords[2, ip1], mesh.coords[3, ip] - mesh.coords[3, ip1]]
+                    t2 = [mesh.coords[1, ip] - mesh.coords[1, ip2],mesh.coords[2, ip] - mesh.coords[2, ip2], mesh.coords[3, ip] - mesh.coords[3, ip2]]
                     s1 = t1[2]*t2[3] - t1[3]*t2[2]
                     s2 = t1[3]*t2[1] - t1[1]*t2[3]
                     s3 = t1[1]*t2[2] - t1[2]*t2[1]
@@ -3520,8 +3520,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
-                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
-                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    t1 = [mesh.coords[1, ip] - mesh.coords[1, ip1],mesh.coords[2, ip] - mesh.coords[2, ip1], mesh.coords[3, ip] - mesh.coords[3, ip1]]
+                    t2 = [mesh.coords[1, ip] - mesh.coords[1, ip2],mesh.coords[2, ip] - mesh.coords[2, ip2], mesh.coords[3, ip] - mesh.coords[3, ip2]]
                     s1 = t1[2]*t2[3] - t1[3]*t2[2]
                     s2 = t1[3]*t2[1] - t1[1]*t2[3]
                     s3 = t1[1]*t2[2] - t1[2]*t2[1]
@@ -3541,8 +3541,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
-                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
-                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    t1 = [mesh.coords[1, ip] - mesh.coords[1, ip1],mesh.coords[2, ip] - mesh.coords[2, ip1], mesh.coords[3, ip] - mesh.coords[3, ip1]]
+                    t2 = [mesh.coords[1, ip] - mesh.coords[1, ip2],mesh.coords[2, ip] - mesh.coords[2, ip2], mesh.coords[3, ip] - mesh.coords[3, ip2]]
                     s1 = t1[2]*t2[3] - t1[3]*t2[2]
                     s2 = t1[3]*t2[1] - t1[1]*t2[3]
                     s3 = t1[1]*t2[2] - t1[2]*t2[1]
@@ -4081,14 +4081,14 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
         
         mesh.conn[iel_g, 1], mesh.conn[iel_g, ngl] = ip1, ip2
         mesh.connijk[iel_g, 1, 1, 1], mesh.connijk[iel_g, ngl, 1, 1] = ip1, ip2
-        x1, x2 = mesh.x[ip1], mesh.x[ip2]
+        x1, x2 = mesh.coords[1, ip1], mesh.coords[1, ip2]
         
         iconn = 1
         for l=2:ngl-1
             ξ = lgl.ξ[l];
             
-            mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-            mesh.coords[1, ip] = mesh.x[ip]
+            mesh.coords[1, ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
+            mesh.coords[1, ip] = mesh.coords[1, ip]
             
             mesh.conn[iel_g, l] = ip #OK
             mesh.connijk[iel_g, l, 1, 1] = ip #OK
@@ -4097,7 +4097,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             ip = ip + 1
         end
     end
-    mesh.coords[1, :] = copy(mesh.x[:])
+    mesh.coords[1, :] = copy(mesh.coords[1, :])
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
@@ -4155,9 +4155,9 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
             
-            x1, y1 = mesh.x[ip1], mesh.y[ip1]
-            x2, y2 = mesh.x[ip2], mesh.y[ip2]
-            z1, z2 = mesh.z[ip1], mesh.z[ip2]
+            x1, y1 = mesh.coords[1, ip1], mesh.coords[2, ip1]
+            x2, y2 = mesh.coords[1, ip2], mesh.coords[2, ip2]
+            z1, z2 = mesh.coords[3, ip1], mesh.coords[3, ip2]
 
             gip1, gip2 = mesh.ip2gip[ip1], mesh.ip2gip[ip2]
             if gip1 > gip2
@@ -4359,8 +4359,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
                 operator = -
             end
             
-            x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
-            x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
+            x1, y1, z1 = mesh.coords[1, ip1], mesh.coords[2, ip1], mesh.coords[3, ip1]
+            x2, y2, z2 = mesh.coords[1, ip2], mesh.coords[2, ip2], mesh.coords[3, ip2]
             
             #@printf(" iedge_g=%d -> (ip1, ip2) = (%d %d) \n", iedge_g, ip1, ip2)
             for l=2:ngl-1
@@ -4691,12 +4691,12 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
             mesh.poin_in_face[iface_g, ngl, ngl] = ip4
             mesh.poin_in_face[iface_g, 1, ngl]   = ip3
             
-            x1, y1 = mesh.x[ip1], mesh.y[ip1]
-            x2, y2 = mesh.x[ip2], mesh.y[ip2]
-            x3, y3 = mesh.x[ip3], mesh.y[ip3]
-            x4, y4 = mesh.x[ip4], mesh.y[ip4]
-            z1, z2 = mesh.z[ip1], mesh.z[ip2]
-            z3, z4 = mesh.z[ip3], mesh.z[ip4]
+            x1, y1 = mesh.coords[1, ip1], mesh.coords[2, ip1]
+            x2, y2 = mesh.coords[1, ip2], mesh.coords[2, ip2]
+            x3, y3 = mesh.coords[1, ip3], mesh.coords[2, ip3]
+            x4, y4 = mesh.coords[1, ip4], mesh.coords[2, ip4]
+            z1, z2 = mesh.coords[3, ip1], mesh.coords[3, ip2]
+            z3, z4 = mesh.coords[3, ip3], mesh.coords[3, ip4]
 
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
@@ -4875,10 +4875,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
             mesh.poin_in_face[iface_g, ngl, ngl] = ip3#ip4
             mesh.poin_in_face[iface_g, 1, ngl]   = ip4#ip3
             
-            x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
-            x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
-            x3, y3, z3 = mesh.x[ip3], mesh.y[ip3], mesh.z[ip3]
-            x4, y4, z4 = mesh.x[ip4], mesh.y[ip4], mesh.z[ip4]
+            x1, y1, z1 = mesh.coords[1, ip1], mesh.coords[2, ip1], mesh.coords[3, ip1]
+            x2, y2, z2 = mesh.coords[1, ip2], mesh.coords[2, ip2], mesh.coords[3, ip2]
+            x3, y3, z3 = mesh.coords[1, ip3], mesh.coords[2, ip3], mesh.coords[3, ip3]
+            x4, y4, z4 = mesh.coords[1, ip4], mesh.coords[2, ip4], mesh.coords[3, ip4]
             
 
             for l=2:ngl-1
@@ -5274,14 +5274,14 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
             ip7 = node_ids[7]
             ip8 = node_ids[3]
             
-            x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
-            x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
-            x3, y3, z3 = mesh.x[ip3], mesh.y[ip3], mesh.z[ip3]
-            x4, y4, z4 = mesh.x[ip4], mesh.y[ip4], mesh.z[ip4]     
-            x5, y5, z5 = mesh.x[ip5], mesh.y[ip5], mesh.z[ip5]
-            x6, y6, z6 = mesh.x[ip6], mesh.y[ip6], mesh.z[ip6]
-            x7, y7, z7 = mesh.x[ip7], mesh.y[ip7], mesh.z[ip7]
-            x8, y8, z8 = mesh.x[ip8], mesh.y[ip8], mesh.z[ip8]
+            x1, y1, z1 = mesh.coords[1, ip1], mesh.coords[2, ip1], mesh.coords[3, ip1]
+            x2, y2, z2 = mesh.coords[1, ip2], mesh.coords[2, ip2], mesh.coords[3, ip2]
+            x3, y3, z3 = mesh.coords[1, ip3], mesh.coords[2, ip3], mesh.coords[3, ip3]
+            x4, y4, z4 = mesh.coords[1, ip4], mesh.coords[2, ip4], mesh.coords[3, ip4]     
+            x5, y5, z5 = mesh.coords[1, ip5], mesh.coords[2, ip5], mesh.coords[3, ip5]
+            x6, y6, z6 = mesh.coords[1, ip6], mesh.coords[2, ip6], mesh.coords[3, ip6]
+            x7, y7, z7 = mesh.coords[1, ip7], mesh.coords[2, ip7], mesh.coords[3, ip7]
+            x8, y8, z8 = mesh.coords[1, ip8], mesh.coords[2, ip8], mesh.coords[3, ip8]
             
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
@@ -5417,9 +5417,9 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     mesh.npoin = mesh.npx
 
     mesh.coords[1, 1] = mesh.xmin
-    mesh.x[1] = mesh.xmin
+    mesh.coords[1, 1] = mesh.xmin
     for i = 2:mesh.npx
-        mesh.x[i] = mesh.x[i-1] + Δx
+        mesh.coords[1, i] = mesh.coords[1, i-1] + Δx
         mesh.coords[1, i] = mesh.coords[1, i-1] + Δx
         mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
     end
@@ -5491,7 +5491,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     if (inputs[:llaguerre_1d_left])
         e = min(2,mesh.nelem_semi_inf)
         x = zeros(Float64,mesh.npoin+mesh.ngr-1)
-        x[1:mesh.npoin] .= mesh.x[1:mesh.npoin]
+        x[1:mesh.npoin] .= mesh.coords[1, 1:mesh.npoin]
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
         mesh.connijk_lag[e,1,1] = 1
         for i=2:mesh.ngr
@@ -5934,11 +5934,11 @@ function compute_min_node_spacing(mesh::St_mesh, SD::NSD_2D, T)
     @inbounds for ie = 1:mesh.nelem
         for j = 1:ngl, i = 1:ngl-1
             ip = mesh.connijk[ie,i,j]; iq = mesh.connijk[ie,i+1,j]
-            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2))
+            Δmin = min(Δmin, sqrt((mesh.coords[1, ip]-mesh.coords[1, iq])^2 + (mesh.coords[2, ip]-mesh.coords[2, iq])^2))
         end
         for j = 1:ngl-1, i = 1:ngl
             ip = mesh.connijk[ie,i,j]; iq = mesh.connijk[ie,i,j+1]
-            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2))
+            Δmin = min(Δmin, sqrt((mesh.coords[1, ip]-mesh.coords[1, iq])^2 + (mesh.coords[2, ip]-mesh.coords[2, iq])^2))
         end
     end
 
@@ -5952,15 +5952,15 @@ function compute_min_node_spacing(mesh::St_mesh, SD::NSD_3D, T)
     @inbounds for ie = 1:mesh.nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl-1
             ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i+1,j,k]
-            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+            Δmin = min(Δmin, sqrt((mesh.coords[1, ip]-mesh.coords[1, iq])^2 + (mesh.coords[2, ip]-mesh.coords[2, iq])^2 + (mesh.coords[3, ip]-mesh.coords[3, iq])^2))
         end
         for k = 1:ngl, j = 1:ngl-1, i = 1:ngl
             ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i,j+1,k]
-            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+            Δmin = min(Δmin, sqrt((mesh.coords[1, ip]-mesh.coords[1, iq])^2 + (mesh.coords[2, ip]-mesh.coords[2, iq])^2 + (mesh.coords[3, ip]-mesh.coords[3, iq])^2))
         end
         for k = 1:ngl-1, j = 1:ngl, i = 1:ngl
             ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i,j,k+1]
-            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+            Δmin = min(Δmin, sqrt((mesh.coords[1, ip]-mesh.coords[1, iq])^2 + (mesh.coords[2, ip]-mesh.coords[2, iq])^2 + (mesh.coords[3, ip]-mesh.coords[3, iq])^2))
         end
     end
 
@@ -5988,8 +5988,8 @@ function compute_element_size!(SD::NSD_2D, ie, mesh::St_mesh, T)
     
     #Store Coordinates
     for m = 1:4
-        x[m] = mesh.x[inode[m]]
-        y[m] = mesh.y[inode[m]]
+        x[m] = mesh.coords[1, inode[m]]
+        y[m] = mesh.coords[2, inode[m]]
         #@info m, x[m], y[m]
     end
     
@@ -6023,9 +6023,9 @@ function compute_element_size!(SD::NSD_3D, ie, mesh::St_mesh, T)
     
     #Store Coordinates
     for m = 1:8
-        x[m] = mesh.x[inode[m]]
-        y[m] = mesh.y[inode[m]]
-        z[m] = mesh.z[inode[m]]
+        x[m] = mesh.coords[1, inode[m]]
+        y[m] = mesh.coords[2, inode[m]]
+        z[m] = mesh.coords[3, inode[m]]
         # @info m, x[m], y[m], z[m]
     end
 

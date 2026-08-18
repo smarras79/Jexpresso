@@ -25,7 +25,7 @@ function standard_linsolve!(sem, params, qp, inputs, OUTPUT_DIR)
                                params.qp.qe[ip],
                                sem.mesh.npoin,
                                inputs[:CL], inputs[:SOL_VARS_TYPE];
-                               neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip],
+                               neqs=1, x=sem.mesh.coords[1, ip], y=sem.mesh.coords[2, ip],
                                xmax=sem.mesh.xmax, xmin=sem.mesh.xmin,
                                ymax=sem.mesh.ymax, ymin=sem.mesh.ymin)
     end

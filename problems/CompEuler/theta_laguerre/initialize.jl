@@ -33,7 +33,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 #for j=1:mesh.ngl, i=1:mesh.ngl
                 
                     #ip = mesh.connijk[iel_g,i,j]
-                    x, y = mesh.x[ip], mesh.y[ip]
+                    x, y = mesh.coords[1, ip], mesh.coords[2, ip]
                     r = sqrt( (x - xc)^2 + (y - yc)^2 )
                     Δθ = 0.0 #K
                     if r < r0
@@ -108,14 +108,14 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
 
         PhysConst = PhysicalConst{TFloat}()
-        xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
+        xc = TFloat((maximum(view(mesh.coords, 1, :)) + minimum(view(mesh.coords, 1, :)))/2)
         yc = TFloat(2500.0) #m
         rθ = TFloat(2000.0) #m
 
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, view(mesh.coords, 1, :), view(mesh.coords, 2, :), xc, rθ, yc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
 
     if rank == 0

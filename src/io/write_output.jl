@@ -321,7 +321,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
     nvar     = size(varnames, 1)
     noutvar  = size(outvarnames,1) #max(nvar, size(outvarnames,1))
-    new_size = size(mesh.x,1)
+    new_size = size(view(mesh.coords, 1, :),1)
 
     npoin          = mesh.npoin
     nelem          = mesh.nelem
@@ -605,7 +605,7 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
     vtkfile = map(parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+        vtkf = pvtk_grid(file_name, mesh.coords[1, 1:mesh.npoin], mesh.coords[2, 1:mesh.npoin], mesh.coords[2, 1:mesh.npoin]*TFloat(0.0), cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf
@@ -657,7 +657,7 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
     
     # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
     vtkfile = map(parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+        vtkf = pvtk_grid(file_name, mesh.coords[1, 1:mesh.npoin], mesh.coords[2, 1:mesh.npoin], mesh.coords[3, 1:mesh.npoin], cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf
@@ -1326,7 +1326,7 @@ function read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir="")
 
     # Build a safe index map: vtk_ip = ip_map[mesh_ip]
     # Fast O(N) identity check; falls back to coordinate hash-map if ordering differs.
-    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :))
 
     ρ_arr = vars["ρ"]
     u_arr = vars["u"]
@@ -1465,7 +1465,7 @@ user_read_vtu_point_data! not found. Define it in your problem's user_primitives
     npoin_vtk == mesh.npoin ||
         error("Rank $rank: VTK point count ($npoin_vtk) ≠ mesh.npoin ($(mesh.npoin)).")
 
-    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], mesh.x, mesh.y, mesh.z)
+    ip_map = vtk_to_mesh_ipmap(vars["__coords__"], view(mesh.coords, 1, :), view(mesh.coords, 2, :), view(mesh.coords, 3, :))
 
     user_read_vtu_point_data!(q, vars, ip_map, mesh)
 
@@ -1494,8 +1494,8 @@ function write_NetCDF(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
 
-    xx      = mesh.x
-    yy      = mesh.y
+    xx      = view(mesh.coords, 1, :)
+    yy      = view(mesh.coords, 2, :)
     nvar    = size(varnames, 1)
     noutvar = max(nvar, size(outvarnames,1))
 
@@ -1674,9 +1674,9 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     # ----------------------------------------------------------------
     # local coordinates
     # ----------------------------------------------------------------
-    xx = copy(mesh.x)
-    yy = copy(mesh.y)
-    zz = copy(mesh.z)
+    xx = copy(view(mesh.coords, 1, :))
+    yy = copy(view(mesh.coords, 2, :))
+    zz = copy(view(mesh.coords, 3, :))
 
     # ----------------------------------------------------------------
     # build local subelement connectivity using ip2gip for global node indices

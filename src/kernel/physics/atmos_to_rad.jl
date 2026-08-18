@@ -338,8 +338,8 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
     # Round to nearest tol_xy to group nodes at the same (x,y) position
     column_nodes = Dict{Tuple{Float64,Float64}, Vector{Int}}()
     for ip = 1:mesh.npoin
-        key = (round(mesh.x[ip] / tol_xy) * tol_xy,
-               round(mesh.y[ip] / tol_xy) * tol_xy)
+        key = (round(mesh.coords[1, ip] / tol_xy) * tol_xy,
+               round(mesh.coords[2, ip] / tol_xy) * tol_xy)
         push!(get!(column_nodes, key, Int[]), ip)
     end
 
@@ -387,8 +387,8 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
         key_votes = Dict{Tuple{Float64,Float64}, Int}()
         for i = 1:ngl, j = 1:ngl
             ip_ref = mesh.connijk[iel, i, j, 1]
-            key    = (round(mesh.x[ip_ref] / tol_xy) * tol_xy,
-                      round(mesh.y[ip_ref] / tol_xy) * tol_xy)
+            key    = (round(mesh.coords[1, ip_ref] / tol_xy) * tol_xy,
+                      round(mesh.coords[2, ip_ref] / tol_xy) * tol_xy)
             key_votes[key] = get(key_votes, key, 0) + 1
         end
         # Pick the key with the most votes
@@ -448,7 +448,7 @@ function verify_optical_depth(mesh, κ, σ, ω, Je, ngl;
             continue
         end
 
-        z_vals       = mesh.z[nodes_in_col]
+        z_vals       = mesh.coords[3, nodes_in_col]
         sort_idx     = sortperm(z_vals)
         nodes_sorted = nodes_in_col[sort_idx]
         z_sorted     = z_vals[sort_idx]
@@ -653,9 +653,9 @@ function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
     ref_iel   = 1
     for iel = 1:mesh.nelem
         ip = mesh.connijk[iel, i_fix, j_fix, 1]
-        dx = mesh.x[ip] - x_mid
-        dy = mesh.y[ip] - y_mid
-        dz = mesh.z[ip] - mesh.zmin
+        dx = mesh.coords[1, ip] - x_mid
+        dy = mesh.coords[2, ip] - y_mid
+        dz = mesh.coords[3, ip] - mesh.zmin
         d  = dx^2 + dy^2 + 100*dz^2   # weight z heavily to prefer bottom elements
         if d < best_dist
             best_dist = d
@@ -666,8 +666,8 @@ function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
     # ── Collect all nodes in this column via connectivity ─────────────────────
     # The reference x,y coordinates come from connijk — exact by construction
     ref_ip = mesh.connijk[ref_iel, i_fix, j_fix, 1]
-    x_col  = mesh.x[ref_ip]
-    y_col  = mesh.y[ref_ip]
+    x_col  = mesh.coords[1, ref_ip]
+    y_col  = mesh.coords[2, ref_ip]
 
     # Collect every node ip where x[ip] ≈ x_col AND y[ip] ≈ y_col
     # Use a tolerance relative to the element size, not the domain size
@@ -679,8 +679,8 @@ function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
 
     nodes_in_col = Int[]
     for ip = 1:mesh.npoin
-        if abs(mesh.x[ip] - x_col) < tol_xy &&
-           abs(mesh.y[ip] - y_col) < tol_xy
+        if abs(mesh.coords[1, ip] - x_col) < tol_xy &&
+           abs(mesh.coords[2, ip] - y_col) < tol_xy
             push!(nodes_in_col, ip)
         end
     end
@@ -693,7 +693,7 @@ function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
         return [mesh.zmax, mesh.zmin], [0.0, 0.0]
     end
 
-    z_span = maximum(mesh.z[nodes_in_col]) - minimum(mesh.z[nodes_in_col])
+    z_span = maximum(mesh.coords[3, nodes_in_col]) - minimum(mesh.coords[3, nodes_in_col])
     if MPI.Comm_rank(MPI.COMM_WORLD) == 0
         if z_span < 0.5*(mesh.zmax - mesh.zmin)
             @warn "Column spans only $(round(z_span,digits=2)) m of " *
@@ -704,12 +704,12 @@ function build_sw_lateral_bc_profile(mesh, κ_ext, ngl)
         @info "  Reference element: $ref_iel"
         @info "  Column (x,y): ($(round(x_col,digits=4)), $(round(y_col,digits=4)))"
         @info "  Nodes found: $(length(nodes_in_col))"
-        @info "  z range: [$(round(minimum(mesh.z[nodes_in_col]),digits=2)), " *
-                          "$(round(maximum(mesh.z[nodes_in_col]),digits=2))]"
+        @info "  z range: [$(round(minimum(mesh.coords[3, nodes_in_col]),digits=2)), " *
+                          "$(round(maximum(mesh.coords[3, nodes_in_col]),digits=2))]"
     end
 
     # ── Sort by z descending (TOA first), deduplicate interfaces ─────────────
-    z_vals   = mesh.z[nodes_in_col]
+    z_vals   = mesh.coords[3, nodes_in_col]
     sort_idx = sortperm(z_vals, rev=true)
     nodes_s  = nodes_in_col[sort_idx]
     z_s      = z_vals[sort_idx]

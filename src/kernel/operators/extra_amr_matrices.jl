@@ -198,9 +198,9 @@ function build_restriction_matrices_local_and_ghost(
                 if !(haskey(gid_to_extended_parents,ghost_gid))
                     gid_to_extended_parents[ghost_gid] = n_spa + parent_ghost_idx
                     push!(extended_parents_to_gid,ghost_gid)
-                    push!(extended_parents_x, mesh.x[ip])
-                    push!(extended_parents_y, mesh.y[ip])
-                    push!(extended_parents_z, mesh.z[ip])
+                    push!(extended_parents_x, mesh.coords[1, ip])
+                    push!(extended_parents_y, mesh.coords[2, ip])
+                    push!(extended_parents_z, mesh.coords[3, ip])
                     push!(extended_parents_θ, θ)
                     push!(extended_parents_ϕ, ϕ)
                     push!(extended_parents_ip, ip)
