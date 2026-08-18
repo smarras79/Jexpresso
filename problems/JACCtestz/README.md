@@ -62,8 +62,22 @@ julia --project=. -t 8 src/Jexpresso.jl ShallowWater SoliWaveIsland
 ```
 
 Everything else is unchanged: same mesh, same `Float64` setup, same SSPRK54, same
-output files. Because the JACC right-hand side reproduces the serial one bit for
-bit, turning the switch on cannot change the answer — only how long it takes.
+output files.
+
+Measured end to end on this deck — the case run twice in one session, serial CPU
+RHS then JACC RHS, five steps of SSPRK54, HDF5 output diffed:
+
+| field | max\|q\| | max\|Δ\| | relative |
+|-------|---------|---------|----------|
+| H     | 3.82e-01 | 1.67e-16 | 4.4e-16 |
+| Hu    | 1.21e-01 | 9.37e-17 | 7.7e-16 |
+| Hv    | 5.89e-10 (zero by symmetry) | 7.75e-17 | — |
+
+i.e. agreement to floating-point round-off. Not bit-for-bit, and it cannot be:
+the direct stiffness summation adds the same numbers in a different order (gather
+per node instead of scatter per element), and floating-point addition is not
+associative. What *is* bit-for-bit is any two JACC runs of the same deck — see
+"No atomics" below.
 
 ### 3. On a GPU
 
@@ -123,11 +137,27 @@ RHS[ip,ieq] = Minv[ip] * Σ_{(iel,i,j) ∈ p2e[ip]} rhs_el[iel,i,j,ieq]
 ```
 
 Race-free by construction, identical on every backend and at every thread count,
-and it costs one extra `npoin × neqs` pass plus an integer CSR map. The boundary
-condition is handled the same way: one thread per **distinct boundary node**,
-applying each of that node's edges in a fixed order — which also fixes a real
-defect of the per-edge spelling, where a corner node belongs to two edges and
-whichever normal landed last decided the corner's velocity.
+and it costs one extra `npoin × neqs` pass plus an integer CSR map. Two JACC runs
+of the same deck therefore agree to the last bit, on CPU and GPU alike; against
+the CPU path they agree to round-off, since the summation order differs.
+
+The boundary condition is handled the same way: one thread per **distinct
+boundary node**, applying each of that node's edges in a fixed order. That also
+removes a race in the per-edge spelling, where a corner node belongs to two edges
+and whichever normal landed last decided the corner's velocity.
+
+### Matching the CPU boundary contract
+
+Two details of `build_custom_bcs_dirichlet!` (BCs.jl) are not incidental, and
+getting either wrong moves the answer by ~1e-3 within the first time step:
+
+* the corrected field is pushed back into the integrator's state — the builder's
+  last statement is `uaux2u!(u, uaux, neqs, npoin)`, which contradicts the
+  `# WARNING: ... applied to uaux[:,:] and NOT u[:]!` comment at its top;
+* whether to write a Dirichlet value at all is decided by `AlmostEqual`
+  (Kopriva alg. 139) with **ε = 1e-6, absolute** — so any wall correction smaller
+  than about a microsecond-scale momentum is declined. An exact `!=` here enforces
+  a slightly different wall, and the two trajectories separate.
 
 ### What a case needs
 

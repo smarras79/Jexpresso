@@ -50,9 +50,16 @@
 #
 #     RHS[ip,ieq] = Minv[ip] * Σ_{(iel,i,j) ∈ p2e[ip]} rhs_el[iel,i,j,ieq]
 #
-# Race-free by construction, deterministic to the last bit on every backend, and
-# it costs one extra npoin×neqs pass plus an integer CSR map built once at setup.
-# `_jacc_build_p2e` is that map.
+# Race-free by construction, deterministic to the last bit on every backend and at
+# every thread count, and it costs one extra npoin×neqs pass plus an integer CSR
+# map built once at setup. `_jacc_build_p2e` is that map.
+#
+# To be exact about what that determinism buys: two runs of THIS path agree
+# bit for bit. Against the CPU path the agreement is to ROUND-OFF, not to the bit,
+# precisely because the summation order differs — a gather per node adds the same
+# contributions in a different sequence than a scatter per element, and floating
+# point addition is not associative. Measured on SoliWaveIsland, five steps of
+# SSPRK54: 4.4e-16 relative on H, 7.7e-16 on Hu.
 #
 # WHAT IS AND IS NOT COVERED
 # --------------------------
@@ -115,6 +122,38 @@ JACC.@init_backend
 #---------------------------------------------------------------------------------
 @inline _jacc_copy(a::AbstractArray) = JACC.array(collect(a))
 @inline _jacc_zeros(T, dims...)      = JACC.zeros(T, dims...)
+
+
+#---------------------------------------------------------------------------------
+# _jacc_stage(a, T, dims) — stage `a` on the device as element type T and EXACTLY
+# rank `length(dims)`.
+#
+# WHY THE RESHAPE IS NOT COSMETIC. Jexpresso's 2D metric arrays carry trailing
+# singleton dimensions: allocate_metrics (metric_terms.jl) gives dξdx, dηdy, Je …
+# the shape (nelem, ngl, ngl, 1) and the boundary normals nx, ny the shape
+# (nedges_bdy, ngl, 1). The rest of the tree indexes them with one index fewer —
+# `Je[iel,i,j]`, `nx[iedge,k]` — and gets away with it because Julia lets a
+# Base.Array drop TRAILING SINGLETON dimensions.
+#
+# That rule does not survive the trip into a kernel. JACC's threads backend runs
+# the body under Polyester.@batch, which hands the arguments in as
+# StrideArraysCore.PtrArray, and a PtrArray demands exactly as many indices as it
+# has dimensions: `Je[iel,i,j]` on a 4-D array is a BoundsError, not a read. On a
+# GPU backend the device array types are just as strict.
+#
+# This is not hypothetical. It is what the first full-solver run of this file did,
+# and only with more than one thread — at nthreads() == 1 JACC takes a plain loop,
+# the arrays stay Base.Arrays, and the same code is fine. A bug that appears only
+# under threading is worth removing at the source, so the cache stages every array
+# at the rank its kernel actually indexes. The copies are ours, so it is free.
+#---------------------------------------------------------------------------------
+function _jacc_stage(a, ::Type{T}, dims::NTuple{N,Int}) where {T,N}
+    length(a) == prod(dims) ||
+        error(" # ERROR rhs_jacc.jl: cannot stage an array of size ", size(a),
+              " as ", dims, " — element counts differ (", length(a),
+              " vs ", prod(dims), ").")
+    return _jacc_copy(T.(reshape(collect(a), dims)))
+end
 
 
 #---------------------------------------------------------------------------------
@@ -300,18 +339,77 @@ function _jacc_u2uaux!(ip, u, uaux, npoin, neq)
 end
 
 
+#--- uaux → u, the whole field --------------------------------------------------
+#
+# The counterpart of uaux2u! (rhs.jl), and it exists for the same reason: the
+# boundary kernel corrects `uaux`, and the CPU path pushes the corrected field
+# back into the integrator's state at the tail of build_custom_bcs_dirichlet!
+# (BCs.jl, last line before its `end`). Everywhere except the boundary nodes this
+# writes back exactly what it read, so the field-wide form and a boundary-only
+# form agree — the field-wide one is what the CPU does, so it is what is done here.
+#
+function _jacc_uaux2u!(ip, u, uaux, npoin, neq)
+    @inbounds for ieq = 1:neq
+        u[(ieq-1)*npoin + ip] = uaux[ip, ieq]
+    end
+    return nothing
+end
+
+
+#---------------------------------------------------------------------------------
+# _jacc_almost_equal(a, b) — Kopriva's algorithm 139, the SAME test
+# build_custom_bcs_dirichlet! uses to decide whether a Dirichlet value is worth
+# writing (AlmostEqual, src/kernel/infrastructure/Kopriva_functions.jl).
+#
+# Note the tolerance: ε = 1e-6, ABSOLUTE for small values. It is enormous next to
+# a physical momentum, and it is not an accident of this port — it is what the CPU
+# path does, so any boundary correction smaller than ~1e-6 is silently declined
+# there. Reproducing it is the difference between a JACC run that tracks the
+# reference and one that quietly enforces a slightly different wall.
+#
+# This was measured, not guessed: with an exact `!=` here, a corner node of the
+# SoliWaveIsland basin carried Hu = 8.95e-7 on the CPU path and exactly 0 on this
+# one, and the two runs parted company at the fourth time step.
+#---------------------------------------------------------------------------------
+@inline function _jacc_almost_equal(a::T, b::T) where {T}
+    ε = T(1.0e-6)
+    if a == zero(T) || b == zero(T) || a <= ε || b <= ε
+        return abs(a - b) <= 2ε
+    else
+        return abs(a - b) <= ε*abs(a) && abs(a - b) <= ε*abs(b)
+    end
+end
+
+
 #--- Dirichlet / free-slip boundary values ----------------------------------------
 #
-# The sentinel protocol is the KA path's, kept verbatim so a case's
-# user_bc_dirichlet_gpu does not need a second spelling: qbdy is pre-filled with
-# 1234567 and the callback leaves that value in the slots it does not want to
-# touch (SoliWaveIsland returns qbdy[1] for H — depth is free at a wall).
+# The sentinel protocol is the KA path's, so a case's user_bc_dirichlet_gpu needs
+# no second spelling: qbdy is pre-filled with a sentinel and the callback leaves it
+# in the slots it does not want to touch (SoliWaveIsland returns qbdy[1] for H —
+# the depth is free at a wall).
 #
-function _jacc_bc_2d!(ib, u, uaux, qe, x, y, t,
+# THE BOUNDARY VALUES DO REACH `u`, and that is not optional.
+#
+# build_custom_bcs_dirichlet! (BCs.jl) opens with
+#
+#   # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
+#
+# and then closes, as its very last statement, with `uaux2u!(u, uaux, neqs, npoin)`.
+# The comment is stale: the corrected field IS pushed back into the integrator's
+# state on every RHS call. Measured on this deck: the CPU path changes `u` by
+# 1.06e-3 during the first RK stage, all of it at wall nodes.
+#
+# So the kernel corrects `uaux` and the driver mirrors it into `u` afterwards
+# (_jacc_uaux2u!), exactly as the CPU does. Skipping it is not a rounding-level
+# difference — with the write left out the two paths part company by 1e-3 inside
+# the first time step, because the wall is then enforced in one trajectory and not
+# in the other.
+#
+function _jacc_bc_2d!(ib, uaux, qe, x, y, t,
                       bn_ip, bn_ptr, bn_edge, bn_loc, bdy_nx, bdy_ny, qbdy,
-                      neq, npoin, lpert)
+                      neq, lpert)
 
-    T = eltype(u)
+    T = eltype(uaux)
     sentinel = T(1234567)
 
     @inbounds ip = bn_ip[ib]
@@ -332,9 +430,8 @@ function _jacc_bc_2d!(ib, u, uaux, qe, x, y, t,
 
         for ieq = 1:neq
             qb = qbdy[ib, ieq]
-            if qb != sentinel && qb != uaux[ip, ieq]
-                uaux[ip, ieq]           = qb
-                u[(ieq-1)*npoin + ip]   = qb
+            if !_jacc_almost_equal(qb, sentinel) && !_jacc_almost_equal(qb, uaux[ip, ieq])
+                uaux[ip, ieq] = qb
             end
         end
     end
@@ -496,12 +593,12 @@ end
 # jacc_rhs_2d!(c, u, t)
 #
 # Fills `c.RHS` (device, npoin × neq) with ∂q/∂t for the state `u`. `u` is the
-# integrator's HOST vector; it is staged into `c.u` and — because the boundary
-# kernel writes Dirichlet values back into it, exactly as the CPU and KA paths do
-# — copied back out at the end.
+# integrator's HOST vector; it is staged into `c.u` on the way in, and the
+# boundary-corrected field is handed back on the way out — the same contract the
+# CPU path has (see _jacc_bc_2d!).
 #
-# Everything after the staging is device-resident: six `parallel_for` launches and
-# no host round trip.
+# Everything in between is device-resident: five to seven `parallel_for` launches
+# and no host round trip.
 #---------------------------------------------------------------------------------
 function jacc_rhs_2d!(c::St_jacc2d, u, t)
 
@@ -514,10 +611,11 @@ function jacc_rhs_2d!(c::St_jacc2d, u, t)
 
     if c.nbnode > 0
         JACC.parallel_for(c.nbnode, _jacc_bc_2d!,
-                          c.u, c.uaux, c.qe, c.x, c.y, T(t),
+                          c.uaux, c.qe, c.x, c.y, T(t),
                           c.bn_ip, c.bn_ptr, c.bn_edge, c.bn_loc,
                           c.bdy_nx, c.bdy_ny, c.qbdy,
-                          neq, npoin, c.lpert)
+                          neq, c.lpert)
+        JACC.parallel_for(npoin, _jacc_uaux2u!, c.u, c.uaux, npoin, neq)
     end
 
     JACC.parallel_for((nelem, ngl, ngl), _jacc_volume_2d!,
@@ -543,9 +641,10 @@ function jacc_rhs_2d!(c::St_jacc2d, u, t)
 
     JACC.synchronize()
 
-    # The boundary kernel is the only writer of `u`; hand its Dirichlet values back
-    # to the integrator's array, which is what both the CPU and the KA path do.
-    copyto!(u, c.u)
+    # Hand the boundary-corrected field back to the integrator, which is what
+    # uaux2u! does at the tail of the CPU's Dirichlet builder. Only the boundary
+    # nodes actually differ from what was read in.
+    c.nbnode > 0 && copyto!(u, c.u)
 
     return c.RHS
 end
@@ -664,11 +763,17 @@ function build_jacc_cache_2D(sem, qp, inputs, T)
     lpert = sem.SOL_VARS_TYPE == PERT()
 
     #--- the two CSR maps that replace the atomics ---------------------------
-    p2e_ptr, p2e_e, p2e_i, p2e_j = _jacc_build_p2e(mesh.connijk, npoin, nelem, ngl)
+    #
+    # Built from host copies reshaped to the rank the loops below index, for the
+    # same reason _jacc_stage exists: mesh.connijk and mesh.poin_in_bdy_edge may
+    # arrive with a trailing singleton dimension.
+    #
+    conn_h = reshape(collect(mesh.connijk), nelem, ngl, ngl)
+    p2e_ptr, p2e_e, p2e_i, p2e_j = _jacc_build_p2e(conn_h, npoin, nelem, ngl)
 
     nedges_bdy = Int(mesh.nedges_bdy)
-    bn_ip, bn_ptr, bn_edge, bn_loc = _jacc_build_bnodes(mesh.poin_in_bdy_edge,
-                                                        nedges_bdy, ngl)
+    bdy_h  = reshape(collect(mesh.poin_in_bdy_edge), nedges_bdy, ngl)
+    bn_ip, bn_ptr, bn_edge, bn_loc = _jacc_build_bnodes(bdy_h, nedges_bdy, ngl)
     nbnode = length(bn_ip)
 
     #--- per-equation viscosity ---------------------------------------------
@@ -686,18 +791,18 @@ function build_jacc_cache_2D(sem, qp, inputs, T)
     return St_jacc2d(npoin = npoin, nelem = nelem, ngl = ngl, neq = neq,
                      nbnode = nbnode,
 
-                     connijk = _jacc_copy(Int.(mesh.connijk)),
-                     x       = _jacc_copy(T.(mesh.x)),
-                     y       = _jacc_copy(T.(mesh.y)),
-                     dξdx    = _jacc_copy(T.(metrics.dξdx)),
-                     dξdy    = _jacc_copy(T.(metrics.dξdy)),
-                     dηdx    = _jacc_copy(T.(metrics.dηdx)),
-                     dηdy    = _jacc_copy(T.(metrics.dηdy)),
-                     Je      = _jacc_copy(T.(metrics.Je)),
-                     dψ      = _jacc_copy(T.(basis.dψ)),
-                     ω       = _jacc_copy(T.(ω)),
-                     Minv    = _jacc_copy(T.(sem.matrix.Minv)),
-                     qe      = _jacc_copy(T.(qp.qe)),
+                     connijk = _jacc_stage(mesh.connijk, Int, (nelem, ngl, ngl)),
+                     x       = _jacc_stage(mesh.x,    T, (npoin,)),
+                     y       = _jacc_stage(mesh.y,    T, (npoin,)),
+                     dξdx    = _jacc_stage(metrics.dξdx, T, (nelem, ngl, ngl)),
+                     dξdy    = _jacc_stage(metrics.dξdy, T, (nelem, ngl, ngl)),
+                     dηdx    = _jacc_stage(metrics.dηdx, T, (nelem, ngl, ngl)),
+                     dηdy    = _jacc_stage(metrics.dηdy, T, (nelem, ngl, ngl)),
+                     Je      = _jacc_stage(metrics.Je,   T, (nelem, ngl, ngl)),
+                     dψ      = _jacc_stage(basis.dψ,     T, (ngl, ngl)),
+                     ω       = _jacc_stage(ω,            T, (ngl,)),
+                     Minv    = _jacc_stage(sem.matrix.Minv, T, (npoin,)),
+                     qe      = _jacc_stage(qp.qe, T, (npoin, neq+1)),
 
                      p2e_ptr = _jacc_copy(p2e_ptr),
                      p2e_e   = _jacc_copy(p2e_e),
@@ -708,8 +813,12 @@ function build_jacc_cache_2D(sem, qp, inputs, T)
                      bn_ptr  = _jacc_copy(bn_ptr),
                      bn_edge = _jacc_copy(bn_edge),
                      bn_loc  = _jacc_copy(bn_loc),
-                     bdy_nx  = _jacc_copy(nedges_bdy > 0 ? T.(metrics.nx) : zeros(T,1,1)),
-                     bdy_ny  = _jacc_copy(nedges_bdy > 0 ? T.(metrics.ny) : zeros(T,1,1)),
+                     bdy_nx  = nedges_bdy > 0 ?
+                               _jacc_stage(metrics.nx, T, (nedges_bdy, ngl)) :
+                               _jacc_zeros(T, 1, 1),
+                     bdy_ny  = nedges_bdy > 0 ?
+                               _jacc_stage(metrics.ny, T, (nedges_bdy, ngl)) :
+                               _jacc_zeros(T, 1, 1),
 
                      u        = _jacc_zeros(T, npoin*neq),
                      uaux     = _jacc_zeros(T, npoin, neq+1),

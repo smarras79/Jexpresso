@@ -74,10 +74,12 @@ function user_inputs()
         #
         #     julia --project -t 8 src/Jexpresso.jl ShallowWater SoliWaveIsland
         #
-        # Measured on this deck, the JACC RHS reproduces the serial RHS to the
-        # last bit — its direct stiffness summation is a gather over a fixed map,
-        # not an atomic scatter — so turning it on cannot change the answer.
-        # problems/JACCtestz/JACC_2d_swe.jl is the standalone check.
+        # Measured on this deck (5 steps of SSPRK54, HDF5 output diffed against
+        # the serial run): H and Hu agree to 4e-16 and 8e-16 RELATIVE, i.e. to
+        # floating-point round-off. Not bit-for-bit — the direct stiffness
+        # summation adds the same numbers in a different order — but two JACC
+        # runs of this deck do agree to the last bit, on CPU and GPU alike.
+        # problems/JACCtestz/{README.md, JACC_2d_swe.jl} have the details.
         #---------------------------------------------------------------------------
         :ljacc                => false,
         #---------------------------------------------------------------------------

@@ -359,7 +359,12 @@ function reference_rhs(m::TestMesh, uaux::Matrix{Float64}, qe::Matrix{Float64},
     ngl = m.ngl; nelem = m.nelem; npoin = m.npoin
     uaux = copy(uaux)
 
-    # --- boundary values, edge by edge (the KA path's order) ------------------
+    # --- boundary values, edge by edge, with the CPU path's AlmostEqual gate ---
+    # (Kopriva alg. 139, ε = 1e-6 — see _jacc_almost_equal in rhs_jacc.jl and
+    #  AlmostEqual in src/kernel/infrastructure/Kopriva_functions.jl.)
+    almost_equal(a, b) = (a == 0 || b == 0 || a <= 1e-6 || b <= 1e-6) ?
+                         abs(a-b) <= 2e-6 :
+                         (abs(a-b) <= 1e-6*abs(a) && abs(a-b) <= 1e-6*abs(b))
     for iedge = 1:m.nedges_bdy, k = 1:ngl
         ip = m.poin_in_bdy_edge[iedge,k]
         qb = fill(1234567.0, neq)
@@ -368,7 +373,9 @@ function reference_rhs(m::TestMesh, uaux::Matrix{Float64}, qe::Matrix{Float64},
                                      m.nx[iedge,k], m.ny[iedge,k], qb, false)
         for ieq = 1:neq
             v = vals[ieq]
-            (v != 1234567.0) && (uaux[ip,ieq] = v)
+            if !almost_equal(v, 1234567.0) && !almost_equal(v, uaux[ip,ieq])
+                uaux[ip,ieq] = v
+            end
         end
     end
 

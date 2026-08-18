@@ -114,29 +114,40 @@ const MU  = [0.05, 0.05, 0.05]
     end
 
     @testset "free-slip wall, corners included" begin
-        # The boundary kernel writes back into the state vector it is handed, so
-        # `u` after the call carries the Dirichlet values. On these straight walls
-        # n is (±1,0) or (0,±1), so no-penetration means the wall-normal momentum
-        # component is exactly zero — and at a corner BOTH components are.
+        # The boundary values are applied to `uaux` and then mirrored back into the
+        # state vector, which is what uaux2u! does at the tail of the CPU's
+        # Dirichlet builder. On these straight walls n is (±1,0) or (0,±1), so
+        # no-penetration means the wall-normal momentum is zero — at a corner both
+        # components are.
         c = jacc_cache_from_test_mesh(m, qe; neq = NEQ, lvisc = false)
         u = pack_u(q, m.npoin, NEQ)
+        before = copy(u)
         jacc_rhs_2d!(c, u, 0.0)
 
+        # the corrected field really did reach `u`, and only at the wall
+        @test u != before
+        changed = findall(!=(0.0), u .- before)
+        bnodes  = Set(vec(m.poin_in_bdy_edge))
+        @test all(ip -> ((ip - 1) % m.npoin + 1) in bnodes, changed)
+
+        ua = Array(c.uaux)
         worst = 0.0
         for iedge = 1:m.nedges_bdy, k = 1:m.ngl
             ip = m.poin_in_bdy_edge[iedge,k]
-            Hu = u[1*m.npoin + ip]      # q = [H, Hu, Hv] ⇒ momentum starts at neqs 2
-            Hv = u[2*m.npoin + ip]
-            worst = max(worst, abs(m.nx[iedge,k]*Hu + m.ny[iedge,k]*Hv))
+            worst = max(worst, abs(m.nx[iedge,k]*ua[ip,2] + m.ny[iedge,k]*ua[ip,3]))
         end
-        @test worst < 1e-14
+        # 1e-6 and not 1e-14: the CPU path declines any boundary correction the
+        # AlmostEqual gate calls negligible, and this path reproduces that exactly.
+        @test worst < 2e-6
 
-        # a corner sees two normals, so both components must have been zeroed
         npx     = m.nelx*(m.ngl - 1) + 1
         corners = [1, npx]                          # the two south-wall corners
         for ip in corners
-            @test abs(u[1*m.npoin + ip]) < 1e-14
-            @test abs(u[2*m.npoin + ip]) < 1e-14
+            @test abs(ua[ip,2]) < 2e-6
+            @test abs(ua[ip,3]) < 2e-6
+            # and the same values are what the integrator now holds
+            @test u[1*m.npoin + ip] == ua[ip,2]
+            @test u[2*m.npoin + ip] == ua[ip,3]
         end
     end
 end
