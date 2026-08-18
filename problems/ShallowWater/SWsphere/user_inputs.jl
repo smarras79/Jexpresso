@@ -150,6 +150,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Time integration.
         #---------------------------------------------------------------------------
+        #:ljacc                => true,
         :ode_solver           => CarpenterKennedy2N54(), #SSPRK33(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
         :cfl                  => 1.0,
