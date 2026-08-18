@@ -60,7 +60,7 @@ function user_inputs()
         #        -o meshes/gmsh_grids/SoliWaveIsland.msh
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/ShallowWater/SolidWaveIsland/SoliWaveIsland.msh",
+        :gmsh_filename        => "./problems/ShallowWater/SoliWaveIsland/SoliWaveIsland.msh",
         #---------------------------------------------------------------------------
         # Plotting / output: one PNG per variable at every diagnostic time
         # (H-it<n>.png, Hu-it<n>.png, Hv-it<n>.png). Set :lplot_surf3d to
