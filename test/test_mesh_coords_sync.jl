@@ -22,6 +22,15 @@
 # of mesh.x/y/z has something to hold onto: every step of that migration has to
 # leave this test green.
 #
+# NOTE ON WHAT IT STILL PROVES, now that stage 2 has landed. mesh.x/y/z are views
+# of coords' rows, so the equality assertions below are TAUTOLOGICAL — there is no
+# longer any storage that could disagree, which was the point. What they still
+# catch is a regression that reintroduces separate storage, and what the rest of
+# the file checks is not tautological at all: that coords is (NSD_MAX, npoin) on
+# every grid shape, that the row count does not depend on nsd or on lmanifold, and
+# that row 3 of a flat grid is zero. Those are real properties of the mesh builder
+# and they are what the 1D/Laguerre case actually exercises.
+#
 # It is deliberately about the INVARIANT, not about any one case. Add a case to
 # CASES and it is covered.
 #---------------------------------------------------------------------------------

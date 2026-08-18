@@ -882,9 +882,9 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     #
     # Resize as needed
     #
-    mesh.x = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.y = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.z = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+    # x/y/z are views of coords' rows (meshStructs.jl), so one array covers all
+    # four. AMR remeshes, so this must not leave a stale coords behind.
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, NSD_MAX, Int64(mesh.npoin))
 
     mesh.ip2gip = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
@@ -1303,9 +1303,11 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             #@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
             mesh.npoin_original = mesh.npoin
             mesh.npoin = iter -1
-            mesh.x = x_new
-            mesh.y = y_new
-            mesh.z = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
+            # the Laguerre grow, as in mod_mesh_build_mesh! — one array now
+            resize_coords!(mesh, mesh.npoin)
+            mesh.coords[1, 1:length(x_new)] .= x_new
+            mesh.coords[2, 1:length(y_new)] .= y_new
+            mesh.coords[3, :] .= zero(TFloat)
             mesh.nelem_semi_inf = n_semi_inf
         end
 

@@ -2271,9 +2271,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #
     # Resize as needed
     #
-    mesh.x      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.y      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.z      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+    # x/y/z are views of coords' rows, so allocating coords allocates all four.
     mesh.coords = KernelAbstractions.zeros(backend, TFloat, NSD_MAX, Int64(mesh.npoin))
     
     mesh.ip2gip    = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
@@ -3214,10 +3212,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             mesh.npoin_original = mesh.npoin
             mesh.npoin = iter -1
             mesh.gnpoin += n_semi_infg*(mesh.ngl-1)*(mesh.ngr-1)
-            mesh.x = x_new
-            mesh.y = y_new
+            #
+            # THE drift site this whole migration was about: npoin grows to take
+            # in the semi-infinite layers, x/y were replaced wholesale, and coords
+            # was left at the old size holding the old numbers. Now there is only
+            # one array to grow, and the new nodes' coordinates go straight into
+            # it.
+            #
+            resize_coords!(mesh, mesh.npoin)
+            mesh.coords[1, 1:length(x_new)] .= x_new
+            mesh.coords[2, 1:length(y_new)] .= y_new
+            mesh.coords[3, :] .= zero(TFloat)
             mesh.ip2gip = ip2gip_new
-            mesh.z = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
            # mesh.nelem_semi_inf = n_semi_inf
         end
         if (mesh.lLaguerre)
@@ -4054,7 +4060,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
-    resize!(mesh.x, (mesh.npoin))
 
     # (nsd, npoin). This used to be `copy(mesh.x)`, which made coords a bare
     # npoin-vector that only worked because the old [ip,1] indexing tolerated a
@@ -5441,9 +5446,13 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     end
     
     
-    # Resize (using resize! from ElasticArrays) as needed
-    resize!(mesh.x, (mesh.npoin))
-    resize!(mesh.coords[1, :], (mesh.npoin))
+    # Resize as needed.
+    #
+    # This used to be `resize!(mesh.x, npoin)` followed by
+    # `resize!(mesh.coords[1, :], npoin)`. The second line never did anything:
+    # `coords[1, :]` COPIES the row, so it resized a temporary and discarded it.
+    # The first grew x alone and left coords behind — the drift again.
+    resize_coords!(mesh, mesh.npoin)
     mesh.npoin_el = ngl
     #allocate mesh.conn and reshape it
     mesh.conn = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
@@ -5476,8 +5485,8 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
             x[ip] = mesh.xmax + inputs[:yfac_laguerre]*gr.ξ[i]
         end    
         mesh.npoin = mesh.npoin + mesh.ngr-1
-        mesh.x = x
-        #mesh.coords[1, :] = x[:]
+        resize_coords!(mesh, mesh.npoin)
+        mesh.coords[1, 1:length(x)] .= x
     end
     if (inputs[:llaguerre_1d_left])
         e = min(2,mesh.nelem_semi_inf)
@@ -5491,31 +5500,19 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
             x[ip] = mesh.xmin - inputs[:yfac_laguerre]*gr.ξ[i]
         end
         mesh.npoin = mesh.npoin + mesh.ngr-1
-        mesh.x = x
-        #mesh.coords[1, :] = x[:]
+        resize_coords!(mesh, mesh.npoin)
+        mesh.coords[1, 1:length(x)] .= x
     end 
-    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, NSD_MAX, Int64(mesh.npoin))
-    mesh.coords[1, :] = mesh.x[:]
     #plot_1d_grid(mesh)
 
     #
-    # y and z are identically zero on a 1D grid, and they have to SAY so.
+    # y and z need no attention on a 1D grid: they are rows 2 and 3 of coords, and
+    # resize_coords! zeroes what it grows. This used to be a bare
+    # `resize!(mesh.y, npoin)` — which does not initialise what it grows, so
+    # mesh.y left here holding denormals of order 1e-309 — plus nothing at all for
+    # mesh.z, which kept the 2-element St_mesh placeholder and was out of bounds
+    # for every ip > 2. Both are structurally impossible now.
     #
-    # This used to be a bare `resize!(mesh.y, mesh.npoin)`. resize! grows a Vector
-    # without initialising the new elements, so mesh.y came out of here holding
-    # whatever was in that memory — on a 1D Laguerre grid, denormals of order
-    # 1e-309 — while coords[2,:] was correctly zero. mesh.z was worse: it was
-    # never resized at all and kept the 2-element placeholder from the St_mesh
-    # default, so `mesh.z[ip]` was out of bounds for every ip > 2.
-    #
-    # Neither showed up in a run because nothing on the 1D path reads y or z for
-    # anything but the coords fill. That is exactly the kind of thing that starts
-    # mattering the moment coords and x/y/z are unified, which is why
-    # test/test_mesh_coords_sync.jl now pins it.
-    #
-    mesh.y = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
-    mesh.z = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
-
     println(" # BUILD LINEAR CARTESIAN GRID ............................ DONE")
     
 end
@@ -5775,17 +5772,15 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         end
 
 
-        # WARNING: this will be removed when x,y,z is fully replaced by coords.
+        # The sync from x/y/z into coords that used to live here is GONE, and it had
+        # to go: x/y/z are now views of coords' rows, so reallocating coords and
+        # then copying `mesh.x` into it copied the freshly-zeroed row onto itself
+        # and wiped every coordinate in the mesh. The reader has been filling
+        # coords directly, through those views, since the allocation in
+        # mod_mesh_read_gmsh!; there is nothing left to sync.
         #
-        # coords is (NSD_MAX, npoin) unconditionally now, so the old
-        # `ncoord = lmanifold ? 3 : nsd` special case is gone: a 2D manifold and a
-        # flat 2D grid get the same three rows, and the distinction between them
-        # stays where it belongs, in `mesh.lmanifold`. Rows above nsd are filled
-        # from mesh.y / mesh.z, which are zero on a lower-dimensional grid.
-        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, NSD_MAX, Int64(mesh.npoin))
-        mesh.coords[1, :] = mesh.x[:]
-        mesh.coords[2, :] = mesh.y[:]
-        mesh.coords[3, :] = mesh.z[:]
+        # (This is the "WARNING: this will be removed when x,y,z is fully replaced
+        # by coords" that used to sit here. It is removed.)
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
@@ -5799,7 +5794,6 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
                 mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat, NSD_MAX, Int64(inputs[:npx])),
-                                                   x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
                                                    npx  = TInt(inputs[:npx]),
                                                    xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
                                                    nop=TInt(inputs[:nop]),
@@ -5817,7 +5811,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             #
             println(" # ... build DEFAULT 1D grid")
             println(" # ...... DEFINE NSD in your input dictionary if you want a different grid!")
-            mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(), TFloat, Int64(inputs[:npx]), 1),
+            mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(), TFloat, NSD_MAX, Int64(inputs[:npx])),
                                                npx  = Int64(inputs[:npx]),
                                                xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
                                                nop=Int64(inputs[:nop]),

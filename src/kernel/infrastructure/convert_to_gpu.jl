@@ -1,32 +1,16 @@
+#
+# mesh.x/y/z are VIEWS of rows of mesh.coords (see meshStructs.jl), so staging
+# coords stages them. The three per-array copy blocks that used to be here moved
+# the same numbers a second time and are gone; `mesh.x = …` would now raise.
+#
 function convert_mesh_arrays!(::NSD_1D, mesh, backend, inputs)
-    # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
-    mesh.x = convert_to_typed_array(mesh.x, TFloat)
-    mesh.y = convert_to_typed_array(mesh.y, TFloat)
-    mesh.z = convert_to_typed_array(mesh.z, TFloat)
     mesh.coords = convert_to_typed_array(mesh.coords, TFloat)
 
-    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
-    KernelAbstractions.copyto!(backend, aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
-    mesh.x .= aux
-
-    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.y))
-    KernelAbstractions.copyto!(backend, aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(backend, TFloat, size(mesh.y))
-    mesh.y .= aux
-
-    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.z))
-    KernelAbstractions.copyto!(backend, aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(backend, TFloat, size(mesh.z))
-    mesh.z .= aux
-
     #
-    # coords (nsd x npoin) is the canonical coordinate storage — mesh.x/y/z are
-    # hand-synced duplicates of its rows. The device kernels take a node's
-    # coordinates as @view(coords[:, ip]), one cache line per node, which is the
-    # whole point of the layout, so coords has to make the trip too. It did not
-    # before this, which is why the GPU boundary kernels were still passing
-    # x[ip], y[ip], z[ip] one scalar at a time.
+    # coords (NSD_MAX x npoin) is THE coordinate storage — mesh.x/y/z are views of
+    # its rows. The device kernels take a node's coordinates as
+    # @view(coords[:, ip]), one cache line per node, which is the point of the
+    # layout.
     #
     aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
     KernelAbstractions.copyto!(backend, aux, mesh.coords)
@@ -48,34 +32,13 @@ function convert_mesh_arrays!(::NSD_1D, mesh, backend, inputs)
 end
 
 function convert_mesh_arrays!(::NSD_2D, mesh, backend, inputs)
-    # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
-    mesh.x = convert_to_typed_array(mesh.x, TFloat)
-    mesh.y = convert_to_typed_array(mesh.y, TFloat)
-    mesh.z = convert_to_typed_array(mesh.z, TFloat)
     mesh.coords = convert_to_typed_array(mesh.coords, TFloat)
 
-    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
-    KernelAbstractions.copyto!(backend, aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
-    mesh.x .= aux
-
-    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.y))
-    KernelAbstractions.copyto!(backend, aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(backend, TFloat, size(mesh.y))
-    mesh.y .= aux
-
-    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.z))
-    KernelAbstractions.copyto!(backend, aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(backend, TFloat, size(mesh.z))
-    mesh.z .= aux
-
     #
-    # coords (nsd x npoin) is the canonical coordinate storage — mesh.x/y/z are
-    # hand-synced duplicates of its rows. The device kernels take a node's
-    # coordinates as @view(coords[:, ip]), one cache line per node, which is the
-    # whole point of the layout, so coords has to make the trip too. It did not
-    # before this, which is why the GPU boundary kernels were still passing
-    # x[ip], y[ip], z[ip] one scalar at a time.
+    # coords (NSD_MAX x npoin) is THE coordinate storage — mesh.x/y/z are views of
+    # its rows. The device kernels take a node's coordinates as
+    # @view(coords[:, ip]), one cache line per node, which is the point of the
+    # layout.
     #
     aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
     KernelAbstractions.copyto!(backend, aux, mesh.coords)
@@ -101,34 +64,13 @@ function convert_mesh_arrays!(::NSD_2D, mesh, backend, inputs)
 end
 
 function convert_mesh_arrays!(::NSD_3D, mesh, backend, inputs)
-    # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
-    mesh.x = convert_to_typed_array(mesh.x, TFloat)
-    mesh.y = convert_to_typed_array(mesh.y, TFloat)
-    mesh.z = convert_to_typed_array(mesh.z, TFloat)
     mesh.coords = convert_to_typed_array(mesh.coords, TFloat)
-    npoin = size(mesh.x, 1)
-    aux = KernelAbstractions.allocate(backend, TFloat, npoin)
-    KernelAbstractions.copyto!(backend, aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(backend, TFloat, npoin)
-    mesh.x .= aux
-
-    aux = KernelAbstractions.allocate(backend, TFloat, npoin)
-    KernelAbstractions.copyto!(backend, aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(backend, TFloat, npoin)
-    mesh.y .= aux
-
-    aux = KernelAbstractions.allocate(backend, TFloat, npoin)
-    KernelAbstractions.copyto!(backend, aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(backend, TFloat, npoin)
-    mesh.z .= aux
-
+    npoin = size(getfield(mesh, :coords), 2)
     #
-    # coords (nsd x npoin) is the canonical coordinate storage — mesh.x/y/z are
-    # hand-synced duplicates of its rows. The device kernels take a node's
-    # coordinates as @view(coords[:, ip]), one cache line per node, which is the
-    # whole point of the layout, so coords has to make the trip too. It did not
-    # before this, which is why the GPU boundary kernels were still passing
-    # x[ip], y[ip], z[ip] one scalar at a time.
+    # coords (NSD_MAX x npoin) is THE coordinate storage — mesh.x/y/z are views of
+    # its rows. The device kernels take a node's coordinates as
+    # @view(coords[:, ip]), one cache line per node, which is the point of the
+    # layout.
     #
     aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.coords))
     KernelAbstractions.copyto!(backend, aux, mesh.coords)
@@ -147,21 +89,6 @@ function convert_mesh_arrays!(::NSD_3D, mesh, backend, inputs)
 end
 
 function convert_mesh_arrays_to_cpu!(::NSD_1D, mesh, inputs)
-
-    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
-    KernelAbstractions.copyto!(CPU(), aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
-    mesh.x .= aux
-
-    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.y))
-    KernelAbstractions.copyto!(CPU(), aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(CPU(), Float64, size(mesh.y))
-    mesh.y .= aux
-
-    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.z))
-    KernelAbstractions.copyto!(CPU(), aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(CPU(), Float64, size(mesh.z))
-    mesh.z .= aux
 
     # coords comes home with x/y/z — see convert_mesh_arrays!.
     aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.coords))
@@ -184,21 +111,6 @@ function convert_mesh_arrays_to_cpu!(::NSD_1D, mesh, inputs)
 end
 
 function convert_mesh_arrays_to_cpu!(::NSD_2D, mesh, inputs)
-
-    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
-    KernelAbstractions.copyto!(CPU(), aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
-    mesh.x .= aux
-
-    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.y))
-    KernelAbstractions.copyto!(CPU(), aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(CPU(), Float64, size(mesh.y))
-    mesh.y .= aux
-
-    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.z))
-    KernelAbstractions.copyto!(CPU(), aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(CPU(), Float64, size(mesh.z))
-    mesh.z .= aux
 
     # coords comes home with x/y/z — see convert_mesh_arrays!.
     aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.coords))
@@ -226,22 +138,7 @@ end
 
 function convert_mesh_arrays_to_cpu!(::NSD_3D, mesh, inputs)
 
-    npoin = size(mesh.x,1)
-    aux = KernelAbstractions.allocate(CPU(), TFloat, npoin)
-    KernelAbstractions.copyto!(CPU(), aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(CPU(), TFloat, npoin)
-    mesh.x .= aux
-
-    aux = KernelAbstractions.allocate(CPU(), TFloat, npoin)
-    KernelAbstractions.copyto!(CPU(), aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(CPU(), TFloat, npoin)
-    mesh.y .= aux
-
-    aux = KernelAbstractions.allocate(CPU(), TFloat, npoin)
-    KernelAbstractions.copyto!(CPU(), aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(CPU(), TFloat, npoin)
-    mesh.z .= aux
-
+    npoin = size(getfield(mesh, :coords), 2)
     # coords comes home with x/y/z — see convert_mesh_arrays!.
     aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.coords))
     KernelAbstractions.copyto!(CPU(), aux, mesh.coords)

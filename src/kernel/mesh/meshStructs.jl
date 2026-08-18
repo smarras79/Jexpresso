@@ -17,17 +17,14 @@ Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3,
     dψ = KernelAbstractions.zeros(backend,TInt, 5,5)
     ref_level = KernelAbstractions.zeros(backend,TInt,nelem)
 end
-
-#
-# Rows of St_mesh.coords. Three, always -- see the `coords` field below.
-#
 const NSD_MAX = 3
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
-    x      = KernelAbstractions.zeros(backend, TFloat, 2)
-    y      = KernelAbstractions.zeros(backend, TFloat, 2)
-    z      = KernelAbstractions.zeros(backend, TFloat, 2)
+    # NOTE: there are no x, y, z FIELDS. `mesh.x`, `mesh.y` and `mesh.z` are rows
+    # of `coords`, served by the Base.getproperty method below. See the long note
+    # after this struct.
+    #
     # LAYOUT: coords is (NSD_MAX, npoin) -- a node's coordinates are ADJACENT in
     # memory, so touching a node costs one cache line instead of nsd of them.
     #
@@ -268,3 +265,86 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     extra_mesh = Array{St_extra_mesh}(undef, 0, 0)
 
 end
+
+
+#---------------------------------------------------------------------------------
+# mesh.x / mesh.y / mesh.z — rows of mesh.coords, not storage of their own.
+#
+# They used to be three separate npoin-vectors DUPLICATING rows of coords, kept in
+# step by hand: eight explicit `coords[r,:] = mesh.<r>[:]` assignments against
+# forty-one places that assigned mesh.x/y/z, and nothing enforcing the
+# correspondence. Any path that updated one and forgot the other produced a mesh
+# whose two halves disagreed, and which half a given routine read was a matter of
+# which was written first. That really happened — see the git history of
+# mod_mesh_build_mesh!, where mesh.y came out of the 1D builder holding
+# uninitialised memory and mesh.z kept a 2-element placeholder on a 349-node grid.
+#
+# Serving them as views makes the duplication — and therefore the drift —
+# structurally impossible, and frees the duplicate storage. Roughly 1350 read
+# sites across 140 files keep working untouched, in both the `mesh.x[ip]` and the
+# bare `mesh.x` (passed whole) forms.
+#
+# WRITES ARE REFUSED, deliberately. `mesh.x = v` cannot mean anything sensible
+# once x is a view: it would either silently drop the write or silently unlink x
+# from coords, and both are worse than an error that says where to go instead.
+#
+# COST: a view over a row of an (NSD_MAX, npoin) array is STRIDED. Scalar
+# `mesh.x[ip]` costs exactly what `coords[1,ip]` costs — nothing changes. Code
+# that SWEEPS x loses locality relative to a dense vector, but that is inherent to
+# the (nsd, npoin) layout this codebase already chose, and the fix where it
+# matters is to use coords directly, which is where this is all going anyway.
+#---------------------------------------------------------------------------------
+@inline function Base.getproperty(m::St_mesh, s::Symbol)
+    s === :x && return view(getfield(m, :coords), 1, :)
+    s === :y && return view(getfield(m, :coords), 2, :)
+    s === :z && return view(getfield(m, :coords), 3, :)
+    return getfield(m, s)
+end
+
+@inline function Base.setproperty!(m::St_mesh, s::Symbol, v)
+    if s === :x || s === :y || s === :z
+        error(" # ERROR St_mesh: `mesh.", s, " = …` is not allowed.\n",
+              " #   x, y and z are VIEWS of rows 1, 2 and 3 of mesh.coords, not storage.\n",
+              " #   To write coordinates:      mesh.coords[", s === :x ? 1 : s === :y ? 2 : 3,
+              ", :] .= …\n",
+              " #   To change the node count:  resize_coords!(mesh, npoin)")
+    end
+    #
+    # convert() is not optional: the DEFAULT setproperty! is
+    # `setfield!(x, f, convert(fieldtype(typeof(x), f), v))`, and dropping the
+    # conversion turns every widening assignment into a TypeError. The gmsh
+    # reader assigns a Gridap Table{Int32} to a field holding a Table{Int64},
+    # which the default silently converted and a bare setfield! rejects.
+    #
+    return setfield!(m, s, convert(fieldtype(typeof(m), s), v))
+end
+
+# keep x/y/z discoverable by `propertynames`, `dump`, tab-completion and anything
+# that reflects over the mesh — they are properties, just not fields.
+Base.propertynames(m::St_mesh, private::Bool = false) =
+    (fieldnames(typeof(m))..., :x, :y, :z)
+
+"""
+    resize_coords!(mesh, npoin) -> mesh
+
+Grow or shrink the coordinate storage to `npoin` nodes, keeping whatever fits.
+
+The replacement for the `resize!(mesh.x, npoin)` / `mesh.x = x_new` pattern: those
+resized ONE of the four representations of the same data and left the rest stale.
+Rows above the problem's nsd stay zero, which is what mesh.y/mesh.z held on a
+lower-dimensional grid.
+"""
+function resize_coords!(mesh::St_mesh, npoin::Integer)
+    old  = getfield(mesh, :coords)
+    npoin == size(old, 2) && return mesh
+    new  = similar(old, NSD_MAX, Int(npoin))
+    fill!(new, zero(eltype(new)))
+    n = min(size(old, 2), Int(npoin))
+    n > 0 && copyto!(view(new, :, 1:n), view(old, :, 1:n))
+    setfield!(mesh, :coords, new)
+    return mesh
+end
+
+#
+# Rows of St_mesh.coords. Three, always -- see the `coords` field below.
+#

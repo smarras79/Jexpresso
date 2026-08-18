@@ -799,10 +799,20 @@ function _je_prefetch_geometry!(inputs, local_comm::MPI.Comm,
         # Use a NamedTuple instead of St_mesh{...} — extract_local_alya_coordinates
         # only accesses x/y/z/nelem/ngl/connijk/nsd via duck typing.  A NamedTuple
         # avoids the expensive @kwdef constructor JIT of a 150+-field struct.
+        # Coordinates come from `coords` (NSD_MAX x npoin), which is the only
+        # coordinate FIELD a mesh has — x/y/z are views of its rows and so are not
+        # saved by _save_mesh_cache, which loops over fieldnames. The "x"/"y"/"z"
+        # fallbacks read caches written before that change; drop them once no such
+        # cache can still be around.
+        _crd = haskey(flds, "coords") ? flds["coords"] : nothing
+        _row(r, k) = _crd !== nothing ?
+                     (size(_crd, 1) >= r ? Vector{Float64}(_crd[r, :]) : Float64[]) :
+                     Vector{Float64}(haskey(flds, k) ? flds[k] : Float64[])
+
         mesh_tmp = (
-            x       = Vector{Float64}(haskey(flds,"x")       ? flds["x"]       : Float64[]),
-            y       = Vector{Float64}(haskey(flds,"y")       ? flds["y"]       : Float64[]),
-            z       = Vector{Float64}(haskey(flds,"z")       ? flds["z"]       : Float64[]),
+            x       = _row(1, "x"),
+            y       = _row(2, "y"),
+            z       = _row(3, "z"),
             nelem   = haskey(flds,"nelem")   ? Int(flds["nelem"])   : 0,
             ngl     = haskey(flds,"ngl")     ? Int(flds["ngl"])     : 0,
             connijk = haskey(flds,"connijk") ? flds["connijk"]      : Array{Int64}(undef,0,0,0,0),
