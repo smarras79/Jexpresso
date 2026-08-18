@@ -50,6 +50,16 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
 
+    #
+    # :ljacc — run the RHS through JACC.jl instead of the serial CPU kernels.
+    # The device is NOT selected here: JACC reads it from a Preferences value
+    # (`using JACC; JACC.set_backend("cuda")`, then restart Julia), which is why
+    # this is a plain on/off switch and :backend stays at CPU().
+    #
+    if(!haskey(inputs, :ljacc))
+        inputs[:ljacc] = false
+    end
+
     if(!haskey(inputs, :RT_atmos_coupling))
        inputs[:RT_atmos_coupling] = false
     end

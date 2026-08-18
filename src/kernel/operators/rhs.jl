@@ -123,6 +123,21 @@ function rhs!(du, u, params, time)
     # for @timers, do not delete
     timers = params.timers
 
+    #
+    # JACC.jl portable path (:ljacc => true). It owns the whole RHS — volume term,
+    # source, boundary values, artificial viscosity and the direct stiffness
+    # summation — so it returns before any of the CPU/KernelAbstractions code
+    # below runs. See src/kernel/operators/rhs_jacc.jl.
+    #
+    # It sits INSIDE the CPU branch's territory on purpose: :backend stays at its
+    # CPU() default (mesh, metrics and I/O remain host-side, Float64), and the
+    # device is chosen by JACC's own build-time preference.
+    #
+    if params.jacc !== nothing
+        @timeit_debug JEXPRESSO_TIMER "build_rhs_jacc" build_rhs_jacc_2D!(du, u, params, time)
+        return nothing
+    end
+
     if (backend == CPU())
         @timeit_debug JEXPRESSO_TIMER "build_rhs" _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 

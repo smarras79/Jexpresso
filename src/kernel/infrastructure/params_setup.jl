@@ -391,6 +391,25 @@ function params_setup(sem,
     les_bottom_cache  = build_les_bottom_cache(sem.mesh, sem.metrics, inputs)
 
     #------------------------------------------------------------------------------------
+    # JACC.jl portable RHS (:ljacc => true in the deck).
+    #
+    # Built HERE and not lazily on the first rhs! call: the staging copies and the
+    # two CSR maps are O(npoin) work that has no business inside a time step, and
+    # jacc_check_inputs must reject an unsupported deck before the run starts
+    # rather than 40 minutes in. `nothing` when the switch is off costs one word
+    # in the params NamedTuple and nothing at run time.
+    #
+    # Note the ORDER: qp.qe is handed to the device here, so this has to come
+    # after the conformity4ncf_q! block above, which is what fills qe on the
+    # non-conforming nodes.
+    #------------------------------------------------------------------------------------
+    jacc = get(inputs, :ljacc, false) == true ?
+           build_jacc_cache_2D(sem, qp, inputs, TFloat) : nothing
+    if jacc !== nothing
+        jacc_banner(jacc; rank = rank)
+    end
+
+    #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
@@ -434,6 +453,7 @@ function params_setup(sem,
                   sgs,
                   sgs_stress,
                   timers,
+                  jacc,
                   coupling = coupling)
 
     else
@@ -475,6 +495,7 @@ function params_setup(sem,
                   sgs_stress,
                   OUTPUT_DIR,
                   timers,
+                  jacc,
                   sem.interp, sem.project, sem.nparts, sem.distribute,
                   coupling = coupling)
     end

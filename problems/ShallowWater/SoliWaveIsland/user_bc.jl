@@ -32,7 +32,21 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::Abst
     return flux
 end
 
-function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
+#
+# Device spelling of the same wall, used by the GPU (rhs_gpu.jl) and JACC
+# (rhs_jacc.jl) kernels.
+#
+# The argument list is (q, qe, x, y, t, nx, ny, qbdy, lpert) — the 2D kernels pass
+# the two coordinates SEPARATELY, as x[ip], y[ip]. It used to read `coords` in
+# that slot and take one argument fewer, which no caller in the tree ever matched;
+# the mismatch was invisible only because this case had never been run off the
+# CPU path.
+#
+# qbdy comes in pre-filled with the sentinel the kernels use for "leave this
+# component alone", and returning qbdy[1] for the depth is how H is declared free
+# at a free-slip wall: only the momentum components are constrained.
+#
+function user_bc_dirichlet_gpu(q, qe, x, y, t, nx, ny, qbdy, lpert)
     T  = eltype(q)
     Hu = q[2]
     Hv = q[3]

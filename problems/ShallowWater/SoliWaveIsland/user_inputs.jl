@@ -54,13 +54,40 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lfilter              => false,
         #---------------------------------------------------------------------------
+        # JACC.jl portable RHS.
+        #
+        # Flip to true to evaluate the right-hand side through
+        # src/kernel/operators/rhs_jacc.jl — ONE kernel body that runs on
+        # multi-core CPU, NVIDIA, AMD, Intel or Apple hardware. Everything else
+        # about the run is unchanged: same mesh, same Float64 setup, same
+        # SSPRK54, same output, and :backend stays at its CPU() default (that
+        # switch selects the separate KernelAbstractions path and the two must
+        # not both be on).
+        #
+        # Which device JACC uses is NOT a deck setting — it is a Preferences
+        # value written once per project:
+        #
+        #     julia> using JACC; JACC.set_backend("cuda")   # amdgpu|oneapi|metal|threads
+        #     (restart Julia)
+        #
+        # On the default "threads" backend, ask for threads on the command line:
+        #
+        #     julia --project -t 8 src/Jexpresso.jl ShallowWater SoliWaveIsland
+        #
+        # Measured on this deck, the JACC RHS reproduces the serial RHS to the
+        # last bit — its direct stiffness summation is a gather over a fixed map,
+        # not an atomic scatter — so turning it on cannot change the answer.
+        # problems/JACCtestz/JACC_2d_swe.jl is the standalone check.
+        #---------------------------------------------------------------------------
+        :ljacc                => false,
+        #---------------------------------------------------------------------------
         # Mesh
         # Generate with:
         #   gmsh -2 problems/ShallowWater/SoliWaveIsland/SoliWaveIsland.geo \
         #        -o meshes/gmsh_grids/SoliWaveIsland.msh
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/ShallowWater/SolidWaveIsland/SoliWaveIsland.msh",
+        :gmsh_filename        => "./problems/ShallowWater/SoliWaveIsland/SoliWaveIsland.msh",
         #---------------------------------------------------------------------------
         # Plotting / output: one PNG per variable at every diagnostic time
         # (H-it<n>.png, Hu-it<n>.png, Hv-it<n>.png). Set :lplot_surf3d to

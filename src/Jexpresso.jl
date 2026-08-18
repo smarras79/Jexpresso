@@ -232,6 +232,11 @@ include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
 
+# Portable (CPU threads / CUDA / AMDGPU / oneAPI / Metal) 2D RHS, one kernel body
+# for every backend. Reached with :ljacc => true; see the header of the file.
+# AFTER rhs.jl and rhs_gpu.jl: it reuses PHYS_CONST and RHStoDU! from the former.
+include(joinpath( "kernel", "operators", "rhs_jacc.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
