@@ -680,8 +680,13 @@ end
 # a VTK_LAGRANGE_QUADRILATERAL would be re-tessellated by ParaView and would
 # hide exactly the thing we want to inspect.
 #
-# Serial (vtk_grid, not pvtk_grid) because the shell path itself is serial for
-# now; see the :lspherical_shell branch of problems/drivers.jl.
+# One PIECE PER RANK when the run is parallel: pvtk_grid writes
+# <name>/<name>_<part>.vtu plus the <name>.pvtu that lists them, which is the
+# same convention write_vtk_grid_only uses for the flat cases. Every rank writes
+# the nodes it holds — including the mirrored copies of nodes owned by a
+# neighbour, so a seam node appears in two pieces with the same value, which is
+# what ParaView expects of a partitioned mesh. On one rank it stays a single
+# .vtu, unchanged.
 #
 # What is written, and why it is the useful thing to look at when debugging
 # the numbering of a CLOSED shell:
@@ -776,13 +781,31 @@ function write_vtk_sphere_grid(mesh::St_mesh,
 
     fout_name = string(OUTPUT_DIR, "/", file_name)
 
-    vtkf = vtk_grid(fout_name,
-                    mesh.coords[1, 1:mesh.npoin],
-                    mesh.coords[2, 1:mesh.npoin],
-                    mesh.coords[3, 1:mesh.npoin],
-                    cells, compress = false)
+    comm   = get_mpi_comm()
+    nparts = MPI.Comm_size(comm)
+    part   = MPI.Comm_rank(comm) + 1        # WriteVTK parts are 1-indexed
 
-    vtkf["ip",        VTKPointData()] = Float64.(collect(1:mesh.npoin))
+    vtkf = if nparts > 1
+        pvtk_grid(fout_name,
+                  mesh.coords[1, 1:mesh.npoin],
+                  mesh.coords[2, 1:mesh.npoin],
+                  mesh.coords[3, 1:mesh.npoin],
+                  cells, compress = false;
+                  part = part, nparts = nparts, ismain = (part == 1))
+    else
+        vtk_grid(fout_name,
+                 mesh.coords[1, 1:mesh.npoin],
+                 mesh.coords[2, 1:mesh.npoin],
+                 mesh.coords[3, 1:mesh.npoin],
+                 cells, compress = false)
+    end
+
+    # The GLOBAL node number, not the local one: across a panel seam — or a
+    # PARTITION seam — this field must look continuous, and the local index is
+    # meaningless from one piece to the next.
+    vtkf["ip",        VTKPointData()] =
+        length(mesh.ip2gip) >= mesh.npoin ? Float64.(@view mesh.ip2gip[1:mesh.npoin]) :
+                                            Float64.(collect(1:mesh.npoin))
     # 0 = linear vertex, 1 = edge node, 2 = element interior. Read off the
     # global numbering rather than stored: mod_mesh_read_gmsh! lays the nodes
     # out as [vertices | edge nodes | interior nodes], in that order.
@@ -797,6 +820,8 @@ function write_vtk_sphere_grid(mesh::St_mesh,
 
     vtkf["iel",   VTKCellData()] = cell_iel
     vtkf["panel", VTKCellData()] = cell_pan
+    # Which rank owns each element — colour by it to see the partition.
+    nparts > 1 && (vtkf["part", VTKCellData()] = fill(Float64(part), nsub))
 
     #
     # Solution fields, when a state vector is handed in (the initial condition,
@@ -877,7 +902,8 @@ function write_vtk_sphere_grid(mesh::St_mesh,
 
     out = vtk_save(vtkf)
 
-    verbose && println(" # Wrote high-order spherical shell grid: ", fout_name, ".vtu  (",
+    verbose && println(" # Wrote high-order spherical shell grid: ", fout_name,
+                       nparts > 1 ? ".pvtu  (" : ".vtu  (",
                        mesh.npoin, " nodes, ", nsub, " sub-cells",
                        nq == 0 ? "" : string(", ", nq, " solution fields"), ")")
 

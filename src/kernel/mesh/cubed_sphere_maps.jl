@@ -503,7 +503,7 @@ end
 # a measurement rather than a declaration.
 #---------------------------------------------------------------------------------
 """
-    detect_cubed_sphere_map(xs, ys, zs) -> (map::Symbol, residuals::Dict)
+    detect_cubed_sphere_map(xs, ys, zs; nvert = length(xs)) -> (map::Symbol, residuals::Dict)
 
 Best-fitting source map for the LINEAR VERTICES of a cubed-sphere grid, with the
 per-candidate lattice residual so a caller can see how decisive the fit was.
@@ -514,10 +514,14 @@ do not sit on the panel lattice and would wash the test out.
 `n` is taken from the vertex count, `V = 6n²+2`, rather than by counting distinct
 levels — round-off makes the shipped grid show 12 apparent levels where the
 generated one shows 11, and an `n` off by one turns a 1e-16 residual into 1e-1.
+
+IN PARALLEL the caller holds only its share of the vertices, so `V` cannot be
+read off the array: pass the GLOBAL count as `nvert` and the residuals then
+measure this rank's piece against the right lattice. The caller reduces them.
 """
-function detect_cubed_sphere_map(xs, ys, zs)
+function detect_cubed_sphere_map(xs, ys, zs; nvert = length(xs))
     res = Dict{Symbol,Float64}(:gnomonic => Inf, :equiangular => Inf, :conformal => Inf)
-    V = length(xs)
+    V = nvert
     n2 = (V - 2)/6
     n  = round(Int, sqrt(n2))
     (n >= 1 && 6n^2 + 2 == V) || return (:unknown, res)   # not a structured cubed sphere

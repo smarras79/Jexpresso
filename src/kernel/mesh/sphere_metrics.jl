@@ -140,6 +140,30 @@
 #   * Σ_ip M[ip] is the SEM quadrature of the shell area and must equal 4πR²;
 #   * aⁱ·a_j = δⁱⱼ must hold to round-off at every node.
 #
+# ON MORE THAN ONE RANK
+# ---------------------
+# The metric terms themselves are ELEMENT-LOCAL — a_ξ, a_η, J, aⁱ, J n̂ are built
+# from the coordinates of one element and nothing else — so they need no
+# communication whatever the partition. Exactly three things here do:
+#
+#   * M, because the direct stiffness summation above runs over the elements
+#     that touch a node and a node on a partition seam has some of them on
+#     another rank. assemble_mpi! completes the sum on the owner and sends the
+#     total back, so every copy ends up with the full mass, as in serial;
+#
+#   * Δmin, because it sets Δt and the ranks have to agree on it (MPI.MIN);
+#
+#   * every residual check_sphere_metrics computes, because a max over this
+#     rank's elements is not a max over the grid — and because drivers.jl turns
+#     a failed check into an error(), so a rank that disagreed with the others
+#     would hang them rather than stop them.
+#
+# Σ M[ip] is the one place ownership matters: after the assembly a shared node
+# carries the full mass on EVERY rank that holds it, so the area sums only over
+# the nodes a rank owns (mesh.gip2owner). test/test_sphere_parallel.jl checks
+# exactly this, and it is a sharp test — a missing assembly makes the area come
+# out low, a missing ownership test makes it come out high.
+#
 # S. Marras & contributors
 #---------------------------------------------------------------------------------
 
@@ -227,6 +251,14 @@ function build_sphere_metrics(mesh::St_mesh,
     npoin = Int(mesh.npoin)
     form  = sphere_metrics_form(inputs)
 
+    # In parallel every count above is LOCAL to this rank: nelem is the elements
+    # it owns, npoin the nodes those elements touch (its own plus the mirrored
+    # copies of nodes owned by a neighbour). The metric terms themselves are
+    # element-local and need no communication; the two quantities that are NOT —
+    # the assembled mass matrix and Δmin — are reduced below.
+    comm   = get_mpi_comm()
+    nparts = MPI.Comm_size(comm)
+
     verbose && println(" # ")
     verbose && println(" # SPHERICAL SHELL METRICS .....................................")
     verbose && println(" #   Kopriva-form metric terms, extension direction v = ",
@@ -259,6 +291,25 @@ function build_sphere_metrics(mesh::St_mesh,
                      crd, mesh.connijk, dψ, ω,
                      nelem, ngl, TF(mesh.radius), form === :radial)
 
+    #-----------------------------------------------------------------------------
+    # DIRECT STIFFNESS SUMMATION ACROSS RANKS.
+    #
+    # _sphere_metrics! summed ω_i ω_j J over the elements THIS RANK owns. A node
+    # on a partition boundary is owned by one rank and mirrored on the others,
+    # and each of them has only its own share of the elements that touch it, so
+    # M there is a partial sum on every one of them. assemble_mpi! adds the
+    # shares on the owner and sends the total back, which is the same direct
+    # stiffness summation the flat path does in element_matrices.jl — after it,
+    # every copy of a shared node carries the FULL mass, exactly as in serial.
+    #
+    # Everything downstream depends on this being right: M is the quadrature
+    # weight of the global area (M4), the divisor of every RHS, filter and
+    # vorticity assembly, and the weight of the conserved integrals.
+    #-----------------------------------------------------------------------------
+    if nparts > 1
+        assemble_mpi!(M, setup_assembler(mesh.SD, M, mesh.ip2gip, mesh.gip2owner))
+    end
+
     minimum(M) > 0 || error(" # ERROR sphere_metrics.jl: a node has zero mass — the grid is not covered by the elements.")
     Minv = one(TF) ./ M
 
@@ -278,6 +329,9 @@ function build_sphere_metrics(mesh::St_mesh,
             Δmin = min(Δmin, sqrt((crd[1, ip]-crd[1, iq])^2 + (crd[2, ip]-crd[2, iq])^2 + (crd[3, ip]-crd[3, iq])^2))
         end
     end
+    # Δmin sets Δt, so every rank has to agree on it — a per-rank minimum would
+    # give the ranks different time steps and the run would come apart.
+    nparts > 1 && (Δmin = MPI.Allreduce(Δmin, MPI.MIN, comm))
 
     metrics = St_sphere_metrics{TF}(Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
                                     nx, ny, nz, Jnx, Jny, Jnz,
@@ -444,6 +498,19 @@ end
 end
 
 
+#
+# Σ M[ip] over the nodes THIS RANK OWNS. Typed barrier: mesh.gip2owner is an
+# ::Any field, so the comparison in the loop would box on every node.
+#
+function _owned_mass_sum(M::AbstractVector{TF}, gip2owner, rank::Int) where {TF}
+    s = zero(TF)
+    @inbounds for ip in eachindex(M)
+        gip2owner[ip] == rank && (s += M[ip])
+    end
+    return s
+end
+
+
 #---------------------------------------------------------------------------------
 # check_sphere_metrics(mesh, metrics; …)
 #
@@ -487,6 +554,19 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
 
     crd = mesh.coords          # (x,y,z); mesh.x/y/z are deprecated
     allok = true
+
+    # Every residual below is a MAX over the grid and the area is a SUM over it,
+    # so in parallel each rank measures its own piece and the answers are reduced
+    # before they are judged. The verdict is therefore the same on every rank —
+    # which matters, because drivers.jl turns a false one into an error() and a
+    # rank that disagreed would hang the others. The reductions are collective,
+    # so they run on all ranks even though only rank 0 prints.
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+    gmax(v) = nparts > 1 ? MPI.Allreduce(v, MPI.MAX, comm) : v
+    gsum(v) = nparts > 1 ? MPI.Allreduce(v, MPI.SUM, comm) : v
+
     line(name, ok, extra="") = begin
         verbose && println("     ", ok ? "PASS" : "FAIL", "  ", name, extra == "" ? "" : string("  [", extra, "]"))
         ok
@@ -550,6 +630,10 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
                                  (Jnzi - (a1x*a2y - a1y*a2x))^2)/metrics.Je[iel,i,j])
         end
     end
+    worst_id  = gmax(worst_id)
+    worst_tan = gmax(worst_tan)
+    worst_nrm = gmax(worst_nrm)
+    worst_geo = gmax(worst_geo)
 
     #--- M7: does the strong-form surface divergence annihilate a RIGID
     # ROTATION? u = Ω × x is tangential and divergence free on any sphere, and
@@ -582,6 +666,7 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
             worst_rot = max(worst_rot, abs(d))
         end
     end
+    worst_rot = gmax(worst_rot)
 
     allok &= line("M1 metric identities aⁱ·a_j = δⁱⱼ", worst_id < 1.0e-10, @sprintf("max err = %.3e", worst_id))
     allok &= line("M2 contravariant basis is tangential", worst_tan < 1.0e-8, @sprintf("max |aⁱ·n̂|·R = %.3e", worst_tan))
@@ -611,7 +696,11 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
     allok &= line("M3 outward area normal (J n̂)·x̂ = |J n̂|", worst_nrm < atol_normal,
                   @sprintf("max err = %.3e", worst_nrm))
 
-    area  = sum(metrics.M)
+    # OWNED nodes only. After the direct stiffness summation in
+    # build_sphere_metrics every copy of a shared node carries the full mass, so
+    # summing all local nodes would count the shared ones once per rank that
+    # mirrors them and report an area larger than the sphere.
+    area  = gsum(_owned_mass_sum(metrics.M, mesh.gip2owner, rank))
     aref  = 4π*mesh.radius^2
     aerr  = abs(area - aref)/aref
     allok &= line("M4 Σ M[ip] = 4πR² (SEM quadrature of the area)", aerr < atol_area,
@@ -653,6 +742,7 @@ function check_sphere_metrics(mesh::St_mesh, metrics::St_sphere_metrics;
             end
         end
     end
+    worst_fs = gmax(worst_fs)
     #
     # Round-off for BOTH forms, at every order and on any grid: J a¹, J a² and
     # J n̂ are three parts of one discrete curl, so this is an algebraic

@@ -94,6 +94,12 @@ function sphere_cfl_dt(q::AbstractMatrix{TF}, mesh::St_mesh,
         cmax = max(cmax, umag + sqrt(φ))
     end
 
+    # The step has to be the SAME on every rank: cmax is a maximum over this
+    # rank's nodes only, and ranks that disagree on Δt would march the same
+    # equation at different speeds and exchange states from different times.
+    comm = get_mpi_comm()
+    MPI.Comm_size(comm) > 1 && (cmax = MPI.Allreduce(cmax, MPI.MAX, comm))
+
     Δt::TF = cfl*metrics.Δmin/cmax
 
     ν::TF = TF(μmax)
@@ -111,21 +117,47 @@ end
 function sphere_diagnostics(q::AbstractMatrix{TF}, mesh::St_mesh,
                             metrics::St_sphere_metrics{TF}) where {TF}
 
-    mass  = zero(TF)
-    ener  = zero(TF)
-    npoin::Int = Int(mesh.npoin)     # ::Any field; see the note in sphere_cfl_dt
-    M     = metrics.M
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+
+    # ∫φ and ∫E are sums over the OWNED nodes only. M carries the fully
+    # assembled mass (build_sphere_metrics completes it across ranks), so a node
+    # mirrored on three ranks would otherwise contribute three times and the
+    # "conserved" mass would depend on the partition.
+    mass, ener = _sphere_integrals(q, metrics.M, mesh.gip2owner, rank, Int(mesh.npoin))
+
+    # ::TF for the same reason: mesh.x/y/z are ::Any, so the call inside
+    # sphere_normal_momentum is dynamic and its result infers ::Any. A max needs
+    # no ownership test — a mirrored node has the same value on both ranks.
+    drift::TF = sphere_normal_momentum(q, mesh; ivar = 2)
+
+    if nparts > 1
+        mass  = MPI.Allreduce(mass,  MPI.SUM, comm)
+        ener  = MPI.Allreduce(ener,  MPI.SUM, comm)
+        drift = MPI.Allreduce(drift, MPI.MAX, comm)
+    end
+
+    return mass, ener, drift
+end
+
+
+#
+# ∫φ dΩ and ∫(½φ|u|² + ½φ²) dΩ over this rank's own nodes. Typed barrier:
+# mesh.gip2owner is an ::Any field and the loop would box on every node.
+#
+function _sphere_integrals(q::AbstractMatrix{TF}, M::AbstractVector{TF},
+                           gip2owner, rank::Int, npoin::Int) where {TF}
+    mass = zero(TF)
+    ener = zero(TF)
     @inbounds for ip = 1:npoin
+        gip2owner[ip] == rank || continue
         φ  = q[ip,1]
         m2 = q[ip,2]^2 + q[ip,3]^2 + q[ip,4]^2
         mass += M[ip]*φ
         ener += M[ip]*(0.5*m2/φ + 0.5*φ*φ)
     end
-    # ::TF for the same reason: mesh.x/y/z are ::Any, so the call inside
-    # sphere_normal_momentum is dynamic and its result infers ::Any.
-    drift::TF = sphere_normal_momentum(q, mesh; ivar = 2)
-
-    return mass, ener, drift
+    return mass, ener
 end
 
 
@@ -251,10 +283,18 @@ struct St_sphere_monitor_due{TMon}
     mon::TMon
 end
 
+#
+# NOTE `mon.verbose` is deliberately NOT part of this test, although only rank 0
+# ever prints. The body below reduces the diagnostics across ranks, so it is
+# collective, and a condition that was true on rank 0 alone would leave that rank
+# waiting inside MPI for ranks that never entered the callback. Whether a step is
+# a print step is a property of the STEP, identical everywhere; who prints is
+# decided inside.
+#
 function (due::St_sphere_monitor_due)(u, t, integrator)
     mon   = due.mon
     istep = integrator.stats.naccept
-    return (mon.verbose && (istep % mon.nprint == 0 || istep >= mon.nsteps)) ||
+    return (istep % mon.nprint == 0 || istep >= mon.nsteps) ||
            (mon.iout < mon.nout && t >= mon.tnext - 1.0e-9*integrator.dt)
 end
 
@@ -264,8 +304,9 @@ function (mon::St_sphere_monitor)(integrator)
     t     = integrator.t
     istep = integrator.stats.naccept
 
-    #--- diagnostics
-    if mon.verbose && (istep % mon.nprint == 0 || istep >= mon.nsteps)
+    #--- diagnostics. Collective on every rank; printed by whichever one was
+    #    handed verbose = true.
+    if istep % mon.nprint == 0 || istep >= mon.nsteps
         mass, ener, drift = sphere_diagnostics(u, mon.mesh, mon.metrics)
         # max|ζ| is the instability indicator: for the Galewsky test the
         # height field barely moves while the perturbation grows, so |ζ|
@@ -277,10 +318,18 @@ function (mon::St_sphere_monitor)(integrator)
         for ip = 1:mon.npoin
             dζ = max(dζ, abs(mon.ζ[ip] - mon.ζ0[ip]))
         end
-        @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max|ζ| = %9.3e  max|ζ-ζ₀| = %9.3e\n",
-                istep, t, t/86400, (mass-mon.mass0)/mon.mass0, (ener-mon.ener0)/mon.ener0,
-                drift, ζmax, dζ)
-        flush(stdout)
+        comm = get_mpi_comm()
+        if MPI.Comm_size(comm) > 1
+            ζmax = MPI.Allreduce(ζmax, MPI.MAX, comm)
+            dζ   = MPI.Allreduce(dζ,   MPI.MAX, comm)
+        end
+        if mon.verbose
+            @printf(" #   step %6d  t = %10.1f s (%6.3f d)  δmass/mass = %9.2e  δE/E = %9.2e  |(φu)·x̂| = %9.2e  max|ζ| = %9.3e  max|ζ-ζ₀| = %9.3e\n",
+                    istep, t, t/86400, (mass-mon.mass0)/mon.mass0, (ener-mon.ener0)/mon.ener0,
+                    drift, ζmax, dζ)
+            flush(stdout)
+        end
+        # mass is a reduced quantity, so this fires on every rank at once.
         isfinite(mass) || error(" # ERROR sphere_time_loop.jl: the solution has gone non-finite. Reduce :cfl, or switch on :lfilter and/or :lvisc (with :μ > 0).")
     end
 
@@ -494,18 +543,25 @@ function _sphere_march!(mesh::St_mesh,
                      " #     * a larger :μ, or a smaller :cfl if the step really is the problem."))
     end
 
+    # Collective, so outside the verbose gate: sphere_diagnostics reduces across
+    # ranks and calling it on rank 0 alone would hang the others.
+    mass, ener, drift = sphere_diagnostics(q.qn, mesh, metrics)
+    driftmax = params.driftmax[]
+    MPI.Comm_size(get_mpi_comm()) > 1 &&
+        (driftmax = MPI.Allreduce(driftmax, MPI.MAX, get_mpi_comm()))
+
     if verbose
-        mass, ener, drift = sphere_diagnostics(q.qn, mesh, metrics)
         println(" # TIME INTEGRATION ............................................ DONE")
         @printf(" #   final: t = %.1f s ; δmass/mass = %.3e ; δE/E = %.3e ; max drift removed = %.3e\n",
-                tfinal, (mass-mass0)/mass0, (ener-ener0)/ener0, params.driftmax[])
+                tfinal, (mass-mass0)/mass0, (ener-ener0)/ener0, driftmax)
         # Where the results are. Repeated here so the location is on screen at
         # the end of the run instead of only next to the individual writes.
         println(" # Output written to: ", abspath(OUTPUT_DIR))
+        ext = MPI.Comm_size(get_mpi_comm()) > 1 ? ".pvtu" : ".vtu"
         get(inputs, :lwrite_initial, true) == true &&
-            println(" #   sphere_grid_ho.vtu   grid + initial condition")
-        @printf(" #   sphere_0001..%04d.vtu   %d output time%s\n",
-                nout, nout, nout == 1 ? "" : "s")
+            println(" #   sphere_grid_ho", ext, "   grid + initial condition")
+        @printf(" #   sphere_0001..%04d%s   %d output time%s\n",
+                nout, ext, nout, nout == 1 ? "" : "s")
     end
 
     return tfinal
@@ -536,7 +592,8 @@ function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
     # <OUTPUT_DIR>/iter_N.pvtu ... DONE"). `abspath` because :output_dir is
     # typically relative ("./output"), so the bare string does not tell you
     # where the file actually landed.
-    verbose && @printf(" #   writing %s.vtu at t = %.1f s ... DONE\n",
-                       joinpath(abspath(OUTPUT_DIR), fname), t)
+    verbose && @printf(" #   writing %s%s at t = %.1f s ... DONE\n",
+                       joinpath(abspath(OUTPUT_DIR), fname),
+                       MPI.Comm_size(get_mpi_comm()) > 1 ? ".pvtu" : ".vtu", t)
     return nothing
 end

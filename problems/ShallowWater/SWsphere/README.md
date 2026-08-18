@@ -46,12 +46,106 @@ Jexpresso case.
 > session opened before you pulled will run the new `drivers.jl` against the old
 > module and die with `UndefVarError`.
 
+### In parallel
+
+The case runs on any number of MPI ranks:
+
+```bash
+julia --project=. -e 'using MPI; run(`$(mpiexec()) -n 4 $(Base.julia_cmd()[1]) --project=. \
+      -e "using Jexpresso; Jexpresso.run_case(\"ShallowWater\", \"SWsphere\")"`)'
+```
+
+or with whichever `mpiexec` your MPI.jl is configured against (see `INSTALL.md`
+for the system-binary setup). Nothing in the deck changes.
+
+WHAT IS AND IS NOT EXCHANGED. The grid is partitioned by the ordinary Jexpresso
+reader — each rank owns a subset of the elements and holds, in addition, a
+mirrored copy of every node those elements share with a neighbour. The metric
+terms are element-local and need no communication at all. What does need it is
+every quantity that is a SUM OVER THE ELEMENTS TOUCHING A NODE, because on a
+partition seam each rank holds only its own share of that sum:
+
+| assembled quantity | where |
+|---|---|
+| the mass matrix `M` | `build_sphere_metrics` |
+| the RHS `∂q/∂t` | `sphere_rhs!`, every RK stage |
+| the filter's mass-weighted average | `sphere_filter!`, every step |
+| the relative vorticity | `sphere_relative_vorticity!`, every diagnostic |
+
+Each of those completes its sum with `assemble_mpi!` — the cross-rank half of
+the direct stiffness summation — BEFORE dividing by `M`. After it, a mirrored
+node carries exactly the value its owner does, so the state stays identical on
+every rank that holds it and no separate halo exchange is needed. The Lagrange
+projection and the RK update are node-local and therefore consistent for free.
+
+Everything global is reduced: `Δt` (a MAX over the wave speed, so all ranks take
+the same step), the conserved integrals (a SUM over OWNED nodes only — a
+mirrored node would otherwise be counted once per rank), the drift, `max|ζ|`,
+and every residual in `check_sphere_metrics`, whose verdict is therefore the
+same everywhere.
+
+MEASURED, on the shipped 10-per-panel grid at `nop = 5`. Every diagnostic the
+run prints agrees across rank counts to all the digits printed:
+
+| after 1 h (49 steps) | 1 rank | 2 ranks | 4 ranks |
+|---|---|---|---|
+| `δE/E` | -7.503e-06 | -7.503e-06 | -7.503e-06 |
+| `max\|ζ-ζ₀\|` | 4.388e-06 | 4.388e-06 | 4.388e-06 |
+| max drift removed | 6.153e+01 | 6.153e+01 | 6.153e+01 |
+| `δmass/mass` | -4.553e-14 | -4.454e-14 | -4.422e-14 |
+| M4, `Σ M[ip]` vs 4πR² | 4.9e-14 | 5.7e-14 | 5.1e-14 |
+
+and again at 6 h (289 steps), 1 rank against 4: `δE/E` -4.425e-05 both,
+`max|ζ-ζ₀|` 1.262e-05 both, `δmass/mass` -2.160e-13 against -2.116e-13. The mass
+residual is the only column that moves, in its last digits, because the order of
+summation changes with the partition — that is round-off, not a different
+answer. All seven metric checks pass at every rank count. `test/test_sphere_parallel.jl` pins this down without needing a serial
+run to compare against: it checks that the area comes out 4πR², that shared
+nodes agree on `M`, on the RHS and on the vorticity, and that `∫ ∂φ/∂t dΩ = 0`
+on the closed shell — which is the invariant a half-assembled seam cannot
+satisfy.
+
+```bash
+mpiexec -n 4 julia --project=. test/test_sphere_parallel.jl
+```
+
+WHAT IT COSTS. Timed on a 4-core sandbox, one simulated day (1153 steps) on the
+shipped 600-element grid at `nop = 5` — 600, 300 and 150 elements per rank:
+
+| ranks | time loop | of which compiling | speed-up |
+|---|---|---|---|
+| 1 | 21.4 s | 34 % | — |
+| 2 | 15.1 s | 52 % | **1.9×** |
+| 4 | 22.5 s | 46 % | 1.2× |
+
+Two ranks is close to ideal; four buys nothing more *here*, where each rank is
+down to 150 elements and four MPI processes are contending for four cores. Do
+not read that last row as a property of the code — it is a property of this box
+and this grid. Note also that total wall time (106 / 102 / 168 s) is dominated by
+per-process JIT: every rank compiles the whole RHS chain for itself, ~35 s of it
+inside the first `with_mpi` call. Measure scaling on a real machine, with a grid
+big enough that a rank has thousands of elements.
+
+THE PARTITION is the generic one (`_compute_xy_partition`, a box decomposition
+of the projected x-y plane), so a part of a SPHERE wraps around the far side
+rather than being a compact patch. It is balanced — 0.97 to 1.00 load ratio at 4
+ranks — and the mirrored-node overhead is small (15 404 local nodes against
+15 002 global, i.e. 2.7 %), so it has not been worth replacing with a
+sphere-aware partitioner. Re-measure before assuming that still holds at high
+rank counts.
+
 Output, in `problems/ShallowWater/SWsphere/output/`:
 
 | file | what it is |
 |---|---|
 | `sphere_grid_ho.vtu` | the initial state |
 | `sphere_0001.vtu` … | one per output time, `:ndiagnostics_outputs` of them |
+
+On more than one rank each of those becomes a `.pvtu` plus one `.vtu` piece per
+rank in a directory of the same name — the convention `write_vtk_grid_only` uses
+for the flat cases. Open the `.pvtu`. The `ip` point field is the GLOBAL node
+number, so it stays continuous across a partition seam as well as across a panel
+seam; the `part` cell field is the owning rank.
 
 Each file is the high-order grid — **(ngl-1)² sub-elements per spectral
 element**, exactly as `write_vtk_grid_only` does for the flat cases, so every

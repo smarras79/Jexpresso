@@ -1522,8 +1522,9 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
         error(" # ERROR mesh.jl: :cubed_sphere_map => ", to,
               " is not one of ", CUBED_SPHERE_MAPS, ".")
 
-    comm = get_mpi_comm()
-    rank = MPI.Comm_rank(comm)
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
 
     # radius is only set (and lon/lat only allocated) when
     # project_nodes_to_shell! decided the grid really is a sphere.
@@ -1633,10 +1634,29 @@ function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
     # It separates the candidates by ~14 orders of magnitude (2e-16 against
     # 1e-1), so this is a measurement, not a guess.
     #
+    # In parallel each rank holds only its share of the linear vertices, and the
+    # lattice size n comes from the GLOBAL count V = 6n²+2 — so count the
+    # vertices this rank OWNS (a vertex mirrored on two ranks must be counted
+    # once) and sum. The per-candidate residuals are local maxima over the
+    # vertices at hand and are reduced below, so every rank picks the same map.
     nlin = Int(mesh.npoin_linear)
+    nvert = nlin
+    if nparts > 1
+        nown = 0
+        for ip = 1:nlin
+            mesh.gip2owner[ip] == rank && (nown += 1)
+        end
+        nvert = MPI.Allreduce(nown, MPI.SUM, comm)
+    end
     from, resid = detect_cubed_sphere_map(@view(mesh.x[1:nlin]),
                                           @view(mesh.y[1:nlin]),
-                                          @view(mesh.z[1:nlin]))
+                                          @view(mesh.z[1:nlin]); nvert = nvert)
+    if nparts > 1
+        for k in keys(resid)
+            resid[k] = MPI.Allreduce(resid[k], MPI.MAX, comm)
+        end
+        from = argmin(resid)
+    end
     if from === :unknown
         error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) *
               " needs a structured cubed sphere, but this grid has " * string(nlin) *
@@ -1959,6 +1979,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # same ordinary gmsh path with no case input and no separate reader.
     mesh.lmanifold = (mesh.nsd == 2) && (num_point_dims(model) == 3) &&
                      _is_curved_surface(get_node_coordinates(get_grid(model)))
+    #
+    # ...and it is decided COLLECTIVELY. _is_curved_surface looks at the node
+    # cloud this rank holds, and a small enough piece of a shell is flat to
+    # within the coplanarity tolerance. One rank answering "flat" while the
+    # others answer "manifold" would put that rank on the flat 2D path — it
+    # would drop z, collapse its piece onto the equatorial disc, and the run
+    # would go quietly wrong. If ANY rank sees curvature, the grid is a manifold.
+    #
+    if mpi_size > 1
+        mesh.lmanifold = MPI.Allreduce(mesh.lmanifold ? 1 : 0, MPI.MAX, comm) == 1
+    end
     if mesh.lmanifold
         println_rank(string(" #   2D manifold embedded in 3D: keeping z and placing the LGL nodes on the surface");
                      msg_rank = rank, suppress = mesh.msg_suppress)
