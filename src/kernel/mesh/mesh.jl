@@ -2274,7 +2274,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.x      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.y      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z      = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.nsd), Int64(mesh.npoin))
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, NSD_MAX, Int64(mesh.npoin))
     
     mesh.ip2gip    = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
@@ -4059,7 +4059,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     # (nsd, npoin). This used to be `copy(mesh.x)`, which made coords a bare
     # npoin-vector that only worked because the old [ip,1] indexing tolerated a
     # trailing singleton dimension. It is filled in full below.
-    mesh.coords = KernelAbstractions.zeros(backend, TFloat, size(mesh.coords, 1), Int64(mesh.npoin))
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, NSD_MAX, Int64(mesh.npoin))
     #mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
     # SM here is the issue. COORDS is not being populated correctly at 1D grid generationS
     
@@ -5494,10 +5494,28 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         mesh.x = x
         #mesh.coords[1, :] = x[:]
     end 
-    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.nsd), Int64(mesh.npoin))
+    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, NSD_MAX, Int64(mesh.npoin))
     mesh.coords[1, :] = mesh.x[:]
     #plot_1d_grid(mesh)
-    resize!(mesh.y, (mesh.npoin))
+
+    #
+    # y and z are identically zero on a 1D grid, and they have to SAY so.
+    #
+    # This used to be a bare `resize!(mesh.y, mesh.npoin)`. resize! grows a Vector
+    # without initialising the new elements, so mesh.y came out of here holding
+    # whatever was in that memory — on a 1D Laguerre grid, denormals of order
+    # 1e-309 — while coords[2,:] was correctly zero. mesh.z was worse: it was
+    # never resized at all and kept the 2-element placeholder from the St_mesh
+    # default, so `mesh.z[ip]` was out of bounds for every ip > 2.
+    #
+    # Neither showed up in a run because nothing on the 1D path reads y or z for
+    # anything but the coords fill. That is exactly the kind of thing that starts
+    # mattering the moment coords and x/y/z are unified, which is why
+    # test/test_mesh_coords_sync.jl now pins it.
+    #
+    mesh.y = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+    mesh.z = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+
     println(" # BUILD LINEAR CARTESIAN GRID ............................ DONE")
     
 end
@@ -5757,17 +5775,17 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         end
 
 
-        # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-        # A 2D manifold needs three columns even though nsd == 2.
-        ncoord = mesh.lmanifold ? 3 : Int64(mesh.nsd)
-        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, ncoord, Int64(mesh.npoin))
+        # WARNING: this will be removed when x,y,z is fully replaced by coords.
+        #
+        # coords is (NSD_MAX, npoin) unconditionally now, so the old
+        # `ncoord = lmanifold ? 3 : nsd` special case is gone: a 2D manifold and a
+        # flat 2D grid get the same three rows, and the distinction between them
+        # stays where it belongs, in `mesh.lmanifold`. Rows above nsd are filled
+        # from mesh.y / mesh.z, which are zero on a lower-dimensional grid.
+        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, NSD_MAX, Int64(mesh.npoin))
         mesh.coords[1, :] = mesh.x[:]
-        if ncoord > 1
-            mesh.coords[2, :] = mesh.y[:]
-            if ncoord > 2
-                mesh.coords[3, :] = mesh.z[:]
-            end
-        end
+        mesh.coords[2, :] = mesh.y[:]
+        mesh.coords[3, :] = mesh.z[:]
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
@@ -5780,7 +5798,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
             
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat, 1, Int64(inputs[:npx])),
+                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat, NSD_MAX, Int64(inputs[:npx])),
                                                    x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
                                                    npx  = TInt(inputs[:npx]),
                                                    xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),

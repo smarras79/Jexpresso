@@ -18,14 +18,32 @@ Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3,
     ref_level = KernelAbstractions.zeros(backend,TInt,nelem)
 end
 
+#
+# Rows of St_mesh.coords. Three, always -- see the `coords` field below.
+#
+const NSD_MAX = 3
+
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     x      = KernelAbstractions.zeros(backend, TFloat, 2)
     y      = KernelAbstractions.zeros(backend, TFloat, 2)
     z      = KernelAbstractions.zeros(backend, TFloat, 2)
-    # LAYOUT: coords is (nsd, npoin) -- a node's coordinates are ADJACENT in
+    # LAYOUT: coords is (NSD_MAX, npoin) -- a node's coordinates are ADJACENT in
     # memory, so touching a node costs one cache line instead of nsd of them.
-    coords = KernelAbstractions.zeros(backend, TFloat, 1, 2)
+    #
+    # ALWAYS THREE ROWS, whatever the problem's nsd. It used to be (nsd, npoin),
+    # which left mesh.z on a 2D grid with nowhere to live: coords had no row 3,
+    # so z could only be carried by the separate mesh.z array, and the two could
+    # not be unified. Rows above nsd are zero, which is exactly what mesh.y/mesh.z
+    # already hold on a lower-dimensional grid, so nothing downstream changes
+    # meaning. The cost is one npoin-vector of zeros on a 2D grid.
+    #
+    # A 2D MANIFOLD (a cubed sphere) has nsd == 2 but genuinely needs all three
+    # rows; that used to be special-cased as `ncoord = lmanifold ? 3 : nsd`. With
+    # three rows always, the special case is gone -- and note that the flat/shell
+    # distinction is carried by `lmanifold`, NOT by the row count, so nothing is
+    # lost by making the row count uniform.
+    coords = KernelAbstractions.zeros(backend, TFloat, NSD_MAX, 2)
     
     x_ho = KernelAbstractions.zeros(backend, TFloat, 2)
     y_ho = KernelAbstractions.zeros(backend, TFloat, 2)

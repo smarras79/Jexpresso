@@ -178,7 +178,12 @@ end
                     shell_inputs(flat, 4; lspherical = false),
                     1, distribute)
                 @test mesh.lmanifold == false
-                @test size(mesh.coords, 1) == 2      # no third row on a flat grid
+                # coords is (NSD_MAX, npoin) for EVERY grid now — the flat/shell
+                # distinction lives in `lmanifold`, which is the assertion above,
+                # and never in the row count. The third row of a flat 2D grid is
+                # zero, which is what mesh.z held there anyway.
+                @test size(mesh.coords, 1) == Jexpresso.NSD_MAX
+                @test all(iszero, mesh.coords[3, :])
             end
         end
     end
