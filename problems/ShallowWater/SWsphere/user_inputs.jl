@@ -40,11 +40,10 @@ function user_inputs()
         # being strong enough to erase the answer.
         #
         # Physics, provenance and the discretization: see the README next to
-        # problems/ShallowWater/SWsphere/user_inputs.jl. Everything down to the
-        # STABILIZATION block below is that deck, unchanged.
+        # this file.
         #---------------------------------------------------------------------------
         :lspherical_shell     => true,
-        :lgrid_only           => true,
+        :lgrid_only           => false,
         :linit_only           => false,
         #---------------------------------------------------------------------------
         # Grid checks (see check_sphere_metrics in src/kernel/mesh/sphere_metrics.jl)
@@ -143,9 +142,8 @@ function user_inputs()
         :interpolation_nodes  => "lgl",
         :nop                  => 5,
         #---------------------------------------------------------------------------
-        # Mesh: the cubed sphere that ships with SWsphere (600 quads, 602
-        # vertices, 10 elements per panel edge). Pointed at rather than copied —
-        # the two cases are the same grid by construction.
+        # Mesh: the cubed sphere that ships with this case (600 quads, 602
+        # vertices, 10 elements per panel edge).
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/ShallowWater/SWsphere/cubed_sphere.msh",
@@ -159,7 +157,7 @@ function user_inputs()
         :tend                 => 10*24*3600,       # 144 h = 6 days, as in the test
         :ndiagnostics_outputs => 24,             # a VTK dump every 6 h
         :ndiagnostics_prints  => 200,            # steps between diagnostic lines
-        :case                 => "swsphere_visc",
+        :case                 => "swsphere",
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,
         #---------------------------------------------------------------------------

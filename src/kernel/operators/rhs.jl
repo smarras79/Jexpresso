@@ -1490,7 +1490,6 @@ function _expansion_inviscid!(u, neqs, ngl,
                               F, S,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-
     for ieq = 1:neqs
         for i=1:ngl
             dFdξ = 0.0
@@ -1612,7 +1611,7 @@ function _expansion_inviscid_KEP!(u, neqs, ngl, dψ, ω,
                 dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
 
                 for ieq=1:neqs
-                    rhs_el[iel,i,j,ieq] -= ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
+                    rhs_el[iel,i,j,ieq] -= 1.5*ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
                 end
             end
         end

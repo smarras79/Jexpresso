@@ -31,7 +31,7 @@
 module CICases
 
 export CICase, CI_CASES, case_name, select_cases, matrix_json, validate,
-       project_root, runs_dir, ref_dir
+       project_root, runs_dir, ref_dir, referenced_cases
 
 """
     CICase(eqs, case; timeout, atol)
@@ -85,11 +85,11 @@ const CI_CASES = CICase[
     # under test/CI-ref/ — either way the reference has to be regenerated,
     # since it predates the current HDF5 file naming.
     #
-    # CICase(eqs = "CompEuler",    case = "thetaTracers",   timeout = 40),
-    # CICase(eqs = "CompEuler",    case = "theta_laguerre", timeout = 40),
+    CICase(eqs = "CompEuler",    case = "thetaTracers",   timeout = 40),
+    CICase(eqs = "CompEuler",    case = "theta_laguerre", timeout = 40),
     # CICase(eqs = "CompEuler",    case = "3d",             timeout = 40),
     # CICase(eqs = "CompEuler",    case = "wave1d",         timeout = 20),
-    # CICase(eqs = "CompEuler",    case = "wave1d_lag",     timeout = 20),
+    CICase(eqs = "CompEuler",    case = "wave1d_lag",     timeout = 20),
     # CICase(eqs = "Burgers",      case = "case1",          timeout = 20),
     # CICase(eqs = "Burgers",      case = "case2d",         timeout = 30),
     # CICase(eqs = "Elliptic",     case = "2dlaplace",      timeout = 20),
@@ -215,12 +215,109 @@ function deck_mesh(case_dir::AbstractString)
 end
 
 """
-    validate(; cases = CI_CASES, root = project_root()) -> Vector{String}
+    tracked_references(root) -> Set{String} or nothing
+
+The `test/CI-ref/…` paths git has under version control, or `nothing` when
+that cannot be determined (git missing, not a repository, no worktree).
+
+Only a *committed* reference is a claim about what the suite covers. A local
+`test/CI-ref/<eqs>/<case>/` left behind by an experiment with
+`generate_ci_ref.jl` is one developer's scratch space: it is invisible to
+everyone else and to CI, so it must not fail their `Pkg.test()`. Paths come
+back repository-relative with forward slashes, which is how they are built in
+`referenced_cases`.
+"""
+function tracked_references(root::AbstractString)
+    try
+        listing = read(Cmd(`git -C $root ls-files -z -- test/CI-ref`), String)
+        return Set(split(listing, '\0'; keepempty = false))
+    catch
+        # No git and no repository means an unpacked source archive, which
+        # contains committed files and nothing else — the plain directory
+        # scan is then already the right answer.
+        return nothing
+    end
+end
+
+"""
+    referenced_cases(root = project_root()) -> Vector{String}
+
+Every `"<eqs>/<case>"` that has a committed reference solution, i.e. at least
+one version-controlled `.h5` file in `test/CI-ref/<eqs>/<case>/output/`.
+
+This is the repository's view of what the suite covers. `CI_CASES` is the
+registry's view. `validate` compares the two.
+"""
+function referenced_cases(root::AbstractString = project_root())
+    ref_root = joinpath(root, "test", "CI-ref")
+    found    = String[]
+    isdir(ref_root) || return found
+
+    tracked = tracked_references(root)
+    is_reference = (eqs, case, file) ->
+        endswith(file, ".h5") &&
+        (tracked === nothing ||
+         "test/CI-ref/$eqs/$case/output/$file" in tracked)
+
+    for eqs in readdir(ref_root)
+        eqs_dir = joinpath(ref_root, eqs)
+        isdir(eqs_dir) || continue
+        for case in readdir(eqs_dir)
+            out = joinpath(eqs_dir, case, "output")
+            isdir(out) || continue
+            any(f -> is_reference(eqs, case, f), readdir(out)) || continue
+            push!(found, string(eqs, "/", case))
+        end
+    end
+    return sort(found)
+end
+
+"""
+    disabled_entry(name; file = <this file>) -> String or nothing
+
+The commented-out `CICase(...)` line for `name` in the registry, or `nothing`
+when there is none.
+
+A case disabled by commenting its line out is the failure mode this whole
+check exists for: the deck, the reference and the documentation all still say
+the case is tested, and the one line that decides whether it runs says it is
+not. When that is what happened, `validate` can say so exactly instead of
+reporting a generic "not registered".
+"""
+function disabled_entry(name::AbstractString; file::AbstractString = @__FILE__)
+    isfile(file) || return nothing
+    for line in eachline(file)
+        code = lstrip(line)
+        startswith(code, "#") || continue
+        body = lstrip(code, ['#', ' ', '\t'])
+        startswith(body, "CICase(") || continue
+
+        m_eqs  = match(r"eqs\s*=\s*\"([^\"]+)\"",  body)
+        m_case = match(r"case\s*=\s*\"([^\"]+)\"", body)
+        (m_eqs === nothing || m_case === nothing) && continue
+        string(m_eqs.captures[1], "/", m_case.captures[1]) == name || continue
+        return body
+    end
+    return nothing
+end
+
+"""
+    validate(; cases = CI_CASES, root = project_root(), orphans = true) -> Vector{String}
 
 Check cases against the repository: the `test/CI-runs` directory must exist
 and contain the six `user_*.jl` files the solver includes unconditionally,
 and any mesh the deck reads must be present. A missing reference solution is
 reported as a note, not an error — `test/generate_ci_ref.jl` creates it.
+
+With `orphans = true` it also checks the other direction, which is the one
+that fails silently: every case with a committed reference under
+`test/CI-ref/` must be registered in `CI_CASES`. A reference nobody compares
+against does not make CI fail — it makes CI *green*, however wrong the
+solution gets, while the deck, the reference and `test/CIdescription.md` all
+still claim the case is covered. That check is against the whole registry, so
+it does not depend on `cases`; pass `orphans = false` in the tool that is
+about to register the case (`test/generate_ci_ref.jl`), which would otherwise
+be blocked by the very inconsistency it fixes.
 
 `cases` defaults to the whole registry, which is what the CI job checks. Pass
 a subset when acting on specific cases, so that an unrelated broken entry
@@ -229,7 +326,8 @@ does not block the work at hand.
 Returns the list of problems found (empty when everything checks out).
 """
 function validate(; cases::AbstractVector{CICase} = CI_CASES,
-                    root::AbstractString = project_root())
+                    root::AbstractString = project_root(),
+                    orphans::Bool = true)
     problems = String[]
 
     if isempty(cases)
@@ -277,6 +375,36 @@ function validate(; cases::AbstractVector{CICase} = CI_CASES,
         c.atol    > 0 || push!(problems, "$name: atol must be positive")
     end
 
+    #--------------------------------------------------------------------------
+    # References nothing runs against.
+    #
+    # runtests.jl iterates CI_CASES, so a case that is not in it is simply not
+    # run — no failure, no warning, no line in the test summary. Committing its
+    # reference solution does not change that: the reference just sits there,
+    # and the suite reports "all passed" while the case it belongs to has not
+    # been evaluated since the day it was disabled.
+    #--------------------------------------------------------------------------
+    if orphans
+        registered = Set(map(case_name, CI_CASES))
+        for name in referenced_cases(root)
+            name in registered && continue
+
+            reference = "test/CI-ref/$name/output"
+            disabled  = disabled_entry(name)
+            fix = disabled === nothing ?
+                "Add it to CI_CASES (or run `julia --project=. " *
+                "test/generate_ci_ref.jl $name`, which registers it for you)." :
+                "The registry has it commented out — uncomment that line:\n      " *
+                disabled
+            push!(problems,
+                  "$name: $reference/ holds a reference solution, but the case " *
+                  "is not in CI_CASES, so nothing ever compares against it and " *
+                  "the suite stays green however far the solution drifts. " *
+                  fix * "\n      If the reference is obsolete instead, delete " *
+                  "test/CI-ref/$name/.")
+        end
+    end
+
     return problems
 end
 
@@ -297,6 +425,20 @@ function main(args::AbstractVector{<:AbstractString})
         println(length(select_cases(selection)))
     elseif command == "validate"
         problems = validate()
+
+        # A registered case with no reference yet is not an error — the
+        # comparison skips it and says so — but it IS a case CI is not
+        # actually checking, so it is worth a line here rather than only in
+        # the middle of a test log.
+        referenced = Set(referenced_cases())
+        for c in CI_CASES
+            case_name(c) in referenced ||
+                println("NOTE: $(case_name(c)) has no reference solution in " *
+                        "test/CI-ref/$(case_name(c))/output/ — the comparison " *
+                        "will be skipped. Generate it with `julia --project=. " *
+                        "test/generate_ci_ref.jl $(case_name(c))`.")
+        end
+
         if isempty(problems)
             println("CI registry OK — $(length(CI_CASES)) case(s): ",
                     join(map(case_name, CI_CASES), ", "))

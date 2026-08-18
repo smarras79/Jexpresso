@@ -37,16 +37,30 @@ const SELECTION = let names = filter(a -> !startswith(a, "-"), ARGS)
 end
 const CASES = select_cases(SELECTION)
 
-problems = validate(cases = CASES)
+# The orphan-reference check (a case with a committed reference that is not in
+# CI_CASES, and so is never run) is a statement about the whole registry, not
+# about the selection — so it belongs to a full-suite run, which is what CI
+# does. A developer narrowing to one case is not asking to be stopped by an
+# unrelated one.
+problems = validate(cases = CASES, orphans = length(CASES) == length(CI_CASES))
 isempty(problems) || error("test/ci_cases.jl is inconsistent with the " *
                            "repository:\n  " * join(problems, "\n  "))
 
-@testset "Jexpresso CI suite" begin
+# `verbose = true` at each level, because Julia prints a nested testset only
+# when it fails. A green suite therefore collapsed to a single
+#
+#     Jexpresso CI suite |   15     15  9m35.6s
+#
+# which says how many assertions passed but not WHICH cases ran — the one
+# question worth asking of a suite whose whole history is cases that silently
+# were not running. The per-case rows also carry per-case times, so a case
+# that has quietly grown to dominate the suite is visible.
+@testset verbose = true "Jexpresso CI suite" begin
     if isempty(CASES)
         @warn "no CI cases selected — nothing to test"
     end
     for c in CASES
-        @testset "$(case_name(c))" begin
+        @testset verbose = true "$(case_name(c))" begin
             run_ci_case(c)
             compare_case(c)
             (FORCE_VTK || c.vtk_smoke) && vtk_smoke_case(c)

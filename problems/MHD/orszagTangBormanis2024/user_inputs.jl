@@ -87,7 +87,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
         :gmsh_filename       => "./problems/MHD/orszagTangBormanis2024/OT_32x32_periodic.msh",
-        #:gmsh_filename      => "./meshes/gmsh_grids/OT_32x32_periodic.msh",
         #---------------------------------------------------------------------------
         # Filter parameters.
         #
