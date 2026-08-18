@@ -38,7 +38,17 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::Abst
     return flux
 end
 
-function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
+#
+# Device spelling of the free-slip wall, used by the GPU (rhs_gpu.jl) and JACC
+# (rhs_jacc.jl) kernels.
+#
+# The argument list is (q, qe, x, y, t, nx, ny, qbdy, lpert) — the 2D kernels pass
+# the two coordinates SEPARATELY, as x[ip], y[ip]. It used to read `coords` in
+# that slot and take one argument fewer, which no caller in the tree ever matched;
+# the mismatch was invisible only because this case had never been run off the CPU
+# path. Same fix as problems/ShallowWater/SoliWaveIsland/user_bc.jl.
+#
+function user_bc_dirichlet_gpu(q, qe, x, y, t, nx, ny, qbdy, lpert)
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
