@@ -806,6 +806,47 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lproject_to_sphere] = true
     end
     #
+    #   :cubed_sphere_map         move the shell's nodes onto a different
+    #                             cube-face → sphere map after the grid is read.
+    #                             Connectivity, panel decomposition and panel
+    #                             boundaries are untouched — only where the
+    #                             nodes sit inside each panel changes. See
+    #                             src/kernel/mesh/cubed_sphere_maps.jl.
+    #
+    #     :none         (default) leave the grid exactly as the .msh has it.
+    #     :gnomonic     equidistant central projection, Sadourny (1972).
+    #                   (:equidistant is an accepted alias.)
+    #     :equiangular  central projection with the face coordinate measured as
+    #                   an angle, Ronchi, Iacono & Paolucci (1996). The most
+    #                   HOMOGENEOUS of the three: largest minimum grid distance,
+    #                   so the largest explicit time step.
+    #     :conformal    Rančić, Purser & Mesinger (1996). ORTHOGONAL AND ISOTROPIC
+    #                   everywhere, corner included — and REFUSED on any grid with
+    #                   a node on a cube corner, which is every structured panel
+    #                   grid, because its Jacobian is zero there. Three panels meet
+    #                   at a corner and each opens 120°, so a map that keeps the
+    #                   square's 90° can only do it by collapsing its derivative;
+    #                   there is no regularisation of it a nodal scheme can use
+    #                   (THE 120° CORNER in src/kernel/mesh/cubed_sphere_maps.jl
+    #                   has the argument and the measurements). Use :equiangular.
+    #                   (:conformal_exact is a deprecated alias.)
+    #
+    # The grid the remap starts FROM is MEASURED by detect_cubed_sphere_map, not
+    # assumed, so there is deliberately no input for it: a "source map" switch is
+    # a claim about the .msh that nothing can check, and getting it wrong silently
+    # produces a grid that is neither map. (It used to be assumed gnomonic, and
+    # that was wrong — gmsh spaces `Transfinite Line` points at equal ANGLE along
+    # a `Circle` arc, so cubed_sphere.geo emits the EQUIANGULAR grid.)
+    #
+    if(!haskey(inputs, :cubed_sphere_map))
+        inputs[:cubed_sphere_map] = :none
+    end
+    let _m = inputs[:cubed_sphere_map]
+        (_m === :none || _m in CUBED_SPHERE_MAPS) ||
+            error(string(" # ERROR mod_inputs.jl: :cubed_sphere_map => ", _m,
+                         " is not recognised. Use :none or one of ", CUBED_SPHERE_MAPS, "."))
+    end
+    #
     #   :sphere_metrics    the 2D-manifold metric terms of build_sphere_metrics.
     #                      Kopriva's curl-invariant form (J. Sci. Comput. 26(3),
     #                      301, 2006, Eq. 15; Sec. 3.2.3 of Kelly, Alves,
@@ -885,6 +926,25 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     if(!haskey(inputs, :dsgs_Prt))
         inputs[:dsgs_Prt] = 0.7
+    end
+    # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖.
+    #
+    #   false (default) : rank-local. No communication at all.
+    #   true            : the domain norms of Marras eq. (9) / Nazarov &
+    #                     Hoffman eq. (3.5). Costs 2-3 MPI Allreduce per RHS
+    #                     call — 10-15 per step under a five-stage RK — on
+    #                     every rank's critical path.
+    #
+    # These two quantities only set the SCALE the element residual is measured
+    # against, and a partition of a connected domain resolves that scale as
+    # well as the whole domain does, so the default costs nothing and changes
+    # the solution only at round-off level. Set it true when μ has to be
+    # reproducible across rank counts (bit-for-bit regression tests), or when
+    # a rank's subdomain genuinely cannot see the solution's scale. Serial
+    # runs are unaffected either way. See kernel/physics/SGS.jl
+    # (_dsgs_norm_scope) and ENVIRONMENT_VARIABLES.md.
+    if(!haskey(inputs, :ldsgs_global_norms))
+        inputs[:ldsgs_global_norms] = false
     end
 
     #

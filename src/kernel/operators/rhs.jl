@@ -1035,7 +1035,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 params.RHS, params.Minv, params.visc_coeff,
                                 TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δx,
-                                Int(nelem), Int(ngl))
+                                Int(nelem), Int(ngl);
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
                                  Int(nelem), Int(ngl), SD)
@@ -1103,7 +1104,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 TT(get(params.inputs, :dsgs_C1,    1.0)),
                                 TT(get(params.inputs, :dsgs_C2,    0.5)),
                                 get_mpi_comm(),
-                                Int(params.mesh.nelem), Int(params.mesh.ngl))
+                                Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -1143,7 +1145,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δelem,
                                 PHYS_CONST, Pr_TT,
-                                Int(params.mesh.nelem), Int(params.mesh.ngl))
+                                Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                ltheta = (params.inputs[:energy_equation] == "theta"),
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
 
         # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
@@ -1194,13 +1198,15 @@ end
 #
 # μ_dsgs[iel, ieq] already carries the per-equation coefficient set
 # by compute_dsgs_viscosity!:
-#   ieq = 1 : diagnostic ν_ρ (NOT applied — Marras drops mass diffusion)
+#   ieq = 1 : β on ρ — zero on the Euler-θ path (Marras eq. 10 drops
+#             mass diffusion), the β = μ/‖ρ‖∞,K of Nazarov & Hoffman
+#             eq. (3.7) on the total-energy path
 #   ieq = 2 : μ on the x-momentum
 #   ieq = 3 : μ on the y-momentum
-#   ieq = 4 : κ on the θ-equation (already scaled by Pr/(γ-1))
+#   ieq = 4 : κ on the energy/θ equation (already scaled by Pr/(γ-1))
 # All this loop needs to do is unpack μ_dsgs[iel, :] into the per-
-# element visc_coeff_dsgs scratch (zeroing ieq=1 so ρ stays
-# conservative) and pass it to the generic 2D _expansion_visc!.
+# element visc_coeff_dsgs scratch and pass it to the generic 2D
+# _expansion_visc!.
 function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   rhs_diffξ_el, rhs_diffη_el,
                                   rhs_diff_el,
@@ -1217,9 +1223,9 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   VT = DSGS())
 
     for iel = 1:nelem
-        # Marras (10): mass conservation untouched.
-        visc_coeff_dsgs[1] = zero(eltype(visc_coeff_dsgs))
-        for ieq = 2:neqs
+        # Slot 1 is whatever compute_dsgs_viscosity! decided: identically
+        # zero for Marras eq. (10), β for Nazarov & Hoffman eq. (3.7).
+        for ieq = 1:neqs
             visc_coeff_dsgs[ieq] = μ_dsgs[iel, ieq]
         end
 

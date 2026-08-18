@@ -268,16 +268,30 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     #---------------------------------------------------------------------------------
     drift = sphere_normal_momentum(q.qn, mesh; ivar = 2)
     scale = maximum(abs, @view q.qn[1:mesh.npoin, 2:4]) + eps()
+    # In parallel both are maxima over this rank's nodes only. Reduce them, so
+    # that the test — and the error it can raise — is the same on every rank
+    # instead of one rank throwing while the others walk into the next
+    # collective and hang.
+    if MPI.Comm_size(comm) > 1
+        drift = MPI.Allreduce(drift, MPI.MAX, comm)
+        scale = MPI.Allreduce(scale, MPI.MAX, comm)
+    end
     if drift > 1.0e-10*scale
         error(string(" # ERROR initialize.jl: the initial momentum is not tangential to the shell: ",
                      "max|(φu)·x̂| = ", drift, " against a momentum scale of ", scale, "."))
     end
 
+    # Computed on every rank (the reductions are collective) and printed by one.
+    hmin, hmax   = extrema(@view q.qout[1:mesh.npoin, 1])
+    φmin, φmax   = extrema(@view q.qn[1:mesh.npoin, 1])
+    umag         = maximum(sqrt(q.qout[ip,2]^2 + q.qout[ip,3]^2 + q.qout[ip,4]^2)
+                           for ip = 1:mesh.npoin)
+    if MPI.Comm_size(comm) > 1
+        hmin = MPI.Allreduce(hmin, MPI.MIN, comm); hmax = MPI.Allreduce(hmax, MPI.MAX, comm)
+        φmin = MPI.Allreduce(φmin, MPI.MIN, comm); φmax = MPI.Allreduce(φmax, MPI.MAX, comm)
+        umag = MPI.Allreduce(umag, MPI.MAX, comm)
+    end
     if rank == 0
-        hmin, hmax   = extrema(@view q.qout[1:mesh.npoin, 1])
-        φmin, φmax   = extrema(@view q.qn[1:mesh.npoin, 1])
-        umag         = maximum(sqrt(q.qout[ip,2]^2 + q.qout[ip,3]^2 + q.qout[ip,4]^2)
-                               for ip = 1:mesh.npoin)
         @printf(" #   h ∈ [%.4f, %.4f] m ; φ = gh ∈ [%.2f, %.2f] m²/s² ; max|u| = %.4f m/s\n",
                 hmin, hmax, φmin, φmax, umag)
         @printf(" #   max|(φu)·x̂| = %.3e  (the initial state is on the shell)\n", drift)

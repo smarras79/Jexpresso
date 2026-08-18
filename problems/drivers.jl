@@ -81,13 +81,10 @@ function driver(nparts,
                   " #     julia> Jexpresso.run_case(\"ShallowWater\", \"SWsphere\")")
         end
 
-        if MPI.Comm_size(comm) > 1
-            error(" # ERROR drivers.jl: the spherical-shell path is serial for now. Run it on a single MPI rank.")
-        end
-
         if rank == 0
             println()
             println(" # :lspherical_shell => true — reading the shell grid through the ordinary gmsh path")
+            nparts > 1 && println(" #   running on ", nparts, " MPI ranks")
             flush(stdout)
         end
 
@@ -100,9 +97,11 @@ function driver(nparts,
         # same convention as write_vtk_grid_only for the flat cases. When the
         # initial condition has been built its fields ride on that same file.
         if get(inputs, :lgrid_only, false) == true
-            rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR)
+            # Every rank writes its own piece (one .vtu each plus rank 0's
+            # .pvtu); only rank 0 narrates.
+            write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; verbose = (rank == 0))
             if rank == 0
-                println(" # :lgrid_only => true — grid built and written to ", OUTPUT_DIR, ". Stopping here.")
+                println(" # :lgrid_only => true — grid built and written to ", abspath(OUTPUT_DIR), ". Stopping here.")
             end
             return smesh
         end
@@ -148,15 +147,17 @@ function driver(nparts,
                            @view(qsphere.qe[ip, :]))
             end
 
+            nparts > 1 && (drift = MPI.Allreduce(drift, MPI.MAX, comm))
             if rank == 0
                 @printf(" # Lagrange projection P = I - xxᵀ/r²: removed max|(φu)·x̂| = %.3e\n", drift)
             end
         end
 
         if get(inputs, :linit_only, false) == true
-            rank == 0 && write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR; q = qsphere)
+            write_vtk_sphere_grid(smesh, "sphere_grid_ho", OUTPUT_DIR;
+                                  q = qsphere, verbose = (rank == 0))
             if rank == 0
-                println(" # :linit_only => true — grid + initial condition written to ", OUTPUT_DIR, ". Stopping here.")
+                println(" # :linit_only => true — grid + initial condition written to ", abspath(OUTPUT_DIR), ". Stopping here.")
             end
             return smesh, qsphere
         end
