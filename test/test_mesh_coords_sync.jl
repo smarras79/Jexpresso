@@ -31,6 +31,12 @@
 # that row 3 of a flat grid is zero. Those are real properties of the mesh builder
 # and they are what the 1D/Laguerre case actually exercises.
 #
+# AND THE VALUES. Shape is not enough: a 1D build that reallocated coords to zeros
+# produced an array of exactly the right shape holding no grid at all, and every 1D
+# case plotted as one vertical line at x = 0. The two 1D testsets therefore assert
+# what the coordinates ARE -- element vertices on the linear grid, LGL nodes
+# increasing across each element, the span equal to [xmin, xmax].
+#
 # It is deliberately about the INVARIANT, not about any one case. Add a case to
 # CASES and it is covered.
 #---------------------------------------------------------------------------------
@@ -78,6 +84,20 @@ const LAGUERRE_1D = Dict{Symbol,Any}(
     :xmin               => -2.5,
     :xmax               =>  2.5,
     :nelx               =>  50,
+)
+
+#
+# A natively-built 1D grid with NO Laguerre layers -- the plain sod1d/wav1d shape.
+# Ten elements on [0, 1] at nop = 4, so the element vertices are exactly the
+# multiples of 0.1 and every interior LGL node sits strictly between two of them.
+#
+const PLAIN_1D = Dict{Symbol,Any}(
+    :lread_gmsh => false,
+    :nsd        => 1,
+    :nop        => 4,
+    :xmin       =>  0.0,
+    :xmax       =>  1.0,
+    :nelx       =>  10,
 )
 
 function build_mesh(casedir, msh; nop = 4, extra = Dict{Symbol,Any}())
@@ -152,6 +172,66 @@ end
             d == 0 || @info "coords row $r disagrees with mesh.$nm" maxdiff=d
             @test mesh.coords[r, :] == v
         end
+
+        #
+        # ...and the numbers themselves. See the note on the plain-1D testset
+        # below: shape alone does not tell you the grid survived the build.
+        #
+        x  = mesh.coords[1, 1:npoin]
+        xi = mesh.coords[1, 1:Int(mesh.npoin_original)]   # the LGL part
+        @test allunique(x)                                # no two nodes on top of each other
+        @test minimum(xi) ≈ LAGUERRE_1D[:xmin]
+        @test maximum(xi) ≈ LAGUERRE_1D[:xmax]
+        # the semi-infinite layers reach out past both ends
+        @test minimum(x) < LAGUERRE_1D[:xmin]
+        @test maximum(x) > LAGUERRE_1D[:xmax]
+    end
+
+    #
+    # THE VALUES, not just the shape.
+    #
+    # Everything above this point is about lengths and row counts, and a mesh can
+    # pass all of it while holding no grid at all: add_high_order_nodes_1D_native_mesh!
+    # used to REALLOCATE coords to zeros (harmless when mesh.x was separate storage
+    # and coords got refilled from it afterwards, fatal once coords became the
+    # storage), and the result was an npoin-column array of the right shape with
+    # every 1D node sitting on x = 0. Shape tests saw nothing; every 1D case
+    # plotted as a single vertical line. So: check the coordinates are the grid.
+    #
+    @testset "1D native grid: coords are the grid, not zeros" begin
+        mesh  = build_mesh("", nothing; nop = 4, extra = PLAIN_1D)
+        npoin = Int(mesh.npoin)
+        nelem = Int(mesh.nelem)
+        ngl   = Int(mesh.ngl)
+        xmin  = PLAIN_1D[:xmin]
+        xmax  = PLAIN_1D[:xmax]
+        Δx    = (xmax - xmin)/nelem
+        x     = mesh.coords[1, 1:npoin]
+
+        # exactly one node is at the origin: the left endpoint. This single
+        # assertion is the one that fails when the grid collapses.
+        @test count(iszero, x) == 1
+        @test allunique(x)
+        @test minimum(x) ≈ xmin
+        @test maximum(x) ≈ xmax
+
+        # the element vertices are still the linear grid, in order
+        for i = 1:Int(mesh.npoin_linear)
+            @test x[i] ≈ xmin + (i - 1)*Δx
+        end
+
+        # and each element's LGL nodes increase across it, endpoint to endpoint
+        for iel = 1:nelem
+            xe = [mesh.coords[1, mesh.connijk[iel, i, 1, 1]] for i = 1:ngl]
+            @test issorted(xe)
+            @test allunique(xe)
+            @test xe[1]   ≈ xmin + (iel - 1)*Δx
+            @test xe[end] ≈ xmin + iel*Δx
+        end
+
+        # rows 2 and 3 stay zero on a 1D grid
+        @test all(iszero, mesh.coords[2, 1:npoin])
+        @test all(iszero, mesh.coords[3, 1:npoin])
     end
 
     #

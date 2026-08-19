@@ -4061,12 +4061,19 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
 
-    # (nsd, npoin). This used to be `copy(mesh.x)`, which made coords a bare
-    # npoin-vector that only worked because the old [ip,1] indexing tolerated a
-    # trailing singleton dimension. It is filled in full below.
-    mesh.coords = KernelAbstractions.zeros(backend, TFloat, NSD_MAX, Int64(mesh.npoin))
-    #mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
-    # SM here is the issue. COORDS is not being populated correctly at 1D grid generationS
+    # GROW coords, do NOT reallocate it.
+    #
+    # This used to be `mesh.coords = KernelAbstractions.zeros(...)`, which was
+    # harmless only while `mesh.x` was storage of its own: coords was then a
+    # scratch copy, and the loop below rebuilt it from `mesh.x`. With coords as
+    # THE storage, that same line threw away the element vertices that
+    # mod_mesh_build_mesh! had just written into coords[1, 1:npoin_linear] --
+    # and the loop below reads them back as x1/x2, so every high-order node was
+    # interpolated between two zeros. The whole 1D grid collapsed onto x = 0.
+    #
+    # resize_coords! keeps the first npoin_linear columns and zeroes only what
+    # it grows, which is exactly the nelem*(ngl-2) interior nodes filled below.
+    resize_coords!(mesh, mesh.npoin)
     
     mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1, 1)
 
@@ -4088,7 +4095,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             ξ = lgl.ξ[l];
             
             mesh.coords[1, ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-            mesh.coords[1, ip] = mesh.coords[1, ip]
             
             mesh.conn[iel_g, l] = ip #OK
             mesh.connijk[iel_g, l, 1, 1] = ip #OK
@@ -4097,7 +4103,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             ip = ip + 1
         end
     end
-    mesh.coords[1, :] = copy(mesh.coords[1, :])
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
@@ -5417,9 +5422,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     mesh.npoin = mesh.npx
 
     mesh.coords[1, 1] = mesh.xmin
-    mesh.coords[1, 1] = mesh.xmin
     for i = 2:mesh.npx
-        mesh.coords[1, i] = mesh.coords[1, i-1] + Δx
         mesh.coords[1, i] = mesh.coords[1, i-1] + Δx
         mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
     end
