@@ -4,24 +4,6 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        #---------------------------------------------------------------------------
-        # Two-phase launch on a large problem (ENVIRONMENT_VARIABLES.md ->
-        # JEXPRESSO_PRECOMPILE_PASS).
-        #
-        # Phase 1 is ONE timestep with the real problem, the real callbacks and
-        # the real solver kwargs: that is where the whole RHS chain, the
-        # CallbackSet-specialised integrator, the MPI halo exchange and every
-        # first-touch allocation get compiled and paid for. Phase 2 then RESUMES
-        # from that state and runs to :tend with everything hot.
-        #
-        # Nothing is discarded - phase 1's step is the simulation's first step,
-        # and phase 2 resumes the SAME integrator object, so the trajectory is
-        # bit-for-bit the one a single solve() would have produced.
-        #
-        # Turn off for a single run without touching this file:
-        #   JEXPRESSO_PRECOMPILE_PASS=0 mpirun ...
-        #---------------------------------------------------------------------------
-        :lprecompile_pass     => true,
         :Δt                   => 0.02,
         :tinit                => 0.0,
         :tend                 => 10800.0,
@@ -92,10 +74,10 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
-        :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_128x128x120_10240mX10240mX5000m.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
-	
+        :lread_gmsh       => true, #If false, a 1D problem will be enforce
+	#:gmsh_filename    => "./problems/CompEuler/LESICP2-coarse/LESICP_8x2x60_6400mX1600mX5000m.msh",
+        :gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_128x128x120_10240mX10240mX5000m.msh
+		
         # Warping:
         :lwarp => false,
         :mount_type => "LESICP",
@@ -123,8 +105,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_64x64x60_10kmX10kmX5km/",
-        #:output_dir          => "./output",
+	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/",
+        #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
