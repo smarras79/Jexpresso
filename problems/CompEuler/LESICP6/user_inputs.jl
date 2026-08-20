@@ -4,9 +4,9 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.02,
+        :Δt                   => 0.01,
         :tinit                => 0,
-        :tend                 => 9000.0,
+        :tend                 => 10800.0,
 	#:tend                 => 1.0,
 	:lrestart             => false,
 	:lrestart_vtk         => true,
@@ -81,7 +81,7 @@ function user_inputs()
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x52_10kmX10kmX5km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x125_10kmX10kmX5km.msh",
 
         # Warping:
         :lwarp => true,

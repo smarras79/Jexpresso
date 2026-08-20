@@ -6,11 +6,10 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         # Size this against the "Smallest LGL node spacing" the solver prints
         # (53.96 m here), not the element size: the interior GLL nodes cluster
-        # to ~0.17*dz. 0.12 blew up at t ~ 90 s with a negative rho*theta in
-        # perfectGasLaw_rhoTHETAtoP; 0.05 ran clean past t = 150 s.
+        # to ~0.17*dz. 0.08 runs clean to t = 500 s (acoustic CFL 0.53).
         :Δt                   => 0.08,
         :tinit                => 0.0,
-        :tend                 => 9000.0,
+        :tend                 => 10800.0,
 	:lrestart             => false,
 	#:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",
@@ -20,7 +19,7 @@ function user_inputs()
 	# 0.0 must be the first entry: the IC is written to the slot of :tinit
 	# in this list (falling back to slot 1), so without it the IC and the
 	# first diagnostic both land in iter_1 and the IC gets overwritten.
-	:diagnostics_at_times => (0,100:10:500...),
+	:diagnostics_at_times => (0,100:100:10800...),
 	# :diagnostics_at_times => (0.0, 100.0, 500:500:9000.0...),
 	:lsource              => true,
 	#:lsponge              => true,
@@ -63,9 +62,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	# LESICP2 samples 9000-10800 on a restart run; this deck integrates
-	# 0 -> 9000 in one go, so statistics are taken over the last 30 min.
-	:statistics_time      => (7200.0:10.0:9000.0),
+	# 3 h run, statistics over the last 30 min, per section 2.2 of the
+	# TABLES description. Matches LESICP2.
+	:statistics_time      => (9000.0:10.0:10800.0),
 	#:statistics_time      => (10.0:10.0:100),
         #:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,
