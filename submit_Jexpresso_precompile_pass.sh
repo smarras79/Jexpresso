@@ -47,7 +47,7 @@
 #SBATCH --partition=general
 #SBATCH --qos=low
 #SBATCH --account=smarras
-#SBATCH --nodes=12
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=128
 #SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=4000M
@@ -130,7 +130,7 @@ if julia --pkgimages=existing -e 'exit(0)' >/dev/null 2>&1; then
     JULIA_FLAGS+=(--pkgimages=existing)
 fi
 
-NTASKS="${SLURM_NTASKS:-1536}"
+NTASKS="${SLURM_NTASKS:-64}"
 
 echo "--- Setup complete, launching $NTASKS ranks ---"
 echo "    case                      : $EQS / $CASE"
