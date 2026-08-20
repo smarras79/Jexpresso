@@ -151,19 +151,30 @@ echo "--- Finished: $(date) ---"
 # out-of-memory kill during the mesh read -- which produces no Julia
 # backtrace at all, just a dead job -- was indistinguishable from success.
 if [ "$rc" -ne 0 ]; then
-    # BOTH streams on purpose. Sending this only to stderr put it in the .err
-    # file while "--- Finished ---" went to .out, so reading the .out alone --
-    # the natural thing to do -- still showed a run that looked like it simply
-    # stopped, with no indication it had failed.
+    # Report on BOTH streams: stderr alone lands in the .err file while
+    # "--- Finished ---" goes to .out, so reading .out on its own showed a run
+    # that appeared to simply stop.
+    #
+    # Do NOT guess at the cause. An earlier version printed the empty-rank
+    # explanation unconditionally on every failure, which reads as a diagnosis
+    # and sent at least one debugging session down the wrong path. Instead,
+    # look for the one symptom we can actually detect from here, and otherwise
+    # say plainly that the cause is in the .err file.
+    log="${SLURM_JOB_NAME:-job}.${SLURM_JOB_ID:-0}.out"
     for stream in /dev/stdout /dev/stderr; do
         {
             echo "--- FAILED: mpirun exited $rc ---"
-            echo "    The run did NOT complete. Full error text is in the .err file."
-            echo "    Stopped right after the mesh/high-order-node phase?"
-            echo "      -> check the 'Load Balance Analysis' block above:"
-            echo "         'Min elements: 0' means some ranks own no elements at all,"
-            echo "         which is fatal downstream. You asked for more ranks than the"
-            echo "         mesh has horizontal columns. Rerun with ntasks <= that count."
+            echo "    The run did NOT complete."
+            echo "    The actual error is in the .err file for job ${SLURM_JOB_ID:-<id>}."
+            if [ -f "$log" ] && grep -q "Min elements: 0" "$log"; then
+                echo
+                echo "    CONFIRMED in this run's output: 'Min elements: 0'."
+                echo "    Some ranks own no elements, which is fatal downstream."
+                echo "    ntasks exceeds what the mesh can be split into. Note that"
+                echo "    the split is aspect-ratio aware: a non-square domain does"
+                echo "    NOT give you nelemx*nelemy usable ranks. Check the nx x ny"
+                echo "    the run chose against the element counts in each direction."
+            fi
         } > "$stream"
     done
 fi
