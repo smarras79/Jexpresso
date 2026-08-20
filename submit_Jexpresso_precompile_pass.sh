@@ -48,7 +48,7 @@
 #SBATCH --qos=low
 #SBATCH --account=smarras
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=16
+#SBATCH --ntasks-per-node=64
 #SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=4000M
 

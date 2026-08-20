@@ -76,7 +76,8 @@ function user_inputs()
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
 	#:gmsh_filename    => "./problems/CompEuler/LESICP2-coarse/LESICP_8x2x60_6400mX1600mX5000m.msh",
-        :gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_128x128x120_10240mX10240mX5000m.msh
+        #:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_128x128x120_10240mX10240mX5000m.msh
+	:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_16x16x125_10240mX10240mX5000m.msh
 		
         # Warping:
         :lwarp => false,
@@ -105,7 +106,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/",
+	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_16x16x125_10240mX10240mX5000m/",
+	#:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/,"
         #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
