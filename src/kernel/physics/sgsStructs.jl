@@ -112,7 +112,12 @@ function allocate_SGS(npoin, T, backend, PhysConst, ::SMAG; C_s = PhysConst.C_s)
     )
 end
 
-allocate_SGS(_, _, _, _, ::Any; kwargs...) = nothing
+# Fallback for :visc_model values with no dynamic SGS model (AV, DSGS, ...).
+# Type-only slots rather than `_`: once a method takes keyword arguments,
+# Julia lowers it into a keyword sorter that FORWARDS the positional
+# arguments to an inner body method, so all-underscore names become used
+# rather than discarded and the definition no longer lowers.
+allocate_SGS(::Any, ::Any, ::Any, ::Any, ::Any; kwargs...) = nothing
 
 function allocate_SGS(npoin, T, backend, PhysConst, ::VREM; C_s = PhysConst.C_s)
     dims1 = (Int64(npoin),)
