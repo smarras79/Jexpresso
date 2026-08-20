@@ -72,7 +72,15 @@ using SciMLBase: CallbackSet, DiscreteCallback,
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
-                  terminate!, remake
+                  terminate!, remake,
+                  # solve! drives an already-`init`-ed integrator to the end of
+                  # its tspan. Used by the two-phase pre-compilation pass in
+                  # TimeIntegrators.jl, which splits `solve` into
+                  # `init` + `step!` (phase 1) + `solve!` (phase 2).
+                  # NOTE the LinearSolve call sites spell theirs
+                  # `LinearSolve.solve!(...)` explicitly, so this bare name
+                  # collides with nothing.
+                  solve!
 import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP

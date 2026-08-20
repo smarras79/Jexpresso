@@ -4,6 +4,24 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        #---------------------------------------------------------------------------
+        # Two-phase launch on a large problem (ENVIRONMENT_VARIABLES.md ->
+        # JEXPRESSO_PRECOMPILE_PASS).
+        #
+        # Phase 1 is ONE timestep with the real problem, the real callbacks and
+        # the real solver kwargs: that is where the whole RHS chain, the
+        # CallbackSet-specialised integrator, the MPI halo exchange and every
+        # first-touch allocation get compiled and paid for. Phase 2 then RESUMES
+        # from that state and runs to :tend with everything hot.
+        #
+        # Nothing is discarded - phase 1's step is the simulation's first step,
+        # and phase 2 resumes the SAME integrator object, so the trajectory is
+        # bit-for-bit the one a single solve() would have produced.
+        #
+        # Turn off for a single run without touching this file:
+        #   JEXPRESSO_PRECOMPILE_PASS=0 mpirun ...
+        #---------------------------------------------------------------------------
+        :lprecompile_pass     => true,
         :Δt                   => 0.02,
         :tinit                => 0.0,
         :tend                 => 10800.0,

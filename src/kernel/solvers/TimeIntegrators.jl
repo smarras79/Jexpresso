@@ -88,6 +88,90 @@ function precompile_warmup_enabled(inputs)
 end
 
 """
+    precompile_pass_enabled(inputs) -> Bool
+
+Decide whether `time_loop!` runs the simulation as a **pre-compilation pass**
+(exactly ONE timestep) followed by the production loop, instead of launching
+the whole thing as a single `solve(...)` call.
+
+Why this exists
+---------------
+On a large problem launched at full size, the first timestep is not a
+timestep: it is Julia's JIT compiling the entire RHS chain, the SciML
+integrator specialised on the real `CallbackSet`, the MPI halo-exchange
+paths and the diagnostic/output path, plus the first-touch allocation of
+every per-rank working array. On 1 500+ ranks that work happens *inside* the
+production time loop, interleaved with collective communication: the ranks
+that compiled quickly sit in `MPI_Wait` while the slow ones finish, the
+measured step rate for the first hundreds of steps is meaningless, and the
+long run inherits a heap full of compilation garbage.
+
+How the split is done
+---------------------
+`solve(prob, alg; kw...)` is, by definition, `solve!(init(prob, alg; kw...))`.
+The pass takes that apart:
+
+    integrator = init(prob, alg; kwargs...)
+    step!(integrator)      # PHASE 1 — one timestep: all JIT, all first touches
+    GC.gc(); MPI.Barrier()  # compacted heap, all ranks aligned
+    solve!(integrator)     # PHASE 2 — the rest of the run, hot
+
+Phase 2 continues the **same integrator object**. This is not a restart:
+there is no second `init`, and the step-size controller, the callback caches,
+the FSAL history and `u` all carry across untouched. The trajectory is
+therefore bit-for-bit the one a single `solve(...)` would have produced —
+adaptive stepping included — and not one method is compiled twice.
+
+Phase 1's step IS the simulation's first step: nothing is snapshotted,
+restored or thrown away.
+
+Relationship to `precompile_warmup_enabled`
+-------------------------------------------
+The older warm-ups (`precompile_warmup_run!` in drivers.jl and the
+in-`time_loop!` integrator warm-up) run a throw-away step and then *restore*
+the initial condition, so a run pays for two extra full-mesh RHS evaluations
+whose results are discarded. When the pre-compilation pass is on, both are
+skipped: the pass compiles the same code and keeps the work.
+
+Failure is not fatal
+--------------------
+If `init` or the first `step!` throws, the advanced history is rolled back
+and `time_loop!` falls through to the historical single-phase `solve(...)`,
+JIT-ing on its first step exactly as it always did. That decision is made
+collectively (an `Allreduce` over the per-rank outcome): one rank failing
+sends every rank down the same path, because half a job in `solve!` and half
+in a fresh `solve` is a hang, not a fallback.
+
+Precedence (highest first)
+--------------------------
+ 1. ENV `JEXPRESSO_PRECOMPILE_PASS`. Examples:
+      `JEXPRESSO_PRECOMPILE_PASS=1 mpirun -np 1536 julia ...`   (enable)
+      `JEXPRESSO_PRECOMPILE_PASS=0 julia ...`                   (disable)
+    MPICH/Hydra propagates the environment by default; under OpenMPI pass it
+    explicitly with `mpirun -x JEXPRESSO_PRECOMPILE_PASS ...`.
+ 2. Command-line flag — `--precompile-pass` / `--no-precompile-pass` in ARGS.
+ 3. `:lprecompile_pass` in the case's `user_inputs.jl` (Bool).
+ 4. Default: `false` (historical single-phase behaviour).
+
+Accepted truthy ENV values: 1/true/yes/on; falsy: 0/false/no/off
+(case-insensitive).
+"""
+function precompile_pass_enabled(inputs)
+    e = get(ENV, "JEXPRESSO_PRECOMPILE_PASS", nothing)
+    if e !== nothing
+        v = lowercase(strip(e))
+        v in ("0", "false", "no", "off") && return false
+        v in ("1", "true", "yes", "on")  && return true
+    end
+    if any(a -> a in ("--no-precompile-pass", "no-precompile-pass"), ARGS)
+        return false
+    elseif any(a -> a in ("--precompile-pass", "precompile-pass"), ARGS)
+        return true
+    end
+    return get(inputs, :lprecompile_pass, false) == true
+end
+
+"""
     precompile_warmup_run!(inputs, params, u, partitioned_model, is_coupled, coupling)
 
 Run one timestep of the real solve as a JIT warm-up, snapshotting and
@@ -101,8 +185,10 @@ SciML integrator's `step!`, the callback dispatch machinery, and
 `save_*` paths in addition to the entire RHS chain - matches the
 "REPL second run" warmth.
 
-No-op when both `precompile_warmup_enabled(inputs) == false` AND
-`alloc_summary_enabled(inputs) == false`.
+No-op when `precompile_pass_enabled(inputs) == true` (the two-phase
+pre-compilation pass in `time_loop!` subsumes this warm-up and, unlike it,
+keeps the step), or when both `precompile_warmup_enabled(inputs) == false`
+AND `alloc_summary_enabled(inputs) == false`.
 
 Coupled-mode safety: the warm-up `solve` uses `CallbackSet()` (empty),
 so the coupling exchange callback (`cb_coupling`) and the diagnostic
@@ -116,6 +202,10 @@ the real solve's first `rhs!` call.
 """
 function precompile_warmup_run!(inputs, params, u,
                                 partitioned_model, is_coupled, coupling)
+    # The two-phase pre-compilation pass compiles the SAME rhs! chain, with the
+    # real callback set, and keeps the resulting step. Running this throw-away
+    # solve first would just buy a second full-mesh RHS evaluation for nothing.
+    precompile_pass_enabled(inputs) && return nothing
     (precompile_warmup_enabled(inputs) || alloc_summary_enabled(inputs)) || return nothing
 
     comm = get_mpi_comm()
@@ -509,6 +599,18 @@ function time_loop!(inputs, params, u, args...)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
         callbacks_main = CallbackSet(_cbs...)
 
+        # The `saveat` grid is built ONCE and shared by the pre-compilation
+        # pass and the production solve. SciML specialises the integrator on
+        # the *types* of the solve kwargs, so handing the two phases two
+        # different `saveat` objects of two different types would make phase 2
+        # recompile the very thing phase 1 just compiled.
+        saveat_main = range(inputs[:tinit], inputs[:tend],
+                            length = inputs[:ndiagnostics_outputs])
+
+        # Two-phase run: 1 compile step, then the production solve resuming
+        # from it. See precompile_pass_enabled() for the full rationale.
+        _precompile_pass = precompile_pass_enabled(inputs)
+
         # PERF: SciML integrator warmup with the REAL callback set.
         #
         # The outer precompile_warmup_run! (called from drivers.jl) uses
@@ -525,7 +627,11 @@ function time_loop!(inputs, params, u, args...)
         # production run sees the original IC. The throw-away step's
         # diagnostic-VTK output, if any, goes to a per-rank mktempdir that's
         # removed right after.
-        if precompile_warmup_enabled(inputs)
+        #
+        # Skipped entirely under the pre-compilation pass: that pass compiles
+        # the identical prob/callbacks_main specialisation and, unlike this
+        # warm-up, keeps the step instead of restoring the IC.
+        if !_precompile_pass && precompile_warmup_enabled(inputs)
             rank == 0 && (print(YELLOW_FG(" # Integrator warm-up with real callbacks (PATIENCE: ONLY DONE ON 1st RUN!) ......... ")); flush(stdout))
             _t_wm = time_ns()
             u_snap    = copy(u)
@@ -596,16 +702,153 @@ function time_loop!(inputs, params, u, args...)
         # printing it nparts times is pure noise.  Root rank still sees
         # the warning once, which is the right amount.
         solve_logger = rank == 0 ? current_logger() : NullLogger()
-        solution = with_logger(solve_logger) do
+
+        # The production solve, as ONE call. `solve(prob, alg; kw...)` is by
+        # definition `solve!(init(prob, alg; kw...))`, which is what the
+        # two-phase branch below takes apart.
+        run_single_phase() = with_logger(solve_logger) do
             solve(prob,
                   inputs[:ode_solver], dt=dt,
                   #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                   callback = callbacks_main, tstops = tstops_all,
                   save_everystep = false,
                   adaptive=inputs[:ode_adaptive_solver],
-                  saveat = range(inputs[:tinit],
-                                 inputs[:tend],
-                                 length=inputs[:ndiagnostics_outputs]))
+                  saveat = saveat_main)
+        end
+
+        if !_precompile_pass
+            solution = run_single_phase()
+        else
+            #----------------------------------------------------------------
+            # PRE-COMPILATION PASS (see precompile_pass_enabled).
+            #
+            # `solve` is split into its two halves along the SciML integrator
+            # interface:
+            #
+            #     integrator = init(prob, alg; kwargs...)
+            #     step!(integrator)      <-- PHASE 1: exactly one timestep
+            #     GC.gc(); MPI.Barrier()
+            #     solve!(integrator)     <-- PHASE 2: the rest of the run
+            #
+            # Phase 1 is where the whole cost of "first timestep on a large
+            # problem" is paid: `rhs!` and the entire kernel chain, the
+            # integrator specialised on the REAL CallbackSet, the MPI halo
+            # exchange, the diagnostic/output path, and the first touch of
+            # every per-rank working array. Doing it as its own call means
+            # that cost is measured, reported, and finished BEFORE the
+            # production loop starts — instead of happening inside it, where
+            # every rank that compiled quickly sits in a collective waiting
+            # for one that did not.
+            #
+            # Phase 2 then continues the SAME integrator object. This is not a
+            # restart: there is no second `init`, the step-size controller,
+            # the callback caches, the FSAL history and `u` are carried
+            # across untouched. The trajectory is therefore bit-for-bit the
+            # one a single `solve(...)` would have produced — including under
+            # adaptive stepping — and not one method is compiled twice.
+            #
+            # Phase 1's step IS the simulation's first step. Nothing is
+            # snapshotted, restored or thrown away (contrast the warm-ups
+            # above, which pay for a full-mesh RHS evaluation and then discard
+            # its result).
+            #----------------------------------------------------------------
+            t0_pass = params.tspan[1]
+            if rank == 0
+                println(YELLOW_FG(" # ┌─ Pre-compilation pass: 1 timestep on the production problem"))
+                println(YELLOW_FG(" # │  JIT + first-touch allocations happen HERE, not inside the time loop."))
+                @printf(" # │  t = %.6f → %.6f  (dt = %.6g).  PATIENCE: this is the slow step.\n",
+                        t0_pass, t0_pass + dt, dt)
+                flush(stdout)
+            end
+
+            # Restored only if the pass fails: a partially-advanced history
+            # must never leak into the single-phase fallback. `u` itself needs
+            # no snapshot — the integrator works on `recursivecopy(prob.u0)`,
+            # so `u` is untouched until phase 2 completes.
+            qnm1_snap       = copy(params.qp.qnm1)
+            qnm2_snap       = copy(params.qp.qnm2)
+            dsgs_qnm1_snap  = copy(params.dsgs_qnm1)
+            dsgs_qnm2_snap  = copy(params.dsgs_qnm2)
+            dsgs_thist_snap = params.dsgs_thist[]
+
+            _t_pass = time_ns()
+            integrator = with_logger(solve_logger) do
+                try
+                    integ = init(prob,
+                                 inputs[:ode_solver], dt=dt,
+                                 callback = callbacks_main, tstops = tstops_all,
+                                 save_everystep = false,
+                                 adaptive=inputs[:ode_adaptive_solver],
+                                 saveat = saveat_main)
+                    # One step. `step!` honours tstops, so if a diagnostic time
+                    # falls inside [t0, t0+Δt] the step is shortened to land on
+                    # it and its callback fires for real — this is production
+                    # time stepping, not a rehearsal.
+                    step!(integ)
+                    integ
+                catch e
+                    rank == 0 && @warn "pre-compilation pass failed; falling back to a single-phase run" exception=e
+                    nothing
+                end
+            end
+
+            _t_pass_s   = (time_ns() - _t_pass) / 1e9
+            _t_pass_max = MPI.Allreduce(_t_pass_s, MPI.MAX, comm)
+            _t_pass_min = MPI.Allreduce(_t_pass_s, MPI.MIN, comm)
+
+            # The fallback decision MUST be collective. A `catch` is per-rank,
+            # so if one rank's init/step! threw and the others' did not, half
+            # the job would enter `solve!` and half would enter a fresh
+            # `solve` — two different sequences of collectives, i.e. a hang
+            # with no error message. One rank failing therefore sends everyone
+            # down the single-phase path.
+            _pass_ok = MPI.Allreduce(integrator === nothing ? 0 : 1,
+                                     MPI.MIN, comm) == 1
+
+            # Hand phase 2 a compacted heap: the compiler's garbage is dead by
+            # now, and a 1500-rank run should not drag it through hours of time
+            # stepping. The barrier makes every rank enter the production loop
+            # together — otherwise the ranks that compiled fastest immediately
+            # block in the first halo exchange of the real loop.
+            GC.gc(true)
+            MPI.Barrier(comm)
+
+            if rank == 0
+                @printf(" # │  DONE in %.2f s   (slowest rank %.2f s, fastest %.2f s)\n",
+                        _t_pass_s, _t_pass_max, _t_pass_min)
+                if !_pass_ok
+                    println(" # └─ Pass unusable on at least one rank; running single-phase from t0, JIT-ing as usual.")
+                else
+                    @printf(" # └─ Hot code. Simulation continues from t = %.6f to t = %.6f\n",
+                            integrator.t, params.tspan[2])
+                end
+                flush(stdout)
+            end
+
+            # The pass absorbed the compile-time allocations, so the summary
+            # table below reflects steady state only.
+            if alloc_summary_enabled(inputs)
+                TimerOutputs.reset_timer!(JEXPRESSO_TIMER)
+            end
+
+            if !_pass_ok
+                # Roll back the history this rank's step advanced (if it got
+                # that far) so the single-phase run below starts from the same
+                # initial condition it would have had without the pass. `u`
+                # needs nothing: the integrator only ever touched its own copy.
+                integrator = nothing
+                params.qp.qnm1     .= qnm1_snap
+                params.qp.qnm2     .= qnm2_snap
+                params.dsgs_qnm1   .= dsgs_qnm1_snap
+                params.dsgs_qnm2   .= dsgs_qnm2_snap
+                params.dsgs_thist[] = dsgs_thist_snap
+                _step_count[]       = 0
+                solution = run_single_phase()
+            else
+                solution = with_logger(solve_logger) do
+                    solve!(integrator)
+                end
+            end
         end
 
         # End-of-simulation per-function timing & allocation summary.

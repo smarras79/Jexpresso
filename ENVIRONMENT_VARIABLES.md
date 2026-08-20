@@ -107,10 +107,91 @@ benefit by re-running inside the same session and don't need this.
   ```bash
   JEXPRESSO_PRECOMPILE_WARMUP=0 mpirun -np 4 julia --project=. src/Jexpresso.jl CompEuler theta
   ```
+- **Superseded by** `JEXPRESSO_PRECOMPILE_PASS` (below): when the
+  pre-compilation pass is on, this warm-up is skipped entirely.
 - **Note:** when `JEXPRESSO_ALLOC_SUMMARY=1`, the warm-up runs
   unconditionally regardless of this flag — the alloc summary needs
   the post-JIT measurement window to be meaningful, so the warm-up
   must run.
+
+### `JEXPRESSO_PRECOMPILE_PASS`
+
+Runs the simulation as a **pre-compilation pass** (exactly one timestep)
+followed by the production loop, instead of one `solve(...)` call that JITs
+inside its own hot loop.
+
+This is the switch to use for a large problem on many ranks. Launched in one
+go, a big case spends its first timestep compiling — the whole RHS chain, the
+SciML integrator specialised on the real `CallbackSet`, the MPI halo-exchange
+paths, the diagnostic/output path — and first-touching every per-rank working
+array, all of that *interleaved with collective communication inside the
+production time loop*. Ranks that compiled quickly sit in `MPI_Wait` waiting
+for ones that did not; the step rate reported for the first hundreds of steps
+is meaningless; and the long run inherits a heap full of compiler garbage.
+
+`solve(prob, alg; kw...)` is by definition `solve!(init(prob, alg; kw...))`,
+so the pass simply takes it apart:
+
+```julia
+integrator = init(prob, alg; kwargs...)
+step!(integrator)      # PHASE 1 — one timestep: all JIT, all first touches
+GC.gc(); MPI.Barrier() # compacted heap, all ranks aligned
+solve!(integrator)     # PHASE 2 — the rest of the run, hot
+```
+
+Phase 2 continues the **same integrator object**. This is not a restart: no
+second `init`, and the step-size controller, callback caches, FSAL history
+and `u` all carry across untouched. The trajectory is bit-for-bit the one a
+single `solve(...)` would have produced, and nothing is compiled twice — the
+split costs exactly zero additional RHS evaluations
+(`test/test_precompile_pass.jl` pins both down).
+
+Phase 1's step *is* the simulation's first step: nothing is snapshotted,
+restored or thrown away.
+
+- **Type:** boolean
+- **Default:** `false` (historical single-phase behaviour)
+- **Read in:** `src/kernel/solvers/TimeIntegrators.jl`
+  (`precompile_pass_enabled`)
+- **Precedence (highest first):**
+  1. `JEXPRESSO_PRECOMPILE_PASS` env var
+  2. `--precompile-pass` / `--no-precompile-pass` CLI flag in `ARGS`
+  3. `:lprecompile_pass => true/false` in `user_inputs.jl`
+  4. Default (`false`)
+- **Example — a 1536-rank LES run:**
+  ```bash
+  JEXPRESSO_PRECOMPILE_PASS=1 mpirun -np 1536 julia --project=. \
+      src/Jexpresso.jl CompEuler LESICP2
+  ```
+  MPICH/Hydra propagates the environment to every rank by default; under
+  OpenMPI pass it explicitly with `mpirun -x JEXPRESSO_PRECOMPILE_PASS ...`.
+  `submit_Jexpresso_precompile_pass.sh` is a ready-made batch script that
+  does this along with the serial package-precompilation phases that must
+  precede any multi-rank launch.
+- **Supersedes the throw-away warm-ups.** When the pass is on, both
+  `precompile_warmup_run!` (drivers.jl) and the in-`time_loop!` integrator
+  warm-up are skipped: they compile the same code but then restore the
+  initial condition, so a run would pay for two extra full-mesh RHS
+  evaluations whose results are discarded.
+- **Works with adaptive stepping.** Because phase 2 resumes the same
+  integrator rather than starting a new one, there is no controller to
+  restart — `:ode_adaptive_solver => true` is fine.
+- **Failure is not fatal.** If `init` or the first `step!` throws, the
+  advanced history is rolled back and the run falls through to the historical
+  single-phase `solve(...)`, JIT-ing on its first step as it always did. The
+  integrator works on a copy of `prob.u0`, so the fallback always starts from
+  a clean initial condition. The decision is collective — one rank failing
+  sends every rank down the same path, since half a job in `solve!` and half
+  in a fresh `solve` would hang rather than fall back.
+- **What it does NOT do.** This is *runtime JIT*, which cannot be cached
+  across processes. It is not a substitute for a serial `Pkg.precompile()`
+  before a multi-rank launch (see `JEXPRESSO_PRECOMPILE_WORKLOAD` and
+  `submit_Jexpresso_precompile_pass.sh`), nor for a PackageCompiler sysimage
+  (`create_Jexpresso_sysimage.jl`), which is the only way to remove the JIT
+  entirely.
+- **Not to be confused with** `JEXPRESSO_PRECOMPILE_WARMUP` (throw-away
+  warm-up inside a run, keeps nothing) or `JEXPRESSO_PRECOMPILE_WORKLOAD` (a
+  `Pkg.precompile()`-time workload — a different stage altogether).
 
 ### `JEXPRESSO_STEP_HEARTBEAT`
 
