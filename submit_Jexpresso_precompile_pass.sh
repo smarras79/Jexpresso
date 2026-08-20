@@ -151,9 +151,20 @@ echo "--- Finished: $(date) ---"
 # out-of-memory kill during the mesh read -- which produces no Julia
 # backtrace at all, just a dead job -- was indistinguishable from success.
 if [ "$rc" -ne 0 ]; then
-    echo "--- FAILED: mpirun exited $rc ---" >&2
-    echo "    Look in the .err file for this job id." >&2
-    echo "    Nothing in the .out file after 'Read gmsh grid' usually means" >&2
-    echo "    the ranks were OOM-killed; see the mesh-memory note in the header." >&2
+    # BOTH streams on purpose. Sending this only to stderr put it in the .err
+    # file while "--- Finished ---" went to .out, so reading the .out alone --
+    # the natural thing to do -- still showed a run that looked like it simply
+    # stopped, with no indication it had failed.
+    for stream in /dev/stdout /dev/stderr; do
+        {
+            echo "--- FAILED: mpirun exited $rc ---"
+            echo "    The run did NOT complete. Full error text is in the .err file."
+            echo "    Stopped right after the mesh/high-order-node phase?"
+            echo "      -> check the 'Load Balance Analysis' block above:"
+            echo "         'Min elements: 0' means some ranks own no elements at all,"
+            echo "         which is fatal downstream. You asked for more ranks than the"
+            echo "         mesh has horizontal columns. Rerun with ntasks <= that count."
+        } > "$stream"
+    done
 fi
 exit $rc
