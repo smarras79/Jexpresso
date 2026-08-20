@@ -274,23 +274,30 @@ Base.@kwdef mutable struct St_filter{T <: AbstractFloat, dims1, dims2, dims3, di
     b::Arr3     = KernelAbstractions.zeros(backend,  T, dims3)
     B::Arr4     = KernelAbstractions.zeros(backend,  T, dims4)
 end
-function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=false)
+function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=false, ladapt=false)
+
+    # `b` (dims3) is the element-local filter scratch, (nelem, ngl^d, neqs).
+    # It is only consumed by DSS_nc_gather_rhs!/DSS_rhs! on the AMR path; with
+    # ladapt == false filter! assembles straight into `B` (exactly like the GPU
+    # kernels do) and never touches `b`. Sizing it to 1 in that case saves
+    # nelem*ngl^d*neqs*sizeof(T) bytes -- easily hundreds of MB for a 3D LES run.
+    lb = lfilter && ladapt
 
     if lfilter
         if SD == NSD_1D()
             dims1 = (Int64(neqs), Int64(ngl))
             dims2 = (Int64(ngl))
-            dims3 = (Int64(nelem), Int64(ngl), Int64(neqs))
+            dims3 = lb ? (Int64(nelem), Int64(ngl), Int64(neqs)) : (1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_2D()
             dims1 = (Int64(neqs), Int64(ngl), Int64(ngl))
             dims2 = (Int64(ngl), Int64(ngl))
-            dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs))
+            dims3 = lb ? (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) : (1, 1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
             dims1 = (Int64(neqs), Int64(ngl), Int64(ngl), Int64(ngl))
             dims2 = (Int64(ngl), Int64(ngl), Int64(ngl))
-            dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
+            dims3 = lb ? (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) : (1, 1, 1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         end
     else
@@ -337,23 +344,28 @@ end
 function allocate_filter_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; neqs=1, lfilter=false)
 
     if lfilter
+        # NOTE: b_lag (dims3) is no longer written by filter! -- the Laguerre
+        # block is summed straight into B_lag inside the element loop (2D
+        # Laguerre + AMR is unsupported, so the element-local copy had no
+        # consumer). It is kept at size 1 so the field still exists.
         if SD == NSD_1D()
             dims1 = (Int64(neqs), Int64(ngr))
             dims2 = (Int64(ngr))
-            dims3 = (Int64(nelem_semi_inf), Int64(ngr), Int64(neqs))
+            dims3 = (1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_2D()
             dims1 = (Int64(neqs), Int64(ngl), Int64(ngr))
             dims2 = (Int64(ngl), Int64(ngr))
-            dims3 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr), Int64(neqs))
+            dims3 = (1, 1, 1, 1)
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
-            # WARNING Allocate only 1 because there is no 3D filter yet
-            #dims1 = (1, 1, 1, 1)
-            #dims2 = (1, 1, 1)
-            #dims3 = (1, 1, 1, 1, 1)
-            #dims4 = (1, 1)
-            #warning( " 3D laguerre filter not implemented yet")
+            # WARNING Allocate only 1 because there is no 3D Laguerre filter yet.
+            # These used to be left undefined, which made allocate_filter_lag throw
+            # an UndefVarError for a 3D Laguerre run with lfilter == true.
+            dims1 = (1, 1, 1, 1)
+            dims2 = (1, 1, 1)
+            dims3 = (1, 1, 1, 1, 1)
+            dims4 = (1, 1)
         end
         
     else
