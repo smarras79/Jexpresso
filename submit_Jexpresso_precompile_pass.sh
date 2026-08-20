@@ -47,8 +47,8 @@
 #SBATCH --partition=general
 #SBATCH --qos=low
 #SBATCH --account=smarras
-#SBATCH --nodes=12
-#SBATCH --ntasks-per-node=128
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=64
 #SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=4000M
 
@@ -57,7 +57,7 @@ module load GCC MPICH
 
 JEXPRESSO_ROOT="${JEXPRESSO_ROOT:-/project/smarras/smarras/Jexpresso}"
 EQS="${EQS:-CompEuler}"
-CASE="${CASE:-LESICP2}"
+CASE="${CASE:-LESICP2-coarse}"
 
 cd "$JEXPRESSO_ROOT" || exit 1
 
