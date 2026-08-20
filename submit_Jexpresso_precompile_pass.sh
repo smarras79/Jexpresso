@@ -151,31 +151,36 @@ echo "--- Finished: $(date) ---"
 # out-of-memory kill during the mesh read -- which produces no Julia
 # backtrace at all, just a dead job -- was indistinguishable from success.
 if [ "$rc" -ne 0 ]; then
-    # Report on BOTH streams: stderr alone lands in the .err file while
-    # "--- Finished ---" goes to .out, so reading .out on its own showed a run
-    # that appeared to simply stop.
+    # CRITICAL: write with >&2 / plain echo, NEVER "> /dev/stdout" or
+    # "> /dev/stderr".
     #
-    # Do NOT guess at the cause. An earlier version printed the empty-rank
-    # explanation unconditionally on every failure, which reads as a diagnosis
-    # and sent at least one debugging session down the wrong path. Instead,
-    # look for the one symptom we can actually detect from here, and otherwise
-    # say plainly that the cause is in the .err file.
+    # Under SLURM, fd 1 and fd 2 are regular files (%x.%j.out / .err). On Linux
+    # /dev/stdout is a symlink to /proc/self/fd/1, so "> /dev/stdout" RE-OPENS
+    # that file with O_TRUNC -- it discards everything the job had written and
+    # starts again at offset zero. A previous version of this handler did
+    # exactly that to both streams, so every failed run destroyed its own log
+    # and left only this message behind. The Julia backtrace, the mesh
+    # diagnostics, the whole run: gone, and the failure looked like a job that
+    # had produced no output at all. ("tail: file truncated" was the tell.)
+    #
+    # Duplicating the existing descriptor appends instead of truncating, which
+    # is the whole point: this handler must never be able to lose evidence.
+    _report() {
+        echo "--- FAILED: mpirun exited $rc ---"
+        echo "    The run did NOT complete."
+        echo "    Julia's error and backtrace are ABOVE this line in the .err file"
+        echo "    for job ${SLURM_JOB_ID:-<id>} (stderr from every rank lands there)."
+        if [ -f "$log" ] && grep -q "Min elements: 0" "$log"; then
+            echo
+            echo "    CONFIRMED in this run's output: 'Min elements: 0'."
+            echo "    Some ranks own no elements, which is fatal downstream."
+            echo "    ntasks exceeds what this mesh can be split into. The split is"
+            echo "    aspect-ratio aware, so nelemx*nelemy is an upper bound a"
+            echo "    non-square domain does not reach. Run tools/pick_nranks.jl."
+        fi
+    }
     log="${SLURM_JOB_NAME:-job}.${SLURM_JOB_ID:-0}.out"
-    for stream in /dev/stdout /dev/stderr; do
-        {
-            echo "--- FAILED: mpirun exited $rc ---"
-            echo "    The run did NOT complete."
-            echo "    The actual error is in the .err file for job ${SLURM_JOB_ID:-<id>}."
-            if [ -f "$log" ] && grep -q "Min elements: 0" "$log"; then
-                echo
-                echo "    CONFIRMED in this run's output: 'Min elements: 0'."
-                echo "    Some ranks own no elements, which is fatal downstream."
-                echo "    ntasks exceeds what the mesh can be split into. Note that"
-                echo "    the split is aspect-ratio aware: a non-square domain does"
-                echo "    NOT give you nelemx*nelemy usable ranks. Check the nx x ny"
-                echo "    the run chose against the element counts in each direction."
-            fi
-        } > "$stream"
-    done
+    _report          # -> .out, appended
+    _report >&2      # -> .err, appended
 fi
 exit $rc
