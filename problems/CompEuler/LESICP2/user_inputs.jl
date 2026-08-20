@@ -38,8 +38,7 @@ function user_inputs()
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        # Smagorinsky constant. Was PhysConst.C_s = 0.21; ABL LES runs 0.13-0.18
-        # and nu_t goes as C_s^2, so 0.21 alone is ~1.7x Lilly.
+        # Smagorinsky constant. ABL LES runs 0.13-0.18
         :C_s                  => 0.16,
         # Buoyancy correction on nu_t. Without it the full eddy diffusivity acts
         # across the capping inversion and smears it over a few hundred metres.
@@ -52,7 +51,7 @@ function user_inputs()
         # multiplies the eddy viscosity the closure already computed. The old
         # values ([0.0, 5, 5, 5, 5]) were AV constants and inflated C_s by sqrt(μ).
         # Tune the closure through :C_s instead.
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 2.0],
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
@@ -78,13 +77,9 @@ function user_inputs()
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
-        :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x125_10kmX10kmX5km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x72_10kmX10kmX5km.msh",
-	
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
+		
         # Warping:
         :lwarp => false,
         :mount_type => "LESICP",
@@ -112,14 +107,14 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/hw59/output_new/LESICP2_64x16x36_10kmX5kmX3dot5km/",
+        :output_dir          => "/scratch/smarras/smarras/output_lesfix/LESICP2_64x64x60_10kmX10kmX5km/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
+        :linitial_refine     => true,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
