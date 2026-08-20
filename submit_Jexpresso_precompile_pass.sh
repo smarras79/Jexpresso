@@ -142,5 +142,18 @@ echo "    started                   : $(date)"
 # Under OpenMPI the exports above do NOT propagate -- pass them explicitly:
 #   mpirun -x JULIA_PKG_PRECOMPILE_AUTO -x JEXPRESSO_PRECOMPILE_PASS ...
 mpirun -np "$NTASKS" julia "${JULIA_FLAGS[@]}" src/Jexpresso.jl "$EQS" "$CASE"
+rc=$?
 
 echo "--- Finished: $(date) ---"
+
+# Report the launcher's exit status. Without this the script printed
+# "Finished" whether the run completed or every rank was killed, so an
+# out-of-memory kill during the mesh read -- which produces no Julia
+# backtrace at all, just a dead job -- was indistinguishable from success.
+if [ "$rc" -ne 0 ]; then
+    echo "--- FAILED: mpirun exited $rc ---" >&2
+    echo "    Look in the .err file for this job id." >&2
+    echo "    Nothing in the .out file after 'Read gmsh grid' usually means" >&2
+    echo "    the ranks were OOM-killed; see the mesh-memory note in the header." >&2
+fi
+exit $rc

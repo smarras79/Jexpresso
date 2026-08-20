@@ -1873,10 +1873,41 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # PERF: GridapP4est is `using`-d lazily; load it before the
             # first call to UniformlyRefinedForestOfOctreesDiscreteModel.
             _ensure_amr_loaded!()
-            @outputrootonly begin
-                gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
-                partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+
+            # MEMORY: read the .msh on rank 0 only and broadcast the flattened
+            # serial model, exactly as the lxy_partition branch above does.
+            #
+            # This branch used to wrap the read in @outputrootonly, which
+            # silences stdout on non-root ranks but still RUNS the expression
+            # there (see src/macros/je_macros.jl). So every rank parsed the
+            # same file: nparts x gmsh parse, nparts x UnstructuredGridTopology
+            # construction, nparts x the second copy that
+            # _flatten_model_to_cell_dim makes -- all resident at the same
+            # moment. On a fat node (128 ranks x a 245k-element coarse mesh)
+            # that is an out-of-memory kill during "Read gmsh grid", which
+            # produces no Julia backtrace: the job simply stops.
+            #
+            # NOTE this fixes the PEAK (one parse instead of nparts, and the
+            # flatten copy only on root). It does NOT remove the replication:
+            # UniformlyRefinedForestOfOctreesDiscreteModel is collective and
+            # needs the coarse model on every rank, because that model IS the
+            # p4est coarse forest/connectivity. A coarse mesh replicated
+            # nparts-ways is inherent to this code path -- keep the COARSE
+            # mesh coarse and let :init_refine_lvl do the refining.
+            if rank == 0
+                print(YELLOW_FG(" #   \u21b3 Gridap GmshDiscreteModel (rank-0-only read + MPI.bcast) ......... "))
+                flush(stdout)
             end
+            _t_gmsh = time_ns()
+            gmodel_root = rank == 0 ?
+                _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)) :
+                nothing
+            gmodel = MPI.bcast(gmodel_root, 0, comm)
+            if rank == 0
+                print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
+                flush(stdout)
+            end
+            partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
             dmodel = local_views(partitioned_model).item_ref[]
             model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
