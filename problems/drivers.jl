@@ -302,6 +302,14 @@ function driver(nparts,
         # the hot-path methods already specialized. Disable via
         # JEXPRESSO_PRECOMPILE_WARMUP=0 (env), --no-precompile-warmup
         # (CLI), or :lprecompile_warmup => false (user_inputs.jl).
+        #
+        # NOTE this warm-up THROWS THE STEP AWAY (it snapshots and restores the
+        # IC), so a large run pays an extra full-mesh RHS evaluation for it. On
+        # a big problem prefer the two-phase pre-compilation pass instead —
+        # JEXPRESSO_PRECOMPILE_PASS=1 / :lprecompile_pass => true — which
+        # compiles the same code on one REAL step inside time_loop! and then
+        # continues the simulation from it. When that pass is on, the call
+        # below returns immediately (see precompile_warmup_run!).
         precompile_warmup_run!(inputs, params, u, partitioned_model,
                                is_coupled, coupling)
 
