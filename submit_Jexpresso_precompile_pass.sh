@@ -48,7 +48,7 @@
 #SBATCH --qos=low
 #SBATCH --account=smarras
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=64
+#SBATCH --ntasks-per-node=16
 #SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=4000M
 
@@ -130,7 +130,7 @@ if julia --pkgimages=existing -e 'exit(0)' >/dev/null 2>&1; then
     JULIA_FLAGS+=(--pkgimages=existing)
 fi
 
-NTASKS="${SLURM_NTASKS:-1536}"
+NTASKS="${SLURM_NTASKS:-64}"
 
 echo "--- Setup complete, launching $NTASKS ranks ---"
 echo "    case                      : $EQS / $CASE"
@@ -142,5 +142,29 @@ echo "    started                   : $(date)"
 # Under OpenMPI the exports above do NOT propagate -- pass them explicitly:
 #   mpirun -x JULIA_PKG_PRECOMPILE_AUTO -x JEXPRESSO_PRECOMPILE_PASS ...
 mpirun -np "$NTASKS" julia "${JULIA_FLAGS[@]}" src/Jexpresso.jl "$EQS" "$CASE"
+rc=$?
 
 echo "--- Finished: $(date) ---"
+
+# Report the launcher's exit status. Without this the script printed
+# "Finished" whether the run completed or every rank was killed, so an
+# out-of-memory kill during the mesh read -- which produces no Julia
+# backtrace at all, just a dead job -- was indistinguishable from success.
+if [ "$rc" -ne 0 ]; then
+    # BOTH streams on purpose. Sending this only to stderr put it in the .err
+    # file while "--- Finished ---" went to .out, so reading the .out alone --
+    # the natural thing to do -- still showed a run that looked like it simply
+    # stopped, with no indication it had failed.
+    for stream in /dev/stdout /dev/stderr; do
+        {
+            echo "--- FAILED: mpirun exited $rc ---"
+            echo "    The run did NOT complete. Full error text is in the .err file."
+            echo "    Stopped right after the mesh/high-order-node phase?"
+            echo "      -> check the 'Load Balance Analysis' block above:"
+            echo "         'Min elements: 0' means some ranks own no elements at all,"
+            echo "         which is fatal downstream. You asked for more ranks than the"
+            echo "         mesh has horizontal columns. Rerun with ntasks <= that count."
+        } > "$stream"
+    done
+fi
+exit $rc

@@ -31,7 +31,7 @@ function user_inputs()
 	:restart_time         => 9000.0,
 	#:diagnostics_at_times => (11500.0:10.0:15000.0),
 	#:diagnostics_at_times => (0.0:50.0:10800.0),
-	:diagnostics_at_times => (100, 1000:1000:9000.0...,10800),
+	:diagnostics_at_times => (100:100:1000..., 1000:1000:9000.0...,10800),
 	:lsource              => true,
 	#:lsponge              => true,
 	#:zsponge              => 2500.0, hard coded in user_source.jl
@@ -93,11 +93,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x125_10kmX10kmX5km.msh",
+        #:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_128x128x120_10240mX10240mX5000m.msh",
         :gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
-		
+	
         # Warping:
         :lwarp => false,
         :mount_type => "LESICP",
@@ -117,9 +115,9 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.5,
-        :mu_y                => 0.5,
-	:mu_z                => 0.5,
+        :mu_x                => 0.25,
+        :mu_y                => 0.25,
+	:mu_z                => 0.25,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
@@ -132,7 +130,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
+        :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR

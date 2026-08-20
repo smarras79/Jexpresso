@@ -13,7 +13,7 @@ function user_inputs()
 	:restart_time         => 9000.0,
 	#:diagnostics_at_times => (11500.0:10.0:15000.0),
 	#:diagnostics_at_times => (0.0:50.0:10800.0),
-	:diagnostics_at_times => (100, 1000:1000:9000.0...,10800),
+	:diagnostics_at_times => (100:100:1000..., 1000:1000:9000.0...,10800),
 	:lsource              => true,
 	#:lsponge              => true,
 	#:zsponge              => 2500.0, hard coded in user_source.jl
@@ -100,9 +100,9 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.5,
-        :mu_y                => 0.5,
-	:mu_z                => 0.5,
+        :mu_x                => 0.25,
+        :mu_y                => 0.25,
+	:mu_z                => 0.25,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
