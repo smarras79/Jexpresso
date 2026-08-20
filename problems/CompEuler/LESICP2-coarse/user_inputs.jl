@@ -78,7 +78,7 @@ function user_inputs()
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x125_10kmX10kmX5km.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_8x2x60_10kmX10kmX5km.msh",
+        :gmsh_filename    => "./problems/CompEuler/LESICP2-coarse/LESICP_8x2x60_10kmX10kmX5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
 		
         # Warping:
