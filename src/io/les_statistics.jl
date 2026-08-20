@@ -277,22 +277,37 @@ function fill_sgs_cache!(params)
         # call by compute_sgs_cache! (SGS.jl). Use them directly to skip velocity
         # gradient recomputation. Only temperature gradients are computed here for
         # SGS heat fluxes (8:10) and scalar dissipation (12).
+        # visc_coeff (= inputs[:μ]) multiplies μ_turb in SGS_diffusion, so the
+        # SGS stress the solver actually applies is visc_coeff[ieq] times the
+        # one built from μ_turb alone. Reporting μ_turb alone understated the
+        # subgrid contribution by exactly that factor, which is how a deck
+        # running at 5x the intended eddy viscosity could still show a small
+        # subgrid share in its output profiles.
         _fill_sgs_smag!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                         dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                        params.sgs, Pr_t, μ_mol, κ_mol, ngl, nelem, npoin, ET)
+                        params.sgs, params.visc_coeff, Pr_t, μ_mol, κ_mol, ngl, nelem, npoin, ET)
     else
         ad_lvl   = mesh.ad_lvl
         _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                          dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                         ad_lvl, Float64(mesh.Δeffective_l), PhysConst, Pr_t, μ_mol, κ_mol,
+                         ad_lvl, Float64(mesh.Δeffective_l),
+                         mesh.Δelem_geo, Int64(mesh.nop),
+                         params.visc_coeff,
+                         isnothing(params.sgs) ? PhysConst.C_s : Float64(params.sgs.C_s),
+                         PhysConst, Pr_t, μ_mol, κ_mol,
                          ngl, nelem, npoin, VT, ET)
     end
 end
 
 function _fill_sgs_smag!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                           dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                          sgs, Pr_t, μ_mol, κ_mol, ngl, nelem, npoin, ET)
+                          sgs, visc_coeff, Pr_t, μ_mol, κ_mol, ngl, nelem, npoin, ET)
     fill!(sgs_stress, 0.0)
+    # Scale factors actually in force in SGS_diffusion: momentum uses
+    # visc_coeff[2], the θ equation visc_coeff[5]. A 1-element visc_coeff means
+    # :lvisc was false, in which case nothing is applied.
+    cμ = length(visc_coeff) >= 2 ? Float64(visc_coeff[2]) : 0.0
+    cθ = length(visc_coeff) >= 5 ? Float64(visc_coeff[5]) : cμ
 
     # Pass 1: momentum stresses (1:6) and TKE dissipation (11).
     # Sij and μ_turb are read directly from the SGS cache — no gradient computation.
@@ -302,8 +317,8 @@ function _fill_sgs_smag!(sgs_stress, ncount, uaux, qe, connijk, uprim,
         S11 = Float64(sgs.S11[ip]);  S22 = Float64(sgs.S22[ip]);  S33 = Float64(sgs.S33[ip])
         S12 = Float64(sgs.S12[ip]);  S13 = Float64(sgs.S13[ip]);  S23 = Float64(sgs.S23[ip])
         SijSij = S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)
-        ν_t   = μ_t / ρ
-        ν_eff = μ_mol/ρ + ν_t
+        ν_t   = cμ * μ_t / ρ
+        ν_eff = cμ * μ_mol/ρ + ν_t
         sgs_stress[ip, 1] = -2 * ν_t * S11
         sgs_stress[ip, 2] = -2 * ν_t * S12
         sgs_stress[ip, 3] = -2 * ν_t * S13
@@ -345,7 +360,7 @@ function _fill_sgs_smag!(sgs_stress, ncount, uaux, qe, connijk, uprim,
             dθdy = dθdξ*Jdξdy + dθdη*Jdηdy + dθdζ*Jdζdy
             dθdz = dθdξ*Jdξdz + dθdη*Jdηdz + dθdζ*Jdζdz
             μ_t   = Float64(sgs.μ_turb[ip])
-            κ_t   = μ_t / (ρ * Pr_t)
+            κ_t   = cθ * μ_t / (ρ * Pr_t)
             κ_eff = κ_mol + κ_t
             sgs_stress[ip, 8]  += -κ_t * dθdx
             sgs_stress[ip, 9]  += -κ_t * dθdy
@@ -367,13 +382,17 @@ end
 
 function _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                            dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                           ad_lvl, Δ, PhysConst, Pr_t, μ_mol, κ_mol,
+                           ad_lvl, Δ, Δelem_geo, nop, visc_coeff, C_s_eff, PhysConst, Pr_t, μ_mol, κ_mol,
                            ngl, nelem, npoin, VT, ET)
     fill!(sgs_stress, 0.0)
     fill!(ncount, Int32(0))
+    cμ = length(visc_coeff) >= 2 ? Float64(visc_coeff[2]) : 0.0
+    cθ = length(visc_coeff) >= 5 ? Float64(visc_coeff[5]) : cμ
+    # Same per-element filter width the RHS uses (see _viscous_rhs_el_3d!).
+    luse_local_Δ = length(Δelem_geo) == nelem && nop > 0
 
     for iel in 1:nelem
-        Δ2 = (ldexp(Δ, -ad_lvl[iel]))^2
+        Δ2 = luse_local_Δ ? (Δelem_geo[iel]/nop)^2 : (ldexp(Δ, -ad_lvl[iel]))^2
 
         for k in 1:ngl, j in 1:ngl, i in 1:ngl
             ip = connijk[iel,i,j,k]
@@ -430,11 +449,11 @@ function _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                 compute_sij_and_mu_turb(ρ, dudx, dudy, dudz,
                                         dvdx, dvdy, dvdz,
                                         dwdx, dwdy, dwdz,
-                                        PhysConst, Δ2, VT)
+                                        PhysConst, Δ2, VT; C_s = C_s_eff)
 
-            ν_t   = μ_t / ρ
-            κ_t   = μ_t / (ρ * Pr_t)
-            ν_eff = μ_mol/ρ + ν_t
+            ν_t   = cμ * μ_t / ρ
+            κ_t   = cθ * μ_t / (ρ * Pr_t)
+            ν_eff = cμ * μ_mol/ρ + ν_t
             κ_eff = κ_mol + κ_t
 
             sgs_stress[ip, 1]  += -2 * ν_t * S11

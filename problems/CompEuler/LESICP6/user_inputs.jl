@@ -13,6 +13,12 @@ function user_inputs()
 	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
         :lsource              => true,
 	:lsponge              => true,
+	# TABLES specifies a 5000 m domain top with Rayleigh damping above 3000 m.
+	# This mesh tops out at 3500 m and damps from 2500 m, so the sponge starts
+	# 500 m lower than the protocol and occupies 29% of the column — gravity
+	# waves radiated from the CBL top are absorbed closer in than in the other
+	# models. Raising :zsponge alone would leave too thin a damping layer; this
+	# needs a taller mesh (LESICP_*_10kmX10kmX5km.msh) and :zsponge => 3000.0.
 	:zsponge              => 2500.0,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge1000_noheader.dat",
         #---------------------------------------------------------------------------
@@ -25,13 +31,27 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :user_heatflux        => 0.12,
         :lwall_model          => true,
-        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
+        # Smagorinsky constant. Was PhysConst.C_s = 0.21; ABL LES runs 0.13-0.18
+        # and nu_t goes as C_s^2, so 0.21 alone is ~1.7x Lilly.
+        :C_s                  => 0.16,
+        # Buoyancy correction on nu_t. Without it the full eddy diffusivity acts
+        # across the capping inversion and smears it over a few hundred metres.
+        :lrichardson          => true,
+        # Near-wall limit l = min(C_s*Delta, kappa*z) on the mixing length.
+        # false: :lwarp is on, so height above the domain floor is not the
+        # distance to the wall over the ridge.
+        :lwall_damping        => false,
         #:visc_model           => AV(),
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum
+        # :μ is a 0/1 MASK under a dynamic SGS model, not a viscosity: it
+        # multiplies the eddy viscosity the closure already computed. The old
+        # values ([0.0, 10, 10, 10, 10]) were AV constants and inflated C_s by sqrt(μ).
+        # Tune the closure through :C_s instead.
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------

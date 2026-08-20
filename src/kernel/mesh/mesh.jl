@@ -5875,7 +5875,8 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    mesh.Δelem = KernelAbstractions.zeros(backend, T, mesh.nelem)
+    mesh.Δelem     = KernelAbstractions.zeros(backend, T, mesh.nelem)
+    mesh.Δelem_geo = KernelAbstractions.zeros(backend, T, mesh.nelem)
     for ie = 1:mesh.nelem
          compute_element_size!(SD, ie, mesh::St_mesh, T)
     end
@@ -5985,7 +5986,8 @@ function compute_element_size!(SD::NSD_2D, ie, mesh::St_mesh, T)
     dx = maximum(x) - minimum(x)
     dy = maximum(y) - minimum(y)
     
-    mesh.Δelem[ie] = min(dx, dy)           #shortest distance of two points corner within a given element
+    mesh.Δelem[ie]     = min(dx, dy)       #shortest distance of two points corner within a given element
+    mesh.Δelem_geo[ie] = sqrt(dx*dy)       #area-equivalent (isotropic) element size, for LES filter widths
     #mesh.Δelem_largest[ie]  = max(dx, dy) #longest distance of two points corner within a given element
     
 end
@@ -6022,7 +6024,8 @@ function compute_element_size!(SD::NSD_3D, ie, mesh::St_mesh, T)
     dy = maximum(y) - minimum(y)
     dz = maximum(z) - minimum(z)
     
-    mesh.Δelem[ie] = min(dx, dy, dz)            #shortest distance of two points corner within a given element
+    mesh.Δelem[ie]     = min(dx, dy, dz)        #shortest distance of two points corner within a given element
+    mesh.Δelem_geo[ie] = cbrt(dx*dy*dz)         #volume-equivalent (isotropic) element size, for LES filter widths
     #mesh.Δelem_largest[ie]  = max(dx, dy, dz)  #longest distance of two points corner within a given element
     
 end

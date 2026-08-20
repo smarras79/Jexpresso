@@ -27,7 +27,10 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
 
 end
 
-function user_les_profiles!(means, prof, q, qe, ET)
+# horizontal_mean! (src/io/les_statistics.jl) calls this with six arguments,
+# passing the per-node SGS stress cache. The five-argument form was a
+# MethodError as soon as :les_statistics was switched on.
+function user_les_profiles!(means, prof, q, qe, sgs, ET)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -64,26 +67,26 @@ function user_les_profiles!(means, prof, q, qe, ET)
     prof[9]  = v * θ  # <vθ> res
     prof[10] = w * θ  # <wθ> res
 
-    # ---- SFS stress — requires SGS model output; zero until implemented ----
-    prof[11] = 0.0  # <uu> sfs
-    prof[12] = 0.0  # <uv> sfs
-    prof[13] = 0.0  # <uw> sfs
-    prof[14] = 0.0  # <vv> sfs
-    prof[15] = 0.0  # <vw> sfs
-    prof[16] = 0.0  # <ww> sfs
-    prof[17] = 0.0  # <θθ> sfs (no SGS scalar variance in Smagorinsky)
-    prof[18] = 0.0  # <uθ> sfs
-    prof[19] = 0.0  # <vθ> sfs
-    prof[20] = 0.0  # <wθ> sfs
+    # ---- SFS stress (from SGS model: sgs[1:6]=τ_ij/ρ, sgs[7]=0, sgs[8:10]=SGS heat flux) ----
+    prof[11] = sgs[1]   # <uu> sfs = -2ν_t S11
+    prof[12] = sgs[2]   # <uv> sfs = -2ν_t S12
+    prof[13] = sgs[3]   # <uw> sfs = -2ν_t S13
+    prof[14] = sgs[4]   # <vv> sfs = -2ν_t S22
+    prof[15] = sgs[5]   # <vw> sfs = -2ν_t S23
+    prof[16] = sgs[6]   # <ww> sfs = -2ν_t S33
+    prof[17] = sgs[7]   # <θθ> sfs (0 — not modeled in Smagorinsky/Vreman)
+    prof[18] = sgs[8]   # <uθ> sfs = -κ_t ∂θ/∂x
+    prof[19] = sgs[9]   # <vθ> sfs = -κ_t ∂θ/∂y
+    prof[20] = sgs[10]  # <wθ> sfs = -κ_t ∂θ/∂z
 
     # ---- pressure-velocity correlations ----
     prof[21] = u * p  # <up>
     prof[22] = v * p  # <vp>
     prof[23] = w * p  # <wp>
 
-    # ---- dissipation rates — require velocity/temperature gradients; zero until implemented ----
-    prof[24] = 0.0  # eps   (TKE dissipation: 2 ν_eff S_ij S_ij)
-    prof[25] = 0.0  # eps_t (θ-variance dissipation: κ_eff |∇θ|²)
+    # ---- dissipation rates (from SGS model: sgs[11]=ε, sgs[12]=εθ) ----
+    prof[24] = sgs[11]  # eps   (TKE dissipation: 2 ν_eff S_ij S_ij)
+    prof[25] = sgs[12]  # eps_t (θ-variance dissipation: κ_eff |∇θ|²)
 
     # ---- density ----
     prof[26] = ρ    # rho
