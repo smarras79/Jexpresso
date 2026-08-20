@@ -1736,7 +1736,45 @@ function _compute_xy_partition(model, nparts)
     xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
     yi = clamp.(floor.(Int, (cy .- y_min) ./ ly .* ny), 0, ny - 1)
 
-    return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+    cell_to_part = xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+
+    # ── Report what this partition actually is ──────────────────────────────
+    # A part that receives no cells is fatal much later (mesh.nelem == 0 on
+    # that rank), and the only prior evidence was a bare "Min elements: 0" in
+    # the load-balance block -- with no indication of what nx x ny had been
+    # chosen or how many element columns the mesh actually has. That is not
+    # enough to tell "too many ranks" apart from "the mesh is not the shape
+    # you think it is", and the two have completely different fixes.
+    #
+    # So state the inputs and the outcome, on rank 0, every run.
+    let comm = get_mpi_comm()
+        if MPI.Comm_rank(comm) == 0
+            ncols_x = length(unique(round.(cx, digits=6)))
+            ncols_y = length(unique(round.(cy, digits=6)))
+            counts  = zeros(Int, nparts)
+            for p in cell_to_part
+                counts[p] += 1
+            end
+            nempty = count(iszero, counts)
+            println(" # xy-partition: ", nparts, " ranks over ", ncols_x, " x ", ncols_y,
+                    " element columns  ->  rank grid ", nx, " x ", ny)
+            println(" #   domain span lx/ly = ", round(lx / ly, digits=4),
+                    "   cells/rank min/max = ", minimum(counts), "/", maximum(counts))
+            if nempty > 0
+                @warn string(
+                    "xy-partition left ", nempty, " of ", nparts, " ranks with NO elements. ",
+                    "This mesh has ", ncols_x, " x ", ncols_y, " element columns and the ",
+                    "partitioner chose a ", nx, " x ", ny, " rank grid, so ",
+                    (nx > ncols_x ? string(nx - ncols_x, " x-bins ") : ""),
+                    (ny > ncols_y ? string(ny - ncols_y, " y-bins ") : ""),
+                    "cannot be filled. Reduce the rank count (see tools/pick_nranks.jl, ",
+                    "passing these column counts) or use a finer mesh.")
+            end
+            flush(stdout)
+        end
+    end
+
+    return cell_to_part
 end
 
 
