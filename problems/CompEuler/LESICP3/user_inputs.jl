@@ -23,11 +23,25 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :user_heatflux        => 0.12,
         :lwall_model          => true,
-        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        :μ                    => [0.0, 5, 5, 5, 5], #horizontal viscosity constant for momentum
+        # Smagorinsky constant. Was PhysConst.C_s = 0.21; ABL LES runs 0.13-0.18
+        # and nu_t goes as C_s^2, so 0.21 alone is ~1.7x Lilly.
+        :C_s                  => 0.16,
+        # Buoyancy correction on nu_t. Without it the full eddy diffusivity acts
+        # across the capping inversion and smears it over a few hundred metres.
+        :lrichardson          => true,
+        # Near-wall limit l = min(C_s*Delta, kappa*z) on the mixing length.
+        # false: :lwarp is on, so height above the domain floor is not the
+        # distance to the wall over the ridge.
+        :lwall_damping        => false,
+        # :μ is a 0/1 MASK under a dynamic SGS model, not a viscosity: it
+        # multiplies the eddy viscosity the closure already computed. The old
+        # values ([0.0, 5, 5, 5, 5]) were AV constants and inflated C_s by sqrt(μ).
+        # Tune the closure through :C_s instead.
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------

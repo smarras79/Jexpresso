@@ -958,8 +958,32 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     
+    #
+    # Dynamic SGS closures (SMAG/VREM). This block is the single source of
+    # truth for these keys: params_setup.jl reads them, it does not re-default
+    # them.
+    #
     if(!haskey(inputs, :lrichardson))
-        inputs[:lrichardson] = false #Default is artificial viscosity with constant coefficient
+        # Buoyancy (Richardson) correction on the eddy viscosity. Off by
+        # default to keep existing decks bit-identical; any stratified case —
+        # and every convective boundary layer — wants it ON, otherwise the full
+        # eddy diffusivity acts across a capping inversion and smears it.
+        inputs[:lrichardson] = false
+    end
+
+    if(!haskey(inputs, :C_s))
+        # Smagorinsky constant. 0.21 is the historical Jexpresso value; ABL LES
+        # normally runs 0.13-0.18 (Lilly 0.17, Deardorff/Moeng ~0.13 with
+        # shear). Since nu_t scales with C_s^2, the difference is a factor 1.4-2.6.
+        inputs[:C_s] = PhysicalConst{Float64}().C_s
+    end
+
+    if(!haskey(inputs, :lwall_damping))
+        # Near-wall limit l = min(C_s*Delta, kappa*z) on the SGS mixing length
+        # (SMAG only). Off by default: it needs the distance to the wall, which
+        # for a warped/terrain-following mesh is not the height above the
+        # domain floor.
+        inputs[:lwall_damping] = false
     end
 
     #
@@ -1089,9 +1113,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:δtotal_energy] = 0.0
     end
 
-    if(!haskey(inputs, :lrichardson))
-        inputs[:lrichardson] = false
-    end
     if(!haskey(inputs, :CL))
         # :CL stands for Conservation Law.
         # :CL => CL()  means that we solve dq/dt + \nabla.F(q) = S(q)

@@ -174,6 +174,11 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     # it as Δelem::AbstractVector{TT} with Δ = Δelem[ie]/ngl. The TInt default
     # was the odd one out — Δelem_s/Δelem_l next to it are already 0.0.
     Δelem                = KernelAbstractions.zeros(backend, TFloat, 0)
+    # Δelem is min(dx,dy,dz) — the right scale for a CFL bound, the wrong one
+    # for an LES filter width, which wants the cell volume: an LES on a 78 x 78
+    # x 49 m element must not pretend the filter is isotropic at 49 m. Δelem_geo
+    # holds (dx*dy*dz)^(1/3) per element for the SGS models to divide by nop.
+    Δelem_geo            = KernelAbstractions.zeros(backend, TFloat, 0)
     Δelem_s              = 0.0
     Δelem_l              = 0.0
     Δeffective_s         = 0.0

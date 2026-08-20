@@ -70,7 +70,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
                     randnoise = 0.0
                     if z < 800.0
-                        randnoise = 2*amp*(rand() - 1.0)
+                        randnoise = 2*amp*(rand() - 0.5)   # rand() ∈ [0,1): -0.5 centres the perturbation.
+                        # With -1.0 every draw was negative: a uniform -amp cold offset over the
+                        # whole seeded layer rather than zero-mean noise.
                     end
                     θ    = θ + randnoise
                     
@@ -298,7 +300,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             for ip = 1:mesh.npoin
                 randnoise = 0.0
                 if mesh.z[ip] < 800.0
-                    randnoise = 2*amp*(rand() - 1.0)
+                    randnoise = 2*amp*(rand() - 0.5)   # rand() ∈ [0,1): -0.5 centres the perturbation.
+                    # With -1.0 every draw was negative: a uniform -amp cold offset over the
+                    # whole seeded layer rather than zero-mean noise.
                 end
                 θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
                 qv    = data_interpolate[ip,2] / 1000.0     # qv from column 3, convert g/kg to kg/kg

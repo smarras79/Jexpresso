@@ -1,6 +1,68 @@
 #----------------------------------------------------------------------
+# SHARED SGS HELPERS
+#----------------------------------------------------------------------
+#
+# Buoyancy stability function for the eddy viscosity (Lilly 1962;
+# Deardorff 1980; Moeng 1984):
+#
+#     f(Ri) = sqrt(max(0, 1 - Ri/Pr_t)),   Ri = N²/S²
+#
+# so that
+#
+#     ν_t = (C_s Δ)² |S| f(Ri) = (C_s Δ)² sqrt(S² - N²/Pr_t).
+#
+# Stable (Ri > 0) reduces mixing and shuts it off at Ri = Pr_t; unstable
+# (Ri < 0) enhances it. The right-hand form shows the unstable branch is
+# well behaved without a cap: as |S| → 0 it tends to (C_s Δ)² sqrt(-N²/Pr_t),
+# it does not blow up.
+#
+# This replaces the earlier branch that used the Monin-Obukhov SURFACE-LAYER
+# function min(sqrt(1 - 16 Ri), 3) on the unstable side. The 16 there belongs
+# to the φ_m profile relationship, not to an SGS closure; against Lilly's
+# coefficient of 1/Pr_t ≈ 1.43 it over-predicts the eddy viscosity by up to
+# the 3x cap throughout a convective mixed layer, i.e. exactly where a CBL
+# LES is most sensitive to spurious dissipation.
+#
+@inline function sgs_stability_function(Ri, Pr_t)
+    return sqrt(max(0.0, 1.0 - Ri/Pr_t))
+end
+
+#
+# SGS mixing length with the standard near-wall limit
+#
+#     1/ℓ² = 1/(C_s Δ)² + 1/(κ z)²      (Mason & Thomson 1992 with n = 2)
+#
+# Away from the wall ℓ → C_s Δ; approaching it ℓ → κ z, which is what the
+# surface layer actually supports. Without this limit the first few nodes of
+# a wall-modelled LES carry an eddy viscosity set by the grid rather than by
+# the distance to the wall, over-mixing the surface layer.
+#
+# Returns ℓ², so callers use μ_turb = ρ ℓ² |S| f_Ri in place of
+# ρ C_s² Δ² |S| f_Ri.
+#
+# NOTE: `z` must be the distance to the WALL. For a flat lower boundary that
+# is the height above it, which is what the callers pass. On a terrain-
+# following mesh the height above terrain is not currently available at this
+# point, so :lwall_damping must stay false for warped grids.
+#
+@inline function sgs_mixing_length2(C_s2, Δ2, z, karman, lwall_damping)
+    CsΔ2 = C_s2 * Δ2
+    (lwall_damping && z > 0.0) || return CsΔ2
+    κz2 = (karman * z)^2
+    return CsΔ2 * κz2 / (CsΔ2 + κz2)
+end
+
+#----------------------------------------------------------------------
 # SMAGORINSKY
 #----------------------------------------------------------------------
+#
+# LEGACY per-node path. When :visc_model is SMAG()/VREM(), params.sgs is a
+# concrete AbstractSGSModel and the RHS goes through compute_sgs_cache! plus
+# the cache-reading SGS_diffusion further down instead of these methods. They
+# are kept for the sgs === nothing dispatches only, and they read C_s from
+# PhysConst directly, so they do NOT honour an inputs[:C_s] override — put new
+# closure work in compute_sgs_cache!, not here.
+#
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
                                u11, u22, u12, u21,
@@ -50,17 +112,22 @@
         return (μ_mol + μ_turb) * visc_coeffieq[ieq] # effective viscosity
 
     elseif is_temperature
-        κ_turb = μ_turb / (ρ * Pr_t)
+        # DYNAMIC, not kinematic: the prognostic variable is ρθ (ρhl, ρqx),
+        # so the diffusive flux assembled by _expansion_visc! as κ_eff·∇θ must
+        # carry the ρ of ρ·ν_t/Pr_t·∇θ. Dividing μ_turb by ρ here cancelled it
+        # and left every scalar flux short by a factor ρ (≈14% at the surface,
+        # and inconsistent with the momentum branch above, which is dynamic).
+        κ_turb = μ_turb / Pr_t
 
         if ltheta_eqn
             return κ_turb * visc_coeffieq[ieq]
         else
-            return (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            return (ρ*κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
 
     else
-        κ_turb_scalar = μ_turb / (ρ * Sc_t)
-        return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
+        κ_turb_scalar = μ_turb / Sc_t   # dynamic, see the θ branch above
+        return (ρ*κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
 
 end
@@ -87,7 +154,6 @@ end
     Sc_t  = PhysConst.Sc_t      # Turbulent Schmidt number
     μ_mol = PhysConst.μ_mol     # Molecular viscosity [Pa·s]
     κ_mol = PhysConst.κ_mol     # Molecular thermal diffusivity [m²/s]
-    Ri_crit = PhysConst.Ri_crit # Critical Richardson number (typically 0.25)
     g     = PhysConst.g
     cp    = PhysConst.cp
     C_s2  = C_s*C_s
@@ -129,31 +195,12 @@ end
         # Richardson number: Ri = N²/S²
         # Ri > 0: stable stratification (suppresses turbulence)
         # Ri < 0: unstable stratification (enhances turbulence)
-        # Ri > Ri_crit: turbulence completely suppressed
+        # Ri >= Pr_t: turbulence completely suppressed
         Ri = (Sij2 > 1.0f-12) ? N2 / Sij2 : 0.0
         
         # Stability function for Richardson correction
         # Various formulations exist in literature
-        f_Ri = if Ri >= Ri_crit
-            # Stable stratification above critical Richardson number
-            # Turbulence is completely suppressed
-            0.0
-            
-        elseif Ri >= 0.0
-            # Stable but sub-critical: reduce mixing
-            # Smooth transition to zero at Ri_crit
-            # Common formulation: f(Ri) = (1 - Ri/Ri_crit)²
-            ratio = Ri / Ri_crit
-            (1.0 - ratio) * (1.0 - ratio)
-            
-        else
-            # Unstable stratification (Ri < 0): enhance mixing
-            # Various formulations:
-            # - sqrt(1 - 16*Ri): from Monin-Obukhov similarity
-            # - (1 - 16*Ri)^(1/4): alternative formulation
-            # Cap at maximum enhancement factor (e.g., 3x)
-            min(sqrt(1.0 - 16.0*Ri), 3.0)
-        end
+        f_Ri = sgs_stability_function(Ri, Pr_t)
     elseif lrichardson && !ltheta_eqn
         # ===== Moist Richardson Number Logic =====
         # Note: In this mode, the caller has pre-calculated:
@@ -174,21 +221,7 @@ end
         Ri = (Sij2 > 1.0f-12) ? N2 / Sij2 : 0.0
         
         # Stability function for Richardson correction (Smagorinsky scaling)
-        f_Ri = if Ri >= Ri_crit
-            # Laminar regime: Stratification is strong enough to kill turbulence
-            0.0
-            
-        elseif Ri >= 0.0
-            # Stable regime: Turbulence is present but suppressed by buoyancy
-            # Using the quadratic suppression: (1 - Ri/Ri_crit)²
-            ratio = Ri / Ri_crit
-            (1.0 - ratio) * (1.0 - ratio)
-            
-        else
-            # Unstable regime (Ri < 0): Buoyancy enhances turbulent mixing
-            # Enhancement factor capped at 3.0 to maintain numerical stability
-            min(sqrt(1.0 - 16.0*Ri), 3.0)
-        end
+        f_Ri = sgs_stability_function(Ri, Pr_t)
     end
     
     # Turbulent viscosity with Richardson correction
@@ -202,19 +235,24 @@ end
         
     elseif is_temperature
         # Temperature equation uses effective thermal diffusivity
-        κ_turb = μ_turb / (ρ * Pr_t)
+        # DYNAMIC, not kinematic: the prognostic variable is ρθ (ρhl, ρqx),
+        # so the diffusive flux assembled by _expansion_visc! as κ_eff·∇θ must
+        # carry the ρ of ρ·ν_t/Pr_t·∇θ. Dividing μ_turb by ρ here cancelled it
+        # and left every scalar flux short by a factor ρ (≈14% at the surface,
+        # and inconsistent with the momentum branch above, which is dynamic).
+        κ_turb = μ_turb / Pr_t
         if ltheta_eqn
             # Potential temperature equation
             return κ_turb * visc_coeffieq[ieq]
         else
             # Internal energy or enthalpy equation
-            return (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            return (ρ*κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
         
     else
         # Other scalar equations (species, TKE, etc.)
-        κ_turb_scalar = μ_turb / (ρ * Sc_t)
-        return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
+        κ_turb_scalar = μ_turb / Sc_t   # dynamic, see the θ branch above
+        return (ρ*κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
 end
 
@@ -273,7 +311,12 @@ end
 
     elseif  is_temperature # Assuming potential temperature equation is at index 4
 
-        κ_turb = μ_turb / (ρ * Pr_t)
+        # DYNAMIC, not kinematic: the prognostic variable is ρθ (ρhl, ρqx),
+        # so the diffusive flux assembled by _expansion_visc! as κ_eff·∇θ must
+        # carry the ρ of ρ·ν_t/Pr_t·∇θ. Dividing μ_turb by ρ here cancelled it
+        # and left every scalar flux short by a factor ρ (≈14% at the surface,
+        # and inconsistent with the momentum branch above, which is dynamic).
+        κ_turb = μ_turb / Pr_t
 
         if ltheta_eqn
             return κ_turb * visc_coeffieq[ieq]
@@ -283,8 +326,8 @@ end
         end
 
     else
-        κ_turb_scalar = μ_turb / (ρ * Sc_t)
-        return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
+        κ_turb_scalar = μ_turb / Sc_t   # dynamic, see the θ branch above
+        return (ρ*κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
 
 end
@@ -328,7 +371,6 @@ end
     μ_mol      = PhysConst.μ_mol  # Molecular viscosity [Pa·s]
     κ_mol      = PhysConst.κ_mol  # Molecular thermal diffusivity [m²/s]
     g          = PhysConst.g         # Gravitational acceleration (m/s²)
-    Ri_crit    = PhysConst.Ri_crit   # Critical Richardson number
     C_s        = PhysConst.C_s    # Smagorinsky constant
     C_s2       = C_s*C_s
     cp         = PhysConst.cp
@@ -379,16 +421,7 @@ end
         
         # Stability function for Richardson correction
         # Various formulations exist; using a smooth transition
-        f_Ri = if Ri >= Ri_crit
-            # Stable stratification suppresses turbulence
-            0.0
-        elseif Ri >= 0.0
-            # Stable but sub-critical: reduce mixing
-            (1.0 - Ri/Ri_crit)^2
-        else
-            # Unstable stratification: enhance mixing
-            min(sqrt(1.0 - 16.0*Ri), 3.0)  # Cap at 3x base mixing
-        end
+        f_Ri = sgs_stability_function(Ri, Pr_t)
     end
     
     # Vreman eddy viscosity with safety checks
@@ -402,17 +435,22 @@ end
         return (μ_mol + μ_turb) * visc_coeffieq[ieq] # effective viscosity
     elseif  is_temperature # Assuming potential temperature equation is at index 4
 
-        κ_turb = μ_turb / (ρ * Pr_t)
+        # DYNAMIC, not kinematic: the prognostic variable is ρθ (ρhl, ρqx),
+        # so the diffusive flux assembled by _expansion_visc! as κ_eff·∇θ must
+        # carry the ρ of ρ·ν_t/Pr_t·∇θ. Dividing μ_turb by ρ here cancelled it
+        # and left every scalar flux short by a factor ρ (≈14% at the surface,
+        # and inconsistent with the momentum branch above, which is dynamic).
+        κ_turb = μ_turb / Pr_t
 
         if ltheta_eqn
             return κ_turb * visc_coeffieq[ieq]
         else
-            return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            return cp * (ρ*κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
 
     else
-        κ_turb_scalar = μ_turb / (ρ * Sc_t)
-        return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
+        κ_turb_scalar = μ_turb / Sc_t   # dynamic, see the θ branch above
+        return (ρ*κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
 
 end
@@ -1384,15 +1422,20 @@ end
     if ieq == 2 || ieq == 3 || ieq == 4  # momentum
         return (μ_mol + μ_turb) * visc_coeffieq[ieq]
     elseif ieq == 5                        # temperature / energy
-        κ_turb = μ_turb / (ρ * Pr_t)
+        # DYNAMIC, not kinematic: the prognostic variable is ρθ (ρhl, ρqx),
+        # so the diffusive flux assembled by _expansion_visc! as κ_eff·∇θ must
+        # carry the ρ of ρ·ν_t/Pr_t·∇θ. Dividing μ_turb by ρ here cancelled it
+        # and left every scalar flux short by a factor ρ (≈14% at the surface,
+        # and inconsistent with the momentum branch above, which is dynamic).
+        κ_turb = μ_turb / Pr_t
         if ltheta_eqn
             return κ_turb * visc_coeffieq[ieq]
         else
-            return (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            return (ρ*κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
     else                                   # other scalars (moisture, species)
-        κ_turb_scalar = μ_turb / (ρ * Sc_t)
-        return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
+        κ_turb_scalar = μ_turb / Sc_t   # dynamic, see the θ branch above
+        return (ρ*κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
 end
 
@@ -1421,8 +1464,14 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
     Rvap    = sgs.Rvap
     Rair    = sgs.Rair
     ε_ratio = sgs.ε_ratio
-    Ri_crit = sgs.Ri_crit
+    # Pr_t, not Ri_crit, is the cutoff: sgs_stability_function follows Lilly,
+    # where mixing shuts off at Ri = Pr_t. sgs.Ri_crit is retained on the
+    # struct for other consumers but no longer drives the eddy viscosity.
+    Pr_t    = sgs.Pr_t
     C_s2    = sgs.C_s2
+    karman  = sgs.karman
+    lwall_damping = sgs.lwall_damping
+    zwall   = sgs.zwall
 
     for m = 1:ngl, l = 1:ngl, k = 1:ngl
         ip = connijk[iel, k, l, m]
@@ -1530,19 +1579,14 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
         f_Ri_val = 1.0
         if lrichardson
             Ri = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
-            f_Ri_val = if Ri >= Ri_crit
-                0.0
-            elseif Ri >= 0.0
-                ratio = Ri / Ri_crit
-                (1.0 - ratio) * (1.0 - ratio)
-            else
-                min(sqrt(1.0 - 16.0*Ri), 3.0)
-            end
+            f_Ri_val = sgs_stability_function(Ri, Pr_t)
         end
         sgs.f_Ri[ip] = f_Ri_val
 
         ρ = uprimitive[k,l,m,1]
-        sgs.μ_turb[ip] = ρ * C_s2 * Δ2 * Sij_val * f_Ri_val
+        # ℓ² = (C_sΔ)² away from the wall, → (κz)² approaching it.
+        ℓ2 = sgs_mixing_length2(C_s2, Δ2, zwall[ip], karman, lwall_damping)
+        sgs.μ_turb[ip] = ρ * ℓ2 * Sij_val * f_Ri_val
     end
     return
 end
@@ -1565,7 +1609,10 @@ function compute_sgs_cache!(sgs::SGS_VREM,
     Rvap    = sgs.Rvap
     Rair    = sgs.Rair
     ε_ratio = sgs.ε_ratio
-    Ri_crit = sgs.Ri_crit
+    # Pr_t, not Ri_crit, is the cutoff: sgs_stability_function follows Lilly,
+    # where mixing shuts off at Ri = Pr_t. sgs.Ri_crit is retained on the
+    # struct for other consumers but no longer drives the eddy viscosity.
+    Pr_t    = sgs.Pr_t
     C_vrem  = sgs.C_vrem
     eps_v   = eps(1.0)
 
@@ -1676,14 +1723,7 @@ function compute_sgs_cache!(sgs::SGS_VREM,
             S_ij_S_ij = S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)
             Sij2_val  = 2.0 * S_ij_S_ij
             Ri = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
-            f_Ri_val = if Ri >= Ri_crit
-                0.0
-            elseif Ri >= 0.0
-                ratio = Ri / Ri_crit
-                (1.0 - ratio) * (1.0 - ratio)
-            else
-                min(sqrt(1.0 - 16.0*Ri), 3.0)
-            end
+            f_Ri_val = sgs_stability_function(Ri, Pr_t)
         end
         sgs.f_Ri[ip] = f_Ri_val
 
@@ -1718,8 +1758,14 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
     Rvap    = sgs.Rvap
     Rair    = sgs.Rair
     ε_ratio = sgs.ε_ratio
-    Ri_crit = sgs.Ri_crit
+    # Pr_t, not Ri_crit, is the cutoff: sgs_stability_function follows Lilly,
+    # where mixing shuts off at Ri = Pr_t. sgs.Ri_crit is retained on the
+    # struct for other consumers but no longer drives the eddy viscosity.
+    Pr_t    = sgs.Pr_t
     C_s2    = sgs.C_s2
+    karman  = sgs.karman
+    lwall_damping = sgs.lwall_damping
+    zwall   = sgs.zwall
 
     for l = 1:ngl, k = 1:ngl
         ip = connijk[iel, k, l]
@@ -1805,19 +1851,14 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
         f_Ri_val = 1.0
         if lrichardson
             Ri = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
-            f_Ri_val = if Ri >= Ri_crit
-                0.0
-            elseif Ri >= 0.0
-                ratio = Ri / Ri_crit
-                (1.0 - ratio) * (1.0 - ratio)
-            else
-                min(sqrt(1.0 - 16.0*Ri), 3.0)
-            end
+            f_Ri_val = sgs_stability_function(Ri, Pr_t)
         end
         sgs.f_Ri[ip] = f_Ri_val
 
         ρ = uprimitive[k,l,1]
-        sgs.μ_turb[ip] = ρ * C_s2 * Δ2 * Sij_val * f_Ri_val
+        # ℓ² = (C_sΔ)² away from the wall, → (κz)² approaching it.
+        ℓ2 = sgs_mixing_length2(C_s2, Δ2, zwall[ip], karman, lwall_damping)
+        sgs.μ_turb[ip] = ρ * ℓ2 * Sij_val * f_Ri_val
     end
     return
 end
@@ -1839,7 +1880,10 @@ function compute_sgs_cache!(sgs::SGS_VREM,
     Rvap    = sgs.Rvap
     Rair    = sgs.Rair
     ε_ratio = sgs.ε_ratio
-    Ri_crit = sgs.Ri_crit
+    # Pr_t, not Ri_crit, is the cutoff: sgs_stability_function follows Lilly,
+    # where mixing shuts off at Ri = Pr_t. sgs.Ri_crit is retained on the
+    # struct for other consumers but no longer drives the eddy viscosity.
+    Pr_t    = sgs.Pr_t
     C_vrem  = sgs.C_vrem
     eps_v   = eps(1.0)
 
@@ -1924,14 +1968,7 @@ function compute_sgs_cache!(sgs::SGS_VREM,
         if lrichardson
             Sij2_val = 2.0*(dudx*dudx + dvdy*dvdy + 2.0*(0.5*(dudy + dvdx))^2)
             Ri = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
-            f_Ri_val = if Ri >= Ri_crit
-                0.0
-            elseif Ri >= 0.0
-                ratio = Ri / Ri_crit
-                (1.0 - ratio) * (1.0 - ratio)
-            else
-                min(sqrt(1.0 - 16.0*Ri), 3.0)
-            end
+            f_Ri_val = sgs_stability_function(Ri, Pr_t)
         end
         sgs.f_Ri[ip] = f_Ri_val
 
@@ -1960,15 +1997,20 @@ end
     if ieq == 2 || ieq == 3                # momentum (u, v)
         return (μ_mol + μ_turb) * visc_coeffieq[ieq]
     elseif ieq == 4                         # temperature / energy
-        κ_turb = μ_turb / (ρ * Pr_t)
+        # DYNAMIC, not kinematic: the prognostic variable is ρθ (ρhl, ρqx),
+        # so the diffusive flux assembled by _expansion_visc! as κ_eff·∇θ must
+        # carry the ρ of ρ·ν_t/Pr_t·∇θ. Dividing μ_turb by ρ here cancelled it
+        # and left every scalar flux short by a factor ρ (≈14% at the surface,
+        # and inconsistent with the momentum branch above, which is dynamic).
+        κ_turb = μ_turb / Pr_t
         if ltheta_eqn
             return κ_turb * visc_coeffieq[ieq]
         else
-            return (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            return (ρ*κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
     else                                      # other scalars (moisture, species)
-        κ_turb_scalar = μ_turb / (ρ * Sc_t)
-        return (κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
+        κ_turb_scalar = μ_turb / Sc_t   # dynamic, see the θ branch above
+        return (ρ*κ_mol + κ_turb_scalar) * visc_coeffieq[ieq]
     end
 end
 
@@ -1981,8 +2023,8 @@ end
                                           dudx, dudy, dudz,
                                           dvdx, dvdy, dvdz,
                                           dwdx, dwdy, dwdz,
-                                          PhysConst, Δ2, ::SMAG)
-    C_s2 = PhysConst.C_s * PhysConst.C_s
+                                          PhysConst, Δ2, ::SMAG; C_s = PhysConst.C_s)
+    C_s2 = C_s * C_s
     S11  = dudx;  S22 = dvdy;  S33 = dwdz
     S12  = 0.5 * (dudy + dvdx)
     S13  = 0.5 * (dudz + dwdx)
@@ -1996,8 +2038,8 @@ end
                                           dudx, dudy, dudz,
                                           dvdx, dvdy, dvdz,
                                           dwdx, dwdy, dwdz,
-                                          PhysConst, Δ2, ::VREM)
-    C_s2   = PhysConst.C_s * PhysConst.C_s
+                                          PhysConst, Δ2, ::VREM; C_s = PhysConst.C_s)
+    C_s2   = C_s * C_s
     C_vrem = 2.5 * C_s2
     eps_v  = eps(1.0)
     β11 = Δ2 * (dudx*dudx + dudy*dudy + dudz*dudz)
@@ -2024,6 +2066,6 @@ end
                                           dudx, dudy, dudz,
                                           dvdx, dvdy, dvdz,
                                           dwdx, dwdy, dwdz,
-                                          PhysConst, Δ2, ::Any)
+                                          PhysConst, Δ2, ::Any; C_s = PhysConst.C_s)
     return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 end

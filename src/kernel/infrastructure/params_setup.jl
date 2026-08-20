@@ -246,10 +246,52 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     PhysConst = PhysicalConst{TFloat}()
     thermo_params = create_updated_TD_Parameters(PhysConst.potential_temperature_reference_pressure)
-    sgs        = allocate_SGS(sem.mesh.npoin, TFloat, backend, PhysConst, inputs[:visc_model])
+    sgs        = allocate_SGS(sem.mesh.npoin, TFloat, backend, PhysConst, inputs[:visc_model];
+                              C_s = inputs[:C_s])
     if sgs isa AbstractSGSModel
-        sgs.lrichardson = get(inputs, :lrichardson, true)  # default true for SMAG/VREM
-        sgs.ltheta_eqn  = !(haskey(inputs, :energy_equation) && inputs[:energy_equation] == "energy")
+        # mod_inputs.jl always populates :lrichardson, so read it rather than
+        # supplying a second, unreachable default here — the two disagreed, and
+        # the mod_inputs one (false) silently won for every deck that did not
+        # set the key, leaving the buoyancy correction off in runs that assumed
+        # it was on.
+        sgs.lrichardson   = inputs[:lrichardson]
+        sgs.ltheta_eqn    = !(haskey(inputs, :energy_equation) && inputs[:energy_equation] == "energy")
+        sgs.lwall_damping = inputs[:lwall_damping] && sgs isa SGS_SMAG
+
+        if sgs.lwall_damping
+            # Distance to the lower wall at every node. The wall-normal
+            # coordinate is the last one: z in 3D, y in 2D.
+            coords_h = Array(sem.mesh.coords)
+            idir     = sem.mesh.SD == NSD_3D() ? 3 : 2
+            # Reduce over ranks rather than reading mesh.zmin/ymin: those carry a
+            # -1.0 sentinel until the mesh driver fills them, and a silently
+            # shifted wall distance is worse than the cost of one Allreduce.
+            wall0    = MPI.Allreduce(minimum(@view coords_h[idir, :]), MPI.MIN, comm)
+            zw       = max.(@view(coords_h[idir, :]) .- wall0, 0.0)
+            KernelAbstractions.copyto!(backend, sgs.zwall, TFloat.(zw))
+            if inputs[:lwarp] && rank == 0
+                @warn(":lwall_damping uses height above the domain floor, but :lwarp is on. " *
+                      "Over terrain that is not the distance to the wall, so the near-wall " *
+                      "limit will under-damp above the hill.")
+            end
+        end
+
+        # :μ means two different things depending on :visc_model. Under AV() it
+        # is the constant kinematic viscosity in m²/s; under a dynamic model it
+        # multiplies the eddy viscosity that the closure has already computed,
+        # so anything other than 0 or 1 silently rescales C_s by sqrt(:μ). Decks
+        # carried AV-tuned values (5, 10, 15) into Smagorinsky runs this way,
+        # which is a 2.2-3.9x inflation of the Smagorinsky constant.
+        if rank == 0 && inputs[:lvisc]
+            bad = [(i, m) for (i, m) in enumerate(inputs[:μ]) if m != 0.0 && m != 1.0]
+            if !isempty(bad)
+                @warn("visc_model $(typeof(inputs[:visc_model])) computes its own eddy viscosity, " *
+                      "but :μ is not a 0/1 mask: entries $(bad) multiply it. " *
+                      "Effective C_s = C_s*sqrt(:μ) = " *
+                      "$(round.(sgs.C_s .* sqrt.(Float64[m for (_, m) in bad]), digits=3)). " *
+                      "Set :μ => [0.0, 1, 1, ...] and tune :C_s instead.")
+            end
+        end
     end
     sgs_stress = zeros(TFloat, Int64(sem.mesh.npoin), 12)
     

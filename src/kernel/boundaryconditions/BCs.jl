@@ -399,7 +399,8 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                             F_surf[i, 4] = ρ*PhysConst.cp*wθ_local[1] + ρ*PhysConst.Lc*wqv_local[1]
                             F_surf[i, 5] = wqv_local[1]
                         else
-                            F_surf[i, 4] = wθ_local[1]*(1.0 - δhf) + user_heatflux*δhf
+                            # See the 3D branch: ρθ needs the dynamic flux ρ·w'θ'.
+                            F_surf[i, 4] = ρ*(wθ_local[1]*(1.0 - δhf) + user_heatflux*δhf)
                         end
                     else
                         user_bc_neumann!(@view(F_surf[i,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),
@@ -783,7 +784,14 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     F_surf[i,j,5] = ρ*PhysConst.cp*wθ[iface,i,j,1] + ρ*PhysConst.Lc*wqv[iface,i,j,1]
                                     F_surf[i,j,6] = wqv[iface,i,j,1]
                                 else
-                                    F_surf[i,j,5] = wθ[iface,i,j,1]*(1.0- δhf) + user_heatflux*δhf
+                                    # The prognostic variable is ρθ, so the surface term must be the DYNAMIC
+                                    # flux ρ·w'θ'. CM_MOST! returns w'θ' kinematically (K m/s) — unlike τ_f, which
+                                    # already carries ρ — and :user_heatflux is prescribed in the same kinematic
+                                    # units. Dropping ρ here under-delivered surface heating by ~14% at sea level,
+                                    # which propagates straight into the resolved heat-flux profile, the
+                                    # entrainment flux, and a cold mixed-layer bias. The moist branch just above
+                                    # already multiplies by ρ.
+                                    F_surf[i,j,5] = ρ*(wθ[iface,i,j,1]*(1.0- δhf) + user_heatflux*δhf)
                                 end
                             else
                                 user_bc_neumann!(@view(F_surf[i,j,:]), @view(uaux[ip,:]), @view(uaux[ip1,:]),

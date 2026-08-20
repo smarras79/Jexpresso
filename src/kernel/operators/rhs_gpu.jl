@@ -471,6 +471,15 @@ end
     S33 = dwdz
     # |Sij|
     Sij = sqrt(2.0 * (S11*S11 + S12*S12 + S13*S13 + S21*S21 + S22*S22 + S23*S23 + S31*S31 + S32*S32 + S33*S33))
+    # WARNING: this GPU Smagorinsky does NOT match the CPU closure in
+    # kernel/physics/SGS.jl. Differences, all of them significant for an LES:
+    #   * delta2 is hard-coded to 1e4 m² (Δ = 100 m) instead of coming from the
+    #     mesh, so the filter width is unrelated to the grid actually being run;
+    #   * there is no C_s — visc_coeff (= inputs[:μ]) stands in for C_s², so
+    #     :μ means something different again here;
+    #   * no ρ, no buoyancy (Richardson) correction, no near-wall length limit.
+    # Anything run on the GPU with :visc_model => SMAG() should be treated as
+    # untrusted until this is brought in line with compute_sgs_cache!.
     delta2::T = 10000.0
 
     for ieq=1:neq
