@@ -1780,7 +1780,19 @@ function _compute_xy_partition(model, nparts)
         end
     end
 
-    if nempty > 0
+    # Escape hatch. This guard was added without the means to test it against a
+    # real MPI run, and it turns what used to be a late crash into an early
+    # hard stop. If it ever fires on a configuration that genuinely works,
+    # JEXPRESSO_ALLOW_EMPTY_RANKS=1 downgrades it to a warning rather than
+    # leaving you unable to launch at all.
+    _allow_empty = lowercase(strip(get(ENV, "JEXPRESSO_ALLOW_EMPTY_RANKS", ""))) in
+                   ("1", "true", "yes", "on")
+    if nempty > 0 && _allow_empty
+        MPI.Comm_rank(get_mpi_comm()) == 0 && @warn string(
+            "xy-partition left ", nempty, " of ", nparts, " ranks with no elements; ",
+            "continuing because JEXPRESSO_ALLOW_EMPTY_RANKS is set. Expect a failure ",
+            "later in the setup (\"reducing over an empty collection\").")
+    elseif nempty > 0
         error("""
 
          # xy-partition cannot place $(nparts) ranks on this mesh.
@@ -1800,6 +1812,8 @@ function _compute_xy_partition(model, nparts)
 
          If those column counts are not the mesh you meant to run, check
          :gmsh_filename in user_inputs.jl and the case directory you launched.
+
+         To override this check: JEXPRESSO_ALLOW_EMPTY_RANKS=1
          """)
     end
 
