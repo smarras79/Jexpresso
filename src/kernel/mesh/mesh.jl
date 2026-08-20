@@ -1738,40 +1738,83 @@ function _compute_xy_partition(model, nparts)
 
     cell_to_part = xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
 
-    # ── Report what this partition actually is ──────────────────────────────
-    # A part that receives no cells is fatal much later (mesh.nelem == 0 on
-    # that rank), and the only prior evidence was a bare "Min elements: 0" in
-    # the load-balance block -- with no indication of what nx x ny had been
-    # chosen or how many element columns the mesh actually has. That is not
-    # enough to tell "too many ranks" apart from "the mesh is not the shape
-    # you think it is", and the two have completely different fixes.
+    # ── Report what this partition actually is, and refuse to continue ─────
+    # if it is unusable.
     #
-    # So state the inputs and the outcome, on rank 0, every run.
+    # A part that receives no cells is FATAL, but it used to fail far from the
+    # cause: the rank with no elements eventually called maximum() on an empty
+    # array and died with
+    #
+    #   ArgumentError: reducing over an empty collection is not allowed
+    #
+    # which says nothing about ranks, meshes or partitions. The only other
+    # clue was a bare "Min elements: 0" in the load-balance block, with no
+    # record of the rank grid chosen or the mesh's actual column counts --
+    # not enough to tell "too many ranks for this mesh" apart from "this is
+    # not the mesh I meant to run", which have completely different fixes.
+    #
+    # So measure it here, where both the rank grid and the mesh are in hand,
+    # and stop. Every rank computes the same cell_to_part from the same
+    # broadcast model, so every rank reaches the same verdict and throws
+    # together -- no rank is left waiting in a collective for one that died.
+    #
+    # NOTE lx/ly below is the span of cell CENTROIDS, not the domain extent:
+    # for an 8 x 2 mesh in a 6400 x 1600 box it is (7/8*6400)/(1/2*1600) = 7,
+    # not 4. That ratio is what picks nx, so a mesh only a little anisotropic
+    # in element count can get a very lopsided rank grid.
+    ncols_x = length(unique(round.(cx, digits=6)))
+    ncols_y = length(unique(round.(cy, digits=6)))
+    counts  = zeros(Int, nparts)
+    for p in cell_to_part
+        counts[p] += 1
+    end
+    nempty = count(iszero, counts)
+
     let comm = get_mpi_comm()
         if MPI.Comm_rank(comm) == 0
-            ncols_x = length(unique(round.(cx, digits=6)))
-            ncols_y = length(unique(round.(cy, digits=6)))
-            counts  = zeros(Int, nparts)
-            for p in cell_to_part
-                counts[p] += 1
-            end
-            nempty = count(iszero, counts)
             println(" # xy-partition: ", nparts, " ranks over ", ncols_x, " x ", ncols_y,
                     " element columns  ->  rank grid ", nx, " x ", ny)
-            println(" #   domain span lx/ly = ", round(lx / ly, digits=4),
+            println(" #   centroid span lx/ly = ", round(lx / ly, digits=4),
                     "   cells/rank min/max = ", minimum(counts), "/", maximum(counts))
-            if nempty > 0
-                @warn string(
-                    "xy-partition left ", nempty, " of ", nparts, " ranks with NO elements. ",
-                    "This mesh has ", ncols_x, " x ", ncols_y, " element columns and the ",
-                    "partitioner chose a ", nx, " x ", ny, " rank grid, so ",
-                    (nx > ncols_x ? string(nx - ncols_x, " x-bins ") : ""),
-                    (ny > ncols_y ? string(ny - ncols_y, " y-bins ") : ""),
-                    "cannot be filled. Reduce the rank count (see tools/pick_nranks.jl, ",
-                    "passing these column counts) or use a finer mesh.")
-            end
             flush(stdout)
         end
+    end
+
+    # Escape hatch. This guard was added without the means to test it against a
+    # real MPI run, and it turns what used to be a late crash into an early
+    # hard stop. If it ever fires on a configuration that genuinely works,
+    # JEXPRESSO_ALLOW_EMPTY_RANKS=1 downgrades it to a warning rather than
+    # leaving you unable to launch at all.
+    _allow_empty = lowercase(strip(get(ENV, "JEXPRESSO_ALLOW_EMPTY_RANKS", ""))) in
+                   ("1", "true", "yes", "on")
+    if nempty > 0 && _allow_empty
+        MPI.Comm_rank(get_mpi_comm()) == 0 && @warn string(
+            "xy-partition left ", nempty, " of ", nparts, " ranks with no elements; ",
+            "continuing because JEXPRESSO_ALLOW_EMPTY_RANKS is set. Expect a failure ",
+            "later in the setup (\"reducing over an empty collection\").")
+    elseif nempty > 0
+        error("""
+
+         # xy-partition cannot place $(nparts) ranks on this mesh.
+
+           mesh            : $(ncols_x) x $(ncols_y) element columns (z is never partitioned)
+           rank grid chosen: $(nx) x $(ny)   (centroid span lx/ly = $(round(lx/ly, digits=4)))
+           result          : $(nempty) of $(nparts) ranks would own NO elements
+
+         A rank with no elements crashes later in the setup with an unrelated
+         message ("reducing over an empty collection"), so this stops here.
+
+         Fix by lowering the rank count. The usable maximum is bounded by the
+         column counts above, and the aspect-ratio-aware split means it is
+         often well below their product. To list the rank counts that do work:
+
+             julia tools/pick_nranks.jl $(ncols_x) $(ncols_y) <nelemz> <nop> <max_cores> <Lx> <Ly>
+
+         If those column counts are not the mesh you meant to run, check
+         :gmsh_filename in user_inputs.jl and the case directory you launched.
+
+         To override this check: JEXPRESSO_ALLOW_EMPTY_RANKS=1
+         """)
     end
 
     return cell_to_part
