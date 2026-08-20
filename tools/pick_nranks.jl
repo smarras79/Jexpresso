@@ -95,12 +95,18 @@ function main()
     best = filter(r -> r.pts >= pts_target, ok)
     rec  = isempty(best) ? (isempty(ok) ? nothing : ok[1]) : best[end]
 
-    println(rpad("ranks",7), rpad("nx x ny",10), rpad("cols/rank",11),
+    println("COLUMN HEADINGS")
+    println("  rank grid   : how the RANKS are arranged (nx x ny), NOT your element grid")
+    println("  block       : element columns each rank owns, as (nelemx/nx) x (nelemy/ny)")
+    println("  cols/rank   : total columns per rank = the two block numbers multiplied")
+    println("  halo/elem   : halo faces per owned element -- pure communication overhead\n")
+    println(rpad("ranks",7), rpad("rank grid",12), rpad("block",10), rpad("cols/rank",11),
             rpad("pts/rank",11), rpad("halo/elem",11), "note")
     for r in ok
         note = rec !== nothing && r.n == rec.n ? "  <== RECOMMENDED" :
                (r.pts < pts_target ? "  (thin: comms-bound)" : "")
-        println(rpad(r.n,7), rpad("$(r.nx)x$(r.ny)",10),
+        println(rpad(r.n,7), rpad("$(r.nx) x $(r.ny)",12),
+                rpad("$(nelemx÷r.nx) x $(nelemy÷r.ny)",10),
                 rpad(r.mn == r.mx ? "$(r.mn)" : "$(r.mn)-$(r.mx)", 11),
                 rpad(round(Int, r.pts), 11),
                 rpad(round(r.halo, digits=2), 11), note)
@@ -109,8 +115,17 @@ function main()
     if rec === nothing
         println("\nNo valid rank count found at or below $(maxc).")
     else
-        println("\nRECOMMENDED: $(rec.n) ranks  ($(rec.nx) x $(rec.ny), " *
-                "$(round(Int, rec.pts)) points/rank, halo/elem $(round(rec.halo, digits=2)))")
+        println("\nRECOMMENDED: $(rec.n) ranks")
+        println("   ranks arranged $(rec.nx) x $(rec.ny) over your $(nelemx) x $(nelemy) element columns,")
+        println("   so each rank owns a $(nelemx÷rec.nx) x $(nelemy÷rec.ny) block of columns " *
+                "($(rec.mn) columns, full height),")
+        println("   $(round(Int, rec.pts)) gridpoints/rank, halo/elem $(round(rec.halo, digits=2)).")
+        if rec.nx != rec.ny
+            println("\n   NOTE: $(rec.nx) x $(rec.ny) is not square because $(rec.n) is not a perfect")
+            println("   square, so the blocks are elongated and the halo is larger than it")
+            println("   needs to be. If you would rather have square blocks, use the largest")
+            println("   k*k below with k dividing $(nelemx).")
+        end
         nodes = cld(rec.n, 64)
         println("\n  #SBATCH --nodes=$(nodes)")
         println("  #SBATCH --ntasks-per-node=$(cld(rec.n, nodes))")
