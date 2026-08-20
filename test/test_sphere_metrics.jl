@@ -266,3 +266,40 @@ end
         end
     end
 end
+
+
+#---------------------------------------------------------------------------------
+# THE 120° CORNER, from the metrics' side.
+#
+# This is the regression that a corner-stretched :conformal map slipped past: the
+# map's own unit tests (orthogonality, watertight seams, forward ∘ inverse) all
+# passed, and the metrics it produced were still wrong by O(1) — M6 = 0.41,
+# unmoved by nop from 3 to 7 or by n from 5 to 40, because forcing a 90° corner
+# with a non-zero Jacobian makes the corner a cone point no polynomial can fit.
+#
+# There is no map that gives a 90° corner AND a non-singular Jacobian (see
+# cubed_sphere_maps.jl), so :conformal must be REFUSED on a grid with a node on a
+# cube corner rather than regularised. Assert the refusal, and assert that asking
+# for the map the grid already carries is still a no-op that builds clean metrics.
+#---------------------------------------------------------------------------------
+@testset "spherical shell: :conformal is refused on a grid with corner nodes" begin
+
+    with_mpi() do distribute
+
+        inputs = shell_inputs(4, :radial)
+        inputs[:cubed_sphere_map] = :conformal
+        @test_throws ErrorException mod_mesh_mesh_driver(inputs, 1, distribute)
+
+        # the deprecated alias must be refused identically, not slip through
+        inputs = shell_inputs(4, :radial)
+        inputs[:cubed_sphere_map] = :conformal_exact
+        @test_throws ErrorException mod_mesh_mesh_driver(inputs, 1, distribute)
+
+        # and the map the grid DOES carry stays a no-op with clean metrics
+        inputs = shell_inputs(4, :radial)
+        inputs[:cubed_sphere_map] = :equiangular
+        mesh, _ = mod_mesh_mesh_driver(inputs, 1, distribute)
+        metrics = build_sphere_metrics(mesh, inputs; verbose = false)
+        @test check_sphere_metrics(mesh, metrics; verbose = false)
+    end
+end

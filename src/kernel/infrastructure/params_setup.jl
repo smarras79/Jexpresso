@@ -134,7 +134,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
-    filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter])
+    filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter], ladapt=inputs[:ladapt])
     fy_t   = transpose(sem.fy)
     fz_t   = transpose(sem.fz)
     q_t    = filter.q_t

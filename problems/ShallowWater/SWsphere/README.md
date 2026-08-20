@@ -46,12 +46,96 @@ Jexpresso case.
 > session opened before you pulled will run the new `drivers.jl` against the old
 > module and die with `UndefVarError`.
 
+### In parallel
+
+The case runs on any number of MPI ranks:
+
+```bash
+julia --project=. -e 'using MPI; run(`$(mpiexec()) -n 4 $(Base.julia_cmd()[1]) --project=. \
+      -e "using Jexpresso; Jexpresso.run_case(\"ShallowWater\", \"SWsphere\")"`)'
+```
+
+or with whichever `mpiexec` your MPI.jl is configured against (see `INSTALL.md`
+for the system-binary setup). Nothing in the deck changes.
+
+WHAT IS AND IS NOT EXCHANGED. The grid is partitioned by the ordinary Jexpresso
+reader — each rank owns a subset of the elements and holds, in addition, a
+mirrored copy of every node those elements share with a neighbour. The metric
+terms are element-local and need no communication at all. What does need it is
+every quantity that is a SUM OVER THE ELEMENTS TOUCHING A NODE, because on a
+partition seam each rank holds only its own share of that sum:
+
+| assembled quantity | where |
+|---|---|
+| the mass matrix `M` | `build_sphere_metrics` |
+| the RHS `∂q/∂t` | `sphere_rhs!`, every RK stage |
+| the filter's mass-weighted average | `sphere_filter!`, every step |
+| the relative vorticity | `sphere_relative_vorticity!`, every diagnostic |
+
+Each of those completes its sum with `assemble_mpi!` — the cross-rank half of
+the direct stiffness summation — BEFORE dividing by `M`. After it, a mirrored
+node carries exactly the value its owner does, so the state stays identical on
+every rank that holds it and no separate halo exchange is needed. The Lagrange
+projection and the RK update are node-local and therefore consistent for free.
+
+Everything global is reduced: `Δt` (a MAX over the wave speed, so all ranks take
+the same step), the conserved integrals (a SUM over OWNED nodes only — a
+mirrored node would otherwise be counted once per rank), the drift, `max|ζ|`,
+and every residual in `check_sphere_metrics`, whose verdict is therefore the
+same everywhere.
+
+MEASURED, by running THIS deck — the full 10-day Galewsky integration, 11 521
+steps at `nop = 5` — on 1, 2 and 4 ranks. Every diagnostic it prints agrees on
+all three, to every digit printed:
+
+| after 10 days | 1 rank | 2 ranks | 4 ranks |
+|---|---|---|---|
+| `δE/E` | -1.008e-03 | -1.008e-03 | -1.008e-03 |
+| `max\|ζ\|` | 8.737e-05 | 8.737e-05 | 8.737e-05 |
+| `max\|ζ-ζ₀\|` | 1.623e-04 | 1.623e-04 | 1.623e-04 |
+| max drift removed | 1.361e+03 | 1.361e+03 | 1.361e+03 |
+| `δmass/mass` | 9.555e-12 | 9.559e-12 | 9.561e-12 |
+
+The mass residual is the only column that moves, in its last digits, because the
+order of summation changes with the partition — that is round-off, not a
+different answer. All seven metric checks pass at every rank count (M4, the
+area, at 4.9e-14 / 5.7e-14 / 5.1e-14).
+
+WHAT IT BUYS. Same runs, wall time of the time loop, on a 4-core sandbox — 600,
+300 and 150 elements per rank:
+
+| ranks | time loop | of which compiling | speed-up |
+|---|---|---|---|
+| 1 | 152.4 s | 5.0 % | — |
+| 2 | 81.3 s | 9.6 % | **1.87×** |
+| 4 | 46.9 s | 16.6 % | **3.25×** |
+
+— 1.97× and 3.71× on the compute alone, i.e. close to ideal for a grid this
+small. Do measure on a short run and you will see none of it: at one simulated
+day the per-process JIT (~35 s a rank, most of it the first `with_mpi` call)
+swamps the integration and four ranks come out no faster than one. The
+integration is what scales; the startup does not.
+
+THE PARTITION is the generic one (`_compute_xy_partition`, a box decomposition
+of the projected x-y plane), so a part of a SPHERE wraps around the far side
+rather than being a compact patch. It is balanced — 0.97 to 1.00 load ratio at 4
+ranks — and the mirrored-node overhead is small (15 404 local nodes against
+15 002 global, i.e. 2.7 %), so it has not been worth replacing with a
+sphere-aware partitioner. Re-measure before assuming that still holds at high
+rank counts.
+
 Output, in `problems/ShallowWater/SWsphere/output/`:
 
 | file | what it is |
 |---|---|
 | `sphere_grid_ho.vtu` | the initial state |
 | `sphere_0001.vtu` … | one per output time, `:ndiagnostics_outputs` of them |
+
+On more than one rank each of those becomes a `.pvtu` plus one `.vtu` piece per
+rank in a directory of the same name — the convention `write_vtk_grid_only` uses
+for the flat cases. Open the `.pvtu`. The `ip` point field is the GLOBAL node
+number, so it stays continuous across a partition seam as well as across a panel
+seam; the `part` cell field is the owning rank.
 
 Each file is the high-order grid — **(ngl-1)² sub-elements per spectral
 element**, exactly as `write_vtk_grid_only` does for the flat cases, so every
@@ -167,6 +251,180 @@ abscissae; element interiors by a **Coons transfinite patch** built from those
 four great-circle edges, then projected radially onto the shell. Both are exactly
 on the sphere, and the edge construction depends only on the edge's two
 endpoints, so the two sides of a seam agree.
+
+### Changing the cube-face → sphere map
+
+`cubed_sphere.geo` does **not** build the gnomonic cubed sphere, despite what
+this section used to say: gmsh spaces `Transfinite Line` points at equal *angle*
+along a `Circle` arc, so the shipped `.msh` is already the **equiangular** map of
+Ronchi, Iacono & Paolucci (1996). It reproduces
+`tools/generate_cubed_sphere.jl`'s `:equiangular` output to 2.2e-16 of `R`, and
+differs from the gnomonic grid by 535 km.
+
+One input slides the nodes onto a different map *after* the grid is read.
+Connectivity, the panel decomposition and the panel boundaries are untouched;
+only where the nodes sit **inside** each panel changes, so this is safe to do
+once `mod_mesh_read_gmsh!` has already built the topology.
+
+```julia
+:cubed_sphere_map => :none,   # :none (default) | :gnomonic | :equiangular | :conformal
+```
+
+The map the nodes come **from** is *measured*, by `detect_cubed_sphere_map`,
+which pushes every linear vertex back through each candidate's inverse and
+reports which one lands on the uniform panel lattice (residual 2e-16 for the
+right map against 1e-1 for the wrong ones). There is deliberately no input for
+it: a "source map" switch is a claim about the `.msh` that nothing can check,
+and getting it wrong silently produces a grid that is neither map — which is
+exactly what happened while the source was *assumed* gnomonic, since asking for
+`:equiangular` then warped an already-warped grid and cut the minimum element
+edge from 710 km to 562 km, 21% of the time step, in silence.
+
+| value | map | what it buys |
+|---|---|---|
+| `:none` | leave the grid as read | what this deck ships with — the grid is already equiangular |
+| `:gnomonic` | equidistant central projection — Sadourny (1972) | nothing here; it *un-warps* the grid to the coarser-cornered projection |
+| `:equiangular` | face coordinate as an angle, `u = tan α`, `α ∈ [-π/4, π/4]` — Ronchi, Iacono & Paolucci (1996) | a no-op on this grid; the remap detects that and says so |
+| `:conformal` | Rančić, Purser & Mesinger (1996) | grid lines at 90° into a cube corner — and **refused on this grid**, see below |
+
+### Corner behaviour, which is what actually distinguishes them
+
+Angle between the two families of grid lines, walking the face diagonal
+`u = v = t` in to a cube corner. 90° is orthogonal:
+
+| `t` | gnomonic | equiangular | conformal |
+|---|---|---|---|
+| 0.0 (face centre) | 90.000° | 90.000° | 90.000° |
+| 0.9 | 116.584° | 114.947° | **90.000°** |
+| 0.99 | 119.668° | 119.482° | **90.000°** |
+| 0.9999 | 119.997° | 119.995° | **90.000°** |
+
+Gnomonic and equiangular both open to a 120° corner; only the conformal map
+holds 90° all the way in. Over the whole face the worst deviation from
+orthogonality is 30.000° for both of the first two — attained *at* the corner —
+and below the finite-difference floor (1e-6) for the conformal map.
+
+### Why `:conformal` is refused here, and why no regularisation of it works
+
+**The 120° is topological.** Three panels meet at a cube corner and 360° is all
+there is to share, so each panel opens 120° there. Now let `r` be a face map that
+is *differentiable* at the corner with a *non-singular* differential `A`. The two
+grid lines through the corner are `u ↦ r(u,1)` and `v ↦ r(1,v)`, their tangents
+are `A e₁` and `A e₂`, and those two curves are the two cube-edge arcs. Hence
+
+> `∠(A e₁, A e₂) = 120°` for **every** differentiable, non-degenerate map.
+
+So **30° is the smallest deviation from orthogonality any usable map can have at
+a cube corner** — `:gnomonic` and `:equiangular` both attain it — and a map that
+keeps the square's 90° there must have `det A = 0`. That is what the conformal
+map does: near a corner it behaves like `ζ^(4/3)`, so its local scale `|∂r/∂u|`
+falls off as `d^(1/3)`. Measured, as a fraction of the face-centre value:
+
+| `d = 1-u` | 1e-1 | 1e-2 | 1e-3 | 1e-4 |
+|---|---|---|---|---|
+| conformal | 0.444 | 0.206 | 0.0957 | 0.0444 |
+| equiangular | 0.925 | 0.940 | 0.943 | 0.943 |
+
+Fitted exponent 0.333 over four decades — it goes to **zero** at the corner, and
+the grid puts a mesh vertex on each of the eight cube corners (`Point(2)`…
+`Point(9)`, shared by the panels). Measured on this grid remapped to the pure
+map, the surface Jacobian at a corner node comes out *positive but collapsing* —
+1/27, 1/51, 1/93 of the grid median at `nop = 3, 5, 8`, smaller the finer the
+grid, because the nearest LGL node keeps closing on the singular point — so
+`build_sphere_metrics` does not necessarily reject the element as degenerate. It
+builds wrong metrics instead, and `check_sphere_metrics` says so: M6 = 0.10,
+0.14, 0.17 (`:radial`) and 1.5, 1.8, 1.7 (`:cross_product`) at those same orders,
+against a 5e-2 tolerance. A node landing exactly on the zero would give the
+blunter failure,
+
+```
+ERROR sphere_metrics.jl: non-positive surface Jacobian in element 1
+at node (1,1). The element is degenerate or wound inward.
+```
+
+Either way the run is worthless, so `remap_cubed_sphere_nodes!` refuses up front,
+where the cause can be named. The map itself is correct —
+`test/test_cubed_sphere_maps.jl` shows it is conformal to 4e-9 — it is the
+combination of that map with a node ON the singular point that does not work.
+This is why conformal cubed spheres are used by cell-centred finite-volume
+codes (Rančić's own model, CCAM), where the singular point is a cell corner
+nobody evaluates at, and not by nodal spectral elements.
+
+**A corner-stretched `:conformal` was shipped briefly and has been removed.** It
+reparametrised the face coordinate diagonally, `r(u,v) = C(φ(u), φ(v))` with
+`φ(t) = sign(t)(1-(1-|t|)^(3/4))`, the exponent picked to cancel the `d^(1/3)`
+collapse. It does make the Jacobian at the corner node finite, and because `φ`
+acts on each coordinate separately the grid lines stay orthogonal wherever the
+derivatives exist. Both of those are true and neither is enough:
+
+* orthogonality *plus* a non-zero Jacobian at the corner is precisely what the
+  argument above forbids, so the 30° of shear gets spread over the angular
+  sector and the corner becomes a **cone point** — the map turns positively
+  homogeneous of degree 1 instead of differentiable. Measured `|dr/ds|` along
+  the ray `(1-u, 1-v) = t(cos θ, sin θ)`: 0.639, 0.673, 0.705, 0.717 at
+  `θ = 0°, 15°, 30°, 45°`, flat in `t` over `1e-2 … 1e-6`. No linear map fits
+  that, so no polynomial element can represent it;
+* a **separable** stretch cannot be confined to the corner. `φ` acts on `u`
+  alone, so `φ'(1) = ∞` hits the whole cube edge: at `v = 0.5`,
+  `|r_u| = 0.523·(1-u)^(-1/4)` — 0.94, 1.65, 2.94, 5.23, 9.30 at
+  `1-u = 1e-1 … 1e-5`, against a flat 0.783 for `:equiangular`. The map is not
+  `C¹` on any of the twelve cube edges.
+
+`check_sphere_metrics` measures both, on this grid remapped
+equiangular → stretched-conformal (`:radial`, tolerances in `sphere_metrics.jl`):
+
+| nop | 3 | 4 | 5 | 7 | equiangular, nop = 4 |
+|---|---|---|---|---|---|
+| M3 `(J n̂)·x̂` | 3.2e-04 | 3.0e-04 | 8.3e-05 | 3.3e-05 | 1.5e-10 |
+| M4 area | 2.8e-05 | 8.5e-06 | 3.3e-06 | 8.0e-07 | 1.3e-11 |
+| M6 curl normal | 0.414 | 0.408 | 0.403 | 0.399 | 2.7e-05 |
+| M7 rigid rotation | 1.3e-07 | 1.1e-07 | 7.0e-08 | 4.4e-08 | 2.3e-12 |
+
+M6 does not move with `nop`, and it does not move with `h` either — 0.403,
+0.408, 0.410, 0.412 at `n = 5, 10, 20, 40` elements per panel edge — and all of
+it sits in the 24 corner elements (edge elements 2.6e-03, interior 4.3e-05 at
+`nop = 4`). An O(1) error that neither `p`- nor `h`-refinement touches is not a
+tolerance that needs loosening: the same tolerances leave the equiangular grid
+four to nine orders of margin at every `nop` from 3 to 8.
+
+Blending the conformal face coordinate into the equiangular one near the corners
+— which the argument above says is the only direction left — does pass all seven
+checks (best case, weight `w = u²v²`: M3 1.6e-08, M4 1.0e-12, M6 2.0e-03, M7
+7.4e-10 at `nop = 5`), and is still not worth shipping: M6 stays ~100× the
+equiangular grid's and converges only first-order in `nop`, and the blend has to
+be wide enough that the map is no longer conformal over most of the panel. What
+is left at that point is a worse `:equiangular`. **Use `:equiangular`** — i.e.
+this grid, as read.
+
+### What it costs, measured on the shipped grid
+
+Element edge lengths over a panel (all six are congruent), `n = 10`,
+`R = 6.37122e6` m. The minimum is what sets the explicit time step under
+`:lcfl_dt`:
+
+| map | min edge | max edge | ratio | Δt vs the grid as shipped |
+|---|---|---|---|---|
+| equiangular (as shipped) | **710.2 km** | 999.8 km | **1.41** | 1.00× |
+| gnomonic | 641.1 km | 1255.6 km | 1.96 | 0.90× |
+| conformal | 476.0 km | 1033.0 km | 2.17 | 0.67× (and refused) |
+
+So the grid as shipped is both the most homogeneous and the cheapest of the
+three, and `:cubed_sphere_map` has nothing to add to it. Do not generalise the
+Δt column to finer grids: the conformal map's cell scale falls off toward a
+corner, so the more elements per panel edge, the closer the corner-adjacent
+nodes sit to the singular point and the more shrinkage a refined grid sees.
+Re-measure if you refine.
+
+The mechanics — the panel frames, the Rančić Table B1 coefficients and the
+series reversion that gives the inverse — are in
+`src/kernel/mesh/cubed_sphere_maps.jl`, and `test/test_cubed_sphere_maps.jl`
+checks them (including that the conformal map really is conformal, and that
+the two panels sharing a cube edge move a seam node to the same place, so the
+shell stays watertight).
+
+`:cubed_sphere_map` is part of the mesh-cache fingerprint, so changing it
+re-reads and re-remaps the grid instead of reusing the previous run's node
+positions out of `.jexpresso_cache/`.
 
 ### Inspecting the numbering in ParaView
 
@@ -368,11 +626,11 @@ warns if both are off.
 | `:lfilter => true` | the exponential modal filter, applied once per step as the integrator's `step_limiter!`, followed by a mass-weighted DSS average, so it conserves `∫φ` exactly. The stand-in for the paper's Boyd-Vandeven filter; `:filter_alpha => 0.05` is its "reduce the highest modes by 5%". |
 | `:lvisc => true`, `:μ => 1e5` | the artificial diffusion `δν∇²(φu)` of Eq. (8b), `ν = 1e5 m²/s` in the paper. `:ivisc_equations => [2,3,4]` puts it on the momentum only, where the paper has it. |
 
-Both live in this one deck: the two switches at the bottom of `user_inputs.jl`
-select which mechanism is active, and the header there records what each
-combination actually does on this grid. (There used to be a second case,
-`SWsphere_visc`, for the viscous branch; it was folded back in here.) Running
-with both on is legitimate too; it is simply more dissipative.
+This deck keeps the **filter**, which is the paper's own choice for the
+published test. The other branch is a case of its own —
+[`../SWsphere_visc`](../SWsphere_visc/README.md), identical but for those two
+switches — so both are covered by something runnable rather than by a comment.
+Running with both on is legitimate too; it is simply more dissipative.
 
 The diffusion is the **surface (Laplace-Beltrami) Laplacian**, built from the
 same 3×2 manifold metrics as the divergence, and assembled in **weak** form —

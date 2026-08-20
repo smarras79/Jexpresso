@@ -92,7 +92,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::NONE;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
     nothing
 end
 
@@ -111,7 +111,7 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -160,7 +160,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
 
     #
     # 2D PNG of q(t): one colored map per variable and output time.
@@ -242,7 +242,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -254,7 +254,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
                   iout=iout, nvar=nvar, qexact=qexact, case=case,
-                  μ_dsgs_pnode=μ_dsgs_pnode)
+                  μ_dsgs_pnode=μ_dsgs_pnode, schlieren=schlieren)
         
     else
         #VERIFY THIS on GPU
@@ -276,7 +276,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     varnames, outvarnames,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="",
-                    μ_dsgs_pnode=nothing)
+                    μ_dsgs_pnode=nothing, schlieren=nothing)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -314,7 +314,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="",
-                   μ_dsgs_pnode=nothing)
+                   μ_dsgs_pnode=nothing, schlieren=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -423,20 +423,35 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
             end
         end
 
+        # Numerical schlieren (see kernel/physics/schlieren.jl). Written
+        # straight to the file rather than through user_uout!, so switching
+        # it on is one line in user_inputs.jl and needs no change to the
+        # case's qoutvars or its user_uout! — which matters because not
+        # every case's user_uout! accepts extra keyword arguments.
+        #
+        #   schlieren_grad_rho : |∇ρ| [kg/m⁴], quantitative
+        #   schlieren          : exp(-k|∇ρ|/max|∇ρ|) ∈ [e^-k, 1], the image
+        #                        — plot greyscale REVERSED for the familiar
+        #                        dark-shock schlieren look
+        if schlieren !== nothing && size(schlieren, 1) == npoin
+            vtkf["schlieren_grad_rho", VTKPointData()] = @view(schlieren[1:npoin, 1])
+            vtkf["schlieren",          VTKPointData()] = @view(schlieren[1:npoin, 2])
+        end
+
         vtkf
     end
-    
+
     outfiles = map(vtk_save, vtkfile)
-    
+
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs,
                    varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="",
-                   μ_dsgs_pnode=nothing)
+                   μ_dsgs_pnode=nothing, schlieren=nothing)
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -665,8 +680,13 @@ end
 # a VTK_LAGRANGE_QUADRILATERAL would be re-tessellated by ParaView and would
 # hide exactly the thing we want to inspect.
 #
-# Serial (vtk_grid, not pvtk_grid) because the shell path itself is serial for
-# now; see the :lspherical_shell branch of problems/drivers.jl.
+# One PIECE PER RANK when the run is parallel: pvtk_grid writes
+# <name>/<name>_<part>.vtu plus the <name>.pvtu that lists them, which is the
+# same convention write_vtk_grid_only uses for the flat cases. Every rank writes
+# the nodes it holds — including the mirrored copies of nodes owned by a
+# neighbour, so a seam node appears in two pieces with the same value, which is
+# what ParaView expects of a partitioned mesh. On one rank it stays a single
+# .vtu, unchanged.
 #
 # What is written, and why it is the useful thing to look at when debugging
 # the numbering of a CLOSED shell:
@@ -761,13 +781,31 @@ function write_vtk_sphere_grid(mesh::St_mesh,
 
     fout_name = string(OUTPUT_DIR, "/", file_name)
 
-    vtkf = vtk_grid(fout_name,
-                    mesh.coords[1, 1:mesh.npoin],
-                    mesh.coords[2, 1:mesh.npoin],
-                    mesh.coords[3, 1:mesh.npoin],
-                    cells, compress = false)
+    comm   = get_mpi_comm()
+    nparts = MPI.Comm_size(comm)
+    part   = MPI.Comm_rank(comm) + 1        # WriteVTK parts are 1-indexed
 
-    vtkf["ip",        VTKPointData()] = Float64.(collect(1:mesh.npoin))
+    vtkf = if nparts > 1
+        pvtk_grid(fout_name,
+                  mesh.coords[1, 1:mesh.npoin],
+                  mesh.coords[2, 1:mesh.npoin],
+                  mesh.coords[3, 1:mesh.npoin],
+                  cells, compress = false;
+                  part = part, nparts = nparts, ismain = (part == 1))
+    else
+        vtk_grid(fout_name,
+                 mesh.coords[1, 1:mesh.npoin],
+                 mesh.coords[2, 1:mesh.npoin],
+                 mesh.coords[3, 1:mesh.npoin],
+                 cells, compress = false)
+    end
+
+    # The GLOBAL node number, not the local one: across a panel seam — or a
+    # PARTITION seam — this field must look continuous, and the local index is
+    # meaningless from one piece to the next.
+    vtkf["ip",        VTKPointData()] =
+        length(mesh.ip2gip) >= mesh.npoin ? Float64.(@view mesh.ip2gip[1:mesh.npoin]) :
+                                            Float64.(collect(1:mesh.npoin))
     # 0 = linear vertex, 1 = edge node, 2 = element interior. Read off the
     # global numbering rather than stored: mod_mesh_read_gmsh! lays the nodes
     # out as [vertices | edge nodes | interior nodes], in that order.
@@ -782,6 +820,8 @@ function write_vtk_sphere_grid(mesh::St_mesh,
 
     vtkf["iel",   VTKCellData()] = cell_iel
     vtkf["panel", VTKCellData()] = cell_pan
+    # Which rank owns each element — colour by it to see the partition.
+    nparts > 1 && (vtkf["part", VTKCellData()] = fill(Float64(part), nsub))
 
     #
     # Solution fields, when a state vector is handed in (the initial condition,
@@ -862,7 +902,8 @@ function write_vtk_sphere_grid(mesh::St_mesh,
 
     out = vtk_save(vtkf)
 
-    verbose && println(" # Wrote high-order spherical shell grid: ", fout_name, ".vtu  (",
+    verbose && println(" # Wrote high-order spherical shell grid: ", fout_name,
+                       nparts > 1 ? ".pvtu  (" : ".vtu  (",
                        mesh.npoin, " nodes, ", nsub, " sub-cells",
                        nq == 0 ? "" : string(", ", nq, " solution fields"), ")")
 
@@ -879,7 +920,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::HDF5;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing)
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
