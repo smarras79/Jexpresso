@@ -1119,8 +1119,11 @@ end
 function DSS_global_RHS!(RHS, g_dss_cache, neqs)
 
     if g_dss_cache === nothing return end
-    
-    assemble_mpi!(@view(RHS[:,:]),g_dss_cache)
+
+    # NOTE: `@view(RHS[:,:])` used to wrap RHS here. It is an identity view, so
+    # it bought nothing but a SubArray construction on every call and an extra
+    # specialization of assemble_mpi! for SubArray. Pass RHS straight through.
+    assemble_mpi!(RHS, g_dss_cache)
     
 end
 

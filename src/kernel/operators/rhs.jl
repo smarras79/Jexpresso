@@ -71,12 +71,23 @@ function resetRHSToZero_inviscid!(params)
 end
 
 function reset_filters!(params)
-    fill!(params.b, zero(params.T))
+    # NOTE: params.b is deliberately NOT zeroed here.
+    #
+    # `b` is the element-local filter scratch, dimensioned
+    # (nelem, ngl^d, neqs) -- tens to hundreds of MB on an LES mesh. It is
+    # only written at all when AMR is active (ladapt == true), and in that
+    # case filter! assigns every entry exactly once with `=`, so the memset
+    # was pure wasted bandwidth on every single RHS evaluation. Without AMR
+    # the array is never touched: filter! sums straight into `B`.
+    #
+    # `B` still has to be zeroed: the direct-stiffness sum accumulates into
+    # it with `+=` from every element sharing a point.
     fill!(params.B, zero(params.T))
 end
 
 function reset_laguerre_filters!(params)
-    fill!(params.b_lag, zero(params.T))
+    # Same reasoning as above: params.b_lag is no longer written by filter!
+    # (2D Laguerre + AMR is unsupported), so only B_lag needs zeroing.
     fill!(params.B_lag, zero(params.T))
 end
 
@@ -537,9 +548,13 @@ function _build_rhs!(RHS, u, params, time)
         else
             @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
         end
+        # filter! was handed params.uaux itself and finishes with
+        # uaux2u!(u, uaux, ...), so params.uaux already holds the filtered
+        # state and u was written from it. Reloading uaux from u here is an
+        # exact no-op that costs a full 2*npoin*neqs sweep per RHS evaluation.
+    else
+        @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     end
-
-    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     if (inputs[:ladapt] == true) && (params.inputs[:lfilter] == false)
         @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
