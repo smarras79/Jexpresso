@@ -4,10 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        # Size this against the "Smallest LGL node spacing" the solver prints
-        # (53.96 m here), not the element size: the interior GLL nodes cluster
-        # to ~0.17*dz. 0.08 runs clean to t = 500 s (acoustic CFL 0.53).
-        :Δt                   => 0.08,
+        :Δt                   => 0.02,
         :tinit                => 0.0,
         :tend                 => 10800.0,
 	:lrestart             => false,
@@ -16,11 +13,7 @@ function user_inputs()
 	:restart_time         => 9000.0,
 	#:diagnostics_at_times => (11500.0:10.0:15000.0),
 	#:diagnostics_at_times => (0.0:50.0:10800.0),
-	# 0.0 must be the first entry: the IC is written to the slot of :tinit
-	# in this list (falling back to slot 1), so without it the IC and the
-	# first diagnostic both land in iter_1 and the IC gets overwritten.
-	:diagnostics_at_times => (0,100:100:10800...),
-	# :diagnostics_at_times => (0.0, 100.0, 500:500:9000.0...),
+	:diagnostics_at_times => (100, 1000:1000:9000.0...,10800),
 	:lsource              => true,
 	#:lsponge              => true,
 	#:zsponge              => 2500.0, hard coded in user_source.jl
@@ -36,16 +29,16 @@ function user_inputs()
         :user_heatflux        => 0.12,
 	# MUST be true. With false the mesh is built through Gridap's
 	# GmshDiscreteModel(parts, ...) branch instead of the rank-0 read +
-	# _compute_xy_partition column split, and the solution injects energy:
-	# still air with every forcing term off reached 196 m/s in 100 s.
+	# _compute_xy_partition column split, and the solution injects energy
+	# out of nothing: still air with every forcing term off reached
+	# 196 m/s in 100 s, independent of mesh, dt, C_s and :lrichardson.
 	:lxy_partition          => true,
         :lwall_model          => true,
         :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        # Smagorinsky constant. Was PhysConst.C_s = 0.21; ABL LES runs 0.13-0.18
-        # and nu_t goes as C_s^2, so 0.21 alone is ~1.7x Lilly.
+        # Smagorinsky constant. ABL LES runs 0.13-0.18
         :C_s                  => 0.16,
         # Buoyancy correction on nu_t. Without it the full eddy diffusivity acts
         # across the capping inversion and smears it over a few hundred metres.
@@ -58,13 +51,11 @@ function user_inputs()
         # multiplies the eddy viscosity the closure already computed. The old
         # values ([0.0, 5, 5, 5, 5]) were AV constants and inflated C_s by sqrt(μ).
         # Tune the closure through :C_s instead.
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 2.0],
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	# 3 h run, statistics over the last 30 min, per section 2.2 of the
-	# TABLES description. Matches LESICP2.
-	:statistics_time      => (9000.0:10.0:10800.0),
+	:statistics_time      => (9000.0:10:10800.0),
 	#:statistics_time      => (10.0:10.0:100),
         #:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,
@@ -86,13 +77,10 @@ function user_inputs()
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x52_10kmX10kmX5km.msh",
-	# 20x3x16 slab: 10240 x 1000 m footprint like the old LESICP_coarse_test,
-	# but with the TABLES 5000 m top. 960 hexa, 81x13x65 = 68k GLL points at
-	# nop=4. Built from the .geo of the same name in meshes/gmsh_grids/.
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_20x3x16_10kmX1kmX5km.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
-	
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x125_10kmX10kmX5km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_8x2x60_10kmX10kmX5km.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
+		
         # Warping:
         :lwarp => false,
         :mount_type => "LESICP",
@@ -120,20 +108,20 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        #:output_dir          => "/scratch/smarras/hw59/output_new/LESICP2_64x16x36_10kmX5kmX3dot5km/",
-        :output_dir          => "./output",
+        :output_dir          => "/scratch/smarras/smarras/output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
+        #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
+        :linitial_refine     => true,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
         :ladapt              => false,
-        :amr                 => false,
+        :amr                 => true,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
