@@ -17,7 +17,7 @@ end
 function user_uout!(ip, ET, uout, u, qe; kwargs...)
 
     PhysConst = PhysicalConst{Float64}()
-
+    
     uout[1] = u[1]      #ρ
     uout[2] = u[2]/u[1] #u
     uout[3] = u[3]/u[1] #v
@@ -26,6 +26,10 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[end] = perfectGasLaw_ρθtoP(PhysConst; ρ=uout[1], θ=uout[5]) #P
 
 end
+
+# horizontal_mean! (src/io/les_statistics.jl) calls this with six arguments,
+# passing the per-node SGS stress cache. The five-argument form was a
+# MethodError as soon as :les_statistics was switched on.
 function user_les_profiles!(means, prof, q, qe, sgs, ET)
 
     PhysConst = PhysicalConst{Float64}()
@@ -39,8 +43,8 @@ function user_les_profiles!(means, prof, q, qe, sgs, ET)
     end
 
     u = q[2] / ρ
-    v = q[3] / ρ
-    w = q[4] / ρ
+    v = q[3] / ρ 
+    w = q[4] / ρ 
     p = perfectGasLaw_ρθtoP(PhysConst; ρ=ρ, θ=θ)
 
     means[1] = u                                          # u
@@ -175,19 +179,20 @@ function user_les_stress!(profp, prof, means)
 
 end
 
-# function user_les_spectral!(spectra, kappa, u_unif, Ly)
-#     N_unif = size(u_unif, 1)
-#     nk     = N_unif ÷ 2 + 1
-#     N2     = Float64(N_unif * N_unif)
-#
-#     for ivar in 1:4
-#         signal = copy(u_unif[:, ivar])
-#         signal .-= sum(signal) / N_unif   # remove y-mean
-#         ŝ = fft(signal)
-#         for ik in 1:nk
-#             ivar == 1 && (kappa[ik] = (ik-1) / Ly)   # fill kappa once
-#             fac = (ik == 1 || ik == nk) ? 1.0 : 2.0
-#             spectra[ik, ivar] = fac * abs2(ŝ[ik]) / N2 * Ly
-#         end
-#     end
-# end
+function user_les_spectral!(spectra, kappa, u_unif, Ly)
+    N_unif = size(u_unif, 1)
+    nk     = N_unif ÷ 2 + 1
+    N2     = Float64(N_unif * N_unif)
+
+    for ivar in 1:4
+        signal = copy(u_unif[:, ivar])
+        signal .-= sum(signal) / N_unif   # remove y-mean
+        ŝ = fft(signal)
+        for ik in 1:nk
+            ivar == 1 && (kappa[ik] = (ik-1) / Ly)   # fill kappa once
+            fac = (ik == 1 || ik == nk) ? 1.0 : 2.0
+            spectra[ik, ivar] = fac * abs2(ŝ[ik]) / N2 * Ly
+        end
+    end
+end
+

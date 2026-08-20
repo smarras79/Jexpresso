@@ -6,11 +6,12 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.04,
         :tinit                => 0.0,
-        :tend                 => 10800.0,
-	:lrestart             => false,
+        :tend                 => 9000.0,
+	#:lrestart             => true,
+	:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",
 	:restart_time         => 9000,
-	:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:250:8500...,  9000:10:10800.0...),
+	:diagnostics_at_times => (100.0,1000:1000:9000...),
         :lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u00_ridge100_noheader.dat",
         #---------------------------------------------------------------------------
@@ -22,6 +23,12 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :user_heatflux        => 0.12,
+	# MUST be true. With false the mesh is built through Gridap's
+	# GmshDiscreteModel(parts, ...) branch instead of the rank-0 read +
+	# _compute_xy_partition column split, and the solution injects energy
+	# out of nothing: still air with every forcing term off reached
+	# 196 m/s in 100 s, independent of mesh, dt, C_s and :lrichardson.
+	:lxy_partition          => true,
         :lwall_model          => true,
         :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
@@ -45,9 +52,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	# :statistics_time           => (9000.0:10.0:10800.0),
-        # :statistics_online_start   => 9000.0,
-        # :statistics_online_stride  => 10,   # accumulate every 10 steps → ~450 samples/30 min at dt=0.4s
+	:statistics_time           => (9000.0:10.0:10800.0),
+        #:statistics_online_start    => 9000.0,
+	#:statistics_online_interval => 0.2,
         :lesprofile_vars      => ["u_mean", "v_mean", "w_mean", "t_mean", "p_mean"],
         :lesstress_vars       => ["upup_res", "upvp_res", "upwp_res", "vpvp_res", "vpwp_res", "wpwp_res",
                                    "tptp_res", "uptp_res", "vptp_res", "wptp_res",
@@ -68,7 +75,7 @@ function user_inputs()
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
 	# :gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x52_10kmX10kmX5km.msh",
         # :gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
 
         # Warping:
@@ -97,7 +104,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/hw59/smarras/output/LESICP3_scaling-8nodes-64x64x36_10kmX10kmX3dot5km/",
+        :output_dir          => "/scratch/smarras/hw59/output_new/LESICP3_scaling-8nodes-64x64x36_10kmX10kmX3dot5km/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,

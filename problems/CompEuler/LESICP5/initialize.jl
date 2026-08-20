@@ -1,9 +1,9 @@
-function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        println(" Initialize analytic neutral ABL ........................ ")
+        @info " Initialize analytic neutral ABL ........................ "
     end
     
     #---------------------------------------------------------------------------------
@@ -70,9 +70,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
                     randnoise = 0.0
                     if z < 800.0
-                        randnoise = 2*amp*(rand() - 0.5)   # rand() ∈ [0,1): -0.5 centres the perturbation.
-                        # With -1.0 every draw was negative: a uniform -amp cold offset over the
-                        # whole seeded layer rather than zero-mean noise.
+                        randnoise = 2*amp*(rand() - 1.0)
                     end
                     θ    = θ + randnoise
                     
@@ -192,7 +190,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             converged      = false
             
             if rank == 0
-                println("Starting iterative hydrostatic balance correction...")
+                @info "Starting iterative hydrostatic balance correction..."
             end
 
             for iter = 1:max_iterations
@@ -241,13 +239,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
                 if max_correction < tolerance
                     converged = true
                     if rank == 0
-                        println("Hydrostatic balance converged after $iter iterations (max correction: $(max_correction) Pa)")
+                        @info "Hydrostatic balance converged after $iter iterations (max correction: $(max_correction) Pa)"
                     end
                     break
                 end
                 
                 if rank == 0 && iter % 3 == 0
-                    println("Iteration $iter: max pressure correction = $(max_correction) Pa")
+                    @info "Iteration $iter: max pressure correction = $(max_correction) Pa"
                 end
             end
 
@@ -285,9 +283,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             end
             
             if rank == 0
-                println("Final hydrostatic balance verification: max imbalance = $(max_imbalance) Pa")
+                @info "Final hydrostatic balance verification: max imbalance = $(max_imbalance) Pa"
                 relative_imbalance = max_imbalance / p_surface * 100.0
-                println("Relative imbalance: $(relative_imbalance)%")
+                @info "Relative imbalance: $(relative_imbalance)%"
             end
             
             # Store calculated pressures
@@ -299,10 +297,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             amp = 0.25
             for ip = 1:mesh.npoin
                 randnoise = 0.0
-                if mesh.z[ip] < 800.0
-                    randnoise = 2*amp*(rand() - 0.5)   # rand() ∈ [0,1): -0.5 centres the perturbation.
-                    # With -1.0 every draw was negative: a uniform -amp cold offset over the
-                    # whole seeded layer rather than zero-mean noise.
+                if mesh.z[ip] < 1200.0
+                    randnoise = 2*amp*(rand() - 1.0)
                 end
                 θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
                 qv    = data_interpolate[ip,2] / 1000.0     # qv from column 3, convert g/kg to kg/kg
@@ -331,7 +327,17 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     end
     
     if rank == 0
-        println(" Initialize analytic neutral ABL ........................ DONE ")
+        @info " Initialize analytic neutral ABL ........................ DONE "
+    end
+    #
+    # VTK RESTART: overwrite qn from a previous VTK output snapshot.
+    # qe (reference/background state) is kept from the sounding init above.
+    # Only :lrestart_vtk => true and :restart_vtk_input_dir are required;
+    # :restart_vtk_iout and :tinit are auto-detected from simulation.pvd.
+    #
+    if get(inputs, :lrestart_vtk, false) == true
+        PhysConst = PhysicalConst{Float64}()
+        read_vtk_restart!(q, mesh, inputs, PhysConst; output_dir=OUTPUT_DIR)
     end
     
     return q
@@ -352,11 +358,11 @@ function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
                 m += 1
             end
         end
-        # println(q[ips,4] - qe[ips,4])
+        # @info q[ips,4] - qe[ips,4]
         theta      = q[ips, 4] ./ q[ips, 1]
         theta_ref  = qe[ips, 4] ./ qe[ips, 1]
         dtheta     = theta - theta_ref
-        # println(dtheta)
+        # @info dtheta
         if any(dtheta .> tol) && (old_ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
         end

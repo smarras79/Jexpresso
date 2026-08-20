@@ -4,25 +4,28 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.18,
+        # Size this against the "Smallest LGL node spacing" the solver prints
+        # (53.96 m here), not the element size: the interior GLL nodes cluster
+        # to ~0.17*dz. 0.12 blew up at t ~ 90 s with a negative rho*theta in
+        # perfectGasLaw_rhoTHETAtoP; 0.05 ran clean past t = 150 s.
+        :Δt                   => 0.08,
         :tinit                => 0.0,
-        :tend                 => 10800.0,
+        :tend                 => 9000.0,
 	:lrestart             => false,
+	#:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",
-	:restart_time         => 500,
+	:restart_time         => 9000.0,
 	#:diagnostics_at_times => (11500.0:10.0:15000.0),
-	:diagnostics_at_times => (0.0:50.0:10800.0),
-	#:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:100:8500...,  9000:10:10800.0...),
+	#:diagnostics_at_times => (0.0:50.0:10800.0),
+	# 0.0 must be the first entry: the IC is written to the slot of :tinit
+	# in this list (falling back to slot 1), so without it the IC and the
+	# first diagnostic both land in iter_1 and the IC gets overwritten.
+	:diagnostics_at_times => (0,100:10:500...),
+	# :diagnostics_at_times => (0.0, 100.0, 500:500:9000.0...),
 	:lsource              => true,
-	:lsponge              => true,
-	# TABLES specifies a 5000 m domain top with Rayleigh damping above 3000 m.
-	# This mesh tops out at 3500 m and damps from 2500 m, so the sponge starts
-	# 500 m lower than the protocol and occupies 29% of the column — gravity
-	# waves radiated from the CBL top are absorbed closer in than in the other
-	# models. Raising :zsponge alone would leave too thin a damping layer; this
-	# needs a taller mesh (LESICP_*_10kmX10kmX5km.msh) and :zsponge => 3000.0.
-	:zsponge              => 2500.0,
-        :sounding_file        =>"./data_files/input_sounding_teamx_u00_flat_noheader.dat",
+	#:lsponge              => true,
+	#:zsponge              => 2500.0, hard coded in user_source.jl
+        :sounding_file        =>"./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -31,12 +34,17 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-#        :user_heatflux          => 0.12,
-        :lwall_model            => true,
-        :ifirst_wall_node_index => 2, # This must be between 2 <= :first_wall_node_index <= nop+1
-        :bdy_fluxes             => true,
-        :lvisc                  => true, #false by default
-        :visc_model             => SMAG(),
+        :user_heatflux        => 0.12,
+	# MUST be true. With false the mesh is built through Gridap's
+	# GmshDiscreteModel(parts, ...) branch instead of the rank-0 read +
+	# _compute_xy_partition column split, and the solution injects energy:
+	# still air with every forcing term off reached 196 m/s in 100 s.
+	:lxy_partition          => true,
+        :lwall_model          => true,
+        :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :bdy_fluxes           => true,
+        :lvisc                => true, #false by default
+        :visc_model           => SMAG(),
         # Smagorinsky constant. Was PhysConst.C_s = 0.21; ABL LES runs 0.13-0.18
         # and nu_t goes as C_s^2, so 0.21 alone is ~1.7x Lilly.
         :C_s                  => 0.16,
@@ -46,15 +54,21 @@ function user_inputs()
         # Near-wall limit l = min(C_s*Delta, kappa*z) on the mixing length.
         :lwall_damping        => true,
         #:visc_model           => AV(),
+        #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
         # :μ is a 0/1 MASK under a dynamic SGS model, not a viscosity: it
         # multiplies the eddy viscosity the closure already computed. The old
-        # values ([0.0, 10, 10, 10, 10]) were AV constants and inflated C_s by sqrt(μ).
+        # values ([0.0, 5, 5, 5, 5]) were AV constants and inflated C_s by sqrt(μ).
         # Tune the closure through :C_s instead.
-        :μ                      => [0.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	:statistics_time      => (7200.0:10.0:10800.0),
+	# LESICP2 samples 9000-10800 on a restart run; this deck integrates
+	# 0 -> 9000 in one go, so statistics are taken over the last 30 min.
+	:statistics_time      => (7200.0:10.0:9000.0),
+	#:statistics_time      => (10.0:10.0:100),
+        #:statistics_online_start    => 9000.0,
+	#:statistics_online_interval => 0.2,
         :lesprofile_vars      => ["u_mean", "v_mean", "w_mean", "t_mean", "p_mean"],
         :lesstress_vars       => ["upup_res", "upvp_res", "upwp_res", "vpvp_res", "vpwp_res", "wpwp_res",
                                    "tptp_res", "uptp_res", "vptp_res", "wptp_res",
@@ -72,7 +86,13 @@ function user_inputs()
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x52_10kmX10kmX5km.msh",
+	# 20x3x16 slab: 10240 x 1000 m footprint like the old LESICP_coarse_test,
+	# but with the TABLES 5000 m top. 960 hexa, 81x13x65 = 68k GLL points at
+	# nop=4. Built from the .geo of the same name in meshes/gmsh_grids/.
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_20x3x16_10kmX1kmX5km.msh",
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
 	
         # Warping:
         :lwarp => false,
@@ -101,7 +121,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        #:output_dir          => "/scratch/smarras/smarras/output/LESICP2_64x16x36_10kmX5kmX3dot5km-coarse",
+        #:output_dir          => "/scratch/smarras/hw59/output_new/LESICP2_64x16x36_10kmX5kmX3dot5km/",
         :output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
@@ -114,7 +134,7 @@ function user_inputs()
         # AMR
         #---------------------------------------------------------------------------
         :ladapt              => false,
-        :amr                 => true,
+        :amr                 => false,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
