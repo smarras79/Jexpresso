@@ -1,45 +1,4 @@
 #!/bin/bash -l
-# ============================================================================
-# submit_Jexpresso_precompile_pass.sh
-#
-# Large LES run on many ranks, with compilation paid for ONCE and up front
-# instead of inside the production time loop.
-#
-# There are three distinct "compile" stages in a Julia MPI job, and they are
-# routinely confused. This script deals with all three, in order:
-#
-#   (A) PACKAGE PRECOMPILATION  -- Pkg.precompile(), writes .ji / .so caches
-#       into the depot. Must happen ONCE, SERIALLY, before any rank starts:
-#       1536 ranks discovering the same missing cache file all try to build
-#       it, into the same shared depot, at the same time. That is minutes to
-#       hours of wall time, lock contention and half-written cache files.
-#       -> phases 1-3 below, one process, no mpirun.
-#
-#   (B) LOAD-TIME WORK          -- `using Jexpresso` on every rank. Cheap only
-#       if (A) already produced valid caches, which is why (A) runs first and
-#       why the ranks are then forbidden from writing to the depot at all.
-#
-#   (C) JIT OF THE SOLVER       -- rhs!, the SciML integrator specialised on
-#       the real CallbackSet, the MPI halo exchange, plus the first-touch
-#       allocation of every per-rank working array. This one CANNOT be cached
-#       across processes: it happens inside the run, on the first timestep.
-#       Launched all at once on a big problem, it happens interleaved with
-#       collective communication -- fast ranks block in MPI_Wait while slow
-#       ranks compile, the first few hundred steps report a meaningless step
-#       rate, and the long run inherits a heap full of compiler garbage.
-#       -> JEXPRESSO_PRECOMPILE_PASS=1 below splits the run in two:
-#             phase 1: ONE timestep, real problem / real callbacks / real
-#                      kwargs -> everything compiles and allocates here
-#             GC.gc() + MPI.Barrier
-#             phase 2: the production solve, RESUMING from phase 1's state,
-#                      reusing phase 1's specialisation, hot from step two.
-#          Phase 1's step is kept -- it IS the simulation's first step.
-#          See ENVIRONMENT_VARIABLES.md -> JEXPRESSO_PRECOMPILE_PASS.
-#
-# Submit with:
-#   sbatch submit_Jexpresso_precompile_pass.sh
-#   sbatch --export=ALL,CASE=LESICP2-coarse submit_Jexpresso_precompile_pass.sh
-# ============================================================================
 
 #SBATCH --job-name=LESsmago
 #SBATCH --output=%x.%j.out
