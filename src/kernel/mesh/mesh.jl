@@ -1762,8 +1762,23 @@ function _compute_xy_partition(model, nparts)
     # for an 8 x 2 mesh in a 6400 x 1600 box it is (7/8*6400)/(1/2*1600) = 7,
     # not 4. That ratio is what picks nx, so a mesh only a little anisotropic
     # in element count can get a very lopsided rank grid.
-    ncols_x = length(unique(round.(cx, digits=6)))
-    ncols_y = length(unique(round.(cy, digits=6)))
+    # Count DISTINCT centroid positions without materialising an intermediate
+    # array. `unique(round.(cx, digits=6))` allocated a full copy of cx -- on
+    # the 128x128x120 mesh that is 1.97M Float64 (16 MB) per axis, per rank,
+    # at the exact point where the run is already holding the broadcast serial
+    # model and is closest to the memory ceiling. The generator form keeps only
+    # the distinct values, which for a structured mesh is a few hundred.
+    # Measured on a 1.97M-cell mesh: unique(round.(v,digits=6)) 15.0 MiB,
+    # Set(generator) 36.0 MiB (untyped Set boxes every value), this loop
+    # 3.3 KiB. The Set only ever holds the distinct positions -- a few hundred
+    # for a structured mesh -- so nothing scales with cell count.
+    function _ndistinct(v)
+        s = Set{Float64}()
+        for x in v
+            push!(s, round(x, digits=6))
+        end
+        return length(s)
+    end
     counts  = zeros(Int, nparts)
     for p in cell_to_part
         counts[p] += 1
@@ -1772,7 +1787,8 @@ function _compute_xy_partition(model, nparts)
 
     let comm = get_mpi_comm()
         if MPI.Comm_rank(comm) == 0
-            println(" # xy-partition: ", nparts, " ranks over ", ncols_x, " x ", ncols_y,
+            println(" # xy-partition: ", nparts, " ranks over ",
+                    _ndistinct(cx), " x ", _ndistinct(cy),
                     " element columns  ->  rank grid ", nx, " x ", ny)
             println(" #   centroid span lx/ly = ", round(lx / ly, digits=4),
                     "   cells/rank min/max = ", minimum(counts), "/", maximum(counts))
@@ -1793,6 +1809,8 @@ function _compute_xy_partition(model, nparts)
             "continuing because JEXPRESSO_ALLOW_EMPTY_RANKS is set. Expect a failure ",
             "later in the setup (\"reducing over an empty collection\").")
     elseif nempty > 0
+        ncols_x = _ndistinct(cx)
+        ncols_y = _ndistinct(cy)
         error("""
 
          # xy-partition cannot place $(nparts) ranks on this mesh.
@@ -1988,6 +2006,54 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
                 flush(stdout)
             end
+            # ── Coarse-mesh ORDERING check (p4est only) ─────────────────────
+            # p4est hands each rank a CONTIGUOUS range of the space-filling
+            # curve, and that curve follows coarse-tree order, which follows
+            # the order elements appear in the .msh. gmsh writes a box mesh in
+            # horizontal LAYERS, so a contiguous range is a horizontal SLAB:
+            # the ranks holding the bottom layer own the entire ground surface
+            # and every other rank owns none. On the 8x2x60 case that gave
+            #
+            #   # Bottom faces (min/avg/max) : 0 / 1.0 / 60  [imbalance: 60.0x]
+            #
+            # -- 62 of 64 ranks doing no wall-model work, one rank doing 94% of
+            # it, every timestep. Correctness is unaffected (the wall model is
+            # element-local), but the load balance is not recoverable later:
+            # the partition is fixed the moment the forest is built.
+            #
+            # Detect it here, where the coarse model is in hand and still small,
+            # by measuring how often consecutive cells share a z level. Rank 0
+            # only, and only over the COARSE cells, so this stays cheap.
+            if rank == 0
+                _cc = get_cell_coordinates(Triangulation(gmodel))
+                _nc = length(_cc)
+                if _nc > 1
+                    _cz = [sum(pt[3] for pt in c) / length(c) for c in _cc]
+                    _same = 0
+                    for i in 2:_nc
+                        abs(_cz[i] - _cz[i-1]) < 1e-6 && (_same += 1)
+                    end
+                    _frac = _same / (_nc - 1)
+                    println(" #   coarse-mesh ordering: ", round(100 * _frac, digits=1),
+                            "% of consecutive cells share a z level")
+                    if _frac > 0.5
+                        @warn string(
+                            "This coarse mesh is ordered in horizontal LAYERS (",
+                            round(100 * _frac, digits=1), "% of consecutive cells share a z level). ",
+                            "p4est partitions contiguous ranges of that order, so ranks will get ",
+                            "horizontal slabs and only the ones holding the bottom layer will own ",
+                            "any ground surface -- watch the 'Bottom faces' line below for min=0. ",
+                            "Reorder the mesh column-major first:\n\n",
+                            "    julia tools/reorder_msh_columns.jl ",
+                            get(inputs, :gmsh_filename, "<mesh.msh>"),
+                            " <out.msh> ", nparts, "\n\n",
+                            "then point :gmsh_filename at <out.msh>. The tool reports the ground ",
+                            "distribution you would get before and after.")
+                    end
+                    flush(stdout)
+                end
+            end
+
             partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
             dmodel = local_views(partitioned_model).item_ref[]
