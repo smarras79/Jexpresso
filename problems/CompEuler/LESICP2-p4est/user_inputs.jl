@@ -78,8 +78,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
-	#:gmsh_filename    => "./problems/CompEuler/LESICP2-coarse/LESICP_8x2x60_6400mX1600mX5000m.msh",
-        #:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_128x128x120_10240mX10240mX5000m.msh
 	# COARSE mesh (16x16x15). :init_refine_lvl => 1 refines it to the 32x32x30
 	# grid the run actually uses. Must be the COLUMN-MAJOR file produced by
 	# tools/reorder_msh_columns.jl -- p4est partitions contiguous ranges of the
@@ -105,7 +103,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        :lfilter             => false,
         :mu_x                => 0.25,
         :mu_y                => 0.25,
 	:mu_z                => 0.25,
@@ -114,8 +112,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_16x16x125_10240mX10240mX5000m/",
-	#:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/,"
+	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/",
         #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
