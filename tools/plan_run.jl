@@ -116,7 +116,25 @@ function main()
         println("recommended          : $(ranks) ranks  ->  --nodes=$(nodes) --ntasks-per-node=$(tpn)")
         println("  gridpoints/rank : $(round(Int, totpts / ranks))")
         println("  ground cells/rank: $(rec.ground)   (must be > 0 on every rank)")
-        println("valid rank counts: ", join((c.n for c in cands), ", "))
+        if LVL == 0
+            # Direct path: an unlisted count really is invalid. _compute_xy_partition
+            # bins by coordinate, and a rank whose bin catches no cells owns nothing,
+            # which kills the run during setup.
+            println("valid rank counts : ", join((c.n for c in cands), ", "))
+            println("  Anything else leaves ranks with NO ELEMENTS and the run dies.")
+        else
+            # p4est: any count runs. It splits the space-filling curve into
+            # near-equal contiguous chunks whatever the number -- element balance
+            # stays within one cell. The listed counts are the ones where each
+            # rank also gets a whole number of columns, so the SURFACE (wall-model)
+            # load is even too; off-list counts just spread the ground unevenly.
+            println("evenly balanced   : ", join((c.n for c in cands), ", "))
+            println("  Any count up to $(cnx*cny) also RUNS -- p4est splits the curve")
+            println("  evenly regardless -- but the ground surface is then shared")
+            println("  unevenly between ranks (some do ~2x the wall-model work).")
+            println("  Above $(cnx*cny) some ranks own no ground at all: not a crash,")
+            println("  but that much of the wall model sits idle.")
+        end
     end
 end
 
