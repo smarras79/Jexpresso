@@ -111,8 +111,8 @@ function main()
         println("path                 : ", LVL == 0 ? "direct read + lxy_partition" :
                                            "p4est, $(LVL) refinement level(s)")
         LVL > 0 ?
-            println("gmsh must generate   : $(cnx) x $(cny) x $(cnz)  ($(cnx*cny*cnz) elements) -- p4est refines this $(LVL) level(s)") :
-            println("gmsh must generate   : $(NX) x $(NY) x $(NZ)  (no refinement)")
+            println("coarse mesh          : $(cnx) x $(cny) x $(cnz)  ($(cnx*cny*cnz) elements) -- p4est refines this $(LVL) level(s)") :
+            println("mesh                 : $(NX) x $(NY) x $(NZ)  (no refinement)")
         println("recommended          : $(ranks) ranks  ->  --nodes=$(nodes) --ntasks-per-node=$(tpn)")
         println("  gridpoints/rank : $(round(Int, totpts / ranks))")
         println("  ground cells/rank: $(rec.ground)   (must be > 0 on every rank)")
