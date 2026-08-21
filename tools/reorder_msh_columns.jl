@@ -117,7 +117,7 @@ function main()
                         isbot[idx] && (per[min(cld(pos, chunk), nranks)] += 1)
                     end
                     println("  ", rpad(label, 24),
-                            " ground cells/rank min=", minimum(per),
+                            " coarse ground cells/rank min=", minimum(per),
                             " max=", maximum(per),
                             "  ranks with none: ", count(iszero, per), "/", nranks)
                 end
@@ -130,6 +130,7 @@ function main()
         write(io, join(out, '\n'))
     end
     println("reordered $(total_reordered) 3D elements over $(ncols_report) columns")
+    println("(counts above are COARSE cells; each becomes 4^lvl ground cells after refinement)")
     println("wrote $(outfile)")
     if nranks > 0
         println("\nnranks=$(nranks) vs $(ncols_report) columns: ",

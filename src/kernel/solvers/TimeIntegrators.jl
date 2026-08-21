@@ -571,14 +571,91 @@ function time_loop!(inputs, params, u, args...)
         # `:lstep_heartbeat => true` in user_inputs.jl or via env
         # `JEXPRESSO_STEP_HEARTBEAT=1`. The env var, if set, takes
         # precedence over the user_inputs.jl flag.
-        _step_count = Ref{Int}(0)
+        #
+        # Every heartbeat carries the wall-clock cost of the interval it
+        # closes, which turns the throttled trace into a performance meter:
+        #
+        #   #   step 200   t = 4.000000   wall 00:03:22   1.004 s/step   ETA 3d 00:52:16
+        #
+        #   wall    time since the FIRST step of this loop. Under the
+        #           pre-compilation pass that first step is the pass itself,
+        #           so `wall` measures hot code only - JIT and first-touch
+        #           allocation are already excluded, which is what you want
+        #           when comparing rank counts, mesh sizes or machines.
+        #   s/step  measured over the steps since the PREVIOUS heartbeat, not
+        #           averaged from t0, so a slowdown shows up in the line where
+        #           it happens instead of being diluted by earlier history.
+        #   ETA     the interval's simulated-seconds-per-wall-second carried
+        #           out to :tend. A straight-line extrapolation of the last
+        #           100 steps, nothing more.
+        #
+        # Rank 0 does the timing and the printing. Nothing here is collective:
+        # a heartbeat must never be able to hang a 1500-rank job.
+        _step_count   = Ref{Int}(0)
+        _hb_wall0     = Ref{UInt64}(0)      # time_ns() at the first step
+        _hb_wall_last = Ref{UInt64}(0)      # time_ns() at the previous heartbeat
+        _hb_step_last = Ref{Int}(0)         # step index of the previous heartbeat
+        _hb_tsim_last = Ref{Float64}(NaN)   # integrator.t at the previous heartbeat
+        _hb_tend      = Float64(inputs[:tend])
+        # The wall-clock anchors live and die with the step counter: every
+        # site that rewinds `_step_count` (integrator warm-up, failed
+        # pre-compilation pass) must rewind these too, or the production
+        # loop's first heartbeat would bill it for the warm-up's seconds.
+        function reset_heartbeat!()
+            _step_count[]   = 0
+            _hb_wall0[]     = 0
+            _hb_wall_last[] = 0
+            _hb_step_last[] = 0
+            _hb_tsim_last[] = NaN
+        end
+        # hh:mm:ss, with a leading day count once past 24 h - these runs are
+        # measured in days and "72:41:09" is harder to read than "3d 00:41:09".
+        function _hb_hms(secs)
+            (isfinite(secs) && secs >= 0) || return "--"
+            s    = round(Int, secs)
+            d, s = divrem(s, 86400)
+            h, s = divrem(s, 3600)
+            m, s = divrem(s, 60)
+            return d > 0 ? @sprintf("%dd %02d:%02d:%02d", d, h, m, s) :
+                           @sprintf("%02d:%02d:%02d", h, m, s)
+        end
         function step_heartbeat_condition(u, t, integrator)
             _step_count[] += 1
             n = _step_count[]
+            if n == 1
+                # The clock starts here, at the end of step 1. Anchoring the
+                # interval on the same instant makes step 1's own rate
+                # unmeasurable (it prints `--`) rather than fake.
+                now             = time_ns()
+                _hb_wall0[]     = now
+                _hb_wall_last[] = now
+                _hb_step_last[] = n
+                _hb_tsim_last[] = Float64(integrator.t)
+            end
             return n <= 5 || (n % 100 == 0)
         end
         function step_heartbeat_affect!(integrator)
-            rank == 0 && (@printf(" #   step %d   t = %.6f\n", _step_count[], integrator.t); flush(stdout))
+            now    = time_ns()
+            n      = _step_count[]
+            tsim   = Float64(integrator.t)
+            dwall  = (now - _hb_wall_last[]) / 1e9
+            dsteps = n - _hb_step_last[]
+            if rank == 0
+                rate = dsteps > 0 && dwall > 0 ?
+                       @sprintf("%.3f s/step", dwall / dsteps) : "-- s/step"
+                # Extrapolate on simulated time per wall second, so the
+                # estimate stays honest under adaptive stepping, where a
+                # step is not a fixed amount of physics.
+                dtsim = tsim - _hb_tsim_last[]
+                eta   = (dwall > 0 && isfinite(dtsim) && dtsim > 0) ?
+                        _hb_hms((_hb_tend - tsim) * dwall / dtsim) : "--"
+                @printf(" #   step %d   t = %.6f   wall %s   %s   ETA %s\n",
+                        n, tsim, _hb_hms((now - _hb_wall0[]) / 1e9), rate, eta)
+                flush(stdout)
+            end
+            _hb_wall_last[] = now
+            _hb_step_last[] = n
+            _hb_tsim_last[] = tsim
         end
         # Default OFF. Env var, if set, wins over user_inputs.jl.
         _env_hb = lowercase(strip(get(ENV, "JEXPRESSO_STEP_HEARTBEAT", "")))
@@ -685,9 +762,10 @@ function time_loop!(inputs, params, u, args...)
             params.dsgs_thist[] = dsgs_thist_snap
             inputs isa Dict && saved_outdir !== nothing && (inputs[:output_dir] = saved_outdir)
             try; rm(warm_outdir; recursive = true, force = true); catch; end
-            # Reset the heartbeat counter so the real solve gets its
-            # own first-5-steps detail (the warmup just consumed one).
-            _step_count[] = 0
+            # Reset the heartbeat counter and its wall clock so the real
+            # solve gets its own first-5-steps detail and its own timing
+            # baseline (the warmup just consumed one step's worth of both).
+            reset_heartbeat!()
             MPI.Barrier(comm)
             #rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
         end
@@ -842,7 +920,7 @@ function time_loop!(inputs, params, u, args...)
                 params.dsgs_qnm1   .= dsgs_qnm1_snap
                 params.dsgs_qnm2   .= dsgs_qnm2_snap
                 params.dsgs_thist[] = dsgs_thist_snap
-                _step_count[]       = 0
+                reset_heartbeat!()
                 solution = run_single_phase()
             else
                 solution = with_logger(solve_logger) do
