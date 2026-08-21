@@ -1736,9 +1736,140 @@ function _compute_xy_partition(model, nparts)
     xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
     yi = clamp.(floor.(Int, (cy .- y_min) ./ ly .* ny), 0, ny - 1)
 
-    return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+    cell_to_part = xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+
+    # ── Report what this partition actually is, and refuse to continue ─────
+    # if it is unusable.
+    #
+    # A part that receives no cells is FATAL, but it used to fail far from the
+    # cause: the rank with no elements eventually called maximum() on an empty
+    # array and died with
+    #
+    #   ArgumentError: reducing over an empty collection is not allowed
+    #
+    # which says nothing about ranks, meshes or partitions. The only other
+    # clue was a bare "Min elements: 0" in the load-balance block, with no
+    # record of the rank grid chosen or the mesh's actual column counts --
+    # not enough to tell "too many ranks for this mesh" apart from "this is
+    # not the mesh I meant to run", which have completely different fixes.
+    #
+    # So measure it here, where both the rank grid and the mesh are in hand,
+    # and stop. Every rank computes the same cell_to_part from the same
+    # broadcast model, so every rank reaches the same verdict and throws
+    # together -- no rank is left waiting in a collective for one that died.
+    #
+    # NOTE lx/ly below is the span of cell CENTROIDS, not the domain extent:
+    # for an 8 x 2 mesh in a 6400 x 1600 box it is (7/8*6400)/(1/2*1600) = 7,
+    # not 4. That ratio is what picks nx, so a mesh only a little anisotropic
+    # in element count can get a very lopsided rank grid.
+    # Count DISTINCT centroid positions without materialising an intermediate
+    # array. `unique(round.(cx, digits=6))` allocated a full copy of cx -- on
+    # the 128x128x120 mesh that is 1.97M Float64 (16 MB) per axis, per rank,
+    # at the exact point where the run is already holding the broadcast serial
+    # model and is closest to the memory ceiling. The generator form keeps only
+    # the distinct values, which for a structured mesh is a few hundred.
+    # Measured on a 1.97M-cell mesh: unique(round.(v,digits=6)) 15.0 MiB,
+    # Set(generator) 36.0 MiB (untyped Set boxes every value), this loop
+    # 3.3 KiB. The Set only ever holds the distinct positions -- a few hundred
+    # for a structured mesh -- so nothing scales with cell count.
+    function _ndistinct(v)
+        s = Set{Float64}()
+        for x in v
+            push!(s, round(x, digits=6))
+        end
+        return length(s)
+    end
+    counts  = zeros(Int, nparts)
+    for p in cell_to_part
+        counts[p] += 1
+    end
+    nempty = count(iszero, counts)
+
+    let comm = get_mpi_comm()
+        if MPI.Comm_rank(comm) == 0
+            println(" # xy-partition: ", nparts, " ranks over ",
+                    _ndistinct(cx), " x ", _ndistinct(cy),
+                    " element columns  ->  rank grid ", nx, " x ", ny)
+            println(" #   centroid span lx/ly = ", round(lx / ly, digits=4),
+                    "   cells/rank min/max = ", minimum(counts), "/", maximum(counts))
+            flush(stdout)
+        end
+    end
+
+    # Escape hatch. This guard was added without the means to test it against a
+    # real MPI run, and it turns what used to be a late crash into an early
+    # hard stop. If it ever fires on a configuration that genuinely works,
+    # JEXPRESSO_ALLOW_EMPTY_RANKS=1 downgrades it to a warning rather than
+    # leaving you unable to launch at all.
+    _allow_empty = lowercase(strip(get(ENV, "JEXPRESSO_ALLOW_EMPTY_RANKS", ""))) in
+                   ("1", "true", "yes", "on")
+    if nempty > 0 && _allow_empty
+        MPI.Comm_rank(get_mpi_comm()) == 0 && @warn string(
+            "xy-partition left ", nempty, " of ", nparts, " ranks with no elements; ",
+            "continuing because JEXPRESSO_ALLOW_EMPTY_RANKS is set. Expect a failure ",
+            "later in the setup (\"reducing over an empty collection\").")
+    elseif nempty > 0
+        ncols_x = _ndistinct(cx)
+        ncols_y = _ndistinct(cy)
+        error("""
+
+         # xy-partition cannot place $(nparts) ranks on this mesh.
+
+           mesh            : $(ncols_x) x $(ncols_y) element columns (z is never partitioned)
+           rank grid chosen: $(nx) x $(ny)   (centroid span lx/ly = $(round(lx/ly, digits=4)))
+           result          : $(nempty) of $(nparts) ranks would own NO elements
+
+         A rank with no elements crashes later in the setup with an unrelated
+         message ("reducing over an empty collection"), so this stops here.
+
+         Fix by lowering the rank count. The usable maximum is bounded by the
+         column counts above, and the aspect-ratio-aware split means it is
+         often well below their product. To list the rank counts that do work:
+
+             julia tools/pick_nranks.jl $(ncols_x) $(ncols_y) <nelemz> <nop> <max_cores> <Lx> <Ly>
+
+         If those column counts are not the mesh you meant to run, check
+         :gmsh_filename in user_inputs.jl and the case directory you launched.
+
+         To override this check: JEXPRESSO_ALLOW_EMPTY_RANKS=1
+         """)
+    end
+
+    return cell_to_part
 end
 
+
+# ──────────────────────────────────────────────────────────────────────────
+# Memory checkpoint for the mesh-setup path.
+#
+# A rank killed by the OOM killer dies on SIGKILL, which cannot be caught and
+# does not flush buffered stdout. Everything printed since the last flush is
+# lost, so the log stops at an arbitrary earlier point and says nothing about
+# how far the run actually got or how close to the ceiling it was. Repeatedly
+# in practice that left "BAD TERMINATION ... EXIT CODE: 9" as the entire
+# diagnosis.
+#
+# Print a flushed, reduced RSS reading at each milestone instead, so the last
+# surviving line names both the phase reached and the high-water mark. The
+# Allreduce is over points every rank reaches, and Sys.maxrss() is the
+# process high-water mark, so max/avg reveal a single fat rank (typically
+# rank 0, which parses the serial mesh alone) as against uniform growth.
+#
+# Set JEXPRESSO_MEMLOG=0 to silence.
+function je_memlog(label::AbstractString)
+    lowercase(strip(get(ENV, "JEXPRESSO_MEMLOG", "1"))) in ("0", "false", "no", "off") && return nothing
+    comm = get_mpi_comm()
+    rss  = Float64(Sys.maxrss())
+    mx   = MPI.Allreduce(rss, MPI.MAX, comm)
+    sm   = MPI.Allreduce(rss, MPI.SUM, comm)
+    n    = MPI.Comm_size(comm)
+    if MPI.Comm_rank(comm) == 0
+        @printf(" # [mem] %-38s peak RSS/rank  max %7.2f GB   avg %7.2f GB   (x%d ranks)\n",
+                label, mx / 2^30, sm / n / 2^30, n)
+        flush(stdout)
+    end
+    return nothing
+end
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
@@ -1747,6 +1878,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
+    
+    je_memlog("mesh read: entry")
     
     #
     # Read GMSH grid from file
@@ -1834,7 +1967,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 smodel_root = rank == 0 ?
                     GmshDiscreteModel(inputs[:gmsh_filename], renumber=true) :
                     nothing
+                je_memlog("lxy: after rank-0 gmsh read")
                 smodel = MPI.bcast(smodel_root, 0, comm)
+                je_memlog("lxy: after bcast to all ranks")
 
                 if rank == 0
                     print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
@@ -1873,10 +2008,92 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # PERF: GridapP4est is `using`-d lazily; load it before the
             # first call to UniformlyRefinedForestOfOctreesDiscreteModel.
             _ensure_amr_loaded!()
-            @outputrootonly begin
-                gmodel = _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true))
-                partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+
+            # MEMORY: read the .msh on rank 0 only and broadcast the flattened
+            # serial model, exactly as the lxy_partition branch above does.
+            #
+            # This branch used to wrap the read in @outputrootonly, which
+            # silences stdout on non-root ranks but still RUNS the expression
+            # there (see src/macros/je_macros.jl). So every rank parsed the
+            # same file: nparts x gmsh parse, nparts x UnstructuredGridTopology
+            # construction, nparts x the second copy that
+            # _flatten_model_to_cell_dim makes -- all resident at the same
+            # moment. On a fat node (128 ranks x a 245k-element coarse mesh)
+            # that is an out-of-memory kill during "Read gmsh grid", which
+            # produces no Julia backtrace: the job simply stops.
+            #
+            # NOTE this fixes the PEAK (one parse instead of nparts, and the
+            # flatten copy only on root). It does NOT remove the replication:
+            # UniformlyRefinedForestOfOctreesDiscreteModel is collective and
+            # needs the coarse model on every rank, because that model IS the
+            # p4est coarse forest/connectivity. A coarse mesh replicated
+            # nparts-ways is inherent to this code path -- keep the COARSE
+            # mesh coarse and let :init_refine_lvl do the refining.
+            if rank == 0
+                print(YELLOW_FG(" #   \u21b3 Gridap GmshDiscreteModel (rank-0-only read + MPI.bcast) ......... "))
+                flush(stdout)
             end
+            _t_gmsh = time_ns()
+            gmodel_root = rank == 0 ?
+                _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)) :
+                nothing
+            je_memlog("p4est: after rank-0 coarse read")
+            gmodel = MPI.bcast(gmodel_root, 0, comm)
+            je_memlog("p4est: after coarse bcast")
+            if rank == 0
+                print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
+                flush(stdout)
+            end
+            # ── Coarse-mesh ORDERING check (p4est only) ─────────────────────
+            # p4est hands each rank a CONTIGUOUS range of the space-filling
+            # curve, and that curve follows coarse-tree order, which follows
+            # the order elements appear in the .msh. gmsh writes a box mesh in
+            # horizontal LAYERS, so a contiguous range is a horizontal SLAB:
+            # the ranks holding the bottom layer own the entire ground surface
+            # and every other rank owns none. On the 8x2x60 case that gave
+            #
+            #   # Bottom faces (min/avg/max) : 0 / 1.0 / 60  [imbalance: 60.0x]
+            #
+            # -- 62 of 64 ranks doing no wall-model work, one rank doing 94% of
+            # it, every timestep. Correctness is unaffected (the wall model is
+            # element-local), but the load balance is not recoverable later:
+            # the partition is fixed the moment the forest is built.
+            #
+            # Detect it here, where the coarse model is in hand and still small,
+            # by measuring how often consecutive cells share a z level. Rank 0
+            # only, and only over the COARSE cells, so this stays cheap.
+            if rank == 0
+                _cc = get_cell_coordinates(Triangulation(gmodel))
+                _nc = length(_cc)
+                if _nc > 1
+                    _cz = [sum(pt[3] for pt in c) / length(c) for c in _cc]
+                    _same = 0
+                    for i in 2:_nc
+                        abs(_cz[i] - _cz[i-1]) < 1e-6 && (_same += 1)
+                    end
+                    _frac = _same / (_nc - 1)
+                    println(" #   coarse-mesh ordering: ", round(100 * _frac, digits=1),
+                            "% of consecutive cells share a z level")
+                    if _frac > 0.5
+                        @warn string(
+                            "This coarse mesh is ordered in horizontal LAYERS (",
+                            round(100 * _frac, digits=1), "% of consecutive cells share a z level). ",
+                            "p4est partitions contiguous ranges of that order, so ranks will get ",
+                            "horizontal slabs and only the ones holding the bottom layer will own ",
+                            "any ground surface -- watch the 'Bottom faces' line below for min=0. ",
+                            "Reorder the mesh column-major first:\n\n",
+                            "    julia tools/reorder_msh_columns.jl ",
+                            get(inputs, :gmsh_filename, "<mesh.msh>"),
+                            " <out.msh> ", nparts, "\n\n",
+                            "then point :gmsh_filename at <out.msh>. The tool reports the ground ",
+                            "distribution you would get before and after.")
+                    end
+                    flush(stdout)
+                end
+            end
+
+            partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+            je_memlog("p4est: after uniform refinement")
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
             dmodel = local_views(partitioned_model).item_ref[]
             model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))

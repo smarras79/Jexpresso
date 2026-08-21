@@ -4,9 +4,9 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.01,
+        :Δt                   => 0.02,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 10800.0,
 	:lrestart             => false,
 	#:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",
@@ -32,7 +32,10 @@ function user_inputs()
 	# _compute_xy_partition column split, and the solution injects energy
 	# out of nothing: still air with every forcing term off reached
 	# 196 m/s in 100 s, independent of mesh, dt, C_s and :lrichardson.
-	#:lxy_partition          => true,
+	# p4est path: the xy column partitioner is NOT used. mesh.jl only consults
+	# :lxy_partition when :linitial_refine is false, so this must be false here
+	# and the decomposition comes from p4est's space-filling curve instead.
+	:lxy_partition          => false,
         :lwall_model          => true,
         :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
@@ -74,38 +77,33 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
-        :lread_gmsh       => true, #If false, a 1D problem will be enforced
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x125_10kmX10kmX5km.msh",
-        :gmsh_filename    => "./problems/CompEuler/LESICP2-coarse/LESICP_8x2x60_6400mX1600mX5000m.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
+        :lread_gmsh       => true, #If false, a 1D problem will be enforce
+	# COARSE mesh (16x16x15). :init_refine_lvl => 1 refines it to the 32x32x30
+	# grid the run actually uses. Must be the COLUMN-MAJOR file produced by
+	# tools/reorder_msh_columns.jl -- p4est partitions contiguous ranges of the
+	# mesh's element order, so a layer-ordered file gives horizontal slabs and
+	# leaves most ranks with no ground surface at all.
+	:gmsh_filename    => "./problems/CompEuler/LESICP2-p4est/LESICP_coarse_16x16x15_cols.msh",
 		
         # Warping:
-        #=:lwarp => true,
-        :mount_type => "LESICP",
-        :h_mount => 1000.0,
-        :a_mount => 10240.0,
-        :z_transition_start => 0.0,
-        :z_transition_end => 3000.0,=#
-        #=:lwarp => false,
+        :lwarp => false,
         :mount_type => "LESICP",
         :h_mount => 1000.0,
         :a_mount => 10240.0,
 	:z_transition_start => -1000.0,
 	:z_transition_end => 2200.0,
-        =#
+
         # Stretching factors:
-        :lstretch => true,
+        :lstretch => false,
         :stretch_factor => 1.15,
-        :stretch_type => "two_block uniformish", #strong means that the top is constrained
+        :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
         :first_zelement_size => 10.0,
         :zlevel_transition => 2000.0,
         
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        :lfilter             => false,
         :mu_x                => 0.25,
         :mu_y                => 0.25,
 	:mu_z                => 0.25,
@@ -114,30 +112,20 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-<<<<<<< HEAD
-        #:output_dir          => "/scratch/smarras/smarras/output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
-        :output_dir          => "./output_new/coarse-LESICP2_stretched/",
-=======
-	:output_dir          => "/scratch/smarras/smarras/output_new/coarse-LESICP2_16x4x120_6400mX1600mX5000m/",
+	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/",
         #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
->>>>>>> 31ce39e54009561676259cef7e9bc3f95cb388f3
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-<<<<<<< HEAD
-        #:linitial_refine     => true,
-        #:init_refine_lvl     => 1,
-=======
-        :linitial_refine     => false,
+        :linitial_refine     => true,
         :init_refine_lvl     => 1,
->>>>>>> 31ce39e54009561676259cef7e9bc3f95cb388f3
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
         :ladapt              => false,
-        #:amr                 => true,
+        :amr                 => true,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------

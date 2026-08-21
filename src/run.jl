@@ -163,6 +163,21 @@ end
 # Read User Inputs:
 #--------------------------------------------------------
 mod_inputs_print_welcome(rank)
+
+# FIRST memory checkpoint, deliberately this early.
+#
+# A 2048-rank job was killed (SIGKILL, exit 9) with the log ending exactly at
+# the banner above and no mesh-setup checkpoint reached at all. That rules the
+# mesh out, but leaves the actual footprint unmeasured: by this line every rank
+# has already loaded Julia plus the whole Gridap/p4est/SciML stack, and that
+# baseline is multiplied by RANKS PER NODE before any simulation data exists.
+# At 128 ranks on a node it is the dominant consumer, and it is invisible in
+# sacct's MaxRSS because that samples every ~30 s and these jobs die in four
+# minutes.
+#
+# Report it here, flushed, so the number is on record even if the next thing
+# that happens is the OOM killer.
+je_memlog("julia + packages loaded, before any mesh work")
 inputs = Dict{}()
 
 # Prefetched mesh/SEM payloads (coupled runs) live in module-level Refs that
@@ -275,6 +290,7 @@ if rank == 0
     @printf("DONE (%.2f s)\n", (time_ns() - _t_defaults) / 1e9)
     flush(stdout)
 end
+je_memlog("inputs parsed")
 
 #--------------------------------------------------------
 # Create output directory if it doesn't exist:
