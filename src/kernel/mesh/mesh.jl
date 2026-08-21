@@ -2006,6 +2006,54 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
                 flush(stdout)
             end
+            # ── Coarse-mesh ORDERING check (p4est only) ─────────────────────
+            # p4est hands each rank a CONTIGUOUS range of the space-filling
+            # curve, and that curve follows coarse-tree order, which follows
+            # the order elements appear in the .msh. gmsh writes a box mesh in
+            # horizontal LAYERS, so a contiguous range is a horizontal SLAB:
+            # the ranks holding the bottom layer own the entire ground surface
+            # and every other rank owns none. On the 8x2x60 case that gave
+            #
+            #   # Bottom faces (min/avg/max) : 0 / 1.0 / 60  [imbalance: 60.0x]
+            #
+            # -- 62 of 64 ranks doing no wall-model work, one rank doing 94% of
+            # it, every timestep. Correctness is unaffected (the wall model is
+            # element-local), but the load balance is not recoverable later:
+            # the partition is fixed the moment the forest is built.
+            #
+            # Detect it here, where the coarse model is in hand and still small,
+            # by measuring how often consecutive cells share a z level. Rank 0
+            # only, and only over the COARSE cells, so this stays cheap.
+            if rank == 0
+                _cc = get_cell_coordinates(Triangulation(gmodel))
+                _nc = length(_cc)
+                if _nc > 1
+                    _cz = [sum(pt[3] for pt in c) / length(c) for c in _cc]
+                    _same = 0
+                    for i in 2:_nc
+                        abs(_cz[i] - _cz[i-1]) < 1e-6 && (_same += 1)
+                    end
+                    _frac = _same / (_nc - 1)
+                    println(" #   coarse-mesh ordering: ", round(100 * _frac, digits=1),
+                            "% of consecutive cells share a z level")
+                    if _frac > 0.5
+                        @warn string(
+                            "This coarse mesh is ordered in horizontal LAYERS (",
+                            round(100 * _frac, digits=1), "% of consecutive cells share a z level). ",
+                            "p4est partitions contiguous ranges of that order, so ranks will get ",
+                            "horizontal slabs and only the ones holding the bottom layer will own ",
+                            "any ground surface -- watch the 'Bottom faces' line below for min=0. ",
+                            "Reorder the mesh column-major first:\n\n",
+                            "    julia tools/reorder_msh_columns.jl ",
+                            get(inputs, :gmsh_filename, "<mesh.msh>"),
+                            " <out.msh> ", nparts, "\n\n",
+                            "then point :gmsh_filename at <out.msh>. The tool reports the ground ",
+                            "distribution you would get before and after.")
+                    end
+                    flush(stdout)
+                end
+            end
+
             partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
             dmodel = local_views(partitioned_model).item_ref[]
