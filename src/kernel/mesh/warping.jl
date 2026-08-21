@@ -179,7 +179,7 @@ function warp_mesh_3D!(mesh,inputs)
     z_transition_end = inputs[:z_transition_end]    # Height where grid becomes fully flat (60% of domain)
     
     for ip = 1:mesh.npoin
-        sigma[ip] = mesh.z[ip]
+        sigma[ip] = mesh.coords[3,ip]
         
         # Original warped coordinate (follows topography)
         z_warped = zsurf[ip] + sigma[ip] * (ztop - zsurf[ip]) / ztop
@@ -210,7 +210,7 @@ function warp_mesh_3D!(mesh,inputs)
             # else: damping_factor remains 1.0 for sigma[ip] < z_transition_start
         end
 
-        mesh.z[ip] = sigma[ip] + damping_factor * (z_warped - sigma[ip])
+        mesh.coords[3,ip] = sigma[ip] + damping_factor * (z_warped - sigma[ip])
        
     end
     

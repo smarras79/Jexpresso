@@ -45,7 +45,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
     if inputs[:stretch_type] == "powerlaw"
         for ip = 1:npoin
             stretching_factor = inputs[:stretch_factor]
-            sigma = mesh.z[ip]
+            sigma = mesh.coords[3,ip]
             
             # Normalize the sigma coordinate to the range [0, 1]
             sigma_normalized = sigma / ztop
@@ -60,7 +60,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             z = zsurf[ip] + z_normalized * (ztop - zsurf[ip])
             
             # Update the grid point's vertical position with the new stretched value.
-            mesh.z[ip] = z
+            mesh.coords[3,ip] = z
         end
         
     elseif inputs[:stretch_type] == "fixed_first"
@@ -75,7 +75,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
         # Store a copy of the original, uniform z-coordinates to use as the sigma field.
         # This is crucial because we will be overwriting mesh.z in the loop.
-        sigma_coords = copy(mesh.z)
+        sigma_coords = copy(mesh.coords[3,:])
 
         # Find the maximum height of the domain.
         ztop = mesh.zmax #maximum(sigma_coords)
@@ -104,7 +104,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
             if sigma == 0.0
                 # A point at the bottom surface remains at the bottom surface.
-                mesh.z[ip] = zsurf[ip]
+                mesh.coords[3,ip] = zsurf[ip]
                 continue
             end
 
@@ -118,7 +118,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             z = zsurf[ip] + z_normalized * (ztop - zsurf[ip])
 
             # Update the grid point's vertical position.
-            mesh.z[ip] = z
+            mesh.coords[3,ip] = z
         end
 
     elseif inputs[:stretch_type] == "fixed_first_twoblocks_weak"
@@ -136,7 +136,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         # --- Pre-computation Step ---
 
         # Store a copy of the original, uniform z-coordinates to use as the sigma field.
-        sigma_coords = copy(mesh.z)
+        sigma_coords = copy(mesh.coords[3,:])
 
         
         # 1. Initialize local minimum to positive infinity.
@@ -196,7 +196,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
             # Handle the point at the surface.
             if sigma == 0.0
-                mesh.z[ip] = zsurf[ip]
+                mesh.coords[3,ip] = zsurf[ip]
                 continue
             end
 
@@ -219,7 +219,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             end
 
             # Update the grid point's vertical position.
-            mesh.z[ip] = z
+            mesh.coords[3,ip] = z
         end
         
     elseif inputs[:stretch_type] == "fixed_first_twoblocks_strong"
@@ -237,7 +237,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         # --- Pre-computation Step ---
 
         # Store a copy of the original, uniform z-coordinates to use as the sigma field.
-        sigma_coords = copy(mesh.z)
+        sigma_coords = copy(mesh.coords[3,:])
 
         # Find the maximum height and the first layer's height in the original grid.
         ztop = mesh.zmax
@@ -285,7 +285,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
             # Handle the point at the surface.
             if sigma == 0.0
-                mesh.z[ip] = zsurf[ip]
+                mesh.coords[3,ip] = zsurf[ip]
                 continue
             end
 
@@ -312,9 +312,119 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             end
 
             # Update the grid point's vertical position.
-            mesh.z[ip] = z
+            mesh.coords[3,ip] = z
         end
+
+    elseif inputs[:stretch_type] == "two_block uniformish"
+        # --- User Inputs ---
+        # Desired thickness of the first grid cell from the surface.
+        first_cell_size = inputs[:first_zelement_size] # e.g., 1.0 meter
+
+        #Scale it up by the order because then LGL points will scale it down again:
+        first_cell_size *= (mesh.ngl-1)
+
+        # The z-coordinate where the stretching stops and the uniform grid begins.
+        zlevel_transition = inputs[:zlevel_transition]  # e.g., 200.0 meters
         
+        # Store a copy of the original, uniform z-coordinates to use as the sigma field.
+        sigma = copy(mesh.coords[3,:])
+
+        # Find the maximum height and the first layer's height in the original grid.
+        ztop = mesh.zmax
+
+        #compute existing general cell size
+        ip1 = mesh.connijk[1,1,1,1]
+        ip2 = mesh.connijk[1,1,1,mesh.ngl]
+        cell_size = abs(mesh.coords[3,ip1]-mesh.coords[3,ip2])
+        
+        #find number of vertical elements to be worked with
+        total_z_elems = round(ztop/cell_size)
+        
+        #Determine if enough elements are present to construct uniform high resolution area
+        nelem_squashed = round(zlevel_transition/first_cell_size)
+    
+        nelem_stretched = total_z_elems-nelem_squashed
+        #compute squashing ratio:
+        squash_ratio = first_cell_size/cell_size
+
+        #Find stretched element cell sizes
+        stretch_cell_size = (ztop-zlevel_transition)/nelem_stretched
+
+        if (nelem_squashed > (9/10) * total_z_elems) || nelem_stretched < 5
+            error("too few elements available for desired resolution and transition height combination")
+            return nothing
+        end
+
+        #find stretching ratio
+
+        stretch_ratio = stretch_cell_size/cell_size
+
+        #Use half the stretched layer to transition between mesh sizes using half of the coarser area. 
+        
+        nelem_transition = round(nelem_stretched/2)
+        #find new number of stretched elements
+        nelem_stretched -= nelem_transition
+        #recompute new stretched cell size
+        transition_height = nelem_squashed*first_cell_size
+        cumul_height = 0.0
+        for e_t=1:nelem_transition
+            ratio = squash_ratio + ((e_t)/nelem_transition)*(stretch_ratio-squash_ratio)
+            transition_height += cell_size*ratio
+            cumul_height += cell_size*ratio
+        end
+        stretch_ratio_old = stretch_ratio
+        stretch_cell_size = (ztop-transition_height)/(nelem_stretched)
+        stretch_ratio = stretch_cell_size/cell_size
+        
+        for ie=1:mesh.nelem
+            ip1 = mesh.connijk[ie,1,1,1]
+            ip2 = mesh.connijk[ie,1,1,mesh.ngl]
+            zelem_extrema1 = sigma[ip1]
+            zelem_extrema2 = sigma[ip2]
+            zelem_max = max(zelem_extrema1, zelem_extrema2)
+            zelem_min = min(zelem_extrema1, zelem_extrema2)
+            elem_order = round(zelem_max/cell_size)
+            if (elem_order <= nelem_squashed)
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[ie,i,j,k]
+                            dz = abs(sigma[ip] - zelem_min)
+                            z = (elem_order-1)*first_cell_size + dz * squash_ratio
+                            mesh.coords[3,ip] = z
+                        end
+                    end
+                end
+            elseif (elem_order <= (nelem_squashed + nelem_transition))
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[ie,i,j,k]
+                            ratio = squash_ratio + ((elem_order-nelem_squashed)/nelem_transition)*(stretch_ratio_old-squash_ratio)
+                            cumul_height = 0.0
+                            for e_t = 1:elem_order-nelem_squashed-1
+                                ratio_temp = squash_ratio + ((e_t)/nelem_transition)*(stretch_ratio_old-squash_ratio)
+                                cumul_height += cell_size * ratio_temp
+                            end
+                            dz = abs(sigma[ip] - zelem_min)
+                            z = (nelem_squashed)*first_cell_size + cumul_height + dz*ratio 
+                            mesh.coords[3,ip] = z
+                        end
+                    end
+                end
+            else
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[ie,i,j,k]
+                            dz = abs(sigma[ip] - zelem_min)
+                            z = transition_height + (elem_order-nelem_squashed-nelem_transition - 1)*stretch_cell_size  + dz * stretch_ratio
+                            mesh.coords[3,ip] = z
+                        end
+                    end
+                end
+            end
+        end
     end
     
     

@@ -367,7 +367,18 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             end
             
             #if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            if (mesh.nsd > 2)
+                if (inputs[:lstretch]) stretch_mesh_3D!(mesh, inputs, mesh.npoin) end
+            else          
+                if (inputs[:lstretch]) stretch_mesh!(mesh, inputs, mesh.npoin) end
+            end
             
+            if (mesh.nsd > 2)
+                if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
+            else
+                if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            end     
+
             if loaded_from_cache
                 metrics = cached_metrics
                 matrix  = cached_matrix
@@ -424,6 +435,18 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
             #else
             #    if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
             #end
+            if (mesh.nsd > 2)
+                if (inputs[:lstretch]) stretch_mesh_3D!(mesh, inputs, mesh.npoin) end
+            else
+                if (inputs[:lstretch]) stretch_mesh!(mesh, inputs, mesh.npoin) end
+            end
+
+            if (mesh.nsd > 2)
+                if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
+            else
+                if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            end
+
             if loaded_from_cache
                 metrics = cached_metrics
                 matrix  = cached_matrix

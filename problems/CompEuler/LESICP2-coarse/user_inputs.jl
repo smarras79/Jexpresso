@@ -4,16 +4,16 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.02,
+        :Δt                   => 0.01,
         :tinit                => 0.0,
-        :tend                 => 10800.0,
+        :tend                 => 1000.0,
 	:lrestart             => false,
 	#:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",
 	:restart_time         => 9000.0,
 	#:diagnostics_at_times => (11500.0:10.0:15000.0),
 	#:diagnostics_at_times => (0.0:50.0:10800.0),
-	:diagnostics_at_times => (100, 1000:1000:9000.0...,10800),
+        :diagnostics_at_times => (0.01, 50.0, 100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0),#(100, 1000:1000:9000.0...,10800),
 	:lsource              => true,
 	#:lsponge              => true,
 	#:zsponge              => 2500.0, hard coded in user_source.jl
@@ -32,7 +32,7 @@ function user_inputs()
 	# _compute_xy_partition column split, and the solution injects energy
 	# out of nothing: still air with every forcing term off reached
 	# 196 m/s in 100 s, independent of mesh, dt, C_s and :lrichardson.
-	:lxy_partition          => true,
+	#:lxy_partition          => true,
         :lwall_model          => true,
         :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
@@ -82,17 +82,23 @@ function user_inputs()
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
 		
         # Warping:
-        :lwarp => false,
+        #=:lwarp => true,
+        :mount_type => "LESICP",
+        :h_mount => 1000.0,
+        :a_mount => 10240.0,
+        :z_transition_start => 0.0,
+        :z_transition_end => 3000.0,=#
+        #=:lwarp => false,
         :mount_type => "LESICP",
         :h_mount => 1000.0,
         :a_mount => 10240.0,
 	:z_transition_start => -1000.0,
 	:z_transition_end => 2200.0,
-
+        =#
         # Stretching factors:
-        :lstretch => false,
+        :lstretch => true,
         :stretch_factor => 1.15,
-        :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
+        :stretch_type => "two_block uniformish", #strong means that the top is constrained
         :first_zelement_size => 10.0,
         :zlevel_transition => 2000.0,
         
@@ -109,19 +115,19 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
         #:output_dir          => "/scratch/smarras/smarras/output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
-        :output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
+        :output_dir          => "./output_new/coarse-LESICP2_stretched/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
-        :init_refine_lvl     => 1,
+        #:linitial_refine     => true,
+        #:init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
         :ladapt              => false,
-        :amr                 => true,
+        #:amr                 => true,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------

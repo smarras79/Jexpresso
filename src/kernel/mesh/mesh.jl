@@ -2452,11 +2452,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #
     # THE STRETCHUING MUST BE DONE BEFORE POPULATING WITH HIGH ORDER:
     #
-    if (mesh.nsd > 2)
+    #=if (mesh.nsd > 2)
         if (inputs[:lstretch]) stretch_mesh_3D!(mesh, inputs, mesh.npoin_linear) end
     else
         if (inputs[:lstretch]) stretch_mesh!(mesh, inputs, mesh.npoin_linear) end
-    end
+    end=#
     #
     # Add high-order points to edges, faces, and elements (volumes)
     #
@@ -3718,11 +3718,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #
     # END Free memory of obsolete arrays
     #
-    if (mesh.nsd > 2)
+    #=if (mesh.nsd > 2)
         if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
     else
         if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
-    end
+    end=#
 
     #open("./COORDS_GLOBAL.dat", "w") do f
     #    for ip = 1:mesh.npoin
