@@ -1839,6 +1839,38 @@ function _compute_xy_partition(model, nparts)
 end
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Memory checkpoint for the mesh-setup path.
+#
+# A rank killed by the OOM killer dies on SIGKILL, which cannot be caught and
+# does not flush buffered stdout. Everything printed since the last flush is
+# lost, so the log stops at an arbitrary earlier point and says nothing about
+# how far the run actually got or how close to the ceiling it was. Repeatedly
+# in practice that left "BAD TERMINATION ... EXIT CODE: 9" as the entire
+# diagnosis.
+#
+# Print a flushed, reduced RSS reading at each milestone instead, so the last
+# surviving line names both the phase reached and the high-water mark. The
+# Allreduce is over points every rank reaches, and Sys.maxrss() is the
+# process high-water mark, so max/avg reveal a single fat rank (typically
+# rank 0, which parses the serial mesh alone) as against uniform growth.
+#
+# Set JEXPRESSO_MEMLOG=0 to silence.
+function je_memlog(label::AbstractString)
+    lowercase(strip(get(ENV, "JEXPRESSO_MEMLOG", "1"))) in ("0", "false", "no", "off") && return nothing
+    comm = get_mpi_comm()
+    rss  = Float64(Sys.maxrss())
+    mx   = MPI.Allreduce(rss, MPI.MAX, comm)
+    sm   = MPI.Allreduce(rss, MPI.SUM, comm)
+    n    = MPI.Comm_size(comm)
+    if MPI.Comm_rank(comm) == 0
+        @printf(" # [mem] %-38s peak RSS/rank  max %7.2f GB   avg %7.2f GB   (x%d ranks)\n",
+                label, mx / 2^30, sm / n / 2^30, n)
+        flush(stdout)
+    end
+    return nothing
+end
+
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
     backend = CPU()
@@ -1846,6 +1878,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
+    
+    je_memlog("mesh read: entry")
     
     #
     # Read GMSH grid from file
@@ -1933,7 +1967,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 smodel_root = rank == 0 ?
                     GmshDiscreteModel(inputs[:gmsh_filename], renumber=true) :
                     nothing
+                je_memlog("lxy: after rank-0 gmsh read")
                 smodel = MPI.bcast(smodel_root, 0, comm)
+                je_memlog("lxy: after bcast to all ranks")
 
                 if rank == 0
                     print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
@@ -2001,7 +2037,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             gmodel_root = rank == 0 ?
                 _flatten_model_to_cell_dim(GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)) :
                 nothing
+            je_memlog("p4est: after rank-0 coarse read")
             gmodel = MPI.bcast(gmodel_root, 0, comm)
+            je_memlog("p4est: after coarse bcast")
             if rank == 0
                 print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_gmsh) / 1e9)))
                 flush(stdout)
@@ -2055,6 +2093,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             end
 
             partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+            je_memlog("p4est: after uniform refinement")
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
             dmodel = local_views(partitioned_model).item_ref[]
             model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
