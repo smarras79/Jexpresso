@@ -44,12 +44,18 @@ COARSE_MESH=""              # e.g. "meshes/LESICP_16x16x15_10240mX10240mX5000m.m
 #      32x32x30          1          16x16x15          32x32x30
 #     128x128x120        3          16x16x15         128x128x120
 #
-TARGET_GRID="32x32x30"      # final resolution   (ignored if COARSE_MESH set)
+TARGET_GRID="32x32x30"      # final resolution; also used by REFINE_LVL="auto"
 DOMAIN="10240x10240x5000"   # metres             (ignored if COARSE_MESH set)
 
 # REFINE_LVL applies either way. With a supplied mesh, the resolution you end
 # up solving on is  <mesh dimensions> x 2^REFINE_LVL.
-REFINE_LVL=1                # p4est refinement levels; 0 = no refinement
+# REFINE_LVL may be an integer, or "auto".
+#   integer : refine the mesh this many times; the resolution you solve on is
+#             <mesh dimensions> x 2^REFINE_LVL.
+#   "auto"  : derive it from TARGET_GRID -- the script works out how many
+#             refinements take your mesh to that resolution, and refuses if no
+#             whole number of levels does.
+REFINE_LVL=1                # integer, or "auto" (needs TARGET_GRID)
 MAX_CORES=256               # upper bound on ranks
 MEM_PER_CPU="7000M"         # per rank; setup peaks well above the time loop
 SUBMIT="no"                 # "yes" to sbatch at the end
@@ -69,7 +75,8 @@ NOP=$(awk -F'=>' '/^[[:space:]]*:nop[[:space:]]*=>/ {if (match($2,/[0-9]+/)) {pr
 CASEDIR="problems/$EQS/$CASE"
 [ -d "$CASEDIR" ] || { echo "ERROR: no such case directory: $CASEDIR" >&2; exit 1; }
 
-POW=$(( 2 ** REFINE_LVL ))
+POW=1
+[ "$REFINE_LVL" = "auto" ] || POW=$(( 2 ** REFINE_LVL ))
 if [ -n "$COARSE_MESH" ]; then
     # Supplied mesh is the source of truth. Read its shape rather than trusting
     # a restatement of it -- a mesh whose real dimensions differ from what the
@@ -80,6 +87,37 @@ if [ -n "$COARSE_MESH" ]; then
         echo "ERROR: $COARSE_MESH is not a regular box lattice." >&2
         echo "       The rank planning here assumes one. Run tools/inspect_msh.jl for detail." >&2
         exit 1
+    fi
+    if [ "$REFINE_LVL" = "auto" ]; then
+        # Derive the level from the target instead of making the user divide by
+        # powers of two and get it right. Every axis must agree on the SAME
+        # power, otherwise no uniform refinement produces that grid -- p4est
+        # refines all three directions together.
+        IFS=x read -r TNX TNY TNZ <<< "$TARGET_GRID"
+        REFINE_LVL=""
+        for l in 0 1 2 3 4 5 6; do
+            q=$(( 2 ** l ))
+            if [ $(( MESH_NX * q )) -eq "$TNX" ] && \
+               [ $(( MESH_NY * q )) -eq "$TNY" ] && \
+               [ $(( MESH_NZ * q )) -eq "$TNZ" ]; then
+                REFINE_LVL=$l; break
+            fi
+        done
+        if [ -z "$REFINE_LVL" ]; then
+            echo "ERROR: no whole number of refinements takes" >&2
+            echo "         ${MESH_NX} x ${MESH_NY} x ${MESH_NZ}   (your mesh)" >&2
+            echo "       to  ${TNX} x ${TNY} x ${TNZ}   (TARGET_GRID)" >&2
+            echo "       Uniform refinement doubles all three axes at once, so the" >&2
+            echo "       ratio must be the same power of 2 in x, y and z. Reachable" >&2
+            echo "       targets from this mesh:" >&2
+            for l in 0 1 2 3 4; do
+                q=$(( 2 ** l ))
+                echo "         lvl $l -> $(( MESH_NX * q )) x $(( MESH_NY * q )) x $(( MESH_NZ * q ))" >&2
+            done
+            exit 1
+        fi
+        POW=$(( 2 ** REFINE_LVL ))
+        echo "    REFINE_LVL=auto  ->  derived $REFINE_LVL"
     fi
     NX=$(( MESH_NX * POW )); NY=$(( MESH_NY * POW )); NZ=$(( MESH_NZ * POW ))
     LX=$MESH_LX; LY=$MESH_LY; LZ=$MESH_LZ
