@@ -107,11 +107,13 @@ function main()
         println("COLUMNS=$(LVL == 0 ? NX*NY : cnx*cny)")
         println("VALID_RANKS=\"", join((c.n for c in cands), " "), "\"")
     else
-        println("fine grid      : $(NX) x $(NY) x $(NZ)  (nop=$NOP, $(totpts) gridpoints)")
-        println("path           : ", LVL == 0 ? "direct read + lxy_partition" :
-                                     "p4est, $(LVL) refinement level(s)")
-        LVL > 0 && println("coarse mesh    : $(cnx) x $(cny) x $(cnz)  ($(cnx*cny*cnz) elements)")
-        println("recommended    : $(ranks) ranks  ->  --nodes=$(nodes) --ntasks-per-node=$(tpn)")
+        println("simulation solves on : $(NX) x $(NY) x $(NZ)  (nop=$NOP, $(totpts) gridpoints)")
+        println("path                 : ", LVL == 0 ? "direct read + lxy_partition" :
+                                           "p4est, $(LVL) refinement level(s)")
+        LVL > 0 ?
+            println("gmsh must generate   : $(cnx) x $(cny) x $(cnz)  ($(cnx*cny*cnz) elements) -- p4est refines this $(LVL) level(s)") :
+            println("gmsh must generate   : $(NX) x $(NY) x $(NZ)  (no refinement)")
+        println("recommended          : $(ranks) ranks  ->  --nodes=$(nodes) --ntasks-per-node=$(tpn)")
         println("  gridpoints/rank : $(round(Int, totpts / ranks))")
         println("  ground cells/rank: $(rec.ground)   (must be > 0 on every rank)")
         println("valid rank counts: ", join((c.n for c in cands), ", "))

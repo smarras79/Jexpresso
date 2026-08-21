@@ -7,7 +7,7 @@
 # submits. Everything that has cost a queue cycle in practice is derived here
 # rather than left to be edited by hand and kept consistent by memory:
 #
-#   * coarse mesh size          = fine grid / 2^REFINE_LVL
+#   * mesh gmsh generates       = TARGET_GRID / 2^REFINE_LVL
 #   * rank count                = largest valid one that keeps ranks fed
 #   * --nodes / --ntasks-per-node
 #   * :lxy_partition / :linitial_refine / :init_refine_lvl / :gmsh_filename
@@ -16,9 +16,25 @@
 # ===========================================================================
 
 CASE="LESICP2-p4est"        # problems/CompEuler/<CASE>
-GRID="32x32x30"             # FINE grid the simulation runs on (elements)
+# TARGET_GRID is the FINAL resolution -- the grid the simulation actually
+# solves on. It is NOT the mesh gmsh generates.
+#
+# When REFINE_LVL > 0, gmsh generates a COARSER mesh and p4est refines it up to
+# TARGET_GRID at startup:
+#
+#     mesh gmsh generates  =  TARGET_GRID / 2^REFINE_LVL
+#
+#     TARGET_GRID   REFINE_LVL   gmsh generates   simulation runs on
+#      32x32x30          0          32x32x30          32x32x30
+#      32x32x30          1          16x16x15          32x32x30
+#     128x128x120        3          16x16x15         128x128x120
+#
+# Set TARGET_GRID to the resolution you want RESULTS at, and raise REFINE_LVL
+# until the generated mesh is small enough to be read serially and broadcast to
+# every rank -- that broadcast is what runs out of memory on big grids.
+TARGET_GRID="32x32x30"      # <-- final resolution the simulation solves on
 DOMAIN="10240x10240x5000"   # metres
-REFINE_LVL=1                # 0 = read fine mesh directly; >=1 = p4est refinement
+REFINE_LVL=1                # p4est refinements; gmsh mesh = TARGET_GRID / 2^this
 MAX_CORES=256               # upper bound on ranks
 MEM_PER_CPU="7000M"         # per rank; setup peaks well above the time loop
 SUBMIT="no"                 # "yes" to sbatch at the end
@@ -35,12 +51,19 @@ NOP=$(awk -F'=>' '/^[[:space:]]*:nop[[:space:]]*=>/ {if (match($2,/[0-9]+/)) {pr
       "problems/$EQS/$CASE/user_inputs.jl" 2>/dev/null || echo 4)
 : "${NOP:=4}"
 
-IFS=x read -r NX NY NZ <<< "$GRID"
+IFS=x read -r NX NY NZ <<< "$TARGET_GRID"
 IFS=x read -r LX LY LZ <<< "$DOMAIN"
 CASEDIR="problems/$EQS/$CASE"
 [ -d "$CASEDIR" ] || { echo "ERROR: no such case directory: $CASEDIR" >&2; exit 1; }
 
 echo "=== 1/6  planning ==========================================="
+echo "    simulation will SOLVE on : ${NX} x ${NY} x ${NZ}   (TARGET_GRID)"
+if [ "$REFINE_LVL" -gt 0 ]; then
+  echo "    gmsh will GENERATE       : $((NX/(2**REFINE_LVL))) x $((NY/(2**REFINE_LVL))) x $((NZ/(2**REFINE_LVL)))   (TARGET_GRID / 2^${REFINE_LVL}, refined by p4est at startup)"
+else
+  echo "    gmsh will GENERATE       : ${NX} x ${NY} x ${NZ}   (REFINE_LVL=0, no refinement)"
+fi
+echo
 # The planner replicates the real partitioners, so a rank count it lists is one
 # the code can actually build. See tools/plan_run.jl for why the two paths have
 # different rules.
@@ -175,7 +198,8 @@ cat <<SUMEOF
 
 -----------------------------------------------------------------
  case            : $EQS / $CASE
- fine grid       : ${NX} x ${NY} x ${NZ}   (nop=${NOP})
+ solves on       : ${NX} x ${NY} x ${NZ}   (nop=${NOP})   <- TARGET_GRID
+ gmsh generated  : ${COARSE_NX} x ${COARSE_NY} x ${COARSE_NZ}
  path            : $([ "$REFINE_LVL" -gt 0 ] && echo "p4est, ${REFINE_LVL} level(s), coarse ${COARSE_NX}x${COARSE_NY}x${COARSE_NZ}" || echo "direct read + lxy_partition")
  mesh            : $FINAL_MESH
  ranks           : ${RANKS}  (${NODES} x ${NTASKS_PER_NODE})
