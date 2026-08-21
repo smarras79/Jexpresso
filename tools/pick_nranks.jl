@@ -56,7 +56,115 @@ function partition_counts(nelemx, nelemy, nparts, Lx, Ly)
     return nx, ny, counts
 end
 
+# ──────────────────────────────────────────────────────────────────────────
+# p4est / space-filling-curve mode.
+#
+#   julia tools/pick_nranks.jl --p4est <nelem> <nop> <max_cores>
+#
+# Completely different constraint structure from the column mode below, and
+# the difference is worth stating because it inverts the usual advice.
+#
+# The column partitioner bins cells by centroid into an nx x ny grid, so the
+# rank count must factor to match the mesh or ranks come out EMPTY and the run
+# dies. p4est has no such requirement: it cuts the space-filling curve into
+# nparts contiguous chunks of floor(N/P) or ceil(N/P) leaves. Any count works,
+# and the element imbalance is at most ONE cell -- negligible except when the
+# chunks themselves get tiny. Divisibility buys essentially nothing here; do
+# not chase it.
+#
+# What does bind:
+#
+#   work per rank      A rank holding too few elements spends its time in halo
+#                      exchange rather than in the RHS. This is the real cap on
+#                      useful parallelism.
+#
+#   surface-to-volume  A Morton/Hilbert chunk of e elements is compact, roughly
+#                      a cube, so its halo scales as e^(2/3) and halo per
+#                      element as ~6/e^(1/3). Halving e per rank multiplies
+#                      communication per unit work by 2^(1/3).
+#
+# Gridpoints are estimated as nelem * nop^3: in a structured mesh each element
+# contributes nop^3 unique nodes, the rest being shared with its neighbours.
+# The estimate is exact only in the limit of many elements per direction, and
+# it always UNDERSTATES, because the outermost layer of nodes is shared with
+# nothing. Measured against exact counts at nop=4:
+#
+#     128x128x120   125.8M vs 126.6M    -0.6%
+#      32x32x30      1.97M vs  2.01M    -2.4%
+#      16x16x15       246k vs   258k    -4.6%
+#       8x2x60         61k vs    72k   -14.2%
+#
+# Thin or small meshes are where it drifts, since the boundary is a larger
+# fraction of them. Erring low means the recommendation is conservative -- it
+# credits each rank with slightly less work than it really has, and so asks for
+# slightly fewer ranks. If your mesh is small or has a short direction, pass
+# the exact gridpoint count via the column mode instead, which computes it.
+function p4est_mode(nelem, nop, maxc)
+    ptsmin = parse(Int, get(ENV, "JEXPRESSO_PTS_PER_RANK", "50000"))
+    dof    = nelem * nop^3
+    println("partitioning  : p4est, space-filling curve (any rank count is valid)")
+    println("elements      : $(nelem)   nop=$(nop)  ->  ~$(dof) gridpoints")
+    println("budget        : $(maxc) cores;  target >= $(ptsmin) gridpoints/rank\n")
+
+    # Largest rank count that still keeps each rank above the work floor...
+    rcap = max(1, min(maxc, dof ÷ max(ptsmin, 1)))
+    # ...then round DOWN to a multiple of 8. The unrounded cap is usually an
+    # awkward number (39, 157, 613): SLURM allocates whole cores, so 39 ranks
+    # leaves most of a 64-core node idle and bills you for it either way. A
+    # multiple of 8 packs into any common node width, and giving up a few ranks
+    # of the cap costs nothing -- the work floor is a soft threshold, not a
+    # cliff. p4est is indifferent to the exact number, so this is free.
+    rec = rcap >= 8 ? (rcap ÷ 8) * 8 : rcap
+
+    cands = Int[]
+    r = 1
+    while r <= maxc
+        push!(cands, r); r *= 2
+    end
+    rec  in cands || push!(cands, rec)
+    rcap in cands || push!(cands, rcap)
+    maxc in cands || push!(cands, maxc)
+    sort!(unique!(cands))
+
+    println(rpad("ranks",8), rpad("elem/rank",12), rpad("dof/rank",12),
+            rpad("imbalance",11), rpad("halo/elem",11), "note")
+    for n in cands
+        n > maxc && continue
+        lo, hi = fld(nelem, n), cld(nelem, n)
+        lo == 0 && continue
+        imb  = hi / (nelem / n)
+        halo = 6 / cbrt(nelem / n)
+        note = n == rec ? "  <== RECOMMENDED" :
+               (dof / n < ptsmin ? "  (thin: comms-bound)" : "")
+        println(rpad(n,8), rpad("$(lo)-$(hi)",12), rpad(round(Int, dof/n),12),
+                rpad(round(imb, digits=4),11), rpad(round(halo, digits=2),11), note)
+    end
+
+    lo, hi = fld(nelem, rec), cld(nelem, rec)
+    println("\nRECOMMENDED: $(rec) ranks")
+    println("   $(lo)-$(hi) elements/rank, ~$(round(Int, dof/rec)) gridpoints/rank,")
+    println("   halo/elem ~$(round(6/cbrt(nelem/rec), digits=2)), imbalance $(round(hi/(nelem/rec), digits=4))x")
+    rec == rcap || println("   ($(rcap) is the raw cap at this work floor; rounded down to pack into nodes)")
+    nodes = cld(rec, 64)
+    println("\n  #SBATCH --nodes=$(nodes)")
+    println("  #SBATCH --ntasks-per-node=$(cld(rec, nodes))")
+    println("\nAny other count up to $(maxc) also runs -- p4est does not care about")
+    println("divisibility. Going above $(rcap) keeps working but each rank drops")
+    println("below $(ptsmin) gridpoints, so more of its time goes to halo exchange")
+    println("than to the RHS. Raise the floor with JEXPRESSO_PTS_PER_RANK to be")
+    println("more conservative, or lower it to trade efficiency for wall-clock.")
+    return nothing
+end
+
 function main()
+    if "--p4est" in ARGS
+        a = filter(x -> x != "--p4est", ARGS)
+        if length(a) < 3
+            println("usage: julia tools/pick_nranks.jl --p4est <nelem> <nop> <max_cores>")
+            return
+        end
+        return p4est_mode(parse.(Int, a[1:3])...)
+    end
     if length(ARGS) < 5
         println("usage: julia tools/pick_nranks.jl <nelemx> <nelemy> <nelemz> <nop> <max_cores> [Lx] [Ly]")
         return
