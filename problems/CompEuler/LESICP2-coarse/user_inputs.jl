@@ -114,25 +114,15 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-<<<<<<< HEAD
-        #:output_dir          => "/scratch/smarras/smarras/output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
-        :output_dir          => "./output_new/coarse-LESICP2_stretched/",
-=======
 	:output_dir          => "/scratch/smarras/smarras/output_new/coarse-LESICP2_16x4x120_6400mX1600mX5000m/",
         #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
->>>>>>> 31ce39e54009561676259cef7e9bc3f95cb388f3
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-<<<<<<< HEAD
-        #:linitial_refine     => true,
-        #:init_refine_lvl     => 1,
-=======
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
->>>>>>> 31ce39e54009561676259cef7e9bc3f95cb388f3
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
