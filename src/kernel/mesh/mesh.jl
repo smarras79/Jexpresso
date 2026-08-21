@@ -1762,8 +1762,23 @@ function _compute_xy_partition(model, nparts)
     # for an 8 x 2 mesh in a 6400 x 1600 box it is (7/8*6400)/(1/2*1600) = 7,
     # not 4. That ratio is what picks nx, so a mesh only a little anisotropic
     # in element count can get a very lopsided rank grid.
-    ncols_x = length(unique(round.(cx, digits=6)))
-    ncols_y = length(unique(round.(cy, digits=6)))
+    # Count DISTINCT centroid positions without materialising an intermediate
+    # array. `unique(round.(cx, digits=6))` allocated a full copy of cx -- on
+    # the 128x128x120 mesh that is 1.97M Float64 (16 MB) per axis, per rank,
+    # at the exact point where the run is already holding the broadcast serial
+    # model and is closest to the memory ceiling. The generator form keeps only
+    # the distinct values, which for a structured mesh is a few hundred.
+    # Measured on a 1.97M-cell mesh: unique(round.(v,digits=6)) 15.0 MiB,
+    # Set(generator) 36.0 MiB (untyped Set boxes every value), this loop
+    # 3.3 KiB. The Set only ever holds the distinct positions -- a few hundred
+    # for a structured mesh -- so nothing scales with cell count.
+    function _ndistinct(v)
+        s = Set{Float64}()
+        for x in v
+            push!(s, round(x, digits=6))
+        end
+        return length(s)
+    end
     counts  = zeros(Int, nparts)
     for p in cell_to_part
         counts[p] += 1
@@ -1772,7 +1787,8 @@ function _compute_xy_partition(model, nparts)
 
     let comm = get_mpi_comm()
         if MPI.Comm_rank(comm) == 0
-            println(" # xy-partition: ", nparts, " ranks over ", ncols_x, " x ", ncols_y,
+            println(" # xy-partition: ", nparts, " ranks over ",
+                    _ndistinct(cx), " x ", _ndistinct(cy),
                     " element columns  ->  rank grid ", nx, " x ", ny)
             println(" #   centroid span lx/ly = ", round(lx / ly, digits=4),
                     "   cells/rank min/max = ", minimum(counts), "/", maximum(counts))
@@ -1793,6 +1809,8 @@ function _compute_xy_partition(model, nparts)
             "continuing because JEXPRESSO_ALLOW_EMPTY_RANKS is set. Expect a failure ",
             "later in the setup (\"reducing over an empty collection\").")
     elseif nempty > 0
+        ncols_x = _ndistinct(cx)
+        ncols_y = _ndistinct(cy)
         error("""
 
          # xy-partition cannot place $(nparts) ranks on this mesh.
