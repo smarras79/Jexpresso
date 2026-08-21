@@ -195,12 +195,34 @@ restored or thrown away.
 
 ### `JEXPRESSO_STEP_HEARTBEAT`
 
-Enables the per-step heartbeat callback that prints
-`#   step N   t = X.X` lines at intervals during `solve(...)`.
+Enables the per-step heartbeat callback that prints progress lines at
+intervals during `solve(...)`:
+
+```
+ #   step 200   t = 4.000000   wall 00:03:22   1.004 s/step   ETA 3d 00:52:16
+```
+
 Useful when diagnostics are sparse (e.g. city2d's
 `:diagnostics_at_times => 0:10:600` with `Δt = 0.004` means 2500
 silent steps between user-visible writes — hard to tell from a hang).
 Throttled: prints every step for the first 5, then every 100.
+
+The wall-clock fields make the trace a performance meter as well as a
+liveness check:
+
+- **`wall`** — elapsed since the loop's first step. Under the
+  pre-compilation pass (`JEXPRESSO_PRECOMPILE_PASS`) that first step *is*
+  the pass, so `wall` times hot code only; JIT and first-touch allocation
+  are already excluded. Comparable across rank counts, meshes and machines.
+- **`s/step`** — averaged over the steps since the *previous* heartbeat
+  (the last 100, once past step 5), not since `t0`, so a slowdown shows up
+  in the line where it happens instead of being diluted by earlier history.
+- **`ETA`** — that interval's simulated-seconds-per-wall-second carried out
+  to `:tend`. A straight-line extrapolation of the last 100 steps: expect it
+  to move around while the rate does.
+
+Rank 0 does the timing and the printing, and the callback makes no MPI
+calls, so it cannot deadlock a large job.
 
 - **Type:** boolean
 - **Default:** `false` (off)
@@ -463,7 +485,7 @@ the level of the usual round-off divergence.
 | `JEXPRESSO_ALLOC_SUMMARY`         | bool   | `false`     | End-of-run timing/allocation table               |
 | `JEXPRESSO_PRECOMPILE_WARMUP`     | bool   | `true`      | One-step JIT warm-up before real solve           |
 | `JEXPRESSO_PRECOMPILE_WORKLOAD`   | bool   | `false`     | Run a 3-step solve during package precompilation |
-| `JEXPRESSO_STEP_HEARTBEAT`        | bool   | `false`     | Per-step progress prints during solve            |
+| `JEXPRESSO_STEP_HEARTBEAT`        | bool   | `false`     | Step/wall-clock/s-per-step prints during solve   |
 | `JEXPRESSO_CI_OUTPUT`             | bool   | `1`         | CI mode forces hdf5/none/overwrite output        |
 | `JEXPRESSO_CI_OUTFORMAT`          | string | `hdf5`      | Which format CI mode forces (`hdf5` \| `vtk`)    |
 | `FI_PROVIDER`                     | string | (unset)     | libfabric provider; set only for the precompile workload |
