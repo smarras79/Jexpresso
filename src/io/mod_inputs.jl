@@ -201,7 +201,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # strategy can still opt out by setting `:lxy_partition => false`
     # in their user_inputs.jl.
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = false
+        inputs[:lxy_partition] = true
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))
