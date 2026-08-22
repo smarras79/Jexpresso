@@ -543,6 +543,30 @@ function build_hevi(params, inputs)
               "solution vector already holds the deviation from qe, so the implicit ",
               "operator would subtract the reference state a second time.")
 
+    # HEVI on the p4est space-filling-curve partition diverges, and slowly
+    # enough to look like anything but a partition problem. On that partition
+    # the assembled RHS and the mass matrix pick up DIFFERENT ghost-inflation
+    # factors at some rank-shared nodes -- measured on rtb with three ranks,
+    # mass exactly 1.5x its serial value at 330 nodes per rank where the
+    # stiffness is 1.4965x -- so M^-1 K is no longer skew and the implicit
+    # operator acquires a positive real eigenvalue: +5.07e-02 relative at four
+    # ranks, a growth rate of +3.5 1/s, which takes round-off to O(1) in about
+    # ten seconds. rtb_hevi died at t ~ 12 that way, with every other
+    # self-check passing.
+    #
+    # The columnar partition has neither problem: the factors match, and no
+    # column is split across ranks (0 of 180 measured at four ranks), so the
+    # column solve needs no redistribution at all.
+    (get(inputs, :lxy_partition, true) == true || MPI.Comm_size(comm) == 1) ||
+        error("HEVI needs :lxy_partition => true on more than one rank; this deck has ",
+              "it false, which selects the p4est space-filling-curve partition. On that ",
+              "partition the assembled RHS and the mass matrix carry different ",
+              "ghost-element multiplicities at some rank-shared nodes, the implicit ",
+              "operator stops being skew, and the run grows at a few 1/s -- rtb_hevi ",
+              "diverges at t ~ 12 with every self-check still passing. Remove ",
+              ":lxy_partition from the deck (HEVI defaults it to true) or set it true. ",
+              "A fully explicit run is unaffected and keeps p4est.")
+
     params.Minv isa AbstractVector ||
         error("HEVI needs a lumped (diagonal) mass matrix; this case has a dense Minv, ",
               "which comes from :QT => Exact() with :llump => false. Applying the ",
