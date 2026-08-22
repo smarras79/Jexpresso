@@ -590,9 +590,9 @@ function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
     end
 end
 
-function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
+function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false, els = 1:nelem)
     
-    for iel=1:nelem
+    for iel in els
         
         for k = 1:N+1
             for j = 1:N+1
@@ -1263,6 +1263,49 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     
     g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+
+    # DIAGNOSTIC (temporary): a lumped mass sums to the domain volume.
+    # Summing over UNIQUELY-OWNED nodes only makes it partition-independent,
+    # so any deviation is an assembly error and not double counting of shared
+    # nodes. Needs no serial reference run.
+    if get(ENV, "JEXPRESSO_MASS_CHECK", "0") == "1"
+        let comm = get_mpi_comm(), rk = MPI.Comm_rank(comm)
+            loc = 0.0
+            for ip = 1:Int(mesh.npoin)
+                Int(mesh.gip2owner[ip]) == rk && (loc += M[ip])
+            end
+            tot = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(loc, MPI.SUM, comm) : loc
+            rk == 0 && println("\n [mass check] all local elements : ", tot,
+                               "   (should equal the domain volume)")
+
+            # Same assembly, but skipping elements this rank does not own.
+            # If the excess above is ghost elements being assembled locally and
+            # then summed again across ranks, this is the number that comes out
+            # right -- and if it does not, the excess is something else and
+            # restricting the element loop is not the fix.
+            if hasproperty(mesh, :gel2owner) && mesh.gel2owner !== nothing &&
+               length(mesh.gel2owner) == Int(mesh.nelem)
+                M2 = zeros(eltype(M), Int(mesh.npoin))
+                els = [iel for iel = 1:Int(mesh.nelem) if Int(mesh.gel2owner[iel]) == rk]
+                DSS_mass!(M2, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat;
+                          llump=inputs[:llump], els = els)
+                c2 = setup_assembler(SD, M2, mesh.ip2gip, mesh.gip2owner)
+                c2 === nothing || assemble_mpi!(M2, c2)
+                loc2 = 0.0
+                for ip = 1:Int(mesh.npoin)
+                    Int(mesh.gip2owner[ip]) == rk && (loc2 += M2[ip])
+                end
+                tot2 = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(loc2, MPI.SUM, comm) : loc2
+                nel_g = MPI.Comm_size(comm) > 1 ?
+                        MPI.Allreduce(Int(mesh.nelem), MPI.SUM, comm) : Int(mesh.nelem)
+                nown_g = MPI.Comm_size(comm) > 1 ?
+                         MPI.Allreduce(length(els), MPI.SUM, comm) : length(els)
+                rk == 0 && println(" [mass check] owned elements only : ", tot2,
+                                   "   (local elems summed = ", nel_g,
+                                   ", owned summed = ", nown_g, ")\n")
+            end
+        end
+    end
 
     DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, SD)
     
