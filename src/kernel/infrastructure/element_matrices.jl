@@ -590,9 +590,9 @@ function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
     end
 end
 
-function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false, els = 1:nelem)
+function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
     
-    for iel in els
+    for iel = 1:nelem
         
         for k = 1:N+1
             for j = 1:N+1
@@ -1264,46 +1264,24 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     
     g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
 
-    # DIAGNOSTIC (temporary): a lumped mass sums to the domain volume.
-    # Summing over UNIQUELY-OWNED nodes only makes it partition-independent,
-    # so any deviation is an assembly error and not double counting of shared
-    # nodes. Needs no serial reference run.
+    # A lumped mass summed over UNIQUELY-OWNED nodes equals the domain volume
+    # on any partition, so it is an exact expected value with no serial
+    # reference run needed, and any deviation is an assembly error rather than
+    # shared nodes being counted twice. This is what caught the ghost elements
+    # that GmshDiscreteModel(parts, ...) leaves in the local model: theta at
+    # four ranks read 1.44e8 against a domain volume of 1.00e8, matching its
+    # 144 local / 100 owned element ratio (see the DiscreteModelPortion
+    # restriction in mesh.jl). Off by default; set JEXPRESSO_MASS_CHECK=1.
     if get(ENV, "JEXPRESSO_MASS_CHECK", "0") == "1"
-        let comm = get_mpi_comm(), rk = MPI.Comm_rank(comm)
+        let comm = get_mpi_comm(), rk = MPI.Comm_rank(comm), nr = MPI.Comm_size(comm)
             loc = 0.0
             for ip = 1:Int(mesh.npoin)
                 Int(mesh.gip2owner[ip]) == rk && (loc += M[ip])
             end
-            tot = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(loc, MPI.SUM, comm) : loc
-            rk == 0 && println("\n [mass check] all local elements : ", tot,
-                               "   (should equal the domain volume)")
-
-            # Same assembly, but skipping elements this rank does not own.
-            # If the excess above is ghost elements being assembled locally and
-            # then summed again across ranks, this is the number that comes out
-            # right -- and if it does not, the excess is something else and
-            # restricting the element loop is not the fix.
-            if hasproperty(mesh, :gel2owner) && mesh.gel2owner !== nothing &&
-               length(mesh.gel2owner) == Int(mesh.nelem)
-                M2 = zeros(eltype(M), Int(mesh.npoin))
-                els = [iel for iel = 1:Int(mesh.nelem) if Int(mesh.gel2owner[iel]) == rk]
-                DSS_mass!(M2, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat;
-                          llump=inputs[:llump], els = els)
-                c2 = setup_assembler(SD, M2, mesh.ip2gip, mesh.gip2owner)
-                c2 === nothing || assemble_mpi!(M2, c2)
-                loc2 = 0.0
-                for ip = 1:Int(mesh.npoin)
-                    Int(mesh.gip2owner[ip]) == rk && (loc2 += M2[ip])
-                end
-                tot2 = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(loc2, MPI.SUM, comm) : loc2
-                nel_g = MPI.Comm_size(comm) > 1 ?
-                        MPI.Allreduce(Int(mesh.nelem), MPI.SUM, comm) : Int(mesh.nelem)
-                nown_g = MPI.Comm_size(comm) > 1 ?
-                         MPI.Allreduce(length(els), MPI.SUM, comm) : length(els)
-                rk == 0 && println(" [mass check] owned elements only : ", tot2,
-                                   "   (local elems summed = ", nel_g,
-                                   ", owned summed = ", nown_g, ")\n")
-            end
+            tot   = nr > 1 ? MPI.Allreduce(loc, MPI.SUM, comm) : loc
+            nel_g = nr > 1 ? MPI.Allreduce(Int(mesh.nelem), MPI.SUM, comm) : Int(mesh.nelem)
+            rk == 0 && println("\n [mass check] lumped mass over owned nodes : ", tot,
+                               "   (local elements summed over ranks = ", nel_g, ")\n")
         end
     end
 

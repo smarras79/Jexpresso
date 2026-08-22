@@ -215,7 +215,12 @@ const _CACHE_FINGERPRINT_KEYS = (
 # rebuilt.
 # v4: cache identity reworked — per-case paths, adaptive runs never read a
 # cache, struct-shape signature added to the fingerprint.
-const _CACHE_SCHEMA_VERSION = 4
+# v5: :lxy_partition = false (the p4est / distributed-gmsh path) used to keep
+# the GHOST cells Gridap puts in each rank's local model, so every cached mesh
+# written on that path carries surplus elements and a mass matrix inflated by
+# the ghost fraction. The element counts change but no struct field does, so
+# the struct-shape signature cannot see this — it needs the manual bump.
+const _CACHE_SCHEMA_VERSION = 5
 
 # Signature of the field sets of the structs that get serialized into the
 # caches (St_mesh in the mesh cache, St_metrics in the SEM cache).
