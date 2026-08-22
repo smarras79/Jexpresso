@@ -246,6 +246,22 @@ include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
 
 include(joinpath( "kernel", "operators", "filter.jl"))
 
+#-----------------------------------------------------------------------------
+# HEVI: horizontally-explicit / vertically-implicit time integration.
+#
+# Order matters here only where one file names another's types in a method
+# signature: columns.jl defines ColumnTopology/ColumnComm, operator.jl defines
+# HEVIOperator, and both are referenced by factorize.jl. ark.jl is
+# independent of all three -- it talks to the implicit operator only through
+# the p.hevi hooks -- and hevi.jl ties them together.
+#-----------------------------------------------------------------------------
+include(joinpath( "kernel", "solvers", "hevi", "columns.jl"))
+include(joinpath( "kernel", "solvers", "hevi", "operator.jl"))
+include(joinpath( "kernel", "solvers", "hevi", "factorize.jl"))
+include(joinpath( "kernel", "solvers", "hevi", "ark.jl"))
+include(joinpath( "kernel", "solvers", "hevi", "hevi.jl"))
+include(joinpath( "kernel", "solvers", "hevi", "cfl_diagnostics.jl"))
+
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
 # SSP-RK3 time loop for the spherical shell, with the Lagrange projection

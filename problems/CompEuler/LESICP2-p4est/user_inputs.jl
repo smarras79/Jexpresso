@@ -5,6 +5,22 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.02,
+	# ------------------------------------------------------------------
+	# HEVI (horizontally explicit / vertically implicit). Swap the two
+	# lines above for the two below to take the vertical acoustic terms
+	# implicitly; nothing else in this deck has to change. See
+	# src/kernel/solvers/hevi/README.md.
+	#
+	# Worth about 2x on this mesh and no more: Δx=80 m against Δz=41.7 m
+	# at nop=4 in both directions is an acoustic anisotropy of 1.92, and
+	# HEVI removes exactly the vertical acoustic term. Run once with
+	# :lcfl_report => true first -- if the report says SGS diffusion
+	# rather than vertical sound is what binds Δt, HEVI will buy nothing
+	# and implicit vertical diffusion is the fix instead.
+	#
+	#:ode_solver           => HEVI_ARK(:ARS343),
+	#:Δt                   => 0.04,
+	#:lcfl_report          => true,
         :tinit                => 0.0,
         :tend                 => 10800.0,
 	:lrestart             => false,

@@ -366,6 +366,44 @@ function time_loop!(inputs, params, u, args...)
                      " ......... END"; msg_rank = rank)
     end
 
+    #------------------------------------------------------------------------
+    # HEVI wiring check, and the direction-wise stability report.
+    #
+    # The report costs one RHS evaluation and is the only thing that tells
+    # "Δt is limited by vertical sound", which HEVI removes, apart from
+    # "Δt is limited by the SGS diffusion", which it does not. That RHS call
+    # is also what fills the SGS viscosity cache: without it ν_t is zero
+    # everywhere and the viscous limits would read as infinite, which is the
+    # one answer guaranteed to be wrong.
+    #
+    # rhs! writes through u (Dirichlet BCs, the filter) and rolls the qnm /
+    # DynSGS histories, so everything it touches is snapshotted and put back
+    # -- same set the integrator warm-up below restores.
+    #------------------------------------------------------------------------
+    if inputs[:ode_solver] isa HEVI_ARK
+        hasproperty(params, :hevi) ||
+            error("The deck asks for HEVI_ARK but params carries no HEVI cache. ",
+                  "params_setup builds it only when hevi_enabled(inputs) is true, so ",
+                  "set :ode_solver => HEVI_ARK(:ARS343) in user_inputs.jl rather than ",
+                  "swapping the integrator in later.")
+        inputs[:ode_adaptive_solver] == true &&
+            error("HEVI_ARK is fixed-step: its tableaux carry no embedded error ",
+                  "estimate. Set :ode_adaptive_solver => false.")
+    end
+
+    if get(inputs, :lcfl_report, false) == true
+        _u    = copy(u)
+        _qnm1 = copy(params.qp.qnm1);   _qnm2 = copy(params.qp.qnm2)
+        _dq1  = copy(params.dsgs_qnm1); _dq2  = copy(params.dsgs_qnm2)
+        _dth  = params.dsgs_thist[]
+        rhs!(similar(u), u, params, inputs[:tinit])
+        u .= _u
+        params.qp.qnm1 .= _qnm1;   params.qp.qnm2 .= _qnm2
+        params.dsgs_qnm1 .= _dq1;  params.dsgs_qnm2 .= _dq2
+        params.dsgs_thist[] = _dth
+        cfl_report(params, u, inputs[:tinit]; dt = inputs[:Δt])
+    end
+
     function rad_condition(u, t, integrator)
         if (rem(t,rad_time) < 1e-3)
             return true

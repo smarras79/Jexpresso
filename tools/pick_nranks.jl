@@ -156,7 +156,72 @@ function p4est_mode(nelem, nop, maxc)
     return nothing
 end
 
+
+#-----------------------------------------------------------------------------
+# --columns : rank counts that keep vertical columns on one rank
+#
+# HEVI's implicit stage is a column solve, and it is cheapest when a column
+# lives entirely on one rank. Under p4est that is not automatic. Leaves are
+# ordered by (tree, Morton-within-tree) and the partition cuts contiguous
+# ranges of that order, so:
+#
+#   * a partial tree is a Morton sub-cube -- it spans only part of the tree's
+#     vertical extent, so column locality does NOT survive a cut inside a tree;
+#   * whole trees do keep their columns, so if the rank count divides the
+#     number of TREE COLUMNS (nelemx * nelemy of the COARSE mesh) and each rank
+#     gets a whole number of them, every column is rank-local.
+#
+# The refinement level does not change this: refining multiplies the leaves per
+# tree, not the tree layout. What it does change is how many elements a rank
+# ends up with, which is the other half of the trade -- one tree column of a
+# 16x16x15 coarse mesh refined three times is 7680 elements, which is a lot to
+# put on one rank.
+#
+# This is guidance, not a guarantee: the coarse mesh must also be ordered
+# column-major (tools/reorder_msh_columns.jl) for tree columns to be
+# contiguous in the first place. The ground truth is the split percentage the
+# HEVI setup prints at the top of a run -- if that says 0%, the partition is
+# column-local whatever this tool predicted.
+#-----------------------------------------------------------------------------
+function columns_mode(cx, cy, cz, lvl, maxc)
+    ncol   = cx * cy
+    per    = 2^lvl
+    trees  = cx * cy * cz
+    leaves = trees * per^3
+    println("coarse mesh   : $(cx) x $(cy) x $(cz) trees  ($(trees) trees)")
+    println("refine level  : $(lvl)  ->  $(cx*per) x $(cy*per) x $(cz*per) elements ",
+            "($(leaves) leaves)")
+    println("tree columns  : $(ncol)")
+    println("budget        : $(maxc) ranks\n")
+    println("  ranks   tree cols/rank   elements/rank   note")
+    any = false
+    for n = 1:maxc
+        ncol % n == 0 || continue
+        any = true
+        cpr = ncol ÷ n
+        epr = leaves ÷ n
+        note = epr > 4000 ? "heavy: consider a finer coarse mesh" :
+               epr < 200  ? "light: halo may dominate the RHS"    : ""
+        println(lpad(n, 7), lpad(cpr, 16), lpad(epr, 16), "   ", note)
+    end
+    any || println("  none -- $(ncol) tree columns has no divisor <= $(maxc)")
+    println()
+    println("Any rank count NOT in this list still runs: columns that straddle a rank")
+    println("boundary are gathered onto an owner for the solve and scattered back. The")
+    println("cost is proportional to how many straddle, which the run reports at setup.")
+    return nothing
+end
+
 function main()
+    if "--columns" in ARGS
+        a = filter(x -> x != "--columns", ARGS)
+        if length(a) < 5
+            println("usage: julia tools/pick_nranks.jl --columns <coarse_nx> <coarse_ny> ",
+                    "<coarse_nz> <refine_lvl> <max_ranks>")
+            return
+        end
+        return columns_mode(parse.(Int, a[1:5])...)
+    end
     if "--p4est" in ARGS
         a = filter(x -> x != "--p4est", ARGS)
         if length(a) < 3
