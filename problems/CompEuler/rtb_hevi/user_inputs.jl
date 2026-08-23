@@ -1,29 +1,63 @@
 #==============================================================================
  rtb_hevi -- rising thermal bubble, run with the HEVI time integrator.
 
- The dry nonhydrostatic benchmark (Robert 1993; Giraldo & Restelli, JCP 227,
- 2008): a warm cosine bubble, θ' = 0.5 K over a 250 m radius centred at
- (500, 350) m, released into a neutrally stratified atmosphere at rest inside
- a 1000 m box. It accelerates upward under its own buoyancy and rolls into a
- mushroom by t ≈ 700 s.
+ THIS CASE IS CompEuler/theta AS A 3D SLAB. Same 10 km x 10 km domain, same
+ 10 x 10 element resolution (Δx = Δz = 1000 m), same bubble (θ' = 2 K, linear
+ taper, r0 = 2000 m, centred at 2500 m), same μ = 125, same tend = 1000 s --
+ extruded one element in y because HEVI is 3D-only. Run it explicitly and it
+ must reproduce theta; run it under HEVI and it must reproduce theta too. Any
+ difference is the time integrator, and nothing else.
 
- WHY THIS CASE, FOR THIS INTEGRATOR
+ VERIFIED, max|u| at 100 s intervals to t = 1000 s, 1 rank:
+
+   explicit 3D slab vs 2D theta   within 1.6% at t = 100, under 1% thereafter
+   HEVI     vs explicit 3D slab   within 0.07% at every sample
+
+ (The slab is not bit-identical to theta and should not be: theta runs
+ :SOL_VARS_TYPE => PERT() and this case runs the TOTAL default, and the 3D
+ operators are not the 2D ones. Agreement at this level is the check.)
+
+ That is the whole design. An earlier version of this case ran a 250 m bubble
+ in a 1 km box at μ = 15 and looked far more diffused than theta at μ = 125,
+ which reads as a code problem and is not one: how smeared a bubble looks is
+ set by the diffusion length relative to the bubble, sqrt(μ t)/r0. theta sits
+ at sqrt(125*1000)/2000 = 0.18; that case sat at sqrt(15*700)/250 = 0.41, more
+ than twice as diffused on an 8x smaller μ. Matching the geometry is what
+ makes the two comparable, so the geometry is matched here.
+
+ WHAT THIS CASE CAN AND CANNOT SHOW
  ----------------------------------
- It exercises exactly what the vertically-implicit split touches:
+ It exercises what the vertically-implicit split touches:
 
    * the vertical acoustic terms HEVI moves to the implicit side;
    * the buoyancy coupling -g·dρ inside the implicit operator;
    * a base state at rest, so any imbalance the split introduced would show up
      as the whole domain drifting rather than as a subtle error in the bubble.
 
- The mesh is DELIBERATELY anisotropic -- 8 x 1 x 24 elements, so Δz = 41.7 m
- against Δx = 125 m. On an isotropic bubble mesh HEVI buys nothing, because
+ It CANNOT show HEVI to be faster, and it is not meant to. This mesh is
+ isotropic, and on an isotropic mesh a vertically-implicit split buys nothing:
  there is no vertical acoustic term to remove that the horizontal one does not
- match. Here the vertical spacing is 3x finer and the split is worth a measured
- 1.75x in Δt and ~2.5x in wall-clock -- 0.185 s/step at Δt = 0.02 explicit
- against 0.132 s/step at Δt = 0.035 under ARS232. (At Δt = 0.05 it is 3.50x,
- but that is 97% of the joint stability limit and is not a step to run at; see
- the note on Δt below.) That is the claim this case is here to make checkable.
+ match. The setup report measures the implicit half at 2.8 1/s against the
+ explicit half at 5.7 1/s, and ARS232's joint limit (0.284 s) lands BELOW
+ CarpenterKennedy2N54's (~0.69 s).
+
+ MEASURED here, 1 rank, to t = 1000 s:
+
+   explicit  Δt = 0.5    2000 steps   0.040 s/step    81.8 s
+   HEVI      Δt = 0.19   5263 steps   0.022 s/step   148.1 s     1.81x SLOWER
+
+ HEVI is cheaper PER STEP even so (ARS232's 3 rhs! and 2 column solves against
+ CarpenterKennedy2N54's 5 rhs!, and the column solves are trivial on 10 vertical
+ elements) -- it just needs 2.6x as many of them. Cost per step was never the
+ question; wall-clock to a fixed physical time is, and on this geometry the
+ explicit scheme wins it.
+
+ For the performance claim, point :gmsh_filename at rtb_8x1x24.msh -- 1 km box,
+ 8 x 1 x 24 elements, Δz = 41.7 m against Δx = 125 m -- and restore Δt = 0.02
+ explicit / 0.035 HEVI with tend = 700. On that mesh the split is worth a
+ measured 1.75x in Δt and ~2.5x in wall-clock: 0.185 s/step explicit against
+ 0.132 s/step under ARS232. Both meshes are kept in this directory precisely
+ because one case cannot answer both questions.
 
  One element in y: the bubble is a cylinder along y, so the solution is
  y-invariant and the third dimension exists only because HEVI is 3D-only.
@@ -31,9 +65,8 @@
 
  TO COMPARE AGAINST THE EXPLICIT SCHEME
  --------------------------------------
- Set `lexplicit = true` at the top of user_inputs() below. The explicit run needs 2.5x the number of
- steps to reach t = 700 s, and the two solutions should be indistinguishable --
- the standalone version of this case checks exactly that.
+ Set `lexplicit = true` at the top of user_inputs() below. Each scheme runs at
+ its own largest safe step, and the two solutions should be indistinguishable.
 
  A version of this case that needs no mesh, no Gridap and no MPI stack --
  and that asserts all of the above rather than leaving it to the eye -- is
@@ -64,34 +97,37 @@ function user_inputs()
 
     # Step sizes.
     #
-    # HEVI at 0.035 s with ARS232 -- 70% of the joint IMEX limit, NOT at it.
+    # MEASURED on rtb_10x1x10.msh by the setup report (it prints these):
     #
-    # ark_joint_dt_max puts the neutral limit at 0.0515 s on this mesh, where the
-    # explicit half of the split sees 26.7 1/s and the implicit half 69.4 1/s.
-    # This case shipped at 0.05, which is 97% of that, and it was stable on 1 and
-    # 3 ranks and divergent at t ~ 5 s on 10. At the limit the scheme is EXACTLY
-    # neutral, and three things move it by a few percent: the explicit rate is a
-    # node-spacing estimate calibrated against one measured spectrum, it assumes
-    # the flow speeds at t = 0, and the assembly at rank-shared nodes is mildly
-    # partition-dependent so the effective rates shift with the rank count. None
-    # of those matters at 70%; all of them decide the run at 97%.
+    #   explicit half of the split   5.7 1/s
+    #   implicit half of the split   2.8 1/s
+    #   ARS232 joint neutral limit   0.284 s   -> 0.19 here, 67% of it
+    #   CarpenterKennedy2N54 limit  ~0.69 s    -> 0.50 here, theta's step
     #
-    # The setup report now prints Δt as a percentage of the limit and warns above
-    # 85%, and still refuses outright if max|R| > 1.
+    # Read the first two numbers before reading anything else. The implicit
+    # half is SMALLER than the explicit half, because this mesh is isotropic
+    # (Δx = Δz = 1000 m): there is no vertical acoustic term for the split to
+    # remove that the horizontal one does not match. HEVI's limit (0.284 s) is
+    # consequently BELOW the explicit scheme's (~0.69 s) -- ARS232's explicit
+    # imaginary radius is 1.73 against CarpenterKennedy2N54's 3.95, and on an
+    # isotropic mesh that is the whole story. Expect HEVI to be SLOWER here.
     #
-    # This case ran :ARS343 at 0.03 until the joint region was measured. ARS343
-    # has the largest EXPLICIT imaginary radius of the ARS family (2.83 against
-    # ARS232's 1.73) and a joint Δt_max of 0.0004 s: it amplifies by 2.4% per
-    # step here, which took ~15 s of model time to become visible and moved
-    # with the rank count. Judge a tableau by ark_joint_amplification.
+    # That is not a defect of the case; it is the point of it. This geometry
+    # is theta's, so an explicit run must reproduce the 2D theta answer and a
+    # HEVI run must reproduce it too. Correctness is what an isotropic mesh can
+    # check. For the PERFORMANCE claim -- 1.75x in Δt and ~2.5x in wall-clock --
+    # switch :gmsh_filename to rtb_8x1x24.msh, whose Δz is 3x finer than its Δx,
+    # and restore Δt = 0.02 explicit / 0.035 HEVI with tend = 700.
     #
-    # The explicit limit measured between 0.02 and 0.04, so 0.02 has margin.
+    # The setup report prints Δt as a percentage of the joint limit, warns above
+    # 85%, and refuses outright if max|R| > 1. It refuses on the JOINT region,
+    # not the explicit half: ARS343 has the largest explicit imaginary radius of
+    # the ARS family (2.83 vs ARS232's 1.73) and a joint Δt_max of 0.0004 s on
+    # the anisotropic mesh. Judge a tableau by ark_joint_amplification.
     #
-    # To find either limit, sweep :Δt with a short :tend (say 30.0) and watch
-    # for the pressure going negative. The CFL table printed at startup reports
-    # the CFL each run is actually sitting at.
-    Δt   = lexplicit ? 0.02 : 0.035
-    tend = 700.0
+    # Both steps are overridable for a sweep: DBG_DT=... DBG_TEND=...
+    Δt   = parse(Float64, get(ENV, "DBG_DT", lexplicit ? "0.5" : "0.19"))
+    tend = parse(Float64, get(ENV, "DBG_TEND", "1000.0"))
 
     inputs = Dict(
         #---------------------------------------------------------------------------
@@ -118,7 +154,7 @@ function user_inputs()
         # The heartbeat is also the timing instrument: it reports s/step
         # measured over the interval since the PREVIOUS heartbeat, so after the
         # first few steps it is a steady-state rate with the JIT excluded.
-        :diagnostics_at_times => (0:50:tend),
+        :diagnostics_at_times => (0:100:tend),
         :lstep_heartbeat      => true,
         :lsource              => true,
         :restart_time         => 1.0e7,
@@ -138,24 +174,33 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters
         #
-        # A small constant artificial viscosity keeps the bubble edge smooth on
-        # a mesh this coarse (16 points across the bubble diameter). The value
-        # is CompEuler/theta's 125 scaled by the ratio of minimum LGL gaps,
-        # 21.6/172.7 -- that case is the same benchmark on a 10 km domain.
-        # It is small enough not to bind Δt: the parabolic limit here is ~0.5 s
-        # against the 0.1 s the acoustic terms allow.
+        # CompEuler/theta's viscosity, unscaled, because this is now theta's
+        # domain, theta's resolution and theta's bubble -- see initialize.jl.
+        #
+        # It was previously 15, theta's 125 scaled by the ratio of minimum LGL
+        # gaps (21.6/172.7) for the old 1 km domain. Scaling μ that way keeps
+        # the CELL Reynolds number fixed, which is the right thing for keeping
+        # a bubble edge smooth, but it does NOT keep the solution looking the
+        # same: how diffused the bubble looks is set by sqrt(μ t)/r0, and
+        # shrinking r0 by 8x while scaling μ by 8x moves that ratio from
+        # theta's 0.18 to 0.41. Same-domain, same-μ removes the question.
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :visc_model           => AV(),
-        :μ                    => [0.0, 15.0, 15.0, 15.0, 15.0],
+        :μ                    => [0.0, 125.0, 125.0, 125.0, 125.0],
         :energy_equation      => "theta",
         #---------------------------------------------------------------------------
-        # Mesh
+        # Mesh -- theta's 10 km box at theta's resolution, one element thick.
         #
-        # Regenerate with:  gmsh -3 problems/CompEuler/rtb_hevi/rtb_8x1x24.geo
+        # Regenerate with:  gmsh -3 problems/CompEuler/rtb_hevi/rtb_10x1x10.geo
+        #
+        # rtb_8x1x24.msh (1 km box, Δz 3x finer than Δx) is kept alongside for
+        # the HEVI PERFORMANCE claim, which needs an anisotropic mesh. This one
+        # is isotropic and exists for CORRECTNESS: explicit here must reproduce
+        # the 2D theta answer.
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/CompEuler/rtb_hevi/rtb_8x1x24.msh",
+        :gmsh_filename        => "./problems/CompEuler/rtb_hevi/rtb_10x1x10.msh",
         :lwarp                => false,
         :lstretch             => false,
         #---------------------------------------------------------------------------
