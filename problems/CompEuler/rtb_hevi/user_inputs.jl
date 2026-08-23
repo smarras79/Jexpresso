@@ -59,7 +59,43 @@ function user_inputs()
         # case documents them. See src/kernel/solvers/hevi/README.md.
         #---------------------------------------------------------------------------
         :lcfl_report          => true,   # print the stability table at startup
-        :hevi_verify          => true,   # setup self-check; cheap, leave it on
+        :hevi_verify          => parse(Bool, get(ENV,"DBG_VERIFY","true")),   # setup self-check; cheap, leave it on
+        #-----------------------------------------------------------------------
+        # LINEARISATION OF THE IMPLICIT OPERATOR -- the switch, and why this
+        # deck picks :PS.
+        #
+        #   :RS  coefficients frozen at the reference state qe for the whole run
+        #   :PS  coefficients refreshed from the solution every
+        #        :hevi_update_freq steps, then refactorised
+        #
+        # Giraldo, de Braganca Alves, Kelly, Kang & Reinecke (arXiv:2311.11425)
+        # time three HEVI variants in NUMA -- a spectral element code, so the
+        # comparison transfers -- and find LINEAR HEVI fastest by a wide margin:
+        # 5x NHEVI-LU and 10x NHEVI-GMRES, with the second- and third-order ARK
+        # pairs the best of the five they test. This code is already linear
+        # HEVI, so that result is a result FOR this scheme, not an argument to
+        # change it. :PS is the sub-variant they recommend, refreshed every five
+        # steps.
+        #
+        # THIS DECK USES :RS ANYWAY, because on THIS case :PS is measurably
+        # worse. Measured, 1 rank, tend = 100 s:
+        #
+        #   :RS   0.207 s/step    max|u| = 2.6760e+00
+        #   :PS   0.233 s/step    max|u| = 2.6760e+00     +12.6% for nothing
+        #
+        # and with the stability guard off both are still stable at Δt = 0.45,
+        # so :PS buys no step size either. That is what should be expected here:
+        # beta = gamma p/(rho theta) and thetabar barely move for a 2 K bubble
+        # on a 300 K background, so refreshing them costs a refactorisation and
+        # recovers a coefficient that was never stale.
+        #
+        # :PS earns its cost when the solution departs far from any fixed
+        # reference state -- their 100-day baroclinic instability, real data, or
+        # a whole-atmosphere run with large day/night temperature swings. Switch
+        # with DBG_LIN=PS or by editing the line below.
+        #-----------------------------------------------------------------------
+        :hevi_linearization   => Symbol(get(ENV, "DBG_LIN", "RS")),
+        :hevi_update_freq     => parse(Int, get(ENV, "DBG_UPDFREQ", "5")),
         :hevi_wall_flux       => true,   # zero implicit vertical mass flux at floor/lid
         #---------------------------------------------------------------------------
         # Integration and quadrature properties

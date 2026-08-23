@@ -196,6 +196,26 @@ region ~130× smaller. This case shipped on ARS343 at Δt = 0.03 and amplified
 presented as a blow-up at a fixed *model* time, nearly independent of Δt, that
 moved with the rank count.
 
+> **A note on ARS343 and the literature.** Giraldo et al. (2023) report
+> ARS(3,4,3) among their *fastest* integrators, which looks like a flat
+> contradiction of the table above. Both are right. Mapping `|R|` pointwise
+> shows ARS343 has a narrow unstable strip near the apex and is heavily damped
+> beyond it:
+>
+> ```
+> zE\zI      0.0     0.5     2.0     5.0    20.0
+>  0.50   0.9999  1.0040  0.8918  0.5072  0.1066
+>  1.70   0.8865  0.9912  1.2649  0.8605  0.2733
+> ```
+>
+> That is the "wedge" shape of their §6, where the explicit region grows with
+> the implicit step. They run at a stiffness ratio around 10 **with 4th-order
+> hyperdiffusion applied at every stage**, which damps that strip away. This
+> code runs at ratio 2–5 with a constant μ (h² damping, not h⁴), so the strip
+> survives — and it did, at 0.79 %/s. `ark_joint_amplification` is a
+> purely imaginary-axis analysis and is therefore **conservative by
+> construction**: it is the undamped answer.
+
 **Judge a tableau by `ark_joint_amplification`, never by the explicit radius.**
 A check that samples only `z_I = 0` passes ARS343. `test/hevi/test_joint_stability.jl`
 pins exactly that trap.
@@ -356,13 +376,61 @@ implemented.
 
 ---
 
+## 7b. Linearisation: LHEVI-RS vs LHEVI-PS
+
+The implicit operator's coefficients — `beta = dp/d(rho theta)` and `thetabar`
+— have to be evaluated somewhere. Two choices, one deck switch:
+
+```julia
+:hevi_linearization => :RS,   # default: frozen at the reference state qe
+:hevi_linearization => :PS,   # refreshed from the solution, then refactorised
+:hevi_update_freq   => 5,     # steps between refreshes (:PS only)
+```
+
+**What `:PS` changes, and what it deliberately does not.** The operator's
+stiffness-removing power lives entirely in its coefficients: `f_imp(u) =
+A(u - qe)` has Jacobian `A` whatever is subtracted, so how well the split
+removes the vertical acoustic term depends on `A` alone — the offset cancels in
+`f_exp = rhs! - f_imp`. So `:PS` refreshes the coefficients and keeps measuring
+the deviation from `qe`.
+
+That is a deliberate departure from Giraldo et al., who linearise about the
+previous solution outright. Keeping `qe` as the origin costs nothing in
+stiffness and preserves a property their form gives up: `A` acts on `(u - qe)`,
+so `f_imp(qe) = 0` **exactly**, `qe` stays an exact steady state of the implicit
+half, and whatever discrete hydrostatic imbalance the code has stays entirely
+inside the explicit part. Their motivation for the previous-solution form — that
+a balanced reference state may not exist for real data, or for whole-atmosphere
+runs with large day/night swings — does not apply to a deck that always
+defines `qe`.
+
+**Measured on `rtb_hevi`** (1 rank, tend = 100 s):
+
+| mode | s/step | max\|u\| at t=100 |
+|---|---|---|
+| `:RS` | **0.207** | 2.6760e+00 |
+| `:PS` | 0.233 (+12.6%) | 2.6760e+00 |
+
+Identical answer, 12.6% more expensive, and with the stability guard off both
+are still stable at Δt = 0.45 — so `:PS` buys no step size either. Expected:
+`beta` and `thetabar` barely move for a 2 K bubble on a 300 K background, so
+refreshing them costs a refactorisation and recovers a coefficient that was
+never stale. **`rtb_hevi` therefore ships `:RS`.**
+
+`:PS` earns its cost when the solution departs far from any fixed reference
+state — a 100-day baroclinic instability, real data, or a whole-atmosphere run.
+
+---
+
 ## 8. Deck options
 
 ```julia
 :ode_solver     => HEVI_ARK(:ARS232),   # instead of CarpenterKennedy2N54()
 :Δt             => 0.19,
 
-:hevi_verify    => true,        # setup self-check + stability guard (default)
+:hevi_verify        => true,     # setup self-check + stability guard (default)
+:hevi_linearization => :RS,     # :RS (default) or :PS -- see 7b
+:hevi_update_freq   => 5,       # steps between refreshes (:PS only)
 :hevi_wall_flux => true,        # zero implicit vertical mass flux at floor/lid
 :hevi_vars      => [1,4,5],     # override the implicit variable set
 :lcfl_report    => true,        # print the stability table at startup
@@ -416,6 +484,19 @@ the originals before citing them in a paper.
   compressible Euler equations in a spectral-element atmospheric model,
   including the choice to linearise the implicit operator about the reference
   state so it is affine-free.
+* **Giraldo, F. X., de Bragança Alves, F. A. V., Kelly, J. F., Kang, S. &
+  Reinecke, P. A. (2023).** *A Performance Study of Horizontally Explicit
+  Vertically Implicit (HEVI) Time-Integrators for Non-Hydrostatic Atmospheric
+  Models.* arXiv:2311.11425.
+  — Times three HEVI variants in NUMA (a spectral element code): NHEVI-GMRES,
+  NHEVI-LU and **LHEVI**. LHEVI wins by a wide margin — 5× NHEVI-LU, 10×
+  NHEVI-GMRES — with the 2nd/3rd-order ARK pairs fastest. Their Eq. (47),
+  `{S(q) - L(q)}_EX + [L(q)]_IM`, is the split implemented here, and their
+  banded bandwidth `kl = ku = nvar(Nζ+1) - 1` is the one this code uses. Source
+  of the `:PS` variant in §7b, and of the caution that their §6 stability
+  analysis is run WITH 4th-order hyperdiffusion at every stage — which is why
+  their ARS(3,4,3) result and the ARS343 verdict in §4.2 are both correct (see
+  the note there).
 * **Weller, H., Lock, S.-J. & Wood, N. (2013).** *Runge–Kutta IMEX schemes for
   the horizontally explicit/vertically implicit (HEVI) solution of wave
   equations.* Journal of Computational Physics **252**, 365–381.

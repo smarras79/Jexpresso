@@ -211,6 +211,28 @@ anything but a tableau problem: it presented as a blow-up at a fixed
 count.
 
 \begin{quote}
+\textbf{A note on ARS343 and the literature.} Giraldo et al.\ (2023) report
+ARS(3,4,3) among their \emph{fastest} integrators, which looks like a flat
+contradiction of the table above. Both are right. Mapping $|R|$ pointwise shows
+ARS343 has a narrow unstable strip near the apex and is heavily damped beyond
+it:
+\begin{center}\ttfamily\small
+\begin{tabular}{rrrrrr}
+zE$\backslash$zI & 0.0 & 0.5 & 2.0 & 5.0 & 20.0\\
+0.50 & 0.9999 & 1.0040 & 0.8918 & 0.5072 & 0.1066\\
+1.70 & 0.8865 & 0.9912 & 1.2649 & 0.8605 & 0.2733\\
+\end{tabular}
+\end{center}
+That is the ``wedge'' shape of their \S6, where the explicit region grows with
+the implicit step. They run at a stiffness ratio around 10 \textbf{with
+fourth-order hyperdiffusion applied at every stage}, which damps that strip
+away. This code runs at ratio 2--5 with a constant $\mu$ ($h^2$ damping, not
+$h^4$), so the strip survives --- and it did, at $0.79\,\%$/s.
+\texttt{ark\_joint\_amplification} is a purely imaginary-axis analysis and is
+therefore \textbf{conservative by construction}: it is the undamped answer.
+\end{quote}
+
+\begin{quote}
 \textbf{Judge a tableau by \eqref{eq:joint}, never by the explicit radius.}
 A check sampling only $z_I=0$ passes ARS343.
 \texttt{test/hevi/test\_joint\_stability.jl} pins exactly that trap.
@@ -385,6 +407,53 @@ implemented.
 \end{quote}
 
 %======================================================================
+\section{Linearisation: LHEVI-RS vs LHEVI-PS}\label{sec:linmode}
+The implicit operator's coefficients --- $\beta = \partial p/\partial(\rho\theta)$
+and $\bar\theta$ --- have to be evaluated somewhere. Two choices, one switch:
+\begin{lstlisting}
+:hevi_linearization => :RS,   # default: frozen at the reference state qe
+:hevi_linearization => :PS,   # refreshed from the solution, then refactorised
+:hevi_update_freq   => 5,     # steps between refreshes (:PS only)
+\end{lstlisting}
+
+\paragraph{What \texttt{:PS} changes, and what it deliberately does not.}
+The operator's stiffness-removing power lives entirely in its coefficients:
+$f_{\mathrm{imp}}(u) = A(u-\qe)$ has Jacobian $A$ whatever is subtracted, so how
+well the split removes the vertical acoustic term depends on $A$ alone --- the
+offset cancels in $\fexp = \texttt{rhs!} - \fimp$. So \texttt{:PS} refreshes the
+coefficients and keeps measuring the deviation from $\qe$.
+
+That is a deliberate departure from Giraldo et al., who linearise about the
+previous solution outright. Keeping $\qe$ as the origin costs nothing in
+stiffness and preserves a property their form gives up: $A$ acts on $(u-\qe)$,
+so $\fimp(\qe)=0$ \emph{exactly}, $\qe$ stays an exact steady state of the
+implicit half, and whatever discrete hydrostatic imbalance the code has stays
+entirely inside the explicit part. Their motivation for the previous-solution
+form --- that a balanced reference state may not exist for real data, or for
+whole-atmosphere runs with large day/night swings --- does not apply to a deck
+that always defines $\qe$.
+
+\paragraph{Measured on \texttt{rtb\_hevi}} (1 rank, tend $=100$\,s):
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+mode & s/step & $\max|u|$ at $t=100$\\
+\midrule
+\texttt{:RS} & \textbf{0.207} & 2.6760e+00\\
+\texttt{:PS} & 0.233 ($+12.6\%$) & 2.6760e+00\\
+\bottomrule
+\end{tabular}
+\end{center}
+Identical answer, $12.6\%$ more expensive, and with the stability guard off both
+are still stable at $\Delta t = 0.45$ --- so \texttt{:PS} buys no step size
+either. Expected: $\beta$ and $\bar\theta$ barely move for a 2\,K bubble on a
+300\,K background, so refreshing them costs a refactorisation and recovers a
+coefficient that was never stale. \textbf{\texttt{rtb\_hevi} therefore ships
+\texttt{:RS}.} \texttt{:PS} earns its cost when the solution departs far from
+any fixed reference state --- a 100-day baroclinic instability, real data, or a
+whole-atmosphere run.
+
+%======================================================================
 \section{Deck options}
 \begin{lstlisting}
 :ode_solver     => HEVI_ARK(:ARS232),   # instead of CarpenterKennedy2N54()
@@ -442,6 +511,17 @@ the originals before citing them in a paper.
   \textbf{35}(5), B1162--B1194. --- The closest antecedent of this
   implementation, including linearising the implicit operator about the
   reference state so it is affine-free.
+\item \textbf{Giraldo, F. X., de Bragan\c{c}a Alves, F. A. V., Kelly, J. F.,
+  Kang, S. \& Reinecke, P. A. (2023).} \emph{A Performance Study of
+  Horizontally Explicit Vertically Implicit (HEVI) Time-Integrators for
+  Non-Hydrostatic Atmospheric Models.} arXiv:2311.11425.
+  --- Times three HEVI variants in NUMA (a spectral element code):
+  NHEVI-GMRES, NHEVI-LU and \textbf{LHEVI}. LHEVI wins by a wide margin ---
+  $5\times$ NHEVI-LU, $10\times$ NHEVI-GMRES --- with the second/third-order
+  ARK pairs fastest. Their Eq.~(47),
+  $\{S(q)-L(q)\}_{EX} + [L(q)]_{IM}$, is the split implemented here, and their
+  banded bandwidth $k_l = k_u = n_{\mathrm{var}}(N_\zeta+1)-1$ is the one this
+  code uses. Source of the \texttt{:PS} variant in \S\ref{sec:linmode}.
 \item \textbf{Weller, H., Lock, S.-J. \& Wood, N. (2013).} \emph{Runge--Kutta
   IMEX schemes for the horizontally explicit/vertically implicit (HEVI)
   solution of wave equations.} J.\ Comput.\ Phys.\ \textbf{252}, 365--381.

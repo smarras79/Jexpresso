@@ -461,6 +461,20 @@ function _ODEC.perform_step!(integrator, cache::HEVI_ARK_Cache, repeat_step = fa
     hv    = p.hevi
 
     HEVI_STEP_COUNT[] += 1
+
+    # LHEVI-PS: refresh the operator's coefficients from the previous solution
+    # and refactorise, every `update_freq` steps. Done HERE, before the stage
+    # loop, so the whole step sees one consistent operator -- refreshing
+    # mid-step would put different stages on different implicit operators and
+    # break the ARK order conditions.
+    #
+    # Step 1 is skipped: the operator was just built from qe at setup, and the
+    # state has not moved yet.
+    if hv.linearization === :PS && HEVI_STEP_COUNT[] > 1 &&
+       (HEVI_STEP_COUNT[] - 1) % hv.update_freq == 0
+        hevi_relinearize!(p, hv, uprev)
+    end
+
     tracing = HEVI_TRACE[] && HEVI_STEP_COUNT[] <= HEVI_TRACE_STEPS[]
     tracing && hevi_trace("step ", HEVI_STEP_COUNT[], " begin: t=", t, " dt=", dt)
     _tstep = hevi_tic()

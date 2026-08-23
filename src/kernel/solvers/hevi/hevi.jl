@@ -62,6 +62,14 @@ struct HEVICache{OPT, CCT, FAT, F1, F2}
     solve!::F2
     tableau::Symbol
     gdt::Float64
+    # :RS -- linearise once, about the deck's reference state qe (the default,
+    #        and what this code did before the switch existed).
+    # :PS -- re-linearise about the PREVIOUS SOLUTION every `update_freq`
+    #        steps, following Giraldo et al. (arXiv:2311.11425), whose timings
+    #        make LHEVI the fastest of the HEVI variants and who refresh every
+    #        five steps by default.
+    linearization::Symbol
+    update_freq::Int
 end
 
 """
@@ -71,6 +79,53 @@ The `f_imp` hook. Thin wrapper so `HEVI_ARK` can call a plain function while
 the operator state travels on `p`.
 """
 hevi_fimp!(du, u, p, t) = hevi_implicit_rhs!(du, u, p, p.hevi)
+
+"""
+    hevi_relinearize!(params, hevi, u) -> hevi
+
+Recompute the implicit operator's coefficients from the state `u` and
+refactorise. This is the :PS (previous solution) half of the linearisation
+switch; :RS never calls it.
+
+Only `beta = dp/d(rho theta)` and `thetabar` move. They are what make `A` an
+approximation of the vertical Jacobian, and they drift as the solution departs
+from the reference state -- a stale `beta` leaves a residual vertical acoustic
+term in the explicit part, which shows up as a step size that will not go where
+the stability analysis says it should, with nothing in the output to explain it.
+
+`u` holds TOTAL variables (build_hevi refuses PERT), so the thermodynamics can
+be read straight off it.
+
+The band is re-extracted by the same probing path used at setup, so the matrix
+stays exactly the operator rather than drifting into an approximation of it.
+"""
+function hevi_relinearize!(params, hevi::HEVICache, u)
+
+    op    = hevi.op
+    npoin = Int(params.mesh.npoin)
+    PhysConst = PhysicalConst{Float64}()
+    γ = PhysConst.γ
+
+    ρoff  = 0 * npoin
+    ρθoff = 4 * npoin
+
+    @inbounds for ip = 1:npoin
+        ρ  = u[ρoff + ip]
+        ρθ = u[ρθoff + ip]
+        if ρ > 0 && ρθ > 0
+            p = perfectGasLaw_ρθtoP(PhysConst, ρ, ρθ / ρ)
+            op.beta[ip]     = γ * p / ρθ
+            op.thetabar[ip] = ρθ / ρ
+        end
+        # A non-positive rho or rho*theta means the state is already broken;
+        # keeping the previous coefficients there is strictly better than
+        # writing a NaN into the operator and losing the error message.
+    end
+
+    refactorize!(hevi.fac, params, op, hevi.cc, hevi.topo, hevi.gdt)
+    return hevi
+end
+
 
 """
     hevi_enabled(inputs) -> Bool
@@ -593,6 +648,37 @@ function build_hevi(params, inputs)
     Δt  = Float64(Float32(inputs[:Δt] / (2.0^ad_lvl_max)))
     gdt = tab.γ * Δt
 
+    # LINEARISATION MODE.
+    #
+    # :RS keeps the operator's coefficients frozen at the deck's reference
+    # state qe for the whole run. :PS recomputes them from the current solution
+    # every :hevi_update_freq steps and refactorises.
+    #
+    # WHAT :PS CHANGES, AND WHAT IT DELIBERATELY DOES NOT. The operator's
+    # stiffness-removing power lives entirely in its COEFFICIENTS (beta and
+    # thetabar): f_imp(u) = A(u - qe) has Jacobian A regardless of what is
+    # subtracted, so how well the split removes the vertical acoustic term
+    # depends on A alone. The offset cancels in f_exp = rhs! - f_imp. So :PS
+    # refreshes the coefficients and keeps measuring the deviation from qe.
+    #
+    # That is a deliberate departure from Giraldo et al., who linearise about
+    # the previous solution outright. Keeping qe as the origin costs nothing in
+    # stiffness and preserves a property their form gives up: A acts on
+    # (u - qe), so f_imp(qe) = 0 EXACTLY, the reference state stays an exact
+    # steady state of the implicit half, and whatever discrete hydrostatic
+    # imbalance the code has stays entirely inside the explicit part. Their
+    # motivation for the previous-solution form -- that a balanced reference
+    # state may not exist for real data or for whole-atmosphere runs with large
+    # day/night swings -- does not apply to a deck that always defines qe.
+    lin_mode = Symbol(get(inputs, :hevi_linearization, :RS))
+    lin_mode in (:RS, :PS) ||
+        error("HEVI: :hevi_linearization must be :RS (reference state, the default) ",
+              "or :PS (previous solution); got $lin_mode.")
+    update_freq = Int(get(inputs, :hevi_update_freq, 5))
+    lin_mode === :PS && update_freq < 1 &&
+        error("HEVI: :hevi_update_freq must be >= 1 when :hevi_linearization => :PS; ",
+              "got $update_freq.")
+
     hevi_trace_init!()
     get(inputs, :hevi_monitor, false) == true && (HEVI_MONITOR[] = true)
     hevi_trace("build_hevi: start")
@@ -699,7 +785,8 @@ function build_hevi(params, inputs)
     end
 
     hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys,
-                (jamp, jdt, rate_e, rate_i), (time_ns() - t0) / 1e9)
+                (jamp, jdt, rate_e, rate_i), (time_ns() - t0) / 1e9;
+                lin = lin_mode, ufreq = update_freq)
 
     if !isnan(jamp) && jamp > 1 + 1.0e-6
         rate = log(jamp) / Δt
@@ -717,7 +804,8 @@ function build_hevi(params, inputs)
     end
 
 
-    return HEVICache(topo, op, cc, fac, hevi_fimp!, hevi_column_solve!, tab.name, gdt)
+    return HEVICache(topo, op, cc, fac, hevi_fimp!, hevi_column_solve!, tab.name, gdt,
+                     lin_mode, update_freq)
 end
 
 """
@@ -728,7 +816,8 @@ whether the run will behave: the fraction of columns that had to be split
 across ranks (communication volume per stage) and the memory the banded
 factors take (which is per rank, and there are 64 ranks on a node).
 """
-function hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys, joint, secs)
+function hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys, joint, secs;
+                     lin::Symbol = :RS, ufreq::Int = 0)
 
     comm = cc.comm
     rank = MPI.Comm_rank(comm)
@@ -760,6 +849,10 @@ function hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys
             cc.nmoved_global, cc.nmoved_global * op.nimp * 8 / 1024^2)
     @printf(" │  banded factors: kl=ku=%d, n=%d per column, %.1f MB on the busiest rank\n",
             fac.kl, fac.n, bytes_mx / 1024^2)
+    @printf(" │  linearisation: %s\n",
+            lin === :PS ?
+              "LHEVI-PS -- coefficients refreshed from the solution every $(ufreq) steps" :
+              "LHEVI-RS -- coefficients frozen at the reference state qe")
     @printf(" │  γΔt = %.6g   (γ = %.6g, Δt = %.6g); factorised once\n", fac.gdt[], tab.γ, Δt)
     if isnan(verr)
         println(" │  self-check: SKIPPED (:hevi_verify => false)")
