@@ -51,23 +51,52 @@ anisotropy                              1.92
 ```
 
 Same polynomial order in all three directions, so the LGL clustering factor
-cancels and the ratio is just `Δx/Δz`. **The honest expectation is a factor of
-about two on Δt.** It is not the 10–30× the same split buys on a mesh with
-`Δx ≫ Δz`; that ratio does not exist here.
+cancels and the ratio is just `Δx/Δz`. Removing the vertical acoustic term
+halves the acoustic rate — and it is not the 10–30× the same split buys on a
+mesh with `Δx ≫ Δz`; that ratio does not exist here.
 
-Wall-clock is a little better than 2× because ARS343 costs 4 RHS evaluations
-per step against `CarpenterKennedy2N54`'s 5, and its explicit half has a
-slightly better stability radius per unit work:
+**But halving the rate does not double Δt, because the tableau gives most of it
+back.** This section previously claimed "about two on Δt" and "2.0–2.4× end to
+end". Those figures were computed for `ARS343`, whose explicit half has an
+imaginary radius of 2.83. The joint-stability analysis later ruled ARS343 out
+for HEVI (see *Choosing a tableau* in `ark.jl`) and the default became
+`ARS232`, whose radius is 1.732 — and the step size went with it. Measured on
+this mesh with `ark_joint_dt_max`:
 
 ```
-                     imag. radius   RHS/step   radius per RHS
-CarpenterKennedy2N54     3.34           5           0.67
-ARS343 (explicit half)   2.83           4           0.71
+                      rate seen    imag. radius   RHS/step   Δt
+CarpenterKennedy2N54   145.6 /s        3.34          5        0.0229 s
+HEVI, ARS232            76.3 /s        1.732         3        0.0202 s
+HEVI, ARS443            76.3 /s        1.570         4        0.0206 s
 ```
 
-So roughly **2.0–2.4× end to end**, against the *stable* explicit Δt. If the
-run is currently at Δt = 0.02 and the CFL report says that is marginal, the
-comparison to make is against the Δt = 0.01 that is actually safe.
+**HEVI's step on this mesh is about 0.9× the explicit one, not 2×.** Halving
+the rate and roughly halving the stability radius very nearly cancel.
+
+What is left is the cheaper step — 3 RHS evaluations plus 3 operator
+applications and 2 column solves, against `CarpenterKennedy2N54`'s 5 RHS — and
+that is where the whole gain now lives:
+
+```
+cost per simulated second, in rhs!-equivalents, a = A_vert/T_rhs
+  a       explicit    HEVI     ratio
+  0.47      223        268     0.83x   (rtb-like: a bare inviscid rhs!)
+  0.25      223        212     1.05x
+  0.12      223        179     1.25x   (plausible for SMAG + wall model)
+  0.06      223        164     1.36x
+```
+
+So **roughly 1.0–1.35× end to end**, not 2.0–2.4×, and it depends on how
+expensive your `rhs!` is relative to the vertical acoustic operator. HEVI is
+*slower than explicit* on a case with a cheap RHS. `JEXPRESSO_HEVI_PROFILE=1`
+prints `t_rhs` and `t_fimp` per call, so `a` is one run away.
+
+> **A caveat on the explicit baseline.** `CarpenterKennedy2N54`'s imaginary
+> radius is quoted as 3.34 in `ark.jl` and 3.95 in `docs/hevi/hevi.md`, and the
+> ratio above moves from 1.25× to 1.03× between them. The LESICP2 deck runs
+> Δt = 0.02 against a computed rate of 145.6 /s, i.e. an effective 2.9 — so it
+> has margin and the true baseline is somewhere in that band. Treat the HEVI
+> gain on an isotropic-ish mesh as "order 1, measure it", not as a number.
 
 ### Getting past 2× on this grid
 
@@ -104,8 +133,8 @@ attacks the same ratio from the mesh side and compounds with HEVI.
 ## Turning it on
 
 ```julia
-:ode_solver           => HEVI_ARK(:ARS343),   # was CarpenterKennedy2N54()
-:Δt                   => 0.04,                # ~2x the explicit limit
+:ode_solver           => HEVI_ARK(:ARS232),   # was CarpenterKennedy2N54()
+:Δt                   => 0.02,                # measure it -- see above
 :ode_adaptive_solver  => false,               # already the default
 ```
 
@@ -134,8 +163,13 @@ per rank and the run deadlocks rather than failing. (This is a property of
 the code as it stands, not of HEVI: the same is true of the explicit solvers,
 which is why `:ode_adaptive_solver` already defaults to `false`.)
 
-Tableaux: `:ARS111` `:ARS121` `:ARS122` `:ARS222` `:ARS232` `:ARS343`
-(default) `:ARS443`.
+Tableaux: `:ARS111` `:ARS121` `:ARS122` `:ARS222` `:ARS232` (default)
+`:ARS343` `:ARS443`.
+
+**`:ARS343` is refused for HEVI** by the startup guard — see *Choosing a
+tableau* in `ark.jl`. It is the default for `IMEX_ARK`, which is not a
+contradiction: the two splits reach different sets of `(zE, zI)`. See
+`README_IMEX3D.md`.
 
 **`:ARS222` is a trap.** It is the cheapest per step — 2 RHS — and its
 explicit half has the stability polynomial of Heun's method, which is
@@ -462,7 +496,7 @@ which subtracts the base state analytically; `CompEuler/theta` uses that.)
 One deck, one switch at the top of `user_inputs()`:
 
 ```julia
-lexplicit = false          # HEVI_ARK(:ARS343)      -> ./output_hevi/
+lexplicit = false          # HEVI_ARK(:ARS232)      -> ./output_hevi/
 lexplicit = true           # CarpenterKennedy2N54() -> ./output_explicit/
 ```
 

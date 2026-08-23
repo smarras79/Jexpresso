@@ -7,8 +7,9 @@
  --------------------------------
  HEVI (hevi.jl) takes the VERTICAL acoustic terms implicitly. That removes one
  term from the explicit eigenvalue budget, so its gain is bounded by the grid's
- acoustic anisotropy -- about 2x on the LESICP2 target mesh, and nothing at all
- on an isotropic one. The README in this directory names the two ways past that
+ acoustic anisotropy -- and on the LESICP2 target mesh that works out at about
+ 0.9x on Δt, recovered to roughly 1.0-1.35x in wall-clock only through the
+ cheaper step. Nothing at all on an isotropic mesh. The README in this directory names the two ways past that
  ceiling: acoustic substepping (substep.jl), and
 
      "a 3D implicit acoustic solve. Removes the constraint entirely, at the
@@ -647,15 +648,9 @@ function build_imex3d(params, inputs)
     # the p4est space-filling-curve partition the assembled RHS and the mass
     # matrix pick up different ghost multiplicities at some rank-shared nodes,
     # so M^-1 K stops being skew and the acoustic operator acquires a positive
-    # real eigenvalue. A split scheme cannot survive that; see the long comment
-    # in build_hevi.
-    (get(inputs, :lxy_partition, true) == true || MPI.Comm_size(comm) == 1) ||
-        error("IMEX3D needs :lxy_partition => true on more than one rank; this deck has ",
-              "it false, which selects the p4est space-filling-curve partition. On that ",
-              "partition the assembled RHS and the mass matrix carry different ghost ",
-              "multiplicities at some rank-shared nodes, the acoustic operator stops ",
-              "being skew and grows at a few 1/s. Remove :lxy_partition from the deck ",
-              "(IMEX3D defaults it to true) or set it true.")
+    # real eigenvalue. A split scheme cannot survive that, and this one less
+    # than HEVI: nothing is left explicit to absorb a growing mode.
+    check_columnar_partition(inputs, comm, "IMEX3D")
 
     params.Minv isa AbstractVector ||
         error("IMEX3D needs a lumped (diagonal) mass matrix; this case has a dense Minv, ",

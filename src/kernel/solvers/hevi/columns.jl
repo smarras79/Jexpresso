@@ -339,6 +339,87 @@ function hevi_monitor_step!(u, p)
 end
 
 """
+    check_columnar_partition(inputs, comm, scheme)
+
+Refuse to start unless the mesh was ACTUALLY partitioned by columns. Shared by
+HEVI and IMEX3D, which are broken by the alternative in the same way.
+
+WHY THIS IS NOT SIMPLY `inputs[:lxy_partition] == true`
+-------------------------------------------------------
+Because that flag is a REQUEST, not an outcome. mesh.jl only consults it when
+there is no refinement:
+
+    if ladaptive == false && linitial_refine == false      # mesh.jl
+        partitioned_model = if inputs[:lxy_partition]
+
+so a deck carrying `:linitial_refine => true` gets p4est's space-filling-curve
+partition whatever the flag says. A guard that reads the flag alone therefore
+passes a run that is executing on the one partition these schemes cannot
+survive -- and that is not an exotic combination, it is the one a production
+deck naturally reaches, because runtime refinement is precisely how the large
+cases avoid reading a multi-million-element mesh on rank 0.
+
+WHY THE SFC PARTITION IS FATAL, AND WHY IT DOES NOT LOOK IT
+-----------------------------------------------------------
+On that partition the assembled RHS and the mass matrix pick up DIFFERENT
+ghost multiplicities at some rank-shared nodes -- measured on rtb at three
+ranks, the lumped mass exactly 1.5x its serial value at 330 nodes per rank
+where the assembled stiffness is 1.4965x -- so `M^-1 K` stops being skew and
+the implicit operator acquires a positive real eigenvalue: +5.07e-02 relative
+at four ranks, a growth rate of +3.5 1/s.
+
+Nothing already in place catches that. `hevi_verify_band` compares the matrix
+against the operator it was probed from and passes. `hevi_verify_solve`
+inverts the matrix it was just handed and passes. `hevi_column_spectrum`
+reports max(Re)/max|Im| = 5.07e-02, which is UNDER the 0.1 the report warns
+at -- deliberately, because a few percent is expected on more than one rank.
+rtb_hevi died at t ~ 12 with every self-check green. That is why this is a
+hard refusal at setup and not a warning.
+
+THE WAY OUT is to move the refinement offline: generate the refined mesh as a
+single `.msh` and read it with `:linitial_refine => false` and
+`:lxy_partition => true`, which costs one serial read and broadcast on rank 0
+at startup. An explicit integrator is unaffected either way and keeps p4est.
+
+`:ladapt` is refused separately by both schemes, for the stronger reason that
+adaptation invalidates the column topology mid-run; it is not repeated here.
+"""
+function check_columnar_partition(inputs, comm, scheme::AbstractString)
+
+    # One rank is one partition: there are no rank-shared nodes for the
+    # multiplicities to disagree at, and no columns to split.
+    MPI.Comm_size(comm) > 1 || return nothing
+
+    get(inputs, :lxy_partition, true) == true ||
+        error(scheme, " needs :lxy_partition => true on more than one rank; this deck ",
+              "has it false, which selects the p4est space-filling-curve partition. On ",
+              "that partition the assembled RHS and the mass matrix carry different ",
+              "ghost multiplicities at some rank-shared nodes, the implicit operator ",
+              "stops being skew, and the run grows at a few 1/s -- rtb_hevi diverges at ",
+              "t ~ 12 with every self-check still passing. Remove :lxy_partition from ",
+              "the deck (", scheme, " defaults it to true) or set it true. A fully ",
+              "explicit run is unaffected and keeps p4est.")
+
+    # The flag is true, but does the mesh code look at it?
+    get(inputs, :linitial_refine, false) == true &&
+        error(scheme, " cannot run with :linitial_refine => true on more than one rank, ",
+              "even though :lxy_partition is set. mesh.jl consults :lxy_partition ONLY ",
+              "when :linitial_refine and :ladapt are both false, so with refinement on ",
+              "the decomposition comes from p4est's space-filling curve regardless of ",
+              "the flag -- and that is the partition on which the assembled RHS and the ",
+              "mass matrix carry different ghost multiplicities, the implicit operator ",
+              "acquires a positive real eigenvalue (+5.07e-02 relative at four ranks, ",
+              "+3.5 1/s), and the run diverges slowly with every self-check still ",
+              "passing. Refine the mesh OFFLINE instead: write the refined grid as a ",
+              "single .msh, point :gmsh_filename at it, and set :linitial_refine => ",
+              "false with :lxy_partition => true. That trades runtime refinement for ",
+              "one serial read and broadcast on rank 0 at startup. A fully explicit ",
+              "integrator is unaffected and keeps the p4est path.")
+
+    return nothing
+end
+
+"""
     ColumnTopology
 
 The rank-local view of the global column structure.

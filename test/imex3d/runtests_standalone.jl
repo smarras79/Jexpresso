@@ -112,6 +112,33 @@ scal2 = MPI.Allreduce(maximum(abs, Rn2),        MPI.MAX, COMM)
 say(@sprintf("  and does bite on a field with normal momentum at the wall: %.2e (rel %.2e)",
              ddiff, ddiff / scal2))
 
+#--- 2b. the columnar-partition guard ----------------------------------------
+# Shared by HEVI and IMEX3D, and the reason it is tested here rather than
+# trusted: it used to read `:lxy_partition` alone, which is a REQUEST the mesh
+# code ignores whenever refinement is on. A deck with `:linitial_refine =>
+# true` then ran on p4est's space-filling-curve partition -- where the
+# operator is not skew and the solution grows at a few 1/s -- with the guard
+# and every self-check green. See check_columnar_partition in columns.jl.
+let
+    cases = ((:defaults,           Dict{Symbol,Any}(),                                          false),
+             (:flag_false,         Dict{Symbol,Any}(:lxy_partition => false),                   true),
+             (:flag_true_refine,   Dict{Symbol,Any}(:lxy_partition => true,
+                                                    :linitial_refine => true),                  true),
+             (:refine_flag_absent, Dict{Symbol,Any}(:linitial_refine => true),                  true))
+    for (name, deck, bad) in cases, scheme in ("HEVI", "IMEX3D")
+        threw = try
+            check_columnar_partition(deck, COMM, scheme); false
+        catch
+            true
+        end
+        # Serial is a single partition with no rank-shared nodes, so every
+        # configuration is legitimate there; the guard must not fire.
+        @test threw == (bad && NR > 1)
+    end
+    say(NR > 1 ? "  partition guard: refuses :lxy_partition=>false AND :linitial_refine=>true" :
+                 "  partition guard: serial, every configuration allowed (correct)")
+end
+
 #--- 3. the distributed inner product ----------------------------------------
 # The one quantity here with a known exact answer: <1, 1> is the number of
 # GLOBAL degrees of freedom, whatever the rank count. Counting each rank's
