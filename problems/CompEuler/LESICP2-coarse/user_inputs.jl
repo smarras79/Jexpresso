@@ -6,14 +6,14 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.01,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 10.0,
 	:lrestart             => false,
 	#:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",
 	:restart_time         => 9000.0,
 	#:diagnostics_at_times => (11500.0:10.0:15000.0),
 	#:diagnostics_at_times => (0.0:50.0:10800.0),
-	:diagnostics_at_times => (100:100:1000..., 1000:1000:9000.0...,10800),
+	:diagnostics_at_times => (10..., 100:100:1000..., 1000:1000:9000.0...,10800),
 	:lsource              => true,
 	#:lsponge              => true,
 	#:zsponge              => 2500.0, hard coded in user_source.jl
@@ -99,13 +99,12 @@ function user_inputs()
         :lstretch => true,
         :stretch_factor => 1.15,
         :stretch_type => "two_block uniformish", #strong means that the top is constrained
-        :first_zelement_size => 10.0,
+        :first_zelement_size => 12.0,
         :zlevel_transition => 2000.0,
-        
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        :lfilter             => false,
         :mu_x                => 0.25,
         :mu_y                => 0.25,
 	:mu_z                => 0.25,
@@ -114,8 +113,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-	:output_dir          => "/scratch/smarras/smarras/output_new/coarse-LESICP2_16x4x120_6400mX1600mX5000m/",
-        #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
+	#:output_dir          => "/scratch/smarras/smarras/output_new/coarse-LESICP2_16x4x120_6400mX1600mX5000m/",
+        :output_dir          => "./output_new/LESICP_8x2x60_6400mX1600mX5000m",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
