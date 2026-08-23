@@ -7,10 +7,10 @@
  --------------------------------
  HEVI (hevi.jl) takes the VERTICAL acoustic terms implicitly. That removes one
  term from the explicit eigenvalue budget, so its gain is bounded by the grid's
- acoustic anisotropy -- and on the LESICP2 target mesh that works out at about
- 0.9x on Δt, recovered to roughly 1.0-1.35x in wall-clock only through the
- cheaper step. Nothing at all on an isotropic mesh. The README in this directory names the two ways past that
- ceiling: acoustic substepping (substep.jl), and
+ acoustic anisotropy -- on the LESICP2 target mesh about 0.9x on Δt, recovered
+ to roughly 1.0-1.35x in wall-clock only through the cheaper step, and nothing
+ at all on an isotropic mesh. The README in this directory names the two ways
+ past that ceiling: acoustic substepping (substep.jl), and
 
      "a 3D implicit acoustic solve. Removes the constraint entirely, at the
       cost of a global elliptic solve per stage."
@@ -694,8 +694,24 @@ function build_imex3d(params, inputs)
     IMEX_MONITOR_EVERY[] = max(1, Int(get(inputs, :imex_monitor_every, 50)))
     hevi_trace("build_imex3d: start")
 
-    rank == 0 && (print(" # IMEX3D setup: column topology ..."); flush(stdout))
+    # PER-PHASE WALL CLOCK, always on.
+    #
+    # Setup runs once per run, so this costs nothing, and without it "the setup
+    # is slow" is unactionable: the phases below differ by orders of magnitude
+    # in cost and in what you would do about each. On a first run most of the
+    # total is Julia compiling `hevi_apply_A!` and the banded LAPACK path
+    # against Jexpresso's real types -- that shows up as a large `operator` or
+    # `precond` figure that does NOT scale with the mesh, and the fix is a
+    # sysimage (create_Jexpresso_sysimage.jl), not a smaller problem.
+    _tlap = Ref(time())
+    function _lap()
+        t = time(); d = t - _tlap[]; _tlap[] = t; return d
+    end
+    _say(msg) = rank == 0 && (print(msg); flush(stdout))
+
+    _say(" # IMEX3D setup:")
     topo = build_column_topology(mesh, comm)
+    _say(@sprintf(" topology %.1fs", _lap()))
     hevi_trace("build_imex3d: topology done (", topo.ncol, " local columns, ",
                topo.nlev, " levels)")
 
@@ -704,10 +720,10 @@ function build_imex3d(params, inputs)
     nwall = count(wallx) + count(wally)
     nwall_g = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(nwall, MPI.SUM, comm) : nwall
 
-    rank == 0 && (print(" 3D operator ..."); flush(stdout))
     lwall = get(inputs, :imex_wall_flux, true)
     op = build_hevi_fast_operator(params, topo; lwall_flux = lwall,
                                   wallx = wallx, wally = wally)
+    _say(@sprintf(" | 3D operator %.1fs", _lap()))
 
     #-------------------------------------------------------------------------
     # The preconditioner: HEVI's vertical operator over all five equations.
@@ -733,11 +749,13 @@ function build_imex3d(params, inputs)
     # mesh warped by any route still gets all five. See IMEX3DPrecond.
     pvars = pcmode === :column ? hevi_choose_vars(params.metrics, comm) : Int[]
     if pcmode === :column
-        rank == 0 && (print(" column preconditioner ..."); flush(stdout))
         opv = build_hevi_operator(params, topo, pvars; lwall_flux = lwall,
                                   full = false)
+        hevi_trace("build_imex3d: preconditioner operator built")
         owner, own = assign_column_owners(topo, comm)
         cc  = build_column_comm(topo, owner, own, comm, length(pvars))
+        hevi_trace("build_imex3d: gather/scatter plan built (", cc.nown, " owned columns)")
+        _say(@sprintf(" | precond setup %.1fs", _lap()))
         # The spectrum has to be taken through the factorisation's hook, not
         # afterwards: `gbtrf!` overwrites AB with the LU factors, so reading the
         # band once `fac` exists would diagonalise the factors rather than the
@@ -745,12 +763,30 @@ function build_imex3d(params, inputs)
         #
         # The hook runs on EVERY rank -- hevi_column_spectrum reduces at the end
         # -- so no collective here sits behind a rank-local branch.
-        hook = verify ? ((AB, kl, ku, n) -> begin
-                   spec = hevi_column_spectrum(AB, kl, ku, n, gdt, params, topo, opv)
-                   nothing
-               end) : nothing
+        # The spectrum is a DIAGNOSTIC (is this really a hyperbolic operator?),
+        # and it costs a dense eigendecomposition of an n x n matrix per sampled
+        # column -- O(n^3) with n = nvar * nlev. At 241 levels that is 723^3 and
+        # takes under a second; at 2000 levels it is 6000^3 and takes minutes,
+        # for a number that does not change the answer. Skip it above a size
+        # where it stops being cheap, and say so rather than silently pausing.
+        nspec = length(pvars) * topo.nlev
+        specmax = Int(get(inputs, :imex_spectrum_maxdim, 1500))
+        hook = if verify && nspec <= specmax
+            (AB, kl, ku, n) -> begin
+                spec = hevi_column_spectrum(AB, kl, ku, n, gdt, params, topo, opv)
+                nothing
+            end
+        else
+            verify && rank == 0 &&
+                print(" (column spectrum skipped: ", nspec, " x ", nspec,
+                      " eigensolve exceeds :imex_spectrum_maxdim = ", specmax, ")")
+            nothing
+        end
+        hevi_trace("build_imex3d: probing the operator (", 2*(Int(mesh.ngl)-1)+1,
+                   " x ", length(pvars), " applications) and factorising")
         fac = build_column_factorization(params, opv, cc, topo, gdt; verify_hook = hook)
         pc  = IMEX3DPrecond(opv, cc, fac, topo, copy(pvars))
+        _say(@sprintf(" | factorise %.1fs", _lap()))
     end
 
     #-------------------------------------------------------------------------
@@ -779,7 +815,6 @@ function build_imex3d(params, inputs)
     #-------------------------------------------------------------------------
     vfast = nothing; sres = NaN; siter = 0; ssv = NaN; wb = NaN
     if verify
-        rank == 0 && (print(" self-check ..."); flush(stdout))
         # 1. the 3D operator reduces to the vertical one on a horizontally
         #    uniform field, and moves the horizontal momenta on a field that
         #    varies in x. Needs a vertical operator; reuse the preconditioner's
@@ -823,7 +858,7 @@ function build_imex3d(params, inputs)
                   "collapsed to HEVI's.")
         end
     end
-    rank == 0 && (println(" done"); flush(stdout))
+    _say(verify ? @sprintf(" | self-check %.1fs\n", _lap()) : " | self-check skipped\n")
 
     #-------------------------------------------------------------------------
     # Stability, on the wedge rather than on the rectangle.

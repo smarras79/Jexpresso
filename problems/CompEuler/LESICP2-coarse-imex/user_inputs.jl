@@ -240,6 +240,14 @@ function user_inputs()
         :imex_monitor         => parse(Bool, get(ENV, "DBG_IMEXMON", "true")),
         :imex_monitor_every   => parse(Int, get(ENV, "DBG_IMEXMONEVERY", "200")),
         :lcfl_report          => true,
+        # Per-step progress with a wall clock and an ETA to :tend, printed from
+        # rank 0 only and doing nothing collective -- so it cannot hang a large
+        # job. Effectively free (one time_ns() per step, a printf every 100),
+        # and it is the only thing that separates "still compiling" from "hung"
+        # on a first run. Also the timing instrument: the s/step it reports is
+        # measured over the interval since the PREVIOUS heartbeat, so it is a
+        # steady-state rate with the JIT excluded, which total wall time is not.
+        :lstep_heartbeat      => parse(Bool, get(ENV, "DBG_HEARTBEAT", "true")),
 	:lrestart             => false,
 	#:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",
