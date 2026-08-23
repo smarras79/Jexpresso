@@ -75,16 +75,23 @@ const HEVI_STEP_COUNT = Ref(0)
 const _HEVI_T0        = Ref(0.0)
 
 """
-    hevi_trace_init!() -> Bool
+    hevi_trace_init!(comm = nothing) -> Bool
 
-Read `JEXPRESSO_HEVI_TRACE` and start the clock. Called once from `build_hevi`.
+Read `JEXPRESSO_HEVI_TRACE` and start the clock. Called once from `build_hevi`
+and `build_imex3d`.
+
+`comm` is used only to decide which rank prints the cost breakdown. Reading the
+environment here rather than at module load matters under MPI: the variable has
+to be set in each RANK's process, and this runs after `MPI.Init`.
 """
-function hevi_trace_init!()
+function hevi_trace_init!(comm = nothing)
     on(k) = lowercase(strip(get(ENV, k, "0"))) in ("1", "true", "yes", "on")
     HEVI_TRACE[] = on("JEXPRESSO_HEVI_TRACE")
     HEVI_PROF[]  = HEVI_TRACE[] || on("JEXPRESSO_HEVI_PROFILE")
     HEVI_PROF_EVERY[] = parse(Int, get(ENV, "JEXPRESSO_HEVI_PROFILE_EVERY", "50"))
     HEVI_PROF_SKIP[]  = parse(Int, get(ENV, "JEXPRESSO_HEVI_PROFILE_SKIP", "10"))
+    HEVI_PROF_ALL[]   = on("JEXPRESSO_HEVI_PROFILE_ALLRANKS")
+    HEVI_PROF_RANK[]  = comm === nothing ? 0 : MPI.Comm_rank(comm)
     HEVI_MONITOR[]    = on("JEXPRESSO_HEVI_MONITOR")
     HEVI_STEP_COUNT[] = 0
     hevi_profile_reset!()
@@ -124,6 +131,20 @@ mutable struct HEVIProfile
 end
 const HEVI_PROF       = Ref(false)
 const HEVI_PROF_EVERY = Ref(50)
+# Which rank prints the cost breakdown, and whether the others do too.
+#
+# The report is a TIMING SUMMARY, and on 16 ranks sixteen interleaved copies of
+# an eight-line block every 50 steps is not a measurement, it is noise. Rank 0
+# is representative: the work per step is identical across ranks by
+# construction (same tableau, same stage count, same operator), and the pieces
+# that are NOT identical -- the column gather/scatter for split columns -- are
+# reported once at setup instead.
+#
+# Set JEXPRESSO_HEVI_PROFILE_ALLRANKS=1 to get every rank, which is what you
+# want when you suspect one rank is doing more work than the others (an uneven
+# column split, a straggler in the halo exchange).
+const HEVI_PROF_RANK  = Ref(0)
+const HEVI_PROF_ALL   = Ref(false)
 # Steps skipped before accumulating. The first few steps are where Julia
 # compiles the RHS chain, so counting them inflates every row -- and rhs! most
 # of all, which is exactly the row the other numbers are judged against.
@@ -156,6 +177,13 @@ allocation, GC -- and that is where to look next.
 function hevi_profile_report!()
     P = HEVI_PROFILE
     P.n_step == 0 && return nothing
+    # Every rank still ACCUMULATES and resets, so the counters stay in step
+    # across ranks and a later --allranks run measures the same window; only
+    # the printing is restricted.
+    if !(HEVI_PROF_ALL[] || HEVI_PROF_RANK[] == 0)
+        hevi_profile_reset!()
+        return nothing
+    end
     ns = P.n_step
     acc = (P.t_fimp + P.t_solve + P.t_rhs + P.t_refac) / ns
     tot = P.t_step / ns

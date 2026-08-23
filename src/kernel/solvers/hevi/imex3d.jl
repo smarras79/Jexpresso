@@ -686,7 +686,7 @@ function build_imex3d(params, inputs)
         error("IMEX3D: :imex_update_freq must be >= 1 when :imex_linearization => :PS; ",
               "got $update_freq.")
 
-    hevi_trace_init!()
+    hevi_trace_init!(comm)
     get(inputs, :imex_monitor, false) == true && (IMEX_MONITOR[] = true)
     # max(1, ...): the monitor takes `nsolve % every`, and a deck that set this
     # to 0 would take down the run with a DivideError from inside the stage

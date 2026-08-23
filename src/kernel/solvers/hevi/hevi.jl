@@ -684,7 +684,7 @@ function build_hevi(params, inputs)
         error("HEVI: :hevi_update_freq must be >= 1 when :hevi_linearization => :PS; ",
               "got $update_freq.")
 
-    hevi_trace_init!()
+    hevi_trace_init!(comm)
     get(inputs, :hevi_monitor, false) == true && (HEVI_MONITOR[] = true)
     hevi_trace("build_hevi: start")
 
