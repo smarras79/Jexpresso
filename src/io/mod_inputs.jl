@@ -200,8 +200,32 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # the default on Linux too. Users who need a different partition
     # strategy can still opt out by setting `:lxy_partition => false`
     # in their user_inputs.jl.
+    # HEVI needs the columnar partition; a fully explicit run does not.
+    #
+    # The vertically-implicit half of HEVI solves one banded system per
+    # VERTICAL COLUMN, so it wants whole columns on a rank. The columnar
+    # partition gives exactly that -- measured on rtb_hevi, 0 of 180 local
+    # column-instances split at four ranks -- and it also happens to be the
+    # partition on which the assembly is correct: every node's ghost-inflation
+    # factor is then the same in the assembled RHS as in the mass matrix, so
+    # the two cancel.
+    #
+    # Under the p4est space-filling-curve partition they do not always cancel.
+    # Measured on rtb with three ranks: the lumped mass comes out 2.0x its
+    # serial value at 1155 nodes per rank and exactly 1.5x at another 330,
+    # while the assembled stiffness at those same 330 comes out 1.4965x rather
+    # than 1.5x, because a derivative operator's two element contributions are
+    # unequal where the two element masses are equal. M^-1 K then stops being
+    # skew, which a split scheme cannot survive: the HEVI vertical operator
+    # measured max(Re)/max|Im| = +5.07e-02 at four ranks, a +3.5 1/s growth
+    # rate, and rtb_hevi died at t ~ 12.
+    #
+    # So HEVI defaults to the columnar partition and an explicit run keeps
+    # p4est. A deck can still say either explicitly; if it asks for HEVI on
+    # the SFC partition, build_hevi refuses rather than diverging quietly
+    # twelve seconds in.
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = true
+        inputs[:lxy_partition] = hevi_enabled(inputs)
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))

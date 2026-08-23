@@ -1925,6 +1925,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         end
     end
     # ─────────────────────────────────────────────────────────────────────────
+    # Set only when a ghost-carrying local model is restricted to its owned
+    # cells below; nothing otherwise, meaning no composition is needed because
+    # `model` already maps straight to the global model.
+    ghost_parent_faces = nothing
     if isnothing(adapt_flags)
 
         if ladaptive == false && linitial_refine == false
@@ -2003,7 +2007,45 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 end
                 pm
             end
-            model = local_views(partitioned_model).item_ref[]
+            # Gridap's distributed constructors hand each rank its OWNED cells
+            # plus a layer of GHOST copies of its neighbours' cells. Every
+            # other model branch in this function already strips those with
+            # DiscreteModelPortion; this one did not. That matters because
+            # assemble_mpi! SUMS each shared node over every rank holding it
+            # and scatters the sum back -- it is a completion of disjoint local
+            # contributions, not a redundancy that cancels. Assembling a ghost
+            # element locally therefore counts its contribution once on its
+            # owner and once more on every rank carrying the copy.
+            #
+            # Measured on CompEuler/theta at 4 ranks: 144 local elements for
+            # 100 owned, and a lumped mass of 1.44e8 against a domain volume of
+            # 1.00e8 -- the same 1.44 ratio. The solution stayed finite but
+            # drifted from the serial answer in the third significant digit by
+            # t = 10 s and blew up near t = 150 s.
+            #
+            # je_DiscreteModel (the :lxy_partition branch above) builds a
+            # ghost-free columnar partition, so the owned and local cell counts
+            # agree there and the restriction below is a no-op -- which is why
+            # that path was correct (bit-identical to serial) while this one
+            # was not. Guarding on the counts keeps it a no-op rather than
+            # relying on DiscreteModelPortion to be an exact identity.
+            _lmodel     = local_views(partitioned_model).item_ref[]
+            _lcell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
+            _lown       = own_to_local(_lcell_gids)
+            if length(_lown) == num_cells(_lmodel)
+                model = _lmodel
+            else
+                # The local view is already a DiscreteModelPortion of the
+                # global serial model, so its get_face_to_parent_face is the
+                # local -> GLOBAL map this function goes on to use as
+                # point2ppoint / elm2pelm. Restricting it again gives a portion
+                # whose parent is that intermediate model, not the global one,
+                # so keep the intermediate maps here and compose through them
+                # where point2ppoint is built.
+                ghost_parent_faces = [Geometry.get_face_to_parent_face(_lmodel, d)
+                                      for d = 0:num_cell_dims(_lmodel)]
+                model = DiscreteModelPortion(_lmodel, _lown)
+            end
         elseif linitial_refine == true
             # PERF: GridapP4est is `using`-d lazily; load it before the
             # first call to UniformlyRefinedForestOfOctreesDiscreteModel.
@@ -2278,10 +2320,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         face2pface   = local_to_global(fgids)[f2pf]
         elm2pelm     = local_to_global(elgids)[e2pe]
     else
-        point2ppoint = Geometry.get_face_to_parent_face(model,POIN_flg)
-        edge2pedge   = Geometry.get_face_to_parent_face(model,EDGE_flg)
-        face2pface   = Geometry.get_face_to_parent_face(model,FACE_flg)
-        elm2pelm     = Geometry.get_face_to_parent_face(model,ELEM_flg)
+        # `_to_global` is the identity composition unless the local model had
+        # ghost cells stripped, in which case get_face_to_parent_face(model, d)
+        # lands in the intermediate (ghost-carrying) model and has to be pushed
+        # one more step to reach global numbering.
+        _to_global = d -> begin
+            f = Geometry.get_face_to_parent_face(model, d)
+            ghost_parent_faces === nothing ? f : ghost_parent_faces[d+1][f]
+        end
+        point2ppoint = _to_global(POIN_flg)
+        edge2pedge   = _to_global(EDGE_flg)
+        face2pface   = _to_global(FACE_flg)
+        elm2pelm     = _to_global(ELEM_flg)
     end
     # @info rank, p2pp, point2ppoint
     if ladaptive == true

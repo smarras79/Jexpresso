@@ -592,7 +592,7 @@ end
 
 function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
     
-    for iel=1:nelem
+    for iel = 1:nelem
         
         for k = 1:N+1
             for j = 1:N+1
@@ -1263,6 +1263,27 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     
     g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+
+    # A lumped mass summed over UNIQUELY-OWNED nodes equals the domain volume
+    # on any partition, so it is an exact expected value with no serial
+    # reference run needed, and any deviation is an assembly error rather than
+    # shared nodes being counted twice. This is what caught the ghost elements
+    # that GmshDiscreteModel(parts, ...) leaves in the local model: theta at
+    # four ranks read 1.44e8 against a domain volume of 1.00e8, matching its
+    # 144 local / 100 owned element ratio (see the DiscreteModelPortion
+    # restriction in mesh.jl). Off by default; set JEXPRESSO_MASS_CHECK=1.
+    if get(ENV, "JEXPRESSO_MASS_CHECK", "0") == "1"
+        let comm = get_mpi_comm(), rk = MPI.Comm_rank(comm), nr = MPI.Comm_size(comm)
+            loc = 0.0
+            for ip = 1:Int(mesh.npoin)
+                Int(mesh.gip2owner[ip]) == rk && (loc += M[ip])
+            end
+            tot   = nr > 1 ? MPI.Allreduce(loc, MPI.SUM, comm) : loc
+            nel_g = nr > 1 ? MPI.Allreduce(Int(mesh.nelem), MPI.SUM, comm) : Int(mesh.nelem)
+            rk == 0 && println("\n [mass check] lumped mass over owned nodes : ", tot,
+                               "   (local elements summed over ranks = ", nel_g, ")\n")
+        end
+    end
 
     DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, SD)
     

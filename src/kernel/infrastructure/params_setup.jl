@@ -521,6 +521,41 @@ function params_setup(sem,
                   coupling = coupling)
     end
 
+    #------------------------------------------------------------------------------------
+    # HEVI: the vertical implicit operator reads the mesh, the metrics, the
+    # basis and the reference state off `params`, so it can only be built once
+    # `params` exists -- and it has to live ON `params`, because the integrator
+    # reaches it as `p.hevi`. NamedTuple merge makes a new object; that happens
+    # exactly once, here.
+    #
+    # Built eagerly rather than on first use: setup does global reductions and
+    # an all-to-all, and putting a collective behind a lazily-taken branch is
+    # how a run deadlocks on the rank that took the other one.
+    #------------------------------------------------------------------------------------
+    if hevi_enabled(inputs)
+        if sem.mesh.SD != NSD_3D()
+            error("HEVI is 3D only; this case is $(typeof(sem.mesh.SD)). ",
+                  "Use an explicit integrator, or drop :lhevi / :ode_solver => HEVI_ARK.")
+        elseif backend != CPU()
+            error("HEVI has no GPU path: the column solve is a LAPACK banded LU on the ",
+                  "host, and the gather/scatter moves host arrays. Run with CPU(), or ",
+                  "use an explicit integrator on the GPU.")
+        end
+        params = merge(params, (hevi = build_hevi(params, inputs),))
+    end
+
+    # SPLIT_EXPLICIT: same story as HEVI -- the fast operator reads the mesh,
+    # the metrics, the basis and the reference state off `params`, and the
+    # integrator reaches it as `p.substep`.
+    if inputs[:ode_solver] isa SPLIT_EXPLICIT
+        if sem.mesh.SD != NSD_3D()
+            error("SPLIT_EXPLICIT is 3D only; this case is $(typeof(sem.mesh.SD)).")
+        elseif backend != CPU()
+            error("SPLIT_EXPLICIT has no GPU path.")
+        end
+        params = merge(params, (substep = build_substep(params, inputs, inputs[:Δt]),))
+    end
+
     println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)
 
     return params, u
