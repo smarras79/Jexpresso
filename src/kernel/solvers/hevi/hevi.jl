@@ -643,6 +643,42 @@ function build_hevi(params, inputs)
     end
     rank == 0 && (println(" done"); flush(stdout))
 
+    # Fast-operator check: build the full acoustic operator and verify it
+    # against the vertical one this setup already trusts. Off by default -- it
+    # allocates a second operator -- and only meaningful while the substepping
+    # scheme that uses it is being developed.
+    if get(ENV, "JEXPRESSO_HEVI_FAST_CHECK", "0") == "1"
+        opf = build_hevi_fast_operator(params, topo; lwall_flux = op.lwall_flux)
+        vf  = hevi_verify_fast(params, opf, op, topo)
+        # Cost of one f_fast application against one full rhs!. This is the
+        # number that decides whether substepping can pay at all: an outer step
+        # costs 3 rhs! + ns f_fast, so the whole scheme is worth building only
+        # if f_fast is a small fraction of rhs!.
+        ntime = 20
+        _np = Int(params.mesh.npoin); _nq = Int(params.neqs)
+        du = zeros(Float64, _np * _nq)
+        u0 = zeros(Float64, _np * _nq)
+        @inbounds for ieq = 1:_nq, ip = 1:_np
+            u0[(ieq - 1) * _np + ip] = params.qp.qn[ip, ieq]
+        end
+        hevi_fast_rhs!(du, u0, params, opf)                      # warm up
+        t0 = time_ns()
+        for _ = 1:ntime; hevi_fast_rhs!(du, u0, params, opf); end
+        t_fast = (time_ns() - t0) / 1e9 / ntime
+        rhs!(du, u0, params, 0.0)                                # warm up
+        t0 = time_ns()
+        for _ = 1:ntime; rhs!(du, u0, params, 0.0); end
+        t_rhs = (time_ns() - t0) / 1e9 / ntime
+        rank == 0 && println("\n [fast op] full-vs-vertical on a horizontally uniform field: ",
+                             vf.rel_vertical,
+                             "\n [fast op] horizontal response to a field varying in x: ",
+                             vf.horiz_response,
+                             "\n [fast op] ok = ", vf.ok,
+                             "\n [fast op] cost: f_fast ", round(t_fast*1e3, digits=3),
+                             " ms   rhs! ", round(t_rhs*1e3, digits=3),
+                             " ms   ratio ", round(t_fast/t_rhs, digits=4), "\n")
+    end
+
     # The joint IMEX stability of THIS tableau at THIS Δt on THIS mesh. The
     # explicit half's imaginary radius -- the number a tableau is usually
     # picked on -- is the zI = 0 edge of this rectangle, and for HEVI that is

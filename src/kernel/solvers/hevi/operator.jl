@@ -87,6 +87,19 @@ struct HEVIOperator{TF <: AbstractFloat, CT}
     Hv::Matrix{TF}
     dss_cache::CT
     lwall_flux::Bool
+    # `full = false` is the HEVI operator proper: only the ζ-derivative part of
+    # the flux divergence, which is what makes it column-local and bandable.
+    # `full = true` keeps the ξ and η sweeps as well, giving the COMPLETE
+    # linear acoustic-gravity operator in all three directions. That one is not
+    # column-local and is never factorised -- it exists to be APPLIED, as the
+    # fast operator of an acoustic-substepping split, where the outer step sees
+    # no sound at all. Same fluxes, same reference state, same wall treatment,
+    # same DSS and mass division; only the derivative sweeps differ.
+    full::Bool
+    # element-wide flux scratch, allocated only when `full` (ngl^3 x nimp)
+    F3::Array{TF,4}
+    G3::Array{TF,4}
+    H3::Array{TF,4}
 end
 
 """
@@ -120,7 +133,7 @@ end
     build_hevi_operator(params, topo, vars; lwall_flux = true) -> HEVIOperator
 """
 function build_hevi_operator(params, topo::ColumnTopology, vars::Vector{Int};
-                             lwall_flux::Bool = true)
+                             lwall_flux::Bool = true, full::Bool = false)
 
     mesh  = params.mesh
     npoin = Int(mesh.npoin)
@@ -175,11 +188,22 @@ function build_hevi_operator(params, topo::ColumnTopology, vars::Vector{Int};
 
     slot = ntuple(ieq -> something(findfirst(==(ieq), vars), 0), 5)
 
+    # The full operator carries the horizontal acoustic terms, so it needs the
+    # horizontal momenta in its variable set; refusing here beats producing an
+    # operator that silently drops half the sound wave.
+    if full && !issubset([1, 2, 3, 4, 5], vars)
+        error("The full acoustic operator needs all five equations in its ",
+              "variable set (it carries the horizontal pressure gradient and ",
+              "mass flux); got $vars.")
+    end
+
+    z4(n) = zeros(TF, n, n, n, nimp)
     return HEVIOperator{TF, typeof(cache)}(
         copy(vars), nimp, slot, beta, thetabar, Vector(wall),
         V, R, rhs_el, RHS, vaux,
         zeros(TF, ngl, nimp), zeros(TF, ngl, nimp), zeros(TF, ngl, nimp),
-        cache, lwall_flux)
+        cache, lwall_flux, full,
+        full ? z4(ngl) : z4(0), full ? z4(ngl) : z4(0), full ? z4(ngl) : z4(0))
 end
 
 
@@ -252,6 +276,97 @@ function _hevi_A_elements!(rhs_el, V, beta, thetabar, wall, Fv, Gv, Hv,
 end
 
 """
+    _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, F, G, H,
+                           conn, dψ, ω, Je,
+                           dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                           nelem, ngl, nimp, slot, g)
+
+The element loop of the COMPLETE linear acoustic-gravity operator: the same
+linearised fluxes as `_hevi_A_elements!`, but contracted with all three
+derivative sweeps instead of ζ alone.
+
+It is the term-for-term linearisation of `_expansion_inviscid!` (NSD_3D,
+ContGal) restricted to the acoustic subsystem, which is what it has to be --
+a fast operator that is not the exact acoustic part of the explicit
+discretisation leaves a residual fast mode in the slow part, and the outer
+step stays pinned by sound with nothing in the output to say why.
+
+Behind the same typed function barrier as the vertical kernel, and for the
+same reason (see the comment in `hevi_apply_A!`).
+"""
+function _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, F, G, H,
+                                conn, dψ, ω, Je,
+                                dξdx, dξdy, dξdz,
+                                dηdx, dηdy, dηdz,
+                                dζdx, dζdy, dζdz,
+                                nelem::Int, ngl::Int, nimp::Int,
+                                slot::NTuple{5,Int}, g::Float64)
+
+    sρ, sρu, sρv, sρw, sρθ = slot
+
+    @inbounds for iel = 1:nelem
+
+        # --- linearised acoustic fluxes over the whole element ---------------
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip  = conn[iel, i, j, k]
+            β   = beta[ip]
+            θb  = thetabar[ip]
+            dρθ = V[ip, sρθ]
+            dρu = V[ip, sρu]
+            dρv = V[ip, sρv]
+            dρw = V[ip, sρw]
+            noflux = wall[ip]
+
+            for q = 1:nimp
+                F[i, j, k, q] = 0.0; G[i, j, k, q] = 0.0; H[i, j, k, q] = 0.0
+            end
+            # x flux
+            F[i, j, k, sρ]  = dρu
+            F[i, j, k, sρu] = β * dρθ
+            F[i, j, k, sρθ] = θb * dρu
+            # y flux
+            G[i, j, k, sρ]  = dρv
+            G[i, j, k, sρv] = β * dρθ
+            G[i, j, k, sρθ] = θb * dρv
+            # z flux -- the vertical mass and heat fluxes vanish at floor/lid
+            H[i, j, k, sρ]  = noflux ? 0.0 : dρw
+            H[i, j, k, sρw] = β * dρθ
+            H[i, j, k, sρθ] = noflux ? 0.0 : θb * dρw
+        end
+
+        # --- all three derivative sweeps, plus the buoyancy source -----------
+        for q = 1:nimp, k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip   = conn[iel, i, j, k]
+            ωJac = ω[i] * ω[j] * ω[k] * Je[iel, i, j, k]
+
+            dFξ = 0.0; dFη = 0.0; dFζ = 0.0
+            dGξ = 0.0; dGη = 0.0; dGζ = 0.0
+            dHξ = 0.0; dHη = 0.0; dHζ = 0.0
+            for m = 1:ngl
+                dξm = dψ[m, i]; dηm = dψ[m, j]; dζm = dψ[m, k]
+                dFξ += dξm * F[m, j, k, q]
+                dFη += dηm * F[i, m, k, q]
+                dFζ += dζm * F[i, j, m, q]
+                dGξ += dξm * G[m, j, k, q]
+                dGη += dηm * G[i, m, k, q]
+                dGζ += dζm * G[i, j, m, q]
+                dHξ += dξm * H[m, j, k, q]
+                dHη += dηm * H[i, m, k, q]
+                dHζ += dζm * H[i, j, m, q]
+            end
+
+            dFdx = dFξ * dξdx[iel,i,j,k] + dFη * dηdx[iel,i,j,k] + dFζ * dζdx[iel,i,j,k]
+            dGdy = dGξ * dξdy[iel,i,j,k] + dGη * dηdy[iel,i,j,k] + dGζ * dζdy[iel,i,j,k]
+            dHdz = dHξ * dξdz[iel,i,j,k] + dHη * dηdz[iel,i,j,k] + dHζ * dζdz[iel,i,j,k]
+
+            S = (q == sρw) ? -g * V[ip, sρ] : 0.0
+            rhs_el[iel, i, j, k, q] -= ωJac * ((dFdx + dGdy + dHdz) - S)
+        end
+    end
+    return nothing
+end
+
+"""
     hevi_apply_A!(out, V, params, op)
 
 Apply the linear vertical acoustic operator to the deviation field `V`
@@ -295,11 +410,21 @@ function hevi_apply_A!(out::AbstractMatrix, V::AbstractMatrix, params, op::HEVIO
     # their concrete runtime types, and the loop compiles as it should. Same
     # device rhs.jl uses for _inviscid_rhs_el_3d! -- see the comment there.
     #-------------------------------------------------------------------------
-    _hevi_A_elements!(rhs_el, V, op.beta, op.thetabar, op.wall,
-                      op.Fv, op.Gv, op.Hv,
-                      mesh.connijk, params.basis.dψ, params.ω,
-                      met.Je, met.dζdx, met.dζdy, met.dζdz,
-                      nelem, ngl, nimp, op.slot, PhysicalConst{Float64}().g)
+    if op.full
+        _hevi_A_elements_full!(rhs_el, V, op.beta, op.thetabar, op.wall,
+                               op.F3, op.G3, op.H3,
+                               mesh.connijk, params.basis.dψ, params.ω, met.Je,
+                               met.dξdx, met.dξdy, met.dξdz,
+                               met.dηdx, met.dηdy, met.dηdz,
+                               met.dζdx, met.dζdy, met.dζdz,
+                               nelem, ngl, nimp, op.slot, PhysicalConst{Float64}().g)
+    else
+        _hevi_A_elements!(rhs_el, V, op.beta, op.thetabar, op.wall,
+                          op.Fv, op.Gv, op.Hv,
+                          mesh.connijk, params.basis.dψ, params.ω,
+                          met.Je, met.dζdx, met.dζdy, met.dζdz,
+                          nelem, ngl, nimp, op.slot, PhysicalConst{Float64}().g)
+    end
 
     RHS = op.RHS
     fill!(RHS, 0.0)
