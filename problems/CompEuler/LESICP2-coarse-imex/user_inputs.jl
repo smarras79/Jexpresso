@@ -252,6 +252,23 @@ function user_inputs()
         #                   1e-6 saves an iteration or two, 1e-4 starts costing
         #                   order.
         :imex_rtol            => parse(Float64, get(ENV, "DBG_RTOL", "1.0e-8")),
+        # :imex_warm_start  START EACH STAGE SOLVE FROM THE PREVIOUS ONE'S ANSWER
+        #                   rather than from zero. On by default, and the single
+        #                   largest lever on this scheme's cost.
+        #
+        #                   Consecutive ARK stages differ by O(dt*f) while the
+        #                   right-hand side is the WHOLE deviation u - qe, so the
+        #                   guess arrives several orders down. This operator is
+        #                   skew and GMRES on it converges LINEARLY -- iterations
+        #                   go as log(residual/tol) -- so those orders come
+        #                   straight off the count. Measured end to end through
+        #                   the ARK stepper: 5.0 iterations/solve against 21.7
+        #                   cold, with the two states agreeing to 1.3e-10.
+        #
+        #                   It cannot change what the solve returns: the tolerance
+        #                   is unchanged and is measured against the true residual.
+        #                   DBG_WARM=0 turns it off to measure the difference.
+        :imex_warm_start      => parse(Bool, get(ENV, "DBG_WARM", "true")),
         # :imex_restart     GMRES(m). NOT the knob it looks like: this operator is
         #                   skew, its spectrum is a line segment, and restarting
         #                   costs ~4% rather than the stagnation an elliptic

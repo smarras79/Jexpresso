@@ -180,7 +180,7 @@ function GMRESWorkspace(npoin::Int, nimp::Int, inner::DistributedInner;
 end
 
 """
-    gmres_solve!(X, B, ws, matvec!, precon!) -> (iters, relres, converged)
+    gmres_solve!(X, B, ws, matvec!, precon!; warm = false) -> (iters, relres, converged)
 
 Solve `A X = B` for `X`, with `matvec!(out, in)` applying `A` and
 `precon!(Z)` applying `M^-1` in place.
@@ -191,20 +191,35 @@ preconditioning would minimise `‖M^-1 (B - A X)‖` instead, and with a
 preconditioner as strong as a column solve that norm is a poor proxy for the
 one the time integrator cares about.
 
-`X` is overwritten and used as the initial guess only in the sense that it
-starts at zero: the stage solve's right-hand side is a deviation field that is
-already small, and a zero guess makes the reported relative residual
-unambiguous.
+`warm = false` (the default) zeroes `X` and starts from nothing, which makes
+the reported relative residual unambiguous and is what the setup self-check
+wants -- a number that does not depend on what ran before it.
+
+`warm = true` KEEPS whatever `X` already holds and starts from it. In the time
+loop that is the previous stage's answer, and the previous stage's answer is a
+good guess: consecutive ARK stages differ by `O(Δt·f)` while the right-hand
+side itself is the whole deviation `u - qe`. Measured on an anisotropic mock
+at Δt = 0.7, `‖B_next - A X_prev‖ / ‖B_next‖` is 2.3e-4, i.e. the iteration
+starts nearly four orders down. Since this operator is skew and GMRES on it
+converges LINEARLY -- iterations go as `log(β/tol)` -- those orders come
+straight off the count: 45% of the iterations at `rtol = 1e-8`, and MORE at
+looser tolerances, because the same fixed head start is a larger share of a
+shorter descent (61% at 1e-6, 73% at 1e-5).
+
+It cannot change what the solve returns: the tolerance is unchanged and is
+measured against the true residual. The worst case is a guess that is worse
+than zero, which costs one matvec and a few iterations, and cannot happen
+often enough to matter when the stage-to-stage change is what it is.
 """
 function gmres_solve!(X::AbstractMatrix, B::AbstractMatrix, ws::GMRESWorkspace,
-                      matvec!, precon!)
+                      matvec!, precon!; warm::Bool = false)
 
     di = ws.inner
     m  = ws.m
     V, W, Z, C = ws.V, ws.W, ws.Z, ws.C
     H, cs, sn, g, y, hs = ws.H, ws.cs, ws.sn, ws.g, ws.y, ws.hs
 
-    fill!(X, 0.0)
+    warm || fill!(X, 0.0)
     bnorm = dnorm(di, B)
     ws.nsolve += 1
 
@@ -212,6 +227,9 @@ function gmres_solve!(X::AbstractMatrix, B::AbstractMatrix, ws::GMRESWorkspace,
     # NORMAL one at t = 0 on a state at rest: the operator acts on u - qe and
     # the stage vector is qe. X = 0 is the exact answer and 0/0 is not.
     if !(bnorm > 0.0)
+        # X = 0 is the exact answer, so a warm start's leftover has to go --
+        # keeping it would return a non-zero solution to a zero problem.
+        fill!(X, 0.0)
         ws.last_iters = 0; ws.last_relres = 0.0
         return (0, 0.0, true)
     end
@@ -221,11 +239,12 @@ function gmres_solve!(X::AbstractMatrix, B::AbstractMatrix, ws::GMRESWorkspace,
     resid = bnorm
 
     while true
-        # r = B - A X. On the first cycle X is zero and the matvec is skipped;
-        # on a restart it is not, and recomputing the residual explicitly
-        # (rather than carrying the Arnoldi estimate across the restart) is
-        # what keeps the reported number the true residual.
-        if total == 0
+        # r = B - A X. On the first cycle of a cold start X is zero and the
+        # matvec is skipped; on a restart -- or on any cycle of a warm start --
+        # it is not, and recomputing the residual explicitly (rather than
+        # carrying the Arnoldi estimate across the restart) is what keeps the
+        # reported number the true residual.
+        if total == 0 && !warm
             copyto!(V[1], B)
         else
             matvec!(W, X)

@@ -141,6 +141,17 @@ function user_inputs()
         # NOT the knob it looks like: this operator is skew, its spectrum is a
         # line segment, and restarting costs ~4% rather than the stagnation an
         # elliptic problem shows. Leave it at 20.
+        # :imex_warm_start  start each stage solve from the PREVIOUS one's answer
+        #                   rather than from zero. On by default, and the single
+        #                   largest lever on this scheme's cost: consecutive ARK
+        #                   stages differ by O(dt*f) while the right-hand side is
+        #                   the whole deviation u - qe, so the guess arrives
+        #                   several orders down, and GMRES on this skew operator
+        #                   converges linearly, so those orders come straight off
+        #                   the iteration count. Measured end to end: 5.0
+        #                   iterations/solve against 21.7 cold, same answer to
+        #                   1.3e-10. DBG_WARM=0 to measure it here.
+        :imex_warm_start      => parse(Bool, get(ENV, "DBG_WARM", "true")),
         :imex_restart         => parse(Int, get(ENV, "DBG_RESTART", "20")),
         :imex_maxiter         => parse(Int, get(ENV, "DBG_MAXITER", "200")),
         # :none is there to MEASURE what the column preconditioner buys. On a

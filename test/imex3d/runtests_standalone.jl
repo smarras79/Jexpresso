@@ -271,8 +271,12 @@ end
 
 #--- 5. the stage solve, end to end ------------------------------------------
 ws   = GMRESWorkspace(NPOIN, 5, inner; m = 30, maxiter = 300, rtol = 1e-12)
+# warm_start = false here on purpose: the integration checks below measure
+# convergence order and a stability threshold, and a cold start keeps every
+# stage solve independent of what ran before it. The warm path is exercised
+# end to end further down, against this cache as the reference.
 imex = IMEX3DCache(topo, opwall, pc, ws, zeros(NPOIN, 5), zeros(NPOIN, 5),
-                   imex3d_fimp!, imex3d_solve!, :ARS343, GDT, :RS, 5, COMM)
+                   imex3d_fimp!, imex3d_solve!, :ARS343, GDT, :RS, 5, false, COMM)
 ph   = merge(params, (imex = imex,))
 
 srcv = zeros(NPOIN * 5)
@@ -388,6 +392,107 @@ say(@sprintf("  ARS343 vs Tsit5 reference: err %.2e, observed order %.2f", errs[
 say(@sprintf("  at dt = %.3g s (~8x an explicit scheme's 3D acoustic limit, ‖A‖ ≈ %.3g 1/s):",
              big, λ))
 say(@sprintf("      IMEX3D |q'| = %.2e, explicit |q'| = %.2e", imax, emax))
+
+#--- warm-starting the stage solve -------------------------------------------
+# Consecutive ARK stages hand the solver right-hand sides that differ by
+# O(Δt·f) while the right-hand side itself is the whole deviation u - qe, so
+# the previous stage's answer starts the iteration far down. Since this
+# operator is skew and GMRES on it converges LINEARLY -- iterations go as
+# log(β/tol) -- that head start comes straight off the count.
+#
+# Both halves matter. The saving is the point; the AGREEMENT is what makes it
+# free, and a warm start that quietly returned a different answer would look
+# like a speed-up right up until it was a wrong result.
+let
+    topo2 = build_column_topology(params.mesh, COMM)
+    opf   = build_hevi_fast_operator(params, topo2)
+    pvw   = hevi_choose_vars(params.metrics, COMM)
+    opvw  = build_hevi_operator(params, topo2, pvw; full = false)
+    ow, onw = assign_column_owners(topo2, COMM)
+    ccw   = build_column_comm(topo2, ow, onw, COMM, length(pvw))
+    g     = 0.05
+    facw  = build_column_factorization(params, opvw, ccw, topo2, g)
+    pcw   = IMEX3DPrecond(opvw, ccw, facw, topo2, copy(pvw))
+    innr  = build_distributed_inner(opf.dss_cache, NPOIN, COMM)
+    mv!   = (W, V) -> (hevi_apply_A!(W, V, params, opf); @. W = V - g * W; W)
+    pr!   = Z -> imex3d_precond!(Z, pcw, params, g)
+    # Right-hand sides built from the GLOBAL id, so every holder of a shared
+    # node sees the same value and the sequence is identical on every rank.
+    rhs(k) = [0.4 * sinpi(1e-3 * (Float64(GIP[ip]) + 37.0q)) +
+              0.01 * sinpi(1e-3 * (Float64(GIP[ip]) + 11.0q + 3.0k))
+              for ip = 1:NPOIN, q = 1:5]
+
+    function sweep(warm)
+        ws = GMRESWorkspace(NPOIN, 5, innr; m = 20, maxiter = 200,
+                            rtol = 1e-8, atol = 1e-30)
+        X = zeros(NPOIN, 5); tot = 0; last = nothing
+        for k = 1:5
+            tot += gmres_solve!(X, rhs(k), ws, mv!, pr!; warm = warm && k > 1)[1]
+            last = copy(X)
+        end
+        return tot, last
+    end
+    ncold, Xcold = sweep(false)
+    nwarm, Xwarm = sweep(true)
+
+    # Same answer: both were driven to the same tolerance on the same system,
+    # so they may differ by the tolerance and not by more.
+    dif = MPI.Allreduce(maximum(abs, Xwarm .- Xcold), MPI.MAX, COMM)
+    scl = MPI.Allreduce(maximum(abs, Xcold), MPI.MAX, COMM)
+    @test dif < 1e-6 * scl
+    @test nwarm < ncold
+    say(@sprintf("  warm start: %d iterations over 5 solves vs %d cold (%.0f%% saved); ",
+                 nwarm, ncold, 100 * (1 - nwarm / ncold)),
+        @sprintf("answers agree to %.1e relative", dif / scl))
+
+    # An exactly-zero right-hand side must return exactly zero even when X
+    # arrives holding the previous solve's answer -- otherwise the warm start
+    # would hand back a non-zero solution to a zero problem, which is the state
+    # at t = 0 on a mesh at rest.
+    ws0 = GMRESWorkspace(NPOIN, 5, innr; m = 20, maxiter = 200, rtol = 1e-8, atol = 1e-30)
+    Xz  = copy(Xwarm)
+    itz, _, okz = gmres_solve!(Xz, zeros(NPOIN, 5), ws0, mv!, pr!; warm = true)
+    @test itz == 0 && okz
+    @test maximum(abs, Xz) == 0.0
+end
+
+#--- ... and end to end, through imex3d_solve! and the ARK stepper -----------
+# The block above tests the Krylov method. This tests the SCHEME: the same
+# integration run with the warm path on and off has to land in the same place,
+# because the two solve the same stage equations to the same tolerance. If it
+# did not, the saving above would be a speed-up bought with an answer.
+let
+    wsw = GMRESWorkspace(NPOIN, 5, ph.imex.ws.inner; m = 20, maxiter = 200,
+                         rtol = 1e-10, atol = 1e-30)
+    ic = ph.imex
+    warmc = IMEX3DCache(ic.topo, ic.op, ic.pc, wsw,
+                        zeros(NPOIN, 5), zeros(NPOIN, 5),
+                        imex3d_fimp!, imex3d_solve!, ic.tableau, ic.gdt,
+                        ic.linearization, ic.update_freq, true, COMM)
+    phw = merge(params, (imex = warmc,))
+    # Same right-hand side integration_checks uses -- the implicit operator
+    # plus a mild relaxation, so the stage right-hand sides move from step to
+    # step the way a real one does.
+    ff! = let qf = qeflat
+        (du, u, p, t) -> (imex3d_fimp!(du, u, p, t); @. du += -0.1 * (u - qf); du)
+    end
+    u0 = qeflat .+ [1e-3 * sinpi(1e-3 * (GIP[mod1(i, NPOIN)] + 7 * div(i-1, NPOIN)))
+                    for i = 1:NPOIN*5]
+    prob(p) = ODEProblem(ff!, copy(u0), (0.0, 20 * GDT), p)
+    uc = solve(prob(ph),  IMEX_ARK(:ARS343); dt = GDT, adaptive = false,
+               save_everystep = false).u[end]
+    uw = solve(prob(phw), IMEX_ARK(:ARS343); dt = GDT, adaptive = false,
+               save_everystep = false).u[end]
+    dev = MPI.Allreduce(maximum(abs, uw .- uc), MPI.MAX, COMM)
+    scl = MPI.Allreduce(maximum(abs, uc .- qeflat), MPI.MAX, COMM)
+    itc = ph.imex.ws.niter / max(ph.imex.ws.nsolve, 1)
+    itw = wsw.niter / max(wsw.nsolve, 1)
+    @test dev < 1e-7 * scl
+    @test itw < itc
+    say(@sprintf("  end to end over 20 steps: %.1f iterations/solve warm vs %.1f cold; ",
+                 itw, itc),
+        @sprintf("states agree to %.1e relative", dev / scl))
+end
 
 end # testset
 

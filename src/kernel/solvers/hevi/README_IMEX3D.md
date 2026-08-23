@@ -67,6 +67,7 @@ closure can go missing in the split, whatever the deck turns on.
 | `:imex_update_freq` | `5` | steps between refreshes under `:PS` |
 | `:imex_stability_guard` | `:warn` | `:warn` `:error` `:off` |
 | `:imex_monitor` | `false` | periodic line reporting the Krylov iteration count |
+| `:imex_warm_start` | `true` | start each stage solve from the previous one's answer. See [Making it cheaper](#making-it-cheaper). |
 | `:lcfl_report` | `false` | print the direction-wise stability table at startup |
 | `:lcfl_report_every` | `0` | re-print it every N steps (0 = off). Collective; `JEXPRESSO_CFL_REPORT_EVERY` overrides. |
 | `:implicit_vdiff` | `false` | make the **vertical** SGS diffusion implicit too — see [below](#implicit-vertical-diffusion). Needs `:imex_linearization => :PS` under a dynamic closure. |
@@ -331,6 +332,12 @@ opposite of the familiar elliptic case, where GMRES(m) stagnates on restart and
 a bigger `m` is the fix. **Do not raise `:imex_restart` to chase iterations
 here** — it buys ~4% and costs memory linearly. The default of 20 is right.
 
+> The counts in this section are **cold-start** counts: they depend on nothing
+> but the operator's spectrum, which is what makes them the right number to
+> quote for the preconditioner and comparable between decks. The running cost
+> is lower — `:imex_warm_start` is on by default and is worth roughly 4× here.
+> See [Making it cheaper](#making-it-cheaper).
+
 **The consequence for Δt.** Cost per step is linear in Δt, so cost per unit
 *simulated* time approaches a floor instead of falling:
 
@@ -512,6 +519,86 @@ is shared, so a change here that broke HEVI would show up there.
 ---
 
 ---
+
+---
+
+## Making it cheaper
+
+**The iteration count is the entire cost of this scheme.** Everything below
+attacks that number, and the two cheapest levers are worth about 4× together.
+
+### Warm-starting the stage solve — `:imex_warm_start`, on by default
+
+The right-hand side of a stage solve is the whole deviation `u − qe`;
+consecutive stages differ by `O(Δt·f)`. So the previous stage's answer is
+already most of the way there. And because this operator is skew, GMRES on it
+converges **linearly** — iterations go as `log(β/tol)` — so a head start of a
+few orders comes straight off the count rather than being absorbed.
+
+Measured end to end through the ARK stepper (`test/imex3d/runtests_standalone.jl`):
+
+| | iterations/solve | states agree to |
+|---|---|---|
+| cold start | 21.7 | — |
+| warm start | **5.0** | 1.3e-10 relative |
+
+It cannot change what the solve returns: the tolerance is unchanged and is
+still measured against the true residual of the original system. `DBG_WARM=0`
+turns it off to measure the difference on your own case.
+
+### `:imex_rtol` — 1e-8 is tighter than a third-order step needs
+
+Same linear convergence, read the other way: iterations are proportional to
+`log(1/rtol)`, so the tolerance is a direct multiplier on cost. Measured on an
+anisotropic mock at Δt = 0.7:
+
+| `:imex_rtol` | 1e-8 | 1e-7 | 1e-6 | 1e-5 | 1e-4 |
+|---|---|---|---|---|---|
+| iterations, cold | 10 | 8 | 7 | 5 | 3 |
+| iterations, warm | 5.0 | — | 2.8 | 1.7 | 1.3 |
+
+The default stays at 1e-8 because loosening it *is* an accuracy choice and
+belongs to the deck, not to a default — but 1e-6 costs 30% less and is still
+well below a third-order step's own truncation error. Sweep it with
+`DBG_RTOL` and watch the answer, not just the clock.
+
+### What does **not** help
+
+* **`:imex_restart`.** The spectrum is a line segment, not the clustered mess
+  an elliptic problem gives, so restarting costs ~4% rather than stagnating.
+  Measured: 71 iterations at `m = 20` against 68 at `m = 240`. Leave it at 20.
+* **Raising Δt.** Cost per step grows linearly with Δt, so cost per unit
+  *simulated* time approaches a floor rather than falling. Past the point where
+  the three `rhs!` evaluations stop dominating, a bigger Δt buys nothing.
+* **`:implicit_vdiff`,** if you are chasing speed rather than stability. It
+  retires the `pvars` optimisation and puts the banded solve back to
+  `(5/3)² ≈ 2.8×` its three-equation cost. Switch it on for the step size it
+  protects, not for the clock.
+
+### When it still loses to HEVI
+
+Write the cost per unit simulated time for each scheme:
+
+    HEVI    (2·T_rhs + 2·T_col) / Δt_hevi
+    IMEX3D  (3·T_rhs + 3·N·T_iter) / Δt_imex
+
+`N` is the iteration count, which is `≈ 25·CFL_h` cold and rather less warm.
+The `T_rhs` term always favours IMEX3D, by exactly the step-size ratio. The
+`N·T_iter` term is the bill, and it does not shrink when Δt grows — it *is* the
+floor. So the scheme wins when
+
+    N · T_iter  <  T_rhs · (Δt_imex/Δt_hevi − 1) · 2/3   (roughly)
+
+which is a statement about **how expensive `rhs!` is relative to the linear
+acoustic operator** — a property of the case, not of this file. A bare
+inviscid RHS loses. A full LES `rhs!` — SGS closure, wall model, microphysics,
+radiation — wins, and wins by more the more physics is in it.
+
+`JEXPRESSO_HEVI_PROFILE=1` measures both sides of that inequality on any deck:
+it prints `rhs!`, `f_imp` and the stage solve as seconds per step and as a
+percentage. If the stage solve is over about half the step, the levers above
+are where to go; if it is already small and the scheme still loses, the step
+size is not large enough to pay for `f_imp`.
 
 ## Implicit vertical diffusion
 

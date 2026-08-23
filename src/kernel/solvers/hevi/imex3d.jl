@@ -65,6 +65,17 @@
  per unit SIMULATED time approaches a floor rather than falling. Past the point
  where the four rhs! evaluations stop dominating, a larger Δt buys nothing.
 
+ THAT LAW IS THE COLD-START ONE, and it is the right number to quote for the
+ preconditioner because it depends on nothing but the operator's spectrum. The
+ RUNNING cost is lower: `:imex_warm_start` (on by default) begins each stage
+ solve from the previous stage's answer, and since consecutive stages differ by
+ O(dt*f) while the right-hand side is the whole deviation u - qe, the iteration
+ starts several orders down. Linear convergence turns those orders directly
+ into iterations not taken -- measured end to end through the ARK stepper, 5.0
+ iterations/solve against 21.7 cold, with the two states agreeing to 1.3e-10.
+ The setup report prints the cold number (reproducible, comparable between
+ decks); :imex_monitor prints the running one.
+
  BE CLEAR-EYED ABOUT WHAT THAT MEANS. One Krylov iteration measures 3.74x one
  HEVI vertical-operator application, which on the rtb_hevi case is about 1.8
  full rhs! evaluations. On a case whose rhs! is cheap -- rtb_imex's is a bare
@@ -190,6 +201,13 @@ struct IMEX3DCache{OPT, PCT, F1, F2}
     gdt::Float64
     linearization::Symbol
     update_freq::Int
+    # Start each stage solve from the previous one's answer rather than from
+    # zero (`:imex_warm_start`). See gmres_solve! for the measurement; the
+    # short version is that consecutive ARK stages differ by O(Δt·f) while the
+    # right-hand side is the whole deviation `u - qe`, so the guess arrives
+    # nearly four orders down and this operator's LINEAR convergence turns
+    # those orders directly into iterations not taken.
+    warm_start::Bool
     comm::MPI.Comm
 end
 
@@ -252,7 +270,8 @@ function imex3d_solve!(dst, src, params, gdt::Real)
               end
 
     hevi_trace("    IMEX: entering GMRES, gdt=", g)
-    iters, rel, converged = gmres_solve!(X, B, ws, matvec!, precon!)
+    iters, rel, converged = gmres_solve!(X, B, ws, matvec!, precon!;
+                                         warm = imex.warm_start)
     hevi_trace("    IMEX: GMRES done in ", iters, " iterations, rel. residual ", rel)
 
     if !converged
@@ -824,10 +843,11 @@ function build_imex3d(params, inputs)
     ws = GMRESWorkspace(npoin, op.nimp, inner;
                         m = restart, maxiter = maxiter, rtol = rtol, atol = atol)
 
+    warm = get(inputs, :imex_warm_start, true) == true
     imex = IMEX3DCache(topo, op, pc, ws,
                        zeros(Float64, npoin, op.nimp), zeros(Float64, npoin, op.nimp),
                        imex3d_fimp!, imex3d_solve!, tab.name, gdt,
-                       lin_mode, update_freq, comm)
+                       lin_mode, update_freq, warm, comm)
 
     #-------------------------------------------------------------------------
     # Self-checks.
@@ -910,7 +930,7 @@ function build_imex3d(params, inputs)
                   (vfast, sres, siter, ssv, wb, spec),
                   (R, mach, wamp, jamp, wdt),
                   (wallsrc, nwall_g), (time_ns() - t0) / 1e9;
-                  lin = lin_mode, ufreq = update_freq, verify = verify)
+                  lin = lin_mode, ufreq = update_freq, verify = verify, warm = warm)
 
     guard = Symbol(get(inputs, :imex_stability_guard, :warn))
     guard in (:warn, :error, :off) ||
@@ -942,7 +962,8 @@ computed with -- which is the one input that is a guess rather than a
 measurement.
 """
 function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, walls, secs;
-                       lin::Symbol = :RS, ufreq::Int = 0, verify::Bool = true)
+                       lin::Symbol = :RS, ufreq::Int = 0, verify::Bool = true,
+                       warm::Bool = true)
 
     comm   = params.mesh.parts.comm
     rank   = MPI.Comm_rank(comm)
@@ -1012,10 +1033,15 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
         @printf(" │      banded factors %.1f MB, Krylov basis %.1f MB (busiest rank)\n",
                 pb_max / 1024^2, kb_max / 1024^2)
     end
-    @printf(" │      restart %d, max %d iterations, rtol %.1e\n",
-            ws.m, ws.maxiter, ws.rtol)
+    @printf(" │      restart %d, max %d iterations, rtol %.1e, %s\n",
+            ws.m, ws.maxiter, ws.rtol,
+            warm ? "warm start (from the previous stage)" :
+                   "cold start (:imex_warm_start => false)")
     if verify
-        @printf(" │      measured: %d iterations to %.1e on a full-spectrum right-hand side\n",
+        # COLD-START count, deliberately: imex_verify_solve runs from zero, so
+        # this number is reproducible and comparable between decks. The running
+        # cost is the warm one, which :imex_monitor reports.
+        @printf(" │      measured: %d iterations to %.1e from a COLD start on a full-spectrum RHS\n",
                 siter, ws.rtol)
         @printf(" │      applied residual %.2e; state single-valued across ranks to %.2e\n",
                 sres, ssv)
