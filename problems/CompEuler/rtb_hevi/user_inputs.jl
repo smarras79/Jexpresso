@@ -60,6 +60,7 @@ function user_inputs()
     # physical time answers it.
     #---------------------------------------------------------------------------
     lexplicit = false
+    #lexplicit = true
 
     # Step sizes.
     #
@@ -171,7 +172,8 @@ function user_inputs()
         # AMR: off. HEVI refuses :ladapt -- adaptation invalidates the column
         # topology, the factorised column matrices and the gather/scatter plan.
         #---------------------------------------------------------------------------
-        :linitial_refine      => false,
+        :linitial_refine      => true,
+        :init_refine_lvl      => 1,
         :ladapt               => false,
     ) #Dict
     return inputs
