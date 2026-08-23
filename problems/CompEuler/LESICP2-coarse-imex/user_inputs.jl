@@ -1,12 +1,26 @@
 #==============================================================================
  LESICP2-coarse-imex -- LESICP2-coarse, run with the fully 3D IMEX integrator.
 
- A copy of problems/CompEuler/LESICP2-coarse-hevi with one more scheme wired
- in. Physics, mesh, closure, wall model, filter, stretching, sounding and
- statistics are BYTE-IDENTICAL to that case -- the only differences are which
- integrator runs, the step size each one takes, and the output directory. That
- is the whole point: any difference in the answer, or in the wall clock, is the
- time integrator and nothing else.
+ Originally a copy of problems/CompEuler/LESICP2-coarse-hevi with one more
+ scheme wired in.
+
+ THE GUARANTEE THIS DECK MAKES is that its own THREE ARMS are identical to each
+ other: across DBG_SCHEME only :ode_solver, :Δt and :output_dir change, so any
+ difference in the answer or the wall clock between them is the time integrator
+ and nothing else. That is checked, not assumed.
+
+ IT NO LONGER MATCHES THE STANDALONE -hevi DECK, and deliberately so -- the two
+ have since been edited apart:
+
+     key                     -coarse   -coarse-hevi   -coarse-imex (here)
+     :lfilter                false     true           false
+     :first_zelement_size    12.0      10.0           10.0
+
+ So do NOT compare a run of this deck against a run of LESICP2-coarse-hevi:
+ that comparison now carries a filter difference as well as an integrator one.
+ Compare WITHIN this deck instead -- DBG_SCHEME=hevi gives the same HEVI
+ configuration under the same physics as DBG_SCHEME=imex, which is what the
+ standalone -hevi case was for before this one existed.
 
  THREE SCHEMES, ONE SWITCH
  -------------------------
