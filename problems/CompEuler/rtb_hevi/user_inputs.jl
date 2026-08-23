@@ -21,7 +21,7 @@ function user_inputs()
     lexplicit = false
     #lexplicit = true
 
-    Δt   = parse(Float64, get(ENV, "DBG_DT", lexplicit ? "0.19" : "0.5"))
+    Δt   = parse(Float64, get(ENV, "DBG_DT", lexplicit ? "0.19" : "0.19"))
     tend = parse(Float64, get(ENV, "DBG_TEND", "1000.0"))
 
     inputs = Dict(
