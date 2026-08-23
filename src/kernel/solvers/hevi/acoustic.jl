@@ -179,3 +179,69 @@ function hevi_verify_fast(params, opfull::HEVIOperator, opvert::HEVIOperator,
     return (rel_vertical = rel_vertical, horiz_response = horiz,
             ok = rel_vertical < 1.0e-10 && horiz > 0.0)
 end
+
+"""
+    hevi_verify_fast_energy(params, op, dτ, nstep) -> NamedTuple
+
+Integrate the isolated acoustic system `dV/dt = A V` with the same
+forward-backward substep the split-explicit integrator uses, and report how the
+energy-like norm behaves.
+
+This is the test that separates the operator from the scheme around it. The
+acoustic subsystem is non-dissipative, so its discrete solution should neither
+grow nor decay appreciably; a norm that climbs step after step at a rate that
+does not move with `dτ` is the operator or the boundary treatment, not the
+outer Runge-Kutta.
+
+Returns the per-step growth factor, which is `1` for a neutral scheme.
+"""
+function hevi_verify_fast_energy(params, op::HEVIOperator, dτ::Real, nstep::Int)
+
+    npoin = Int(params.mesh.npoin)
+    nimp  = op.nimp
+    slot  = op.slot
+    mom   = (slot[2], slot[3], slot[4])
+    mas   = (slot[1], slot[5])
+
+    # smooth, mesh-resolved initial perturbation in rho*theta
+    x, z = params.mesh.x, params.mesh.z
+    xmin, xmax = extrema(x); zmin, zmax = extrema(z)
+    let c = get_mpi_comm()
+        if MPI.Comm_size(c) > 1
+            xmin = MPI.Allreduce(xmin, MPI.MIN, c); xmax = MPI.Allreduce(xmax, MPI.MAX, c)
+            zmin = MPI.Allreduce(zmin, MPI.MIN, c); zmax = MPI.Allreduce(zmax, MPI.MAX, c)
+        end
+    end
+    Lx = max(xmax - xmin, eps()); Lz = max(zmax - zmin, eps())
+
+    V = zeros(Float64, npoin, nimp)
+    @inbounds for ip = 1:npoin
+        V[ip, slot[5]] = sinpi(2.0 * (x[ip] - xmin) / Lx) * sinpi((z[ip] - zmin) / Lz)
+    end
+
+    R = similar(V)
+    nrm(W) = begin
+        s = 0.0
+        @inbounds for q = 1:nimp, ip = 1:npoin
+            s += W[ip, q]^2
+        end
+        c = get_mpi_comm()
+        MPI.Comm_size(c) > 1 ? sqrt(MPI.Allreduce(s, MPI.SUM, c)) : sqrt(s)
+    end
+
+    n0 = nrm(V)
+    for _ = 1:nstep
+        hevi_apply_A!(R, V, params, op)
+        @inbounds for q in mom, ip = 1:npoin
+            V[ip, q] += dτ * R[ip, q]
+        end
+        hevi_apply_A!(R, V, params, op)
+        @inbounds for q in mas, ip = 1:npoin
+            V[ip, q] += dτ * R[ip, q]
+        end
+    end
+    n1 = nrm(V)
+
+    growth = n0 > 0 ? (n1 / n0)^(1 / max(nstep, 1)) : NaN
+    return (norm0 = n0, norm1 = n1, growth_per_step = growth)
+end

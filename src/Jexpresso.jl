@@ -262,6 +262,7 @@ include(joinpath( "kernel", "solvers", "hevi", "acoustic.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "ark.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "hevi.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "cfl_diagnostics.jl"))
+include(joinpath( "kernel", "solvers", "hevi", "substep.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 

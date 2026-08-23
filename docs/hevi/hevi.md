@@ -384,3 +384,143 @@ factorised column matrices and the gather/scatter plan.
   as the binding term, this split will not help. *(Not implemented.)*
 * **Fixed step.** The tableaux carry no embedded error estimator.
 * **No AMR.**
+
+---
+
+## 10. Where the methods come from
+
+Compiled from the standard literature; verify the bibliographic details against
+the originals before citing them in a paper.
+
+### IMEX additive Runge–Kutta
+
+* **Ascher, U. M., Ruuth, S. J. & Spiteri, R. J. (1997).** *Implicit–explicit
+  Runge–Kutta methods for time-dependent partial differential equations.*
+  Applied Numerical Mathematics **25**(2–3), 151–167.
+  — The ARS family. `:ARS111 :ARS121 :ARS122 :ARS222 :ARS232 :ARS343 :ARS443`
+  in `ark.jl` are these tableaux; the naming ARS(s\_exp, s\_imp, order) is theirs.
+* **Kennedy, C. A. & Carpenter, M. H. (2003).** *Additive Runge–Kutta schemes
+  for convection–diffusion–reaction equations.* Applied Numerical Mathematics
+  **44**(1–2), 139–181.
+  — The additive-RK framework: two tableaux sharing stage values, order
+  conditions, and stiff accuracy (which is why ARS232's last stage is the
+  answer and its RHS evaluation is reused as the FSAL).
+
+### HEVI for the nonhydrostatic atmosphere
+
+* **Giraldo, F. X., Kelly, J. F. & Constantinescu, E. M. (2013).**
+  *Implicit–explicit formulations of a three-dimensional nonhydrostatic unified
+  model of the atmosphere (NUMA).* SIAM Journal on Scientific Computing
+  **35**(5), B1162–B1194.
+  — The closest antecedent of this implementation: IMEX/HEVI splitting of the
+  compressible Euler equations in a spectral-element atmospheric model,
+  including the choice to linearise the implicit operator about the reference
+  state so it is affine-free.
+* **Weller, H., Lock, S.-J. & Wood, N. (2013).** *Runge–Kutta IMEX schemes for
+  the horizontally explicit/vertically implicit (HEVI) solution of wave
+  equations.* Journal of Computational Physics **252**, 365–381.
+  — The **joint** two-parameter stability analysis of §4: a HEVI mode loads the
+  explicit and implicit halves simultaneously, so `R(z_E, z_I)` over a
+  rectangle is the figure of merit and the explicit imaginary radius is not.
+  `ark_joint_amplification` implements this.
+* **Ullrich, P. A. & Jablonowski, C. (2012).** *Operator-split
+  Runge–Kutta–Rosenbrock methods for nonhydrostatic atmospheric models.*
+  Monthly Weather Review **140**, 1257–1284.
+* **Bao, L., Klöfkorn, R. & Nair, R. D. (2015).** *Horizontally explicit and
+  vertically implicit (HEVI) time discretization scheme for a discontinuous
+  Galerkin nonhydrostatic model.* Monthly Weather Review **143**, 972–990.
+* **Durran, D. R. & Blossey, P. N. (2012).** *Implicit–explicit multistep
+  methods for fast-wave–slow-wave problems.* Monthly Weather Review **140**,
+  1307–1325.
+  — The fast-wave/slow-wave framing, and why the slow part must genuinely be
+  slow.
+
+### Split-explicit / acoustic substepping
+
+* **Klemp, J. B. & Wilhelmson, R. B. (1978).** *The simulation of
+  three-dimensional convective storm dynamics.* Journal of the Atmospheric
+  Sciences **35**, 1070–1096.
+  — The original time-split scheme with **forward–backward** acoustic
+  substeps. The inner scheme in `substep.jl` is this one.
+* **Wicker, L. J. & Skamarock, W. C. (2002).** *Time-splitting methods for
+  elastic models using forward time schemes.* Monthly Weather Review **130**,
+  2088–2097.
+  — The **RK3 outer step** (Δt/3, Δt/2, Δt, each starting from uⁿ) used in
+  `substep.jl`.
+* **Skamarock, W. C. & Klemp, J. B. (1992).** *The stability of time-split
+  numerical methods for the hydrostatic and the nonhydrostatic elastic
+  equations.* Monthly Weather Review **120**, 2109–2127.
+  — **Required reading for the current state of `substep.jl`.** Time-split
+  schemes are weakly unstable as constructed: the frozen slow tendency and the
+  substepped acoustics interact, and stability needs explicit **divergence
+  damping** and/or off-centring of the acoustic substep. Neither is
+  implemented yet, which is consistent with the outer step limit measured
+  below.
+* **Klemp, J. B., Skamarock, W. C. & Dudhia, J. (2007).** *Conservative
+  split-explicit time integration methods for the compressible nonhydrostatic
+  equations.* Monthly Weather Review **135**, 2897–2913.
+  — The formulation used in WRF, including the off-centring parameter of the
+  vertically-implicit acoustic step and the 3D divergence damping.
+
+### Explicit reference scheme and the benchmark
+
+* **Carpenter, M. H. & Kennedy, C. A. (1994).** *Fourth-order 2N-storage
+  Runge–Kutta schemes.* NASA Technical Memorandum 109112.
+  — `CarpenterKennedy2N54`, the explicit scheme every measurement here is
+  compared against.
+* **Robert, A. (1993).** *Bubble convection experiments with a semi-implicit
+  formulation of the Euler equations.* Journal of the Atmospheric Sciences
+  **50**, 1865–1873.
+* **Giraldo, F. X. & Restelli, M. (2008).** *A study of spectral element and
+  discontinuous Galerkin methods for the Navier–Stokes equations in
+  nonhydrostatic mesoscale atmospheric modeling.* Journal of Computational
+  Physics **227**, 3849–3877.
+  — The rising thermal bubble in the form used by `rtb_hevi` and
+  `CompEuler/theta`.
+
+### Numerical linear algebra
+
+The per-column solve is LAPACK's banded LU (`dgbtrf` / `dgbtrs`) through
+Julia's `LinearAlgebra`. The probing extraction of a banded matrix by
+colouring the rows modulo the bandwidth is the standard sparse-Jacobian
+colouring argument, e.g. **Curtis, A. R., Powell, M. J. D. & Reid, J. K.
+(1974),** *On the estimation of sparse Jacobian matrices*, IMA Journal of
+Applied Mathematics **13**, 117–120.
+
+---
+
+## 11. Status of acoustic substepping (`substep.jl`)
+
+Implemented and **not yet delivering its intended benefit.** Recorded here so
+the state is not mistaken for a finished feature.
+
+**What works.** The fast operator (§2, `acoustic.jl`) is verified exactly: on a
+horizontally uniform field it reproduces the vertical HEVI operator to `0.0`,
+bit-identical at 1 and 4 ranks. In isolation, `dV/dt = A V` under
+forward–backward substeps is essentially neutral — growth per substep
+1.000059 / 1.000225 / 1.000765 at Δτ = 0.02 / 0.04 / 0.08, scaling like Δτ².
+The integrator runs and is stable at Δt ≤ ≈0.2 s.
+
+**What does not.** The outer step should be limited by advection and diffusion
+(≈4.8 s on this mesh); measured, it is limited to ≈0.2 s, about twice the
+explicit acoustic limit of 0.0995 s. Above that it diverges within five or six
+outer steps.
+
+**Eliminated by measurement**, each with a dedicated run:
+
+| hypothesis | test | result |
+|---|---|---|
+| substep Δτ too large | rate-summed limit, stage counts corrected | no change |
+| floor/lid flux mismatch between `f_fast` and `rhs!` | `:hevi_wall_flux => false` | no change |
+| solution-dependent artificial viscosity in the frozen slow part | `:lvisc => false` | no change |
+
+**Most likely remaining cause**, in order:
+
+1. **No divergence damping or off-centring.** Skamarock & Klemp (1992) show a
+   time-split scheme is weakly unstable without them, and Klemp et al. (2007)
+   give the forms used in practice. This is the literature-supported next step.
+2. **Boundary projection.** `rhs!` applies free-slip by projecting the state at
+   boundary nodes, so `S = rhs!(Pu) − f_fast(u)`; nothing re-applies `P` during
+   the substeps, so `u` drifts off the boundary condition within a stage, and
+   the drift grows with stage length. Split-explicit codes apply the wall
+   condition inside the substeps.

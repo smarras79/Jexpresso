@@ -30,7 +30,7 @@ function user_inputs()
         # whichever scheme is running, so a run that is silently over its limit
         # is visible before it diverges.
         #---------------------------------------------------------------------------
-        :ode_solver           => lexplicit ? CarpenterKennedy2N54() : HEVI_ARK(:ARS232),
+        :ode_solver           => get(ENV,"DBG_SPLIT","0")=="1" ? SPLIT_EXPLICIT() : (lexplicit ? CarpenterKennedy2N54() : HEVI_ARK(:ARS232)),
         :Δt                   => Δt,
 
         :tinit                => 0.0,
@@ -80,7 +80,7 @@ function user_inputs()
         # shrinking r0 by 8x while scaling μ by 8x moves that ratio from
         # theta's 0.18 to 0.41. Same-domain, same-μ removes the question.
         #---------------------------------------------------------------------------
-        :lvisc                => true,
+        :lvisc                => parse(Bool, get(ENV,"DBG_VISC","true")),
         :visc_model           => AV(),
         :μ                    => [0.0, 125.0, 125.0, 125.0, 125.0],
         :energy_equation      => "theta",

@@ -544,6 +544,18 @@ function params_setup(sem,
         params = merge(params, (hevi = build_hevi(params, inputs),))
     end
 
+    # SPLIT_EXPLICIT: same story as HEVI -- the fast operator reads the mesh,
+    # the metrics, the basis and the reference state off `params`, and the
+    # integrator reaches it as `p.substep`.
+    if inputs[:ode_solver] isa SPLIT_EXPLICIT
+        if sem.mesh.SD != NSD_3D()
+            error("SPLIT_EXPLICIT is 3D only; this case is $(typeof(sem.mesh.SD)).")
+        elseif backend != CPU()
+            error("SPLIT_EXPLICIT has no GPU path.")
+        end
+        params = merge(params, (substep = build_substep(params, inputs, inputs[:Δt]),))
+    end
+
     println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)
 
     return params, u

@@ -677,6 +677,11 @@ function build_hevi(params, inputs)
                              "\n [fast op] cost: f_fast ", round(t_fast*1e3, digits=3),
                              " ms   rhs! ", round(t_rhs*1e3, digits=3),
                              " ms   ratio ", round(t_fast/t_rhs, digits=4), "\n")
+        for dtau in (0.02, 0.04, 0.08)
+            e = hevi_verify_fast_energy(params, opf, dtau, 40)
+            rank == 0 && println("   [fast op] FB energy growth/step at dtau=", dtau,
+                                 ": ", round(e.growth_per_step, digits=6))
+        end
     end
 
     # The joint IMEX stability of THIS tableau at THIS Δt on THIS mesh. The
