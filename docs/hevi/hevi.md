@@ -5,7 +5,10 @@ compressible Euler equations.**
 
 Source: `src/kernel/solvers/hevi/` — `columns.jl`, `operator.jl`,
 `factorize.jl`, `ark.jl`, `hevi.jl`, `cfl_diagnostics.jl` (included in that
-order).
+order). The same directory also holds two schemes that are built on this
+machinery but are *not* HEVI: acoustic substepping (`acoustic.jl`,
+`substep.jl`) and fully three-dimensional implicit acoustics (`krylov.jl`,
+`imex3d.jl`, documented in `src/kernel/solvers/hevi/README_IMEX3D.md`).
 
 Worked example throughout: `problems/CompEuler/rtb_hevi`, on
 `hevi_10x1x50.msh`.
@@ -215,6 +218,24 @@ moved with the rank count.
 > survives — and it did, at 0.79 %/s. `ark_joint_amplification` is a
 > purely imaginary-axis analysis and is therefore **conservative by
 > construction**: it is the undamped answer.
+>
+> **That wedge is now computed, and it is the criterion the 3D IMEX uses.**
+> `ark_wedge_amplification` takes the sup over `{zE ≤ mach·zI}` instead of over
+> the rectangle. The distinction is not a relaxation of the test — it is a
+> different *set*, and which one applies is decided by the split, not by taste:
+>
+> * **HEVI** puts horizontal sound in `zE` and vertical sound in `zI`. Two
+>   independent wavenumbers, so the whole rectangle is reachable and the strip
+>   above is a real mode. ARS343 is out.
+> * **IMEX3D** puts *all* the acoustics in `zI`, leaving advection in `zE`. One
+>   wavenumber sets both, `zE/zI = |v|/c`, and the strip lies outside the
+>   reachable wedge for any subsonic flow. ARS343 is neutral there out to
+>   `zE = 2.83` — its full explicit radius — against 1.57 for ARS443 and 1.15
+>   for ARS232, and it is `IMEX_ARK`'s default.
+>
+> So the Giraldo et al. ARS(3,4,3) result and the §4.2 verdict are not merely
+> compatible, they are the same statement evaluated on two different sets.
+> `test/imex3d/test_wedge_stability.jl` recomputes both columns.
 
 **Judge a tableau by `ark_joint_amplification`, never by the explicit radius.**
 A check that samples only `z_I = 0` passes ARS343. `test/hevi/test_joint_stability.jl`
@@ -447,7 +468,11 @@ factorised column matrices and the gather/scatter plan.
 * **Bounded by acoustic anisotropy.** Removes the vertical acoustic term and
   nothing else. On an isotropic mesh HEVI is slower than explicit.
 * **Horizontal acoustics stay explicit.** Getting past the anisotropy ratio
-  needs acoustic substepping or a full 3D implicit solve. *(Not implemented.)*
+  needs acoustic substepping (`substep.jl`, `SPLIT_EXPLICIT`) or a full 3D
+  implicit solve (`imex3d.jl`, `IMEX_ARK` — see
+  `src/kernel/solvers/hevi/README_IMEX3D.md`). Both are now implemented, and
+  the second one reuses HEVI's column solve as its preconditioner, so the two
+  compose rather than compete.
 * **Vertical diffusion stays explicit.** If the CFL report names SGS diffusion
   as the binding term, this split will not help. *(Not implemented.)*
 * **Fixed step.** The tableaux carry no embedded error estimator.

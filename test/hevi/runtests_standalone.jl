@@ -123,7 +123,7 @@ end
 
 #--- 6. end-to-end stage solve ------------------------------------------------
 fac = build_column_factorization(params, op, cc, topo, γdt)
-hevi = HEVICache(topo, op, cc, fac, hevi_fimp!, hevi_column_solve!, :ARS343, γdt)
+hevi = HEVICache(topo, op, cc, fac, hevi_fimp!, hevi_column_solve!, :ARS343, γdt, :RS, 5)
 ph   = merge(params, (hevi = hevi,))
 
 npoin = params.mesh.npoin

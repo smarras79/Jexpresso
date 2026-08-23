@@ -137,9 +137,21 @@ struct MockMesh
     ip2gip::Vector{Int}; gip2owner::Vector{Int}
     SD::NSD_3D; parts::MockParts
 end
+# The FULL metric tensor, not just the diagonal.
+#
+# The vertical HEVI operator only ever touches dζd*, so this fixture used to
+# carry those plus the two diagonal entries the fixture's own RHS needs. The
+# 3D acoustic operator contracts all three derivative sweeps with all nine
+# components, and a missing field is a `type has no field` error at the first
+# application -- which is the right failure, but only if the fields are here
+# to be tested against. On this Cartesian box the six off-diagonal entries are
+# identically zero, and that is exactly the point: a sign or index error in
+# the new ξ/η sweeps has to show up as a term that should have cancelled and
+# did not.
 struct MockMetrics
     Je::Array{Float64,4}
-    dξdx::Array{Float64,4}; dηdy::Array{Float64,4}
+    dξdx::Array{Float64,4}; dξdy::Array{Float64,4}; dξdz::Array{Float64,4}
+    dηdx::Array{Float64,4}; dηdy::Array{Float64,4}; dηdz::Array{Float64,4}
     dζdx::Array{Float64,4}; dζdy::Array{Float64,4}; dζdz::Array{Float64,4}
 end
 
@@ -161,7 +173,8 @@ function barrier in hevi_apply_A! has something to be tested against.
 """
 mutable struct UntypedMetrics
     Je
-    dξdx; dηdy
+    dξdx; dξdy; dξdz
+    dηdx; dηdy; dηdz
     dζdx; dζdy; dζdz
 end
 struct MockBasis; dψ::Matrix{Float64}; end
@@ -237,8 +250,8 @@ function build_mock_params(; nelx = 2, nely = 2, nelz = 5, p = 2,
     zer  = zeros(nelem, ngl, ngl, ngl)
     _mtype  = untyped_metrics ? UntypedMetrics : MockMetrics
     metrics = _mtype(Je,
-                     fill(2.0/hx, nelem, ngl, ngl, ngl),
-                     fill(2.0/hy, nelem, ngl, ngl, ngl),
+                     fill(2.0/hx, nelem, ngl, ngl, ngl), copy(zer), copy(zer),
+                     copy(zer), fill(2.0/hy, nelem, ngl, ngl, ngl), copy(zer),
                      copy(zer), copy(zer), fill(2.0/hz, nelem, ngl, ngl, ngl))
 
     # lumped mass, assembled across ranks

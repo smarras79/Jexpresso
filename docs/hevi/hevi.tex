@@ -230,6 +230,27 @@ away. This code runs at ratio 2--5 with a constant $\mu$ ($h^2$ damping, not
 $h^4$), so the strip survives --- and it did, at $0.79\,\%$/s.
 \texttt{ark\_joint\_amplification} is a purely imaginary-axis analysis and is
 therefore \textbf{conservative by construction}: it is the undamped answer.
+
+\medskip
+\textbf{That wedge is now computed, and it is the criterion the 3D IMEX uses.}
+\texttt{ark\_wedge\_amplification} takes the supremum over
+$\{z_E \le \mathrm{Ma}\,z_I\}$ rather than over the rectangle. This is not a
+relaxation of the test but a different \emph{set}, and which one applies is
+decided by the split:
+\begin{itemize}
+\item \textbf{HEVI} puts horizontal sound in $z_E$ and vertical sound in
+      $z_I$. Two independent wavenumbers, so the whole rectangle is reachable
+      and the unstable strip above is a real mode. ARS343 is out.
+\item \textbf{IMEX3D} puts \emph{all} the acoustics in $z_I$, leaving
+      advection in $z_E$. One wavenumber sets both, $z_E/z_I=|v|/c$, and the
+      strip lies outside the reachable wedge for any subsonic flow. ARS343 is
+      neutral there out to $z_E=2.83$ --- its full explicit radius --- against
+      $1.57$ for ARS443 and $1.15$ for ARS232, and it is \texttt{IMEX\_ARK}'s
+      default.
+\end{itemize}
+So the Giraldo et al.\ ARS(3,4,3) result and the verdict above are not merely
+compatible: they are the same statement evaluated on two different sets.
+\texttt{test/imex3d/test\_wedge\_stability.jl} recomputes both columns.
 \end{quote}
 
 \begin{quote}
@@ -474,8 +495,12 @@ topology, the factorised column matrices and the gather/scatter plan.
 \item \textbf{Bounded by acoustic anisotropy.} Removes the vertical acoustic
       term and nothing else; on an isotropic mesh HEVI is slower than explicit.
 \item \textbf{Horizontal acoustics stay explicit.} Getting past the anisotropy
-      ratio needs acoustic substepping or a full 3D implicit solve.
-      \emph{(Not implemented.)}
+      ratio needs acoustic substepping (\texttt{substep.jl},
+      \texttt{SPLIT\_EXPLICIT}) or a full 3D implicit solve
+      (\texttt{imex3d.jl}, \texttt{IMEX\_ARK}; see
+      \texttt{src/kernel/solvers/hevi/README\_IMEX3D.md}). Both are now
+      implemented, and the second reuses HEVI's column solve as its
+      preconditioner, so the two compose rather than compete.
 \item \textbf{Vertical diffusion stays explicit.} If the CFL report names SGS
       diffusion as the binding term, this split will not help.
       \emph{(Not implemented.)}

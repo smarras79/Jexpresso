@@ -27,7 +27,7 @@ scheme would buy. Four outcomes, three of which are *not* "use HEVI":
 |---|---|
 | vertical acoustics | HEVI. This is what it is for. |
 | SGS diffusion | Make the **vertical diffusion** implicit, not the acoustics. HEVI as built here will buy almost nothing. The parabolic limit goes as `Δz²`, so on a mesh refined to resolve a surface layer it can easily beat the acoustic limit. |
-| horizontal acoustics | HEVI cannot help. Only acoustic substepping or a 3D implicit solve removes this. |
+| horizontal acoustics | HEVI cannot help. Acoustic substepping (`substep.jl`) or the fully 3D implicit solve (`README_IMEX3D.md`) removes it. |
 | advection | Already at the floor. No time-integration trick helps; the mesh is the only lever. |
 
 The report costs one RHS evaluation, and that evaluation is also what fills
@@ -85,7 +85,12 @@ The remaining fast term is horizontal sound, and only two things remove it:
   removes. The two compose; neither replaces the other.
 
 * **a 3D implicit acoustic solve.** Removes the constraint entirely, at the
-  cost of a global elliptic solve per stage. A different project.
+  cost of a global elliptic solve per stage. **This now exists** — see
+  `README_IMEX3D.md` and `imex3d.jl`. It turned out not to be a different
+  project, because the column solver in this directory is exactly the
+  preconditioner that global solve needs: the Krylov iteration count then
+  scales with the *horizontal* acoustic Courant number, and the two schemes
+  compose rather than compete.
 
 Cheaper things worth knowing about, not implemented here: reduced sound speed
 (RSST) scales the continuity equation's time derivative by `1/ξ²` and buys `ξ`
@@ -243,14 +248,23 @@ block-banded per column and distributed over MPI.
 
 ### Files
 
+Only the first six are HEVI proper. `acoustic.jl` / `substep.jl` are the
+acoustic-substepping scheme and `krylov.jl` / `imex3d.jl` are the fully 3D
+implicit one (`README_IMEX3D.md`); both are built on the operator and column
+machinery below, which is why they live here.
+
 | file | what it does |
 |---|---|
 | `cfl_diagnostics.jl` | direction-wise stability limits and what each scheme would buy |
 | `columns.jl` | global column identification, and the MPI gather/scatter for columns that straddle ranks |
 | `operator.jl` | the linear vertical acoustic-gravity operator |
 | `factorize.jl` | one banded LU per column; the matrix is *probed out of the operator*, not hand-derived |
-| `ark.jl` | ARS IMEX tableaux, registered as an OrdinaryDiffEq algorithm |
+| `ark.jl` | ARS IMEX tableaux and the ARK stepper, shared with IMEX3D |
 | `hevi.jl` | setup, self-check, report |
+| `acoustic.jl` | the full 3D acoustic operator, shared with IMEX3D |
+| `substep.jl` | the acoustic-substepping integrator |
+| `krylov.jl` | distributed GMRES (IMEX3D) |
+| `imex3d.jl` | fully 3D implicit acoustics: setup, stage solve, report |
 
 ### The matrix is extracted, not derived
 

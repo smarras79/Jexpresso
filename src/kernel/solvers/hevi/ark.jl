@@ -22,10 +22,17 @@
  THE CONTRACT WITH `p`
  ---------------------
  The algorithm reaches the implicit operator through the ODE parameter
- object, which in Jexpresso is `params`:
+ object, which in Jexpresso is `params`. `ark_hooks(alg, p)` resolves which
+ field carries them -- `p.hevi` for HEVI_ARK, `p.imex` for IMEX_ARK -- once at
+ `init`, and the stepper then only ever sees:
 
-     p.hevi.fimp!(du, u, p, t)          f_imp evaluated at u
-     p.hevi.solve!(dst, src, p, gdt)    dst = (I - gdt*A)^-1 (src - qref) + qref
+     hooks.fimp!(du, u, p, t)          f_imp evaluated at u
+     hooks.solve!(dst, src, p, gdt)    dst = (I - gdt*A)^-1 (src - qref) + qref
+
+ That is the whole interface, which is why the same stepper drives both the
+ vertically-implicit split (whose solve is a banded LU per column) and the
+ fully 3D one (whose solve is a preconditioned Krylov iteration). Anything
+ supplying those two functions can be integrated by this file.
 
  `f_exp` is never written down: it is `f(u) - f_imp(u)`, evaluated as a
  subtraction. That is one extra (cheap) operator application per stage, in
@@ -298,6 +305,125 @@ function ark_joint_dt_max(tab::ARKTableau, rate_exp::Real, rate_imp::Real;
 end
 
 """
+    ark_wedge_amplification(tab, zEmax, zImax, mach; n = 241) -> (amp, zE, zI)
+
+The IMEX figure of merit for a split whose implicit half takes **all** of the
+acoustics: `max |R(i·zE, i·zI)|` over the WEDGE
+
+    { (zE, zI) : 0 <= zI <= zImax,  0 <= zE <= min(mach·zI, zEmax) }
+    ∪  the zI = 0 edge, 0 <= zE <= zEmax
+
+rather than over the full rectangle. Returns the amplification and where it
+was attained.
+
+WHY THE RECTANGLE IS THE WRONG SET ONCE THE SPLIT IS FULLY THREE-DIMENSIONAL
+---------------------------------------------------------------------------
+`ark_joint_amplification` scans the whole rectangle `[0,zEmax] x [0,zImax]`,
+and for HEVI that is exactly right: there `zE` is the HORIZONTAL acoustic
+rate `Δt·c·kx` and `zI` the VERTICAL one `Δt·c·kz`, the mesh supports every
+`(kx, kz)` pair independently, so every corner of the rectangle is a mode the
+run actually has.
+
+Move all three directions of the acoustics to the implicit half and that stops
+being true. What is left explicit is advection, `zE = Δt·|v|·k`, and the SAME
+wavenumber `k` puts `zI = Δt·c·k` on the implicit half at the same time. The
+two are locked together by the Mach number:
+
+    zE / zI = |v| / c
+
+so the reachable set is a wedge of opening `mach`, not a rectangle. Its one
+detached piece is the `zI = 0` edge -- the entropy and vorticity modes, which
+are advected and carry no acoustic partner.
+
+This is not a technicality; it reverses the ranking of the family. Measured
+here (see `test/imex3d/test_wedge_stability.jl`, which recomputes them):
+
+    tableau   RHS/step   rectangle, sup over zI      wedge at mach <= 0.3
+    ARS232        3      neutral                     zE <= 1.15
+    ARS443        4      neutral                     zE <= 1.57
+    ARS343        4      amplifies for zE > 0.07     zE <= 2.83
+
+Per RHS evaluation -- which is what converts into wall-clock -- that is 0.38,
+0.39 and 0.71. ARS343 is not marginally better here, it is nearly twice the
+step per unit work, and its wedge limit is its full explicit imaginary radius:
+at these Mach numbers the acoustic coupling costs it nothing at all.
+
+ARS343 is unusable for HEVI and the best of the family here, for the same
+reason in both cases: its unstable region sits at `zI` of order 1 with `zE`
+of order 1 too. HEVI puts modes there. A fully 3D split cannot -- reaching
+`zE = 1` costs `zI = 1/mach >= 3`, and by then the L-stable implicit half has
+damped the mode by an order of magnitude.
+
+`mach` should be an upper bound on `|v|/c` over the run, not its initial
+value: it is the ONE input here that grows as the flow develops.
+"""
+function ark_wedge_amplification(tab::ARKTableau, zEmax::Real, zImax::Real,
+                                 mach::Real; n::Int = 241)
+    s   = tab.s
+    zEm = Float64(zEmax); zIm = Float64(zImax); M = Float64(mach)
+    amp = 0.0; aE = 0.0; aI = 0.0
+
+    @inline function _amp(e, i)
+        zE = im * e
+        zI = im * i
+        Y  = (I(s) - zE * tab.aE - zI * tab.aI) \ ones(ComplexF64, s)
+        return abs(1 + zE * sum(tab.bE .* Y) + zI * sum(tab.bI .* Y))
+    end
+
+    for i in range(0.0, zIm; length = n)
+        emax = min(M * i, zEm)
+        # `emax` shrinks to zero at the wedge apex, so a fixed sample count
+        # there would spend the whole budget resolving nothing. Scale it, but
+        # keep at least two points so the edge itself is always sampled.
+        ne = max(2, ceil(Int, n * emax / max(zEm, eps())))
+        for e in range(0.0, emax; length = ne)
+            r = _amp(e, i)
+            r > amp && (amp = r; aE = e; aI = i)
+        end
+    end
+    # The advected, non-acoustic modes: zI = 0 is not in the wedge (it is its
+    # apex) but the modes are real and this is where the explicit half stands
+    # alone, so it is the edge that sets zEmax in the first place.
+    for e in range(0.0, zEm; length = n)
+        r = _amp(e, 0.0)
+        r > amp && (amp = r; aE = e; aI = 0.0)
+    end
+    return (amp, aE, aI)
+end
+
+"""
+    ark_wedge_dt_max(tab, rate_exp, rate_imp, mach; rtol = 1e-4) -> Float64
+
+Largest Δt for which `ark_wedge_amplification(tab, Δt·rate_exp, Δt·rate_imp,
+mach)` stays at 1. The wedge analogue of `ark_joint_dt_max`, and the number
+the 3D IMEX setup report quotes.
+
+Brackets before bisecting, for the reason spelled out in `ark_joint_dt_max`:
+a fixed upper cap returns the cap rather than the limit whenever the limit is
+above it, and a capped value is indistinguishable from a real one in a report
+that a deck's Δt is then chosen against.
+"""
+function ark_wedge_dt_max(tab::ARKTableau, rate_exp::Real, rate_imp::Real, mach::Real;
+                          rtol::Real = 1.0e-4, n::Int = 121)
+    ok(dt) = ark_wedge_amplification(tab, dt * rate_exp, dt * rate_imp, mach; n = n)[1] <=
+             1 + 1.0e-9
+    ok(1.0e-8) || return 0.0
+
+    h = 1.0e-7
+    while ok(h)
+        h *= 2.0
+        h > 1.0e8 && return h        # unconditionally stable in this direction
+    end
+    lo = 0.5 * h
+
+    while h - lo > rtol * max(lo, eps())
+        m = 0.5 * (lo + h)
+        ok(m) ? (lo = m) : (h = m)
+    end
+    return lo
+end
+
+"""
     ark_imaginary_radius(tab; tol = 1e-4) -> Float64
 
 Largest `y` for which `|R(iy)| <= 1`: the pure-advection stability limit of
@@ -391,12 +517,94 @@ HEVI_ARK(name::Symbol = :ARS232) = HEVI_ARK(ark_tableau(name))
 
 Base.show(io::IO, alg::HEVI_ARK) = print(io, "HEVI_ARK(:", alg.tab.name, ")")
 
-_ODEC.alg_order(alg::HEVI_ARK)   = alg.tab.order
-_ODEC.isfsal(::HEVI_ARK)         = true
-_ODEC.isadaptive(::HEVI_ARK)     = false
-_ODEC.alg_extrapolates(::HEVI_ARK) = false
+"""
+    IMEX_ARK(name::Symbol = :ARS343)
 
-mutable struct HEVI_ARK_Cache{uType, rateType, TabType} <: _ODEC.OrdinaryDiffEqMutableCache
+Fully three-dimensional implicit-explicit additive Runge-Kutta: the **whole**
+linear acoustic-gravity subsystem is implicit, in all three directions, and
+what is left explicit is advection, diffusion, the sources and the closures.
+
+Same place in a deck as any other integrator:
+
+    :ode_solver => IMEX_ARK(:ARS343),
+    :Δt         => 1.5,                 # limited by ADVECTION now, not sound
+
+It runs the same stepper as `HEVI_ARK` -- same tableaux, same
+`fimp!` / `solve!` contract, same FSAL and stiff-accuracy handling. The one
+difference is where the stage solve goes: HEVI's implicit operator is
+column-local and is inverted by a banded LU per column, while this one couples
+the whole domain and is inverted by a preconditioned Krylov iteration, with
+that very column solve as the preconditioner. See `imex3d.jl`.
+
+WHICH TABLEAU, AND WHY IT IS THE OPPOSITE ANSWER TO HEVI'S
+----------------------------------------------------------
+`:ARS343`, and the reason is `ark_wedge_amplification`. HEVI leaves the
+horizontal acoustics explicit, so the explicit and implicit halves are loaded
+by two INDEPENDENT wavenumbers and the whole `(zE, zI)` rectangle is
+reachable; ARS343 amplifies there for any `zE > 0.07` and is unusable. Here
+the acoustics are entirely implicit, the explicit half sees only advection,
+and the same wavenumber sets both -- so the reachable set is the wedge
+`zE <= mach·zI` and ARS343 is neutral on it out to `zE = 2.83` -- its full
+explicit imaginary radius, i.e. the acoustic coupling costs it nothing at all
+-- against ARS443's 1.57 and ARS232's 1.15. Over four RHS evaluations rather
+than three, that is still nearly twice the step per unit work.
+
+Fixed step only, as `HEVI_ARK`: the tableaux carry no embedded error estimate,
+and `rhs!` contains MPI collectives that an adaptive controller would reach a
+different number of times on each rank.
+"""
+struct IMEX_ARK <: _ODEC.OrdinaryDiffEqAlgorithm
+    tab::ARKTableau
+end
+# ONE constructor here too -- see the comment above HEVI_ARK's.
+IMEX_ARK(name::Symbol = :ARS343) = IMEX_ARK(ark_tableau(name))
+
+Base.show(io::IO, alg::IMEX_ARK) = print(io, "IMEX_ARK(:", alg.tab.name, ")")
+
+"""
+    ARK_ALG
+
+The two algorithms that share this file's stepper. They differ only in which
+object on `p` carries the `fimp!` / `solve!` hooks, which `ark_hooks` resolves
+once per run rather than per step.
+"""
+const ARK_ALG = Union{HEVI_ARK, IMEX_ARK}
+
+"""
+    ark_hooks(alg, p)
+
+The implicit-half hook object for this algorithm, off the ODE parameter
+object. Resolved in `alg_cache` and stored, so `perform_step!` neither
+searches `p` nor hard-codes a field name -- and so a deck that names the
+integrator without `params_setup` having built the matching cache fails at
+`init`, with a message, instead of on the first stage.
+"""
+ark_hooks(::HEVI_ARK, p) = hasproperty(p, :hevi) ? p.hevi :
+    error("HEVI_ARK was selected but `params` carries no `hevi` cache. ",
+          "params_setup builds it only when hevi_enabled(inputs) is true, so put ",
+          ":ode_solver => HEVI_ARK(...) in user_inputs.jl rather than swapping the ",
+          "integrator in afterwards.")
+ark_hooks(::IMEX_ARK, p) = hasproperty(p, :imex) ? p.imex :
+    error("IMEX_ARK was selected but `params` carries no `imex` cache. ",
+          "params_setup builds it only when imex3d_enabled(inputs) is true, so put ",
+          ":ode_solver => IMEX_ARK(...) in user_inputs.jl rather than swapping the ",
+          "integrator in afterwards.")
+
+"""
+    ark_relinearize!(params, hooks, u)
+
+Refresh the implicit operator's coefficients from the state `u` and refactorise
+whatever the scheme factorises. The `:PS` half of the linearisation switch;
+`:RS` never calls it. One method per hook type, in the file that defines it.
+"""
+function ark_relinearize! end
+
+_ODEC.alg_order(alg::ARK_ALG)   = alg.tab.order
+_ODEC.isfsal(::ARK_ALG)         = true
+_ODEC.isadaptive(::ARK_ALG)     = false
+_ODEC.alg_extrapolates(::ARK_ALG) = false
+
+mutable struct HEVI_ARK_Cache{uType, rateType, TabType, HookType} <: _ODEC.OrdinaryDiffEqMutableCache
     u::uType
     uprev::uType
     tab::TabType
@@ -407,6 +615,11 @@ mutable struct HEVI_ARK_Cache{uType, rateType, TabType} <: _ODEC.OrdinaryDiffEqM
     ftmp::rateType
     fsalfirst::rateType
     k::rateType
+    # The implicit half's hooks (`fimp!`, `solve!`, the linearisation policy),
+    # resolved from `p` once at `init` by `ark_hooks`. Held here rather than
+    # looked up per step so the stepper never names a field of `params` and
+    # the same `perform_step!` serves HEVI and the 3D IMEX.
+    hv::HookType
 end
 
 _ODEC.get_fsalfirstlast(cache::HEVI_ARK_Cache, u) = (cache.fsalfirst, cache.k)
@@ -415,7 +628,7 @@ _ODEC.full_cache(c::HEVI_ARK_Cache) = (c.u, c.uprev, c.U, c.tmp, c.ftmp, c.fsalf
 
 # Trailing `args...` absorbs the `verbose` argument that OrdinaryDiffEq v7
 # added to this signature; v6 calls it without.
-function _ODEC.alg_cache(alg::HEVI_ARK, u, rate_prototype, ::Type{uEltypeNoUnits},
+function _ODEC.alg_cache(alg::ARK_ALG, u, rate_prototype, ::Type{uEltypeNoUnits},
                          ::Type{uBottomEltypeNoUnits}, ::Type{tTypeNoUnits},
                          uprev, uprev2, f, t, dt, reltol, p, calck,
                          ::Val{true}, args...) where {uEltypeNoUnits, uBottomEltypeNoUnits, tTypeNoUnits}
@@ -424,15 +637,16 @@ function _ODEC.alg_cache(alg::HEVI_ARK, u, rate_prototype, ::Type{uEltypeNoUnits
                    [zero(rate_prototype) for _ = 1:s],
                    [zero(rate_prototype) for _ = 1:s],
                    zero(u), zero(u),
-                   zero(rate_prototype), zero(rate_prototype), zero(rate_prototype))
+                   zero(rate_prototype), zero(rate_prototype), zero(rate_prototype),
+                   ark_hooks(alg, p))
 end
 
-function _ODEC.alg_cache(alg::HEVI_ARK, u, rate_prototype, ::Type{uEltypeNoUnits},
+function _ODEC.alg_cache(alg::ARK_ALG, u, rate_prototype, ::Type{uEltypeNoUnits},
                          ::Type{uBottomEltypeNoUnits}, ::Type{tTypeNoUnits},
                          uprev, uprev2, f, t, dt, reltol, p, calck,
                          ::Val{false}, args...) where {uEltypeNoUnits, uBottomEltypeNoUnits, tTypeNoUnits}
-    error("HEVI_ARK is in-place only. The state here is a large distributed field; ",
-          "an out-of-place formulation would allocate a full copy per stage.")
+    error(typeof(alg), " is in-place only. The state here is a large distributed ",
+          "field; an out-of-place formulation would allocate a full copy per stage.")
 end
 
 function _ODEC.initialize!(integrator, cache::HEVI_ARK_Cache)
@@ -458,7 +672,7 @@ function _ODEC.perform_step!(integrator, cache::HEVI_ARK_Cache, repeat_step = fa
     p     = integrator.p
     tab   = cache.tab
     s     = tab.s
-    hv    = p.hevi
+    hv    = cache.hv
 
     HEVI_STEP_COUNT[] += 1
 
@@ -472,7 +686,7 @@ function _ODEC.perform_step!(integrator, cache::HEVI_ARK_Cache, repeat_step = fa
     # state has not moved yet.
     if hv.linearization === :PS && HEVI_STEP_COUNT[] > 1 &&
        (HEVI_STEP_COUNT[] - 1) % hv.update_freq == 0
-        hevi_relinearize!(p, hv, uprev)
+        ark_relinearize!(p, hv, uprev)
     end
 
     tracing = HEVI_TRACE[] && HEVI_STEP_COUNT[] <= HEVI_TRACE_STEPS[]
@@ -502,14 +716,16 @@ function _ODEC.perform_step!(integrator, cache::HEVI_ARK_Cache, repeat_step = fa
         γ  = tab.aI[i, i]
         Ui = cache.U
         if γ != 0.0
-            # (I - γΔt A)(U - qref) = tmp - qref, solved column by column
-            tracing && hevi_trace("  stage ", i, ": entering column solve, gdt=", dt * γ)
+            # (I - γΔt A)(U - qref) = tmp - qref. HEVI solves it column by
+            # column with a banded LU; the 3D IMEX solves it with a
+            # preconditioned Krylov iteration over the whole domain.
+            tracing && hevi_trace("  stage ", i, ": entering implicit solve, gdt=", dt * γ)
             _t = hevi_tic()
             hv.solve!(Ui, tmp, p, dt * γ)
             if hevi_prof_on()
                 HEVI_PROFILE.t_solve += (time_ns() - _t) * 1e-9; HEVI_PROFILE.n_solve += 1
             end
-            tracing && hevi_trace("  stage ", i, ": column solve done")
+            tracing && hevi_trace("  stage ", i, ": implicit solve done")
         else
             copyto!(Ui, tmp)
         end

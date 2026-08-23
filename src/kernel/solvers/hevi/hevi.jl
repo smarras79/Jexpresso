@@ -126,6 +126,10 @@ function hevi_relinearize!(params, hevi::HEVICache, u)
     return hevi
 end
 
+# The stepper in ark.jl calls `ark_relinearize!` so that it never has to know
+# which scheme's hooks it is holding; this is HEVI's method.
+ark_relinearize!(params, hevi::HEVICache, u) = hevi_relinearize!(params, hevi, u)
+
 
 """
     hevi_enabled(inputs) -> Bool

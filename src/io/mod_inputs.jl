@@ -224,8 +224,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # p4est. A deck can still say either explicitly; if it asks for HEVI on
     # the SFC partition, build_hevi refuses rather than diverging quietly
     # twelve seconds in.
+    #
+    # IMEX3D needs it for both halves of the same argument: its preconditioner
+    # is the very same per-column banded solve, and the skewness argument above
+    # applies to the 3D acoustic operator exactly as it does to the vertical
+    # one -- more so, since nothing is left explicit to absorb a growing mode.
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = hevi_enabled(inputs)
+        inputs[:lxy_partition] = hevi_enabled(inputs) || imex3d_enabled(inputs)
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))

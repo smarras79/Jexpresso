@@ -544,6 +544,28 @@ function params_setup(sem,
         params = merge(params, (hevi = build_hevi(params, inputs),))
     end
 
+    #------------------------------------------------------------------------------------
+    # IMEX3D: same story as HEVI, and for the same reasons -- the 3D acoustic
+    # operator, its column preconditioner and the Krylov workspace all read the
+    # mesh, the metrics, the basis and the reference state off `params`, and the
+    # integrator reaches them as `p.imex`.
+    #
+    # Eagerly, not lazily: setup does global reductions, an all-to-all and (with
+    # :imex_verify on) a full Krylov solve. Putting collectives behind a lazily
+    # taken branch is how a run deadlocks on the rank that took the other one.
+    #------------------------------------------------------------------------------------
+    if imex3d_enabled(inputs)
+        if sem.mesh.SD != NSD_3D()
+            error("IMEX3D is 3D only; this case is $(typeof(sem.mesh.SD)). ",
+                  "Use an explicit integrator, or drop :limex / :ode_solver => IMEX_ARK.")
+        elseif backend != CPU()
+            error("IMEX3D has no GPU path: the column preconditioner is a LAPACK banded ",
+                  "LU on the host and the gather/scatter moves host arrays. Run with ",
+                  "CPU(), or use an explicit integrator on the GPU.")
+        end
+        params = merge(params, (imex = build_imex3d(params, inputs),))
+    end
+
     # SPLIT_EXPLICIT: same story as HEVI -- the fast operator reads the mesh,
     # the metrics, the basis and the reference state off `params`, and the
     # integrator reaches it as `p.substep`.

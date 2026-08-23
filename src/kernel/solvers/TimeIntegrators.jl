@@ -391,6 +391,19 @@ function time_loop!(inputs, params, u, args...)
                   "estimate. Set :ode_adaptive_solver => false.")
     end
 
+    if inputs[:ode_solver] isa IMEX_ARK
+        hasproperty(params, :imex) ||
+            error("The deck asks for IMEX_ARK but params carries no IMEX3D cache. ",
+                  "params_setup builds it only when imex3d_enabled(inputs) is true, so ",
+                  "set :ode_solver => IMEX_ARK(:ARS343) in user_inputs.jl rather than ",
+                  "swapping the integrator in later.")
+        inputs[:ode_adaptive_solver] == true &&
+            error("IMEX_ARK is fixed-step: its tableaux carry no embedded error ",
+                  "estimate, and an adaptive controller would disagree between ranks ",
+                  "about the step size -- which, since rhs! contains MPI collectives, ",
+                  "deadlocks rather than fails. Set :ode_adaptive_solver => false.")
+    end
+
     if get(inputs, :lcfl_report, false) == true
         _u    = copy(u)
         _qnm1 = copy(params.qp.qnm1);   _qnm2 = copy(params.qp.qnm2)

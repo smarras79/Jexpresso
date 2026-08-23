@@ -310,12 +310,18 @@ function cfl_report(params, u, t; io = stdout, dt = nothing)
     @printf(io, " │    HEVI  (vertical acoustics implicit)            %6.2fx\n", gain(rate_hevi))
     @printf(io, " │    HEVI + implicit vertical diffusion            %6.2fx\n", gain(rate_hevi_diff))
     @printf(io, " │    HEVI + acoustic substepping (outer step)      %6.2fx\n", gain(rate_split))
+    # IMEX3D removes the same three acoustic terms the substepping outer step
+    # does, so the Δt gain is identical. What differs is the price: substepping
+    # pays it in inner steps at the horizontal acoustic limit, IMEX3D in Krylov
+    # iterations per stage. Listed separately because they are separate schemes
+    # and the reader is choosing between them.
+    @printf(io, " │    IMEX3D (all acoustics implicit)               %6.2fx\n", gain(rate_split))
     println(io, " │")
     binder = argmax([_rate(L.dt_acoustic_x) + _rate(L.dt_acoustic_y),
                      _rate(L.dt_acoustic_z),
                      _rate(L.dt_viscous_x) + _rate(L.dt_viscous_y) + _rate(L.dt_viscous_z),
                      _rate(L.dt_advective_x) + _rate(L.dt_advective_y) + _rate(L.dt_advective_z)])
-    names = ("horizontal acoustics -- only substepping or a 3D implicit solve removes this",
+    names = ("horizontal acoustics -- HEVI cannot help; substepping or IMEX3D removes it",
              "vertical acoustics   -- this is what HEVI is for",
              "SGS diffusion        -- make the VERTICAL DIFFUSION implicit, not the acoustics",
              "advection            -- already at the floor; no time-integration trick helps")

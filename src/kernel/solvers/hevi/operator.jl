@@ -62,6 +62,10 @@ Everything the vertical implicit operator needs, built once at setup.
   `thetabar` reference θ, per node
   `wtop`     per-node flag: node sits on the domain floor or lid, where the
              implicit vertical mass flux is set to zero
+  `wallx`    per-node flag: node sits on a free-slip boundary whose normal is
+             x, where the implicit x mass flux is set to zero. Only the FULL
+             operator reads it -- the vertical one carries no x flux to zero.
+  `wally`    the same for y
   `V`, `R`   work arrays, npoin x nimp: operator input (deviation) and output
 """
 struct HEVIOperator{TF <: AbstractFloat, CT}
@@ -76,6 +80,8 @@ struct HEVIOperator{TF <: AbstractFloat, CT}
     beta::Vector{TF}
     thetabar::Vector{TF}
     wall::Vector{Bool}
+    wallx::Vector{Bool}
+    wally::Vector{Bool}
     V::Matrix{TF}
     R::Matrix{TF}
     rhs_el::Array{TF,5}
@@ -130,10 +136,18 @@ function hevi_choose_vars(metrics, comm)
 end
 
 """
-    build_hevi_operator(params, topo, vars; lwall_flux = true) -> HEVIOperator
+    build_hevi_operator(params, topo, vars; lwall_flux = true, full = false,
+                        wallx = nothing, wally = nothing) -> HEVIOperator
+
+`wallx` / `wally` are per-node free-slip flags for the lateral boundaries.
+They are only meaningful for the FULL operator -- the vertical one carries no
+horizontal mass flux to zero -- and default to "no lateral wall", which is
+what a laterally periodic case wants. See `imex_lateral_walls`.
 """
 function build_hevi_operator(params, topo::ColumnTopology, vars::Vector{Int};
-                             lwall_flux::Bool = true, full::Bool = false)
+                             lwall_flux::Bool = true, full::Bool = false,
+                             wallx::Union{Nothing, AbstractVector{Bool}} = nothing,
+                             wally::Union{Nothing, AbstractVector{Bool}} = nothing)
 
     mesh  = params.mesh
     npoin = Int(mesh.npoin)
@@ -197,9 +211,18 @@ function build_hevi_operator(params, topo::ColumnTopology, vars::Vector{Int};
               "mass flux); got $vars.")
     end
 
+    # Lateral free-slip flags. Length-checked here rather than trusted: a
+    # caller handing over a vector built against a different npoin would
+    # otherwise silently index out of a neighbouring node's flag.
+    wx = wallx === nothing ? falses(npoin) : Vector{Bool}(wallx)
+    wy = wally === nothing ? falses(npoin) : Vector{Bool}(wally)
+    (length(wx) == npoin && length(wy) == npoin) ||
+        error("HEVI/IMEX: the lateral wall flags must be npoin = $npoin long; got ",
+              "$(length(wx)) and $(length(wy)).")
+
     z4(n) = zeros(TF, n, n, n, nimp)
     return HEVIOperator{TF, typeof(cache)}(
-        copy(vars), nimp, slot, beta, thetabar, Vector(wall),
+        copy(vars), nimp, slot, beta, thetabar, Vector(wall), wx, wy,
         V, R, rhs_el, RHS, vaux,
         zeros(TF, ngl, nimp), zeros(TF, ngl, nimp), zeros(TF, ngl, nimp),
         cache, lwall_flux, full,
@@ -276,7 +299,7 @@ function _hevi_A_elements!(rhs_el, V, beta, thetabar, wall, Fv, Gv, Hv,
 end
 
 """
-    _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, F, G, H,
+    _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, wallx, wally, F, G, H,
                            conn, dψ, ω, Je,
                            dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
                            nelem, ngl, nimp, slot, g)
@@ -291,10 +314,27 @@ a fast operator that is not the exact acoustic part of the explicit
 discretisation leaves a residual fast mode in the slow part, and the outer
 step stays pinned by sound with nothing in the output to say why.
 
+THE LATERAL WALLS ARE PART OF THE OPERATOR, NOT A DETAIL
+--------------------------------------------------------
+At a free-slip boundary the normal mass flux vanishes, so the normal
+component of the linearised momentum must not enter the continuity or the
+potential-temperature flux -- exactly the condition the vertical kernel
+already imposes at the floor and the lid through `wall`. The pressure term in
+the *momentum* flux stays: `p` at a wall is not zero, it is what pushes back.
+
+The vertical kernel never needed the horizontal version because it carries no
+horizontal flux. This one does, and leaving it out is not a small error on a
+walled domain: the implicit half would let sound run out through the side
+walls, the difference would land in `f_exp = rhs! - f_imp` as a stiff
+residual at exactly the nodes where `rhs!` projects the normal momentum out,
+and the horizontal acoustic step-size limit this whole scheme exists to
+remove would come back along the boundary with nothing in the output to say
+so.
+
 Behind the same typed function barrier as the vertical kernel, and for the
 same reason (see the comment in `hevi_apply_A!`).
 """
-function _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, F, G, H,
+function _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, wallx, wally, F, G, H,
                                 conn, dψ, ω, Je,
                                 dξdx, dξdy, dξdz,
                                 dηdx, dηdy, dηdz,
@@ -315,23 +355,27 @@ function _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, F, G, H,
             dρu = V[ip, sρu]
             dρv = V[ip, sρv]
             dρw = V[ip, sρw]
-            noflux = wall[ip]
+            # Free-slip: the normal MASS flux vanishes, the pressure term in
+            # the normal MOMENTUM flux does not.
+            mx = wallx[ip] ? 0.0 : dρu
+            my = wally[ip] ? 0.0 : dρv
+            mz = wall[ip]  ? 0.0 : dρw
 
             for q = 1:nimp
                 F[i, j, k, q] = 0.0; G[i, j, k, q] = 0.0; H[i, j, k, q] = 0.0
             end
             # x flux
-            F[i, j, k, sρ]  = dρu
+            F[i, j, k, sρ]  = mx
             F[i, j, k, sρu] = β * dρθ
-            F[i, j, k, sρθ] = θb * dρu
+            F[i, j, k, sρθ] = θb * mx
             # y flux
-            G[i, j, k, sρ]  = dρv
+            G[i, j, k, sρ]  = my
             G[i, j, k, sρv] = β * dρθ
-            G[i, j, k, sρθ] = θb * dρv
+            G[i, j, k, sρθ] = θb * my
             # z flux -- the vertical mass and heat fluxes vanish at floor/lid
-            H[i, j, k, sρ]  = noflux ? 0.0 : dρw
+            H[i, j, k, sρ]  = mz
             H[i, j, k, sρw] = β * dρθ
-            H[i, j, k, sρθ] = noflux ? 0.0 : θb * dρw
+            H[i, j, k, sρθ] = θb * mz
         end
 
         # --- all three derivative sweeps, plus the buoyancy source -----------
@@ -411,7 +455,8 @@ function hevi_apply_A!(out::AbstractMatrix, V::AbstractMatrix, params, op::HEVIO
     # device rhs.jl uses for _inviscid_rhs_el_3d! -- see the comment there.
     #-------------------------------------------------------------------------
     if op.full
-        _hevi_A_elements_full!(rhs_el, V, op.beta, op.thetabar, op.wall,
+        _hevi_A_elements_full!(rhs_el, V, op.beta, op.thetabar,
+                               op.wall, op.wallx, op.wally,
                                op.F3, op.G3, op.H3,
                                mesh.connijk, params.basis.dψ, params.ω, met.Je,
                                met.dξdx, met.dξdy, met.dξdz,

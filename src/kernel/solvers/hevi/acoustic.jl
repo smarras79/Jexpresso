@@ -40,18 +40,29 @@
 =============================================================================#
 
 """
-    build_hevi_fast_operator(params, topo; lwall_flux = true) -> HEVIOperator
+    build_hevi_fast_operator(params, topo; lwall_flux = true,
+                             wallx = nothing, wally = nothing) -> HEVIOperator
 
 The complete linear acoustic-gravity operator, for use as the fast operator of
-a substepping split. Carries all five equations, because the horizontal
-pressure gradient and horizontal mass flux live in the ones HEVI leaves out.
+a substepping split, or as the implicit operator of a fully 3D IMEX scheme.
+Carries all five equations, because the horizontal pressure gradient and
+horizontal mass flux live in the ones HEVI leaves out.
 
-Never factorised: it is not column-local, and in a substepping scheme it is
-only ever applied.
+`wallx` / `wally` mark the nodes where the lateral mass flux has to vanish;
+they default to "no lateral wall", which is what a laterally periodic case
+wants and what the substepping scheme has always assumed. `imex_lateral_walls`
+builds them from the deck's own boundary faces.
+
+Never factorised: it is not column-local. A substepping scheme only applies
+it; the 3D IMEX solves with it iteratively, preconditioned by the column
+factorisation of its vertical part.
 """
-function build_hevi_fast_operator(params, topo::ColumnTopology; lwall_flux::Bool = true)
+function build_hevi_fast_operator(params, topo::ColumnTopology; lwall_flux::Bool = true,
+                                  wallx::Union{Nothing, AbstractVector{Bool}} = nothing,
+                                  wally::Union{Nothing, AbstractVector{Bool}} = nothing)
     return build_hevi_operator(params, topo, [1, 2, 3, 4, 5];
-                               lwall_flux = lwall_flux, full = true)
+                               lwall_flux = lwall_flux, full = true,
+                               wallx = wallx, wally = wally)
 end
 
 """
@@ -151,9 +162,12 @@ function hevi_verify_fast(params, opfull::HEVIOperator, opvert::HEVIOperator,
     # measures a different wavenumber and the number moves with the partition
     # for reasons that have nothing to do with the operator. extrema(x) is
     # rank-local, so reduce it.
-    x  = params.mesh.x
+    # coords[1, :] rather than mesh.x: they are the same array of numbers in
+    # Jexpresso, and coords is the one every mesh-like object here carries --
+    # including the standalone test fixture, which has no `x` field.
+    x  = @view params.mesh.coords[1, :]
     xmin, xmax = extrema(x)
-    let c = get_mpi_comm()
+    let c = params.mesh.parts.comm
         if MPI.Comm_size(c) > 1
             xmin = MPI.Allreduce(xmin, MPI.MIN, c)
             xmax = MPI.Allreduce(xmax, MPI.MAX, c)
@@ -170,7 +184,7 @@ function hevi_verify_fast(params, opfull::HEVIOperator, opvert::HEVIOperator,
         horiz = max(horiz, abs(Rf2[ip, opfull.slot[2]]))
     end
 
-    comm = get_mpi_comm()
+    comm = params.mesh.parts.comm
     if MPI.Comm_size(comm) > 1
         rel_vertical = MPI.Allreduce(rel_vertical, MPI.MAX, comm)
         horiz        = MPI.Allreduce(horiz,        MPI.MAX, comm)

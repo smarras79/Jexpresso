@@ -61,7 +61,8 @@ const DT_BIG   = 0.05     # HEVI stable with margin, explicit not
 const GAMMA    = ark_tableau(:ARS343).γ
 
 fac  = build_column_factorization(params, op, cc, topo, GAMMA * DT_SMALL)
-hevi = HEVICache(topo, op, cc, fac, hevi_fimp!, hevi_column_solve!, :ARS343, GAMMA * DT_SMALL)
+hevi = HEVICache(topo, op, cc, fac, hevi_fimp!, hevi_column_solve!, :ARS343, GAMMA * DT_SMALL,
+                 :RS, 5)
 ph   = merge(params, (rtb = RTBCache(params), hevi = hevi))
 
 npoin = params.mesh.npoin

@@ -74,6 +74,46 @@ const J = Jexpresso
         rE, rI = 26.6, 69.5
         @test J.ark_joint_amplification(J.HEVI_ARK().tab, 0.05*rE, 0.05*rI) ≤ 1 + 1e-9
     end
+
+    @testset "the rectangle is HEVI's set, and not IMEX3D's" begin
+        # This repository ships TWO defaults that disagree about ARS343:
+        #
+        #     HEVI_ARK()  -> :ARS232      (everything above says why)
+        #     IMEX_ARK()  -> :ARS343
+        #
+        # and a reader who finds one without the other will reasonably conclude
+        # the second is a mistake. It is not, and the difference is not a
+        # matter of judgement -- it is which (zE, zI) pairs the mesh can
+        # produce.
+        #
+        # HEVI splits the acoustics between the halves: zE is HORIZONTAL sound
+        # and zI VERTICAL sound, set by independent wavenumbers, so the whole
+        # rectangle is reachable and ARS343's unstable corner is in it. Move
+        # ALL the acoustics implicit and zE becomes ADVECTION at the same
+        # wavenumber that sets zI, so zE/zI = |v|/c and the reachable set is a
+        # WEDGE that ARS343's unstable region lies outside of.
+        #
+        # See src/kernel/solvers/hevi/README_IMEX3D.md, and
+        # test/imex3d/test_wedge_stability.jl, which recomputes the whole
+        # comparison without needing this dependency stack.
+        @test J.IMEX_ARK().tab.name === :ARS343
+
+        rE, rI = 26.6, 69.5          # the same mesh as above
+        Δt = 0.03
+        # unusable on the rectangle...
+        @test J.ark_joint_amplification(ars343, Δt*rE, Δt*rI) > 1.02
+        # ...and neutral on the wedge, at any subsonic Mach number.
+        for mach in (0.05, 0.1, 0.3)
+            @test J.ark_wedge_amplification(ars343, Δt*rE, Δt*rI, mach)[1] ≤ 1 + 1e-6
+        end
+
+        # And on the wedge it is the BEST of the family, which is the reverse
+        # of the ranking twenty lines above. Reported as the largest zE each
+        # stays neutral to, since that is what converts into Δt.
+        wedge_lim(tab; mach = 0.1) = J.ark_wedge_dt_max(tab, 1.0, 1.0/mach, mach)
+        @test wedge_lim(ars343) > wedge_lim(ars443) > wedge_lim(ars232)
+        @test wedge_lim(ars343) ≈ J.ark_imaginary_radius(ars343) rtol = 0.02
+    end
 end
 
 # The bisection in ark_joint_dt_max used to run inside a fixed hi = 0.5 and
