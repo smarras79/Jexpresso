@@ -21,7 +21,7 @@ function user_inputs()
     lexplicit = false
     #lexplicit = true
 
-    Δt   = parse(Float64, get(ENV, "DBG_DT", lexplicit ? "0.5" : "0.19"))
+    Δt   = parse(Float64, get(ENV, "DBG_DT", lexplicit ? "0.19" : "0.5"))
     tend = parse(Float64, get(ENV, "DBG_TEND", "1000.0"))
 
     inputs = Dict(
@@ -113,7 +113,7 @@ function user_inputs()
         # AMR: off. HEVI refuses :ladapt -- adaptation invalidates the column
         # topology, the factorised column matrices and the gather/scatter plan.
         #---------------------------------------------------------------------------
-        :linitial_refine      => true,
+        :linitial_refine      => false,
         :init_refine_lvl      => 1,
         :ladapt               => false,
     ) #Dict
