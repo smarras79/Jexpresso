@@ -91,6 +91,31 @@ expensive your `rhs!` is relative to the vertical acoustic operator. HEVI is
 *slower than explicit* on a case with a cheap RHS. `JEXPRESSO_HEVI_PROFILE=1`
 prints `t_rhs` and `t_fimp` per call, so `a` is one run away.
 
+> **This number is a property of the MESH, not of HEVI.** The contrast is
+> `problems/CompEuler/LESICP2-coarse-hevi`, whose setup report measures
+>
+> ```
+> node spacing    xi 138.1 m   eta 138.1 m   zeta 6.907 m     (20:1)
+> joint IMEX      explicit half 5.1 1/s, implicit half 34.6 1/s
+>                 Δt_max = 0.2410 s, recommended 0.1687 (70%)
+> ```
+>
+> — HEVI at Δt = 0.16 against the explicit deck's 0.01, i.e. **16×**. Same
+> split, same tableau, same code; the difference is that its elements are
+> 800 m wide against the target mesh's 80 m, so its anisotropy is 20:1 rather
+> than 1.92:1. **HEVI's gain is the anisotropy and nothing else**, so refining
+> horizontally destroys it while refining vertically creates it. Read the
+> `dominant term` line of your own CFL report before believing any figure in
+> this section.
+>
+> Note also that `κ` — the ratio of the measured operator spectrum to
+> `c/Δz_min`, which converts node spacings into rates — is itself
+> mesh-dependent: 1.44 on `rtb_hevi` (uniform), 0.69 on that stretched coarse
+> mesh, where only a few nodes carry the smallest gap. The table above uses
+> the uniform-mesh value, which is the right one for the unstretched
+> 128×128×120 target but not for a stretched grid. The setup report measures
+> it for whatever mesh you hand it.
+
 > **A caveat on the explicit baseline.** `CarpenterKennedy2N54`'s imaginary
 > radius is quoted as 3.34 in `ark.jl` and 3.95 in `docs/hevi/hevi.md`, and the
 > ratio above moves from 1.25× to 1.03× between them. The LESICP2 deck runs
