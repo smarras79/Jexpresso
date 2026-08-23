@@ -258,19 +258,39 @@ function ark_joint_amplification(tab::ARKTableau, zEmax::Real, zImax::Real; n::I
 end
 
 """
-    ark_joint_dt_max(tab, rate_exp, rate_imp; tol = 1e-4, hi = 0.5) -> Float64
+    ark_joint_dt_max(tab, rate_exp, rate_imp; rtol = 1e-4, hi = nothing) -> Float64
 
 Largest Δt for which `ark_joint_amplification(tab, Δt·rate_exp, Δt·rate_imp)`
 stays at 1. `rate_exp` and `rate_imp` are the largest eigenvalue magnitudes
 (1/s) the explicit and implicit halves see on this mesh.
 """
 function ark_joint_dt_max(tab::ARKTableau, rate_exp::Real, rate_imp::Real;
-                          tol::Real = 1.0e-4, hi::Real = 0.5, n::Int = 161)
+                          rtol::Real = 1.0e-4, hi::Union{Nothing,Real} = nothing,
+                          n::Int = 161)
     ok(dt) = ark_joint_amplification(tab, dt * rate_exp, dt * rate_imp; n = n) <= 1 + 1.0e-9
-    lo = 1.0e-5
+    lo = 1.0e-8
     ok(lo) || return 0.0
-    h = Float64(hi)
-    while h - lo > tol
+
+    # BRACKET FIRST, then bisect. This used to take a fixed `hi = 0.5` and
+    # bisect inside it, which silently returns the CAP rather than the limit
+    # whenever the true limit is above it -- and 0.5 is not a large number
+    # here: on hevi_10x1x50 the answer is 0.357, well inside it, but the same
+    # tableau at rate_exp = 1 returns 0.4999 for both ARS232 and ARS443, which
+    # is the cap and not a property of either method. A capped value is
+    # indistinguishable from a real one in the setup report, and it errs
+    # towards saying a Δt is safe.
+    h = hi === nothing ? 1.0e-7 : Float64(hi)
+    if hi === nothing
+        while ok(h)
+            h *= 2.0
+            h > 1.0e8 && return h    # unconditionally stable in this direction
+        end
+        lo = 0.5 * h
+    end
+
+    # Relative tolerance: an absolute one is meaningless across limits that
+    # span 1e-4 to 1e2 in the tableaux this is called on.
+    while h - lo > rtol * max(lo, eps())
         m = 0.5 * (lo + h)
         ok(m) ? (lo = m) : (h = m)
     end

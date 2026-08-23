@@ -75,3 +75,20 @@ const J = Jexpresso
         @test J.ark_joint_amplification(J.HEVI_ARK().tab, 0.05*rE, 0.05*rI) ≤ 1 + 1e-9
     end
 end
+
+# The bisection in ark_joint_dt_max used to run inside a fixed hi = 0.5 and
+# return that cap whenever the true limit was above it -- indistinguishable, in
+# the setup report, from a real limit, and erring towards calling a Δt safe.
+# At rate_exp = rate_imp = 1 both ARS232 and ARS443 sit well above 0.5, so a
+# capped implementation returns 0.4999 for both.
+@testset "joint Δt_max is not capped by the search bracket" begin
+    ars232 = J.ark_tableau(:ARS232)
+    ars443 = J.ark_tableau(:ARS443)
+    @test J.ark_joint_dt_max(ars232, 1.0, 1.0) > 1.0
+    @test J.ark_joint_dt_max(ars443, 1.0, 1.0) > 1.0
+    # ARS443 is uncoupled: its joint limit is its explicit imaginary radius and
+    # does not move with the stiffness ratio. ARS232 is mildly coupled and
+    # degrades. Both must be found without a caller-supplied bracket.
+    @test J.ark_joint_dt_max(ars443, 1.0, 40.0) ≈ J.ark_imaginary_radius(ars443) rtol=0.01
+    @test J.ark_joint_dt_max(ars232, 1.0, 40.0) < J.ark_joint_dt_max(ars232, 1.0, 1.0)
+end
