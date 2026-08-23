@@ -56,27 +56,32 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
             min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
             #-------------------------------------------------------------
-            # Robert (1993) / Giraldo & Restelli (2008) warm bubble, on the
-            # 1000 m domain of rtb_8x1x24.geo.
+            # The bubble of the 2D CompEuler/theta case, verbatim: same centre
+            # (2500 m), same radius (2000 m), same amplitude (2 K) and the same
+            # LINEAR taper θc(1 - r/r0). Together with the matching domain and
+            # resolution of rtb_10x1x10.msh and the matching :μ in
+            # user_inputs.jl, this makes the case theta as a 3D slab, so an
+            # explicit run here must reproduce theta and any difference under
+            # HEVI belongs to the time integrator.
             #
-            # The perturbation is a cosine bump rather than the linear taper
-            # θc(1 - r/r0) that the larger-domain variant of this case uses.
-            # Both are in the literature; the cosine one is C1 at the bubble
-            # edge, and on a spectral element mesh a kink there rings for the
-            # rest of the run. This case exists to exercise the TIME
-            # integrator, so the spatial solution should not be fighting Gibbs
-            # oscillations at the same time.
+            # Note what the amplitude does NOT control: how diffused the result
+            # looks. That is set by the diffusion length relative to the bubble,
+            # sqrt(μ t)/r0. theta runs μ = 125 to t = 1000 s on r0 = 2000 m, so
+            # sqrt(125*1000)/2000 = 0.18. The earlier 250 m bubble here reached
+            # 0.41 at μ = 15 -- more than twice as smeared in units of its own
+            # radius, on an EIGHT TIMES smaller μ. Match the geometry before
+            # reading anything into a viscosity.
             #
             # r is measured in the x-z plane only, so the bubble is a cylinder
             # along y and the solution stays y-invariant. |v| is then a free
             # diagnostic: anything above round-off means something went wrong.
             #-------------------------------------------------------------
             xc = (max_x + min_x)/2
-            zc =  350.0 #m
-            r0 =  250.0 #m
+            zc = 2500.0 #m
+            r0 = 2000.0 #m
         
             θref = 300.0 #K
-            θc   =   0.5 #K
+            θc   =   2.0 #K
             for ip = 1:mesh.npoin
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
@@ -85,7 +90,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
             
                 Δθ = 0.0 #K
                 if r < r0
-                    Δθ = 0.5*θc*(1.0 + cospi(r/r0))
+                    Δθ = θc*(1.0 - r/r0)
                 end
                 θ = θref + Δθ
                 p    = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
