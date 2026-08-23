@@ -1,5 +1,11 @@
 function user_inputs()
 
+    # Implicit vertical diffusion is opt-in per run: DBG_VDIFF=1. Read into a
+    # local here rather than inline because two keys below have to agree about
+    # it -- switching it on also switches the linearisation to :PS, without
+    # which the implicit operator would carry no diffusion at all.
+    _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "false"))
+
     #---------------------------------------------------------------------------
     # HEVI or fully explicit -- ONE switch.
     #
@@ -70,11 +76,39 @@ function user_inputs()
         # :lcfl_report        print the stability table at startup. Read the
         #                     "dominant term" line.
         #---------------------------------------------------------------------------
+        # :implicit_vdiff  MAKE THE VERTICAL SGS DIFFUSION IMPLICIT AS WELL.
+        #
+        # HEVI and the 3D IMEX remove the acoustic limit. What is left is
+        # whatever was second, and on a mesh refined in z that is the SGS
+        # diffusion of the vertical derivative, nu/dz^2. It is invisible at
+        # startup -- the CFL report is taken on a laminar sounding where nu_t
+        # is ~0 -- and it arrives on its own schedule as the boundary layer
+        # spins up, which is what a blow-up at a fixed MODEL time looks like.
+        #
+        # This puts d/dz(mu d/dz) on u, v, w and theta into the same column
+        # operator that already carries the vertical acoustics, so it costs a
+        # wider band and no new solve. The horizontal and cross terms stay
+        # explicit; they are dz/dx of what is removed.
+        #
+        # It REQUIRES :PS under a dynamic closure -- the coefficient is read
+        # from the closure, which returns its molecular floor at t = 0, so :RS
+        # would freeze it there and the operator would carry no diffusion at
+        # all. DBG_VDIFF=1 therefore switches the linearisation with it (and
+        # DBG_LIN still overrides).
+        #---------------------------------------------------------------------------
+        :implicit_vdiff       => _vdiff,
+        #---------------------------------------------------------------------------
         :hevi_verify          => parse(Bool, get(ENV, "DBG_VERIFY", "true")),
-        :hevi_linearization   => Symbol(get(ENV, "DBG_LIN", "RS")),
+        :hevi_linearization   => Symbol(get(ENV, "DBG_LIN", _vdiff ? "PS" : "RS")),
         :hevi_update_freq     => parse(Int, get(ENV, "DBG_UPDFREQ", "5")),
         :hevi_wall_flux       => true,
         :lcfl_report          => true,
+        # :lcfl_report_every  re-print that table every N steps. :lcfl_report shows it
+        #                   ONCE, at startup, where nu_t is ~0 on a laminar sounding --
+        #                   so its viscous row says diffusion never limits dt, and says
+        #                   it truthfully, at t = 0. Watch that row cross the line as the
+        #                   boundary layer spins up. Collective and cheap; 0 = off.
+        :lcfl_report_every    => parse(Int, get(ENV, "DBG_CFL_EVERY", "0")),
 	:lrestart             => false,
 	#:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",

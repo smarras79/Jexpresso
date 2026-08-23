@@ -26,7 +26,7 @@ scheme would buy. Four outcomes, three of which are *not* "use HEVI":
 | dominant term | what to do |
 |---|---|
 | vertical acoustics | HEVI. This is what it is for. |
-| SGS diffusion | Make the **vertical diffusion** implicit, not the acoustics. HEVI as built here will buy almost nothing. The parabolic limit goes as `Δz²`, so on a mesh refined to resolve a surface layer it can easily beat the acoustic limit. |
+| SGS diffusion | Set **`:implicit_vdiff => true`** — the acoustics are not what binds. The parabolic limit goes as `Δz²`, so on a mesh refined to resolve a surface layer it easily beats the acoustic one, and HEVI's acoustic split alone buys almost nothing. See [Implicit vertical diffusion](#implicit-vertical-diffusion) below. |
 | horizontal acoustics | HEVI cannot help. Acoustic substepping (`substep.jl`) or the fully 3D implicit solve (`README_IMEX3D.md`) removes it. |
 | advection | Already at the floor. No time-integration trick helps; the mesh is the only lever. |
 
@@ -178,6 +178,8 @@ Optional knobs:
 | `:hevi_wall_flux` | `true` | zero the implicit vertical mass flux at floor and lid |
 | `:hevi_vars` | auto | override the implicit variable set |
 | `:lcfl_report` | `false` | print the stability table at startup |
+| `:lcfl_report_every` | `0` | re-print it every N steps (0 = off). The startup table is taken on a laminar sounding, where `ν_t ≈ 0`; this is how the viscous row is watched as the boundary layer spins up. Collective. `JEXPRESSO_CFL_REPORT_EVERY` overrides. |
+| `:implicit_vdiff` | `false` | make the **vertical** SGS diffusion implicit too — see [below](#implicit-vertical-diffusion). Needs `:hevi_linearization => :PS` under a dynamic closure. |
 | `:lprecompile_warmup` | `true` | one throw-away step before the real solve |
 
 `:ode_adaptive_solver => true` is refused, and not only because the tableaux
@@ -412,6 +414,119 @@ contiguous. The ground truth is the split percentage the setup prints.
 
 ---
 
+## Implicit vertical diffusion
+
+`:implicit_vdiff => true` moves `∂/∂z(μ ∂/∂z)` on `u`, `v`, `w` and `θ` into the
+same column operator that already carries the vertical acoustics. It serves HEVI
+and the 3D IMEX from one implementation, because both build the same operator
+and both invert it with the same banded LU.
+
+### Why it exists
+
+Removing the acoustic limit exposes whatever was second, and on a mesh refined
+in `z` that is not advection — it is the SGS diffusion of the vertical
+derivative:
+
+    λ_visc ~ ν / Δz²
+
+The trap is that this is **invisible at startup**. `:lcfl_report` is taken on the
+initial sounding, where a laminar profile gives `ν_t ≈ 0`, so the viscous row
+says diffusion never limits `Δt` — and says it truthfully, at `t = 0`. As a
+convective boundary layer spins up, `ν_t` climbs into the tens of m²/s over a few
+hundred seconds and that row crosses the line, with nothing printing it again.
+A run that dies at a fixed *model* time, having been perfectly stable up to it,
+looks like a bug in the scheme and is not one. `:lcfl_report_every => N` re-prints
+the table during the run so the crossing is visible rather than inferred.
+
+The signature to check first: **a blow-up whose time moves with `Δt` is a
+stability limit, not a physical instability.** The same deck on HEVI (small `Δt`)
+and on IMEX3D (large `Δt`) blowing up at different model times is that signature.
+
+### What is implicit, and what is deliberately not
+
+On a mesh whose ζ lines are vertical, the physical viscous flux in `z` is
+
+    τ_xz = μ (∂u/∂z + ∂w/∂x)          ← second term horizontal
+    τ_yz = μ (∂v/∂z + ∂w/∂y)          ← second term horizontal
+    τ_zz = (4/3) μ ∂w/∂z − (2/3) μ (∂u/∂x + ∂v/∂y)
+    q_z  = κ ∂θ/∂z                    ← entirely column-local
+
+and the operator takes the first term of each line. The cross terms stay
+explicit; they scale as `μ/(Δx Δz)`, which is `Δz/Δx` of what is removed — 1/8
+on the LESICP2 mesh. They could not be made implicit here in any case: a
+horizontal flux is not something one column can see.
+
+The `4/3` on `w` is the `2 − 2/3` that survives when `∂w/∂z` is collected from
+both terms of `τ_zz`.
+
+Because the column-local stress couples each variable only to itself, the
+operator is block-diagonal in the variable index: mass is untouched, and `u`,
+`v`, `w`, `θ` each get their own scalar vertical diffusion. There is no
+cross-variable coupling to get wrong.
+
+### Why it is nearly free to add
+
+Two properties of the existing machinery do all the work.
+
+1. **The split is a subtraction.** `f_exp = rhs!(u) − f_imp(u)`, so the scheme is
+   consistent for *any* implicit operator. An approximate `D` cannot lose or
+   double-count physics — it can only fail to remove stiffness. That is what
+   makes dropping the cross terms safe.
+2. **The band is assembled by probing.** `assemble_column_band` extracts the
+   matrix *of the operator that is actually applied*, so HEVI's column LU and the
+   3D IMEX's preconditioner absorb the diffusion with no code of their own.
+
+What it does cost: the implicit variable set widens from `(ρ, ρw, ρθ)` to all
+five, because `u` and `v` diffuse at the same `μ/Δz²` as `θ` and leaving them out
+would remove none of the limit. The banded LU is `O(n·b²)` with both `n` and `b`
+proportional to the variable count, so the factorisation goes as `nimp³` and the
+triangular solves as `nimp²`. For the 3D IMEX this also retires the `pvars`
+optimisation, which existed precisely because the acoustic operator's `ρu`, `ρv`
+rows were the identity — with diffusion they are not.
+
+### It needs `:PS`
+
+The coefficient is read from the SGS closure, which returns its molecular floor
+on a laminar initial state. `:RS` would freeze it there for the whole run: the
+operator would carry no diffusion at all while still paying for the wider band,
+and the only symptom would be the blow-up arriving on schedule and looking like
+a bug somewhere else. Setting `:implicit_vdiff => true` under a dynamic closure
+with `:RS` is refused at setup rather than allowed to do nothing. A deck-constant
+`AV()` viscosity does not move, so `:RS` is fine there.
+
+In the decks, `DBG_VDIFF=1` switches the linearisation with it; `DBG_LIN` still
+overrides.
+
+### What was verified
+
+`test/hevi/test_vdiffusion.jl` (27 assertions, 1 and 3 ranks). The reference
+implementations in it are transcribed *verbatim* from `_expansion_visc!` in
+`rhs.jl` — all three sweeps, the full metric contraction, the same `dψ` index
+order — because a cancellation between a weak form and anything else is not a
+cancellation.
+
+| check | result |
+|---|---|
+| `D` on `ρ̄ sin(kz)` vs `−μk² sin(kz)`, p=3, nelz 6 → 12 → 24 | `1.6e-2 → 1.6e-3 → 2.1e-4` (O(hᵖ)); p=5 gives `4.6e-6` |
+| self-adjointness `⟨Dx,y⟩` vs `⟨Dy,x⟩` | `2.2e-12` relative |
+| negative semidefinite `⟨Dx,x⟩` | `−1.5e6` |
+| AV path vs the explicit RHS, all equations, all nodes | `9.0e-13` |
+| SGS path vs the explicit RHS, interior, eq 2/3/4/5 | `3.7e-16 / 4.9e-16 / 7.2e-14 / 5.6e-13` |
+| the same with the `4/3` removed (eq 4) | `1.0e-1` — the constant is load-bearing |
+| probed band vs operator, with diffusion | `3.9e-16`; banded solve residual `7.8e-16` |
+
+The momentum equations agree **in the interior** and not on the lateral faces,
+which is the design and not a defect: the stress tensor's horizontal flux
+components (`−(2/3)μ ∂w/∂z` in the `u` equation, `μ ∂u/∂z` in the `w` equation)
+do not vanish even on a horizontally uniform field. The explicit ξ sweep
+contracts them to `Σ_k ψ'_i(ξ_k) w_k = ψ_i(1) − ψ_i(−1)`, a term carried by the
+two ξ-endpoint test functions alone, which DSS cancels between neighbouring
+elements and around a periodic seam and cannot cancel where the domain ends. On
+a laterally periodic LES the cancellation in `f_exp` is therefore complete to
+round-off.
+
+---
+
 ## Testing
 
 Two suites, neither of which needs the Jexpresso dependency stack — only MPI,
@@ -420,6 +535,7 @@ LinearAlgebra, Printf and OrdinaryDiffEq.
 ```bash
 julia --project=. test/hevi/test_load.jl               # it loads at all
 julia --project=. test/hevi/runtests_standalone.jl     # the machinery
+julia --project=. test/hevi/test_vdiffusion.jl         # implicit vertical diffusion
 julia --project=. test/hevi/test_rtb.jl                # the physics
 mpiexecjl -n 3 julia --project=. test/hevi/runtests_standalone.jl
 ```
@@ -660,10 +776,6 @@ for throughput. That is the fixture, not the code under test.
 ## Not implemented
 
 * **Acoustic substepping** — the ~8–10× on this grid. See above.
-* **Implicit vertical diffusion** — the fix when the CFL report says SGS
-  diffusion is binding. The column machinery is the same; `ν_t` varies in time,
-  so it needs a refactorisation per step (~60 MFLOP/rank/step at production
-  size, affordable).
 * **GPU** — the column solve is LAPACK banded LU on the host.
 * **`:SOL_VARS_TYPE => PERT()`** — refused at setup. The operator acts on
   `u − qe`, which is the deviation only under `TOTAL()`; under `PERT()` the

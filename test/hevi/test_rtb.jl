@@ -23,7 +23,7 @@ const NR   = MPI.Comm_size(COMM)
 
 const SRC = joinpath(@__DIR__, "..", "..", "src", "kernel", "solvers", "hevi")
 include(joinpath(@__DIR__, "mock_sem.jl"))
-for f in ("columns.jl", "operator.jl", "factorize.jl", "ark.jl", "hevi.jl")
+for f in ("columns.jl", "vdiffusion.jl", "operator.jl", "factorize.jl", "ark.jl", "hevi.jl")
     include(joinpath(SRC, f))
 end
 include(joinpath(@__DIR__, "rtb_fixture.jl"))

@@ -34,7 +34,7 @@ using Test
 const IMEX_SRC = joinpath(@__DIR__, "..", "..", "src", "kernel", "solvers", "hevi")
 # The full include order Jexpresso.jl uses, so the probe fails on the same
 # things a real precompile would.
-const IMEX_FILES = ("columns.jl", "operator.jl", "factorize.jl", "acoustic.jl",
+const IMEX_FILES = ("columns.jl", "vdiffusion.jl", "operator.jl", "factorize.jl", "acoustic.jl",
                     "ark.jl", "hevi.jl", "cfl_diagnostics.jl", "substep.jl",
                     "krylov.jl", "imex3d.jl")
 

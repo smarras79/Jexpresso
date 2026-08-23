@@ -304,6 +304,14 @@ function cfl_report(params, u, t; io = stdout, dt = nothing)
     # substepping the acoustics on top of HEVI: outer step sees no sound at all
     rate_split = _rate(L.dt_advective_x) + _rate(L.dt_advective_y) + _rate(L.dt_advective_z) +
                  _rate(L.dt_viscous_x)   + _rate(L.dt_viscous_y)   + _rate(L.dt_viscous_z)
+    # ... and with the vertical diffusion implicit as well (:implicit_vdiff),
+    # which is the only combination that leaves NOTHING vertical in the
+    # explicit budget. On a mesh refined in z this is usually the largest
+    # number in the table, and on a spun-up boundary layer it is often the only
+    # one that differs from the row above it.
+    rate_split_diff = _rate(L.dt_advective_x) + _rate(L.dt_advective_y) +
+                      _rate(L.dt_advective_z) +
+                      _rate(L.dt_viscous_x)   + _rate(L.dt_viscous_y)
 
     gain(r) = r > 0 ? rate_full / r : Inf
     println(io, " │  Δt gain available, per scheme (rate-summed, before per-stage cost):")
@@ -316,6 +324,7 @@ function cfl_report(params, u, t; io = stdout, dt = nothing)
     # iterations per stage. Listed separately because they are separate schemes
     # and the reader is choosing between them.
     @printf(io, " │    IMEX3D (all acoustics implicit)               %6.2fx\n", gain(rate_split))
+    @printf(io, " │    IMEX3D + implicit vertical diffusion          %6.2fx\n", gain(rate_split_diff))
     println(io, " │")
     binder = argmax([_rate(L.dt_acoustic_x) + _rate(L.dt_acoustic_y),
                      _rate(L.dt_acoustic_z),
@@ -323,7 +332,7 @@ function cfl_report(params, u, t; io = stdout, dt = nothing)
                      _rate(L.dt_advective_x) + _rate(L.dt_advective_y) + _rate(L.dt_advective_z)])
     names = ("horizontal acoustics -- HEVI cannot help; substepping or IMEX3D removes it",
              "vertical acoustics   -- this is what HEVI is for",
-             "SGS diffusion        -- make the VERTICAL DIFFUSION implicit, not the acoustics",
+             "SGS diffusion        -- :implicit_vdiff => true; the acoustics are not what binds",
              "advection            -- already at the floor; no time-integration trick helps")
     println(io, " │  dominant term: ", names[binder])
     println(io, " └", "─"^70)

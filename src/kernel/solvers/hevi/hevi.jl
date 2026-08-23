@@ -135,6 +135,12 @@ function hevi_relinearize!(params, hevi::HEVICache, u)
         # writing a NaN into the operator and losing the error message.
     end
 
+    # The eddy viscosity moves far more than beta and thetabar do -- from its
+    # molecular floor to tens of m^2/s as the boundary layer spins up -- so on
+    # a diffusion-carrying operator this refresh is the point of :PS, not a
+    # refinement of it.
+    op.vd === nothing || vdiff_refresh!(op.vd, params, op.vars, u)
+
     refactorize!(hevi.fac, params, op, hevi.cc, hevi.topo, hevi.gdt)
     return hevi
 end
@@ -684,6 +690,11 @@ function build_hevi(params, inputs)
         error("HEVI: :hevi_update_freq must be >= 1 when :hevi_linearization => :PS; ",
               "got $update_freq.")
 
+    # Implicit vertical diffusion is opt-in and, under a dynamic closure, only
+    # meaningful with :PS -- see vdiff_check_linearisation for why the wrong
+    # combination is worse than not asking for it at all.
+    vdiff_check_linearisation(inputs, params, "HEVI", lin_mode)
+
     hevi_trace_init!(comm)
     get(inputs, :hevi_monitor, false) == true && (HEVI_MONITOR[] = true)
     hevi_trace("build_hevi: start")
@@ -695,8 +706,13 @@ function build_hevi(params, inputs)
 
     vars = haskey(inputs, :hevi_vars) ? collect(Int, inputs[:hevi_vars]) :
                                         hevi_choose_vars(params.metrics, comm)
+    # Diffusion acts on u, v, w and theta, so switching it on widens the
+    # implicit set even where the acoustic operator alone would not need to.
+    lvdiff = vdiff_enabled(inputs)
+    vars   = vdiff_vars(params, inputs, vars)
     op = build_hevi_operator(params, topo, vars;
-                             lwall_flux = get(inputs, :hevi_wall_flux, true))
+                             lwall_flux = get(inputs, :hevi_wall_flux, true),
+                             vdiff = lvdiff)
 
     owner, own = assign_column_owners(topo, comm)
     cc  = build_column_comm(topo, owner, own, comm, length(vars))
@@ -836,6 +852,11 @@ function hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys
     ncol_g  = nranks > 1 ? MPI.Allreduce(topo.ncol, MPI.SUM, comm) : topo.ncol
     bytes   = sum(sizeof, fac.AB; init = 0) + sum(sizeof, fac.ipiv; init = 0)
     bytes_mx = nranks > 1 ? MPI.Allreduce(bytes, MPI.MAX, comm) : bytes
+    # COLLECTIVE, so it belongs above the early return -- every rank reaches it
+    # or none does. `mu` is rank-local; a max over it alone would print
+    # whichever value this rank happened to hold.
+    μmax    = op.vd === nothing ? 0.0 : maximum(op.vd.mu)
+    μg      = nranks > 1 ? MPI.Allreduce(μmax, MPI.MAX, comm) : μmax
     rank == 0 || return nothing
 
     radius = ark_imaginary_radius(tab)
@@ -858,6 +879,11 @@ function hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys
             lin === :PS ?
               "LHEVI-PS -- coefficients refreshed from the solution every $(ufreq) steps" :
               "LHEVI-RS -- coefficients frozen at the reference state qe")
+    if op.vd !== nothing
+        @printf(" │  vertical diffusion: IMPLICIT (:implicit_vdiff) on %s, max mu = %.3g\n",
+                string(filter(v -> v != 1, op.vars)), μg)
+        println(" │      the horizontal and cross terms stay explicit; they are dz/dx of this")
+    end
     @printf(" │  γΔt = %.6g   (γ = %.6g, Δt = %.6g); factorised once\n", fac.gdt[], tab.γ, Δt)
     if isnan(verr)
         println(" │  self-check: SKIPPED (:hevi_verify => false)")

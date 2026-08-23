@@ -63,6 +63,12 @@
  See docs/hevi/hevi.md for the HEVI split, and README_IMEX3D.md for the 3D one.
 ==============================================================================#
 function user_inputs()
+
+    # Implicit vertical diffusion is opt-in per run: DBG_VDIFF=1. Read into a
+    # local here rather than inline because two keys below have to agree about
+    # it -- switching it on also switches the linearisation to :PS, without
+    # which the implicit operator would carry no diffusion at all.
+    _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "false"))
     #---------------------------------------------------------------------------
     # WHICH SCHEME -- one switch, three values. Defaults to :explicit so this
     # case behaves exactly like LESICP3 until you ask for something else.
@@ -88,10 +94,38 @@ function user_inputs()
         #   docs/hevi/hevi.md                          (HEVI)
         #   src/kernel/solvers/hevi/README_IMEX3D.md   (IMEX3D)
         #---------------------------------------------------------------------------
+        # :implicit_vdiff  MAKE THE VERTICAL SGS DIFFUSION IMPLICIT AS WELL.
+        #
+        # HEVI and the 3D IMEX remove the acoustic limit. What is left is
+        # whatever was second, and on a mesh refined in z that is the SGS
+        # diffusion of the vertical derivative, nu/dz^2. It is invisible at
+        # startup -- the CFL report is taken on a laminar sounding where nu_t
+        # is ~0 -- and it arrives on its own schedule as the boundary layer
+        # spins up, which is what a blow-up at a fixed MODEL time looks like.
+        #
+        # This puts d/dz(mu d/dz) on u, v, w and theta into the same column
+        # operator that already carries the vertical acoustics, so it costs a
+        # wider band and no new solve. The horizontal and cross terms stay
+        # explicit; they are dz/dx of what is removed.
+        #
+        # It REQUIRES :PS under a dynamic closure -- the coefficient is read
+        # from the closure, which returns its molecular floor at t = 0, so :RS
+        # would freeze it there and the operator would carry no diffusion at
+        # all. DBG_VDIFF=1 therefore switches the linearisation with it (and
+        # DBG_LIN still overrides).
+        #---------------------------------------------------------------------------
+        :implicit_vdiff       => _vdiff,
+        #---------------------------------------------------------------------------
         # The stability table, and the "dominant term" line that says whether
         # either split can help on this grid at all. One RHS evaluation.
         :lcfl_report          => true,
         # Per-step progress with a wall clock and an ETA to :tend, from rank 0,
+        # :lcfl_report_every  re-print that table every N steps. :lcfl_report shows it
+        #                   ONCE, at startup, where nu_t is ~0 on a laminar sounding --
+        #                   so its viscous row says diffusion never limits dt, and says
+        #                   it truthfully, at t = 0. Watch that row cross the line as the
+        #                   boundary layer spins up. Collective and cheap; 0 = off.
+        :lcfl_report_every    => parse(Int, get(ENV, "DBG_CFL_EVERY", "0")),
         # nothing collective. Free, and the only thing that distinguishes "still
         # compiling" from "hung" on a first run.
         :lstep_heartbeat      => parse(Bool, get(ENV, "DBG_HEARTBEAT", "true")),
@@ -100,7 +134,7 @@ function user_inputs()
         # above the limit it measures on this mesh, and names the recommended
         # step in the error. Leave it on.
         :hevi_verify          => parse(Bool, get(ENV, "DBG_VERIFY", "true")),
-        :hevi_linearization   => Symbol(get(ENV, "DBG_LIN", "RS")),
+        :hevi_linearization   => Symbol(get(ENV, "DBG_LIN", _vdiff ? "PS" : "RS")),
         :hevi_update_freq     => parse(Int, get(ENV, "DBG_UPDFREQ", "5")),
         :hevi_wall_flux       => true,
         #--- IMEX3D (ignored unless DBG_SCHEME=imex) -------------------------------
@@ -122,7 +156,7 @@ function user_inputs()
         :imex_precond         => Symbol(get(ENV, "DBG_PRECOND", "column")),
         :imex_lateral_walls   => Symbol(get(ENV, "DBG_LATWALL", "auto")),
         :imex_wall_flux       => true,
-        :imex_linearization   => Symbol(get(ENV, "DBG_LIN", "RS")),
+        :imex_linearization   => Symbol(get(ENV, "DBG_LIN", _vdiff ? "PS" : "RS")),
         :imex_update_freq     => parse(Int, get(ENV, "DBG_UPDFREQ", "5")),
         # The Krylov iteration count IS the cost of this scheme and it drifts as
         # the flow develops. Watch it on a first production run.

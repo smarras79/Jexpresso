@@ -59,10 +59,11 @@ factorisation of its vertical part.
 """
 function build_hevi_fast_operator(params, topo::ColumnTopology; lwall_flux::Bool = true,
                                   wallx::Union{Nothing, AbstractVector{Bool}} = nothing,
-                                  wally::Union{Nothing, AbstractVector{Bool}} = nothing)
+                                  wally::Union{Nothing, AbstractVector{Bool}} = nothing,
+                                  vdiff::Bool = false)
     return build_hevi_operator(params, topo, [1, 2, 3, 4, 5];
                                lwall_flux = lwall_flux, full = true,
-                               wallx = wallx, wally = wally)
+                               wallx = wallx, wally = wally, vdiff = vdiff)
 end
 
 """

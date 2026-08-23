@@ -259,6 +259,7 @@ include(joinpath( "kernel", "operators", "filter.jl"))
 # names GMRESWorkspace in a field type.
 #-----------------------------------------------------------------------------
 include(joinpath( "kernel", "solvers", "hevi", "columns.jl"))
+include(joinpath( "kernel", "solvers", "hevi", "vdiffusion.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "operator.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "factorize.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "acoustic.jl"))

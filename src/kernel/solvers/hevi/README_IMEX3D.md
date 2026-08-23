@@ -68,6 +68,8 @@ closure can go missing in the split, whatever the deck turns on.
 | `:imex_stability_guard` | `:warn` | `:warn` `:error` `:off` |
 | `:imex_monitor` | `false` | periodic line reporting the Krylov iteration count |
 | `:lcfl_report` | `false` | print the direction-wise stability table at startup |
+| `:lcfl_report_every` | `0` | re-print it every N steps (0 = off). Collective; `JEXPRESSO_CFL_REPORT_EVERY` overrides. |
+| `:implicit_vdiff` | `false` | make the **vertical** SGS diffusion implicit too — see [below](#implicit-vertical-diffusion). Needs `:imex_linearization => :PS` under a dynamic closure. |
 
 `:ode_adaptive_solver => true` is refused, for the same reason `HEVI_ARK`
 refuses it: `rhs!` contains MPI collectives, and an adaptive controller runs
@@ -465,6 +467,7 @@ is pure arithmetic on the Butcher tableaux).
 ```bash
 julia --project=. test/imex3d/test_load.jl               # it loads at all
 julia --project=. test/imex3d/runtests_standalone.jl     # the machinery
+julia --project=. test/hevi/test_vdiffusion.jl           # implicit vertical diffusion
 julia --project=. test/imex3d/test_rtb.jl                # the physics
 julia --project=. test/imex3d/test_wedge_stability.jl    # the tableau choice
 mpiexecjl -n 3 julia --project=. test/imex3d/runtests_standalone.jl
@@ -508,6 +511,37 @@ is shared, so a change here that broke HEVI would show up there.
 
 ---
 
+---
+
+## Implicit vertical diffusion
+
+`:implicit_vdiff => true`. Shared with HEVI — same operator, same banded LU,
+one implementation. The full account is in
+[`README.md`](README.md#implicit-vertical-diffusion); what matters *here* is why
+it is the natural companion to this scheme rather than an extra.
+
+**IMEX3D removes the acoustic limit completely, which is exactly what makes the
+viscous one visible.** With sound gone in all three directions the explicit
+budget is advection plus SGS diffusion, and on a mesh refined in `z` the second
+of those goes as `ν/Δz²` — the term the acoustic split cannot touch. Removing it
+too is the only combination that leaves nothing vertical in the explicit budget.
+`cfl_report` prints that row (`IMEX3D + implicit vertical diffusion`) alongside
+the others so the two can be compared before either is switched on.
+
+It is also the case where the extra cost lands hardest, and the report says so:
+the `pvars` optimisation — preconditioning only `(ρ, ρw, ρθ)` because the
+vertical operator's `ρu`, `ρv` rows are exactly the identity — is *precisely* what
+implicit diffusion invalidates. Those rows stop being the identity, `pvars`
+widens to all five, and the banded solve goes back to `(5/3)² ≈ 2.8×` the
+arithmetic of the three-equation one. That is a real per-iteration cost, paid
+against a `Δt` that is no longer capped by the viscous rate.
+
+It requires `:imex_linearization => :PS` under a dynamic SGS closure, and is
+refused at setup otherwise — the coefficient is read from the closure, which
+returns its molecular floor at `t = 0`, so `:RS` would freeze it there and the
+operator would carry no diffusion at all. In the decks `DBG_VDIFF=1` switches
+the linearisation with it.
+
 ## Not implemented
 
 * **GPU.** The column preconditioner is a LAPACK banded LU on the host and the
@@ -517,9 +551,10 @@ is shared, so a change here that broke HEVI would show up there.
 * **AMR (`:ladapt`).** Refused at setup: adaptation invalidates the column
   topology the preconditioner is built on, its factorisations and its
   gather/scatter plan.
-* **Implicit diffusion.** The SGS terms stay explicit. On a mesh refined to
-  resolve a surface layer the parabolic limit can bind before advection does —
-  run with `:lcfl_report => true` and read the dominant-term line.
+* **Implicit HORIZONTAL diffusion.** The vertical part is available
+  (`:implicit_vdiff => true`, below); the horizontal and cross terms stay
+  explicit, and on an LES mesh they are `Δz/Δx` of the vertical one, so they
+  are not what binds.
 * **An embedded error estimate**, hence no adaptive stepping. See above for why
   that would deadlock rather than merely be inaccurate.
 * **A Helmholtz (reduced) stage solve.** This inverts the full

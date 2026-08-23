@@ -594,9 +594,19 @@ function ark_relinearize!(params, imex::IMEX3DCache, u)
         # losing the error message.
     end
 
+    # The eddy viscosity moves far more than beta and thetabar do -- from its
+    # molecular floor to tens of m^2/s as the boundary layer spins up -- so on
+    # a diffusion-carrying operator this refresh is the point of :PS, not a
+    # refinement of it. The 3D operator and the preconditioner hold SEPARATE
+    # coefficient arrays over different variable sets, so each is filled from
+    # the state rather than copied from the other.
+    op.vd === nothing || vdiff_refresh!(op.vd, params, op.vars, u)
+
     if imex.pc !== nothing
         copyto!(imex.pc.opv.beta,     op.beta)
         copyto!(imex.pc.opv.thetabar, op.thetabar)
+        imex.pc.opv.vd === nothing ||
+            vdiff_refresh!(imex.pc.opv.vd, params, imex.pc.opv.vars, u)
         refactorize!(imex.pc.fac, params, imex.pc.opv, imex.pc.cc, imex.pc.topo,
                      imex.pc.fac.gdt[])
     end
@@ -686,6 +696,11 @@ function build_imex3d(params, inputs)
         error("IMEX3D: :imex_update_freq must be >= 1 when :imex_linearization => :PS; ",
               "got $update_freq.")
 
+    # Implicit vertical diffusion is opt-in and, under a dynamic closure, only
+    # meaningful with :PS -- see vdiff_check_linearisation for why the wrong
+    # combination is worse than not asking for it at all.
+    vdiff_check_linearisation(inputs, params, "IMEX3D", lin_mode)
+
     hevi_trace_init!(comm)
     get(inputs, :imex_monitor, false) == true && (IMEX_MONITOR[] = true)
     # max(1, ...): the monitor takes `nsolve % every`, and a deck that set this
@@ -720,9 +735,10 @@ function build_imex3d(params, inputs)
     nwall = count(wallx) + count(wally)
     nwall_g = MPI.Comm_size(comm) > 1 ? MPI.Allreduce(nwall, MPI.SUM, comm) : nwall
 
-    lwall = get(inputs, :imex_wall_flux, true)
+    lwall  = get(inputs, :imex_wall_flux, true)
+    lvdiff = vdiff_enabled(inputs)
     op = build_hevi_fast_operator(params, topo; lwall_flux = lwall,
-                                  wallx = wallx, wally = wally)
+                                  wallx = wallx, wally = wally, vdiff = lvdiff)
     _say(@sprintf(" | 3D operator %.1fs", _lap()))
 
     #-------------------------------------------------------------------------
@@ -748,9 +764,16 @@ function build_imex3d(params, inputs)
     # trivial. hevi_choose_vars reads the metrics rather than a deck flag, so a
     # mesh warped by any route still gets all five. See IMEX3DPrecond.
     pvars = pcmode === :column ? hevi_choose_vars(params.metrics, comm) : Int[]
+    # Implicit diffusion is exactly what makes the dropped rows non-trivial:
+    # the vertical operator is the identity on rho*u and rho*v only while it
+    # carries acoustics alone. Preconditioning a diffusion-carrying operator
+    # with one that ignores two of its four diffusing variables would leave
+    # those two rows unpreconditioned, and the iteration count would go with
+    # the viscous CFL of the horizontal momenta.
+    pcmode === :column && (pvars = vdiff_vars(params, inputs, pvars))
     if pcmode === :column
         opv = build_hevi_operator(params, topo, pvars; lwall_flux = lwall,
-                                  full = false)
+                                  full = false, vdiff = lvdiff)
         hevi_trace("build_imex3d: preconditioner operator built")
         owner, own = assign_column_owners(topo, comm)
         cc  = build_column_comm(topo, owner, own, comm, length(pvars))
@@ -821,8 +844,10 @@ function build_imex3d(params, inputs)
         #    when it exists, build a throw-away one when it does not.
         opvchk = opv === nothing ?
                  build_hevi_operator(params, topo,
-                                     hevi_choose_vars(params.metrics, comm);
-                                     lwall_flux = lwall, full = false) : opv
+                                     vdiff_vars(params, inputs,
+                                                hevi_choose_vars(params.metrics, comm));
+                                     lwall_flux = lwall, full = false,
+                                     vdiff = lvdiff) : opv
         vfast = hevi_verify_fast(params, op, opvchk, topo)
 
         # 2. the stage solve itself.
@@ -931,6 +956,11 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
     pb_max  = nranks > 1 ? MPI.Allreduce(pbytes, MPI.MAX, comm) : pbytes
     nsplit  = pc === nothing ? 0 : pc.cc.nsplit_global
     ncol_g  = nranks > 1 ? MPI.Allreduce(topo.ncol, MPI.SUM, comm) : topo.ncol
+    # COLLECTIVE, so it has to be above the early return below -- every rank
+    # reaches it or none does. `mu` is rank-local and a max over it alone would
+    # print whichever value this rank happened to hold.
+    μmax    = op.vd === nothing ? 0.0 : maximum(op.vd.mu)
+    μg      = nranks > 1 ? MPI.Allreduce(μmax, MPI.MAX, comm) : μmax
     rank == 0 || return nothing
 
     vfast, sres, siter, ssv, wb, spec = checks
@@ -951,6 +981,14 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
             lin === :PS ?
               "PS -- coefficients refreshed from the solution every $(ufreq) steps" :
               "RS -- coefficients frozen at the reference state qe")
+    if op.vd !== nothing
+        # What the operator carries is worth naming, because the deck key is a
+        # single Bool and the consequence is the whole viscous row of the CFL
+        # report moving into the implicit half.
+        @printf(" │  vertical diffusion: IMPLICIT (:implicit_vdiff) on %s, max mu = %.3g\n",
+                string(filter(v -> v != 1, op.vars)), μg)
+        println(" │      the horizontal and cross terms stay explicit; they are dz/dx of this")
+    end
     # Built before the @printf that uses it: a nested @sprintf inside a
     # ternary inside a @printf argument list parses, but only just.
     uwhere = R.uref > R.umeasured + 1.0e-12 ?

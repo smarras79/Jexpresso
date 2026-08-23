@@ -721,10 +721,68 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
             nothing
 
+        #---------------------------------------------------------------------
+        # PERIODIC CFL REPORT -- `:lcfl_report_every => N` (steps). Default off.
+        #
+        # `:lcfl_report` prints the stability table ONCE, at startup, and at
+        # startup its viscous row can be actively misleading. ν_t is whatever
+        # the SGS closure returns on the initial sounding, which for a laminar
+        # profile is ~0, so `dt_viscous` comes back enormous and the report
+        # says diffusion never limits Δt. That stops being true as soon as the
+        # flow is turbulent -- on a convective boundary layer, hundreds of
+        # seconds in -- and by then nothing prints it again.
+        #
+        # That gap is exactly where a blow-up at a fixed MODEL time comes from,
+        # and it is invisible in the worst way: the term that killed the run is
+        # the one the startup report called harmless. It matters more the more
+        # implicit the scheme is, because removing the acoustic limit EXPOSES
+        # whatever is next, and the diffusive rate goes as ν/h_z² -- which on a
+        # vertically refined LES mesh is the term waiting underneath.
+        #
+        # UNLIKE THE HEARTBEAT ABOVE, THIS IS COLLECTIVE. `cfl_limits` does
+        # about fifteen Allreduces, so every rank has to reach it: the
+        # condition counts steps, every rank increments that counter on the
+        # same steps, and nothing here branches on the rank. (`cfl_report`
+        # itself returns early on non-root only AFTER the reduction, which is
+        # the correct order and why it is safe to call from all ranks.)
+        #
+        # Cost is one pass over the local mesh plus those reductions -- no RHS
+        # evaluation, and `cfl_limits` refreshes `uaux` from `u` itself, so it
+        # needs nothing set up first and mutates nothing the integrator owns.
+        # At a cadence of a few hundred steps it is free.
+        #
+        # The CFL numbers are quoted against the deck's nominal `:Δt` rather
+        # than `integrator.dt`, so that a report landing on a tstop-shortened
+        # step does not read as a sudden improvement. The point is to watch a
+        # RATE move against a fixed line.
+        #---------------------------------------------------------------------
+        _cfl_count = Ref{Int}(0)
+        _env_cfl   = strip(get(ENV, "JEXPRESSO_CFL_REPORT_EVERY", ""))
+        _cfl_every = isempty(_env_cfl) ? Int(get(inputs, :lcfl_report_every, 0)) :
+                                         parse(Int, _env_cfl)
+        function cfl_periodic_condition(u, t, integrator)
+            _cfl_count[] += 1
+            return _cfl_count[] % _cfl_every == 0
+        end
+        function cfl_periodic_affect!(integrator)
+            if rank == 0
+                println()
+                @printf(" # CFL report at t = %.4f  (step %d)\n",
+                        Float64(integrator.t), _cfl_count[])
+                flush(stdout)
+            end
+            cfl_report(params, integrator.u, integrator.t; dt = inputs[:Δt])
+            return nothing
+        end
+        cb_cfl = _cfl_every > 0 ?
+            DiscreteCallback(cfl_periodic_condition, cfl_periodic_affect!) :
+            nothing
+
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
+        cb_cfl !== nothing                     && push!(_cbs, cb_cfl)
         callbacks_main = CallbackSet(_cbs...)
 
         # The `saveat` grid is built ONCE and shared by the pre-compilation

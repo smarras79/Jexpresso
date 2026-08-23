@@ -67,6 +67,8 @@ Everything the vertical implicit operator needs, built once at setup.
              operator reads it -- the vertical one carries no x flux to zero.
   `wally`    the same for y
   `V`, `R`   work arrays, npoin x nimp: operator input (deviation) and output
+  `vd`       implicit vertical diffusion coefficients, or `nothing` when
+             diffusion is left explicit. See vdiffusion.jl.
 """
 struct HEVIOperator{TF <: AbstractFloat, CT}
     vars::Vector{Int}
@@ -106,6 +108,13 @@ struct HEVIOperator{TF <: AbstractFloat, CT}
     F3::Array{TF,4}
     G3::Array{TF,4}
     H3::Array{TF,4}
+    # Implicit vertical diffusion, or `nothing` when the deck leaves diffusion
+    # explicit. It rides on the operator rather than beside it because every
+    # consumer -- the matrix probing in factorize.jl, the Krylov matvec, the
+    # column preconditioner -- has to see ONE operator. A diffusion term that
+    # the band did not know about would turn the exact column solve into a
+    # mediocre preconditioner and show up only as an iteration count.
+    vd::Union{Nothing, VerticalDiffusion{TF}}
 end
 
 """
@@ -147,7 +156,8 @@ what a laterally periodic case wants. See `imex_lateral_walls`.
 function build_hevi_operator(params, topo::ColumnTopology, vars::Vector{Int};
                              lwall_flux::Bool = true, full::Bool = false,
                              wallx::Union{Nothing, AbstractVector{Bool}} = nothing,
-                             wally::Union{Nothing, AbstractVector{Bool}} = nothing)
+                             wally::Union{Nothing, AbstractVector{Bool}} = nothing,
+                             vdiff::Bool = false)
 
     mesh  = params.mesh
     npoin = Int(mesh.npoin)
@@ -220,13 +230,29 @@ function build_hevi_operator(params, topo::ColumnTopology, vars::Vector{Int};
         error("HEVI/IMEX: the lateral wall flags must be npoin = $npoin long; got ",
               "$(length(wx)) and $(length(wy)).")
 
+    # The implicit variable set has to be able to hold what diffusion acts on
+    # before the coefficients are built against it; `vdiff_vars` is what widens
+    # it, and a caller that skipped that step would get an operator whose
+    # diffusion silently covers only some of the stiff terms.
+    vd = nothing
+    if vdiff
+        missing_v = filter(ieq -> ieq ∉ vars, (2, 3, 4, 5))
+        isempty(missing_v) ||
+            error("HEVI/IMEX: implicit vertical diffusion needs equations 2, 3, 4 and 5 ",
+                  "in the implicit variable set (diffusion acts on u, v, w and theta); ",
+                  "got $vars, missing $(collect(missing_v)). Pass the set through ",
+                  "vdiff_vars(params, inputs, vars) before building the operator.")
+        vd = build_vertical_diffusion(params, copy(vars))
+    end
+
     z4(n) = zeros(TF, n, n, n, nimp)
     return HEVIOperator{TF, typeof(cache)}(
         copy(vars), nimp, slot, beta, thetabar, Vector(wall), wx, wy,
         V, R, rhs_el, RHS, vaux,
         zeros(TF, ngl, nimp), zeros(TF, ngl, nimp), zeros(TF, ngl, nimp),
         cache, lwall_flux, full,
-        full ? z4(ngl) : z4(0), full ? z4(ngl) : z4(0), full ? z4(ngl) : z4(0))
+        full ? z4(ngl) : z4(0), full ? z4(ngl) : z4(0), full ? z4(ngl) : z4(0),
+        vd)
 end
 
 
@@ -469,6 +495,17 @@ function hevi_apply_A!(out::AbstractMatrix, V::AbstractMatrix, params, op::HEVIO
                           mesh.connijk, params.basis.dψ, params.ω,
                           met.Je, met.dζdx, met.dζdy, met.dζdz,
                           nelem, ngl, nimp, op.slot, PhysicalConst{Float64}().g)
+    end
+
+    # Implicit vertical diffusion accumulates into the SAME rhs_el, before the
+    # single DSS / mass division below, so that the two halves of the implicit
+    # operator go through exactly the tail the explicit code applies to
+    # RHS + RHS_visc. Same barrier discipline as the acoustic kernels above.
+    if op.vd !== nothing
+        vd = op.vd
+        _hevi_D_elements!(rhs_el, V, vd.mu, vd.sc,
+                          mesh.connijk, params.basis.dψ, params.ω,
+                          met.Je, met.dζdz, nelem, ngl, nimp)
     end
 
     RHS = op.RHS

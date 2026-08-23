@@ -17,6 +17,12 @@
 
 using MPI, LinearAlgebra, Printf
 
+# vdiffusion.jl defines a method dispatching on AbstractSGSModel (the real one
+# lives in src/kernel/physics/sgsStructs.jl). Declaring it here lets the
+# standalone tests include the operator without the physics stack; `sgs` on the
+# mock params is `nothing`, so only the AV method is ever called.
+abstract type AbstractSGSModel end
+
 struct NSD_1D end
 struct NSD_3D end
 struct ContGal end
@@ -194,7 +200,8 @@ mesh, and the case the redistribution has to get right.
 function build_mock_params(; nelx = 2, nely = 2, nelz = 5, p = 2,
                              Lx = 400.0, Ly = 400.0, Lz = 1000.0,
                              comm = MPI.COMM_WORLD, θ0 = 300.0, ρ0 = 1.2,
-                             base = :exp, untyped_metrics = false)
+                             base = :exp, untyped_metrics = false,
+                             mu = zeros(5))
 
     rank   = MPI.Comm_rank(comm)
     nranks = MPI.Comm_size(comm)
@@ -291,5 +298,9 @@ function build_mock_params(; nelx = 2, nely = 2, nelz = 5, p = 2,
 
     return (mesh = mesh, metrics = metrics, basis = MockBasis(dψ), ω = ω,
             Minv = Minv, SD = NSD_3D(), AD = ContGal(), qp = MockQP(qe), neqs = 5,
-            inputs = Dict{Symbol,Any}(), hx = hx, hy = hy, hz = hz, ngl = ngl)
+            inputs = Dict{Symbol,Any}(), hx = hx, hy = hy, hz = hz, ngl = ngl,
+            # The implicit vertical diffusion operator reads these two the way
+            # the real rhs! does: `sgs === nothing` selects the AV path, where
+            # `visc_coeff[ieq]` IS the diffusivity of equation ieq.
+            sgs = nothing, visc_coeff = collect(Float64, mu))
 end
