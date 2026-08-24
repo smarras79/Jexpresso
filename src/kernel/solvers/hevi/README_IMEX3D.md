@@ -564,9 +564,12 @@ well below a third-order step's own truncation error. Sweep it with
 
 ### What does **not** help
 
-* **`:imex_restart`.** The spectrum is a line segment, not the clustered mess
-  an elliptic problem gives, so restarting costs ~4% rather than stagnating.
-  Measured: 71 iterations at `m = 20` against 68 at `m = 240`. Leave it at 20.
+* **`:imex_restart`, *below* `CFL_h ≈ 3`.** There the spectrum is a short line
+  segment, restarting costs ~4% rather than stagnating (71 iterations at
+  `m = 20` against 68 at `m = 240`), and 20 is plenty. **Above `CFL_h ≈ 3` this
+  reverses** and the restart length becomes one of the most important settings
+  in the deck — see the anisotropy section below. The setup report prints
+  `CFL_h` and advises an `m` when it matters.
 * **Raising Δt.** Cost per step grows linearly with Δt, so cost per unit
   *simulated* time approaches a floor rather than falling. Past the point where
   the three `rhs!` evaluations stop dominating, a bigger Δt buys nothing.
@@ -599,6 +602,59 @@ it prints `rhs!`, `f_imp` and the stage solve as seconds per step and as a
 percentage. If the stage solve is over about half the step, the levers above
 are where to go; if it is already small and the scheme still loses, the step
 size is not large enough to pay for `f_imp`.
+
+---
+
+## Grid anisotropy is the whole ballgame
+
+**This scheme's advantage is proportional to the grid's acoustic anisotropy
+`h_x/h_z`.** That is not a caveat, it is the governing fact, and it is worth
+reading before choosing this scheme for a mesh.
+
+The preconditioner is a solve down each *column*. It removes the vertical
+acoustic coupling exactly and leaves the horizontal coupling to the Krylov
+iteration. So the iteration count is set by the **horizontal** acoustic Courant
+number
+
+    CFL_h = γ Δt c / h_x
+
+and by nothing else — not by `h_z`, not by the total acoustic CFL, not by the
+node count. On a vertically refined mesh `h_x` is large, `CFL_h` stays small
+even at a Δt worth 20× the explicit step, and the solve is a handful of
+iterations. Flatten the anisotropy and `CFL_h` rises by exactly the same
+factor.
+
+Measured on one domain at one order, at a fixed acoustic CFL of 17, varying
+only the element **shape**:
+
+| `h_x/h_z` | `CFL_h` | iterations/solve at `m = 20` | smallest `m` that converges |
+|---|---|---|---|
+| 32:1 | 0.23 | 8 cold / 4 warm | 5 |
+| 4:1 | 1.85 | 52 / 30 | 5 |
+| 2:1 | 3.70 | 136 / 82 | 5 |
+| 1:1 | 7.41 | **does not converge** | 80 |
+
+The **step size** this scheme buys is the same on all four rows — it removes
+the acoustics regardless. The **price** is not, and on the last row it is
+unpayable at the default restart. Two things go wrong at once there: the
+iteration count grows superlinearly (32 → 80 → 142 → 313 → 787 for `CFL_h` of
+1, 2, 3, 5, 7.5), *and* restarted GMRES(20) stops converging because the
+spectrum segment is long relative to the restart.
+
+So, concretely:
+
+* **`h_x/h_z ≳ 8`** — the case this scheme was built for. `CFL_h ≲ 1`, tens of
+  iterations, default settings fine.
+* **`h_x/h_z ≈ 2–4`** — works, but the stage solve will dominate the step.
+  Raise `:imex_restart` toward `10·CFL_h` and check `JEXPRESSO_HEVI_PROFILE=1`.
+* **`h_x/h_z ≈ 1`** — **use an explicit scheme.** HEVI has no anisotropy to
+  exploit and this one has no cheap direction left to precondition. The cost
+  model says explicit wins, and the measurement agrees.
+
+The setup report prints `CFL_h`, the anisotropy, and — above `CFL_h = 3` — an
+advised restart length and a warning, so a re-meshed case cannot quietly change
+category. The symptom if it does is pure wall clock: same physics, same deck,
+same step size, 30× slower.
 
 ## Implicit vertical diffusion
 

@@ -494,6 +494,64 @@ let
         @sprintf("states agree to %.1e relative", dev / scl))
 end
 
+#--- the iteration count follows the grid's ACOUSTIC ANISOTROPY ---------------
+# The column preconditioner removes the vertical acoustics and leaves the
+# horizontal to the Krylov iteration, so the cost is governed by
+# CFL_h = γΔt·c/h_x -- and therefore by the grid SHAPE, at a fixed acoustic
+# CFL. This is the single most consequential property of the scheme and the
+# one with no symptom but the wall clock: re-mesh the same domain
+# isotropically and the same deck at the same step size goes from a handful of
+# iterations to not converging at all.
+#
+# Same domain, same order, same acoustic CFL; only the element shape moves.
+let
+    acoustic_cfl = 12.0
+    cvel = 347.0
+    results = Tuple{Float64,Float64,Float64}[]
+    for (nx, ny, nz) in ((2, 2, 16), (4, 4, 4))
+        pa = build_mock_params(nelx = nx, nely = ny, nelz = nz, p = 2,
+                               Lx = 1600.0, Ly = 1600.0, Lz = 800.0, comm = COMM)
+        n2 = Int(pa.mesh.npoin)
+        hx = 1600.0 / nx * 0.2764        # smallest LGL gap, p = 2
+        hz =  800.0 / nz * 0.2764
+        tp = build_column_topology(pa.mesh, COMM)
+        o  = build_hevi_fast_operator(pa, tp)
+        pvv = hevi_choose_vars(pa.metrics, COMM)
+        ov = build_hevi_operator(pa, tp, pvv; full = false)
+        w1, w2 = assign_column_owners(tp, COMM)
+        c2 = build_column_comm(tp, w1, w2, COMM, length(pvv))
+        dt = acoustic_cfl * min(hx, hz) / cvel
+        gg = ark_tableau(:ARS343).γ * dt
+        f2 = build_column_factorization(pa, ov, c2, tp, gg)
+        p2 = IMEX3DPrecond(ov, c2, f2, tp, copy(pvv))
+        i2 = build_distributed_inner(o.dss_cache, n2, COMM)
+        m2 = (W, V) -> (hevi_apply_A!(W, V, pa, o); @. W = V - gg * W; W)
+        r2 = Z -> imex3d_precond!(Z, p2, pa, gg)
+        g2 = pa.mesh.ip2gip
+        Bf = [0.4 * sinpi(1e-3 * (Float64(g2[ip]) + 37.0q)) for ip = 1:n2, q = 1:5]
+        ws2 = GMRESWorkspace(n2, 5, i2; m = 20, maxiter = 400, rtol = 1e-8, atol = 1e-30)
+        it, _, _ = gmres_solve!(zeros(n2, 5), Bf, ws2, m2, r2)
+        hc = imex_horizontal_cfl(gg, (dt_acoustic_x = hx / cvel, dt_acoustic_y = hx / cvel,
+                                      hmin_x = hx, hmin_y = hx, hmin_z = hz))
+        push!(results, (hc.aniso, hc.cflh, Float64(it)))
+        say(@sprintf("  h_x/h_z = %5.1f:1  ->  CFL_h = %5.2f, %3d iterations at m=20",
+                     hc.aniso, hc.cflh, it))
+    end
+    (a1, c1, i1), (a2, c2v, i2v) = results
+    # CFL_h tracks the anisotropy ratio, and the iteration count tracks CFL_h.
+    # Both directions asserted: a preconditioner that had stopped exploiting the
+    # vertical would flatten the second, and a wrong CFL_h would flatten the first.
+    @test a1 > 4 * a2
+    @test c2v > 3 * c1
+    @test i2v > 3 * i1
+    # ... and the advised restart grows with it, which is what the setup guard
+    # reports. 20 for the anisotropic grid, more for the flat one.
+    @test imex_horizontal_cfl(1.0, (dt_acoustic_x = 1.0, dt_acoustic_y = 1.0,
+                                    hmin_x = 1.0, hmin_y = 1.0, hmin_z = 1.0)).m_advised == 20
+    @test imex_horizontal_cfl(8.0, (dt_acoustic_x = 1.0, dt_acoustic_y = 1.0,
+                                    hmin_x = 1.0, hmin_y = 1.0, hmin_z = 1.0)).m_advised == 80
+end
+
 end # testset
 
 MPI.Barrier(COMM)

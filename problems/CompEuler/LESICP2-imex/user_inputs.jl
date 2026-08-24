@@ -152,6 +152,15 @@ function user_inputs()
         #                   iterations/solve against 21.7 cold, same answer to
         #                   1.3e-10. DBG_WARM=0 to measure it here.
         :imex_warm_start      => parse(Bool, get(ENV, "DBG_WARM", "true")),
+        # :imex_restart     20 is right only while CFL_h = gamma*dt*c/h_x stays
+        #                   below ~3. Above that, restarted GMRES(20) stops
+        #                   converging -- measured on an isotropic grid at
+        #                   CFL_h = 7.4, m=20 and m=40 never converge and m=80 is
+        #                   needed. CFL_h is the HORIZONTAL acoustic Courant
+        #                   number, because the column preconditioner removes the
+        #                   vertical acoustics and leaves the horizontal to the
+        #                   Krylov iteration. The setup report prints CFL_h, the
+        #                   grid anisotropy behind it, and an advised m.
         :imex_restart         => parse(Int, get(ENV, "DBG_RESTART", "20")),
         :imex_maxiter         => parse(Int, get(ENV, "DBG_MAXITER", "200")),
         # :none is there to MEASURE what the column preconditioner buys. On a

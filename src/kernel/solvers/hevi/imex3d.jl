@@ -926,11 +926,36 @@ function build_imex3d(params, inputs)
     # what would (wrongly) rule ARS343 out here.
     jamp = ark_joint_amplification(tab, Δt * R.rate_exp, Δt * R.rate_imp; n = 161)
 
+    hcfl = imex_horizontal_cfl(gdt, R.limits)
+
     imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt,
                   (vfast, sres, siter, ssv, wb, spec),
                   (R, mach, wamp, jamp, wdt),
                   (wallsrc, nwall_g), (time_ns() - t0) / 1e9;
-                  lin = lin_mode, ufreq = update_freq, verify = verify, warm = warm)
+                  lin = lin_mode, ufreq = update_freq, verify = verify, warm = warm,
+                  hcfl = hcfl)
+
+    # THE COST GUARD. Distinct from the stability guard below: nothing here is
+    # unstable, it is merely unaffordable, and unaffordable in a way that has no
+    # symptom except the wall clock. A grid whose anisotropy has been reduced --
+    # the same domain re-meshed isotropically, say -- moves CFL_h by exactly the
+    # anisotropy ratio and can take the stage solve from 8 iterations to
+    # non-convergence with nothing else in the deck changed.
+    if rank == 0 && hcfl.cflh > 3.0
+        @warn string("IMEX3D: CFL_h = ", round(hcfl.cflh; sigdigits = 3),
+                     " (= γΔt·c/h_x, the HORIZONTAL acoustic Courant number). The column ",
+                     "preconditioner removes the vertical acoustics and leaves the ",
+                     "horizontal to the Krylov iteration, so this number alone sets the ",
+                     "iteration count -- expect a few hundred per solve, and restarted ",
+                     "GMRES(", ws.m, ") may not converge at all above CFL_h ~ 5. This ",
+                     "grid's acoustic anisotropy is ", round(hcfl.aniso; sigdigits = 3),
+                     ":1, and this scheme's advantage is proportional to it. Either raise ",
+                     ":imex_restart to ~", hcfl.m_advised, " (costs ",
+                     round((hcfl.m_advised - ws.m) * Int(params.mesh.npoin) * op.nimp * 8 /
+                           1024^2; sigdigits = 2),
+                     " MB/rank more), or lower Δt, or -- on a near-isotropic grid -- use ",
+                     "an explicit scheme, which is what the cost model says wins there.")
+    end
 
     guard = Symbol(get(inputs, :imex_stability_guard, :warn))
     guard in (:warn, :error, :off) ||
@@ -951,6 +976,50 @@ function build_imex3d(params, inputs)
 end
 
 """
+    imex_horizontal_cfl(gdt, L) -> (cflh, aniso, m_advised)
+
+`CFL_h = γΔt·c/h_x`, the number the stage solve's cost is actually governed by,
+plus the grid anisotropy it comes from and the restart length it calls for.
+
+WHY THIS IS THE NUMBER. The preconditioner is a solve down each COLUMN, so it
+removes the vertical acoustic coupling exactly and leaves the horizontal
+coupling to the Krylov iteration. What that iteration sees is therefore set by
+the horizontal acoustic Courant number and by nothing else -- not by h_z, not
+by the total acoustic CFL, not by the node count.
+
+That single fact is what makes this scheme's advantage PROPORTIONAL TO THE
+GRID'S ACOUSTIC ANISOTROPY, and it is worth stating in the strong form because
+it is not obvious and the failure is silent. Measured on one domain at one
+order, at a fixed acoustic CFL of 17, varying only the element SHAPE:
+
+    h_x/h_z    CFL_h    iterations/solve at :imex_restart => 20
+      32:1      0.23        8 cold /  4 warm
+       4:1      1.85       52      / 30
+       2:1      3.70      136      / 82
+       1:1      7.41      does not converge -- needs m >= 80
+
+The step size this scheme buys is the same on all four grids. The PRICE is not,
+and on the last row it is unpayable. On an isotropic mesh neither this scheme
+nor HEVI is the right tool: HEVI has no anisotropy to exploit and this one has
+no cheap direction left to precondition.
+
+Restarted GMRES(m) also degrades once the spectrum segment is long relative to
+m -- measured, m = 5 suffices to CFL_h = 3, m = 8 at 5, and m = 80 at 7.5 --
+so the advised restart grows with CFL_h rather than being a fixed 20.
+"""
+function imex_horizontal_cfl(gdt::Real, L)
+    BIG   = 1.0e29
+    dtx   = min(L.dt_acoustic_x, L.dt_acoustic_y)
+    cflh  = dtx > BIG ? 0.0 : Float64(gdt) / dtx
+    hz    = L.hmin_z > 0 ? L.hmin_z : 1.0
+    aniso = min(L.hmin_x, L.hmin_y) / hz
+    # From the measured table above: m = 20 is comfortable to CFL_h ~ 3 and
+    # broken by 7.5. Ten per unit reproduces that and stays at the default for
+    # any grid where the default was ever the right answer.
+    return (cflh = cflh, aniso = aniso, m_advised = max(20, ceil(Int, 10 * cflh)))
+end
+
+"""
     imex3d_report(...)
 
 One block on rank 0 stating what the setup found.
@@ -963,7 +1032,7 @@ measurement.
 """
 function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, walls, secs;
                        lin::Symbol = :RS, ufreq::Int = 0, verify::Bool = true,
-                       warm::Bool = true)
+                       warm::Bool = true, hcfl = nothing)
 
     comm   = params.mesh.parts.comm
     rank   = MPI.Comm_rank(comm)
@@ -1032,6 +1101,19 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
                 topo.ncolg, topo.nlev, nsplit, max(ncol_g, 1))
         @printf(" │      banded factors %.1f MB, Krylov basis %.1f MB (busiest rank)\n",
                 pb_max / 1024^2, kb_max / 1024^2)
+    end
+    if hcfl !== nothing
+        # Printed BEFORE the restart line, because it is what the restart line
+        # should be read against.
+        @printf(" │      CFL_h = %.3g  (γΔt·c/h_x -- the horizontal acoustic Courant\n",
+                hcfl.cflh)
+        @printf(" │            number, and the ONLY thing the iteration count depends on)\n")
+        @printf(" │      grid acoustic anisotropy h_x/h_z = %.3g:1 -- this scheme's\n",
+                hcfl.aniso)
+        @printf(" │            advantage is proportional to it; at 1:1 there is none\n")
+        hcfl.cflh > 3.0 &&
+            @printf(" │      ADVISED restart at this CFL_h: %d (see the warning above)\n",
+                    hcfl.m_advised)
     end
     @printf(" │      restart %d, max %d iterations, rtol %.1e, %s\n",
             ws.m, ws.maxiter, ws.rtol,
