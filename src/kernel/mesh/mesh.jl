@@ -6262,7 +6262,10 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend; inputs = not
     _gmax  = mesh.nelem > 0 ? maximum(mesh.Δelem_geo)    : -Inf
     _fwmin = MPI.Allreduce(_fwmin, MPI.MIN, comm); _fwmax = MPI.Allreduce(_fwmax, MPI.MAX, comm)
     _gmin  = MPI.Allreduce(_gmin,  MPI.MIN, comm); _gmax  = MPI.Allreduce(_gmax,  MPI.MAX, comm)
-    if isfinite(_fwmin)
+    # Nothing to say in 1D: compute_element_size! is a no-op there, so these are
+    # all zero by construction and printing "0.0 .. 0.0 m" would be noise that
+    # reads like a broken mesh.
+    if isfinite(_fwmin) && !(mesh.SD isa NSD_1D)
         # Per ELEMENT; the SGS closure divides by nop, so the filter the model
         # sees is these numbers over nop. Printed per element to match the
         # ELEMENT SIZES block just above.
@@ -6275,6 +6278,34 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend; inputs = not
                                           round((_fwmax / max(_gmax, eps()))^2; digits = 2),
                                           " at the coarsest element]") : "";
                      msg_rank = rank, suppress = false)
+        # :max IS FOR ANISOTROPY, NOT FOR A DUMMY DIRECTION.
+        #
+        # It exists because a filter cannot resolve better than the coarsest
+        # direction of its cell. That holds for a direction the simulation
+        # actually resolves. On a quasi-2D mesh -- one element across y, kept
+        # only to make the case three-dimensional -- the coarsest direction is
+        # an artefact of the setup, and :max hands the whole domain a filter
+        # width set by it. Measured on the meshes in this project:
+        #
+        #     element             cbrt/nop   max/nop   ratio   nu_t factor
+        #     160 x 160 x 40         25.2      40.0     1.59       2.5
+        #     640 x  800 x 40        68.4     200.0     2.92       8.5
+        #     640 x 1600 x 40        86.2     400.0     4.64      21.5   nely = 1
+        #
+        # A 21x eddy viscosity is not a modelling choice anyone made. Say so
+        # here rather than let it surface later as a run that will not take the
+        # step size it was planned for.
+        if fw === :max && _fwmax > 2.0 * _gmax
+            @warn string("LES filter width :max gives ", round(_fwmax; digits = 1),
+                         " m per element against a volume-equivalent ",
+                         round(_gmax; digits = 1), " m -- a factor ",
+                         round(_fwmax/_gmax; digits = 2), " on the filter and ",
+                         round((_fwmax/_gmax)^2; digits = 1), "x on the eddy viscosity. ",
+                         "That much usually means ONE element across a direction, where ",
+                         "the coarsest edge is an artefact of the setup rather than a ",
+                         "resolution the run has. :max is for genuine grid anisotropy; ",
+                         "on a quasi-2D mesh prefer :les_filter_width => :geometric.")
+        end
     end
 
     Δnode_local  = compute_min_node_spacing(mesh, mesh.SD, T)
@@ -6305,7 +6336,15 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend; inputs = not
     #
     # :lstop_on_bad_grid => false to measure a grid that is known to be odd.
     #
-    if !(mesh.Δelem_s > 0) || (!(mesh.SD isa NSD_1D) && !(mesh.Δnode_s > 0))
+    # NOT IN 1D. compute_element_size!(::NSD_1D, ...) is a deliberate no-op --
+    # see its definition below -- so Delta_elem stays all zeros and Delta_elem_s,
+    # Delta_elem_l and Delta_node_s are ALL legitimately 0.0 there. 1D carries
+    # its spacing in mesh.Delta_x instead and never reads these. The first
+    # version of this check tested Delta_elem_s unconditionally and so killed
+    # every 1D case in the repo (sod1d, wave1d, ...) on a value that has always
+    # been zero and has always been fine.
+    #
+    if !(mesh.SD isa NSD_1D) && (!(mesh.Δelem_s > 0) || !(mesh.Δnode_s > 0))
         msg = string(" # ERROR mesh.jl: this grid reports a smallest element of ",
                      mesh.Δelem_s, " and a smallest LGL node spacing of ", mesh.Δnode_s,
                      ". Neither can be zero on a valid mesh, and both are divided by ",
