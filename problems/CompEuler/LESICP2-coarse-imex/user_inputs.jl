@@ -165,7 +165,7 @@ function user_inputs()
     # heartbeat against the iteration count in the profile block.
     Δt_default = scheme === :imex ? "0.9" : (scheme === :hevi ? "0.16" : "0.01")
     Δt   = parse(Float64, get(ENV, "DBG_DT", Δt_default))
-    tend = parse(Float64, get(ENV, "DBG_TEND", "1000.0"))
+    tend = parse(Float64, get(ENV, "DBG_TEND", "1.0"))
 
     inputs = Dict(
 
@@ -410,7 +410,6 @@ function user_inputs()
         #:gmsh_filename    => "./problems/CompEuler/LESICP2-coarse-imex/LESICP_8x2x60_6400mX1600mX5000m.msh",
         :gmsh_filename    => "./problems/CompEuler/LESICP2-coarse-imex/LESICP_10x1x60_6400mX1600mX5000m.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
-	:lgrid_only        => true,
         
         # Warping:
         #=:lwarp => true,
