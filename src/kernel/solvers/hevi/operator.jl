@@ -115,6 +115,29 @@ struct HEVIOperator{TF <: AbstractFloat, CT}
     # the band did not know about would turn the exact column solve into a
     # mediocre preconditioner and show up only as an iteration count.
     vd::Union{Nothing, VerticalDiffusion{TF}}
+    # ADVECTIVE FORM OF THE THETA ROW.
+    #
+    # Flux form is  A_Theta = -Div[thetabar .* W m].
+    # Advective is  A_Theta = -( thetabar .* Div[W m] + (W m) . grad(thetabar) ).
+    #
+    # The two are IDENTICAL in the continuum -- Div(tb*m) = tb*Div(m) + m.grad(tb)
+    # -- and differ only in how the discrete operator is assembled, i.e. by the
+    # aliasing of the LGL quadrature on the product. They are NOT the same
+    # matrix, and the difference stays explicit in f_exp = rhs! - f_imp, so it
+    # has to be measured rather than assumed harmless: see
+    # test/hevi/test_theta_advective.jl.
+    #
+    # Why bother: with the flux form, eliminating Theta introduces Div OF THE
+    # UNKNOWN momentum, so the Schur reduction does not close on one scalar and
+    # rho survives it. With the advective form the coupling is POINTWISE
+    # (grad(thetabar) is a known coefficient), which is exactly what lets
+    # Giraldo's reduction collapse to a single pressure unknown.
+    theta_advective::Bool
+    # grad(thetabar), per node, computed once at setup. Zero-length when the
+    # flux form is in use.
+    dtbdx::Vector{TF}
+    dtbdy::Vector{TF}
+    dtbdz::Vector{TF}
 end
 
 """
@@ -157,7 +180,7 @@ function build_hevi_operator(params, topo::ColumnTopology, vars::Vector{Int};
                              lwall_flux::Bool = true, full::Bool = false,
                              wallx::Union{Nothing, AbstractVector{Bool}} = nothing,
                              wally::Union{Nothing, AbstractVector{Bool}} = nothing,
-                             vdiff::Bool = false)
+                             vdiff::Bool = false, theta_advective::Bool = false)
 
     mesh  = params.mesh
     npoin = Int(mesh.npoin)
@@ -246,13 +269,57 @@ function build_hevi_operator(params, topo::ColumnTopology, vars::Vector{Int};
     end
 
     z4(n) = zeros(TF, n, n, n, nimp)
-    return HEVIOperator{TF, typeof(cache)}(
+    op = HEVIOperator{TF, typeof(cache)}(
         copy(vars), nimp, slot, beta, thetabar, Vector(wall), wx, wy,
         V, R, rhs_el, RHS, vaux,
         zeros(TF, ngl, nimp), zeros(TF, ngl, nimp), zeros(TF, ngl, nimp),
         cache, lwall_flux, full,
         full ? z4(ngl) : z4(0), full ? z4(ngl) : z4(0), full ? z4(ngl) : z4(0),
-        vd)
+        vd, theta_advective,
+        theta_advective ? zeros(TF, npoin) : TF[],
+        theta_advective ? zeros(TF, npoin) : TF[],
+        theta_advective ? zeros(TF, npoin) : TF[])
+    theta_advective && hevi_fill_gradthetabar!(op, params)
+    return op
+end
+
+"""
+    hevi_fill_gradthetabar!(op, params)
+
+`grad(thetabar)` at every node, for the advective Theta row.
+
+Computed by APPLYING THE OPERATOR ITSELF rather than by a second derivative
+kernel: block row 2 is `A_rho_u = -Gradx[P]` with `P = beta.*Theta` (pinned in
+test_schur_blocks.jl), so feeding a state whose only non-zero is
+`Theta = thetabar./beta` makes the momentum slots exactly `-grad(thetabar)`.
+
+That reuses the metric handling, the DSS and the mass division that are
+already verified, and guarantees the gradient is the SAME discrete gradient
+the rest of the operator uses. A second implementation could disagree with it
+in a way that no self-check would catch, because both would be internally
+consistent.
+
+The flux term must be OFF while this runs (`theta_advective` is set but the
+gradient is still zero, so the advective branch would read zeros); it is called
+with the operator's own Theta row inactive because the momentum rows do not
+depend on it.
+"""
+function hevi_fill_gradthetabar!(op::HEVIOperator, params)
+    npoin = length(op.thetabar)
+    V = zeros(Float64, npoin, op.nimp)
+    W = zeros(Float64, npoin, op.nimp)
+    sθ = op.slot[5]
+    @inbounds for ip = 1:npoin
+        V[ip, sθ] = op.thetabar[ip] / op.beta[ip]      # so that beta*Theta == thetabar
+    end
+    hevi_apply_A!(W, V, params, op)
+    su, sv, sw = op.slot[2], op.slot[3], op.slot[4]
+    @inbounds for ip = 1:npoin
+        op.dtbdx[ip] = -W[ip, su]
+        op.dtbdy[ip] = -W[ip, sv]
+        op.dtbdz[ip] = -W[ip, sw]
+    end
+    return op
 end
 
 
@@ -366,7 +433,8 @@ function _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, wallx, wally, F
                                 dηdx, dηdy, dηdz,
                                 dζdx, dζdy, dζdz,
                                 nelem::Int, ngl::Int, nimp::Int,
-                                slot::NTuple{5,Int}, g::Float64)
+                                slot::NTuple{5,Int}, g::Float64,
+                                theta_adv::Bool, dtbdx, dtbdy, dtbdz)
 
     sρ, sρu, sρv, sρw, sρθ = slot
 
@@ -432,6 +500,44 @@ function _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, wallx, wally, F
             S = (q == sρw) ? -g * V[ip, sρ] : 0.0
             rhs_el[iel, i, j, k, q] -= ωJac * ((dFdx + dGdy + dHdz) - S)
         end
+
+        # --- ADVECTIVE THETA ROW, replacing the flux one --------------------
+        #
+        #   flux:       A_Theta = -Div[ tb .* W m ]
+        #   advective:  A_Theta = -( tb .* Div[W m] + (W m) . grad(tb) )
+        #
+        # The second sweep is over the MASS fluxes (F[..,srho] = mx etc.), so
+        # `divm` here is the same divergence the continuity row takes -- which
+        # is the point: it makes the Theta row a POINTWISE multiple of the
+        # continuity row plus a pointwise advection, and that is what lets the
+        # Schur elimination close on one scalar.
+        #
+        # tb multiplies BEFORE the DSS and the mass division, which is exact:
+        # thetabar is a continuous nodal field, so it takes the same value in
+        # every element contribution at a node and commutes with the assembly
+        # sum. Same identity that makes the buoyancy source exactly -g*rho
+        # (verified to 1.8e-16 in test_schur_blocks.jl).
+        if theta_adv
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip   = conn[iel, i, j, k]
+            ωJac = ω[i] * ω[j] * ω[k] * Je[iel, i, j, k]
+            dFξ = 0.0; dFη = 0.0; dFζ = 0.0
+            dGξ = 0.0; dGη = 0.0; dGζ = 0.0
+            dHξ = 0.0; dHη = 0.0; dHζ = 0.0
+            for m = 1:ngl
+                dξm = dψ[m, i]; dηm = dψ[m, j]; dζm = dψ[m, k]
+                dFξ += dξm * F[m, j, k, sρ]; dFη += dηm * F[i, m, k, sρ]; dFζ += dζm * F[i, j, m, sρ]
+                dGξ += dξm * G[m, j, k, sρ]; dGη += dηm * G[i, m, k, sρ]; dGζ += dζm * G[i, j, m, sρ]
+                dHξ += dξm * H[m, j, k, sρ]; dHη += dηm * H[i, m, k, sρ]; dHζ += dζm * H[i, j, m, sρ]
+            end
+            divm = (dFξ * dξdx[iel,i,j,k] + dFη * dηdx[iel,i,j,k] + dFζ * dζdx[iel,i,j,k]) +
+                   (dGξ * dξdy[iel,i,j,k] + dGη * dηdy[iel,i,j,k] + dGζ * dζdy[iel,i,j,k]) +
+                   (dHξ * dξdz[iel,i,j,k] + dHη * dηdz[iel,i,j,k] + dHζ * dζdz[iel,i,j,k])
+            adv = F[i,j,k,sρ]*dtbdx[ip] + G[i,j,k,sρ]*dtbdy[ip] + H[i,j,k,sρ]*dtbdz[ip]
+            # overwrite what the flux sweep just wrote into the Theta row
+            rhs_el[iel, i, j, k, sρθ] = -ωJac * (thetabar[ip] * divm + adv)
+        end
+        end
     end
     return nothing
 end
@@ -488,7 +594,8 @@ function hevi_apply_A!(out::AbstractMatrix, V::AbstractMatrix, params, op::HEVIO
                                met.dξdx, met.dξdy, met.dξdz,
                                met.dηdx, met.dηdy, met.dηdz,
                                met.dζdx, met.dζdy, met.dζdz,
-                               nelem, ngl, nimp, op.slot, PhysicalConst{Float64}().g)
+                               nelem, ngl, nimp, op.slot, PhysicalConst{Float64}().g,
+                               op.theta_advective, op.dtbdx, op.dtbdy, op.dtbdz)
     else
         _hevi_A_elements!(rhs_el, V, op.beta, op.thetabar, op.wall,
                           op.Fv, op.Gv, op.Hv,

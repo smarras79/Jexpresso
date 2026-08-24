@@ -286,14 +286,29 @@ function build_mock_params(; nelx = 2, nely = 2, nelz = 5, p = 2,
     qe = zeros(npoin, 5)
     for ip = 1:npoin
         z = coords[3, ip]
+        θz = θ0
         if base === :neutral
             pbar = PC.pref * (1.0 - PC.g*z/(PC.cp*θ0))^(PC.cp/PC.Rair)
             ρ    = (1.0/θ0) * (pbar/PC.C0)^(1.0/PC.γ)
+        elseif base === :stratified
+            # STABLY STRATIFIED, constant Brunt-Vaisala N: theta(z) = t0*exp(N^2 z/g).
+            #
+            # :neutral and :exp both give a CONSTANT thetabar, so grad(thetabar)
+            # is identically zero and the advective and flux forms of the Theta
+            # row coincide TRIVIALLY -- a broken advective kernel passes every
+            # comparison against the flux one. Anything testing that row needs
+            # this base state. N = 0.01 1/s is the usual value for the
+            # inertia-gravity-wave and Straka benchmarks.
+            N2   = 1.0e-4
+            θz   = θ0 * exp(N2 * z / PC.g)
+            πz   = 1.0 + PC.g^2/(PC.cp*θ0*N2) * (exp(-N2*z/PC.g) - 1.0)
+            pbar = PC.pref * πz^(PC.cp/PC.Rair)
+            ρ    = (1.0/θz) * (pbar/PC.C0)^(1.0/PC.γ)
         else
             ρ = ρ0 * exp(-z / 8500.0)
         end
         qe[ip, 1] = ρ
-        qe[ip, 5] = ρ * θ0
+        qe[ip, 5] = ρ * θz
     end
 
     return (mesh = mesh, metrics = metrics, basis = MockBasis(dψ), ω = ω,
