@@ -269,11 +269,18 @@ function user_inputs()
         #                   is unchanged and is measured against the true residual.
         #                   DBG_WARM=0 turns it off to measure the difference.
         :imex_warm_start      => parse(Bool, get(ENV, "DBG_WARM", "true")),
-        # :imex_restart     GMRES(m). NOT the knob it looks like: this operator is
-        #                   skew, its spectrum is a line segment, and restarting
-        #                   costs ~4% rather than the stagnation an elliptic
-        #                   problem shows. Leave it at 20 and spend memory
-        #                   elsewhere.
+        # :imex_restart     GMRES(m). Below CFL_h ~ 3 this is NOT the knob it looks
+        #                   like: the operator is skew, its spectrum is a short line
+        #                   segment, and restarting costs ~4% rather than the
+        #                   stagnation an elliptic problem shows -- 71 iterations at
+        #                   m=20 against 68 at m=240. ABOVE CFL_h ~ 3 that reverses
+        #                   and it becomes one of the most important keys here:
+        #                   measured on an isotropic grid at CFL_h = 7.4, m=20 and
+        #                   m=40 do not converge at all and m=80 is needed.
+        #                   CFL_h = gamma*dt*c/h_x is the HORIZONTAL acoustic Courant
+        #                   number -- the column preconditioner removes the vertical
+        #                   acoustics, so the horizontal is all the Krylov iteration
+        #                   sees. The setup report prints it and advises an m.
         :imex_restart         => parse(Int, get(ENV, "DBG_RESTART", "20")),
         :imex_maxiter         => parse(Int, get(ENV, "DBG_MAXITER", "200")),
         # :imex_precond     :column is HEVI's own banded column solve, which is
