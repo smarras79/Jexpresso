@@ -162,6 +162,49 @@ mutable struct GMRESWorkspace
     worst_relres::Float64
 end
 
+"""
+    heap_budget_note(bytes) -> String
+
+Why an allocation of `bytes` might have failed, when `bytes` is small.
+
+JULIA DOES NOT READ THE SLURM CGROUP. `Sys.total_memory()` comes from
+/proc/meminfo, i.e. the whole NODE, so on a 512 GB node every rank sizes its GC
+heap target as if it owned hundreds of gigabytes while the cgroup gives it
+`--mem-per-cpu`. The GC then has no reason to collect until far past the real
+cap, and the first allocation to cross it fails -- typically a small one, long
+after the large transient (here the mesh broadcast) that filled the heap.
+
+This turns that into a message that names the cause. Measured on the
+64x64x60 production run at 256 ranks: an `OutOfMemoryError` inside a 90 MB
+`GMRESWorkspace` on ranks holding 4 GB each.
+"""
+function heap_budget_note(bytes::Integer)
+    mb(x) = round(x / 1024^2; digits = 1)
+    note = string("This allocation is only ", mb(bytes), " MB. An OutOfMemoryError ",
+                  "here almost never means the workspace is too big -- it means the ",
+                  "heap was already at its limit. ")
+    lim = -1
+    for f in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes")
+        try
+            v = strip(read(f, String))
+            v == "max" && continue
+            lim = parse(Int, v)
+            break
+        catch
+        end
+    end
+    seen = Sys.total_memory()
+    if lim > 0 && lim < seen
+        note *= string("This process is capped at ", mb(lim), " MB by its cgroup but ",
+                       "Julia sizes its GC heap from /proc/meminfo, which reports ",
+                       mb(seen), " MB. ")
+    end
+    note *= string("Launch the ranks with `--heap-size-hint=<per-rank budget>` (about ",
+                   "85% of --mem-per-cpu) so the GC collects against the real limit. ",
+                   "Lowering :imex_restart is NOT the fix: it saves a few tens of MB.")
+    return note
+end
+
 function GMRESWorkspace(npoin::Int, nimp::Int, inner::DistributedInner;
                         m::Int = 20, maxiter::Int = 200,
                         rtol::Float64 = 1.0e-8, atol::Float64 = 1.0e-30)
@@ -171,12 +214,21 @@ function GMRESWorkspace(npoin::Int, nimp::Int, inner::DistributedInner;
               "the iteration would be cut off mid-cycle and could never reach a ",
               "restart. Raise :imex_maxiter or lower :imex_restart.")
     z() = zeros(Float64, npoin, nimp)
-    return GMRESWorkspace(m, maxiter, rtol, atol,
-                          [z() for _ = 1:m+1], z(), z(), z(),
-                          zeros(Float64, m + 1, m),
-                          zeros(Float64, m), zeros(Float64, m), zeros(Float64, m + 1),
-                          zeros(Float64, m), zeros(Float64, m),
-                          inner, 0, 0, 0, 0, 0.0, 0.0)
+    # The OutOfMemoryError that lands here is a symptom of the heap budget, not
+    # of this workspace's size -- see heap_budget_note.
+    try
+        return GMRESWorkspace(m, maxiter, rtol, atol,
+                              [z() for _ = 1:m+1], z(), z(), z(),
+                              zeros(Float64, m + 1, m),
+                              zeros(Float64, m), zeros(Float64, m), zeros(Float64, m + 1),
+                              zeros(Float64, m), zeros(Float64, m),
+                              inner, 0, 0, 0, 0, 0.0, 0.0)
+    catch err
+        err isa OutOfMemoryError || rethrow()
+        error("IMEX3D: out of memory building the GMRES workspace (npoin = $npoin, ",
+              "nimp = $nimp, :imex_restart = $m). ",
+              heap_budget_note(($m + 4) * npoin * nimp * sizeof(Float64)))
+    end
 end
 
 """

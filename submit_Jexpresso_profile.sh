@@ -19,8 +19,8 @@
 # which cost a queue turnaround to attribute. Submit in this order and keep
 # the first that works:
 #
-#     --nodes=1 --ntasks-per-node=64      64 ranks, one node, no network
-#     --nodes=4 --ntasks-per-node=64      256 ranks -- the DEFAULT below, and
+#     --nodes=1 --ntasks-per-node=32      32 ranks, one node, no network
+#     --nodes=8 --ntasks-per-node=32      256 ranks -- the DEFAULT below, and
 #                                         what tools/pick_nranks.jl recommends
 #     --nodes=8 --ntasks-per-node=128     1024 ranks, the scaling arm
 #
@@ -87,17 +87,24 @@
 # vertical columns, and only the counts that tool lists divide cleanly. Anything
 # else leaves ranks owning zero elements.
 #
-# 64 ranks/node rather than 128 is deliberate: it halves per-node memory during
-# the mesh broadcast, which is the peak of the whole run, and 8 nodes x 128 is
-# the configuration that failed inside MPI_Init_thread on the first attempt.
+# 32 ranks/node over 8 nodes, NOT 64 over 4: same 256 ranks and the same
+# decomposition, but 8 GB per rank instead of 4. The 4 GB arrangement died of
+# OutOfMemoryError during setup -- the mesh broadcast is the memory peak of the
+# whole run, and 15.9M global gridpoints is a lot to pass around. Wasting 96 of
+# the 128 cores on each node is the price of the headroom; for a one-hour probe
+# that is the right trade. If these nodes have 512 GB, --ntasks-per-node=64
+# with --mem-per-cpu=8000M gets the cores back -- the launch banner prints the
+# node's RAM so this can be checked rather than guessed.
 #
 # The scaling arm of the comparison in the header is --nodes=8
 # --ntasks-per-node=128 (1024 ranks). Run it SECOND, once 256 has worked, and
-# expect the halo cost per element to have doubled.
-#SBATCH --nodes=4
-#SBATCH --ntasks-per-node=64
+# expect the halo cost per element to have doubled. Note it will need
+# --mem-per-cpu lowered to fit, which is another reason to establish the
+# memory floor at 256 first.
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=32
 #SBATCH --time=01:00:00
-#SBATCH --mem-per-cpu=4000M
+#SBATCH --mem-per-cpu=8000M
 
 module load Julia/1.11.9
 module load GCC MPICH
@@ -195,6 +202,42 @@ if julia --pkgimages=existing -e 'exit(0)' >/dev/null 2>&1; then
     JULIA_FLAGS+=(--pkgimages=existing)
 fi
 
+# ===========================================================================
+# --heap-size-hint -- THE ONE FLAG WITHOUT WHICH THIS RUN DIES OF OOM.
+#
+# Julia sizes its GC heap target from /proc/meminfo, i.e. from the NODE's RAM.
+# It does not read the SLURM cgroup. So on a 512 GB node every rank believes
+# it has ~400 GB to play with, while the cgroup gives it --mem-per-cpu. The GC
+# therefore has no reason to collect until long past the real cap, and the
+# first allocation that crosses it fails.
+#
+# That is what killed the 256-rank run, and the traceback is deceptive:
+#
+#     OutOfMemoryError()
+#      [8] GMRESWorkspace(npoin=69649, nimp=5; m=30, ...)  krylov.jl:174
+#
+# GMRESWorkspace at that size is 90 MB (31 Arnoldi vectors + 3 scratch, each
+# 69649 x 5 x 8 B). Nothing asks for 90 MB and fails on a rank holding 4 GB --
+# unless the heap is already at the cap with garbage the GC never collected.
+# The workspace is the last straw, not the load. Do not "fix" this by lowering
+# :imex_restart; m=30 -> m=20 saves 26 MB.
+#
+# The hint is set to 85% of the cgroup budget, leaving room for the parts that
+# are not Julia heap: the MPI library, UCX buffers, and the LAPACK banded
+# factors.
+# ===========================================================================
+if [ -n "$SLURM_MEM_PER_CPU" ]; then
+    RANK_MB=$(( SLURM_MEM_PER_CPU * ${SLURM_CPUS_PER_TASK:-1} ))
+elif [ -n "$SLURM_MEM_PER_NODE" ] && [ -n "$SLURM_NTASKS_PER_NODE" ]; then
+    RANK_MB=$(( SLURM_MEM_PER_NODE / SLURM_NTASKS_PER_NODE ))
+else
+    RANK_MB=0
+fi
+if [ "$RANK_MB" -gt 0 ] && julia --heap-size-hint=1G -e 'exit(0)' >/dev/null 2>&1; then
+    HEAP_MB=$(( RANK_MB * 85 / 100 ))
+    JULIA_FLAGS+=(--heap-size-hint=${HEAP_MB}M)
+fi
+
 NTASKS="${SLURM_NTASKS:-256}"
 NNODES="${SLURM_NNODES:-1}"
 
@@ -246,6 +289,9 @@ else
     echo "    launcher                  : mpirun (MPICH Hydra)"
 fi
 echo "    nodes x tasks             : $NNODES x $((NTASKS / NNODES)) = $NTASKS ranks"
+echo "    cgroup budget per rank    : ${RANK_MB:-unknown} MB"
+echo "    --heap-size-hint          : ${HEAP_MB:-NOT SET} MB  (Julia reads /proc/meminfo, NOT the cgroup)"
+echo "    node RAM (this node)      : $(awk '/MemTotal/{printf "%.0f MB", $2/1024}' /proc/meminfo)"
 srun --mpi=list 2>&1 | sed 's/^/    srun --mpi=list: /' || true
 
 # ---------------------------------------------------------------------------
@@ -274,8 +320,8 @@ launch "${JULIA_FLAGS[@]}" -e '
     echo "ERROR: MPI itself cannot start $NTASKS ranks across $NNODES nodes (exit $rc)." >&2
     echo "       Nothing in Jexpresso has run. Bisect the two variables that" >&2
     echo "       changed from the known-good 1 x 32 launch, one at a time:" >&2
-    echo "         1. --nodes=1 --ntasks-per-node=64    (one node, no network)" >&2
-    echo "         2. --nodes=4 --ntasks-per-node=64    (adds the network)" >&2
+    echo "         1. --nodes=1 --ntasks-per-node=32    (one node, no network)" >&2
+    echo "         2. --nodes=8 --ntasks-per-node=32    (adds the network)" >&2
     echo "         3. --nodes=8 --ntasks-per-node=128   (more ranks per node)" >&2
     echo "       If 1 passes and 2 fails, it is the inter-node transport:" >&2
     echo "       try JEXPRESSO_LAUNCHER=srun with SRUN_MPI from the list above," >&2
