@@ -6,7 +6,8 @@
 #
 # THE DIFFERENCE, in full:
 #   JEXPRESSO_HEVI_PROFILE=1   print the per-step cost breakdown
-#   DBG_TEND=100.0             200 steps at the deck's dt = 0.5 s, then stop
+#   DBG_TEND=35.0              70 steps at the deck's dt = 0.5 s, then stop
+#   DBG_RTOL / DBG_RESTART     pinned to the baseline being explained
 #   CASE                       the production deck
 #   SBATCH nodes / time / mem  production rank count, short walltime
 #   launcher + preflight       srun on multi-node, and a 10-second MPI_Init
@@ -117,7 +118,7 @@
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=32
 #SBATCH --cpus-per-task=2
-#SBATCH --time=01:00:00
+#SBATCH --time=00:30:00
 #SBATCH --mem-per-cpu=4000M
 
 module load Julia/1.11.9
@@ -212,11 +213,25 @@ export JEXPRESSO_HEVI_PROFILE=1
 export JEXPRESSO_HEVI_PROFILE_EVERY=50
 export JEXPRESSO_HEVI_PROFILE_SKIP=10
 
-# 200 steps at the deck's dt = 0.5 s. The deck reads DBG_TEND, and when it is
-# set it also turns off the ~640 MB initial VTK write -- minutes of I/O for a
-# run whose output is thrown away. It does not distort s/step (it happens
-# before the time loop), it just wastes the allocation.
-export DBG_TEND="${DBG_TEND:-100.0}"
+# PIN THE SOLVER KNOBS. The deck defaults :imex_rtol to 1e-6, but the 16.4
+# s/step baseline this probe is meant to explain was measured at 1e-4 (the
+# monitor showed residuals of ~9e-05 and 26.2 iterations/solve; at 1e-6 it is
+# 54.4 and the step is half as fast again). Leaving it to the deck default
+# would produce a profile of a DIFFERENT run and the split would not be
+# comparable to the number it is supposed to break down. Both are overridable.
+export DBG_RTOL="${DBG_RTOL:-1.0e-4}"
+export DBG_RESTART="${DBG_RESTART:-30}"
+
+# 70 steps at the deck's dt = 0.5 s. The profile reports once n_step reaches
+# JEXPRESSO_HEVI_PROFILE_EVERY, and n_step only counts steps AFTER the _SKIP
+# JIT steps -- so it needs 10 + 50 = 60 before it prints anything, and 70
+# leaves margin for one clean block. There is no reason to run the full 200:
+# the breakdown is a per-step average and a second block only confirms it.
+#
+# The deck also reads DBG_TEND to turn off the ~640 MB initial VTK write --
+# minutes of I/O for a run whose output is thrown away. It does not distort
+# s/step (it happens before the time loop), it just wastes the allocation.
+export DBG_TEND="${DBG_TEND:-35.0}"
 
 JULIA_FLAGS=(--project=. --startup-file=no)
 # Probe rather than assume: `existing` was added to these flags in Julia 1.11,
@@ -405,7 +420,7 @@ launch "${JULIA_FLAGS[@]}" -e '
 
 echo "--- Setup complete, launching $NTASKS ranks (PROFILE PROBE) ---"
 echo "    case                      : $EQS / $CASE"
-echo "    DBG_TEND                  : $DBG_TEND s  (200 steps at dt = 0.5 s)"
+echo "    DBG_TEND / rtol / restart  : $DBG_TEND s (70 steps at dt=0.5) / $DBG_RTOL / $DBG_RESTART"
 echo "    JEXPRESSO_HEVI_PROFILE    : $JEXPRESSO_HEVI_PROFILE  (every $JEXPRESSO_HEVI_PROFILE_EVERY steps, first $JEXPRESSO_HEVI_PROFILE_SKIP skipped)"
 echo "    JEXPRESSO_PRECOMPILE_PASS : $JEXPRESSO_PRECOMPILE_PASS"
 echo "    julia flags               : ${JULIA_FLAGS[*]}"
