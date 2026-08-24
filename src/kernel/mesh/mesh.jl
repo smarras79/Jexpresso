@@ -2254,6 +2254,60 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                      msg_rank = rank, suppress = mesh.msg_suppress)
     end
 
+    #
+    # A GMSH FILE WITH NO VOLUME ELEMENTS.
+    #
+    # `mesh.nsd` is read from the FILE (num_cell_dims above), not from the deck
+    # -- the deck's :nsd defaults to 3 for every gmsh case and is then
+    # overwritten here. So a .msh whose highest-dimension cells are the surface
+    # quads of a box, which is what gmsh writes when the volume was never
+    # meshed or no Physical Volume was defined, silently makes the whole run
+    # two-dimensional.
+    #
+    # Nothing downstream says so. The element-size pass measures quads with 3D
+    # logic and prints a smallest element of 0.0; the mesh is then CACHED in
+    # that state, so the failure reproduces instantly and looks like a code
+    # bug; and the run finally dies minutes later inside the case's
+    # initialize() with `no method matching initialize(::NSD_2D, ...)` -- a
+    # message that names the symptom and nothing about where the 2D came from.
+    #
+    # The signature is exact, which is why this can be an error rather than a
+    # warning: 2D cells, nodes carrying a real third coordinate, the surface is
+    # NOT curved (so it is not a spherical shell / manifold, which is
+    # legitimate), and the nodes span a non-zero z range (so it is not a flat
+    # 2D patch that happens to be written with three coordinates, which is also
+    # legitimate). Only a 3D geometry stripped of its 3D cells matches.
+    #
+    if mesh.nsd == 2 && !mesh.lmanifold && num_point_dims(model) == 3
+        _zc = get_node_coordinates(get_grid(model))
+        _zmin = minimum(p -> p[3], _zc; init =  Inf)
+        _zmax = maximum(p -> p[3], _zc; init = -Inf)
+        _zspan = isfinite(_zmin) && isfinite(_zmax) ? _zmax - _zmin : 0.0
+        _xy = maximum(p -> max(abs(p[1]), abs(p[2])), _zc; init = 0.0)
+        if mpi_size > 1
+            _zspan = MPI.Allreduce(_zspan, MPI.MAX, comm)
+            _xy    = MPI.Allreduce(_xy,    MPI.MAX, comm)
+        end
+        if _zspan > 1.0e-8 * max(_xy, 1.0) &&
+           get(inputs, :lstop_on_bad_grid, true) == true
+            error(" # ERROR mesh.jl: ", get(inputs, :gmsh_filename, "the gmsh file"),
+                  " contains 2D cells only, but its nodes span ", _zspan,
+                  " in z -- it is a three-dimensional geometry whose VOLUME elements ",
+                  "are missing.\n",
+                  " #   gmsh writes this when the volume was never meshed, or when no ",
+                  "Physical Volume was defined (gmsh then saves only the entities that ",
+                  "belong to a Physical group).\n",
+                  " #   Re-export the mesh with its 3D elements. In the .geo, give the ",
+                  "volume a Physical Volume and mesh with dimension 3.\n",
+                  " #   Then DELETE the cached topology for this grid -- it was written ",
+                  "from the broken read and would be loaded again:\n",
+                  " #     rm -rf <case>/.jexpresso_cache/*",
+                  splitext(basename(string(get(inputs, :gmsh_filename, ""))))[1], "*\n",
+                  " #   If this really is a flat 2D case that happens to be meshed off ",
+                  "the z = 0 plane, set :lstop_on_bad_grid => false.")
+        end
+    end
+
     POIN_flg = 0
     EDGE_flg = 1
     FACE_flg = 2
@@ -6096,7 +6150,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     #   mesh.Δelem_smallest --> size of the smallest element inside a grid (==minimum(mesh.Δelem))
     #   mesh.Δeffective     --> mesh.Δelem_smallest/mesh.nop
     #
-    compute_element_size_driver(mesh, mesh.SD, Float64, CPU())
+    compute_element_size_driver(mesh, mesh.SD, Float64, CPU(); inputs = inputs)
     
     #check_memory("  END MESH DRIVER BEFORE GC.")
     GC.gc()
@@ -6138,7 +6192,9 @@ end
 # WARNING: this only gives an estimate if the grid is not cartesian
 #
 #----------------------------------------------------------------------
-function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
+# `inputs` is optional so the standalone callers that only want the sizes keep
+# working; it is read for :lstop_on_bad_grid alone.
+function compute_element_size_driver(mesh::St_mesh, SD, T, backend; inputs = nothing)
     
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -6171,6 +6227,39 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     println_rank(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l; msg_rank = rank, suppress = false)
     println_rank(" #   Smallest LGL node spacing:     ", mesh.Δnode_s, " (this is the CFL length scale)"; msg_rank = rank, suppress = false)
     println_rank(" # "; msg_rank = rank, suppress = false)
+
+    #
+    # A ZERO SMALLEST ELEMENT IS NOT A NUMBER TO PRINT, IT IS A BROKEN MESH.
+    #
+    # No valid grid has a zero-size element, and this quantity is the CFL
+    # length scale: Δeffective_s feeds the SGS filter width, Δnode_s feeds
+    # every stability estimate, and both are DIVIDED BY downstream. A zero
+    # here propagates as Inf and NaN through the time-step advice, the CFL
+    # report and the SGS closure -- none of which say where it came from.
+    #
+    # The usual cause is a gmsh file read at the wrong dimension (see the
+    # num_cell_dims check in mod_mesh_read_gmsh!), where 3D element-size logic
+    # measures 2D cells. The second is a genuinely degenerate element.
+    #
+    # :lstop_on_bad_grid => false to measure a grid that is known to be odd.
+    #
+    if !(mesh.Δelem_s > 0) || (!(mesh.SD isa NSD_1D) && !(mesh.Δnode_s > 0))
+        msg = string(" # ERROR mesh.jl: this grid reports a smallest element of ",
+                     mesh.Δelem_s, " and a smallest LGL node spacing of ", mesh.Δnode_s,
+                     ". Neither can be zero on a valid mesh, and both are divided by ",
+                     "downstream (the SGS filter width, every CFL estimate), so the run ",
+                     "would continue into Inf and NaN with nothing to say why.\n",
+                     " #   The usual cause is a gmsh file whose 3D elements are missing, ",
+                     "which makes the whole run 2D -- the check in mod_mesh_read_gmsh! ",
+                     "names that case explicitly. Otherwise the grid has a degenerate ",
+                     "element.\n",
+                     " #   Set :lstop_on_bad_grid => false to continue anyway.")
+        if inputs === nothing || get(inputs, :lstop_on_bad_grid, true) == true
+            error(msg)
+        else
+            rank == 0 && @warn msg
+        end
+    end
 end
 
 #------------------------------------------------------------------------------------

@@ -602,10 +602,21 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
     end
     
     #Reference values only (definied in initial conditions)
-    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
-    
+    # The DIRECTORY has to be part of the name handed to pvtk_grid: WriteVTK
+    # resolves a bare basename against the process's working directory, not
+    # against anything this function knows. Passing `file_name` here wrote
+    # `grid_ho.pvtu` next to wherever Julia happened to be started while the
+    # caller printed that it had written it to OUTPUT_DIR -- a file that exists,
+    # says it succeeded, and is not where it says it is.
+    #
+    # No ".vtu" either: pvtk_grid appends its own extension (".pvtu" for the
+    # main file, and one ".vtu" per part inside a directory it names after the
+    # base). Handing it a name that already ends in ".vtu" yields
+    # "grid_ho.vtu.pvtu".
+    fout_name = string(OUTPUT_DIR, "/", file_name)
+
     vtkfile = map(parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf
@@ -653,11 +664,21 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
     end
     
     #Reference values only (definied in initial conditions)
-    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
-    
-    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    # The DIRECTORY has to be part of the name handed to pvtk_grid: WriteVTK
+    # resolves a bare basename against the process's working directory, not
+    # against anything this function knows. Passing `file_name` here wrote
+    # `grid_ho.pvtu` next to wherever Julia happened to be started while the
+    # caller printed that it had written it to OUTPUT_DIR -- a file that exists,
+    # says it succeeded, and is not where it says it is.
+    #
+    # No ".vtu" either: pvtk_grid appends its own extension (".pvtu" for the
+    # main file, and one ".vtu" per part inside a directory it names after the
+    # base). Handing it a name that already ends in ".vtu" yields
+    # "grid_ho.vtu.pvtu".
+    fout_name = string(OUTPUT_DIR, "/", file_name)
+
     vtkfile = map(parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
                         part=part, nparts=nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
         vtkf
