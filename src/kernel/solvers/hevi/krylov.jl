@@ -227,7 +227,7 @@ function GMRESWorkspace(npoin::Int, nimp::Int, inner::DistributedInner;
         err isa OutOfMemoryError || rethrow()
         error("IMEX3D: out of memory building the GMRES workspace (npoin = $npoin, ",
               "nimp = $nimp, :imex_restart = $m). ",
-              heap_budget_note(($m + 4) * npoin * nimp * sizeof(Float64)))
+              heap_budget_note((m + 4) * npoin * nimp * sizeof(Float64)))
     end
 end
 

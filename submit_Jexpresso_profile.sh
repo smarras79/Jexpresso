@@ -150,6 +150,18 @@ echo "--- 1. MPI preferences FIRST (before any compilation) ---"
 julia --project=. --startup-file=no \
     -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
 
+echo "--- 1b. Syntax check (1 second, before paying 133 for a precompile) ---"
+# A one-character typo in src/ costs a full precompile (133 s) and then fails
+# on EVERY rank -- that is how a stray `$` in krylov.jl burned a 256-rank job.
+# Note that `Meta.parse` alone would not have caught it: `$` outside a string
+# parses cleanly and only fails when the expression is LOWERED. This checks
+# both, on every .jl file, without loading the package or needing MPI.
+julia --startup-file=no tools/syntax_check.jl src test problems tools || {
+    echo "ERROR: syntax error in the source tree -- fix it before submitting." >&2
+    echo "       Nothing was compiled and no ranks were launched." >&2
+    exit 1
+}
+
 echo "--- 2. Serial precompile (one process, many cores internally) ---"
 julia --project=. --startup-file=no \
     -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
