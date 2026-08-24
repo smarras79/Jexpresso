@@ -2271,14 +2271,23 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # initialize() with `no method matching initialize(::NSD_2D, ...)` -- a
     # message that names the symptom and nothing about where the 2D came from.
     #
-    # The signature is exact, which is why this can be an error rather than a
-    # warning: 2D cells, nodes carrying a real third coordinate, the surface is
-    # NOT curved (so it is not a spherical shell / manifold, which is
-    # legitimate), and the nodes span a non-zero z range (so it is not a flat
-    # 2D patch that happens to be written with three coordinates, which is also
-    # legitimate). Only a 3D geometry stripped of its 3D cells matches.
+    # `lmanifold` IS NOT THE DISCRIMINATOR, which is the trap here. It is
+    # inferred from non-coplanarity alone, and the surface of a box is not
+    # coplanar -- so a volume-less box passes the "curved manifold" test and
+    # would slip through a `!lmanifold` guard. (Verified on the file that
+    # prompted this: 1340 quads and no hexahedra, which is exactly
+    # 2(10x1) + 2(10x60) + 2(1x60), the box's six faces.)
     #
-    if mesh.nsd == 2 && !mesh.lmanifold && num_point_dims(model) == 3
+    # What separates the two is the DECK, not the geometry: a real curved
+    # manifold is a spherical shell, and a shell case says so with
+    # :lspherical_shell => true, which is also what selects its solver path in
+    # drivers.jl. So the condition is: 2D cells, nodes carrying a real third
+    # coordinate, a non-zero z span (a flat 2D patch written with three
+    # coordinates has none, however far off z = 0 it sits), and no shell
+    # requested. Only a 3D geometry stripped of its 3D cells matches.
+    #
+    if mesh.nsd == 2 && num_point_dims(model) == 3 &&
+       get(inputs, :lspherical_shell, false) != true
         _zc = get_node_coordinates(get_grid(model))
         _zmin = minimum(p -> p[3], _zc; init =  Inf)
         _zmax = maximum(p -> p[3], _zc; init = -Inf)
