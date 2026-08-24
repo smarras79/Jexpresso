@@ -20,6 +20,30 @@ const J = Jexpresso
 
 @testset "IMEX joint stability" begin
 
+    @testset "LESICP2-coarse: the refusal was diffusion, not the tableau" begin
+        # The numbers a real refusal printed, kept because the diagnosis of it
+        # was wrong twice before it was right. LESICP2-coarse-imex, 10 x 1 x 60
+        # over 6400 x 1600 x 5000 m, first z element 40 m, ARS232 at Δt = 0.2:
+        # the guard reported max|R| = 49.9941 and Δt_max = 0.047 s.
+        #
+        # Inverting those two for (rate_exp, rate_imp) is what identified the
+        # cause: rate_imp = 35.0 1/s against c/Δz_min = 340/6.91 = 49.2 gives
+        # κ = 0.71, an ordinary spectral correction -- so κ was NOT inflated by
+        # the vertical grading, which was the first theory. rate_exp = 32.3 1/s
+        # against a horizontal acoustic rate of κ·(340/110.5 + 340/276.3) =
+        # 3.1 1/s leaves 29 1/s that only 2ν/h_z² can supply, and it supplied
+        # it because :les_filter_width => :max took the width from the ONE
+        # element across y (1600 m against 40 m, so 1600x on ν_t).
+        rE, rI, dt = 32.25, 35.0, 0.2
+        t232 = J.ark_tableau(:ARS232)
+        @test J.ark_joint_amplification(t232, dt * rE, dt * rI) ≈ 49.99 rtol = 0.02
+        @test J.ark_joint_dt_max(t232, rE, rI) ≈ 0.047 rtol = 0.02
+        # The acoustics alone would have been comfortably stable at that Δt --
+        # which is why "drop Δt" and "change tableau" were both wrong answers.
+        @test J.ark_joint_amplification(t232, dt * 3.1, dt * rI) <= 1 + 1e-9
+        @test J.ark_joint_dt_max(t232, 3.1, rI) > 4 * dt
+    end
+
     ars232 = J.ark_tableau(:ARS232)
     ars343 = J.ark_tableau(:ARS343)
     ars443 = J.ark_tableau(:ARS443)
