@@ -1202,7 +1202,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                         params.mesh.connijk, params.inputs, params.rhs_el,
                         Int64(params.mesh.nelem), Int64(params.neqs),
                         connijk, Float64(params.mesh.Δeffective_l),
-                        params.mesh.Δelem_geo, Int64(params.mesh.nop),
+                        params.mesh.Δelem_filter, Int64(params.mesh.nop),
                         params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE,
                         params.sgs, params.mp)
 end
@@ -1284,16 +1284,16 @@ function _viscous_rhs_el_2d!(uaux, qe, uprimitive,
                              connijk_mesh, inputs, rhs_el,
                              nelem, neqs,
                              connijk, Δ,
-                             Δelem_geo, nop,
+                             Δelem_filter, nop,
                              QT, VT, SD, AD, SOL_VARS_TYPE,
                              sgs, mp)
     micro = size(Tabs, 1)
     # See _viscous_rhs_el_3d!: prefer the per-element, isotropy-aware filter
     # width over the single global Δeffective_l.
-    luse_local_Δ = length(Δelem_geo) == nelem && nop > 0
+    luse_local_Δ = length(Δelem_filter) == nelem && nop > 0
     Δ_effective  = Δ
     for iel = 1:nelem
-        Δ_effective = luse_local_Δ ? Δelem_geo[iel]/nop : Δ
+        Δ_effective = luse_local_Δ ? Δelem_filter[iel]/nop : Δ
         for j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j]
             user_primitives!(@view(uaux[ip,:]),
@@ -1419,7 +1419,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                         params.mesh.elem_to_face, params.mesh.bdy_face_type,
                         Int64(params.mesh.nelem), Int64(params.neqs),
                         params.mesh.ad_lvl, connijk, Float64(params.mesh.Δeffective_l),
-                        params.mesh.Δelem_geo, Int64(params.mesh.nop),
+                        params.mesh.Δelem_filter, Int64(params.mesh.nop),
                         params.QT, params.VT, SD, params.AD, params.SOL_VARS_TYPE,
                         params.sgs, params.mp)
 end
@@ -1436,21 +1436,27 @@ function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
                              elem_to_face, bdy_face_type,
                              nelem, neqs,
                              ad_lvl, connijk, Δ,
-                             Δelem_geo, nop,
+                             Δelem_filter, nop,
                              QT, VT, SD, AD, SOL_VARS_TYPE,
                              sgs, mp)
     Δ_effective = Δ
     micro = size(mp.Tabs, 1)
-    # Δ (= mesh.Δeffective_l) is ONE number for the whole domain: the largest
-    # element's SHORTEST edge over nop. It is neither local nor isotropic, so a
-    # stretched or graded grid gets the wrong filter width everywhere except at
-    # its coarsest element. Prefer the per-element volume-equivalent size when
-    # the mesh provides it, and keep the global value as the fallback for
-    # meshes built before Δelem_geo existed.
-    luse_local_Δ = length(Δelem_geo) == nelem && nop > 0
+    # Δ_effective is the LES FILTER WIDTH, and nu_t = (C_s*Δ)^2 |S| makes it a
+    # direct multiplier on how dissipative the run is.
+    #
+    # Δelem_filter is per element and is chosen ONCE, by
+    # compute_element_size_driver from :les_filter_width (default :max =
+    # max(dx,dy,dz)); see the comment there for why the coarsest direction is
+    # the right one and not the cell volume.
+    #
+    # Δ (= mesh.Δeffective_l) is only the fallback for a mesh built before
+    # Δelem_filter existed: ONE number for the whole domain, the largest
+    # element's shortest edge over nop -- neither local nor consistent with the
+    # choice above, which is why it is a fallback and not a mode.
+    luse_local_Δ = length(Δelem_filter) == nelem && nop > 0
 
     for iel = 1:nelem
-        Δ_effective = luse_local_Δ ? Δelem_geo[iel]/nop : calculate_effective_delta(Δ, ad_lvl[iel])
+        Δ_effective = luse_local_Δ ? Δelem_filter[iel]/nop : calculate_effective_delta(Δ, ad_lvl[iel])
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j,k]
 

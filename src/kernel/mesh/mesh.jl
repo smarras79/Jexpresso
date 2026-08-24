@@ -6208,7 +6208,8 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend; inputs = not
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     mesh.Δelem     = KernelAbstractions.zeros(backend, T, mesh.nelem)
-    mesh.Δelem_geo = KernelAbstractions.zeros(backend, T, mesh.nelem)
+    mesh.Δelem_geo    = KernelAbstractions.zeros(backend, T, mesh.nelem)
+    mesh.Δelem_filter = KernelAbstractions.zeros(backend, T, mesh.nelem)
     for ie = 1:mesh.nelem
          compute_element_size!(SD, ie, mesh::St_mesh, T)
     end
@@ -6224,6 +6225,58 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend; inputs = not
     # not Δelem/nop, is what an explicit time step has to resolve, so measure
     # it directly and let computeCFL report against it. Same quantity, and the
     # same reasoning, as the Δmin of kernel/mesh/sphere_metrics.jl.
+    #-------------------------------------------------------------------------
+    # THE LES FILTER WIDTH -- a modelling choice, made ONCE, here.
+    #
+    # nu_t = (C_s * Delta)^2 |S|, so this is a direct multiplier on the eddy
+    # viscosity and therefore on how dissipative the run is. compute_element_size!
+    # has already written max(dx,dy,dz); the other two modes overwrite it.
+    #
+    #   :max        (default) max(dx,dy,dz). A filter cannot resolve better than
+    #               the COARSEST direction of its cell. On a 160 x 160 x 40 m
+    #               element the volume-equivalent 100.8 m claims a horizontal
+    #               resolution the grid does not have.
+    #   :geometric  (dx*dy*dz)^(1/3), the previous behaviour.
+    #   :min        min(dx,dy,dz). Least dissipative; here for completeness.
+    #
+    # Doing it in ONE place matters more than it looks: the SGS closure in
+    # rhs.jl and the SGS-stress diagnostic in les_statistics.jl both read this
+    # array, and if they ever disagreed about the filter width the reported
+    # subfilter fluxes would not be the ones the model actually applied.
+    #-------------------------------------------------------------------------
+    fw = inputs === nothing ? :max : Symbol(get(inputs, :les_filter_width, :max))
+    fw in (:max, :geometric, :min) ||
+        error(" # ERROR mesh.jl: :les_filter_width must be :max (the default), ",
+              ":geometric or :min; got $fw.")
+    if fw === :geometric
+        copyto!(mesh.Δelem_filter, mesh.Δelem_geo)
+    elseif fw === :min
+        copyto!(mesh.Δelem_filter, mesh.Δelem)
+    end
+    # COLLECTIVE, so above the rank-0 print: these arrays are rank-local, and a
+    # range taken on rank 0 alone would report whatever slice of the mesh that
+    # rank happens to own.
+    _fwmin = mesh.nelem > 0 ? minimum(mesh.Δelem_filter) :  Inf
+    _fwmax = mesh.nelem > 0 ? maximum(mesh.Δelem_filter) : -Inf
+    _gmin  = mesh.nelem > 0 ? minimum(mesh.Δelem_geo)    :  Inf
+    _gmax  = mesh.nelem > 0 ? maximum(mesh.Δelem_geo)    : -Inf
+    _fwmin = MPI.Allreduce(_fwmin, MPI.MIN, comm); _fwmax = MPI.Allreduce(_fwmax, MPI.MAX, comm)
+    _gmin  = MPI.Allreduce(_gmin,  MPI.MIN, comm); _gmax  = MPI.Allreduce(_gmax,  MPI.MAX, comm)
+    if isfinite(_fwmin)
+        # Per ELEMENT; the SGS closure divides by nop, so the filter the model
+        # sees is these numbers over nop. Printed per element to match the
+        # ELEMENT SIZES block just above.
+        println_rank(" #   LES filter width (:les_filter_width => :", fw, "): ",
+                     round(_fwmin; digits = 2), " .. ", round(_fwmax; digits = 2),
+                     " m per element",
+                     fw === :max ? string("   [volume-equivalent would be ",
+                                          round(_gmin; digits = 2), " .. ",
+                                          round(_gmax; digits = 2), " m, i.e. nu_t x ",
+                                          round((_fwmax / max(_gmax, eps()))^2; digits = 2),
+                                          " at the coarsest element]") : "";
+                     msg_rank = rank, suppress = false)
+    end
+
     Δnode_local  = compute_min_node_spacing(mesh, mesh.SD, T)
     Δnode_global = MPI.Allreduce(Δnode_local, MPI.MIN, comm)
     # Inf comes back from the 1D no-op (and from a run with no elements at
@@ -6352,7 +6405,8 @@ function compute_element_size!(SD::NSD_2D, ie, mesh::St_mesh, T)
     dy = maximum(y) - minimum(y)
     
     mesh.Δelem[ie]     = min(dx, dy)       #shortest distance of two points corner within a given element
-    mesh.Δelem_geo[ie] = sqrt(dx*dy)       #area-equivalent (isotropic) element size, for LES filter widths
+    mesh.Δelem_geo[ie]    = sqrt(dx*dy)     #area-equivalent (isotropic) size
+    mesh.Δelem_filter[ie] = max(dx, dy)     #longest edge: what SMAG/VREM use
     #mesh.Δelem_largest[ie]  = max(dx, dy) #longest distance of two points corner within a given element
     
 end
@@ -6389,9 +6443,12 @@ function compute_element_size!(SD::NSD_3D, ie, mesh::St_mesh, T)
     dy = maximum(y) - minimum(y)
     dz = maximum(z) - minimum(z)
     
-    mesh.Δelem[ie]     = min(dx, dy, dz)        #shortest distance of two points corner within a given element
-    mesh.Δelem_geo[ie] = cbrt(dx*dy*dz)         #volume-equivalent (isotropic) element size, for LES filter widths
-    #mesh.Δelem_largest[ie]  = max(dx, dy, dz)  #longest distance of two points corner within a given element
+    mesh.Δelem[ie]        = min(dx, dy, dz)     #shortest corner-to-corner distance: the CFL length scale
+    mesh.Δelem_geo[ie]    = cbrt(dx*dy*dz)      #volume-equivalent (isotropic) size
+    # The LES filter width. Written as the LONGEST edge here and overwritten by
+    # compute_element_size_driver when :les_filter_width asks for something
+    # else, so the default costs no branch in this per-element loop.
+    mesh.Δelem_filter[ie] = max(dx, dy, dz)     #longest edge: what SMAG/VREM use
     
 end
 

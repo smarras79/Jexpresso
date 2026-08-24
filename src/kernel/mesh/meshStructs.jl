@@ -174,11 +174,25 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     # it as Δelem::AbstractVector{TT} with Δ = Δelem[ie]/ngl. The TInt default
     # was the odd one out — Δelem_s/Δelem_l next to it are already 0.0.
     Δelem                = KernelAbstractions.zeros(backend, TFloat, 0)
-    # Δelem is min(dx,dy,dz) — the right scale for a CFL bound, the wrong one
-    # for an LES filter width, which wants the cell volume: an LES on a 78 x 78
-    # x 49 m element must not pretend the filter is isotropic at 49 m. Δelem_geo
-    # holds (dx*dy*dz)^(1/3) per element for the SGS models to divide by nop.
+    # Δelem is min(dx,dy,dz) — the right scale for a CFL bound, and the WRONG
+    # one for an LES filter width. The two candidates for that are kept
+    # separately:
+    #
+    #   Δelem_geo     (dx*dy*dz)^(1/3), the volume-equivalent isotropic size.
+    #   Δelem_filter  what SMAG and VREM actually divide by nop and use. Filled
+    #                 by compute_element_size_driver from :les_filter_width,
+    #                 which defaults to :max = max(dx,dy,dz).
+    #
+    # WHY :max IS THE DEFAULT. A filter cannot resolve better than the COARSEST
+    # direction of the cell it lives in. On this project's LES grids the element
+    # is 160 x 160 x 40 m, so the volume-equivalent 100.8 m claims a resolution
+    # in x and y that the grid does not have, and under-damps by (160/100.8)^2 =
+    # 2.5x in eddy viscosity exactly where the horizontal grid is coarsest.
+    # :geometric restores the old behaviour and :min is there for completeness;
+    # both are one deck key away, because this is a modelling choice and not a
+    # fact about the mesh.
     Δelem_geo            = KernelAbstractions.zeros(backend, TFloat, 0)
+    Δelem_filter         = KernelAbstractions.zeros(backend, TFloat, 0)
     Δelem_s              = 0.0
     Δelem_l              = 0.0
     Δeffective_s         = 0.0

@@ -291,7 +291,7 @@ function fill_sgs_cache!(params)
         _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                          dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
                          ad_lvl, Float64(mesh.Δeffective_l),
-                         mesh.Δelem_geo, Int64(mesh.nop),
+                         mesh.Δelem_filter, Int64(mesh.nop),
                          params.visc_coeff,
                          isnothing(params.sgs) ? PhysConst.C_s : Float64(params.sgs.C_s),
                          PhysConst, Pr_t, μ_mol, κ_mol,
@@ -382,17 +382,17 @@ end
 
 function _fill_sgs_inner!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                            dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                           ad_lvl, Δ, Δelem_geo, nop, visc_coeff, C_s_eff, PhysConst, Pr_t, μ_mol, κ_mol,
+                           ad_lvl, Δ, Δelem_filter, nop, visc_coeff, C_s_eff, PhysConst, Pr_t, μ_mol, κ_mol,
                            ngl, nelem, npoin, VT, ET)
     fill!(sgs_stress, 0.0)
     fill!(ncount, Int32(0))
     cμ = length(visc_coeff) >= 2 ? Float64(visc_coeff[2]) : 0.0
     cθ = length(visc_coeff) >= 5 ? Float64(visc_coeff[5]) : cμ
     # Same per-element filter width the RHS uses (see _viscous_rhs_el_3d!).
-    luse_local_Δ = length(Δelem_geo) == nelem && nop > 0
+    luse_local_Δ = length(Δelem_filter) == nelem && nop > 0
 
     for iel in 1:nelem
-        Δ2 = luse_local_Δ ? (Δelem_geo[iel]/nop)^2 : (ldexp(Δ, -ad_lvl[iel]))^2
+        Δ2 = luse_local_Δ ? (Δelem_filter[iel]/nop)^2 : (ldexp(Δ, -ad_lvl[iel]))^2
 
         for k in 1:ngl, j in 1:ngl, i in 1:ngl
             ip = connijk[iel,i,j,k]
