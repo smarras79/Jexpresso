@@ -21,7 +21,7 @@
 #
 #     --nodes=1 --ntasks-per-node=32      32 ranks, one node, no network
 #     --nodes=8 --ntasks-per-node=32      256 ranks -- the DEFAULT below, and
-#                                         what tools/pick_nranks.jl recommends
+#         --cpus-per-task=2               what tools/pick_nranks.jl recommends
 #     --nodes=8 --ntasks-per-node=128     1024 ranks, the scaling arm
 #
 # Every rung is a valid :lxy_partition rank count for this 64 x 64 mesh; the
@@ -87,24 +87,38 @@
 # vertical columns, and only the counts that tool lists divide cleanly. Anything
 # else leaves ranks owning zero elements.
 #
-# 32 ranks/node over 8 nodes, NOT 64 over 4: same 256 ranks and the same
-# decomposition, but 8 GB per rank instead of 4. The 4 GB arrangement died of
-# OutOfMemoryError during setup -- the mesh broadcast is the memory peak of the
-# whole run, and 15.9M global gridpoints is a lot to pass around. Wasting 96 of
-# the 128 cores on each node is the price of the headroom; for a one-hour probe
-# that is the right trade. If these nodes have 512 GB, --ntasks-per-node=64
-# with --mem-per-cpu=8000M gets the cores back -- the launch banner prints the
-# node's RAM so this can be checked rather than guessed.
+# MEMORY PER RANK WHEN --mem-per-cpu IS CAPPED.
 #
-# The scaling arm of the comparison in the header is --nodes=8
-# --ntasks-per-node=128 (1024 ranks). Run it SECOND, once 256 has worked, and
-# expect the halo cost per element to have doubled. Note it will need
-# --mem-per-cpu lowered to fit, which is another reason to establish the
-# memory floor at 256 first.
+# Wulver enforces MaxMemPerCPU = 4000M, so --mem-per-cpu=8000M is rejected. That
+# caps the memory per CPU, NOT the memory per RANK: --cpus-per-task=2 allocates
+# two CPUs to each MPI rank, and the rank's cgroup budget is the sum, 8000M.
+# Asking for fewer ranks per node does NOT help -- fewer tasks means fewer CPUs
+# means proportionally less memory, and 4 GB per rank either way. cpus-per-task
+# is the only lever the cap leaves.
+#
+#   nodes x ntasks-per-node x cpus-per-task = 8 x 32 x 2
+#     -> 256 ranks, 64 CPUs and 256 GB per node, 8 GB per rank
+#
+# The second CPU of each pair sits idle: JULIA_NUM_THREADS/OMP_NUM_THREADS are 1
+# below and Jexpresso is pure MPI. It is bought for its memory, and it doubles
+# the core-hours charged. If the run comes up comfortably inside 8 GB (watch the
+# banner and `seff` afterwards), drop back to --cpus-per-task=1 and halve that.
+#
+# 4 GB per rank died of OutOfMemoryError during setup, but that was WITHOUT
+# --heap-size-hint, which is the actual bug (see the flag's block below). It is
+# worth retrying at --cpus-per-task=1 once the hint is in place; the mesh
+# broadcast is the peak and 15.9M global gridpoints may well fit in 4 GB when
+# the GC is collecting against the right limit.
+#
+# The scaling arm of the comparison in the header is 1024 ranks
+# (--nodes=8 --ntasks-per-node=128 --cpus-per-task=1). Run it SECOND, once 256
+# has worked: at 128 tasks x 4000M it is 512 GB per node, so it needs nodes that
+# large and it gets only 4 GB per rank.
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=32
+#SBATCH --cpus-per-task=2
 #SBATCH --time=01:00:00
-#SBATCH --mem-per-cpu=8000M
+#SBATCH --mem-per-cpu=4000M
 
 module load Julia/1.11.9
 module load GCC MPICH
@@ -274,9 +288,13 @@ else
     LAUNCHER="mpirun"
 fi
 
+# -c is passed EXPLICITLY. Since Slurm 22.05 srun no longer inherits the batch
+# job's --cpus-per-task on every site configuration, and without it each rank
+# gets one CPU and one CPU's worth of memory -- silently undoing the
+# cpus-per-task trick above and reinstating the OOM.
 launch() {   # launch <julia args...>
     if [ "$LAUNCHER" = "srun" ]; then
-        srun --mpi="$SRUN_MPI" -n "$NTASKS" julia "$@"
+        srun --mpi="$SRUN_MPI" -n "$NTASKS" -c "${SLURM_CPUS_PER_TASK:-1}" julia "$@"
     else
         mpirun -np "$NTASKS" julia "$@"
     fi
@@ -288,7 +306,7 @@ if [ "$LAUNCHER" = "srun" ]; then
 else
     echo "    launcher                  : mpirun (MPICH Hydra)"
 fi
-echo "    nodes x tasks             : $NNODES x $((NTASKS / NNODES)) = $NTASKS ranks"
+echo "    nodes x tasks x cpus      : $NNODES x $((NTASKS / NNODES)) x ${SLURM_CPUS_PER_TASK:-1} = $NTASKS ranks"
 echo "    cgroup budget per rank    : ${RANK_MB:-unknown} MB"
 echo "    --heap-size-hint          : ${HEAP_MB:-NOT SET} MB  (Julia reads /proc/meminfo, NOT the cgroup)"
 echo "    node RAM (this node)      : $(awk '/MemTotal/{printf "%.0f MB", $2/1024}' /proc/meminfo)"
