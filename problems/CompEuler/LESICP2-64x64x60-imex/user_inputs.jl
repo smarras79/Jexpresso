@@ -347,11 +347,34 @@ function user_inputs()
         #   element  160 x 160 x 40 m  ->  effective resolution 40 x 40 x 10 m
         #   50 elements below 2000 m at dz = 40 m, 10 stretched to the lid
         #   15.9 M nodes, 245 760 elements, 241 levels, 4096 element columns
-	:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_32x32x30_10240mX10240mX5000m.msh",
+	:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
+	# the 32x32x30 is kept only as the source of the .geo; it is NOT usable
+	# here, because reaching 64x64x60 from it needs :linitial_refine.
+	#:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_32x32x30_10240mX10240mX5000m.msh",
         #:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_64x64x60_10240mX10240mX5000m.msh",
 	#:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_16x16x125_10240mX10240mX5000m.msh",
 	
-        # Stretching factors.
+        # Stretching. The .geo is UNIFORM in z (Progression 1.0); the vertical
+        # grading is applied here, at read time, by stretching.jl.
+        #
+        # :first_zelement_size IS THE EFFECTIVE RESOLUTION, NOT THE ELEMENT SIZE.
+        # stretching.jl multiplies it by (ngl-1) on the way in --
+        #     first_cell_size *= (mesh.ngl-1)
+        # -- precisely because the LGL points divide it again, and then prints
+        # "Desired resolution by the surface: 10.0". So 10.0 here means a 40 m
+        # first ELEMENT and a 10 m effective resolution, which is what this case
+        # wants.
+        #
+        # WHAT THE STRETCH ACTUALLY PRODUCES at nelemz = 60 -- worth knowing,
+        # because it is a smooth power law and not two blocks of fixed size:
+        #     exponent n = 1.179, first element 40 m (10 m effective)
+        #     ~28 elements below the 2000 m transition, the last of them 85 m
+        #       (21 m effective) -- so the resolution DEGRADES from 10 m at the
+        #       surface to ~21 m by 2000 m; it is not 10 m throughout
+        #     ~32 uniform elements of 85 m above it to the lid
+        # If 10 m is wanted all the way to 2000 m this is the wrong stretch type
+        # for it. Either way h_z_min, and so the step size, is set by the FIRST
+        # element: 0.1727 x 40 = 6.91 m, which is what dt = 0.5 was derived from.
         :lstretch => true,
         :stretch_factor => 1.15,
         :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
@@ -380,7 +403,21 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
+        # MUST be false. mesh.jl consults :lxy_partition ONLY when
+        # :linitial_refine and :ladapt are both false, so runtime refinement
+        # silently returns the mesh to the p4est space-filling-curve partition
+        # whatever the flag says -- and that is the partition on which the
+        # assembled RHS and the mass matrix carry different ghost multiplicities
+        # and the implicit operator picks up a positive real eigenvalue.
+        # check_columnar_partition refuses it at setup rather than letting the
+        # run diverge slowly with every self-check passing.
+        #
+        # Refine OFFLINE instead. LESICP_64x64x60.geo in this directory is
+        # LESICP.geo with nelem{x,y,z} = 64, 64, 60, i.e. exactly what one
+        # refinement level of the 32x32x30 would have produced:
+        #   gmsh -3 -order 1 problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60.geo \
+        #        -o problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh
+        :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
