@@ -133,8 +133,36 @@ end
 end
 
 
-#
-#
+#=============================================================================
+ NOT CALLED. NOTHING IN THE TREE REACHES THIS METHOD.
+
+ The 3D viscous path goes through the CACHE form instead. _expansion_visc!
+ (rhs.jl, NSD_3D, ContGal) calls compute_sgs_cache! ONCE per element and then,
+ inside the equation loop, the seven-argument reader
+
+     SGS_diffusion(visc_coeffieq, ieq, rho, ip, sgs, ltheta_eqn, SD)
+
+ which is defined far below in this file and just looks up sgs.mu_turb[ip].
+ The strain rate, the buoyancy correction and the FILTER WIDTH Delta^2 all
+ live in compute_sgs_cache! now -- so an @info added here never prints, and a
+ change made here has no effect on any 3D run.
+
+ The 2D long form directly above IS live: the NSD_2D _expansion_visc! still
+ passes the velocity gradients and Delta2 explicitly.
+
+ AND IT HAS DRIFTED, which is the reason for a banner rather than a deletion.
+ This copy has no near-wall length limit -- no lwall_damping, no karman, no
+ l = min(C_s*Delta, kappa*z) -- while compute_sgs_cache! does. Routing 3D back
+ through here would silently drop the wall damping and inflate nu_t in the
+ first element above the surface, which is exactly where an LES with a wall
+ model can least afford it.
+
+ To instrument the filter width, put the @info in compute_sgs_cache! (the
+ SGS_SMAG method), whose Delta2 argument is the square of
+ mesh.Delta_elem_filter[iel]/nop. Or read it off the mesh driver's
+ "LES filter width" line, which prints the global range at startup and needs
+ no code change at all.
+=============================================================================#
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
                                u11, u22, u33,
@@ -334,6 +362,36 @@ end
 
 
 
+#=============================================================================
+ NOT CALLED. NOTHING IN THE TREE REACHES THIS METHOD.
+
+ The 3D viscous path goes through the CACHE form instead. _expansion_visc!
+ (rhs.jl, NSD_3D, ContGal) calls compute_sgs_cache! ONCE per element and then,
+ inside the equation loop, the seven-argument reader
+
+     SGS_diffusion(visc_coeffieq, ieq, rho, ip, sgs, ltheta_eqn, SD)
+
+ which is defined far below in this file and just looks up sgs.mu_turb[ip].
+ The strain rate, the buoyancy correction and the FILTER WIDTH Delta^2 all
+ live in compute_sgs_cache! now -- so an @info added here never prints, and a
+ change made here has no effect on any 3D run.
+
+ The 2D long form directly above IS live: the NSD_2D _expansion_visc! still
+ passes the velocity gradients and Delta2 explicitly.
+
+ AND IT HAS DRIFTED, which is the reason for a banner rather than a deletion.
+ This copy has no near-wall length limit -- no lwall_damping, no karman, no
+ l = min(C_s*Delta, kappa*z) -- while compute_sgs_cache! does. Routing 3D back
+ through here would silently drop the wall damping and inflate nu_t in the
+ first element above the surface, which is exactly where an LES with a wall
+ model can least afford it.
+
+ To instrument the filter width, put the @info in compute_sgs_cache! (the
+ SGS_VREM method), whose Delta2 argument is the square of
+ mesh.Delta_elem_filter[iel]/nop. Or read it off the mesh driver's
+ "LES filter width" line, which prints the global range at startup and needs
+ no code change at all.
+=============================================================================#
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
                                u11, u12, u13,
