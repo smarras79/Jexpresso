@@ -19,12 +19,15 @@
 # which cost a queue turnaround to attribute. Submit in this order and keep
 # the first that works:
 #
-#     --nodes=1 --ntasks-per-node=128     128 ranks/node, still no network
-#     --nodes=2 --ntasks-per-node=128     adds the inter-node transport
-#     --nodes=8 --ntasks-per-node=128     the target, 1024 ranks
+#     --nodes=1 --ntasks-per-node=64      64 ranks, one node, no network
+#     --nodes=4 --ntasks-per-node=64      256 ranks -- the DEFAULT below, and
+#                                         what tools/pick_nranks.jl recommends
+#     --nodes=8 --ntasks-per-node=128     1024 ranks, the scaling arm
 #
-# The preflight below fails in seconds rather than after the mesh read, and
-# its error message says which rung failed and what to change.
+# Every rung is a valid :lxy_partition rank count for this 64 x 64 mesh; the
+# ladder is about the MPI stack, not the decomposition. The preflight below
+# fails in seconds rather than after the mesh read, and its error message says
+# which rung failed and what to change.
 #
 # WHAT IT PRINTS
 # --------------
@@ -70,20 +73,31 @@
 #SBATCH --qos=low
 #SBATCH --account=smarras
 #
-# 1024 ranks = a 32 x 32 rank grid over the 64 x 64 element columns, so each
-# rank owns a 2 x 2 block of columns and 15 545 points -- the closest valid
-# column decomposition to the per-rank load the explicit 1240-core run already
-# carries. 1240 itself is NOT valid here: :lxy_partition, which HEVI and
-# IMEX3D both require, cuts the mesh into vertical columns and the admissible
-# rank counts are the ones this lists:
+# 256 ranks = a 16 x 16 rank grid over the 64 x 64 element columns, so each
+# rank owns a 4 x 4 block of columns and 62 179 points. This is what the repo's
+# own tool picks for this mesh:
 #
 #     julia tools/pick_nranks.jl 64 64 60 4 2048 10240 10240
+#     ...
+#     256    16 x 16   4 x 4   16   62179   halo/elem 1.0   <== RECOMMENDED
+#     1024   32 x 32   2 x 2    4   15545   halo/elem 2.0   (thin: comms-bound)
 #
-# --nodes=16 for the 2048-rank arm of the scaling comparison above.
-#SBATCH --nodes=8
-#SBATCH --ntasks-per-node=128
+# 1240 -- the explicit run's core count -- is NOT valid here at all:
+# :lxy_partition, which HEVI and IMEX3D both require, cuts the mesh into
+# vertical columns, and only the counts that tool lists divide cleanly. Anything
+# else leaves ranks owning zero elements.
+#
+# 64 ranks/node rather than 128 is deliberate: it halves per-node memory during
+# the mesh broadcast, which is the peak of the whole run, and 8 nodes x 128 is
+# the configuration that failed inside MPI_Init_thread on the first attempt.
+#
+# The scaling arm of the comparison in the header is --nodes=8
+# --ntasks-per-node=128 (1024 ranks). Run it SECOND, once 256 has worked, and
+# expect the halo cost per element to have doubled.
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=64
 #SBATCH --time=01:00:00
-#SBATCH --mem-per-cpu=2000M
+#SBATCH --mem-per-cpu=4000M
 
 module load Julia/1.11.9
 module load GCC MPICH
@@ -181,7 +195,7 @@ if julia --pkgimages=existing -e 'exit(0)' >/dev/null 2>&1; then
     JULIA_FLAGS+=(--pkgimages=existing)
 fi
 
-NTASKS="${SLURM_NTASKS:-1024}"
+NTASKS="${SLURM_NTASKS:-256}"
 NNODES="${SLURM_NNODES:-1}"
 
 # ===========================================================================
@@ -260,15 +274,15 @@ launch "${JULIA_FLAGS[@]}" -e '
     echo "ERROR: MPI itself cannot start $NTASKS ranks across $NNODES nodes (exit $rc)." >&2
     echo "       Nothing in Jexpresso has run. Bisect the two variables that" >&2
     echo "       changed from the known-good 1 x 32 launch, one at a time:" >&2
-    echo "         1. --nodes=1 --ntasks-per-node=128   (ppn only, no network)" >&2
-    echo "         2. --nodes=2 --ntasks-per-node=128   (adds the network)" >&2
-    echo "         3. --nodes=8 --ntasks-per-node=128   (the target)" >&2
+    echo "         1. --nodes=1 --ntasks-per-node=64    (one node, no network)" >&2
+    echo "         2. --nodes=4 --ntasks-per-node=64    (adds the network)" >&2
+    echo "         3. --nodes=8 --ntasks-per-node=128   (more ranks per node)" >&2
     echo "       If 1 passes and 2 fails, it is the inter-node transport:" >&2
     echo "       try JEXPRESSO_LAUNCHER=srun with SRUN_MPI from the list above," >&2
     echo "       or export UCX_TLS=self,sm,ud (ud scales further than rc at" >&2
     echo "       high rank counts; rc exhausts queue-pair memory)." >&2
-    echo "       If 1 also fails, it is 128 ranks/node: check /dev/shm room and" >&2
-    echo "       that --mem-per-cpu x 128 fits the node." >&2
+    echo "       If 1 also fails, it is not the network at all: check /dev/shm" >&2
+    echo "       room and that --mem-per-cpu x ntasks-per-node fits the node." >&2
     exit $rc
 }
 
