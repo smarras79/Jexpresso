@@ -128,6 +128,18 @@ mutable struct HEVIProfile
     t_rhs::Float64;   n_rhs::Int
     t_refac::Float64; n_refac::Int
     t_step::Float64;  n_step::Int
+    # INSIDE the stage solve, which for IMEX3D is ~90% of the step. Splitting
+    # it is not curiosity: whether the Schur reduction (5 implicit fields -> 1)
+    # can pay depends entirely on which of these dominates. The matvec, the
+    # gather/scatter and the orthogonalisation all shrink with the field count;
+    # the MPI reductions are latency and do not shrink at all. Measured on the
+    # 64x64x60 deck the banded solve is only ~12% of the non-matvec cost, so
+    # the answer was not guessable.
+    t_mv::Float64;    n_mv::Int      # operator application inside GMRES
+    t_pc::Float64;    n_pc::Int      # preconditioner: gather + gbtrs + scatter
+    t_band::Float64;  n_band::Int    # ...of which the LAPACK banded solves
+    t_orth::Float64;  n_orth::Int    # Gram-Schmidt: dots and axpys
+    t_red::Float64;   n_red::Int     # MPI.Allreduce inside the inner products
 end
 const HEVI_PROF       = Ref(false)
 const HEVI_PROF_EVERY = Ref(50)
@@ -149,7 +161,8 @@ const HEVI_PROF_ALL   = Ref(false)
 # compiles the RHS chain, so counting them inflates every row -- and rhs! most
 # of all, which is exactly the row the other numbers are judged against.
 const HEVI_PROF_SKIP  = Ref(10)
-const HEVI_PROFILE    = HEVIProfile(0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0)
+const HEVI_PROFILE    = HEVIProfile(0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0,
+                                    0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0)
 
 @inline hevi_prof_on() = HEVI_PROF[] && HEVI_STEP_COUNT[] > HEVI_PROF_SKIP[]
 @inline hevi_tic() = hevi_prof_on() ? time_ns() : UInt64(0)
@@ -161,6 +174,11 @@ function hevi_profile_reset!()
     P.t_rhs = 0.0;   P.n_rhs = 0
     P.t_refac = 0.0; P.n_refac = 0
     P.t_step = 0.0;  P.n_step = 0
+    P.t_mv = 0.0;    P.n_mv = 0
+    P.t_pc = 0.0;    P.n_pc = 0
+    P.t_band = 0.0;  P.n_band = 0
+    P.t_orth = 0.0;  P.n_orth = 0
+    P.t_red = 0.0;   P.n_red = 0
     return nothing
 end
 
@@ -198,6 +216,20 @@ function hevi_profile_report!()
     row("f_imp",       P.t_fimp,  P.n_fimp)
     row("column solve", P.t_solve, P.n_solve)
     row("refactorise", P.t_refac, P.n_refac)
+    # The stage solve, broken out. These are INSIDE "column solve" above, so
+    # they are printed indented and are NOT added to `accounted`.
+    if P.n_mv > 0 || P.n_pc > 0
+        Base.print("   │   -- inside the stage solve --\n")
+        row("  matvec",     P.t_mv,   P.n_mv)
+        row("  precond",    P.t_pc,   P.n_pc)
+        row("    of which banded", P.t_band, P.n_band)
+        row("  orthogonalise", P.t_orth, P.n_orth)
+        row("  MPI reduce",  P.t_red,  P.n_red)
+        sub = (P.t_mv + P.t_pc + P.t_orth + P.t_red) / ns
+        Base.print("   │ ", rpad("  sub-accounted", 16), " " ^ 30,
+                   lpad(string(round(sub; digits = 4)), 9), " s/step  of ",
+                   round(P.t_solve / ns; digits = 4), " in the solve\n")
+    end
     Base.print("   │ ", rpad("accounted", 16), " " ^ 30,
                lpad(string(round(acc; digits = 4)), 9), " s/step\n")
     Base.print("   │ ", rpad("measured step", 16), " " ^ 30,

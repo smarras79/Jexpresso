@@ -120,7 +120,13 @@ function ddots!(out::Vector{Float64}, di::DistributedInner,
     # The whole buffer is reduced, not `view(out, 1:j)`: the tail is zeroed
     # above, the extra bytes are a handful of doubles, and it keeps this off
     # the question of which SubArrays MPI.jl will accept as a buffer.
-    di.parallel && MPI.Allreduce!(out, MPI.SUM, di.comm)
+    if di.parallel
+        _tr = hevi_tic()
+        MPI.Allreduce!(out, MPI.SUM, di.comm)
+        if hevi_prof_on()
+            HEVI_PROFILE.t_red += (time_ns() - _tr) * 1e-9; HEVI_PROFILE.n_red += 1
+        end
+    end
     return out
 end
 
@@ -317,10 +323,19 @@ function gmres_solve!(X::AbstractMatrix, B::AbstractMatrix, ws::GMRESWorkspace,
         for jj = 1:m
             j = jj
             copyto!(Z, V[jj])
-            precon!(Z)                 # z = M^-1 v_j
+            precon!(Z)                 # z = M^-1 v_j   (timed in the preconditioner)
+            _tmv = hevi_tic()
             matvec!(W, Z)              # w = A z
+            if hevi_prof_on()
+                HEVI_PROFILE.t_mv += (time_ns() - _tmv) * 1e-9; HEVI_PROFILE.n_mv += 1
+            end
 
             # --- CGS2: two batched projection passes, three reductions ------
+            # Timed as one block. The MPI part of it is counted separately
+            # inside ddot, so t_orth minus t_red is the local vector work --
+            # which is what shrinks with the implicit field count, where the
+            # reductions are latency and do not.
+            _to = hevi_tic()
             ddots!(hs, di, W, V, jj)
             @inbounds for i = 1:jj
                 H[i, jj] = hs[i]
@@ -333,6 +348,9 @@ function gmres_solve!(X::AbstractMatrix, B::AbstractMatrix, ws::GMRESWorkspace,
             end
 
             hnext = dnorm(di, W)
+            if hevi_prof_on()
+                HEVI_PROFILE.t_orth += (time_ns() - _to) * 1e-9; HEVI_PROFILE.n_orth += 1
+            end
             H[jj+1, jj] = hnext
 
             # --- Givens: apply the previous rotations, then the new one -----

@@ -170,12 +170,20 @@ function imex3d_precond!(V::AbstractMatrix, pc::IMEX3DPrecond, params, gdt::Real
     # column_gather!/scatter! index `vars[m]` for m = 1:cc.nimp, so a
     # non-contiguous set like (1, 4, 5) works directly and the untouched
     # columns keep their values -- i.e. the identity on ρu and ρv.
+    _tpc = hevi_tic()
     column_gather!(pc.cc, V, pc.pvars)
+    _tb = hevi_tic()
     @inbounds for ic = 1:pc.cc.nown
         LAPACK.gbtrs!('N', fac.kl, fac.ku, fac.n, fac.AB[ic], fac.ipiv[ic],
                       view(pc.cc.X, :, ic))
     end
+    if hevi_prof_on()
+        HEVI_PROFILE.t_band += (time_ns() - _tb) * 1e-9; HEVI_PROFILE.n_band += 1
+    end
     column_scatter!(pc.cc, V, pc.pvars)
+    if hevi_prof_on()
+        HEVI_PROFILE.t_pc += (time_ns() - _tpc) * 1e-9; HEVI_PROFILE.n_pc += 1
+    end
     return V
 end
 
