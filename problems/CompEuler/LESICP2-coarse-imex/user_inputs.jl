@@ -410,8 +410,8 @@ function user_inputs()
         # to be compared against that one, and a comparison across two meshes is
         # not a comparison.
         #:gmsh_filename    => "./problems/CompEuler/LESICP2-coarse-imex/LESICP_8x2x60_6400mX1600mX5000m.msh",
-        #:gmsh_filename    => "./problems/CompEuler/LESICP2-coarse-imex/LESICP_10x1x60_6400mX1600mX5000m.msh",
-        :gmsh_filename    => "./problems/CompEuler/LESICP2-coarse-imex/LESICP_10x1x55_6400mX1600mX5000m.msh",
+        :gmsh_filename    => "./problems/CompEuler/LESICP2-coarse-imex/LESICP_10x1x60_6400mX1600mX5000m.msh",
+        #:gmsh_filename    => "./problems/CompEuler/LESICP2-coarse-imex/LESICP_10x1x55_6400mX1600mX5000m.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x60_10kmX10kmX5km.msh",
         
         # Warping:
