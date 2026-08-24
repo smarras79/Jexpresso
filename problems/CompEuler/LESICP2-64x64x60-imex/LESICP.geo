@@ -1,17 +1,17 @@
-nelemx = 10;
-nelemy = 1;
-nelemz = 55;
+nelemx = 32;
+nelemy = 32;
+nelemz = 30;
 
 
 //
 // Nelx = Lx/(nop*Dx)
 //
 xmin =      0.0;
-//xmax =	10240.0;
-xmax =	 6400.0;
+xmax = 10240.0;
+//xmax =	 6400.0;
 ymin =      0.0;
-//ymax = 10240.0;
-ymax =   1600.0;
+ymax = 10240.0;
+//ymax =   1600.0;
 zmin =      0.0;
 zmax =   5000.0;
 
