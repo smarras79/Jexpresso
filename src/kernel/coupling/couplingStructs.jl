@@ -128,6 +128,44 @@ function _cache_name_prefix(inputs)
     return isempty(tag) ? "" : string(tag, "_")
 end
 
+# ---------------------------------------------------------------------------
+# Inputs that change the MESH GEOMETRY after the .msh has been read.
+#
+# WHY THE CACHE KEY HAS TO CARRY THEM. mod_mesh_read_gmsh! applies the vertical
+# stretching and the terrain warping to mesh.coords (~line 2786), and the cache
+# is saved AFTER that (~line 4073) -- while a cache HIT returns immediately,
+# before either runs. So the cached file holds an already-stretched grid, and a
+# key built only from the .msh name, the case and nop cannot tell two different
+# stretchings apart.
+#
+# The consequence is silent and nasty: edit :first_zelement_size, or flip
+# :lstretch, and NOTHING HAPPENS. The run keeps using whatever vertical grid
+# the cache was built with, the deck and the mesh disagree, and the disagreement
+# only surfaces when some unrelated change (a new St_mesh field, say) discards
+# the cache and the real grid appears -- at which point a case that "worked
+# yesterday" starts failing on a stability guard, and the change that exposed
+# it looks like the change that caused it.
+#
+# Hashing them into the file name means an edited stretch invalidates its own
+# cache, which is the only behaviour that cannot mislead.
+# ---------------------------------------------------------------------------
+const _GEOM_CACHE_KEYS = (:lstretch, :stretch_type, :stretch_factor,
+                          :first_zelement_size, :zlevel_transition,
+                          :lwarp, :h_mount, :a_mount,
+                          :z_transition_start, :z_transition_end,
+                          :lperiodic_x, :lperiodic_y, :lperiodic_z)
+
+function _geom_tag(inputs)
+    io = IOBuffer()
+    for k in _GEOM_CACHE_KEYS
+        print(io, k, '=', get(inputs, k, "-"), ';')
+    end
+    # Truncated hex of the hash: long enough that two real configurations will
+    # not collide, short enough to keep the file name readable. A hash that
+    # changes between Julia versions only costs one rebuild.
+    return string("_g", last(string(hash(String(take!(io))); base = 16), 8))
+end
+
 function _mesh_cache_path(inputs, nparts::Int)
     _use_mesh_cache(inputs) || return ""
     _adaptive_mesh_run(inputs) && return ""
@@ -136,7 +174,7 @@ function _mesh_cache_path(inputs, nparts::Int)
     rank   = MPI.Comm_rank(get_mpi_comm())
     stem   = _gmsh_stem(inputs)
     suffix = nparts > 1 ? "_rank$(rank)of$(nparts)" : ""
-    return joinpath(dir, "MESH_$(_cache_name_prefix(inputs))$(stem)_nop$(inputs[:nop])$(suffix).jld2")
+    return joinpath(dir, "MESH_$(_cache_name_prefix(inputs))$(stem)_nop$(inputs[:nop])$(_geom_tag(inputs))$(suffix).jld2")
 end
 
 function _preprocess_cache_path(inputs, Nξ::Int, Qξ::Int, nparts::Int)
@@ -147,7 +185,10 @@ function _preprocess_cache_path(inputs, Nξ::Int, Qξ::Int, nparts::Int)
     rank   = MPI.Comm_rank(get_mpi_comm())
     stem   = _gmsh_stem(inputs)
     suffix = nparts > 1 ? "_rank$(rank)of$(nparts)" : ""
-    return joinpath(dir, "PREPROCESS_$(_cache_name_prefix(inputs))$(stem)_nop$(Nξ)_Q$(Qξ)$(suffix).jld2")
+    # Same tag: the metrics, the mass matrix and everything else in here are
+    # built ON the stretched coordinates, so a geometry change invalidates this
+    # cache exactly as it invalidates the mesh one.
+    return joinpath(dir, "PREPROCESS_$(_cache_name_prefix(inputs))$(stem)_nop$(Nξ)_Q$(Qξ)$(_geom_tag(inputs))$(suffix).jld2")
 end
 
 # Make sure the .jexpresso_cache directory exists before a save.  Called
