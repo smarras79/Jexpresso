@@ -163,7 +163,7 @@ function user_inputs()
     # the four rhs! evaluations stop dominating a step, a bigger Δt buys nothing
     # and eventually costs. Sweep it with DBG_DT and watch s/step in the
     # heartbeat against the iteration count in the profile block.
-    Δt_default = scheme === :imex ? "0.9" : (scheme === :hevi ? "0.16" : "0.01")
+    Δt_default = scheme === :imex ? "0.9" : (scheme === :hevi ? "0.2" : "0.01")
     Δt   = parse(Float64, get(ENV, "DBG_DT", Δt_default))
     tend = parse(Float64, get(ENV, "DBG_TEND", "2000.0"))
 
