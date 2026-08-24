@@ -38,10 +38,14 @@ const J = Jexpresso
         t232 = J.ark_tableau(:ARS232)
         @test J.ark_joint_amplification(t232, dt * rE, dt * rI) ≈ 49.99 rtol = 0.02
         @test J.ark_joint_dt_max(t232, rE, rI) ≈ 0.047 rtol = 0.02
-        # The acoustics alone would have been comfortably stable at that Δt --
-        # which is why "drop Δt" and "change tableau" were both wrong answers.
+        # The acoustics alone would have been comfortably stable at that Δt:
+        # neutral there, with a limit of 0.379 s -- 1.9x the Δt that was
+        # refused and 8x the 0.047 s the guard offered instead. That is the
+        # whole point: "drop Δt" and "change tableau" were both answers to a
+        # question nobody had asked.
         @test J.ark_joint_amplification(t232, dt * 3.1, dt * rI) <= 1 + 1e-9
-        @test J.ark_joint_dt_max(t232, 3.1, rI) > 4 * dt
+        @test J.ark_joint_dt_max(t232, 3.1, rI) ≈ 0.379 rtol = 0.02
+        @test J.ark_joint_dt_max(t232, 3.1, rI) > 1.8 * dt
     end
 
     ars232 = J.ark_tableau(:ARS232)
