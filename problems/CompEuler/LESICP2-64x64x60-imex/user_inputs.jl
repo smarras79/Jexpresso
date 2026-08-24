@@ -341,19 +341,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
-	#:gmsh_filename    => "./problems/CompEuler/LESICP2-coarse/LESICP_8x2x60_6400mX1600mX5000m.msh",
-        #:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_128x128x120_10240mX10240mX5000m.msh
-        # 64 x 64 x 60 elements over 10240 x 10240 x 5000 m at p = 4:
-        #   element  160 x 160 x 40 m  ->  effective resolution 40 x 40 x 10 m
-        #   50 elements below 2000 m at dz = 40 m, 10 stretched to the lid
-        #   15.9 M nodes, 245 760 elements, 241 levels, 4096 element columns
 	:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
-	# the 32x32x30 is kept only as the source of the .geo; it is NOT usable
-	# here, because reaching 64x64x60 from it needs :linitial_refine.
-	#:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_32x32x30_10240mX10240mX5000m.msh",
-        #:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_64x64x60_10240mX10240mX5000m.msh",
-	#:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_16x16x125_10240mX10240mX5000m.msh",
-	
+		
         # Stretching. The .geo is UNIFORM in z (Progression 1.0); the vertical
         # grading is applied here, at read time, by stretching.jl.
         #
