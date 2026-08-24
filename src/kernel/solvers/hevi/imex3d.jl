@@ -1008,7 +1008,7 @@ function build_imex3d(params, inputs)
     hcfl = imex_horizontal_cfl(gdt, R.limits)
 
     imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt,
-                  (vfast, sres, siter, ssv, wb, spec),
+                  (vfast, sres, siter, ssv, wb, spec, sinf, sconc),
                   (R, mach, wamp, jamp, wdt),
                   (wallsrc, nwall_g), (time_ns() - t0) / 1e9;
                   lin = lin_mode, ufreq = update_freq, verify = verify, warm = warm,
@@ -1139,7 +1139,7 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
     μg      = nranks > 1 ? MPI.Allreduce(μmax, MPI.MAX, comm) : μmax
     rank == 0 || return nothing
 
-    vfast, sres, siter, ssv, wb, spec = checks
+    vfast, sres, siter, ssv, wb, spec, sinf, sconc = checks
     R, mach, wamp, jamp, wdt = stab
     wallsrc, nwall_g = walls
 
