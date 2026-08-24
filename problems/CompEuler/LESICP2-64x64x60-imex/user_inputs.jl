@@ -68,14 +68,7 @@
 
      512 ranks   8 columns each   exact
     1024 ranks   4 columns each   exact
-    1240 ranks   3.3 each         376 ranks get 4 -> 21% LOAD IMBALANCE
     2048 ranks   2 columns each   exact
-
- 1240 is the worst of these: the critical-path rank carries 4 columns while the
- average carries 3.3, so a fifth of the machine is idle at every barrier -- and
- the stage solve has three MPI reductions per Krylov iteration, i.e. ~280
- barriers per step, so the imbalance is paid over and over. 2048 is the
- recommendation; 1024 if the queue prefers it.
 
      DBG_SCHEME=imex (default) | hevi | explicit   -- same physics, three arms
      JEXPRESSO_HEVI_PROFILE=1                      -- measures rho
@@ -339,29 +332,12 @@ function user_inputs()
         #   element  160 x 160 x 40 m  ->  effective resolution 40 x 40 x 10 m
         #   50 elements below 2000 m at dz = 40 m, 10 stretched to the lid
         #   15.9 M nodes, 245 760 elements, 241 levels, 4096 element columns
-	:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_64x64x60_10240mX10240mX5000m.msh",
+	:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_32x32x30_10240mX10240mX5000m.msh",
+        #:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_64x64x60_10240mX10240mX5000m.msh",
 	#:gmsh_filename    => "/scratch/smarras/smarras/large_meshes/LESICP_16x16x125_10240mX10240mX5000m.msh",
-		
-        # Warping:
-        :lwarp => false,
-        :mount_type => "LESICP",
-        :h_mount => 1000.0,
-        :a_mount => 10240.0,
-	:z_transition_start => -1000.0,
-	:z_transition_end => 2200.0,
-
+	
         # Stretching factors.
-        #
-        # :lstretch => false because the stretching is BAKED INTO THE GMSH FILE
-        # for this grid (50 uniform 40 m elements to 2000 m, then 10 stretched
-        # to the 5000 m lid). The four keys below are therefore inert here --
-        # they are kept so that switching :lstretch on later does not need them
-        # invented. If you ever do switch it on for THIS grid,
-        # :first_zelement_size must become 40.0, not the 10.0 inherited from the
-        # parent deck: 10 m is the EFFECTIVE resolution (element/nop = 40/4),
-        # not the element size, and setting it to 10 would give a 2.5 m
-        # effective resolution and a 4x smaller step for no reason.
-        :lstretch => false,
+        :lstretch => true,
         :stretch_factor => 1.15,
         :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
         :first_zelement_size => 10.0,
@@ -389,7 +365,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
+        :linitial_refine     => true,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
