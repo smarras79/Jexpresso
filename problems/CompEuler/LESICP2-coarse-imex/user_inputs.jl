@@ -432,16 +432,16 @@ function user_inputs()
         :lstretch => true,
         :stretch_factor => 1.15,
         :stretch_type => "two_block uniformish", #strong means that the top is constrained
-        :first_zelement_size => 40.0,
+        :first_zelement_size => 10.0,
         :zlevel_transition => 2000.0,
         
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => false,
-        :mu_x                => 0.25,
-        :mu_y                => 0.25,
-	:mu_z                => 0.25,
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
+	:mu_z                => 0.05,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
