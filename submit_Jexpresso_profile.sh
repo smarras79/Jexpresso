@@ -339,21 +339,56 @@ srun --mpi=list 2>&1 | sed 's/^/    srun --mpi=list: /' || true
 # many nodes" and "Jexpresso failed". The original failure above was entirely
 # the former, and it cost a full queue turnaround to learn that.
 # ---------------------------------------------------------------------------
+# WHY AN ALLREDUCE AND NOT JUST MPI_Init.
+#
+# MPI_Init_thread returning 0 on every rank proves only that each process
+# initialised ITS OWN library. It says nothing about whether those processes
+# found each other. The failure that hides in that gap is the one worth a
+# preflight: with the wrong PMI plugin, MPICH does not error -- it starts N
+# INDEPENDENT ONE-RANK JOBS, each with its own COMM_WORLD of size 1. Every
+# rank runs, every rank succeeds, and the job then behaves as 256 serial
+# Jexpressos writing over each other's output. Nothing in MPI_Init detects it.
+#
+# A collective is what forces the ranks to actually reach each other, and one
+# whose answer is known in advance is what turns "it did not hang" into a
+# verified result: summing 1 over the communicator must give Comm_size, and
+# Comm_size must be the rank count SLURM was asked for. Both are checked below,
+# and either being wrong exits non-zero. The Barrier that follows costs nothing
+# and confirms a second collective completes after the first.
+export JEXPRESSO_EXPECT_RANKS="$NTASKS"
 echo "--- Preflight: MPI_Init_thread + one Allreduce on $NTASKS ranks ---"
 launch "${JULIA_FLAGS[@]}" -e '
     using MPI
     MPI.Init()
     c = MPI.COMM_WORLD
     n = MPI.Comm_size(c)
+    r = MPI.Comm_rank(c)
     s = MPI.Allreduce(1, MPI.SUM, c)
-    if MPI.Comm_rank(c) == 0
-        println("    MPI OK: ", n, " ranks, Allreduce = ", s,
-                s == n ? "  (consistent)" : "  *** INCONSISTENT ***")
+    want = parse(Int, ENV["JEXPRESSO_EXPECT_RANKS"])
+    ok = (n == want) && (s == n)
+    if r == 0
+        println("    MPI ", ok ? "OK" : "**BROKEN**", ": Comm_size = ", n,
+                " (asked for ", want, "), Allreduce(1) = ", s)
+        if n == 1 && want > 1
+            println("    Every process got a COMM_WORLD of size 1: the ranks never found")
+            println("    each other, so the job would have run as ", want, " independent")
+            println("    serial Jexpressos writing over each other. That is the PMI plugin --")
+            println("    try another SRUN_MPI from the --mpi=list above.")
+        elseif n != want
+            println("    The launcher started ", n, " ranks, not ", want,
+                    ". The allocation and the launch disagree;")
+            println("    check -n against SLURM_NTASKS and whether --cpus-per-task changed")
+            println("    how many tasks fit.")
+        elseif s != n
+            println("    Allreduce disagrees with Comm_size: the collective is returning")
+            println("    the wrong answer, which is a broken transport, not a broken launch.")
+        end
     end
     MPI.Barrier(c)
-    MPI.Finalize()' || {
+    MPI.Finalize()
+    exit(ok ? 0 : 1)' || {
     rc=$?
-    echo "ERROR: MPI itself cannot start $NTASKS ranks across $NNODES nodes (exit $rc)." >&2
+    echo "ERROR: MPI cannot run $NTASKS ranks across $NNODES nodes (exit $rc)." >&2
     echo "       Nothing in Jexpresso has run. Bisect the two variables that" >&2
     echo "       changed from the known-good 1 x 32 launch, one at a time:" >&2
     echo "         1. --nodes=1 --ntasks-per-node=32    (one node, no network)" >&2
