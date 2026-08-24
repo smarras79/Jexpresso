@@ -1,14 +1,33 @@
 #!/bin/bash -l
 #
-# submit_Jexpresso_profile.sh -- submit_Jexpresso_precompile_pass.sh, unchanged
-# except for a 200-step PROBE that measures where the time goes. Everything
-# else in this file is the production script verbatim, comments included.
+# submit_Jexpresso_profile.sh -- submit_Jexpresso_precompile_pass.sh plus a
+# 200-step PROBE that measures where the time goes, and the launcher work the
+# jump to multi-node turned out to need.
 #
 # THE DIFFERENCE, in full:
 #   JEXPRESSO_HEVI_PROFILE=1   print the per-step cost breakdown
 #   DBG_TEND=100.0             200 steps at the deck's dt = 0.5 s, then stop
 #   CASE                       the production deck
 #   SBATCH nodes / time / mem  production rank count, short walltime
+#   launcher + preflight       srun on multi-node, and a 10-second MPI_Init
+#                              check at the full rank count before the run
+#
+# START ON THE LADDER, NOT AT THE TOP. The script this was copied from had
+# only ever run at --nodes=1 --ntasks-per-node=32, which never touches the
+# network: MPICH keeps all 32 ranks in shared memory. Going straight to
+# 8 x 128 changed both variables at once and died inside MPI_Init_thread,
+# which cost a queue turnaround to attribute. Submit in this order and keep
+# the first that works:
+#
+#     --nodes=1 --ntasks-per-node=64      64 ranks, one node, no network
+#     --nodes=4 --ntasks-per-node=64      256 ranks -- the DEFAULT below, and
+#                                         what tools/pick_nranks.jl recommends
+#     --nodes=8 --ntasks-per-node=128     1024 ranks, the scaling arm
+#
+# Every rung is a valid :lxy_partition rank count for this 64 x 64 mesh; the
+# ladder is about the MPI stack, not the decomposition. The preflight below
+# fails in seconds rather than after the mesh read, and its error message says
+# which rung failed and what to change.
 #
 # WHAT IT PRINTS
 # --------------
@@ -54,20 +73,31 @@
 #SBATCH --qos=low
 #SBATCH --account=smarras
 #
-# 1024 ranks = a 32 x 32 rank grid over the 64 x 64 element columns, so each
-# rank owns a 2 x 2 block of columns and 15 545 points -- the closest valid
-# column decomposition to the per-rank load the explicit 1240-core run already
-# carries. 1240 itself is NOT valid here: :lxy_partition, which HEVI and
-# IMEX3D both require, cuts the mesh into vertical columns and the admissible
-# rank counts are the ones this lists:
+# 256 ranks = a 16 x 16 rank grid over the 64 x 64 element columns, so each
+# rank owns a 4 x 4 block of columns and 62 179 points. This is what the repo's
+# own tool picks for this mesh:
 #
 #     julia tools/pick_nranks.jl 64 64 60 4 2048 10240 10240
+#     ...
+#     256    16 x 16   4 x 4   16   62179   halo/elem 1.0   <== RECOMMENDED
+#     1024   32 x 32   2 x 2    4   15545   halo/elem 2.0   (thin: comms-bound)
 #
-# --nodes=16 for the 2048-rank arm of the scaling comparison above.
-#SBATCH --nodes=8
-#SBATCH --ntasks-per-node=128
+# 1240 -- the explicit run's core count -- is NOT valid here at all:
+# :lxy_partition, which HEVI and IMEX3D both require, cuts the mesh into
+# vertical columns, and only the counts that tool lists divide cleanly. Anything
+# else leaves ranks owning zero elements.
+#
+# 64 ranks/node rather than 128 is deliberate: it halves per-node memory during
+# the mesh broadcast, which is the peak of the whole run, and 8 nodes x 128 is
+# the configuration that failed inside MPI_Init_thread on the first attempt.
+#
+# The scaling arm of the comparison in the header is --nodes=8
+# --ntasks-per-node=128 (1024 ranks). Run it SECOND, once 256 has worked, and
+# expect the halo cost per element to have doubled.
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=64
 #SBATCH --time=01:00:00
-#SBATCH --mem-per-cpu=2000M
+#SBATCH --mem-per-cpu=4000M
 
 module load Julia/1.11.9
 module load GCC MPICH
@@ -165,7 +195,96 @@ if julia --pkgimages=existing -e 'exit(0)' >/dev/null 2>&1; then
     JULIA_FLAGS+=(--pkgimages=existing)
 fi
 
-NTASKS="${SLURM_NTASKS:-1024}"
+NTASKS="${SLURM_NTASKS:-256}"
+NNODES="${SLURM_NNODES:-1}"
+
+# ===========================================================================
+# LAUNCHER -- srun for multi-node, mpirun for single-node.
+#
+# WHY THIS EXISTS. The first multi-node run of this script died with
+#
+#     Abort(15) on node 814: Fatal error in internal_Init_thread: Other MPI error
+#     [proxy:3@n0031] HYD_pmcd_pmip_control_cmd_cb: assert (!closed) failed
+#
+# -- a failure inside MPI_Init_thread, i.e. before a single line of Jexpresso
+# runs. The precursor script this file was copied from had only ever been run
+# at --nodes=1 --ntasks-per-node=32, where MPICH never touches the network at
+# all: every rank is on one node, so ch4:ucx uses shared memory and the whole
+# inter-node path is untested. This script was the first launch to use it.
+#
+# `mpirun` here is MPICH's Hydra, which under SLURM spawns one proxy per node
+# and then runs its OWN PMI wire-up inside the allocation. The `assert
+# (!closed)` lines are those proxies losing their control socket to a rank that
+# has already aborted. Hydra-inside-SLURM is the fragile combination; srun
+# talks to SLURM's PMI directly and is what the site supports.
+#
+# Override either way with JEXPRESSO_LAUNCHER=srun|mpirun. If srun rejects the
+# PMI plugin, the list of ones this cluster actually has is printed below --
+# set SRUN_MPI to one of them (pmix and pmi2 are the usual names).
+# ===========================================================================
+SRUN_MPI="${SRUN_MPI:-pmi2}"
+if [ -n "$JEXPRESSO_LAUNCHER" ]; then
+    LAUNCHER="$JEXPRESSO_LAUNCHER"
+elif [ "$NNODES" -gt 1 ] && command -v srun >/dev/null 2>&1; then
+    LAUNCHER="srun"
+else
+    LAUNCHER="mpirun"
+fi
+
+launch() {   # launch <julia args...>
+    if [ "$LAUNCHER" = "srun" ]; then
+        srun --mpi="$SRUN_MPI" -n "$NTASKS" julia "$@"
+    else
+        mpirun -np "$NTASKS" julia "$@"
+    fi
+}
+
+echo "--- MPI environment ---"
+if [ "$LAUNCHER" = "srun" ]; then
+    echo "    launcher                  : srun --mpi=$SRUN_MPI"
+else
+    echo "    launcher                  : mpirun (MPICH Hydra)"
+fi
+echo "    nodes x tasks             : $NNODES x $((NTASKS / NNODES)) = $NTASKS ranks"
+srun --mpi=list 2>&1 | sed 's/^/    srun --mpi=list: /' || true
+
+# ---------------------------------------------------------------------------
+# PREFLIGHT -- get MPI_Init_thread to succeed at the full rank count BEFORE
+# paying for the mesh read and the operator build.
+#
+# This is seconds of walltime and it separates the two failures that look
+# identical in a SLURM log: "the MPI stack cannot start 1024 ranks on this
+# many nodes" and "Jexpresso failed". The original failure above was entirely
+# the former, and it cost a full queue turnaround to learn that.
+# ---------------------------------------------------------------------------
+echo "--- Preflight: MPI_Init_thread + one Allreduce on $NTASKS ranks ---"
+launch "${JULIA_FLAGS[@]}" -e '
+    using MPI
+    MPI.Init()
+    c = MPI.COMM_WORLD
+    n = MPI.Comm_size(c)
+    s = MPI.Allreduce(1, MPI.SUM, c)
+    if MPI.Comm_rank(c) == 0
+        println("    MPI OK: ", n, " ranks, Allreduce = ", s,
+                s == n ? "  (consistent)" : "  *** INCONSISTENT ***")
+    end
+    MPI.Barrier(c)
+    MPI.Finalize()' || {
+    rc=$?
+    echo "ERROR: MPI itself cannot start $NTASKS ranks across $NNODES nodes (exit $rc)." >&2
+    echo "       Nothing in Jexpresso has run. Bisect the two variables that" >&2
+    echo "       changed from the known-good 1 x 32 launch, one at a time:" >&2
+    echo "         1. --nodes=1 --ntasks-per-node=64    (one node, no network)" >&2
+    echo "         2. --nodes=4 --ntasks-per-node=64    (adds the network)" >&2
+    echo "         3. --nodes=8 --ntasks-per-node=128   (more ranks per node)" >&2
+    echo "       If 1 passes and 2 fails, it is the inter-node transport:" >&2
+    echo "       try JEXPRESSO_LAUNCHER=srun with SRUN_MPI from the list above," >&2
+    echo "       or export UCX_TLS=self,sm,ud (ud scales further than rc at" >&2
+    echo "       high rank counts; rc exhausts queue-pair memory)." >&2
+    echo "       If 1 also fails, it is not the network at all: check /dev/shm" >&2
+    echo "       room and that --mem-per-cpu x ntasks-per-node fits the node." >&2
+    exit $rc
+}
 
 echo "--- Setup complete, launching $NTASKS ranks (PROFILE PROBE) ---"
 echo "    case                      : $EQS / $CASE"
@@ -175,13 +294,15 @@ echo "    JEXPRESSO_PRECOMPILE_PASS : $JEXPRESSO_PRECOMPILE_PASS"
 echo "    julia flags               : ${JULIA_FLAGS[*]}"
 echo "    started                   : $(date)"
 
-# MPICH/Hydra propagates the environment to every rank by default (-genvall).
-# Under OpenMPI the exports above do NOT propagate -- pass them explicitly:
+# ENVIRONMENT PROPAGATION. srun exports the submitting environment to every
+# task by default, and MPICH/Hydra does the same (-genvall), so the exports
+# above reach the ranks under either launcher here. Under OpenMPI's mpirun they
+# would NOT -- pass them explicitly:
 #   mpirun -x JULIA_PKG_PRECOMPILE_AUTO -x JEXPRESSO_PRECOMPILE_PASS \
 #          -x JEXPRESSO_HEVI_PROFILE -x DBG_TEND ...
-# Under OpenMPI without those, the probe silently prints nothing and the run is
-# a full-length production run: DBG_TEND would not reach the ranks either.
-mpirun -np "$NTASKS" julia "${JULIA_FLAGS[@]}" src/Jexpresso.jl "$EQS" "$CASE"
+# Without them the probe silently prints nothing and the run is a full-length
+# production run: DBG_TEND would not reach the ranks either.
+launch "${JULIA_FLAGS[@]}" src/Jexpresso.jl "$EQS" "$CASE"
 rc=$?
 
 echo "--- Finished: $(date) ---"
