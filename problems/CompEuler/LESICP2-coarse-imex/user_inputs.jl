@@ -364,6 +364,8 @@ function user_inputs()
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
+        :les_filter_widthc    => :max,
+        
         # Smagorinsky constant. ABL LES runs 0.13-0.18
         :C_s                  => 0.16,
         # Buoyancy correction on nu_t. Without it the full eddy diffusivity acts
