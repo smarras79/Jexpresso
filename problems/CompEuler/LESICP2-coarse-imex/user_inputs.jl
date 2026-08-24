@@ -163,7 +163,7 @@ function user_inputs()
     # the four rhs! evaluations stop dominating a step, a bigger Δt buys nothing
     # and eventually costs. Sweep it with DBG_DT and watch s/step in the
     # heartbeat against the iteration count in the profile block.
-    Δt_default = scheme === :imex ? "0.9" : (scheme === :hevi ? "0.16" : "0.01")
+    Δt_default = scheme === :imex ? "0.9" : (scheme === :hevi ? "0.2" : "0.01")
     Δt   = parse(Float64, get(ENV, "DBG_DT", Δt_default))
     tend = parse(Float64, get(ENV, "DBG_TEND", "2000.0"))
 
@@ -364,6 +364,8 @@ function user_inputs()
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
+        :les_filter_widthc    => :max,
+        
         # Smagorinsky constant. ABL LES runs 0.13-0.18
         :C_s                  => 0.16,
         # Buoyancy correction on nu_t. Without it the full eddy diffusivity acts
@@ -430,16 +432,16 @@ function user_inputs()
         :lstretch => true,
         :stretch_factor => 1.15,
         :stretch_type => "two_block uniformish", #strong means that the top is constrained
-        :first_zelement_size => 40.0,
+        :first_zelement_size => 10.0,
         :zlevel_transition => 2000.0,
         
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => false,
-        :mu_x                => 0.25,
-        :mu_y                => 0.25,
-	:mu_z                => 0.25,
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
+	:mu_z                => 0.05,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
