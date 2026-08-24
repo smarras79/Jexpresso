@@ -319,8 +319,14 @@ else
     echo "    launcher                  : mpirun (MPICH Hydra)"
 fi
 echo "    nodes x tasks x cpus      : $NNODES x $((NTASKS / NNODES)) x ${SLURM_CPUS_PER_TASK:-1} = $NTASKS ranks"
-echo "    cgroup budget per rank    : ${RANK_MB:-unknown} MB"
-echo "    --heap-size-hint          : ${HEAP_MB:-NOT SET} MB  (Julia reads /proc/meminfo, NOT the cgroup)"
+if [ "${RANK_MB:-0}" -gt 0 ]; then
+    echo "    cgroup budget per rank    : ${RANK_MB} MB"
+    echo "    --heap-size-hint          : ${HEAP_MB} MB  (Julia reads /proc/meminfo, NOT the cgroup)"
+else
+    echo "    cgroup budget per rank    : unknown (no SLURM_MEM_PER_CPU / _PER_NODE)"
+    echo "    --heap-size-hint          : NOT SET -- Julia will size its heap from the"
+    echo "                                whole node and can OOM against a smaller cgroup"
+fi
 echo "    node RAM (this node)      : $(awk '/MemTotal/{printf "%.0f MB", $2/1024}' /proc/meminfo)"
 srun --mpi=list 2>&1 | sed 's/^/    srun --mpi=list: /' || true
 
