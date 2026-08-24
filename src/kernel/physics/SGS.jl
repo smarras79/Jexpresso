@@ -1673,6 +1673,9 @@ function compute_sgs_cache!(sgs::SGS_VREM,
     Pr_t    = sgs.Pr_t
     C_vrem  = sgs.C_vrem
     eps_v   = eps(1.0)
+    karman        = sgs.karman
+    lwall_damping = sgs.lwall_damping
+    zwall         = sgs.zwall
 
     for m = 1:ngl, l = 1:ngl, k = 1:ngl
         ip = connijk[iel, k, l, m]
@@ -1786,8 +1789,21 @@ function compute_sgs_cache!(sgs::SGS_VREM,
         sgs.f_Ri[ip] = f_Ri_val
 
         ρ = uprimitive[k,l,m,1]
+        # NEAR-WALL LIMIT, applied exactly where Smagorinsky applies it.
+        #
+        # Vreman's β_ij carries Δ² (see the β11.. lines above), so B_β goes as
+        # Δ⁴ and sqrt(B_β/‖∇u‖²) as Δ²: the constant multiplying Δ² here is
+        # C_vrem, filling precisely the role C_s² fills in Smagorinsky. So the
+        # limiter is the same function on the same footing --
+        # ℓ² = C_vrem Δ² (κz)² / (C_vrem Δ² + (κz)²) -- and dividing it by Δ²
+        # puts it back in the place C_vrem occupied.
+        #
+        # With lwall_damping false, sgs_mixing_length2 returns C_vrem*Δ² and
+        # ℓ2/Δ2 is C_vrem to the last bit: this is a no-op unless asked for.
+        ℓ2 = sgs_mixing_length2(C_vrem, Δ2, zwall[ip], karman, lwall_damping)
+        C_eff = Δ2 > 0.0 ? ℓ2 / Δ2 : C_vrem
         μ_base = (u_ij_u_ij > eps_v && B_β > 0.0) ?
-                 ρ * C_vrem * sqrt(B_β / u_ij_u_ij) : 0.0
+                 ρ * C_eff * sqrt(B_β / u_ij_u_ij) : 0.0
         sgs.μ_turb[ip] = μ_base * f_Ri_val
     end
     return
@@ -1944,6 +1960,9 @@ function compute_sgs_cache!(sgs::SGS_VREM,
     Pr_t    = sgs.Pr_t
     C_vrem  = sgs.C_vrem
     eps_v   = eps(1.0)
+    karman        = sgs.karman
+    lwall_damping = sgs.lwall_damping
+    zwall         = sgs.zwall
 
     for l = 1:ngl, k = 1:ngl
         ip = connijk[iel, k, l]
@@ -2031,8 +2050,21 @@ function compute_sgs_cache!(sgs::SGS_VREM,
         sgs.f_Ri[ip] = f_Ri_val
 
         ρ = uprimitive[k,l,1]
+        # NEAR-WALL LIMIT, applied exactly where Smagorinsky applies it.
+        #
+        # Vreman's β_ij carries Δ² (see the β11.. lines above), so B_β goes as
+        # Δ⁴ and sqrt(B_β/‖∇u‖²) as Δ²: the constant multiplying Δ² here is
+        # C_vrem, filling precisely the role C_s² fills in Smagorinsky. So the
+        # limiter is the same function on the same footing --
+        # ℓ² = C_vrem Δ² (κz)² / (C_vrem Δ² + (κz)²) -- and dividing it by Δ²
+        # puts it back in the place C_vrem occupied.
+        #
+        # With lwall_damping false, sgs_mixing_length2 returns C_vrem*Δ² and
+        # ℓ2/Δ2 is C_vrem to the last bit: this is a no-op unless asked for.
+        ℓ2 = sgs_mixing_length2(C_vrem, Δ2, zwall[ip], karman, lwall_damping)
+        C_eff = Δ2 > 0.0 ? ℓ2 / Δ2 : C_vrem
         μ_base = (u_ij_u_ij > eps_v && B_β > 0.0) ?
-                 ρ * C_vrem * sqrt(B_β / u_ij_u_ij) : 0.0
+                 ρ * C_eff * sqrt(B_β / u_ij_u_ij) : 0.0
         sgs.μ_turb[ip] = μ_base * f_Ri_val
     end
     return

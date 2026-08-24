@@ -77,8 +77,27 @@ Base.@kwdef mutable struct SGS_VREM{T <: AbstractFloat, dims1, backend, VT} <: A
     # run-time configuration flags (set from inputs after allocation)
     lrichardson::Bool = false
     ltheta_eqn::Bool  = true
-    # Vreman's operator already vanishes at a wall by construction, so no
-    # near-wall length-scale limit is applied here (unlike SGS_SMAG).
+    # Near-wall limit on the mixing length, off by default and for a stronger
+    # reason than in SGS_SMAG: Vreman's operator ALREADY vanishes at a wall by
+    # construction -- B_β collapses faster than ‖∇u‖² in the near-wall layer --
+    # which is the model's main advantage over Smagorinsky and the reason no
+    # limiter was applied here originally.
+    #
+    # It is available anyway because "vanishes at a wall" is an asymptotic
+    # statement about a RESOLVED wall layer, and an LES on a 160 x 160 m
+    # horizontal cell with a wall model does not resolve one: the first node
+    # sits at z = 6.9 m, deep inside the surface layer, where the asymptotics
+    # have not taken over and nothing else bounds ℓ. Switching it on there
+    # bounds ℓ by κz exactly as in SGS_SMAG.
+    #
+    # It reduces EXACTLY to the previous behaviour when false, which is the
+    # default: sgs_mixing_length2 returns C_vrem*Δ² untouched.
+    lwall_damping::Bool = false
+
+    # Distance to the wall at every node, filled once at setup when
+    # lwall_damping is on (left at zero otherwise, which disables the limit
+    # node by node). Same contract as SGS_SMAG.zwall.
+    zwall::VT  = KernelAbstractions.zeros(backend, T, dims1)
 
     # per-point caches (size npoin)
     μ_turb::VT = KernelAbstractions.zeros(backend, T, dims1)

@@ -256,7 +256,9 @@ function params_setup(sem,
         # it was on.
         sgs.lrichardson   = inputs[:lrichardson]
         sgs.ltheta_eqn    = !(haskey(inputs, :energy_equation) && inputs[:energy_equation] == "energy")
-        sgs.lwall_damping = inputs[:lwall_damping] && sgs isa SGS_SMAG
+        # Both closures now honour it. Vreman's limiter is a no-op when this is
+        # false, so the key means the same thing for either model.
+        sgs.lwall_damping = inputs[:lwall_damping] == true
 
         if sgs.lwall_damping
             # Distance to the lower wall at every node. The wall-normal
