@@ -430,7 +430,7 @@ function imex_single_valued_error(V::AbstractMatrix, op, comm::MPI.Comm)
 end
 
 """
-    imex_verify_solve(params, imex, gdt) -> (relres, iters, sv)
+    imex_verify_solve(params, imex, gdt) -> (rel2, relinf, conc, iters, converged, sv)
 
 Solve `(I - γΔt A) x = b` for a deterministic, DSS-consistent `b` and measure
 what came back:
@@ -475,22 +475,58 @@ function imex_verify_solve(params, imex::IMEX3DCache, gdt::Real)
                   Z -> imex3d_precond!(Z, pc, params, g)
               end
 
-    iters, _, _ = gmres_solve!(X, B, imex.ws, matvec!, precon!)
+    iters, _, converged = gmres_solve!(X, B, imex.ws, matvec!, precon!)
 
     R = similar(X)
     matvec!(R, X)
+    D = R .- B
+
+    # TWO NORMS, AND THE 2-NORM IS THE ONE THAT DECIDES.
+    #
+    # GMRES minimises the 2-norm; this used to check the INFINITY norm against a
+    # fixed 1e-6. Those differ by up to sqrt(N), so the check was mesh-size
+    # dependent and got stricter the bigger the problem. On the 64x64x60 mesh
+    # (15.9M points x 5 implicit fields = 79.6M dof) a solve converged to the
+    # requested 2-norm rtol = 1e-8 still leaves
+    #
+    #     ||b||_2 = sqrt(N/2) = 6308,  so  ||r||_2 <= 6.3e-05
+    #     ||r||_inf <= ||r||_2 = 6.3e-05,  against ||b||_inf = 1
+    #
+    # -- i.e. an inf-norm relative residual of up to 6e-5 is CORRECT there, and
+    # the check failed at 2.6e-5. The same solve on the coarse 10x1x60 mesh
+    # gives 3.5e-6 and passed, which is why this never showed up until the
+    # production mesh. Measure what the solver optimises, with the same
+    # distributed inner product it uses.
+    inner = imex.ws.inner
+    b2 = dnorm(inner, B)
+    d2 = dnorm(inner, D)          # one collective, reused for `rms` below
+    rel2 = b2 > 0 ? d2 / b2 : d2
+
+    # The inf-norm is kept as a DIAGNOSTIC, not a criterion: a residual whose
+    # worst node is far above its own RMS is localised, which points at one bad
+    # node (a rank interface, a boundary column) rather than at an iteration
+    # that merely stopped early. The two failures need different fixes and the
+    # single number could not tell them apart.
     err = 0.0; scl = 0.0
     @inbounds for q = 1:nimp, ip = 1:npoin
-        err = max(err, abs(R[ip, q] - B[ip, q]))
+        err = max(err, abs(D[ip, q]))
         scl = max(scl, abs(B[ip, q]))
     end
+    ndof = Float64(nimp) * sum(inner.w)
     if MPI.Comm_size(imex.comm) > 1
-        err = MPI.Allreduce(err, MPI.MAX, imex.comm)
-        scl = MPI.Allreduce(scl, MPI.MAX, imex.comm)
+        err  = MPI.Allreduce(err,  MPI.MAX, imex.comm)
+        scl  = MPI.Allreduce(scl,  MPI.MAX, imex.comm)
+        ndof = MPI.Allreduce(ndof, MPI.SUM, imex.comm)
     end
+    relinf = scl > 0 ? err / scl : err
+    # how many times the residual's own RMS the worst single node is; ~1-10 for
+    # a spread-out residual, orders more for a localised one
+    rms   = ndof > 0 ? d2 / sqrt(ndof) : 0.0
+    conc  = rms > 0 ? err / rms : 0.0
 
     sv = imex_single_valued_error(X, op, imex.comm)
-    return (scl > 0 ? err / scl : err, iters, sv)
+    return (rel2 = rel2, relinf = relinf, conc = conc, iters = iters,
+            converged = converged, sv = sv)
 end
 
 """
@@ -863,6 +899,17 @@ function build_imex3d(params, inputs)
     # directly rather than through `params.imex`.
     #-------------------------------------------------------------------------
     vfast = nothing; sres = NaN; siter = 0; ssv = NaN; wb = NaN
+    sinf = NaN; sconc = NaN; sconv = false
+    # FAILURES ARE COLLECTED, NOT THROWN HERE.
+    #
+    # Every one of these checks is diagnosed by numbers that imex3d_report
+    # prints -- the CFL_h, the iteration count, the column spectrum, the wedge
+    # limit. Throwing on the spot meant the report never ran, so the one block
+    # that explains the failure was unreachable from the failure itself. They
+    # are raised together after it instead. All the values involved are already
+    # MPI-reduced, so every rank takes the same branch and the deferral cannot
+    # desynchronise the collectives in the report.
+    failures = String[]
     if verify
         # 1. the 3D operator reduces to the vertical one on a horizontally
         #    uniform field, and moves the horizontal momenta on a field that
@@ -877,36 +924,61 @@ function build_imex3d(params, inputs)
         vfast = hevi_verify_fast(params, op, opvchk, topo)
 
         # 2. the stage solve itself.
-        sres, siter, ssv = imex_verify_solve(params, imex, gdt)
+        V = imex_verify_solve(params, imex, gdt)
+        sres = V.rel2; siter = V.iters; ssv = V.sv
+        sinf = V.relinf; sconc = V.conc; sconv = V.converged
         wb = imex_verify_wellbalanced(params, imex)
 
-        if !(sres < 1.0e-6)
-            error("IMEX3D self-check failed: the stage solve left a relative residual of ",
-                  sres, " after ", siter, " Krylov iterations. Either the iteration did ",
-                  "not converge (raise :imex_maxiter / :imex_restart) or the operator and ",
-                  "the preconditioner disagree about the field they act on.")
+        # The bar scales with what was ASKED FOR, not with a constant. A true
+        # residual a hundred times the requested rtol is generous for a
+        # right-preconditioned restarted GMRES and still far too tight to hide a
+        # real operator/preconditioner disagreement, which shows up orders out.
+        stol = max(100.0 * ws.rtol, 1.0e-10)
+        if !(sres < stol)
+            push!(failures, string("IMEX3D self-check failed: the stage solve left a relative 2-norm ",
+                  "residual of ", sres, " after ", siter, " Krylov iterations, against a ",
+                  "bar of ", stol, " (= 100 x :imex_rtol). ",
+                  sconv ?
+                    string("GMRES REPORTED CONVERGENCE, so its own residual estimate and ",
+                           "the true residual disagree. That is the signature of lost ",
+                           "orthogonality in the Arnoldi basis, or of a preconditioner ",
+                           "that is not a fixed linear operator. ") :
+                    string("GMRES DID NOT CONVERGE: it stopped after ", siter,
+                           " of :imex_maxiter = ", ws.maxiter, " iterations at restart ",
+                           "length ", ws.m, ". Raise :imex_restart first -- the horizontal ",
+                           "acoustic CFL sets how long a cycle has to be, and a restart ",
+                           "that is too short stalls instead of converging. "),
+                  "The worst single node is ", round(sconc; sigdigits = 3), "x the ",
+                  "residual's own RMS (inf-norm relative residual ", sinf, "). ",
+                  sconc > 1.0e3 ?
+                    string("THAT IS LOCALISED: essentially all of the residual sits in a ",
+                           "handful of nodes, which points at specific nodes -- a rank ",
+                           "interface, a boundary column -- and not at the iteration. ",
+                           "Check the single-valued and well-balanced numbers below it.") :
+                    string("That is spread out, which is what an iteration stopping short ",
+                           "looks like rather than a bad node.")))
         end
         if !(ssv < 1.0e-10)
-            error("IMEX3D self-check failed: the stage solve left the state DOUBLE-VALUED ",
+            push!(failures, string("IMEX3D self-check failed: the stage solve left the state DOUBLE-VALUED ",
                   "across ranks by a relative ", ssv, ". A continuous-Galerkin field with ",
                   "different values in the two copies of a rank-interface node is ",
                   "differentiated across the jump by the next explicit RHS, and the jump ",
                   "grows. This points at the gather/scatter in the preconditioner, not at ",
-                  "the Krylov iteration.")
+                  "the Krylov iteration."))
         end
         if !(wb == 0.0)
-            error("IMEX3D self-check failed: f_imp(qe) = ", wb, ", which must be EXACTLY ",
+            push!(failures, string("IMEX3D self-check failed: f_imp(qe) = ", wb, ", which must be EXACTLY ",
                   "zero -- the operator acts on u - qe, so the reference state is a steady ",
                   "state of the implicit half by construction. A non-zero here means the ",
-                  "packing has drifted from qe.")
+                  "packing has drifted from qe."))
         end
         if vfast !== nothing && !vfast.ok
-            error("IMEX3D self-check failed: the 3D acoustic operator does not reduce to ",
+            push!(failures, string("IMEX3D self-check failed: the 3D acoustic operator does not reduce to ",
                   "the vertical one on a horizontally uniform field (relative ",
                   vfast.rel_vertical, "), or it produces no horizontal momentum response ",
                   "at all (", vfast.horiz_response, "). The first is a metric or index ",
                   "error in the ξ/η sweeps; the second means the operator has silently ",
-                  "collapsed to HEVI's.")
+                  "collapsed to HEVI's."))
         end
     end
     _say(verify ? @sprintf(" | self-check %.1fs\n", _lap()) : " | self-check skipped\n")
@@ -941,6 +1013,13 @@ function build_imex3d(params, inputs)
                   (wallsrc, nwall_g), (time_ns() - t0) / 1e9;
                   lin = lin_mode, ufreq = update_freq, verify = verify, warm = warm,
                   hcfl = hcfl)
+
+    # Now raise whatever the self-check found -- after the report, so the block
+    # that explains it is above the message rather than lost with it.
+    isempty(failures) ||
+        error(length(failures) == 1 ? failures[1] :
+              string(length(failures), " IMEX3D self-checks failed.\n\n",
+                     join(failures, "\n\n")))
 
     # THE COST GUARD. Distinct from the stability guard below: nothing here is
     # unstable, it is merely unaffordable, and unaffordable in a way that has no
@@ -1132,8 +1211,14 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
         # cost is the warm one, which :imex_monitor reports.
         @printf(" │      measured: %d iterations to %.1e from a COLD start on a full-spectrum RHS\n",
                 siter, ws.rtol)
-        @printf(" │      applied residual %.2e; state single-valued across ranks to %.2e\n",
-                sres, ssv)
+        # Both norms, labelled. The inf-norm is the one that LOOKS alarming on a
+        # big mesh -- it can reach sqrt(N) times the 2-norm figure and still be
+        # a converged solve -- so printing it unlabelled next to a tolerance
+        # invites exactly the misreading that made the old check fire.
+        @printf(" │      applied residual: %.2e in the 2-norm (what GMRES minimises),\n", sres)
+        @printf(" │            %.2e in the inf-norm; worst node %.3g x the residual RMS\n",
+                sinf, sconc)
+        @printf(" │      state single-valued across ranks to %.2e\n", ssv)
         # The iteration count is the entire cost of the scheme, so say what
         # drives it rather than leaving the reader to guess. Measured on two
         # meshes over an 8x range of Δt, it is ~25 x the HORIZONTAL acoustic
