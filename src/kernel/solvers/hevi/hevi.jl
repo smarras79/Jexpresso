@@ -302,10 +302,45 @@ horizontal acoustic terms scaled by that SAME measured factor. Reusing it is
 the point: the correction is a property of the polynomial order, not of the
 direction, so calibrating it once against the one operator whose spectrum is
 actually available makes the horizontal estimate as good as the vertical one.
-Advection and diffusion go in unscaled and are small here; they are included
-rather than dropped so a diffusion-dominated mesh does not quietly slip past.
+
+WHY THE THIRD RETURN VALUE EXISTS -- READ IT BEFORE BLAMING THE TABLEAU.
+`rate_exp` is a SUM over three physically unrelated processes, and a refusal
+prints only the sum. That is not enough to act on, because the three want
+opposite fixes: horizontal acoustics wants a smaller Δt or the 3D IMEX,
+advection wants a smaller Δt, and DIFFUSION wants neither -- it wants the
+closure or `:implicit_vdiff`. Diagnosed on this project's LESICP2-coarse mesh
+(10 x 1 x 60 over 6400 x 1600 x 5000 m, first z element 40 m):
+
+    rate_exp = 32.3 1/s     of which     acoustic  3.1     viscous  29.2
+
+-- i.e. 90% of the refusal was SGS diffusion, on a mesh whose horizontal
+acoustic Courant number at that Δt was 0.6. Nothing in "tableau ARS232
+amplifies by 49.99" says that, and every remedy the message used to suggest
+(drop Δt, change tableau) was the wrong one: 2 nu / h_z^2 goes as 1/h_z^2, so
+buying stability with Δt costs a factor of ten in cost for a factor of ten in
+h_z that was not the problem.
+
+WHAT MADE IT 29 1/s THERE, since the same figure on a laminar sounding is
+normally ~0.02. `hevi_verify_physics` calls `rhs!` a few lines before this
+runs, so `sgs.mu_turb` is POPULATED by the time `cfl_limits` reads it -- these
+rates are not taken on a zero-viscosity state, whatever the CFL report's own
+"taken at t = 0" caveat says. And nu_t goes as the filter width SQUARED. On
+that mesh the elements are 640 x 1600 x 40 m with ONE element across y, so
+`:les_filter_width => :max` (the default) hands the whole domain the 1600 m
+dummy direction: 1600/40 = 40 on the width, 1600x on nu_t, and a viscous rate
+that was negligible becomes the binding term. `compute_element_size_driver`
+warns about exactly this at setup; `:geometric` is the fix on a quasi-2D mesh.
+
+The vertical viscous term is dropped from `rate_exp` when `op.vd !== nothing`,
+because `:implicit_vdiff` has already put d/dz(mu d/dz) into the column
+operator -- charging it to the explicit half would refuse a Δt the scheme can
+actually take. It is a real (decaying) eigenvalue, so it does not belong in
+`rate_imp` either: the implicit half takes it unconditionally.
+
+Advection goes in unscaled. It is included rather than dropped so an
+advection-dominated mesh does not quietly slip past.
 """
-function hevi_explicit_implicit_rates(params, spec)
+function hevi_explicit_implicit_rates(params, spec, op::HEVIOperator)
 
     npoin = Int(params.mesh.npoin)
     neqs  = Int(params.neqs)
@@ -323,11 +358,19 @@ function hevi_explicit_implicit_rates(params, spec)
     rate_imp = spec[1]
     κ = (isfinite(spec[3]) && spec[3] > 0) ? spec[1] / spec[3] : 1.0
 
-    rate_exp = κ * (_r(L.dt_acoustic_x) + _r(L.dt_acoustic_y)) +
-               _r(L.dt_advective_x) + _r(L.dt_advective_y) + _r(L.dt_advective_z) +
-               _r(L.dt_viscous_x)   + _r(L.dt_viscous_y)   + _r(L.dt_viscous_z)
+    rate_ac  = κ * (_r(L.dt_acoustic_x) + _r(L.dt_acoustic_y))
+    rate_adv = _r(L.dt_advective_x) + _r(L.dt_advective_y) + _r(L.dt_advective_z)
+    # :implicit_vdiff has already taken d/dz(mu d/dz); only the horizontal and
+    # cross terms are still explicit.
+    vdz      = op.vd === nothing ? _r(L.dt_viscous_z) : 0.0
+    rate_vis = _r(L.dt_viscous_x) + _r(L.dt_viscous_y) + vdz
 
-    return rate_exp, rate_imp
+    rate_exp = rate_ac + rate_adv + rate_vis
+
+    return rate_exp, rate_imp,
+           (acoustic = rate_ac, advective = rate_adv, viscous = rate_vis,
+            vdiff_implicit = op.vd !== nothing, numax = L.numax,
+            hmin_z = L.hmin_z, kappa = κ)
 end
 
 """
@@ -796,24 +839,56 @@ function build_hevi(params, inputs)
     # picked on -- is the zI = 0 edge of this rectangle, and for HEVI that is
     # the one mode that cannot go unstable. See ark_joint_amplification.
     jamp = NaN; jdt = NaN; rate_e = NaN; rate_i = NaN
+    terms = nothing
     # `spec` is reduced across ranks inside hevi_column_spectrum, so this
     # condition is the SAME on every rank and the collectives inside
     # hevi_explicit_implicit_rates are reached by all of them or by none.
     if !isnan(spec[1])
-        rate_e, rate_i = hevi_explicit_implicit_rates(params, spec)
+        rate_e, rate_i, terms = hevi_explicit_implicit_rates(params, spec, op)
         jamp = ark_joint_amplification(tab, Δt * rate_e, Δt * rate_i)
         jdt  = ark_joint_dt_max(tab, rate_e, rate_i)
     end
 
     hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys,
                 (jamp, jdt, rate_e, rate_i), (time_ns() - t0) / 1e9;
-                lin = lin_mode, ufreq = update_freq)
+                lin = lin_mode, ufreq = update_freq, terms = terms)
 
     if !isnan(jamp) && jamp > 1 + 1.0e-6
         rate = log(jamp) / Δt
+        # NAME THE TERM. `rate_e` is a sum over three processes with three
+        # different remedies, and a message that reports only the sum sends the
+        # reader after the tableau even when the tableau is fine. Measured on
+        # LESICP2-coarse: 29.2 of 32.3 1/s was SGS diffusion, from an LES filter
+        # width taken off a one-element-wide y direction.
+        diag = ""
+        if terms !== nothing
+            diag = string("WHAT IS IN THE EXPLICIT HALF ($(round(rate_e; sigdigits = 3)) 1/s): ",
+                          "acoustic $(round(terms.acoustic; sigdigits = 3)) + ",
+                          "advective $(round(terms.advective; sigdigits = 3)) + ",
+                          "viscous $(round(terms.viscous; sigdigits = 3)) 1/s. ")
+            if terms.viscous > 0.5 * rate_e && terms.viscous > 1.0
+                diag *= string("DIFFUSION IS THE BINDING TERM, not the acoustics and not the ",
+                               "tableau: nu_max = $(round(terms.numax; sigdigits = 3)) m^2/s over ",
+                               "h_z = $(round(terms.hmin_z; sigdigits = 3)) m. Neither a smaller Δt ",
+                               "nor another tableau addresses that -- 2nu/h_z^2 is a property of the ",
+                               "closure and the mesh. ",
+                               terms.vdiff_implicit ?
+                                 "The vertical part is already implicit, so this is the horizontal " *
+                                 "and cross terms; the remaining lever is the closure. " :
+                                 "Look FIRST at the LES filter width line in the mesh report: on a " *
+                                 "quasi-2D mesh (one element across a direction) the default " *
+                                 ":les_filter_width => :max takes the width from that dummy " *
+                                 "direction and inflates nu_t by its square -- 1600x on the " *
+                                 "10x1x60 LESICP2 mesh. :les_filter_width => :geometric is the fix " *
+                                 "there. If the width is right, :implicit_vdiff => true moves " *
+                                 "d/dz(mu d/dz) into the column operator for the cost of a wider " *
+                                 "band and no new solve. ")
+            end
+        end
         error("HEVI refuses to start: tableau $(String(tab.name)) amplifies by ",
               "$(round(jamp; sigdigits = 6)) per step at Δt = $Δt on this mesh, a growth ",
-              "rate of $(round(rate; sigdigits = 3)) 1/s. That is slow enough to look like ",
+              "rate of $(round(rate; sigdigits = 3)) 1/s. ", diag,
+              "That is slow enough to look like ",
               "anything but a tableau problem -- it presents as a blow-up at a fixed model ",
               "time, nearly independent of Δt, that moves with the rank count. ",
               "Either drop Δt to $(round(HEVI_DT_SAFETY[] * jdt; sigdigits = 3)) s or below ",
@@ -838,7 +913,7 @@ across ranks (communication volume per stage) and the memory the banded
 factors take (which is per rank, and there are 64 ranks on a node).
 """
 function hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys, joint, secs;
-                     lin::Symbol = :RS, ufreq::Int = 0)
+                     lin::Symbol = :RS, ufreq::Int = 0, terms = nothing)
 
     comm = cc.comm
     rank = MPI.Comm_rank(comm)
@@ -931,6 +1006,26 @@ function hevi_report(params, topo, op, cc, fac, tab, Δt, verr, serr, spec, phys
         jamp, jdt, rate_e, rate_i = joint
         @printf(" │  joint IMEX stability: explicit half %.1f 1/s, implicit half %.1f 1/s\n",
                 rate_e, rate_i)
+        # WHAT THE EXPLICIT HALF IS MADE OF. The sum alone cannot be acted on:
+        # acoustics and advection want a smaller Δt, diffusion wants the
+        # closure or :implicit_vdiff, and the remedy for one is wasted on the
+        # others. Printed always, not only on a refusal, so the margin can be
+        # attributed while the run is still starting successfully.
+        if terms !== nothing
+            @printf(" │      explicit half = acoustic %.2f + advective %.2f + viscous %.2f 1/s\n",
+                    terms.acoustic, terms.advective, terms.viscous)
+            if terms.viscous > 0.5 * rate_e && terms.viscous > 1.0
+                @printf(" │      DIFFUSION IS THE BINDING TERM (%.0f%% of it): nu_max = %.3g m^2/s ",
+                        100 * terms.viscous / max(rate_e, eps()), terms.numax)
+                @printf("over h_z = %.3g m\n", terms.hmin_z)
+                if terms.vdiff_implicit
+                    println(" │      (the vertical part is already implicit; this is the horizontal one)")
+                else
+                    println(" │      A smaller Δt is the wrong remedy -- 2nu/h_z^2 does not scale with it.")
+                    println(" │      Check the LES filter width warning above, then :implicit_vdiff => true.")
+                end
+            end
+        end
         @printf(" │      max|R| over (zE,zI) = (%.3f, %.3f) is %.6f;  Δt_max here = %.4f s\n",
                 Δt * rate_e, Δt * rate_i, jamp, jdt)
         frac = jdt > 0 ? Δt / jdt : Inf

@@ -6244,6 +6244,22 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend; inputs = not
     # array, and if they ever disagreed about the filter width the reported
     # subfilter fluxes would not be the ones the model actually applied.
     #-------------------------------------------------------------------------
+    # A MISSPELT KEY IS A SILENT NO-OP, and this one costs a factor of the
+    # filter width SQUARED on the eddy viscosity. `:les_filter_widthc => :max`
+    # sat in two decks in this repo reading exactly like a setting and doing
+    # nothing. Nothing else in the deck reader rejects unknown keys, so reject
+    # the near-misses of this one here rather than let the next one through.
+    if inputs !== nothing
+        for k in keys(inputs)
+            ks = String(k)
+            (startswith(ks, "les_filter_width") || startswith(ks, "les_filterwidth")) &&
+                ks != "les_filter_width" &&
+                error(" # ERROR mesh.jl: unknown deck key :", ks,
+                      " -- did you mean :les_filter_width? A misspelt key is ignored ",
+                      "silently, and this one sets the LES filter width, which enters ",
+                      "the eddy viscosity SQUARED.")
+        end
+    end
     fw = inputs === nothing ? :max : Symbol(get(inputs, :les_filter_width, :max))
     fw in (:max, :geometric, :min) ||
         error(" # ERROR mesh.jl: :les_filter_width must be :max (the default), ",

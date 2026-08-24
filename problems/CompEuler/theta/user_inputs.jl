@@ -29,7 +29,10 @@ function user_inputs()
         #:visc_model        => AV(),
         #:visc_model        => VREM(),
         :visc_model        => SMAG(),
-        :les_filter_widthc => :max,
+        # :max = coarsest element edge (the default), :geometric = volume
+        # equivalent, :min = finest. Prefer :geometric on a quasi-2D mesh --
+        # see compute_element_size_driver in mesh.jl.
+        :les_filter_width  => :max,
         :energy_equation   => "theta",
         :μ                 => [0.0, 1.0, 1.0, 2.0], #horizontal viscosity constant for momentum
         #:μ                => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum

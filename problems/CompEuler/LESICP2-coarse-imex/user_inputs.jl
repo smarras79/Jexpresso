@@ -364,7 +364,17 @@ function user_inputs()
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        :les_filter_widthc    => :max,
+        # LES FILTER WIDTH. :max (the default) takes the COARSEST edge of the
+        # element, which is right for genuine anisotropy and wrong here: this
+        # mesh is 10 x 1 x 60 over 6400 x 1600 x 5000 m, so the elements are
+        # 640 x 1600 x 40 m and the coarsest edge is the ONE element across y
+        # -- a direction the case does not resolve and never meant to. :max
+        # then hands the whole domain a 1600 m filter against a 40 m one, and
+        # nu_t goes as the width SQUARED: 1600x. That is not a modelling
+        # choice; it made the SGS diffusion the binding explicit term (29.2 of
+        # 32.3 1/s) and HEVI refused to start at Δt = 0.2 on a mesh whose
+        # horizontal acoustic Courant number there was 0.6.
+        :les_filter_width     => :geometric,
         
         # Smagorinsky constant. ABL LES runs 0.13-0.18
         :C_s                  => 0.16,

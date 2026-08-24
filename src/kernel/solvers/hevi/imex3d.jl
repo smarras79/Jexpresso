@@ -552,7 +552,7 @@ step is safe. So `umax_deck` (`:imex_umax`) is the deck's statement of the
 largest flow speed it expects, and it is used when it exceeds the measured
 one. The report says which of the two it used.
 """
-function imex3d_rates(params, u, spec, umax_deck::Float64)
+function imex3d_rates(params, u, spec, umax_deck::Float64; vdiff_implicit::Bool = false)
 
     L = cfl_limits(params, u)
     _r(dt) = (isfinite(dt) && dt > 0 && dt < 1.0e29) ? 1.0 / dt : 0.0
@@ -565,7 +565,13 @@ function imex3d_rates(params, u, spec, umax_deck::Float64)
     uref = max(L.umax, L.wmax, umax_deck)
     rate_adv = uref * (_r(L.hmin_x) + _r(L.hmin_y) + _r(L.hmin_z))
 
-    rate_visc = _r(L.dt_viscous_x) + _r(L.dt_viscous_y) + _r(L.dt_viscous_z)
+    # :implicit_vdiff has already put d/dz(mu d/dz) into the column
+    # preconditioner AND into the operator, so it is no longer explicit.
+    # Charging it here refuses a Δt the scheme can actually take -- and on a
+    # z-refined LES mesh it is the LARGEST of the three by two orders, because
+    # 2nu/h^2 goes as 1/h^2 and h_z is the small one.
+    rate_visc = _r(L.dt_viscous_x) + _r(L.dt_viscous_y) +
+                (vdiff_implicit ? 0.0 : _r(L.dt_viscous_z))
 
     rate_exp = κ * rate_adv + κ * κ * rate_visc
     rate_imp = κ * (_r(L.dt_acoustic_x) + _r(L.dt_acoustic_y) + _r(L.dt_acoustic_z))
@@ -913,7 +919,8 @@ function build_imex3d(params, inputs)
         u0[(ieq - 1) * npoin + ip] = params.qp.qn[ip, ieq]
     end
     umax_deck = Float64(get(inputs, :imex_umax, 0.0))
-    R = imex3d_rates(params, u0, spec, umax_deck)
+    R = imex3d_rates(params, u0, spec, umax_deck;
+                     vdiff_implicit = opv !== nothing && opv.vd !== nothing)
     mach = Float64(get(inputs, :imex_mach, R.mach))
     # The wedge is remarkably insensitive to `mach` -- the sup is identical for
     # 0.05 and 0.3 on every tableau in the family -- but a degenerate value

@@ -206,6 +206,69 @@ tableau and the setup report prints it.
 
 ---
 
+## "HEVI refuses to start: tableau ARS232 amplifies by ..."
+
+The guard is doing its job, but the message names the tableau and the tableau
+is usually not the cause. **Read the `explicit half = acoustic + advective +
+viscous` line in the setup report before changing anything.** The three terms
+add into one rate and want three different remedies:
+
+| binding term | what fixes it | what does NOT |
+|---|---|---|
+| acoustic | smaller Δt, or the 3D IMEX (`:limex`) | the closure |
+| advective | smaller Δt | anything else |
+| **viscous** | the LES filter width, or `:implicit_vdiff` | **smaller Δt, another tableau** |
+
+The viscous one is the trap, because `2ν/h_z²` does not scale with Δt at all —
+halving Δt to buy stability costs half the throughput and leaves the term
+exactly where it was.
+
+### The case this was written from
+
+`LESICP2-coarse-imex`, 10 × 1 × 60 elements over 6400 × 1600 × 5000 m, first z
+element 40 m, ARS232 at Δt = 0.2. The guard reported `max|R| = 49.9941` and
+`Δt_max = 0.047 s`. Inverting those two numbers for the rates gives
+
+```
+rate_imp = 35.0 1/s      against c/Δz_min = 340/6.91 = 49.2   ->  κ = 0.71
+rate_exp = 32.3 1/s      of which  acoustic 3.1 + viscous 29.2
+```
+
+κ = 0.71 is an ordinary spectral correction, so the vertical grading was *not*
+inflating the estimate — that was the first theory and it was wrong. The
+horizontal acoustic rate is 3.1 1/s, i.e. a horizontal acoustic Courant number
+of 0.6 at that Δt: the acoustics were never close to the limit. **90 % of the
+refusal was SGS diffusion.**
+
+And that diffusion was an artefact. `ν_t` goes as the filter width **squared**,
+and `:les_filter_width => :max` (the default) takes the width from the
+*coarsest* element edge. On a 10 × 1 × 60 mesh the elements are 640 × 1600 ×
+40 m and the coarsest edge is the **one element across y** — a direction the
+case never meant to resolve. 1600 m against a 40 m vertical gap is 40× on the
+width and **1600× on ν_t**, which is what turned a ~0.02 1/s term into 29 1/s.
+
+`compute_element_size_driver` warns about this at setup (`LES filter width :max
+gives ... a factor N on the filter and N² on the eddy viscosity`). On a
+quasi-2D mesh set `:les_filter_width => :geometric`. `:max` is for *genuine*
+anisotropy — on the 64 × 64 × 60 production mesh it is 1.59× on the width and
+2.5× on ν_t, which is a modelling choice someone can defend.
+
+Two related notes:
+
+* These rates are **not** taken on a zero-viscosity state. `hevi_verify_physics`
+  calls `rhs!` a few lines before the guard runs, so `sgs.μ_turb` is populated
+  by the time `cfl_limits` reads it. (The CFL *report* is a different call and
+  does carry the "taken at t = 0" caveat.)
+* With `:implicit_vdiff => true` the vertical viscous term is dropped from the
+  explicit half — `d/dz(μ d/dz)` is in the column operator, so charging it
+  would refuse a Δt the scheme can take. It is a real (decaying) eigenvalue, so
+  it is not added to the implicit half either: that solve takes it
+  unconditionally.
+
+A misspelt key here is a silent no-op with a squared cost — `:les_filter_widthc
+=> :max` sat in two decks in this repo reading exactly like a setting and doing
+nothing. `compute_element_size_driver` now rejects near-misses of the name.
+
 ## When it looks like it hangs (usually it doesn't)
 
 **Check this first.** The integrator warm-up prints
