@@ -272,10 +272,18 @@ function fill_sgs_cache!(params)
     uprim  = params.les_stat_cache.sgs_uprim
     ncount = params.les_stat_cache.sgs_ncount
 
-    if VT isa SMAG
-        # Sij and μ_turb are already stored per-node in params.sgs, written every RHS
-        # call by compute_sgs_cache! (SGS.jl). Use them directly to skip velocity
-        # gradient recomputation. Only temperature gradients are computed here for
+    if params.sgs isa AbstractSGSModel
+        # SMAG *and* VREM: Sij and μ_turb are already stored per-node in
+        # params.sgs, written every RHS call by compute_sgs_cache! (SGS.jl). Use
+        # them directly to skip velocity gradient recomputation.
+        #
+        # For Vreman this is a correctness requirement, not just a saving. The
+        # `else` branch below RECOMPUTES μ_turb from the gradients and the
+        # filter width, and a recomputation cannot see the near-wall limiter
+        # (:lwall_damping) or the Richardson factor the cache applied -- so it
+        # would report the subfilter stress the model did NOT apply, overstated
+        # exactly where the limiter bites hardest. Reading the cache reports
+        # what ran. Only temperature gradients are computed here for
         # SGS heat fluxes (8:10) and scalar dissipation (12).
         # visc_coeff (= inputs[:μ]) multiplies μ_turb in SGS_diffusion, so the
         # SGS stress the solver actually applies is visc_coeff[ieq] times the
@@ -283,7 +291,7 @@ function fill_sgs_cache!(params)
         # subgrid contribution by exactly that factor, which is how a deck
         # running at 5x the intended eddy viscosity could still show a small
         # subgrid share in its output profiles.
-        _fill_sgs_smag!(sgs_stress, ncount, uaux, qe, connijk, uprim,
+        _fill_sgs_cached!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                         dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
                         params.sgs, params.visc_coeff, Pr_t, μ_mol, κ_mol, ngl, nelem, npoin, ET)
     else
@@ -299,7 +307,10 @@ function fill_sgs_cache!(params)
     end
 end
 
-function _fill_sgs_smag!(sgs_stress, ncount, uaux, qe, connijk, uprim,
+# Renamed from _fill_sgs_smag!: it serves both cache-backed closures now, and
+# a name saying SMAG is how the Vreman path ends up on the recompute branch by
+# accident.
+function _fill_sgs_cached!(sgs_stress, ncount, uaux, qe, connijk, uprim,
                           dψ, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
                           sgs, visc_coeff, Pr_t, μ_mol, κ_mol, ngl, nelem, npoin, ET)
     fill!(sgs_stress, 0.0)

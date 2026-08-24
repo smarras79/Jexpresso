@@ -1775,12 +1775,22 @@ function compute_sgs_cache!(sgs::SGS_VREM,
         end
         sgs.N2[ip] = N2_val
 
+        # Strain rate, computed and stored UNCONDITIONALLY (SGS_SMAG does the
+        # same). Vreman's own eddy viscosity does not use it -- that comes from
+        # B_β/‖∇u‖² above -- but les_statistics reads these six out of the
+        # cache, and that is what lets it report the stress built from the SAME
+        # μ_turb the model applied, near-wall limiter and Richardson factor and
+        # filter width included, rather than a recomputed one that sees none of
+        # them.
+        S11 = dudx;  S22 = dvdy;  S33 = dwdz
+        S12 = 0.5*(dudy + dvdx)
+        S13 = 0.5*(dudz + dwdx)
+        S23 = 0.5*(dvdz + dwdy)
+        sgs.S11[ip] = S11;  sgs.S22[ip] = S22;  sgs.S33[ip] = S33
+        sgs.S12[ip] = S12;  sgs.S13[ip] = S13;  sgs.S23[ip] = S23
+
         f_Ri_val = 1.0
         if lrichardson
-            S11 = dudx;  S22 = dvdy;  S33 = dwdz
-            S12 = 0.5*(dudy + dvdx)
-            S13 = 0.5*(dudz + dwdx)
-            S23 = 0.5*(dvdz + dwdy)
             S_ij_S_ij = S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)
             Sij2_val  = 2.0 * S_ij_S_ij
             Ri = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
@@ -2041,9 +2051,14 @@ function compute_sgs_cache!(sgs::SGS_VREM,
         end
         sgs.N2[ip] = N2_val
 
+        # Same as the 3D method above; 2D stores the three components its
+        # SGS_SMAG counterpart stores, leaving S33/S13/S23 at zero.
+        S11 = dudx;  S22 = dvdy;  S12 = 0.5*(dudy + dvdx)
+        sgs.S11[ip] = S11;  sgs.S22[ip] = S22;  sgs.S12[ip] = S12
+
         f_Ri_val = 1.0
         if lrichardson
-            Sij2_val = 2.0*(dudx*dudx + dvdy*dvdy + 2.0*(0.5*(dudy + dvdx))^2)
+            Sij2_val = 2.0*(S11*S11 + S22*S22 + 2.0*S12*S12)
             Ri = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
             f_Ri_val = sgs_stability_function(Ri, Pr_t)
         end

@@ -103,7 +103,19 @@ Base.@kwdef mutable struct SGS_VREM{T <: AbstractFloat, dims1, backend, VT} <: A
     μ_turb::VT = KernelAbstractions.zeros(backend, T, dims1)
     f_Ri::VT   = KernelAbstractions.zeros(backend, T, dims1)
     N2::VT     = KernelAbstractions.zeros(backend, T, dims1)
-    # Vreman computes B_β/‖∇u‖² internally — no Sij components stored
+    # Sij components. Vreman does not need them for its own eddy viscosity --
+    # it works from B_β/‖∇u‖² -- but les_statistics does, and storing them here
+    # is what lets the diagnostic read μ_turb straight out of this cache
+    # instead of recomputing it. That distinction stopped being cosmetic when
+    # :lwall_damping became available for Vreman: a recomputed μ_turb does not
+    # see the near-wall limiter, so the reported subfilter stress would have
+    # been the one the model did NOT apply, and overstated near the ground.
+    S11::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S22::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S33::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S12::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S13::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S23::VT    = KernelAbstractions.zeros(backend, T, dims1)
 end
 
 #----------------------------------------------------------------------
