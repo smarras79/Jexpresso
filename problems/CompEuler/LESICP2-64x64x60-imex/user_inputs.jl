@@ -133,6 +133,21 @@ function user_inputs()
     Δt_default = scheme === :imex ? "0.5" : (scheme === :hevi ? "0.024" : "0.02")
     Δt = parse(Float64, get(ENV, "DBG_DT", Δt_default))
 
+    # A SHORT PROBE RUN, without editing this file. The point of measuring is
+    # to decide the production settings, and a measurement that needs the deck
+    # edited first is one that gets taken against a deck that no longer matches
+    # the run it is being used to plan.
+    #
+    #   DBG_TEND=100  JEXPRESSO_HEVI_PROFILE=1   -> 200 steps at Δt = 0.5 with
+    #                                               the cost breakdown printed
+    #
+    # The initial VTK dump is ~640 MB on this grid and lands before the time
+    # loop, so it does not distort s/step -- but it is minutes of I/O for a run
+    # that will be thrown away, and it is off by default whenever :tend has
+    # been overridden.
+    tend  = parse(Float64, get(ENV, "DBG_TEND", "10800.0"))
+    lprobe = haskey(ENV, "DBG_TEND")
+
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
@@ -259,7 +274,7 @@ function user_inputs()
         :imex_monitor_every   => parse(Int, get(ENV, "DBG_IMEXMONEVERY", "200")),
         :Δt                   => Δt,
         :tinit                => 0.0,
-        :tend                 => 10800.0,
+        :tend                 => tend,
 	:lrestart             => false,
 	#:lrestart_vtk	      => true,
 	#:restart_output_file_path => "",
@@ -271,7 +286,7 @@ function user_inputs()
         # shortened, gamma*dt changes, and the column factorisation is rebuilt
         # twice per event (once onto the short step, once back). 19 events is
         # ~38 refactorisations over ~21 600 steps -- under 0.2%.
-	:diagnostics_at_times => (0.0:600.0:10800.0),
+	:diagnostics_at_times => (0.0:600.0:tend),
 	:lsource              => true,
 	#:lsponge              => true,
 	#:zsponge              => 2500.0, hard coded in user_source.jl
@@ -385,7 +400,7 @@ function user_inputs()
 	#:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/,"
         #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
-        :lwrite_initial      => true,
+        :lwrite_initial      => parse(Bool, get(ENV, "DBG_WRITE_INITIAL", lprobe ? "false" : "true")),
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
