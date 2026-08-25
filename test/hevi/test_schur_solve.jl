@@ -93,5 +93,65 @@ if NR == 1
 end
 end
 
+if NR == 1
+    @testset "iteration count: H against the full 5-field operator" begin
+        # Step 2 measured cond(H) growing QUADRATICALLY with stiffness against
+        # linearly for (I - lam*A), and I took that as a warning that the
+        # reduction would cost iterations. It does not -- because the H of step
+        # 2 was the APPROXIMATE Helmholtz with the buoyancy couplings dropped,
+        # and this one is the exact Schur complement, which keeps them.
+        #
+        # Unpreconditioned GMRES to 1e-4, dense, so the operator is the only
+        # variable:
+        #
+        #   mesh                     lam*rate   its H   its full
+        #   2x2x5   (default)            0.36       3          5
+        #   2x2x5                        1.42       6         12
+        #   2x2x10  (~4:1, production)   0.53       4          7
+        #   2x2x10                       2.13       9         18
+        #
+        # CAVEAT, and it is not small: production preconditions BOTH, with a
+        # column solve that is exact for the vertical operator and therefore
+        # very effective on the full system. These counts are the intrinsic
+        # difficulty of the two operators, not the production ratio.
+        function gmres_count(A, b; tol = 1e-4, maxit = 300)
+            n = length(b); r = b - A*zeros(n); β = norm(r); β == 0 && return 0
+            V = [r/β]; H = zeros(maxit+1, maxit); g = zeros(maxit+1); g[1] = β
+            cs = zeros(maxit); sn = zeros(maxit)
+            for j = 1:maxit
+                w = A*V[j]
+                for i = 1:j; H[i,j] = dot(V[i], w); w -= H[i,j]*V[i]; end
+                hnext = norm(w); H[j+1,j] = hnext
+                hnext > 1e-14 && push!(V, w/hnext)
+                for i = 1:j-1
+                    t = cs[i]*H[i,j] + sn[i]*H[i+1,j]
+                    H[i+1,j] = -sn[i]*H[i,j] + cs[i]*H[i+1,j]; H[i,j] = t
+                end
+                ρ = hypot(H[j,j], H[j+1,j]); cs[j] = H[j,j]/ρ; sn[j] = H[j+1,j]/ρ
+                H[j,j] = ρ; H[j+1,j] = 0.0
+                g[j+1] = -sn[j]*g[j]; g[j] = cs[j]*g[j]
+                abs(g[j+1])/β <= tol && return j
+                hnext <= 1e-14 && return j      # PRE-rotation value; H[j+1,j] was zeroed
+            end
+            return maxit
+        end
+        m = N * op.nimp
+        Ar = zeros(Float64, m, m); V = zeros(N, op.nimp); W = zeros(N, op.nimp)
+        for j = 1:m
+            fill!(V, 0.0); V[j] = 1.0; hevi_apply_A!(W, V, params, op)
+            @inbounds for i = 1:m; Ar[i,j] = W[i]; end
+        end
+        Hm = zeros(Float64, N, N); e = zeros(N)
+        for j = 1:N; fill!(e,0.0); e[j]=1.0; Hm[:,j] = schur_H!(zeros(N), e, params, op, LAM, st); end
+        bH = [sinpi(1e-2*params.mesh.ip2gip[i]) for i = 1:N]
+        bF = vec([sinpi(1e-2*(params.mesh.ip2gip[i] + 7j)) for i = 1:N, j = 1:op.nimp])
+        iH = gmres_count(Hm, bH)
+        iF = gmres_count(Matrix(1.0I, m, m) .- LAM.*Ar, bF)
+        say(@sprintf("  unpreconditioned GMRES to 1e-4:  H %d iterations, full %d  (%.2fx fewer)",
+                     iH, iF, iF/iH))
+        @test iH < iF
+    end
+end
+
 MPI.Barrier(COMM)
 say("=== step 4 done on $NR rank(s) ===\n")
