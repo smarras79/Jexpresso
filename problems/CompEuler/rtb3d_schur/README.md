@@ -96,7 +96,7 @@ against 6.8% for the non-scaling MPI reduce. A rise in iterations/solve under
 The reduction did everything it was designed to do except the one term that
 dominates:
 
-| per step, 25 ranks, 20×20×80, CFL_h 1.05 | five-field | Schur | |
+| per step, 25 ranks, 20×20×80, CFL_h 1.05 | five-field | Schur, reference H | |
 |---|---|---|---|
 | matvec | 4.191 | 6.104 | **0.69× — worse** |
 | preconditioner | 1.688 | 0.342 | 4.9× better |
@@ -128,10 +128,51 @@ needs. Measured against the reference form it replaces, and agreeing with it to
 | **whole stage solve** | **4.06× faster** (`tools/schur_kernel_e2e.jl`) |
 
 The 4.06× is end-to-end over a complete `imex3d_solve_schur!` at identical
-iteration counts, not the matvec alone. **What it does to the step on 25 ranks
-is not yet measured** — that is what the `full` / `schur` pair above is for.
-The step will gain less than 4.06× because `rhs!`, the explicit stages and the
-DSS outside the stage solve are untouched by any of this.
+iteration counts, not the matvec alone.
+
+### The measured result: 3.56×
+
+Both arms run back to back on the same nodes, 25 ranks, 20×20×80, CFL_h 1.05,
+Δt 0.6, rtol 1e-8, 50 profiled steps:
+
+| s/step | five-field | Schur + kernel | |
+|---|---|---|---|
+| rhs! | 0.799 | 0.742 | untouched |
+| f_imp | 0.297 | 0.351 | 0.85× — see below |
+| **stage solve** | **9.542** | **1.880** | **5.08×** |
+| — matvec | 4.955 | 1.092 | 4.54× |
+| — preconditioner | 2.042 | 0.250 | 8.18× |
+| — of which banded | 1.670 | 0.193 | 8.64× |
+| — orthogonalise | 1.922 | 0.199 | 9.67× |
+| — MPI reduce | 0.357 | 0.053 | 6.69× |
+| — Schur setup + recover | — | 0.199 | per solve, not per iteration |
+| iterations/step | 69.4 | 36.2 | 1.92× fewer |
+| **step** | **10.651** | **2.990** | **3.56×** |
+| stage solve share of step | 89.6% | 62.9% | |
+
+The matvec now wins on both counts: 1.92× fewer of them, and each one 2.37×
+cheaper *despite* the five-field figure being an average over a cheaper mix.
+
+`f_imp` going the wrong way by 18% is expected, not a regression: `:imex_schur`
+forces the advective Θ row, so the two arms compute a genuinely different f_imp.
+
+**Run-to-run variation on this cluster is around 13%**, measured: two `schur`
+runs of the identical configuration gave 3.398 and 2.990 s/step. Quote the
+per-term ratios, which are 4–10×, rather than the third digit of the headline.
+
+### Where the time is now
+
+The stage solve is down from 89.6% of the step to 62.9%, and `rhs!` + `f_imp`
+are now 36.5% — the same order as the matvec. Amdahl has started to bite, so
+further work on the stage solve returns less than it did.
+
+The cheapest remaining lever is the iteration count, not per-iteration cost:
+12.1 iterations/solve at `rtol 1e-8`, which is tighter than a third-order
+tableau needs. `DBG_RTOL=1e-6` is one job and would say whether ~2
+iterations/solve come off for free. After that it is horizontal
+preconditioning, which is real work — the column preconditioner is exact
+vertically and does nothing for the horizontal acoustic coupling that
+CFL_h = 1.05 puts in.
 
 **Treat 1.21× as a lower bound from one rank and nothing more.** Two effects
 pull opposite ways: one rank has no MPI reduce at all, which *flatters* Schur;

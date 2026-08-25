@@ -115,14 +115,17 @@ The three arms differ like this:
 
 **What should carry over from 3D.** The per-iteration savings are a property of
 solving for one field instead of five, and the anisotropy that sets them is
-identical here. On 25 ranks the 3D case measured, per step:
+identical here. The 3D case, both arms back to back on the same nodes, 25 ranks:
 
-| | five-field | Schur + kernel |
-|---|---|---|
-| matvec | 4.191 | 1.205 |
-| preconditioner | 1.688 | 0.320 |
-| orthogonalise | 2.110 | 0.330 |
-| **step** | **9.581** | **3.398** (2.82×) |
+| s/step | five-field | Schur + kernel | |
+|---|---|---|---|
+| stage solve | 9.542 | 1.880 | 5.08× |
+| — matvec | 4.955 | 1.092 | 4.54× |
+| — preconditioner | 2.042 | 0.250 | 8.18× |
+| — orthogonalise | 1.922 | 0.199 | 9.67× |
+| — MPI reduce | 0.357 | 0.053 | 6.69× |
+| iterations/step | 69.4 | 36.2 | 1.92× fewer |
+| **step** | **10.651** | **2.990** | **3.56×** |
 
 **What should not.** Two things work against Schur here, so **a smaller speedup
 than 2.82× is the expected result, not a regression**:
@@ -131,7 +134,13 @@ than 2.82× is the expected result, not a regression**:
   and on 4 ranks over 20 columns it is a larger share of a smaller problem than
   it was on 25 ranks over 400;
 - absolute s/step means nothing across the two — 130,005 points against
-  2,106,081.
+  2,106,081;
+- `rhs!` and `f_imp` are untouched by the reduction and are already 36.5% of the
+  3D step. Whatever share they take here bounds the headline the same way.
+
+Run-to-run variation on the 3D cluster measured ~13% between two identical
+`schur` runs, so quote the per-term ratios rather than the third digit of a
+step time. Expect the same or worse on a shared desktop: run each arm twice.
 
 **Read the profile split, not just the step time.** That is the part that
 transfers. `JEXPRESSO_HEVI_PROFILE=1` (which `run_rtb2d.sh` sets) prints the
