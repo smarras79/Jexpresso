@@ -377,6 +377,38 @@ NNODES="${SLURM_NNODES:-1}"
 # PMI plugin, the list of ones this cluster actually has is printed below --
 # set SRUN_MPI to one of them (pmix and pmi2 are the usual names).
 # ===========================================================================
+# ---------------------------------------------------------------------------
+# SLURM_MEM_PER_CPU vs SLURM_MEM_PER_NODE -- srun refuses when both are set:
+#
+#     srun: fatal: SLURM_MEM_PER_CPU, SLURM_MEM_PER_GPU, and SLURM_MEM_PER_NODE
+#           are mutually exclusive.
+#
+# and it is fatal to the STEP, so it kills the run after the whole serial setup
+# and precompile have already been paid for -- the most expensive place to
+# discover it.
+#
+# Both are set because this job asks for --mem-per-cpu (which sets
+# SLURM_MEM_PER_CPU) on a site whose defaults also put SLURM_MEM_PER_NODE in the
+# batch environment. srun inherits both and refuses.
+#
+# SLURM_MEM_PER_NODE is the one to drop. The batch job's --mem-per-cpu=4000M is
+# what actually sized the cgroup, it is what the cpus-per-task trick above
+# depends on, and it is what RANK_MB and --heap-size-hint are derived from.
+# Unsetting the per-node variable changes NOTHING about the allocation -- the
+# cgroup is already established -- it only stops srun seeing a contradiction it
+# cannot resolve.
+#
+# This runs before `srun --mpi=list` below as well as before any launch, since
+# that probe hits the same check.
+# ---------------------------------------------------------------------------
+if [ -n "$SLURM_MEM_PER_CPU" ] && [ -n "$SLURM_MEM_PER_NODE" ]; then
+    echo "    NOTE: both SLURM_MEM_PER_CPU ($SLURM_MEM_PER_CPU) and" \
+         "SLURM_MEM_PER_NODE ($SLURM_MEM_PER_NODE) are set;"
+    echo "          unsetting SLURM_MEM_PER_NODE -- srun treats them as mutually" \
+         "exclusive and this job is sized per CPU."
+    unset SLURM_MEM_PER_NODE
+fi
+
 SRUN_MPI="${SRUN_MPI:-pmi2}"
 if [ -n "$JEXPRESSO_LAUNCHER" ]; then
     LAUNCHER="$JEXPRESSO_LAUNCHER"
