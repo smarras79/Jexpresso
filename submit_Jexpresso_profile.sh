@@ -16,8 +16,14 @@
 #
 # THE A/B THIS EXISTS FOR. Submit it TWICE, changing ONE thing:
 #
-#     DBG_SCHUR=0 sbatch submit_Jexpresso_profile.sh    # five fields, 5*Np
-#     DBG_SCHUR=1 sbatch submit_Jexpresso_profile.sh    # scalar Schur, Np
+#     sbatch submit_Jexpresso_profile.sh full      # five fields, 5*Np
+#     sbatch submit_Jexpresso_profile.sh schur     # scalar Schur, Np
+#
+# PREFER THE ARGUMENT TO THE ENVIRONMENT VARIABLE. `DBG_SCHUR=1 sbatch ...`
+# relies on --export=ALL, which is the usual default and not a guarantee; where
+# it is not, the job runs the five-field arm and every banner still says
+# otherwise. Script arguments always reach the job. DBG_SCHUR still works, and
+# `sbatch --export=ALL,DBG_SCHUR=1 ...` is the explicit env form.
 #
 # Same rank count, same rtol, same restart, same step count -- all pinned below
 # so neither arm can drift. The deck writes to output_imex_full/ and
@@ -284,6 +290,33 @@ export JEXPRESSO_HEVI_PROFILE_SKIP=10
 # clock and the wrong one for reading a state difference between the two output
 # trees as an error.
 # ---------------------------------------------------------------------------
+# A POSITIONAL ARGUMENT, because environment propagation is the failure mode
+# this switch actually hits:
+#
+#     sbatch submit_Jexpresso_profile.sh schur     <- the scalar Schur arm
+#     sbatch submit_Jexpresso_profile.sh full      <- the five-field arm
+#
+# sbatch passes script arguments through to the job unconditionally. The
+# environment it does NOT: --export=ALL is only the usual default, sites set
+# --export=NONE, and `DBG_SCHUR=1 sbatch ...` then runs the five-field arm while
+# every banner still says what you asked for. That has happened here.
+#
+# An unrecognised argument is an ERROR rather than a fallback to the default.
+# A typo -- `scur`, `SCHUR=1` -- silently running the baseline is precisely the
+# outcome this argument exists to prevent, and half an A/B that turns out to be
+# two copies of the same arm costs a queue turnaround to notice.
+case "${1:-}" in
+    schur|SCHUR|1)  DBG_SCHUR=1 ;;
+    full|FULL|0)    DBG_SCHUR=0 ;;
+    "")             : ;;   # not given: fall through to the environment default
+    *)
+        echo "ERROR: unrecognised argument '$1'." >&2
+        echo "       Use 'schur' (scalar Schur stage solve) or 'full' (five" >&2
+        echo "       fields), or set DBG_SCHUR in the environment. Refusing to" >&2
+        echo "       guess: running the wrong arm looks exactly like a result." >&2
+        exit 2
+        ;;
+esac
 export DBG_SCHUR="${DBG_SCHUR:-0}"
 
 # The rtb3d_schur deck's own defaults, restated here so both arms are pinned to
