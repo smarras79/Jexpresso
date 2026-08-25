@@ -271,6 +271,9 @@ include(joinpath( "kernel", "solvers", "hevi", "krylov.jl"))
 # schur.jl builds its operator out of hevi_apply_A!, so it follows operator.jl;
 # imex3d.jl is the only consumer, so it precedes that.
 include(joinpath( "kernel", "solvers", "hevi", "schur.jl"))
+# schur_precond.jl probes schur.jl's operator and factorises it with the
+# machinery in factorize.jl / columns.jl, so it follows all three.
+include(joinpath( "kernel", "solvers", "hevi", "schur_precond.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "imex3d.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
