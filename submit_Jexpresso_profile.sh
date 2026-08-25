@@ -6,12 +6,41 @@
 #
 # THE DIFFERENCE, in full:
 #   JEXPRESSO_HEVI_PROFILE=1   print the per-step cost breakdown
-#   DBG_TEND=35.0              70 steps at the deck's dt = 0.5 s, then stop
-#   DBG_RTOL / DBG_RESTART     pinned to the baseline being explained
-#   CASE                       the production deck
-#   SBATCH nodes / time / mem  production rank count, short walltime
+#   DBG_SCHUR                  which stage solve to run -- THE A/B, see below
+#   DBG_TEND=45.0              75 steps at the deck's dt = 0.6 s, then stop
+#   DBG_RTOL / DBG_RESTART     pinned so both arms solve to the same tolerance
+#   CASE                       CompEuler/rtb3d_schur
+#   SBATCH nodes / time / mem  25 ranks on one node, short walltime
 #   launcher + preflight       srun on multi-node, and a 10-second MPI_Init
 #                              check at the full rank count before the run
+#
+# THE A/B THIS EXISTS FOR. Submit it TWICE, changing ONE thing:
+#
+#     DBG_SCHUR=0 sbatch submit_Jexpresso_profile.sh    # five fields, 5*Np
+#     DBG_SCHUR=1 sbatch submit_Jexpresso_profile.sh    # scalar Schur, Np
+#
+# Same rank count, same rtol, same restart, same step count -- all pinned below
+# so neither arm can drift. The deck writes to output_imex_full/ and
+# output_imex_schur/, so the second does not overwrite the first.
+#
+# WHAT TO COMPARE, in order of how much it tells you:
+#   1. "measured step" from the profile block -- the number the whole exercise
+#      is about.
+#   2. The profile SPLIT. On the 64x64x60 baseline the stage solve was 87.4% of
+#      the step, of which matvec 46.9%, banded 16.4%, gather/scatter 2.2%,
+#      orthogonalise 23.5% and MPI reduce 6.8%. Everything but that last one
+#      scales with the implicit field count, so the split is what shows WHERE
+#      the saving comes from rather than that there is one.
+#   3. Iterations/solve, from the setup report and :imex_monitor.
+#
+# AND EXPECT THE ITERATION COUNT TO GO THE WRONG WAY. Measured on the small
+# variant of this deck (10x10x40, one rank): the scalar system took 61 cold
+# iterations against the five-field system's 20 -- 3x MORE -- and was still
+# 1.21x faster per step, because one implicit field instead of five makes each
+# iteration much cheaper. A mock sweep had predicted 2.67x FEWER iterations at
+# this anisotropy; it inverted on a real mesh. So a rise in iterations/solve
+# under DBG_SCHUR=1 is the expected result here, not a fault -- read the step
+# time, not the count.
 #
 # START ON THE LADDER, NOT AT THE TOP. The script this was copied from had
 # only ever run at --nodes=1 --ntasks-per-node=32, which never touches the
@@ -59,31 +88,38 @@
 #   * "measured step" minus "accounted" -- time outside rhs!/f_imp/solve, i.e.
 #     filtering, diagnostics or MPI wait.
 #
-# RUN IT TWICE, AT TWO RANK COUNTS. Two five-minute jobs settle the scaling
-# question that no estimate can: submit with --nodes=8 and again with
-# --nodes=16 and compare "measured step". IMEX3D does ~93 halo exchanges and
-# ~280 MPI reductions per step against the explicit scheme's handful, so it is
-# far more sensitive to thin ranks than the explicit run this case is being
-# migrated from. Do not assume the rank count that suited that run suits this
-# one.
+# KEEP BOTH ARMS AT THE SAME RANK COUNT. IMEX3D does ~93 halo exchanges and
+# ~280 MPI reductions per step, and the MPI reduce is precisely the part of the
+# stage solve the Schur reduction CANNOT shrink. Comparing arms across rank
+# counts therefore changes the one term that does not improve, and biases the
+# answer -- thin ranks against Schur, fat ranks for it.
+#
+# If you want the scaling curve as well, run the PAIR again at another count
+# (16 is the other efficient one for this mesh) rather than splitting a pair
+# across two.
 
-#SBATCH --job-name=LESprofile
+#SBATCH --job-name=rtb3dschur
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 #SBATCH --partition=general
 #SBATCH --qos=low
 #SBATCH --account=smarras
 #
-# 256 ranks = a 16 x 16 rank grid over the 64 x 64 element columns, so each
-# rank owns a 4 x 4 block of columns and 62 179 points. This is what the repo's
-# own tool picks for this mesh:
+# 25 ranks = a 5 x 5 rank grid over rtb3d_schur's 20 x 20 element columns, so
+# each rank owns a 4 x 4 block of columns and 84 243 of the mesh's 2 106 081
+# points. This is what the repo's own tool picks:
 #
-#     julia tools/pick_nranks.jl 64 64 60 4 2048 10240 10240
+#     julia tools/pick_nranks.jl 20 20 80 4 256 10000 10000
 #     ...
-#     256    16 x 16   4 x 4   16   62179   halo/elem 1.0   <== RECOMMENDED
-#     1024   32 x 32   2 x 2    4   15545   halo/elem 2.0   (thin: comms-bound)
+#      16     4 x 4    5 x 5   25  131630   halo/elem 0.8
+#      25     5 x 5    4 x 4   16   84243   halo/elem 1.0   <== RECOMMENDED
+#      50     5 x 10   4 x 2    8   42122   halo/elem 1.5   (thin: comms-bound)
 #
-# 1240 -- the explicit run's core count -- is NOT valid here at all:
+# 400 element columns cap the useful parallelism, and going past 25 is worse
+# than merely wasteful HERE: the MPI reduce is the one part of the stage solve
+# the Schur reduction cannot shrink, so thin ranks inflate the term that cannot
+# improve and bias the A/B against it.
+#
 # :lxy_partition, which HEVI and IMEX3D both require, cuts the mesh into
 # vertical columns, and only the counts that tool lists divide cleanly. Anything
 # else leaves ranks owning zero elements.
@@ -97,8 +133,17 @@
 # means proportionally less memory, and 4 GB per rank either way. cpus-per-task
 # is the only lever the cap leaves.
 #
-#   nodes x ntasks-per-node x cpus-per-task = 8 x 32 x 2
-#     -> 256 ranks, 64 CPUs and 256 GB per node, 8 GB per rank
+#   nodes x ntasks-per-node x cpus-per-task = 1 x 25 x 2
+#     -> 25 ranks, 50 CPUs and 200 GB on the node, 8 GB per rank
+#
+# 8 GB per rank is generous for this mesh and deliberately so on the first run.
+# Measured here: ONE rank on the full 20 x 20 x 80 peaked at 13.4 GB and was
+# OOM-killed on a 16 GB machine, having got as far as the 3D operator. Spread
+# over 25 that is roughly 0.5 GB of distributed data per rank on top of a
+# ~1.7 GB Julia-plus-packages baseline, so ~2.2 GB -- comfortably inside 4 GB.
+# But the MESH BROADCAST is the peak of the whole run, not the solve, and 4 GB
+# is exactly what failed on LESICP2 before --heap-size-hint went in. Take 8 GB
+# once, read `seff`, then drop to --cpus-per-task=1 and halve the core-hours.
 #
 # The second CPU of each pair sits idle: JULIA_NUM_THREADS/OMP_NUM_THREADS are 1
 # below and Jexpresso is pure MPI. It is bought for its memory, and it doubles
@@ -111,14 +156,15 @@
 # broadcast is the peak and 15.9M global gridpoints may well fit in 4 GB when
 # the GC is collecting against the right limit.
 #
-# The scaling arm of the comparison in the header is 1024 ranks
-# (--nodes=8 --ntasks-per-node=128 --cpus-per-task=1). Run it SECOND, once 256
-# has worked: at 128 tasks x 4000M it is 512 GB per node, so it needs nodes that
-# large and it gets only 4 GB per rank.
-#SBATCH --nodes=8
-#SBATCH --ntasks-per-node=32
+# 25 ranks fit on one node, so this configuration never touches the network --
+# MPICH keeps them all in shared memory. That makes the MPI reduce cheaper than
+# it would be across nodes, which FLATTERS the Schur arm slightly. It is the
+# right rank count for this mesh regardless (see the table above); just do not
+# read the ratio as a multi-node result.
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=25
 #SBATCH --cpus-per-task=2
-#SBATCH --time=00:30:00
+#SBATCH --time=00:45:00
 #SBATCH --mem-per-cpu=4000M
 
 module load Julia/1.11.9
@@ -126,7 +172,7 @@ module load GCC MPICH
 
 JEXPRESSO_ROOT="${JEXPRESSO_ROOT:-/project/smarras/smarras/Jexpresso}"
 EQS="${EQS:-CompEuler}"
-CASE="${CASE:-LESICP2-64x64x60-imex}"
+CASE="${CASE:-rtb3d_schur}"
 
 cd "$JEXPRESSO_ROOT" || exit 1
 
@@ -219,19 +265,44 @@ export JEXPRESSO_HEVI_PROFILE_SKIP=10
 # 54.4 and the step is half as fast again). Leaving it to the deck default
 # would produce a profile of a DIFFERENT run and the split would not be
 # comparable to the number it is supposed to break down. Both are overridable.
-export DBG_RTOL="${DBG_RTOL:-1.0e-4}"
-export DBG_RESTART="${DBG_RESTART:-30}"
-
-# 70 steps at the deck's dt = 0.5 s. The profile reports once n_step reaches
-# JEXPRESSO_HEVI_PROFILE_EVERY, and n_step only counts steps AFTER the _SKIP
-# JIT steps -- so it needs 10 + 50 = 60 before it prints anything, and 70
-# leaves margin for one clean block. There is no reason to run the full 200:
-# the breakdown is a per-step average and a second block only confirms it.
+# ---------------------------------------------------------------------------
+# THE A/B SWITCH. 0 = the five-field stage solve, 1 = the scalar Schur one.
 #
-# The deck also reads DBG_TEND to turn off the ~640 MB initial VTK write --
-# minutes of I/O for a run whose output is thrown away. It does not distort
-# s/step (it happens before the time loop), it just wastes the allocation.
-export DBG_TEND="${DBG_TEND:-35.0}"
+# It is exported with an explicit default rather than left unset so that BOTH
+# arms are stated: a run whose log says DBG_SCHUR=0 cannot later be mistaken
+# for one that simply predated the flag.
+#
+# Everything else in this block is pinned so the two arms differ in ONE thing.
+# That matters more than the values: an A/B where the tolerance also moved
+# measures nothing, and :imex_rtol is the single largest lever on this scheme's
+# cost.
+#
+# NOTE THAT DBG_SCHUR=1 IS A DIFFERENT SPLITTING, not just a different solver.
+# It forces the advective Theta row, without which the elimination does not
+# close on one scalar. The two rows differ by 0.06% of the flux form
+# (test/hevi/test_theta_advective.jl). That is the right comparison for wall
+# clock and the wrong one for reading a state difference between the two output
+# trees as an error.
+# ---------------------------------------------------------------------------
+export DBG_SCHUR="${DBG_SCHUR:-0}"
+
+# The rtb3d_schur deck's own defaults, restated here so both arms are pinned to
+# them and neither can pick up a different tolerance from an edited deck. 1e-8
+# is tight enough that the stage solve is not the leading error term against a
+# third-order tableau, and loose enough not to buy digits the step discards.
+export DBG_RTOL="${DBG_RTOL:-1.0e-8}"
+export DBG_RESTART="${DBG_RESTART:-20}"
+
+# 75 steps at rtb3d_schur's dt = 0.6 s. The profile reports once n_step reaches
+# JEXPRESSO_HEVI_PROFILE_EVERY, and n_step only counts steps AFTER the _SKIP
+# JIT steps -- so it needs 10 + 50 = 60 before it prints anything, which is
+# 36 s of model time, and 45 leaves margin for one clean block. There is no
+# reason to run to the deck's 1000 s: the breakdown is a per-step average and a
+# second block only confirms it.
+#
+# RAISE THIS, NOT LOWER IT, if the profile block never appears -- a run that
+# stops at 59 steps prints no breakdown at all and looks like a silent failure.
+export DBG_TEND="${DBG_TEND:-45.0}"
 
 JULIA_FLAGS=(--project=. --startup-file=no)
 # Probe rather than assume: `existing` was added to these flags in Julia 1.11,
@@ -420,7 +491,8 @@ launch "${JULIA_FLAGS[@]}" -e '
 
 echo "--- Setup complete, launching $NTASKS ranks (PROFILE PROBE) ---"
 echo "    case                      : $EQS / $CASE"
-echo "    DBG_TEND / rtol / restart  : $DBG_TEND s (70 steps at dt=0.5) / $DBG_RTOL / $DBG_RESTART"
+echo "    stage solve               : DBG_SCHUR=$DBG_SCHUR  ($([ "$DBG_SCHUR" = "1" ] && echo "SCALAR Schur, Np unknowns" || echo "five-field, 5*Np unknowns"))"
+echo "    DBG_TEND / rtol / restart  : $DBG_TEND s (75 steps at dt=0.6) / $DBG_RTOL / $DBG_RESTART"
 echo "    JEXPRESSO_HEVI_PROFILE    : $JEXPRESSO_HEVI_PROFILE  (every $JEXPRESSO_HEVI_PROFILE_EVERY steps, first $JEXPRESSO_HEVI_PROFILE_SKIP skipped)"
 echo "    JEXPRESSO_PRECOMPILE_PASS : $JEXPRESSO_PRECOMPILE_PASS"
 echo "    julia flags               : ${JULIA_FLAGS[*]}"
@@ -431,9 +503,19 @@ echo "    started                   : $(date)"
 # above reach the ranks under either launcher here. Under OpenMPI's mpirun they
 # would NOT -- pass them explicitly:
 #   mpirun -x JULIA_PKG_PRECOMPILE_AUTO -x JEXPRESSO_PRECOMPILE_PASS \
-#          -x JEXPRESSO_HEVI_PROFILE -x DBG_TEND ...
+#          -x JEXPRESSO_HEVI_PROFILE -x DBG_TEND -x DBG_SCHUR \
+#          -x DBG_RTOL -x DBG_RESTART ...
 # Without them the probe silently prints nothing and the run is a full-length
 # production run: DBG_TEND would not reach the ranks either.
+#
+# DBG_SCHUR IS THE WORST ONE TO LOSE, because losing it fails QUIETLY and
+# PLAUSIBLY. The banner above is printed by this script, from its own
+# environment, so it would still say DBG_SCHUR=1 while every rank ran the
+# five-field solve -- and the A/B would come back a dead heat with nothing
+# anywhere saying why. Check the SETUP REPORT in the run's own output instead:
+# it prints "Stage solve: preconditioned GMRES on the SCALAR SCHUR system"
+# against "on all 5 fields", from inside the ranks. That line is the one that
+# proves which arm actually ran.
 launch "${JULIA_FLAGS[@]}" src/Jexpresso.jl "$EQS" "$CASE"
 rc=$?
 
