@@ -194,6 +194,44 @@ function user_inputs()
         # case takes tens of iterations per stage instead of a handful.
         :imex_precond         => Symbol(get(ENV, "DBG_PRECOND", "column")),
         #-----------------------------------------------------------------------
+        # :imex_schur   SOLVE THE STAGE SYSTEM AS ONE SCALAR INSTEAD OF FIVE.
+        #
+        # DBG_SCHUR=1. Eliminates rho, rho_u, rho_v, rho_w exactly and leaves a
+        # single Helmholtz equation in P = beta*Theta -- Np unknowns rather than
+        # 5*Np -- then rebuilds the five fields pointwise. Same answer: measured
+        # against the five-field solve through both production entry points at
+        # ~1e-12 relative, which is where two Krylov solves to 1e-12 stop and not
+        # where the algebra does (test/imex3d/test_schur_stage.jl).
+        #
+        # THIS MESH IS A GOOD PLACE TO TRY IT. The gain comes from two things,
+        # and both are here:
+        #
+        #   * per iteration -- the matvec, the gather/scatter and the
+        #     orthogonalisation all scale with the implicit field count, and on
+        #     the 64x64x60 profile they are 73% of the stage solve against 6.8%
+        #     for the MPI reduce, which does not scale;
+        #   * per solve -- fewer iterations, and by how much depends on the grid
+        #     acoustic anisotropy h_x/h_z, because that is what decides how much
+        #     a COLUMN preconditioner can do. Measured on the mock at production
+        #     stiffness: 1.66x at 1:1, 2.67x at 4:1, 1.50x at 16:1.
+        #
+        # This mesh's smallest LGL gaps are 172.7 m in x and 34.5 m in z, i.e.
+        # 5:1 -- next to the 4:1 where that sweep was best.
+        #
+        # It IMPLIES the advective Theta row (the reduction does not close on one
+        # scalar with the flux form), so it is a different SPLITTING from the
+        # DBG_SCHUR=0 run, not just a different way of solving the same one. The
+        # two Theta rows differ by 0.06% of the flux form
+        # (test/hevi/test_theta_advective.jl), so an A/B compares two valid
+        # schemes rather than one scheme against itself -- fine for wall clock,
+        # worth knowing before reading a state difference as an error.
+        #
+        # NOT YET MEASURED AT PRODUCTION SCALE. Every number above is either the
+        # 64x64x60 profile or the mock; the end-to-end speedup on a real mesh is
+        # exactly what this switch is here to find out.
+        #-----------------------------------------------------------------------
+        :imex_schur           => parse(Bool, get(ENV, "DBG_SCHUR", "false")),
+        #-----------------------------------------------------------------------
         # The largest flow speed the run is expected to reach, in m/s.
         #
         # This is the one input to the stability estimate that cannot be
