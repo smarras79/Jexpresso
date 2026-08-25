@@ -132,6 +132,16 @@ struct HEVIOperator{TF <: AbstractFloat, CT}
     # rho survives it. With the advective form the coupling is POINTWISE
     # (grad(thetabar) is a known coefficient), which is exactly what lets
     # Giraldo's reduction collapse to a single pressure unknown.
+    #
+    # ONLY THE `full` KERNEL HONOURS THIS. `_hevi_A_elements_full!` takes the
+    # flag and the gradient arrays; the vertical `_hevi_A_elements!` does not
+    # and always applies the FLUX row. So on a `full = false` operator this flag
+    # changes nothing about the operator -- its whole effect is to fill
+    # `dtbd*` below. That is not a bug to route around: schur_precond.jl WANTS
+    # exactly that, because it builds the scalar Helmholtz out of the
+    # continuity and momentum rows plus grad(thetabar) and never reads the
+    # Theta row at all. It is recorded here because the flag looks like it
+    # should change the operator, and silently does not.
     theta_advective::Bool
     # grad(thetabar), per node, computed once at setup. Zero-length when the
     # flux form is in use.

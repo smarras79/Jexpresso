@@ -196,10 +196,16 @@ from `params.imex` by the integrator.
 `fimp!` and `solve!` are the two hooks `IMEX_ARK` calls, and they carry the
 same signatures HEVI's do -- which is why one stepper drives both.
 """
-struct IMEX3DCache{OPT, PCT, F1, F2}
+struct IMEX3DCache{OPT, PCT, SCT, F1, F2}
     topo::ColumnTopology
     op::OPT                     # the full 3D acoustic operator
     pc::PCT                     # IMEX3DPrecond, or nothing
+    # The scalar Schur path (`:imex_schur`), or nothing. When it is present
+    # `solve!` is imex3d_solve_schur! and `ws`/`B`/`X` below are still used --
+    # B and X are the five-field right-hand side and answer either way, and only
+    # the linear algebra between them changes. `ws` is then the UNUSED five-field
+    # workspace; the scalar one lives in here. See schur_stage.jl.
+    schur::SCT
     ws::GMRESWorkspace
     B::Matrix{Float64}          # packed right-hand side  (npoin x 5)
     X::Matrix{Float64}          # packed solution         (npoin x 5)
@@ -671,6 +677,23 @@ function ark_relinearize!(params, imex::IMEX3DCache, u)
     # the state rather than copied from the other.
     op.vd === nothing || vdiff_refresh!(op.vd, params, op.vars, u)
 
+    # grad(thetabar) is DERIVED from thetabar, so refreshing one without the
+    # other leaves the advective Theta row reading a gradient of the state the
+    # operator had at setup. That is silent: the row stays a plausible
+    # advection, the solve still converges, and only the splitting is wrong.
+    op.theta_advective && hevi_fill_gradthetabar!(op, params)
+
+    # The Schur preconditioner holds its own vertical operator with its own
+    # coefficients, and its band is assembled FROM them, so it has to be
+    # refreshed and re-probed exactly as the five-field one is.
+    if imex.schur !== nothing && imex.schur.pc !== nothing
+        spc = imex.schur.pc
+        copyto!(spc.opv.beta,     op.beta)
+        copyto!(spc.opv.thetabar, op.thetabar)
+        spc.opv.theta_advective && hevi_fill_gradthetabar!(spc.opv, params)
+        refactorize_schur!(spc, params, spc.lam[])
+    end
+
     if imex.pc !== nothing
         copyto!(imex.pc.opv.beta,     op.beta)
         copyto!(imex.pc.opv.thetabar, op.thetabar)
@@ -806,8 +829,13 @@ function build_imex3d(params, inputs)
 
     lwall  = get(inputs, :imex_wall_flux, true)
     lvdiff = vdiff_enabled(inputs)
+    # `:imex_schur` IMPLIES the advective Theta row -- the reduction does not
+    # close on one scalar without it (schur_stage.jl says why), so it is set
+    # here rather than offered as a separate deck key that could contradict it.
+    lschur = get(inputs, :imex_schur, false) == true
     op = build_hevi_fast_operator(params, topo; lwall_flux = lwall,
-                                  wallx = wallx, wally = wally, vdiff = lvdiff)
+                                  wallx = wallx, wally = wally, vdiff = lvdiff,
+                                  theta_advective = lschur)
     _say(@sprintf(" | 3D operator %.1fs", _lap()))
 
     #-------------------------------------------------------------------------
@@ -832,15 +860,22 @@ function build_imex3d(params, inputs)
     # The trivial rows of the vertical operator, dropped where they really are
     # trivial. hevi_choose_vars reads the metrics rather than a deck flag, so a
     # mesh warped by any route still gets all five. See IMEX3DPrecond.
-    pvars = pcmode === :column ? hevi_choose_vars(params.metrics, comm) : Int[]
+    # NOT built when the Schur path is on: nothing applies it there, and it is
+    # not free to keep -- the five-field band is nimp*ngl-1 wide against ngl-1
+    # for the scalar one, it is `nimp` times longer, and ark_relinearize! would
+    # re-probe and re-factorise it on every update for no reader. `:imex_precond`
+    # keeps its meaning either way; with `:imex_schur` it selects the column
+    # preconditioner for the SCALAR system, built inside build_imex3d_schur.
+    build5 = pcmode === :column && !lschur
+    pvars = build5 ? hevi_choose_vars(params.metrics, comm) : Int[]
     # Implicit diffusion is exactly what makes the dropped rows non-trivial:
     # the vertical operator is the identity on rho*u and rho*v only while it
     # carries acoustics alone. Preconditioning a diffusion-carrying operator
     # with one that ignores two of its four diffusing variables would leave
     # those two rows unpreconditioned, and the iteration count would go with
     # the viscous CFL of the horizontal momenta.
-    pcmode === :column && (pvars = vdiff_vars(params, inputs, pvars))
-    if pcmode === :column
+    build5 && (pvars = vdiff_vars(params, inputs, pvars))
+    if build5
         opv = build_hevi_operator(params, topo, pvars; lwall_flux = lwall,
                                   full = false, vdiff = lvdiff)
         hevi_trace("build_imex3d: preconditioner operator built")
@@ -893,11 +928,19 @@ function build_imex3d(params, inputs)
     ws = GMRESWorkspace(npoin, op.nimp, inner;
                         m = restart, maxiter = maxiter, rtol = rtol, atol = atol)
 
+    schur = nothing
+    if lschur
+        hevi_trace("build_imex3d: building the scalar Schur stage solve")
+        schur = build_imex3d_schur(params, topo, comm, inputs, op, gdt, inner;
+                                   lwall_flux = lwall)
+        _say(@sprintf(" | Schur setup %.1fs", _lap()))
+    end
+
     warm = get(inputs, :imex_warm_start, true) == true
-    imex = IMEX3DCache(topo, op, pc, ws,
+    imex = IMEX3DCache(topo, op, pc, schur, ws,
                        zeros(Float64, npoin, op.nimp), zeros(Float64, npoin, op.nimp),
-                       imex3d_fimp!, imex3d_solve!, tab.name, gdt,
-                       lin_mode, update_freq, warm, comm)
+                       imex3d_fimp!, lschur ? imex3d_solve_schur! : imex3d_solve!,
+                       tab.name, gdt, lin_mode, update_freq, warm, comm)
 
     #-------------------------------------------------------------------------
     # Self-checks.
@@ -1020,7 +1063,7 @@ function build_imex3d(params, inputs)
                   (R, mach, wamp, jamp, wdt),
                   (wallsrc, nwall_g), (time_ns() - t0) / 1e9;
                   lin = lin_mode, ufreq = update_freq, verify = verify, warm = warm,
-                  hcfl = hcfl)
+                  hcfl = hcfl, schur = schur)
 
     # Now raise whatever the self-check found -- after the report, so the block
     # that explains it is above the message rather than lost with it.
@@ -1126,7 +1169,7 @@ measurement.
 """
 function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, walls, secs;
                        lin::Symbol = :RS, ufreq::Int = 0, verify::Bool = true,
-                       warm::Bool = true, hcfl = nothing)
+                       warm::Bool = true, hcfl = nothing, schur = nothing)
 
     comm   = params.mesh.parts.comm
     rank   = MPI.Comm_rank(comm)
@@ -1184,8 +1227,24 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
             wallsrc === :box ? "the domain bounding box" : "nothing (:none)")
 
     println(" │")
-    println(" │  Stage solve: preconditioned GMRES")
+    if schur === nothing
+        println(" │  Stage solve: preconditioned GMRES on all 5 fields (5*Np unknowns)")
+    else
+        @printf(" │  Stage solve: preconditioned GMRES on the SCALAR SCHUR system\n")
+        @printf(" │      (:imex_schur) -- Np unknowns in P = beta*Theta, the five\n")
+        @printf(" │      fields recovered pointwise afterwards. The Theta row is\n")
+        @printf(" │      ADVECTIVE, which the reduction requires.\n")
+    end
+    # `pc === nothing` does NOT mean "unpreconditioned" once the Schur path is
+    # on -- there the preconditioner lives on the scalar system instead, and
+    # reporting NONE here would send a user chasing an iteration count that is
+    # not there.
     @printf(" │      preconditioner: %s\n",
+            schur !== nothing ?
+              (schur.pc === nothing ?
+                 "NONE (:imex_precond => :none) -- expect many iterations" :
+                 string("column solve on the scalar Schur operator, banded LU ",
+                        "per column (bandwidth ", schur.pc.kl, ", n = ", schur.pc.n, ")")) :
             pc === nothing ? "NONE (:imex_precond => :none) -- expect many iterations" :
             string("HEVI column solve on ", pc.pvars, ", banded LU per column",
                    length(pc.pvars) == 3 ?
@@ -1250,8 +1309,10 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
         println(" │  Operator self-check:")
         @printf(" │      f_imp(qe) = %.1e   (must be exactly 0: the split cannot disturb balance)\n", wb)
         if vfast !== nothing
-            @printf(" │      reduces to the vertical operator on a horizontally uniform field: %.2e\n",
-                    vfast.rel_vertical)
+            @printf(" │      reduces to the vertical operator on a horizontally uniform field: %.2e%s\n",
+                    vfast.rel_vertical,
+                    vfast.theta_compared ? "" :
+                      "  (rho and rho_w only -- the vertical kernel has no advective Theta row)")
             @printf(" │      horizontal momentum response to a field varying in x: %.3g (must be > 0)\n",
                     vfast.horiz_response)
         end

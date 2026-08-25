@@ -94,7 +94,7 @@ ws   = GMRESWorkspace(npoin, 5, inner; m = 30, maxiter = 300, rtol = 1e-10)
 # (iterations ~ 25 x CFL_h), which is a property of the preconditioner and the
 # operator's spectrum. A warm start is a property of the SEQUENCE of
 # right-hand sides and would confound it.
-imex = IMEX3DCache(topo, opfull, pc, ws, zeros(npoin, 5), zeros(npoin, 5),
+imex = IMEX3DCache(topo, opfull, pc, nothing, ws, zeros(npoin, 5), zeros(npoin, 5),
                    imex3d_fimp!, imex3d_solve!, :ARS343, GAMMA * DT_SMALL,
                    :RS, 5, false, COMM)
 

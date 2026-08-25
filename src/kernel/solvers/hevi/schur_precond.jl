@@ -188,6 +188,16 @@ function build_schur_column_precond(params, topo::ColumnTopology, comm::MPI.Comm
     ngl   = Int(params.mesh.ngl)
 
     # All five slots, vertical only, advective theta row. See the struct docs.
+    #
+    # `theta_advective` on a `full = false` operator does NOT give it an
+    # advective Theta row -- the vertical element kernel has no such branch and
+    # keeps the flux one. Its only effect here is to fill `dtbd*`, and that is
+    # precisely what is wanted: `schur_H!` reads the CONTINUITY row (through
+    # schur_divW!), the MOMENTUM rows (through schur_grad!) and grad(thetabar)
+    # pointwise. It never touches the Theta row, so which form that row carries
+    # cannot affect the band this file assembles. Verified rather than argued:
+    # test_schur_precond.jl matches the assembled band against a dense H_v to
+    # 0.000e+00.
     opv = build_hevi_operator(params, topo, [1, 2, 3, 4, 5];
                               lwall_flux = lwall_flux, full = false,
                               theta_advective = true)
@@ -248,6 +258,10 @@ Refactorises if `lam` has moved, for the reason in `refactorize_schur!`.
 """
 function schur_precond!(P::AbstractVector, pc::SchurColumnPrecond, params, lam::Real)
 
+    # The refactorisation comes FIRST and that is not arbitrary: the assembly
+    # probes through this same `pc.F` staging buffer, so staging `P` into it
+    # before re-probing would hand the probe the field being preconditioned and
+    # get back a band that is not the operator.
     if abs(pc.lam[] - Float64(lam)) > 1.0e-14 * max(abs(Float64(lam)), 1.0)
         refactorize_schur!(pc, params, lam)
     end

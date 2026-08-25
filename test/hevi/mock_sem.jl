@@ -26,6 +26,12 @@ abstract type AbstractSGSModel end
 struct NSD_1D end
 struct NSD_3D end
 struct ContGal end
+# Solution-variable tags. build_imex3d refuses PERT() -- under it the solution
+# vector already holds the deviation from qe, so the operator would subtract the
+# reference state twice -- and reads the default TOTAL(), so both have to exist
+# for that refusal to be testable here.
+struct TOTAL end
+struct PERT end
 
 Base.@kwdef struct PhysicalConst{T}
     Rair::T = 287.0
@@ -120,6 +126,17 @@ function assemble_mpi!(a::AbstractMatrix, c::MockAssembler)
 end
 
 # --- production copies -------------------------------------------------------
+# Verbatim from src/kernel/operators/rhs.jl. Copied rather than included for
+# the same reason DSS_rhs! below is: that file pulls in most of the solver, and
+# this fixture exists to run the hevi kernels without it. The CFL diagnostics
+# that build_imex3d reports call this one.
+function u2uaux!(uaux, u, neqs, npoin)
+    for i=1:neqs
+        idx = (i-1)*npoin
+        uaux[:,i] = view(u, idx+1:i*npoin)
+    end
+end
+
 function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
     for ieq = 1:neqs, iel = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
         RHS[connijk[iel,i,j,k], ieq] += rhs_el[iel,i,j,k,ieq]
@@ -142,6 +159,10 @@ struct MockMesh
     xmin::Float64; xmax::Float64; ymin::Float64; ymax::Float64; zmin::Float64; zmax::Float64
     ip2gip::Vector{Int}; gip2owner::Vector{Int}
     SD::NSD_3D; parts::MockParts
+    # AMR refinement level. Always 1 here -- the fixture has no adaptivity --
+    # but build_imex3d reads it to divide the step size down, so it has to
+    # exist for the setup path to be testable against this mock at all.
+    ad_lvl::Int
 end
 # The FULL metric tensor, not just the diagonal.
 #
@@ -184,7 +205,12 @@ mutable struct UntypedMetrics
     dζdx; dζdy; dζdz
 end
 struct MockBasis; dψ::Matrix{Float64}; end
-struct MockQP; qe::Matrix{Float64}; end
+# `qn` is the CURRENT state, `qe` the reference one. The fixture initialises
+# them equal, which is the hydrostatic state at rest -- the setup diagnostics in
+# build_imex3d read qn to report the initial CFL, so it has to exist for that
+# path to be testable here. Tests that want a perturbed state overwrite it.
+struct MockQP; qe::Matrix{Float64}; qn::Matrix{Float64}; end
+MockQP(qe::Matrix{Float64}) = MockQP(qe, copy(qe))
 
 """
     build_mock_params(; nelx, nely, nelz, p, Lx, Ly, Lz, comm) -> params
@@ -267,7 +293,7 @@ function build_mock_params(; nelx = 2, nely = 2, nelz = 5, p = 2,
         M[conn[iel,i,j,k], 1] += ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
     end
     mesh = MockMesh(npoin, nelem, ngl, conn, coords, 0.0, Lx, 0.0, Ly, 0.0, Lz,
-                    ip2gip, gip2owner, NSD_3D(), MockParts(comm))
+                    ip2gip, gip2owner, NSD_3D(), MockParts(comm), 1)
     asm = setup_assembler(NSD_3D(), M, ip2gip, gip2owner)
     assemble_mpi!(M, asm)
     Minv = [1.0 / M[ip, 1] for ip = 1:npoin]
@@ -313,6 +339,7 @@ function build_mock_params(; nelx = 2, nely = 2, nelz = 5, p = 2,
 
     return (mesh = mesh, metrics = metrics, basis = MockBasis(dψ), ω = ω,
             Minv = Minv, SD = NSD_3D(), AD = ContGal(), qp = MockQP(qe), neqs = 5,
+            uaux = zeros(npoin, 5),
             inputs = Dict{Symbol,Any}(), hx = hx, hy = hy, hz = hz, ngl = ngl,
             # The implicit vertical diffusion operator reads these two the way
             # the real rhs! does: `sgs === nothing` selects the AV path, where

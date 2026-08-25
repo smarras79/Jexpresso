@@ -275,7 +275,7 @@ ws   = GMRESWorkspace(NPOIN, 5, inner; m = 30, maxiter = 300, rtol = 1e-12)
 # convergence order and a stability threshold, and a cold start keeps every
 # stage solve independent of what ran before it. The warm path is exercised
 # end to end further down, against this cache as the reference.
-imex = IMEX3DCache(topo, opwall, pc, ws, zeros(NPOIN, 5), zeros(NPOIN, 5),
+imex = IMEX3DCache(topo, opwall, pc, nothing, ws, zeros(NPOIN, 5), zeros(NPOIN, 5),
                    imex3d_fimp!, imex3d_solve!, :ARS343, GDT, :RS, 5, false, COMM)
 ph   = merge(params, (imex = imex,))
 
@@ -465,7 +465,7 @@ let
     wsw = GMRESWorkspace(NPOIN, 5, ph.imex.ws.inner; m = 20, maxiter = 200,
                          rtol = 1e-10, atol = 1e-30)
     ic = ph.imex
-    warmc = IMEX3DCache(ic.topo, ic.op, ic.pc, wsw,
+    warmc = IMEX3DCache(ic.topo, ic.op, ic.pc, ic.schur, wsw,
                         zeros(NPOIN, 5), zeros(NPOIN, 5),
                         imex3d_fimp!, imex3d_solve!, ic.tableau, ic.gdt,
                         ic.linearization, ic.update_freq, true, COMM)

@@ -60,10 +60,12 @@ factorisation of its vertical part.
 function build_hevi_fast_operator(params, topo::ColumnTopology; lwall_flux::Bool = true,
                                   wallx::Union{Nothing, AbstractVector{Bool}} = nothing,
                                   wally::Union{Nothing, AbstractVector{Bool}} = nothing,
-                                  vdiff::Bool = false)
+                                  vdiff::Bool = false,
+                                  theta_advective::Bool = false)
     return build_hevi_operator(params, topo, [1, 2, 3, 4, 5];
                                lwall_flux = lwall_flux, full = true,
-                               wallx = wallx, wally = wally, vdiff = vdiff)
+                               wallx = wallx, wally = wally, vdiff = vdiff,
+                               theta_advective = theta_advective)
 end
 
 """
@@ -121,7 +123,9 @@ It also reports what the horizontal terms do on a field that varies in x,
 which must be NON-zero in (ρu, ρv) -- a full operator that silently reduced to
 the vertical one would pass the first test and fail this one.
 
-Returns `(rel_vertical, horiz_response, ok)`.
+Returns `(rel_vertical, horiz_response, theta_compared, ok)`. `theta_compared`
+is false when the two operators disagree about the form of the Theta row and it
+had to be left out of the comparison -- see the note at the comparison itself.
 """
 function hevi_verify_fast(params, opfull::HEVIOperator, opvert::HEVIOperator,
                           topo::ColumnTopology)
@@ -148,8 +152,30 @@ function hevi_verify_fast(params, opfull::HEVIOperator, opvert::HEVIOperator,
     Rf = hevi_apply_A!(similar(Vf), Vf, params, opfull)
     Rv = hevi_apply_A!(similar(Vv), Vv, params, opvert)
 
+    # THE THETA ROW IS EXCLUDED WHEN THE TWO OPERATORS DISAGREE ABOUT ITS FORM.
+    # `theta_advective` is honoured only by the FULL element kernel: the
+    # vertical one (`_hevi_A_elements!`) has no advective branch and always
+    # applies the flux row, so a vertical operator built with the flag set
+    # still carries `-Div[tb .* W m]` while the full one carries
+    # `-(tb .* Div[W m] + (W m).grad(tb))`. Those agree only in the continuum
+    # -- test_theta_advective.jl measures the gap at 0.06% of the flux form --
+    # so comparing them here reports a CONSISTENCY error as "a metric or index
+    # error in the xi/eta sweeps" and refuses a correct operator. With
+    # `:imex_schur` on, which forces the advective row, that aborted the run at
+    # setup at 2.79e-04 against this check's 1e-6.
+    #
+    # Passing `theta_advective` to the vertical operator does NOT fix it, which
+    # is worth stating because it is the obvious thing to try: the flag reaches
+    # a kernel that ignores it, and the measured mismatch is identical to four
+    # digits either way.
+    #
+    # The rho and rho_w rows still carry the whole point of the check -- they
+    # are where a wrong metric term or flux slot in the new sweeps shows up --
+    # and the advective Theta row has its own file.
+    skipθ = opfull.theta_advective && !opvert.full
     num = 0.0; den = 0.0
     @inbounds for (q, ieq) in enumerate(opvert.vars)
+        skipθ && ieq == 5 && continue
         qf = opfull.slot[ieq]
         for ip = 1:npoin
             num = max(num, abs(Rf[ip, qf] - Rv[ip, q]))
@@ -192,6 +218,7 @@ function hevi_verify_fast(params, opfull::HEVIOperator, opvert::HEVIOperator,
     end
 
     return (rel_vertical = rel_vertical, horiz_response = horiz,
+            theta_compared = !skipθ,
             ok = rel_vertical < 1.0e-10 && horiz > 0.0)
 end
 

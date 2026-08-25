@@ -274,6 +274,9 @@ include(joinpath( "kernel", "solvers", "hevi", "schur.jl"))
 # schur_precond.jl probes schur.jl's operator and factorises it with the
 # machinery in factorize.jl / columns.jl, so it follows all three.
 include(joinpath( "kernel", "solvers", "hevi", "schur_precond.jl"))
+# schur_stage.jl is the production stage solve built on the two above; it
+# names GMRESWorkspace, so it follows krylov.jl, and imex3d.jl consumes it.
+include(joinpath( "kernel", "solvers", "hevi", "schur_stage.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "imex3d.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
