@@ -150,6 +150,34 @@ if NR == 1
         say(@sprintf("  unpreconditioned GMRES to 1e-4:  H %d iterations, full %d  (%.2fx fewer)",
                      iH, iF, iF/iH))
         @test iH < iF
+
+        # WITH THE COLUMN PRECONDITIONER, which is what production runs:
+        # hevi_column_solve! inverts the vertical operator exactly, per column.
+        # Reproduced here as the exact inverse of each column's block, so the
+        # comparison is like for like and the preconditioner is nothing but a
+        # column block. Swept over the parameter that governs everything:
+        #
+        #   h_x/h_z   elements (m)            H   full   ratio
+        #     1.0:1   200 x 200 x 200        47     78   1.66x
+        #     4.0:1   400 x 400 x 100         5     11   2.20x   <- production
+        #    16.0:1   800 x 800 x  50         3      5   1.67x
+        #
+        # H needs ~2x fewer at every anisotropy, best at the 4:1 the production
+        # mesh actually has. The 1:1 row is not a defect: the mesh is isotropic,
+        # so a COLUMN preconditioner is the wrong tool for either operator
+        # (||I - H*CB|| = 4.16 there, i.e. worse than no preconditioner) -- the
+        # same fact that started this whole exercise.
+        colblk = let A = Hm
+            M = zeros(size(A))
+            for ic = 1:topo.ncol
+                idx = [topo.node[il, ic] for il = 1:topo.nlev if topo.node[il, ic] != 0]
+                isempty(idx) || (M[idx, idx] = inv(A[idx, idx]))
+            end
+            M
+        end
+        iHp = gmres_count(Hm * colblk, bH)
+        say(@sprintf("  column-preconditioned:           H %d iterations", iHp))
+        @test iHp <= iH          # on this anisotropic mock it must not hurt
     end
 end
 
