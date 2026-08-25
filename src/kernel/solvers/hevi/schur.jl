@@ -75,6 +75,9 @@ Read straight off block row 2, which `test_schur_blocks.jl` pins:
 non-zero is `Theta = P./beta` are exactly `-Grad[P]`.
 """
 function schur_grad!(gx, gy, gz, P, params, op, work)
+    if work.kern !== nothing
+        return schur_grad_fast!(gx, gy, gz, P, params, op, work.kern)
+    end
     V, W = work.V, work.W
     fill!(V, 0.0)
     sθ = op.slot[5]
@@ -125,11 +128,17 @@ struct SchurWork{M <: AbstractMatrix{Float64}, V <: AbstractVector{Float64}}
     gy::V
     gz::V
     d::V
+    # The bespoke scalar sweeps (schur_kernel.jl), or `nothing` for the
+    # reference form below. Both are kept, permanently: the reference is what
+    # the kernel is CHECKED AGAINST, and a kernel with no independent statement
+    # of what it should compute is a kernel nobody can debug. `nothing` here is
+    # not a fallback for missing functionality, it selects the slow definition.
+    kern::Union{Nothing, SchurKernel}
 end
-SchurWork(npoin::Int, nimp::Int) =
+SchurWork(npoin::Int, nimp::Int; kern = nothing) =
     SchurWork(zeros(Float64, npoin, nimp), zeros(Float64, npoin, nimp),
               zeros(Float64, npoin), zeros(Float64, npoin),
-              zeros(Float64, npoin), zeros(Float64, npoin))
+              zeros(Float64, npoin), zeros(Float64, npoin), kern)
 
 """
     schur_apply!(HP, P, params, op, lam, work)
@@ -246,6 +255,9 @@ non-zero is the momentum is exactly minus what we want. `W` is applied inside
 the kernel, which is why it does not appear here.
 """
 function schur_divW!(out, vx, vy, vz, params, op, work)
+    if work.kern !== nothing
+        return schur_divW_fast!(out, vx, vy, vz, params, op, work.kern)
+    end
     V, W = work.V, work.W
     fill!(V, 0.0)
     su, sv, sw = op.slot[2], op.slot[3], op.slot[4]
@@ -280,9 +292,9 @@ struct SchurState{TF <: AbstractFloat}
     # wrong only where grad(tb) is large.
     mbx::Vector{TF}; mby::Vector{TF}; mbz::Vector{TF}
 end
-function SchurState(npoin::Int, nimp::Int)
+function SchurState(npoin::Int, nimp::Int; kern = nothing)
     z() = zeros(Float64, npoin)
-    SchurState(SchurWork(npoin, nimp), z(), z(), z(), z(), z(), z(), z(),
+    SchurState(SchurWork(npoin, nimp; kern = kern), z(), z(), z(), z(), z(), z(), z(),
                z(), z(), z(), z(), z(), z(), z())
 end
 
