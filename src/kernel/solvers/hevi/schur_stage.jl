@@ -145,7 +145,18 @@ function imex3d_solve_schur!(dst, src, params, gdt::Real)
     end
 
     # 5-field right-hand side -> scalar right-hand side, caching q_b and m_b.
+    # ACCOUNTED SEPARATELY. This and the recovery below are per-SOLVE costs, not
+    # per-iteration ones, so none of the matvec/precond/orthogonalise counters
+    # can see them -- on the first production profile of this path they appeared
+    # only as a 1.27 s/step hole between `sub-accounted` and the solve total,
+    # 16% of the stage solve. They are also where an optimised scalar kernel for
+    # H would show up second (setup_rhs is two full operator applications and
+    # recover is one), which is the other reason to measure them apart.
+    _tsr = hevi_tic()
     schur_setup_rhs!(sch.R, sch.st, B, params, op, g)
+    if hevi_prof_on()
+        HEVI_PROFILE.t_srhs += (time_ns() - _tsr) * 1e-9; HEVI_PROFILE.n_srhs += 1
+    end
 
     st = sch.st
     matvec! = let params = params, op = op, g = g, st = st
@@ -172,7 +183,11 @@ function imex3d_solve_schur!(dst, src, params, gdt::Real)
     end
 
     # rebuild the five fields from the pressure
+    _trc = hevi_tic()
     schur_recover!(X, sch.P, sch.st, B, params, op, g)
+    if hevi_prof_on()
+        HEVI_PROFILE.t_srec += (time_ns() - _trc) * 1e-9; HEVI_PROFILE.n_srec += 1
+    end
 
     dst === src || copyto!(dst, src)
     @inbounds for (q, ieq) in enumerate(op.vars)

@@ -140,6 +140,15 @@ mutable struct HEVIProfile
     t_band::Float64;  n_band::Int    # ...of which the LAPACK banded solves
     t_orth::Float64;  n_orth::Int    # Gram-Schmidt: dots and axpys
     t_red::Float64;   n_red::Int     # MPI.Allreduce inside the inner products
+    # The Schur reduction's own per-SOLVE cost, which the rows above cannot see
+    # because it is not per-iteration: building the scalar right-hand side and
+    # rebuilding the five fields from the pressure afterwards. Each costs full
+    # operator applications (two and one), so on the reference form of H it is
+    # not small -- measured at 1.27 s/step, 16% of the stage solve, on the
+    # 20x20x80 bubble at 25 ranks, where it showed up only as the gap between
+    # `sub-accounted` and the solve total.
+    t_srhs::Float64;  n_srhs::Int    # schur_setup_rhs!
+    t_srec::Float64;  n_srec::Int    # schur_recover!
 end
 const HEVI_PROF       = Ref(false)
 const HEVI_PROF_EVERY = Ref(50)
@@ -161,8 +170,12 @@ const HEVI_PROF_ALL   = Ref(false)
 # compiles the RHS chain, so counting them inflates every row -- and rhs! most
 # of all, which is exactly the row the other numbers are judged against.
 const HEVI_PROF_SKIP  = Ref(10)
+# Positional, so it has to be kept in step with the field list above by hand --
+# adding a counter and forgetting this line is a MethodError at load, which is
+# how the schur setup/recover counters announced themselves.
 const HEVI_PROFILE    = HEVIProfile(0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0,
-                                    0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0)
+                                    0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0,
+                                    0.0, 0, 0.0, 0)
 
 @inline hevi_prof_on() = HEVI_PROF[] && HEVI_STEP_COUNT[] > HEVI_PROF_SKIP[]
 @inline hevi_tic() = hevi_prof_on() ? time_ns() : UInt64(0)
@@ -179,6 +192,8 @@ function hevi_profile_reset!()
     P.t_band = 0.0;  P.n_band = 0
     P.t_orth = 0.0;  P.n_orth = 0
     P.t_red = 0.0;   P.n_red = 0
+    P.t_srhs = 0.0;  P.n_srhs = 0
+    P.t_srec = 0.0;  P.n_srec = 0
     return nothing
 end
 
@@ -225,7 +240,13 @@ function hevi_profile_report!()
         row("    of which banded", P.t_band, P.n_band)
         row("  orthogonalise", P.t_orth, P.n_orth)
         row("  MPI reduce",  P.t_red,  P.n_red)
-        sub = (P.t_mv + P.t_pc + P.t_orth + P.t_red) / ns
+        # Only on the Schur path; the five-field solve leaves these at zero and
+        # the block keeps exactly the shape it had.
+        if P.n_srhs > 0 || P.n_srec > 0
+            row("  schur setup",   P.t_srhs, P.n_srhs)
+            row("  schur recover", P.t_srec, P.n_srec)
+        end
+        sub = (P.t_mv + P.t_pc + P.t_orth + P.t_red + P.t_srhs + P.t_srec) / ns
         Base.print("   │ ", rpad("  sub-accounted", 16), " " ^ 30,
                    lpad(string(round(sub; digits = 4)), 9), " s/step  of ",
                    round(P.t_solve / ns; digits = 4), " in the solve\n")
