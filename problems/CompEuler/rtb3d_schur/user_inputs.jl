@@ -27,10 +27,8 @@ function user_inputs()
     #---------------------------------------------------------------------------
     # 2. SCHUR REDUCTION -- ignored unless limex
     #---------------------------------------------------------------------------
-    lschur        = _b("DBG_SCHUR", false)      # scalar Np system in P = β·θ,
-                                                # instead of the 5·Np one
-    lschur_kernel = _b("DBG_SCHUR_KERN", true)  # fast matvec for H;
-                                                # false = reference form (~6x slower)
+    lschur = _b("DBG_SCHUR", true)   # solve the scalar Np system in P = β·θ
+                                     # instead of the 5·Np one. 3.56x faster.
 
     #---------------------------------------------------------------------------
     # 3. RESOLUTION AND TIME
@@ -103,7 +101,11 @@ function user_inputs()
 
         # -- IMEX (block 2 and 4) --
         :imex_schur           => lschur,
-        :imex_schur_kernel    => lschur_kernel,
+        # The fast scalar matvec for H, on. DBG_SCHUR_KERN=0 reaches the
+        # reference form -- two full five-field applies, ~6x slower, kept only
+        # as the independent statement of the same operator to debug against.
+        # There is no reason to run it otherwise: they agree to 1.9e-16.
+        :imex_schur_kernel    => _b("DBG_SCHUR_KERN", true),
         :implicit_vdiff       => implicit_vdiff,
         :imex_verify          => verify,
         :imex_warm_start      => warm_start,

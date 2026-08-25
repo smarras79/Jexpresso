@@ -51,9 +51,8 @@ points), which fits on one rank.
 ## Running it
 
 ```bash
-sbatch submit_Jexpresso_profile.sh full                    # five fields, 5·Np unknowns
-sbatch submit_Jexpresso_profile.sh schur                   # scalar Schur, Np unknowns
-DBG_SCHUR_KERN=0 sbatch submit_Jexpresso_profile.sh schur  # Schur, reference matvec
+sbatch submit_Jexpresso_profile.sh full     # five fields, 5·Np unknowns
+sbatch submit_Jexpresso_profile.sh schur    # scalar Schur, Np unknowns
 ```
 
 The positional argument is preferred to `DBG_SCHUR=1 sbatch …`: a site that
@@ -61,8 +60,13 @@ defaults `sbatch` to `--export=NONE` drops the variable and runs the baseline
 under a banner saying otherwise. A typo in the argument exits 2 rather than
 guessing.
 
-The third line is the diagnostic arm, and it is what the *first* cluster
-profile of this path measured. See below.
+There is a third, *diagnostic* arm that the launcher deliberately does not
+advertise: `DBG_SCHUR_KERN=0 sbatch submit_Jexpresso_profile.sh schur` runs the
+Schur reduction with the **reference** matvec — two full five-field operator
+applications instead of the bespoke sweeps, ~6× slower. It is not a
+configuration anyone should run for results; it is the independent statement of
+the same operator, kept reachable for debugging, and it is what the first
+cluster profile of this path measured. The two agree to 1.9e-16.
 
 **25 ranks, one node** (`pick_nranks.jl`: a 5×5 rank grid over the 20×20
 columns, 16 columns and 84,243 points each). Keep both arms at the same count:

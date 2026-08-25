@@ -76,11 +76,15 @@ Keep `ny = 1` and `nz = 4·nx`.
 ## Running it
 
 ```bash
-./problems/CompEuler/rtb2d_schur/run_rtb2d.sh full        # five fields, 5·Np
-./problems/CompEuler/rtb2d_schur/run_rtb2d.sh schur       # scalar Schur, fast H
-./problems/CompEuler/rtb2d_schur/run_rtb2d.sh schur-ref   # scalar Schur, reference H
-./problems/CompEuler/rtb2d_schur/run_rtb2d.sh all         # all three in order
+./problems/CompEuler/rtb2d_schur/run_rtb2d.sh full     # five fields, 5·Np
+./problems/CompEuler/rtb2d_schur/run_rtb2d.sh schur    # scalar Schur, Np
+./problems/CompEuler/rtb2d_schur/run_rtb2d.sh all      # both, in order
 ```
+
+`DBG_SCHUR_KERN=0` reaches a third, diagnostic arm — the Schur reduction with
+the reference matvec, ~6× slower — which the launcher deliberately does not
+advertise. It is not for results; it is the independent statement of the same
+operator, kept for debugging.
 
 `NR=4` by default, and **not your core count**. `:lxy_partition` never cuts z,
 and the slab is one element thick in y, so there are 20 element columns and that
@@ -110,7 +114,6 @@ The three arms differ like this:
 | arm | stage solve | unknowns | H is |
 |---|---|---|---|
 | `full` | five-field | 5·Np | — |
-| `schur-ref` | scalar Schur | Np | two full five-field applies |
 | `schur` | scalar Schur | Np | bespoke scalar sweeps |
 
 **What should carry over from 3D.** The per-iteration savings are a property of
@@ -147,10 +150,9 @@ transfers. `JEXPRESSO_HEVI_PROFILE=1` (which `run_rtb2d.sh` sets) prints the
 per-term breakdown; compare `matvec`, `precond`, `orthogonalise` and
 `MPI reduce` between arms rather than one headline number.
 
-`schur-ref` is worth the third run. It is the reduction with the *old* matvec —
-two five-field applies, 2.08× the cost of one — which is how the Schur path
-behaved before `schur_kernel.jl` and is what separates *"the reduction is
-sound"* from *"the matvec is fast"*.
+If a Schur run ever looks wrong rather than slow, `DBG_SCHUR_KERN=0` runs the
+same reduction through the reference matvec. A difference there is a kernel
+bug; no difference means the reduction itself is what to look at.
 
 ## Two things to check before believing a result
 

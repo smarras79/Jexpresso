@@ -2,9 +2,8 @@
 #=============================================================================
 #  Jexpresso profile run.
 #
-#      sbatch submit_Jexpresso_profile.sh schur       scalar Schur stage solve
-#      sbatch submit_Jexpresso_profile.sh full        five-field stage solve
-#      sbatch submit_Jexpresso_profile.sh schur-ref   Schur, reference matvec
+#      sbatch submit_Jexpresso_profile.sh schur      scalar Schur stage solve
+#      sbatch submit_Jexpresso_profile.sh full       five-field stage solve
 #
 #  EDIT THE TWO BLOCKS MARKED "EDIT ME". Nothing else in this file needs
 #  changing to run a different problem, on a different rank count, on a
@@ -59,11 +58,10 @@ set -u
 
 #-- 1. which stage solve --------------------------------------------------
 case "${1:-}" in
-    schur)     SCHUR=1; KERN=1 ;;
-    full)      SCHUR=0; KERN=1 ;;
-    schur-ref) SCHUR=1; KERN=0 ;;
+    schur) SCHUR=1 ;;
+    full)  SCHUR=0 ;;
     *)
-        echo "ERROR: give exactly one of: schur | full | schur-ref" >&2
+        echo "ERROR: give exactly one of: schur | full" >&2
         echo "       (got '${1:-<nothing>}'). Refusing to guess: running the" >&2
         echo "       wrong arm looks exactly like a result." >&2
         exit 2 ;;
@@ -73,7 +71,7 @@ for m in "${MODULES[@]}"; do module load "$m" || exit 1; done
 cd "$ROOT" || exit 1
 
 #-- 2. deck settings, passed through the environment ----------------------
-export DBG_SCHUR="$SCHUR" DBG_SCHUR_KERN="$KERN"
+export DBG_SCHUR="$SCHUR"
 [ -n "$TEND" ] && export DBG_TEND="$TEND"
 [ -n "$MESH" ] && export DBG_MESH="$MESH"
 export DBG_RTOL="${DBG_RTOL:-1.0e-8}"
@@ -184,10 +182,8 @@ launch "${JULIA_FLAGS[@]}" -e '
     exit $rc; }
 
 #-- 7. run ----------------------------------------------------------------
-if   [ "$SCHUR" = 0 ]; then arm_desc="five-field, 5*Np unknowns"
-elif [ "$KERN"  = 1 ]; then arm_desc="SCALAR Schur, Np unknowns, kernel matvec (~0.36x one 5-field apply)"
-else                        arm_desc="SCALAR Schur, Np unknowns, REFERENCE matvec (~2x one 5-field apply)"
-fi
+[ "$SCHUR" = 1 ] && arm_desc="SCALAR Schur, Np unknowns" \
+                 || arm_desc="five-field, 5*Np unknowns"
 
 echo "--- Launching $NTASKS ranks ---"
 echo "    case          : $EQS / $CASE${MESH:+  (mesh $MESH)}"

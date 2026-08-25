@@ -2,10 +2,9 @@
 #
 # run_rtb2d.sh -- the desktop A/B for the 2D (slab) rising thermal bubble.
 #
-#     ./problems/CompEuler/rtb2d_schur/run_rtb2d.sh full        five fields, 5*Np
-#     ./problems/CompEuler/rtb2d_schur/run_rtb2d.sh schur       scalar Schur, fast H
-#     ./problems/CompEuler/rtb2d_schur/run_rtb2d.sh schur-ref   scalar Schur, reference H
-#     ./problems/CompEuler/rtb2d_schur/run_rtb2d.sh all         all three, in order
+#     ./problems/CompEuler/rtb2d_schur/run_rtb2d.sh full     five fields, 5*Np
+#     ./problems/CompEuler/rtb2d_schur/run_rtb2d.sh schur    scalar Schur, Np
+#     ./problems/CompEuler/rtb2d_schur/run_rtb2d.sh all      both, in order
 #
 # No SLURM, no cluster. This is submit_Jexpresso_profile.sh's job, done with
 # mpiexec on whatever machine you are sitting at.
@@ -34,7 +33,7 @@
 set -u
 
 usage() {
-    echo "usage: $0 {full|schur|schur-ref|all}" >&2
+    echo "usage: $0 {full|schur|all}" >&2
     exit 2
 }
 [ $# -ge 1 ] || usage
@@ -74,13 +73,13 @@ launch() {
 }
 
 one_arm() {
-    local name="$1" schur="$2" kern="$3"
+    local name="$1" schur="$2"
     echo
     echo "=================================================================="
     echo " $name   ($NR ranks, mesh $DBG_MESH, tend $DBG_TEND s)"
-    echo "   DBG_SCHUR=$schur  DBG_SCHUR_KERN=$kern"
+    echo "   DBG_SCHUR=$schur"
     echo "=================================================================="
-    export DBG_SCHUR="$schur" DBG_SCHUR_KERN="$kern"
+    export DBG_SCHUR="$schur"
     launch
     local rc=$?
     # Report the launcher's status. Without this the script looks identical
@@ -90,15 +89,13 @@ one_arm() {
 }
 
 case "$1" in
-    full)      one_arm "five-field baseline"      0 1 ;;
-    schur)     one_arm "scalar Schur, kernel H"   1 1 ;;
-    schur-ref) one_arm "scalar Schur, reference H" 1 0 ;;
+    full)  one_arm "five-field baseline" 0 ;;
+    schur) one_arm "scalar Schur"        1 ;;
     all)
         # Sequential, never concurrent: two runs sharing the cores would time
         # each other's contention rather than the solvers.
-        one_arm "five-field baseline"       0 1
-        one_arm "scalar Schur, reference H" 1 0
-        one_arm "scalar Schur, kernel H"    1 1
+        one_arm "five-field baseline" 0
+        one_arm "scalar Schur"        1
         ;;
     *) usage ;;
 esac
