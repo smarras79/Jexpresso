@@ -493,6 +493,15 @@ function _hevi_A_elements_full!(rhs_el, V, beta, thetabar, wall, wallx, wally, F
                 dHζ += dζm * H[i, j, m, q]
             end
 
+            # NOT WORTH SKIPPING THE ZERO FLUXES. F is zero for rho_v/rho_w, G
+            # for rho_u/rho_w, H for rho_u/rho_v -- 18 of these 45 chains per
+            # node, 40% of the arithmetic, differentiate identically zero data.
+            # Branching them out is bitwise-identical and measured 1.03x on a
+            # 4x4x20 p=4 mesh: the loop is bound by the strided F[i,m,k,q] and
+            # F[i,j,m,q] reads, not by the multiply-adds, so removing flops
+            # buys nothing and the branches cost clarity. Left as it is
+            # deliberately; the way to speed this up is less memory traffic
+            # (fewer implicit fields), not fewer operations.
             dFdx = dFξ * dξdx[iel,i,j,k] + dFη * dηdx[iel,i,j,k] + dFζ * dζdx[iel,i,j,k]
             dGdy = dGξ * dξdy[iel,i,j,k] + dGη * dηdy[iel,i,j,k] + dGζ * dζdy[iel,i,j,k]
             dHdz = dHξ * dξdz[iel,i,j,k] + dHη * dηdz[iel,i,j,k] + dHζ * dζdz[iel,i,j,k]
