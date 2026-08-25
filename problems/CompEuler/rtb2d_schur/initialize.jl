@@ -13,17 +13,14 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # defines neqs, which is the second dimension of q = define_q()
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
-    # THE SIXTH NAME MUST MATCH WHAT user_uout! PUTS IN SLOT 6, and it did not.
-    # user_primitives.jl writes `uout[6] = u[5]/u[1] - qe[5]/qe[1]`, i.e. the
-    # POTENTIAL TEMPERATURE PERTURBATION, while this list called that slot "p"
-    # -- a leftover from the commented-out gas-law line just above it there. So
-    # the VTU did carry dtheta all along, under the name `p`, and the field
-    # named `θ` is the TOTAL, 300 K of background with a 2 K bubble on top:
-    # opened on `θ`, ParaView autoscales to the stratification and the bubble is
-    # invisible. Nothing was missing from the output; the label was wrong.
+    # THE SIXTH NAME MUST MATCH WHAT user_uout! PUTS IN SLOT 6, which is
+    # `u[5]/u[1] - qe[5]/qe[1]` -- the potential temperature PERTURBATION.
     #
-    # Same mislabel exists in problems/CompEuler/rtb_hevi and rtb_imex, which
-    # this case was derived from.
+    # **dθ IS THE FIELD TO PLOT.** `θ` is the total: 300 K of background with a
+    # 2 K bubble on top, so opened on `θ` ParaView autoscales to the
+    # stratification and the bubble is invisible. rtb_hevi and rtb_imex name
+    # this slot "p", which is a leftover from a commented-out gas-law line in
+    # their user_primitives.jl and does not describe what they write into it.
     qoutvars = ["ρ", "u", "v", "w", "θ", "dθ"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
@@ -97,7 +94,18 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
 
-                r = sqrt( (x - xc)^2 + (y - yc)^2 + (z - zc)^2 )
+                # A CYLINDER, not a sphere: no y dependence. That is what
+                # makes this the 2D analogue rather than a thin 3D box. With a
+                # y-invariant initial state and free slip on both y faces, v is
+                # zero at t = 0 and nothing ever generates it, so the solution
+                # is exactly the two-dimensional one -- the single element in y
+                # costs nothing but carries the 3D operator the solver needs.
+                #
+                # `y` is deliberately unused here. It is still read above so
+                # that this loop and the GPU kernel below read the same three
+                # coordinates, and an edit to one is visibly an edit to the
+                # other.
+                r = sqrt( (x - xc)^2 + (z - zc)^2 )
 
                 Δθ = 0.0 #K
                 if r < r0
@@ -195,10 +203,10 @@ end
     x = x[ip]
     y = y[ip]
     z = z[ip]
-    # 3D radius, matching the CPU branch. A 2D radius here and a 3D one there
-    # would give a different initial state on GPU and CPU, and nothing in the
-    # output would say which one was run.
-    r = sqrt( (x - xc)^2 + (y - yc)^2 + (z - zc)^2 )
+    # CYLINDRICAL radius, matching the CPU branch. A 3D radius here and a 2D
+    # one there would give a different initial state on GPU and CPU, and
+    # nothing in the output would say which one was run.
+    r = sqrt( (x - xc)^2 + (z - zc)^2 )
     Δθ = T(0.0) #K
 
     if r < rθ
