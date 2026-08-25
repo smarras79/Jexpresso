@@ -32,6 +32,13 @@ function user_inputs()
     # the usable parallelism is bounded by nelemx*nelemy = 400 and the rest
     # leave ranks owning zero elements.
     #
+    # MEMORY. Measured here on the full mesh: a ONE-RANK run reaches 13.4 GB
+    # during IMEX3D setup and was OOM-killed on a 16 GB machine, having got as
+    # far as the 3D operator. The mesh read and the high-order node population
+    # alone take 253 s and several GB before the solver is even built. This case
+    # is meant for >= 4 ranks; on 25 each rank holds 1/25 of the points. Use
+    # DBG_MESH=10x10x40 for a single-rank smoke test.
+    #
     # READ THE HEARTBEAT, NOT THE TOTAL. :lstep_heartbeat reports s/step
     # measured since the previous heartbeat, so after the first few steps it is
     # a steady-state rate with the JIT excluded, which total wall time is not.
@@ -190,8 +197,14 @@ function user_inputs()
         # stops being skew, and the run grows at a few 1/s with every
         # self-check still passing. IMEX3D refuses that combination outright.
         #---------------------------------------------------------------------------
+        # DBG_MESH picks the size. 20x20x80 is the case; 10x10x40 is the SAME
+        # 4:1 aspect ratio at 270,681 points instead of 2,106,081, for a quick
+        # check that a build runs before spending cluster time on it -- and it
+        # fits on one rank, which the full mesh does not (see the memory note
+        # in the header).
         :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/CompEuler/rtb3d_schur/rtb3d_20x20x80.msh",
+        :gmsh_filename        => string("./problems/CompEuler/rtb3d_schur/rtb3d_",
+                                        get(ENV, "DBG_MESH", "20x20x80"), ".msh"),
         :lxy_partition        => true,
         :lwarp                => false,
         :lstretch             => false,

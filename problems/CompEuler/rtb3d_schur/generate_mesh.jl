@@ -23,13 +23,46 @@
 # worth more than being able to `head` it.
 using GridapGmsh: gmsh
 
+#
+# SIZE. With no arguments this builds the 20 x 20 x 80 the deck defaults to.
+# Pass three integers for a different one:
+#
+#   julia --project=. problems/CompEuler/rtb3d_schur/generate_mesh.jl 10 10 40
+#
+# and point DBG_MESH at the result. KEEP nelemz = 4*nelemx WHILE THE DOMAIN IS
+# A CUBE: that is what makes h_x/h_z = 4:1, which is the whole reason this case
+# exists (see the .geo). 10 x 10 x 40 is the useful small one -- 270,681 points
+# against 2,106,081, same aspect ratio, and it fits on one rank.
+#
+# The three element counts are substituted into the ONE .geo rather than kept
+# in a second copy of it, so a variant cannot drift from the geometry,
+# the boundary tags or the transfinite structure it is derived from.
 const HERE = @__DIR__
 const GEO  = joinpath(HERE, "rtb3d_20x20x80.geo")
-const OUT  = length(ARGS) >= 1 ? ARGS[1] : joinpath(HERE, "rtb3d_20x20x80.msh")
 
 isfile(GEO) || error("generate_mesh.jl: cannot find $GEO")
 
-println("gmsh: reading  ", GEO)
+const NX, NY, NZ = length(ARGS) >= 3 ?
+    (parse(Int, ARGS[1]), parse(Int, ARGS[2]), parse(Int, ARGS[3])) : (20, 20, 80)
+const OUT = joinpath(HERE, "rtb3d_$(NX)x$(NY)x$(NZ).msh")
+
+# Derive the .geo for this size. Only the three counts change; everything
+# structural is whatever the committed .geo says.
+const GEOSRC = let src = read(GEO, String)
+    src = replace(src, r"(?m)^nelemx = \d+;" => "nelemx = $NX;")
+    src = replace(src, r"(?m)^nelemy = \s*\d+;" => "nelemy = $NY;")
+    src = replace(src, r"(?m)^nelemz = \d+;" => "nelemz = $NZ;")
+    src
+end
+occursin("nelemx = $NX;", GEOSRC) && occursin("nelemy = $NY;", GEOSRC) &&
+    occursin("nelemz = $NZ;", GEOSRC) ||
+    error("generate_mesh.jl: could not substitute the element counts into $GEO -- ",
+          "its `nelemx/y/z = N;` lines must have changed shape.")
+const GEOTMP = (NX, NY, NZ) == (20, 20, 80) ? GEO :
+               (t = joinpath(tempdir(), "rtb3d_$(NX)x$(NY)x$(NZ).geo");
+                write(t, GEOSRC); t)
+
+println("gmsh: reading  ", GEOTMP, "  (", NX, " x ", NY, " x ", NZ, ")")
 gmsh.initialize()
 try
     # Quiet, but not silent: warnings about the geometry are worth seeing.
@@ -44,7 +77,7 @@ try
     gmsh.option.setNumber("Mesh.RecombineAll", 1)
     gmsh.option.setNumber("Mesh.Algorithm3D", 1)
 
-    gmsh.open(GEO)
+    gmsh.open(GEOTMP)
     gmsh.model.mesh.generate(3)
 
     println("gmsh: writing  ", OUT)
@@ -55,8 +88,8 @@ try
     ntag, = gmsh.model.mesh.getElementsByType(5)      # 8-node hexahedra
     nodes, = gmsh.model.mesh.getNodes()
     println("gmsh: ", length(ntag), " hexahedra, ", length(nodes), " vertices")
-    length(ntag) == 20*20*80 ||
-        @warn "expected $(20*20*80) hexahedra, got $(length(ntag)) -- the .geo " *
+    length(ntag) == NX*NY*NZ ||
+        @warn "expected $(NX*NY*NZ) hexahedra, got $(length(ntag)) -- the .geo " *
               "and this check disagree about the element counts"
 finally
     gmsh.finalize()
