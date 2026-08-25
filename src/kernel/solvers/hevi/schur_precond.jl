@@ -263,21 +263,38 @@ function schur_precond!(P::AbstractVector, pc::SchurColumnPrecond, params, lam::
     # before re-probing would hand the probe the field being preconditioned and
     # get back a band that is not the operator.
     if abs(pc.lam[] - Float64(lam)) > 1.0e-14 * max(abs(Float64(lam)), 1.0)
+        _t = hevi_tic()
         refactorize_schur!(pc, params, lam)
+        if hevi_prof_on()
+            HEVI_PROFILE.t_refac += (time_ns() - _t) * 1e-9; HEVI_PROFILE.n_refac += 1
+        end
     end
 
+    # ACCOUNTED TO THE SAME COUNTERS imex3d_precond! uses, so the profile block
+    # compares like with like across the two stage solves. Without this the
+    # `precond` row reads 0.0 on the Schur path and its cost turns up only as
+    # the gap between `sub-accounted` and the solve total -- which is how the
+    # first production profile of this path had to be read.
+    _tpc = hevi_tic()
     F = pc.F
     @inbounds for ip in eachindex(P)
         F[ip, 1] = P[ip]
     end
     column_gather!(pc.cc, F, 1:1)
+    _tb = hevi_tic()
     @inbounds for ic = 1:pc.cc.nown
         LAPACK.gbtrs!('N', pc.kl, pc.ku, pc.n, pc.AB[ic], pc.ipiv[ic],
                       view(pc.cc.X, :, ic))
     end
+    if hevi_prof_on()
+        HEVI_PROFILE.t_band += (time_ns() - _tb) * 1e-9; HEVI_PROFILE.n_band += 1
+    end
     column_scatter!(pc.cc, F, 1:1)
     @inbounds for ip in eachindex(P)
         P[ip] = F[ip, 1]
+    end
+    if hevi_prof_on()
+        HEVI_PROFILE.t_pc += (time_ns() - _tpc) * 1e-9; HEVI_PROFILE.n_pc += 1
     end
     return P
 end
