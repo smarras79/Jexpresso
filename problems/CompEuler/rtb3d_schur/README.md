@@ -60,13 +60,20 @@ defaults `sbatch` to `--export=NONE` drops the variable and runs the baseline
 under a banner saying otherwise. A typo in the argument exits 2 rather than
 guessing.
 
-There is a third, *diagnostic* arm that the launcher deliberately does not
-advertise: `DBG_SCHUR_KERN=0 sbatch submit_Jexpresso_profile.sh schur` runs the
-Schur reduction with the **reference** matvec — two full five-field operator
-applications instead of the bespoke sweeps, ~6× slower. It is not a
-configuration anyone should run for results; it is the independent statement of
-the same operator, kept reachable for debugging, and it is what the first
-cluster profile of this path measured. The two agree to 1.9e-16.
+There is a third, *diagnostic* configuration, reached by adding one line to
+`user_inputs.jl` rather than by an argument:
+
+```julia
+:imex_schur_kernel    => false,     # reference matvec, ~6× slower
+```
+
+This runs the Schur reduction with two full five-field operator applications
+per matvec instead of the bespoke sweeps. It is not a configuration to run for
+results — it is an independently written statement of the same operator,
+agreeing with the fast one to 1.9e-16, and it is what the first cluster profile
+of this path measured. Use it only if a Schur run looks *wrong* rather than
+slow: a difference there is a kernel bug, no difference means look at the
+reduction.
 
 **25 ranks, one node** (`pick_nranks.jl`: a 5×5 rank grid over the 20×20
 columns, 16 columns and 84,243 points each). Keep both arms at the same count:

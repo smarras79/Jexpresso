@@ -81,10 +81,10 @@ Keep `ny = 1` and `nz = 4·nx`.
 ./problems/CompEuler/rtb2d_schur/run_rtb2d.sh all      # both, in order
 ```
 
-`DBG_SCHUR_KERN=0` reaches a third, diagnostic arm — the Schur reduction with
-the reference matvec, ~6× slower — which the launcher deliberately does not
-advertise. It is not for results; it is the independent statement of the same
-operator, kept for debugging.
+A third, diagnostic configuration is reached by adding `:imex_schur_kernel =>
+false` to `user_inputs.jl` — the Schur reduction with the reference matvec, ~6×
+slower. It is not for results; it is an independently written statement of the
+same operator, kept for debugging.
 
 `NR=4` by default, and **not your core count**. `:lxy_partition` never cuts z,
 and the slab is one element thick in y, so there are 20 element columns and that
@@ -173,9 +173,9 @@ transfers. `JEXPRESSO_HEVI_PROFILE=1` (which `run_rtb2d.sh` sets) prints the
 per-term breakdown; compare `matvec`, `precond`, `orthogonalise` and
 `MPI reduce` between arms rather than one headline number.
 
-If a Schur run ever looks wrong rather than slow, `DBG_SCHUR_KERN=0` runs the
-same reduction through the reference matvec. A difference there is a kernel
-bug; no difference means the reduction itself is what to look at.
+If a Schur run ever looks wrong rather than slow, `:imex_schur_kernel => false`
+runs the same reduction through the reference matvec. A difference there is a
+kernel bug; no difference means the reduction itself is what to look at.
 
 ## Two things to check before believing a result
 

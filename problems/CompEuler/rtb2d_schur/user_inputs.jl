@@ -106,11 +106,15 @@ function user_inputs()
 
         # -- IMEX (block 2 and 4) --
         :imex_schur           => lschur,
-        # The fast scalar matvec for H, on. DBG_SCHUR_KERN=0 reaches the
-        # reference form -- two full five-field applies, ~6x slower, kept only
-        # as the independent statement of the same operator to debug against.
-        # There is no reason to run it otherwise: they agree to 1.9e-16.
-        :imex_schur_kernel    => _b("DBG_SCHUR_KERN", true),
+        # NOT SET HERE: :imex_schur_kernel, which picks the matvec for H INSIDE
+        # the reduction (it is not an alternative to :imex_schur -- it is how
+        # one step of it is computed). It defaults to the fast sweeps, and the
+        # only other setting is ~6x slower, so the deck stating it would put a
+        # permanent line in the inputs table for a choice nobody makes. Add
+        # `:imex_schur_kernel => false` here to reach the reference form, which
+        # is worth doing only to debug a Schur run that looks WRONG: it is an
+        # independently written statement of the same operator, agreeing to
+        # 1.9e-16.
         :implicit_vdiff       => implicit_vdiff,
         :imex_verify          => verify,
         :imex_warm_start      => warm_start,
