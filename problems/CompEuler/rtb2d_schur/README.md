@@ -130,20 +130,43 @@ identical here. The 3D case, both arms back to back on the same nodes, 25 ranks:
 | iterations/step | 69.4 | 36.2 | 1.92× fewer |
 | **step** | **10.651** | **2.990** | **3.56×** |
 
-**What should not.** Two things work against Schur here, so **a smaller speedup
-than 2.82× is the expected result, not a regression**:
+### Measured here: 4.37×
 
-- the MPI reduce is the one part of the stage solve the reduction cannot shrink,
-  and on 4 ranks over 20 columns it is a larger share of a smaller problem than
-  it was on 25 ranks over 400;
-- absolute s/step means nothing across the two — 130,005 points against
-  2,106,081;
-- `rhs!` and `f_imp` are untouched by the reduction and are already 36.5% of the
-  3D step. Whatever share they take here bounds the headline the same way.
+Both arms back to back, 20×1×80, 2 ranks, Δt 0.6, rtol 1e-8, 50 profiled steps:
 
-Run-to-run variation on the 3D cluster measured ~13% between two identical
-`schur` runs, so quote the per-term ratios rather than the third digit of a
-step time. Expect the same or worse on a shared desktop: run each arm twice.
+| s/step | five-field | Schur | |
+|---|---|---|---|
+| rhs! | 0.326 | 0.323 | untouched |
+| f_imp | 0.108 | 0.119 | different splitting |
+| **stage solve** | **4.585** | **0.700** | **6.55×** |
+| — matvec | 1.897 | 0.384 | 4.94× |
+| — preconditioner | 1.330 | 0.154 | 8.62× |
+| — orthogonalise | 1.104 | 0.057 | 19.5× |
+| — MPI reduce | 0.0164 | 0.0025 | 6.56× |
+| iterations/step | 72.6 | 38.1 | **1.91× fewer** |
+| **step** | **5.028** | **1.151** | **4.37×** |
+
+**1.91× fewer iterations, against the 3D case's 1.92×.** That is the design
+goal met: same h_x/h_z, same CFL_h, so the Krylov behaviour is the same problem
+at a sixteenth of the size. This case is a faithful proxy.
+
+**It is FASTER than the 3D case's 3.56×, and an earlier draft of this file
+predicted the opposite.** That prediction was wrong, and the reasoning behind it
+was backwards: it argued the MPI reduce would be a larger share of a smaller
+problem. The reduce does not scale with problem size, it scales with RANK COUNT
+— 0.3% of the step on 2 ranks against 3.4% on 25. Fewer ranks means *less*
+communication, not relatively more. Expect the gap to narrow, not widen, as you
+add ranks here.
+
+What genuinely does not transfer: absolute s/step (130,005 points against
+2,106,081), and these numbers were taken on a 4-core shared box at 2 ranks, so
+they are contended. Run-to-run variation on the 3D cluster measured ~13% between
+two identical runs; expect the same or worse on a desktop, and run each arm
+twice before believing a step time. The per-term ratios are 5–20× and survive
+it.
+
+`rhs!` and `f_imp` are untouched by any of this and are 38.4% of the Schur step
+here (36.5% in 3D). That is the ceiling on anything further.
 
 **Read the profile split, not just the step time.** That is the part that
 transfers. `JEXPRESSO_HEVI_PROFILE=1` (which `run_rtb2d.sh` sets) prints the
