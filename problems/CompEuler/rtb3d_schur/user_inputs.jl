@@ -7,18 +7,43 @@ function user_inputs()
     #
     # WHY THIS MESH. The column preconditioner is exact for the vertical
     # acoustic operator and does nothing for the horizontal one, so what it
-    # leaves for the Krylov iteration -- and therefore how much the Schur
-    # reduction can save -- scales with the grid's acoustic anisotropy h_x/h_z.
-    # Swept on the mock at production stiffness
-    # (test/hevi/test_schur_precond.jl):
+    # leaves for the Krylov iteration scales with the grid's acoustic
+    # anisotropy h_x/h_z. 20 x 20 x 80 over 10 km cubed is h_x = h_y = 500 m
+    # against h_z = 125 m, i.e. 4:1, and at nop = 4 the smallest LGL gaps are
+    # 86.4 m and 21.6 m.
     #
-    #      h_x/h_z    H iterations   full   ratio
-    #        1:1           11          23   1.66x
-    #        4:1            3           8   2.67x   <-- this mesh
-    #       16:1            2           3   1.50x
+    # FIRST REAL MEASUREMENT, and it does not match the projection this case was
+    # built on. On the 10 x 10 x 40 variant (same 4:1, 270,681 points), one rank,
+    # Delta t = 0.6, CFL_h = 0.526, rtol 1e-8:
     #
-    # 20 x 20 x 80 elements over 10 km cubed is h_x = h_y = 500 m, h_z = 125 m,
-    # i.e. 4:1, and at nop = 4 the smallest LGL gaps are 86.4 m and 21.6 m.
+    #                    s/step (steady)   cold iterations   total wall
+    #     five-field          19.46              20            225.8 s
+    #     scalar Schur        16.15              61            196.9 s
+    #                        -> 1.21x
+    #
+    # The reduction IS faster, and for the opposite reason to the one predicted.
+    # test/hevi/test_schur_precond.jl swept the mock at production stiffness and
+    # measured H needing FEWER iterations than the five-field operator -- 2.67x
+    # fewer at this very anisotropy. On a real mesh it needs 3x MORE (61 against
+    # 20). The whole gain comes from per-iteration cost, where one implicit field
+    # instead of five cuts the matvec, the gather/scatter and the
+    # orthogonalisation, and it is large enough to absorb tripling the count.
+    #
+    # So the mock's ITERATION RATIO did not transfer -- it inverted. Two likely
+    # reasons, neither yet tested: this run sits at 18% of the stability limit
+    # where the five-field system is already easy at 20 iterations, while the
+    # mock sweep sat at lam*rate = 10.7; and production preconditions [1, 4, 5]
+    # rather than all five, because hevi_choose_vars drops rho_u and rho_v as
+    # exactly the identity on a z-aligned mesh, so the five-field preconditioner
+    # may capture its operator more completely than the scalar one captures H.
+    #
+    # TREAT THE 1.21x AS A LOWER BOUND ON ONE RANK AND NOTHING MORE. Two effects
+    # pull opposite ways and neither is small: one rank has no MPI reduce at all,
+    # which is the one part of the stage solve the reduction cannot shrink (6.8%
+    # on the 64x64x60 profile), so its absence FLATTERS Schur; and CFL_h = 0.526
+    # is half what the full mesh runs at, which keeps the stage solve a smaller
+    # share of the step and so UNDERSTATES it. The number that settles it is the
+    # full mesh on 25 ranks.
     #
     # HOW TO RUN THE A/B
     #
@@ -121,9 +146,9 @@ function user_inputs()
         # which does not scale), and per solve the iteration count falls by the
         # factor in the header.
         #
-        # NOT YET MEASURED AT PRODUCTION SCALE. Every number quoted in this
-        # file is either that profile or a mock of a few hundred degrees of
-        # freedom at p = 2. This case is how that gets settled.
+        # Measured 1.21x per step on the small variant (see the header), on the
+        # per-iteration saving alone -- the iteration count went the WRONG way,
+        # 61 against 20. Not yet measured on the full mesh or on many ranks.
         #-----------------------------------------------------------------------
         :imex_schur           => parse(Bool, get(ENV, "DBG_SCHUR", "false")),
 
