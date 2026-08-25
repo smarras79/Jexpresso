@@ -96,6 +96,21 @@ function build_imex3d_schur(params, topo::ColumnTopology, comm::MPI.Comm, inputs
     restart = Int(get(inputs, :imex_restart, 20))
     maxiter = Int(get(inputs, :imex_maxiter, 200))
 
+    # :imex_schur_kernel -- the bespoke scalar sweeps for H, DEFAULT ON.
+    #
+    # Off, `schur_H!` is two full five-field `hevi_apply_A!` calls. That is the
+    # reference form and it is correct; it is also 2.05x one application, which
+    # is why the first production profile of this path showed the matvec 46%
+    # SLOWER than the five-field solve it replaced even while every other term
+    # fell by 5-12x. On, the same H costs 0.36x one application -- 5.8x less --
+    # and agrees with the reference to 1.9e-16 (test/hevi/test_schur_kernel.jl).
+    #
+    # The key exists so that a deck seeing a suspicious answer can go back to
+    # the reference form WITHOUT editing source, and get a second, independent
+    # statement of the same operator to compare against. That is the only thing
+    # it is for; there is no accuracy reason to turn it off.
+    usekern = Bool(get(inputs, :imex_schur_kernel, true))
+
     ws = GMRESWorkspace(npoin, 1, inner; m = restart, maxiter = maxiter,
                         rtol = rtol, atol = 1.0e-30)
 
@@ -104,7 +119,12 @@ function build_imex3d_schur(params, topo::ColumnTopology, comm::MPI.Comm, inputs
                                     lwall_flux = lwall_flux) : nothing
 
     P = zeros(Float64, npoin); R = zeros(Float64, npoin)
-    return IMEX3DSchur(SchurState(npoin, op.nimp), pc, ws, P, R,
+    # The PRECONDITIONER deliberately gets no kernel: it runs on a vertical-only
+    # operator, and the kernel is the full 3D form. `_schur_kernel` in schur.jl
+    # turns that combination into an error rather than a quiet wrong band.
+    kern = usekern ? SchurKernel(params) : nothing
+
+    return IMEX3DSchur(SchurState(npoin, op.nimp; kern = kern), pc, ws, P, R,
                        reshape(P, npoin, 1), reshape(R, npoin, 1))
 end
 

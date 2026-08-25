@@ -63,6 +63,39 @@
  checked against THIS.
 =============================================================================#
 
+# `SchurWork` names `SchurKernel` in a field type, so schur_kernel.jl must be
+# loaded before this file is. Jexpresso.jl includes them in that order; the
+# standalone tests under test/hevi and test/imex3d each list their own includes
+# and several predate the kernel, so they would fail at PARSE time with a bare
+# `UndefVarError: SchurKernel` that says nothing about the cause. Pull it in
+# here when it is not already there -- inside the package the guard is false and
+# nothing is included twice.
+isdefined(@__MODULE__, :SchurKernel) ||
+    include(joinpath(@__DIR__, "schur_kernel.jl"))
+
+"""
+    _schur_kernel(work, op) -> SchurKernel or nothing
+
+The kernel to use for `work` on `op`, or `nothing` to take the reference path.
+
+THE `op.full` CHECK IS NOT DEFENSIVE PADDING. schur_kernel.jl computes the FULL
+three-dimensional sweeps -- nine derivative chains for the divergence, three for
+the gradient -- and has no vertical-only branch. Handed a `full = false`
+operator it would happily return the full-3D answer, and the caller that builds
+such an operator is `build_schur_column_precond`: the result would be a
+preconditioner band for the wrong operator. That still CONVERGES, just to a
+worse iteration count, so it would show up as a performance regression nobody
+could explain rather than as a wrong answer. An error is loud; a silent
+fallback to the reference form would hide the misuse just as well.
+"""
+@inline function _schur_kernel(work, op)
+    work.kern === nothing && return nothing
+    op.full || error("schur: the bespoke kernel is the FULL 3D form and has no ",
+                     "vertical-only branch, but it was handed an operator with ",
+                     "full = false. Build that SchurState without `kern`.")
+    return work.kern
+end
+
 """
     schur_grad!(gx, gy, gz, P, params, op, work)
 
@@ -75,8 +108,9 @@ Read straight off block row 2, which `test_schur_blocks.jl` pins:
 non-zero is `Theta = P./beta` are exactly `-Grad[P]`.
 """
 function schur_grad!(gx, gy, gz, P, params, op, work)
-    if work.kern !== nothing
-        return schur_grad_fast!(gx, gy, gz, P, params, op, work.kern)
+    kern = _schur_kernel(work, op)
+    if kern !== nothing
+        return schur_grad_fast!(gx, gy, gz, P, params, op, kern)
     end
     V, W = work.V, work.W
     fill!(V, 0.0)
@@ -255,8 +289,9 @@ non-zero is the momentum is exactly minus what we want. `W` is applied inside
 the kernel, which is why it does not appear here.
 """
 function schur_divW!(out, vx, vy, vz, params, op, work)
-    if work.kern !== nothing
-        return schur_divW_fast!(out, vx, vy, vz, params, op, work.kern)
+    kern = _schur_kernel(work, op)
+    if kern !== nothing
+        return schur_divW_fast!(out, vx, vy, vz, params, op, kern)
     end
     V, W = work.V, work.W
     fill!(V, 0.0)

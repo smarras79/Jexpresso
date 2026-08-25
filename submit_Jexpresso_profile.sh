@@ -7,6 +7,7 @@
 # THE DIFFERENCE, in full:
 #   JEXPRESSO_HEVI_PROFILE=1   print the per-step cost breakdown
 #   DBG_SCHUR                  which stage solve to run -- THE A/B, see below
+#   DBG_SCHUR_KERN             which form of the scalar matvec (default 1, fast)
 #   DBG_TEND=45.0              75 steps at the deck's dt = 0.6 s, then stop
 #   DBG_RTOL / DBG_RESTART     pinned so both arms solve to the same tolerance
 #   CASE                       CompEuler/rtb3d_schur
@@ -319,6 +320,21 @@ case "${1:-}" in
 esac
 export DBG_SCHUR="${DBG_SCHUR:-0}"
 
+# WHICH FORM OF THE SCALAR MATVEC. Default on; only meaningful with DBG_SCHUR=1.
+#
+#   sbatch submit_Jexpresso_profile.sh full                    five fields
+#   sbatch submit_Jexpresso_profile.sh schur                   Schur, fast H
+#   DBG_SCHUR_KERN=0 sbatch submit_Jexpresso_profile.sh schur   Schur, reference H
+#
+# The third arm is what the first cluster profile of the Schur path actually
+# measured, before the kernel existed: reference H is two full five-field
+# operator applications, so the scalar matvec cost 2.05x ONE application and
+# came out slower than the five-field matvec it replaced, wiping out a 12.3x
+# drop in orthogonalisation and a 1.92x drop in iteration count. Keeping it
+# runnable is what separates "the reduction is sound" from "the matvec is fast"
+# in the next set of numbers.
+export DBG_SCHUR_KERN="${DBG_SCHUR_KERN:-1}"
+
 # The rtb3d_schur deck's own defaults, restated here so both arms are pinned to
 # them and neither can pick up a different tolerance from an edited deck. 1e-8
 # is tight enough that the stage solve is not the leading error term against a
@@ -557,6 +573,9 @@ launch "${JULIA_FLAGS[@]}" -e '
 echo "--- Setup complete, launching $NTASKS ranks (PROFILE PROBE) ---"
 echo "    case                      : $EQS / $CASE"
 echo "    stage solve               : DBG_SCHUR=$DBG_SCHUR  ($([ "$DBG_SCHUR" = "1" ] && echo "SCALAR Schur, Np unknowns" || echo "five-field, 5*Np unknowns"))"
+if [ "$DBG_SCHUR" = "1" ]; then
+echo "    Schur matvec              : DBG_SCHUR_KERN=$DBG_SCHUR_KERN  ($([ "$DBG_SCHUR_KERN" = "1" ] && echo "bespoke scalar sweeps, ~0.36x one 5-field apply" || echo "REFERENCE form, ~2x one 5-field apply"))"
+fi
 echo "    DBG_TEND / rtol / restart  : $DBG_TEND s (75 steps at dt=0.6) / $DBG_RTOL / $DBG_RESTART"
 echo "    JEXPRESSO_HEVI_PROFILE    : $JEXPRESSO_HEVI_PROFILE  (every $JEXPRESSO_HEVI_PROFILE_EVERY steps, first $JEXPRESSO_HEVI_PROFILE_SKIP skipped)"
 echo "    JEXPRESSO_PRECOMPILE_PASS : $JEXPRESSO_PRECOMPILE_PASS"
@@ -568,7 +587,7 @@ echo "    started                   : $(date)"
 # above reach the ranks under either launcher here. Under OpenMPI's mpirun they
 # would NOT -- pass them explicitly:
 #   mpirun -x JULIA_PKG_PRECOMPILE_AUTO -x JEXPRESSO_PRECOMPILE_PASS \
-#          -x JEXPRESSO_HEVI_PROFILE -x DBG_TEND -x DBG_SCHUR \
+#          -x JEXPRESSO_HEVI_PROFILE -x DBG_TEND -x DBG_SCHUR -x DBG_SCHUR_KERN \
 #          -x DBG_RTOL -x DBG_RESTART ...
 # Without them the probe silently prints nothing and the run is a full-length
 # production run: DBG_TEND would not reach the ranks either.

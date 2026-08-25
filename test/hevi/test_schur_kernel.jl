@@ -143,6 +143,28 @@ say("\n=== Schur kernel vs the reference form, $NR rank(s), p=$P ===")
         @test e < 1.0e-12
     end
 
+    @testset "the kernel refuses a vertical-only operator" begin
+        # The guard in schur.jl is the only thing standing between
+        # `build_schur_column_precond` and a preconditioner band assembled from
+        # the FULL 3D operator: the kernel has no vertical-only branch, so
+        # without the guard it would return the full answer and the band would
+        # be for the wrong operator -- which still converges, just worse, so it
+        # would surface as an unexplained slowdown rather than a wrong answer.
+        # Asserted, because a guard nobody exercises is a comment.
+        opv = build_hevi_operator(params, topo, [1,2,3,4,5]; lwall_flux=true,
+                                  full=false, theta_advective=true)
+        @test !opv.full
+        @test_throws ErrorException schur_grad!(zeros(N), zeros(N), zeros(N),
+                                                probe(51), params, opv, stfast.w)
+        @test_throws ErrorException schur_divW!(zeros(N), probe(52), probe(53),
+                                                probe(54), params, opv, stfast.w)
+        # ... and the reference path still works there, which is what the
+        # preconditioner relies on.
+        g = (zeros(N), zeros(N), zeros(N))
+        schur_grad!(g..., probe(51), params, opv, stref.w)
+        @test MPI.Allreduce(maximum(abs, g[3]), MPI.MAX, COMM) > 1.0e-8
+    end
+
 if NR == 1
     @testset "and it is actually faster" begin
         # MINIMUM OF SEVERAL BATCHES, not one batch's mean. On a shared box the

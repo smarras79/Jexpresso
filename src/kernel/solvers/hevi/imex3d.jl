@@ -1278,6 +1278,15 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
         @printf(" │      (:imex_schur) -- Np unknowns in P = beta*Theta, the five\n")
         @printf(" │      fields recovered pointwise afterwards. The Theta row is\n")
         @printf(" │      ADVECTIVE, which the reduction requires.\n")
+        # Worth a line of its own: with the kernel OFF the matvec is ~2x one
+        # five-field application and the reduction LOSES on the matvec even
+        # though it wins on every other term, so a profile read without knowing
+        # which form is in use is uninterpretable.
+        @printf(" │      matvec: %s\n",
+                schur.st.w.kern !== nothing ?
+                  "bespoke scalar sweeps (~0.36x one 5-field apply)" :
+                  string("reference form -- two 5-field applies, ~2x one ",
+                         "(:imex_schur_kernel => false)"))
     end
     # `pc === nothing` does NOT mean "unpreconditioned" once the Schur path is
     # on -- there the preconditioner lives on the scalar system instead, and

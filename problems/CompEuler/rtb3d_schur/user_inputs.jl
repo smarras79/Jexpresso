@@ -152,6 +152,22 @@ function user_inputs()
         #-----------------------------------------------------------------------
         :imex_schur           => parse(Bool, get(ENV, "DBG_SCHUR", "false")),
 
+        # WHICH FORM OF H THE SCALAR MATVEC USES. Default on, and there is no
+        # accuracy reason to turn it off: the two forms agree to 1.9e-16
+        # (test/hevi/test_schur_kernel.jl).
+        #
+        # Off, `schur_H!` is two full five-field operator applications -- the
+        # reference form, correct by construction because it reuses the verified
+        # operator, and 2.05x the cost of ONE application. That is what the
+        # first cluster profile of this path measured, and it is why the matvec
+        # came out 46% slower than the five-field solve it replaced even though
+        # the orthogonalisation fell 12.3x, the banded solve 6.9x and the MPI
+        # reduce 8.9x. On, the same H costs 0.36x one application.
+        #
+        # DBG_SCHUR_KERN=0 with DBG_SCHUR=1 is therefore the third leg of the
+        # A/B: it separates "the reduction is sound" from "the matvec is fast".
+        :imex_schur_kernel    => parse(Bool, get(ENV, "DBG_SCHUR_KERN", "true")),
+
         :implicit_vdiff       => _vdiff,
         :lcfl_report          => true,
         :lcfl_report_every    => parse(Int, get(ENV, "DBG_CFL_EVERY", "0")),

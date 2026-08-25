@@ -78,6 +78,12 @@ Its own storage rather than a view into `op.rhs_el`: the operator's scratch is
 in fact free while these run, but borrowing it would couple this file to the
 promise that no `hevi_apply_A!` is ever in flight around it, and the whole
 workspace is ~5 MB per rank against a Krylov basis of 85 MB.
+
+The workspace holds no reference-state coefficients -- no `beta`, no
+`thetabar`, no `grad(thetabar)`. Both sweeps are pure metric-and-mask: the
+gradient of a scalar and the free-slip-masked divergence of a vector. Nothing
+here goes stale when `ark_relinearize!` refreshes the operator, which is why
+that path mutates the operator in place and never rebuilds this.
 """
 struct SchurKernel
     rel3::Array{Float64, 5}      # (nelem, ngl, ngl, ngl, 3)  gradient

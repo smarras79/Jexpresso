@@ -51,9 +51,18 @@ points), which fits on one rank.
 ## Running it
 
 ```bash
-DBG_SCHUR=0 sbatch submit_Jexpresso_profile.sh    # five fields, 5·Np unknowns
-DBG_SCHUR=1 sbatch submit_Jexpresso_profile.sh    # scalar Schur, Np unknowns
+sbatch submit_Jexpresso_profile.sh full                    # five fields, 5·Np unknowns
+sbatch submit_Jexpresso_profile.sh schur                   # scalar Schur, Np unknowns
+DBG_SCHUR_KERN=0 sbatch submit_Jexpresso_profile.sh schur  # Schur, reference matvec
 ```
+
+The positional argument is preferred to `DBG_SCHUR=1 sbatch …`: a site that
+defaults `sbatch` to `--export=NONE` drops the variable and runs the baseline
+under a banner saying otherwise. A typo in the argument exits 2 rather than
+guessing.
+
+The third line is the diagnostic arm, and it is what the *first* cluster
+profile of this path measured. See below.
 
 **25 ranks, one node** (`pick_nranks.jl`: a 5×5 rank grid over the 20×20
 columns, 16 columns and 84,243 points each). Keep both arms at the same count:
@@ -82,6 +91,48 @@ orthogonalisation, which on the 64×64×60 profile are 73% of the stage solve
 against 6.8% for the non-scaling MPI reduce. A rise in iterations/solve under
 `DBG_SCHUR=1` is the expected result, not a fault. Read the step time.
 
+### What 25 ranks on the full mesh actually gave
+
+The reduction did everything it was designed to do except the one term that
+dominates:
+
+| per step, 25 ranks, 20×20×80, CFL_h 1.05 | five-field | Schur | |
+|---|---|---|---|
+| matvec | 4.191 | 6.104 | **0.69× — worse** |
+| preconditioner | 1.688 | 0.342 | 4.9× better |
+| banded solve | 1.495 | 0.217 | 6.9× better |
+| orthogonalise | 2.110 | 0.171 | 12.3× better |
+| MPI reduce | 0.507 | 0.057 | 8.9× better |
+| warm iterations/solve | 23.1 | 12.1 | 1.92× fewer |
+| **step** | **9.581** | **9.152** | 1.047× |
+
+Note the iteration count went the *right* way here, 1.92× fewer — the opposite
+of the one-rank result above, and the reason that table is now only of
+historical interest. Warm-started production and a cold-start self-check
+disagree about this path; production is the one that counts.
+
+The matvec was the problem. `schur_H!` was built out of two full five-field
+`hevi_apply_A!` calls — deliberately, to reuse verified code — so the *scalar*
+matvec cost 2.05× **one** five-field application. Halving the iterations and
+then doubling the cost of each is a wash, and it ate a 12.3× win everywhere
+else.
+
+`schur_kernel.jl` replaces those two calls with the two sweeps H actually
+needs. Measured against the reference form it replaces, and agreeing with it to
+1.9e-16:
+
+| | |
+|---|---|
+| H, reference form | 2.09× one `hevi_apply_A!` |
+| H, kernel | 0.36× one `hevi_apply_A!` |
+| **whole stage solve** | **4.06× faster** (`tools/schur_kernel_e2e.jl`) |
+
+The 4.06× is end-to-end over a complete `imex3d_solve_schur!` at identical
+iteration counts, not the matvec alone. **What it does to the step on 25 ranks
+is not yet measured** — that is what the `full` / `schur` pair above is for.
+The step will gain less than 4.06× because `rhs!`, the explicit stages and the
+DSS outside the stage solve are untouched by any of this.
+
 **Treat 1.21× as a lower bound from one rank and nothing more.** Two effects
 pull opposite ways: one rank has no MPI reduce at all, which *flatters* Schur;
 and that variant's CFL_h = 0.526 is half the full mesh's, keeping the stage
@@ -102,9 +153,12 @@ line comes from inside the ranks, in the setup report:
 
 ```
 Stage solve: preconditioned GMRES on the SCALAR SCHUR system
+    ...
+    matvec: bespoke scalar sweeps (~0.36x one 5-field apply)
 ```
 
-versus `... on all 5 fields`.
+versus `... on all 5 fields`. The `matvec:` line says which form of H is in
+use, which a profile cannot be read without.
 
 **The two arms are different splittings**, not two solvers for one problem.
 `:imex_schur` forces the advective Θ row, without which the elimination does not
