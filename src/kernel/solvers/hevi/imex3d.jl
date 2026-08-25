@@ -974,6 +974,50 @@ function build_imex3d(params, inputs)
                                      vdiff = lvdiff) : opv
         vfast = hevi_verify_fast(params, op, opvchk, topo)
 
+        # 1b. THE VERTICAL COLUMN SPECTRUM, on the path that has no five-field
+        #     preconditioner to carry it.
+        #
+        # This is not a nicety. It supplies two things nothing else does:
+        #
+        #   * kappa = max|Im lambda| / (c/dz_min), the SEM correction to the
+        #     analytic acoustic rate. imex3d_rates falls back to kappa = 1 when
+        #     the spectrum is missing, and everything downstream -- the explicit
+        #     and implicit rates, the wedge, "neutral up to dt = ..." -- is then
+        #     OPTIMISTIC by that factor. Measured on the LES bubble it is 1.44,
+        #     and the two stage solves reported 69% and 42% OF THE SAME LIMIT on
+        #     the same mesh and state. A stability margin that flatters itself by
+        #     44% is worse than none, because it will be believed.
+        #
+        #   * max(Re)/max|Im|, which is the only check that the implicit operator
+        #     is hyperbolic at all. A positive real part is a growing mode inside
+        #     the half the scheme trusts to be neutral.
+        #
+        # Assembled and thrown away: `assemble_column_band` without the
+        # `gbtrf!`, so this costs the probe and one eigendecomposition, and none
+        # of the factor storage the five-field path keeps for the whole run. It
+        # is paid only under :imex_verify, and it is the same band that path
+        # builds anyway.
+        if opv === nothing && isnan(spec[1])
+            _spmax = Int(get(inputs, :imex_spectrum_maxdim, 1500))
+            _nspec = opvchk.nimp * topo.nlev
+            if _nspec <= _spmax
+                hevi_trace("build_imex3d: probing the vertical operator for the ",
+                           "column spectrum (diagnostic only, discarded after)")
+                _owner, _own = assign_column_owners(topo, comm)
+                _ccs = build_column_comm(topo, _owner, _own, comm, opvchk.nimp)
+                _ABs, _kls, _kus, _ns =
+                    assemble_column_band(params, opvchk, _ccs, topo, gdt)
+                spec = hevi_column_spectrum(_ABs, _kls, _kus, _ns, gdt, params,
+                                            topo, opvchk)
+                _ABs = nothing; _ccs = nothing
+            elseif rank == 0
+                print(" (column spectrum skipped: ", _nspec, " x ", _nspec,
+                      " eigensolve exceeds :imex_spectrum_maxdim = ", _spmax,
+                      "; kappa falls back to 1 and the stability limit below is ",
+                      "OPTIMISTIC)")
+            end
+        end
+
         # 2. the stage solve itself.
         V = imex_verify_solve(params, imex, gdt)
         sres = V.rel2; siter = V.iters; ssv = V.sv
