@@ -2,15 +2,31 @@
 #=============================================================================
 #  Jexpresso profile run.
 #
-#      sbatch submit_Jexpresso_profile.sh schur      scalar Schur stage solve
-#      sbatch submit_Jexpresso_profile.sh full       five-field stage solve
+#      sbatch submit_Jexpresso_profile.sh
+#
+#  NO ARGUMENTS. Which stage solve runs is the DECK's business, not this
+#  file's: it is `limex_schur` in the case's user_inputs.jl, on by default.
+#  This script sets resources and runs the case.
 #
 #  EDIT THE TWO BLOCKS MARKED "EDIT ME". Nothing else in this file needs
 #  changing to run a different problem, on a different rank count, on a
 #  different cluster.
 #
-#  The argument is REQUIRED and a typo exits 2: half an A/B that turns out to
-#  be two copies of the same arm looks exactly like a result.
+#  For a one-off A/B without editing the deck, set the variable in the
+#  environment and it is passed through:
+#
+#      DBG_SCHUR=0 sbatch submit_Jexpresso_profile.sh     # five-field arm
+#
+#  WHAT STILL GUARDS THE A/B. This used to demand `schur` or `full` as an
+#  argument so that a forgotten word could not silently run the wrong arm. The
+#  guard is not lost by dropping it: the ranks print which stage solve they
+#  built, from inside the run --
+#
+#      Stage solve: preconditioned GMRES on the SCALAR SCHUR system
+#      Stage solve: preconditioned GMRES on all 5 fields
+#
+#  -- and that line, not anything this script echoes, is the authoritative
+#  record of what was measured.
 #=============================================================================
 
 #--------------------------------------------------------------- EDIT ME (1) -
@@ -62,22 +78,26 @@ MODULES=(Julia/1.11.9 GCC MPICH)
 #=============================================================================
 set -u
 
-#-- 1. which stage solve --------------------------------------------------
-case "${1:-}" in
-    schur) SCHUR=1 ;;
-    full)  SCHUR=0 ;;
-    *)
-        echo "ERROR: give exactly one of: schur | full" >&2
-        echo "       (got '${1:-<nothing>}'). Refusing to guess: running the" >&2
-        echo "       wrong arm looks exactly like a result." >&2
-        exit 2 ;;
-esac
+# An argument is no longer accepted. Refuse one rather than ignore it: a
+# leftover `sbatch ... schur` from muscle memory should not look like it did
+# something.
+if [ $# -gt 0 ]; then
+    echo "ERROR: this script takes no arguments (got '$1')." >&2
+    echo "       Which stage solve runs is set in the deck --" >&2
+    echo "       limex_schur in problems/$EQS/$CASE/user_inputs.jl, on by" >&2
+    echo "       default. For a one-off five-field run:" >&2
+    echo "           DBG_SCHUR=0 sbatch $(basename "$0")" >&2
+    exit 2
+fi
 
 for m in "${MODULES[@]}"; do module load "$m" || exit 1; done
 cd "$ROOT" || exit 1
 
 #-- 2. deck settings, passed through the environment ----------------------
-export DBG_SCHUR="$SCHUR"
+# DBG_SCHUR is NOT set here -- the deck owns it. Passed through only when the
+# caller put it in the environment, on the same terms as rtol/restart/maxiter
+# below.
+[ -n "${DBG_SCHUR:-}" ] && export DBG_SCHUR
 [ -n "$TEND" ] && export DBG_TEND="$TEND"
 [ -n "$MESH" ] && export DBG_MESH="$MESH"
 # THE LAUNCHER DOES NOT SET rtol OR restart. It used to default them to 1.0e-8
@@ -195,8 +215,14 @@ launch "${JULIA_FLAGS[@]}" -e '
     exit $rc; }
 
 #-- 7. run ----------------------------------------------------------------
-[ "$SCHUR" = 1 ] && arm_desc="SCALAR Schur, Np unknowns" \
-                 || arm_desc="five-field, 5*Np unknowns"
+# This shell cannot know what the deck chose, so it does not pretend to: it
+# reports an override if one was given and defers otherwise. The ranks' own
+# setup report is the authoritative line -- see the header.
+case "${DBG_SCHUR:-}" in
+    1) arm_desc="SCALAR Schur, Np unknowns   (forced by DBG_SCHUR=1)" ;;
+    0) arm_desc="five-field, 5*Np unknowns   (forced by DBG_SCHUR=0)" ;;
+    *) arm_desc="<deck decides -- see 'Stage solve:' in the run's own output>" ;;
+esac
 
 echo "--- Launching $NTASKS ranks ---"
 echo "    case          : $EQS / $CASE${MESH:+  (mesh $MESH)}"
