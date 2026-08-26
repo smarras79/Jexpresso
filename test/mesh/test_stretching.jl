@@ -56,26 +56,31 @@ function build(nz_el, ngl, ztop)
     nlev  = length(zs)
     npoin = nlev
     coords = zeros(3, npoin); coords[3, :] .= zs
+    # connijk must be filled for EVERY (i,j,k): the element-aware stretch types
+    # loop over all of them, and a zero entry indexes coords at 0. This is one
+    # vertical column, so every (i,j) maps to the same stack -- degenerate in x
+    # and y, which is fine because the stretch only touches z.
     conn = zeros(Int, nz_el, ngl, ngl, ngl)
-    for e = 1:nz_el, k = 1:ngl
-        conn[e, 1, 1, k] = (e - 1) * (ngl - 1) + k
+    for e = 1:nz_el, i = 1:ngl, j = 1:ngl, k = 1:ngl
+        conn[e, i, j, k] = (e - 1) * (ngl - 1) + k
     end
     MiniMesh(npoin, nz_el, ngl, ztop, ztop, coords,
              zeros(npoin), zeros(npoin), copy(zs), conn)
 end
 
-# The deck's own settings, verbatim.
-inputs = Dict{Symbol,Any}(
+deck(kind) = Dict{Symbol,Any}(
     :stretch_factor       => 1.15,
-    :stretch_type         => "fixed_first_twoblocks_strong",
-    :first_zelement_size  => 10.0,
+    :stretch_type         => kind,
+    :first_zelement_size  => 10.0,      # the EFFECTIVE (node) resolution wanted
     :zlevel_transition    => 2000.0)
 
 const NZ, NGL, ZTOP = 60, 5, 5000.0
+const ZT = 2000.0
+const DZ_WANT = 10.0
+
 m = build(NZ, NGL, ZTOP)
 z_before = copy(m.coords[3, :])
-
-stretch_mesh_3D!(m, inputs, m.npoin)
+stretch_mesh_3D!(m, deck("fixed_first_twoblocks_strong"), m.npoin)
 
 @testset "vertical stretching" begin
 
@@ -104,4 +109,54 @@ stretch_mesh_3D!(m, inputs, m.npoin)
         @test m.coords[3, 1]   ≈ 0.0   atol = 1e-9
         @test m.coords[3, end] ≈ ZTOP  atol = 1e-6
     end
+end
+
+
+#-----------------------------------------------------------------------------
+# THE PROFILE THE DECK ASKS FOR: ~10 m effective resolution from the ground to
+# zlevel_transition, expansion above it. That is `two_block uniformish`, which
+# is element-aware -- it lays down whole elements of `first_zelement_size *
+# (ngl-1)` up to the transition, ramps over the next block, and finishes
+# uniform-coarse. `fixed_first_twoblocks_strong` above does NOT do this: it
+# power-law stretches BELOW the transition and goes uniform above.
+#-----------------------------------------------------------------------------
+mu = build(NZ, NGL, ZTOP)
+zu_before = copy(mu.coords[3, :])
+stretch_mesh_3D!(mu, deck("two_block uniformish"), mu.npoin)
+
+@testset "two_block uniformish: uniform below the transition, expanding above" begin
+    z = mu.coords[3, :]
+    d = diff(z)
+
+    @test all(>(0), d)                                   # monotone
+    @test z[1] ≈ 0.0    atol = 1e-9
+    @test z[end] ≈ ZTOP atol = 1e-6                      # domain filled exactly
+    @test maximum(abs, mu.z .- z) == 0.0                 # both copies in step
+
+    # -- the requirement, stated as a measurement -----------------------------
+    below = z .<= ZT + 1e-9
+    nb    = count(below)
+    # effective resolution below the transition: the mean node spacing there,
+    # which is what "10 m effective" means for an LGL element (the within-
+    # element gaps are 0.1727h, 0.3273h, 0.3273h, 0.1727h and average h/4).
+    dz_eff = ZT / (nb - 1)
+    @printf("  below %.0f m: %d nodes, effective dz = %.2f m (wanted %.1f)\n",
+            ZT, nb, dz_eff, DZ_WANT)
+    @test isapprox(dz_eff, DZ_WANT; rtol = 0.05)
+
+    # uniform below: every element down there is the same size
+    d_below = d[1:nb-1]
+    span = maximum(d_below) / minimum(d_below)
+    @printf("  below: max/min node spacing = %.3f (LGL structure only, not growth)\n", span)
+    # 0.3273/0.1727 = 1.895 is the LGL ratio WITHIN an element; anything much
+    # above that means the elements themselves are growing where they should not.
+    @test span < 2.0
+
+    # -- and it expands above ------------------------------------------------
+    above = .!below
+    d_above = diff(z[above])
+    @printf("  above %.0f m: first %.1f m -> last %.1f m (%.1fx)\n",
+            ZT, d_above[1], d_above[end], d_above[end] / d_above[1])
+    @test d_above[end] > d_above[1]                      # genuinely expanding
+    @test maximum(d_above) > 5 * dz_eff                  # and by a useful factor
 end

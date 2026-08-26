@@ -1,3 +1,40 @@
+"""
+    warn_if_stretch_inverts(n, first_cell_size, sigma_1, ngl, rank)
+
+The `fixed_first*` types map z = ztop*(sigma/ztop)^n. n > 1 concentrates nodes
+near the ground; n < 1 does the OPPOSITE, and silently -- the run completes on
+a grid coarser at the surface than the uniform one it started from.
+
+n > 1 requires first_cell_size < sigma_1, and sigma_1 is the smallest positive
+z in the ORIGINAL grid, i.e. the smallest LGL NODE gap (0.1727*h for nop=4),
+not the element size. These branches scale the requested resolution up by
+(ngl-1) first, on the reasoning that "LGL points will scale it down again" --
+which would hold against an element size and does not hold against a node gap.
+So a perfectly reasonable-looking deck can land on n < 1: LESICP2 asking for
+10 m on a 5000 m / 60-element column gets first_cell_size = 40 m against
+sigma_1 = 14.39 m, hence n = 0.83 and a grid that coarsens downwards.
+
+This does not change the geometry -- decks that have been tuned around the
+current behaviour keep it -- it just stops the inversion being silent. For a
+uniform high-resolution layer below a transition, "two_block uniformish" is the
+type that does that directly, and it is element-aware so the (ngl-1) scaling is
+consistent there.
+"""
+function warn_if_stretch_inverts(n, first_cell_size, sigma_1, ngl, rank)
+    (n >= 1.0 || rank != 0) && return nothing
+    @warn string("stretch_type \"", "fixed_first*", "\": the computed exponent is ",
+                 round(n; sigdigits = 4), " < 1, so this mapping will COARSEN the grid ",
+                 "towards the ground rather than refine it. The requested first cell ",
+                 "(", round(first_cell_size / (ngl - 1); sigdigits = 4), " m, scaled to ",
+                 round(first_cell_size; sigdigits = 4), " m by x(ngl-1)) is larger than ",
+                 "the smallest existing node spacing (", round(sigma_1; sigdigits = 4),
+                 " m), and n > 1 requires it to be smaller. Either ask for a finer ",
+                 "resolution, or use :stretch_type => \"two_block uniformish\", which ",
+                 "lays down whole elements of the requested size up to ",
+                 ":zlevel_transition and stretches above it.") maxlog = 1
+    return nothing
+end
+
 function stretch_mesh!(mesh,inputs,npoin)
 
     comm = get_mpi_comm()
@@ -99,6 +136,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         # This is derived from the power-law equation: h = (σ/z_top)^n * z_top
         # Solving for n gives: n = log(h/z_top) / log(σ/z_top)
         computed_stretch_factor = log(first_cell_size / ztop) / log(sigma_1 / ztop)
+        warn_if_stretch_inverts(computed_stretch_factor, first_cell_size, sigma_1, mesh.ngl, rank)
 
         println("Desired resolution by the surface: ", first_cell_size/(mesh.ngl-1))
         println("Computed stretching factor: ", computed_stretch_factor)
@@ -175,6 +213,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         # 1. CALCULATE STRETCHING FACTOR for the bottom region.
         # This is the same calculation as before, ensuring the bottom layer meets the size criteria.
         computed_stretch_factor = log(first_cell_size / ztop) / log(sigma_1 / ztop)
+        warn_if_stretch_inverts(computed_stretch_factor, first_cell_size, sigma_1, mesh.ngl, rank)
         n = computed_stretch_factor # Use 'n' for brevity in formulas
 
         println("Desired resolution by the surface: ", first_cell_size/(mesh.ngl-1))
@@ -275,6 +314,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         
         # 1. CALCULATE STRETCHING FACTOR for the bottom region.
         n = log(first_cell_size / ztop) / log(sigma_1 / ztop)
+        warn_if_stretch_inverts(n, first_cell_size, sigma_1, mesh.ngl, rank)
         println("Desired resolution by the surface: ", first_cell_size/(mesh.ngl-1))
         println("Transition z-level: ", zlevel_transition)
         println("Computed stretching factor for bottom region: ", n)

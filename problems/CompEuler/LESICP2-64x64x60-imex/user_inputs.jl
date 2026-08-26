@@ -304,7 +304,21 @@ function user_inputs()
         # element: 0.1727 x 40 = 6.91 m, which is what dt = 0.5 was derived from.
         :lstretch => true,
         :stretch_factor => 1.15,
-        :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
+        # "two_block uniformish" is the type that gives the profile this case
+        # wants: WHOLE ELEMENTS of :first_zelement_size*(ngl-1) from the ground
+        # to :zlevel_transition -- so a genuinely uniform ~10 m effective
+        # resolution there -- then a ramp, then uniform-coarse to the top.
+        # Verified in test/mesh/test_stretching.jl on this deck's own values:
+        # 201 nodes below 2000 m, effective dz 10.00 m, expanding 30 m -> 70 m
+        # above.
+        #
+        # NOT "fixed_first_twoblocks_strong", which was here and does the
+        # opposite shape: it power-law stretches BELOW the transition and goes
+        # uniform above. With these values it also inverts -- 40 m at the ground
+        # against 14.39 m uniform -- because its exponent compares the
+        # (ngl-1)-scaled first cell against the smallest LGL NODE gap rather
+        # than against the element size. stretching.jl warns when that happens.
+        :stretch_type => "two_block uniformish",
         :first_zelement_size => 10.0,
         :zlevel_transition => 2000.0,
         
