@@ -52,7 +52,11 @@
 #SBATCH --nodes=4
 #SBATCH --ntasks-per-node=64
 #SBATCH --cpus-per-task=2
-#SBATCH --time=02:00:00
+# 71:59:00, not 2 hours. At dt = 0.5 the deck's tend of 10800 s is 21,600 steps
+# and the measured rate is ~3.7 s/step, i.e. around 22 h -- a 2 h limit killed
+# it about 9% in. Drop this back to something short only for a TEND-limited
+# probe run.
+#SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=3500M
 #
 #  Site settings -- set once for your cluster, then forget.
