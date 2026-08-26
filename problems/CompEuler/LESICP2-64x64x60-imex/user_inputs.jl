@@ -232,6 +232,25 @@ function user_inputs()
         #                   iterations/solve against 21.7 cold, same answer to
         #                   1.3e-10. DBG_WARM=0 to measure it here.
         :imex_warm_start      => parse(Bool, get(ENV, "DBG_WARM", "true")),
+
+        # :imex_schur       SOLVE THE SCALAR SYSTEM, not the five-field one.
+        #                   rho, rho_u, rho_v and rho_w are eliminated exactly
+        #                   and one Helmholtz equation in P = beta*Theta is
+        #                   solved over Np unknowns instead of 5*Np, then the
+        #                   five fields are rebuilt pointwise. It forces the
+        #                   ADVECTIVE Theta row, without which the elimination
+        #                   does not close on one scalar -- so this is a
+        #                   different SPLITTING, not just a different solver,
+        #                   differing from the flux form by 0.06%.
+        #
+        #                   Measured on CompEuler/rtb3d_schur (same 4:1
+        #                   anisotropy as this grid, 25 ranks): stage solve
+        #                   5.08x, step 3.56x, with 1.92x fewer iterations per
+        #                   solve. The gain scales with h_x/h_z, which is 4.0:1
+        #                   here -- the same ratio those numbers were taken at.
+        #
+        #                   DBG_SCHUR=0 runs the five-field solve for an A/B.
+        :imex_schur           => parse(Bool, get(ENV, "DBG_SCHUR", "true")),
         # :imex_restart     20 is right only while CFL_h = gamma*dt*c/h_x stays
         #                   below ~3. Above that, restarted GMRES(20) stops
         #                   converging -- measured on an isotropic grid at
@@ -247,7 +266,15 @@ function user_inputs()
         # the flow speeding up, at 11 extra Krylov vectors -- about 3 MB/rank at
         # 2048 ranks. The setup report prints CFL_h and its advised m.
         :imex_restart         => parse(Int, get(ENV, "DBG_RESTART", "30")),
-        :imex_maxiter         => parse(Int, get(ENV, "DBG_MAXITER", "200")),
+        # :imex_maxiter     A CAP, NOT A COST: it changes nothing when the solve
+        #                   converges inside it, so there is no reason to keep
+        #                   it tight. 200 was, and it is the wrong knob to be
+        #                   tight -- measured on rtb2d_schur at CFL_h = 2.28,
+        #                   GMRES(20) DOES converge, in 354 iterations, and a
+        #                   cap of 200 turned that into a setup-check failure
+        #                   whose message blamed the restart length. 600 is
+        #                   three restart cycles' worth of headroom at m = 30.
+        :imex_maxiter         => parse(Int, get(ENV, "DBG_MAXITER", "600")),
         # :none is there to MEASURE what the column preconditioner buys. On a
         # 20:1 mesh it is 25x in iterations, so do not run production with it.
         :imex_precond         => Symbol(get(ENV, "DBG_PRECOND", "column")),
