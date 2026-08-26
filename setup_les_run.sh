@@ -20,16 +20,19 @@ CASE="LESICP2-64x64x60-imex"        # problems/CompEuler/<CASE>
 
 for m in "${MODULES[@]}"; do module load "$m" || exit 1; done
 # ---------------------------------------------------------------------------
-# MESH: supply your own, or have gmsh build one.
+# MESH: supply your own (the default), or have gmsh build one.
 #
 # Wulver has no gmsh, so the normal workflow is to run gmsh on your laptop and
 # copy the .msh over. Set COARSE_MESH to that file and this script takes it
 # from there -- it reads the element counts and extents OUT OF THE FILE, so
 # there is nothing to keep in sync by hand.
 #
-# Leave COARSE_MESH empty to have the script write a .geo and call gmsh
-# itself (only works where gmsh is installed).
+# RUN_GMSH is OFF by default and must be turned on deliberately. Meshing is the
+# one step here that overwrites a file you may have spent effort producing, and
+# an empty COARSE_MESH is a likely typo -- so an unset mesh is now an error
+# that says so, rather than a silent decision to build a different one.
 # ---------------------------------------------------------------------------
+RUN_GMSH="no"               # "yes" to write a .geo and call gmsh (needs gmsh on PATH)
 COARSE_MESH=""              # e.g. "meshes/LESICP_16x16x15_10240mX10240mX5000m.msh"
 
 # TARGET_GRID and DOMAIN are used ONLY when COARSE_MESH is empty, i.e. when
@@ -77,15 +80,50 @@ NOP=$(awk -F'=>' '/^[[:space:]]*:nop[[:space:]]*=>/ {if (match($2,/[0-9]+/)) {pr
 CASEDIR="problems/$EQS/$CASE"
 [ -d "$CASEDIR" ] || { echo "ERROR: no such case directory: $CASEDIR" >&2; exit 1; }
 
+case "$RUN_GMSH" in
+    yes|YES|true|1)  RUN_GMSH=yes ;;
+    no|NO|false|0|"") RUN_GMSH=no ;;
+    *) echo "ERROR: RUN_GMSH must be yes or no; got '$RUN_GMSH'." >&2; exit 1 ;;
+esac
+
+# The two mesh sources are mutually exclusive, and BOTH ways of getting it
+# wrong are silent if not caught here: with neither set the script used to
+# generate a mesh nobody asked for, and with both set it would generate one and
+# then ignore it in favour of COARSE_MESH.
+if [ "$RUN_GMSH" = yes ] && [ -n "$COARSE_MESH" ]; then
+    echo "ERROR: RUN_GMSH=yes and COARSE_MESH are both set." >&2
+    echo "       Pick one: unset COARSE_MESH to build a mesh from TARGET_GRID" >&2
+    echo "       and DOMAIN, or set RUN_GMSH=no to use the mesh you supplied." >&2
+    exit 1
+fi
+if [ "$RUN_GMSH" = no ] && [ -z "$COARSE_MESH" ]; then
+    echo "ERROR: no mesh. COARSE_MESH is empty and RUN_GMSH is no, so there is" >&2
+    echo "       nothing to run on and nothing is being generated." >&2
+    echo "       Either set COARSE_MESH to a .msh you already have, or set" >&2
+    echo "       RUN_GMSH=\"yes\" to build one from TARGET_GRID/DOMAIN (needs" >&2
+    echo "       gmsh on PATH -- Wulver has none)." >&2
+    exit 1
+fi
+
 POW=1
 [ "$REFINE_LVL" = "auto" ] || POW=$(( 2 ** REFINE_LVL ))
-if [ -n "$COARSE_MESH" ]; then
+if [ "$RUN_GMSH" = no ]; then
     # Supplied mesh is the source of truth. Read its shape rather than trusting
     # a restatement of it -- a mesh whose real dimensions differ from what the
     # config claims is exactly the failure that has been hardest to see.
     [ -f "$COARSE_MESH" ] || { echo "ERROR: COARSE_MESH not found: $COARSE_MESH" >&2; exit 1; }
-    eval "$(julia --project=. --startup-file=no tools/inspect_msh.jl "$COARSE_MESH" --machine)"
-    if [ "$MESH_STRUCTURED" != "1" ]; then
+    # Check the inspection SUCCEEDED before reading what it was meant to set.
+    # `eval` of a failed command sets nothing, and the next line then trips
+    # `set -u` with "MESH_STRUCTURED: unbound variable" -- which says nothing
+    # about julia being missing, the mesh being unreadable, or the parse having
+    # failed, all of which land here identically.
+    MESH_FACTS="$(julia --project=. --startup-file=no tools/inspect_msh.jl "$COARSE_MESH" --machine)" || {
+        echo "ERROR: could not inspect $COARSE_MESH." >&2
+        echo "       tools/inspect_msh.jl failed -- is julia on PATH, and is the" >&2
+        echo "       file a readable gmsh mesh? Its own output is above." >&2
+        exit 1; }
+    eval "$MESH_FACTS"
+    if [ "${MESH_STRUCTURED:-}" != "1" ]; then
         echo "ERROR: $COARSE_MESH is not a regular box lattice." >&2
         echo "       The rank planning here assumes one. Run tools/inspect_msh.jl for detail." >&2
         exit 1
@@ -123,15 +161,13 @@ if [ -n "$COARSE_MESH" ]; then
     fi
     NX=$(( MESH_NX * POW )); NY=$(( MESH_NY * POW )); NZ=$(( MESH_NZ * POW ))
     LX=$MESH_LX; LY=$MESH_LY; LZ=$MESH_LZ
-    GENERATE_MESH="no"
 else
     IFS=x read -r NX NY NZ <<< "$TARGET_GRID"
     IFS=x read -r LX LY LZ <<< "$DOMAIN"
-    GENERATE_MESH="yes"
 fi
 
 echo "=== 1/5  planning ==========================================="
-if [ "$GENERATE_MESH" = "no" ]; then
+if [ "$RUN_GMSH" = no ]; then
   echo "    using YOUR mesh          : $COARSE_MESH"
   echo "    which is                 : ${MESH_NX} x ${MESH_NY} x ${MESH_NZ} elements over ${LX} x ${LY} x ${LZ} m"
   echo "    REFINE_LVL=${REFINE_LVL}  =>  simulation will SOLVE on : ${NX} x ${NY} x ${NZ}"
@@ -149,7 +185,7 @@ julia --project=. --startup-file=no tools/plan_run.jl \
         "$NX" "$NY" "$NZ" "$NOP" "$REFINE_LVL" "$MAX_CORES" "$LX" "$LY"
 
 echo "=== 2/5  mesh =============================================="
-if [ "$GENERATE_MESH" = "no" ]; then
+if [ "$RUN_GMSH" = no ]; then
     MESHBASE="$(basename "${COARSE_MESH%.msh}")"
     RAW="$CASEDIR/${MESHBASE}.msh"
     if [ "$(cd "$(dirname "$COARSE_MESH")" && pwd)/$(basename "$COARSE_MESH")" != "$ROOT/$RAW" ]; then
@@ -284,7 +320,7 @@ cat <<SUMEOF
 
 -----------------------------------------------------------------
  case            : $EQS / $CASE
- solves on       : ${NX} x ${NY} x ${NZ}   (nop=${NOP})   <- $([ "$GENERATE_MESH" = "no" ] && echo "derived from your mesh x2^${REFINE_LVL}" || echo "TARGET_GRID")
+ solves on       : ${NX} x ${NY} x ${NZ}   (nop=${NOP})   <- $([ "$RUN_GMSH" = no ] && echo "derived from your mesh x2^${REFINE_LVL}" || echo "TARGET_GRID")
  mesh on disk    : $((NX/POW)) x $((NY/POW)) x $((NZ/POW))  ->  refined x2^${REFINE_LVL}
  path            : $([ "$REFINE_LVL" -gt 0 ] && echo "p4est, ${REFINE_LVL} refinement level(s)" || echo "direct read + lxy_partition")
  mesh            : $FINAL_MESH
