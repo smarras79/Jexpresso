@@ -14,9 +14,11 @@
 #
 # EDIT ONLY THE BLOCK BELOW.
 # ===========================================================================
+MODULES=(Julia/1.11.9 GCC MPICH)
 
-CASE="LESICP2-p4est"        # problems/CompEuler/<CASE>
+CASE="LESICP2-64x64x60-imex"        # problems/CompEuler/<CASE>
 
+for m in "${MODULES[@]}"; do module load "$m" || exit 1; done
 # ---------------------------------------------------------------------------
 # MESH: supply your own, or have gmsh build one.
 #
@@ -44,7 +46,7 @@ COARSE_MESH=""              # e.g. "meshes/LESICP_16x16x15_10240mX10240mX5000m.m
 #      32x32x30          1          16x16x15          32x32x30
 #     128x128x120        3          16x16x15         128x128x120
 #
-TARGET_GRID="32x32x30"      # final resolution; also used by REFINE_LVL="auto"
+TARGET_GRID="64x64x60"      # final resolution; also used by REFINE_LVL="auto"
 DOMAIN="10240x10240x5000"   # metres             (ignored if COARSE_MESH set)
 
 # REFINE_LVL applies either way. With a supplied mesh, the resolution you end
@@ -55,7 +57,7 @@ DOMAIN="10240x10240x5000"   # metres             (ignored if COARSE_MESH set)
 #   "auto"  : derive it from TARGET_GRID -- the script works out how many
 #             refinements take your mesh to that resolution, and refuses if no
 #             whole number of levels does.
-REFINE_LVL=1                # integer, or "auto" (needs TARGET_GRID)
+REFINE_LVL=0                # integer, or "auto" (needs TARGET_GRID)
 MAX_CORES=256               # upper bound on ranks
 MEM_PER_CPU="7000M"         # per rank; setup peaks well above the time loop
 SUBMIT="no"                 # "yes" to sbatch at the end
