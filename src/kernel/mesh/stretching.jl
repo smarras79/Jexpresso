@@ -28,7 +28,17 @@ function stretch_mesh!(mesh,inputs,npoin)
         # Update the grid point's vertical position with the new stretched value.
         mesh.y[ip] = z
     end
-    
+
+    # KEEP THE TWO COPIES OF THE VERTICAL COORDINATE IN STEP. The mesh carries
+    # the node positions twice -- as mesh.x/y/z and as the mesh.coords matrix --
+    # and different consumers read different ones. Stretching only one leaves
+    # the grid stretched for some of the code and uniform for the rest, which
+    # is silent: nothing errors, the run completes, and the answer is on a mesh
+    # nobody asked for. See the note at the end of stretch_mesh_3D!.
+    @inbounds for ip = 1:npoin
+        mesh.coords[2, ip] = mesh.y[ip]
+    end
+
 end
 
 function stretch_mesh_3D!(mesh,inputs, npoin)  
@@ -426,6 +436,24 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             end
         end
     end
-    
-    
+
+    # KEEP THE TWO COPIES OF THE VERTICAL COORDINATE IN STEP -- and this one was
+    # NOT in step, which is why a stretched deck produced a uniform run.
+    #
+    # Every branch above writes mesh.coords[3,:] and none of them writes
+    # mesh.z. The comment at line 77 still says "we will be overwriting mesh.z
+    # in the loop", so that was the intent and the code drifted from it. The
+    # consequence is not cosmetic: the 3D metric terms are built from
+    # mesh.x/y/z (metric_terms.jl:361, 485, 545), so the DISCRETISATION saw the
+    # uniform grid while the column topology -- which reads coords[3,:]
+    # (columns.jl:624) -- saw the stretched one. Two parts of the same run
+    # disagreeing about where the nodes are, with no error anywhere.
+    #
+    # It also explains the symptom that surfaced it: one 3D VTK writer emits
+    # mesh.coords[3,:] (write_output.jl:519) and another emits mesh.z (:681),
+    # so whether the plot looked stretched depended on which writer ran.
+    @inbounds for ip = 1:npoin
+        mesh.z[ip] = mesh.coords[3, ip]
+    end
+
 end
