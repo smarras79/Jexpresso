@@ -45,7 +45,13 @@ function user_inputs()
     precond       = :column     # :column | :none
     rtol          = _f("DBG_RTOL", 1.0e-8)
     restart       = _i("DBG_RESTART", 20)   # GMRES restart m
-    maxiter       = 200
+    maxiter       = _i("DBG_MAXITER", 600)
+                  # A CAP, NOT A COST: it changes nothing when the solve
+                  # converges inside it, so there is no reason to keep it
+                  # tight. 200 was, and it is the wrong knob to be tight --
+                  # measured here at CFL_h 2.28, GMRES(20) DOES converge, in
+                  # 354 iterations, and a cap of 200 turned that into a setup
+                  # failure whose message blamed the restart length instead.
     warm_start    = true
     verify        = true        # setup self-check; off saves a startup solve
     umax          = 20.0        # largest expected |v|, for the stability report
