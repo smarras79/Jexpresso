@@ -351,7 +351,7 @@ function user_inputs()
         # shortened, gamma*dt changes, and the column factorisation is rebuilt
         # twice per event (once onto the short step, once back). 19 events is
         # ~38 refactorisations over ~21 600 steps -- under 0.2%.
-	:diagnostics_at_times => (0.0:600.0:tend),
+	:diagnostics_at_times => (0.0:100.0:tend),
 	:lsource              => true,
 	#:lsponge              => true,
 	#:zsponge              => 2500.0, hard coded in user_source.jl
@@ -393,7 +393,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	:statistics_time      => (9000.0:10:10800.0),
+	:statistics_time      => (10.0:10:100.0..., 9000.0:10:10800.0),
 	#:statistics_time      => (10.0:10.0:100),
         #:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,
