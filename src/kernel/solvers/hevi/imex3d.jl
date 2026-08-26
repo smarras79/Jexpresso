@@ -1150,14 +1150,19 @@ function build_imex3d(params, inputs)
                      " (= γΔt·c/h_x, the HORIZONTAL acoustic Courant number). The column ",
                      "preconditioner removes the vertical acoustics and leaves the ",
                      "horizontal to the Krylov iteration, so this number alone sets the ",
-                     "iteration count -- expect a few hundred per solve, and restarted ",
-                     "GMRES(", ws.m, ") may not converge at all above CFL_h ~ 5. This ",
+                     "iteration count -- expect a few hundred per solve. This ",
                      "grid's acoustic anisotropy is ", round(hcfl.aniso; sigdigits = 3),
-                     ":1, and this scheme's advantage is proportional to it. Either raise ",
+                     ":1, and this scheme's advantage is proportional to it. FIRST make ",
+                     "sure :imex_maxiter is generous: a few hundred iterations per solve ",
+                     "is normal here and the cap is what turns that into a failure ",
+                     "(measured at CFL_h 2.28, GMRES(20) converges in 354). Raising ",
                      ":imex_restart to ~", hcfl.m_advised, " (costs ",
                      round((hcfl.m_advised - ws.m) * Int(params.mesh.npoin) * op.nimp * 8 /
                            1024^2; sigdigits = 2),
-                     " MB/rank more), or lower Δt, or -- on a near-isotropic grid -- use ",
+                     " MB/rank more) trades memory for iterations and measured ",
+                     "SUB-LINEAR -- 4x the restart bought 1.33x fewer iterations and no ",
+                     "wall-clock gain -- so reach for it only once the cap is ruled out. ",
+                     "Otherwise lower Δt, or -- on a near-isotropic grid -- use ",
                      "an explicit scheme, which is what the cost model says wins there.")
     end
 
@@ -1208,8 +1213,31 @@ nor HEVI is the right tool: HEVI has no anisotropy to exploit and this one has
 no cheap direction left to precondition.
 
 Restarted GMRES(m) also degrades once the spectrum segment is long relative to
-m -- measured, m = 5 suffices to CFL_h = 3, m = 8 at 5, and m = 80 at 7.5 --
+m -- on the mock, m = 5 suffices to CFL_h = 3, m = 8 at 5, and m = 80 at 7.5 --
 so the advised restart grows with CFL_h rather than being a fixed 20.
+
+TREAT BOTH TABLES ABOVE AS MOCK MEASUREMENTS, NOT AS PREDICTIONS. Measured on a
+REAL mesh (rtb2d_schur, 20x1x80, the same 4:1 anisotropy, CFL_h 2.28, rtol
+1e-8, cold start):
+
+    :imex_restart    cold iterations    steady s/step
+         20               354               5.33
+         40               300               6.26
+         80               266               5.63
+
+Three things there contradict the framing above. GMRES(20) CONVERGES at a CFL_h
+where the mock table's neighbouring row says 52 iterations -- it takes 354, near
+7x more, so the mock's counts do not transfer. Quadrupling m buys 1.33x fewer
+iterations, i.e. strongly sub-linear. And none of it shows up in the wall clock:
+the three step times differ by less than the run-to-run noise on the machine
+that produced them, because what m saves in iterations it spends in
+orthogonalisation per iteration.
+
+So `m_advised` is a memory-for-iterations trade, not a convergence fix, and at
+this CFL_h it is not worth taking. It is left as it stands because ONE real
+point is not enough to recalibrate a curve -- but a non-converging stage solve
+is far more often :imex_maxiter than :imex_restart, and the self-check message
+says so in that order.
 """
 function imex_horizontal_cfl(gdt::Real, L)
     BIG   = 1.0e29
