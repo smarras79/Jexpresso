@@ -278,6 +278,36 @@ function precompile_warmup_run!(inputs, params, u,
     return nothing
 end
 
+"""
+    flatten_times(x) -> Vector{Float64}
+
+Every time list a deck can write, flattened to plain seconds: a range, a
+vector, a tuple of numbers, or -- the case this exists for -- a tuple that
+MIXES numbers and ranges.
+
+WHY THIS IS NOT JUST `collect(Float64, x)`. Decks specify these as tuples of
+splatted ranges:
+
+    :diagnostics_at_times => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0...,
+                              9000.0:10.0:tend...)
+
+and leaving the `...` off ONE of them is silent at parse time: it builds a
+tuple whose last element is a range instead of a number. `collect(Float64, ...)`
+then dies with
+
+    MethodError: Cannot `convert` an object of type StepRangeLen{...} to Float64
+
+and it dies HERE, in time_loop!, i.e. after the mesh read, after the operator
+build and after the setup self-check -- on the full rank count, minutes into a
+job. That has now cost two runs of a 256-rank case on two different keys.
+
+Flattening costs nothing on the correct input and removes the failure mode, so
+a missing `...` becomes a no-op rather than a dead job.
+"""
+flatten_times(x) = (out = Float64[]; _push_times!(out, x); out)
+_push_times!(out::Vector{Float64}, x::Number) = (push!(out, Float64(x)); out)
+_push_times!(out::Vector{Float64}, x) = (for y in x; _push_times!(out, y); end; out)
+
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -307,7 +337,7 @@ function time_loop!(inputs, params, u, args...)
     #------------------------------------------------------------------------
     dosetimes    = inputs[:diagnostics_at_times]
     les_stat_t   = inputs[:statistics_time]
-    tstops_all   = sort(unique(vcat(collect(Float64, dosetimes), collect(Float64, les_stat_t))))
+    tstops_all   = sort(unique(vcat(flatten_times(dosetimes), flatten_times(les_stat_t))))
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]

@@ -226,7 +226,10 @@ function user_inputs()
         :tend                 => tend,
 	:lrestart             => false,
 	:restart_time         => 9000.0,
-	:diagnostics_at_times => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0..., 9000:10:tend),
+	# EVERY range needs its own `...`; the third was missing one, which made this
+	# a tuple of 28 Floats followed by a StepRangeLen and killed the run in
+	# time_loop! (collect(Float64, ...) cannot convert a range to a Float64).
+	:diagnostics_at_times => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0..., 9000.0:10.0:tend...),
 	:lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
