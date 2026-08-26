@@ -96,40 +96,19 @@ function user_inputs()
     # -- used only when limex_schur. Each is also an env override so an A/B
     #    needs no edit here; the value shown is the default.
     lschur      = parse(Bool,    get(ENV, "DBG_SCHUR",     string(limex_schur)))
-                                # the reduction itself. DBG_SCHUR=0 keeps IMEX
-                                # and solves all five fields -- that is the A/B.
     dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.5"))
-                                # s. 25x the explicit step; see the rate budget
-                                # below for where it comes from.
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
     restart     = parse(Int,     get(ENV, "DBG_RESTART",   "30"))
-                                # GMRES restart m. Grows with CFL_h, which the
-                                # setup report prints.
     maxiter     = parse(Int,     get(ENV, "DBG_MAXITER",   "600"))
-                                # A CAP, NOT A COST -- it changes nothing when
-                                # the solve converges inside it. Measured on
-                                # rtb2d_schur at CFL_h 2.28: GMRES(20) needs 354
-                                # iterations, so a cap of 200 fails a run that
-                                # would have converged.
     precond     = Symbol(        get(ENV, "DBG_PRECOND",   "column"))   # or :none
     umax        = parse(Float64, get(ENV, "DBG_UMAX",      "15.0"))
-                                # largest |u| the run is expected to reach; the
-                                # stability limit is computed from it.
     verify      = parse(Bool,    get(ENV, "DBG_VERIFY",    "true"))
-                                # setup self-check. Leave on: it is what catches
-                                # a stage solve that will not converge, before
-                                # the queue time is spent.
     warm_start  = parse(Bool,    get(ENV, "DBG_WARM",      "true"))
     lin_imex    = Symbol(        get(ENV, "DBG_LIN",       "PS"))       # :RS | :PS
     updfreq     = parse(Int,     get(ENV, "DBG_UPDFREQ",   "5"))
     lat_walls   = Symbol(        get(ENV, "DBG_LATWALL",   "auto"))
     monitor     = parse(Bool,    get(ENV, "DBG_IMEXMON",   "true"))
     monitor_every = parse(Int,   get(ENV, "DBG_IMEXMONEVERY", "200"))
-
-    #---------------------------------------------------------------------------
-    # The other two schemes stay reachable, for comparison rather than for
-    # production: DBG_SCHEME=hevi or =explicit overrides the switch above.
-    #---------------------------------------------------------------------------
     scheme = Symbol(get(ENV, "DBG_SCHEME", limex_schur ? "imex" : "explicit"))
     scheme in (:imex, :hevi, :explicit) ||
         error("LESICP2-64x64x60-imex: DBG_SCHEME must be imex, hevi or explicit; got $scheme")
@@ -220,154 +199,35 @@ function user_inputs()
         # DBG_LIN still overrides).
         #---------------------------------------------------------------------------
         :implicit_vdiff       => _vdiff,
-        #---------------------------------------------------------------------------
-        # The stability table, and the "dominant term" line that says whether
-        # either split can help on this grid at all. One RHS evaluation.
         :lcfl_report          => true,
-        # Every ~500 steps (~250 s of model time). The startup table is taken on
-        # a laminar sounding where nu_t is ~0, so its viscous row is true at
-        # t = 0 and says nothing about a spun-up boundary layer. On this grid
-        # the implicit step tolerates nu_t up to ~117 m^2/s before diffusion
-        # binds, against the ~20 expected -- a 6x margin. This is how you watch
-        # that margin rather than assume it. If it ever closes, the switch is
-        # :implicit_vdiff => true (DBG_VDIFF=1), which moves d/dz(mu d/dz) into
-        # the column operator that is already being factorised.
-        # Per-step progress with a wall clock and an ETA to :tend, from rank 0,
-        # :lcfl_report_every  re-print that table every N steps. :lcfl_report shows it
-        #                   ONCE, at startup, where nu_t is ~0 on a laminar sounding --
-        #                   so its viscous row says diffusion never limits dt, and says
-        #                   it truthfully, at t = 0. Watch that row cross the line as the
-        #                   boundary layer spins up. Collective and cheap; 0 = off.
         :lcfl_report_every    => parse(Int, get(ENV, "DBG_CFL_EVERY", "500")),
-        # nothing collective. Free, and the only thing that distinguishes "still
-        # compiling" from "hung" on a first run.
         :lstep_heartbeat      => parse(Bool, get(ENV, "DBG_HEARTBEAT", "true")),
-        #--- HEVI (ignored unless DBG_SCHEME=hevi) ---------------------------------
-        # :hevi_verify is also the joint-stability guard: it REFUSES to start
-        # above the limit it measures on this mesh, and names the recommended
-        # step in the error. Leave it on.
         :hevi_verify          => parse(Bool, get(ENV, "DBG_VERIFY", "true")),
         :hevi_linearization   => Symbol(get(ENV, "DBG_LIN", _vdiff ? "PS" : "RS")),
         :hevi_update_freq     => parse(Int, get(ENV, "DBG_UPDFREQ", "5")),
         :hevi_wall_flux       => true,
         #--- IMEX3D (ignored unless DBG_SCHEME=imex) -------------------------------
-        :imex_verify          => verify,
-        # THE ONE INPUT THAT CANNOT BE MEASURED AT SETUP: the largest flow speed
-        # this run is expected to reach, m/s. IMEX3D's explicit half is
-        # ADVECTION, which is ~0 at t = 0 and grows as the boundary layer
-        # develops, so an estimate from the initial state would call any Δt safe.
-        # Set it from the physics of YOUR case.
-        :imex_umax            => umax,
-        # 1e-6, not the 1e-8 default. GMRES on this operator converges LINEARLY,
-        # so iterations go as log(1/rtol) and the tolerance is a direct
-        # multiplier on the only cost this scheme has: measured, 1e-6 is 70% of
-        # the 1e-8 iteration count. 1e-6 is still three orders below a
-        # third-order step's own truncation error. DBG_RTOL to sweep it.
-        :imex_rtol            => rtol,
-        # NOT the knob it looks like: this operator is skew, its spectrum is a
-        # line segment, and restarting costs ~4% rather than the stagnation an
-        # elliptic problem shows. Leave it at 20.
-        # :imex_warm_start  start each stage solve from the PREVIOUS one's answer
-        #                   rather than from zero. On by default, and the single
-        #                   largest lever on this scheme's cost: consecutive ARK
-        #                   stages differ by O(dt*f) while the right-hand side is
-        #                   the whole deviation u - qe, so the guess arrives
-        #                   several orders down, and GMRES on this skew operator
-        #                   converges linearly, so those orders come straight off
-        #                   the iteration count. Measured end to end: 5.0
-        #                   iterations/solve against 21.7 cold, same answer to
-        #                   1.3e-10. DBG_WARM=0 to measure it here.
-        :imex_warm_start      => warm_start,
-        # :imex_schur       SOLVE THE SCALAR SYSTEM, not the five-field one.
-        #                   rho, rho_u, rho_v and rho_w are eliminated exactly
-        #                   and one Helmholtz equation in P = beta*Theta is
-        #                   solved over Np unknowns instead of 5*Np, then the
-        #                   five fields are rebuilt pointwise. It forces the
-        #                   ADVECTIVE Theta row, without which the elimination
-        #                   does not close on one scalar -- so this is a
-        #                   different SPLITTING, not just a different solver,
-        #                   differing from the flux form by 0.06%.
-        #
-        #                   Measured on CompEuler/rtb3d_schur (same 4:1
-        #                   anisotropy as this grid, 25 ranks): stage solve
-        #                   5.08x, step 3.56x, with 1.92x fewer iterations per
-        #                   solve. The gain scales with h_x/h_z, which is 4.0:1
-        #                   here -- the same ratio those numbers were taken at.
-        #
-        #                   DBG_SCHUR=0 runs the five-field solve for an A/B.
         :imex_schur           => lschur,
-        # :imex_restart     The Krylov cycle length. CFL_h = gamma*dt*c/h_x is
-        #                   what it has to be long enough for, because the column
-        #                   preconditioner removes the vertical acoustics and
-        #                   leaves the horizontal to the iteration. This grid is
-        #                   at CFL_h = 2.77 at dt = 0.5.
-        #
-        #                   MEASURED ON A REAL MESH at CFL_h = 2.28, 4:1
-        #                   anisotropy (rtb2d_schur, cold start, rtol 1e-8):
-        #
-        #                       m = 20   354 iterations   5.33 s/step
-        #                       m = 40   300              6.26
-        #                       m = 80   266              5.63
-        #
-        #                   All three converge, quadrupling m buys only 1.33x
-        #                   fewer iterations, and none of it shows in the wall
-        #                   clock -- m saves iterations and spends the saving on
-        #                   orthogonalisation per iteration. So raising this is a
-        #                   memory-for-iterations trade, not a convergence fix.
-        #                   30 here is margin for the flow speeding up, at 11
-        #                   extra Krylov vectors (~3 MB/rank at 2048 ranks).
-        #
-        #                   If a solve will not converge, look at :imex_maxiter
-        #                   below FIRST. The older numbers quoted here -- "m = 5
-        #                   suffices to CFL_h 3, m = 80 by 7.5" -- came from the
-        #                   MOCK, whose iteration counts are ~7x optimistic
-        #                   against the real mesh above and should not be read as
-        #                   predictions.
+        :imex_verify          => verify,
+        :imex_umax            => umax,
+        :imex_rtol            => rtol,
+        :imex_warm_start      => warm_start,
         :imex_restart         => restart,
-        # :imex_maxiter     A CAP, NOT A COST: it changes nothing when the solve
-        #                   converges inside it, so there is no reason to keep
-        #                   it tight. 200 was, and it is the wrong knob to be
-        #                   tight -- measured on rtb2d_schur at CFL_h = 2.28,
-        #                   GMRES(20) DOES converge, in 354 iterations, and a
-        #                   cap of 200 turned that into a setup-check failure
-        #                   whose message blamed the restart length. 600 is
-        #                   three restart cycles' worth of headroom at m = 30.
         :imex_maxiter         => maxiter,
-        # :none is there to MEASURE what the column preconditioner buys. On a
-        # 20:1 mesh it is 25x in iterations, so do not run production with it.
         :imex_precond         => precond,
         :imex_lateral_walls   => lat_walls,
         :imex_wall_flux       => true,
-        # :PS, and worth the refactorisation. Over 10800 s of surface heating
-        # rho*theta drifts ~1%, so beta = dp/d(rho theta) drifts ~0.4%; a stale
-        # beta leaves that fraction of the FULL acoustic rate (78 1/s) in the
-        # explicit half, which against IMEX3D's 2.6 1/s budget is a ~11% cut in
-        # the admissible step. Refreshing costs 27 operator applications plus one
-        # banded LU per column every 5 steps -- about 1.6% of a step here.
         :imex_linearization   => lin_imex,
         :imex_update_freq     => updfreq,
-        # The Krylov iteration count IS the cost of this scheme and it drifts as
-        # the flow develops. Watch it on a first production run.
         :imex_monitor         => monitor,
         :imex_monitor_every   => monitor_every,
         :Δt                   => Δt,
         :tinit                => 0.0,
         :tend                 => tend,
 	:lrestart             => false,
-	#:lrestart_vtk	      => true,
-	#:restart_output_file_path => "",
 	:restart_time         => 9000.0,
-	#:diagnostics_at_times => (11500.0:10.0:15000.0),
-	#:diagnostics_at_times => (0.0:50.0:10800.0),
-        # 15.9 M nodes x 5 fields is ~640 MB per snapshot, so 19 of them is
-        # ~12 GB. Every one is also a tstop: the step that lands on it is
-        # shortened, gamma*dt changes, and the column factorisation is rebuilt
-        # twice per event (once onto the short step, once back). 19 events is
-        # ~38 refactorisations over ~21 600 steps -- under 0.2%.
-	:diagnostics_at_times => (0.0:100.0:tend),
+	:diagnostics_at_times => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0..., 9000:10:tend),
 	:lsource              => true,
-	#:lsponge              => true,
-	#:zsponge              => 2500.0, hard coded in user_source.jl
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -378,30 +238,15 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :user_heatflux        => 0.12,
-	# MUST be true. With false the mesh is built through Gridap's
-	# GmshDiscreteModel(parts, ...) branch instead of the rank-0 read +
-	# _compute_xy_partition column split, and the solution injects energy
-	# out of nothing: still air with every forcing term off reached
-	# 196 m/s in 100 s, independent of mesh, dt, C_s and :lrichardson.
 	:lxy_partition          => true,
         :lwall_model          => true,
         :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        # Smagorinsky constant. ABL LES runs 0.13-0.18
         :C_s                  => 0.16,
-        # Buoyancy correction on nu_t. Without it the full eddy diffusivity acts
-        # across the capping inversion and smears it over a few hundred metres.
         :lrichardson          => true,
-        # Near-wall limit l = min(C_s*Delta, kappa*z) on the mixing length.
         :lwall_damping        => true,
-        #:visc_model           => AV(),
-        #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        # :μ is a 0/1 MASK under a dynamic SGS model, not a viscosity: it
-        # multiplies the eddy viscosity the closure already computed. The old
-        # values ([0.0, 5, 5, 5, 5]) were AV constants and inflated C_s by sqrt(μ).
-        # Tune the closure through :C_s instead.
         :μ                    => [0.0, 1.0, 1.0, 1.0, 2.0],
         #---------------------------------------------------------------------------
         #LES statistics
@@ -463,7 +308,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        :lfilter             => false,
         :mu_x                => 0.25,
         :mu_y                => 0.25,
 	:mu_z                => 0.25,
@@ -480,27 +325,10 @@ function user_inputs()
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => parse(Bool, get(ENV, "DBG_WRITE_INITIAL", lprobe ? "false" : "true")),
         #---------------------------------------------------------------------------
-        # init_refinement
-        #---------------------------------------------------------------------------
-        # MUST be false. mesh.jl consults :lxy_partition ONLY when
-        # :linitial_refine and :ladapt are both false, so runtime refinement
-        # silently returns the mesh to the p4est space-filling-curve partition
-        # whatever the flag says -- and that is the partition on which the
-        # assembled RHS and the mass matrix carry different ghost multiplicities
-        # and the implicit operator picks up a positive real eigenvalue.
-        # check_columnar_partition refuses it at setup rather than letting the
-        # run diverge slowly with every self-check passing.
-        #
-        # Refine OFFLINE instead. LESICP_64x64x60.geo in this directory is
-        # LESICP.geo with nelem{x,y,z} = 64, 64, 60, i.e. exactly what one
-        # refinement level of the 32x32x30 would have produced:
-        #   gmsh -3 -order 1 problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60.geo \
-        #        -o problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh
-        :linitial_refine     => false,
-        :init_refine_lvl     => 1,
-        #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
+        :linitial_refine     => false,
+        :init_refine_lvl     => 1,
         :ladapt              => false,
         :amr                 => true,
         #---------------------------------------------------------------------------

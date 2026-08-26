@@ -51,15 +51,9 @@
 #  WHAT TO RUN.
 #-----------------------------------------------------------------------------
 EQS="CompEuler"
-CASE="LESICP2-64x64x60-imex"   # | rtb3d_schur | rtb2d_schur
-TEND="45.0"                 # model seconds. The profile prints once 10 skipped
-                            # + 50 counted steps have run, so it needs 60: 45 s
-                            # is 90 steps at LESICP2's dt = 0.5. Blank to use
-                            # the deck's own tend (10800 s -- physics, not
-                            # timing, and hours of it).
-MESH=""                     # rtb cases only -- they read DBG_MESH. LESICP2
-                            # names its mesh in the deck, so this is inert
-                            # there. Blank = whatever the deck picks.
+CASE="LESICP2-64x64x60-imex"
+TEND="10800.0"
+MESH=""
 ROOT="/project/smarras/smarras/Jexpresso"
 MODULES=(Julia/1.11.9 GCC MPICH)
 
