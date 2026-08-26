@@ -82,11 +82,55 @@ function user_inputs()
     # it -- switching it on also switches the linearisation to :PS, without
     # which the implicit operator would carry no diffusion at all.
     _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "false"))
+
     #---------------------------------------------------------------------------
-    # WHICH SCHEME -- one switch, three values. Defaults to :explicit so this
-    # case behaves exactly like LESICP2 until you ask for something else.
+    # IMEX + SCHUR -- ONE SWITCH, and everything it needs right underneath.
     #---------------------------------------------------------------------------
-    scheme = Symbol(get(ENV, "DBG_SCHEME", "imex"))
+    limex_schur = true          # true  -> IMEX-ARK(ARS343), ALL acoustics
+                                #          implicit, solved through the SCALAR
+                                #          Schur system (Np unknowns, not 5*Np).
+                                #          Measured 3.56x per step on the same
+                                #          4:1 anisotropy this grid has.
+                                # false -> fully explicit, i.e. plain LESICP2.
+
+    # -- used only when limex_schur. Each is also an env override so an A/B
+    #    needs no edit here; the value shown is the default.
+    lschur      = parse(Bool,    get(ENV, "DBG_SCHUR",     string(limex_schur)))
+                                # the reduction itself. DBG_SCHUR=0 keeps IMEX
+                                # and solves all five fields -- that is the A/B.
+    dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.5"))
+                                # s. 25x the explicit step; see the rate budget
+                                # below for where it comes from.
+    rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
+    restart     = parse(Int,     get(ENV, "DBG_RESTART",   "30"))
+                                # GMRES restart m. Grows with CFL_h, which the
+                                # setup report prints.
+    maxiter     = parse(Int,     get(ENV, "DBG_MAXITER",   "600"))
+                                # A CAP, NOT A COST -- it changes nothing when
+                                # the solve converges inside it. Measured on
+                                # rtb2d_schur at CFL_h 2.28: GMRES(20) needs 354
+                                # iterations, so a cap of 200 fails a run that
+                                # would have converged.
+    precond     = Symbol(        get(ENV, "DBG_PRECOND",   "column"))   # or :none
+    umax        = parse(Float64, get(ENV, "DBG_UMAX",      "15.0"))
+                                # largest |u| the run is expected to reach; the
+                                # stability limit is computed from it.
+    verify      = parse(Bool,    get(ENV, "DBG_VERIFY",    "true"))
+                                # setup self-check. Leave on: it is what catches
+                                # a stage solve that will not converge, before
+                                # the queue time is spent.
+    warm_start  = parse(Bool,    get(ENV, "DBG_WARM",      "true"))
+    lin_imex    = Symbol(        get(ENV, "DBG_LIN",       "PS"))       # :RS | :PS
+    updfreq     = parse(Int,     get(ENV, "DBG_UPDFREQ",   "5"))
+    lat_walls   = Symbol(        get(ENV, "DBG_LATWALL",   "auto"))
+    monitor     = parse(Bool,    get(ENV, "DBG_IMEXMON",   "true"))
+    monitor_every = parse(Int,   get(ENV, "DBG_IMEXMONEVERY", "200"))
+
+    #---------------------------------------------------------------------------
+    # The other two schemes stay reachable, for comparison rather than for
+    # production: DBG_SCHEME=hevi or =explicit overrides the switch above.
+    #---------------------------------------------------------------------------
+    scheme = Symbol(get(ENV, "DBG_SCHEME", limex_schur ? "imex" : "explicit"))
     scheme in (:imex, :hevi, :explicit) ||
         error("LESICP2-64x64x60-imex: DBG_SCHEME must be imex, hevi or explicit; got $scheme")
 
@@ -123,8 +167,10 @@ function user_inputs()
     # wavenumber loads both halves, only the wedge zE <= Mach*zI is reachable,
     # and ARS343 is neutral across it. That is why the ranking reverses.
     #---------------------------------------------------------------------------
-    Δt_default = scheme === :imex ? "0.5" : (scheme === :hevi ? "0.024" : "0.02")
-    Δt = parse(Float64, get(ENV, "DBG_DT", Δt_default))
+    # dt_imex is set in the switch block above (and honours DBG_DT); the other
+    # two schemes keep their own limits here.
+    Δt = scheme === :imex ? dt_imex :
+         parse(Float64, get(ENV, "DBG_DT", scheme === :hevi ? "0.024" : "0.02"))
 
     # A SHORT PROBE RUN, without editing this file. The point of measuring is
     # to decide the production settings, and a measurement that needs the deck
@@ -205,19 +251,19 @@ function user_inputs()
         :hevi_update_freq     => parse(Int, get(ENV, "DBG_UPDFREQ", "5")),
         :hevi_wall_flux       => true,
         #--- IMEX3D (ignored unless DBG_SCHEME=imex) -------------------------------
-        :imex_verify          => parse(Bool, get(ENV, "DBG_VERIFY", "true")),
+        :imex_verify          => verify,
         # THE ONE INPUT THAT CANNOT BE MEASURED AT SETUP: the largest flow speed
         # this run is expected to reach, m/s. IMEX3D's explicit half is
         # ADVECTION, which is ~0 at t = 0 and grows as the boundary layer
         # develops, so an estimate from the initial state would call any Δt safe.
         # Set it from the physics of YOUR case.
-        :imex_umax            => parse(Float64, get(ENV, "DBG_UMAX", "15.0")),
+        :imex_umax            => umax,
         # 1e-6, not the 1e-8 default. GMRES on this operator converges LINEARLY,
         # so iterations go as log(1/rtol) and the tolerance is a direct
         # multiplier on the only cost this scheme has: measured, 1e-6 is 70% of
         # the 1e-8 iteration count. 1e-6 is still three orders below a
         # third-order step's own truncation error. DBG_RTOL to sweep it.
-        :imex_rtol            => parse(Float64, get(ENV, "DBG_RTOL", "1.0e-6")),
+        :imex_rtol            => rtol,
         # NOT the knob it looks like: this operator is skew, its spectrum is a
         # line segment, and restarting costs ~4% rather than the stagnation an
         # elliptic problem shows. Leave it at 20.
@@ -231,8 +277,7 @@ function user_inputs()
         #                   the iteration count. Measured end to end: 5.0
         #                   iterations/solve against 21.7 cold, same answer to
         #                   1.3e-10. DBG_WARM=0 to measure it here.
-        :imex_warm_start      => parse(Bool, get(ENV, "DBG_WARM", "true")),
-
+        :imex_warm_start      => warm_start,
         # :imex_schur       SOLVE THE SCALAR SYSTEM, not the five-field one.
         #                   rho, rho_u, rho_v and rho_w are eliminated exactly
         #                   and one Helmholtz equation in P = beta*Theta is
@@ -250,7 +295,7 @@ function user_inputs()
         #                   here -- the same ratio those numbers were taken at.
         #
         #                   DBG_SCHUR=0 runs the five-field solve for an A/B.
-        :imex_schur           => parse(Bool, get(ENV, "DBG_SCHUR", "true")),
+        :imex_schur           => lschur,
         # :imex_restart     20 is right only while CFL_h = gamma*dt*c/h_x stays
         #                   below ~3. Above that, restarted GMRES(20) stops
         #                   converging -- measured on an isotropic grid at
@@ -265,7 +310,7 @@ function user_inputs()
         # suffices to CFL_h = 3, m = 80 is needed by 7.5). 30 buys margin for
         # the flow speeding up, at 11 extra Krylov vectors -- about 3 MB/rank at
         # 2048 ranks. The setup report prints CFL_h and its advised m.
-        :imex_restart         => parse(Int, get(ENV, "DBG_RESTART", "30")),
+        :imex_restart         => restart,
         # :imex_maxiter     A CAP, NOT A COST: it changes nothing when the solve
         #                   converges inside it, so there is no reason to keep
         #                   it tight. 200 was, and it is the wrong knob to be
@@ -274,11 +319,11 @@ function user_inputs()
         #                   cap of 200 turned that into a setup-check failure
         #                   whose message blamed the restart length. 600 is
         #                   three restart cycles' worth of headroom at m = 30.
-        :imex_maxiter         => parse(Int, get(ENV, "DBG_MAXITER", "600")),
+        :imex_maxiter         => maxiter,
         # :none is there to MEASURE what the column preconditioner buys. On a
         # 20:1 mesh it is 25x in iterations, so do not run production with it.
-        :imex_precond         => Symbol(get(ENV, "DBG_PRECOND", "column")),
-        :imex_lateral_walls   => Symbol(get(ENV, "DBG_LATWALL", "auto")),
+        :imex_precond         => precond,
+        :imex_lateral_walls   => lat_walls,
         :imex_wall_flux       => true,
         # :PS, and worth the refactorisation. Over 10800 s of surface heating
         # rho*theta drifts ~1%, so beta = dp/d(rho theta) drifts ~0.4%; a stale
@@ -286,12 +331,12 @@ function user_inputs()
         # explicit half, which against IMEX3D's 2.6 1/s budget is a ~11% cut in
         # the admissible step. Refreshing costs 27 operator applications plus one
         # banded LU per column every 5 steps -- about 1.6% of a step here.
-        :imex_linearization   => Symbol(get(ENV, "DBG_LIN", "PS")),
-        :imex_update_freq     => parse(Int, get(ENV, "DBG_UPDFREQ", "5")),
+        :imex_linearization   => lin_imex,
+        :imex_update_freq     => updfreq,
         # The Krylov iteration count IS the cost of this scheme and it drifts as
         # the flow develops. Watch it on a first production run.
-        :imex_monitor         => parse(Bool, get(ENV, "DBG_IMEXMON", "true")),
-        :imex_monitor_every   => parse(Int, get(ENV, "DBG_IMEXMONEVERY", "200")),
+        :imex_monitor         => monitor,
+        :imex_monitor_every   => monitor_every,
         :Δt                   => Δt,
         :tinit                => 0.0,
         :tend                 => tend,
