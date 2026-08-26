@@ -296,20 +296,33 @@ function user_inputs()
         #
         #                   DBG_SCHUR=0 runs the five-field solve for an A/B.
         :imex_schur           => lschur,
-        # :imex_restart     20 is right only while CFL_h = gamma*dt*c/h_x stays
-        #                   below ~3. Above that, restarted GMRES(20) stops
-        #                   converging -- measured on an isotropic grid at
-        #                   CFL_h = 7.4, m=20 and m=40 never converge and m=80 is
-        #                   needed. CFL_h is the HORIZONTAL acoustic Courant
-        #                   number, because the column preconditioner removes the
-        #                   vertical acoustics and leaves the horizontal to the
-        #                   Krylov iteration. The setup report prints CFL_h, the
-        #                   grid anisotropy behind it, and an advised m.
-        # CFL_h = gamma*dt*c/h_x = 2.77 on this grid at dt = 0.5, which is just
-        # inside the band where GMRES(20) is still comfortable (measured: m = 5
-        # suffices to CFL_h = 3, m = 80 is needed by 7.5). 30 buys margin for
-        # the flow speeding up, at 11 extra Krylov vectors -- about 3 MB/rank at
-        # 2048 ranks. The setup report prints CFL_h and its advised m.
+        # :imex_restart     The Krylov cycle length. CFL_h = gamma*dt*c/h_x is
+        #                   what it has to be long enough for, because the column
+        #                   preconditioner removes the vertical acoustics and
+        #                   leaves the horizontal to the iteration. This grid is
+        #                   at CFL_h = 2.77 at dt = 0.5.
+        #
+        #                   MEASURED ON A REAL MESH at CFL_h = 2.28, 4:1
+        #                   anisotropy (rtb2d_schur, cold start, rtol 1e-8):
+        #
+        #                       m = 20   354 iterations   5.33 s/step
+        #                       m = 40   300              6.26
+        #                       m = 80   266              5.63
+        #
+        #                   All three converge, quadrupling m buys only 1.33x
+        #                   fewer iterations, and none of it shows in the wall
+        #                   clock -- m saves iterations and spends the saving on
+        #                   orthogonalisation per iteration. So raising this is a
+        #                   memory-for-iterations trade, not a convergence fix.
+        #                   30 here is margin for the flow speeding up, at 11
+        #                   extra Krylov vectors (~3 MB/rank at 2048 ranks).
+        #
+        #                   If a solve will not converge, look at :imex_maxiter
+        #                   below FIRST. The older numbers quoted here -- "m = 5
+        #                   suffices to CFL_h 3, m = 80 by 7.5" -- came from the
+        #                   MOCK, whose iteration counts are ~7x optimistic
+        #                   against the real mesh above and should not be read as
+        #                   predictions.
         :imex_restart         => restart,
         # :imex_maxiter     A CAP, NOT A COST: it changes nothing when the solve
         #                   converges inside it, so there is no reason to keep
