@@ -1038,11 +1038,34 @@ function build_imex3d(params, inputs)
                            "the true residual disagree. That is the signature of lost ",
                            "orthogonality in the Arnoldi basis, or of a preconditioner ",
                            "that is not a fixed linear operator. ") :
+                    # THE ORDER OF THESE TWO IS THE WHOLE POINT, and it used to
+                    # be the other way round. gmres_solve! returns early only on
+                    # convergence, so reaching here ALWAYS means the iteration
+                    # cap stopped it -- and "stopped by the cap" does not
+                    # distinguish "would have converged in a few more" from
+                    # "stalled and never will". Only one of the two cures is
+                    # free: :imex_maxiter is a cap, not a cost, and changes
+                    # nothing when the solve converges inside it, whereas
+                    # :imex_restart costs m Krylov vectors of memory on every
+                    # solve forever. So try the free one first. Measured on a
+                    # 4:1 mesh at CFL_h 2.28, GMRES(20) converges in 354
+                    # iterations: the old advice would have sent someone raising
+                    # m against a solve that was already working.
                     string("GMRES DID NOT CONVERGE: it stopped after ", siter,
                            " of :imex_maxiter = ", ws.maxiter, " iterations at restart ",
-                           "length ", ws.m, ". Raise :imex_restart first -- the horizontal ",
-                           "acoustic CFL sets how long a cycle has to be, and a restart ",
-                           "that is too short stalls instead of converging. "),
+                           "length ", ws.m, ", i.e. ",
+                           round(siter / max(ws.m, 1); digits = 1), " restart cycles. ",
+                           "IT RAN OUT OF ITERATIONS -- that is the only way to reach ",
+                           "this message, and it does NOT by itself mean the restart ",
+                           "length is too short. Raise :imex_maxiter FIRST: it is a cap, ",
+                           "not a cost, so it changes nothing when the solve converges ",
+                           "inside it. (Measured on a 4:1 mesh at CFL_h 2.28, GMRES(20) ",
+                           "converges in 354 iterations, so a cap of 200 fails a solve ",
+                           "that was working.) If it still will not converge with a ",
+                           "generous cap, THEN raise :imex_restart -- restarting ",
+                           "discards the Krylov subspace, so too short a cycle stalls ",
+                           "rather than converges, and the horizontal acoustic CFL sets ",
+                           "how long a cycle has to be. "),
                   "The worst single node is ", round(sconc; sigdigits = 3), "x the ",
                   "residual's own RMS (inf-norm relative residual ", sinf, "). ",
                   sconc > 1.0e3 ?
