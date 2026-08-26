@@ -393,7 +393,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	:statistics_time      => (10.0:10:100.0..., 9000.0:10:10800.0),
+	# BOTH ranges have to be splatted. With the `...` on only the first, this
+	# is a tuple of ten Floats followed by a StepRangeLen, and
+	# TimeIntegrators.jl does `collect(Float64, les_stat_t)` on it -- which
+	# cannot convert a range to a Float64 and dies at startup with a
+	# MethodError. Splatting both gives the 191 sample times intended.
+	:statistics_time      => (10.0:10:100.0..., 9000.0:10:10800.0...),
 	#:statistics_time      => (10.0:10.0:100),
         #:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,
