@@ -22,13 +22,22 @@
 #
 #      julia tools/pick_nranks.jl <nelemx> <nelemy> <nelemz> <nop> <max_cores>
 #
-#  25 is that tool's answer for rtb3d_schur's 20x20x80. For rtb2d_schur use 4.
+#  Answers for the cases here:
+#      LESICP2-64x64x60-imex   256  (16 x 16 over 64 x 64 columns)  <- set below
+#      rtb3d_schur              25  (5 x 5 over 20 x 20)
+#      rtb2d_schur               4  (a slab has only 20 columns)
+#
+#  cpus-per-task BUYS MEMORY, NOT SPEED. This is pure MPI -- the job exports
+#  JULIA_NUM_THREADS=1 -- so the second core per task sits idle and its only
+#  effect is that each rank gets mem-per-cpu x cpus-per-task. 64 x 2 = 128
+#  fills a Wulver node; 3500M x 2 = 7000M/rank is what setup_les_run.sh found
+#  this domain needs, and 64 x 7000M = 448 GB/node leaves the node headroom.
 #-----------------------------------------------------------------------------
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=25
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=64
 #SBATCH --cpus-per-task=2
-#SBATCH --time=00:45:00
-#SBATCH --mem-per-cpu=4000M
+#SBATCH --time=02:00:00
+#SBATCH --mem-per-cpu=3500M
 #
 #  Site settings -- set once for your cluster, then forget.
 #SBATCH --partition=general
@@ -42,12 +51,15 @@
 #  WHAT TO RUN.
 #-----------------------------------------------------------------------------
 EQS="CompEuler"
-CASE="rtb3d_schur"          # rtb3d_schur | rtb2d_schur | LESICP2-64x64x60-imex
-TEND="45.0"                 # model seconds. 45 = 75 steps at dt 0.6 = one
-                            # profile block. Use the deck's own tend (blank)
-                            # for physics rather than timing.
-MESH=""                     # override the deck's mesh, e.g. 10x10x40. Blank =
-                            # whatever the deck picks.
+CASE="LESICP2-64x64x60-imex"   # | rtb3d_schur | rtb2d_schur
+TEND="45.0"                 # model seconds. The profile prints once 10 skipped
+                            # + 50 counted steps have run, so it needs 60: 45 s
+                            # is 90 steps at LESICP2's dt = 0.5. Blank to use
+                            # the deck's own tend (10800 s -- physics, not
+                            # timing, and hours of it).
+MESH=""                     # rtb cases only -- they read DBG_MESH. LESICP2
+                            # names its mesh in the deck, so this is inert
+                            # there. Blank = whatever the deck picks.
 ROOT="/project/smarras/smarras/Jexpresso"
 MODULES=(Julia/1.11.9 GCC MPICH)
 
@@ -74,8 +86,15 @@ cd "$ROOT" || exit 1
 export DBG_SCHUR="$SCHUR"
 [ -n "$TEND" ] && export DBG_TEND="$TEND"
 [ -n "$MESH" ] && export DBG_MESH="$MESH"
-export DBG_RTOL="${DBG_RTOL:-1.0e-8}"
-export DBG_RESTART="${DBG_RESTART:-20}"
+# THE LAUNCHER DOES NOT SET rtol OR restart. It used to default them to 1.0e-8
+# and 20 -- the rtb values -- which silently OVERRODE any deck with its own
+# tuning. LESICP2 ships 1.0e-6 and 30 for a reason (it runs at CFL_h 2.77), and
+# a launcher quietly imposing a 100x tighter tolerance at a shorter restart is
+# how a case that converges becomes a case that does not. Pass them only when
+# the user asked for them; otherwise the deck decides.
+[ -n "${DBG_RTOL:-}" ]    && export DBG_RTOL
+[ -n "${DBG_RESTART:-}" ] && export DBG_RESTART
+[ -n "${DBG_MAXITER:-}" ] && export DBG_MAXITER
 
 export JEXPRESSO_HEVI_PROFILE=1
 export JEXPRESSO_HEVI_PROFILE_EVERY=50
@@ -197,7 +216,7 @@ else
     echo "    memory/rank   : no heap hint set -- Julia sizes its heap from the whole"
     echo "                    node and can be OOM-killed against a smaller cgroup"
 fi
-echo "    tend / rtol   : ${DBG_TEND:-<deck>} s / $DBG_RTOL, restart $DBG_RESTART"
+echo "    tend / rtol   : ${DBG_TEND:-<deck>} s / ${DBG_RTOL:-<deck>}, restart ${DBG_RESTART:-<deck>}, maxiter ${DBG_MAXITER:-<deck>}"
 echo "    started       : $(date)"
 echo
 # The banner above is printed from THIS shell. The authoritative statement of
