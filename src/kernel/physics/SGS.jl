@@ -1723,12 +1723,23 @@ function _dsgs_3d_theta!(sgs::SGS_DSGS{TT},
     lglobal_norms && MPI.Allreduce!(denom, MPI.MAX, comm)
 
     #--- Denominator floors, built from the mean TOTAL state ----------------
+    # `raw` keeps the measured norm and `floors` the floor, so the gate below
+    # can tell "this field has structure" from "this field is still flat".
+    raw    = sgs.raw
+    floors = sgs.floors
+    @inbounds for ieq = 1:neqs
+        raw[ieq] = denom[ieq]
+    end
     ρ̄  = max(abs(scale[1]), eps)
     θ̄  = neqs >= 5 ? max(abs(scale[5]), eps)/ρ̄ : TT(300)
     p̄  = C0*(max(ρ̄*θ̄, zero(TT)))^γ
     c̄  = sqrt(max(γ*p̄/ρ̄, zero(TT)))
     FLOOR = TT(1.0e-3)
     @inbounds begin
+        floors[1] = FLOOR*ρ̄
+        for ieq = 2:min(neqs,4); floors[ieq] = FLOOR*ρ̄*c̄; end
+        neqs >= 5 && (floors[5] = FLOOR*ρ̄*θ̄)
+        for ieq = 6:neqs; floors[ieq] = FLOOR*max(abs(scale[ieq]), eps); end
         denom[1] = max(denom[1] + eps, FLOOR*ρ̄)
         for ieq = 2:min(neqs,4)
             denom[ieq] = max(denom[ieq] + eps, FLOOR*ρ̄*c̄)
@@ -1739,6 +1750,41 @@ function _dsgs_3d_theta!(sgs::SGS_DSGS{TT},
         for ieq = 6:neqs
             denom[ieq] = max(denom[ieq] + eps, FLOOR*max(abs(scale[ieq]), eps))
         end
+    end
+
+    #--- A DENOMINATOR THAT IS STILL ITS FLOOR MEANS THAT FIELD HAS NO SCALE
+    #    YET, AND ITS RESIDUAL MUST NOT DRIVE THE COEFFICIENT.
+    #
+    # The floors exist so that a field with ‖q-⟨q⟩‖ = 0 gives 0/floor = 0
+    # instead of 0/eps. They are physical scales, and for the momenta that
+    # scale is ACOUSTIC: 1e-3·ρ̄·c̄ = 0.25 kg/(m²s) here, i.e. |u| = 0.33 m/s in
+    # an atmosphere whose flow speeds are 10 m/s. A bubble starting from rest
+    # therefore spends its first seconds dividing a real vertical-momentum
+    # tendency (buoyancy, ρgΔθ/θ ≈ 0.065) by a floor 40x below the scale the
+    # flow will actually reach, and the ratio comes out O(1) 1/s -- which at
+    # Δ² = 62500 m² is μ ≈ 4e4, i.e. straight into the C₂Δ(‖v‖+c) cap, before
+    # any flow exists at all. Measured: that is what killed rtb3d_dsgs at
+    # t = 1.5 s, on eq. 4, at interior nodes, with denom[4] sitting exactly on
+    # its floor of 0.246.
+    #
+    # The fix is not a bigger floor -- that is tuning. It is to use the floor
+    # as a GATE rather than as a value: while a denominator is still the floor,
+    # that equation has no resolved scale for the residual to be measured
+    # against, so it is excluded from the max. Setting it to Inf does that
+    # branch-free, and makes it visible in the monitor. Each equation rejoins
+    # by itself the moment its own field develops structure above the floor
+    # (for the momenta here, within a few seconds).
+    #
+    # If every denominator is at its floor -- the t = 0 state of any case that
+    # starts uniform -- the ratio is 0 and the model is off, which is correct:
+    # there is nothing yet to stabilise.
+    #
+    # NOT applied to the 1D or 2D paths. 1D carries no floors at all, and the
+    # 2D ones are what CompEuler/sod1d, theta_dsgs and ffs_step were tuned
+    # against; the same change is very likely right for them too, but that is a
+    # measurement to make on those cases, not one to make blind.
+    @inbounds for ieq = 1:neqs
+        raw[ieq] <= floors[ieq] && (denom[ieq] = TT(Inf))
     end
 
     #--- Pass 3: per-element residual L∞, wave-speed cap, coefficient -------
@@ -1988,7 +2034,17 @@ function _dsgs_3d_energy!(sgs::SGS_DSGS{TT},
     T̄  = max(Ē - KĒ, eps)
     c̄  = sqrt(max(γ*T̄, eps))
     FLOOR = TT(1.0e-3)
+    raw    = sgs.raw
+    floors = sgs.floors
+    @inbounds for ieq = 1:neqs
+        raw[ieq] = denom[ieq]
+    end
     @inbounds begin
+        floors[1] = FLOOR*ρ̄
+        floors[2] = FLOOR*ρ̄*c̄
+        floors[3] = floors[2]; floors[4] = floors[2]
+        neqs >= 5 && (floors[5] = FLOOR*ρ̄*c̄*c̄)
+        for ieq = 6:neqs; floors[ieq] = FLOOR*max(abs(scale[ieq]), eps); end
         denom[1] = max(denom[1], FLOOR*ρ̄)        + eps
         denom[2] = max(denom[2], FLOOR*ρ̄*c̄)      + eps
         if neqs >= 5
@@ -1998,7 +2054,12 @@ function _dsgs_3d_energy!(sgs::SGS_DSGS{TT},
             denom[ieq] = max(denom[ieq] + eps, FLOOR*max(abs(scale[ieq]), eps))
         end
     end
-    dρ = denom[1]
+    # Floor-as-gate; see the identical block in _dsgs_3d_theta! for why.
+    @inbounds for ieq = 1:neqs
+        ieq in (3, 4) && continue          # the momentum norm lives in slot 2
+        raw[ieq] <= floors[ieq] && (denom[ieq] = TT(Inf))
+    end
+    dρ = denom[1] === TT(Inf) ? max(raw[1], floors[1]) : denom[1]
 
     #--- Pass 3: per element -------------------------------------------------
     DSGS_MONITOR[] && fill!(DSGS_DBG, 0.0)
@@ -2990,6 +3051,58 @@ end
 # compute_dsgs_viscosity! ran.
 # ================================================================================
 const DSGS_MONITOR = Ref(false)
+
+# ================================================================================
+# WHICH RESIDUAL, AND WHY THE DEFAULT IS THE ONE THAT IS NOT LITERALLY BDF2
+#
+# `:dsgs_residual => :tendency` (default) | `:strict`
+#
+# The history pair is advanced once per step. WHERE that advance sits relative
+# to the read decides what the sensor measures, and the two choices are not a
+# matter of taste -- they measure different things, and the difference was
+# established by measurement on CompEuler/sod1d, not by argument.
+#
+#   :strict     roll AFTER the read, rebuild only on the stage where uaux is
+#               qⁿ. The stencil is then literally
+#                   (3qⁿ - 4qⁿ⁻¹ + qⁿ⁻²)/2Δt  ≈  ∂q/∂t
+#               and R = |∂q/∂t - M⁻¹·RHS|. But `params.RHS` at that point in
+#               _build_rhs! holds the INVISCID flux divergence only -- the
+#               viscous term is added a few lines later -- while ∂q/∂t is the
+#               derivative of the solution the viscous term helped produce. So
+#                   R = |the artificial viscosity's own contribution|
+#               and the model is reading itself. That is Nazarov & Hoffman
+#               eq. (3.4) taken literally (R of the EXACT PDE, on a solution
+#               that satisfies PDE + artificial viscosity = 0), and on a
+#               weak-form Galerkin RHS it is a contraction: mu decays instead
+#               of locking onto the feature.
+#
+#   :tendency   roll BEFORE the read, rebuild every stage -- what this code has
+#               always done. `dsgs_qnm2` is then the CURRENT state, the stencil
+#               collapses to -(qⁿ - qⁿ⁻¹)/2Δt, and
+#                   R ≈ 1.5·|∂q/∂t|  at the first stage of each step.
+#               It is a TENDENCY sensor, not the strict residual. It fires
+#               wherever the solution is changing fast, which for a shock, a
+#               contact or a steepening front is where the stabilisation is
+#               needed, and it does not read its own output.
+#
+# MEASURED, sod1d at t = 0.2, 100 elements at nop = 4 (element 85 is the shock,
+# element 1 is x = 0):
+#
+#     :tendency  mu max 1.28e-3  at element 85   <- the shock
+#     :strict    mu max 1.19e-4  at element  1   <- 10x smaller, and at the
+#                                                   boundary, with visible
+#                                                   oscillations in rho and rhoE
+#
+# So the default is :tendency, and the name says what it is rather than
+# implying a residual it is not. :strict is kept because the question of how to
+# get a true residual out of a weak-form RHS is worth returning to -- the
+# answer is probably to compare against RHS_inviscid + RHS_visc from the
+# PREVIOUS step, which is the consistency error of the scheme rather than
+# either of these -- and because having both makes the difference measurable
+# on any case in one run.
+# ================================================================================
+const DSGS_STRICT = Ref(false)          # :dsgs_residual => :strict
+const DSGS_NOMASK = Ref(false)          # JEXPRESSO_DSGS_NOMASK=1, diagnostic
 
 # (max ratio, node, equation, raw residual). A module-level buffer rather than
 # a field on SGS_DSGS because the 1D and 2D paths have no closure struct and

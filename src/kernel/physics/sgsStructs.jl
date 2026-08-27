@@ -298,6 +298,13 @@ Base.@kwdef mutable struct SGS_DSGS{T <: AbstractFloat, dims1, dimsE, backend, V
     avg::Vector{T}
     denom::Vector{T}
     scale::Vector{T}
+    #   raw     the MEASURED ‖q_i - <q_i>‖ before any floor is applied
+    #   floors  the floor for each slot
+    # Kept apart so the floor can be used as a GATE -- "this field has no
+    # resolved scale yet, leave its residual out of the max" -- rather than as
+    # a value. See the block that sets denom[ieq] = Inf in SGS.jl.
+    raw::Vector{T}
+    floors::Vector{T}
 
     # per-point caches (size npoin) — same names and meanings as SGS_SMAG, so
     # every consumer of a closure struct works unchanged.
@@ -328,6 +335,8 @@ function allocate_SGS(npoin, T, backend, PhysConst, ::DSGS;
         avg     = zeros(T, Int64(neqs)),
         denom   = zeros(T, Int64(neqs)),
         scale   = zeros(T, Int64(neqs)),
+        raw     = zeros(T, Int64(neqs)),
+        floors  = zeros(T, Int64(neqs)),
         Pr_t    = T(PhysConst.Pr_t),
         Sc_t    = T(PhysConst.Sc_t),
         μ_mol   = T(PhysConst.μ_mol),

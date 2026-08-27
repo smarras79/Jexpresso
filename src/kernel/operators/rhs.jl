@@ -709,7 +709,12 @@ function _build_rhs!(RHS, u, params, time)
     ldsgs_step = params.inputs[:lvisc] == true &&
                  (params.VT == DSGS_MHD() || params.VT == DSGS()) &&
                  (time - params.dsgs_thist[] >= 0.999*params.Δt)
-    params.dsgs_fresh[] = ldsgs_step
+    params.dsgs_fresh[] = ldsgs_step || !DSGS_STRICT[]
+    if ldsgs_step && !DSGS_STRICT[]
+        params.dsgs_qnm1 .= params.dsgs_qnm2
+        params.dsgs_qnm2 .= params.uaux
+        params.dsgs_thist[] = time
+    end
     params.dsgs_hist[]  = time >= params.tspan[1] + 1.999*params.Δt
 
     #-----------------------------------------------------------------------------------
@@ -742,7 +747,7 @@ function _build_rhs!(RHS, u, params, time)
 
         # The roll, AFTER compute_dsgs_viscosity! has read the buffers. See the
         # block above `ldsgs_step` for why the order is the whole point.
-        if ldsgs_step
+        if ldsgs_step && DSGS_STRICT[]
             params.dsgs_qnm1 .= params.dsgs_qnm2
             params.dsgs_qnm2 .= params.uaux
             params.dsgs_thist[] = time

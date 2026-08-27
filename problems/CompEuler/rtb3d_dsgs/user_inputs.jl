@@ -145,10 +145,36 @@ function user_inputs()
         :lvisc                => parse(Bool, get(ENV, "DBG_VISC", "true")),
         :visc_model           => DSGS(),
         :energy_equation      => "theta",
-        # Marras eq. (9). These ARE the paper's values; written out rather than
-        # left to the defaults in io/mod_inputs.jl so that changing them leaves
-        # a trace in the deck.
-        :dsgs_C1              => 1.0,
+        # Marras eq. (9). C1 is DELIBERATELY NOT THE PAPER'S 1.0 -- see below.
+        #
+        # The sensor this code applies is a TENDENCY sensor, not the paper's
+        # residual (see :dsgs_residual, and the long comment on DSGS_STRICT in
+        # kernel/physics/SGS.jl), so R ~ 1.5|dq/dt| and C1 = 1 has no authority
+        # here. On this bubble it over-fires during the spin-up: for the first
+        # ~10 s the flow accelerates from rest on a time scale of a few
+        # seconds, and 1.5|dq/dt| over the field's own still-small norm comes
+        # out at O(0.5) 1/s. At Delta^2 = 62500 m^2 that is
+        #
+        #     nu ~ 2-5e4 m^2/s
+        #
+        # i.e. an eddy frequency of 0.4 1/s for a 250 m eddy -- a velocity
+        # scale of 100 m/s for a flow that reaches 10. About 4x too much, and
+        # it happens in 2D too: rtb2d_dsgs peaks at 2.5e4 at t = 1 s and decays
+        # to ~250 by t = 1000. 2D SURVIVES it because its theta slot carries
+        # Pr/(gamma-1)*mu = 0.25 mu; the 3D path routes theta through
+        # SGS_diffusion at mu/Pr_t = 1.43 mu and applies the full stress tensor
+        # to the momenta, and it does not.
+        #
+        # MEASURED on this deck, dt = 0.5:
+        #
+        #     C1 = 1.0    dies at t ~ 7.5 s, nu pinned at the 4.3e4 cap
+        #     C1 = 0.25   runs to t = 200.  nu max ~400, mean ~175
+        #     C1 = 0.1    runs to t = 200.  nu max ~160, mean ~70
+        #
+        # And it is NOT the theta split alone -- C1 = 1 with :mu[5] = 0.175
+        # (the 2D path's effective theta coefficient) still dies at t ~ 9 s --
+        # nor the time step: dt = 0.25 dies at t ~ 8.
+        :dsgs_C1              => parse(Float64, get(ENV, "DBG_C1", "0.25")),
         :dsgs_C2              => 0.5,
         # Add Smagorinsky to the residual viscosity instead of replacing it.
         # OFF: on this case there is no wall and no surface layer, so the
@@ -163,7 +189,8 @@ function user_inputs()
         # viscosity). Slot 1 stays 0 so the mass equation is strictly
         # conservative, Marras eq. (10). See note 2 in the header for the one
         # value to change if you are comparing against theta_dsgs.
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                    => [0.0, 1.0, 1.0, 1.0,
+                                   parse(Float64, get(ENV, "DBG_MU5", "1.0"))],
         # Domain rather than rank-local <q'> and ‖q' - <q'>‖. Costs two
         # Allreduce per RHS call and is a no-op in serial, which is how this
         # case is meant to be run; set it if you take it to many ranks and want

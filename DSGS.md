@@ -587,8 +587,20 @@ rather than three hours into a 15.9 M-node run.
 :dsgs_gamma => 5.0/3.0,       # DSGS_MHD only
 :dsgs_Prt   => 0.7,           # DSGS_MHD only
 :dsgs_add_smagorinsky => false, # 3D DSGS only — see §5.7
+:dsgs_residual        => :tendency,  # | :strict — see defect 6
 :ldsgs_global_norms   => false, # domain vs rank-local ⟨q⟩ and ‖q−⟨q⟩‖
 ```
+
+**`JEXPRESSO_DSGS_MONITOR=1`** prints one line per step with $\nu$ max/mean,
+the normalising denominators, and the coordinates of the node that produced
+the worst ratio — flagged if that node is on a boundary. It is what found
+defect 9, and it is the first thing to turn on when a DynSGS run misbehaves.
+
+**On `:dsgs_C1`.** Because the default sensor is a *tendency* sensor and not
+the paper's residual, the paper's $C_1 = 1$ carries no authority. It over-fires
+during a spin-up from rest by roughly 4× — measured on both bubble cases —
+and `CompEuler/rtb3d_dsgs` therefore runs at `:dsgs_C1 => 0.25`, with the
+sweep that established it recorded in the deck.
 
 **Output.** The per-element coefficients are broadcast to nodes by
 `broadcast_dsgs_to_nodes!` and written to VTK as one point-data field per
@@ -678,74 +690,60 @@ reasoning matters if the model is revisited.
    inflated by $1/\sqrt{\gamma-1} \approx 1.58$ at $\gamma = 1.4$, letting
    $\mu_{res}$ govern more often than the Marras bound intends. *Fixed.*
 
-6. **The BDF2 history was rolled BEFORE the residual read it, so `q¹ ≡ qⁿ`.**
-   This is the big one, and it made the sensor measure the wrong thing
-   entirely on every path.
+6. **The sensor is a TENDENCY sensor, not the strict residual — and that is
+   now said out loud rather than assumed.** `_build_rhs!` advances the
+   step-cadenced pair *above* the viscous block and writes `uaux` (the current
+   state) into `dsgs_qnm2`, while every call site passes
+   `(q, q1, q2) = (uaux, dsgs_qnm2, dsgs_qnm1)`. So `q1` holds the same
+   contents as `q` and the stencil collapses:
 
-   `_build_rhs!` advanced the step-cadenced pair with
+   $$3q^n - 4q^1 + q^2 \;\to\; 3q^n - 4q^n + q^{n-1} = -(q^n - q^{n-1})$$
 
-   ```julia
-   params.dsgs_qnm1 .= params.dsgs_qnm2
-   params.dsgs_qnm2 .= params.uaux      # <- the CURRENT state
-   ```
+   giving $R \approx 1.5\lvert\partial q/\partial t\rvert$.
 
-   *above* the viscous block, and the call sites pass
-   `(q, q1, q2) = (uaux, dsgs_qnm2, dsgs_qnm1)`. So `q1` was handed the same
-   array contents as `q`, and the stencil collapsed:
+   That was found and "fixed" — and the fix was reverted, because it makes the
+   model worse and the measurement says so. Rolling *after* the read gives the
+   literal BDF2, so $R = \lvert\partial q/\partial t - M^{-1}\mathrm{RHS}\rvert$;
+   but `params.RHS` at that point holds the **inviscid** flux divergence only
+   (the viscous term is added a few lines later) while $\partial q/\partial t$
+   is the derivative of the solution the viscous term helped produce. So the
+   strict residual equals **the artificial viscosity's own contribution**, and
+   the model reads itself. On a weak-form Galerkin RHS that is a contraction.
+   Measured on `CompEuler/sod1d` at $t = 0.2$ (element 85 is the shock,
+   element 1 is $x=0$):
 
-   $$
-   3q^n - 4q^1 + q^2 \;\to\; 3q^n - 4q^n + q^{n-1} = -\left(q^n - q^{n-1}\right)
-   $$
+   | | $\mu_{max}$ | where |
+   |---|---|---|
+   | tendency (default) | $1.83\times10^{-3}$ | element 85 — **the shock** |
+   | strict BDF2 | $1.19\times10^{-4}$ | element 1 — the boundary |
 
-   — minus *half* the first-order backward difference. The residual was then
+   with visible oscillations in $\rho$ and $\rho E$ in the second. So the
+   default is `:dsgs_residual => :tendency`, named for what it is, and
+   `:strict` is kept as an option because the question of how to get a true
+   residual out of a weak-form RHS is worth returning to — the answer is
+   probably to compare against `RHS_inviscid + RHS_visc` from the *previous*
+   step, which is the consistency error of the scheme rather than either of
+   these.
 
-   $$
-   R = \left\lvert -\tfrac12\frac{\partial q}{\partial t} - \frac{\partial q}{\partial t}\right\rvert
-     = 1.5\left\lvert\frac{\partial q}{\partial t}\right\rvert
-   $$
+7. **There was no warm-up guard.** The stencil needs three step-cadenced
+   levels and a run starts with one, so the first two steps produce nothing
+   meaningful. `params.dsgs_hist` holds the model at $\mu = 0$ until
+   $t \ge t_{init} + 2\Delta t$. Written in `time` rather than as a roll
+   counter because `time` is already snapshotted and restored by the
+   integrator warm-up, the precompile pass and the restart path.
 
-   i.e. **the physical tendency, not the residual**. The whole premise of the
-   model is that $R$ vanishes for a solution that satisfies the PDE, and this
-   version cannot vanish for any solution that is moving. It is what produced
-   the "cold-start spike" of $\mu \approx 9.7\times10^3$ recorded below on
-   `theta_dsgs` — a rising bubble whose physical eddy viscosity is $O(10^2)$ —
-   and, once the 3D path started normalising on the perturbation rather than
-   on the hydrostatic background (§5.2, ~50× smaller denominators on that
-   problem), it pinned $\mu$ at the $C_2\Delta(\lVert v\rVert+c)$ cap and
-   killed `CompEuler/rtb3d_dsgs` inside its first step.
-
-   *Fixed*: the roll moved to the end of the viscous block, after
-   `compute_dsgs_viscosity!` has read the buffers. Pinned by
-   `test/sgs/test_dsgs3d.jl`, which builds a state evolving at a known
-   constant rate with an RHS that accounts for it exactly — a zero-residual
-   solution — and asserts that the correct ordering returns $\mu = 0$ while
-   the old one returns $O(10^3)\ \mathrm{m^2/s}$.
-
-7. **The coefficient was rebuilt on every RK stage.** `uaux` equals $q^n$ only
-   on the *first* stage of a step; on the others it is a stage state, and
-
-   $$
-   3q_{stage} - 4q^{n-1} + q^{n-2} = 2\Delta t\frac{\partial q}{\partial t} + 3\left(q_{stage} - q^n\right)
-   $$
-
-   whose second term is again $O(\lvert\partial q/\partial t\rvert)$ and swamps
-   the truncation error the sensor exists to measure. *Fixed*: `params.dsgs_fresh`
-   marks the stage where the three levels are consistent, the coefficient is
-   built there and held for the rest of the step. Also 4–5× less reduction
-   work per step.
-
-8. **There was no warm-up guard.** The BDF2 stencil needs three step-cadenced
-   levels and a run starts with one — both buffers are seeded with the initial
-   state, so step 1 gives $0$ and step 2 gives $3(q^1-q^0)/2\Delta t$, a 1.5×
-   overestimate of $\partial q/\partial t$. Neither is a truncation error, and
-   on a rising bubble the tendency is large enough to pin $\mu$ at the cap —
-   which in a low-Mach atmosphere ($c \approx 340$ m/s against
-   $\lVert v\rVert \approx 10$) is $\approx 4\times10^{4}\ \mathrm{m^2/s}$, two
-   to three orders above any real eddy viscosity. *Fixed*: `params.dsgs_hist`
-   holds the model at $\mu = 0$ until $t \ge t_{init} + 2\Delta t$. Written in
-   `time` rather than as a roll counter because `time` is already snapshotted
-   and restored by the integrator warm-up, the precompile pass and the restart
-   path.
+8. **The denominator floors were used as values where they should be gates
+   (3D only).** The floors exist so a field with $\lVert q-\langle q\rangle\rVert = 0$
+   gives $0/\mathrm{floor} = 0$ rather than $0/\varepsilon$. But for the
+   momenta the floor is an **acoustic** scale, $10^{-3}\bar\rho\bar c = 0.25$
+   kg/(m²s), i.e. $\lvert u\rvert = 0.33$ m/s in an atmosphere whose flow
+   speeds are 10 m/s. A bubble starting from rest therefore divides a real
+   vertical-momentum tendency by a floor 40× below the scale the flow will
+   reach. *Fixed* in the 3D workers by setting $\mathrm{denom}_i = \infty$
+   while the measured norm is still below the floor, so that equation is
+   excluded from the max until its own field develops structure. **Not**
+   applied to the 1D or 2D paths: 1D carries no floors at all, and the 2D ones
+   are what `sod1d`, `theta_dsgs` and `ffs_step` were tuned against.
 
 9. **The residual was taken at boundary nodes, where it is the boundary
    condition.** The largest single defect in the *picture* the model produces,
@@ -783,12 +781,14 @@ reasoning matters if the model is revisited.
    where the initial condition's linear taper $\theta_c(1-r/r_0)$ has its
    slope discontinuity, i.e. the actual under-resolved feature.
 
-> ⚠ Defects 6–9 change the coefficient on **every** DynSGS path, including
-> `CompEuler/sod1d`, which has a committed reference in `test/CI-ref/`. That
-> reference was generated against the broken sensor and has to be regenerated
+> ⚠ Defect 9 (the boundary mask) changes the coefficient on **every** DynSGS
+> path, including `CompEuler/sod1d`, which has a committed reference in
+> `test/CI-ref/`. That reference has to be regenerated
 > (`.github/workflows/generate-ci-ref.yml`, or `test/generate_ci_ref.jl`)
-> before the CI suite will pass. The measurements in the tables below were
-> also taken before these fixes and are no longer current.
+> before the CI suite will pass. Defect 8 is 3D-only. Defects 6 and 7 leave
+> the 1D and 2D coefficient unchanged in the default configuration — verified
+> by running `sod1d` and reproducing its published $\mu = 1.8\times10^{-3}$ at
+> the shock. The measurements in the tables below predate all of this.
 
 ### Verification
 

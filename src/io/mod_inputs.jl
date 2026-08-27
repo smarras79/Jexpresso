@@ -957,6 +957,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_add_smagorinsky))
         inputs[:dsgs_add_smagorinsky] = false
     end
+    #
+    # :dsgs_residual => :tendency (default) | :strict
+    #
+    # WHICH residual the sensor measures. They are not variants of each other:
+    #   :tendency  R ~ 1.5·|∂q/∂t|, the historical behaviour of this code.
+    #   :strict    the literal BDF2 against the inviscid RHS, which on a
+    #              weak-form Galerkin RHS makes the model read its own viscous
+    #              term and decay.
+    # The default is measured, not chosen -- see DSGS_STRICT in
+    # kernel/physics/SGS.jl for the sod1d numbers that decided it. NOTE that
+    # :tendency means C1 = 1 carries no authority from the paper: the sensor is
+    # not the paper's residual. CompEuler/rtb3d_dsgs runs at :dsgs_C1 => 0.25
+    # for that reason and says why.
+    #
+    if(!haskey(inputs, :dsgs_residual))
+        inputs[:dsgs_residual] = :tendency
+    end
     if(!haskey(inputs, :dsgs_C1))
         inputs[:dsgs_C1] = 1.0
     end

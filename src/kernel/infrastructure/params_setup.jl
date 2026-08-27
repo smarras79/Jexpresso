@@ -501,6 +501,7 @@ function params_setup(sem,
                 1 <= ip <= length(dsgs_wres) && (dsgs_wres[ip] = zero(TFloat))
             end
         end
+        DSGS_NOMASK[] && fill!(dsgs_wres, one(TFloat))
         nint = count(!iszero, dsgs_wres)
         println_rank(" #   DynSGS residual taken on ", nint, " of ",
                      length(dsgs_wres), " nodes (",
@@ -512,6 +513,16 @@ function params_setup(sem,
     # than per RHS call: `haskey(ENV, ...)` on the hot path is a dictionary
     # lookup per step for a value that cannot change.
     DSGS_MONITOR[] = get(ENV, "JEXPRESSO_DSGS_MONITOR", "0") ∉ ("0", "false", "")
+    # :dsgs_residual => :tendency (default) | :strict. See the long comment on
+    # DSGS_STRICT in kernel/physics/SGS.jl for the measurement that decided the
+    # default -- the two choices measure different things and :strict, which is
+    # the one that is literally BDF2, reads the model's own viscous term.
+    _dsgs_res = Symbol(get(inputs, :dsgs_residual, :tendency))
+    _dsgs_res in (:tendency, :strict) ||
+        error(" # ERROR params_setup.jl: :dsgs_residual must be :tendency ",
+              "(the default) or :strict; got $(_dsgs_res).")
+    DSGS_STRICT[] = _dsgs_res === :strict
+    DSGS_NOMASK[]      = get(ENV, "JEXPRESSO_DSGS_NOMASK",     "0") ∉ ("0","false","")
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:
