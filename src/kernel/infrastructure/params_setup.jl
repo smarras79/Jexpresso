@@ -397,6 +397,45 @@ function params_setup(sem,
     ldsgs     = inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
     ldsgs_mhd = inputs[:lvisc] == true && inputs[:visc_model] == DSGS_MHD()
 
+    # 2D DynSGS NEEDS TOTAL VARIABLES. 3D does not -- the difference is real and
+    # is in where each path builds its denominator floors.
+    #
+    # Both divide the residual by ||q_i - <q_i>||inf and both floor that
+    # denominator, because at t = 0 a fluid at rest has momentum spread of
+    # exactly zero and R/eps would pin mu at the wave-speed cap over the whole
+    # domain. They differ in what the floor is made of:
+    #
+    #   3D (_dsgs_3d_*): floors come from `scale`, the mean TOTAL state, so they
+    #                    are finite whatever form the stored variables take.
+    #   2D (_dsgs_2d_*): floors come from means of `q` AS STORED --
+    #                        mom_floor = 1e-3 * |rho_avg| * c_avg
+    #                    with rho_avg, theta_avg, c_avg all taken on q. Under
+    #                    PERT() those are means of PERTURBATIONS: rho_avg ~ 0 for
+    #                    a bubble, so mom_floor ~ 0, c_avg is 0/0, and the floor
+    #                    that exists precisely to stop the cold-start runaway
+    #                    degenerates with the thing it was protecting.
+    #
+    # The symptom is SciMLBase "Instability detected" during warm-up, which
+    # names neither DynSGS nor the variable form. On CompEuler/theta the cap is
+    # ~17,000 m^2/s, a diffusion number of 29 against an explicit limit near
+    # 0.5.
+    #
+    # Scoped to 2D deliberately: an earlier version of this guard refused PERT
+    # for DynSGS everywhere and would now block the 3D path, which handles it.
+    if (ldsgs || ldsgs_mhd) && inputs[:SOL_VARS_TYPE] == PERT() &&
+       sem.mesh.SD == NSD_2D()
+        error("2D DynSGS (:visc_model => ", inputs[:visc_model], ") requires ",
+              ":SOL_VARS_TYPE => TOTAL(), but this case sets PERT(). The 2D ",
+              "residual coefficient floors its denominator with ",
+              "1e-3*|rho_avg|*c_avg taken on the STORED variables, which under ",
+              "PERT() are perturbations -- rho_avg is ~0, the floor collapses ",
+              "with it, and the first step is handed the maximum viscosity. ",
+              "(The 3D path floors from the mean TOTAL state and is fine with ",
+              "either form.) Set TOTAL(), or use SMAG()/VREM()/AV(), which work ",
+              "with PERT(). CompEuler/theta_dsgs is CompEuler/theta already set ",
+              "up this way.")
+    end
+
     if ldsgs || ldsgs_mhd
         μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
                                                 Int64(sem.mesh.nelem), Int64(qp.neqs))

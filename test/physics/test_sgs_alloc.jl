@@ -54,7 +54,11 @@ callsite_kwargs(SD) = (C_s = 0.23, nelem = 8, neqs = 5, SD = SD,
             # DSGS's allocator arrived with the dynamic-SGS merge, which is
             # also what put the extra keywords at the call site in the first
             # place, so the two belong in the same assertion.
-            if tag isa AV
+            # AV has no method of its own by design. DSGS's struct is 3D-only
+            # (`SD === NSD_3D() || return nothing` in its allocator), so in 2D
+            # it legitimately returns nothing and the older in-rhs path runs
+            # instead -- asserting a model there fails for a correct reason.
+            if tag isa AV || (tag isa DSGS && SD == NSD_2D())
                 @test got === nothing
             else
                 @test got isa AbstractSGSModel
