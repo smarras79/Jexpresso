@@ -380,36 +380,10 @@ function user_inputs()
         :zlevel_transition => 2000.0,
         
         #---------------------------------------------------------------------------
-        # Filter parameters
-        #
-        # :lfilter WAS false HERE AND true IN LESICP2-imex, against a header at
-        # the top of this file claiming the filter is byte-identical to that
-        # deck. It was flipped in "inputs and submit" (f05ed15), a commit whose
-        # other 180 lines are deleted comments -- i.e. it is a regression, not
-        # a decision, and it is restored here.
-        #
-        # WHAT THE FILTER ACTUALLY DOES AT :nop => 4, AND WHY IT IS NEARLY FREE.
-        # init_filter builds F = mu*B + (1 - mu)*I with B the Boyd-Vandeven
-        # (erf-log) transfer function of order 12. At N = 4 that function is
-        #     modes 0,1,2   1.0            (untouched)
-        #     mode  3       0.9957
-        #     mode  4       0.0            (removed)
-        # so with mu = 0.25 the ONLY thing this filter does is take 25% off the
-        # top Legendre mode per application and 0.01% off mode 3. It removes
-        # 2*dx noise -- the mode a continuous-Galerkin operator carries no
-        # dissipation on at all -- and leaves everything the LES is resolving
-        # alone. It is not a substitute for the closure and it is not tuning.
-        #
-        # NOTE THE CADENCE, BECAUSE IT IS SCHEME-DEPENDENT. filter! runs inside
-        # rhs! (rhs.jl), i.e. once per RHS EVALUATION, not once per step. The
-        # explicit arm applies it 5x per 0.02 s = 250 times per simulated
-        # second; ARS343 at dt = 0.5 applies it 4x per 0.5 s = 8 times. The top
-        # mode's e-folding time is 0.43 s here against ~1e-2 s there -- still
-        # far faster than any LES time scale, but this is a much lighter filter
-        # per simulated second than the explicit run's, which is worth knowing
-        # before concluding the filter "did nothing".
+        # Filter parameters. OFF, and that is a standing choice for this case --
+        # do not "restore" it. DBG_FILTER=1 turns it on for a one-off A/B.
         #---------------------------------------------------------------------------
-        :lfilter             => parse(Bool, get(ENV, "DBG_FILTER", "true")),
+        :lfilter             => parse(Bool, get(ENV, "DBG_FILTER", "false")),
         :mu_x                => 0.25,
         :mu_y                => 0.25,
 	:mu_z                => 0.25,
