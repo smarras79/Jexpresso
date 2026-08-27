@@ -8,7 +8,7 @@ the four equation sets that use it in Jexpresso:
 2. [1D CompEuler — `sod1d`, `case1`](#2-1d-compeuler--sod1d-case1)
 3. [2D CompEuler θ-form — `theta_dsgs`](#3-2d-compeuler-θ-form--theta_dsgs)
 4. [2D ideal GLM-MHD — `orszagTangBormanis2024`](#4-2d-ideal-glm-mhd--orszagtangbormanis2024)
-5. [3D CompEuler θ-form — `LESICP2-64x64x60-dynsgs`](#5-3d-compeuler-θ-form--lesicp2-64x64x60-dynsgs)
+5. [3D CompEuler θ-form — `rtb3d_dsgs`, `LESICP2-64x64x60-dynsgs`](#5-3d-compeuler-θ-form--rtb3d_dsgs-lesicp2-64x64x60-dynsgs)
 6. [Code map, inputs and output](#6-code-map-inputs-and-output)
 7. [Defects found and fixed](#7-defects-found-and-fixed)
 
@@ -343,7 +343,7 @@ should look like.
 
 ---
 
-## 5. 3D CompEuler θ-form — `LESICP2-64x64x60-dynsgs`
+## 5. 3D CompEuler θ-form — `rtb3d_dsgs`, `LESICP2-64x64x60-dynsgs`
 
 `compute_dsgs_viscosity!(::SGS_DSGS, ::NSD_3D)` and
 `compute_sgs_cache!(::SGS_DSGS, …, ::NSD_3D)` in `src/kernel/physics/SGS.jl`.
@@ -492,7 +492,42 @@ grid ($h_z = 6.91$ m) that rate is what `:implicit_vdiff` exists to remove, and
 the DynSGS deck carries it on by default for the same reason the Smagorinsky
 one does.
 
-### 5.9 Tests
+### 5.9 Cases
+
+| case | what it is for |
+|---|---|
+| `CompEuler/rtb3d_dsgs` | the small one. A rising thermal bubble that is a **cylinder along y**, on a mesh one element thick in y: 10 × 1 × 10 elements over 10000 × 1000 × 10000 m, 8405 gridpoints, one core, minutes. |
+| `CompEuler/LESICP2-64x64x60-dynsgs` | the production one. 15.9 M nodes, the turbulent PBL. |
+
+`rtb3d_dsgs` is the one to run first, and it is a *test* rather than a small
+run for three reasons:
+
+1. **The solution must be y-invariant.** The bubble radius is measured in the
+   x–z plane only and the y faces are free-slip, so $v \equiv 0$ exactly. `v`
+   in the VTU is then a free correctness check on the whole 3D path — the
+   stress tensor including its $-\tfrac23\mu\nabla\cdot\mathbf{u}$ term, the
+   metrics, the DSS, the coefficient itself — and far easier to read than a
+   slightly-too-diffuse bubble.
+2. **It should reproduce the 2D case.** Same geometry, bubble and resolution
+   as `CompEuler/theta` and `theta_dsgs`. Not bit-for-bit: the 2D path gives
+   slot 4 the $Pr/(\gamma-1)$ artificial conduction ($0.25\mu$ at
+   `:Pr => 0.1`) where the 3D path gives $\mu/Pr_t = 1.43\mu$, a factor 5.7 on
+   the θ diffusivity. `:μ[5] => 0.175` reproduces the 2D coefficient exactly
+   if you want them on equal footing.
+3. **The §5.2 perturbation normalisation is visible in miniature.** Over the
+   10 km column the reference state runs $\rho$ 1.17 → 0.4 and $\rho\theta$
+   350 → 120 while the bubble's departure from it is $O(2)$: normalising on the
+   total field would divide the residual by ~230 instead of ~2 and switch the
+   model off.
+
+**Mesh note.** `rtb3d_dsgs_10x1x10.msh` is isotropic — $dx = dy = dz$ =
+1000 m — *deliberately*, so `:les_filter_width` cannot be set wrongly. A dummy
+direction that is one element deep but many elements *wide* is harmless for an
+inviscid run and not harmless for an LES closure: the default `:max` would take
+the filter width from it and $\nu \propto \Delta^2$. The `.geo` header carries
+the arithmetic.
+
+### 5.10 Tests
 
 `test/sgs/test_dsgs3d.jl` (standalone, no Jexpresso load, same discipline as
 `test/sgs/test_closures.jl`): the coefficient on a manufactured residual is
@@ -500,6 +535,12 @@ the value eq. (9) predicts; an exact solution gets identically zero; the cap
 binds only from above; the perturbation normalisation is invariant under
 adding a sounding; $\mu \propto \Delta^2$ below the cap and $\propto\Delta$ at
 it; the floors keep a uniform field at zero; every equation can drive the max.
+
+`test/sgs/test_dsgs3d_wiring.jl` loads the **real** `sgsStructs.jl` and
+`SGS.jl` against stubs for KernelAbstractions/MPI and runs them, so a
+signature that does not match its call site, a field that is not on the
+struct, or an allocator that hands 2D a closure it must not have fails there
+rather than three hours into a 15.9 M-node run.
 
 ---
 
