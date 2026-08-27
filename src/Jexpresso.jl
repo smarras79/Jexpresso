@@ -268,6 +268,12 @@ include(joinpath( "kernel", "solvers", "hevi", "hevi.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "cfl_diagnostics.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "substep.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "krylov.jl"))
+# precond_api.jl declares the three generic functions a stage-solve
+# preconditioner answers and the `:imex_precond => :custom` build path. It names
+# no concrete type, so it goes before the two files that add methods to it
+# (schur_precond.jl, imex3d.jl) and before the two builders that call it
+# (schur_stage.jl, imex3d.jl).
+include(joinpath( "kernel", "solvers", "hevi", "precond_api.jl"))
 # schur.jl builds its operator out of hevi_apply_A!, so it follows operator.jl;
 # imex3d.jl is the only consumer, so it precedes that.
 # schur_kernel.jl defines SchurKernel, which schur.jl names in a field type,

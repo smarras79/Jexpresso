@@ -36,7 +36,7 @@ const IMEX_SRC = joinpath(@__DIR__, "..", "..", "src", "kernel", "solvers", "hev
 # things a real precompile would.
 const IMEX_FILES = ("columns.jl", "vdiffusion.jl", "operator.jl", "factorize.jl", "acoustic.jl",
                     "ark.jl", "hevi.jl", "cfl_diagnostics.jl", "substep.jl",
-                    "krylov.jl", "imex3d.jl")
+                    "krylov.jl", "precond_api.jl", "imex3d.jl")
 
 incl(p) = string("include(raw\"", abspath(p), "\")")
 

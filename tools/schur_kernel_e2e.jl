@@ -30,7 +30,7 @@ const RANK = MPI.Comm_rank(COMM)
 const SRC = joinpath(@__DIR__, "..", "src", "kernel", "solvers", "hevi")
 include(joinpath(@__DIR__, "..", "test", "hevi", "mock_sem.jl"))
 for f in ("columns.jl", "vdiffusion.jl", "operator.jl", "factorize.jl", "acoustic.jl",
-          "ark.jl", "hevi.jl", "krylov.jl",
+          "ark.jl", "hevi.jl", "krylov.jl", "precond_api.jl",
           "schur.jl", "schur_precond.jl", "schur_stage.jl", "imex3d.jl")
     include(joinpath(SRC, f))
 end

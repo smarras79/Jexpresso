@@ -187,6 +187,21 @@ function imex3d_precond!(V::AbstractMatrix, pc::IMEX3DPrecond, params, gdt::Real
     return V
 end
 
+#-----------------------------------------------------------------------------
+# The generic preconditioner interface (precond_api.jl), for the built-in
+# five-field column solve. Both stage solves reach EVERY preconditioner through
+# these -- the two shipped here and anything a deck supplies via
+# `:imex_precond => :custom` -- so there is one call path and no branch on
+# which kind is in use.
+#-----------------------------------------------------------------------------
+imex_precond_apply!(pc::IMEX3DPrecond, V::AbstractMatrix, params, gdt::Real) =
+    imex3d_precond!(V, pc, params, gdt)
+
+imex_precond_describe(pc::IMEX3DPrecond) =
+    string("HEVI column solve on ", pc.pvars, ", banded LU per column",
+           length(pc.pvars) == 3 ?
+             " (the omitted rows are exactly the identity here)" : "")
+
 """
     IMEX3DCache
 
@@ -280,7 +295,7 @@ function imex3d_solve!(dst, src, params, gdt::Real)
     end
     precon! = pc === nothing ? (Z -> Z) :
               let pc = pc, params = params, g = g
-                  Z -> imex3d_precond!(Z, pc, params, g)
+                  Z -> imex_precond_apply!(pc, Z, params, g)
               end
 
     hevi_trace("    IMEX: entering GMRES, gdt=", g)
@@ -486,7 +501,7 @@ function imex_verify_solve(params, imex::IMEX3DCache, gdt::Real)
     end
     precon! = imex.pc === nothing ? (Z -> Z) :
               let pc = imex.pc, params = params, g = g
-                  Z -> imex3d_precond!(Z, pc, params, g)
+                  Z -> imex_precond_apply!(pc, Z, params, g)
               end
 
     iters, _, converged = gmres_solve!(X, B, imex.ws, matvec!, precon!)
@@ -686,7 +701,7 @@ function ark_relinearize!(params, imex::IMEX3DCache, u)
     # The Schur preconditioner holds its own vertical operator with its own
     # coefficients, and its band is assembled FROM them, so it has to be
     # refreshed and re-probed exactly as the five-field one is.
-    if imex.schur !== nothing && imex.schur.pc !== nothing
+    if imex.schur !== nothing && imex.schur.pc isa SchurColumnPrecond
         spc = imex.schur.pc
         copyto!(spc.opv.beta,     op.beta)
         copyto!(spc.opv.thetabar, op.thetabar)
@@ -694,13 +709,27 @@ function ark_relinearize!(params, imex::IMEX3DCache, u)
         refactorize_schur!(spc, params, spc.lam[])
     end
 
-    if imex.pc !== nothing
+    if imex.pc isa IMEX3DPrecond
         copyto!(imex.pc.opv.beta,     op.beta)
         copyto!(imex.pc.opv.thetabar, op.thetabar)
         imex.pc.opv.vd === nothing ||
             vdiff_refresh!(imex.pc.opv.vd, params, imex.pc.opv.vars, u)
         refactorize!(imex.pc.fac, params, imex.pc.opv, imex.pc.cc, imex.pc.topo,
                      imex.pc.fac.gdt[])
+    end
+
+    # `:imex_precond => :custom`. The two branches above reach INTO the built-in
+    # preconditioners because they are this file's own objects and it knows what
+    # they hold; a deck's is opaque, so it is told the coefficients moved and
+    # refreshes itself. The default `imex_precond_refresh!` is a no-op, which is
+    # correct for a preconditioner that reads `op.beta` and friends live and
+    # WRONG for one that copied them at setup -- see precond_api.jl.
+    if !(imex.pc === nothing || imex.pc isa IMEX3DPrecond)
+        imex_precond_refresh!(imex.pc, params, imex.gdt)
+    end
+    if imex.schur !== nothing &&
+       !(imex.schur.pc === nothing || imex.schur.pc isa SchurColumnPrecond)
+        imex_precond_refresh!(imex.schur.pc, params, imex.gdt)
     end
     return imex
 end
@@ -849,8 +878,11 @@ function build_imex3d(params, inputs)
     # without a second code path.
     #-------------------------------------------------------------------------
     pcmode = Symbol(get(inputs, :imex_precond, :column))
-    pcmode in (:column, :none) ||
-        error("IMEX3D: :imex_precond must be :column (the default) or :none; got $pcmode.")
+    pcmode in (:column, :none, :custom) ||
+        error("IMEX3D: :imex_precond must be :column (the default), :none, or ",
+              ":custom; got $pcmode. `:custom` takes the preconditioner from ",
+              ":imex_precond_build => f, a callable f(ctx) -> pc -- see ",
+              "src/kernel/solvers/hevi/precond_api.jl.")
 
     verify = get(inputs, :imex_verify, true) == true
     spec   = (NaN, NaN, NaN)
@@ -914,6 +946,22 @@ function build_imex3d(params, inputs)
         fac = build_column_factorization(params, opv, cc, topo, gdt; verify_hook = hook)
         pc  = IMEX3DPrecond(opv, cc, fac, topo, copy(pvars))
         _say(@sprintf(" | factorise %.1fs", _lap()))
+    end
+
+    # `:imex_precond => :custom` -- the deck's own preconditioner for the
+    # FIVE-FIELD system. On the Schur path the same key selects a custom
+    # preconditioner for the SCALAR one instead, built with `schur = true` in
+    # build_imex3d_schur, because there is no five-field solve left to
+    # precondition. Everything the builder gets is in `ctx`; everything it has
+    # to answer is in precond_api.jl.
+    if pcmode === :custom && !lschur
+        pc = build_custom_precond(
+                 imex_precond_context(params = params, inputs = inputs, op = op,
+                                      topo = topo, comm = comm, gdt = gdt,
+                                      nimp = op.nimp, schur = false,
+                                      lwall_flux = lwall))
+        hevi_trace("build_imex3d: custom preconditioner built (", typeof(pc), ")")
+        _say(@sprintf(" | custom precond %.1fs", _lap()))
     end
 
     #-------------------------------------------------------------------------
@@ -1273,10 +1321,12 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
     npoin_g = MPI.Allreduce(Int(params.mesh.npoin), MPI.SUM, comm)
     kbytes  = sum(sizeof, ws.V; init = 0) + 3 * sizeof(ws.W)
     kb_max  = nranks > 1 ? MPI.Allreduce(kbytes, MPI.MAX, comm) : kbytes
-    pbytes  = pc === nothing ? 0 :
-              sum(sizeof, pc.fac.AB; init = 0) + sum(sizeof, pc.fac.ipiv; init = 0)
+    # Only the built-in column preconditioner has a band and a gather/scatter
+    # plan to report; a custom one describes itself instead (imex_precond_describe).
+    pbytes  = pc isa IMEX3DPrecond ?
+              sum(sizeof, pc.fac.AB; init = 0) + sum(sizeof, pc.fac.ipiv; init = 0) : 0
     pb_max  = nranks > 1 ? MPI.Allreduce(pbytes, MPI.MAX, comm) : pbytes
-    nsplit  = pc === nothing ? 0 : pc.cc.nsplit_global
+    nsplit  = pc isa IMEX3DPrecond ? pc.cc.nsplit_global : 0
     ncol_g  = nranks > 1 ? MPI.Allreduce(topo.ncol, MPI.SUM, comm) : topo.ncol
     # COLLECTIVE, so it has to be above the early return below -- every rank
     # reaches it or none does. `mu` is rank-local and a max over it alone would
@@ -1343,17 +1393,19 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
     # on -- there the preconditioner lives on the scalar system instead, and
     # reporting NONE here would send a user chasing an iteration count that is
     # not there.
+    #
+    # The text comes from `imex_precond_describe`, so a custom preconditioner
+    # names itself on the same line the built-in ones use. A report that says
+    # something other than what the deck asked for is the first thing to check
+    # when a new preconditioner appears to do nothing.
     @printf(" │      preconditioner: %s\n",
             schur !== nothing ?
               (schur.pc === nothing ?
                  "NONE (:imex_precond => :none) -- expect many iterations" :
-                 string("column solve on the scalar Schur operator, banded LU ",
-                        "per column (bandwidth ", schur.pc.kl, ", n = ", schur.pc.n, ")")) :
+                 imex_precond_describe(schur.pc)) :
             pc === nothing ? "NONE (:imex_precond => :none) -- expect many iterations" :
-            string("HEVI column solve on ", pc.pvars, ", banded LU per column",
-                   length(pc.pvars) == 3 ?
-                     " (the omitted rows are exactly the identity here)" : ""))
-    if pc !== nothing
+            imex_precond_describe(pc))
+    if pc isa IMEX3DPrecond
         @printf(" │      columns: %d global x %d levels; %d of %d local instances split\n",
                 topo.ncolg, topo.nlev, nsplit, max(ncol_g, 1))
         @printf(" │      banded factors %.1f MB, Krylov basis %.1f MB (busiest rank)\n",

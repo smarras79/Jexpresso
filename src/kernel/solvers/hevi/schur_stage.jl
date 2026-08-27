@@ -92,6 +92,9 @@ function build_imex3d_schur(params, topo::ColumnTopology, comm::MPI.Comm, inputs
               "is on; reaching this means the operator was built elsewhere.")
 
     pcmode  = Symbol(get(inputs, :imex_precond, :column))
+    pcmode in (:column, :none, :custom) ||
+        error("IMEX3D/Schur: :imex_precond must be :column (the default), :none, ",
+              "or :custom; got $pcmode.")
     rtol    = Float64(get(inputs, :imex_rtol, 1.0e-8))
     restart = Int(get(inputs, :imex_restart, 20))
     maxiter = Int(get(inputs, :imex_maxiter, 200))
@@ -114,9 +117,18 @@ function build_imex3d_schur(params, topo::ColumnTopology, comm::MPI.Comm, inputs
     ws = GMRESWorkspace(npoin, 1, inner; m = restart, maxiter = maxiter,
                         rtol = rtol, atol = 1.0e-30)
 
+    # `:custom` here preconditions the SCALAR system: the field is npoin x 1 and
+    # the operator is H, not (I - gdt*A). `ctx.schur` says so, and is the one
+    # thing a builder that wants to serve both paths has to branch on.
     pc = pcmode === :column ?
          build_schur_column_precond(params, topo, comm, gdt;
-                                    lwall_flux = lwall_flux) : nothing
+                                    lwall_flux = lwall_flux) :
+         pcmode === :custom ?
+         build_custom_precond(
+             imex_precond_context(params = params, inputs = inputs, op = op,
+                                  topo = topo, comm = comm, gdt = gdt,
+                                  nimp = 1, schur = true,
+                                  lwall_flux = lwall_flux)) : nothing
 
     P = zeros(Float64, npoin); R = zeros(Float64, npoin)
     # The PRECONDITIONER deliberately gets no kernel: it runs on a vertical-only
@@ -187,7 +199,7 @@ function imex3d_solve_schur!(dst, src, params, gdt::Real)
     end
     precon! = sch.pc === nothing ? (Z -> Z) :
               let pc = sch.pc, params = params, g = g
-                  Z -> (schur_precond!(vec(Z), pc, params, g); Z)
+                  Z -> imex_precond_apply!(pc, Z, params, g)
               end
 
     hevi_trace("    IMEX/Schur: entering GMRES on the scalar system, gdt=", g)

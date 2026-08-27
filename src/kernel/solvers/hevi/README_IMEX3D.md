@@ -58,7 +58,8 @@ closure can go missing in the split, whatever the deck turns on.
 | `:imex_atol` | `1e-30` | absolute floor, for a zero right-hand side |
 | `:imex_restart` | `20` | GMRES(m) restart length |
 | `:imex_maxiter` | `200` | total iterations before giving up on a stage |
-| `:imex_precond` | `:column` | `:column` or `:none` (`:none` is for measuring) |
+| `:imex_precond` | `:column` | `:column`, `:none` (for measuring), or `:custom` — see [Writing your own preconditioner](#writing-your-own-preconditioner--imex_precond--custom) |
+| `:imex_precond_build` | — | required by `:custom`: a callable `f(ctx) -> pc` |
 | `:imex_umax` | measured | largest expected `|v|`, m/s |
 | `:imex_mach` | derived | wedge opening; override only to be deliberately conservative |
 | `:imex_lateral_walls` | `:auto` | `:auto` `:bc` `:box` `:none` |
@@ -297,6 +298,236 @@ setup report prints the iteration count either way.
 
 ---
 
+### Writing your own preconditioner — `:imex_precond => :custom`
+
+**Short answer: yes, and nothing else has to change.** The stage solve asks a
+preconditioner for exactly one thing — overwrite the field `Z` with `M⁻¹Z` —
+and everything above it is already blind to which `M` that is. `IMEX3DCache` is
+parametric in the preconditioner's type, so a new one changes no field type, no
+method signature and no call site anywhere upstream. The operator, the column
+topology, the distributed inner product, the ARK driver and GMRES itself are
+untouched.
+
+What used to require editing `src/` was the **deck**: `:imex_precond` accepted
+`:column` or `:none` and raised on anything else. It now takes a third value.
+
+```julia
+:imex_precond       => :custom,
+:imex_precond_build => my_precond,     # f(ctx) -> pc, called once at setup
+```
+
+You write **one builder and one method**. Both go straight into your case's
+`user_inputs.jl`: that file is `include`d into the `Jexpresso` module, so the
+names resolve with no prefix and no `import`.
+
+The full contract lives in `src/kernel/solvers/hevi/precond_api.jl`.
+
+#### The three functions
+
+| function | required? | what it does |
+|---|---|---|
+| `imex_precond_apply!(pc, V, params, gdt)` | **yes** | overwrite `V` with `M⁻¹V`, **in place**, and return it |
+| `imex_precond_refresh!(pc, params, gdt)` | no (no-op) | rebuild against moved coefficients; called only under `:imex_linearization => :PS` |
+| `imex_precond_describe(pc)` | no (type name) | the line the setup report prints after `preconditioner:` |
+
+`V` is `npoin × nimp`: `nimp = 5` on the five-field solve — `(ρ, ρu, ρv, ρw, ρθ)`
+in `op.vars` order — and `nimp = 1` on the scalar Schur system, where `M`
+approximates the Helmholtz operator `H` rather than `I − γΔt·A`.
+
+#### The build context
+
+The builder gets one argument, a `NamedTuple`. Destructure it **by name**;
+fields may be added.
+
+| field | what it is |
+|---|---|
+| `ctx.params` | the parameter bundle: `mesh`, `metrics`, `Minv`, `qp.qe`, … |
+| `ctx.inputs` | the deck `Dict` — read your own keys from it |
+| `ctx.op` | the 3D acoustic operator `A`. `hevi_apply_A!(W, V, params, op)` applies it; `op.beta`, `op.thetabar`, `op.vars`, `op.nimp` are readable |
+| `ctx.topo` | the `ColumnTopology`: who owns which vertical column, and how many levels |
+| `ctx.comm` | the MPI communicator |
+| `ctx.gdt` | `γΔt` at setup — the value to build against |
+| `ctx.nimp` | 5, or 1 on the Schur path |
+| `ctx.schur` | `true` when this preconditions `H` rather than `I − γΔt·A` |
+| `ctx.lwall_flux` | whether the implicit vertical mass flux is zeroed at floor and lid |
+
+#### A worked example, complete
+
+Point Jacobi: the reciprocal of the operator's diagonal, recovered by probing
+`M` rather than by deriving it. Node-local, so it needs no communication and is
+single-valued across ranks for free. It is not a *good* preconditioner for
+stiff acoustics — that is the point of showing it; it is the shortest thing
+that is unambiguously correct, and it is where you start before writing
+something that wins.
+
+Put this at the top of `user_inputs.jl`, above the `Dict`:
+
+```julia
+# ---- a point-Jacobi preconditioner for the IMEX3D stage solve --------------
+mutable struct MyJacobi
+    invd::Matrix{Float64}      # npoin x nimp, the reciprocal diagonal
+end
+
+# REQUIRED. In place: the return value is discarded by the Arnoldi loop, so a
+# method that computes M^-1 V into a NEW array acts as the identity.
+function Jexpresso.imex_precond_apply!(pc::MyJacobi, V::AbstractMatrix, params, gdt)
+    V .*= pc.invd
+    return V
+end
+
+Jexpresso.imex_precond_describe(::MyJacobi) = "point Jacobi on the diagonal of I - gdt*A"
+
+function build_my_jacobi(ctx)
+    npoin = Int(ctx.params.mesh.npoin)
+    e   = ones(Float64,  npoin, ctx.nimp)
+    out = zeros(Float64, npoin, ctx.nimp)
+    Jexpresso.hevi_apply_A!(out, e, ctx.params, ctx.op)
+    @. out = e - ctx.gdt * out                 # (I - gdt*A) applied to ones
+    invd = similar(out)
+    @inbounds for i in eachindex(out)
+        # A zero row would hand the iteration an Inf. Fall back to the identity
+        # on that node rather than poisoning the Krylov basis.
+        invd[i] = abs(out[i]) > 1e-12 ? 1.0 / out[i] : 1.0
+    end
+    return MyJacobi(invd)
+end
+```
+
+and then, in the deck:
+
+```julia
+:imex_precond       => :custom,
+:imex_precond_build => build_my_jacobi,
+```
+
+Run it. The setup report prints
+
+```
+ │      preconditioner: point Jacobi on the diagonal of I - gdt*A
+```
+
+and the iteration count next to it is the number to compare against the
+`:column` and `:none` arms.
+
+> The `Jexpresso.` prefixes above are what you need when the case file is
+> `include`d from outside the module (a script, the REPL). Inside a normal
+> `run_case` the case file is evaluated *in* `Jexpresso`, where the bare names
+> work too; writing the prefix costs nothing and is right either way.
+
+#### Reusing the built-in machinery
+
+A preconditioner does not have to be written from nothing. The column
+factorisation is a library, not a private detail, and everything it needs is
+in the context:
+
+```julia
+function build_my_column_variant(ctx)
+    pvars = Jexpresso.hevi_choose_vars(ctx.params.metrics, ctx.comm)
+    opv   = Jexpresso.build_hevi_operator(ctx.params, ctx.topo, pvars;
+                                          lwall_flux = ctx.lwall_flux, full = false)
+    owner, own = Jexpresso.assign_column_owners(ctx.topo, ctx.comm)
+    cc  = Jexpresso.build_column_comm(ctx.topo, owner, own, ctx.comm, length(pvars))
+    fac = Jexpresso.build_column_factorization(ctx.params, opv, cc, ctx.topo, ctx.gdt)
+    return Jexpresso.IMEX3DPrecond(opv, cc, fac, ctx.topo, copy(pvars))
+end
+```
+
+That rebuilds exactly what `:imex_precond => :column` builds — which is the
+test in `test/imex3d/test_custom_precond.jl`, asserting that the same `M`
+reached through the hook reproduces the built-in arm's iteration count to the
+iteration. Start from it and change one thing: a different variable set, a
+wider band, a different vertical operator, a second sweep after the column
+solve.
+
+`assemble_column_band` (`factorize.jl`) recovers a matrix **by probing the
+operator** with coloured unit vectors rather than by deriving entries, so the
+band cannot drift from the operator it claims to be. If your `M` is any local
+operator with a bounded stencil, copy that pattern instead of writing the
+entries out.
+
+#### The four rules
+
+1. **In place.** `imex_precond_apply!` is called for its effect on `V`; the
+   return value is discarded. Computing `M⁻¹V` correctly into a fresh array
+   makes the run converge to the right answer at the iteration count of *no*
+   preconditioner, and nothing else says so. `imex_precond_selfcheck` turns
+   this into a setup error — it applies the preconditioner once to a
+   deterministic probe and refuses a field that came back untouched, or with a
+   NaN in it. It runs unconditionally, not under `:imex_verify`, because it
+   costs one application.
+
+2. **Single-valued across ranks.** Every holder of a shared node must agree on
+   the result. The multiplicity-weighted inner product in `krylov.jl` is an
+   inner product only on such fields, and Arnoldi built on anything else
+   produces a basis that is not orthogonal in the norm the residual is measured
+   in. A node-local preconditioner gets this for free; anything that solves
+   across nodes must end in an assembly or a scatter, as the column solve ends
+   in `column_scatter!`.
+
+3. **No rank-local branches.** Every collective inside the preconditioner must
+   be reached by every rank on every application. The iteration itself is
+   bit-identical across ranks — the loop conditions come out of
+   `MPI.Allreduce` — so this holds automatically unless *you* branch on a
+   rank-local quantity. If you do, the run deadlocks rather than failing.
+
+4. **Deterministic.** This GMRES is not flexible: it applies `M⁻¹` again at the
+   end of each cycle to form the update, which assumes the same `M⁻¹` used
+   inside the cycle. An inner Krylov solve with its own tolerance breaks that.
+   If you want one anyway, set `:imex_restart` equal to `:imex_maxiter` so
+   there is only ever one cycle.
+
+#### `γΔt` moves, and so must `M`
+
+Jexpresso passes every diagnostic time as a `tstop` and the integrator shortens
+the step that lands on one, so `gdt` is **not** constant over a run. A
+preconditioner built at one value and applied at another is not *wrong* — a
+preconditioner is allowed to be approximate — but it quietly costs iterations,
+which is the one currency this scheme runs on. Both built-ins compare against
+the value they were built at and refactorise:
+
+```julia
+if abs(pc.gdt[] - Float64(gdt)) > 1e-14 * max(abs(gdt), 1.0)
+    rebuild!(pc, params, gdt)
+end
+```
+
+Separately, under `:imex_linearization => :PS` the operator's coefficients
+(`β`, `θ̄`, `grad θ̄`, the eddy viscosity) are refreshed from the solution every
+`:imex_update_freq` steps. `imex_precond_refresh!` is called right after that.
+The default no-op is correct if your builder kept a *reference* to `ctx.op` and
+reads its arrays live; it is wrong if you copied them at setup, and the failure
+is silent — the preconditioner still converges, just to a worse iteration
+count.
+
+#### Measuring whether it was worth it
+
+Three runs, same deck otherwise, and read the iteration count off the setup
+report and the `:imex_monitor` line:
+
+```julia
+:imex_precond => :none      # the ceiling: no preconditioner at all
+:imex_precond => :column    # the built-in, the number to beat
+:imex_precond => :custom    # yours
+```
+
+Cost per iteration matters as much as the count: the profile block breaks the
+stage solve into `matvec`, `precond` and `orthogonalise`, and a preconditioner
+that halves the iterations while tripling the per-iteration cost loses. On the
+`rtb3d_schur` reference run the column preconditioner is 21% of the five-field
+stage solve and 13% of the Schur one — that is the budget a replacement has to
+fit into.
+
+#### Where this does *not* reach
+
+`:imex_precond` steers the **IMEX3D acoustic stage solve** only. The radiative-
+transfer solver has its own, unrelated preconditioner menu (~15 options: ASM
+with several local factorisations, global factorisations on rank 0, distributed
+MUMPS, Jacobi, inner GMRES) in `src/kernel/operators/asm_preconditioner.jl`.
+Adding one there still means editing that file — see its header for the two
+places to touch.
+
+---
+
 ## What it costs — read this before choosing Δt
 
 The iteration count is the entire price of the scheme, and it is **not a
@@ -477,8 +708,20 @@ julia --project=. test/imex3d/runtests_standalone.jl     # the machinery
 julia --project=. test/hevi/test_vdiffusion.jl           # implicit vertical diffusion
 julia --project=. test/imex3d/test_rtb.jl                # the physics
 julia --project=. test/imex3d/test_wedge_stability.jl    # the tableau choice
+julia --project=. test/imex3d/test_custom_precond.jl     # the :custom hook
 mpiexecjl -n 3 julia --project=. test/imex3d/runtests_standalone.jl
 ```
+
+`test_custom_precond.jl` is the one to run after touching anything in
+`precond_api.jl` or the two `precon!` closures. It asserts the claim the
+section above makes: the built-in column preconditioner, handed back through
+`:imex_precond_build`, reproduces the `:column` arm's iteration count *to the
+iteration* on both stage solves — so the hook applies `M` at the same point in
+the cycle, to the same field, at the same `gdt`. It also checks that a
+deliberately weak preconditioner changes the cost and not the answer, and that
+each of the silent mistakes (no builder, a non-callable one, `nothing`, an
+out-of-place apply, a type with no method) is refused at setup rather than at
+hour three of a run.
 
 **Run the machinery suite on several rank counts.** Two of the things it tests
 exist only in parallel and are no-ops on one rank: the multiplicity-weighted

@@ -298,3 +298,20 @@ function schur_precond!(P::AbstractVector, pc::SchurColumnPrecond, params, lam::
     end
     return P
 end
+
+#-----------------------------------------------------------------------------
+# The generic preconditioner interface (precond_api.jl), for the one-field
+# column solve. The stage solve reaches every preconditioner -- built-in or
+# supplied by a deck -- through these three, so this file is also the shortest
+# worked example of what a custom one has to provide.
+#
+# `V` arrives as the npoin x 1 field the scalar Krylov iteration carries;
+# `schur_precond!` works on a vector, and `vec` of a Matrix is a reshape, not a
+# copy, so the in-place contract survives it.
+#-----------------------------------------------------------------------------
+imex_precond_apply!(pc::SchurColumnPrecond, V::AbstractMatrix, params, gdt::Real) =
+    (schur_precond!(vec(V), pc, params, gdt); V)
+
+imex_precond_describe(pc::SchurColumnPrecond) =
+    string("column solve on the scalar Schur operator, banded LU per column ",
+           "(bandwidth ", pc.kl, ", n = ", pc.n, ")")

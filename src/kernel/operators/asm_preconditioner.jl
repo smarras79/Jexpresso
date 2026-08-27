@@ -34,6 +34,34 @@
 #                  :global_paru :global_pardiso
 #  Distributed:    :mumps_dist
 #  Other:          :jacobi :inner_gmres :none
+#
+#  ── Adding one ────────────────────────────────────────────────────────────
+#  This menu is CLOSED, and unlike the IMEX3D stage solve (which takes a deck
+#  callable through `:imex_precond => :custom` -- see
+#  src/kernel/solvers/hevi/precond_api.jl) a new option here means editing this
+#  file. Two places, and only two:
+#
+#    1. If it is a new local FACTORISATION, add a branch to `_factorize_matrix`
+#       returning anything that answers `LinearAlgebra.ldiv!(y, F, x)`. The
+#       three wrappers already here -- ReorderedILU, LinearSolveFactor, and
+#       MUMPS' own -- are the pattern for a factoriser that does not define it.
+#       Then add the symbol to `local_solvers` in `solve_parallel_gmres_asm`.
+#
+#    2. If it is a new PRECONDITIONER SHAPE rather than a new factorisation of
+#       the same one -- multigrid, a Schwarz variant with overlap, a physics-
+#       based one -- write a `build_*_preconditioner` that returns a
+#       `LinearOperator` (see `build_jacobi_preconditioner`, ~20 lines, for the
+#       smallest complete example) and add a branch to the `N = if ...` chain
+#       in `solve_parallel_gmres_asm`.
+#
+#  ONE THING TO GET RIGHT: what matters is what the APPLY does, not what the
+#  build does. A preconditioner whose apply is a fixed operation -- Jacobi's
+#  is, even though building the diagonal takes an Allreduce -- is a constant
+#  linear operator and plain GMRES is correct for it. One whose apply carries
+#  collectives or an inner iteration is not, and plain GMRES silently assumes
+#  it is; add such a symbol to the `use_fgmres` set so the solve runs
+#  `Krylov.fgmres` instead. The `:global`, `:inner_gmres` and `:mumps_dist`
+#  families are all there for exactly that reason.
 # ═════════════════════════════════════════════════════════════════════════════
 
 using SparseArrays, LinearAlgebra

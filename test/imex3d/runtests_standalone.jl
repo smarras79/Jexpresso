@@ -36,6 +36,7 @@ include(joinpath(SRC, "acoustic.jl"))
 include(joinpath(SRC, "ark.jl"))
 include(joinpath(SRC, "hevi.jl"))
 include(joinpath(SRC, "krylov.jl"))
+include(joinpath(SRC, "precond_api.jl"))
 include(joinpath(SRC, "imex3d.jl"))
 
 say(args...) = RANK == 0 && (println(args...); flush(stdout))
