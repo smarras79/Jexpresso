@@ -67,29 +67,36 @@
    mu_dsgs_ρθ          should be mu_dsgs_ρu / Pr_t = 1.43x it, everywhere.
    mu_dsgs_ρ           identically zero, because :μ[1] = 0.
 
- MEASURED (this deck has been run)
- ---------------------------------
- Both rungs of the ladder run to t = 1000 s. On this one the DynSGS
- coefficient settles at
+ MEASURED (this deck has been run, to completion)
+ ------------------------------------------------
+ t = 1000 s, 351 s on one core, at :dsgs_C1 => 0.25 (see the note there for
+ the sweep that chose it).
 
-     nu  max ~90-120 m^2/s, mean ~60          (kinematic)
+     nu             max ~150, mean ~74 m^2/s, against a C2*Delta*(|v|+c) cap
+                    of ~4.3e4 -- the cap is inert and mu_res governs, which is
+                    the regime the model is designed for
+     max|v|         5.5e-5 m/s against max|w| = 10.1, i.e. 5e-6 of the flow.
+                    THE y-INVARIANCE CHECK PASSES: the full 3D path -- the
+                    stress tensor with its -2/3 div(u) term, the metrics, the
+                    DSS, the DynSGS coefficient -- generates no cross-flow.
+     theta          the 2 K bubble retains 1.10 K at t = 1000 s
+     mu_dsgs_ρu     3.0x larger on the front (0.05 < |theta'| < 0.8) than in
+                    the far field (|theta'| < 0.005)
 
- against a C2*Delta*(|v|+c) cap of ~4.3e4 -- i.e. the cap is inert and mu_res
- governs, which is the regime the model is designed for. rtb2d_dsgs on the
- same bubble gives max ~190-215; the difference is Delta (250 m here against
- the 2D path's 200 m, so 1.56x in Delta^2) and the theta split noted above.
-
- The worst residual in the domain sits on the BUBBLE EDGE, where the initial
- condition's linear taper theta_c(1 - r/r0) has its slope discontinuity. That
- is the whole claim of a residual sensor and it is worth checking rather than
- assuming:
+ THAT 3.0x IS RESOLUTION-LIMITED, NOT A PROPERTY OF THE MODEL. The element is
+ 1000 m and the bubble's front is ~1 element thick here, so a coefficient that
+ is CONSTANT PER ELEMENT cannot be sharper than this: most elements straddle
+ the front. Marras et al.'s Fig. 2, where the SGS stresses hug the bubble as a
+ thin ribbon, is a FINE-GRID run at dx = dz = 15.625 m -- 16x finer than this
+ deck's effective 250 m. Refine before reading anything into the sharpness.
 
      JEXPRESSO_DSGS_MONITOR=1
 
  prints one line per step with nu max/mean, the normalising denominators, and
  the coordinates of the node that produced the worst ratio -- flagging it if
  that node is ON A BOUNDARY, which is the signature of the residual picking up
- a boundary condition rather than a discretisation error.
+ a boundary condition rather than a discretisation error. It is what found
+ that defect; turn it on first when a DynSGS run misbehaves.
 
  It is not registered in test/ci_cases.jl because that needs a committed
  reference solution in test/CI-ref/ and a copy of the deck under
