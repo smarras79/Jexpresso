@@ -88,9 +88,25 @@
     2048 ranks   2 columns each   exact
 
      DBG_SCHEME=imex (default) | hevi | explicit   -- same physics, three arms
-     DBG_VDIFF=0                                   -- explicit vertical diffusion
      DBG_FILTER=0                                  -- modal filter off
      DBG_DT=... DBG_RTOL=... DBG_RESTART=...       -- sweep the three knobs
+
+ THE TWO IMEX ARMS. :imex_schur and :implicit_vdiff cannot both be on -- the
+ Schur reduction inverts the momentum row pointwise and cannot see a vertical
+ diffusion operator -- so `use_schur = !_vdiff` picks one:
+
+     (default)     implicit vertical diffusion, FIVE-FIELD stage solve
+                   stable as nu_t grows; ~3.56x slower per step
+
+     DBG_VDIFF=0   explicit vertical diffusion, SCHUR stage solve
+                   3.56x faster per step; the vertical viscous rate
+                   2*mu[5]/Pr_t*nu_t/h_z^2 is back in the explicit budget and
+                   ARS343 carries it only to nu_t ~ 40-80 m^2/s here (twice the
+                   Smagorinsky deck's 20-40, because :mu[5] is 1.0 not 2.0)
+
+ Both take ALL acoustics implicitly at dt = 0.5. Watch the CFL report's viscous
+ row and JEXPRESSO_DSGS_MONITOR=1: the DBG_VDIFF=0 arm ends when nu_t reaches
+ the number above, and whether DynSGS gets there is the question it answers.
 =============================================================================#
 
 function user_inputs()
@@ -480,7 +496,13 @@ function user_inputs()
         :outformat           => "vtk",
 	# One tree per scheme, so an A/B/C leaves all three solutions on disk
 	# rather than overwriting each other.
-	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_64x64x60_10240mX10240mX5000m_dynsgs_" * String(scheme) * "/",
+	# The ARM is in the path, not just the scheme: the two IMEX configurations
+	# below are a deliberate A/B and writing both into one directory loses the
+	# first one silently.
+	#   _dynsgs_imex_schur   Schur stage solve, EXPLICIT vertical diffusion
+	#   _dynsgs_imex_vdiff   five-field stage solve, IMPLICIT vertical diffusion
+	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_64x64x60_10240mX10240mX5000m_dynsgs_" *
+	                        String(scheme) * (scheme === :imex ? (_vdiff ? "_vdiff" : "_schur") : "") * "/",
 	#:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/,"
         #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
