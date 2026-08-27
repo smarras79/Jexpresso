@@ -133,7 +133,7 @@ function user_inputs()
     umax        = parse(Float64, get(ENV, "DBG_UMAX",      "15.0"))
     verify      = parse(Bool,    get(ENV, "DBG_VERIFY",    "true"))
     warm_start  = parse(Bool,    get(ENV, "DBG_WARM",      "true"))
-    lin_imex    = Symbol(        get(ENV, "DBG_LIN",       "PS"))       # :RS | :PS
+    lin_imex    = Symbol(        get(ENV, "DBG_LIN", _vdiff ? "PS" : "RS"))  # :PS is REQUIRED by implicit vdiff and pure cost without it -- it re-probes and re-factorises the band every :imex_update_freq steps
     updfreq     = parse(Int,     get(ENV, "DBG_UPDFREQ",   "5"))
     lat_walls   = Symbol(        get(ENV, "DBG_LATWALL",   "auto"))
     monitor     = parse(Bool,    get(ENV, "DBG_IMEXMON",   "true"))
