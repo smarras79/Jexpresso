@@ -373,6 +373,39 @@ function params_setup(sem,
     #     [:,4] = κ_θ  (already scaled by Pr/(γ-1))
     ldsgs     = inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
     ldsgs_mhd = inputs[:lvisc] == true && inputs[:visc_model] == DSGS_MHD()
+
+    # DYNSGS NEEDS TOTAL VARIABLES, and failing that it does not misbehave
+    # mildly -- it blows up on the first step, which looks like a time-step or
+    # a physics problem and is neither.
+    #
+    # The residual coefficient is normalised by the domain spread of the
+    # solution (SGS.jl:729-731):
+    #
+    #     mu_res|e = C1 * D^2 * max_i ||R_i||inf,e / ||q_i - <q_i>||inf,Omega
+    #
+    # and that denominator is taken from `q` AS STORED. Under PERT() `q` is
+    # already the deviation from the reference state, so for the usual quiescent
+    # start the momentum slots are IDENTICALLY ZERO at t = 0: the denominator
+    # collapses to `eps`, mu_res saturates its own limiter, and the run gets
+    # mu_max = C2*D*(|u|+c) applied everywhere from step one. On CompEuler/theta
+    # that is ~17,000 m^2/s, a diffusion number of 29 against an explicit limit
+    # near 0.5 -- instantaneous instability.
+    #
+    # Marras et al. (JCP 2015) define the method on the total variables, and
+    # every DSGS deck in problems/ uses TOTAL(). Refusing here rather than
+    # warning: there is no partially-correct outcome to fall back to.
+    if (ldsgs || ldsgs_mhd) && inputs[:SOL_VARS_TYPE] == PERT()
+        error("DynSGS (:visc_model => ", inputs[:visc_model], ") requires ",
+              ":SOL_VARS_TYPE => TOTAL(), but this case sets PERT(). The ",
+              "residual coefficient is normalised by the domain spread of the ",
+              "solution variables, and under PERT() those are perturbations -- ",
+              "identically zero in the momentum slots at t = 0 for a quiescent ",
+              "start -- so the normalisation collapses and the run is handed ",
+              "its maximum viscosity on the first step. Set TOTAL(), or use a ",
+              "non-dynamic :visc_model (SMAG(), VREM(), AV()), which are all ",
+              "fine with PERT(). CompEuler/theta_dsgs is CompEuler/theta set up ",
+              "for this model.")
+    end
     if ldsgs || ldsgs_mhd
         μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
                                                 Int64(sem.mesh.nelem), Int64(qp.neqs))
