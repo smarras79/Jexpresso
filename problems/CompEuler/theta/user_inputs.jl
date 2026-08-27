@@ -29,6 +29,7 @@ function user_inputs()
         #:visc_model        => AV(),
         #:visc_model        => VREM(),
         :visc_model        => SMAG(),
+        #:visc_model        => DSGS(), #DSGS + TOTAL(). Not implemented with PERT()
         # :max = coarsest element edge (the default), :geometric = volume
         # equivalent, :min = finest. Prefer :geometric on a quasi-2D mesh --
         # see compute_element_size_driver in mesh.jl.
