@@ -49,17 +49,15 @@ callsite_kwargs(SD) = (C_s = 0.23, nelem = 8, neqs = 5, SD = SD,
             # That is what broke, and it is branch-independent.
             @test got !== :THREW
 
-            # The RETURN is only pinned where this branch actually implements a
-            # model. AV has no method of its own by design. DSGS's allocator
-            # lives on claude/lesicp2-stability-dynsgs-zt1z0r and is absent
-            # here, so it legitimately reaches the ::Any fallback and returns
-            # nothing -- asserting otherwise tests which branch you are on
-            # rather than the signature, which is what an earlier version of
-            # this file did and failed on.
-            if tag isa SMAG || tag isa VREM
-                @test got isa AbstractSGSModel
-            elseif tag isa AV
+            # The RETURN: AV has no method of its own by design and must come
+            # back as nothing. SMAG, VREM and DSGS all build real models --
+            # DSGS's allocator arrived with the dynamic-SGS merge, which is
+            # also what put the extra keywords at the call site in the first
+            # place, so the two belong in the same assertion.
+            if tag isa AV
                 @test got === nothing
+            else
+                @test got isa AbstractSGSModel
             end
         end
     end
