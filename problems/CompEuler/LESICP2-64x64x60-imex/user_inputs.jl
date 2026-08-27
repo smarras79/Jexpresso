@@ -111,18 +111,16 @@ function user_inputs()
     _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "true"))
 
     #---------------------------------------------------------------------------
-    # IMEX + SCHUR -- ONE SWITCH, and everything it needs right underneath.
+    # TWO INDEPENDENT SWITCHES: the first picks the INTEGRATOR, the second only
+    # picks how the IMEX stage system is solved. Turning the second off does
+    # NOT go explicit.
     #---------------------------------------------------------------------------
-    limex_schur = true          # true  -> IMEX-ARK(ARS343), ALL acoustics
-                                #          implicit, solved through the SCALAR
-                                #          Schur system (Np unknowns, not 5*Np).
-                                #          Measured 3.56x per step on the same
-                                #          4:1 anisotropy this grid has.
-                                # false -> fully explicit, i.e. plain LESICP2.
+    use_imex  = true    # true -> IMEX-ARK(ARS343), all acoustics implicit, dt 0.5;  false -> fully explicit, dt 0.02
+    use_schur = true    # IMEX only: scalar Schur stage solve, Np unknowns not 5*Np, 3.56x/step here. Ignored if use_imex is false
 
-    # -- used only when limex_schur. Each is also an env override so an A/B
+    # -- used only when use_imex. Each is also an env override so an A/B
     #    needs no edit here; the value shown is the default.
-    lschur      = parse(Bool,    get(ENV, "DBG_SCHUR",     string(limex_schur)))
+    lschur      = parse(Bool,    get(ENV, "DBG_SCHUR",     string(use_schur)))
     dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.5"))
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
     restart     = parse(Int,     get(ENV, "DBG_RESTART",   "30"))
@@ -136,7 +134,7 @@ function user_inputs()
     lat_walls   = Symbol(        get(ENV, "DBG_LATWALL",   "auto"))
     monitor     = parse(Bool,    get(ENV, "DBG_IMEXMON",   "true"))
     monitor_every = parse(Int,   get(ENV, "DBG_IMEXMONEVERY", "200"))
-    scheme = Symbol(get(ENV, "DBG_SCHEME", limex_schur ? "imex" : "explicit"))
+    scheme = Symbol(get(ENV, "DBG_SCHEME", use_imex ? "imex" : "explicit"))
     scheme in (:imex, :hevi, :explicit) ||
         error("LESICP2-64x64x60-imex: DBG_SCHEME must be imex, hevi or explicit; got $scheme")
 
