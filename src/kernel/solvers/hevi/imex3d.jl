@@ -734,6 +734,158 @@ function ark_relinearize!(params, imex::IMEX3DCache, u)
     return imex
 end
 
+#-----------------------------------------------------------------------------
+# THE ONE DECK CONTRADICTION THAT CANNOT BE LEFT TO THE USER
+#-----------------------------------------------------------------------------
+
+"""
+Set when `imex_resolve_schur_vdiff!` has demoted `:imex_schur`, so
+`imex3d_report` can repeat the adjustment where a reader of a long log will
+see it -- the banner scrolls past in the first second of a run that then goes
+on for days.
+"""
+const IMEX_SCHUR_DEMOTED = Ref(false)
+
+# Bold orange, 256-colour. Written as a raw escape rather than through
+# Crayons.Box because Box exports named constants only and there is no orange
+# among them; 208 is the closest true orange in the xterm-256 cube.
+#
+# THE BANNER MUST STILL READ WITHOUT IT. A SLURM .out viewed with `cat` keeps
+# the escapes, one viewed through a filter that strips them keeps only the
+# text, and the block border and the blank lines around it are what make this
+# impossible to miss in either. Colour is the decoration, not the signal.
+const _IMEX_ORANGE = "\e[1;38;5;208m"
+const _IMEX_RESET  = "\e[0m"
+
+"""
+    imex_banner(title, body; rank = 0)
+
+A full-width orange block with `title` inside it and `body` beneath, framed by
+blank lines. Rank 0 only, flushed, because the next thing that happens is
+often a long silence while the operator builds.
+
+A terminal has ONE font size, so "big" here is a 76-column block of solid
+`█` rather than larger type -- that is as loud as stdout gets.
+"""
+function imex_banner(title::AbstractString, body::AbstractString; rank::Int = 0)
+    rank == 0 || return nothing
+    w = 76
+    pad(s) = string("██  ", rpad(s, w - 8), "  ██")
+    println()
+    println(_IMEX_ORANGE, "  ", "█"^w)
+    println("  ", pad(""))
+    for line in split(title, '\n')
+        println("  ", pad(line))
+    end
+    println("  ", pad(""))
+    println("  ", "█"^w, _IMEX_RESET)
+    println()
+    for line in split(body, '\n')
+        println("   ", line)
+    end
+    println()
+    flush(stdout)
+    return nothing
+end
+
+"""
+    imex_resolve_schur_vdiff!(inputs, lschur, lvdiff, rank) -> lschur
+
+Refuse the `:imex_schur` + `:implicit_vdiff` combination by REPAIRING it, not
+by throwing: say loudly what is wrong, turn the Schur reduction off, and keep
+the implicit diffusion.
+
+WHY THE PAIR IS WRONG. The scalar Schur reduction eliminates the momentum and
+Theta rows algebraically, and that elimination is only valid because their
+coefficient on their own unknown is the IDENTITY (schur.jl, equations (1)-(3)):
+
+    m + lam*Grad[P] + lam*g*zhat*rho = b_m
+
+`:implicit_vdiff` makes that coefficient `(I - lam*d/dz(mu d/dz))`, so
+`schur_momentum!`'s pointwise solve drops the diffusion operator entirely.
+Nothing in schur.jl / schur_stage.jl / schur_precond.jl / schur_kernel.jl reads
+`op.vd` -- the reduction cannot see it, and every probe it takes zeroes exactly
+the slots the diffusion acts on, so `schur_H!` returns the diffusion-free
+operator whether or not the deck asked for diffusion.
+
+WHY THAT IS WORSE THAN LEAVING THE DIFFUSION EXPLICIT. The term is still in
+`f_imp`, so the explicit half -- `f(u) - f_imp(u)`, ark.jl -- has it SUBTRACTED,
+and the stage solve never puts it back. The stage equation is violated by
+exactly `lam*D*U`, which is ~0 on a laminar initial state and grows with the
+boundary layer: the run does not fail at t = 0, it fails tens of seconds in,
+looking like a physics problem.
+
+WHICH WAY THE REPAIR GOES, AND WHY IT IS NOT A COIN FLIP. Dropping
+`:implicit_vdiff` and keeping Schur returns the deck to the configuration whose
+explicit vertical viscous rate `2*mu[5]/Pr_t*nu_t/h_z^2` is what ARS343's
+explicit tableau cannot carry once `nu_t` passes ~20-40 m^2/s -- a measured
+failure, not a hypothetical one. Dropping Schur keeps the diffusion implicit and
+routes it through the FIVE-FIELD stage solve, which is the arm that was wired
+for it: `vdiff_vars` widens the preconditioned set, `build_hevi_operator` gets
+`vdiff = true`, and `ark_relinearize!` refreshes the coefficients. So the repair
+preserves STABILITY and pays in SPEED, which is the direction a run should fail.
+
+`:imex_allow_schur_vdiff => true` runs the pair anyway. It exists for the same
+reason `:imex_schur_kernel => false` does -- so the broken combination can be
+measured without editing source -- and for no other.
+"""
+function imex_resolve_schur_vdiff!(inputs, lschur::Bool, lvdiff::Bool, rank::Int)
+
+    (lschur && lvdiff) || return lschur
+
+    if get(inputs, :imex_allow_schur_vdiff, false) == true
+        imex_banner("WARNING: RUNNING :imex_schur WITH :implicit_vdiff ON PURPOSE",
+                    string(
+"The Schur reduction cannot see the vertical diffusion operator, so the\n",
+"stage equation is violated by lam*D*U and the run is expected to lose\n",
+"stability as nu_t grows. You asked for this with\n",
+"\n",
+"    :imex_allow_schur_vdiff => true\n",
+"\n",
+"which exists only so the failure can be measured. Remove it to get the\n",
+"automatic repair (:imex_schur -> false)."); rank = rank)
+        return lschur
+    end
+
+    IMEX_SCHUR_DEMOTED[] = true
+    inputs[:imex_schur] = false
+    imex_banner("INCOMPATIBLE SETTINGS -- :imex_schur + :implicit_vdiff\nADJUSTED AUTOMATICALLY: :imex_schur => false",
+                string(
+"THE CONTRADICTION\n",
+"  The scalar Schur reduction eliminates the momentum and Theta rows by\n",
+"  assuming their coefficient is the IDENTITY. :implicit_vdiff makes it\n",
+"  (I - gamma*dt*d/dz(mu d/dz)), so the elimination silently DROPS the\n",
+"  diffusion operator. The term still enters f_imp -- and is therefore\n",
+"  subtracted from the explicit half -- but is never inverted, so every\n",
+"  stage solve is wrong by lam*D*U.\n",
+"\n",
+"  That error is ~0 on a laminar initial state and grows with the boundary\n",
+"  layer, so it does NOT show up at t = 0. It shows up tens of seconds in,\n",
+"  as a blow-up that looks like a physics problem.\n",
+"\n",
+"WHAT WAS CHANGED, AND WHY THIS DIRECTION\n",
+"  :imex_schur        true -> FALSE     five-field stage solve (5*Np unknowns)\n",
+"  :implicit_vdiff    true -- KEPT      the vertical diffusion stays implicit\n",
+"\n",
+"  The five-field arm is the one wired for implicit diffusion: vdiff_vars\n",
+"  widens the preconditioned variable set, the column preconditioner is built\n",
+"  with vdiff = true, and ark_relinearize! refreshes its coefficients. Keeping\n",
+"  Schur and dropping the diffusion instead would hand the explicit tableau a\n",
+"  vertical viscous rate it cannot carry once nu_t passes ~20-40 m^2/s.\n",
+"  The repair therefore costs SPEED and preserves STABILITY.\n",
+"\n",
+"WHAT IT COSTS\n",
+"  The Schur reduction is worth roughly 3.5x on the stage solve (IMEX3D_MAP.md\n",
+"  section 7). Expect the step time to rise by about that much. Nothing else\n",
+"  about the run changes -- same physics, same tolerance, same answer.\n",
+"\n",
+"IF YOU WANT SCHUR BACK\n",
+"  Set :implicit_vdiff => false (DBG_VDIFF=0 on the LESICP2 decks) and accept\n",
+"  the explicit viscous limit, or set :imex_allow_schur_vdiff => true to run\n",
+"  the incompatible pair as-is and measure it."); rank = rank)
+    return false
+end
+
 """
     build_imex3d(params, inputs) -> IMEX3DCache
 
@@ -862,6 +1014,10 @@ function build_imex3d(params, inputs)
     # close on one scalar without it (schur_stage.jl says why), so it is set
     # here rather than offered as a separate deck key that could contradict it.
     lschur = get(inputs, :imex_schur, false) == true
+    # BEFORE the operator is built, because demoting `:imex_schur` also changes
+    # the Theta row this call asks for -- the reduction needs the advective
+    # form and the five-field solve does not.
+    lschur = imex_resolve_schur_vdiff!(inputs, lschur, lvdiff, rank)
     op = build_hevi_fast_operator(params, topo; lwall_flux = lwall,
                                   wallx = wallx, wally = wally, vdiff = lvdiff,
                                   theta_advective = lschur)
@@ -1372,6 +1528,16 @@ function imex3d_report(params, topo, op, pc, ws, tab, Δt, gdt, checks, stab, wa
             wallsrc === :box ? "the domain bounding box" : "nothing (:none)")
 
     println(" │")
+    # The banner is printed once, seconds into a run that then goes on for
+    # days. Anyone reading the log later finds the report, not the banner, so
+    # the adjustment is stated in both places.
+    if IMEX_SCHUR_DEMOTED[]
+        println(" │  ", _IMEX_ORANGE, ":imex_schur WAS TURNED OFF AUTOMATICALLY", _IMEX_RESET,
+                " -- it is incompatible with")
+        println(" │      :implicit_vdiff (the reduction cannot see the diffusion operator).")
+        println(" │      See the orange block at the top of this log.")
+        println(" │")
+    end
     if schur === nothing
         println(" │  Stage solve: preconditioned GMRES on all 5 fields (5*Np unknowns)")
     else

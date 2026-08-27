@@ -189,6 +189,8 @@ the failure is silent.
 | `:imex_schur_kernel` | fast matvec for `H` (default on) | `schur_stage.jl` |
 | `:imex_precond` | `:column`, `:none`, or `:custom` | `imex3d.jl`, `schur_stage.jl` |
 | `:imex_precond_build` | `f(ctx) -> pc`, required by `:custom` | `precond_api.jl` |
+| `:implicit_vdiff` | implicit vertical SGS diffusion. **Refuses to coexist with `:imex_schur`** — the pair demotes `:imex_schur` and says so in orange | `imex3d.jl` `imex_resolve_schur_vdiff!` |
+| `:imex_allow_schur_vdiff` | run that pair anyway, to measure it | `imex3d.jl` |
 | `:imex_rtol`, `:imex_restart`, `:imex_maxiter` | Krylov tolerance, cycle length, cap | `imex3d.jl` |
 | `:imex_linearization`, `:imex_update_freq` | `:RS` frozen / `:PS` refreshed | `imex3d.jl:650` |
 | `:imex_verify` | setup self-check on the assembled operator and a full stage solve | `imex3d.jl` |
@@ -241,4 +243,5 @@ transferable numbers, not the third digit of a step time.
 | both production stage solves agree | `test/imex3d/test_schur_stage.jl` |
 | `build_imex3d`, both arms | `test/imex3d/test_schur_build.jl` |
 | the `:custom` preconditioner hook | `test/imex3d/test_custom_precond.jl` |
+| the `:imex_schur` + `:implicit_vdiff` repair | `test/imex3d/test_schur_build.jl` |
 | answers independent of rank count | `test/hevi/test_rank_independence.jl` |

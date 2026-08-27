@@ -131,6 +131,51 @@ say("\n=== IMEX3D step 6: build_imex3d wiring, $NR rank(s) ===")
         # input is the failure mode a finiteness check sails straight past.
         @test moved > 0
     end
+
+    @testset "the :imex_schur + :implicit_vdiff contradiction repairs itself" begin
+        # THE PAIR IS NOT A TASTE QUESTION. The Schur reduction eliminates the
+        # momentum and Theta rows assuming their coefficient is the identity;
+        # implicit vertical diffusion makes it (I - lam*d/dz(mu d/dz)) and the
+        # elimination drops the operator. The term is still in f_imp, so the
+        # explicit half has it subtracted and the stage solve never puts it
+        # back -- an error that is ~0 on a laminar initial state and grows with
+        # the boundary layer. That is why this is repaired rather than left to
+        # a deck author to notice tens of seconds into a run.
+        #
+        # Tested on the resolver directly rather than through build_imex3d:
+        # the decision is a pure function of two Bools and the deck, and
+        # reaching it through a real :implicit_vdiff build would drag in the
+        # closure and the vertical-diffusion coefficients for no extra coverage.
+
+        # 1. the contradiction: Schur loses, diffusion is kept.
+        IMEX_SCHUR_DEMOTED[] = false        # so the assertion below means something
+        d = Dict{Symbol,Any}(:imex_schur => true)
+        @test imex_resolve_schur_vdiff!(d, true, true, RANK) == false
+        # ... and the deck itself is corrected, so nothing downstream can read
+        # the value the run is no longer using.
+        @test d[:imex_schur] == false
+        # The flag imex3d_report reads to repeat the adjustment further down a
+        # log that will be days long by the time anyone reads it.
+        @test IMEX_SCHUR_DEMOTED[]
+
+        # 2. every legal combination is left exactly alone -- no banner, no
+        #    edit to the deck. A guard that fires on a correct deck is worse
+        #    than no guard.
+        for (a, b) in ((true, false), (false, true), (false, false))
+            e = Dict{Symbol,Any}()
+            @test imex_resolve_schur_vdiff!(e, a, b, RANK) == a
+            @test isempty(e)
+        end
+
+        # 3. the escape hatch runs the pair as asked. It exists so the failure
+        #    can be MEASURED without editing source, which is the same reason
+        #    :imex_schur_kernel => false exists.
+        o = Dict{Symbol,Any}(:imex_allow_schur_vdiff => true)
+        @test imex_resolve_schur_vdiff!(o, true, true, RANK) == true
+        @test !haskey(o, :imex_schur)      # untouched: the deck asked for this
+
+        say("  :imex_schur + :implicit_vdiff -> :imex_schur => false, diffusion kept")
+    end
 end
 
 MPI.Barrier(COMM)

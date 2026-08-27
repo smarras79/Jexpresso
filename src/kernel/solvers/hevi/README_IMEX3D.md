@@ -71,7 +71,8 @@ closure can go missing in the split, whatever the deck turns on.
 | `:imex_warm_start` | `true` | start each stage solve from the previous one's answer. See [Making it cheaper](#making-it-cheaper). |
 | `:lcfl_report` | `false` | print the direction-wise stability table at startup |
 | `:lcfl_report_every` | `0` | re-print it every N steps (0 = off). Collective; `JEXPRESSO_CFL_REPORT_EVERY` overrides. |
-| `:implicit_vdiff` | `false` | make the **vertical** SGS diffusion implicit too — see [below](#implicit-vertical-diffusion). Needs `:imex_linearization => :PS` under a dynamic closure. |
+| `:implicit_vdiff` | `false` | make the **vertical** SGS diffusion implicit too — see [below](#implicit-vertical-diffusion). Needs `:imex_linearization => :PS` under a dynamic closure. **Incompatible with `:imex_schur`** — the pair is repaired automatically, see below. |
+| `:imex_allow_schur_vdiff` | `false` | run `:imex_schur` + `:implicit_vdiff` anyway, to measure the failure |
 
 `:ode_adaptive_solver => true` is refused, for the same reason `HEVI_ARK`
 refuses it: `rhs!` contains MPI collectives, and an adaptive controller runs
@@ -905,6 +906,44 @@ same step size, 30× slower.
 one implementation. The full account is in
 [`README.md`](README.md#implicit-vertical-diffusion); what matters *here* is why
 it is the natural companion to this scheme rather than an extra.
+
+### It cannot be combined with `:imex_schur`, and the run repairs itself
+
+The scalar Schur reduction eliminates the momentum and Θ rows algebraically, and
+that elimination is valid only because their coefficient on their own unknown is
+the **identity** (`schur.jl`, equations (1)–(3)):
+
+```
+m + lam*Grad[P] + lam*g*zhat*rho = b_m
+```
+
+`:implicit_vdiff` makes that coefficient `(I − γΔt·∂z(μ ∂z))`, so
+`schur_momentum!`'s pointwise solve drops the diffusion operator. Nothing in
+`schur.jl`, `schur_stage.jl`, `schur_precond.jl` or `schur_kernel.jl` reads
+`op.vd`, and every probe the reduction takes zeroes exactly the slots the
+diffusion acts on — so `schur_H!` returns the diffusion-free operator whether or
+not the deck asked for diffusion.
+
+That is **worse than leaving the diffusion explicit**, not equivalent to it. The
+term is still in `f_imp`, so the explicit half — `f(u) − f_imp(u)` — has it
+subtracted, and the stage solve never puts it back. The stage equation is
+violated by exactly `γΔt·D·U`, which is ≈0 on a laminar initial state and grows
+with the boundary layer: the run does not fail at `t = 0`, it fails tens of
+seconds in, looking like a physics problem.
+
+`build_imex3d` detects the pair, prints an orange block saying so, and **turns
+`:imex_schur` off**, keeping the diffusion implicit. The direction is not a coin
+flip: the five-field arm is the one wired for implicit diffusion (`vdiff_vars`
+widens the preconditioned set, the column preconditioner is built with
+`vdiff = true`, `ark_relinearize!` refreshes its coefficients), while dropping
+the diffusion instead returns the deck to an explicit vertical viscous rate
+ARS343 cannot carry past `ν_t ≈ 20–40 m²/s`. The repair costs **speed** — the
+Schur reduction is worth ~3.5× on the stage solve — and preserves **stability**,
+which is the direction a run should fail.
+
+`:imex_allow_schur_vdiff => true` runs the pair as written. It exists so the
+failure can be measured without editing source, for the same reason
+`:imex_schur_kernel => false` does, and for no other reason.
 
 **IMEX3D removes the acoustic limit completely, which is exactly what makes the
 viscous one visible.** With sound gone in all three directions the explicit
