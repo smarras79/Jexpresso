@@ -342,13 +342,21 @@ function user_inputs()
         # that matters -- it does not decide WHERE the model is active, only
         # how hard it acts once the residual has decided.
         :dsgs_C1              => 1.0,
-        # C2 scales the first-order-upwind cap mu_max = C2 Delta (‖v‖+c). In an
-        # atmosphere c ~ 340 m/s against ‖v‖ ~ 10, so at Delta = 40 m this cap
-        # is 0.5*40*350 = 7000 m^2/s -- two to three orders above anything a
-        # PBL closure produces, and it will never bind. That is fine (it is a
-        # safety net, not a target: min(mu_max, mu_res) is meant to leave
-        # mu_res governing), but it does mean C2 is not a working knob here
-        # unless it is dropped by orders of magnitude.
+        # C2 scales the first-order-upwind cap mu_max = C2 Delta (‖v‖+c). At
+        # Delta = 40 m with c ~ 340 against ‖v‖ ~ 10 that is 0.5*40*350 = 7000
+        # m^2/s -- and THE CAP IS NOT A SAFETY NET AT THIS VALUE.
+        #
+        # WITH THE DIFFUSION EXPLICIT (DBG_VDIFF=0), what the step can carry is
+        #     dt * 2 * (mu[5]/Pr_t) * nu_t / h_z^2  <=  ~2   (ARS343, real axis)
+        # and at h_z = 6.91 m, mu[5] = 1.0, Pr_t = 0.7, dt = 0.5 that is
+        #     nu_t <~ 65 m^2/s.
+        # The cap sits 100x above it, so it can only bind long after the run is
+        # already dead. If the monitor (JEXPRESSO_DSGS_MONITOR=1) shows nu
+        # pinned at 7000, C2 ~ 0.004 brings the cap to ~56 m^2/s -- but that is
+        # then a first-order-upwind viscosity wearing DynSGS's name, not a
+        # residual model, and lowering :dsgs_C1 or :dsgs_residual => :strict is
+        # the honest lever. On the implicit arm this rate is removed and the
+        # ceiling is set by accuracy instead.
         :dsgs_C2              => 0.5,
         # Add the Smagorinsky viscosity to the residual one instead of
         # replacing it. OFF: see "WHAT TO EXPECT" in the header for the
