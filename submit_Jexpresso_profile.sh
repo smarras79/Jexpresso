@@ -119,6 +119,7 @@ export JEXPRESSO_HEVI_PROFILE_EVERY=50
 export JEXPRESSO_HEVI_PROFILE_SKIP=10
 export JEXPRESSO_PRECOMPILE_PASS="${JEXPRESSO_PRECOMPILE_PASS:-1}"
 export JEXPRESSO_STEP_HEARTBEAT=1
+export DBG_VDIFF=0
 
 # One BLAS/Julia thread per rank: the ranks already fill the node, and nested
 # threading oversubscribes it.
