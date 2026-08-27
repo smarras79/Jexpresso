@@ -5,7 +5,9 @@
 #      sbatch submit_Jexpresso_profile.sh
 #
 #  NO ARGUMENTS. Which stage solve runs is the DECK's business, not this
-#  file's: it is `limex_schur` in the case's user_inputs.jl, on by default.
+#  file's: it is `use_imex` / `use_schur` in the case's user_inputs.jl, both
+#  on by default. On the 64x64x60 decks `use_schur = !_vdiff`, so DBG_VDIFF=0
+#  is what selects the Schur arm (with explicit vertical diffusion).
 #  This script sets resources and runs the case.
 #
 #  EDIT THE TWO BLOCKS MARKED "EDIT ME". Nothing else in this file needs
@@ -88,7 +90,7 @@ set -u
 if [ $# -gt 0 ]; then
     echo "ERROR: this script takes no arguments (got '$1')." >&2
     echo "       Which stage solve runs is set in the deck --" >&2
-    echo "       limex_schur in problems/$EQS/$CASE/user_inputs.jl, on by" >&2
+    echo "       use_imex / use_schur in problems/$EQS/$CASE/user_inputs.jl," >&2
     echo "       default. For a one-off five-field run:" >&2
     echo "           DBG_SCHUR=0 sbatch $(basename "$0")" >&2
     exit 2
@@ -102,6 +104,14 @@ cd "$ROOT" || exit 1
 # caller put it in the environment, on the same terms as rtol/restart/maxiter
 # below.
 [ -n "${DBG_SCHUR:-}" ] && export DBG_SCHUR
+# DBG_VDIFF picks the IMEX ARM on the LESICP2 64x64x60 decks: the deck sets
+# `use_schur = !_vdiff`, so DBG_VDIFF=0 is what selects the Schur stage solve
+# with EXPLICIT vertical diffusion. Without this line a caller's DBG_VDIFF is a
+# plain shell variable that never reaches Julia, the deck keeps its default,
+# and the run silently takes the other arm.
+[ -n "${DBG_VDIFF:-}" ]   && export DBG_VDIFF
+[ -n "${DBG_FILTER:-}" ]  && export DBG_FILTER
+[ -n "${DBG_SCHEME:-}" ]  && export DBG_SCHEME
 [ -n "$TEND" ] && export DBG_TEND="$TEND"
 [ -n "$MESH" ] && export DBG_MESH="$MESH"
 # THE LAUNCHER DOES NOT SET rtol OR restart. It used to default them to 1.0e-8
@@ -225,7 +235,14 @@ launch "${JULIA_FLAGS[@]}" -e '
 case "${DBG_SCHUR:-}" in
     1) arm_desc="SCALAR Schur, Np unknowns   (forced by DBG_SCHUR=1)" ;;
     0) arm_desc="five-field, 5*Np unknowns   (forced by DBG_SCHUR=0)" ;;
-    *) arm_desc="<deck decides -- see 'Stage solve:' in the run's own output>" ;;
+    *) case "${DBG_VDIFF:-}" in
+           # On the 64x64x60 decks use_schur = !_vdiff, so DBG_VDIFF settles it
+           # when DBG_SCHUR is not given. Other decks ignore DBG_VDIFF, hence
+           # "expected" rather than a claim.
+           0) arm_desc="SCALAR Schur, Np unknowns   (expected: DBG_VDIFF=0, explicit diffusion)" ;;
+           1) arm_desc="five-field, 5*Np unknowns   (expected: DBG_VDIFF=1, implicit diffusion)" ;;
+           *) arm_desc="<deck decides -- see 'Stage solve:' in the run's own output>" ;;
+       esac ;;
 esac
 
 echo "--- Launching $NTASKS ranks ---"
@@ -241,6 +258,7 @@ else
     echo "                    node and can be OOM-killed against a smaller cgroup"
 fi
 echo "    tend / rtol   : ${DBG_TEND:-<deck>} s / ${DBG_RTOL:-<deck>}, restart ${DBG_RESTART:-<deck>}, maxiter ${DBG_MAXITER:-<deck>}"
+echo "    vert. diff    : ${DBG_VDIFF:+DBG_VDIFF=$DBG_VDIFF }${DBG_VDIFF:-<deck>}"
 echo "    started       : $(date)"
 echo
 # The banner above is printed from THIS shell. The authoritative statement of
