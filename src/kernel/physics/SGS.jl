@@ -828,7 +828,14 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     if !ltheta
-        _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs, Minv, visc_coeff,
+        # `wres` MUST be forwarded. It is the boundary mask (1 interior, 0 on a
+        # domain boundary -- dsgs_wres in params_setup.jl) that keeps the
+        # residual from reading the boundary condition instead of a
+        # discretisation error, and _dsgs_2d_energy! takes it in position 7.
+        # Omitting it does not shift the meaning of the later arguments
+        # harmlessly: it is a MethodError at the first call, which is where
+        # CompEuler/ffs_step died.
+        _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs, Minv, wres, visc_coeff,
                          Δt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
                          lglobal_norms)
         return nothing
