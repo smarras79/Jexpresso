@@ -129,7 +129,12 @@ export JEXPRESSO_HEVI_PROFILE_EVERY=50
 export JEXPRESSO_HEVI_PROFILE_SKIP=10
 export JEXPRESSO_PRECOMPILE_PASS="${JEXPRESSO_PRECOMPILE_PASS:-1}"
 export JEXPRESSO_STEP_HEARTBEAT=1
-export DBG_VDIFF=0
+# THE SCHUR ARM IS THIS SCRIPT'S DEFAULT: explicit vertical diffusion, so
+# `use_schur = !_vdiff` in the deck leaves the scalar Schur stage solve on.
+# `:-0` rather than a bare 0 so `DBG_VDIFF=1 sbatch ...` still reaches the deck
+# -- a launcher that overrides the caller's environment is how an A/B silently
+# measures the same arm twice.
+export DBG_VDIFF="${DBG_VDIFF:-0}"
 
 # One BLAS/Julia thread per rank: the ranks already fill the node, and nested
 # threading oversubscribes it.
