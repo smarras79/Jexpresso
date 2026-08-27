@@ -639,15 +639,51 @@ function _build_rhs!(RHS, u, params, time)
     @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
-    # DynSGS-MHD: advance the step-cadenced BDF2 history.
+    # DynSGS: the step-cadenced BDF2 history.
     #
-    # params.qp.qnm1/qnm2 below are advanced on every RK *stage*, so a BDF2
-    # stencil built on them is not an approximation of ∂q/∂t at all. DynSGS
-    # keeps its own pair and rolls it exactly once per time step. `time`
-    # sweeps t + cᵢΔt within a step, so the >= 0.999Δt gate fires once per
-    # step regardless of the stage layout. params.uaux is current here:
-    # inviscid_rhs_el! refreshed it from u at the top of this call.
-    #-----------------------------------------------------------------------------------
+    # params.qp.qnm1/qnm2 are advanced on every RK *stage*, so a BDF2 stencil
+    # built on them is not an approximation of ∂q/∂t at all. DynSGS keeps its
+    # own pair and advances it exactly once per time step. `time` sweeps
+    # t + cᵢΔt within a step, so the >= 0.999Δt test fires on the FIRST stage
+    # of each step regardless of the tableau.
+    #
+    # THE ROLL ITSELF IS AT THE END OF THE VISCOUS BLOCK, NOT HERE, AND THAT
+    # ORDER IS THE WHOLE POINT. It used to be here, i.e. BEFORE
+    # compute_dsgs_viscosity! read the buffers, and it writes `uaux` into
+    # dsgs_qnm2 -- so the call site, which passes (q, q1, q2) =
+    # (uaux, dsgs_qnm2, dsgs_qnm1), was handed q1 IDENTICAL TO q. The BDF2
+    # stencil then collapsed:
+    #
+    #     3q - 4q1 + q2  ->  3qⁿ - 4qⁿ + qⁿ⁻¹  =  -(qⁿ - qⁿ⁻¹)
+    #
+    # i.e. minus HALF the first-order backward difference, so
+    #
+    #     R = |-½ ∂q/∂t - ∂q/∂t| = 1.5 |∂q/∂t|
+    #
+    # and the "residual" was the physical TENDENCY, not the residual. That is
+    # not a small error: the entire premise of the model is that R vanishes for
+    # a solution that satisfies the PDE, and this version cannot vanish for any
+    # solution that is moving. It is what made the coefficient O(10³-10⁴) m²/s
+    # on a rising bubble whose physical eddy viscosity is O(10²) -- the
+    # "cold-start spike" recorded in DSGS.md -- and, once the 3D path started
+    # normalising on the perturbation rather than the hydrostatic background
+    # (50x smaller denominators on this problem), it pinned μ at the
+    # C₂Δ(|v|+c) cap and killed CompEuler/rtb3d_dsgs in its first step.
+    #
+    # Rolling AFTER the read leaves dsgs_qnm2 = qⁿ⁻¹ and dsgs_qnm1 = qⁿ⁻² while
+    # uaux = qⁿ, which is the stencil the model asks for.
+    #
+    # ldsgs_step also gates the COMPUTATION of the coefficient (viscous_rhs_el!
+    # reads params.dsgs_fresh), for the same consistency reason: `uaux` equals
+    # qⁿ only on the first stage. On stages 2..N it is the stage state, and
+    #
+    #     3q_stage - 4qⁿ⁻¹ + qⁿ⁻²  =  2Δt·∂q/∂t + 3(q_stage - qⁿ)
+    #
+    # whose second term is again O(|∂q/∂t|) and swamps the truncation error the
+    # sensor exists to measure. So the coefficient is built once per step, on
+    # the stage where the three levels are consistent, and held for the rest of
+    # the step -- which is also 4-5x less reduction work per step.
+    #
     # The :lvisc test is not redundant. params_setup only allocates the
     # dsgs_qnm* buffers when lvisc is on, so a case that keeps
     # visc_model = DSGS() but sets :lvisc => false -- the natural way to
@@ -655,14 +691,26 @@ function _build_rhs!(RHS, u, params, time)
     # broadcast npoin×neqs into the 1×1 dummies and die with
     # DimensionMismatch on the first RHS call. Keep this condition in step
     # with the allocation condition in params_setup.jl.
-    if params.inputs[:lvisc] == true &&
-        (params.VT == DSGS_MHD() || params.VT == DSGS())
-        if time - params.dsgs_thist[] >= 0.999*params.Δt
-            params.dsgs_qnm1 .= params.dsgs_qnm2
-            params.dsgs_qnm2 .= params.uaux
-            params.dsgs_thist[] = time
-        end
-    end
+    # WARM-UP, the second thing the flags carry. The BDF2 stencil needs THREE
+    # step-cadenced levels and a run starts with one: both buffers are seeded
+    # with the initial state, so step 1 gives 3q⁰-4q⁰+q⁰ = 0 and step 2 gives
+    # 3(q¹-q⁰)/2Δt, a 1.5x overestimate of ∂q/∂t. In neither case is the
+    # difference against M⁻¹·RHS a truncation error; it is again the physical
+    # tendency. On a rising bubble that is large enough to pin μ at the
+    # C₂Δ(|v|+c) cap -- which in a low-Mach atmosphere (c ≈ 340 m/s against
+    # |v| ≈ 10) is ~4e4 m²/s, two to three orders above any real eddy
+    # viscosity, and two steps of it drives ρθ negative.
+    #
+    # So the model returns zero until the history is real, which for a fixed-Δt
+    # run is exactly t >= tinit + 2Δt. Written in `time` rather than as a roll
+    # counter because `time` is already snapshotted and restored by the
+    # integrator warm-up, the precompile pass and the restart path, and a
+    # counter would need adding to all three.
+    ldsgs_step = params.inputs[:lvisc] == true &&
+                 (params.VT == DSGS_MHD() || params.VT == DSGS()) &&
+                 (time - params.dsgs_thist[] >= 0.999*params.Δt)
+    params.dsgs_fresh[] = ldsgs_step
+    params.dsgs_hist[]  = time >= params.tspan[1] + 1.999*params.Δt
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -685,6 +733,14 @@ function _build_rhs!(RHS, u, params, time)
         
         @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
+
+        # The roll, AFTER compute_dsgs_viscosity! has read the buffers. See the
+        # block above `ldsgs_step` for why the order is the whole point.
+        if ldsgs_step
+            params.dsgs_qnm1 .= params.dsgs_qnm2
+            params.dsgs_qnm2 .= params.uaux
+            params.dsgs_thist[] = time
+        end
     end
     @timeit_debug JEXPRESSO_TIMER "BC_neumann" apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
@@ -1044,14 +1100,25 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # background.
     if params.VT == DSGS()
         TT = eltype(params.μ_dsgs)
-        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
-                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
-                                params.qp.qe,
-                                params.RHS, params.Minv, params.visc_coeff,
-                                TT(params.Δt),
-                                params.mesh.connijk, params.mesh.Δx,
-                                Int(nelem), Int(ngl);
-                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+        # REBUILD ONLY WHEN THE THREE BDF2 LEVELS ARE CONSISTENT.
+        # dsgs_fresh: this is the first RK stage of a step, so uaux is qⁿ.
+        # dsgs_hist:  the buffers hold two genuinely distinct past steps.
+        # Otherwise hold the previous coefficient (or zero, during the two-step
+        # warm-up). See `ldsgs_step` in _build_rhs! for what each protects.
+        if params.dsgs_fresh[]
+          if !params.dsgs_hist[]
+            fill!(params.μ_dsgs, zero(eltype(params.μ_dsgs)))
+          else
+            compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                    params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                    params.qp.qe,
+                                    params.RHS, params.Minv, params.visc_coeff,
+                                    TT(params.Δt),
+                                    params.mesh.connijk, params.mesh.Δx,
+                                    Int(nelem), Int(ngl);
+                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+          end
+        end
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
                                  Int(nelem), Int(ngl), SD)
@@ -1108,19 +1175,30 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
 
-        compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
-                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
-                                params.RHS, params.Minv, params.visc_coeff,
-                                params.dsgs_avg, params.dsgs_denom,
-                                TT(params.Δt),
-                                params.mesh.connijk, params.mesh.Δelem,
-                                TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
-                                TT(get(params.inputs, :dsgs_Prt,   0.7)),
-                                TT(get(params.inputs, :dsgs_C1,    1.0)),
-                                TT(get(params.inputs, :dsgs_C2,    0.5)),
-                                get_mpi_comm(),
-                                Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+        # REBUILD ONLY WHEN THE THREE BDF2 LEVELS ARE CONSISTENT.
+        # dsgs_fresh: this is the first RK stage of a step, so uaux is qⁿ.
+        # dsgs_hist:  the buffers hold two genuinely distinct past steps.
+        # Otherwise hold the previous coefficient (or zero, during the two-step
+        # warm-up). See `ldsgs_step` in _build_rhs! for what each protects.
+        if params.dsgs_fresh[]
+          if !params.dsgs_hist[]
+            fill!(params.μ_dsgs, zero(eltype(params.μ_dsgs)))
+          else
+            compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
+                                    params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                    params.RHS, params.Minv, params.visc_coeff,
+                                    params.dsgs_avg, params.dsgs_denom,
+                                    TT(params.Δt),
+                                    params.mesh.connijk, params.mesh.Δelem,
+                                    TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
+                                    TT(get(params.inputs, :dsgs_Prt,   0.7)),
+                                    TT(get(params.inputs, :dsgs_C1,    1.0)),
+                                    TT(get(params.inputs, :dsgs_C2,    0.5)),
+                                    get_mpi_comm(),
+                                    Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+          end
+        end
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -1153,16 +1231,27 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # keeps the L∞ denominators measuring perturbations, not the
         # hydrostatic background.
         Pr_TT = TT(params.inputs[:Pr])
-        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
-                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
-                                params.qp.qe,
-                                params.RHS, params.Minv, params.visc_coeff,
-                                TT(params.Δt),
-                                params.mesh.connijk, params.mesh.Δelem,
-                                PHYS_CONST, Pr_TT,
-                                Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                ltheta = (params.inputs[:energy_equation] == "theta"),
-                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+        # REBUILD ONLY WHEN THE THREE BDF2 LEVELS ARE CONSISTENT.
+        # dsgs_fresh: this is the first RK stage of a step, so uaux is qⁿ.
+        # dsgs_hist:  the buffers hold two genuinely distinct past steps.
+        # Otherwise hold the previous coefficient (or zero, during the two-step
+        # warm-up). See `ldsgs_step` in _build_rhs! for what each protects.
+        if params.dsgs_fresh[]
+          if !params.dsgs_hist[]
+            fill!(params.μ_dsgs, zero(eltype(params.μ_dsgs)))
+          else
+            compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                    params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                    params.qp.qe,
+                                    params.RHS, params.Minv, params.visc_coeff,
+                                    TT(params.Δt),
+                                    params.mesh.connijk, params.mesh.Δelem,
+                                    PHYS_CONST, Pr_TT,
+                                    Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                    ltheta = (params.inputs[:energy_equation] == "theta"),
+                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+          end
+        end
 
         # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
@@ -1414,22 +1503,40 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # flux later still), which is the state the residual is defined against.
     if params.sgs isa SGS_DSGS
         TT = eltype(params.μ_dsgs)
-        compute_dsgs_viscosity!(params.sgs, SD,
-                                params.μ_dsgs,
-                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
-                                params.qp.qe,
-                                params.RHS, params.Minv, params.visc_coeff,
-                                TT(params.Δt),
-                                params.mesh.connijk,
-                                params.mesh.Δelem_filter,
-                                TT(params.mesh.Δeffective_l),
-                                Int(params.mesh.nop),
-                                PHYS_CONST,
-                                params.mesh.parts.comm,
-                                Int(params.mesh.nelem), Int(params.mesh.ngl),
-                                Int(params.neqs);
-                                lpert = params.SOL_VARS_TYPE == PERT(),
-                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+        # REBUILD ONLY WHEN THE THREE BDF2 LEVELS ARE CONSISTENT.
+        # dsgs_fresh: this is the first RK stage of a step, so uaux is qⁿ.
+        # dsgs_hist:  the buffers hold two genuinely distinct past steps.
+        # Otherwise hold the previous coefficient (or zero, during the two-step
+        # warm-up). See `ldsgs_step` in _build_rhs! for what each protects.
+        #
+        # μ_el is what the RHS actually applies (SGS_diffusion reads it through
+        # compute_sgs_cache!); μ_dsgs is only the VTK diagnostic. The warm-up
+        # branch has to zero BOTH, or the run would spend its first two steps
+        # applying whatever the buffer happened to be initialised with.
+        if params.dsgs_fresh[]
+          if !params.dsgs_hist[]
+            fill!(params.μ_dsgs,  zero(eltype(params.μ_dsgs)))
+            fill!(params.sgs.μ_el, zero(eltype(params.sgs.μ_el)))
+            fill!(params.sgs.ν_el, zero(eltype(params.sgs.ν_el)))
+          else
+            compute_dsgs_viscosity!(params.sgs, SD,
+                                    params.μ_dsgs,
+                                    params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                    params.qp.qe,
+                                    params.RHS, params.Minv, params.visc_coeff,
+                                    TT(params.Δt),
+                                    params.mesh.connijk,
+                                    params.mesh.Δelem_filter,
+                                    TT(params.mesh.Δeffective_l),
+                                    Int(params.mesh.nop),
+                                    PHYS_CONST,
+                                    params.mesh.parts.comm,
+                                    Int(params.mesh.nelem), Int(params.mesh.ngl),
+                                    Int(params.neqs);
+                                    lpert = params.SOL_VARS_TYPE == PERT(),
+                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+          end
+        end
 
         # Diagnostic only: this is what write_output.jl turns into the
         # mu_dsgs_<var> VTK fields. What the RHS applies comes from

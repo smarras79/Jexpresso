@@ -661,6 +661,82 @@ reasoning matters if the model is revisited.
    inflated by $1/\sqrt{\gamma-1} \approx 1.58$ at $\gamma = 1.4$, letting
    $\mu_{res}$ govern more often than the Marras bound intends. *Fixed.*
 
+6. **The BDF2 history was rolled BEFORE the residual read it, so `q¹ ≡ qⁿ`.**
+   This is the big one, and it made the sensor measure the wrong thing
+   entirely on every path.
+
+   `_build_rhs!` advanced the step-cadenced pair with
+
+   ```julia
+   params.dsgs_qnm1 .= params.dsgs_qnm2
+   params.dsgs_qnm2 .= params.uaux      # <- the CURRENT state
+   ```
+
+   *above* the viscous block, and the call sites pass
+   `(q, q1, q2) = (uaux, dsgs_qnm2, dsgs_qnm1)`. So `q1` was handed the same
+   array contents as `q`, and the stencil collapsed:
+
+   $$
+   3q^n - 4q^1 + q^2 \;\to\; 3q^n - 4q^n + q^{n-1} = -\left(q^n - q^{n-1}\right)
+   $$
+
+   — minus *half* the first-order backward difference. The residual was then
+
+   $$
+   R = \left\lvert -\tfrac12\frac{\partial q}{\partial t} - \frac{\partial q}{\partial t}\right\rvert
+     = 1.5\left\lvert\frac{\partial q}{\partial t}\right\rvert
+   $$
+
+   i.e. **the physical tendency, not the residual**. The whole premise of the
+   model is that $R$ vanishes for a solution that satisfies the PDE, and this
+   version cannot vanish for any solution that is moving. It is what produced
+   the "cold-start spike" of $\mu \approx 9.7\times10^3$ recorded below on
+   `theta_dsgs` — a rising bubble whose physical eddy viscosity is $O(10^2)$ —
+   and, once the 3D path started normalising on the perturbation rather than
+   on the hydrostatic background (§5.2, ~50× smaller denominators on that
+   problem), it pinned $\mu$ at the $C_2\Delta(\lVert v\rVert+c)$ cap and
+   killed `CompEuler/rtb3d_dsgs` inside its first step.
+
+   *Fixed*: the roll moved to the end of the viscous block, after
+   `compute_dsgs_viscosity!` has read the buffers. Pinned by
+   `test/sgs/test_dsgs3d.jl`, which builds a state evolving at a known
+   constant rate with an RHS that accounts for it exactly — a zero-residual
+   solution — and asserts that the correct ordering returns $\mu = 0$ while
+   the old one returns $O(10^3)\ \mathrm{m^2/s}$.
+
+7. **The coefficient was rebuilt on every RK stage.** `uaux` equals $q^n$ only
+   on the *first* stage of a step; on the others it is a stage state, and
+
+   $$
+   3q_{stage} - 4q^{n-1} + q^{n-2} = 2\Delta t\frac{\partial q}{\partial t} + 3\left(q_{stage} - q^n\right)
+   $$
+
+   whose second term is again $O(\lvert\partial q/\partial t\rvert)$ and swamps
+   the truncation error the sensor exists to measure. *Fixed*: `params.dsgs_fresh`
+   marks the stage where the three levels are consistent, the coefficient is
+   built there and held for the rest of the step. Also 4–5× less reduction
+   work per step.
+
+8. **There was no warm-up guard.** The BDF2 stencil needs three step-cadenced
+   levels and a run starts with one — both buffers are seeded with the initial
+   state, so step 1 gives $0$ and step 2 gives $3(q^1-q^0)/2\Delta t$, a 1.5×
+   overestimate of $\partial q/\partial t$. Neither is a truncation error, and
+   on a rising bubble the tendency is large enough to pin $\mu$ at the cap —
+   which in a low-Mach atmosphere ($c \approx 340$ m/s against
+   $\lVert v\rVert \approx 10$) is $\approx 4\times10^{4}\ \mathrm{m^2/s}$, two
+   to three orders above any real eddy viscosity. *Fixed*: `params.dsgs_hist`
+   holds the model at $\mu = 0$ until $t \ge t_{init} + 2\Delta t$. Written in
+   `time` rather than as a roll counter because `time` is already snapshotted
+   and restored by the integrator warm-up, the precompile pass and the restart
+   path.
+
+> ⚠ Defects 6–8 change the coefficient on **every** DynSGS path, including
+> `CompEuler/sod1d`, which has a committed reference in `test/CI-ref/`. That
+> reference was generated against the broken sensor and has to be regenerated
+> (`.github/workflows/generate-ci-ref.yml`, or `test/generate_ci_ref.jl`)
+> before the CI suite will pass. The measurements in the tables below were
+> also taken before these fixes and are no longer current.
+
 ### Verification
 
 All three cases run to completion with the fixes in place:

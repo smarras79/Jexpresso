@@ -294,6 +294,49 @@ end
     end
 end
 
+@testset "the BDF2 history must be qⁿ, qⁿ⁻¹, qⁿ⁻² -- not qⁿ, qⁿ, qⁿ⁻¹" begin
+    # THE REGRESSION TEST FOR THE ORDERING BUG.
+    #
+    # rhs.jl used to roll the history BEFORE compute_dsgs_viscosity! read it,
+    # and the roll writes `uaux` into dsgs_qnm2 -- so the call site, which
+    # passes (q, q1, q2) = (uaux, dsgs_qnm2, dsgs_qnm1), handed q1 IDENTICAL
+    # to q. Assert here what that does to the stencil, because the symptom
+    # (a coefficient 10-100x too large, and a case that dies in its first
+    # step) is a long way from the cause.
+    Δt = 0.5
+    q0 = rest_state()
+    q0[:,5] .+= 1.2 .* range(0, 2, length = NPOIN)      # some structure
+    # A state evolving at a KNOWN, constant rate: qⁿ = q0 + n*Δt*rate.
+    rate = zeros(NPOIN, 5);  rate[:,5] .= 0.7           # d(ρθ)/dt = 0.7
+    qnm2 = q0
+    qnm1 = q0 .+ Δt .* rate
+    qn   = q0 .+ 2Δt .* rate
+    Minv = ones(NPOIN)
+    # An RHS that accounts for that rate EXACTLY: a perfect solution.
+    rhs  = rate ./ Minv
+    qe   = rest_state()
+
+    # Correct ordering: BDF2 on three distinct levels is exact for a linear
+    # q(t), so it cancels the RHS and the residual is zero.
+    good = dsgs3d(qn, qnm1, qnm2, qe, rhs, Minv, ELEMS, [40.0, 40.0], Δt)
+    # Not exactly zero only because this test BUILDS rhs by a division and the
+    # kernel multiplies it back: Minv*rhs differs from `rate` in the last bit.
+    # 1e-9 m²/s against a molecular 1.5e-5 is zero for every purpose.
+    @test all(good.ν .< 1e-9)
+
+    # The buggy ordering: q1 == q. The stencil collapses to
+    # 3qⁿ - 4qⁿ + qⁿ⁻¹ = -(qⁿ - qⁿ⁻¹), i.e. MINUS HALF the backward
+    # difference, so R = |-½ dq/dt - dq/dt| = 1.5|dq/dt| -- the physical
+    # tendency, on a solution that satisfies the PDE exactly.
+    bad = dsgs3d(qn, qn, qnm1, qe, rhs, Minv, ELEMS, [40.0, 40.0], Δt)
+    d5  = bad.denom[5]
+    @test bad.ν[1] ≈ 1.0*40.0^2 * 1.5*0.7 / d5 rtol = 1e-10
+    # And the size of the mistake, which is the reason it was worth finding:
+    # a coefficient of O(10³) m²/s on a solution whose residual is zero.
+    @test bad.ν[1] > 1.0e3
+    @test bad.ν[1] > 1.0e9 * maximum(good.ν)
+end
+
 @testset "the per-equation split is the standard LES one" begin
     # DynSGS supplies mu_t; the split across equations is SGS_diffusion's, the
     # same one Smagorinsky goes through. That is the whole reason the 3D path

@@ -439,6 +439,25 @@ function params_setup(sem,
         dsgs_denom = KernelAbstractions.zeros(backend, TFloat, 1)
     end
     dsgs_thist = Ref{Float64}(-1.0e30)
+    # Two flags set by _build_rhs! on every RHS call and read by
+    # viscous_rhs_el!. Neither is ever snapshotted: both are recomputed from
+    # `time` on every call, so the integrator warm-up, the precompile pass and
+    # the restart path need no restore site for them.
+    #
+    #   dsgs_fresh  this is the FIRST RK stage of a step, so `uaux` is qⁿ and
+    #               the two buffers hold qⁿ⁻¹ and qⁿ⁻²: the three levels the
+    #               BDF2 stencil needs are consistent and the coefficient may
+    #               be rebuilt. False on every other stage, where `uaux` is a
+    #               stage state and rebuilding would measure the tendency
+    #               rather than the residual.
+    #   dsgs_hist   the buffers hold two GENUINELY DISTINCT past steps. False
+    #               for the first two steps, when they still carry the initial
+    #               state and the stencil cannot be a time derivative at all.
+    #
+    # See the comment at `ldsgs_step` in rhs.jl for what each of them is
+    # protecting against.
+    dsgs_fresh = Ref{Bool}(false)
+    dsgs_hist  = Ref{Bool}(false)
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:
@@ -490,7 +509,7 @@ function params_setup(sem,
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
-                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist,
+                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_fresh, dsgs_hist,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
@@ -528,7 +547,7 @@ function params_setup(sem,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
-                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist,
+                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_fresh, dsgs_hist,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,
