@@ -53,6 +53,7 @@ Inside `build_imex3d`, in order:
 | column ownership + gather/scatter plan | `imex3d.jl:882-883` → `columns.jl:793` `build_column_comm` |
 | **assemble + LU-factorise the bands** | `imex3d.jl:914` → `factorize.jl:162` `build_column_factorization` |
 | the preconditioner object | `imex3d.jl:915` `IMEX3DPrecond(opv, cc, fac, topo, pvars)` |
+| **or the deck's own**, `:imex_precond => :custom` | `precond_api.jl` `build_custom_precond` |
 | distributed inner product | `imex3d.jl:923` `build_distributed_inner` |
 | GMRES workspace (`5·Np`) | `imex3d.jl:928` `GMRESWorkspace` |
 | **Schur path**, if `:imex_schur` | `imex3d.jl:934` → `schur_stage.jl:81` `build_imex3d_schur` |
@@ -79,7 +80,7 @@ to be.
 | ARK driver calls the stage solve | `ark.jl` → `params.imex.solve!` |
 | **five-field stage solve** | `imex3d.jl:251` `imex3d_solve!` |
 | — matvec closure `(I − γΔt·A)·V` | `imex3d.jl:274` → `operator.jl:578` `hevi_apply_A!` |
-| — **preconditioner closure** | `imex3d.jl:281-283` → `imex3d.jl:156` `imex3d_precond!` |
+| — **preconditioner closure** | `imex3d.jl` → `imex_precond_apply!` → `imex3d.jl:156` `imex3d_precond!` |
 | — the Krylov loop | `imex3d.jl:287` → `krylov.jl:272` `gmres_solve!` |
 | — where GMRES actually calls it | `krylov.jl:326` (Arnoldi) and `krylov.jl:400` (right-preconditioned update) |
 
@@ -111,7 +112,7 @@ Same shape, one field instead of five.
 | **stage solve** | `schur_stage.jl:149` `imex3d_solve_schur!` |
 | — five-field RHS → scalar RHS | `schur_stage.jl:` `schur_setup_rhs!` (per solve, instrumented separately) |
 | — matvec `H[P]` | `schur_stage.jl:184` → `schur.jl:369` `schur_H!` |
-| — **preconditioner** | `schur_stage.jl:190` → `schur_precond.jl:259` `schur_precond!` |
+| — **preconditioner** | `schur_stage.jl` → `imex_precond_apply!` → `schur_precond.jl:259` `schur_precond!` |
 | — the same three steps | `schur_precond.jl:283` gather, `:286` `gbtrs!`, `:292` scatter |
 | — rebuild the five fields | `schur_stage.jl:` `schur_recover!` |
 
@@ -125,6 +126,40 @@ agree to 1.9e-16.
 elimination leaves a 2×2 system in `(ρ, P)` rather than one scalar, so
 `:imex_schur` forces `theta_advective` on the operator rather than offering it
 as a separate choice.
+
+---
+
+## 4b. Swapping the preconditioner — `:imex_precond => :custom`
+
+The stage solve reaches every preconditioner — both built-ins and anything a
+deck supplies — through three generic functions in
+**`precond_api.jl`**. Nothing else in the scheme knows which one is in use:
+`IMEX3DCache` is parametric in the preconditioner type, and GMRES asks only for
+a callable `precon!(Z)` that overwrites `Z` with `M⁻¹Z`.
+
+| what | location |
+|---|---|
+| the contract, in full | `precond_api.jl` (header) |
+| **apply** `M⁻¹` in place — required | `precond_api.jl` `imex_precond_apply!` |
+| refresh under `:PS` — optional, no-op by default | `precond_api.jl` `imex_precond_refresh!` |
+| the setup report's one line — optional | `precond_api.jl` `imex_precond_describe` |
+| what the builder is handed | `precond_api.jl` `imex_precond_context` |
+| resolve `:imex_precond_build` and prove it applies | `precond_api.jl` `build_custom_precond` |
+| the two failures that are otherwise silent | `precond_api.jl` `imex_precond_selfcheck` |
+| built-in methods, five-field | `imex3d.jl`, just below `imex3d_precond!` |
+| built-in methods, scalar | `schur_precond.jl`, at the foot of the file |
+| build site, five-field | `imex3d.jl` `build_imex3d`, after the `:column` block |
+| build site, scalar | `schur_stage.jl` `build_imex3d_schur` |
+| refresh site | `imex3d.jl:~720` `ark_relinearize!` |
+
+A user writes one builder and one `imex_precond_apply!` method, both in their
+case's `user_inputs.jl` — that file is `include`d into the `Jexpresso` module,
+so no `import` and no edit to `src/` is involved. The step-by-step version,
+with a complete worked example, is **"Writing your own preconditioner"** in
+`README_IMEX3D.md`.
+
+`:imex_precond` steers this solve only. The radiative-transfer solver has an
+unrelated preconditioner menu in `src/kernel/operators/asm_preconditioner.jl`.
 
 ---
 
@@ -152,7 +187,8 @@ the failure is silent.
 | `:limex` / `:ode_solver => IMEX_ARK` | turns IMEX3D on | `imex3d.jl:331` |
 | `:imex_schur` | scalar Schur stage solve | `schur_stage.jl` |
 | `:imex_schur_kernel` | fast matvec for `H` (default on) | `schur_stage.jl` |
-| `:imex_precond` | `:column` or `:none` | `imex3d.jl` |
+| `:imex_precond` | `:column`, `:none`, or `:custom` | `imex3d.jl`, `schur_stage.jl` |
+| `:imex_precond_build` | `f(ctx) -> pc`, required by `:custom` | `precond_api.jl` |
 | `:imex_rtol`, `:imex_restart`, `:imex_maxiter` | Krylov tolerance, cycle length, cap | `imex3d.jl` |
 | `:imex_linearization`, `:imex_update_freq` | `:RS` frozen / `:PS` refreshed | `imex3d.jl:650` |
 | `:imex_verify` | setup self-check on the assembled operator and a full stage solve | `imex3d.jl` |
@@ -204,4 +240,5 @@ transferable numbers, not the third digit of a step time.
 | the fast matvec vs the reference form | `test/hevi/test_schur_kernel.jl` |
 | both production stage solves agree | `test/imex3d/test_schur_stage.jl` |
 | `build_imex3d`, both arms | `test/imex3d/test_schur_build.jl` |
+| the `:custom` preconditioner hook | `test/imex3d/test_custom_precond.jl` |
 | answers independent of rank count | `test/hevi/test_rank_independence.jl` |
