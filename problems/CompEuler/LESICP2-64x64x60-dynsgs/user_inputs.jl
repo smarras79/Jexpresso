@@ -125,14 +125,18 @@ function user_inputs()
     # picks how the IMEX stage system is solved. Turning the second off does
     # NOT go explicit.
     #---------------------------------------------------------------------------
-    use_imex  = true    # true -> IMEX-ARK(ARS343), all acoustics implicit, dt 0.5;  false -> fully explicit, dt 0.02
-    use_schur = true    # IMEX only: scalar Schur stage solve, Np unknowns not 5*Np, 3.56x/step here. Ignored if use_imex is false
+    use_imex  = true      # true -> IMEX-ARK(ARS343), all acoustics implicit, dt 0.5;  false -> fully explicit, dt 0.02
+    use_schur = !_vdiff   # IMEX only: scalar Schur stage solve, Np not 5*Np, 3.56x/step. IMPOSSIBLE with :implicit_vdiff -- the reduction cannot see the diffusion operator
 
     # -- used only when use_imex. Each is also an env override so an A/B
     #    needs no edit here; the value shown is the default.
     lschur      = parse(Bool,    get(ENV, "DBG_SCHUR",     string(use_schur)))
     dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.5"))
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
+    # Krylov basis costs (restart+4)*npoin*nvar*8 B/rank: ~19 MB on the scalar
+    # Schur system, ~95 MB on the five-field one (npoin/rank ~ 70k at 256 ranks).
+    # An OutOfMemoryError there is the heap budget, not this number -- launch with
+    # --heap-size-hint (~85% of --mem-per-cpu). See heap_budget_note in krylov.jl.
     restart     = parse(Int,     get(ENV, "DBG_RESTART",   "30"))
     maxiter     = parse(Int,     get(ENV, "DBG_MAXITER",   "600"))
     precond     = Symbol(        get(ENV, "DBG_PRECOND",   "column"))   # or :none

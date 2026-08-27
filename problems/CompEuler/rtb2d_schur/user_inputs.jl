@@ -63,7 +63,7 @@ function user_inputs()
     linearization = :RS         # :RS (frozen) | :PS (periodically refreshed)
     update_freq   = 5           # steps between refreshes, :PS only
     stab_guard    = :warn       # :warn | :error | :none
-    implicit_vdiff = false      # vertical diffusion inside the implicit half
+    implicit_vdiff = false      # vertical diffusion inside the implicit half. Incompatible with lschur -- turning it on demotes lschur (see README_IMEX3D.md)
     lateral_walls  = :auto      # :auto | :bc | :box | :none
     monitor        = false      # per-solve Krylov iteration counts
 
