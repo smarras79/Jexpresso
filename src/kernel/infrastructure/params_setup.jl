@@ -246,8 +246,17 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     PhysConst = PhysicalConst{TFloat}()
     thermo_params = create_updated_TD_Parameters(PhysConst.potential_temperature_reference_pressure)
+    # nelem/neqs/SD are read only by the DSGS allocator: DynSGS carries one
+    # coefficient per ELEMENT plus neqs-long reduction buffers, and it returns
+    # a closure struct only in 3D (in 1D/2D viscous_rhs_el! has its own DSGS
+    # branch that never looks at params.sgs -- see sgsStructs.jl).
     sgs        = allocate_SGS(sem.mesh.npoin, TFloat, backend, PhysConst, inputs[:visc_model];
-                              C_s = inputs[:C_s])
+                              C_s   = inputs[:C_s],
+                              nelem = sem.mesh.nelem,
+                              neqs  = qp.neqs,
+                              SD    = sem.mesh.SD,
+                              C1    = get(inputs, :dsgs_C1, 1.0),
+                              C2    = get(inputs, :dsgs_C2, 0.5))
     if sgs isa AbstractSGSModel
         # mod_inputs.jl always populates :lrichardson, so read it rather than
         # supplying a second, unreachable default here — the two disagreed, and
@@ -259,6 +268,12 @@ function params_setup(sem,
         # Both closures now honour it. Vreman's limiter is a no-op when this is
         # false, so the key means the same thing for either model.
         sgs.lwall_damping = inputs[:lwall_damping] == true
+        # DynSGS only. Adding the Smagorinsky viscosity to the residual one is
+        # opt-in and off by default; see the field's comment in sgsStructs.jl
+        # for why a wall-modelled PBL is the case where it is worth asking for.
+        if sgs isa SGS_DSGS
+            sgs.ladd_smagorinsky = get(inputs, :dsgs_add_smagorinsky, false) == true
+        end
 
         if sgs.lwall_damping
             # Distance to the lower wall at every node. The wall-normal
@@ -371,6 +386,14 @@ function params_setup(sem,
     #     [:,1] = ν_ρ (diagnostic, not applied)
     #     [:,2] = μ_ρu          [:,3] = μ_ρv
     #     [:,4] = κ_θ  (already scaled by Pr/(γ-1))
+    #
+    # In 3D the matrix is DIAGNOSTIC ONLY. What the RHS applies there comes
+    # from sgs.μ_el through SGS_diffusion (the same path Smagorinsky takes),
+    # and these columns just mirror that split so write_output.jl has a
+    # mu_dsgs_<var> field per equation:
+    #     [:,1]   = :μ[1]·μ/Sc_t          (0 with the usual :μ[1] = 0)
+    #     [:,2:4] = :μ[ieq]·μ             momentum
+    #     [:,5]   = :μ[5]·μ/Pr_t          θ
     ldsgs     = inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
     ldsgs_mhd = inputs[:lvisc] == true && inputs[:visc_model] == DSGS_MHD()
     if ldsgs || ldsgs_mhd

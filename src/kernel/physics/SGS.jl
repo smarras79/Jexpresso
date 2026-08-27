@@ -1416,6 +1416,409 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     return nothing
 end
 
+# ================================================================================
+# DynSGS — 3D, compressible Euler in POTENTIAL-TEMPERATURE form
+#          q = (ρ, ρu, ρv, ρw, ρθ [, ρq_x ...])
+#
+#   S. Marras, M. Nazarov, F. X. Giraldo, "Stabilized high-order Galerkin
+#   methods based on a parameter-free dynamic SGS model for LES",
+#   J. Comput. Phys. 301 (2015) 77-101, eqs. (8)-(10).
+#
+# This is the 3D sibling of compute_dsgs_viscosity!(::DSGS, ::NSD_2D) above.
+# Three things are genuinely different, and each of them is a correctness
+# requirement rather than a preference.
+#
+# 1. IT WRITES INTO A CLOSURE STRUCT, NOT INTO visc_coeff_dsgs.
+#
+#    The 2D path packs one number per element into visc_coeff_dsgs[ieq] and
+#    lets the scalar `visc_coeff[ieq]*grad(primitive)` kernel apply it. The 3D
+#    viscous kernel is not that: it is the full stress tensor
+#    tau_ij = mu(du_i/dx_j + du_j/dx_i) - (2/3) mu div(u) delta_ij, and it is
+#    reached only through the `sgs::AbstractSGSModel` method of
+#    _expansion_visc!, which reads SGS_diffusion(..., sgs, ...). Filling
+#    sgs.mu_turb therefore gives DynSGS the correct 3D stress tensor for free,
+#    and with it a truthful viscous row in the CFL table, a working
+#    :implicit_vdiff, and correct subfilter stresses in the LES statistics --
+#    all three read the same struct. See the note on SGS_DSGS in sgsStructs.jl.
+#
+# 2. THE NORMALISING SCALES ARE TAKEN ON THE PERTURBATION, NOT THE TOTAL FIELD.
+#
+#    Eq. (9) divides each residual by ‖q_i - <q_i>‖_inf over the domain. On the
+#    2D rising bubble the background is nearly uniform and it makes little
+#    difference which state that norm is taken on. On a 5 km stratified column
+#    it decides whether the model does anything at all:
+#
+#        field    ‖q - <q>‖_inf on the TOTAL state   turbulent scale
+#        rho      ~3.5e-1 kg/m^3  (hydrostatic)      ~1e-3
+#        rho*th   ~6.5e+1 K kg/m^3 (the sounding)    ~5e-1
+#
+#    i.e. the hydrostatic background is 100-300x the turbulence the sensor is
+#    supposed to see, so a denominator built on the total state divides the
+#    residual by the wrong number by two orders of magnitude and switches
+#    DynSGS off exactly where an LES needs it. The norms here are therefore
+#    taken on q - qe, the departure from the reference sounding, which is the
+#    quantity whose spread is the flow's own scale. The BDF2 numerator is
+#    unaffected: 3qe - 4qe + qe = 0, so subtracting a time-independent
+#    reference state changes nothing there.
+#
+# 3. THE FILTER WIDTH IS THE ONE THE REST OF THE 3D LES MACHINERY USES.
+#
+#    Delta = Delta_elem_filter[iel]/nop, i.e. exactly what SMAG and VREM get
+#    from compute_element_size_driver (:les_filter_width, default :max) and
+#    what les_statistics.jl reports against. The 2D path uses Delta_elem/ngl,
+#    the SHORTEST corner-to-corner distance -- on a 160 x 160 x 40 m element
+#    that is 40/5 = 8 m against 160/4 = 40 m here, a factor 25 in mu (Delta
+#    enters squared). Using two different filter widths for the closure and for
+#    the diagnostic that reports it is how a run ends up unable to explain its
+#    own output.
+#
+# DENOMINATOR FLOORS. Every field of this problem starts horizontally uniform,
+# so ‖q'_i - <q'_i>‖_inf is exactly zero at t = 0 for every slot and the ratio
+# R_i/denom_i would be garbage rather than large. Each denominator is floored at
+# 1e-3 of that field's natural scale, built from the domain-mean TOTAL state:
+#
+#     rho                1e-3 * rhobar
+#     rho u, rho v, rho w 1e-3 * rhobar * cbar
+#     rho theta          1e-3 * rhobar * thetabar
+#     other scalars      1e-3 * <|q_i|>
+#
+# A degenerate field then contributes 0/floor = 0 rather than 0/eps.
+#
+# THE CAP IS LOOSE IN A LOW-MACH FLOW, AND THAT IS NOT A BUG BUT IT IS WORTH
+# KNOWING. mu_max = C2*Delta*(‖v‖+c) is the first-order-upwind viscosity, and in
+# an atmosphere c ~ 340 m/s against ‖v‖ ~ 10, so at Delta = 40 m it is
+# 0.5*40*350 = 7000 m^2/s -- two to three orders above anything a PBL closure
+# produces. min(mu_max, mu_res) therefore never binds here and mu_res governs
+# alone, which is the regime the model is designed for; the cap is doing its
+# job as a safety net for the shock case it was written for, not as a limiter
+# on this one. Lower :dsgs_C2 if you want it to bite.
+#
+# MPI. <q_i> and ‖q_i - <q_i>‖ are DOMAIN norms by definition, so with
+# :ldsgs_global_norms they are Allreduced -- two small collectives per RHS
+# call. Rank-local (the default) costs no communication but makes the eddy
+# viscosity depend on the partitioning, which is fine for a production run and
+# not fine for a rank-count study.
+# ================================================================================
+function compute_dsgs_viscosity!(sgs::SGS_DSGS{TT},
+                                 ::NSD_3D,
+                                 μ_dsgs::AbstractMatrix{TT},
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δelem_filter::AbstractVector{TT},
+                                 Δfallback::TT,
+                                 nop::Int,
+                                 PhysConst::PhysicalConst{TT},
+                                 comm,
+                                 nelem::Int, ngl::Int, neqs::Int;
+                                 lpert::Bool=false,
+                                 lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+
+    avg   = sgs.avg
+    denom = sgs.denom
+    scale = sgs.scale
+    ν_el  = sgs.ν_el
+    μ_el  = sgs.μ_el
+
+    C1  = sgs.C1
+    C2  = sgs.C2
+    γ   = PhysConst.γ
+    C0  = PhysConst.C0
+    eps = TT(1.0e-16)
+
+    inv2Δt = one(TT)/(TT(2)*Δt)
+    npts   = nelem*ngl*ngl*ngl
+
+    # `Δelem_filter` is per element; `Δfallback` (mesh.Δeffective_l) is the one
+    # number for the whole domain kept for meshes built before that array
+    # existed. Same test as _viscous_rhs_el_3d!, so the two cannot drift.
+    luse_local_Δ = length(Δelem_filter) == nelem && nop > 0
+
+    #--- Pass 1: means of the perturbation, and of |total| for the floors ----
+    @inbounds for ieq = 1:neqs
+        avg[ieq]   = zero(TT)
+        scale[ieq] = zero(TT)
+    end
+    @inbounds for ie = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
+        ip = connijk[ie,i,j,k]
+        for ieq = 1:neqs
+            # lpert: uaux ALREADY holds the departure from qe, so q[ip,ieq] is
+            # the perturbation and q[ip,ieq]+qe[ip,ieq] the total. TOTAL: the
+            # other way round. Getting this backwards on a stratified column
+            # swaps a 1e-3 scale for a 1e-1 one.
+            qp = lpert ? q[ip,ieq]             : q[ip,ieq] - qe[ip,ieq]
+            qt = lpert ? q[ip,ieq]+qe[ip,ieq]  : q[ip,ieq]
+            avg[ieq]   += qp
+            scale[ieq] += abs(qt)
+        end
+    end
+    if lglobal_norms
+        MPI.Allreduce!(avg,   MPI.SUM, comm)
+        MPI.Allreduce!(scale, MPI.SUM, comm)
+        npts_g = MPI.Allreduce(npts, MPI.SUM, comm)
+        invn   = one(TT)/max(TT(npts_g), one(TT))
+    else
+        invn = one(TT)/max(TT(npts), one(TT))
+    end
+    @inbounds for ieq = 1:neqs
+        avg[ieq]   *= invn
+        scale[ieq] *= invn
+    end
+
+    #--- Pass 2: L∞ of |q' - <q'>| ------------------------------------------
+    @inbounds for ieq = 1:neqs
+        denom[ieq] = zero(TT)
+    end
+    @inbounds for ie = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
+        ip = connijk[ie,i,j,k]
+        for ieq = 1:neqs
+            qp = lpert ? q[ip,ieq] : q[ip,ieq] - qe[ip,ieq]
+            denom[ieq] = max(denom[ieq], abs(qp - avg[ieq]))
+        end
+    end
+    lglobal_norms && MPI.Allreduce!(denom, MPI.MAX, comm)
+
+    #--- Denominator floors, built from the mean TOTAL state ----------------
+    ρ̄  = max(scale[1], eps)
+    θ̄  = neqs >= 5 ? max(scale[5], eps)/ρ̄ : TT(300)
+    p̄  = C0*(max(ρ̄*θ̄, zero(TT)))^γ
+    c̄  = sqrt(max(γ*p̄/ρ̄, zero(TT)))
+    FLOOR = TT(1.0e-3)
+    @inbounds begin
+        denom[1] = max(denom[1] + eps, FLOOR*ρ̄)
+        for ieq = 2:min(neqs,4)
+            denom[ieq] = max(denom[ieq] + eps, FLOOR*ρ̄*c̄)
+        end
+        if neqs >= 5
+            denom[5] = max(denom[5] + eps, FLOOR*ρ̄*θ̄)
+        end
+        for ieq = 6:neqs
+            denom[ieq] = max(denom[ieq] + eps, FLOOR*max(scale[ieq], eps))
+        end
+    end
+
+    #--- Pass 3: per-element residual L∞, wave-speed cap, coefficient -------
+    @inbounds for ie = 1:nelem
+        Δ  = luse_local_Δ ? Δelem_filter[ie]/nop : Δfallback
+        Δ2 = Δ*Δ
+
+        ratio = zero(TT)     # max_i ‖R_i‖_{∞,e} / denom_i
+        uTmx  = zero(TT)     # (‖v‖ + c)_{∞,e}
+        ρ_el  = zero(TT)
+
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            Mi = Minv[ip]
+
+            # Strong-form residual. params.RHS holds the DSS-assembled WEAK
+            # form at this point in _build_rhs! (the mass-matrix division
+            # happens at the end), so it MUST be premultiplied by M^-1 for the
+            # subtraction against dq/dt to be dimensionally a residual at all.
+            #
+            # THE BDF2 STENCIL IS EVALUATED AS 3(q - q1) - (q1 - q2), WHICH IS
+            # THE SAME NUMBER AND NOT THE SAME ROUNDING.
+            #
+            #     3q - 4q1 + q2  =  3(q - q1) - (q1 - q2)
+            #
+            # exactly, but the left form forms 3q and 4q1 first and then
+            # cancels them, so its rounding error is eps*|q| -- taken on the
+            # TOTAL state, which on this problem is rho*theta ~ 360 and not the
+            # perturbation ~ 1. Divided by 2*dt and by a FLOORED denominator
+            # (1e-3*rho*theta) and multiplied by Delta^2 = 1600 m^2, that noise
+            # comes out as a spurious eddy viscosity on a state that is exactly
+            # steady:
+            #
+            #     3*1.2 - 4*1.2 + 1.2 = -4.4e-16    (not 0)
+            #     -> nu ~ 6e-10 m^2/s on a fluid at rest
+            #
+            # Harmless in magnitude, and still wrong in kind: this model's
+            # entire claim is that an exact solution gets ZERO viscosity, and a
+            # sensor with a floor under it should not be reporting the floating
+            # point representation of the background state. The right form
+            # differences CONSECUTIVE states, whose difference is O(dq), so a
+            # steady state gives an exact zero and the noise on a moving one
+            # scales with the change rather than with the state. Measured on
+            # the same case: 6e-10 -> 0.
+            for ieq = 1:neqs
+                dq = TT(3)*(q[ip,ieq] - q1[ip,ieq]) - (q1[ip,ieq] - q2[ip,ieq])
+                R  = abs(dq*inv2Δt - Mi*rhs[ip,ieq])
+                ratio = max(ratio, R/denom[ieq])
+            end
+
+            ρl = lpert ? q[ip,1] + qe[ip,1] : q[ip,1]
+            ρl = ρl > zero(TT) ? ρl : eps
+            ul = q[ip,2]/ρl
+            vl = q[ip,3]/ρl
+            wl = q[ip,4]/ρl
+            θl = lpert ? (q[ip,5] + qe[ip,5])/ρl : q[ip,5]/ρl
+            pl = C0*(max(ρl*θl, zero(TT)))^γ
+            cl = sqrt(max(γ*pl/ρl, zero(TT)))
+            uTmx = max(uTmx, sqrt(ul*ul + vl*vl + wl*wl) + cl)
+            ρ_el += ρl
+        end
+        ρ_el /= TT(ngl*ngl*ngl)
+
+        μ_res = C1*Δ2*ratio          # kinematic, m²/s
+        μ_max = C2*Δ*uTmx            # kinematic, m²/s
+        ν     = max(zero(TT), min(μ_max, μ_res))
+
+        ν_el[ie] = ν
+        # DYNAMIC from here on: SGS_diffusion(::AbstractSGSModel, ::NSD_3D)
+        # returns μ_turb straight into the stress tensor, whose primitives are
+        # u, v, w and θ — so the coefficient it wants is ρ·ν, exactly as for
+        # Smagorinsky (which builds μ_turb = ρ ℓ² |S|).
+        μ_el[ie] = ρ_el*ν
+
+        # The per-equation μ_dsgs matrix is DIAGNOSTIC ONLY here: it is what
+        # broadcast_dsgs_to_nodes! writes to VTK as mu_dsgs_<var>. What the RHS
+        # actually applies comes from μ_el via SGS_diffusion, so these entries
+        # mirror that split rather than defining it —
+        #     mass     visc_coeff[1]·μ/Sc_t   (0 with the usual :μ[1] = 0)
+        #     momentum visc_coeff[ieq]·μ
+        #     θ        visc_coeff[5]·μ/Pr_t
+        # exactly the three branches of SGS_diffusion.
+        μd = μ_el[ie]
+        μ_dsgs[ie,1] = visc_coeff[1]*μd/sgs.Sc_t
+        for ieq = 2:min(neqs,4)
+            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μd
+        end
+        if neqs >= 5
+            μ_dsgs[ie,5] = visc_coeff[5]*μd/sgs.Pr_t
+        end
+        for ieq = 6:neqs
+            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μd/sgs.Sc_t
+        end
+    end
+
+    return nothing
+end
+
+# ================================================================================
+# compute_sgs_cache!(::SGS_DSGS, ..., ::NSD_3D)
+#
+# The per-element half of DynSGS-3D. compute_dsgs_viscosity! has already run
+# for the whole mesh and left this element's coefficient in sgs.μ_el[iel]; all
+# that is left per element is
+#
+#   * broadcast μ_el[iel] onto the element's nodes in μ_turb, which is what
+#     SGS_diffusion reads inside the ieq loop that follows this call;
+#   * fill Sij, which DynSGS itself does not need but les_statistics.jl does
+#     (_fill_sgs_cached!, the branch taken whenever params.sgs is a closure);
+#   * optionally ADD the Smagorinsky viscosity — see :dsgs_add_smagorinsky on
+#     the struct for why that switch exists.
+#
+# N² and f_Ri are filled when :lrichardson is on so the diagnostic fields mean
+# the same thing they do under SMAG. They multiply the SMAGORINSKY part only:
+# a residual is not a strain rate and a buoyancy stability function has no
+# business rescaling it — the residual already knows whether the flow is doing
+# anything.
+# ================================================================================
+function compute_sgs_cache!(sgs::SGS_DSGS,
+                            uprimitive,
+                            mp, uaux,
+                            ngl, dψ,
+                            dξdx, dξdy, dξdz,
+                            dηdx, dηdy, dηdz,
+                            dζdx, dζdy, dζdz,
+                            connijk, iel, Δ2,
+                            micro, ::NSD_3D)
+
+    lrichardson = sgs.lrichardson
+    ladd_smag   = sgs.ladd_smagorinsky
+    g       = sgs.g
+    Pr_t    = sgs.Pr_t
+    C_s2    = sgs.C_s2
+    karman  = sgs.karman
+    lwall_damping = sgs.lwall_damping
+    zwall   = sgs.zwall
+    μ_e     = sgs.μ_el[iel]
+
+    for m = 1:ngl, l = 1:ngl, k = 1:ngl
+        ip = connijk[iel, k, l, m]
+
+        dudξ = 0.0; dudη = 0.0; dudζ = 0.0
+        dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
+        dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
+        dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
+
+        for ii = 1:ngl
+            dudξ += dψ[ii,k] * uprimitive[ii,l,m,2]
+            dudη += dψ[ii,l] * uprimitive[k,ii,m,2]
+            dudζ += dψ[ii,m] * uprimitive[k,l,ii,2]
+            dvdξ += dψ[ii,k] * uprimitive[ii,l,m,3]
+            dvdη += dψ[ii,l] * uprimitive[k,ii,m,3]
+            dvdζ += dψ[ii,m] * uprimitive[k,l,ii,3]
+            dwdξ += dψ[ii,k] * uprimitive[ii,l,m,4]
+            dwdη += dψ[ii,l] * uprimitive[k,ii,m,4]
+            dwdζ += dψ[ii,m] * uprimitive[k,l,ii,4]
+            dθdξ += dψ[ii,k] * uprimitive[ii,l,m,5]
+            dθdη += dψ[ii,l] * uprimitive[k,ii,m,5]
+            dθdζ += dψ[ii,m] * uprimitive[k,l,ii,5]
+        end
+
+        dξdx_klm = dξdx[iel,k,l,m];  dξdy_klm = dξdy[iel,k,l,m];  dξdz_klm = dξdz[iel,k,l,m]
+        dηdx_klm = dηdx[iel,k,l,m];  dηdy_klm = dηdy[iel,k,l,m];  dηdz_klm = dηdz[iel,k,l,m]
+        dζdx_klm = dζdx[iel,k,l,m];  dζdy_klm = dζdy[iel,k,l,m];  dζdz_klm = dζdz[iel,k,l,m]
+
+        dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
+        dudy = dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm
+        dudz = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm
+        dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
+        dvdy = dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm
+        dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
+        dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
+        dwdy = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm
+        dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
+
+        S11 = dudx
+        S22 = dvdy
+        S33 = dwdz
+        S12 = 0.5*(dudy + dvdx)
+        S13 = 0.5*(dudz + dwdx)
+        S23 = 0.5*(dvdz + dwdy)
+
+        sgs.S11[ip] = S11;  sgs.S22[ip] = S22;  sgs.S33[ip] = S33
+        sgs.S12[ip] = S12;  sgs.S13[ip] = S13;  sgs.S23[ip] = S23
+
+        S_ij_S_ij = S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)
+        Sij2_val  = 2.0 * S_ij_S_ij
+
+        N2_val = 0.0
+        f_Ri_val = 1.0
+        if lrichardson
+            θ_ref  = uprimitive[k,l,m,5]
+            dθdz   = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
+            N2_val = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+            Ri     = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
+            f_Ri_val = sgs_stability_function(Ri, Pr_t)
+        end
+        sgs.N2[ip]   = N2_val
+        sgs.f_Ri[ip] = f_Ri_val
+
+        # The DynSGS coefficient is constant over the element by construction.
+        # Shared (DSS) nodes are overwritten by whichever element writes last,
+        # which is harmless: this call happens immediately before the ieq loop
+        # for THIS element, so every value the viscous kernel reads inside it
+        # is this element's own. Downstream readers (the CFL table, the LES
+        # statistics, :implicit_vdiff) see the same last-writer-wins field the
+        # VTK mu_dsgs_* outputs already use.
+        μ = μ_e
+        if ladd_smag
+            ρ  = uprimitive[k,l,m,1]
+            ℓ2 = sgs_mixing_length2(C_s2, Δ2, zwall[ip], karman, lwall_damping)
+            μ += ρ * ℓ2 * sqrt(Sij2_val) * f_Ri_val
+        end
+        sgs.μ_turb[ip] = μ
+    end
+    return
+end
+
 # Helper: expand the per-element, per-equation μ_dsgs[1:nelem,1:neqs]
 # onto every node so the per-equation coefficients can be written to
 # PNG / VTU like any other field. Shared (DSS) nodes get the value of

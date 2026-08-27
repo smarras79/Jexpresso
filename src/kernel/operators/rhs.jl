@@ -1400,6 +1400,46 @@ end
 
 
 function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
+
+    # DynSGS-3D: the eddy viscosity is per ELEMENT and needs DOMAIN norms, so
+    # it cannot be built inside the per-element loop the way Smagorinsky's is.
+    # Fill it here, once per RHS call, straight into the closure struct; from
+    # there compute_sgs_cache!(::SGS_DSGS) broadcasts it onto the element's
+    # nodes and the rest of _viscous_rhs_el_3d! -- the full stress tensor, the
+    # Pr_t split on θ, everything -- runs completely unchanged. See the header
+    # of compute_dsgs_viscosity!(::SGS_DSGS, ::NSD_3D) in SGS.jl.
+    #
+    # params.RHS is the DSS-assembled WEAK-form inviscid RHS at this point in
+    # _build_rhs! (mass-matrix division comes at the end, the Neumann surface
+    # flux later still), which is the state the residual is defined against.
+    if params.sgs isa SGS_DSGS
+        TT = eltype(params.μ_dsgs)
+        compute_dsgs_viscosity!(params.sgs, SD,
+                                params.μ_dsgs,
+                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                params.qp.qe,
+                                params.RHS, params.Minv, params.visc_coeff,
+                                TT(params.Δt),
+                                params.mesh.connijk,
+                                params.mesh.Δelem_filter,
+                                TT(params.mesh.Δeffective_l),
+                                Int(params.mesh.nop),
+                                PHYS_CONST,
+                                params.mesh.parts.comm,
+                                Int(params.mesh.nelem), Int(params.mesh.ngl),
+                                Int(params.neqs);
+                                lpert = params.SOL_VARS_TYPE == PERT(),
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+
+        # Diagnostic only: this is what write_output.jl turns into the
+        # mu_dsgs_<var> VTK fields. What the RHS applies comes from
+        # sgs.μ_el via SGS_diffusion.
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(params.mesh.nelem),
+                                 Int(params.mesh.ngl), SD)
+    end
+
     # Typed function barrier (paired with FullSpecialize at the
     # ODEProblem construction site in TimeIntegrators.jl): pull every
     # params.* field used in the hot loop out into concretely-typed

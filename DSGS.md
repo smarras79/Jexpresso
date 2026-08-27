@@ -2,14 +2,15 @@
 
 This document describes the Marras–Nazarov Dynamic SGS model (`DSGS`), how it is
 formulated for a general conservation law, and how it is implemented for each of
-the three equation sets that use it in Jexpresso:
+the four equation sets that use it in Jexpresso:
 
 1. [The general conservation law](#1-the-general-conservation-law)
 2. [1D CompEuler — `sod1d`, `case1`](#2-1d-compeuler--sod1d-case1)
 3. [2D CompEuler θ-form — `theta_dsgs`](#3-2d-compeuler-θ-form--theta_dsgs)
 4. [2D ideal GLM-MHD — `orszagTangBormanis2024`](#4-2d-ideal-glm-mhd--orszagtangbormanis2024)
-5. [Code map, inputs and output](#5-code-map-inputs-and-output)
-6. [Defects found and fixed](#6-defects-found-and-fixed)
+5. [3D CompEuler θ-form — `LESICP2-64x64x60-dynsgs`](#5-3d-compeuler-θ-form--lesicp2-64x64x60-dynsgs)
+6. [Code map, inputs and output](#6-code-map-inputs-and-output)
+7. [Defects found and fixed](#7-defects-found-and-fixed)
 
 **References**
 
@@ -74,7 +75,9 @@ $$
 $$
 
 with $C_1 \approx 1$, $C_2 \approx 0.5$, and $\Delta_e$ the element length scale
-divided by the polynomial count, $\Delta_e = \Delta_{elem}/(N+1)$.
+divided by the polynomial count, $\Delta_e = \Delta_{elem}/(N+1)$. Which element
+length that is differs between the 1D/2D paths and the 3D one — see
+[§5.3](#53-filter-width).
 
 The three ingredients:
 
@@ -116,8 +119,8 @@ $$
 R_i = \frac{3q_i^n - 4q_i^{n-1} + q_i^{n-2}}{2\Delta t} - M^{-1}\,\mathrm{RHS}_i .
 $$
 
-The $M^{-1}$ is **required** for the units above to work out; all three paths
-apply it (see [§6](#6-defects-found-and-fixed) — the 2D θ-path did not until
+The $M^{-1}$ is **required** for the units above to work out; every path
+applies it (see [§7](#7-defects-found-and-fixed) — the 2D θ-path did not until
 recently).
 
 ### 1.3 Per-equation split
@@ -337,14 +340,176 @@ staying stable, at the cost of a thinner (but still comfortable) pressure
 margin — which is exactly what putting less viscosity in the smooth regions
 should look like.
 
+
 ---
 
-## 5. Code map, inputs and output
+## 5. 3D CompEuler θ-form — `LESICP2-64x64x60-dynsgs`
+
+`compute_dsgs_viscosity!(::SGS_DSGS, ::NSD_3D)` and
+`compute_sgs_cache!(::SGS_DSGS, …, ::NSD_3D)` in `src/kernel/physics/SGS.jl`.
+
+**State.** $\mathbf{q} = (\rho,\ \rho u,\ \rho v,\ \rho w,\ \rho\theta)$,
+`neqs = 5`, plus any moisture slots.
+
+**Coefficients.** $C_1$, $C_2$ from `:dsgs_C1` / `:dsgs_C2` (1.0 and 0.5).
+
+### 5.1 Why this path goes through a closure struct
+
+The 1D and 2D paths bypass `params.sgs`: they compute one coefficient per
+element, pack it into `visc_coeff_dsgs` and hand it to a scalar
+$\nabla\cdot(\mu\nabla q)$ kernel. That is not what the 3D viscous kernel is.
+The 3D one assembles the full stress tensor
+
+$$
+\tau_{ij} = \mu\Big(\frac{\partial u_i}{\partial x_j} + \frac{\partial u_j}{\partial x_i}\Big)
+          - \tfrac23\mu\,(\nabla\cdot\mathbf{u})\,\delta_{ij}
+$$
+
+and it is reachable only through the `sgs::AbstractSGSModel` method of
+`_expansion_visc!`, which reads its coefficient from `SGS_diffusion`. So
+DynSGS-3D is an `AbstractSGSModel`, `SGS_DSGS`, whose `μ_turb` is filled from
+the residual instead of from the strain rate. Four things come with that and
+none of them is available on the 1D/2D path:
+
+| consumer | file | what it reads |
+|---|---|---|
+| the viscous RHS | `operators/rhs.jl` | the full $\tau_{ij}$, not a Laplacian |
+| the CFL table's viscous row | `hevi/cfl_diagnostics.jl` | `sgs.μ_turb` |
+| implicit vertical diffusion | `hevi/vdiffusion.jl` | `SGS_diffusion` on this struct |
+| LES subfilter stresses | `io/les_statistics.jl` | `sgs.μ_turb`, `sgs.S11…S23` |
+
+**Per-equation split.** DynSGS supplies $\mu_t$; the split is
+`SGS_diffusion`'s, i.e. the standard LES one and identical to Smagorinsky's:
+
+$$
+\text{momentum } (\mu_{mol}+\mu_t)\cdot\texttt{:μ}[i],\qquad
+\theta:\ \frac{\mu_t}{Pr_t}\cdot\texttt{:μ}[5],\qquad
+\rho:\ \texttt{:μ}[1]\cdot\frac{\mu_t}{Sc_t}\ (=0)
+$$
+
+This is deliberately **not** the $Pr/(\gamma-1)$ factor the 2D θ-path applies
+to slot 4. That factor is Nazarov & Hoffman's artificial heat conduction on
+the internal energy of a shock-capturing scheme; $\theta$ is not that
+variable, and an atmospheric LES wants a turbulent Prandtl number.
+
+### 5.2 The normalisation is taken on the perturbation
+
+This is the one formulation change from the 2D path, and on a stratified
+column it decides whether the model does anything at all. Eq. (9) divides by
+$\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$; taken on the **total**
+state over a 5 km sounding that norm is the hydrostatic background:
+
+| field | $\lVert q-\langle q\rangle\rVert_\infty$, total state | turbulent scale |
+|---|---|---|
+| $\rho$ | ≈ 3.5e-1 kg/m³ | ≈ 1e-3 |
+| $\rho\theta$ | ≈ 6.5e+1 K kg/m³ | ≈ 5e-1 |
+
+— i.e. 100–300× too large, which divides the residual by the wrong number by
+two orders of magnitude and switches DynSGS off exactly where an LES needs it.
+The 3D path therefore takes the norms on $q - q_e$, the departure from the
+reference sounding. The BDF2 numerator is unaffected ($3q_e-4q_e+q_e=0$), so
+this changes the denominator and nothing else. `test/sgs/test_dsgs3d.jl`
+pins it: adding a 5 km sounding to both $q$ and $q_e$ leaves $\mu$ unchanged,
+while the total-state denominator grows by more than 50×.
+
+### 5.3 Filter width
+
+$\Delta = \texttt{Δelem\_filter}[e]/\texttt{nop}$ — the same width SMAG and VREM
+get from `compute_element_size_driver` (`:les_filter_width`, default `:max`)
+and the same one `les_statistics.jl` reports against. Not `Δelem/ngl` as in
+2D: on a 160 × 160 × 40 m element that is 8 m against 40 m, a factor 25 in
+$\mu$, and a closure and its own diagnostic disagreeing about the filter width
+is how a run ends up unable to explain its output.
+
+### 5.4 Denominator floors
+
+Every field of a PBL case starts horizontally uniform, so every
+$\lVert q'_i-\langle q'_i\rangle\rVert_\infty$ is exactly zero at $t=0$. Each
+denominator is floored at $10^{-3}$ of that field's natural scale, built from
+the domain-mean **total** state:
+
+| slot | floor |
+|---|---|
+| $\rho$ | $10^{-3}\bar\rho$ |
+| $\rho u,\rho v,\rho w$ | $10^{-3}\bar\rho\,\bar c$ |
+| $\rho\theta$ | $10^{-3}\bar\rho\,\bar\theta$ |
+| other scalars | $10^{-3}\langle\lvert q_i\rvert\rangle$ |
+
+### 5.5 The BDF2 stencil is evaluated as $3(q-q^{n-1}) - (q^{n-1}-q^{n-2})$
+
+Algebraically identical to $3q^n-4q^{n-1}+q^{n-2}$, and not the same rounding.
+The direct form builds $3q$ and $4q^{n-1}$ and then cancels them, so its error
+is $\varepsilon\lvert q\rvert$ — taken on the total state, which here is
+$\rho\theta \approx 360$, not the perturbation. Divided by $2\Delta t$ and by a
+**floored** denominator and multiplied by $\Delta^2 = 1600\,\mathrm{m}^2$, that
+noise comes out as an eddy viscosity on a fluid at rest:
+
+```
+3*1.2 - 4*1.2 + 1.2 = -4.4e-16   ->   nu ~ 6e-10 m^2/s
+```
+
+Negligible in magnitude and still wrong in kind: the whole claim of a
+residual-based model is that an exact solution gets **zero** viscosity.
+Differencing consecutive states instead gives an exact zero on a steady state
+and noise that scales with the change rather than with the background. The 1D,
+2D and MHD paths still use the direct form; changing them would perturb their
+committed reference solutions at round-off for no benefit their denominators
+(which are not floored against a stratified background) need.
+
+### 5.6 The cap is inert in a low-Mach flow
+
+$\mu_{max} = C_2\Delta(\lVert v\rVert + c)$ with $c \approx 340$ m/s and
+$\Delta = 40$ m is $\approx 7\times10^{3}\ \mathrm{m^2/s}$ — two to three orders
+above anything a PBL closure produces, so $\min(\mu_{max},\mu_{res})$ never
+binds and $\mu_{res}$ governs alone. That is the regime the model is designed
+for, but it does mean `:dsgs_C2` is not a working knob here unless it is
+dropped by orders of magnitude.
+
+### 5.7 `:dsgs_add_smagorinsky`
+
+Off by default. DynSGS is a **stabilization**: it puts viscosity where the
+discrete solution fails to satisfy the PDE, which is nearly nothing in a
+locally smooth region. In the surface layer of a wall-modelled PBL the
+subfilter stress carries most of the momentum flux and has to be there whether
+or not the solution is smooth — that is what makes the log law, and no
+residual sensor produces it. With the switch on, $\mu_t = \mu_{smag}+\mu_{dsgs}$:
+the closure keeps its wall behaviour and DynSGS adds dissipation only where the
+residual asks for it. The Richardson stability function and the near-wall
+mixing-length limit multiply the **Smagorinsky part only** — a residual is not
+a strain rate.
+
+The diagnostic that decides whether to switch it on is the near-surface
+`*_sfs` columns of the LES statistics: if $\langle u'w'\rangle_{sfs}$ collapses
+in the first few hundred metres and $\langle u'w'\rangle_{res}$ does not rise
+to compensate, the surface layer is under-stressed.
+
+### 5.8 Stability
+
+DynSGS does not exempt a case from the parabolic step limit: it produces an
+eddy viscosity like any other closure and $2\nu_{eff}/h_z^2$ applies to it the
+same way. What changes is only *where* the viscosity sits. On the LESICP2
+grid ($h_z = 6.91$ m) that rate is what `:implicit_vdiff` exists to remove, and
+the DynSGS deck carries it on by default for the same reason the Smagorinsky
+one does.
+
+### 5.9 Tests
+
+`test/sgs/test_dsgs3d.jl` (standalone, no Jexpresso load, same discipline as
+`test/sgs/test_closures.jl`): the coefficient on a manufactured residual is
+the value eq. (9) predicts; an exact solution gets identically zero; the cap
+binds only from above; the perturbation normalisation is invariant under
+adding a sounding; $\mu \propto \Delta^2$ below the cap and $\propto\Delta$ at
+it; the floors keep a uniform field at zero; every equation can drive the max.
+
+---
+
+## 6. Code map, inputs and output
 
 | file | contents |
 |---|---|
 | `src/kernel/abstractTypes.jl` | `struct DSGS`, `struct DSGS_MHD` |
-| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-MHD), `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
+| `src/kernel/physics/sgsStructs.jl` | `struct SGS_DSGS` and its `allocate_SGS` (3D only) |
+| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-energy, 2D-MHD, **3D**), `compute_sgs_cache!(::SGS_DSGS)`, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
 | `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
 | `src/io/mod_inputs.jl` | `:dsgs_C1`, `:dsgs_C2`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
@@ -356,13 +521,15 @@ should look like.
 
 ```julia
 :lvisc      => true,
-:visc_model => DSGS(),        # 1D CompEuler / 2D CompEuler θ
+:visc_model => DSGS(),        # 1D CompEuler / 2D CompEuler θ or E / 3D CompEuler θ
 :visc_model => DSGS_MHD(),    # 2D ideal GLM-MHD
 :μ          => [0.0, 1.0, …], # per-equation multipliers, length neqs
-:dsgs_C1    => 1.0,           # DSGS_MHD only
-:dsgs_C2    => 0.5,
-:dsgs_gamma => 5.0/3.0,
-:dsgs_Prt   => 0.7,
+:dsgs_C1    => 1.0,           # DSGS_MHD and 3D DSGS
+:dsgs_C2    => 0.5,           # DSGS_MHD and 3D DSGS
+:dsgs_gamma => 5.0/3.0,       # DSGS_MHD only
+:dsgs_Prt   => 0.7,           # DSGS_MHD only
+:dsgs_add_smagorinsky => false, # 3D DSGS only — see §5.7
+:ldsgs_global_norms   => false, # domain vs rank-local ⟨q⟩ and ‖q−⟨q⟩‖
 ```
 
 **Output.** The per-element coefficients are broadcast to nodes by
@@ -391,7 +558,7 @@ isolines on top) from a finished Orszag–Tang run.
 
 ---
 
-## 6. Defects found and fixed
+## 7. Defects found and fixed
 
 Writing this document meant reading the three paths side by side, which turned
 up five defects. All are now fixed; they are recorded here because the fixes

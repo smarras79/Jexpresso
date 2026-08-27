@@ -1,74 +1,83 @@
 #=============================================================================
- LESICP2 on the 64 x 64 x 60 production grid -- 10240 x 10240 x 5000 m.
+ LESICP2 on the 64 x 64 x 60 production grid, with DynSGS instead of
+ Smagorinsky -- 10240 x 10240 x 5000 m.
 
- WHAT THIS DECK IS FOR. The same case run fully explicit at dt = 0.02 s takes
- 24 h of wall clock to reach tend = 10800 s. This deck runs it with the
- acoustics ENTIRELY implicit and is projected at 3-5 h on the same core count,
- 2.5-3 h on 2048 ranks. Physics, sounding, surface flux, closure and filter are
- byte-identical to LESICP2-imex; only the grid, the step size and the solver
- settings differ.
+ This is LESICP2-64x64x60-imex with ONE physics change: the sub-grid closure.
+ Grid, sounding, surface flux, wall model, filter, integrator and every solver
+ setting are the same, deliberately, so the two decks are an A/B on the
+ closure and nothing else. Read that deck's header for the grid and the IMEX
+ argument; this one only explains what DynSGS is and what it does differently.
 
- THE GRID, AND WHY IT DECIDES THE SCHEME
- ---------------------------------------
-   64 x 64 x 60 elements at p = 4 over 10240 x 10240 x 5000 m
-   element 160 x 160 x 40 m  ->  effective resolution 40 x 40 x 10 m
-   smallest LGL gaps  h_x = 27.63 m   h_z = 6.91 m
-   ACOUSTIC ANISOTROPY 4.0:1        15.9 M nodes, 245 760 elements
+ WHAT DynSGS IS
+ --------------
+ Marras, Nazarov & Giraldo, JCP 301 (2015) 77-101. Instead of measuring the
+ STRAIN RATE and assuming the sub-grid stress is proportional to it, DynSGS
+ measures how badly the discrete solution fails to satisfy the PDE it is
+ supposed to satisfy, and puts viscosity exactly there. Per element,
 
- 4:1 is the number that chooses the integrator, and it chooses against HEVI.
- The explicit rate budget on this grid is
+     R_i     = dq_i/dt + div F_i - s_i                      (the residual)
+     mu_res  = C1 Delta^2 max_i ‖R_i‖_inf,e / ‖q'_i - <q'_i>‖_inf,Omega
+     mu_max  = C2 Delta (‖v‖ + c)_inf,e
+     nu      = max(0, min(mu_max, mu_res))                  [m^2/s]
 
-     vertical acoustic 50.2   horizontal acoustic 25.1
-     advection          1.7   SGS diffusion        2.4      [1/s]
+ with dq_i/dt from a BDF2 stencil on the last three STEP states and div F - s
+ read off the right-hand side the solver has just assembled. C1 = 1, C2 = 0.5;
+ there is no tuned constant deciding WHERE the model is active, which is the
+ whole point -- a Smagorinsky coefficient cannot tell a well-resolved shear
+ layer from an under-resolved one and damps both.
 
- THE SGS FIGURE IS NOT TAKEN AT nu_t, AND IT USED TO SAY 0.9. What binds is
- the LARGEST diffusivity any equation is given, and that is not the momentum
- one: :mu below is [0, 1, 1, 1, 2] and SGS_diffusion gives the theta equation
- kappa = :mu[5]/Pr_t * mu_turb = 2/0.7 = 2.857 x the momentum coefficient. So
- the vertical viscous rate is 2*2.857*nu_t/h_z^2, not 2*nu_t/h_z^2, and at
- nu_t = 20 m^2/s that is 2.4 1/s rather than 0.9. cfl_limits (hevi/
- cfl_diagnostics.jl) has always read it this way; the table here did not.
+ The coefficient is then handed to the SAME 3D stress tensor Smagorinsky uses
+ (kernel/physics/SGS.jl, SGS_diffusion for NSD_3D):
 
- HEVI removes only the first line -- 79.5 -> 29.2, a 2.7x rate gain -- but
- ARS232's explicit imaginary radius is 1.732 against CarpenterKennedy2N54's
- 3.34, so nearly half of that is handed back at the tableau and the joint
- (rectangle) limit trims the rest. Net 1.2x on the step, 3 RHS/step instead of
- 5: about 2x in wall clock, and 2x is 12 h, not "a few hours". Worse, the
- tableau with the radius to fix it (ARS343, 2.828) is the one HEVI cannot use:
- there the two halves are loaded by INDEPENDENT wavenumbers, the whole
- rectangle must be neutral, and ARS343 amplifies over most of it -- measured on
- this grid, dt = 0.0022 s, i.e. 0.05x explicit.
+     momentum   mu_t = rho * nu
+     theta      kappa_t = mu_t / Pr_t          Pr_t = 0.7
+     mass       0        (:mu[1] = 0 below)
 
- IMEX3D removes ALL THREE acoustic terms: 79.5 -> 4.1, and now one wavenumber
- loads both halves, so only the wedge zE <= Mach*zI is reachable and ARS343 is
- neutral across it. dt = 0.506 s at the same 47% margin the explicit run
- carries -- 25x the step, 4 RHS/step, 31x fewer RHS evaluations per simulated
- second.
+ so everything downstream -- the CFL table's viscous row, :implicit_vdiff, the
+ subfilter stresses in the LES statistics -- reports and uses the DynSGS
+ coefficient without knowing it is not Smagorinsky.
 
- WHAT IT COSTS, AND THE ONE NUMBER THAT DECIDES IT
- -------------------------------------------------
- The Krylov iteration count is the entire price. At dt = 0.5,
+ WHAT TO EXPECT, AND THE ONE THING TO WATCH
+ ------------------------------------------
+ DynSGS is a STABILISATION first and a physical closure second. In the
+ surface layer of a wall-modelled PBL the sub-filter stress carries most of
+ the momentum flux and has to be there whether or not the local solution is
+ smooth -- that is what makes the log law -- and no residual sensor produces
+ it on its own. So the first thing to look at in the output is not stability,
+ it is the near-surface profiles:
 
-     CFL_h = gamma*dt*c/h_x = 2.77
+   * mu_dsgs_rhou / mu_dsgs_rhotheta in the VTU are the per-element
+     coefficients actually applied (piecewise constant per element).
+   * the les_statistics *_sfs columns are the sub-filter stresses. If
+     <u'w'>_sfs collapses in the first few hundred metres while <u'w'>_res
+     does not rise to compensate, the surface layer is under-stressed and the
+     wind profile will be too steep near the ground.
 
- which is inside the band where GMRES(20-30) is still comfortable (it stops
- converging around CFL_h 5-7). Warm-started at rtol 1e-6 that is ~31
- iterations per solve, 3 solves per step.
+ If that happens, the lever is :dsgs_add_smagorinsky => true, which makes the
+ eddy viscosity mu_smag + mu_dsgs rather than mu_dsgs alone: the closure keeps
+ its wall behaviour and DynSGS adds dissipation only where the residual says
+ the discretisation needs it. It is off here because whether the residual term
+ alone is enough is precisely the question this deck exists to answer.
 
- Writing every cost in units of A_vert (one vertical-operator application), the
- step costs 4*rho + 12 + 232 per 0.5 s, where rho = T_rhs / A_vert is how heavy
- this case's LES right-hand side is relative to the linear acoustic operator.
- That is the ONLY unknown, and JEXPRESSO_HEVI_PROFILE=1 measures it in a
- 200-step run:
+ STABILITY BUDGET, WHICH IS NOT THE SAME AS THE SMAGORINSKY DECK'S
+ -----------------------------------------------------------------
+ The reason LESICP2-64x64x60-imex died at t = 500 s is that its SGS diffusion
+ is explicit and nu_eff grows with the boundary layer until 2 nu_eff/h_z^2
+ crosses what ARS343's explicit tableau will carry. DynSGS does not exempt
+ this deck from that: it produces an eddy viscosity like any other closure and
+ that viscosity has the same parabolic limit. What changes is only WHERE the
+ viscosity sits -- concentrated on the elements whose residual is large rather
+ than spread over every element with a strain rate.
 
-     rho     10      15      20      30      50
-     speedup 3.1x    4.5x    5.7x    7.8x   11.2x
-     hours   7.7     5.4     4.2     3.1     2.1
+ So :implicit_vdiff is ON here too, for the same reason and by the same
+ default. Watch the "viscous" term in the IMEX self-check at startup and in
+ the periodic CFL report (:lcfl_report_every) rather than assuming it.
 
- IMEX3D overtakes explicit at rho = 3.0 and HEVI at rho = 4.6, so for any real
- LES right-hand side this is the right scheme; where in 2-8 h it lands is a
- property of how expensive rhs! is, not of the integrator. The ceiling, at
- infinite rho, is 31x -- the RHS-count ratio. Everything below that is Krylov.
+ DIFFERENCES FROM THE SMAGORINSKY DECK, IN FULL. There are four:
+   :visc_model            SMAG() -> DSGS()
+   :mu[5]                 2.0 -> 1.0     (see the note at :mu below)
+   :dsgs_C1 / :dsgs_C2    new, the model's two coefficients
+   :output_dir            ..._dynsgs_ so an A/B leaves both on disk
 
  RUN IT ON A RANK COUNT THAT DIVIDES 4096
  ----------------------------------------
@@ -79,7 +88,8 @@
     2048 ranks   2 columns each   exact
 
      DBG_SCHEME=imex (default) | hevi | explicit   -- same physics, three arms
-     JEXPRESSO_HEVI_PROFILE=1                      -- measures rho
+     DBG_VDIFF=0                                   -- explicit vertical diffusion
+     DBG_FILTER=0                                  -- modal filter off
      DBG_DT=... DBG_RTOL=... DBG_RESTART=...       -- sweep the three knobs
 =============================================================================#
 
@@ -138,7 +148,7 @@ function user_inputs()
     monitor_every = parse(Int,   get(ENV, "DBG_IMEXMONEVERY", "200"))
     scheme = Symbol(get(ENV, "DBG_SCHEME", limex_schur ? "imex" : "explicit"))
     scheme in (:imex, :hevi, :explicit) ||
-        error("LESICP2-64x64x60-imex: DBG_SCHEME must be imex, hevi or explicit; got $scheme")
+        error("LESICP2-64x64x60-dynsgs: DBG_SCHEME must be imex, hevi or explicit; got $scheme")
 
     #---------------------------------------------------------------------------
     # STEP SIZE -- one per scheme, each at its own limit. These are NOT
@@ -301,11 +311,56 @@ function user_inputs()
         :ifirst_wall_node_index=> 2, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
-        :visc_model           => SMAG(),
+        #---------------------------------------------------------------------------
+        # THE CLOSURE -- the only physics that differs from LESICP2-64x64x60-imex
+        #---------------------------------------------------------------------------
+        :visc_model           => DSGS(),
+        # The two DynSGS coefficients, eq. (9). These ARE the paper's values;
+        # they are written out rather than left to the defaults in
+        # io/mod_inputs.jl so that an A/B that changes them leaves a trace in
+        # the deck.
+        #
+        # C1 scales the residual viscosity. 1.0 is parameter-free in the sense
+        # that matters -- it does not decide WHERE the model is active, only
+        # how hard it acts once the residual has decided.
+        :dsgs_C1              => 1.0,
+        # C2 scales the first-order-upwind cap mu_max = C2 Delta (‖v‖+c). In an
+        # atmosphere c ~ 340 m/s against ‖v‖ ~ 10, so at Delta = 40 m this cap
+        # is 0.5*40*350 = 7000 m^2/s -- two to three orders above anything a
+        # PBL closure produces, and it will never bind. That is fine (it is a
+        # safety net, not a target: min(mu_max, mu_res) is meant to leave
+        # mu_res governing), but it does mean C2 is not a working knob here
+        # unless it is dropped by orders of magnitude.
+        :dsgs_C2              => 0.5,
+        # Add the Smagorinsky viscosity to the residual one instead of
+        # replacing it. OFF: see "WHAT TO EXPECT" in the header for the
+        # near-surface diagnostic that decides whether it should be on.
+        :dsgs_add_smagorinsky => false,
+        # Read only when :dsgs_add_smagorinsky is on. Left at the Smagorinsky
+        # deck's value so the two arms are comparable if it is switched on.
         :C_s                  => 0.16,
+        # Likewise: the buoyancy stability function multiplies the SMAGORINSKY
+        # part only. A residual is not a strain rate, and rescaling it by a
+        # Richardson number would be asking the sensor a question it has
+        # already answered. With :dsgs_add_smagorinsky => false these two keys
+        # affect only the N2 and f_Ri diagnostic fields.
         :lrichardson          => true,
         :lwall_damping        => true,
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 2.0],
+        # :μ IS A PER-EQUATION MASK, NOT A VISCOSITY (same as under SMAG).
+        #
+        # NOTE slot 5 is 1.0 HERE and 2.0 in the Smagorinsky deck. That 2.0
+        # gives the theta equation :μ[5]/Pr_t = 2.857 x the momentum
+        # diffusivity -- an effective turbulent Prandtl number of 0.35 -- which
+        # is a hand-tuning of the Smagorinsky arm with no counterpart here: the
+        # DynSGS coefficient is derived from the residual of the theta equation
+        # itself, so there is nothing for a factor of two to correct. It is
+        # also the term that binds the explicit parabolic limit, so carrying it
+        # over would import a stability problem for no modelling reason.
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        # Domain (rather than rank-local) norms for <q'> and ‖q' - <q'>‖. Two
+        # extra Allreduce per RHS call, 8 per step under ARS343. Off by
+        # default; switch it on when mu has to be identical across rank counts.
+        # :ldsgs_global_norms   => true,
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
@@ -334,6 +389,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
+	# SHARED WITH LESICP2-64x64x60-imex ON PURPOSE. It is a 28 MB file and
+	# the two decks are an A/B on the closure: a second copy is 28 MB of
+	# disk whose only possible future is to drift out of step with the one
+	# the other arm reads. LESICP_64x64x60.geo is copied here so the mesh
+	# can be regenerated from this directory if that one ever goes away.
 	:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
 		
         # Stretching. The .geo is UNIFORM in z (Progression 1.0); the vertical
@@ -418,7 +478,7 @@ function user_inputs()
         :outformat           => "vtk",
 	# One tree per scheme, so an A/B/C leaves all three solutions on disk
 	# rather than overwriting each other.
-	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_64x64x60_10240mX10240mX5000m_" * String(scheme) * "/",
+	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_64x64x60_10240mX10240mX5000m_dynsgs_" * String(scheme) * "/",
 	#:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/,"
         #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
