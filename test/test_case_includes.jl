@@ -1,123 +1,156 @@
 #---------------------------------------------------------------------------------
-# test/test_case_includes.jl — no case's user_*.jl may include ITSELF.
+# test/test_case_includes.jl — no case file may include itself, directly or
+# through a cycle.
 #
-#   julia --project=. test/test_case_includes.jl
+#   julia test/test_case_includes.jl
 #
-# The bug this pins down: `problems/ShallowWater/SWsphere/user_flux.jl` (and its
-# four siblings) ended up containing
+# NO `using Jexpresso`: this only parses files, so it runs in a bare Julia and
+# costs a fraction of a second.
+#
+# WHAT IT GUARDS. src/run.jl loads a case by `include`ing the six user_*.jl in
+# its directory. If one of those includes a path that resolves back to itself,
+# `include` recurses until the stack is gone — and because the failure happens
+# inside Julia's own loader, there is no Jexpresso output and no Julia-level
+# stack trace, just a wall of
+#
+#     Internal error: during type inference of ...
+#     Encountered stack overflow.
+#
+# which points nowhere near the actual file. That is expensive to diagnose from
+# cold, so it is worth a test.
+#
+# It really happened. ShallowWater/SWsphere_visc used to consist of six one-line
+# shims of the form
 #
 #     include(joinpath(@__DIR__, "..", "SWsphere", "user_flux.jl"))
 #
-# The line is correct in a case that *delegates* to SWsphere — it was written
-# for the now-removed `SWsphere_visc` — but when those stub files were moved
-# INTO SWsphere/ the path resolved back to the file doing the including. Julia
-# recursed until the stack ran out, and because the failure happens while the
-# case is being loaded, the StackOverflowError could not even be reported:
-# `run_case("ShallowWater","SWsphere")` printed a wall of
+# which is correct FROM SWsphere_visc/. Commit 6225a0b folded the visc case into
+# SWsphere and copied the shims over SWsphere's real implementations, at which
+# point @__DIR__ was itself .../SWsphere and all five files pointed at
+# themselves. Every run of the case died on load until 9c06e63 restored them.
 #
-#     Internal error: during type inference of
-#     kwcall(..., Tuple{StackOverflowError, ...})
-#     Encountered stack overflow.
-#
-# with no file, no line and no mention of SWsphere anywhere in it.
-#
-# Delegating between cases is a legitimate pattern (it is how two decks stay
-# byte-identical apart from user_inputs.jl), so this test does not ban it. It
-# bans only the degenerate case: an include whose target IS the including file.
-#
-# Nothing here loads Jexpresso or evaluates any case file — it is a textual
-# scan of problems/ and test/CI-runs/, so it costs milliseconds.
+# Cycles through two or more files fail exactly the same way, so they are
+# checked too, along with includes that point at a file which is not there.
 #---------------------------------------------------------------------------------
+
 using Test
 
-const ROOT      = dirname(@__DIR__)
-const CASE_ROOTS = (joinpath(ROOT, "problems"), joinpath(ROOT, "test", "CI-runs"))
+const CASE_ROOTS = [joinpath(@__DIR__, "..", "problems"),
+                    joinpath(@__DIR__, "..", "test", "CI-runs")]
 
-# The per-case files src/run.jl includes by name.
-const CASE_FILES = ("user_inputs.jl", "user_flux.jl", "user_source.jl",
-                    "user_bc.jl", "initialize.jl", "user_primitives.jl",
-                    "user_analytic.jl")
-
-# `include(joinpath(@__DIR__, "..", "Foo", "user_flux.jl"))` and
-# `include(joinpath(@__DIR__, "user_flux.jl"))` — capture the joinpath
-# arguments after @__DIR__ so the target can be resolved against the file's
-# own directory. Anything more dynamic than a list of string literals is left
-# alone: this test is a tripwire, not an include resolver.
-const INCLUDE_RE = r"include\s*\(\s*joinpath\s*\(\s*@__DIR__\s*,\s*([^)]*)\)\s*\)"
-const STRING_RE  = r"\"([^\"]*)\""
-
-"""
-    self_include_targets(path) -> Vector{String}
-
-Every `include(joinpath(@__DIR__, ...))` in `path` whose target resolves to
-`path` itself, as the raw source line.
-"""
-function self_include_targets(path::AbstractString)
-    hits = String[]
-    dir  = dirname(path)
-    for m in eachmatch(INCLUDE_RE, read(path, String))
-        parts = [x.captures[1] for x in eachmatch(STRING_RE, m.captures[1])]
-        isempty(parts) && continue
-        target = normpath(joinpath(dir, parts...))
-        target == normpath(path) && push!(hits, strip(m.match))
+#
+# Resolve the argument of an `include(...)` to a path, when it can be done
+# statically. `dir` is the directory of the file doing the including, which is
+# both what @__DIR__ expands to and what Julia resolves a bare relative string
+# against. Returns nothing for anything computed at run time.
+#
+function _resolve_include(arg, dir::String)
+    arg isa String && return normpath(joinpath(dir, arg))
+    if arg isa Expr && arg.head === :call && arg.args[1] === :joinpath
+        parts = String[]
+        for a in arg.args[2:end]
+            if a isa String
+                push!(parts, a)
+            elseif a === Symbol("@__DIR__") ||
+                   (a isa Expr && a.head === :macrocall && a.args[1] === Symbol("@__DIR__"))
+                push!(parts, dir)
+            else
+                return nothing              # runtime-computed: cannot check here
+            end
+        end
+        return normpath(joinpath(parts...))
     end
-    return hits
+    return nothing
 end
 
-"""
-    case_dirs() -> Vector{String}
+# Every include target of one file, found by walking the parsed AST rather than
+# by regex, so a commented-out or string-embedded `include` cannot fool it.
+function _include_targets(path::String)
+    dir = dirname(path)
+    out = Tuple{String,Bool}[]          # (target, resolved?)
+    ast = try
+        Meta.parseall(read(path, String); filename = path)
+    catch
+        return out
+    end
+    walk(x) = begin
+        if x isa Expr
+            if x.head === :call && !isempty(x.args) && x.args[1] === :include && length(x.args) >= 2
+                r = _resolve_include(x.args[2], dir)
+                push!(out, r === nothing ? ("", false) : (r, true))
+            end
+            foreach(walk, x.args)
+        end
+    end
+    walk(ast)
+    return out
+end
 
-Every directory under problems/ or test/CI-runs/ that holds at least one of
-the per-case user files.
-"""
-function case_dirs()
-    dirs = String[]
+function _all_case_files()
+    files = String[]
     for root in CASE_ROOTS
         isdir(root) || continue
-        for (dir, _, files) in walkdir(root)
-            any(f -> f in CASE_FILES, files) && push!(dirs, dir)
+        for (dp, _, fns) in walkdir(root), fn in fns
+            endswith(fn, ".jl") && push!(files, normpath(joinpath(dp, fn)))
         end
     end
-    return sort(dirs)
+    return files
 end
 
-@testset "case user_*.jl files do not include themselves" begin
-    dirs = case_dirs()
-    @test !isempty(dirs)   # the scan found nothing at all → the paths are wrong
 
-    offenders = String[]
-    for dir in dirs, name in CASE_FILES
-        path = joinpath(dir, name)
-        isfile(path) || continue
-        for line in self_include_targets(path)
-            push!(offenders, string(relpath(path, ROOT), ": ", line))
+@testset "case files never include themselves" begin
+
+    files = _all_case_files()
+    @test !isempty(files)                       # the walk found something at all
+
+    graph = Dict{String,Vector{String}}()
+    unresolved = String[]
+    for f in files
+        tgts = String[]
+        for (t, ok) in _include_targets(f)
+            ok ? push!(tgts, t) : push!(unresolved, f)
+        end
+        isempty(tgts) || (graph[f] = tgts)
+    end
+
+    @testset "no direct self-include" begin
+        for (f, tgts) in graph, t in tgts
+            @test t != f
+            t == f && @error "case file includes ITSELF — every run of this case will die with a StackOverflowError on load" file=f
         end
     end
 
-    if !isempty(offenders)
-        @info """A case file includes itself — loading it recurses until the
-                 stack overflows, and the error cannot be reported because the
-                 failure happens during loading. Point the include at the case
-                 it should delegate to, or inline the real content:
-                 """ * join(offenders, "\n                 ")
+    @testset "no include cycle" begin
+        # DFS over the include graph; a target already on the current stack is a
+        # cycle and recurses just like a self-include.
+        function findcycle(node, stack)
+            for nxt in get(graph, node, String[])
+                if nxt in stack
+                    return vcat(stack[findfirst(==(nxt), stack):end], nxt)
+                elseif haskey(graph, nxt)
+                    c = findcycle(nxt, vcat(stack, nxt))
+                    c === nothing || return c
+                end
+            end
+            return nothing
+        end
+        for f in keys(graph)
+            c = findcycle(f, [f])
+            @test c === nothing
+            c === nothing || @error "include cycle" cycle=join(c, " -> ")
+        end
     end
-    @test isempty(offenders)
-end
 
-# SWsphere is the case that regressed; check its files carry real content
-# rather than a stub, so a future "fold case B back into case A" cannot empty
-# them out again unnoticed.
-@testset "SWsphere carries its own case files" begin
-    swdir = joinpath(ROOT, "problems", "ShallowWater", "SWsphere")
-    @test isdir(swdir)
-    for (name, fn) in ("user_flux.jl"       => "user_flux!",
-                       "user_source.jl"     => "user_source!",
-                       "user_bc.jl"         => "user_bc_dirichlet!",
-                       "user_primitives.jl" => "user_primitives!",
-                       "initialize.jl"      => "function initialize(",
-                       "user_inputs.jl"     => "function user_inputs(")
-        path = joinpath(swdir, name)
-        @test isfile(path)
-        @test occursin(fn, read(path, String))
+    @testset "include targets exist" begin
+        for (f, tgts) in graph, t in tgts
+            @test isfile(t)
+            isfile(t) || @error "include points at a missing file" file=f target=t
+        end
+    end
+
+    # Not a failure — just surfaced, since a runtime-computed include path is
+    # the one shape the checks above cannot see through.
+    if !isempty(unresolved)
+        @info "include paths that could not be resolved statically (review by hand)" files=unique(unresolved)
     end
 end

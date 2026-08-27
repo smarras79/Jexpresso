@@ -134,6 +134,25 @@ isfile(user_analytic_file) && push!(_case_load_files, user_analytic_file)
 _need_case_reload = (_LOADED_CASE_DIR[] != case_name_dir) ||
     any(f -> get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f), _case_load_files)
 if _need_case_reload
+    # NOTE a previous version of this evicted the OUTGOING case's hook methods
+    # with Base.delete_method before including the new ones, to stop a hook two
+    # cases spell differently (theta's `user_source!(…, ::CL, ::PERT)` vs
+    # kopriva's `user_source!(…, ::CL, ::AbstractPert)`) from leaving the stale,
+    # more-specific method winning dispatch. DO NOT BRING IT BACK in that form.
+    #
+    # On a fresh `using Jexpresso`, _LOADED_CASE_DIR[] is whatever the
+    # PrecompileTools workload left in it (test/CI-runs/CompEuler/sod1d — the Ref
+    # is serialised into the .ji), so the very first run_case of a session was
+    # deleting methods that live in the precompile image, whose backedges span
+    # the entire precompiled RHS + integrator graph. That took the whole session
+    # down with a StackOverflowError inside type inference before a single line
+    # of output. Deleting a case hook that has been inlined into precompiled code
+    # is the hazard, and it applies to runtime-included hooks too — they feed the
+    # same specialisations.
+    #
+    # The dispatch bug it was meant to fix is instead handled per case, by having
+    # each case define its hooks at the SAME signatures its siblings use so the
+    # include really does overwrite them (see problems/AdvDiff/kopriva/user_source.jl).
     for _f in _case_load_files
         include(_f)
         _CASE_FILE_MTIMES[_f] = mtime(_f)

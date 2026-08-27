@@ -211,8 +211,10 @@ Below are just a few pre-packaged examples available in Jexpresso.
 To add your own new problem, see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
 
 
-## Example 1a: Shock tube with dynamic SGS for shock capturing:
-DynSGS by Marras et al. 2015 and later.
+## 1D shock tube with dynamic SGS (DynSGS) for shock capturing:
+Classical Sod's tube with shock and expansion.
+The DynSGS SGS model by Marras et al. 2015 and later is used to capture the shock.
+
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "sod1d")
@@ -222,7 +224,7 @@ Jexpresso.run_case("CompEuler", "sod1d")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-## Example 1b: 1D acoustic wave:
+## 1D acoustic wave:
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "case1")
@@ -232,7 +234,115 @@ Jexpresso.run_case("CompEuler", "case1")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Example 2: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
+## Flow at Mach 3 with forward-facing step
+Classical flow at Mach 3 with DynSGS shock capturing
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "ffs_step")
+```
+
+<img src="assets/shock-MrhoSchielern.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
+## Kelvin-Helmholtz instability
+Classical shear-triggered instability test.
+
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
+```
+
+<img src="assets/KH-EC-SGSsmag.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+
+## Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
+
+The problem is defined in [`problems/equations/MHD/kelvinHelmholtzChan2022`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/kelvinHelmholtzChan2022).
+
+```julia
+using Jexpresso
+Jexpresso.run_case("MHD", "kelvinHelmholtzChan2022")
+```
+
+<img src="assets/MHD_By.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+##  Magneto-Hydrodynamics (MHD), Orszag-Tang vortex:
+
+The classical 2D MHD benchmark, with the setup of Bormanis, Leon & Scheinker,
+*Phys. Plasmas* **31**, 012101 (2024): doubly periodic unit square, γ = 5/3,
+128×128 points, t ∈ [0, 1]. The problem is defined in
+[`problems/equations/MHD/orszagTangBormanis2024`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/orszagTangBormanis2024)
+(see its `README.md` and `EQUATIONS.md`).
+
+```julia
+using Jexpresso
+Jexpresso.run_case("MHD", "orszagTangBormanis2024")
+```
+
+Stabilized with **DynSGS** — the residual-based, parameter-free dynamic SGS
+model of Marras, Nazarov & Giraldo (see [DSGS.md](DSGS.md)).
+
+Density at t = 0.7, 0.8, 0.9, 1.0, on the same 0.1-0.4 color scale as Fig. 3
+of the reference:
+
+<img src="assets/MHD_OT_rho.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+The y magnetic field at the same times, on a symmetric color scale shared by
+the four panels:
+
+<img src="assets/MHD_OT_By.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+And the DynSGS eddy viscosity applied to the By equation (log scale), with By
+isolines drawn on top. The coefficient spans 1.5–2.8 decades across the domain —
+a global Smagorinsky constant spans none — and its rank correlation with |∇By|
+is positive at every output time (0.26–0.64, strongest while the fronts are
+steepening). See the
+[case README](problems/MHD/orszagTangBormanis2024/README.md#figures) for the
+measured table, which the plotting script reprints on every run.
+
+<img src="assets/MHD_OT_mu_dsgs_By.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+The solver writes VTK, not PNG. These three figures are rendered from a
+finished run by `julia --project=. tools/plot_orszag_tang.jl`; see the
+[case README](problems/MHD/orszagTangBormanis2024/README.md#figures).
+
+
+
+## Cloud simulation: shallow cumuli with BOMEX conditions:
+
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "3d_bomex")
+```
+<img src="assets/bomex.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+## Shallow water on a spherical shell
+Benchmark: classical Galewki and Polvani's barotropic jet
+```julia
+using Jexpresso
+Jexpresso.run_case("ShallowWater", "SWsphere")
+```
+<img src="assets/SWsphere-Galewki-visc1e5-36x36.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+
+
+##  2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "thetaTracers")
@@ -243,7 +353,7 @@ Jexpresso.run_case("CompEuler", "thetaTracers")
      style="float: left; margin-right: 5px;" />
 
 
-Example 3: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
+##  3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "3d")
@@ -252,15 +362,6 @@ Jexpresso.run_case("CompEuler", "3d")
 <img src="assets/rtb3d.png"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
-
-For ready to run tests, there are the available equations names:
-
-* CompEuler (option with total energy and theta formulation)
-
-The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.
-Details will be given in the documentation (still WIP). Write us if you need help.
-
-More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Laguerre semi-infinite element test suite
 This section contains instructions to run all of the test cases presented in
@@ -329,7 +430,7 @@ Jexpresso.run_case("Helmholtz", "case1_laguerre")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 5: Rising thermal bubble with semi-infinite Laguerre elements for outflows
+## Rising thermal bubble with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
 
@@ -342,66 +443,8 @@ Jexpresso.run_case("CompEuler", "theta_laguerre")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6a: Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
 
-The problem is defined in [`problems/equations/MHD/kelvinHelmholtzChan2022`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/kelvinHelmholtzChan2022).
-
-```julia
-using Jexpresso
-Jexpresso.run_case("MHD", "kelvinHelmholtzChan2022")
-```
-
-<img src="assets/MHD_By.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 6b: Magneto-Hydrodynamics (MHD), Orszag-Tang vortex:
-
-The classical 2D MHD benchmark, with the setup of Bormanis, Leon & Scheinker,
-*Phys. Plasmas* **31**, 012101 (2024): doubly periodic unit square, γ = 5/3,
-128×128 points, t ∈ [0, 1]. The problem is defined in
-[`problems/equations/MHD/orszagTangBormanis2024`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/orszagTangBormanis2024)
-(see its `README.md` and `EQUATIONS.md`).
-
-```julia
-using Jexpresso
-Jexpresso.run_case("MHD", "orszagTangBormanis2024")
-```
-
-Stabilized with **DynSGS** — the residual-based, parameter-free dynamic SGS
-model of Marras, Nazarov & Giraldo (see [DSGS.md](DSGS.md)).
-
-Density at t = 0.7, 0.8, 0.9, 1.0, on the same 0.1-0.4 color scale as Fig. 3
-of the reference:
-
-<img src="assets/MHD_OT_rho.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-The y magnetic field at the same times, on a symmetric color scale shared by
-the four panels:
-
-<img src="assets/MHD_OT_By.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-And the DynSGS eddy viscosity applied to the By equation (log scale), with By
-isolines drawn on top. The coefficient spans 1.5–2.8 decades across the domain —
-a global Smagorinsky constant spans none — and its rank correlation with |∇By|
-is positive at every output time (0.26–0.64, strongest while the fronts are
-steepening). See the
-[case README](problems/MHD/orszagTangBormanis2024/README.md#figures) for the
-measured table, which the plotting script reprints on every run.
-
-<img src="assets/MHD_OT_mu_dsgs_By.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-The solver writes VTK, not PNG. These three figures are rendered from a
-finished run by `julia --project=. tools/plot_orszag_tang.jl`; see the
-[case README](problems/MHD/orszagTangBormanis2024/README.md#figures).
-
-Test 7a: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
+## Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
 
@@ -414,19 +457,8 @@ Jexpresso.run_case("CompEuler", "HSmount_Lag")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 7b: Non-hydrostatic mountain waves: comparison against WRF
+## Non-hydrostatic mountain waves: comparison against WRF
 
 <img src="assets/NHjexpVSwrf.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
-
-
-Test 8: Shallow cumuli simulation with BOMEX conditions:
-
-```julia
-using Jexpresso
-Jexpresso.run_case("CompEuler", "3d_bomex")
-```
-<img src="assets/bomex.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 3.5px;" />

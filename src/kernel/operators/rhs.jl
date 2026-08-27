@@ -71,12 +71,23 @@ function resetRHSToZero_inviscid!(params)
 end
 
 function reset_filters!(params)
-    fill!(params.b, zero(params.T))
+    # NOTE: params.b is deliberately NOT zeroed here.
+    #
+    # `b` is the element-local filter scratch, dimensioned
+    # (nelem, ngl^d, neqs) -- tens to hundreds of MB on an LES mesh. It is
+    # only written at all when AMR is active (ladapt == true), and in that
+    # case filter! assigns every entry exactly once with `=`, so the memset
+    # was pure wasted bandwidth on every single RHS evaluation. Without AMR
+    # the array is never touched: filter! sums straight into `B`.
+    #
+    # `B` still has to be zeroed: the direct-stiffness sum accumulates into
+    # it with `+=` from every element sharing a point.
     fill!(params.B, zero(params.T))
 end
 
 function reset_laguerre_filters!(params)
-    fill!(params.b_lag, zero(params.T))
+    # Same reasoning as above: params.b_lag is no longer written by filter!
+    # (2D Laguerre + AMR is unsupported), so only B_lag needs zeroing.
     fill!(params.B_lag, zero(params.T))
 end
 
@@ -537,9 +548,13 @@ function _build_rhs!(RHS, u, params, time)
         else
             @timeit_debug JEXPRESSO_TIMER "filter" filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
         end
+        # filter! was handed params.uaux itself and finishes with
+        # uaux2u!(u, uaux, ...), so params.uaux already holds the filtered
+        # state and u was written from it. Reloading uaux from u here is an
+        # exact no-op that costs a full 2*npoin*neqs sweep per RHS evaluation.
+    else
+        @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     end
-
-    @timeit_debug JEXPRESSO_TIMER "u2uaux" u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     if (inputs[:ladapt] == true) && (params.inputs[:lfilter] == false)
         @timeit_debug JEXPRESSO_TIMER "conformity4ncf_q" conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
@@ -1035,7 +1050,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 params.RHS, params.Minv, params.visc_coeff,
                                 TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δx,
-                                Int(nelem), Int(ngl))
+                                Int(nelem), Int(ngl);
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
                                  Int(nelem), Int(ngl), SD)
@@ -1103,7 +1119,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 TT(get(params.inputs, :dsgs_C1,    1.0)),
                                 TT(get(params.inputs, :dsgs_C2,    0.5)),
                                 get_mpi_comm(),
-                                Int(params.mesh.nelem), Int(params.mesh.ngl))
+                                Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -1143,7 +1160,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 TT(params.Δt),
                                 params.mesh.connijk, params.mesh.Δelem,
                                 PHYS_CONST, Pr_TT,
-                                Int(params.mesh.nelem), Int(params.mesh.ngl))
+                                Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                ltheta = (params.inputs[:energy_equation] == "theta"),
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
 
         # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
@@ -1194,13 +1213,15 @@ end
 #
 # μ_dsgs[iel, ieq] already carries the per-equation coefficient set
 # by compute_dsgs_viscosity!:
-#   ieq = 1 : diagnostic ν_ρ (NOT applied — Marras drops mass diffusion)
+#   ieq = 1 : β on ρ — zero on the Euler-θ path (Marras eq. 10 drops
+#             mass diffusion), the β = μ/‖ρ‖∞,K of Nazarov & Hoffman
+#             eq. (3.7) on the total-energy path
 #   ieq = 2 : μ on the x-momentum
 #   ieq = 3 : μ on the y-momentum
-#   ieq = 4 : κ on the θ-equation (already scaled by Pr/(γ-1))
+#   ieq = 4 : κ on the energy/θ equation (already scaled by Pr/(γ-1))
 # All this loop needs to do is unpack μ_dsgs[iel, :] into the per-
-# element visc_coeff_dsgs scratch (zeroing ieq=1 so ρ stays
-# conservative) and pass it to the generic 2D _expansion_visc!.
+# element visc_coeff_dsgs scratch and pass it to the generic 2D
+# _expansion_visc!.
 function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   rhs_diffξ_el, rhs_diffη_el,
                                   rhs_diff_el,
@@ -1217,9 +1238,9 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   VT = DSGS())
 
     for iel = 1:nelem
-        # Marras (10): mass conservation untouched.
-        visc_coeff_dsgs[1] = zero(eltype(visc_coeff_dsgs))
-        for ieq = 2:neqs
+        # Slot 1 is whatever compute_dsgs_viscosity! decided: identically
+        # zero for Marras eq. (10), β for Nazarov & Hoffman eq. (3.7).
+        for ieq = 1:neqs
             visc_coeff_dsgs[ieq] = μ_dsgs[iel, ieq]
         end
 

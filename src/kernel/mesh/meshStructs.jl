@@ -178,6 +178,14 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     Δelem_l              = 0.0
     Δeffective_s         = 0.0
     Δeffective_l::TFloat = 0.0
+    # Smallest distance between two ADJACENT LGL nodes anywhere in the mesh —
+    # the length scale the explicit time step actually has to resolve. It is
+    # NOT Δelem_s/nop: LGL points cluster towards the element edges like
+    # 1/nop², so the true gap is 0.69·Δelem/nop at nop = 4 and the ratio keeps
+    # growing with the order. Filled by compute_element_size_driver (mesh.jl)
+    # on the grid as it stands, so it already includes any AMR refinement.
+    # 0.0 means "not measured"; computeCFL falls back to Δeffective_s then.
+    Δnode_s              = 0.0
 
     SD::AbstractSpaceDimensions
 

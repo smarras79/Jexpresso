@@ -2,21 +2,27 @@ function user_inputs()
 
     inputs = Dict(
         #---------------------------------------------------------------------------
-        # SWsphere — the Galewsky jet on the shell.
+        # SWsphere — the Galewsky jet on the shell, shipped in the ARTIFICIAL
+        # DIFFUSION configuration of Eq. (8b) added to the modal filter: the
+        # PAPER'S OWN setup (Marras, Kopera & Giraldo 2015, QJRMS 141:
+        # 1727-1739), which filters every step AND carries ν = 1e5 m²/s.
         #
-        # The stabilization is chosen by the two switches at the bottom of this
-        # file. The PAPER'S OWN configuration (Marras, Kopera & Giraldo 2015,
-        # QJRMS 141: 1727-1739) filters every step AND carries the artificial
-        # diffusion of Eq. (8b) with ν = 1e5 m²/s:
+        # This deck is what used to be the separate SWsphere_visc case, folded
+        # in here so there is ONE spherical shallow-water case; flip :lvisc at
+        # the bottom to get back the filter-only configuration:
         #
-        #     filter only     :lfilter => true    :lvisc => false
-        #     paper's own     :lfilter => true    :lvisc => true, :μ => 1e5
+        #     filter only    :lfilter => true    :lvisc => false
+        #     + diffusion    :lfilter => true    :lvisc => true, :μ => 1e5   ← as shipped
         #
-        # (These used to be two cases, SWsphere and SWsphere_visc, sharing one
-        # set of user_*.jl files. They are one deck now — flip the switches.)
+        # The five sibling user_*.jl in this directory are the REAL
+        # implementations. They were briefly one-line `include`s of the (then
+        # separate) SWsphere case's files; when the two cases were merged those
+        # shims ended up pointing at themselves and every run died with a
+        # StackOverflowError. Do not reintroduce them — a case directory owns
+        # its six files outright.
         #
-        # WHY NOT VISCOSITY ALONE, which is what the viscous case first shipped
-        # as. It does not survive this grid. Measured, 3 days, all else equal:
+        # WHY NOT VISCOSITY ALONE, which is what this case first shipped as.
+        # It does not survive this grid. Measured, 3 days, all else equal:
         #
         #   ν = 1e5, filter OFF   NaN at 2.005 d, whether the diffusion is on
         #                         the momentum only or on all four equations
@@ -46,6 +52,59 @@ function user_inputs()
         :lstop_on_bad_grid       => true,
         :lproject_to_sphere      => true,
         :sphere_radius        => 6.37122e6,
+        #---------------------------------------------------------------------------
+        # Which cube-face → sphere map the panels carry. This switch slides the
+        # nodes onto a different map after the grid is read, leaving the
+        # connectivity and the panel boundaries alone. See the README section
+        # "Changing the cube-face → sphere map" and
+        # src/kernel/mesh/cubed_sphere_maps.jl.
+        #
+        # cubed_sphere.geo does NOT build the gnomonic grid, despite what the
+        # comments here used to say. gmsh spaces Transfinite Line points at
+        # equal ANGLE along a Circle arc, so the .msh is already EQUIANGULAR —
+        # it reproduces tools/generate_cubed_sphere.jl's :equiangular output to
+        # 2.2e-16 of R. Hence :none below: there is nothing to improve, and
+        # asking for :equiangular would have applied the warp a second time
+        # (min element edge 710 km -> 562 km, 21% of the time step, silently).
+        # The remap now MEASURES the map the grid carries rather than assuming,
+        # so that mistake is no longer possible — it reports what it found.
+        #
+        #   :equiangular  what this grid already is (Ronchi et al. 1996):
+        #                 min element edge 710 km, max 1000 km, ratio 1.41.
+        #   :conformal    NOT USABLE ON THIS GRID, and the code refuses it.
+        #                 It does keep grid lines at 90° into a cube corner
+        #                 where the other two degenerate to 120°, but it pays
+        #                 for that with a SINGULARITY at the eight corners: the
+        #                 local map scale falls off as d^(1/3), so a node
+        #                 sitting on a corner — and cubed_sphere.geo puts one on
+        #                 each of the eight — gets a surface Jacobian that
+        #                 collapses with it: measured 1/27, 1/51, 1/93 of the
+        #                 grid median at nop = 3, 5, 8, and the metric checks
+        #                 then fail by O(1) (M6 = 0.10 to 1.8 against 5e-2).
+        #                 Three panels meet at a corner and each must open 120°;
+        #                 an angle-preserving map can only manage that by
+        #                 collapsing its derivative there. This is why conformal
+        #                 cubed spheres are used by cell-centred finite-volume
+        #                 codes and not by nodal spectral elements.
+        #                 (Rančić, Purser & Mesinger 1996)
+        #                 A corner-STRETCHED variant of it was tried, shipped
+        #                 briefly, and removed: it does make the corner Jacobian
+        #                 finite, and it still fails check_sphere_metrics by O(1)
+        #                 (M6 = 0.41) at every nop from 3 to 7 and every spacing
+        #                 from n = 5 to 40. Forcing 90° with a non-zero Jacobian
+        #                 turns the corner into a cone point, and a separable
+        #                 stretch also blows |r_u| up along the WHOLE cube edge
+        #                 as (1-u)^(-1/4). Do not reach for it again — THE 120°
+        #                 CORNER in cubed_sphere_maps.jl has the numbers.
+        #---------------------------------------------------------------------------
+        # NOTE the trailing comma belongs BEFORE the # on whichever line is live.
+        # Without it Julia reads the NEXT line's leading `:` as the range
+        # operator and the run dies with a baffling
+        # `UndefVarError: sphere_metrics`, naming the line AFTER the mistake.
+        :cubed_sphere_map => :none,        # THIS GRID IS ALREADY EQUIANGULAR — see the note above
+        #:cubed_sphere_map => :gnomonic,   # would UN-warp it to the equidistant projection (Sadourny 1972)
+        #:cubed_sphere_map => :equiangular,# no-op here; the remap detects that and says so
+        #:cubed_sphere_map => :conformal,  # UNUSABLE with this grid — see the note above
         #---------------------------------------------------------------------------
         # Metric terms of the 2D manifold. Kopriva's curl-invariant form
         # degenerates on a surface — see the header of sphere_metrics.jl — and
@@ -124,7 +183,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
-        :μ                    => 2.0e5,      # set to 1.0e5 together with :lvisc => true
+        :μ                    => 1.5e5,      # set to 1.0e5 together with :lvisc => true
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the

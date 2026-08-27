@@ -1488,6 +1488,213 @@ function project_nodes_to_shell!(mesh::St_mesh, inputs::Dict{Symbol,Any})
 end
 
 
+#---------------------------------------------------------------------------------
+# remap_cubed_sphere_nodes!(mesh, inputs)
+#
+# The entry point, called from mod_mesh_read_gmsh! immediately after
+# project_nodes_to_shell! has put every node on the sphere and filled
+# (lon, lat). Rewrites mesh.x/y/z in place and refreshes (lon, lat).
+#
+# ONE case input drives it:
+#
+#   :cubed_sphere_map   the map to move the nodes ONTO. :none (default) leaves
+#                       the grid exactly as read. The map they come FROM is
+#                       always the gnomonic one — see remap_direction in
+#                       cubed_sphere_maps.jl for why that is fixed and not a
+#                       second input.
+#
+# NOTE :cubed_sphere_map is in _CACHE_FINGERPRINT_KEYS (couplingStructs.jl).
+# It has to be: a cache hit returns from mod_mesh_read_gmsh! BEFORE this
+# function is reached, so without it in the fingerprint, changing the map and
+# re-running the same case would silently reuse the previous run's node
+# positions.
+#
+# Like project_nodes_to_shell! this writes mesh.x/y/z rather than mesh.coords:
+# it runs inside the x/y/z construction chain, before mesh.coords is filled from
+# them at the end of mod_mesh_read_gmsh!.
+#---------------------------------------------------------------------------------
+function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
+
+    to = get(inputs, :cubed_sphere_map, :none)
+    (to === :none || to === nothing) && return nothing
+
+    to in CUBED_SPHERE_MAPS ||
+        error(" # ERROR mesh.jl: :cubed_sphere_map => ", to,
+              " is not one of ", CUBED_SPHERE_MAPS, ".")
+
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+
+    # radius is only set (and lon/lat only allocated) when
+    # project_nodes_to_shell! decided the grid really is a sphere.
+    if mesh.radius <= 0.0
+        println_rank(string(" #   :cubed_sphere_map => ", to,
+                            " ignored: the grid is not a sphere.");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+        return nothing
+    end
+
+    # The remap re-places every node BY DIRECTION, which necessarily puts it on
+    # the exact sphere. That is the opposite of what :lproject_to_sphere =>
+    # false asks for, so refuse rather than silently overriding it.
+    if get(inputs, :lproject_to_sphere, true) != true
+        error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) *
+              " needs the nodes ON the sphere, but :lproject_to_sphere => false " *
+              "asks for them to be left on the element chords. Set one or the other.")
+    end
+
+    R = mesh.radius
+
+    #
+    # THE CONFORMAL MAP IS SINGULAR AT THE EIGHT CUBE CORNERS, and a grid with a
+    # node sitting on one cannot use it. There is no regularisation of it that a
+    # nodal scheme can use either — see "THE 120° CORNER" in cubed_sphere_maps.jl
+    # for the argument and the measurements. In short:
+    #
+    #   * three panels meet at a cube corner, so each opens 360°/3 = 120°. Any
+    #     map that is differentiable there with a non-singular differential A
+    #     sends the two grid lines to the two cube-edge arcs, so ∠(Ae₁, Ae₂) =
+    #     120°: a 90° corner is possible ONLY with det A = 0. RPM96 preserves the
+    #     90°, and pays with a Jacobian that vanishes like d^(1/3) (measured
+    #     |r_u|/|r_u|centre = 0.444, 0.206, 0.0957, 0.0444 at d = 1e-1 … 1e-4);
+    #
+    #   * cubed_sphere.geo puts a mesh vertex exactly on each of the eight
+    #     corners. What that costs, measured on the shipped 10-per-panel grid
+    #     remapped to the pure map: the surface Jacobian at a corner node comes
+    #     out POSITIVE but collapsing — 1/27, 1/51, 1/93 of the grid median at
+    #     nop = 3, 5, 8, falling as the nearest LGL node closes on the corner —
+    #     so build_sphere_metrics does not necessarily reject the element, it
+    #     just builds wrong metrics, and check_sphere_metrics fails: M6 = 0.10,
+    #     0.14, 0.17 (:radial) and 1.5, 1.8, 1.7 (:cross_product) at those same
+    #     orders, against a 5e-2 tolerance the equiangular grid meets with four
+    #     orders to spare. Either way the run is worthless; catch it here, where
+    #     the cause can be named;
+    #
+    #   * the corner-STRETCHED variant this file used to offer as :conformal did
+    #     make that Jacobian finite, and it still failed check_sphere_metrics by
+    #     O(1) (M6 = 0.41) at every nop from 3 to 7 and at every grid spacing
+    #     from n = 5 to 40, because forcing 90° with a non-zero Jacobian turns
+    #     the corner into a cone point and, being separable, blows |r_u| up along
+    #     the whole cube edge as (1-u)^(-1/4). It has been removed.
+    #
+    # This is why conformal cubed spheres are used by cell-centred finite-volume
+    # codes (Rančić's own model, CCAM) and not by nodal spectral elements: the
+    # singular point is a cell corner nobody evaluates at, rather than a solution
+    # node.
+    #
+    if to in CUBED_SPHERE_CORNER_SINGULAR_MAPS
+        ncorner = 0
+        for ip = 1:mesh.npoin
+            ax = abs(mesh.x[ip]); ay = abs(mesh.y[ip]); az = abs(mesh.z[ip])
+            hi = max(ax, ay, az); lo = min(ax, ay, az)
+            (hi > 0.1*R && (hi - lo) < 1.0e-6*R) && (ncorner += 1)
+        end
+        ncorner = MPI.Allreduce(ncorner, MPI.SUM, comm)
+        if ncorner > 0
+            error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) * " cannot be used with " *
+                  "this grid.\n" *
+                  " #   It has " * string(ncorner) * " node(s) sitting exactly on a cube corner, " *
+                  "and the conformal\n" *
+                  " #   map of Rančić, Purser & Mesinger (1996) is SINGULAR there: its local " *
+                  "scale\n" *
+                  " #   goes as d^(1/3), so the surface Jacobian collapses at such a node — 1/27 " *
+                  "to\n" *
+                  " #   1/93 of the grid median at nop = 3 to 8, and smaller the finer the grid.\n" *
+                  " #   The metrics that come out fail check_sphere_metrics by O(1) (M6 = 0.1 to\n" *
+                  " #   1.8 against a 5e-2 tolerance), and a node landing on the singular point\n" *
+                  " #   exactly makes build_sphere_metrics reject the element outright.\n" *
+                  " #   That is a property of the map, not a bug — three panels meet at a cube\n" *
+                  " #   corner and each must open 120°, and a map that keeps the square's 90°\n" *
+                  " #   there can only do it by collapsing its derivative. Equally, a map that\n" *
+                  " #   keeps a non-zero Jacobian there MUST deviate 30° from orthogonal: there\n" *
+                  " #   is no third option, and the corner-stretched :conformal that used to be\n" *
+                  " #   offered here failed the shell metric checks by O(1) at every order and\n" *
+                  " #   every grid spacing (see THE 120° CORNER in cubed_sphere_maps.jl).\n" *
+                  " #   Use :equiangular, which attains that 30° minimum and is smooth, or run\n" *
+                  " #   the conformal map in a cell-centred code that never evaluates at a\n" *
+                  " #   corner.")
+        end
+    end
+
+
+    #
+    # MEASURE the map the grid already carries; do not assume it.
+    #
+    # This used to assume :gnomonic, "because that is what cubed_sphere.geo
+    # emits". It is not: gmsh spaces `Transfinite Line` points at equal ANGLE
+    # along a `Circle` arc, so the .geo produces the EQUIANGULAR grid — verified
+    # against tools/generate_cubed_sphere.jl, which reproduces the shipped
+    # cubed_sphere.msh to 2.2e-16 of R and differs from gnomonic by 535 km.
+    # Assuming gnomonic made `:cubed_sphere_map => :equiangular` apply the warp
+    # to an already-warped grid and cut the minimum element edge from 710 km to
+    # 562 km — a 21% loss of time step, silently.
+    #
+    # Only the LINEAR vertices lie on the panel lattice, so the fit uses those.
+    # It separates the candidates by ~14 orders of magnitude (2e-16 against
+    # 1e-1), so this is a measurement, not a guess.
+    #
+    # In parallel each rank holds only its share of the linear vertices, and the
+    # lattice size n comes from the GLOBAL count V = 6n²+2 — so count the
+    # vertices this rank OWNS (a vertex mirrored on two ranks must be counted
+    # once) and sum. The per-candidate residuals are local maxima over the
+    # vertices at hand and are reduced below, so every rank picks the same map.
+    nlin = Int(mesh.npoin_linear)
+    nvert = nlin
+    if nparts > 1
+        nown = 0
+        for ip = 1:nlin
+            mesh.gip2owner[ip] == rank && (nown += 1)
+        end
+        nvert = MPI.Allreduce(nown, MPI.SUM, comm)
+    end
+    from, resid = detect_cubed_sphere_map(@view(mesh.x[1:nlin]),
+                                          @view(mesh.y[1:nlin]),
+                                          @view(mesh.z[1:nlin]); nvert = nvert)
+    if nparts > 1
+        for k in keys(resid)
+            resid[k] = MPI.Allreduce(resid[k], MPI.MAX, comm)
+        end
+        from = argmin(resid)
+    end
+    if from === :unknown
+        error(" # ERROR mesh.jl: :cubed_sphere_map => " * string(to) *
+              " needs a structured cubed sphere, but this grid has " * string(nlin) *
+              " linear vertices,\n #   which is not 6n²+2 for any n. Remove the switch, " *
+              "or build the grid with tools/generate_cubed_sphere.jl.")
+    end
+    println_rank(string(" #   cubed-sphere grid detected as :", from,
+                        " (lattice residual ", @sprintf("%.1e", resid[from]), ")");
+                 msg_rank = rank, suppress = mesh.msg_suppress)
+
+    if to === from || (to in (:gnomonic, :equidistant) && from in (:gnomonic, :equidistant))
+        println_rank(string(" #   :cubed_sphere_map => ", to,
+                            " is the map the grid already carries — left as read.");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+        return nothing
+    end
+
+
+    dmax = 0.0
+    for ip = 1:mesh.npoin
+        x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
+        nx, ny, nz = remap_direction(x, y, z, from, to)
+        X, Y, Z = R*nx, R*ny, R*nz
+        dmax = max(dmax, sqrt((X-x)^2 + (Y-y)^2 + (Z-z)^2))
+        mesh.x[ip], mesh.y[ip], mesh.z[ip] = X, Y, Z
+        mesh.lon[ip] = atan(Y, X)
+        mesh.lat[ip] = asin(clamp(Z/R, -1.0, 1.0))
+    end
+
+    println_rank(string(" #   cubed-sphere remap: ", from, " → ", to,
+                        " ; largest node displacement = ",
+                        MPI.Allreduce(dmax, MPI.MAX, comm), " m");
+                 msg_rank = rank, suppress = mesh.msg_suppress)
+
+    return nothing
+end
+
+
 function _flatten_model_to_cell_dim(model::Gridap.Geometry.DiscreteModel{Dc,Dp}) where {Dc,Dp}
     Dc == Dp && return model
     # Squashing a curved surface would silently collapse it (a sphere onto its
@@ -1772,6 +1979,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # same ordinary gmsh path with no case input and no separate reader.
     mesh.lmanifold = (mesh.nsd == 2) && (num_point_dims(model) == 3) &&
                      _is_curved_surface(get_node_coordinates(get_grid(model)))
+    #
+    # ...and it is decided COLLECTIVELY. _is_curved_surface looks at the node
+    # cloud this rank holds, and a small enough piece of a shell is flat to
+    # within the coplanarity tolerance. One rank answering "flat" while the
+    # others answer "manifold" would put that rank on the flat 2D path — it
+    # would drop z, collapse its piece onto the equatorial disc, and the run
+    # would go quietly wrong. If ANY rank sees curvature, the grid is a manifold.
+    #
+    if mpi_size > 1
+        mesh.lmanifold = MPI.Allreduce(mesh.lmanifold ? 1 : 0, MPI.MAX, comm) == 1
+    end
     if mesh.lmanifold
         println_rank(string(" #   2D manifold embedded in 3D: keeping z and placing the LGL nodes on the surface");
                      msg_rank = rank, suppress = mesh.msg_suppress)
@@ -2281,6 +2499,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # them back out and fill (lon, lat). Nothing here runs for a flat grid.
     if mesh.lmanifold
         project_nodes_to_shell!(mesh, inputs)
+        # Optionally slide the nodes along the shell onto a DIFFERENT
+        # cube-face → sphere map (equiangular, conformal). Connectivity and the
+        # panel decomposition are untouched; only where the nodes sit within
+        # each panel changes. No-op unless :cubed_sphere_map is set.
+        remap_cubed_sphere_nodes!(mesh, inputs)
     end
 
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
@@ -2803,25 +3026,40 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             end
         end
 
+        # PERF: elem_to_edge by hash lookup, not by scanning.
+        #
+        # This used to be, for every one of the nelem*ngl^2 element nodes:
+        # `ip in mesh.poin_in_bdy_edge` — a linear scan of the WHOLE
+        # (nedges_bdy x ngl) matrix, paid in full even when the answer is false
+        # — and then a second scan of the same matrix to find the match. Cost
+        # nelem*ngl^2*nedges_bdy*ngl, i.e. quadratic in the grid size.
+        #
+        # Measured on the cubed sphere at nop=5: ~3e8 operations at 10 elements
+        # per panel (seconds), ~2.5e10 at 30 per panel — which is the "hang"
+        # after "spherical shell R = ..." with no further output. 
+        #
+        # Same answer, built by walking the boundary edges ONCE into a
+        # (node, element) -> (edge, position) map. The tie-breaking of the old
+        # code is preserved exactly: the `while` stopped at the FIRST iedge that
+        # matched, while the inner `for i1` ran to completion and so kept the
+        # LAST matching i1 within that edge.
+        _e2e = Dict{Tuple{TInt,TInt},Tuple{TInt,TInt}}()
+        for iedge = 1:mesh.nedges_bdy
+            e1 = mesh.bdy_edge_in_elem[iedge]
+            for i1 = 1:mesh.ngl
+                k = (mesh.poin_in_bdy_edge[iedge, i1], e1)
+                prev = get(_e2e, k, nothing)
+                # unseen, or still on the same edge -> later i1 wins, as before
+                (prev === nothing || prev[1] == iedge) && (_e2e[k] = (iedge, i1))
+            end
+        end
         for e = 1:mesh.nelem
             for j = 1:mesh.ngl
                 for i = 1:mesh.ngl
-                    ip = mesh.connijk[e, i, j]
-                    if (ip in mesh.poin_in_bdy_edge)
-                        found = false
-                        iedge = 1
-                        while (iedge <= mesh.nedges_bdy && found == false)
-                            for i1 = 1:mesh.ngl
-                                ip1 = mesh.poin_in_bdy_edge[iedge, i1]
-                                e1 = mesh.bdy_edge_in_elem[iedge]
-                                if (ip1 == ip && e1 == e)
-                                    mesh.elem_to_edge[e,i,j,1] = iedge
-                                    mesh.elem_to_edge[e,i,j,2] = i1
-                                    found = true
-                                end
-                            end
-                            iedge += 1
-                        end
+                    hit = get(_e2e, (mesh.connijk[e, i, j], e), nothing)
+                    if hit !== nothing
+                        mesh.elem_to_edge[e,i,j,1] = hit[1]
+                        mesh.elem_to_edge[e,i,j,2] = hit[2]
                     end
                 end
             end
@@ -3056,29 +3294,44 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             # end
         end
         
+        # PERF: elem_to_face by hash lookup, not by scanning. The 3D twin of the
+        # elem_to_edge rewrite in the mesh.nsd == 2 branch above, and the worse
+        # of the two: `ip in mesh.poin_in_bdy_face` scans the whole
+        # (nfaces_bdy x ngl x ngl) array for every one of the nelem*ngl^3
+        # element nodes — paid in full even when the answer is false — and the
+        # `while` then scans it again. That is nelem*ngl^3*nfaces_bdy*ngl^2, so
+        # ngl^5 sits inside the element loop.
+        #
+        # For CompEuler/3d at nop=4 (ngl=5) on hexa_TFI_10x10x10 that is
+        # 1000*125*600*25 ~ 1.9e9 operations for a 1000-element grid; it is what
+        # makes a large 3D read appear to hang after the spectral-node stage.
+        #
+        # Same answer, built by walking the boundary faces ONCE into a
+        # (node, element) -> (face, i, j) map. The old tie-breaking is preserved
+        # exactly: the `while` stopped at the FIRST iface that matched, while the
+        # inner j1/i1 loops ran to completion, so the LAST matching (i1, j1) in
+        # j1-outer/i1-inner order won.
+        _e2f = Dict{Tuple{TInt,TInt},Tuple{TInt,TInt,TInt}}()
+        for iface = 1:mesh.nfaces_bdy
+            e1 = mesh.bdy_face_in_elem[iface]
+            for j1 = 1:mesh.ngl
+                for i1 = 1:mesh.ngl
+                    key  = (mesh.poin_in_bdy_face[iface, i1, j1], e1)
+                    prev = get(_e2f, key, nothing)
+                    # unseen, or still on the same face -> later (i1,j1) wins
+                    (prev === nothing || prev[1] == iface) && (_e2f[key] = (iface, i1, j1))
+                end
+            end
+        end
         for e = 1:mesh.nelem
             for k=1:mesh.ngl
                 for j=1:mesh.ngl
                     for i = 1:mesh.ngl
-                        ip = mesh.connijk[e, i, j, k]
-                        if (ip in mesh.poin_in_bdy_face)
-                            found = false
-                            iface = 1
-                            while (iface <= mesh.nfaces_bdy && found == false)
-                                for j1 = 1:mesh.ngl
-                                    for i1 = 1:mesh.ngl
-                                        ip1 = mesh.poin_in_bdy_face[iface, i1, j1]
-                                        e1 = mesh.bdy_face_in_elem[iface]
-                                        if (ip1 == ip && e1 == e)
-                                            mesh.elem_to_face[e,i,j,k,1] = iface
-                                            mesh.elem_to_face[e,i,j,k,2] = i1
-                                            mesh.elem_to_face[e,i,j,k,3] = j1
-                                            found = true
-                                        end
-                                    end
-                                end
-                                iface += 1
-                            end
+                        hit = get(_e2f, (mesh.connijk[e, i, j, k], e), nothing)
+                        if hit !== nothing
+                            mesh.elem_to_face[e,i,j,k,1] = hit[1]
+                            mesh.elem_to_face[e,i,j,k,2] = hit[2]
+                            mesh.elem_to_face[e,i,j,k,3] = hit[3]
                         end
                     end
                 end
@@ -5631,11 +5884,75 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
     mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
 
+    # Δelem_s/nop is an EQUISPACED estimate of the nodal resolution and the
+    # LGL grid is not equispaced: the nodes crowd towards the element edges,
+    # so the smallest gap is smaller than Δelem/nop — by 1.45x at nop = 4, and
+    # by more as the order goes up (the clustering is O(1/nop²)). That gap,
+    # not Δelem/nop, is what an explicit time step has to resolve, so measure
+    # it directly and let computeCFL report against it. Same quantity, and the
+    # same reasoning, as the Δmin of kernel/mesh/sphere_metrics.jl.
+    Δnode_local  = compute_min_node_spacing(mesh, mesh.SD, T)
+    Δnode_global = MPI.Allreduce(Δnode_local, MPI.MIN, comm)
+    # Inf comes back from the 1D no-op (and from a run with no elements at
+    # all); store 0.0 = "not measured" so consumers take their fallback.
+    mesh.Δnode_s = isfinite(Δnode_global) ? TFloat(Δnode_global) : TFloat(0.0)
+
     println_rank(" # "; msg_rank = rank, suppress = false)
     println_rank(" # ELEMENT SIZES:"; msg_rank = rank, suppress = false)
     println_rank(" #   The smallest element has size: ", mesh.Δelem_s, " and effective resolution ", mesh.Δeffective_s; msg_rank = rank, suppress = false)
     println_rank(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l; msg_rank = rank, suppress = false)
+    println_rank(" #   Smallest LGL node spacing:     ", mesh.Δnode_s, " (this is the CFL length scale)"; msg_rank = rank, suppress = false)
     println_rank(" # "; msg_rank = rank, suppress = false)
+end
+
+#------------------------------------------------------------------------------------
+# Smallest distance between two adjacent LGL nodes, taken along the element's
+# own ξ/η/ζ lines. Measured on the grid as it stands, so a refined mesh —
+# :linitial_refine or an adapted one — reports its own, smaller, spacing.
+#
+# Returns Inf on a rank that owns no elements; the caller MIN-reduces, and Inf
+# is the identity of MIN.
+#------------------------------------------------------------------------------------
+compute_min_node_spacing(mesh::St_mesh, SD::NSD_1D, T) = T(Inf)
+
+function compute_min_node_spacing(mesh::St_mesh, SD::NSD_2D, T)
+
+    ngl  = mesh.ngl
+    Δmin = T(Inf)
+    @inbounds for ie = 1:mesh.nelem
+        for j = 1:ngl, i = 1:ngl-1
+            ip = mesh.connijk[ie,i,j]; iq = mesh.connijk[ie,i+1,j]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2))
+        end
+        for j = 1:ngl-1, i = 1:ngl
+            ip = mesh.connijk[ie,i,j]; iq = mesh.connijk[ie,i,j+1]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2))
+        end
+    end
+
+    return Δmin
+end
+
+function compute_min_node_spacing(mesh::St_mesh, SD::NSD_3D, T)
+
+    ngl  = mesh.ngl
+    Δmin = T(Inf)
+    @inbounds for ie = 1:mesh.nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl-1
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i+1,j,k]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+        for k = 1:ngl, j = 1:ngl-1, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i,j+1,k]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+        for k = 1:ngl-1, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]; iq = mesh.connijk[ie,i,j,k+1]
+            Δmin = min(Δmin, sqrt((mesh.x[ip]-mesh.x[iq])^2 + (mesh.y[ip]-mesh.y[iq])^2 + (mesh.z[ip]-mesh.z[iq])^2))
+        end
+    end
+
+    return Δmin
 end
 
 #------------------------------------------------------------------------------------

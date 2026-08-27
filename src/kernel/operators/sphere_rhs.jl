@@ -38,6 +38,23 @@
 # What is implemented is the exponential modal filter, which serves the same
 # purpose and has the same knobs; see sphere_filter! below.
 #
+# ON MORE THAN ONE RANK
+# ---------------------
+# Everything in this file is an element loop that accumulates into a global
+# npoin-length array and then divides by the mass matrix — the RHS, the filter's
+# mass-weighted average, the relative vorticity. That accumulation is a sum over
+# the elements touching a node, so on a partition seam each rank holds only its
+# own share of it, and the division by M has to wait until the shares have been
+# added up across ranks. _sphere_dss_scale! does both, in that order, for all
+# three; the element kernels stay pure local algebra and know nothing about MPI.
+#
+# There is deliberately NO halo exchange of the state q. assemble_mpi! sends the
+# assembled value back to the ranks that contributed to it, so after every stage
+# a mirrored node carries bit-for-bit what its owner carries; the RK update and
+# the Lagrange projection are node-local, so they preserve that. The state is
+# therefore consistent everywhere it is duplicated, with no separate
+# communication step and no ghost elements.
+#
 # S. Marras & contributors
 #---------------------------------------------------------------------------------
 
@@ -52,7 +69,7 @@ export sphere_relative_vorticity!
 #---------------------------------------------------------------------------------
 # Scratch space, allocated once and reused every stage of every step.
 #---------------------------------------------------------------------------------
-mutable struct St_sphere_params{TFloat}
+mutable struct St_sphere_params{TFloat, TDSS, TDSS1}
     neqs ::Int
     F    ::Array{TFloat, 3}    # ngl × ngl × neqs
     G    ::Array{TFloat, 3}
@@ -66,6 +83,29 @@ mutable struct St_sphere_params{TFloat}
     lvisc   ::Bool             # any μ[ieq] > 0
     gξ   ::Array{TFloat, 3}    # ngl × ngl × neqs  ν ∇ₛq · a¹  at the LGL nodes
     gη   ::Array{TFloat, 3}    # ngl × ngl × neqs  ν ∇ₛq · a²
+
+    #
+    # PARALLEL DIRECT STIFFNESS SUMMATION. `nothing` on one rank; on more, the
+    # assembler caches of src/kernel/mpi/mpi_communications.jl, built once here
+    # and reused by every stage of every step. Two of them because the cache is
+    # sized by the COLUMN COUNT of the array it assembles:
+    #
+    #   dss   neqs columns : the RHS, and the filter accumulator
+    #   dss1  one column   : the vorticity accumulator
+    #
+    # Every one of those three is a sum over the elements that touch a node, so
+    # on a partition boundary each rank holds only its own share and the sum has
+    # to be completed across ranks BEFORE the M⁻¹ scaling. Getting this wrong is
+    # not a small error: the boundary nodes would carry a fraction of their
+    # divergence, which is a seam of spurious forcing right through the mesh.
+    #
+    # Typed as PARAMETERS rather than as Union{Nothing,AssemblerCache}: this file
+    # is included before kernel/mpi/mpi_communications.jl, so the cache type does
+    # not exist yet when the struct is defined. The parameters carry it exactly
+    # — Nothing in serial, AssemblerCache in parallel — with no dynamic dispatch
+    # either way.
+    dss  ::TDSS
+    dss1 ::TDSS1
 end
 
 
@@ -81,19 +121,63 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
     μ     = build_sphere_viscosity(inputs, neqs, TF)
     lvisc = any(>(zero(TF)), μ)
 
-    return St_sphere_params{TF}(neqs,
-                                zeros(TF, ngl, ngl, neqs),
-                                zeros(TF, ngl, ngl, neqs),
-                                zeros(TF, ngl, ngl, neqs),
-                                zeros(TF, ngl, ngl, neqs),
-                                Filt,
-                                zeros(TF, ngl, ngl, neqs),
-                                zeros(TF, Int(mesh.npoin), neqs),
-                                lfilter,
-                                μ,
-                                lvisc,
-                                zeros(TF, ngl, ngl, neqs),
-                                zeros(TF, ngl, ngl, neqs))
+    # setup_assembler is COLLECTIVE (Alltoall + Barrier), so it is called on
+    # every rank or on none — never inside a branch that only some ranks take.
+    npoin  = Int(mesh.npoin)
+    nparts = MPI.Comm_size(get_mpi_comm())
+    dss    = nparts > 1 ?
+             setup_assembler(mesh.SD, zeros(TF, npoin, neqs), mesh.ip2gip, mesh.gip2owner) : nothing
+    dss1   = nparts > 1 ?
+             setup_assembler(mesh.SD, zeros(TF, npoin, 1),    mesh.ip2gip, mesh.gip2owner) : nothing
+
+    # Not St_sphere_params{TF}(...): TF is inferred from the arrays, and the two
+    # assembler-cache parameters are inferred from dss/dss1.
+    return St_sphere_params(neqs,
+                            zeros(TF, ngl, ngl, neqs),
+                            zeros(TF, ngl, ngl, neqs),
+                            zeros(TF, ngl, ngl, neqs),
+                            zeros(TF, ngl, ngl, neqs),
+                            Filt,
+                            zeros(TF, ngl, ngl, neqs),
+                            zeros(TF, npoin, neqs),
+                            lfilter,
+                            μ,
+                            lvisc,
+                            zeros(TF, ngl, ngl, neqs),
+                            zeros(TF, ngl, ngl, neqs),
+                            dss, dss1)
+end
+
+
+#
+# The tail every assembled quantity shares: complete the direct stiffness
+# summation across ranks, then divide by the (already globally assembled) mass.
+#
+# `a` is npoin × m and holds this rank's PARTIAL sums on shared nodes when it is
+# called; on return every node — owned or mirrored — holds the full sum divided
+# by M, i.e. exactly what the serial code had.
+#
+@inline function _sphere_dss_scale!(a::AbstractMatrix{TF}, Minv::AbstractVector{TF},
+                                    npoin::Int, m::Int, dss) where {TF}
+    #
+    # THE VIEW IS NOT COSMETIC. assemble_mpi! takes the number of columns to
+    # exchange from `size(a, 2)` — from the ARRAY, not from the cache — while the
+    # send/receive buffers were sized by the width the cache was BUILT with. The
+    # RHS handed in here is the integrator's state array, which is npoin × neqs+1
+    # (define_q carries one spare column), so passing it whole against an
+    # neqs-wide cache writes one column past the end of every buffer. That is a
+    # heap overflow, and it showed up as `corrupted size vs. prev_size` and
+    # SIGABRT partway into the first parallel run, not as a wrong number.
+    #
+    # Slicing to exactly the cache's width makes the two agree by construction.
+    # The spare column is never assembled, which is right: the kernels zero it
+    # and write only 1:neqs.
+    #
+    dss === nothing || assemble_mpi!(view(a, :, 1:m), dss)
+    @inbounds for j = 1:m, ip = 1:npoin
+        a[ip,j] *= Minv[ip]
+    end
+    return a
 end
 
 
@@ -170,12 +254,16 @@ function sphere_rhs!(RHS, q, qe,
                         mesh.connijk, mesh.coords,
                         Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
                         mesh, mesh.SD,
-                        metrics.Je, metrics.Minv,
+                        metrics.Je,
                         metrics.dξdx, metrics.dξdy, metrics.dξdz,
                         metrics.dηdx, metrics.dηdy, metrics.dηdz,
                         metrics.dψ, metrics.ω,
                         sp.F, sp.G, sp.H, sp.S, Int(sp.neqs), SVT,
                         sp.lvisc, sp.μ, sp.gξ, sp.gη)
+
+    # cross-rank DSS (a no-op on one rank), then M⁻¹
+    _sphere_dss_scale!(RHS, metrics.Minv, Int(mesh.npoin), Int(sp.neqs), sp.dss)
+
     return RHS
 end
 
@@ -183,7 +271,7 @@ function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
                              connijk, crd::AbstractMatrix{TF},
                              nelem::Int, ngl::Int, npoin::Int,
                              mesh, SD,
-                             Je, Minv::AbstractVector{TF},
+                             Je,
                              dξdx, dξdy, dξdz,
                              dηdx, dηdy, dηdz,
                              dψ, ω,
@@ -243,11 +331,13 @@ function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
                                   dψ, ω, μ, gξ, gη, neqs)
     end
 
-    #--- M⁻¹ : the mass matrix is diagonal under LGL (inexact) integration
-    @inbounds for ieq = 1:neqs, ip = 1:npoin
-        RHS[ip,ieq] *= Minv[ip]
-    end
-
+    #
+    # M⁻¹ — but not yet. In parallel the sums above are still PARTIAL on every
+    # node that a neighbouring rank also touches, so the cross-rank half of the
+    # direct stiffness summation has to happen first. Both are done by
+    # _sphere_dss_scale! in sphere_rhs!, which is also where the assembler cache
+    # lives; the kernel itself stays pure element algebra.
+    #
     return RHS
 end
 
@@ -420,15 +510,27 @@ function sphere_filter!(q, mesh::St_mesh, metrics::St_sphere_metrics, sp::St_sph
     sp.lfilter || return q
 
     # Typed function barrier; see the note above _sphere_rhs_kernel!.
-    _sphere_filter_kernel!(q, mesh.connijk, Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
-                           metrics.Je, metrics.Minv, metrics.ω,
-                           sp.Filt, sp.acc, sp.qf, sp.S, Int(sp.neqs))
+    npoin = Int(mesh.npoin)
+    neqs  = Int(sp.neqs)
+
+    _sphere_filter_kernel!(q, mesh.connijk, Int(mesh.nelem), Int(mesh.ngl),
+                           metrics.Je, metrics.ω,
+                           sp.Filt, sp.acc, sp.qf, sp.S, neqs)
+
+    # cross-rank DSS (a no-op on one rank), then M⁻¹ — the mass-weighted average
+    # that makes the filtered field continuous has to see the WHOLE stencil of a
+    # node, and on a partition boundary half of it lives on another rank.
+    _sphere_dss_scale!(sp.acc, metrics.Minv, npoin, neqs, sp.dss)
+
+    @inbounds for ieq = 1:neqs, ip = 1:npoin
+        q[ip,ieq] = sp.acc[ip,ieq]
+    end
     return q
 end
 
 function _sphere_filter_kernel!(q::AbstractMatrix{TF}, connijk,
-                                nelem::Int, ngl::Int, npoin::Int,
-                                Je, Minv::AbstractVector{TF}, ω,
+                                nelem::Int, ngl::Int,
+                                Je, ω,
                                 Fm, acc, qf, S, neqs::Int) where {TF}
 
     fill!(acc, zero(TF))
@@ -463,10 +565,7 @@ function _sphere_filter_kernel!(q::AbstractMatrix{TF}, connijk,
         end
     end
 
-    @inbounds for ieq = 1:neqs, ip = 1:npoin
-        q[ip,ieq] = acc[ip,ieq]*Minv[ip]
-    end
-
+    # acc is left holding the UNSCALED assembly; sphere_filter! completes it.
     return q
 end
 
@@ -493,20 +592,30 @@ function sphere_relative_vorticity!(ζ, q, mesh::St_mesh,
     # Typed function barrier; see the note above _sphere_rhs_kernel!. Without it
     # this cost 86 MB per call (mesh.connijk / mesh.nelem / mesh.npoin are ::Any),
     # and it is called at every diagnostics print and every output.
-    _sphere_vorticity_kernel!(ζ, q, mesh.connijk,
-                              Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
+    npoin = Int(mesh.npoin)
+
+    _sphere_vorticity_kernel!(q, mesh.connijk,
+                              Int(mesh.nelem), Int(mesh.ngl),
                               metrics.dξdx, metrics.dξdy, metrics.dξdz,
                               metrics.dηdx, metrics.dηdy, metrics.dηdz,
                               metrics.nx, metrics.ny, metrics.nz,
-                              metrics.Je, metrics.Minv, metrics.dψ, metrics.ω,
+                              metrics.Je, metrics.dψ, metrics.ω,
                               sp.acc)
+
+    # One column, hence sp.dss1 rather than sp.dss: the assembler cache is sized
+    # by the column count of the array it exchanges.
+    _sphere_dss_scale!(view(sp.acc, :, 1:1), metrics.Minv, npoin, 1, sp.dss1)
+
+    @inbounds for ip = 1:npoin
+        ζ[ip] = sp.acc[ip,1]
+    end
     return ζ
 end
 
-function _sphere_vorticity_kernel!(ζ::AbstractVector{TF}, q::AbstractMatrix{TF},
-                                   connijk, nelem::Int, ngl::Int, npoin::Int,
+function _sphere_vorticity_kernel!(q::AbstractMatrix{TF},
+                                   connijk, nelem::Int, ngl::Int,
                                    dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
-                                   nx, ny, nz, Je, Minv::AbstractVector{TF},
+                                   nx, ny, nz, Je,
                                    dψ, ω, acc::AbstractMatrix{TF}) where {TF}
 
     fill!(acc, zero(TF))
@@ -540,9 +649,6 @@ function _sphere_vorticity_kernel!(ζ::AbstractVector{TF}, q::AbstractMatrix{TF}
         end
     end
 
-    @inbounds for ip = 1:npoin
-        ζ[ip] = acc[ip,1]*Minv[ip]
-    end
-
-    return ζ
+    # acc[:,1] is left holding the UNSCALED assembly; the caller completes it.
+    return acc
 end

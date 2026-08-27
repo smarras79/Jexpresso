@@ -191,6 +191,7 @@ const _CACHE_FINGERPRINT_KEYS = (
     :ladapt, :linitial_refine, :init_refine_lvl, :lamr,
     :lpreadapt, :preadapt_max_level, :amr_max_level, :lrestart_amr,
     :lxy_partition, :lwarp,
+    :lproject_to_sphere, :sphere_radius, :cubed_sphere_map,
     :xscale, :yscale, :zscale, :xdisp, :ydisp, :zdisp,
     # Natively-built (non-gmsh) grids: the deck's element counts and domain
     # bounds ARE the mesh, and the cache file name only carries "native".
