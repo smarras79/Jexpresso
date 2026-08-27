@@ -459,6 +459,60 @@ function params_setup(sem,
     dsgs_fresh = Ref{Bool}(false)
     dsgs_hist  = Ref{Bool}(false)
 
+    #---------------------------------------------------------------------
+    # dsgs_wres -- WHICH NODES THE RESIDUAL MAY BE TAKEN AT. 1 interior,
+    # 0 on a domain boundary.
+    #
+    # DynSGS measures how badly the SEMI-DISCRETE PDE is satisfied. At a node
+    # whose value is set by a strongly-imposed boundary condition, it is not
+    # that equation that advances the solution, and the residual there is not
+    # a discretisation error -- it is the boundary condition.
+    #
+    # Concretely: apply_boundary_conditions_dirichlet! (rhs.jl, at the TOP of
+    # every RHS call) projects the wall-normal momentum out of uaux at every
+    # free-slip node. The inviscid RHS then puts it straight back, and the next
+    # call projects it out again. So at a wall node
+    #
+    #     BDF2(qⁿ, qⁿ⁻¹, qⁿ⁻²)   sees the PROJECTED states
+    #     M⁻¹·RHS                does NOT contain the projection
+    #
+    # and they differ by the whole projected flux, every step, for ever. It is
+    # not small: measured on CompEuler/rtb2d_dsgs the worst residual in the
+    # domain was on a boundary node at EVERY step of the run, always on the
+    # wall-normal momentum equation, and it drove the element coefficient to
+    # ~700 m²/s against ~14 in the interior. Since the coefficient is constant
+    # per element, every element touching a wall lit up -- a picture of red
+    # squares along the walls where there is no gradient at all, and the
+    # bubble the model is supposed to be tracking two colour-bar decades down.
+    #
+    # Masking those nodes out of the L∞ costs nothing: an element keeps its
+    # interior nodes (16 of 25 in 2D at nop = 4, 75 of 125 in 3D), and it is
+    # only the max over the element that is being taken.
+    #
+    # The DENOMINATORS are not masked. They are domain norms of the SOLUTION,
+    # which is perfectly well defined on a boundary.
+    #---------------------------------------------------------------------
+    dsgs_wres = ones(TFloat, Int64(sem.mesh.npoin))
+    if ldsgs || ldsgs_mhd
+        for arr in (sem.mesh.poin_in_bdy_face, sem.mesh.poin_in_bdy_edge)
+            length(arr) == 0 && continue
+            for k in eachindex(arr)
+                ip = Int(arr[k])
+                1 <= ip <= length(dsgs_wres) && (dsgs_wres[ip] = zero(TFloat))
+            end
+        end
+        nint = count(!iszero, dsgs_wres)
+        println_rank(" #   DynSGS residual taken on ", nint, " of ",
+                     length(dsgs_wres), " nodes (",
+                     length(dsgs_wres) - nint, " on the boundary, masked out)";
+                     msg_rank = rank, suppress = sem.mesh.msg_suppress)
+    end
+    # JEXPRESSO_DSGS_MONITOR=1 -> one line per step with what the model
+    # produced (kernel/physics/SGS.jl, _dsgs_monitor). Read once here rather
+    # than per RHS call: `haskey(ENV, ...)` on the hot path is a dictionary
+    # lookup per step for a value that cannot change.
+    DSGS_MONITOR[] = get(ENV, "JEXPRESSO_DSGS_MONITOR", "0") ∉ ("0", "false", "")
+
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:
     #   visc_coeff_dsgs[1] = 0                          (mass)
@@ -509,7 +563,7 @@ function params_setup(sem,
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
-                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_fresh, dsgs_hist,
+                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_fresh, dsgs_hist, dsgs_wres,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
@@ -547,7 +601,7 @@ function params_setup(sem,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
-                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_fresh, dsgs_hist,
+                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_fresh, dsgs_hist, dsgs_wres,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,

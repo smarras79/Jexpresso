@@ -46,27 +46,26 @@ function dsgs3d(q, q1, q2, qe, rhs, Minv, elems, Δs, Δt;
 
     avg   = zeros(neqs); scale = zeros(neqs); denom = zeros(neqs)
     for el in elems, ip in el, ieq in 1:neqs
-        qp = lpert ? q[ip,ieq]            : q[ip,ieq] - qe[ip,ieq]
-        qt = lpert ? q[ip,ieq]+qe[ip,ieq] : q[ip,ieq]
-        avg[ieq]   += qp
-        scale[ieq] += abs(qt)
+        # Norms on the STORED PROGNOSTIC variable, eq. (9) to the letter;
+        # `scale` on the TOTAL, because the floors below are physical scales.
+        avg[ieq]   += q[ip,ieq]
+        scale[ieq] += lpert ? q[ip,ieq] + qe[ip,ieq] : q[ip,ieq]
     end
     avg ./= npts;  scale ./= npts
 
     for el in elems, ip in el, ieq in 1:neqs
-        qp = lpert ? q[ip,ieq] : q[ip,ieq] - qe[ip,ieq]
-        denom[ieq] = max(denom[ieq], abs(qp - avg[ieq]))
+        denom[ieq] = max(denom[ieq], abs(q[ip,ieq] - avg[ieq]))
     end
 
-    ρ̄ = max(scale[1], eps)
-    θ̄ = neqs >= 5 ? max(scale[5], eps)/ρ̄ : 300.0
+    ρ̄ = max(abs(scale[1]), eps)
+    θ̄ = neqs >= 5 ? max(abs(scale[5]), eps)/ρ̄ : 300.0
     p̄ = C0*(max(ρ̄*θ̄, 0.0))^GAMMA
     c̄ = sqrt(max(GAMMA*p̄/ρ̄, 0.0))
     FLOOR = 1.0e-3
     denom[1] = max(denom[1] + eps, FLOOR*ρ̄)
     for ieq in 2:min(neqs,4); denom[ieq] = max(denom[ieq] + eps, FLOOR*ρ̄*c̄); end
     neqs >= 5 && (denom[5] = max(denom[5] + eps, FLOOR*ρ̄*θ̄))
-    for ieq in 6:neqs; denom[ieq] = max(denom[ieq] + eps, FLOOR*max(scale[ieq],eps)); end
+    for ieq in 6:neqs; denom[ieq] = max(denom[ieq] + eps, FLOOR*max(abs(scale[ieq]),eps)); end
 
     ν_el = zeros(nelem); μ_el = zeros(nelem)
     for (ie, el) in enumerate(elems)
@@ -202,36 +201,36 @@ end
     @test 5.0e3 < μmax < 9.0e3
 end
 
-@testset "the normalisation sees the perturbation, not the sounding" begin
-    # THE 3D-specific change, and the one that decides whether the model does
-    # anything at all on a 5 km column. Take a case, then add a strong
-    # hydrostatic stratification to BOTH q and qe. The perturbation is
-    # untouched, so mu must be untouched -- while a denominator built on the
-    # total state would collapse by two orders of magnitude.
-    Δt = 0.5;  Δ = 40.0
-    q  = rest_state();  qe = rest_state()
-    q[1,5] += 1.2*1.0
+@testset "the normalisation is eq. (9) to the letter: the FIELD norm" begin
+    # THE REGRESSION TEST FOR A CHANGE THAT WAS TRIED AND REVERTED.
+    #
+    # An earlier version took the norms on q - qe, the departure from the
+    # reference sounding, on the argument that over a 5 km column the total
+    # field's spread is the hydrostatic background rather than the turbulence.
+    # It is wrong, and a rising bubble shows why in one number: the bubble is
+    # constructed at nearly constant PRESSURE, and p = C0(ρθ)^γ pins ρθ to the
+    # pressure -- so the 2 K in θ is carried by ρ going DOWN and the CONSERVED
+    # variable barely moves. The perturbation norm of ρθ is then ~0.4 where the
+    # field norm is ~110, a factor 260 on the coefficient, and that is what
+    # pinned CompEuler/rtb3d_dsgs at the C2*Delta*(|v|+c) cap and killed it in
+    # its first step.
+    Δt = 0.5
+    ρ0 = 1.2
+    q  = zeros(NPOIN, 5);  qe = zeros(NPOIN, 5)
+    ρθcol = collect(range(351.0, 130.0, length = NPOIN))   # 10 km of sounding
+    q[:,1]  .= ρ0;    qe[:,1] .= ρ0
+    q[:,5]  .= ρθcol; qe[:,5] .= ρθcol
+    q[1,5]  += 0.42                       # what 2 K of θ actually does to ρθ
     q1 = copy(q); q2 = copy(q)
-    rhs = zeros(NPOIN,5); rhs[3,5] = -7.0; Minv = ones(NPOIN)
-    base = dsgs3d(q, q1, q2, qe, rhs, Minv, ELEMS, [Δ,Δ], Δt)
+    rhs = zeros(NPOIN,5); rhs[3,5] = -0.5; Minv = ones(NPOIN)
 
-    # 5 km of sounding: rho 1.2 -> 0.7, theta 300 -> 320.
-    ρs = collect(range(1.2, 0.7, length = NPOIN))
-    θs = collect(range(300.0, 320.0, length = NPOIN))
-    qs = zeros(NPOIN,5); qs[:,1] .= ρs .- 1.2; qs[:,5] .= ρs.*θs .- 1.2*300.0
-    q2s  = q  .+ qs;  qes = qe .+ qs
-    q1s  = q1 .+ qs;  q2s2 = q2 .+ qs
-    strat = dsgs3d(q2s, q1s, q2s2, qes, rhs, Minv, ELEMS, [Δ,Δ], Δt)
-
-    # The theta denominator is unchanged: it is a property of q - qe.
-    @test strat.denom[5] ≈ base.denom[5] rtol = 1e-10
-    # ... and so, to within the change in the element-mean density, is mu.
-    @test strat.ν[1] ≈ base.ν[1] rtol = 1e-10
-
-    # Now the counterfactual: the SAME state normalised on the total field.
-    # This is what the 2D path does, and it is why it cannot be used here.
-    tot_denom = maximum(abs.(q2s[:,5] .- sum(q2s[:,5])/NPOIN))
-    @test tot_denom > 50 * base.denom[5]
+    r = dsgs3d(q, q1, q2, qe, rhs, Minv, ELEMS, [40.0, 40.0], Δt)
+    # The field norm is the sounding's own range.
+    @test r.denom[5] > 100
+    # The perturbation norm would have been the bubble's 0.42.
+    pert = maximum(abs.((q[:,5] .- qe[:,5]) .- sum(q[:,5] .- qe[:,5])/NPOIN))
+    @test pert < 0.5
+    @test r.denom[5] > 200 * pert
 end
 
 @testset "scaling in the filter width" begin

@@ -734,6 +734,12 @@ function _build_rhs!(RHS, u, params, time)
         @timeit_debug JEXPRESSO_TIMER "DSS_rhs_visc" DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
 
+        # JEXPRESSO_DSGS_MONITOR=1 -- one line per step with what the model
+        # actually produced. The deck headers tell people to check whether μ is
+        # pinned at the C₂Δ(‖v‖+c) cap, and without this the only way to see
+        # that is to open the VTU and eyeball a piecewise-constant field.
+        ldsgs_step && dsgs_monitor(params, Float64(time))
+
         # The roll, AFTER compute_dsgs_viscosity! has read the buffers. See the
         # block above `ldsgs_step` for why the order is the whole point.
         if ldsgs_step
@@ -1112,7 +1118,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                     params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                     params.qp.qe,
-                                    params.RHS, params.Minv, params.visc_coeff,
+                                    params.RHS, params.Minv, params.dsgs_wres, params.visc_coeff,
                                     TT(params.Δt),
                                     params.mesh.connijk, params.mesh.Δx,
                                     Int(nelem), Int(ngl);
@@ -1186,7 +1192,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
           else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                     params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
-                                    params.RHS, params.Minv, params.visc_coeff,
+                                    params.RHS, params.Minv, params.dsgs_wres, params.visc_coeff,
                                     params.dsgs_avg, params.dsgs_denom,
                                     TT(params.Δt),
                                     params.mesh.connijk, params.mesh.Δelem,
@@ -1243,7 +1249,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                     params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                     params.qp.qe,
-                                    params.RHS, params.Minv, params.visc_coeff,
+                                    params.RHS, params.Minv, params.dsgs_wres, params.visc_coeff,
                                     TT(params.Δt),
                                     params.mesh.connijk, params.mesh.Δelem,
                                     PHYS_CONST, Pr_TT,
@@ -1523,7 +1529,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     params.μ_dsgs,
                                     params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                     params.qp.qe,
-                                    params.RHS, params.Minv, params.visc_coeff,
+                                    params.RHS, params.Minv, params.dsgs_wres, params.visc_coeff,
                                     TT(params.Δt),
                                     params.mesh.connijk,
                                     params.mesh.Δelem_filter,

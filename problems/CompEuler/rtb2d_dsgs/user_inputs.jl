@@ -56,6 +56,21 @@
                 normalisation or the residual is wrong, not that the case is
                 hard.
 
+ MEASURED (this deck has been run). Runs to t = 1000 s in ~35 s on one core.
+ The coefficient settles at nu max ~190-215 m^2/s against a
+ C2*Delta*(|v|+c) cap of ~3.5e4 -- the cap is inert and mu_res governs, which
+ is the regime the model is designed for. The worst residual in the domain
+ sits on the bubble edge, where the linear taper theta_c(1 - r/r0) has its
+ slope discontinuity.
+
+     JEXPRESSO_DSGS_MONITOR=1
+
+ prints one line per step with nu max/mean and the coordinates of the node
+ that produced the worst ratio, flagging it if that node is ON A BOUNDARY --
+ which is the signature of the residual picking up a boundary condition rather
+ than a discretisation error, and is what the per-node mask (dsgs_wres in
+ params_setup.jl) exists to prevent.
+
      DBG_DT=...  DBG_TEND=...  DBG_VISC=0 (closure off)  DBG_MESH=...
 =============================================================================#
 

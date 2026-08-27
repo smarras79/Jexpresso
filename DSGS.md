@@ -392,25 +392,41 @@ to slot 4. That factor is Nazarov & Hoffman's artificial heat conduction on
 the internal energy of a shock-capturing scheme; $\theta$ is not that
 variable, and an atmospheric LES wants a turbulent Prandtl number.
 
-### 5.2 The normalisation is taken on the perturbation
+### 5.2 The normalisation is eq. (9) to the letter
 
-This is the one formulation change from the 2D path, and on a stratified
-column it decides whether the model does anything at all. Eq. (9) divides by
-$\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$; taken on the **total**
-state over a 5 km sounding that norm is the hydrostatic background:
+$\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$ is taken on the
+**stored prognostic variable**, with no `qe` arithmetic — the same as every
+other path in `SGS.jl`.
 
-| field | $\lVert q-\langle q\rangle\rVert_\infty$, total state | turbulent scale |
+This is worth stating explicitly because the opposite was tried, shipped, and
+reverted. The argument for taking the norms on $q - q_e$ was that over a 5 km
+column the total field's spread is the hydrostatic background rather than the
+turbulence, so a total-field denominator divides the residual by something
+100–300× too large. That argument is wrong, and a rising bubble shows why in
+one number: the bubble is constructed at nearly constant **pressure**, and
+$p = C_0(\rho\theta)^\gamma$ pins $\rho\theta$ to the pressure — so a 2 K
+perturbation in $\theta$ is carried almost entirely by $\rho$ going down, and
+the **conserved** variable barely moves:
+
+| | field norm | perturbation norm |
 |---|---|---|
-| $\rho$ | ≈ 3.5e-1 kg/m³ | ≈ 1e-3 |
-| $\rho\theta$ | ≈ 6.5e+1 K kg/m³ | ≈ 5e-1 |
+| $\lVert\rho\theta - \langle\cdot\rangle\rVert_\infty$ | ≈ 110 | ≈ 0.42 |
 
-— i.e. 100–300× too large, which divides the residual by the wrong number by
-two orders of magnitude and switches DynSGS off exactly where an LES needs it.
-The 3D path therefore takes the norms on $q - q_e$, the departure from the
-reference sounding. The BDF2 numerator is unaffected ($3q_e-4q_e+q_e=0$), so
-this changes the denominator and nothing else. `test/sgs/test_dsgs3d.jl`
-pins it: adding a 5 km sounding to both $q$ and $q_e$ leaves $\mu$ unchanged,
-while the total-state denominator grows by more than 50×.
+a factor of 260 on the coefficient. Measured on `CompEuler/rtb3d_dsgs`, the
+perturbation form put $\nu$ at $1.0\times10^4\ \mathrm{m^2/s}$ within two
+steps and at the $C_2\Delta(\lVert v\rVert+c)$ cap by the third, and drove
+$\rho\theta$ negative. The field form gives $\nu \approx 90$–$120$, in the
+same range as the 2D case on the same bubble. `test/sgs/test_dsgs3d.jl` pins
+it.
+
+The general lesson: the denominator is what makes $C_1 = 1$ a universal
+constant. Redefining it silently redefines $C_1$. If a case is
+under-stabilized, `:dsgs_C1` is the lever — not the norm.
+
+Note that under `:SOL_VARS_TYPE => PERT()` the stored prognostic variable
+**is** the perturbation, and the field norm is then automatically taken on it.
+That is not an inconsistency: it is the norm of whatever the scheme is
+actually advancing, which is what eq. (9) asks for.
 
 ### 5.3 Filter width
 
@@ -553,7 +569,8 @@ rather than three hours into a 15.9 M-node run.
 | `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-energy, 2D-MHD, **3D**), `compute_sgs_cache!(::SGS_DSGS)`, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
 | `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
-| `src/io/mod_inputs.jl` | `:dsgs_C1`, `:dsgs_C2`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
+| `src/io/mod_inputs.jl` | `:dsgs_C1`, `:dsgs_C2`, `:dsgs_gamma`, `:dsgs_Prt`, `:dsgs_add_smagorinsky` defaults |
+| `src/kernel/physics/SGS.jl` | `dsgs_monitor` — `JEXPRESSO_DSGS_MONITOR=1` |
 | `src/io/write_output.jl` | the `mu_dsgs_*` VTK fields |
 | `tools/plot_orszag_tang.jl` | off-line figures from a finished MHD run, including the viscosity map |
 | `tools/vtu_reader.jl` | the minimal `.pvtu`/`.vtu` reader that script uses |
@@ -730,7 +747,43 @@ reasoning matters if the model is revisited.
    and restored by the integrator warm-up, the precompile pass and the restart
    path.
 
-> ⚠ Defects 6–8 change the coefficient on **every** DynSGS path, including
+9. **The residual was taken at boundary nodes, where it is the boundary
+   condition.** The largest single defect in the *picture* the model produces,
+   and it affects every path.
+
+   `apply_boundary_conditions_dirichlet!` runs at the **top** of every RHS
+   call and projects the wall-normal momentum out of `uaux` at every free-slip
+   node. The inviscid RHS then puts it straight back, and the next call
+   projects it out again. So at a wall node
+
+   | | |
+   |---|---|
+   | $\mathrm{BDF2}(q^n, q^{n-1}, q^{n-2})$ | sees the **projected** states |
+   | $M^{-1}\mathrm{RHS}$ | does **not** contain the projection |
+
+   and the two differ by the whole projected flux, every step, for ever.
+
+   Measured on `CompEuler/rtb2d_dsgs`: the worst residual in the domain was on
+   a boundary node at **every step of the run**, always on the wall-normal
+   momentum equation, driving the element coefficient to ≈ 700 m²/s against
+   ≈ 14 in the interior. Since the coefficient is constant per element, every
+   element touching a wall lit up — a picture of red squares along the walls,
+   where there is no gradient at all, with the bubble the model is supposed to
+   be tracking two colour-bar decades down and invisible.
+
+   *Fixed*: `params.dsgs_wres` (built in `params_setup.jl` from the mesh's own
+   boundary-node lists) masks those nodes out of the per-element $L^\infty$.
+   The **denominators are not masked** — they are domain norms of the
+   *solution*, which is perfectly well defined on a boundary. An element keeps
+   its interior nodes (16 of 25 in 2D at `nop = 4`, 75 of 125 in 3D), and only
+   the max over the element is being taken.
+
+   After the fix, on the same case, $\nu_{max}$ drops from ≈ 700–1300 to
+   ≈ 130–210 and the worst residual moves to the bubble's edge — which is
+   where the initial condition's linear taper $\theta_c(1-r/r_0)$ has its
+   slope discontinuity, i.e. the actual under-resolved feature.
+
+> ⚠ Defects 6–9 change the coefficient on **every** DynSGS path, including
 > `CompEuler/sod1d`, which has a committed reference in `test/CI-ref/`. That
 > reference was generated against the broken sensor and has to be regenerated
 > (`.github/workflows/generate-ci-ref.yml`, or `test/generate_ci_ref.jl`)

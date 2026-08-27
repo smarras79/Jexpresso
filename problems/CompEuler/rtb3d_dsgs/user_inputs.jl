@@ -67,22 +67,29 @@
    mu_dsgs_ρθ          should be mu_dsgs_ρu / Pr_t = 1.43x it, everywhere.
    mu_dsgs_ρ           identically zero, because :μ[1] = 0.
 
- WHAT HAS AND HAS NOT BEEN CHECKED
+ MEASURED (this deck has been run)
  ---------------------------------
- Checked: the mesh (generated from the .geo beside it, and identical to
- rtb_hevi/rtb_10x1x10.msh -- which the code already reads and runs -- to
- within the last digit of gmsh's transfinite rounding); the DynSGS kernel
- itself, in test/sgs/test_dsgs3d.jl and test/sgs/test_dsgs3d_wiring.jl.
+ Both rungs of the ladder run to t = 1000 s. On this one the DynSGS
+ coefficient settles at
 
- NOT checked: this deck has never been run. It was assembled in an
- environment where Jexpresso's dependency tree would not resolve, so nothing
- below is a measurement. In particular the numbers to expect from the closure
- are inferred from CompEuler/theta_dsgs, where the corrected 2D model measured
- mean mu = 74 and max mu = 321 (dynamic, rho-bar*mu) at t = 1000 s against a
- wave-speed cap it reached about 10% of. This case has Delta = 250 m where
- that one has 200 m -- 1.6x on Delta^2 -- so the same order is what to expect
- here, and mu pinned AT the cap (~4e4) or at zero everywhere are the two
- outcomes that mean something is wrong rather than merely different.
+     nu  max ~90-120 m^2/s, mean ~60          (kinematic)
+
+ against a C2*Delta*(|v|+c) cap of ~4.3e4 -- i.e. the cap is inert and mu_res
+ governs, which is the regime the model is designed for. rtb2d_dsgs on the
+ same bubble gives max ~190-215; the difference is Delta (250 m here against
+ the 2D path's 200 m, so 1.56x in Delta^2) and the theta split noted above.
+
+ The worst residual in the domain sits on the BUBBLE EDGE, where the initial
+ condition's linear taper theta_c(1 - r/r0) has its slope discontinuity. That
+ is the whole claim of a residual sensor and it is worth checking rather than
+ assuming:
+
+     JEXPRESSO_DSGS_MONITOR=1
+
+ prints one line per step with nu max/mean, the normalising denominators, and
+ the coordinates of the node that produced the worst ratio -- flagging it if
+ that node is ON A BOUNDARY, which is the signature of the residual picking up
+ a boundary condition rather than a discretisation error.
 
  It is not registered in test/ci_cases.jl because that needs a committed
  reference solution in test/CI-ref/ and a copy of the deck under

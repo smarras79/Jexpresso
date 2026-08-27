@@ -38,6 +38,7 @@ dtqsati(T,p) = 0.0
 macro turbo(ex); esc(ex); end
 
 using Parameters
+using Printf          # the monitor in SGS.jl uses @printf/@sprintf
 include(joinpath(ROOT, "src", "kernel", "abstractTypes.jl"))
 include(joinpath(ROOT, "src", "kernel", "physics", "globalConstantsPhysics.jl"))
 include(joinpath(ROOT, "src", "kernel", "physics", "sgsStructs.jl"))
@@ -91,10 +92,11 @@ rhs  = zeros(NPOIN, NEQS);  rhs[3,5] = -0.5   # residual in element 1 only
 Minv = ones(NPOIN)
 Δf   = fill(160.0, NELEM)                     # 160 m element, nop = 4 -> Δ = 40 m
 visc = [0.0, 1.0, 1.0, 1.0, 1.0]
+wres = ones(NPOIN)                            # no boundary mask in this fixture
 μ_dsgs = zeros(NELEM, NEQS)
 
 M.compute_dsgs_viscosity!(sgs, M.NSD_3D(), μ_dsgs,
-                          q, q1, q2, qe, rhs, Minv, visc,
+                          q, q1, q2, qe, rhs, Minv, wres, visc,
                           0.5, conn, Δf, 40.0, 4, PC, nothing,
                           NELEM, NGL, NEQS; lpert = false, lglobal_norms = false)
 
@@ -110,7 +112,7 @@ d5 = max(ρ0*1.0 - ρ0*1.0/NPOIN, 1.0e-3*ρ0*θ0)
 # The global-norm branch must produce the same answer on one rank.
 νser = copy(sgs.ν_el)
 M.compute_dsgs_viscosity!(sgs, M.NSD_3D(), μ_dsgs,
-                          q, q1, q2, qe, rhs, Minv, visc,
+                          q, q1, q2, qe, rhs, Minv, wres, visc,
                           0.5, conn, Δf, 40.0, 4, PC, nothing,
                           NELEM, NGL, NEQS; lpert = false, lglobal_norms = true)
 @test sgs.ν_el == νser
