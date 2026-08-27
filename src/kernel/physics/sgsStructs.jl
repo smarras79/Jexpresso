@@ -200,3 +200,187 @@ function allocate_SGS(npoin, T, backend, PhysConst, ::VREM; C_s = PhysConst.C_s,
         C_vrem  = T(2.5 * C_s * C_s),
     )
 end
+
+#----------------------------------------------------------------------
+# DynSGS -- residual-based dynamic SGS, 3D
+#----------------------------------------------------------------------
+#
+# WHY DynSGS GETS A CLOSURE STRUCT IN 3D WHEN IT DOES NOT IN 1D/2D.
+#
+# The 1D and 2D DynSGS paths (SGS.jl, rhs.jl) bypass `params.sgs` entirely:
+# they compute one coefficient per element, pack it into `visc_coeff_dsgs` and
+# hand that to a scalar `visc_coeff[ieq]*grad(primitive)` kernel. That is fine
+# for a shock tube and for the rising bubble, and it is wrong for an
+# atmospheric LES, because the 3D viscous kernel is not a scalar Laplacian --
+# it is the full stress tensor
+#
+#     tau_ij = mu (du_i/dx_j + du_j/dx_i) - (2/3) mu div(u) delta_ij
+#
+# and it is reached only through `_expansion_visc!(..., sgs::AbstractSGSModel,
+# ..., NSD_3D, ...)`, which reads its coefficient from `SGS_diffusion` on a
+# closure struct. Everything else that has to agree with the viscous term
+# reads the same struct:
+#
+#   cfl_limits          (hevi/cfl_diagnostics.jl)  the viscous row of the CFL
+#                                                  table, via sgs.mu_turb
+#   vdiff_refresh!      (hevi/vdiffusion.jl)       the IMPLICIT vertical
+#                                                  diffusion coefficient, via
+#                                                  SGS_diffusion on this struct
+#   _fill_sgs_cached!   (io/les_statistics.jl)     the reported subfilter
+#                                                  stress, via mu_turb and Sij
+#
+# So making DynSGS an AbstractSGSModel is not packaging: it is what buys the
+# correct 3D stress tensor, a truthful CFL report, working :implicit_vdiff and
+# correct LES statistics, none of which the 1D/2D DynSGS path has.
+#
+# WHAT IS DIFFERENT FROM SMAG/VREM. Only where mu_turb comes from. Smagorinsky
+# builds it node by node from the local strain rate; DynSGS builds ONE
+# coefficient per element from the L-infinity norm of the PDE residual over
+# that element and global normalising scales, which cannot be computed inside a
+# per-element loop. So it is filled in two stages:
+#
+#   compute_dsgs_viscosity!(sgs, NSD_3D, ...)   once per RHS call, before the
+#                                               element loop -> sgs.nu_el,
+#                                               sgs.mu_el (per element)
+#   compute_sgs_cache!(sgs, ..., iel, ...)      per element, inside the loop ->
+#                                               broadcasts mu_el[iel] onto the
+#                                               element's nodes in mu_turb and
+#                                               fills Sij for les_statistics
+#
+# The broadcast is last-writer-wins on DSS-shared nodes, which is exactly the
+# convention broadcast_dsgs_to_nodes! already uses for the VTK fields. It is
+# not a defect here: compute_sgs_cache! runs immediately before the ieq loop
+# for the SAME element, so every value the viscous kernel reads inside that
+# element is that element's own.
+#
+Base.@kwdef mutable struct SGS_DSGS{T <: AbstractFloat, dims1, dimsE, backend, VT} <: AbstractSGSModel
+
+    # physical constants — no defaults; set by allocator from PhysicalConst
+    Pr_t::T
+    Sc_t::T
+    μ_mol::T
+    κ_mol::T
+    Ri_crit::T
+    g::T
+    cp::T
+    Lc::T
+    Ls::T
+    Rvap::T
+    Rair::T
+    ε_ratio::T
+    C_s::T
+    C_s2::T
+    karman::T
+
+    # DynSGS coefficients, Marras/Nazarov eq. (9): mu_res = C1 Delta^2 max_i
+    # ‖R_i‖/‖q_i-<q_i>‖ capped at mu_max = C2 Delta (‖v‖+c). Deck-settable as
+    # :dsgs_C1 / :dsgs_C2; the paper's values are 1.0 and 0.5.
+    C1::T
+    C2::T
+
+    # run-time configuration flags (set from inputs after allocation)
+    lrichardson::Bool = false
+    ltheta_eqn::Bool  = true
+    lwall_damping::Bool = false
+
+    # ADD SMAGORINSKY ON TOP OF THE RESIDUAL VISCOSITY (:dsgs_add_smagorinsky).
+    #
+    # Off by default, because "parameter-free" is the point of the model and
+    # because that is what the 1D/2D paths do. It exists because a residual
+    # sensor and a surface layer want different things and this deck has both.
+    #
+    # DynSGS is a STABILISATION: it measures how badly the discrete solution
+    # fails to satisfy the PDE and puts viscosity exactly there, which is
+    # nearly nothing in a well-resolved region. In the surface layer of a
+    # wall-modelled PBL the subfilter stress carries MOST of the momentum flux
+    # and has to be there whether or not the solution is locally smooth --
+    # that is a physics requirement (the log law), not a stabilisation one, and
+    # no residual sensor produces it. With this on, mu_turb = mu_smag + mu_dsgs
+    # so the closure keeps its wall behaviour and DynSGS adds dissipation only
+    # where the residual says the discretisation needs it.
+    #
+    # Run it off first: whether the residual term alone is enough is exactly
+    # the question this deck exists to answer.
+    ladd_smagorinsky::Bool = false
+
+    # Distance to the wall at every node; same contract as SGS_SMAG.zwall, and
+    # read only when ladd_smagorinsky is on (the residual viscosity has no
+    # mixing length to limit).
+    zwall::VT  = KernelAbstractions.zeros(backend, T, dims1)
+
+    # per-ELEMENT DynSGS coefficients (size nelem), filled once per RHS call by
+    # compute_dsgs_viscosity!(::SGS_DSGS, ::NSD_3D).
+    #   ν_el  kinematic  [m²/s]  — the model's own output, what to compare
+    #                              against the C2·Δ·(|v|+c) cap
+    #   μ_el  dynamic    [Pa·s]  — ρ̄_el·ν_el, what the stress tensor wants
+    ν_el::VT = KernelAbstractions.zeros(backend, T, dimsE)
+    μ_el::VT = KernelAbstractions.zeros(backend, T, dimsE)
+
+    # Domain-reduction scratch, one entry per equation. Plain host Vectors and
+    # not backend arrays on purpose: they are the MPI.Allreduce! buffers and
+    # are read scalar-wise by the element loop, so they must be host-resident.
+    #   avg    <q'_i>                 domain mean of the PERTURBATION
+    #   denom  ‖q'_i - <q'_i>‖_inf    the normalising scale of eq. (9)
+    #   scale  <|q_i|>                domain mean of the TOTAL, which is what
+    #                                 the denominator FLOORS are built from
+    avg::Vector{T}
+    denom::Vector{T}
+    scale::Vector{T}
+    #   raw     the MEASURED ‖q_i - <q_i>‖ before any floor is applied
+    #   floors  the floor for each slot
+    # Kept apart so the floor can be used as a GATE -- "this field has no
+    # resolved scale yet, leave its residual out of the max" -- rather than as
+    # a value. See the block that sets denom[ieq] = Inf in SGS.jl.
+    raw::Vector{T}
+    floors::Vector{T}
+
+    # per-point caches (size npoin) — same names and meanings as SGS_SMAG, so
+    # every consumer of a closure struct works unchanged.
+    μ_turb::VT = KernelAbstractions.zeros(backend, T, dims1)
+    f_Ri::VT   = KernelAbstractions.zeros(backend, T, dims1)
+    N2::VT     = KernelAbstractions.zeros(backend, T, dims1)
+    S11::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S22::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S33::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S12::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S13::VT    = KernelAbstractions.zeros(backend, T, dims1)
+    S23::VT    = KernelAbstractions.zeros(backend, T, dims1)
+end
+
+# DynSGS gets a closure struct ONLY in 3D. The 1D and 2D paths run through
+# viscous_rhs_el!'s own `params.VT == DSGS()` branch and never look at
+# params.sgs; allocating one there would put npoin-sized arrays behind a
+# `params.sgs isa AbstractSGSModel` test that several diagnostics use as
+# "there is a closure to read", and they would read zeros.
+function allocate_SGS(npoin, T, backend, PhysConst, ::DSGS;
+                      C_s = PhysConst.C_s, nelem = 0, neqs = 5, SD = nothing,
+                      C1 = 1.0, C2 = 0.5)
+    SD === NSD_3D() || return nothing
+    dims1 = (Int64(npoin),)
+    dimsE = (Int64(nelem),)
+    VT    = typeof(KernelAbstractions.zeros(backend, T, dims1))
+    return SGS_DSGS{T, dims1, dimsE, backend, VT}(
+        avg     = zeros(T, Int64(neqs)),
+        denom   = zeros(T, Int64(neqs)),
+        scale   = zeros(T, Int64(neqs)),
+        raw     = zeros(T, Int64(neqs)),
+        floors  = zeros(T, Int64(neqs)),
+        Pr_t    = T(PhysConst.Pr_t),
+        Sc_t    = T(PhysConst.Sc_t),
+        μ_mol   = T(PhysConst.μ_mol),
+        κ_mol   = T(PhysConst.κ_mol),
+        Ri_crit = T(PhysConst.Ri_crit),
+        g       = T(PhysConst.g),
+        cp      = T(PhysConst.cp),
+        Lc      = T(PhysConst.Lc),
+        Ls      = T(PhysConst.Ls),
+        Rvap    = T(PhysConst.Rvap),
+        Rair    = T(PhysConst.Rair),
+        ε_ratio = T(PhysConst.ε_ratio),
+        C_s     = T(C_s),
+        C_s2    = T(C_s * C_s),
+        karman  = T(PhysConst.karman),
+        C1      = T(C1),
+        C2      = T(C2),
+    )
+end

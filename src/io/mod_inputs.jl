@@ -936,7 +936,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     #
-    # Marras-Nazarov DynSGS (visc_model = DSGS_MHD()) parameters.
+    # Marras-Nazarov DynSGS parameters. :dsgs_C1/:dsgs_C2 are read by BOTH the
+    # MHD variant (visc_model = DSGS_MHD()) and the 3D DSGS() closure; the
+    # other two are MHD-only.
     #   :dsgs_C1    coefficient of the residual viscosity  C1·Δ²·‖R‖/‖q−⟨q⟩‖
     #   :dsgs_C2    coefficient of the wave-speed cap      C2·Δ·(|v|+c_f)
     #   :dsgs_gamma ratio of specific heats used by the MHD EOS and the fast
@@ -944,6 +946,34 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #               deliberately NOT PhysConst.γ, which is air's 1.4)
     #   :dsgs_Prt   turbulent Prandtl number for the energy slot
     #
+    # :dsgs_add_smagorinsky (3D DSGS() only) adds the Smagorinsky eddy
+    # viscosity to the residual one instead of replacing it. Off by default —
+    # "parameter-free" is the whole point of the model. It exists because a
+    # residual sensor produces nothing in a locally smooth surface layer, where
+    # a wall-modelled PBL nevertheless needs a subfilter stress to reproduce
+    # the log law; that is a physics requirement, not a stabilisation one. See
+    # the field comment on SGS_DSGS in kernel/physics/sgsStructs.jl.
+    #
+    if(!haskey(inputs, :dsgs_add_smagorinsky))
+        inputs[:dsgs_add_smagorinsky] = false
+    end
+    #
+    # :dsgs_residual => :tendency (default) | :strict
+    #
+    # WHICH residual the sensor measures. They are not variants of each other:
+    #   :tendency  R ~ 1.5·|∂q/∂t|, the historical behaviour of this code.
+    #   :strict    the literal BDF2 against the inviscid RHS, which on a
+    #              weak-form Galerkin RHS makes the model read its own viscous
+    #              term and decay.
+    # The default is measured, not chosen -- see DSGS_STRICT in
+    # kernel/physics/SGS.jl for the sod1d numbers that decided it. NOTE that
+    # :tendency means C1 = 1 carries no authority from the paper: the sensor is
+    # not the paper's residual. CompEuler/rtb3d_dsgs runs at :dsgs_C1 => 0.25
+    # for that reason and says why.
+    #
+    if(!haskey(inputs, :dsgs_residual))
+        inputs[:dsgs_residual] = :tendency
+    end
     if(!haskey(inputs, :dsgs_C1))
         inputs[:dsgs_C1] = 1.0
     end
