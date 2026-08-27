@@ -121,7 +121,21 @@ end
 #----------------------------------------------------------------------
 # Allocators — dispatched on the existing ::SMAG / ::VREM type tags
 #----------------------------------------------------------------------
-function allocate_SGS(npoin, T, backend, PhysConst, ::SMAG; C_s = PhysConst.C_s)
+# EVERY allocator MUST swallow unknown keywords, and the `::Any` fallback below
+# does NOT cover them for it. `::SMAG` is MORE SPECIFIC than `::Any`, so a call
+# carrying a keyword this method does not name selects this method and then
+# dies in the keyword sorter -- the fallback is never reached. That is not
+# hypothetical: the dynamic-SGS work added nelem/neqs/SD/C1/C2 to the single
+# call site in params_setup.jl unconditionally, which left every deck using
+# :visc_model => SMAG() or VREM() failing at setup with "no method matching
+# allocate_SGS", while DSGS (which names them) and AV (which reaches the
+# fallback) were fine.
+#
+# `kwargs...` here is the fix and the guard: these models genuinely do not need
+# a dynamic model's parameters, so ignoring them is correct, and it makes the
+# next model-specific keyword a non-event rather than a breakage.
+function allocate_SGS(npoin, T, backend, PhysConst, ::SMAG; C_s = PhysConst.C_s,
+                      kwargs...)
     dims1 = (Int64(npoin),)
     VT    = typeof(KernelAbstractions.zeros(backend, T, dims1))
     return SGS_SMAG{T, dims1, backend, VT}(
@@ -150,7 +164,21 @@ end
 # rather than discarded and the definition no longer lowers.
 allocate_SGS(::Any, ::Any, ::Any, ::Any, ::Any; kwargs...) = nothing
 
-function allocate_SGS(npoin, T, backend, PhysConst, ::VREM; C_s = PhysConst.C_s)
+# EVERY allocator MUST swallow unknown keywords, and the `::Any` fallback below
+# does NOT cover them for it. `::SMAG` is MORE SPECIFIC than `::Any`, so a call
+# carrying a keyword this method does not name selects this method and then
+# dies in the keyword sorter -- the fallback is never reached. That is not
+# hypothetical: the dynamic-SGS work added nelem/neqs/SD/C1/C2 to the single
+# call site in params_setup.jl unconditionally, which left every deck using
+# :visc_model => SMAG() or VREM() failing at setup with "no method matching
+# allocate_SGS", while DSGS (which names them) and AV (which reaches the
+# fallback) were fine.
+#
+# `kwargs...` here is the fix and the guard: these models genuinely do not need
+# a dynamic model's parameters, so ignoring them is correct, and it makes the
+# next model-specific keyword a non-event rather than a breakage.
+function allocate_SGS(npoin, T, backend, PhysConst, ::VREM; C_s = PhysConst.C_s,
+                      kwargs...)
     dims1 = (Int64(npoin),)
     VT    = typeof(KernelAbstractions.zeros(backend, T, dims1))
     return SGS_VREM{T, dims1, backend, VT}(
