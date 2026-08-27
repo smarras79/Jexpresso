@@ -45,13 +45,21 @@ callsite_kwargs(SD) = (C_s = 0.23, nelem = 8, neqs = 5, SD = SD,
                 @error "allocate_SGS($nm) rejected the call site's keywords" exception=e
                 :THREW
             end
+            # THE INVARIANT: no tag may throw on the call site's keywords.
+            # That is what broke, and it is branch-independent.
             @test got !== :THREW
-            # AV has no model of its own and must come back as nothing; the
-            # real models must come back as something usable.
-            if tag isa AV
-                @test got === nothing
-            else
+
+            # The RETURN is only pinned where this branch actually implements a
+            # model. AV has no method of its own by design. DSGS's allocator
+            # lives on claude/lesicp2-stability-dynsgs-zt1z0r and is absent
+            # here, so it legitimately reaches the ::Any fallback and returns
+            # nothing -- asserting otherwise tests which branch you are on
+            # rather than the signature, which is what an earlier version of
+            # this file did and failed on.
+            if tag isa SMAG || tag isa VREM
                 @test got isa AbstractSGSModel
+            elseif tag isa AV
+                @test got === nothing
             end
         end
     end
