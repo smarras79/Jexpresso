@@ -7,6 +7,13 @@ commit that added this file; the function names are the stable handle.
 For *why* the scheme is built this way, see `README_IMEX3D.md`. This file is
 strictly *where*.
 
+**New to this code? Read §1b first.** The single most common wrong assumption
+about this solver is that there is an implicit matrix somewhere. There is not,
+and §1b says what exists instead.
+
+Line numbers drift; the function names do not. If a number here does not land
+where it claims, `grep` the name.
+
 ---
 
 ## 1. The one-paragraph summary
@@ -30,6 +37,96 @@ Optionally (`:imex_schur`) the five-field system is reduced algebraically to a
 **single scalar Helmholtz equation** in `P = β·Θ` over `Np` unknowns instead of
 `5·Np`, solved with its own scalar column preconditioner, and the five fields
 are rebuilt pointwise afterwards.
+
+---
+
+## 1b. "Where is the implicit matrix assembled?" — it isn't
+
+**The implicit operator is never assembled. There is no matrix to find.**
+
+This is the first thing that surprises a reader coming from a code that builds
+a sparse Jacobian, so it is stated here before the location tables: `(I − γΔt·A)`
+exists only as a **function that multiplies a vector**. Nothing in the run ever
+holds its entries. Searching for an assembly routine, a `SparseMatrixCSC`, or a
+`spzeros` on the implicit path will find nothing, because there is nothing.
+
+### What the Krylov solve actually sees
+
+The whole "matrix" is this closure (`imex3d.jl:289`):
+
+```julia
+matvec! = let params = params, op = op, g = g
+    (W, V) -> begin
+        hevi_apply_A!(W, V, params, op)     # W = A·V, element by element
+        @inbounds @. W = V - g * W          # W = (I − γΔt·A)·V
+        return W
+    end
+end
+```
+
+`gmres_solve!` is handed that closure and never asks for anything else — no
+entries, no sparsity pattern, no transpose. Everything below is where the
+`A·V` on line 1 comes from.
+
+| what | where |
+|---|---|
+| the matvec `(I − γΔt·A)·V`, five fields | `imex3d.jl:289` (closure) → `operator.jl:578` `hevi_apply_A!` |
+| the matvec `H[P]`, scalar Schur system | `schur_stage.jl:194` (closure) → `schur.jl:369` `schur_H!` |
+| **the element kernel that IS `A`** | `operator.jl:578` `hevi_apply_A!` |
+| implicit vertical diffusion, added into `A` | `vdiffusion.jl:313` `_hevi_D_elements!` |
+| the operator OBJECT — coefficients (β, θ̄), wall masks, scratch. Not entries. | `acoustic.jl:60` `build_hevi_fast_operator`, `operator.jl:189` `build_hevi_operator` |
+
+### Where a real matrix does exist: the preconditioner, and only there
+
+The one place entries are stored is the preconditioner, and even there they are
+**recovered by probing the operator, never derived**: apply the vertical
+operator to coloured unit vectors and read its columns off the result. The band
+is therefore the operator *by construction*, and the two cannot drift apart —
+which is also why there is no derivation to read anywhere.
+
+| what | where |
+|---|---|
+| five-field band `W = I − γΔt·A` per column, by probing | `factorize.jl:80` `assemble_column_band` |
+| → banded LU (build / refactorise) | `factorize.jl:171` and `:199` `LAPACK.gbtrf!` |
+| → applied, one triangular solve pair per column | `factorize.jl:258` `LAPACK.gbtrs!`, via `factorize.jl:218` `hevi_column_solve!` |
+| scalar Schur band, by probing `schur_H!` | `schur_precond.jl:108` `assemble_schur_column_band!` |
+| → LU / solve | `schur_precond.jl:230` `gbtrf!`, `:286` `gbtrs!` |
+
+These are **block-diagonal by vertical column**, in LAPACK general-band storage
+— `nvar·nlev` square per column, bandwidth `nvar·ngl − 1`. They are not the 3D
+operator; they are its vertical part, which is the whole point of the scheme
+(see §7).
+
+### If you want to look at the matrix anyway
+
+Both builders take a hook that is handed the **unfactorised** band. That is the
+only moment it can be inspected: `gbtrf!` overwrites `AB` with the LU factors
+in place, so reading it afterwards diagonalises the factors rather than the
+matrix.
+
+```julia
+build_column_factorization(params, op, cc, topo, gdt;
+                           verify_hook = (AB, kl, ku, n) -> ...)   # factorize.jl:162
+build_schur_column_precond(params, topo, comm, lam;
+                           verify_hook = (AB, kl, ku, n) -> ...)   # schur_precond.jl:183
+```
+
+`imex3d.jl:1102` uses exactly that hook to take the column spectrum
+(`hevi.jl:563` `hevi_column_spectrum`). For a **dense** `(I − γΔt·A)` or a dense
+`H`, built by probing the full operator with unit vectors and compared against
+the matrix-free form, see `test/hevi/test_schur_helmholtz.jl`,
+`test_schur_solve.jl`, `test_schur_blocks.jl` and `test_schur_precond.jl` —
+those are the reference implementations to copy if you need the entries.
+
+### Why it is built this way
+
+Assembling `(I − γΔt·A)` would mean storing a sparse matrix over `5·Np`
+unknowns — 79.6 M degrees of freedom on the production mesh — and rebuilding it
+whenever γΔt or the reference state moves. The matvec costs one element-loop
+pass either way, so the assembly buys nothing the iteration needs, and it adds
+a second statement of the operator that can disagree with the first. The
+preconditioner needs entries and gets them by probing, which is the one route
+that cannot disagree.
 
 ---
 
