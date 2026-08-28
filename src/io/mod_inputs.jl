@@ -971,6 +971,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # not the paper's residual. CompEuler/rtb3d_dsgs runs at :dsgs_C1 => 0.25
     # for that reason and says why.
     #
+    # :dsgs_ramp_steps -- ramp the DynSGS coefficient in over n steps once the
+    # BDF2 history is ready. 0 = off, which is what every case that does not ask
+    # for it gets, so the shock cases the model was tuned on are unaffected.
+    if(!haskey(inputs, :dsgs_ramp_steps))
+        inputs[:dsgs_ramp_steps] = 0
+    end
     if(!haskey(inputs, :dsgs_residual))
         inputs[:dsgs_residual] = :tendency
     end

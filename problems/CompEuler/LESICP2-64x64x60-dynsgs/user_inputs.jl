@@ -92,6 +92,7 @@
      DBG_DSGS_C1=0                                 -- DynSGS off (nu = 0), everything else identical
      DBG_DSGS_C1=... DBG_DSGS_C2=...               -- sweep the two coefficients
      DBG_DSGS_RES=strict                           -- true BDF2 residual instead of the tendency form
+     DBG_DSGS_RAMP=0                               -- no spin-up ramp (default 20 steps)
      DBG_DT=... DBG_RTOL=... DBG_RESTART=...       -- sweep the three knobs
 
  THE TWO IMEX ARMS. :imex_schur and :implicit_vdiff cannot both be on -- the
@@ -370,6 +371,11 @@ function user_inputs()
         # everywhere. :strict rolls after, giving the literal BDF2 residual;
         # measured 10x smaller on sod1d. DBG_DSGS_RES=strict to try it.
         :dsgs_residual        => Symbol(get(ENV, "DBG_DSGS_RES", "tendency")),
+        # Spin-up ramp: the coefficient comes in linearly over n steps once the
+        # BDF2 history is ready, instead of switching on at full strength mid-step
+        # while the sensor's denominators are still measuring almost no turbulence.
+        # ABL only -- the shock cases leave this at its default 0 and are unchanged.
+        :dsgs_ramp_steps      => parse(Int, get(ENV, "DBG_DSGS_RAMP", "20")),
         # Add the Smagorinsky viscosity to the residual one instead of
         # replacing it. OFF: see "WHAT TO EXPECT" in the header for the
         # near-surface diagnostic that decides whether it should be on.

@@ -568,6 +568,14 @@ function params_setup(sem,
         error(" # ERROR params_setup.jl: :dsgs_residual must be :tendency ",
               "(the default) or :strict; got $(_dsgs_res).")
     DSGS_STRICT[] = _dsgs_res === :strict
+    # :dsgs_ramp_steps -- spin-up ramp, 0 (the default) disables it entirely, so
+    # every case that does not ask for it is bit-identical. See DSGS_RAMP_STEPS
+    # in kernel/physics/SGS.jl.
+    DSGS_RAMP_STEPS[] = Int(get(inputs, :dsgs_ramp_steps, 0))
+    DSGS_RAMP_STEPS[] >= 0 ||
+        error(" # ERROR params_setup.jl: :dsgs_ramp_steps must be >= 0; got ",
+              DSGS_RAMP_STEPS[], ". Use 0 to switch the ramp off.")
+    DSGS_RAMP[] = 1.0
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:

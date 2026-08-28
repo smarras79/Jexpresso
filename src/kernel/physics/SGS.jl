@@ -3109,6 +3109,46 @@ const DSGS_MONITOR = Ref(false)
 # on any case in one run.
 # ================================================================================
 const DSGS_STRICT = Ref(false)          # :dsgs_residual => :strict
+
+# ================================================================================
+# SPIN-UP RAMP -- `:dsgs_ramp_steps`, DEFAULT 0 (OFF)
+#
+# `dsgs_hist` switches the model from "return zero" to "full coefficient" at
+# t = tinit + 2*dt, in the middle of one ARK step. On a shock problem that is
+# fine and it is what sod1d, theta_dsgs and ffs_step were tuned against, so the
+# DEFAULT IS OFF and those cases are bit-identical with this code present.
+#
+# On a spinning-up boundary layer it is not fine. The sensor's denominators are
+# L-infinity norms of the SOLUTION, and at t ~ 2*dt a PBL has almost no resolved
+# turbulence for them to measure -- so the ratio R/denom is set by whichever
+# equation happens to have the smallest norm, and the first coefficient the run
+# ever applies is the least well-conditioned one it will ever compute. Ramping
+# in over `n` steps lets the denominators develop before the model has full
+# authority; it does not change what the model computes, only how much of it is
+# applied while the norms are still meaningless.
+#
+# THIS IS A STARTUP DEVICE, NOT A LIMITER. It is 1.0 for ever after `n` steps,
+# so it cannot rescue a coefficient that is too large in the developed flow --
+# see the ceiling arithmetic in the LESICP2-64x64x60-dynsgs deck for that.
+# ================================================================================
+const DSGS_RAMP_STEPS = Ref(0)      # :dsgs_ramp_steps; 0 disables the ramp
+const DSGS_RAMP       = Ref(1.0)    # the factor in force at this rhs! call
+
+"""
+    dsgs_ramp_factor(time, tinit, dt, nsteps) -> Float64
+
+Linear 0 -> 1 over `nsteps` steps, starting at the step where `dsgs_hist` first
+turns true (t = tinit + 2*dt).
+
+`nsteps <= 0` returns 1.0 -- no ramp, and no arithmetic. The first ramped step
+gets `1/nsteps` rather than 0: a step multiplied by zero is the warm-up the
+model already has, not a ramp.
+"""
+@inline function dsgs_ramp_factor(time, tinit, dt, nsteps::Int)
+    nsteps <= 0 && return 1.0
+    t_on = tinit + 1.999 * dt            # where dsgs_hist turns true
+    return clamp((time - t_on + dt) / (nsteps * dt), 0.0, 1.0)
+end
 const DSGS_NOMASK = Ref(false)          # JEXPRESSO_DSGS_NOMASK=1, diagnostic
 
 # (max ratio, node, equation, raw residual). A module-level buffer rather than

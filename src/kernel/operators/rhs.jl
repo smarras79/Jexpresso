@@ -716,6 +716,10 @@ function _build_rhs!(RHS, u, params, time)
         params.dsgs_thist[] = time
     end
     params.dsgs_hist[]  = time >= params.tspan[1] + 1.999*params.Δt
+    # Spin-up ramp, off unless the deck asks (:dsgs_ramp_steps). See
+    # DSGS_RAMP_STEPS in SGS.jl for why an ABL wants it and a shock does not.
+    DSGS_RAMP[] = dsgs_ramp_factor(time, params.tspan[1], params.Δt,
+                                   DSGS_RAMP_STEPS[])
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -1546,6 +1550,19 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     Int(params.neqs);
                                     lpert = params.SOL_VARS_TYPE == PERT(),
                                     lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+            # THE RAMP IS APPLIED TO THE OUTPUT, not to C1: C1 = 1.0 is fixed by
+            # the model's derivation and is not a knob. Scaling mu_res after the
+            # fact leaves min(mu_max, mu_res) meaning what it meant -- the cap is
+            # not ramped, because a cap that grows is not a cap.
+            #
+            # nu_el is scaled with the others so the monitor keeps reporting what
+            # is actually applied rather than what was computed.
+            _ramp = TT(DSGS_RAMP[])
+            if _ramp < one(TT)
+                @. params.μ_dsgs   *= _ramp
+                @. params.sgs.μ_el *= _ramp
+                @. params.sgs.ν_el *= _ramp
+            end
           end
         end
 
