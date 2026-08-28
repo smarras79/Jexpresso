@@ -1,1 +1,0 @@
-auxiliary/slurm/submit_jexpresso_parallel.sh
