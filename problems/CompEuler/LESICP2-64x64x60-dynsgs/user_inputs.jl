@@ -89,6 +89,8 @@
 
      DBG_SCHEME=imex (default) | hevi | explicit   -- same physics, three arms
      DBG_FILTER=1                                  -- modal filter ON (off by default)
+     DBG_DSGS_C1=0                                 -- DynSGS off (nu = 0), everything else identical
+     DBG_DSGS_C1=... DBG_DSGS_C2=...               -- sweep the two coefficients
      DBG_DT=... DBG_RTOL=... DBG_RESTART=...       -- sweep the three knobs
 
  THE TWO IMEX ARMS. :imex_schur and :implicit_vdiff cannot both be on -- the
@@ -341,7 +343,10 @@ function user_inputs()
         # C1 scales the residual viscosity. 1.0 is parameter-free in the sense
         # that matters -- it does not decide WHERE the model is active, only
         # how hard it acts once the residual has decided.
-        :dsgs_C1              => 1.0,
+        # DBG_DSGS_C1=0 makes mu_res = 0 and therefore nu = 0: DynSGS becomes a
+        # no-op with every other setting untouched, which is the one-knob test for
+        # "is the coefficient what is killing this run?".
+        :dsgs_C1              => parse(Float64, get(ENV, "DBG_DSGS_C1", "1.0")),
         # C2 scales the first-order-upwind cap mu_max = C2 Delta (‖v‖+c). At
         # Delta = 40 m with c ~ 340 against ‖v‖ ~ 10 that is 0.5*40*350 = 7000
         # m^2/s -- and THE CAP IS NOT A SAFETY NET AT THIS VALUE.
@@ -357,7 +362,7 @@ function user_inputs()
         # residual model, and lowering :dsgs_C1 or :dsgs_residual => :strict is
         # the honest lever. On the implicit arm this rate is removed and the
         # ceiling is set by accuracy instead.
-        :dsgs_C2              => 0.5,
+        :dsgs_C2              => parse(Float64, get(ENV, "DBG_DSGS_C2", "0.5")),
         # Add the Smagorinsky viscosity to the residual one instead of
         # replacing it. OFF: see "WHAT TO EXPECT" in the header for the
         # near-surface diagnostic that decides whether it should be on.
