@@ -128,9 +128,13 @@ export DBG_TEND="${DBG_TEND:-$TEND}"
 [ -n "${DBG_RESTART:-}" ] && export DBG_RESTART
 [ -n "${DBG_MAXITER:-}" ] && export DBG_MAXITER
 
-export JEXPRESSO_HEVI_PROFILE=1
-export JEXPRESSO_HEVI_PROFILE_EVERY=50
-export JEXPRESSO_HEVI_PROFILE_SKIP=10
+# `:-` on all three: bare assignments clobbered the caller, so
+# JEXPRESSO_HEVI_PROFILE_EVERY=1 on the sbatch line was ignored and the
+# breakdown still came every 50 steps. Same rule as DBG_TEND and DBG_VDIFF --
+# the value here is the default, the environment wins.
+export JEXPRESSO_HEVI_PROFILE="${JEXPRESSO_HEVI_PROFILE:-1}"
+export JEXPRESSO_HEVI_PROFILE_EVERY="${JEXPRESSO_HEVI_PROFILE_EVERY:-50}"
+export JEXPRESSO_HEVI_PROFILE_SKIP="${JEXPRESSO_HEVI_PROFILE_SKIP:-10}"
 export JEXPRESSO_PRECOMPILE_PASS="${JEXPRESSO_PRECOMPILE_PASS:-1}"
 export JEXPRESSO_STEP_HEARTBEAT=1
 # THE SCHUR ARM IS THIS SCRIPT'S DEFAULT: explicit vertical diffusion, so
@@ -269,6 +273,10 @@ else
 fi
 echo "    tend / rtol   : ${DBG_TEND:-<deck>} s / ${DBG_RTOL:-<deck>}, restart ${DBG_RESTART:-<deck>}, maxiter ${DBG_MAXITER:-<deck>}"
 echo "    vert. diff    : ${DBG_VDIFF:+DBG_VDIFF=$DBG_VDIFF }${DBG_VDIFF:-<deck>}"
+# Print the diagnostic switches the ranks will actually see. A monitor that
+# does not fire is otherwise indistinguishable from a variable that never
+# arrived, and that ambiguity has cost a debugging cycle already.
+echo "    diagnostics   : DSGS_MONITOR=${JEXPRESSO_DSGS_MONITOR:-0}  HEVI_PROFILE=${JEXPRESSO_HEVI_PROFILE:-0} every ${JEXPRESSO_HEVI_PROFILE_EVERY}/skip ${JEXPRESSO_HEVI_PROFILE_SKIP}  imex_monitor_every=${DBG_IMEXMONEVERY:-<deck>}"
 echo "    started       : $(date)"
 echo
 # The banner above is printed from THIS shell. The authoritative statement of

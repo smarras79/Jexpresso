@@ -532,6 +532,12 @@ function params_setup(sem,
     # The DENOMINATORS are not masked. They are domain norms of the SOLUTION,
     # which is perfectly well defined on a boundary.
     #---------------------------------------------------------------------
+    # READ BEFORE THE MASKING BLOCK BELOW, which consumes DSGS_NOMASK[]. It
+    # used to be assigned ~20 lines further down, so JEXPRESSO_DSGS_NOMASK=1
+    # was read at its stale default here and the flag did nothing on the only
+    # line that uses it.
+    DSGS_NOMASK[] = get(ENV, "JEXPRESSO_DSGS_NOMASK", "0") ∉ ("0", "false", "")
+
     dsgs_wres = ones(TFloat, Int64(sem.mesh.npoin))
     if ldsgs || ldsgs_mhd
         for arr in (sem.mesh.poin_in_bdy_face, sem.mesh.poin_in_bdy_edge)
@@ -562,7 +568,6 @@ function params_setup(sem,
         error(" # ERROR params_setup.jl: :dsgs_residual must be :tendency ",
               "(the default) or :strict; got $(_dsgs_res).")
     DSGS_STRICT[] = _dsgs_res === :strict
-    DSGS_NOMASK[]      = get(ENV, "JEXPRESSO_DSGS_NOMASK",     "0") ∉ ("0","false","")
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:
