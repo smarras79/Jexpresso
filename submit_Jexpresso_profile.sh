@@ -112,8 +112,12 @@ cd "$ROOT" || exit 1
 [ -n "${DBG_VDIFF:-}" ]   && export DBG_VDIFF
 [ -n "${DBG_FILTER:-}" ]  && export DBG_FILTER
 [ -n "${DBG_SCHEME:-}" ]  && export DBG_SCHEME
-[ -n "$TEND" ] && export DBG_TEND="$TEND"
-[ -n "$MESH" ] && export DBG_MESH="$MESH"
+# `${DBG_TEND:-$TEND}`, not `$TEND`: a bare assignment here OVERRODE the
+# caller, so `DBG_TEND=5 sbatch ...` silently ran the deck's full tend. The
+# EDIT ME value is the default; the environment wins, as it does for DBG_SCHUR
+# and the Krylov knobs below.
+export DBG_TEND="${DBG_TEND:-$TEND}"
+[ -n "${DBG_MESH:-$MESH}" ] && export DBG_MESH="${DBG_MESH:-$MESH}"
 # THE LAUNCHER DOES NOT SET rtol OR restart. It used to default them to 1.0e-8
 # and 20 -- the rtb values -- which silently OVERRODE any deck with its own
 # tuning. LESICP2 ships 1.0e-6 and 30 for a reason (it runs at CFL_h 2.77), and
