@@ -108,9 +108,28 @@
                    ARS343 carries it only to nu_t ~ 40-80 m^2/s here (twice the
                    Smagorinsky deck's 20-40, because :mu[5] is 1.0 not 2.0)
 
- Both take ALL acoustics implicitly at dt = 0.5. Watch the CFL report's viscous
- row and JEXPRESSO_DSGS_MONITOR=1: the DBG_VDIFF=0 arm ends when nu_t reaches
- the number above, and whether DynSGS gets there is the question it answers.
+ Both take ALL acoustics implicitly at dt = 0.5.
+
+ MEASURED, AND THE QUESTION IS ANSWERED: DynSGS GETS THERE, IN SECONDS.
+ With the 20-step ramp on and the model spinning up from t = 1 s:
+
+     t      nu applied     vs the 67 m^2/s ceiling
+     1.0      0.99         ok
+     2.5     14.8          ok
+     3.0     43.3          ok
+     4.5     79.0          OVER  -> the run dies on this step
+
+ The correlation is exact: every step with nu under the ceiling survives and the
+ first step over it does not. Unramped, mu = Delta^2*ratio is already 197 m^2/s
+ at t = 4.5 and still climbing, so the ramp is buying time against something
+ growing faster than it is -- a longer ramp moves the failure, it does not
+ remove it. Carrying mu = 197 explicitly would need dt <= 0.17 s, which costs
+ more than the implicit arm does.
+
+ So the DBG_VDIFF=0 arm is a diagnostic for this closure, not a production
+ configuration: use it to read what DynSGS produces, and run production on the
+ implicit arm, where the vertical viscous rate is not in the explicit budget at
+ all and no ceiling applies.
 =============================================================================#
 
 function user_inputs()
