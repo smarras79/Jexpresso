@@ -273,7 +273,7 @@ else
     echo "                    node and can be OOM-killed against a smaller cgroup"
 fi
 echo "    tend / rtol   : ${DBG_TEND:-<deck>} s / ${DBG_RTOL:-<deck>}, restart ${DBG_RESTART:-<deck>}, maxiter ${DBG_MAXITER:-<deck>}"
-echo "    vert. diff    : ${DBG_VDIFF:+DBG_VDIFF=$DBG_VDIFF }${DBG_VDIFF:-<deck>}"
+echo "    vert. diff    : ${DBG_VDIFF:+DBG_VDIFF=}${DBG_VDIFF:-<deck>}"
 # Print the diagnostic switches the ranks will actually see. A monitor that
 # does not fire is otherwise indistinguishable from a variable that never
 # arrived, and that ambiguity has cost a debugging cycle already.
