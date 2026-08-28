@@ -87,7 +87,10 @@ function user_inputs()
 
     # IMPLICIT VERTICAL DIFFUSION -- ON BY DEFAULT, AND WHY THAT CHANGED.
     #
-    # This was opt-in (DBG_VDIFF=1) and the run died at t = 500 s. A blow-up at
+    # This was opt-in (DBG_VDIFF=1) and the run died at t = 500 s -- REPRODUCED
+    # at t = 550 s with the modal filter off and the Schur arm, so the filter
+    # was never implicated and the explicit viscous rate is the whole story:
+    # dt*2*(:mu[5]/Pr_t)*nu_t/h_z^2 <= 2 caps nu_t at 33 m^2/s here. A blow-up at
     # a fixed MODEL time, on a step size the acoustic analysis below says is
     # 47% of neutral, is the signature of a rate that is not in that analysis
     # and arrives on its own schedule -- and on this mesh there is exactly one:
