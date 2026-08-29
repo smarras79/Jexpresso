@@ -847,6 +847,45 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
                          " is not recognised. Use :none or one of ", CUBED_SPHERE_MAPS, "."))
     end
     #
+    #   :exact_geometry    2D ONLY. Curve the high-order nodes of the named
+    #                      boundaries onto the exact shape the .geo defined,
+    #                      instead of leaving them on the straight-sided chords
+    #                      gmsh wrote. See src/kernel/mesh/exact_geometry.jl for
+    #                      the construction (isoparametric boundary + Gordon-Hall
+    #                      blend) and why it is the one Kopriva (2006) sanctions.
+    #
+    #                      Absent (the default) nothing is curved and every case
+    #                      behaves exactly as before. Otherwise it is a Dict
+    #                      from gmsh `Physical Curve` name to shape:
+    #
+    #                        Dict("circle_boundary" => :circle)
+    #                                centre and radius FITTED from the boundary
+    #                                vertices the mesh file already carries, and
+    #                                refused if they do not lie on a circle.
+    #
+    #                        Dict("circle_boundary" => (:circle, 1.0, 0.0, 0.2))
+    #                                centre and radius stated outright.
+    #
+    #                      The grid must still resolve the curvature: an element
+    #                      thinner than the sagitta of its own boundary arc folds,
+    #                      and exact_geometry.jl stops the run rather than hand a
+    #                      negative Jacobian to the metrics.
+    #
+    if haskey(inputs, :exact_geometry)
+        _eg = inputs[:exact_geometry]
+        _eg isa AbstractDict ||
+            error(string(" # ERROR mod_inputs.jl: :exact_geometry must be a Dict of ",
+                         "\"boundary tag\" => shape, got ", typeof(_eg), "."))
+        for (_tag, _sh) in _eg
+            _ok = _sh === :circle ||
+                  (_sh isa Tuple && length(_sh) == 4 && _sh[1] === :circle &&
+                   all(v -> v isa Real, _sh[2:4]) && _sh[4] > 0)
+            _ok || error(string(" # ERROR mod_inputs.jl: :exact_geometry[\"", _tag,
+                                "\"] => ", _sh, " is not a shape I know. Use :circle ",
+                                "(fitted) or (:circle, xc, yc, r) with r > 0."))
+        end
+    end
+    #
     #   :sphere_metrics    the 2D-manifold metric terms of build_sphere_metrics.
     #                      Kopriva's curl-invariant form (J. Sci. Comput. 26(3),
     #                      301, 2006, Eq. 15; Sec. 3.2.3 of Kelly, Alves,

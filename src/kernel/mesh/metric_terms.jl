@@ -257,36 +257,42 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
         end
         
-        # Optimize boundary edge calculations
+        # Boundary-edge surface Jacobian and unit normal.
+        #
+        # Both come from the tangent of the SAME degree-N interpolant that the
+        # volume metrics above differentiate: t(ξ_k) = Σ_i ℓ_i'(ξ_k) X_i, so
+        # Jef = |t| (which is what compute_segment_integral! multiplies ω by)
+        # and n = (t_y, -t_x)/|t|, signed outward below.
+        #
+        # On a straight edge the interpolant is linear, so this reproduces the
+        # chord/2 and the exact normal it replaces, to round-off. On an edge
+        # curved by snap_nodes_to_exact_geometry! it is the only version that
+        # is right: a chord length is constant along an arc when |dX/dξ| is
+        # not, and a two-point difference gets the wall normal wrong by O(h) —
+        # which would throw away most of what curving the boundary buys.
+        Dedge = lagrange_nodal_derivative_matrix(collect(TFloat.(@view ξ[1:N+1])))
+
         nbdy_edges = size(mesh.poin_in_bdy_edge, 1)
         @inbounds for iedge = 1:nbdy_edges
             poin_edge = @view mesh.poin_in_bdy_edge[iedge, :]
-            
-            # Pre-compute edge endpoints for Jef calculation
-            ip_first = poin_edge[1]
-            ip_last = poin_edge[N+1]
-            edge_length = sqrt((mesh.x[ip_first] - mesh.x[ip_last])^2 + 
-                (mesh.y[ip_first] - mesh.y[ip_last])^2)
-            Jef_val = edge_length * 0.5  # Avoid division by 2
-            
+
             for k = 1:N+1
+                # Tangent dX/dξ at edge node k
+                tx = zero(TFloat); ty = zero(TFloat)
+                for i = 1:N+1
+                    ipi = poin_edge[i]
+                    tx += Dedge[k,i]*mesh.x[ipi]
+                    ty += Dedge[k,i]*mesh.y[ipi]
+                end
+
                 ip = poin_edge[k]
-                
-                # Determine next/previous point more efficiently
-                ip1 = (k < N+1) ? poin_edge[k+1] : poin_edge[k-1]
-                
-                # Cache coordinates
-                x1, y1 = mesh.x[ip], mesh.y[ip]
-                x2, y2 = mesh.x[ip1], mesh.y[ip1]
-                
-                # Compute normal vector components
-                dx, dy = x1 - x2, y1 - y2
-                mag_inv = 1.0 / sqrt(dx*dx + dy*dy)  # Use single sqrt and invert
-                
+                mag = sqrt(tx*tx + ty*ty)
+                mag_inv = T(1.0)/mag
+
                 # Store results
-                metrics.Jef[iedge, k] = Jef_val
-                metrics.nx[iedge, k] = dy * mag_inv
-                metrics.ny[iedge, k] = -dx * mag_inv
+                metrics.Jef[iedge, k] = mag
+                metrics.nx[iedge, k] = ty * mag_inv
+                metrics.ny[iedge, k] = -tx * mag_inv
                 e = mesh.bdy_edge_in_elem[iedge]
                 ip2 = mesh.connijk[e,2,2]
                 idx1 = 0
@@ -324,6 +330,13 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         nbdy_edges    = size(mesh.poin_in_bdy_edge,1)
         poin_in_bdy_edge = KernelAbstractions.allocate(backend, TInt, Int64(nbdy_edges), N+1)
         KernelAbstractions.copyto!(backend, poin_in_bdy_edge,mesh.poin_in_bdy_edge)
+        # NOTE the GPU boundary kernel has NOT been given the tangent-based Jef
+        # and normal that the CPU branch above now uses, so it is not
+        # curved-boundary aware: on a wall curved by :exact_geometry it still
+        # returns a two-point normal (O(h) off the geometry's own) and a Jef
+        # that is not |dX/dξ|. Deliberately left for its own change — it also
+        # disagrees with the CPU path on STRAIGHT edges, which is a separate
+        # pre-existing bug, and there is no GPU here to verify a fix on.
         k = build_2D_gpu_bdy_metrics!(backend)
         k(metrics.Jef, metrics.nx, metrics.ny, x, y, poin_in_bdy_edge, N; ndrange = (nbdy_edges*(N+1)), workgroupsize = (N+1))
     end

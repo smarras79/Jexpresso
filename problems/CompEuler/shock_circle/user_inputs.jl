@@ -78,6 +78,24 @@ function user_inputs()
         :lread_gmsh           => true,
         :gmsh_filename        => "./meshes/gmsh_grids/ffs_step_transfinite.msh",
         :gmsh_filename        => "./problems/CompEuler/shock_circle/plate_hole_circle_unit.msh",
+        # EXACT GEOMETRY. plate_hole_circle_unit.geo defines the hole as a gmsh
+        # `Circle`, but the .msh is straight-sided: the 16 boundary vertices sit
+        # on the circle of radius 0.2 at (1, 0) and every high-order node in
+        # between sits on the CHORD, up to 3.8e-3 inside the wall. That polygon
+        # is what the solver would otherwise see however large :nop is, and its
+        # sixteen corners are sixteen places for a slip wall to shed spurious
+        # vorticity into a Mach-3 flow.
+        #
+        # This snaps the boundary nodes onto the circle and blends the
+        # correction into the touching elements (Gordon-Hall, see
+        # src/kernel/mesh/exact_geometry.jl). The wall becomes the degree-:nop
+        # isoparametric interpolant of the true circle — 4.4e-8 from it at
+        # :nop => 4 instead of 3.8e-3, a factor of 10^5.
+        #
+        # `:circle` means "fit the centre and radius from the boundary vertices
+        # the mesh file already carries", which recovers (1.0, 0.0) and 0.2
+        # here. Write (:circle, 1.0, 0.0, 0.2) instead to state them outright.
+        :exact_geometry       => Dict("circle_boundary" => :circle),
         #---------------------------------------------------------------------------
         # Plotting
         #---------------------------------------------------------------------------
