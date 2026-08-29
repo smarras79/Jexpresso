@@ -222,10 +222,11 @@ function user_inputs()
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
-        :C_s                  => 0.16,
+        :C_s                  => 0.18,
         :lrichardson          => true,
         :lwall_damping        => true,
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 2.0],
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
@@ -234,7 +235,7 @@ function user_inputs()
 	# TimeIntegrators.jl does `collect(Float64, les_stat_t)` on it -- which
 	# cannot convert a range to a Float64 and dies at startup with a
 	# MethodError. Splatting both gives the 191 sample times intended.
-	:statistics_time      => (10.0:10:100.0..., 9000.0:10:10800.0...),
+	:statistics_time      => (9000.0:10:10800.0...),
 	#:statistics_time      => (10.0:10.0:100),
         #:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,
@@ -304,7 +305,7 @@ function user_inputs()
         :lfilter             => true, #parse(Bool, get(ENV, "DBG_FILTER", "false")),
         :mu_x                => 0.05,
         :mu_y                => 0.05,
-	:mu_z                => 0.05,
+	:mu_z                => 0.1,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
