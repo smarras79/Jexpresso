@@ -73,8 +73,8 @@
 #  WHAT TO RUN.
 #-----------------------------------------------------------------------------
 EQS="CompEuler"
-#CASE="LESICP2-64x64x60-imex"
-CASE="LESICP2-64x64x60-dynsgs"
+CASE="LESICP2-64x64x60-imex"
+#CASE="LESICP2-64x64x60-dynsgs"
 TEND="10800.0"
 MESH=""
 ROOT="/project/smarras/smarras/Jexpresso"

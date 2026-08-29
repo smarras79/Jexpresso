@@ -532,7 +532,7 @@ function user_inputs()
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         :ladapt              => false,
-        :amr                 => true,
+        :amr                 => false,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------

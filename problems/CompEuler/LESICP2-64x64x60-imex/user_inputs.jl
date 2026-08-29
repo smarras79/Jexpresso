@@ -1,88 +1,3 @@
-#=============================================================================
- LESICP2 on the 64 x 64 x 60 production grid -- 10240 x 10240 x 5000 m.
-
- WHAT THIS DECK IS FOR. The same case run fully explicit at dt = 0.02 s takes
- 24 h of wall clock to reach tend = 10800 s. This deck runs it with the
- acoustics ENTIRELY implicit and is projected at 3-5 h on the same core count,
- 2.5-3 h on 2048 ranks. Physics, sounding, surface flux, closure and filter are
- byte-identical to LESICP2-imex; only the grid, the step size and the solver
- settings differ.
-
- THE GRID, AND WHY IT DECIDES THE SCHEME
- ---------------------------------------
-   64 x 64 x 60 elements at p = 4 over 10240 x 10240 x 5000 m
-   element 160 x 160 x 40 m  ->  effective resolution 40 x 40 x 10 m
-   smallest LGL gaps  h_x = 27.63 m   h_z = 6.91 m
-   ACOUSTIC ANISOTROPY 4.0:1        15.9 M nodes, 245 760 elements
-
- 4:1 is the number that chooses the integrator, and it chooses against HEVI.
- The explicit rate budget on this grid is
-
-     vertical acoustic 50.2   horizontal acoustic 25.1
-     advection          1.7   SGS diffusion        2.4      [1/s]
-
- THE SGS FIGURE IS NOT TAKEN AT nu_t, AND IT USED TO SAY 0.9. What binds is
- the LARGEST diffusivity any equation is given, and that is not the momentum
- one: :mu below is [0, 1, 1, 1, 2] and SGS_diffusion gives the theta equation
- kappa = :mu[5]/Pr_t * mu_turb = 2/0.7 = 2.857 x the momentum coefficient. So
- the vertical viscous rate is 2*2.857*nu_t/h_z^2, not 2*nu_t/h_z^2, and at
- nu_t = 20 m^2/s that is 2.4 1/s rather than 0.9. cfl_limits (hevi/
- cfl_diagnostics.jl) has always read it this way; the table here did not.
-
- HEVI removes only the first line -- 79.5 -> 29.2, a 2.7x rate gain -- but
- ARS232's explicit imaginary radius is 1.732 against CarpenterKennedy2N54's
- 3.34, so nearly half of that is handed back at the tableau and the joint
- (rectangle) limit trims the rest. Net 1.2x on the step, 3 RHS/step instead of
- 5: about 2x in wall clock, and 2x is 12 h, not "a few hours". Worse, the
- tableau with the radius to fix it (ARS343, 2.828) is the one HEVI cannot use:
- there the two halves are loaded by INDEPENDENT wavenumbers, the whole
- rectangle must be neutral, and ARS343 amplifies over most of it -- measured on
- this grid, dt = 0.0022 s, i.e. 0.05x explicit.
-
- IMEX3D removes ALL THREE acoustic terms: 79.5 -> 4.1, and now one wavenumber
- loads both halves, so only the wedge zE <= Mach*zI is reachable and ARS343 is
- neutral across it. dt = 0.506 s at the same 47% margin the explicit run
- carries -- 25x the step, 4 RHS/step, 31x fewer RHS evaluations per simulated
- second.
-
- WHAT IT COSTS, AND THE ONE NUMBER THAT DECIDES IT
- -------------------------------------------------
- The Krylov iteration count is the entire price. At dt = 0.5,
-
-     CFL_h = gamma*dt*c/h_x = 2.77
-
- which is inside the band where GMRES(20-30) is still comfortable (it stops
- converging around CFL_h 5-7). Warm-started at rtol 1e-6 that is ~31
- iterations per solve, 3 solves per step.
-
- Writing every cost in units of A_vert (one vertical-operator application), the
- step costs 4*rho + 12 + 232 per 0.5 s, where rho = T_rhs / A_vert is how heavy
- this case's LES right-hand side is relative to the linear acoustic operator.
- That is the ONLY unknown, and JEXPRESSO_HEVI_PROFILE=1 measures it in a
- 200-step run:
-
-     rho     10      15      20      30      50
-     speedup 3.1x    4.5x    5.7x    7.8x   11.2x
-     hours   7.7     5.4     4.2     3.1     2.1
-
- IMEX3D overtakes explicit at rho = 3.0 and HEVI at rho = 4.6, so for any real
- LES right-hand side this is the right scheme; where in 2-8 h it lands is a
- property of how expensive rhs! is, not of the integrator. The ceiling, at
- infinite rho, is 31x -- the RHS-count ratio. Everything below that is Krylov.
-
- RUN IT ON A RANK COUNT THAT DIVIDES 4096
- ----------------------------------------
- :lxy_partition splits the 64 x 64 = 4096 ELEMENT COLUMNS, so
-
-     512 ranks   8 columns each   exact
-    1024 ranks   4 columns each   exact
-    2048 ranks   2 columns each   exact
-
-     DBG_SCHEME=imex (default) | hevi | explicit   -- same physics, three arms
-     JEXPRESSO_HEVI_PROFILE=1                      -- measures rho
-     DBG_DT=... DBG_RTOL=... DBG_RESTART=...       -- sweep the three knobs
-=============================================================================#
-
 function user_inputs()
 
     # IMPLICIT VERTICAL DIFFUSION -- ON BY DEFAULT, AND WHY THAT CHANGED.
@@ -386,10 +301,10 @@ function user_inputs()
         # Filter parameters. OFF, and that is a standing choice for this case --
         # do not "restore" it. DBG_FILTER=1 turns it on for a one-off A/B.
         #---------------------------------------------------------------------------
-        :lfilter             => parse(Bool, get(ENV, "DBG_FILTER", "false")),
-        :mu_x                => 0.25,
-        :mu_y                => 0.25,
-	:mu_z                => 0.25,
+        :lfilter             => true, #parse(Bool, get(ENV, "DBG_FILTER", "false")),
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
+	:mu_z                => 0.05,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
@@ -397,9 +312,7 @@ function user_inputs()
         :outformat           => "vtk",
 	# One tree per scheme, so an A/B/C leaves all three solutions on disk
 	# rather than overwriting each other.
-	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_64x64x60_10240mX10240mX5000m_" * String(scheme) * "/",
-	#:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x120_10240mX10240mX5000m/,"
-        #:output_dir          => "./output_new/coarse-LESICP2_16x4x120_10kmX10kmX5km/",
+	:output_dir          => "/scratch/smarras/smarras/output_new/filter_LESICP2_64x64x60_10240mX10240mX5000m_" * String(scheme) * "/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => parse(Bool, get(ENV, "DBG_WRITE_INITIAL", lprobe ? "false" : "true")),
         #---------------------------------------------------------------------------
@@ -408,7 +321,7 @@ function user_inputs()
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         :ladapt              => false,
-        :amr                 => true,
+        :amr                 => false,
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
