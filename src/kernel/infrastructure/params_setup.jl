@@ -293,6 +293,21 @@ function params_setup(sem,
             end
         end
 
+        # BASE-STATE θ FOR N², under PERT only. The deck's user_primitives!
+        # hands compute_sgs_cache! the PERTURBATION θ under :SOL_VARS_TYPE =>
+        # PERT(), which is correct for the term that gets DIFFUSED (the base
+        # state is in hydrostatic balance and must not be) and wrong for N²,
+        # which is (g/θ)·dθ/dz on the TOTAL field. Without this the closure
+        # divides g by an O(0.1 K) quantity that changes sign node to node and
+        # drops the base-state stratification from dθ/dz entirely — f_Ri then
+        # swings between 0 and ~3 at grid scale. See the field's comment in
+        # sgsStructs.jl. Only ever read when :lrichardson is on.
+        # The flag can be set here; the ARRAY has to wait until qe is final --
+        # conformity4ncf_q! below rewrites qe on a non-conforming mesh, and a
+        # base state read before that is stale on every hanging node. Filled
+        # just after that call.
+        sgs.lpert = inputs[:SOL_VARS_TYPE] == PERT()
+
         # :μ means two different things depending on :visc_model. Under AV() it
         # is the constant kinematic viscosity in m²/s; under a dynamic model it
         # multiplies the eddy viscosity that the closure has already computed,
@@ -346,6 +361,28 @@ function params_setup(sem,
         end
     end
     
+    # qe is final from here on, so this is where the SGS base-state θ gets
+    # filled (see the flag and the long note further up, and the field's
+    # comment in sgsStructs.jl). Computed once: qe is the static reference
+    # state.
+    if sgs isa AbstractSGSModel && sgs.lpert && inputs[:lrichardson] == true
+        qe_h = Array(qp.qe)
+        iθ   = sem.mesh.SD == NSD_3D() ? 5 : 4
+        if size(qe_h, 2) >= iθ
+            # A zero or absent reference ρ leaves the node at 0, which the
+            # SGS_THETA_FLOOR guard in SGS.jl then reads as "no usable θ" and
+            # answers with N² = 0 rather than with a division by it.
+            θb = [qe_h[ip, 1] > 0.0 ? qe_h[ip, iθ] / qe_h[ip, 1] : 0.0
+                  for ip = 1:sem.mesh.npoin]
+            KernelAbstractions.copyto!(backend, sgs.theta_base, TFloat.(θb))
+        elseif rank == 0
+            @warn("PERT() with :lrichardson => true, but qe has no θ column " *
+                  "($(size(qe_h,2)) < $iθ): N² would be built from the θ " *
+                  "perturbation. Leaving the base state at zero, which the SGS " *
+                  "θ floor turns into N² = 0 (no buoyancy correction).")
+        end
+    end
+
     for i=1:qp.neqs
 
         idx = (i-1)*sem.mesh.npoin
@@ -576,6 +613,22 @@ function params_setup(sem,
         error(" # ERROR params_setup.jl: :dsgs_ramp_steps must be >= 0; got ",
               DSGS_RAMP_STEPS[], ". Use 0 to switch the ramp off.")
     DSGS_RAMP[] = 1.0
+
+    #---------------------------------------------------------------------------
+    # MOST guard rails. Refs and not arguments because CM_MOST! runs per
+    # boundary node per RHS call; see the MOST GUARD RAILS block in
+    # kernel/physics/CM_MOST.jl for what each one bounds and why.
+    #---------------------------------------------------------------------------
+    MOST_U_MIN[]    = Float64(get(inputs, :most_u_min,    0.1))
+    MOST_ZETA_MIN[] = Float64(get(inputs, :most_zeta_min, -5.0))
+    MOST_ZETA_MAX[] = Float64(get(inputs, :most_zeta_max,  2.0))
+    MOST_U_MIN[] >= 0.0 ||
+        error(" # ERROR params_setup.jl: :most_u_min must be >= 0; got ", MOST_U_MIN[],
+              ". Use 0 to remove the gustiness floor (and the guard it provides).")
+    MOST_ZETA_MIN[] < 0.0 < MOST_ZETA_MAX[] ||
+        error(" # ERROR params_setup.jl: need :most_zeta_min < 0 < :most_zeta_max; got ",
+              MOST_ZETA_MIN[], " and ", MOST_ZETA_MAX[],
+              ". The range has to straddle neutral -- it bounds z/L on both sides.")
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:

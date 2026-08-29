@@ -299,6 +299,11 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
     ifirst_wall_node = inputs[:ifirst_wall_node_index]::Int
     δhf              = inputs[:δhf]
     user_heatflux    = inputs[:user_heatflux]
+    # See the 3D branch: with a prescribed :user_heatflux, MOST must build θ*
+    # (and so L, ψ_m and the drag) from the flux the model actually applies
+    # rather than from a free surface node whose flux is then discarded. Dry
+    # branch only, for the reason given there.
+    wθ_bc            = δhf == 1.0 ? user_heatflux : NaN
 
     τ_f_local = zeros(Float64, 3)
     wθ_local  = zeros(Float64, 1)
@@ -385,11 +390,11 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                             qv_sfc  = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
                             CM_MOST!(τ_f_local, wθ_local, wqv_local,
                                      ρ, u_inside, 0.0, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
-                                     qv_in, qv_sfc, 2e-4, 2e-4)
+                                     qv_in, qv_sfc, 2e-4, 2e-4)   # NaN: see wθ_bc
                         else
                             CM_MOST!(τ_f_local, wθ_local,
                                      ρ, u_inside, 0.0, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
-                                     0.1, 0.01)
+                                     0.1, 0.01, wθ_bc)
                         end
 
                         F_surf[i, 2] = τ_f_local[1]
@@ -674,7 +679,23 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
     ifirst_wall_node    = inputs[:ifirst_wall_node_index]::Int
     δhf                 = inputs[:δhf]
     user_heatflux       = inputs[:user_heatflux]
-    
+    # THE FLUX MOST IS ALLOWED TO SEE. With :user_heatflux set, mod_inputs.jl
+    # puts δhf at 1 and the θ surface term below becomes ρ·user_heatflux --
+    # MOST's own w'θ' is discarded. But θ*, and through it L, ψ_m and the DRAG,
+    # were still being built from θ_sfc, a free prognostic node that nothing
+    # pins: the momentum flux carried a stability correction diagnosed from a
+    # heat flux the model does not apply. Handing the imposed flux to CM_MOST!
+    # closes that loop -- θ* = -w'θ'/u*, Q_H = ρ·cp·w'θ' -- and is also far
+    # better conditioned, since L then depends on u* alone. NaN keeps the
+    # classic air/surface-difference closure when no flux is prescribed.
+    #
+    # DRY BRANCH ONLY. The moist branch below builds its surface energy flux
+    # from MOST's own w'θ' and has never consulted δhf, so handing it the
+    # imposed flux would quietly redefine what :user_heatflux means for a moist
+    # deck. That is a separate decision from this fix; it keeps the classic
+    # closure until someone makes it.
+    wθ_bc               = δhf == 1.0 ? user_heatflux : NaN
+
     for iface = 1:nfaces_bdy
         if (lbdy_fluxes)
             F_surf .= 0.0
@@ -769,11 +790,11 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     qv_sfc = PhysConst.salt_factor * qsat(T_sfc, p_sfc, PhysConst)
                                     CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]), @view(wqv[iface,i,j,:]),
                                             ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
-                                            qv_in, qv_sfc, 2e-4, 2e-4)
+                                            qv_in, qv_sfc, 2e-4, 2e-4)   # NaN: see wθ_bc
                                 else
                                     CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,:]),
                                             ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside, PhysConst,
-                                            0.1, 0.01)
+                                            0.1, 0.01, wθ_bc)
                                 end
                                 # @info τ_f[iface,i,j,1], τ_f[iface,i,j,2], τ_f[iface,i,j,3]
                                 F_surf[i,j,2] = τ_f[iface,i,j,1]

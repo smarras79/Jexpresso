@@ -59,6 +59,38 @@ The 3D version is analogous, looping on `nfaces_bdy` and using `poin_in_bdy_face
 4. Integrates over the boundary segment/face with `compute_segment_integral!` or `compute_surface_integral!`;
 5. Performs DSS and adds the result to the global RHS: `RHS[:,ieq] .+= S_flux[:,ieq]`.
 
+Note that the volumetric SGS diffusion assembles its weak form **without** a
+boundary term, so the natural condition there is zero diffusive flux at every
+boundary and the wall flux is exactly what `CM_MOST!` supplies. The two do not
+double-count.
+
+#### 2.2.1 MOST guard rails
+
+Businger-Dyer MOST is singular in two limits an LES surface layer visits at some
+node on almost every step: `|u| -> 0` at a convergence line between thermals
+(which sends `L ~ u*^2 -> 0` and `zeta = z/L -> -inf`), and `Q_H -> 0` near
+neutral. Three deck keys bound them; all three have defaults, so no deck has to
+set them.
+
+| key | default | what it bounds |
+|---|---|---|
+| `:most_u_min` | `0.1` m/s | gustiness floor on the wind speed entering the **drag coefficient**. Not a floor on the stress: the stress direction is divided by the same floored speed, so `tau` stays linear in `u_i` and vanishes with it. `0` removes the floor and the guard with it. |
+| `:most_zeta_min` | `-5.0` | lower bound on `z/L` (unstable side). Must be `< 0`. |
+| `:most_zeta_max` | `2.0` | upper bound on `z/L` (stable side). Must be `> 0`. |
+
+The iteration itself runs in `1/L` rather than `L`, so the neutral limit
+(`1/L = 0`) is approached continuously from both sides and needs no special
+case, and `zeta` and `zeta0` stay mutually consistent when a bound binds.
+
+When a deck sets `:user_heatflux`, `mod_inputs.jl` puts `δhf` at 1 and the θ
+surface term becomes `ρ·user_heatflux` — MOST's own `w'θ'` is discarded. In that
+case the **dry** branch now also hands the imposed flux to `CM_MOST!`, so
+`θ* = -w'θ'/u*` and the stability correction on the *drag* is built from the flux
+the model actually applies rather than from a free surface node that nothing
+pins. The moist branch builds its surface energy flux from MOST's own `w'θ'` and
+has never consulted `δhf`, so it keeps the classic air/surface-difference
+closure.
+
 ### 2.3 Linear-solve machinery
 
 The variant used by elliptic problems is `apply_boundary_conditions_lin_solve!`, which dispatches to either the dense or the sparse kernel:

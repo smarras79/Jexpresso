@@ -38,6 +38,27 @@ Base.@kwdef mutable struct SGS_SMAG{T <: AbstractFloat, dims1, backend, VT} <: A
     # once, at setup, where the mesh and its zmin are in scope.
     zwall::VT  = KernelAbstractions.zeros(backend, T, dims1)
 
+    # BASE-STATE POTENTIAL TEMPERATURE, and the flag that says whether it is
+    # needed. Under :SOL_VARS_TYPE => PERT() the deck's user_primitives! hands
+    # compute_sgs_cache! the PERTURBATION theta,
+    #     uprimitive[5] = (u[5]+qe[5])/rho - qe[5]/qe[1],
+    # which is the right thing to DIFFUSE (the base state is in hydrostatic
+    # balance and must not be) but the wrong thing to build N2 from. N2 is
+    # (g/theta)*dtheta/dz on the TOTAL field: dividing g by an O(0.1 K)
+    # perturbation that changes sign node to node, and dropping the base-state
+    # stratification from dtheta/dz entirely, turns f_Ri into a grid-scale
+    # multiplier swinging between 0 (mixing off) and ~3 -- incoherent exactly
+    # where a stratified LES is most sensitive to it.
+    #
+    # theta_base[ip] = qe[ip,5]/qe[ip,1] restores both halves: the cache adds
+    # it to uprimitive[5] for the denominator and folds it into the collocation
+    # derivative for dtheta/dz, so the sum IS the derivative of the total.
+    # Filled once at setup (qe is static); left zeroed with lpert = false under
+    # TOTAL(), where uprimitive[5] is already the total and the branch is a
+    # compile-time-predictable no-op.
+    lpert::Bool = false
+    theta_base::VT = KernelAbstractions.zeros(backend, T, dims1)
+
     # per-point caches (size npoin) — zeroed at construction, filled by compute_sgs_cache!
     μ_turb::VT = KernelAbstractions.zeros(backend, T, dims1)  # turbulent viscosity
     f_Ri::VT   = KernelAbstractions.zeros(backend, T, dims1)  # Richardson correction factor
@@ -98,6 +119,27 @@ Base.@kwdef mutable struct SGS_VREM{T <: AbstractFloat, dims1, backend, VT} <: A
     # lwall_damping is on (left at zero otherwise, which disables the limit
     # node by node). Same contract as SGS_SMAG.zwall.
     zwall::VT  = KernelAbstractions.zeros(backend, T, dims1)
+
+    # BASE-STATE POTENTIAL TEMPERATURE, and the flag that says whether it is
+    # needed. Under :SOL_VARS_TYPE => PERT() the deck's user_primitives! hands
+    # compute_sgs_cache! the PERTURBATION theta,
+    #     uprimitive[5] = (u[5]+qe[5])/rho - qe[5]/qe[1],
+    # which is the right thing to DIFFUSE (the base state is in hydrostatic
+    # balance and must not be) but the wrong thing to build N2 from. N2 is
+    # (g/theta)*dtheta/dz on the TOTAL field: dividing g by an O(0.1 K)
+    # perturbation that changes sign node to node, and dropping the base-state
+    # stratification from dtheta/dz entirely, turns f_Ri into a grid-scale
+    # multiplier swinging between 0 (mixing off) and ~3 -- incoherent exactly
+    # where a stratified LES is most sensitive to it.
+    #
+    # theta_base[ip] = qe[ip,5]/qe[ip,1] restores both halves: the cache adds
+    # it to uprimitive[5] for the denominator and folds it into the collocation
+    # derivative for dtheta/dz, so the sum IS the derivative of the total.
+    # Filled once at setup (qe is static); left zeroed with lpert = false under
+    # TOTAL(), where uprimitive[5] is already the total and the branch is a
+    # compile-time-predictable no-op.
+    lpert::Bool = false
+    theta_base::VT = KernelAbstractions.zeros(backend, T, dims1)
 
     # per-point caches (size npoin)
     μ_turb::VT = KernelAbstractions.zeros(backend, T, dims1)
@@ -307,6 +349,27 @@ Base.@kwdef mutable struct SGS_DSGS{T <: AbstractFloat, dims1, dimsE, backend, V
     # read only when ladd_smagorinsky is on (the residual viscosity has no
     # mixing length to limit).
     zwall::VT  = KernelAbstractions.zeros(backend, T, dims1)
+
+    # BASE-STATE POTENTIAL TEMPERATURE, and the flag that says whether it is
+    # needed. Under :SOL_VARS_TYPE => PERT() the deck's user_primitives! hands
+    # compute_sgs_cache! the PERTURBATION theta,
+    #     uprimitive[5] = (u[5]+qe[5])/rho - qe[5]/qe[1],
+    # which is the right thing to DIFFUSE (the base state is in hydrostatic
+    # balance and must not be) but the wrong thing to build N2 from. N2 is
+    # (g/theta)*dtheta/dz on the TOTAL field: dividing g by an O(0.1 K)
+    # perturbation that changes sign node to node, and dropping the base-state
+    # stratification from dtheta/dz entirely, turns f_Ri into a grid-scale
+    # multiplier swinging between 0 (mixing off) and ~3 -- incoherent exactly
+    # where a stratified LES is most sensitive to it.
+    #
+    # theta_base[ip] = qe[ip,5]/qe[ip,1] restores both halves: the cache adds
+    # it to uprimitive[5] for the denominator and folds it into the collocation
+    # derivative for dtheta/dz, so the sum IS the derivative of the total.
+    # Filled once at setup (qe is static); left zeroed with lpert = false under
+    # TOTAL(), where uprimitive[5] is already the total and the branch is a
+    # compile-time-predictable no-op.
+    lpert::Bool = false
+    theta_base::VT = KernelAbstractions.zeros(backend, T, dims1)
 
     # per-ELEMENT DynSGS coefficients (size nelem), filled once per RHS call by
     # compute_dsgs_viscosity!(::SGS_DSGS, ::NSD_3D).

@@ -71,59 +71,184 @@ const a_h = 16.0              # heat stability parameter (unstable)
 const b_m = 5.0               # momentum stability parameter (stable)
 const b_h = 5.0               # heat stability parameter (stable)
 
+#==============================================================================
+ MOST GUARD RAILS
+
+ Businger-Dyer MOST has two singular limits, and an LES surface layer visits
+ both of them at some node on almost every step:
+
+   |u| -> 0   at a convergence line between thermals. u* -> 0, Q_H -> 0 with
+              it, and L ~ u*^2 -> 0, so zeta = z/L -> -inf. Nothing in the
+              formulation bounds the stability correction that comes back.
+   Q_H -> 0   near-neutral. The old code returned a POSITIVE L = 1e6 here
+              regardless of the sign of the flux, i.e. it reported a STABLE
+              surface layer in the middle of a convective one. That is a sign
+              discontinuity in the middle of the map a 20-step undamped Picard
+              iteration is iterating, with no convergence flag and no fallback.
+
+ Three settings fix both, and they are Refs rather than deck arguments because
+ CM_MOST! is called per boundary node per RHS evaluation and a kwargs call
+ there allocates a NamedTuple every time (the same reason the _surface_scales
+ helpers below are positional-only). params_setup.jl sets them once from
+ :most_u_min / :most_zeta_min / :most_zeta_max.
+
+   MOST_U_MIN     Gustiness floor on the wind speed entering the DRAG
+                  COEFFICIENT [m/s]. Not a floor on the stress: CM_MOST!
+                  divides the stress direction by the same floored speed, so
+                  tau stays linear in u_i and goes to zero with it, in a
+                  well-defined direction, instead of turning into a
+                  finite-magnitude random walk.
+   MOST_ZETA_*    Bounds on z/L. The correction is evaluated at the bound
+                  rather than extrapolated past it; [-5, 2] is the usual
+                  range over which Businger-Dyer was fitted.
+
+ The iteration itself is recast in 1/L rather than L. That is not cosmetic:
+ 1/L -> 0 IS the neutral limit and it is approached continuously from both
+ sides, so the near-neutral case needs no special branch and cannot flip sign;
+ zeta = z/L and zeta0 = z0/L are then z*invL and z0*invL, which stay mutually
+ consistent when the bound binds (clamping zeta alone would leave the
+ roughness term computed from an L the rest of the correction no longer uses).
+==============================================================================#
+const MOST_U_MIN    = Ref(0.1)     # :most_u_min    [m/s]
+const MOST_ZETA_MIN = Ref(-5.0)    # :most_zeta_min
+const MOST_ZETA_MAX = Ref(2.0)     # :most_zeta_max
+const MOST_MAXITER  = Ref(20)
+# Under-relaxation on 1/L. Undamped Picard on Businger-Dyer oscillates on the
+# unstable side; 0.7 converges in a handful of steps over the whole clamped
+# range without slowing the neutral case noticeably.
+const MOST_RELAX    = Ref(0.7)
+# |L| past which every z of interest is neutral. Only the sign matters here,
+# and getting it right is the whole point -- see the header.
+const MOST_L_BIG    = 1.0e6
+
+@inline function most_clamp_invL(z_ref, invL)
+    (isfinite(invL) && z_ref > 0.0) || return 0.0
+    return clamp(invL, MOST_ZETA_MIN[] / z_ref, MOST_ZETA_MAX[] / z_ref)
+end
+
+# 1/L = -kappa*g*Q_H / (rho*cp*u*^3*theta).  Reciprocal of obukhov_length
+# below, including its rho, and returns the neutral 0 rather than an Inf or a
+# NaN for every degenerate input.
+@inline function most_inv_L(u_star, theta_ref, Q_H, PhysConst, rho)
+    den = rho * PhysConst.cp * u_star^3 * theta_ref
+    (isfinite(den) && den > 0.0) || return 0.0
+    invL = -PhysConst.karman * PhysConst.g * Q_H / den
+    return isfinite(invL) ? invL : 0.0
+end
+
+#------------------------------------------------------------------------------
+# The shared fixed point behind every _surface_scales_* below.
+#
+# wtheta_imposed = NaN  -> classic MOST: theta* is diagnosed from the air/surface
+#                          theta difference.
+# wtheta_imposed finite -> PRESCRIBED SURFACE HEAT FLUX: theta* = -wtheta/u*, so
+#                          Q_H = rho*cp*wtheta is fixed and L is built from the
+#                          flux the model actually applies. Used when the deck
+#                          sets :user_heatflux, where the alternative is a drag
+#                          stability-corrected by a flux that is then thrown
+#                          away (BCs.jl discards MOST's own wtheta when
+#                          delta_hf = 1) and diagnosed from a free surface node
+#                          that nothing pins.
+#
+# Returns (u_star, theta_star, invL, denom_h, converged). denom_h is handed
+# back so the moist caller can build q* on the same stability correction
+# instead of recomputing psi_h.
+#------------------------------------------------------------------------------
+function _most_iterate(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h,
+                       PhysConst, rho, wtheta_imposed)
+    κ  = PhysConst.karman
+    cp = PhysConst.cp
+
+    lnzm = log(z_ref / z0_m)
+    lnzh = log(z_ref / z0_h)
+    if !(isfinite(lnzm) && lnzm > 0.0 && isfinite(lnzh) && lnzh > 0.0 &&
+         isfinite(theta_ref) && theta_ref > 0.0 && rho > 0.0)
+        # z_ref below the roughness length, a non-positive theta, or a bad rho:
+        # there is no surface layer to model. Zero fluxes beat a NaN that
+        # reaches the RHS.
+        return (0.0, 0.0, 0.0, lnzh, false)
+    end
+
+    u_eff = max(u_ref, MOST_U_MIN[])
+    lflux = isfinite(wtheta_imposed)
+
+    u_star     = κ * u_eff / lnzm
+    theta_star = lflux ? -wtheta_imposed / u_star :
+                          κ * (theta_ref - theta_s) / lnzh
+    invL = most_clamp_invL(z_ref,
+             most_inv_L(u_star, theta_ref, -rho * cp * u_star * theta_star, PhysConst, rho))
+
+    w      = MOST_RELAX[]
+    dh     = lnzh
+    conv   = false
+    for _ = 1:MOST_MAXITER[]
+        ζ   = z_ref * invL
+        ζ0m = z0_m * invL
+        ζ0h = z0_h * invL
+
+        dm = lnzm - psi_m(ζ) + psi_m(ζ0m)
+        dh = lnzh - psi_h(ζ) + psi_h(ζ0h)
+        # Both are comfortably positive across the clamped zeta range (the
+        # unstable branch tends to (1/4)log(z/z0), not to zero). This is a net
+        # against a pathological roughness ratio, not a physical bound.
+        dm = max(dm, 0.1 * lnzm)
+        dh = max(dh, 0.1 * lnzh)
+
+        u_star_new     = κ * u_eff / dm
+        theta_star_new = lflux ? -wtheta_imposed / u_star_new :
+                                  κ * (theta_ref - theta_s) / dh
+        invL_raw = most_inv_L(u_star_new, theta_ref,
+                              -rho * cp * u_star_new * theta_star_new, PhysConst, rho)
+        invL_new = most_clamp_invL(z_ref, invL + w * (invL_raw - invL))
+
+        # Converge on zeta, which is what the correction is a function of --
+        # not on L, whose relative change is meaningless as it passes through
+        # the neutral limit.
+        conv = abs((invL_new - invL) * z_ref) < 1.0e-5
+        u_star     = u_star_new
+        theta_star = theta_star_new
+        invL       = invL_new
+        conv && break
+    end
+
+    if !(isfinite(u_star) && isfinite(theta_star))
+        # Fall back to the neutral log law rather than propagating a NaN.
+        u_star     = κ * u_eff / lnzm
+        theta_star = lflux ? -wtheta_imposed / u_star :
+                              κ * (theta_ref - theta_s) / lnzh
+        invL = 0.0
+        conv = false
+    end
+    return (u_star, theta_star, invL, dh, conv)
+end
+
 # Internal positional-only helpers — no keyword arguments to avoid NamedTuple heap allocation
 # per boundary-point call.  The kwargs version of _surface_scales below delegates here.
 
 function _surface_scales_dry(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho)
-    κ  = PhysConst.karman
-    cp = PhysConst.cp
-    u_star     = κ * u_ref / log(z_ref / z0_m)
-    theta_star = κ * (theta_ref - theta_s) / log(z_ref / z0_h)
-    Q_H = -rho * cp * u_star * theta_star
-    L   = obukhov_length(u_star, theta_ref, Q_H, PhysConst)
-    for _ in 1:20
-        zeta    = z_ref / L
-        zeta0_m = z0_m / L
-        zeta0_h = z0_h / L
-        u_star_new     = κ * u_ref / (log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m))
-        theta_star_new = κ * (theta_ref - theta_s) / (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h))
-        Q_H_new = -rho * cp * u_star_new * theta_star_new
-        L_new   = obukhov_length(u_star_new, theta_ref, Q_H_new, PhysConst)
-        err = abs(L_new - L) / max(abs(L), abs(L_new))
-        u_star     = u_star_new
-        theta_star = theta_star_new
-        Q_H        = Q_H_new
-        L          = L_new
-        err < 1e-4 && break
-    end
+    return _surface_scales_dry(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho, NaN)
+end
+
+function _surface_scales_dry(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho,
+                             wtheta_imposed)
+    u_star, theta_star, _, _, _ =
+        _most_iterate(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho, wtheta_imposed)
     return u_star, theta_star
 end
 
 function _surface_scales_moist(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho, q_ref, q_s)
-    κ  = PhysConst.karman
-    cp = PhysConst.cp
-    u_star     = κ * u_ref / log(z_ref / z0_m)
-    theta_star = κ * (theta_ref - theta_s) / log(z_ref / z0_h)
-    q_star     = κ * (q_ref - q_s) / log(z_ref / z0_h)
-    Q_H = -rho * cp * u_star * theta_star
-    L   = obukhov_length(u_star, theta_ref, Q_H, PhysConst)
-    for _ in 1:20
-        zeta    = z_ref / L
-        zeta0_m = z0_m / L
-        zeta0_h = z0_h / L
-        u_star_new     = κ * u_ref / (log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m))
-        theta_star_new = κ * (theta_ref - theta_s) / (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h))
-        q_star_new     = κ * (q_ref - q_s) / (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h))
-        Q_H_new = -rho * cp * u_star_new * theta_star_new
-        L_new   = obukhov_length(u_star_new, theta_ref, Q_H_new, PhysConst)
-        err = abs(L_new - L) / max(abs(L), abs(L_new))
-        u_star     = u_star_new
-        theta_star = theta_star_new
-        q_star     = q_star_new
-        Q_H        = Q_H_new
-        L          = L_new
-        err < 1e-4 && break
-    end
+    return _surface_scales_moist(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho,
+                                 q_ref, q_s, NaN)
+end
+
+function _surface_scales_moist(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho,
+                               q_ref, q_s, wtheta_imposed)
+    κ = PhysConst.karman
+    u_star, theta_star, _, dh, _ =
+        _most_iterate(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, rho, wtheta_imposed)
+    # Same stability correction as heat (Businger-Dyer), so q* rides on the
+    # denominator the iteration converged on rather than on a fresh psi_h call.
+    q_star = dh > 0.0 ? κ * (q_ref - q_s) / dh : 0.0
     return u_star, theta_star, q_star
 end
 
@@ -140,14 +265,42 @@ end
 
 # --- Hot-path CM_MOST! overloads: all positional, no kwargs ---
 
+# The stress direction. |u| is floored by the SAME MOST_U_MIN the drag
+# coefficient sees, so tau_i = -rho*u*^2*u_i/max(|u|,u_min) stays linear in u_i
+# and vanishes with it. The old form divided by |u| + 2.22e-16, which is a
+# guard against a division by zero and not against anything physical: with a
+# wind floor in u* it would have handed a finite stress an arbitrary direction
+# at every stagnation node.
+@inline function _most_stress!(τ_f, ρ, u_star, u_ref, v_ref, w_ref, u_magnitude)
+    u_eff = max(u_magnitude, MOST_U_MIN[])
+    if !(u_eff > 0.0) || !isfinite(u_star)
+        # Only reachable with :most_u_min => 0 at a node whose tangential wind
+        # is exactly zero. There is no direction to put a stress in.
+        τ_f[1] = 0.0; τ_f[2] = 0.0; τ_f[3] = 0.0
+        return
+    end
+    τ_magnitude = ρ * u_star * u_star
+    τ_f[1] = -τ_magnitude * (u_ref / u_eff)
+    τ_f[2] = -τ_magnitude * (v_ref / u_eff)
+    τ_f[3] = -τ_magnitude * (w_ref / u_eff)
+    return
+end
+
 # Dry (no moisture): z0_m and z0_h are positional
 function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, z0_m, z0_h)
+    CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, z0_m, z0_h, NaN)
+end
+
+# Dry, with a PRESCRIBED surface kinematic heat flux (K m/s). theta*, and so
+# the stability correction on the drag, is built from that flux instead of from
+# the air/surface theta difference; wθ[1] comes back equal to it by
+# construction. See the _most_iterate header.
+function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst,
+                  z0_m, z0_h, wtheta_imposed)
     u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
-    u_star, theta_star = _surface_scales_dry(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst, ρ)
-    τ_magnitude = ρ * u_star^2
-    τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
-    τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
-    τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
+    u_star, theta_star = _surface_scales_dry(u_magnitude, theta_ref, z_ref, theta_s,
+                                             z0_m, z0_h, PhysConst, ρ, wtheta_imposed)
+    _most_stress!(τ_f, ρ, u_star, u_ref, v_ref, w_ref, u_magnitude)
     wθ[1] = -u_star * theta_star
 end
 
@@ -163,28 +316,31 @@ function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_
 end
 
 # Backward compatible version without wq argument (dry, default roughness lengths).
-# Uses _surface_scales_dry directly to avoid allocating a dummy wq array.
 function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst)
-    u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
-    u_star, theta_star = _surface_scales_dry(u_magnitude, theta_ref, z_ref, theta_s,
-                                             0.1, 0.01, PhysConst, ρ)
-    τ_magnitude = ρ * u_star^2
-    τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
-    τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
-    τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
-    wθ[1] = -u_star * theta_star
+    CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst, 0.1, 0.01, NaN)
 end
 
 function CM_MOST!(τ_f, wθ, wqv, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref,
                   PhysConst, qv_in, qv_sfc, z0_m, z0_h)
 
-    CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref,
-             PhysConst, z0_m, z0_h)
+    CM_MOST!(τ_f, wθ, wqv, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref,
+             PhysConst, qv_in, qv_sfc, z0_m, z0_h, NaN)
+end
 
-    # Latent / moisture flux (bulk aerodynamic form using the heat transfer coefficient)
+function CM_MOST!(τ_f, wθ, wqv, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref,
+                  PhysConst, qv_in, qv_sfc, z0_m, z0_h, wtheta_imposed)
+
     u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
-    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h; rho=ρ)
-    wqv[1] = -result.C_H * u_magnitude * (qv_in - qv_sfc)
+    # One fixed point for all three scales, on the same stability correction.
+    # This used to run the dry solve for tau and wtheta and then a SECOND,
+    # independent surface_conditions() solve for the moisture flux, so C_H came
+    # from a different converged L than the one the drag used.
+    u_star, theta_star, q_star =
+        _surface_scales_moist(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h,
+                              PhysConst, ρ, qv_in, qv_sfc, wtheta_imposed)
+    _most_stress!(τ_f, ρ, u_star, u_ref, v_ref, w_ref, u_magnitude)
+    wθ[1]  = -u_star * theta_star
+    wqv[1] = -u_star * q_star
 
     return
 end
@@ -247,18 +403,43 @@ end
 """
     Calculate Obukhov length L from surface fluxes
 
-    L = -u_star³ * T_ref / (κ * g * Q_H)
+    L = -rho * cp * u_star³ * T_ref / (κ * g * Q_H)
 
     where:
     - u_star: friction velocity [m/s]
-    - T_ref: reference temperature [K]  
+    - T_ref: reference potential temperature [K]
     - Q_H: surface sensible heat flux [W/m²]
+    - rho: TOTAL air density at the reference height [kg/m³]
+
+    THE rho IS NOT OPTIONAL AND WAS MISSING. Q_H is handed in as a DYNAMIC flux
+    in W/m² (-rho*cp*u_star*theta_star), so the rho*cp that turns the kinematic
+    u_star*theta_star into it has to appear in the numerator too. Without it
+    this returned L/rho, i.e. |L| about 20% small at sea level, and every
+    zeta = z/L built from it about 20% too large -- a systematic overstatement
+    of the stability correction that grows with altitude as rho falls.
+
+    Callers must pass the TOTAL density. Under :SOL_VARS_TYPE => PERT() that is
+    uaux[ip,1] + qe[ip,1], not uaux[ip,1]; BCs.jl already reconstructs it that
+    way before calling CM_MOST!.
+
+    SIGN CONVENTION, and the second thing that was wrong here: Q_H > 0 is an
+    UPWARD (surface-heating) flux, which is UNSTABLE, which is L < 0. The
+    near-neutral guard used to return +1e6 for either sign, i.e. it reported a
+    stable surface layer in the middle of a convective one -- and it was
+    reached whenever u_star got small, which in an LES surface layer is at
+    some node on essentially every step. The guard now carries the sign of the
+    flux through.
     """
-function obukhov_length(u_star, T_ref, Q_H, PhysConst)
-    if abs(Q_H) < 1e-6
-        return 1e6  # Near-neutral conditions (very large L)
-    end
-    return -u_star^3 * T_ref * PhysConst.cp / (PhysConst.karman * PhysConst.g * Q_H)
+function obukhov_length(u_star, T_ref, Q_H, PhysConst, rho)
+    # L < 0 for Q_H > 0. Q_H == 0 is exactly neutral, where the sign is
+    # immaterial and either bound is as good as the other.
+    Lsign = Q_H > 0.0 ? -1.0 : 1.0
+    (abs(Q_H) > 1e-6 && rho > 0.0 && u_star > 0.0 && isfinite(T_ref)) ||
+        return Lsign * MOST_L_BIG
+    L = -rho * PhysConst.cp * u_star^3 * T_ref / (PhysConst.karman * PhysConst.g * Q_H)
+    isfinite(L) || return Lsign * MOST_L_BIG
+    abs(L) > MOST_L_BIG && return Lsign * MOST_L_BIG
+    return L
 end
 
 """
@@ -378,6 +559,12 @@ function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysCo
     # Check if humidity is provided
     compute_lhf = !isnothing(q_ref) && !isnothing(q_s)
 
+    # Same gustiness floor and zeta bounds as the hot path (see the MOST GUARD
+    # RAILS block): this function reports the transfer coefficients for the
+    # fluxes CM_MOST! applies, so it has to be limited the same way or the two
+    # disagree at exactly the low-wind nodes where the limits bind.
+    u_ref = max(u_ref, MOST_U_MIN[])
+
     # Initial guess assuming neutral conditions
     u_star = κ * u_ref / log(z_ref / z0_m)
     theta_star = κ * (theta_ref - theta_s) / log(z_ref / z0_h)
@@ -385,12 +572,15 @@ function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysCo
 
     # Initial heat flux guess
     Q_H = -rho * cp * u_star * theta_star
-    L = obukhov_length(u_star, theta_ref, Q_H, PhysConst)
+    L = obukhov_length(u_star, theta_ref, Q_H, PhysConst, rho)
 
     # Iterative solution
     for iter in 1:max_iter
-        # Update stability parameter
-        zeta    = z_ref / L
+        # Update stability parameter. Bounding zeta and re-deriving L from the
+        # bound keeps zeta and zeta0 mutually consistent -- clamping zeta alone
+        # would leave the roughness terms on an L the rest no longer uses.
+        zeta = clamp(z_ref / L, MOST_ZETA_MIN[], MOST_ZETA_MAX[])
+        L    = zeta == 0.0 ? L : z_ref / zeta
         zeta0_m = z0_m / L
         zeta0_h = z0_h / L
 
@@ -409,7 +599,7 @@ function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysCo
 
         # Update heat flux and Obukhov length
         Q_H_new = -rho * cp * u_star_new * theta_star_new
-        L_new = obukhov_length(u_star_new, theta_ref, Q_H_new, PhysConst)
+        L_new = obukhov_length(u_star_new, theta_ref, Q_H_new, PhysConst, rho)
 
         # Check convergence
         error = abs(L_new - L) / max(abs(L), abs(L_new))
@@ -432,7 +622,8 @@ function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysCo
     end
 
     # Calculate transfer coefficients
-    zeta = z_ref / L
+    zeta = clamp(z_ref / L, MOST_ZETA_MIN[], MOST_ZETA_MAX[])
+    L    = zeta == 0.0 ? L : z_ref / zeta
     zeta0_m = z0_m / L
     zeta0_h = z0_h / L
 

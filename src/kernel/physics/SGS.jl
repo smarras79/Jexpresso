@@ -28,6 +28,16 @@
 end
 
 #
+# A potential temperature can never legitimately be this small, so this is the
+# floor under the N2 denominator. It used to be 1e-12, which guards against
+# nothing physical: it passes theta = 1e-6 K straight through and hands back
+# g/theta = 1e7. 1 K is unreachable for a real theta and catches the one way
+# this actually goes wrong -- a PERT run whose base state never got filled,
+# leaving theta' in the denominator. N2 = 0 there is the safe answer: f_Ri = 1,
+# i.e. no buoyancy correction rather than an arbitrary one.
+const SGS_THETA_FLOOR = 1.0
+
+#
 # SGS mixing length with the standard near-wall limit
 #
 #     1/ℓ² = 1/(C_s Δ)² + 1/(κ z)²      (Mason & Thomson 1992 with n = 2)
@@ -45,11 +55,26 @@ end
 # following mesh the height above terrain is not currently available at this
 # point, so :lwall_damping must stay false for warped grids.
 #
+# THE z = 0 CASE IS THE WALL, NOT A MISSING WALL DISTANCE. The guard here used
+# to read `(lwall_damping && z > 0.0) || return CsΔ2`, which returned the
+# UNDAMPED (C_sΔ)² on every boundary node -- params_setup.jl builds zwall as
+# max(z - zmin, 0), so every node on the lower boundary carries exactly 0.0 and
+# took that branch. The limiter therefore ran backwards at the one place it
+# exists for: on the LESICP2 64x64x60 mesh ℓ² was 40.96 m² ON the wall against
+# 6.43 m² at the first node above it, a 6.4x spike sitting on the node with the
+# smallest h_z (6.91 m) and the one the surface flux is injected into. That
+# single node carried ~30% of the explicit vertical viscous budget at Δt = 0.5
+# while it should carry ~0. κz → 0 as z → 0 is the whole point of Mason &
+# Thomson: the wall model supplies the flux there, the eddy viscosity must not.
 @inline function sgs_mixing_length2(C_s2, Δ2, z, karman, lwall_damping)
     CsΔ2 = C_s2 * Δ2
-    (lwall_damping && z > 0.0) || return CsΔ2
-    κz2 = (karman * z)^2
-    return CsΔ2 * κz2 / (CsΔ2 + κz2)
+    lwall_damping || return CsΔ2
+    κz2 = (karman * max(z, zero(z)))^2
+    den = CsΔ2 + κz2
+    # den == 0 only if C_sΔ and κz both vanish (C_s = 0, or a degenerate
+    # element ON the wall); ℓ² is 0 there either way, and this keeps it out of
+    # 0/0 rather than seeding the viscosity field with a NaN.
+    return den > 0.0 ? CsΔ2 * κz2 / den : zero(CsΔ2)
 end
 
 #----------------------------------------------------------------------
@@ -2191,6 +2216,8 @@ function compute_sgs_cache!(sgs::SGS_DSGS,
     karman  = sgs.karman
     lwall_damping = sgs.lwall_damping
     zwall   = sgs.zwall
+    lpert      = sgs.lpert
+    theta_base = sgs.theta_base
     μ_e     = sgs.μ_el[iel]
 
     for m = 1:ngl, l = 1:ngl, k = 1:ngl
@@ -2214,6 +2241,15 @@ function compute_sgs_cache!(sgs::SGS_DSGS,
             dθdξ += dψ[ii,k] * uprimitive[ii,l,m,5]
             dθdη += dψ[ii,l] * uprimitive[k,ii,m,5]
             dθdζ += dψ[ii,m] * uprimitive[k,l,ii,5]
+            if lpert
+                # PERT: uprimitive[5] is theta', so this sum is dtheta'/dz and
+                # misses the base-state stratification -- the whole of N2 above
+                # the boundary layer. Same operator, same nodes, so the two
+                # sums add to the derivative of the TOTAL theta exactly.
+                dθdξ += dψ[ii,k] * theta_base[connijk[iel,ii,l,m]]
+                dθdη += dψ[ii,l] * theta_base[connijk[iel,k,ii,m]]
+                dθdζ += dψ[ii,m] * theta_base[connijk[iel,k,l,ii]]
+            end
         end
 
         dξdx_klm = dξdx[iel,k,l,m];  dξdy_klm = dξdy[iel,k,l,m];  dξdz_klm = dξdz[iel,k,l,m]
@@ -2246,9 +2282,9 @@ function compute_sgs_cache!(sgs::SGS_DSGS,
         N2_val = 0.0
         f_Ri_val = 1.0
         if lrichardson
-            θ_ref  = uprimitive[k,l,m,5]
+            θ_ref  = uprimitive[k,l,m,5] + theta_base[ip]
             dθdz   = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
-            N2_val = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+            N2_val = abs(θ_ref) > SGS_THETA_FLOOR ? (g / θ_ref) * dθdz : 0.0
             Ri     = Sij2_val > 1e-12 ? N2_val / Sij2_val : 0.0
             f_Ri_val = sgs_stability_function(Ri, Pr_t)
         end
@@ -2387,6 +2423,8 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
     karman  = sgs.karman
     lwall_damping = sgs.lwall_damping
     zwall   = sgs.zwall
+    lpert      = sgs.lpert
+    theta_base = sgs.theta_base
 
     for m = 1:ngl, l = 1:ngl, k = 1:ngl
         ip = connijk[iel, k, l, m]
@@ -2411,6 +2449,15 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
             dθdξ  += dψ[ii,k] * uprimitive[ii,l,m,5]
             dθdη  += dψ[ii,l] * uprimitive[k,ii,m,5]
             dθdζ  += dψ[ii,m] * uprimitive[k,l,ii,5]
+            if lpert
+                # PERT: uprimitive[5] is theta', so this sum is dtheta'/dz and
+                # misses the base-state stratification -- the whole of N2 above
+                # the boundary layer. Same operator, same nodes, so the two
+                # sums add to the derivative of the TOTAL theta exactly.
+                dθdξ += dψ[ii,k] * theta_base[connijk[iel,ii,l,m]]
+                dθdη += dψ[ii,l] * theta_base[connijk[iel,k,ii,m]]
+                dθdζ += dψ[ii,m] * theta_base[connijk[iel,k,l,ii]]
+            end
             if micro > 1
                 ip_ii = connijk[iel,ii,l,m]
                 ip_il = connijk[iel,k,ii,m]
@@ -2456,9 +2503,9 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
         N2_val = 0.0
         if lrichardson
             if micro == 1
-                θ_ref  = uprimitive[k,l,m,5]
+                θ_ref  = uprimitive[k,l,m,5] + theta_base[ip]
                 dθdz   = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
-                N2_val = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+                N2_val = abs(θ_ref) > SGS_THETA_FLOOR ? (g / θ_ref) * dθdz : 0.0
             else
                 T_ref = mp.Tabs[ip]
                 p_ref = uaux[ip, end]
@@ -2533,6 +2580,8 @@ function compute_sgs_cache!(sgs::SGS_VREM,
     karman        = sgs.karman
     lwall_damping = sgs.lwall_damping
     zwall         = sgs.zwall
+    lpert      = sgs.lpert
+    theta_base = sgs.theta_base
 
     for m = 1:ngl, l = 1:ngl, k = 1:ngl
         ip = connijk[iel, k, l, m]
@@ -2557,6 +2606,15 @@ function compute_sgs_cache!(sgs::SGS_VREM,
             dθdξ  += dψ[ii,k] * uprimitive[ii,l,m,5]
             dθdη  += dψ[ii,l] * uprimitive[k,ii,m,5]
             dθdζ  += dψ[ii,m] * uprimitive[k,l,ii,5]
+            if lpert
+                # PERT: uprimitive[5] is theta', so this sum is dtheta'/dz and
+                # misses the base-state stratification -- the whole of N2 above
+                # the boundary layer. Same operator, same nodes, so the two
+                # sums add to the derivative of the TOTAL theta exactly.
+                dθdξ += dψ[ii,k] * theta_base[connijk[iel,ii,l,m]]
+                dθdη += dψ[ii,l] * theta_base[connijk[iel,k,ii,m]]
+                dθdζ += dψ[ii,m] * theta_base[connijk[iel,k,l,ii]]
+            end
             if micro > 1
                 ip_ii = connijk[iel,ii,l,m]
                 ip_il = connijk[iel,k,ii,m]
@@ -2600,9 +2658,9 @@ function compute_sgs_cache!(sgs::SGS_VREM,
         N2_val = 0.0
         if lrichardson
             if micro == 1
-                θ_ref  = uprimitive[k,l,m,5]
+                θ_ref  = uprimitive[k,l,m,5] + theta_base[ip]
                 dθdz   = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
-                N2_val = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+                N2_val = abs(θ_ref) > SGS_THETA_FLOOR ? (g / θ_ref) * dθdz : 0.0
             else
                 T_ref = mp.Tabs[ip]
                 p_ref = uaux[ip, end]
@@ -2707,6 +2765,8 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
     karman  = sgs.karman
     lwall_damping = sgs.lwall_damping
     zwall   = sgs.zwall
+    lpert      = sgs.lpert
+    theta_base = sgs.theta_base
 
     for l = 1:ngl, k = 1:ngl
         ip = connijk[iel, k, l]
@@ -2724,6 +2784,12 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
             dvdη  += dψ[ii,l] * uprimitive[k,ii,3]
             dθdξ  += dψ[ii,k] * uprimitive[ii,l,4]
             dθdη  += dψ[ii,l] * uprimitive[k,ii,4]
+            if lpert
+                # See the 3D note: under PERT this sum is dtheta'/dy and the
+                # base-state stratification has to be added back before N2.
+                dθdξ += dψ[ii,k] * theta_base[connijk[iel,ii,l]]
+                dθdη += dψ[ii,l] * theta_base[connijk[iel,k,ii]]
+            end
             if micro > 1
                 ip_ii = connijk[iel,ii,l]
                 ip_il = connijk[iel,k,ii]
@@ -2756,9 +2822,9 @@ function compute_sgs_cache!(sgs::SGS_SMAG,
         N2_val = 0.0
         if lrichardson
             if micro == 1
-                θ_ref  = uprimitive[k,l,4]
+                θ_ref  = uprimitive[k,l,4] + theta_base[ip]
                 dθdy   = dθdξ*dξdy_kl + dθdη*dηdy_kl
-                N2_val = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdy : 0.0
+                N2_val = abs(θ_ref) > SGS_THETA_FLOOR ? (g / θ_ref) * dθdy : 0.0
             else
                 T_ref = mp.Tabs[ip]
                 p_ref = uaux[ip, end]
@@ -2830,6 +2896,8 @@ function compute_sgs_cache!(sgs::SGS_VREM,
     karman        = sgs.karman
     lwall_damping = sgs.lwall_damping
     zwall         = sgs.zwall
+    lpert      = sgs.lpert
+    theta_base = sgs.theta_base
 
     for l = 1:ngl, k = 1:ngl
         ip = connijk[iel, k, l]
@@ -2847,6 +2915,12 @@ function compute_sgs_cache!(sgs::SGS_VREM,
             dvdη  += dψ[ii,l] * uprimitive[k,ii,3]
             dθdξ  += dψ[ii,k] * uprimitive[ii,l,4]
             dθdη  += dψ[ii,l] * uprimitive[k,ii,4]
+            if lpert
+                # See the 3D note: under PERT this sum is dtheta'/dy and the
+                # base-state stratification has to be added back before N2.
+                dθdξ += dψ[ii,k] * theta_base[connijk[iel,ii,l]]
+                dθdη += dψ[ii,l] * theta_base[connijk[iel,k,ii]]
+            end
             if micro > 1
                 ip_ii = connijk[iel,ii,l]
                 ip_il = connijk[iel,k,ii]
@@ -2875,9 +2949,9 @@ function compute_sgs_cache!(sgs::SGS_VREM,
         N2_val = 0.0
         if lrichardson
             if micro == 1
-                θ_ref  = uprimitive[k,l,4]
+                θ_ref  = uprimitive[k,l,4] + theta_base[ip]
                 dθdy   = dθdξ*dξdy_kl + dθdη*dηdy_kl
-                N2_val = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdy : 0.0
+                N2_val = abs(θ_ref) > SGS_THETA_FLOOR ? (g / θ_ref) * dθdy : 0.0
             else
                 T_ref = mp.Tabs[ip]
                 p_ref = uaux[ip, end]

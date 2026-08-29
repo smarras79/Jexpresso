@@ -615,7 +615,12 @@ function les_statistics(u, params, ::Any)
                     u = uaux[ip1,2] / ρ
                     v = uaux[ip1,3] / ρ
                 end
-                local_step[ix] += bc.κ_v * sqrt(u*u + v*v) / log(z_in / bc.z0_m)
+                # Same gustiness floor as CM_MOST! (MOST_U_MIN, see the MOST
+                # GUARD RAILS block in kernel/physics/CM_MOST.jl), so the
+                # reported u* does not diverge from the applied one at the
+                # low-wind nodes. This is still the NEUTRAL log law -- no psi_m
+                # -- which is what it has always been.
+                local_step[ix] += bc.κ_v * max(sqrt(u*u + v*v), MOST_U_MIN[]) / log(z_in / bc.z0_m)
             end
         end
         MPI.Allreduce!(local_step, global_step, MPI.SUM, comm)
