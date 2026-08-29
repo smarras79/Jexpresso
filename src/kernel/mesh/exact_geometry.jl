@@ -267,18 +267,7 @@ function _resolve_shape(tag::AbstractString, spec, xs, ys, comm, rank, suppress)
         end
         circle, rresid = fit
         if rresid > 1.0e-6
-            # THE COMMONEST CAUSE IS h-REFINEMENT, so say so. Refining a
-            # straight-sided grid inserts each new boundary vertex at the
-            # MIDPOINT OF A CHORD — a sagitta inside the circle — while the
-            # vertices it inherited stay on it. The fit then sees two clusters
-            # and, being least squares, lands exactly between them: on
-            # shock_circle at :init_refine_lvl => 1 that is r = 0.19809 instead
-            # of 0.2, with both clusters at the SAME residual from it. No
-            # residual-based outlier rejection can separate them, and the ones
-            # that could be tuned to (largest-radius, bimodality) accept a
-            # polygon tagged :circle by mistake, which is the failure this check
-            # exists to prevent. So the fit stays strict and the deck states the
-            # circle instead — the .geo already has the numbers.
+           
             println_rank(string(" #   :exact_geometry \"", tag,
                                 "\" => :circle REFUSED: the boundary vertices are not on a circle ",
                                 "(best fit ", circle, " leaves a relative residual of ", rresid,
@@ -340,25 +329,6 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
                  msg_rank = rank, suppress = mesh.msg_suppress)
 
     #-----------------------------------------------------------------------------
-    # Boundary displacement field: EVERY node of a curved boundary edge, the
-    # linear vertices included.
-    #
-    # The vertices have to move too, and the reason is h-refinement. On a grid
-    # straight from gmsh they already sit on the geometry and their δ is
-    # round-off — but refining that grid inserts each new boundary vertex at the
-    # MIDPOINT OF A CHORD, a full sagitta inside the circle (3.8e-3 on
-    # shock_circle at :init_refine_lvl => 1). Leaving those put and snapping only
-    # the nodes between them would give a boundary that alternates between the
-    # circle and a point well inside it — worse than the polygon it replaced.
-    #
-    # Moving a vertex is safe on its own (a vertex is ONE global node, so every
-    # element sharing it sees the same new position) but it breaks the shortcut
-    # the previous version relied on: with δ ≠ 0 at the element corners, the
-    # transfinite blend of a curved edge no longer vanishes on the two edges
-    # adjacent to it. The blend below is therefore the FULL Gordon-Hall map,
-    # corner terms and all, and every element edge — not just the curved ones —
-    # carries a displacement. See the blend for why that is still conforming.
-    #-----------------------------------------------------------------------------
     δx = zeros(TFloat, mesh.npoin)
     δy = zeros(TFloat, mesh.npoin)
     on_curved = falses(mesh.npoin)
@@ -397,15 +367,7 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
         end
         ncurved_tags += 1
 
-        # A vertex counts as needing to move only when it is off the geometry by
-        # something GEOMETRIC rather than by round-off. On a grid straight from
-        # gmsh the vertices are on the circle to ~1e-14 relative, and snapping
-        # them by that would drag the second element layer into the blend for no
-        # benefit; on a refined grid the chord-midpoint vertices are off by a
-        # sagitta, ~1e-2 relative here, and must move. Twelve orders of magnitude
-        # apart, so the threshold is not delicate — and below it the routine
-        # leaves the unrefined case bit-for-bit as it was before vertices moved
-        # at all.
+        
         vtol = 1.0e-10*_shape_scale(shape)
 
         dmax = 0.0
