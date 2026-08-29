@@ -347,7 +347,12 @@ end
         end
 
         @testset "grid stays conforming" begin
-            # (a) an element that does not touch the circle keeps every node.
+            # On a grid straight from gmsh the boundary vertices are already on
+            # the circle, so the blend still leaves them — and everything outside
+            # the boundary layer — exactly where they were. (On a REFINED grid
+            # they are not, they do move, and the separate testset below covers
+            # that case; the invariant that holds in BOTH is single-valuedness,
+            # which snap_nodes_to_exact_geometry! now asserts internally.)
             for iel = 1:mesh.nelem
                 iel in mesh.bdy_edge_in_elem && continue
                 for j = 1:mesh.ngl, i = 1:mesh.ngl
@@ -356,14 +361,11 @@ end
                     @test mesh.y[p] == y0[p]
                 end
             end
-            # (b) the linear vertices — the element corners — never move, which
-            #     is what kills the Gordon-Hall corner terms and makes (a) hold.
             for iel = 1:mesh.nelem, i in (1, mesh.ngl), j in (1, mesh.ngl)
                 p = mesh.connijk[iel, i, j]
-                @test mesh.x[p] == x0[p]
-                @test mesh.y[p] == y0[p]
+                @test mesh.x[p] ≈ x0[p] atol = 1.0e-14
+                @test mesh.y[p] ≈ y0[p] atol = 1.0e-14
             end
-            # (c) nothing moved outside the one element layer on the boundary.
             for p = 1:mesh.npoin
                 (mesh.x[p] == x0[p] && mesh.y[p] == y0[p]) && continue
                 @test hypot(x0[p] - XC, y0[p] - YC) <= R + (0.6 - R)/nr + 1.0e-12
@@ -381,6 +383,70 @@ end
             @test dmi0 < 1.0e-12
             @test dmi_residual(mesh, D) < 1.0e-12
         end
+    end
+
+    @testset "refined boundary: vertices off the circle" begin
+        # What h-refinement does to a straight-sided grid: every OTHER boundary
+        # vertex ends up at the midpoint of a chord, a full sagitta inside the
+        # circle, while the ones it inherited stay on it. Reproduced here by
+        # pushing alternate vertices in by that amount. Before the vertices were
+        # snapped too, this was the configuration in which the whole feature
+        # quietly did nothing: the circle fit saw the corrupted cloud, measured a
+        # 1% residual, and (correctly, given what it was shown) refused.
+        N, nr, nt = 4, 3, 16
+        mesh, lgl = build_annulus(N, nr, nt)
+        sag = R*(1 - cos(pi/nt))                      # the refinement sagitta
+        moved = Int[]
+        for ie = 1:mesh.nedges_bdy
+            isodd(ie) || continue
+            p = mesh.poin_in_bdy_edge[ie, 1]
+            p in moved && continue
+            push!(moved, p)
+            θ = atan(mesh.y[p] - YC, mesh.x[p] - XC)
+            mesh.x[p] = XC + (R - sag)*cos(θ)         # pull it inside, as a
+            mesh.y[p] = YC + (R - sag)*sin(θ)         # chord midpoint would be
+        end
+        @test !isempty(moved)
+        off_before = maximum(abs(hypot(mesh.x[p] - XC, mesh.y[p] - YC) - R) for p in moved)
+        @test off_before > 1.0e-3                      # the corruption is real
+
+        # (a) THE FIT MUST REFUSE IT. Least squares lands exactly between the two
+        #     clusters — the on-circle vertices and the pulled-in ones sit at the
+        #     same residual from the fitted circle — so there is no residual-based
+        #     way to tell them apart, and guessing would risk deforming a grid
+        #     onto a shape nobody asked for. Refusing is the correct behaviour;
+        #     the deck states the circle instead.
+        xs = Float64[]; ys = Float64[]
+        for ie = 1:mesh.nedges_bdy, ig in (1, mesh.ngl)
+            p = mesh.poin_in_bdy_edge[ie, ig]; push!(xs, mesh.x[p]); push!(ys, mesh.y[p])
+        end
+        fit = _fit_circle_mpi(xs, ys, nothing)
+        @test fit !== nothing
+        @test fit[2] > 1.0e-6                          # residual is large ...
+        @test _resolve_shape("circle", :circle, xs, ys, nothing, 0, true) === nothing
+        @test !isapprox(fit[1].r, R; atol = 1.0e-6)    # ... and r is wrong
+        # the EXPLICIT form is not fooled
+        @test _resolve_shape("circle", (:circle, XC, YC, R), xs, ys, nothing, 0, true) !== nothing
+
+        # (b) with the circle stated, the snap fixes the wall — vertices included.
+        x0 = copy(mesh.x); y0 = copy(mesh.y)
+        curve!(mesh, lgl; shape = (:circle, XC, YC, R))
+        worst = 0.0
+        for ie = 1:mesh.nedges_bdy, k = 1:mesh.ngl
+            p = mesh.poin_in_bdy_edge[ie, k]
+            worst = max(worst, abs(hypot(mesh.x[p] - XC, mesh.y[p] - YC) - R))
+        end
+        @test worst < 1.0e-12
+        @test any(p -> mesh.x[p] != x0[p] || mesh.y[p] != y0[p], moved)   # they moved
+
+        # (c) the elements are still valid, and the grid still conforms — the
+        #     latter is asserted inside the routine, so reaching here is the test.
+        D = lagrange_nodal_derivative_matrix(lgl.ξ)
+        for iel = 1:mesh.nelem
+            J, _, _ = element_metrics(mesh, iel, D)
+            @test minimum(J) > 0.0
+        end
+        @test dmi_residual(mesh, D) < 1.0e-12
     end
 
     @testset "a fold is caught, not shipped" begin

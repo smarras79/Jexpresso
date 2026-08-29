@@ -103,13 +103,18 @@
 #     _check_curved_elements stops the run rather than hand a negative Jacobian
 #     to build_metric_terms!.
 #
-#   * AMR. This runs inside mod_mesh_read_gmsh!, so an adapted grid is curved
-#     again from its own boundary vertices each time it is rebuilt. Those
-#     vertices come from refining the STRAIGHT-SIDED parent, so refinement
-#     brings the vertices onto the wall at the usual O(h²) and the curving then
-#     corrects the nodes between them — correct, but the h in "O(h^{N+1}) from
-#     the true circle" is the parent element's, not the child's, until the
-#     vertices themselves are put on the geometry. Untested with :ladapt.
+#   * REFINEMENT NEEDS THE CIRCLE STATED, not fitted. Refinement happens on the
+#     straight-sided Gridap model and this routine then runs on the result, which
+#     is the right order — but it means each new boundary vertex arrives at the
+#     MIDPOINT OF A CHORD, a sagitta inside the circle (3.8e-3 on shock_circle at
+#     :init_refine_lvl => 1). The snap handles that: vertices are moved too, and
+#     the wall comes out at 3e-16 from the circle, refined or not. What CANNOT
+#     survive it is the `:circle` shorthand, because a fit from vertices that are
+#     half on the circle and half a sagitta inside it lands exactly between the
+#     two clusters and is refused. On a refined grid write the explicit form,
+#     `(:circle, xc, yc, r)`. Verified through mod_mesh_mesh_driver at
+#     :init_refine_lvl => 1: 32 curved elements, wall at 3.3e-16, no fold.
+#     :ladapt (adapting DURING the run) is still untested.
 #---------------------------------------------------------------------------------
 
 #---------------------------------------------------------------------------------
@@ -165,6 +170,7 @@ _shape_scale(c::ExactCircle) = c.r
 # Returns (circle, max relative radial residual) or `nothing` when the cloud is
 # degenerate (fewer than 3 points, or collinear — a straight boundary, for
 # which the normal system is singular).
+#
 #---------------------------------------------------------------------------------
 function _fit_circle_mpi(xs::AbstractVector, ys::AbstractVector, comm)
 
@@ -261,9 +267,28 @@ function _resolve_shape(tag::AbstractString, spec, xs, ys, comm, rank, suppress)
         end
         circle, rresid = fit
         if rresid > 1.0e-6
+            # THE COMMONEST CAUSE IS h-REFINEMENT, so say so. Refining a
+            # straight-sided grid inserts each new boundary vertex at the
+            # MIDPOINT OF A CHORD — a sagitta inside the circle — while the
+            # vertices it inherited stay on it. The fit then sees two clusters
+            # and, being least squares, lands exactly between them: on
+            # shock_circle at :init_refine_lvl => 1 that is r = 0.19809 instead
+            # of 0.2, with both clusters at the SAME residual from it. No
+            # residual-based outlier rejection can separate them, and the ones
+            # that could be tuned to (largest-radius, bimodality) accept a
+            # polygon tagged :circle by mistake, which is the failure this check
+            # exists to prevent. So the fit stays strict and the deck states the
+            # circle instead — the .geo already has the numbers.
             println_rank(string(" #   :exact_geometry \"", tag,
-                                "\" => :circle ignored: the boundary vertices are not on a circle ",
-                                "(best fit ", circle, " leaves a relative residual of ", rresid, ").");
+                                "\" => :circle REFUSED: the boundary vertices are not on a circle ",
+                                "(best fit ", circle, " leaves a relative residual of ", rresid,
+                                "). Nothing was curved.\n",
+                                " #   If this grid is h-refined (:linitial_refine / :ladapt), that is ",
+                                "expected — refinement puts the new boundary vertices on the chords, ",
+                                "so the grid no longer states the circle. Give it outright instead:\n",
+                                " #       :exact_geometry => Dict(\"", tag,
+                                "\" => (:circle, xc, yc, r))\n",
+                                " #   which works on a refined grid: the vertices are snapped too.");
                          msg_rank = rank, suppress = suppress)
             return nothing
         end
@@ -315,10 +340,24 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
                  msg_rank = rank, suppress = mesh.msg_suppress)
 
     #-----------------------------------------------------------------------------
-    # Displacement field. Nonzero ONLY on the interior nodes of a curved
-    # boundary edge; the gmsh vertices keep their coordinates so that δ = 0 at
-    # every element corner, which is what makes the transfinite blend below
-    # conforming (see the header).
+    # Boundary displacement field: EVERY node of a curved boundary edge, the
+    # linear vertices included.
+    #
+    # The vertices have to move too, and the reason is h-refinement. On a grid
+    # straight from gmsh they already sit on the geometry and their δ is
+    # round-off — but refining that grid inserts each new boundary vertex at the
+    # MIDPOINT OF A CHORD, a full sagitta inside the circle (3.8e-3 on
+    # shock_circle at :init_refine_lvl => 1). Leaving those put and snapping only
+    # the nodes between them would give a boundary that alternates between the
+    # circle and a point well inside it — worse than the polygon it replaced.
+    #
+    # Moving a vertex is safe on its own (a vertex is ONE global node, so every
+    # element sharing it sees the same new position) but it breaks the shortcut
+    # the previous version relied on: with δ ≠ 0 at the element corners, the
+    # transfinite blend of a curved edge no longer vanishes on the two edges
+    # adjacent to it. The blend below is therefore the FULL Gordon-Hall map,
+    # corner terms and all, and every element edge — not just the curved ones —
+    # carries a displacement. See the blend for why that is still conforming.
     #-----------------------------------------------------------------------------
     δx = zeros(TFloat, mesh.npoin)
     δy = zeros(TFloat, mesh.npoin)
@@ -358,6 +397,17 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
         end
         ncurved_tags += 1
 
+        # A vertex counts as needing to move only when it is off the geometry by
+        # something GEOMETRIC rather than by round-off. On a grid straight from
+        # gmsh the vertices are on the circle to ~1e-14 relative, and snapping
+        # them by that would drag the second element layer into the blend for no
+        # benefit; on a refined grid the chord-midpoint vertices are off by a
+        # sagitta, ~1e-2 relative here, and must move. Twelve orders of magnitude
+        # apart, so the threshold is not delicate — and below it the routine
+        # leaves the unrefined case bit-for-bit as it was before vertices moved
+        # at all.
+        vtol = 1.0e-10*_shape_scale(shape)
+
         dmax = 0.0
         dvert = 0.0
         for iedge in edges
@@ -365,36 +415,24 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
                 ip = mesh.poin_in_bdy_edge[iedge, igl]
                 on_curved[ip] = true
                 xs_new, ys_new = snap_to_shape(shape, mesh.x[ip], mesh.y[ip])
+                dxi = xs_new - mesh.x[ip]
+                dyi = ys_new - mesh.y[ip]
+                d   = hypot(dxi, dyi)
                 if igl == 1 || igl == ngl
-                    # THE LINEAR VERTICES DO NOT MOVE. They are the element
-                    # corners, and the blend below is conforming precisely
-                    # because δ vanishes there (see the header): snapping a
-                    # corner would revive the Gordon-Hall corner terms and pull
-                    # the shared side edges of neighbouring elements apart.
-                    # gmsh already puts them on the geometry, so there is
-                    # nothing to gain — but say so if this grid does not.
-                    dvert = max(dvert, hypot(xs_new - mesh.x[ip], ys_new - mesh.y[ip]))
-                    continue
+                    d <= vtol && continue                  # already there
+                    dvert = max(dvert, d)
                 end
-                δx[ip] = xs_new - mesh.x[ip]
-                δy[ip] = ys_new - mesh.y[ip]
-                dmax = max(dmax, hypot(δx[ip], δy[ip]))
+                δx[ip] = dxi; δy[ip] = dyi
+                dmax = max(dmax, d)
             end
         end
 
         println_rank(string(" #   \"", tagstr, "\" -> ", shape,
                             " ; ", nedges_glob, " edges ; largest node correction = ",
-                            MPI.Allreduce(dmax, MPI.MAX, comm));
+                            MPI.Allreduce(dmax, MPI.MAX, comm),
+                            " (of which at a linear vertex: ",
+                            MPI.Allreduce(dvert, MPI.MAX, comm), ")");
                      msg_rank = rank, suppress = mesh.msg_suppress)
-
-        dvert = MPI.Allreduce(dvert, MPI.MAX, comm)
-        if dvert > 1.0e-8*_shape_scale(shape)
-            println_rank(string(" #   NOTE \"", tagstr, "\": the grid's own vertices are up to ",
-                                dvert, " off that shape and are LEFT THERE (moving them would ",
-                                "break conformity with the neighbouring elements). The curved ",
-                                "boundary interpolates them, so it is that far off the shape too.");
-                         msg_rank = rank, suppress = mesh.msg_suppress)
-        end
     end
 
     ncurved_tags == 0 && return nothing
@@ -412,13 +450,42 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
     whi  = TFloat[(ξ[k] - ξ[1])/span   for k = 1:ngl]      # 0 at index 1, 1 at ngl
 
     #-----------------------------------------------------------------------------
-    # Gordon-Hall blend into the interiors.
+    # FULL Gordon-Hall blend, corner terms included:
     #
-    # A direction line of the element is on the curved boundary exactly when all
-    # ngl of its nodes are. It cannot be a false positive: for ngl >= 3 the
-    # interior nodes of an edge belong to that edge alone, so they are marked
-    # only if that very edge was snapped.
+    #   δ(ξ,η) = wlo(η)Γ₁(ξ) + whi(η)Γ₂(ξ) + wlo(ξ)Γ₃(η) + whi(ξ)Γ₄(η)
+    #            - [ wlo(ξ)wlo(η)δ₁₁ + whi(ξ)wlo(η)δ₂₁
+    #              + wlo(ξ)whi(η)δ₁₂ + whi(ξ)whi(η)δ₂₂ ]
+    #
+    # where Γ is the displacement along an element edge and δ.. the four corner
+    # displacements. WHY THIS IS CONFORMING once the vertices move:
+    #
+    #   * a corner is one global node, so both elements sharing it use the same
+    #     δ.. ;
+    #   * on a CURVED boundary edge, Γ is the snap displacement — and a boundary
+    #     edge belongs to exactly one element, so there is nobody to disagree
+    #     with;
+    #   * on ANY OTHER edge, Γ is defined below as the linear interpolation of
+    #     that edge's own two corner displacements. It depends on nothing but
+    #     those two global values, so the two elements sharing the edge compute
+    #     it identically;
+    #   * and the formula reproduces Γ exactly on each edge and δ.. exactly at
+    #     each corner (the corner bracket cancels the edge terms there), so the
+    #     three bullets above are the whole story: writing it at every one of
+    #     the ngl² nodes is single-valued, from whichever element you look.
+    #
+    # A direction line is a curved boundary edge exactly when all ngl of its
+    # nodes are flagged. That cannot be a false positive: for ngl >= 3 the
+    # interior nodes of an edge belong to that edge alone, so they carry the
+    # flag only if that very edge was snapped.
     #-----------------------------------------------------------------------------
+    δx_gh = zeros(TFloat, mesh.npoin)          # the blended field, built fresh:
+    δy_gh = zeros(TFloat, mesh.npoin)          # δx/δy above stay the BOUNDARY data
+    written = falses(mesh.npoin)               # conformity guard, see below
+    Γx    = Array{TFloat}(undef, 4, ngl)       # per-element edge displacements,
+    Γy    = Array{TFloat}(undef, 4, ngl)       # order: j=1, j=ngl, i=1, i=ngl
+    mismatch = 0.0                             # worst disagreement between two
+                                               # elements over a shared node
+
     nelem_curved = 0
     dmax_int     = 0.0
     for iel = 1:mesh.nelem
@@ -430,36 +497,92 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
             ilo &= on_curved[mesh.connijk[iel, 1, k]]
             ihi &= on_curved[mesh.connijk[iel, ngl, k]]
         end
-        (jlo || jhi || ilo || ihi) || continue
+
+        # The four corners, and their displacements.
+        c11 = mesh.connijk[iel, 1, 1];     c21 = mesh.connijk[iel, ngl, 1]
+        c12 = mesh.connijk[iel, 1, ngl];   c22 = mesh.connijk[iel, ngl, ngl]
+        d11x = δx[c11]; d11y = δy[c11];    d21x = δx[c21]; d21y = δy[c21]
+        d12x = δx[c12]; d12y = δy[c12];    d22x = δx[c22]; d22y = δy[c22]
+
+        # Nothing to do unless this element owns a curved edge or has a moved
+        # corner. (A moved corner reaches elements that touch the boundary only
+        # at a point — they have to be blended too, or their edge into that
+        # corner would tear away from it.)
+        anycorner = (d11x != 0) | (d11y != 0) | (d21x != 0) | (d21y != 0) |
+                    (d12x != 0) | (d12y != 0) | (d22x != 0) | (d22y != 0)
+        (jlo || jhi || ilo || ihi || anycorner) || continue
         nelem_curved += 1
 
-        for j = 2:ngl-1, i = 2:ngl-1
-            ip = mesh.connijk[iel, i, j]
-            dx = zero(TFloat); dy = zero(TFloat)
+        # Edge displacements Γ. Curved boundary edge -> the snapped δ; any other
+        # edge -> linear in its own two corner δ, which is what both of its
+        # elements compute.
+        for k = 1:ngl
             if jlo
-                p = mesh.connijk[iel, i, 1];   dx += wlo[j]*δx[p]; dy += wlo[j]*δy[p]
+                p = mesh.connijk[iel, k, 1];   Γx[1,k] = δx[p];  Γy[1,k] = δy[p]
+            else
+                Γx[1,k] = wlo[k]*d11x + whi[k]*d21x
+                Γy[1,k] = wlo[k]*d11y + whi[k]*d21y
             end
             if jhi
-                p = mesh.connijk[iel, i, ngl]; dx += whi[j]*δx[p]; dy += whi[j]*δy[p]
+                p = mesh.connijk[iel, k, ngl]; Γx[2,k] = δx[p];  Γy[2,k] = δy[p]
+            else
+                Γx[2,k] = wlo[k]*d12x + whi[k]*d22x
+                Γy[2,k] = wlo[k]*d12y + whi[k]*d22y
             end
             if ilo
-                p = mesh.connijk[iel, 1, j];   dx += wlo[i]*δx[p]; dy += wlo[i]*δy[p]
+                p = mesh.connijk[iel, 1, k];   Γx[3,k] = δx[p];  Γy[3,k] = δy[p]
+            else
+                Γx[3,k] = wlo[k]*d11x + whi[k]*d12x
+                Γy[3,k] = wlo[k]*d11y + whi[k]*d12y
             end
             if ihi
-                p = mesh.connijk[iel, ngl, j]; dx += whi[i]*δx[p]; dy += whi[i]*δy[p]
+                p = mesh.connijk[iel, ngl, k]; Γx[4,k] = δx[p];  Γy[4,k] = δy[p]
+            else
+                Γx[4,k] = wlo[k]*d21x + whi[k]*d22x
+                Γy[4,k] = wlo[k]*d21y + whi[k]*d22y
             end
-            δx[ip] = dx; δy[ip] = dy
-            dmax_int = max(dmax_int, hypot(dx, dy))
+        end
+
+        for j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j]
+            dx = wlo[j]*Γx[1,i] + whi[j]*Γx[2,i] + wlo[i]*Γx[3,j] + whi[i]*Γx[4,j] -
+                 (wlo[i]*wlo[j]*d11x + whi[i]*wlo[j]*d21x +
+                  wlo[i]*whi[j]*d12x + whi[i]*whi[j]*d22x)
+            dy = wlo[j]*Γy[1,i] + whi[j]*Γy[2,i] + wlo[i]*Γy[3,j] + whi[i]*Γy[4,j] -
+                 (wlo[i]*wlo[j]*d11y + whi[i]*wlo[j]*d21y +
+                  wlo[i]*whi[j]*d12y + whi[i]*whi[j]*d22y)
+            # CONFORMITY GUARD. A node on a shared edge is blended by both of
+            # its elements, and the argument above says they must agree. If they
+            # ever do not, the grid tears at that edge and every symptom of it
+            # appears far downstream (a DSS summing values at two different
+            # points), so measure the disagreement here rather than trust the
+            # argument. Costs one comparison per element-node at grid-build time.
+            if written[ip]
+                mismatch = max(mismatch, hypot(dx - δx_gh[ip], dy - δy_gh[ip]))
+            end
+            written[ip] = true
+            δx_gh[ip] = dx; δy_gh[ip] = dy
+            (1 < i < ngl && 1 < j < ngl) && (dmax_int = max(dmax_int, hypot(dx, dy)))
         end
     end
 
+    # Round-off is the only disagreement allowed; anything larger is a torn grid.
+    mismatch_g = MPI.Allreduce(mismatch, MPI.MAX, comm)
+    scale_g    = MPI.Allreduce(maximum(hypot.(δx_gh, δy_gh); init = 0.0), MPI.MAX, comm)
+    if mismatch_g > max(1.0e-10*scale_g, 1.0e-13)
+        error(" # ERROR exact_geometry.jl: the curved grid is NOT conforming — two elements\n" *
+              " #   disagree by " * string(mismatch_g) * " about where a node they share must go\n" *
+              " #   (largest displacement in the blend: " * string(scale_g) * ").\n" *
+              " #   This is a bug in the Gordon-Hall blend, not in the case: please report it.")
+    end
+
     #-----------------------------------------------------------------------------
-    # Commit. One pass over everything: nodes that were never touched carry
-    # δ = 0 and so are bit-for-bit unchanged.
+    # Commit. One pass over everything: nodes no element blended carry δ = 0 and
+    # so are bit-for-bit unchanged.
     #-----------------------------------------------------------------------------
     @inbounds for ip = 1:mesh.npoin
-        mesh.x[ip] += δx[ip]
-        mesh.y[ip] += δy[ip]
+        mesh.x[ip] += δx_gh[ip]
+        mesh.y[ip] += δy_gh[ip]
     end
 
     println_rank(string(" #   ", MPI.Allreduce(nelem_curved, MPI.SUM, comm),
