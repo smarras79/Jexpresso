@@ -408,6 +408,16 @@ function user_inputs()
         # already answered. With :dsgs_add_smagorinsky => false these two keys
         # affect only the N2 and f_Ri diagnostic fields.
         :lrichardson          => true,
+        # NOW ACTUALLY DAMPS AT THE WALL -- and for THIS deck that is currently
+        # a no-op, because sgs_mixing_length2 is only reached inside the
+        # :dsgs_add_smagorinsky branch. It matters the moment that is switched
+        # on: the guard used to read `(lwall_damping && z > 0.0) || return
+        # CsD2`, and zwall is max(z - zmin, 0), so every node ON the lower
+        # boundary carried exactly 0.0, took the early return, and got the
+        # UNDAMPED (C_s*Delta)^2 while its neighbours were damped. On this mesh
+        # that was l^2 = 40.96 m^2 at z = 0 against 6.44 m^2 at z = 6.91 m -- a
+        # 6.4x spike on the node with the smallest h_z. It now runs
+        # 0 -> 6.44 -> 40.96, monotone. See test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
         # :μ IS A PER-EQUATION MASK, NOT A VISCOSITY (same as under SMAG).
         #
@@ -420,6 +430,42 @@ function user_inputs()
         # also the term that binds the explicit parabolic limit, so carrying it
         # over would import a stability problem for no modelling reason.
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        #---------------------------------------------------------------------------
+        # MOST GUARD RAILS. All three ARE the defaults, so writing them changes
+        # nothing -- they are here to be found and tuned, because a convective
+        # boundary layer over a prescribed surface flux visits both singular
+        # limits of Businger-Dyer at some node on essentially every step.
+        # Full write-up in LESICP2-64x64x60-imex/user_inputs.jl and
+        # docs/boundary_conditions.md section 2.2.1.
+        #
+        #   :most_u_min    gustiness floor [m/s] on the wind entering the DRAG
+        #                  COEFFICIENT -- not a floor on the stress, which
+        #                  divides by the same floored speed and so stays
+        #                  linear in u_i and vanishes with it.
+        #   :most_zeta_*   bounds on zeta = z/L. NOT a height and NOT a z
+        #                  coordinate -- z is always >= 0, and the SIGN here is
+        #                  the SIGN OF L, i.e. the stability:
+        #
+        #                      L < 0  (surface heats the air)  ->  zeta < 0   UNSTABLE
+        #                      L = +-inf (no surface flux)     ->  zeta = 0   neutral
+        #                      L > 0  (surface cools the air)  ->  zeta > 0   stable
+        #
+        #                  So -5.0 bounds the CONVECTIVE side, which is this
+        #                  deck's entire regime, and 2.0 the stable side.
+        #                  [-5, 2] is the range Businger-Dyer was fitted over.
+        #
+        # Also fixed in the same pass and NOT deck-settable, because neither was
+        # ever a choice: obukhov_length was missing its rho, and its
+        # near-neutral guard returned a POSITIVE (stable) L for either sign of
+        # Q_H. And the one that bites this deck hardest: :user_heatflux above
+        # sets delta_hf = 1, so MOST's own w'theta' is discarded -- but it was
+        # still setting theta* -> L -> psi_m -> the DRAG from theta_sfc, a free
+        # prognostic node nothing pins. CM_MOST! is now handed the imposed flux.
+        # The theta term applied to the RHS is unchanged; only the drag moves.
+        #---------------------------------------------------------------------------
+        :most_u_min           => 0.1,     # m/s
+        :most_zeta_min        => -5.0,
+        :most_zeta_max        =>  2.0,
         # Domain (rather than rank-local) norms for <q'> and ‖q' - <q'>‖. Two
         # extra Allreduce per RHS call, 8 per step under ARS343. Off by
         # default; switch it on when mu has to be identical across rank counts.

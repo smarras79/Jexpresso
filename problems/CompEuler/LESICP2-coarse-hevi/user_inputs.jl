@@ -128,6 +128,26 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
+        # SURFACE LAYER -- what changed, and where the full story is. The MOST
+        # and near-wall fixes apply to this deck; write-up in
+        # LESICP2-64x64x60-imex/user_inputs.jl and docs/boundary_conditions.md
+        # section 2.2.1.
+        #   * :user_heatflux sets delta_hf = 1, so MOST's own w'theta' is
+        #     discarded -- but it was still setting theta* -> L -> psi_m -> the
+        #     DRAG from a free surface node nothing pins. CM_MOST! is now handed
+        #     the imposed flux. THE THETA TERM IS UNCHANGED; ONLY THE DRAG MOVES.
+        #   * obukhov_length gained its missing rho (|L| was ~20% small at sea
+        #     level), and its near-neutral guard no longer reports a STABLE
+        #     layer for an unstable flux.
+        #   * zeta = z/L is bounded to [-5, 2] and the drag coefficient sees a
+        #     0.1 m/s gustiness floor. Both are defaults; set :most_zeta_min /
+        #     :most_zeta_max / :most_u_min here only to tune them. The negative
+        #     bound is the CONVECTIVE side -- zeta's sign is the sign of L, not
+        #     a height.
+        #   * :lwall_damping now damps AT the wall. It used to return the
+        #     UNDAMPED (C_s*Delta)^2 on every z = 0 node while damping their
+        #     neighbours, so the eddy viscosity spiked on the node with the
+        #     smallest h_z. mu_turb near the ground therefore changes.
         :user_heatflux        => 0.12,
 	# Set EXPLICITLY here rather than left to the default, for two reasons.
 	#

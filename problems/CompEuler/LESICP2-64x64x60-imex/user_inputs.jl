@@ -259,8 +259,22 @@ function user_inputs()
         #                  stays linear in u_i and vanishes with it rather than
         #                  becoming a finite-magnitude random walk wherever two
         #                  thermals converge and |u| passes through zero.
-        #   :most_zeta_*   bounds on z/L, the range Businger-Dyer was fitted
-        #                  over. Without them |u| -> 0 sends L ~ u*^2 -> 0 and
+        #   :most_zeta_*   bounds on zeta = z/L. NOT a height and NOT a z
+        #                  coordinate -- z is always >= 0, and the SIGN here is
+        #                  the SIGN OF L, i.e. the stability:
+        #
+        #                      L < 0  (surface heats the air)  ->  zeta < 0   UNSTABLE
+        #                      L = +-inf (no surface flux)     ->  zeta = 0   neutral
+        #                      L > 0  (surface cools the air)  ->  zeta > 0   stable
+        #
+        #                  So -5.0 bounds the CONVECTIVE side, which is this
+        #                  deck's entire regime, and 2.0 the stable side.
+        #                  [-5, 2] is the range Businger-Dyer was fitted over;
+        #                  past it the correction is evaluated AT the bound
+        #                  rather than extrapolated. The negative bound is the
+        #                  one that binds here: at z = 6.91 m, zeta = -5 is
+        #                  L = -1.38 m, i.e. free convection at a near-calm
+        #                  node. Without it |u| -> 0 sends L ~ u*^2 -> 0 and
         #                  zeta -> -inf, and the drag that comes back is
         #                  whatever the 20th Picard iterate happened to be.
         #
