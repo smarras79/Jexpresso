@@ -63,7 +63,7 @@
 #
 #  Site settings -- set once for your cluster, then forget.
 #SBATCH --partition=general
-#SBATCH --qos=low
+#SBATCH --qos=standard
 #SBATCH --account=smarras
 #SBATCH --job-name=jexpresso
 #SBATCH --output=%x.%j.out

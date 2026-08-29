@@ -75,8 +75,24 @@ set them.
 | key | default | what it bounds |
 |---|---|---|
 | `:most_u_min` | `0.1` m/s | gustiness floor on the wind speed entering the **drag coefficient**. Not a floor on the stress: the stress direction is divided by the same floored speed, so `tau` stays linear in `u_i` and vanishes with it. `0` removes the floor and the guard with it. |
-| `:most_zeta_min` | `-5.0` | lower bound on `z/L` (unstable side). Must be `< 0`. |
-| `:most_zeta_max` | `2.0` | upper bound on `z/L` (stable side). Must be `> 0`. |
+| `:most_zeta_min` | `-5.0` | lower bound on `zeta = z/L`. Must be `< 0`. |
+| `:most_zeta_max` | `2.0` | upper bound on `zeta = z/L`. Must be `> 0`. |
+
+`zeta` is **not** a height and not a z coordinate — `z` is always `>= 0`, and the
+sign of `zeta` is the sign of the Obukhov length `L`, i.e. the stability:
+
+| | `L` | `zeta = z/L` | regime |
+|---|---|---|---|
+| surface heats the air from below | `< 0` | `< 0` | unstable / convective |
+| no surface flux | `+-inf` | `0` | neutral |
+| surface cools the air | `> 0` | `> 0` | stable |
+
+So `:most_zeta_min` bounds the **convective** side and `:most_zeta_max` the
+stable one; `[-5, 2]` is the range Businger-Dyer was fitted over, and past it the
+correction is evaluated *at* the bound rather than extrapolated. For a
+convective boundary layer the negative bound is the one that binds — at
+`z = 6.91 m`, `zeta = -5` is `L = -1.38 m`, i.e. free convection at a near-calm
+node.
 
 The iteration itself runs in `1/L` rather than `L`, so the neutral limit
 (`1/L = 0`) is approached continuously from both sides and needs no special

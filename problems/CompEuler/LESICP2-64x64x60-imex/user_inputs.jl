@@ -224,9 +224,75 @@ function user_inputs()
         :visc_model           => SMAG(),
         :C_s                  => 0.18,
         :lrichardson          => true,
+        # NOW ACTUALLY DAMPS AT THE WALL. The guard used to read
+        # `(lwall_damping && z > 0.0) || return CsD2`, and zwall is built as
+        # max(z - zmin, 0) -- so every node ON the lower boundary carried
+        # exactly 0.0, took the early return, and got the UNDAMPED (C_s*Delta)^2
+        # while its neighbours were damped. On this mesh that was l^2 = 40.96 m^2
+        # at z = 0 against 6.44 m^2 at z = 6.91 m: a 6.4x eddy-viscosity spike
+        # sitting on the node with the smallest h_z AND the node the surface
+        # heat flux is injected into, i.e. the node that sets the vertical
+        # viscous limit in the table above. l^2 now runs 0 -> 6.44 -> 40.96,
+        # monotone, so that node contributes ~0 to the rate budget instead of
+        # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
+        # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         :les_filter_width     => :geometric,
+        #---------------------------------------------------------------------------
+        # MOST GUARD RAILS. Stated explicitly here rather than left to the
+        # defaults because this case is exactly the one they exist for: a
+        # convective boundary layer over a prescribed surface flux visits both
+        # singular limits of Businger-Dyer at some node on essentially every
+        # step. All three ARE the defaults, so writing them changes nothing --
+        # they are here to be found and tuned. See docs/boundary_conditions.md
+        # section 2.2.1 and test/physics/test_most_guards.jl.
+        #
+        #   :most_u_min    gustiness floor on the wind entering the DRAG
+        #                  COEFFICIENT. Not a floor on the stress: the stress
+        #                  direction divides by the same floored speed, so tau
+        #                  stays linear in u_i and vanishes with it rather than
+        #                  becoming a finite-magnitude random walk wherever two
+        #                  thermals converge and |u| passes through zero.
+        #   :most_zeta_*   bounds on zeta = z/L. NOT a height and NOT a z
+        #                  coordinate -- z is always >= 0, and the SIGN here is
+        #                  the SIGN OF L, i.e. the stability:
+        #
+        #                      L < 0  (surface heats the air)  ->  zeta < 0   UNSTABLE
+        #                      L = +-inf (no surface flux)     ->  zeta = 0   neutral
+        #                      L > 0  (surface cools the air)  ->  zeta > 0   stable
+        #
+        #                  So -5.0 bounds the CONVECTIVE side, which is this
+        #                  deck's entire regime, and 2.0 the stable side.
+        #                  [-5, 2] is the range Businger-Dyer was fitted over;
+        #                  past it the correction is evaluated AT the bound
+        #                  rather than extrapolated. The negative bound is the
+        #                  one that binds here: at z = 6.91 m, zeta = -5 is
+        #                  L = -1.38 m, i.e. free convection at a near-calm
+        #                  node. Without it |u| -> 0 sends L ~ u*^2 -> 0 and
+        #                  zeta -> -inf, and the drag that comes back is
+        #                  whatever the 20th Picard iterate happened to be.
+        #
+        # Also fixed in the same pass, and NOT deck-settable because neither was
+        # ever a choice: obukhov_length was missing its rho (|L| ~20% small at
+        # sea level, every zeta ~20% large), and its near-neutral guard returned
+        # a POSITIVE L for either sign of Q_H -- a stable surface layer reported
+        # in the middle of a convective one, reached whenever u* got small.
+        #
+        # AND THE ONE THAT MATTERS MOST FOR THIS DECK: :user_heatflux above sets
+        # delta_hf = 1, so the theta surface term is rho*0.12 and MOST's own
+        # w'theta' is discarded -- but theta*, and through it L, psi_m and the
+        # DRAG, were still being built from theta_sfc, a free prognostic node
+        # that nothing pins. The momentum flux carried a stability correction
+        # diagnosed from a heat flux the model does not apply. BCs.jl now hands
+        # the imposed flux to CM_MOST!, so theta* = -w'theta'/u*. At |u| = 2 m/s
+        # with the surface node 0.5 K cooler than the air that is u* = 0.243
+        # (correctly unstable) against 0.171 (read as stable). The theta term
+        # applied to the RHS is unchanged; only the drag moves.
+        #---------------------------------------------------------------------------
+        :most_u_min           => 0.1,     # m/s
+        :most_zeta_min        => -5.0,
+        :most_zeta_max        =>  2.0,
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
