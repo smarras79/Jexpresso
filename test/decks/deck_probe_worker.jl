@@ -9,7 +9,8 @@
 
  One line on stdout, and the exit status matches it:
      OK <nkeys>                  0
-     SKIP <name>                 4   deck needs a type this file does not stub
+     UNDEF <name>                4   name not defined: a deck bug, or a
+                                     Jexpresso type this file does not stub
      PAIRARITY <key> <nargs>     4   a `...` splat reached a Pair call
      ERR <message>               4
      NOTADICT <type>             3
@@ -60,7 +61,7 @@ catch e
     # A deck that will not even load is worth reporting as itself, not as a
     # missing verdict.
     if e isa UndefVarError
-        println("SKIP ", e.var); exit(4)
+        println("UNDEF ", e.var); exit(4)
     end
     println("ERR could not include the deck: ",
             sprint(showerror, e)[1:min(end, 400)])
@@ -81,7 +82,12 @@ catch e
     if e isa MethodError && e.f === Pair && length(e.args) > 2
         println("PAIRARITY ", e.args[1], " ", length(e.args))
     elseif e isa UndefVarError
-        println("SKIP ", e.var)
+        # NOT a skip. This is how a deck that deletes or comments out a local
+        # still referenced by a later key fails, and it is every bit as fatal as
+        # the Pair case -- LESICP2-64x64x60-imex shipped exactly that: `tend`
+        # commented out at the top while :diagnostics_at_times still closed over
+        # it. Treating it as "missing stub" would have hidden it.
+        println("UNDEF ", e.var)
     else
         println("ERR ", sprint(showerror, e)[1:min(end, 400)])
     end

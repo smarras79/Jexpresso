@@ -138,7 +138,11 @@ function user_inputs()
     # loop, so it does not distort s/step -- but it is minutes of I/O for a run
     # that will be thrown away, and it is off by default whenever :tend has
     # been overridden.
-    #tend  = 10800.0,
+    # Still needed: :diagnostics_at_times below closes over `tend` for its
+    # third range. Commenting this line out left that reference dangling,
+    # which is a UndefVarError at startup on every rank -- the DBG_TEND
+    # override is gone, as intended, but the local still has to exist.
+    tend  = 10800.0
     lprobe = haskey(ENV, "DBG_TEND")
 
     inputs = Dict(
@@ -296,12 +300,22 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #LES statistics
         #---------------------------------------------------------------------------
-	# BOTH ranges have to be splatted. With the `...` on only the first, this
-	# is a tuple of ten Floats followed by a StepRangeLen, and
-	# TimeIntegrators.jl does `collect(Float64, les_stat_t)` on it -- which
-	# cannot convert a range to a Float64 and dies at startup with a
-	# MethodError. Splatting both gives the 191 sample times intended.
-	:statistics_time      => (9000.0:10:10800.0...),
+	# THE TRAILING COMMA IS LOAD-BEARING, and this is the second way this one
+	# key has broken the run. `(x...)` with nothing after it is NOT a
+	# one-element tuple -- in call-argument position it is a SPLAT, so
+	# `:statistics_time => (9000.0:10:10800.0...)` asks for
+	# Pair(::Symbol, ::Float64 x181) and dies on every rank at startup with a
+	# MethodError whose stack trace points at the `inputs = Dict(` line, not at
+	# this one. `(x...,)` is the tuple. Both forms PARSE and LOWER identically
+	# as far as Meta.parse is concerned, so tools/syntax_check.jl cannot see the
+	# difference -- test/decks/test_deck_inputs.jl evaluates the Dict and names
+	# the key.
+	#
+	# (The earlier failure here was the mirror image: with two ranges and the
+	# `...` on only the first, this was ten Floats followed by a StepRangeLen,
+	# and collect(Float64, les_stat_t) in TimeIntegrators.jl cannot convert a
+	# range to a Float64.)
+	:statistics_time      => (9000.0:10:10800.0...,),
 	#:statistics_time      => (10.0:10.0:100),
         #:statistics_online_start    => 9000.0,
 	#:statistics_online_interval => 0.2,

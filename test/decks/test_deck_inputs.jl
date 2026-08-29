@@ -63,7 +63,7 @@ const JULIA  = joinpath(Sys.BINDIR, Base.julia_exename())
 paths = deck_paths()
 say(@sprintf("\n=== evaluating user_inputs() for %d decks ===", length(paths)))
 
-ok = String[]; skipped = Tuple{String,String}[]; bad = Tuple{String,String}[]
+ok = String[]; bad = Tuple{String,String}[]
 
 for p in paths
     # `ignorestatus`: the worker exits non-zero on every verdict except OK, and
@@ -79,8 +79,13 @@ for p in paths
 
     if startswith(line, "OK")
         push!(ok, p)
-    elseif startswith(line, "SKIP")
-        push!(skipped, (p, strip(line[5:end])))
+    elseif startswith(line, "UNDEF")
+        n = strip(line[6:end])
+        push!(bad, (p, "`$n` is not defined when user_inputs() runs. Either the " *
+                       "deck deleted or commented out a local that a later key " *
+                       "still closes over, or `$n` is a Jexpresso type that " *
+                       "deck_probe_worker.jl does not stub yet -- add it there " *
+                       "if so."))
     elseif startswith(line, "PAIRARITY")
         f = split(line)
         push!(bad, (p, "key :$(f[2]) built a Pair with $(f[3]) arguments -- a `...` " *
@@ -91,17 +96,13 @@ for p in paths
     end
 end
 
-say(@sprintf("  %d evaluated, %d skipped (missing stub), %d failed",
-             length(ok), length(skipped), length(bad)))
-for (p, w) in skipped; say("  SKIP  $p\n          $w is not stubbed in deck_probe_worker.jl"); end
-for (p, w) in bad;     say("  FAIL  $p\n          $w"); end
+say(@sprintf("  %d evaluated, %d failed", length(ok), length(bad)))
+for (p, w) in bad; say("  FAIL  $p\n          $w"); end
 
 @testset "every deck's user_inputs() builds a Dict" begin
     @test isempty(bad)
-    # A deck that cannot be evaluated is not a pass. This keeps the skip list
-    # from quietly growing until it covers everything and the suite means
-    # nothing.
-    @test length(ok) >= 0.5 * length(paths)
+    # A deck that cannot be evaluated is not a pass.
+    @test length(ok) == length(paths)
 end
 
 say("\n=== done ===\n")
