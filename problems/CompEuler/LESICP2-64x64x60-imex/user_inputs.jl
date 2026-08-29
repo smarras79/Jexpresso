@@ -138,7 +138,7 @@ function user_inputs()
     # loop, so it does not distort s/step -- but it is minutes of I/O for a run
     # that will be thrown away, and it is off by default whenever :tend has
     # been overridden.
-    tend  = parse(Float64, get(ENV, "DBG_TEND", "10800.0"))
+    #tend  = 10800.0,
     lprobe = haskey(ENV, "DBG_TEND")
 
     inputs = Dict(
@@ -198,7 +198,7 @@ function user_inputs()
         :imex_monitor_every   => monitor_every,
         :Δt                   => Δt,
         :tinit                => 0.0,
-        :tend                 => tend,
+        :tend                 => 10800.0,
 	:lrestart             => false,
 	:restart_time         => 9000.0,
 	# EVERY range needs its own `...`; the third was missing one, which made this
@@ -381,7 +381,7 @@ function user_inputs()
 	# rather than overwriting each other.
 	:output_dir          => "/scratch/smarras/smarras/output_new/filter_LESICP2_64x64x60_10240mX10240mX5000m_" * String(scheme) * "/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
-        :lwrite_initial      => parse(Bool, get(ENV, "DBG_WRITE_INITIAL", lprobe ? "false" : "true")),
+        :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
