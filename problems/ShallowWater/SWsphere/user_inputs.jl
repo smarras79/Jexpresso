@@ -150,12 +150,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Time integration.
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK33(),
+        #:ljacc                => true,
+        :ode_solver           => CarpenterKennedy2N54(), #SSPRK33(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
-        :cfl                  => 0.35,
+        :cfl                  => 1.0,
         :tinit                => 0.0,
-        :tend                 => 10*24*3600,       # 144 h = 6 days, as in the test
-        :ndiagnostics_outputs => 24,             # a VTK dump every 6 h
+        :tend                 => 20*24*3600,       # 144 h = 6 days, as in the test
+        :ndiagnostics_outputs => 48,             # a VTK dump every 6 h
         :ndiagnostics_prints  => 200,            # steps between diagnostic lines
         :case                 => "swsphere",
         :SOL_VARS_TYPE        => TOTAL(),
@@ -183,7 +184,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :ivisc_equations      => [2, 3, 4],
-        :μ                    => 1.5e5,      # set to 1.0e5 together with :lvisc => true
+        :μ                    => 1.0e5,      # set to 1.0e5 together with :lvisc => true
         #---------------------------------------------------------------------------
         # ... AND the modal filter, which is what actually keeps the run alive
         # here (see the table at the top). The two mechanisms compose, and the
