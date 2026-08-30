@@ -192,6 +192,9 @@ const _CACHE_FINGERPRINT_KEYS = (
     :lpreadapt, :preadapt_max_level, :amr_max_level, :lrestart_amr,
     :lxy_partition, :lwarp,
     :lproject_to_sphere, :sphere_radius, :cubed_sphere_map,
+    # Curving the boundary onto an exact shape MOVES nodes, so a cached mesh
+    # built with a different (or absent) :exact_geometry must not be reused.
+    :exact_geometry,
     :xscale, :yscale, :zscale, :xdisp, :ydisp, :zdisp,
     # Natively-built (non-gmsh) grids: the deck's element counts and domain
     # bounds ARE the mesh, and the cache file name only carries "native".

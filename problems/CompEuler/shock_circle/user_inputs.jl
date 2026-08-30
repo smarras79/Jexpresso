@@ -3,7 +3,7 @@ function user_inputs()
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
-        :tend                 => 2.0e-2,
+        :tend                 => 2.0e-2,          # ≈ 2.7 tunnel flow-throughs
         :lrestart             => false,
         :restart_time         => 0.0,
         :Δt                   => 0.5e-7,
@@ -28,8 +28,10 @@ function user_inputs()
         #:ldsgs_global_norms   => true,
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./meshes/gmsh_grids/ffs_step_transfinite.msh",
-        :gmsh_filename        => "./problems/CompEuler/shock_circle/plate_hole_circle_unit.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/ffs_step_transfinite.msh",
+        #:gmsh_filename        => "./problems/CompEuler/shock_circle/plate_hole_circle_unit.msh",
+        :gmsh_filename        => "./problems/CompEuler/shock_circle/cylinder_symmetric.msh",
+        :exact_geometry       => Dict("circle_boundary" => (:circle, 1.0, 0.0, 0.2)),
         #---------------------------------------------------------------------------
         # Plotting
         #---------------------------------------------------------------------------
@@ -45,7 +47,7 @@ function user_inputs()
         # AMR off: the mesh already resolves the shocks at h/nop = 1/80, and
         # DynSGS is what handles what is left under-resolved.
         #---------------------------------------------------------------------------
-        :linitial_refine      => false,
+        :linitial_refine      => true,
         :init_refine_lvl      => 1,
         :ladapt               => false,
     ) #Dict
