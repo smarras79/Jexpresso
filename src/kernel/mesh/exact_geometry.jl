@@ -339,6 +339,21 @@ _exact_geometry_entries(spec) =                       # any iterable of tags
 
 
 #---------------------------------------------------------------------------------
+# One line naming the shape, for the progress print.
+#
+# The shape is the case's own object and may be anything at all — shock_circle
+# returns a 4-tuple, naca64A210 returns a NamedTuple carrying the spline through
+# 51 ordinates. `repr` on the latter dumps four 51-element vectors into the run
+# log, which is how this started life. So: small things print, big things are
+# named by their type and left at that.
+#---------------------------------------------------------------------------------
+_shape_label(shape) = begin
+    s = repr(shape)
+    length(s) <= 120 ? s : string(nameof(typeof(shape)), " (", length(s), " chars, not shown)")
+end
+
+
+#---------------------------------------------------------------------------------
 # Characteristic length of a boundary, from its own vertex cloud: the diagonal
 # of its bounding box, reduced over the ranks that hold a piece of it. Used only
 # to turn "this vertex has not moved" into a relative test.
@@ -497,7 +512,7 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
             end
         end
 
-        println_rank(string(" #   \"", tagstr, "\" -> user_exactGeo(", repr(shape), ")",
+        println_rank(string(" #   \"", tagstr, "\" -> user_exactGeo(", _shape_label(shape), ")",
                             " ; ", nedges_glob, " edges ; largest node correction = ",
                             MPI.Allreduce(dmax, MPI.MAX, comm),
                             " (of which at a linear vertex: ",

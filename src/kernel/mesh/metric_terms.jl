@@ -276,6 +276,39 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         @inbounds for iedge = 1:nbdy_edges
             poin_edge = @view mesh.poin_in_bdy_edge[iedge, :]
 
+            # Reference point for orienting the normal outward: the CENTROID of
+            # the element this edge belongs to.
+            #
+            # This used to be the single node connijk[e,2,2]. That is one
+            # particular interior LGL node, and where the wall turns sharply the
+            # vector from a boundary node to it goes nearly TANGENTIAL — the dot
+            # product below is then O(round-off) rather than O(element size), and
+            # its sign is decided by luck rather than by geometry.
+            #
+            # Measured on problems/CompEuler/naca64A210, an aerofoil whose nose
+            # elements each span a good fraction of a 3.4e-3 m radius: 2 of the
+            # 618 wall nodes came out with the normal pointing into the fluid
+            # instead of out of it, both of them exactly at the leading edge —
+            # the one place on that wall where the turn is sharp enough. The
+            # centroid gives 0 of 618 on the same grid.
+            #
+            # The centroid is unambiguously interior for any element that has not
+            # folded. Same convention as before — n points AWAY from the element
+            # interior — so nothing changes wherever the old test was already
+            # right, which is everywhere but those two nodes.
+            #
+            # Why this went unnoticed: the free-slip projection q - (q·n)n is
+            # invariant under n -> -n, so a slip wall cannot see it. Every flux
+            # and Neumann boundary term can.
+            e  = mesh.bdy_edge_in_elem[iedge]
+            cx = zero(TFloat); cy = zero(TFloat)
+            for j = 1:N+1, i = 1:N+1
+                p = mesh.connijk[e,i,j]
+                cx += mesh.x[p]; cy += mesh.y[p]
+            end
+            cinv = one(TFloat)/TFloat((N+1)*(N+1))
+            cx *= cinv; cy *= cinv
+
             for k = 1:N+1
                 # Tangent dX/dξ at edge node k
                 tx = zero(TFloat); ty = zero(TFloat)
@@ -293,20 +326,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 metrics.Jef[iedge, k] = mag
                 metrics.nx[iedge, k] = ty * mag_inv
                 metrics.ny[iedge, k] = -tx * mag_inv
-                e = mesh.bdy_edge_in_elem[iedge]
-                ip2 = mesh.connijk[e,2,2]
-                idx1 = 0
-                idx2 = 0
-                #=for j=1:N+1
-                    for i=1:N+1
-                        if (mesh.connijk[e,i,j] == ip)
-                            idx1 = i
-                            idx2 = j
-                        end
-                    end
-                end=#
-                #if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
-                if (metrics.nx[iedge, k]*(mesh.x[ip2]-mesh.x[ip]) + metrics.ny[iedge, k]*(mesh.y[ip2] -mesh.y[ip]) > 0)
+                if (metrics.nx[iedge, k]*(cx - mesh.x[ip]) +
+                    metrics.ny[iedge, k]*(cy - mesh.y[ip]) > 0)
                     metrics.nx[iedge, k] = - metrics.nx[iedge, k]
                     metrics.ny[iedge, k] = - metrics.ny[iedge, k]
                 end

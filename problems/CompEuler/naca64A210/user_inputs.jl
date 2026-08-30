@@ -3,16 +3,38 @@ function user_inputs()
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
-        :tend                 => 6.0e-3,          # ≈ 2 tunnel flow-throughs
+        :tend                 => 6.0e-3,          # ≈ 2 tunnel flow-throughs, 400k steps
         :lrestart             => false,
         :restart_time         => 0.0,
-        # CFL. The smallest element is at the nose (h = 2.3e-3 m, measured by
-        # ./check_mesh.jl); at :nop => 4 the tightest LGL spacing inside it is
-        # 0.173h ≈ 4.1e-4 m, and the fastest wave is |u| + c ≈ 1372 m/s, so the
-        # explicit stability limit is ~3.0e-7 s. This runs at a tenth of it,
-        # which is what the DynSGS residual — evaluated on the previous step —
-        # wants across a shock. 200k steps.
-        :Δt                   => 3.0e-8,
+        # TIME STEP. Read this before changing :μ, the mesh, or Δt — they are
+        # not independent, and getting it wrong does not look like a CFL
+        # failure. It looks like "Instability detected" on step 3.
+        #
+        # The binding limit here is NOT the advective CFL. It is the DIFFUSIVE
+        # limit of the DynSGS artificial viscosity, and it is 16x tighter:
+        #
+        #   advective   Δt ≲ ½·Δx/(|u|+c)              = 7.4e-8 s
+        #   diffusive   Δt ≲ ½·Δx²/ν,  ν = μ⃗·C2·Δ·(|u|+c)
+        #
+        # with (all printed by the run itself, under "ELEMENT SIZES")
+        #   Δx = smallest LGL node spacing  ≈ 3.0e-4 m   (the CFL length scale)
+        #   Δ  = smallest element size      ≈ 2.3e-3 m   (what DynSGS caps on)
+        #   |u| + c ≈ 1372 m/s,  C2 = 0.5 (SGS.jl),  μ⃗ = :μ below.
+        #
+        # ν is the DynSGS CAP μ_max = C2·Δ·(|u|+c), which the residual actually
+        # reaches inside the elements that hold the bow shock — so the cap is
+        # the operative value there, not a bound nobody attains.
+        #
+        # Note ν ∝ Δ ∝ Δx, so Δt_diffusive ∝ Δx: refining the nose costs time
+        # step LINEARLY, and it is the nose that sets Δx. That is the whole
+        # economics of this case.
+        #
+        # Measured, on the previous grid (Δ = 1.6e-3, Δx = 2.0e-4) with
+        # :μ => [1,4,4,4], for which the formula gives 4.7e-9:
+        #     Δt = 3.0e-8  ->  NaN on step 3
+        #     Δt = 5.0e-9  ->  ran clean
+        # The formula is trustworthy; it is not a rule of thumb.
+        :Δt                   => 1.5e-8,
         :diagnostics_at_times => (0:2.0e-5:6.0e-3),
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
@@ -27,7 +49,18 @@ function user_inputs()
         :energy_equation      => "energy",        # slot 4 is ρE
         :lvisc                => true,
         :visc_model           => DSGS(),          # residual-based shock capturing
-        :μ                    => [1.0, 4.0, 4.0, 4.0],
+        # DynSGS per-equation multiplier. shock_circle uses [1, 4, 4, 4]; this
+        # deck uses the UNAMPLIFIED [1, 1, 1, 1], i.e. Nazarov & Hoffman's own
+        # calibration (C1 = 1, C2 = 0.5), because the factor of 4 multiplies ν
+        # and therefore divides the time step by 4 — see the :Δt note above.
+        #
+        # On this grid that is the difference between 400k steps and 1.6M for
+        # the same :tend. shock_circle can afford the 4 because its elements are
+        # ~20x larger; an aerofoil nose cannot.
+        #
+        # If the bow shock comes out under-damped (oscillations upstream of it
+        # in the schlieren), raise these — and divide :Δt by the same factor.
+        :μ                    => [1.0, 1.0, 1.0, 1.0],
         # Artificial Prandtl number P of Nazarov & Hoffman eq. (3.7):
         # κ = P/(γ-1)·μ, with P ≈ 0.1.
         :Pr                   => 0.1,
@@ -39,7 +72,7 @@ function user_inputs()
         # naca64A210.msh is straight-sided: its vertices sit on the section, and
         # every high-order node in between sits on the CHORD. Around the nose,
         # where the radius of curvature is 0.0056c = 3.4e-3 m and a boundary
-        # edge is 2.3e-3 m long, that puts the mid-edge nodes ~1.7e-4 m inside
+        # edge is 3.4e-3 m long, that puts the mid-edge nodes ~3.2e-4 m inside
         # the aerofoil — a ring of small forward-facing steps through the
         # stagnation region of a Mach-3 flow, and no value of :nop removes them.
         #
@@ -90,7 +123,7 @@ function user_inputs()
         #
         # :linitial_refine => true DOES work here, unlike on a fitted geometry:
         # refinement puts each new boundary vertex on the midpoint of a chord, a
-        # sagitta inside the section (1.7e-4 m at the nose), but the section is
+        # sagitta inside the section (3.2e-4 m at the nose), but the section is
         # STATED in user_exactGeo.jl rather than fitted from the grid, and the
         # snap moves vertices as well as high-order nodes — so the wall comes
         # back onto the aerofoil either way.

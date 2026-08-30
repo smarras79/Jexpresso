@@ -8,7 +8,7 @@
 //
 // section : NACA 64A210, chord 0.6, LE at (1, 0), incidence 0 deg
 // tunnel  : [0, 3] x [-1, 1]
-// aerofoil: 240 points, splined; h = 0.0024 at the tips, 0.012 on the surface
+// aerofoil: 240 points, splined; h = 0.0036 at the tips, 0.012 on the surface
 
 hfar = 0.1;
 
@@ -295,7 +295,7 @@ Field[3] = Distance;
 Field[3].PointsList = {218, 100};
 Field[4] = Threshold;
 Field[4].InField = 3;
-Field[4].SizeMin = 0.0024;
+Field[4].SizeMin = 0.0036;
 Field[4].SizeMax = 0.1;
 Field[4].DistMin = 0.018;
 Field[4].DistMax = 0.15;

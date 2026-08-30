@@ -82,14 +82,20 @@ const YMIN, YMAX = -1.0, 1.0
 #   H_SURF  along the rest of the aerofoil.
 #   H_FAR   in the far field, reached over a distance D_FAR.
 #
-# As shipped this is 2610 quads — the same order as shock_circle, i.e. a case
+# As shipped this is 2468 quads — the same order as shock_circle, i.e. a case
 # that runs on a laptop. It is a demonstration, not a grid-converged aerofoil
 # calculation. check_mesh.jl measures what it is worth: the wall-edge sagitta
-# peaks at 1.7e-4 m at the nose (that is the error the curving removes) and the
-# thinnest element there is still 9.2 times its own sagitta, so nothing folds.
+# peaks at 3.2e-4 m at the nose (that is the error the curving removes) and the
+# thinnest element there is still 9.4 times its own sagitta, so nothing folds.
+#
+# H_LE IS ALSO THE TIME STEP. The DynSGS diffusive stability limit is
+# Δt ≲ ½Δx²/(μ⃗·C2·Δ·(|u|+c)) with Δx ∝ Δ ∝ H_LE, so Δt ∝ H_LE — halving the
+# nose size halves the time step and doubles the cost of the run. See the :Δt
+# note in user_inputs.jl, which carries the measurements. Refine the nose only
+# as far as the fold margin actually needs.
 #---------------------------------------------------------------------------------
 const NSURF  = 241
-const H_LE   = 0.004*CHORD         # nose radius is 0.0056c: ~4 elements round it
+const H_LE   = 0.006*CHORD         # nose radius is 0.0056c: ~3 elements round it
 const H_SURF = 0.020*CHORD
 const H_FAR  = 0.100
 const D_NEAR = 0.05*CHORD          # distance out to which H_SURF holds

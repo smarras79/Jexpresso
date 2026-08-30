@@ -27,8 +27,8 @@
 #
 # WHY THE CURVED BOUNDARY MATTERS HERE. The grid is straight-sided: nodes on the
 # section, high-order nodes in between on the chords. Around the nose a boundary
-# edge is 2.3e-3 m long across a 3.4e-3 m radius, so its mid-edge nodes sit
-# 1.7e-4 m INSIDE the aerofoil (check_mesh.jl measures exactly this). That is a
+# edge is 3.4e-3 m long across a 3.4e-3 m radius, so its mid-edge nodes sit
+# 3.2e-4 m INSIDE the aerofoil (check_mesh.jl measures exactly this). That is a
 # ring of small forward-facing steps through the stagnation region of a Mach-3
 # flow, and raising :nop does not remove it — the polygon is in the grid, not in
 # the polynomial. :exact_geometry puts those nodes back on the section.
