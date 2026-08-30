@@ -191,34 +191,46 @@ function main()
     # but returning the PARAMETER rather than the point, because the sagitta
     # needs the arc between two nodes and not just their images.
     #
-    # Sweep AND Newton. A sweep alone is quantised to its own spacing, and the
-    # wall edges here are shorter than any affordable sweep — so the arc it
-    # reports would be shifted by up to half a sample relative to the chord, and
-    # near the sharp trailing edge that shift alone reads as a sagitta of a
-    # millimetre. Measurement noise dressed as geometry; refine it away.
+    # Sweep AND Newton, Newton started from EVERY local minimum of the sweep —
+    # the same construction, and for the same reason, as user_exactGeo itself
+    # (see the note above _NACA_SWEEP_PER_SEGMENT there). A single-start search
+    # near the sharp trailing edge locks onto whichever surface happened to hold
+    # the nearest sample, which is not always the one the node is on, and the
+    # arc it then reports spans the wrong part of the section. That shows up
+    # here as a sagitta of a millimetre where the true one is 1.7e-4 —
+    # measurement noise dressed as geometry.
     function param_of(sec, x, y)
         tlo, thi = sec.t[1], sec.t[end]
-        n = (length(sec.t) - 1)*32
+        n  = (length(sec.t) - 1)*32
+        dt = (thi - tlo)/n
+        function refine(t0)
+            lo, hi = max(tlo, t0 - dt), min(thi, t0 + dt)
+            t = t0
+            for _ = 1:40
+                px, py, dx, dy, d2x, d2y = naca64A210_point(sec, t)
+                g  = (px - x)*dx + (py - y)*dy
+                gp = dx*dx + dy*dy + (px - x)*d2x + (py - y)*d2y
+                abs(gp) > 0.0 || break
+                tn = clamp(t - g/gp, lo, hi)
+                abs(tn - t) <= 1.0e-15*max(1.0, abs(t)) && (t = tn; break)
+                t = tn
+            end
+            px, py, _, _, _, _ = naca64A210_point(sec, t)
+            return t, (px - x)^2 + (py - y)^2
+        end
         tbest, fbest = tlo, Inf
+        consider(t0) = ((tc, fc) = refine(t0); fc < fbest && (fbest = fc; tbest = tc))
+        fm2, fm1, tm1 = Inf, Inf, tlo
         for k = 0:n
             t = tlo + (thi - tlo)*k/n
             px, py, _, _, _, _ = naca64A210_point(sec, t)
             f = (px - x)^2 + (py - y)^2
-            f < fbest && (fbest = f; tbest = t)
+            fm1 <= fm2 && fm1 <= f && consider(tm1)
+            fm2, fm1, tm1 = fm1, f, t
         end
-        dt = (thi - tlo)/n
-        lo, hi = max(tlo, tbest - dt), min(thi, tbest + dt)
-        t = tbest
-        for _ = 1:40
-            px, py, dx, dy, d2x, d2y = naca64A210_point(sec, t)
-            g  = (px - x)*dx + (py - y)*dy
-            gp = dx*dx + dy*dy + (px - x)*d2x + (py - y)*d2y
-            abs(gp) > 0.0 || break
-            tn = clamp(t - g/gp, lo, hi)
-            abs(tn - t) <= 1.0e-15*max(1.0, abs(t)) && (t = tn; break)
-            t = tn
-        end
-        return t
+        consider(tlo); consider(thi)
+        fm1 <= fm2 && consider(tm1)
+        return tbest
     end
 
     worst_ratio = Inf

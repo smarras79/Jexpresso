@@ -302,38 +302,39 @@ end
 # parametrization, only that the nodes lie on the section. A nearest-point
 # projection is simply the choice that moves them least.
 #---------------------------------------------------------------------------------
-const _NACA_SWEEP_PER_SEGMENT = 6        # sweep samples per published ordinate
+# Sweep resolution, and why it is not "a few samples per ordinate".
+#
+# THE TRAILING EDGE IS WHY. The sweep exists to pick the branch of the section
+# that Newton then converges on, and Newton, once started, stays on its branch.
+# Near a sharp trailing edge the two surfaces come within a few 1e-5 m of each
+# other while the sweep spacing was 4e-3 m — so the sample nearest a node on the
+# LOWER surface was routinely a point on the UPPER one, and the projection
+# happily moved that node 4.1e-4 m ACROSS the trailing edge. That is bigger than
+# the 1.7e-4 m sagitta the whole exercise is there to remove, it crosses the
+# elements at the trailing edge, and a crossed element is a negative Jacobian,
+# which is a NaN on the first time step.
+#
+# Two changes, and BOTH are needed:
+#
+#   * a finer sweep, so the true branch is sampled at all near the trailing
+#     edge, and
+#   * Newton from EVERY local minimum of the swept distance, keeping the
+#     closest result — not from the single best sample. A point on the lower
+#     surface has a local minimum on its own branch with distance ~0, which
+#     beats anything on the other branch no matter which sample happened to be
+#     nearest. This is what makes the answer independent of the sampling, and it
+#     costs a handful of extra Newton solves on a few hundred boundary nodes,
+#     once, at grid-build time.
+#
+# The two parameter ends are always candidates as well: they are the two sides
+# of the trailing edge itself, and a node just downstream of it projects there.
+const _NACA_SWEEP_PER_SEGMENT = 100      # sweep samples per published ordinate
 const _NACA_NEWTON_ITERS      = 40
 
-function user_exactGeo(tag, spec, x, y)
-
-    spec isa NamedTuple && haskey(spec, :Mx) || return (x, y)   # not ours
-
-    sec  = spec
-    ts   = sec.t
-    tlo  = ts[1]
-    thi  = ts[end]
-
-    # Coarse sweep for the global minimum.
-    nseg = (length(ts) - 1)*_NACA_SWEEP_PER_SEGMENT
-    tbest = tlo
-    fbest = Inf
-    for k = 0:nseg
-        t = tlo + (thi - tlo)*k/nseg
-        px, py, _, _, _, _ = naca64A210_point(sec, t)
-        f = (px - x)^2 + (py - y)^2
-        if f < fbest
-            fbest = f; tbest = t
-        end
-    end
-
-    # Newton on g(t) = 0, confined to one sweep cell either side of the best
-    # sample: that is where the minimum is, and clamping there stops a large
-    # Newton step from jumping to a different branch of the surface.
-    dt   = (thi - tlo)/nseg
-    lo   = max(tlo, tbest - dt)
-    hi   = min(thi, tbest + dt)
-    t    = tbest
+# Newton on g(t) = (P(t) - q)·P'(t) = 0, confined to [lo, hi] so a large step
+# cannot jump to another branch. Returns the point and its squared distance.
+@inline function _naca_refine(sec, x, y, t0, lo, hi)
+    t = t0
     for _ = 1:_NACA_NEWTON_ITERS
         px, py, dx, dy, d2x, d2y = naca64A210_point(sec, t)
         g  = (px - x)*dx + (py - y)*dy
@@ -344,9 +345,48 @@ function user_exactGeo(tag, spec, x, y)
         abs(tn - t) <= 1.0e-15*max(1.0, abs(t)) && (t = tn; break)
         t = tn
     end
-
     px, py, _, _, _, _ = naca64A210_point(sec, t)
-    return (px, py)
+    return px, py, (px - x)^2 + (py - y)^2
+end
+
+function user_exactGeo(tag, spec, x, y)
+
+    spec isa NamedTuple && haskey(spec, :Mx) || return (x, y)   # not ours
+
+    sec  = spec
+    ts   = sec.t
+    tlo  = ts[1]
+    thi  = ts[end]
+    nseg = (length(ts) - 1)*_NACA_SWEEP_PER_SEGMENT
+    dt   = (thi - tlo)/nseg
+
+    bx = x; by = y; bf = Inf
+
+    @inline function consider(t0)
+        lo = t0 - dt < tlo ? tlo : t0 - dt
+        hi = t0 + dt > thi ? thi : t0 + dt
+        px, py, f = _naca_refine(sec, x, y, t0, lo, hi)
+        if f < bf
+            bf = f; bx = px; by = py
+        end
+        return nothing
+    end
+
+    # Sweep, refining from every local minimum. Only three samples are ever held
+    # at once, so this allocates nothing.
+    fm2 = Inf; fm1 = Inf; tm1 = tlo
+    for k = 0:nseg
+        t = tlo + (thi - tlo)*k/nseg
+        px, py, _, _, _, _ = naca64A210_point(sec, t)
+        f = (px - x)^2 + (py - y)^2
+        fm1 <= fm2 && fm1 <= f && consider(tm1)
+        fm2 = fm1; fm1 = f; tm1 = t
+    end
+    consider(tlo)                       # the two sides of the trailing edge,
+    consider(thi)                       # which are the ends of the parameter
+    fm1 <= fm2 && consider(tm1)         # and the last sample, if it is a minimum
+
+    return (bx, by)
 end
 
 
