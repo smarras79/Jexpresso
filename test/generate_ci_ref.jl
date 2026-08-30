@@ -206,7 +206,7 @@ function deck_drift(c::CICase)
     original, ci_deck = problems_dir(c), runs_dir(c)
     (isdir(original) && isdir(ci_deck)) || return String[]
 
-    files = (CICases.REQUIRED_CASE_FILES..., "user_analytic.jl")
+    files = (CICases.REQUIRED_CASE_FILES..., "user_analytic.jl", "user_exactGeo.jl")
     return filter(collect(files)) do f
         a, b = joinpath(original, f), joinpath(ci_deck, f)
         isfile(a) && isfile(b) ? read(a) != read(b) : (isfile(a) || isfile(b))

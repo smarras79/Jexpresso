@@ -854,17 +854,33 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      the construction (isoparametric boundary + Gordon-Hall
     #                      blend) and why it is the one Kopriva (2006) sanctions.
     #
+    #                      This key only NAMES the boundaries. WHAT SHAPE THEY
+    #                      ARE is a property of the case, not of the kernel, so
+    #                      it is stated analytically in
+    #
+    #                          problems/<eqs>/<case>/user_exactGeo.jl
+    #
+    #                      which defines  user_exactGeo(tag, spec, x, y) -> (x, y)
+    #                      (and, optionally, user_exactGeo_setup). Copy
+    #                      problems/CompEuler/shock_circle/user_exactGeo.jl — a
+    #                      circle, stated and fitted — and put your own geometry
+    #                      in it: an ellipse, an aerofoil, a bump, a spline.
+    #
     #                      Absent (the default) nothing is curved and every case
-    #                      behaves exactly as before. Otherwise it is a Dict
-    #                      from gmsh `Physical Curve` name to shape:
+    #                      behaves exactly as before. Otherwise, any of:
     #
-    #                        Dict("circle_boundary" => :circle)
-    #                                centre and radius FITTED from the boundary
-    #                                vertices the mesh file already carries, and
-    #                                refused if they do not lie on a circle.
+    #                        "circle_boundary"                    a single tag
+    #                        ["hub", "shroud"]                    several tags
+    #                        Dict("hub" => (:circle, 1.0, 0.0, 0.2))
+    #                                a tag and a SPEC — an arbitrary value the
+    #                                kernel never inspects and hands back to
+    #                                user_exactGeo, so one user_exactGeo.jl can
+    #                                serve several boundaries, or be reused with
+    #                                the parameters kept in the deck.
     #
-    #                        Dict("circle_boundary" => (:circle, 1.0, 0.0, 0.2))
-    #                                centre and radius stated outright.
+    #                      The tag is the gmsh `Physical Curve` name. Naming a
+    #                      boundary without shipping a user_exactGeo.jl is an
+    #                      error, not a silent no-op.
     #
     #                      The grid must still resolve the curvature: an element
     #                      thinner than the sagitta of its own boundary arc folds,
@@ -873,16 +889,27 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     if haskey(inputs, :exact_geometry)
         _eg = inputs[:exact_geometry]
-        _eg isa AbstractDict ||
-            error(string(" # ERROR mod_inputs.jl: :exact_geometry must be a Dict of ",
-                         "\"boundary tag\" => shape, got ", typeof(_eg), "."))
-        for (_tag, _sh) in _eg
-            _ok = _sh === :circle ||
-                  (_sh isa Tuple && length(_sh) == 4 && _sh[1] === :circle &&
-                   all(v -> v isa Real, _sh[2:4]) && _sh[4] > 0)
-            _ok || error(string(" # ERROR mod_inputs.jl: :exact_geometry[\"", _tag,
-                                "\"] => ", _sh, " is not a shape I know. Use :circle ",
-                                "(fitted) or (:circle, xc, yc, r) with r > 0."))
+        # A tag is a String or a Symbol; a spec is anything at all, because only
+        # the case's own user_exactGeo reads it.
+        _istag(t) = t isa AbstractString || t isa Symbol
+        if _eg isa AbstractDict
+            for _tag in keys(_eg)
+                _istag(_tag) ||
+                    error(string(" # ERROR mod_inputs.jl: :exact_geometry key ", repr(_tag),
+                                 " is not a boundary tag. The keys are gmsh `Physical Curve` ",
+                                 "names, e.g. Dict(\"circle_boundary\" => (:circle, 1.0, 0.0, 0.2))."))
+            end
+        elseif _istag(_eg)
+            # a single tag, written bare
+        elseif _eg isa Union{AbstractVector,Tuple,AbstractSet}
+            all(_istag, _eg) ||
+                error(string(" # ERROR mod_inputs.jl: :exact_geometry => ", repr(_eg),
+                             " must list gmsh `Physical Curve` names, e.g. ",
+                             "[\"circle_boundary\"]. To pass parameters as well, use the ",
+                             "Dict form, Dict(\"circle_boundary\" => <spec>)."))
+        else
+            error(string(" # ERROR mod_inputs.jl: :exact_geometry must be a boundary tag, a ",
+                         "list of tags, or a Dict of tag => spec; got ", typeof(_eg), "."))
         end
     end
     #

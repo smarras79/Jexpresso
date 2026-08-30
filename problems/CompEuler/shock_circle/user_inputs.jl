@@ -44,14 +44,20 @@ function user_inputs()
         # isoparametric interpolant of the true circle — 4.4e-8 from it at
         # :nop => 4 instead of 3.8e-3, a factor of 10^5.
         #
+        # THIS KEY ONLY NAMES THE BOUNDARY. What shape it is — the analytic
+        # definition, and the fit — is stated in ./user_exactGeo.jl, which is
+        # where you put an ellipse, an aerofoil or a spline instead. The value
+        # below is a SPEC: Jexpresso does not look inside it, it hands it back to
+        # user_exactGeo, so the numbers stay next to the mesh they describe.
+        #
         # THE CIRCLE IS STATED, NOT FITTED, because :linitial_refine is on below.
-        # `:circle` on its own means "fit the centre and radius from the boundary
-        # vertices the mesh file carries", and on the UNREFINED grid that
-        # recovers (1.0, 0.0) and 0.2 exactly. Refinement breaks it: each new
-        # boundary vertex lands on the midpoint of a chord, a sagitta inside the
-        # circle, so the fit sees half its points 3.8e-3 in, returns r = 0.19809,
-        # and is refused — correctly, but the net effect is that nothing gets
-        # curved at all. The values below are the ones in
+        # `:circle` on its own asks user_exactGeo_setup to fit the centre and
+        # radius from the boundary vertices the mesh file carries, and on the
+        # UNREFINED grid that recovers (1.0, 0.0) and 0.2 exactly. Refinement
+        # breaks it: each new boundary vertex lands on the midpoint of a chord, a
+        # sagitta inside the circle, so the fit sees half its points 3.8e-3 in,
+        # returns r = 0.19809, and is refused — correctly, but the net effect is
+        # that nothing gets curved at all. The values below are the ones in
         # plate_hole_circle_unit.geo (xc, yc, radius).
         :exact_geometry       => Dict("circle_boundary" => (:circle, 1.0, 0.0, 0.2)),
         #---------------------------------------------------------------------------

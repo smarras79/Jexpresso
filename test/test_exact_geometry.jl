@@ -99,6 +99,38 @@ end
 
 include(joinpath(@__DIR__, "..", "src", "kernel", "mesh", "exact_geometry.jl"))
 
+#---------------------------------------------------------------------------------
+# THE CASE'S HALF OF THE CONTRACT.
+#
+# exact_geometry.jl knows how to curve a boundary and nothing about what shape it
+# is; the shape comes from the case, in problems/<eqs>/<case>/user_exactGeo.jl.
+# So the test has to bring one, and the honest thing is to bring THE one that
+# ships: this is problems/CompEuler/shock_circle/user_exactGeo.jl, verbatim
+# except for the @warn text, which is not what is under test here. Redefining
+# these two methods is exactly what including a case's user_exactGeo.jl does at
+# run time.
+#---------------------------------------------------------------------------------
+function user_exactGeo(tag, spec, x, y)
+    if spec isa Tuple && length(spec) == 4 && spec[1] === :circle
+        xc, yc, r = spec[2], spec[3], spec[4]
+        dx = x - xc
+        dy = y - yc
+        d  = sqrt(dx*dx + dy*dy)
+        d > 0 || return (x, y)
+        return (xc + (r/d)*dx, yc + (r/d)*dy)
+    end
+    return (x, y)
+end
+
+function user_exactGeo_setup(tag, spec, xs, ys)
+    spec === :circle || return spec
+    fit = je_fit_circle(xs, ys)
+    fit === nothing && return nothing
+    xc, yc, r, rresid = fit
+    rresid > 1.0e-6 && return nothing
+    return (:circle, xc, yc, r)
+end
+
 
 #---------------------------------------------------------------------------------
 # Legendre-Gauss-Lobatto nodes on [-1,1]: Newton on (1-x²)P'_N, started from the
@@ -183,9 +215,14 @@ function build_annulus(N, nr, nt; Rout = 0.6)
     return mesh, LGL(ξ)
 end
 
+# :_has_exactgeo is how snap_nodes_to_exact_geometry! knows the case really
+# shipped a user_exactGeo.jl — see the note next to the check in that file, and
+# in src/run.jl, on why a bare isdefined() would not do. The two definitions
+# above are this test's stand-in for that file, so the flag is on.
 curve!(mesh, lgl; shape = :circle) =
     snap_nodes_to_exact_geometry!(mesh, lgl,
-        Dict{Symbol,Any}(:exact_geometry => Dict("circle" => shape)), mesh.SD)
+        Dict{Symbol,Any}(:exact_geometry => Dict("circle" => shape),
+                         :_has_exactgeo  => true), mesh.SD)
 
 # Metrics of one element exactly as build_metric_terms!(…, NSD_2D) forms them:
 # by differentiating the degree-N nodal interpolant. Kopriva eq. (38).
@@ -274,23 +311,23 @@ end
         for ie = 1:m.nedges_bdy, ig in (1, m.ngl)
             p = m.poin_in_bdy_edge[ie, ig]; push!(xs, m.x[p]); push!(ys, m.y[p])
         end
-        fit = _fit_circle_mpi(xs, ys, nothing)
+        fit = je_fit_circle(xs, ys, nothing)
         @test fit !== nothing
-        c, resid = fit
-        @test c.xc ≈ XC atol = 1.0e-12
-        @test c.yc ≈ YC atol = 1.0e-12
-        @test c.r  ≈ R  atol = 1.0e-12
+        xc, yc, r, resid = fit
+        @test xc ≈ XC atol = 1.0e-12
+        @test yc ≈ YC atol = 1.0e-12
+        @test r  ≈ R  atol = 1.0e-12
         @test resid < 1.0e-12
 
         # A straight boundary is not a circle: the fit must say so rather than
         # return a circle of enormous radius and deform the wall onto it.
-        @test _fit_circle_mpi([0.0, 1.0, 2.0, 3.0], [0.0, 0.0, 0.0, 0.0], nothing) === nothing
-        @test _fit_circle_mpi([0.0, 1.0], [0.0, 1.0], nothing) === nothing      # too few
+        @test je_fit_circle([0.0, 1.0, 2.0, 3.0], [0.0, 0.0, 0.0, 0.0], nothing) === nothing
+        @test je_fit_circle([0.0, 1.0], [0.0, 1.0], nothing) === nothing      # too few
 
         # A square is not a circle either: the fit succeeds but the residual is
-        # O(1) and _resolve_shape rejects it.
-        sq = _fit_circle_mpi([0.0,1.0,1.0,0.0,0.5], [0.0,0.0,1.0,1.0,0.0], nothing)
-        @test sq === nothing || sq[2] > 1.0e-6
+        # O(1), and the case's user_exactGeo_setup is what has to notice.
+        sq = je_fit_circle([0.0,1.0,1.0,0.0,0.5], [0.0,0.0,1.0,1.0,0.0], nothing)
+        @test sq === nothing || sq[4] > 1.0e-6
         @test _resolve_shape("sq", :circle, [0.0,1.0,1.0,0.0,0.5], [0.0,0.0,1.0,1.0,0.0],
                              nothing, 0, true) === nothing
     end
@@ -302,13 +339,42 @@ end
             p = m.poin_in_bdy_edge[ie, ig]
             @test hypot(m.x[p] - XC, m.y[p] - YC) ≈ R atol = 1.0e-14
         end
-        @test_throws ErrorException curve!(build_annulus(4, 2, 8)...; shape = :ellipse)
 
-        # A deck may name the gmsh group with a Symbol just as well as a String.
+        # A spec the case does not recognise: user_exactGeo returns the point
+        # unchanged, which is the documented way to decline, so the grid is left
+        # alone rather than deformed onto a guess.
+        m3, l3 = build_annulus(4, 2, 8)
+        x3, y3 = copy(m3.x), copy(m3.y)
+        curve!(m3, l3; shape = :ellipse)
+        @test m3.x == x3 && m3.y == y3
+
+        # A deck may name the gmsh group with a Symbol just as well as a String,
+        # and may give a bare tag list instead of a Dict when the geometry needs
+        # no parameters from the deck.
         m2, l2 = build_annulus(4, 2, 16)
         snap_nodes_to_exact_geometry!(m2, l2,
-            Dict{Symbol,Any}(:exact_geometry => Dict(:circle => (:circle, XC, YC, R))), m2.SD)
+            Dict{Symbol,Any}(:exact_geometry => Dict(:circle => (:circle, XC, YC, R)),
+                             :_has_exactgeo  => true), m2.SD)
         @test m2.x == m.x && m2.y == m.y
+
+        # The bare-tag-list form reaches user_exactGeo with spec = `nothing`. THIS
+        # case's user_exactGeo dispatches on the spec, so it declines and nothing
+        # moves — which is the point being pinned: the list form is for a case
+        # whose geometry is keyed on the tag alone, and declining is never a
+        # silent deformation.
+        m4, l4 = build_annulus(4, 2, 16)
+        x4, y4 = copy(m4.x), copy(m4.y)
+        snap_nodes_to_exact_geometry!(m4, l4,
+            Dict{Symbol,Any}(:exact_geometry => ["circle"],
+                             :_has_exactgeo  => true), m4.SD)
+        @test m4.x == x4 && m4.y == y4
+
+        # Naming a boundary without shipping a user_exactGeo.jl must NOT be a
+        # silent no-op: the run would carry on on the polygon it was trying to
+        # get off. :_has_exactgeo left out is exactly that case.
+        m5, l5 = build_annulus(4, 2, 16)
+        @test_throws ErrorException snap_nodes_to_exact_geometry!(m5, l5,
+            Dict{Symbol,Any}(:exact_geometry => Dict("circle" => (:circle, XC, YC, R))), m5.SD)
     end
 
     @testset "no-op when nothing is asked for" begin
@@ -318,7 +384,8 @@ end
         @test m.x == x0 && m.y == y0
         # a tag no boundary carries is reported, not applied
         snap_nodes_to_exact_geometry!(m, l,
-            Dict{Symbol,Any}(:exact_geometry => Dict("typo" => :circle)), m.SD)
+            Dict{Symbol,Any}(:exact_geometry => Dict("typo" => :circle),
+                             :_has_exactgeo  => true), m.SD)
         @test m.x == x0 && m.y == y0
         # nop = 1: no high-order nodes exist, so there is nothing to move
         m1, l1 = build_annulus(1, 2, 16)
@@ -420,11 +487,11 @@ end
         for ie = 1:mesh.nedges_bdy, ig in (1, mesh.ngl)
             p = mesh.poin_in_bdy_edge[ie, ig]; push!(xs, mesh.x[p]); push!(ys, mesh.y[p])
         end
-        fit = _fit_circle_mpi(xs, ys, nothing)
+        fit = je_fit_circle(xs, ys, nothing)
         @test fit !== nothing
-        @test fit[2] > 1.0e-6                          # residual is large ...
+        @test fit[4] > 1.0e-6                          # residual is large ...
         @test _resolve_shape("circle", :circle, xs, ys, nothing, 0, true) === nothing
-        @test !isapprox(fit[1].r, R; atol = 1.0e-6)    # ... and r is wrong
+        @test !isapprox(fit[3], R; atol = 1.0e-6)      # ... and r is wrong
         # the EXPLICIT form is not fooled
         @test _resolve_shape("circle", (:circle, XC, YC, R), xs, ys, nothing, 0, true) !== nothing
 
