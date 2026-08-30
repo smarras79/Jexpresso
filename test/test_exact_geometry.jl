@@ -100,6 +100,30 @@ end
 include(joinpath(@__DIR__, "..", "src", "kernel", "mesh", "exact_geometry.jl"))
 
 #---------------------------------------------------------------------------------
+# user_exactGeo.jl IS OPTIONAL, and this module is the proof.
+#
+# Almost every case in problems/ ships no user_exactGeo.jl and never sets
+# :exact_geometry, and none of them may be affected by any of this. That is not
+# an argument to be made in a comment: below, exact_geometry.jl is included a
+# SECOND time into a module where the two hooks are never defined — the state a
+# case with no user_exactGeo.jl is actually in — and the testset
+# "user_exactGeo.jl is optional" then runs the entry point there. If a future
+# change makes the kernel need the case's file in order to do nothing, that
+# testset fails.
+#
+# (The rest of this file defines the hooks, because the rest of this file is
+# testing the curving, which needs a shape. This module is the only place the
+# defaults survive.)
+#---------------------------------------------------------------------------------
+module NoUserExactGeo
+    import ..TFloat, ..MPI, ..get_mpi_comm, ..println_rank
+    import ..NSD_1D, ..NSD_2D, ..NSD_3D, ..St_mesh
+    using LinearAlgebra
+    include(joinpath(@__DIR__, "..", "src", "kernel", "mesh", "exact_geometry.jl"))
+end
+
+
+#---------------------------------------------------------------------------------
 # THE CASE'S HALF OF THE CONTRACT.
 #
 # exact_geometry.jl knows how to curve a boundary and nothing about what shape it
@@ -125,9 +149,9 @@ end
 function user_exactGeo_setup(tag, spec, xs, ys)
     spec === :circle || return spec
     fit = je_fit_circle(xs, ys)
-    fit === nothing && return nothing
+    fit === nothing && return false          # `false` declines; `nothing` is a spec
     xc, yc, r, rresid = fit
-    rresid > 1.0e-6 && return nothing
+    rresid > 1.0e-6 && return false
     return (:circle, xc, yc, r)
 end
 
@@ -329,7 +353,7 @@ end
         sq = je_fit_circle([0.0,1.0,1.0,0.0,0.5], [0.0,0.0,1.0,1.0,0.0], nothing)
         @test sq === nothing || sq[4] > 1.0e-6
         @test _resolve_shape("sq", :circle, [0.0,1.0,1.0,0.0,0.5], [0.0,0.0,1.0,1.0,0.0],
-                             nothing, 0, true) === nothing
+                             nothing, 0, true) === false
     end
 
     @testset "explicit shape spec" begin
@@ -375,6 +399,37 @@ end
         m5, l5 = build_annulus(4, 2, 16)
         @test_throws ErrorException snap_nodes_to_exact_geometry!(m5, l5,
             Dict{Symbol,Any}(:exact_geometry => Dict("circle" => (:circle, XC, YC, R))), m5.SD)
+    end
+
+    @testset "user_exactGeo.jl is optional" begin
+        # A case that ships no user_exactGeo.jl and asks for no :exact_geometry
+        # — which is every case in problems/ but two — must be untouched, and
+        # must not so much as consult a hook that is not there.
+        m, l = build_annulus(4, 2, 16)
+        x0, y0 = copy(m.x), copy(m.y)
+        NoUserExactGeo.snap_nodes_to_exact_geometry!(m, l, Dict{Symbol,Any}(), m.SD)
+        @test m.x == x0 && m.y == y0
+        # ... including when the key is present but empty, and in 1D/3D.
+        NoUserExactGeo.snap_nodes_to_exact_geometry!(m, l,
+            Dict{Symbol,Any}(:exact_geometry => String[]), m.SD)
+        @test m.x == x0 && m.y == y0
+        @test NoUserExactGeo.snap_nodes_to_exact_geometry!(m, l, Dict{Symbol,Any}(), NSD_1D()) === nothing
+        @test NoUserExactGeo.snap_nodes_to_exact_geometry!(m, l, Dict{Symbol,Any}(), NSD_3D()) === nothing
+
+        # The default setup hook hands the deck's spec straight back, so a case
+        # that defines only user_exactGeo still works.
+        @test NoUserExactGeo.user_exactGeo_setup("t", :whatever, Float64[], Float64[]) === :whatever
+
+        # And the default snap REFUSES rather than quietly doing nothing: a deck
+        # that names a boundary with no file behind it is a mistake, and a
+        # silent no-op would leave the run on the polygon it meant to get off.
+        @test_throws ErrorException NoUserExactGeo.user_exactGeo("t", nothing, 0.0, 0.0)
+        # The bare-tag-list form passes spec = `nothing`, which the default setup
+        # hands straight on — so user_exactGeo really is reached, and really does
+        # refuse. (It would NOT be reached if `nothing` also meant "skip"; that
+        # ambiguity is why declining is spelled `false`.)
+        @test_throws ErrorException NoUserExactGeo.snap_nodes_to_exact_geometry!(m, l,
+            Dict{Symbol,Any}(:exact_geometry => ["circle"], :_has_exactgeo => true), m.SD)
     end
 
     @testset "no-op when nothing is asked for" begin
@@ -490,10 +545,10 @@ end
         fit = je_fit_circle(xs, ys, nothing)
         @test fit !== nothing
         @test fit[4] > 1.0e-6                          # residual is large ...
-        @test _resolve_shape("circle", :circle, xs, ys, nothing, 0, true) === nothing
+        @test _resolve_shape("circle", :circle, xs, ys, nothing, 0, true) === false
         @test !isapprox(fit[3], R; atol = 1.0e-6)      # ... and r is wrong
         # the EXPLICIT form is not fooled
-        @test _resolve_shape("circle", (:circle, XC, YC, R), xs, ys, nothing, 0, true) !== nothing
+        @test _resolve_shape("circle", (:circle, XC, YC, R), xs, ys, nothing, 0, true) !== false
 
         # (b) with the circle stated, the snap fixes the wall — vertices included.
         x0 = copy(mesh.x); y0 = copy(mesh.y)

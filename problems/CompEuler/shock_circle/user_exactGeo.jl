@@ -32,13 +32,15 @@
 #       node must get bit-for-bit the same answer, or the grid tears along the
 #       partition boundary.
 #
-#   user_exactGeo_setup(tag, spec, xs, ys) -> spec, or nothing   OPTIONAL
+#   user_exactGeo_setup(tag, spec, xs, ys) -> spec, or false      OPTIONAL
 #       Called ONCE per boundary, before any node moves, with the LINEAR (gmsh
 #       vertex) coordinates of that boundary gathered over all ranks — the
 #       geometry the mesh file itself asserts. Return the spec to use (possibly
-#       a different one, fitted from the grid), or `nothing` to leave the
-#       boundary alone. Every rank calls it, so a collective is allowed here and
-#       nowhere else. Omit it entirely and the deck's spec is used as written.
+#       a different one, fitted from the grid), or `false` to leave the boundary
+#       alone — `false` and not `nothing`, because `nothing` is itself a valid
+#       spec (it is what the bare-tag-list form of :exact_geometry passes).
+#       Every rank calls it, so a collective is allowed here and nowhere else.
+#       Omit it entirely and the deck's spec is used as written.
 #
 # WHY A NEAREST-POINT PROJECTION IS ENOUGH. Kopriva (J. Sci. Comput. 26(3):301,
 # 2006) Theorem 3 asks only that the element mapping be in P^N. The mapping is
@@ -110,7 +112,7 @@ function user_exactGeo_setup(tag, spec, xs, ys)
     if fit === nothing
         @warn string(":exact_geometry \"", tag, "\" => :circle ignored: its vertices are ",
                      "collinear or too few to define a circle.")
-        return nothing
+        return false
     end
 
     xc, yc, r, rresid = fit
@@ -123,7 +125,7 @@ function user_exactGeo_setup(tag, spec, xs, ys)
                      "longer states the circle. Give it outright instead: ",
                      ":exact_geometry => Dict(\"", tag, "\" => (:circle, xc, yc, r)), ",
                      "which works on a refined grid because the vertices are snapped too.")
-        return nothing
+        return false
     end
 
     return (:circle, xc, yc, r)

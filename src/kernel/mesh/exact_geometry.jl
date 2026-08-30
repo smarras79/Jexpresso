@@ -89,8 +89,8 @@
 #        # OPTIONAL. Called ONCE per tag, before any node is moved, with the
 #        # LINEAR (gmsh vertex) point cloud of that boundary. Return the spec to
 #        # hand to user_exactGeo — possibly a different one, fitted from the
-#        # grid — or `nothing` to leave this boundary alone.
-#        user_exactGeo_setup(tag, spec, xs, ys) -> spec or nothing
+#        # grid — or `false` to leave this boundary alone.
+#        user_exactGeo_setup(tag, spec, xs, ys) -> spec, or false to skip
 #
 #      problems/CompEuler/shock_circle/user_exactGeo.jl is the worked example: a
 #      circle, both stated outright and least-squares fitted from the grid (via
@@ -183,18 +183,24 @@ function user_exactGeo(tag, spec, x, y)
 end
 
 #
-# user_exactGeo_setup(tag, spec, xs, ys) -> spec, or nothing to skip the tag
+# user_exactGeo_setup(tag, spec, xs, ys) -> spec, or `false` to skip the tag
 #
 # Optional. Called once per boundary tag, before any node is moved, with the
 # LINEAR (gmsh vertex) coordinates of that boundary gathered over all ranks —
 # the geometry the mesh file itself asserts. Use it to fit the shape parameters
 # from the grid (`je_fit_circle` below is there for exactly that), to validate
-# what the deck asked for, or to say "not this one" by returning `nothing`.
+# what the deck asked for, or to say "not this one" by returning `false`.
+#
+# `false` AND NOT `nothing`, because `nothing` is a perfectly good spec: it is
+# what the bare-tag-list form of :exact_geometry passes, for a case whose
+# geometry is keyed on the tag alone. Overloading it to mean "skip" would make
+# such a case — one that defines only the required hook and lets this default
+# stand — silently curve nothing at all.
 #
 # EVERY RANK CALLS IT, for every tag, in the same order — which is why a
 # collective is allowed here and nowhere else, and why its verdict has to be the
-# same on all of them: a `nothing` on some ranks only would skip the tag there
-# and leave the others inside the next collective, hanging the run.
+# same on all of them: a `false` on some ranks only would skip the tag there and
+# leave the others inside the next collective, hanging the run.
 #
 # The default hands the deck's spec back untouched.
 #
@@ -352,7 +358,7 @@ end
 #
 # All this does is call the case's user_exactGeo_setup with the boundary's own
 # linear vertices and let it say what the spec really is — fitted, validated, or
-# passed straight through — or decline the tag by returning `nothing`. It is a
+# passed straight through — or decline the tag by returning `false`. It is a
 # named function rather than an inline call so the caller reads the same as it
 # did before, and so a case that declines a boundary is reported once, here.
 #
@@ -363,7 +369,7 @@ function _resolve_shape(tag::AbstractString, spec, xs, ys, comm, rank, suppress)
 
     shape = user_exactGeo_setup(tag, spec, xs, ys)
 
-    if shape === nothing
+    if shape === false
         println_rank(string(" #   :exact_geometry \"", tag,
                             "\" skipped: user_exactGeo_setup declined it. Nothing was curved ",
                             "on that boundary.");
@@ -453,7 +459,7 @@ function snap_nodes_to_exact_geometry!(mesh::St_mesh, lgl, inputs::Dict{Symbol,A
         end
 
         shape = _resolve_shape(tagstr, shape_spec, xs, ys, comm, rank, mesh.msg_suppress)
-        shape === nothing && continue
+        shape === false && continue
 
         # A tag that exists in no .msh anywhere is a typo in the deck, not a
         # partitioning artifact — check it globally before reporting.
