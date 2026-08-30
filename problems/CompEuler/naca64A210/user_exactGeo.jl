@@ -49,8 +49,11 @@
 #
 # The deck (user_inputs.jl) names the boundary and states the placement:
 #
-#   :exact_geometry => Dict("airfoil" => (:naca64A210, 1.0, 0.0, 0.6, 0.0)),
-#                                        kind        x_LE y_LE chord α [deg]
+#   :exact_geometry => Dict("airfoil" => (:naca64A210, 1.0, 0.0, 0.6, 0.0, 0.005)),
+#                                        kind        x_LE y_LE chord α  r_TE
+#
+# r_TE is the trailing-edge radius as a fraction of chord; 0 leaves the published
+# cusp. See _naca_te_round below for why this case does not use 0.
 #
 # make_mesh.jl reads the SAME tuple to write the .geo, so the mesh and the exact
 # geometry cannot drift apart: change the chord or the incidence in the deck,
@@ -219,7 +222,7 @@ end
 # (xle, yle). Splined against cumulative chord length, so the parameter is very
 # nearly arclength and the round leading edge — where dy/dx is infinite and a
 # y(x) spline would fail — is no different from anywhere else. The two ends of
-# the parameter range are the two sides of the sharp trailing edge, which is
+# the parameter range are the two sides of the trailing edge, which is
 # exactly why the curve is left OPEN rather than made periodic: a periodic
 # spline would round off the one corner the section actually has.
 #
@@ -227,7 +230,8 @@ end
 # src/run.jl does whenever the case is edited) can never collide with a type it
 # defined on a previous include.
 #---------------------------------------------------------------------------------
-function naca64A210_section(xle::Real, yle::Real, chord::Real, α_deg::Real)
+function naca64A210_section(xle::Real, yle::Real, chord::Real, α_deg::Real,
+                            te_radius_c::Real = 0.0)
 
     xr = NACA64A210_ORDINATES[:, 1]
     yr = NACA64A210_ORDINATES[:, 2]
@@ -263,10 +267,133 @@ function naca64A210_section(xle::Real, yle::Real, chord::Real, α_deg::Real)
         ts[i] = ts[i-1] + hypot(px[i] - px[i-1], py[i] - py[i-1])
     end
 
-    return (t = ts, x = px, y = py,
-            Mx = _spline_second_derivatives(ts, px),
-            My = _spline_second_derivatives(ts, py),
-            chord = Float64(chord))
+    sec = (t = ts, x = px, y = py,
+           Mx = _spline_second_derivatives(ts, px),
+           My = _spline_second_derivatives(ts, py),
+           chord = Float64(chord), te = nothing)
+
+    te_radius_c > 0 || return sec
+    return (t = sec.t, x = sec.x, y = sec.y, Mx = sec.Mx, My = sec.My,
+            chord = sec.chord,
+            te = _naca_te_round(sec, Float64(te_radius_c)*Float64(chord)))
+end
+
+
+#---------------------------------------------------------------------------------
+# ROUNDING THE TRAILING EDGE.
+#
+# WHY. The published section ends in a cusp: the two surfaces meet at one point
+# with an included angle of about 12°. A single point is a place where the
+# boundary has NO normal — the two edges meeting there carry normals almost
+# 170° apart — and the free-slip condition is applied edge by edge, so that node
+# gets both projections in succession and neither is the wall it is on. It is
+# the origin of the oscillations that spread along the aft surface and into the
+# wake, and no amount of refinement removes it: the thinner the elements, the
+# sharper the wedge they have to represent.
+#
+# WHAT. Truncate the section where a circle of radius `r` is tangent to BOTH
+# surfaces, and cap it with that circle. The result is G1-continuous: the normal
+# rotates smoothly through the whole 180° around the base, every boundary node
+# has one well-defined normal, and there is no corner anywhere on the aerofoil.
+#
+# WHY ROUND AND NOT SQUARE. A blunt (squared-off) base is the other way to give
+# the trailing edge a finite thickness, and it is worse here: it replaces one
+# 12° cusp with TWO corners of about 90°, and at a 90° corner the two successive
+# slip projections remove BOTH momentum components — a spurious stagnation point
+# planted in the middle of the recompression. That is the failure documented at
+# the convex step corner in problems/CompEuler/ffs_step/user_bc.jl. A circle has
+# no corner to get wrong.
+#
+# HOW. Find the centre C that is exactly `r` from each surface. Newton on the
+# pair of distance equations: with N_u, N_l the nearest points on the upper and
+# lower surface and n_u, n_l the unit vectors from them to C,
+#
+#     n_u·δ = r - |C - N_u| ,    n_l·δ = r - |C - N_l|
+#
+# is the linearisation, because moving C by δ changes its distance to a surface
+# by n·δ to first order. Two equations, two unknowns, quadratic convergence.
+# The tangency points N_u, N_l are then where the spline hands over to the arc.
+#---------------------------------------------------------------------------------
+function _naca_te_round(sec, r::Float64)
+
+    ts   = sec.t
+    tlo, thi = ts[1], ts[end]
+    tle  = ts[argmin(sec.x)]                 # parameter at the leading edge
+
+    # Start from the point midway between the surfaces where the section is
+    # about 2r thick. Bisect on the parameter offset from the trailing edge.
+    lo, hi = 0.0, 0.45*(tle - tlo)
+    cx = cy = 0.0
+    for _ = 1:60
+        d = 0.5*(lo + hi)
+        xu, yu, = naca64A210_point(sec, tlo + d)
+        xl, yl, = naca64A210_point(sec, thi - d)
+        hypot(xu - xl, yu - yl) < 2r ? (lo = d) : (hi = d)
+        cx = 0.5*(xu + xl); cy = 0.5*(yu + yl)
+    end
+
+    tu = tlo; tl = thi
+    for _ = 1:60
+        tu, xu, yu, du = _nearest_on_spline(sec, cx, cy, tlo, tle)
+        tl, xl, yl, dl = _nearest_on_spline(sec, cx, cy, tle, thi)
+        du = sqrt(du); dl = sqrt(dl)
+        (du > 0 && dl > 0) || error(" # ERROR user_exactGeo.jl: the trailing-edge " *
+                                    "rounding centre landed on the section.")
+        nux, nuy = (cx - xu)/du, (cy - yu)/du
+        nlx, nly = (cx - xl)/dl, (cy - yl)/dl
+        det = nux*nly - nuy*nlx
+        abs(det) > 1.0e-12 ||
+            error(" # ERROR user_exactGeo.jl: :te_radius = " * string(r) *
+                  " is too large for this section — the two surfaces are parallel " *
+                  "where the tangent circle would have to sit. Use a smaller radius.")
+        bu, bl = r - du, r - dl
+        δx = ( bu*nly - bl*nuy)/det
+        δy = (-bu*nlx + bl*nux)/det
+        cx += δx; cy += δy
+        hypot(δx, δy) <= 1.0e-14*max(1.0, r) && break
+    end
+
+    xu, yu, = naca64A210_point(sec, tu)
+    xl, yl, = naca64A210_point(sec, tl)
+    θu = atan(yu - cy, xu - cx)
+    θl = atan(yl - cy, xl - cx)
+
+    # The arc runs from the LOWER tangency point round the BACK to the upper
+    # one. "Back" is the direction from the leading edge toward the trailing
+    # edge, so pick the sweep whose midpoint lies on that side.
+    xle_, yle_ = naca64A210_point(sec, tle)[1], naca64A210_point(sec, tle)[2]
+    dirx, diry = cx - xle_, cy - yle_
+    dn = hypot(dirx, diry); dirx /= dn; diry /= dn
+    Δ⁺ = mod(θu - θl, 2π)                       # counter-clockwise sweep
+    for (Δ, s) in ((Δ⁺, 1.0), (Δ⁺ - 2π, -1.0))
+        θm = θl + 0.5*Δ
+        if cos(θm)*dirx + sin(θm)*diry > 0      # midpoint is downstream: this one
+            return (cx = cx, cy = cy, r = r, tu = tu, tl = tl,
+                    θl = θl, Δθ = Δ,
+                    xu = xu, yu = yu, xl = xl, yl = yl,
+                    xa = cx + r*dirx, ya = cy + r*diry)   # the apex, for the .geo
+        end
+    end
+    error(" # ERROR user_exactGeo.jl: could not orient the trailing-edge arc.")
+end
+
+
+# Nearest point on the arc, or on whichever end of it is closer when the query
+# falls outside its angular span.
+@inline function _naca_nearest_on_arc(te, x, y)
+    dx = x - te.cx; dy = y - te.cy
+    d  = hypot(dx, dy)
+    if d > 0
+        θ = atan(dy, dx)
+        s = mod((θ - te.θl)*sign(te.Δθ), 2π)
+        if s <= abs(te.Δθ)
+            px = te.cx + te.r*dx/d; py = te.cy + te.r*dy/d
+            return px, py, (px - x)^2 + (py - y)^2
+        end
+    end
+    fu = (te.xu - x)^2 + (te.yu - y)^2
+    fl = (te.xl - x)^2 + (te.yl - y)^2
+    return fu <= fl ? (te.xu, te.yu, fu) : (te.xl, te.yl, fl)
 end
 
 # A point on the section, and the tangent there.
@@ -346,45 +473,63 @@ const _NACA_NEWTON_ITERS      = 40
         t = tn
     end
     px, py, _, _, _, _ = naca64A210_point(sec, t)
-    return px, py, (px - x)^2 + (py - y)^2
+    return t, px, py, (px - x)^2 + (py - y)^2
 end
 
-function user_exactGeo(tag, spec, x, y)
+# Nearest point on the spline, restricted to the parameter window [ta, tb], and
+# the parameter it sits at. Newton from EVERY local minimum of the sweep — see
+# the note above _NACA_SWEEP_PER_SEGMENT for why the single-best-sample version
+# is not good enough near a thin trailing edge.
+function _nearest_on_spline(sec, x, y, ta, tb)
 
-    spec isa NamedTuple && haskey(spec, :Mx) || return (x, y)   # not ours
-
-    sec  = spec
     ts   = sec.t
-    tlo  = ts[1]
-    thi  = ts[end]
-    nseg = (length(ts) - 1)*_NACA_SWEEP_PER_SEGMENT
-    dt   = (thi - tlo)/nseg
+    span = ts[end] - ts[1]
+    nseg = max(16, ceil(Int, (tb - ta)/span*(length(ts) - 1)*_NACA_SWEEP_PER_SEGMENT))
+    dt   = (tb - ta)/nseg
 
-    bx = x; by = y; bf = Inf
-
+    bt = ta; bx = 0.0; by = 0.0; bf = Inf
     @inline function consider(t0)
-        lo = t0 - dt < tlo ? tlo : t0 - dt
-        hi = t0 + dt > thi ? thi : t0 + dt
-        px, py, f = _naca_refine(sec, x, y, t0, lo, hi)
+        lo = t0 - dt < ta ? ta : t0 - dt
+        hi = t0 + dt > tb ? tb : t0 + dt
+        t, px, py, f = _naca_refine(sec, x, y, t0, lo, hi)
         if f < bf
-            bf = f; bx = px; by = py
+            bf = f; bx = px; by = py; bt = t
         end
         return nothing
     end
 
-    # Sweep, refining from every local minimum. Only three samples are ever held
-    # at once, so this allocates nothing.
-    fm2 = Inf; fm1 = Inf; tm1 = tlo
+    fm2 = Inf; fm1 = Inf; tm1 = ta
     for k = 0:nseg
-        t = tlo + (thi - tlo)*k/nseg
+        t = ta + (tb - ta)*k/nseg
         px, py, _, _, _, _ = naca64A210_point(sec, t)
         f = (px - x)^2 + (py - y)^2
         fm1 <= fm2 && fm1 <= f && consider(tm1)
         fm2 = fm1; fm1 = f; tm1 = t
     end
-    consider(tlo)                       # the two sides of the trailing edge,
-    consider(thi)                       # which are the ends of the parameter
-    fm1 <= fm2 && consider(tm1)         # and the last sample, if it is a minimum
+    consider(ta); consider(tb)
+    fm1 <= fm2 && consider(tm1)
+
+    return bt, bx, by, bf
+end
+
+
+function user_exactGeo(tag, spec, x, y)
+
+    spec isa NamedTuple && haskey(spec, :Mx) || return (x, y)   # not ours
+
+    sec = spec
+    te  = sec.te
+
+    # With a rounded trailing edge the section is the spline BETWEEN the two
+    # tangency points plus the arc that caps it; the spline outside that window
+    # is the cusp the rounding removed and must not be projected onto.
+    ta, tb = te === nothing ? (sec.t[1], sec.t[end]) : (te.tu, te.tl)
+    _, bx, by, bf = _nearest_on_spline(sec, x, y, ta, tb)
+
+    if te !== nothing
+        ax, ay, af = _naca_nearest_on_arc(te, x, y)
+        af < bf && ((bx, by) = (ax, ay))
+    end
 
     return (bx, by)
 end
@@ -408,9 +553,9 @@ end
 #---------------------------------------------------------------------------------
 function user_exactGeo_setup(tag, spec, xs, ys)
 
-    (spec isa Tuple && length(spec) == 5 && spec[1] === :naca64A210) || return spec
+    (spec isa Tuple && length(spec) == 6 && spec[1] === :naca64A210) || return spec
 
-    sec = naca64A210_section(spec[2], spec[3], spec[4], spec[5])
+    sec = naca64A210_section(spec[2], spec[3], spec[4], spec[5], spec[6])
 
     # How far the grid's own vertices are from the section. Local only: the
     # kernel hands each rank its own share, and a rank that owns none of this
@@ -425,7 +570,8 @@ function user_exactGeo_setup(tag, spec, xs, ys)
         @warn string(":exact_geometry \"", tag, "\" REFUSED: the boundary vertices of this ",
                      "grid are up to ", worst, " (", 100*worst/sec.chord, "% of chord) away ",
                      "from the NACA 64A210 section at x_LE = ", spec[2], ", y_LE = ", spec[3],
-                     ", chord = ", spec[4], ", α = ", spec[5], " deg. That is not this ",
+                     ", chord = ", spec[4], ", α = ", spec[5], " deg, r_TE = ", spec[6],
+                     ". That is not this ",
                      "aerofoil, so nothing was curved. Regenerate the mesh from the SAME ",
                      "placement with make_mesh.jl, which reads this very tuple out of ",
                      "user_inputs.jl.")

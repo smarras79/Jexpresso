@@ -43,16 +43,16 @@ function deck_placement(file)
     for line in eachline(file)
         code = lstrip(line)
         startswith(code, "#") && continue
-        m = match(r":naca64A210\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\)",
-                  code)
-        m === nothing || return ntuple(i -> parse(Float64, m.captures[i]), 4)
+        m = match(r":naca64A210((?:\s*,\s*[-\d.eE+]+){5})\s*\)", code)
+        m === nothing && continue
+        return ntuple(i -> parse(Float64, strip(split(m.captures[1], ",")[i+1])), 5)
     end
-    error("make_mesh.jl: no (:naca64A210, x_LE, y_LE, chord, α) spec found in " * file *
+    error("make_mesh.jl: no (:naca64A210, x_LE, y_LE, chord, α, r_TE) spec found in " * file *
           ".\n  The deck's :exact_geometry entry is what places the aerofoil; this " *
           "script reads it\n  so the mesh and the exact geometry cannot disagree.")
 end
 
-const XLE, YLE, CHORD, ALPHA = deck_placement(joinpath(CASE_DIR, "user_inputs.jl"))
+const XLE, YLE, CHORD, ALPHA, RTE = deck_placement(joinpath(CASE_DIR, "user_inputs.jl"))
 
 # The tunnel. It lives here rather than in the deck because the deck never needs
 # it: the grid IS the domain, and mod_mesh_read_gmsh! reads the bounds off it.
@@ -95,7 +95,11 @@ const YMIN, YMAX = -1.0, 1.0
 # as far as the fold margin actually needs.
 #---------------------------------------------------------------------------------
 const NSURF  = 241
-const H_LE   = 0.006*CHORD         # nose radius is 0.0056c: ~3 elements round it
+# H_LE also sets the size at the trailing edge, and the trailing edge is now a
+# circle of radius RTE·c. Keeping H_LE = RTE·c puts TWO elements across the base,
+# which is the point of rounding it: a base one element wide is a base the
+# boundary condition cannot see.
+const H_LE   = 0.005*CHORD         # = RTE·c; nose radius 0.0056c gets ~3 elements
 # 0.008c, not 0.020c. Aft of ~0.85c the aerofoil is thinner than 0.020c, so an
 # element there was larger than the scale over which the upper and lower streams
 # differ — the recompression and the shear layer leaving the trailing edge. A
@@ -136,7 +140,11 @@ const WAKE_THK  = 0.15*CHORD                  # smooth transition out of the ban
 #---------------------------------------------------------------------------------
 function sample_section(sec, nper)
     tle = sec.t[argmin(sec.x)]           # parameter at the leading edge
-    tlo, thi = sec.t[1], sec.t[end]
+    # With a rounded trailing edge the SPLINE part of the section runs only
+    # between the two tangency points; the rest is the arc, emitted separately
+    # below as two gmsh Circle segments so the .geo carries the true circle.
+    tlo = sec.te === nothing ? sec.t[1]   : sec.te.tu
+    thi = sec.te === nothing ? sec.t[end] : sec.te.tl
 
     pts = Tuple{Float64,Float64}[]
     for (a, b, skipfirst) in ((tlo, tle, false), (tle, thi, true))
@@ -152,10 +160,10 @@ function sample_section(sec, nper)
     return pts
 end
 
-const SEC = naca64A210_section(XLE, YLE, CHORD, ALPHA)
-# The closed trailing edge makes the last sample identical to the first, so drop
-# it: the .geo closes Spline(6) onto Point(100) instead. See the note there.
-const PTS = sample_section(SEC, (NSURF - 1) ÷ 2)[1:end-1]
+const SEC = naca64A210_section(XLE, YLE, CHORD, ALPHA, RTE)
+# First and last sample are the two tangency points, which are distinct: the
+# arc joins them round the back.
+const PTS = sample_section(SEC, (NSURF - 1) ÷ 2)
 
 #---------------------------------------------------------------------------------
 # Write the .geo.
@@ -172,6 +180,8 @@ open(joinpath(CASE_DIR, "naca64A210.geo"), "w") do io
     println(io, "//")
     @printf(io, "// section : NACA 64A210, chord %.6g, LE at (%.6g, %.6g), incidence %.6g deg\n",
             CHORD, XLE, YLE, ALPHA)
+    @printf(io, "// TE      : ROUNDED, radius %.6g c = %.6g m (base %.6g m over h = %.6g)\n",
+            RTE, SEC.te.r, 2*SEC.te.r, H_LE)
     @printf(io, "// tunnel  : [%.6g, %.6g] x [%.6g, %.6g]\n", XMIN, XMAX, YMIN, YMAX)
     @printf(io, "// aerofoil: %d points, splined; h = %.4g at the tips, %.4g on the surface\n",
             length(PTS), H_LE, H_SURF)
@@ -191,10 +201,11 @@ open(joinpath(CASE_DIR, "naca64A210.geo"), "w") do io
     println(io)
 
     println(io, "// ---- aerofoil --------------------------------------------------------")
-    println(io, "// Points 100.. run from the trailing edge forward over the UPPER surface")
-    println(io, "// to the leading edge, then aft over the LOWER surface back to the")
-    println(io, "// trailing edge. The two splines meet at the leading edge (a smooth")
-    println(io, "// point of the curve) and at the trailing edge (its one corner).")
+    println(io, "// Points 100.. run from the UPPER trailing-edge tangency point forward")
+    println(io, "// to the leading edge, then aft over the LOWER surface to the lower")
+    println(io, "// tangency point. The two splines meet at the leading edge; the two")
+    println(io, "// Circle arcs below close the loop round the rounded base. Every point")
+    println(io, "// of this boundary has a well-defined normal, which a cusp does not.")
     for (k, p) in enumerate(PTS)
         @printf(io, "Point(%d) = {%.12g, %.12g, 0, hfar};\n", 99 + k, p[1], p[2])
     end
@@ -203,18 +214,24 @@ open(joinpath(CASE_DIR, "naca64A210.geo"), "w") do io
     nle   = argmin([p[1] for p in PTS])         # index of the leading-edge point
     ile   = 99 + nle
     ilast = 99 + length(PTS)
-    @printf(io, "Spline(5) = {%d:%d};        // upper surface, TE -> LE\n", 100, ile)
-    # Back to point 100, not to a second point at the same place: the two
-    # surfaces MEET at the trailing edge, and a zero-length closing segment
-    # between coincident points is a degenerate curve gmsh cannot mesh (it
-    # reports "intersections in the 1D mesh" and gives up on recovering the
-    # boundary). This is also what makes the trailing edge a genuine corner of
-    # the loop rather than a curve of its own.
-    @printf(io, "Spline(6) = {%d:%d, 100};   // lower surface, LE -> TE\n", ile, ilast)
+    te    = SEC.te
+    ic, ia = ilast + 1, ilast + 2               # arc centre, arc apex
+    @printf(io, "Point(%d) = {%.12g, %.12g, 0, hfar};   // trailing-edge arc centre\n",
+            ic, te.cx, te.cy)
+    @printf(io, "Point(%d) = {%.12g, %.12g, 0, hfar};   // trailing-edge apex\n",
+            ia, te.xa, te.ya)
+    println(io)
+    @printf(io, "Spline(5) = {%d:%d};   // upper surface, tangency -> LE\n", 100, ile)
+    @printf(io, "Spline(6) = {%d:%d};   // lower surface, LE -> tangency\n", ile, ilast)
+    println(io, "// The trailing edge is a CIRCLE tangent to both surfaces, not a cusp.")
+    println(io, "// Two arcs, not one: gmsh's built-in Circle spans less than pi, and")
+    println(io, "// this one sweeps about 168 deg. They meet at the apex.")
+    @printf(io, "Circle(7) = {%d, %d, %d};   // lower tangency -> apex\n", ilast, ic, ia)
+    @printf(io, "Circle(8) = {%d, %d, %d};   // apex -> upper tangency\n", ia, ic, 100)
     println(io)
 
     println(io, "Curve Loop(1) = {1, 2, 3, 4};      // tunnel, counter-clockwise")
-    println(io, "Curve Loop(2) = {5, 6};            // aerofoil, the hole")
+    println(io, "Curve Loop(2) = {5, 6, 7, 8};      // aerofoil, the hole")
     println(io, "Plane Surface(1) = {1, 2};")
     println(io)
 
@@ -223,7 +240,7 @@ open(joinpath(CASE_DIR, "naca64A210.geo"), "w") do io
     println(io, "// Distance/Threshold rather than a background mesh so the grading follows")
     println(io, "// the geometry rather than the box.")
     println(io, "Field[1] = Distance;")
-    println(io, "Field[1].CurvesList = {5, 6};")
+    println(io, "Field[1].CurvesList = {5, 6, 7, 8};")
     println(io, "Field[1].Sampling = 400;")
     println(io, "Field[2] = Threshold;")
     println(io, "Field[2].InField = 1;")
@@ -232,10 +249,10 @@ open(joinpath(CASE_DIR, "naca64A210.geo"), "w") do io
     @printf(io, "Field[2].DistMin = %.10g;\n", D_NEAR)
     @printf(io, "Field[2].DistMax = %.10g;\n", D_FAR)
     println(io)
-    println(io, "// The leading and trailing edges: the nose radius is 0.0056c and the")
-    println(io, "// trailing edge is a corner, so both need to be finer than the surface.")
+    println(io, "// The leading edge (radius 0.0056c) and the trailing-edge arc, whose")
+    println(io, "// base must carry at least a couple of elements across it.")
     println(io, "Field[3] = Distance;")
-    @printf(io, "Field[3].PointsList = {%d, %d};\n", ile, 100)
+    @printf(io, "Field[3].PointsList = {%d, %d};\n", ile, ia)
     println(io, "Field[4] = Threshold;")
     println(io, "Field[4].InField = 3;")
     @printf(io, "Field[4].SizeMin = %.10g;\n", H_LE)
@@ -280,7 +297,7 @@ open(joinpath(CASE_DIR, "naca64A210.geo"), "w") do io
     println(io, "Physical Curve(\"outflow\", 2) = {2};")
     println(io, "Physical Curve(\"top\",     3) = {3};")
     println(io, "Physical Curve(\"inflow\",  4) = {4};")
-    println(io, "Physical Curve(\"airfoil\", 5) = {5, 6};")
+    println(io, "Physical Curve(\"airfoil\", 5) = {5, 6, 7, 8};")
     println(io, "Physical Surface(\"domain\") = {1};")
 end
 

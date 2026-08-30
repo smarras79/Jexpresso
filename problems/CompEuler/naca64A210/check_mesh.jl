@@ -137,14 +137,14 @@ function main()
         for line in eachline(file)
             code = lstrip(line)
             startswith(code, "#") && continue
-            m = match(r":naca64A210\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\)",
-                      code)
-            m === nothing || return ntuple(i -> parse(Float64, m.captures[i]), 4)
+            m = match(r":naca64A210((?:\s*,\s*[-\d.eE+]+){5})\s*\)", code)
+            m === nothing && continue
+            return ntuple(i -> parse(Float64, strip(split(m.captures[1], ",")[i+1])), 5)
         end
         error("check_mesh.jl: no (:naca64A210, ...) spec in " * file)
     end
-    xle, yle, chord, alpha = deck_placement(joinpath(CASE_DIR, "user_inputs.jl"))
-    sec = naca64A210_section(xle, yle, chord, alpha)
+    xle, yle, chord, alpha, rte = deck_placement(joinpath(CASE_DIR, "user_inputs.jl"))
+    sec = naca64A210_section(xle, yle, chord, alpha, rte)
     @printf("  section: NACA 64A210, chord %.4g, LE (%.4g, %.4g), α %.4g deg ; %d wall edges\n",
             chord, xle, yle, alpha, length(wall))
 
@@ -177,6 +177,7 @@ function main()
     end
 
     mid_of(a, b) = (0.5*(a[1] + b[1]), 0.5*(a[2] + b[2]))
+    L2sq(a, b)   = (b[1]-a[1])^2 + (b[2]-a[2])^2
 
     # Distance from p to the segment (a, b).
     function seg_dist(p, a, b)
@@ -200,7 +201,10 @@ function main()
     # here as a sagitta of a millimetre where the true one is 1.7e-4 —
     # measurement noise dressed as geometry.
     function param_of(sec, x, y)
-        tlo, thi = sec.t[1], sec.t[end]
+        # Only the spline BETWEEN the tangency points is boundary; the rest was
+        # replaced by the trailing-edge arc.
+        tlo = sec.te === nothing ? sec.t[1]   : sec.te.tu
+        thi = sec.te === nothing ? sec.t[end] : sec.te.tl
         n  = (length(sec.t) - 1)*32
         dt = (thi - tlo)/n
         function refine(t0)
@@ -242,7 +246,31 @@ function main()
         pa, pb = coord[a], coord[b]
         hmin = min(hmin, hypot(pb[1] - pa[1], pb[2] - pa[2]))
 
-        # Sagitta: the largest gap between the chord and the true section over it.
+        # Sagitta. An edge lying on the ROUNDED TRAILING EDGE is a chord of a
+        # circle and its sagitta is r - sqrt(r^2 - (L/2)^2) exactly; only the
+        # spline part needs the parameter search below. (Before the trailing
+        # edge was rounded every edge was on the spline, and an arc edge sent
+        # through param_of comes back with a parameter span across the whole
+        # aerofoil, because its nearest spline point is a tangency point.)
+        onarc(q) = sec.te !== nothing &&
+                   abs(hypot(q[1] - sec.te.cx, q[2] - sec.te.cy) - sec.te.r) <
+                       1.0e-8*sec.chord
+        if onarc(pa) && onarc(pb)
+            r   = sec.te.r
+            sag = r - sqrt(max(r*r - 0.25*L2sq(pa, pb), 0.0))
+            worst_sag < sag && (worst_sag = sag; at_sag = mid_of(pa, pb); hr_sag = sqrt(L2sq(pa,pb)))
+            q = get(edgequad, minmax(a, b), nothing)
+            if q !== nothing
+                others = [n for n in q if n != a && n != b]
+                if length(others) == 2 && sag > 0
+                    thick = seg_dist(mid_of(pa,pb), coord[others[1]], coord[others[2]])
+                    if thick/sag < worst_ratio
+                        worst_ratio = thick/sag; at_ratio = mid_of(pa,pb); hr_ratio = sqrt(L2sq(pa,pb))
+                    end
+                end
+            end
+            continue
+        end
         ta, tb = param_of(sec, pa...), param_of(sec, pb...)
         # The trailing edge is the one point of the section with TWO parameters,
         # t = 0 and t = t_end, and the sweep above always reports the first. So

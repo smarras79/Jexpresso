@@ -17,11 +17,21 @@
 #
 #     p = 101325 Pa,  T = 293 K,  |u| = M*c ≈ 1029 m/s,  v = 0.
 #
+# The TRAILING EDGE IS ROUNDED, not the published cusp: the section is truncated
+# at x/c = 0.905 and capped with a circle of radius 0.010c tangent to both
+# surfaces (see ./user_exactGeo.jl). A cusp is a point at which the boundary has
+# no normal — the two boundary edges meeting there carry normals 168° apart, and
+# the free-slip condition is applied edge by edge, so that node gets both
+# projections and neither is the wall it is on. Rounding removes it: the largest
+# turn of the wall normal between adjacent boundary edges is now 40°, and it is
+# at the LEADING edge. The base is 0.012 m across, about 5 elements.
+#
 # What to expect. At Mach 3 the rounded nose (radius 3.4e-3 m, see below) carries
 # a small detached bow shock; the flow then expands over both surfaces, and the
 # two streams are turned back parallel through a recompression shock system off
-# the sharp trailing edge, with a slip line between them because the camber has
-# given the two sides different total pressure losses. The bow shock reflects
+# the base, with a slip line between them because the camber has given the two
+# sides different total pressure losses. A rounded base also has its own small
+# separated wake, which the published cusp would not. The bow shock reflects
 # off the tunnel walls at roughly x = 1.9 and comes back onto the wake. All of
 # it is density structure, which is what :lschlieren is on for.
 #

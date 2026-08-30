@@ -3,7 +3,7 @@ function user_inputs()
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
-        :tend                 => 2.0e-3,          # ≈ 0.7 tunnel flow-throughs, 500k steps
+        :tend                 => 1.0e-3,          # 400k steps
         :lrestart             => false,
         :restart_time         => 0.0,
         # TIME STEP. Read this before changing :μ, the mesh, or Δt — they are
@@ -17,8 +17,8 @@ function user_inputs()
         #   diffusive   Δt ≲ ½·Δx²/ν,  ν = μ⃗·C2·Δ·(|u|+c)
         #
         # with (all printed by the run itself, under "ELEMENT SIZES")
-        #   Δx = smallest LGL node spacing  ≈ 3.0e-4 m   (the CFL length scale)
-        #   Δ  = smallest element size      ≈ 2.3e-3 m   (what DynSGS caps on)
+        #   Δx = smallest LGL node spacing  = 2.07e-4 m  (the CFL length scale)
+        #   Δ  = smallest element size      = 1.73e-3 m  (what DynSGS caps on)
         #   |u| + c ≈ 1372 m/s,  C2 = 0.5 (SGS.jl),  μ⃗ = :μ below.
         #
         # ν is the DynSGS CAP μ_max = C2·Δ·(|u|+c), which the residual actually
@@ -29,13 +29,14 @@ function user_inputs()
         # step LINEARLY, and it is the nose that sets Δx. That is the whole
         # economics of this case.
         #
-        # Measured, on the previous grid (Δ = 1.6e-3, Δx = 2.0e-4) with
+        # Measured, on an earlier grid (Δ = 1.6e-3, Δx = 2.0e-4) with
         # :μ => [1,4,4,4], for which the formula gives 4.7e-9:
         #     Δt = 3.0e-8  ->  NaN on step 3
         #     Δt = 5.0e-9  ->  ran clean
-        # The formula is trustworthy; it is not a rule of thumb.
-        :Δt                   => 4.0e-9,
-        :diagnostics_at_times => (0:1.0e-5:2.0e-3),
+        # The formula is trustworthy; it is not a rule of thumb. On THIS grid it
+        # gives 4.5e-9, and the value below sits 1.8x under that.
+        :Δt                   => 2.5e-9,
+        :diagnostics_at_times => (0:1.0e-5:1.0e-3),
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
@@ -92,7 +93,7 @@ function user_inputs()
         # The tuple is a SPEC: Jexpresso never looks inside it, it hands it back
         # to user_exactGeo. Here it is the placement of the section —
         #
-        #     (:naca64A210, x_LE, y_LE, chord, incidence in degrees)
+        #     (:naca64A210, x_LE, y_LE, chord, incidence [deg], r_TE/chord)
         #
         # — and make_mesh.jl reads this very line to write the .geo, so the mesh
         # and the exact geometry cannot drift apart. Change it, re-run
@@ -101,7 +102,7 @@ function user_inputs()
         # α = 0 on purpose: the tunnel walls below are free-slip, so a free
         # stream at incidence would fight them. The 64A210 is cambered (design
         # c_l = 0.2), so the flow is asymmetric anyway.
-        :exact_geometry       => Dict("airfoil" => (:naca64A210, 1.0, 0.0, 0.6, 0.0)),
+        :exact_geometry       => Dict("airfoil" => (:naca64A210, 1.0, 0.0, 0.6, 0.0, 0.010)),
         #---------------------------------------------------------------------------
         # Plotting
         #---------------------------------------------------------------------------
