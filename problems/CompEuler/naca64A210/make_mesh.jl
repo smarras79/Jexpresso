@@ -96,7 +96,16 @@ const YMIN, YMAX = -1.0, 1.0
 #---------------------------------------------------------------------------------
 const NSURF  = 241
 const H_LE   = 0.006*CHORD         # nose radius is 0.0056c: ~3 elements round it
-const H_SURF = 0.020*CHORD
+# 0.008c, not 0.020c. Aft of ~0.85c the aerofoil is thinner than 0.020c, so an
+# element there was larger than the scale over which the upper and lower streams
+# differ — the recompression and the shear layer leaving the trailing edge. A
+# high-order scheme cannot resolve a feature smaller than its element and answers
+# with oscillations, which is what drove p (and hence T) negative in the wake.
+#
+# This costs NOTHING in time step: Δt is set by the SMALLEST element, which is
+# the nose at H_LE, and 0.008c is above it. Free resolution exactly where the
+# case was failing.
+const H_SURF = 0.008*CHORD
 const H_FAR  = 0.100
 const D_NEAR = 0.05*CHORD          # distance out to which H_SURF holds
 const D_FAR  = 1.50*CHORD          # distance at which H_FAR is reached
@@ -106,6 +115,16 @@ const D_TIP  = 0.03*CHORD          # radius of the H_LE patch at LE and TE
 # nose and the trailing edge rather than a halo around the whole aerofoil: at
 # 1.5c it is the same grid with 50% more elements and the same fold margin.
 const D_TIPFAR = 0.25*CHORD
+
+# Wake band behind the trailing edge. The shear layer and the recompression
+# shock system live here, and the graded field alone was letting the elements
+# grow to 0.024 m by x = 1.75 — which is exactly where the first unphysical
+# states appeared. Also free in Δt for the same reason as H_SURF.
+const WAKE_H    = 0.010
+const WAKE_X0   = XLE + CHORD                 # the trailing edge
+const WAKE_X1   = XLE + CHORD + 1.4*CHORD
+const WAKE_HALF = 0.20*CHORD
+const WAKE_THK  = 0.15*CHORD                  # smooth transition out of the band
 
 #---------------------------------------------------------------------------------
 # Sample the section.
@@ -224,9 +243,20 @@ open(joinpath(CASE_DIR, "naca64A210.geo"), "w") do io
     @printf(io, "Field[4].DistMin = %.10g;\n", D_TIP)
     @printf(io, "Field[4].DistMax = %.10g;\n", D_TIPFAR)
     println(io)
-    println(io, "Field[5] = Min;")
-    println(io, "Field[5].FieldsList = {2, 4};")
-    println(io, "Background Field = 5;")
+    println(io)
+    println(io, "// The wake. Everything the trailing edge sheds goes through here.")
+    println(io, "Field[5] = Box;")
+    @printf(io, "Field[5].VIn  = %.10g;\n", WAKE_H)
+    @printf(io, "Field[5].VOut = %.10g;\n", H_FAR)
+    @printf(io, "Field[5].XMin = %.10g;\n", WAKE_X0)
+    @printf(io, "Field[5].XMax = %.10g;\n", WAKE_X1)
+    @printf(io, "Field[5].YMin = %.10g;\n", -WAKE_HALF)
+    @printf(io, "Field[5].YMax = %.10g;\n", WAKE_HALF)
+    @printf(io, "Field[5].Thickness = %.10g;\n", WAKE_THK)
+    println(io)
+    println(io, "Field[6] = Min;")
+    println(io, "Field[6].FieldsList = {2, 4, 5};")
+    println(io, "Background Field = 6;")
     println(io, "Mesh.MeshSizeExtendFromBoundary = 0;")
     println(io, "Mesh.MeshSizeFromPoints = 0;")
     println(io, "Mesh.MeshSizeFromCurvature = 0;")

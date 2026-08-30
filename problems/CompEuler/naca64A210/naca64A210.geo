@@ -8,7 +8,7 @@
 //
 // section : NACA 64A210, chord 0.6, LE at (1, 0), incidence 0 deg
 // tunnel  : [0, 3] x [-1, 1]
-// aerofoil: 240 points, splined; h = 0.0036 at the tips, 0.012 on the surface
+// aerofoil: 240 points, splined; h = 0.0036 at the tips, 0.0048 on the surface
 
 hfar = 0.1;
 
@@ -284,7 +284,7 @@ Field[1].CurvesList = {5, 6};
 Field[1].Sampling = 400;
 Field[2] = Threshold;
 Field[2].InField = 1;
-Field[2].SizeMin = 0.012;
+Field[2].SizeMin = 0.0048;
 Field[2].SizeMax = 0.1;
 Field[2].DistMin = 0.03;
 Field[2].DistMax = 0.9;
@@ -300,9 +300,20 @@ Field[4].SizeMax = 0.1;
 Field[4].DistMin = 0.018;
 Field[4].DistMax = 0.15;
 
-Field[5] = Min;
-Field[5].FieldsList = {2, 4};
-Background Field = 5;
+
+// The wake. Everything the trailing edge sheds goes through here.
+Field[5] = Box;
+Field[5].VIn  = 0.01;
+Field[5].VOut = 0.1;
+Field[5].XMin = 1.6;
+Field[5].XMax = 2.44;
+Field[5].YMin = -0.12;
+Field[5].YMax = 0.12;
+Field[5].Thickness = 0.09;
+
+Field[6] = Min;
+Field[6].FieldsList = {2, 4, 5};
+Background Field = 6;
 Mesh.MeshSizeExtendFromBoundary = 0;
 Mesh.MeshSizeFromPoints = 0;
 Mesh.MeshSizeFromCurvature = 0;

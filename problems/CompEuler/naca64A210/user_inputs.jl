@@ -3,7 +3,7 @@ function user_inputs()
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
-        :tend                 => 6.0e-3,          # ≈ 2 tunnel flow-throughs, 400k steps
+        :tend                 => 2.0e-3,          # ≈ 0.7 tunnel flow-throughs, 500k steps
         :lrestart             => false,
         :restart_time         => 0.0,
         # TIME STEP. Read this before changing :μ, the mesh, or Δt — they are
@@ -34,8 +34,8 @@ function user_inputs()
         #     Δt = 3.0e-8  ->  NaN on step 3
         #     Δt = 5.0e-9  ->  ran clean
         # The formula is trustworthy; it is not a rule of thumb.
-        :Δt                   => 1.5e-8,
-        :diagnostics_at_times => (0:2.0e-5:6.0e-3),
+        :Δt                   => 4.0e-9,
+        :diagnostics_at_times => (0:1.0e-5:2.0e-3),
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
@@ -49,18 +49,22 @@ function user_inputs()
         :energy_equation      => "energy",        # slot 4 is ρE
         :lvisc                => true,
         :visc_model           => DSGS(),          # residual-based shock capturing
-        # DynSGS per-equation multiplier. shock_circle uses [1, 4, 4, 4]; this
-        # deck uses the UNAMPLIFIED [1, 1, 1, 1], i.e. Nazarov & Hoffman's own
-        # calibration (C1 = 1, C2 = 0.5), because the factor of 4 multiplies ν
-        # and therefore divides the time step by 4 — see the :Δt note above.
+        # DynSGS per-equation multiplier — shock_circle's value, and do not
+        # lower it here without checking what comes out.
         #
-        # On this grid that is the difference between 400k steps and 1.6M for
-        # the same :tend. shock_circle can afford the 4 because its elements are
-        # ~20x larger; an aerofoil nose cannot.
+        # An earlier version of this deck used the unamplified [1, 1, 1, 1] to
+        # buy a 4x larger time step. It ran, in the sense that it never tripped
+        # the NaN check, but it produced UNPHYSICAL STATES: grid-scale
+        # oscillations along the aft surface grew into the wake and drove the
+        # pressure negative there — p < 0, hence T < 0 (min -2462 K) and an
+        # imaginary sound speed, so Mach came out as 58 or undefined. A run can
+        # be "stable" and still be worthless; the NaN check is not a physics
+        # check. If you change this, look at min(p) and min(T) in the output,
+        # not just at whether the run finished.
         #
-        # If the bow shock comes out under-damped (oscillations upstream of it
-        # in the schlieren), raise these — and divide :Δt by the same factor.
-        :μ                    => [1.0, 1.0, 1.0, 1.0],
+        # The cost is real and linear: ν ∝ μ⃗, so this 4 divides the time step
+        # by 4 against the diffusive limit below.
+        :μ                    => [1.0, 4.0, 4.0, 4.0],
         # Artificial Prandtl number P of Nazarov & Hoffman eq. (3.7):
         # κ = P/(γ-1)·μ, with P ≈ 0.1.
         :Pr                   => 0.1,
