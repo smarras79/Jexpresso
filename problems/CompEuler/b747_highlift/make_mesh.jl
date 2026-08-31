@@ -24,7 +24,7 @@
 # THE SLOTS ARE THE MESH. Element sizing here is not about the aerofoils, it is
 # about the gaps between them: the slot flow is the whole point of a high-lift
 # section, and a slot resolved by two cells is not resolved. As shipped the three
-# gaps are 0.032, 0.046 and 0.042 m against H_SURF, i.e. 6-9 elements across the
+# gaps are 0.032, 0.049 and 0.044 m against H_SURF, i.e. 6-10 elements across the
 # narrowest one. check_mesh.jl prints them.
 #
 # The placement lives in the deck's :exact_geometry — one entry per element, and
@@ -101,10 +101,11 @@ const D_FAR    = 0.900             # distance at which H_FAR is reached
 const D_TIP    = 0.010             # radius of the H_TIP patch
 const D_TIPFAR = 0.120             # ...and how far it relaxes
 
-# Wake band behind the last flap.
+# Wake band behind the last flap. X0 starts where flap2 ends (x = 1.869), so
+# the band is wake and not aerofoil.
 const WAKE_H    = 0.010
-const WAKE_X0   = 1.60
-const WAKE_X1   = 2.60
+const WAKE_X0   = 1.87
+const WAKE_X1   = 2.70
 const WAKE_YMIN = -0.42
 const WAKE_YMAX =  0.10
 const WAKE_THK  = 0.10

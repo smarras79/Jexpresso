@@ -20,8 +20,12 @@
 #
 #     slat    chord 0.160 m, LE (0.860, -0.085), drooped 25°
 #     main    chord 0.600 m, LE (1.000,  0.000), 0°
-#     flap1   chord 0.240 m, LE (1.470, -0.055), lowered 30°
-#     flap2   chord 0.150 m, LE (1.690, -0.185), lowered 55°
+#     flap1   chord 0.240 m, LE (1.570, -0.045), lowered 30°
+#     flap2   chord 0.150 m, LE (1.795, -0.172), lowered 55°
+#
+# The flaps sit AFT of the main element's base, which ends at x = 1.548: flap1
+# begins at 1.570 and the pair extends the section to x = 1.869. They are behind
+# the main, not tucked beneath it.
 #
 # EVERY EDGE IS ROUND. The 64A210 has a rounded leading edge (radius 0.0056c);
 # each trailing edge is truncated where a circle of the stated radius is tangent
@@ -32,8 +36,8 @@
 # enough to drive the pressure negative in the wake; on four it would have been
 # four times over.
 #
-# THE SLOTS ARE THE CASE. The gaps are 0.032 m (slat/main), 0.046 m (main/flap1)
-# and 0.042 m (flap1/flap2), carrying 7 to 11 elements each — check_mesh.jl
+# THE SLOTS ARE THE CASE. The gaps are 0.032 m (slat/main), 0.049 m (main/flap1)
+# and 0.044 m (flap1/flap2), carrying 8 to 14 elements each — check_mesh.jl
 # prints them. A slot two cells wide is not a slot, and the whole point of a
 # high-lift section is what goes through them.
 #
