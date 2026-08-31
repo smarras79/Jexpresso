@@ -32,7 +32,7 @@ function user_uout!(ip, ::TOTAL, uout, u, qe; kwargs...)
 end
 
 function user_uout!(ip, ::PERT, uout, u, qe; kwargs...)
-    uout[1] = u[1]
+    uout[1] = u[1] - qe[1]
     uout[2] = u[2]
     uout[3] = u[3]
 end

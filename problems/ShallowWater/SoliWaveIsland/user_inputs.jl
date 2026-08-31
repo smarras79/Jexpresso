@@ -67,11 +67,11 @@ function user_inputs()
         # true for the Spline2D surface rendering instead of the nodal map,
         # or switch back to "vtk" for ParaView output.
         #---------------------------------------------------------------------------
-        :outformat            => "png",
+        :outformat            => "vtk",
         :loverwrite_output    => true,
         :lwrite_initial       => true,
         :output_dir           => "./output",
-        :loutput_pert         => false,
+        :loutput_pert         => true,
         #---------------------------------------------------------------------------
     ) #Dict
 
