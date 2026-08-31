@@ -245,6 +245,17 @@ Jexpresso.run_case("CompEuler", "ffs_step")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
+## Flow at Mach 3 with airfoil
+Mach 3 flow over a (non-supersonic) airfoil. DynSGS shock capturing.
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "naca64A210")
+```
+
+<img src="assets/NACA64A210-TWOFIGS.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
 
 ## Kelvin-Helmholtz instability
 Classical shear-triggered instability test.
