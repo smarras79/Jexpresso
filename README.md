@@ -258,6 +258,16 @@ Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
+## Elastic beam deformation
+```julia
+using Jexpresso
+Jexpresso.run_case("Elasticity", "beam2d")
+```
+
+<img src="assets/beam2d.mov"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
 
 ## Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
 
