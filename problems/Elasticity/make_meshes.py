@@ -81,11 +81,17 @@ if __name__ == "__main__":
         os.path.join(HERE, "plane_wave2d", "square_periodic_16x16.msh"),
         "square_periodic")
 
-    # cantilever2d: beam of length 1 and depth 0.1 (L/h = 10, the same beam
-    # the 1D Timoshenko case uses), clamped on the x = 0 face. Square
-    # elements: 40 x 4 of side 0.025.
+    # beam2d: simply supported beam, span 1 and depth 0.2 (L/h = 5), loaded
+    # on a patch of its top surface at midspan. Three boundary groups, because
+    # each gets a different condition:
+    #
+    #   "support"  the two end faces      hinged: v = 0, σxx = 0
+    #   "top"      the loaded surface     σyy = -p(x,t), σxy = 0
+    #   "bottom"   the free underside     σyy = 0, σxy = 0
+    #
+    # 32 x 6 elements, near-square at 0.03125 x 0.03333.
     structured_rectangle(
-        0.0, 1.0, -0.05, 0.05, 40, 4,
-        {"clamped": ("left",), "free": ("bottom", "right", "top")},
-        os.path.join(HERE, "cantilever2d", "beam_40x4.msh"),
+        0.0, 1.0, -0.1, 0.1, 32, 6,
+        {"support": ("left", "right"), "top": ("top",), "bottom": ("bottom",)},
+        os.path.join(HERE, "beam2d", "beam_32x6.msh"),
         "beam")

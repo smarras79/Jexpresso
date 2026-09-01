@@ -7,8 +7,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # and no reconstructed extras. qoutvars divide the momenta through by ρ so
     # the VTK files carry the particle velocity itself.
     #-----------------------------------------------------------------------------
-    qvars    = ["ρu", "ρv", "σxx", "σyy", "σxy"]
-    qoutvars = ["u",  "v",  "σxx", "σyy", "σxy"]
+    # `vx`/`vy` are the particle VELOCITY; qoutvars divide the momenta through
+    # by ρ so the VTK files carry it directly.
+    qvars    = ["ρvx", "ρvy", "σxx", "σyy", "σxy"]
+    qoutvars = ["vx",  "vy",  "σxx", "σyy", "σxy"]
 
     q = define_q(SD,
                  mesh.nelem, mesh.npoin, mesh.ngl,

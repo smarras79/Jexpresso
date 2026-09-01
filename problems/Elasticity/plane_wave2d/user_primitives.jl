@@ -23,8 +23,8 @@ end
 
 function user_uout!(ip, ::TOTAL, uout, u, qe; kwargs...)
     P = elastic_properties()
-    uout[1] = u[1]/P.ρ     # u
-    uout[2] = u[2]/P.ρ     # v
+    uout[1] = u[1]/P.ρ     # vx
+    uout[2] = u[2]/P.ρ     # vy
     uout[3] = u[3]         # σxx
     uout[4] = u[4]         # σyy
     uout[5] = u[5]         # σxy

@@ -1,11 +1,13 @@
 #---------------------------------------------------------------------------------
-# S = (0, 0, 0, 0, 0, u, v)ᵀ
+# S = (0, 0, 0, 0, 0, vx, vy)ᵀ
 #
-# The elastodynamic rows 1-5 have NO source — every term of the system is a
-# divergence. A body force (gravity, a distributed load) would go in S[1] and
-# S[2]; there is none here, the beam is released from rest into free vibration.
+# The elastodynamic rows 1-5 have NO source — every term is a divergence. The
+# load is not a body force here: it is a prescribed traction on the top
+# surface, applied in user_bc.jl, which is also what lets it be ramped in time
+# (user_source! is not handed t; user_bc_dirichlet! is). A gravity-like body
+# force would go in S[2] as -ρg.
 #
-# S[6] and S[7] are the displacement recovery, u̇ₓ = u and u̇_y = v.
+# S[6] and S[7] are the displacement recovery, u̇ₓ = vx and u̇_y = vy.
 #
 # This is the 2D source path (rhs.jl, NSD_2D), which weights S by ω·Jac exactly
 # as it weights the flux — 2D and 3D always did. It is the 1D path that used to
@@ -22,8 +24,8 @@ function user_source!(S, q, qe, npoin::Int64, ::CL, ::TOTAL;
     S[3] = 0.0
     S[4] = 0.0
     S[5] = 0.0
-    S[6] = q[1]/P.ρ     # u̇ₓ = u
-    S[7] = q[2]/P.ρ     # u̇_y = v
+    S[6] = q[1]/P.ρ     # u̇ₓ = vx
+    S[7] = q[2]/P.ρ     # u̇_y = vy
 end
 
 #
