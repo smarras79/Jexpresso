@@ -303,7 +303,12 @@ using Jexpresso
 Jexpresso.run_case("Elasticity", "beam2d")
 ```
 
-<img src="assets/beam2d.mov"
+<video src="assets/beam2d.mov" width="100%" controls>
+  Your browser does not support the video tag.
+</video>
+
+
+<img src="assets/beam2d.jpeg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
