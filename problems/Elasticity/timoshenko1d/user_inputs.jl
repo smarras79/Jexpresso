@@ -41,6 +41,14 @@ function user_inputs()
         # No artificial viscosity: the system is linear, the mode is smooth and
         # fully resolved, and the point of the case is that the scheme carries
         # it without help. Any dissipation here would only hide phase error.
+        #
+        # AND NO FILTER IS AVAILABLE: `filter!` (src/kernel/operators/filter.jl)
+        # has methods for NSD_2D and NSD_3D only, so setting :lfilter => true in
+        # a 1D deck does not filter — it raises a MethodError on the first RHS
+        # evaluation. The Boyd-Vandeven filter the 2D cases use (see
+        # problems/Elasticity/beam2d/user_inputs.jl) has no 1D counterpart. If a
+        # 1D case ever needs modal stabilisation, that gap has to be closed in
+        # filter.jl first.
         #---------------------------------------------------------------------------
         :lvisc                => false,
         #---------------------------------------------------------------------------

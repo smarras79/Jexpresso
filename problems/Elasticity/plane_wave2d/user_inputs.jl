@@ -42,11 +42,33 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lsource              => false,
         #---------------------------------------------------------------------------
-        # No artificial viscosity. The system is linear, the wave is smooth and
-        # resolved at ~11 elements per wavelength at p = 4, and the whole point
-        # of the case is that the scheme carries it for ten periods unaided.
+        # DELIBERATELY UNSTABILISED — no viscosity and no filter.
+        #
+        # This is the verification case, and both would corrupt what it
+        # measures. The check is that each output frame reproduces the t = 0
+        # frame exactly; a Boyd-Vandeven filter deletes the top modal
+        # coefficient every RK stage, so any of the wave living in that mode
+        # would be removed and read as amplitude loss that is not the scheme's.
+        #
+        # It is also the DIAGNOSTIC. The element-scale instability that killed
+        # an earlier bounded case in this directory grew at ≈2.6% per step; over
+        # this run's ~3050 steps that would take round-off to ≈1e18. So if this
+        # case blows up too, the problem is in the volume operator or the time
+        # step and not in the boundary treatment — there are no boundaries here.
+        # If it stays clean for ten periods, the volume operator is sound and
+        # the boundaries are where to look.
+        #
+        # Once that question is settled, the filter can be switched on here to
+        # match beam2d — see the long note in that deck for what the parameters
+        # mean:
+        #
+        #     :lfilter     => true,
+        #     :filter_type => "erf",
+        #     :mu_x        => 0.05,
+        #     :mu_y        => 0.05,
         #---------------------------------------------------------------------------
         :lvisc                => false,
+        :lfilter              => false,
         #---------------------------------------------------------------------------
         # Mesh: 16x16 quads on the unit square, both directions periodic.
         # Regenerate with problems/Elasticity/make_meshes.py.

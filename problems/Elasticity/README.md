@@ -100,13 +100,42 @@ This is not hypothetical: an earlier `cantilever2d` in this directory shipped
 with `:lvisc => false` and reached σyy ≈ 1e+276 by the eighth output frame —
 about 2.6% growth per step, from round-off.
 
-Every other 2D case in this repository carries a viscosity for the same reason
-(`CompEuler/theta`, `AdvDiff/kopriva`, `ShallowWater/SoliWaveIsland`, …).
-`beam2d` follows suit with `:visc_model => AV()` and a per-equation `:μ`; the
-deck documents the trade-off and how to move it. `plane_wave2d` is deliberately
-left undamped — it is short, it has no boundaries at all, and it is the case
-that tells you whether the *volume* operator is sound independently of any of
-this.
+`beam2d` is stabilised primarily by the **Boyd–Vandeven modal filter**
+(`:lfilter => true, :filter_type => "erf"`), which is the right tool for this
+failure: `init_filter` leaves every mode up to 2p/3 *exactly* alone and rolls
+off above it, so at p = 4 the transfer weights are
+
+| mode | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| weight | 1 | 1 | 1 | 0.9957 | 0 |
+
+— a top-mode-only filter that deletes the mode the checkerboard lives in and
+does not touch the resolved solution. Compare a Laplacian, which damps every
+wavenumber including the beam's own bending mode.
+
+`:mu_x` / `:mu_y` are **blend factors** in [0,1], one per reference direction:
+`init_filter` builds `F = μ·F_BV + (1-μ)·I`. They are not viscosities and do not
+scale with Δx. The filter runs once per **RK stage**, so five times per step
+with `CarpenterKennedy2N54`; at `μ = 0.05` that removes 22.6% of the top mode
+per step, against the ≈2.6% per step the instability grew at.
+
+A residual `AV()` viscosity is kept alongside it at a tenth of its former value
+(2e-5, ≈0.4% of the bending mode over the run) purely as a backstop, because at
+p = 4 the filter really only bites on one mode and the original failure has
+never been re-run to establish which mode it lived in. **Once a run confirms the
+filter holds alone, set `:μ` to zeros and `:lvisc => false`** — that is the
+preferred end state, since `∇²σ` has no physical meaning and the filter does the
+job without inventing one.
+
+`plane_wave2d` is deliberately left with neither. It is the verification case —
+a filter would delete the top modal coefficient and read as amplitude loss that
+is not the scheme's — and it is the diagnostic: it has no boundaries at all, so
+if it blows up the problem is the volume operator, and if it stays clean for ten
+periods the boundaries are where to look.
+
+**The filter is 2D/3D only.** `filter!` has no `NSD_1D` method, so
+`:lfilter => true` in a 1D deck raises a MethodError rather than filtering;
+`timoshenko1d` says so in place.
 
 ---
 
