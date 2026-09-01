@@ -35,6 +35,7 @@ Suggested Julia version: 1.11.9
   - [1D acoustic wave](#1d-acoustic-wave)
   - [Flow at Mach 3 with forward-facing step](#flow-at-mach-3-with-forward-facing-step)
   - [Kelvin-Helmholtz instability](#kelvin-helmholtz-instability)
+  - [Solid elasticicy](#Solid-elasticity)
   - [MHD: magnetized Kelvin-Helmholtz instability](#magneto-hydrodynamics-mhd-magnetized-kelvin-helmholtz-instability)
   - [MHD: Orszag-Tang vortex](#magneto-hydrodynamics-mhd-orszag-tang-vortex)
   - [Cloud simulation: shallow cumuli with BOMEX conditions](#cloud-simulation-shallow-cumuli-with-bomex-conditions)
@@ -292,6 +293,20 @@ Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
 <img src="assets/KH-EC-SGSsmag.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
+
+
+## Solid elasticity
+Timoshenko's model of elasticity
+
+```julia
+using Jexpresso
+Jexpresso.run_case("Elasticity", "beam2d")
+```
+
+<img src="assets/beam2d.mov"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
 
 
 ## Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
