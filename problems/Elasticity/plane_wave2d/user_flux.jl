@@ -50,7 +50,7 @@
 #
 # A METHOD and not a set of `const`s on purpose: src/run.jl loads a case by
 # `include`ing its user_*.jl files into the Jexpresso module, so a `const`
-# would collide with the sibling case (Elasticity/cantilever2d) the first time
+# would collide with the sibling case (Elasticity/beam2d) the first time
 # the two are run in the same session. Redefining a method at an identical
 # signature is exactly what an `include` is supposed to do.
 #
