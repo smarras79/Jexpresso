@@ -29,7 +29,7 @@ end
 
 
 #
-# Max wave-speed hook for the DG numerical flux (Q3).
+# Max wave-speed hook for the DG numerical flux.
 #
 # Called by surface_rhs_el! (kernel/operators/dg_fluxes.jl) as
 #     user_max_wave_speed(qL, @view(qe[ipL,:]), SD, SVT; neqs=neqs)

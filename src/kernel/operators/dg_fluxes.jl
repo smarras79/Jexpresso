@@ -23,7 +23,7 @@ end
 # Upwind. For a linear constant-coefficient system with a single characteristic
 # speed magnitude (1D advection; the acoustic wave system), upwind == Rusanov
 # with λ = that speed. Replace with a characteristic/Roe split when a genuinely
-# multi-speed nonlinear system needs directional upwinding (Phase 4 / SWE).
+# multi-speed nonlinear system needs directional upwinding (e.g. Euler, SWE).
 function numerical_flux!(Fstar, FL, FR, qL, qR, λ, neqs, ::upwind_flux)
     @inbounds for ieq = 1:neqs
         Fstar[ieq] = 0.5*(FL[ieq] + FR[ieq]) - 0.5*λ*(qR[ieq] - qL[ieq])
