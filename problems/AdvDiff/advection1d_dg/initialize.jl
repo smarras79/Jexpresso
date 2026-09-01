@@ -44,12 +44,12 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
 
             # NOTE: mesh.coords, not mesh.x.
             # St_mesh carries both as separate arrays. AdvDiff/case1 reads
-            # mesh.x[ip]; wave1d_dg reads mesh.coords[ip,1] and is known to work
+            # mesh.x[ip]; wave1d_dg reads mesh.coords[1,ip] and is known to work
             # under the DG numbering. Until it is confirmed that the DG builder
             # (add_high_order_nodes_1D_native_mesh_dg!) fills `x` as well as
             # `coords`, reading `x` here risks silently wrong node coordinates
             # -- which would look like a broken operator rather than a broken IC.
-            x = mesh.coords[ip, 1]
+            x = mesh.coords[1, ip]
 
             q.qn[ip, 1] = initial_profile(x, IC_KIND)
 

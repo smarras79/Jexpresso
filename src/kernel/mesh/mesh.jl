@@ -4161,7 +4161,7 @@ function add_high_order_nodes_1D_native_mesh_dg!(mesh::St_mesh, interpolation_no
     mesh.npoin_el     = ngl
 
     resize!(mesh.x, mesh.npoin)
-    mesh.coords  = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), 1)
+        mesh.coords  = KernelAbstractions.zeros(backend, TFloat, size(mesh.coords, 1), Int64(mesh.npoin))
     mesh.conn    = KernelAbstractions.zeros(backend, TInt, Int64(nelem), Int64(ngl))
     mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(nelem), Int64(ngl), 1, 1)
 
@@ -4171,7 +4171,7 @@ function add_high_order_nodes_1D_native_mesh_dg!(mesh::St_mesh, interpolation_no
             ip = (iel-1)*ngl + l
             ξ  = lgl.ξ[l]
             mesh.x[ip]              = x1 + 0.5*(ξ + 1.0)*mesh.Δx[iel]
-            mesh.coords[ip,1]       = mesh.x[ip]
+            mesh.coords[1,ip]       = mesh.x[ip]
             mesh.conn[iel,l]        = ip
             mesh.connijk[iel,l,1,1] = ip
         end
