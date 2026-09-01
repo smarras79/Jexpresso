@@ -22,14 +22,14 @@ function user_inputs()
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
-        :tend                 => 22.0,                        # ≈ 2 bending periods
+        :tend                 => 50.0,                        # ≈ 2 bending periods
         :Δt                   => 1.0e-3,
-        :diagnostics_at_times => collect(range(0.0, 22.0; length=12)),
+        :diagnostics_at_times => collect(range(0.0, 50.0; length=100)),
         #---------------------------------------------------------------------------
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  => "lgl",
-        :nop                  => 4,
+        :nop                  => 5,
         #---------------------------------------------------------------------------
         # Source: the elastodynamic rows have none — every term is a divergence.
         # S carries only the u̇ = v of the displacement recovery.
