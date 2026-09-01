@@ -22,9 +22,9 @@ function user_inputs()
     inputs = Dict(
         :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
-        :tend                 => 50.0,                        # ≈ 2 bending periods
+        :tend                 => 15.0,                        # ≈ 2 bending periods
         :Δt                   => 1.0e-3,
-        :diagnostics_at_times => collect(range(0.0, 50.0; length=100)),
+        :diagnostics_at_times => collect(range(0.0, 15.0; length=100)),
         #---------------------------------------------------------------------------
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -98,7 +98,6 @@ function user_inputs()
         :filter_type          => "erf",      # Boyd-Vandeven
         :mu_x                 => 0.05,
         :mu_y                 => 0.05,
-
         :lvisc                => true,
         :visc_model           => AV(),
         :energy_equation      => "theta",
