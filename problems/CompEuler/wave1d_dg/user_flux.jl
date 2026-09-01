@@ -14,7 +14,7 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
     return T(q[2]), T(q[1])
 end
 
-# Max wave-speed hook for the DG numerical flux (Q3).
+# Max wave-speed hook for the DG numerical flux.
 # wave1d is the linear acoustic system u_t + A u_x = 0, A = [0 1; 1 0],
 # eigenvalues ±1 ⇒ λ_max = 1.
 function user_max_wave_speed(q, qe, SD::NSD_1D, ::TOTAL; neqs=2)

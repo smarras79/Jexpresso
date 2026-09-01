@@ -1,16 +1,15 @@
 #
 # Initial conditions for the 1D scalar advection DG case.
 #
-# Both ICs below are transcriptions of cases in the Python reference's
-# `exact_solution` function, so the two
-# codes can be compared on identical data:
+# Both ICs below are transcriptions of the corresponding ICs in the Python
+# reference, so the two codes can be compared on identical data:
 #
-#   :sine     -> Python icase 8 : sin(pi*x)
+#   :sine     -> sin(pi*x)
 #                Analytic, exactly periodic on [-1,1]. The order-study IC.
 #                Integrates to zero, so it gives no relative scale for a
 #                conservation check.
 #
-#   :gaussian -> Python icase 1 : exp(-256 (x - xbar)^2) plus periodic images
+#   :gaussian -> exp(-256 x^2) plus periodic images
 #                Nonzero mean, so mass conservation can be reported relative to
 #                a nonzero integral. Sharp (half-width ~0.044): expect it to be
 #                pre-asymptotic below roughly 32 elements.
@@ -42,13 +41,9 @@ function initialize(SD, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
 
             ip = mesh.connijk[iel_g, i, 1]
 
-            # NOTE: mesh.coords, not mesh.x.
-            # St_mesh carries both as separate arrays. AdvDiff/case1 reads
-            # mesh.x[ip]; wave1d_dg reads mesh.coords[1,ip] and is known to work
-            # under the DG numbering. Until it is confirmed that the DG builder
-            # (add_high_order_nodes_1D_native_mesh_dg!) fills `x` as well as
-            # `coords`, reading `x` here risks silently wrong node coordinates
-            # -- which would look like a broken operator rather than a broken IC.
+            # mesh.coords is the canonical coordinate array going forward
+            # (mesh.x/y/z are being migrated into it); the DG 1D builder
+            # writes both consistently.
             x = mesh.coords[1, ip]
 
             q.qn[ip, 1] = initial_profile(x, IC_KIND)

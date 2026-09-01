@@ -39,7 +39,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants
         #   Viscous DG is not implemented (no _expansion_visc!(::DiscGal)) --
-        #   :lvisc must stay false on the DG path until Phase 8.
+        #   :lvisc must stay false on the DG path.
         #---------------------------------------------------------------------------
         :lvisc               => false,
         #---------------------------------------------------------------------------
@@ -48,8 +48,6 @@ function user_inputs()
         :lread_gmsh          => false,     # 1D native mesh built by Jexpresso
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots, "ascii" -> data per npoin, "hdf5" -> .h5
-        #   NOTE: the operative key is :outformat. test/CIdescription.md says
-        #   :output_format, which no case in the tree uses -- stale doc.
         #   Switch to "hdf5" for machine-readable capture and for the CI ref.
         #---------------------------------------------------------------------------
         :outformat           => "png",

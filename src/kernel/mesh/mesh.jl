@@ -3501,8 +3501,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         # the two boundaries into shared points. restructure4periodicity_2D is
         # a node merge with no :AD awareness (it also consumes ip2gip/gip2owner,
         # which are CG shared-entity constructs), so under DiscGal it would weld
-        # both periodic boundaries -- the 1D defect fixed in 586e7ba3, at 2D
-        # scale. Guarded at the call site rather than inside the function
+        # both periodic boundaries -- the same defect the DiscGal guard in
+        # restructure4periodicity_1D! fixes at 1D, at 2D scale. Guarded at the
+        # call site rather than inside the function
         # because restructure4periodicity_2D does not receive `inputs`.
         if inputs[:AD] != DiscGal()
             restructure4periodicity_2D(mesh, norx, "periodicx")
@@ -5309,8 +5310,8 @@ function add_high_order_nodes_2D_gmsh_dg!(mesh::St_mesh, lgl, model)
             # global point, so ip2gip is the identity. This overwrites the
             # CG shared-entity gids the builders wrote and keeps the
             # gnpoin/gip2ip/gip2owner block downstream consistent without
-            # gating it. Real DG global indexing for MPI is the Phase-10
-            # parallel item.
+            # gating it. Real DG global indexing for MPI is deferred
+            # parallel work.
             mesh.ip2gip[ip] = ip
             ξ = lgl.ξ[i];  ζ = lgl.ξ[j]
             w11 = (1-ξ)*(1-ζ)*0.25;  wn1 = (1+ξ)*(1-ζ)*0.25
@@ -5325,7 +5326,7 @@ function add_high_order_nodes_2D_gmsh_dg!(mesh::St_mesh, lgl, model)
 end
 
 #
-# DG (DiscGal) interior + periodic face list, 2D — Phase-5 step 6.
+# DG (DiscGal) interior + periodic face list, 2D.
 #
 # Builds the flat face-pair arrays on St_mesh that surface_rhs_el!(::NSD_2D)
 # loops over. One list; periodic pairs are ordinary rows found by centroid
@@ -5340,7 +5341,7 @@ end
 # Must run inside the cached region of mod_mesh_read_gmsh! (its inputs
 # facet_cell_ids / bdy_edge_* are cache-skip-listed and do not survive a
 # cache hit; the flat-array products are cached). Serial semantics only for
-# now (parallel DG indexing is Phase 10).
+# now (parallel DG indexing is deferred).
 #
 function build_dg_faces_2D!(mesh::St_mesh)
     ngl = mesh.ngl
@@ -5421,7 +5422,7 @@ function build_dg_faces_2D!(mesh::St_mesh)
         cells = mesh.facet_cell_ids[f]
         length(cells) == 2 || continue
         a = cells[1]; b = cells[2]
-        a != b || error("build_dg_faces_2D!: facet $f joins element $a to itself — mesh is one element wide in a periodic direction (2×2-class pathology; see the Phase-5 gate-mesh note)")
+        a != b || error("build_dg_faces_2D!: facet $f joins element $a to itself — mesh is one element wide in a periodic direction; DG face pairing needs at least two elements across each periodic direction")
         found = 0; mla = 0; mlb = 0; mrev = false
         for la = 1:4, lb = 1:4
             ok, rev = slices_match(a, la, b, lb)
@@ -5536,7 +5537,7 @@ function build_dg_faces_2D!(mesh::St_mesh)
             abs(tcm[imax] - tcm[imin]) <= tolt || error("build_dg_faces_2D!: $tag sorted-order pair mismatch at k=$k ($(tcm[imin]) vs $(tcm[imax])) — non-conforming periodic boundary?")
             eL = els[imax]; lfL = lfs[imax]        # L = max side → outward normal points +direction
             eR = els[imin]; lfR = lfs[imin]
-            eL != eR || error("build_dg_faces_2D!: $tag pairs element $eL with itself — 1-element-wide direction (2×2-class pathology)")
+            eL != eR || error("build_dg_faces_2D!: $tag pairs element $eL with itself — 1-element-wide direction; DG face pairing needs at least two elements across each periodic direction")
             ok, rev = xnormal ? slices_match(eL, lfL, eR, lfR; usex=false, usey=true) :
                                 slices_match(eL, lfL, eR, lfR; usex=true,  usey=false)
             ok || error("build_dg_faces_2D!: $tag pair (elements $eL, $eR) does not align in either orientation — numbering inconsistency")
