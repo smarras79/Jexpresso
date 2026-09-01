@@ -154,6 +154,10 @@ conservation laws — but they are what makes the output a sagging beam.
 
 > **Naming, because the output does not warn you:** `vx`/`vy` are the particle
 > **velocity**; `ux`/`uy` are the **displacement**. The sag is `uy`.
+>
+> Field names are deliberately **ASCII** (`sxx`, `syy`, `sxy`). A Greek σ does
+> not survive the trip into VTK — a field written as `σyy` turns up in VisIt
+> under the name `yy`.
 
 Boundary conditions — one per characteristic family at each boundary:
 

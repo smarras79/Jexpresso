@@ -9,8 +9,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     #-----------------------------------------------------------------------------
     # `vx`/`vy` are the particle VELOCITY; qoutvars divide the momenta through
     # by ρ so the VTK files carry it directly.
-    qvars    = ["ρvx", "ρvy", "σxx", "σyy", "σxy"]
-    qoutvars = ["vx",  "vy",  "σxx", "σyy", "σxy"]
+    # ASCII ONLY: these become VTK/HDF5 array names and the Greek σ does not
+    # survive the round trip (VisIt shows "σyy" as "yy").
+    qvars    = ["rho_vx", "rho_vy", "sxx", "syy", "sxy"]
+    qoutvars = ["vx",     "vy",     "sxx", "syy", "sxy"]
 
     q = define_q(SD,
                  mesh.nelem, mesh.npoin, mesh.ngl,

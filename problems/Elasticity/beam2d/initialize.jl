@@ -12,8 +12,12 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     # NAMING, because the output does not warn you: vx/vy are the particle
     # VELOCITY, ux/uy are the DISPLACEMENT. The sag you want to look at is uy.
     #-----------------------------------------------------------------------------
-    qvars    = ["ρvx", "ρvy", "σxx", "σyy", "σxy", "ux", "uy"]
-    qoutvars = ["vx",  "vy",  "σxx", "σyy", "σxy", "ux", "uy"]
+    # ASCII ONLY. These strings become VTK/HDF5 array names, and the Greek
+    # σ does not survive the round trip — VisIt shows a field written as
+    # "σyy" under the name "yy". Greek stays in the comments, where it reads
+    # better and cannot break anything.
+    qvars    = ["rho_vx", "rho_vy", "sxx", "syy", "sxy", "ux", "uy"]
+    qoutvars = ["vx",     "vy",     "sxx", "syy", "sxy", "ux", "uy"]
 
     q = define_q(SD,
                  mesh.nelem, mesh.npoin, mesh.ngl,
