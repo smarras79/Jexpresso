@@ -182,6 +182,10 @@ end
 # spuriously invalidate the cache.
 const _CACHE_FINGERPRINT_KEYS = (
     :nop, :nsd, :backend,
+    # The discretization determines the numbering itself — ContGal shares
+    # interface nodes, DiscGal duplicates them — so a cached mesh or SEM
+    # file is only valid for the :AD it was built under.
+    :AD,
     :lexact_integration, :interpolation_nodes, :quadrature_nodes,
     :llump, :ldss_laplace, :ldss_differentiation,
     :llaguerre_1d_right, :llaguerre_1d_left,
