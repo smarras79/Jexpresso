@@ -17,6 +17,40 @@ A CPU and GPU research software for the numerical solution of a system of arbitr
 
 Suggested Julia version: 1.11.9
 
+# Table of Contents
+
+- [Installation](#installation)
+- [Equations](#equations)
+  1. [1D wave equation](#1-1d-wave-equation)
+  2. [1D shallow water](#2-1d-shallow-water)
+  3. [2D Helmholtz](#3-2d-helmholtz)
+  4. [2D scalar advection-diffusion](#4-2d-scalar-advection-diffusion)
+  5. [2D Euler equations of compressible flows with gravity and passive chemicals](#5-2d-euler-equations-of-compressible-flows-with-gravity-and-passive-chemicals)
+  6. [3D Euler equations of compressible flows with gravity](#6-3d-euler-equations-of-compressible-flows-with-gravity)
+- [Showcase](#turbulent-abl)
+  - [Turbulent ABL](#turbulent-abl)
+  - [Shallow cumuli](#shallow-cumuli)
+- [Examples available in this branch](#examples-available-in-this-branch)
+  - [1D shock tube with dynamic SGS (DynSGS) for shock capturing](#1d-shock-tube-with-dynamic-sgs-dynsgs-for-shock-capturing)
+  - [1D acoustic wave](#1d-acoustic-wave)
+  - [Flow at Mach 3 with forward-facing step](#flow-at-mach-3-with-forward-facing-step)
+  - [Kelvin-Helmholtz instability](#kelvin-helmholtz-instability)
+  - [Solid elasticicy](#Solid-elasticity)
+  - [MHD: magnetized Kelvin-Helmholtz instability](#magneto-hydrodynamics-mhd-magnetized-kelvin-helmholtz-instability)
+  - [MHD: Orszag-Tang vortex](#magneto-hydrodynamics-mhd-orszag-tang-vortex)
+  - [Cloud simulation: shallow cumuli with BOMEX conditions](#cloud-simulation-shallow-cumuli-with-bomex-conditions)
+  - [Shallow water on a spherical shell](#shallow-water-on-a-spherical-shell)
+  - [2D Euler equations with buoyancy and two passive tracers](#2d-euler-equations-with-buoyancy-and-two-passive-tracers)
+  - [3D Euler equations with buoyancy](#3d-euler-equations-with-buoyancy)
+  - [Laguerre semi-infinite element test suite](#laguerre-semi-infinite-element-test-suite)
+    - [Test 1: 1D wave equation with Laguerre absorbing layers](#test-1-1d-wave-equation-with-laguerre-semi-infinite-element-absorbing-layers)
+    - [Test 2: 1D wave train for linearized shallow water equations](#test-2-1d-wave-train-for-linearized-shallow-water-equations)
+    - [Test 3: 2D advection-diffusion equation](#test-3-2d-advection-diffusion-equation)
+    - [Test 4: 2D Helmholtz equation](#test-4-2d-helmholtz-equation)
+  - [Rising thermal bubble with semi-infinite Laguerre elements for outflows](#rising-thermal-bubble-with-semi-infinite-laguerre-elements-for-outflows)
+  - [Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows](#hydrostatic-linear-mountain-waves-with-semi-infinite-laguerre-elements-for-outflows)
+  - [Non-hydrostatic mountain waves: comparison against WRF](#non-hydrostatic-mountain-waves-comparison-against-wrf)
+
 # Installation:
 Follow the instructins in [INSTALL.md](INSTALL.md)
 
@@ -60,8 +94,8 @@ The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/st
 In order, we provide tests and results for the following equations:
 
 
-1. 1D wave equation:
-   
+### 1. 1D wave equation
+
 $${\bf q}=\begin{bmatrix}
 u \\
 v
@@ -70,7 +104,7 @@ v\\
 u
 \end{bmatrix}$$
 
-2: 1D shallow water:
+### 2. 1D shallow water
 
 $${\bf q}=\begin{bmatrix}
 h \\
@@ -82,8 +116,8 @@ gh + Uu
 
 where $H$ and $U$ are a reference height and velocity, respectively.
 
-3. 2D Helmholtz:
-   
+### 3. 2D Helmholtz
+
 $${\bf S}=\begin{bmatrix}
 \alpha^2 u + f(x,z)
 \end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
@@ -92,7 +126,7 @@ u_{xx} + u_{zz}
 
 for a constant value of $\alpha$ and $\mu$, which are case-dependent.
 
-4. 2D scalar advection-diffusion:
+### 4. 2D scalar advection-diffusion
 
 $${\bf q}=\begin{bmatrix}
 q\\
@@ -104,7 +138,9 @@ qv\\
 q_{xx} + q_{zz}
 \end{bmatrix},$$
 
-5. 2D Euler equations of compressible flows with gravity and N passive chemicals $c_i, \forall i=1,...,N$ 
+### 5. 2D Euler equations of compressible flows with gravity and passive chemicals
+
+With $N$ passive chemicals $c_i, \forall i=1,...,N$:
 
 $${\bf q}=\begin{bmatrix}
 \rho \\
@@ -148,7 +184,7 @@ c1_{xx} + c1_{zz}\\
 cN_{xx} + cN_{zz}
 \end{bmatrix}.$$
 
-6. 3D Euler equations of compressible flows with gravity
+### 6. 3D Euler equations of compressible flows with gravity
 
 $${\bf q}=\begin{bmatrix}
 \rho \\
@@ -270,6 +306,22 @@ Jexpresso.run_case("CompEuler", "kelvinHelmholtzChan2022")
      style="float: left; margin-right: 3.5px;" />
 
 
+## Solid elasticity
+Timoshenko's model of elasticity
+
+```julia
+using Jexpresso
+Jexpresso.run_case("Elasticity", "beam2d")
+```
+
+https://github.com/user-attachments/assets/78872c85-e8b5-494f-b95a-4a94aeb5f07f
+
+<img src="assets/beam2d.jpeg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+
+
 ## Magneto-Hydrodynamics (MHD), magnetized Kelvin-Helmholtz instability:
 
 The problem is defined in [`problems/equations/MHD/kelvinHelmholtzChan2022`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/MHD/kelvinHelmholtzChan2022).
@@ -283,7 +335,7 @@ Jexpresso.run_case("MHD", "kelvinHelmholtzChan2022")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-##  Magneto-Hydrodynamics (MHD), Orszag-Tang vortex:
+## Magneto-Hydrodynamics (MHD), Orszag-Tang vortex:
 
 The classical 2D MHD benchmark, with the setup of Bormanis, Leon & Scheinker,
 *Phys. Plasmas* **31**, 012101 (2024): doubly periodic unit square, γ = 5/3,
@@ -353,7 +405,8 @@ Jexpresso.run_case("ShallowWater", "SWsphere")
 
 
 
-##  2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
+## 2D Euler equations with buoyancy and two passive tracers
+The problem is defined in `problems/equations/CompEuler/thetaTracers`. To run it you would do the following:
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "thetaTracers")
@@ -364,7 +417,8 @@ Jexpresso.run_case("CompEuler", "thetaTracers")
      style="float: left; margin-right: 5px;" />
 
 
-##  3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
+## 3D Euler equations with buoyancy
+The problem is defined in `problems/equations/CompEuler/3d`. To run it you would do the following:
 ```julia
 using Jexpresso
 Jexpresso.run_case("CompEuler", "3d")
@@ -388,7 +442,7 @@ This section contains instructions to run all of the test cases presented in
 }
 ```
 
-Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
+### Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
 
 The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
 
@@ -401,7 +455,7 @@ Jexpresso.run_case("CompEuler", "wave1d_lag")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 2: 1D wave train for linearized shallow water equations
+### Test 2: 1D wave train for linearized shallow water equations
 
 The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
 
@@ -415,7 +469,7 @@ Jexpresso.run_case("AdvDiff", "Wave_Train")
      style="float: left; margin-right: 7px;" />
 
 
-Test 3: 2D advection-diffusion equation
+### Test 3: 2D advection-diffusion equation
 
 The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
 
@@ -428,7 +482,7 @@ Jexpresso.run_case("AdvDiff", "2D_laguerre")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 4: 2D Helmholtz equation
+### Test 4: 2D Helmholtz equation
 
 The problem is defined in [`problems/equations/Helmholtz/case1_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1_laguerre) and by default output will be written to `output/Helmholtz/case1_laguerre`. To solve this problem run the following commands from the Julia command line:
 
