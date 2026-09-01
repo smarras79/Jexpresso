@@ -160,7 +160,7 @@ function rhs!(du, u, params, time)
 
             k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngl)))
             k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time),
-              params.mesh.connijk , params.basis.dψ, params.ω, params.Minv, 
+              params.mesh.connijk , params.basis.dψ, params.ω, params.metrics.Je, params.Minv, 
               params.flux_gpu, params.source_gpu, 
               PHYS_CONST, params.xmax, params.xmin, params.mesh.ngl, params.neqs,
               lpert, inputs[:lperiodic_1d], params.mesh.npoin_linear, params.mesh.npoin; 
@@ -170,7 +170,7 @@ function rhs!(du, u, params, time)
                 params.RHS_lag .= TFloat(0.0)
                 k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngr)))
                 k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time),
-                  params.mesh.connijk_lag , params.basis_lag.dψ, params.ω_lag, params.Minv, 
+                  params.mesh.connijk_lag , params.basis_lag.dψ, params.ω_lag, params.metrics_lag.Je, params.Minv, 
                   params.flux_lag_gpu, params.source_lag_gpu,
                   PHYS_CONST, params.xmax, params.xmin, params.mesh.ngr, params.neqs,
                   lpert, inputs[:lperiodic_1d], params.mesh.npoin_linear, params.mesh.npoin;
@@ -739,7 +739,7 @@ function inviscid_rhs_el!(u, params,
     neqs::Int  = params.neqs
 
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-    
+
     for iel=1:nelem   
         for i=1:ngl
             ip = connijk[iel,i,1]
@@ -769,6 +769,7 @@ function inviscid_rhs_el!(u, params,
         _expansion_inviscid!(u, params.neqs, ngl,
                              params.basis.dψ, params.ω,
                              params.F, params.S,
+                             params.metrics.Je,
                              params.rhs_el,
                              iel, params.CL, params.QT, SD, params.AD)
         
@@ -1500,9 +1501,37 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
 end
 
 
+#
+# 1D volume term.
+#
+# WHY THE SOURCE CARRIES Je AND THE FLUX DOES NOT.
+#
+# What leaves this routine is DSS-assembled and then divided by the lumped
+# mass matrix M[i] = Je[iel,i]*ω[i] (build_mass_matrix!, NSD_1D). So each
+# term has to be weighted by ω*Je to survive that division as itself:
+#
+#   source:  ω[i]*Je[iel,i]*S[i,ieq]  / (Je*ω[i])  =  S            ✓
+#
+# The flux is the exception, and only in 1D. The 2D/3D kernels form dF/dx
+# explicitly (dFdξ*dξdx + …) and then weight by ω*Jac. Here dF/dx is
+# dFdξ*dξdx with dξdx = 1/Je, so the ω*Je weighting would immediately cancel
+# the 1/Je back out — ω*Je*(dFdξ/Je) is just ω*dFdξ, which is what is
+# written:
+#
+#   flux:    ω[i]*dFdξ                / (Je*ω[i])  =  dFdξ/Je = dF/dx   ✓
+#
+# That cancellation is why Je never appeared in this routine at all until
+# now, and it is exactly how the source came to be missing it: the source
+# has no dξdx to cancel against, so leaving Je out scaled it by 1/Je, i.e.
+# by 2/Δx. Every other spatial dimension and both GPU kernels got this
+# right; 1D (here, _expansion_inviscid_laguerre! and _build_rhs_gpu_v0!)
+# did not, and no CI case exercised a 1D source that was not an empirically
+# tuned sponge, so nothing caught it. See problems/Elasticity/README.md.
+#
 function _expansion_inviscid!(u, neqs, ngl,
                               dψ, ω,
                               F, S,
+                              Je,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     for ieq = 1:neqs
@@ -1511,7 +1540,7 @@ function _expansion_inviscid!(u, neqs, ngl,
             for k = 1:ngl
                 dFdξ += dψ[k,i]*F[k,ieq]
             end
-            rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*S[i,ieq]
+            rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*Je[iel,i]*S[i,ieq]
         end
     end
 end
