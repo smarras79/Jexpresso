@@ -57,8 +57,26 @@ function user_inputs()
         # fast to see, lower it. Rows 6-7 (ux, uy) get zero: they are ODEs, and
         # diffusing a recovered displacement would be meaningless.
         #---------------------------------------------------------------------------
+        # WHAT AV() ACTUALLY DOES: it adds ∇·(μ_ieq ∇U_ieq) to each equation
+        # independently — a plain constant-coefficient Laplacian on the state
+        # itself, assembled in weak form (_expansion_visc!(..., VT::AV,
+        # NSD_2D, ContGal) in src/kernel/operators/rhs.jl). It is NOT a
+        # constitutive model. On rows 1-2 it is a Newtonian damping of the
+        # momentum, which at least has a meaning; on rows 3-5 it is ∇²σ, which
+        # has none — it is numerical smoothing of the stress field, and that
+        # is the honest description of the whole thing.
+        #
+        # :energy_equation is pinned because that shared kernel carries one
+        # equation-specific branch: at ieq == 4 it augments the flux with the
+        # Navier-Stokes viscous-work term τ_ij·u_j, built from uprimitive[2]
+        # and [3] on the assumption that those are velocities. Here ieq == 4 is
+        # σyy and uprimitive[2], [3] are ρvy and σxx, so that term would be
+        # nonsense. It is gated off when :energy_equation == "theta", which is
+        # also the default — pinned here so a stray setting elsewhere cannot
+        # silently switch it on.
         :lvisc                => true,
         :visc_model           => AV(),
+        :energy_equation      => "theta",
         :μ                    => [2.0e-4, 2.0e-4, 2.0e-4, 2.0e-4, 2.0e-4, 0.0, 0.0],
         #---------------------------------------------------------------------------
         # Mesh: 32x6 quads over [0,1] x [-0.1,0.1] — near-square elements of
