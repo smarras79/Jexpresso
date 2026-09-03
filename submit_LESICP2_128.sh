@@ -334,40 +334,60 @@ if [ "$LAUNCHER" = "mpirun" ] && [ -n "${SLURM_NODELIST:-}" ]; then
 fi
 trap '[ -n "${NODEFILE:-}" ] && rm -f "$NODEFILE"' EXIT
 
-# RANKS PER NODE, STATED RATHER THAN ASSUMED. --ntasks-per-node shapes the
-# ALLOCATION; what actually places ranks is mpirun, and its default mapping is
-# its own business. Our hostfile lists each node ONCE, so `--map-by node`
-# round-robins and happens to land 1024/16 = 64 per node -- correct by
-# arithmetic, not by instruction, and silently wrong the moment NTASKS is not
-# an exact multiple of NNODES. The flag that says it outright differs by
-# family, so pick it from the launcher's own banner.
+# NO MAPPING FLAG BY DEFAULT, AND THAT IS A MEASURED DECISION.
+#
+# This block used to pass `-ppn $PPN` on Hydra -- state the placement rather
+# than arrive at it. It BROKE MPI_Init at 1024 ranks on this cluster:
+#
+#   job 1220100  no mapping flag   preflight OK, Comm_size = 1024; ran on to
+#                                  "Matrix wrapper ...... END"
+#   job 1220165  -ppn 64           "Unable to alloc send buffer MR on mlx5_0:
+#                                  Cannot allocate memory", exit 9, in the
+#                                  PREFLIGHT -- a bare MPI_Init + one Allreduce
+#
+# Everything else was identical across those two jobs: Julia 1.11.9, 8000 MB
+# per rank with --heap-size-hint=6800M, DBG_VDIFF=1, 16 nodes x 64 tasks. One
+# variable, and this was it.
+#
+# The reasoning that recommended -ppn argued the wrong way. Recorded so it is
+# not re-derived: -ppn blocks consecutive ranks onto a node, which for a
+# 32 x 32 rank grid puts most neighbours (r+-1, r+-32) on the SAME node and
+# should open FEWER InfiniBand connections than the round-robin Hydra does
+# with a one-line-per-host hostfile. It measures worse regardless. Whatever
+# this netmod does with pinned UD buffers does not follow that argument, and
+# one preflight outweighs it.
+#
+# Hydra's default with this hostfile already lands 1024/16 = 64 per node. The
+# placement check in the preflight below VERIFIES that rather than assuming
+# it, which is the half of that change worth keeping.
 PPN=$(( NTASKS / NNODES ))
 MPIRUN_BANNER="$(mpirun --version 2>&1 | head -3)"
-case "$MPIRUN_BANNER" in
-    *Hydra*|*HYDRA*|*MPICH*)      MAP_FLAGS=(-ppn "$PPN") ;;         # MPICH/Hydra
-    *"Open MPI"*|*OpenRTE*|*prte*) MAP_FLAGS=(--map-by "ppr:${PPN}:node") ;;
-    *)                            MAP_FLAGS=(--map-by node) ;;        # unknown: as before
-esac
-# JEXPRESSO_MAP_FLAGS replaces the lot, so the mapping can be BISECTED without
-# editing this file -- set it to a single space for "pass nothing and let the
-# launcher decide", which is what this script did before it started saying
-# -ppn. Placement decides which ranks are co-resident, and that decides how
-# many InfiniBand connections (and pinned buffers) each rank opens, so it is a
-# real variable when MPI_Init itself is what fails.
+MAP_FLAGS=()
+# JEXPRESSO_MAP_FLAGS replaces the lot, so the mapping stays bisectable without
+# editing this file. JEXPRESSO_MAP_FLAGS="-ppn 64" restores what job 1220165
+# did; "--map-by ppr:64:node" is the Open MPI spelling. Placement decides which
+# ranks are co-resident, and that decides how many InfiniBand connections (and
+# pinned buffers) each rank opens, so it is a live variable whenever MPI_Init
+# itself is what fails.
 if [ -n "${JEXPRESSO_MAP_FLAGS+x}" ]; then
     # shellcheck disable=SC2206
     MAP_FLAGS=(${JEXPRESSO_MAP_FLAGS})
 fi
-echo "    ranks/node    : $PPN  (mpirun flags: ${MAP_FLAGS[*]})"
+echo "    ranks/node    : $PPN  (mpirun flags: ${MAP_FLAGS[*]:-<none: launcher default>})"
 
+# `${MAP_FLAGS[@]+"${MAP_FLAGS[@]}"}`, not `"${MAP_FLAGS[@]}"`. This script runs
+# under `set -u`, and MAP_FLAGS is now EMPTY by default -- on bash 4.2 (which is
+# what RHEL-family login/compute nodes still ship) expanding an empty array
+# under `set -u` is an "unbound variable" error, so the plain form would abort
+# the job on exactly the default path.
 launch() {
     if [ "$LAUNCHER" = "srun" ]; then
         # srun honours --ntasks-per-node from the allocation natively.
         srun --mpi="$SRUN_MPI" -n "$NTASKS" -c "${SLURM_CPUS_PER_TASK:-1}" "${JULIA[@]}" "$@"
     elif [ -s "${NODEFILE:-/nonexistent}" ]; then
-        mpirun -np "$NTASKS" -hostfile "$NODEFILE" "${MAP_FLAGS[@]}" "${JULIA[@]}" "$@"
+        mpirun -np "$NTASKS" -hostfile "$NODEFILE" ${MAP_FLAGS[@]+"${MAP_FLAGS[@]}"} "${JULIA[@]}" "$@"
     else
-        mpirun -np "$NTASKS" "${MAP_FLAGS[@]}" "${JULIA[@]}" "$@"
+        mpirun -np "$NTASKS" ${MAP_FLAGS[@]+"${MAP_FLAGS[@]}"} "${JULIA[@]}" "$@"
     fi
 }
 
