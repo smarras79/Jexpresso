@@ -10,23 +10,14 @@
 # discrete equilibrium leaves nothing for the wet/dry 1/H division to
 # amplify.
 #
-# Hb(x,y) is the conical island of Marras et al. 2018, Sec. 5.5:
+# Here Hb is flat, but we keep it for the future multi-layer model
 #
-#   Hb(x,y) = 0.93 * (1 - r/rc)     if r ≤ rc
-#           = 0                     otherwise
-#
-# with rc = 3.6 m and r = sqrt((x - xc_cone)² + (y - yc_cone)²).
-# We place the cone in the middle of the basin at (xc_cone, yc_cone) = (12.5, 0).
-#
-const _XC_CONE_SWE =  12.5
-const _YC_CONE_SWE =   0.0
-const _RC_CONE_SWE =   3.6
-const _HC_CONE_SWE =   0.93
 
 # Dry-node momentum relaxation rate [1/s]. On layers thinner than the
 # wet/dry threshold the momentum is relaxed to zero (the paper forces the
 # velocity to zero on dry nodes); σΔt ≈ 0.25 keeps the term well inside
 # the explicit SSPRK54 stability region.
+
 const _SIGMA_DRY_SWE = 25.0
 
 @inline function _swe_bathy_grad(x, y)
