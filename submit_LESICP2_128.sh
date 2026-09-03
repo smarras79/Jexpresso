@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 #=============================================================================
 #  Jexpresso profile run.
 #
@@ -53,6 +53,7 @@
 #  fills a Wulver node; 3500M x 2 = 7000M/rank is what setup_les_run.sh found
 #  this domain needs, and 64 x 7000M = 448 GB/node leaves the node headroom.
 #-----------------------------------------------------------------------------
+#SBATCH --exclusive
 #SBATCH --nodes=16
 #SBATCH --ntasks-per-node=64
 #SBATCH --cpus-per-task=2
@@ -78,8 +79,17 @@ EQS="CompEuler"
 CASE="LESICP2-128x128x60-imex"
 TEND="10800.0"
 MESH=""
-ROOT="/project/smarras/smarras/Jexpresso"
-MODULES=(Julia/1.11.9 GCC MPICH)
+ROOT="/project/smarras/hw59/Jexpresso/Jexpresso"
+# Where the VTK trees go. INFERRED from ROOT by analogy -- hw59's old script
+# did not set it, the deck defaults to another user's scratch, and ~543 GB
+# lands here. CHECK IT EXISTS AND HAS THE QUOTA before a long run.
+export JEXPRESSO_OUTDIR="${JEXPRESSO_OUTDIR:-/scratch/smarras/hw59/output_new}"
+# Taken verbatim from hw59's working submit_high_LESICP2.sh. NOTE: it loads
+# no Julia module -- julia comes from the login environment, which is why
+# the shebang above is `bash -l`. If `module load bright` fails on its own
+# (this script loads them one at a time), collapse them back into a single
+# `module load bright shared mpich/ge/gcc/64` here.
+MODULES=(bright shared mpich/ge/gcc/64)
 
 #=============================================================================
 #  Nothing below here needs editing.
@@ -221,14 +231,28 @@ if [ -n "${SLURM_MEM_PER_CPU:-}" ] && [ -n "${SLURM_MEM_PER_NODE:-}" ]; then
     unset SLURM_MEM_PER_NODE
 fi
 
+# LAUNCHER: mpirun with an explicit hostfile, which is what hw59's
+# submit_high_LESICP2.sh used and is therefore the form KNOWN to work with
+# this site's mpich/ge module. srun --mpi=pmi2 is the generic path and is
+# available with JEXPRESSO_LAUNCHER=srun if the site prefers it.
 SRUN_MPI="${SRUN_MPI:-pmi2}"
 if [ -n "${JEXPRESSO_LAUNCHER:-}" ]; then LAUNCHER="$JEXPRESSO_LAUNCHER"
-elif [ "$NNODES" -gt 1 ] && command -v srun >/dev/null 2>&1; then LAUNCHER="srun"
 else LAUNCHER="mpirun"; fi
+
+# Built once, here, rather than inline in the run command -- the preflight
+# below has to use the SAME launch line as the run, or it proves nothing.
+NODEFILE="$ROOT/nodefile.$SLURM_JOB_ID"
+if [ "$LAUNCHER" = "mpirun" ] && [ -n "${SLURM_NODELIST:-}" ]; then
+    scontrol show hostname "$SLURM_NODELIST" > "$NODEFILE"
+    echo "    hostfile: $NODEFILE ($(wc -l < "$NODEFILE") nodes)"
+fi
+trap '[ -n "${NODEFILE:-}" ] && rm -f "$NODEFILE"' EXIT
 
 launch() {
     if [ "$LAUNCHER" = "srun" ]; then
         srun --mpi="$SRUN_MPI" -n "$NTASKS" -c "${SLURM_CPUS_PER_TASK:-1}" julia "$@"
+    elif [ -s "${NODEFILE:-/nonexistent}" ]; then
+        mpirun -np "$NTASKS" -hostfile "$NODEFILE" --map-by node julia "$@"
     else
         mpirun -np "$NTASKS" julia "$@"
     fi

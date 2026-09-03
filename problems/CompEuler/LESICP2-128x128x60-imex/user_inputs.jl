@@ -451,7 +451,17 @@ function user_inputs()
         :outformat           => "vtk",
 	# One tree per scheme, so an A/B/C leaves all three solutions on disk
 	# rather than overwriting each other.
-	:output_dir          => "/scratch/smarras/smarras/output_new/LESICP2_128x128x60_10240mX10240mX5000m_" * String(scheme) * "/",
+	# JEXPRESSO_OUTDIR overrides the parent directory without editing this
+	# file, because the default below is one user's scratch and this deck is
+	# shared. The scheme suffix is appended either way, so an A/B/C leaves all
+	# three trees on disk rather than overwriting each other.
+	#
+	# BUDGET FOR IT: :diagnostics_at_times below is 209 dumps and each is
+	# ~2.6 GB on this grid, i.e. ~543 GB for a full run. The 9000:10:10800
+	# range alone is 181 of them. Thin that cadence if scratch is tight.
+	:output_dir          => joinpath(get(ENV, "JEXPRESSO_OUTDIR",
+	                                     "/scratch/smarras/smarras/output_new"),
+	                                 "LESICP2_128x128x60_10240mX10240mX5000m_" * String(scheme)) * "/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         # ~2.6 GB on this grid (4x the 64x64x60 dump) and it lands before the
         # time loop, so it does not distort s/step -- but it is minutes of I/O
