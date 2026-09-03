@@ -139,12 +139,26 @@ export JEXPRESSO_HEVI_PROFILE_EVERY="${JEXPRESSO_HEVI_PROFILE_EVERY:-50}"
 export JEXPRESSO_HEVI_PROFILE_SKIP="${JEXPRESSO_HEVI_PROFILE_SKIP:-10}"
 export JEXPRESSO_PRECOMPILE_PASS="${JEXPRESSO_PRECOMPILE_PASS:-1}"
 export JEXPRESSO_STEP_HEARTBEAT=1
-# THE SCHUR ARM IS THIS SCRIPT'S DEFAULT: explicit vertical diffusion, so
-# `use_schur = !_vdiff` in the deck leaves the scalar Schur stage solve on.
-# `:-0` rather than a bare 0 so `DBG_VDIFF=1 sbatch ...` still reaches the deck
-# -- a launcher that overrides the caller's environment is how an A/B silently
-# measures the same arm twice.
-export DBG_VDIFF="${DBG_VDIFF:-0}"
+# THE IMPLICIT-VDIFF ARM IS THIS SCRIPT'S DEFAULT, AND THAT IS THE CHANGE FROM
+# submit_jexpresso_profile.sh, WHICH DEFAULTS TO 0. This is a production
+# launcher, not a profiling one, and the two arms are not interchangeable:
+#
+#   DBG_VDIFF=1  vertical SGS diffusion IMPLICIT -> five-field stage solve.
+#                Slower per step. RUNS.
+#   DBG_VDIFF=0  vertical SGS diffusion EXPLICIT -> scalar Schur stage solve,
+#                ~3.56x faster per step. DIES AROUND t = 500 s.
+#
+# One variable sets both because the deck derives `use_schur = !_vdiff`: a
+# Schur reduction cannot see the diffusion operator, so the cheap solve and
+# the stable diffusion are mutually exclusive. The t = 500 s failure is
+# recorded at the top of the deck -- with diffusion explicit, nu_eff/dz^2 is
+# back in the explicit budget and ARS343 loses it once nu_t reaches 20-40
+# m^2/s, which this boundary layer reaches in the first few hundred seconds.
+#
+# A bare 0 here (as in the profile script) OVERRIDES the deck's own default of
+# true, so an sbatch would silently take the arm that blows up. `:-1` keeps
+# `DBG_VDIFF=0 sbatch ...` working for a deliberate A/B or a timing run.
+export DBG_VDIFF="${DBG_VDIFF:-1}"
 
 # One BLAS/Julia thread per rank: the ranks already fill the node, and nested
 # threading oversubscribes it.
