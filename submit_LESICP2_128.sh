@@ -348,6 +348,16 @@ case "$MPIRUN_BANNER" in
     *"Open MPI"*|*OpenRTE*|*prte*) MAP_FLAGS=(--map-by "ppr:${PPN}:node") ;;
     *)                            MAP_FLAGS=(--map-by node) ;;        # unknown: as before
 esac
+# JEXPRESSO_MAP_FLAGS replaces the lot, so the mapping can be BISECTED without
+# editing this file -- set it to a single space for "pass nothing and let the
+# launcher decide", which is what this script did before it started saying
+# -ppn. Placement decides which ranks are co-resident, and that decides how
+# many InfiniBand connections (and pinned buffers) each rank opens, so it is a
+# real variable when MPI_Init itself is what fails.
+if [ -n "${JEXPRESSO_MAP_FLAGS+x}" ]; then
+    # shellcheck disable=SC2206
+    MAP_FLAGS=(${JEXPRESSO_MAP_FLAGS})
+fi
 echo "    ranks/node    : $PPN  (mpirun flags: ${MAP_FLAGS[*]})"
 
 launch() {
