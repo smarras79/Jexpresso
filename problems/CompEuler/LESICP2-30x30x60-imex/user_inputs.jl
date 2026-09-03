@@ -40,32 +40,34 @@ function user_inputs()
     scheme in (:imex, :hevi, :explicit) ||
         error("LESICP2-30x30x60-imex: scheme must be :imex, :hevi or :explicit; got :$scheme")
     #---------------------------------------------------------------------------
-    # STEP SIZE for :hevi and :explicit (dt_imex above covers :imex). From this
-    # grid's own budget -- 30 x 30 x 60 at p = 4, elements 341.3 m in x/y and
-    # 40 m in z below :zlevel_transition (:first_zelement_size 10 m x (ngl-1)):
+    # STEP SIZE for :hevi and :explicit (dt_imex above covers :imex).
     #
-    #     h_x = 0.1727 x 341.3 = 58.95 m      h_z = 0.1727 x 40 = 6.91 m
+    # MEASURED, NOT ESTIMATED: build_hevi refuses to start above the neutral
+    # limit and prints the budget, which on this mesh (30 x 30 x 60, p = 4,
+    # 40 m first z elements) came out as
     #
-    #   rate [1/s]   vertical acoustic 50.2   horizontal acoustic 5.9
-    #                advection 0.8            SGS diffusion 2.4 (nu_eff 57)
+    #     explicit half  17.4 1/s = acoustic 17.2 + advective 0.17 + viscous 0.014
+    #     ARS232 joint neutral limit  0.0749 s   -> run at 0.0525 s or below
     #
-    # Neutral step from ark.jl's own scans (ark_joint_dt_max for HEVI over the
-    # (zE, zI) rectangle, ark_wedge_dt_max for IMEX3D), then the same 47%
-    # margin the explicit dt = 0.02 carries:
+    # A hand estimate from the LGL gaps (h_x 58.95 m, h_z 6.91 m) lands at
+    # 2.4x that, and it is wrong for two reasons worth remembering: the code
+    # counts BOTH horizontal directions, and it calibrates c/h against the
+    # measured column spectrum (kappa = 1.46 here) -- the true spectral radius
+    # of the p = 4 operator, not c over the smallest node gap. With those two
+    # in, ark_joint_dt_max(ARS232) reproduces the run's number (0.071 s).
     #
-    #   explicit  CK2N54, all of it             neutral 0.056 s  -> 0.026
-    #   HEVI      ARS232, vdiff explicit        neutral 0.138 s  -> 0.065
-    #   HEVI      ARS232, :implicit_vdiff       neutral 0.182 s  -> 0.085   <- default 0.08
-    #   IMEX3D    ARS343, vdiff explicit        wedge   0.88 s   -> 0.41
-    #   IMEX3D    ARS343, :implicit_vdiff       wedge   3.39 s   -> 1.6     (dt_imex 1.0)
+    # Where that leaves the three schemes, same margins throughout:
     #
-    # HEVI is only ~3x explicit here because the horizontal acoustic term stays
-    # explicit and ARS232's imaginary radius is 1.73 against CK2N54's 3.34.
-    # (The earlier 0.024 was the 128x128x60 grid's number, h_x = 13.82 m.)
-    # Read the CFL report at t = 0 before trusting any of this: the vertical
-    # numbers assume the stretching delivered 40 m first elements.
+    #   explicit  CK2N54                    neutral 0.036 s   -> 0.017  (0.02 runs)
+    #   HEVI      ARS232, :implicit_vdiff   neutral 0.075 s   -> 0.05   <- default
+    #   HEVI      ARS443 would allow ~0.06 but costs 4 RHS/step for 3: no gain
+    #   IMEX3D    ARS343, :implicit_vdiff   wedge   2.6 s     -> 1.2    (dt_imex 1.0)
+    #
+    # HEVI is only ~2.5x explicit here: the horizontal acoustics stay explicit
+    # and ARS232's imaginary radius is 1.73 against CK2N54's 3.34. 0.1 was
+    # refused (amplification 1.92/step); 0.08 would be refused too.
     Δt = scheme === :imex ? dt_imex :
-         parse(Float64, get(ENV, "DBG_DT", scheme === :hevi ? "0.1" : "0.02"))
+         parse(Float64, get(ENV, "DBG_DT", scheme === :hevi ? "0.05" : "0.02"))
     
     tend  = parse(Float64, get(ENV, "DBG_TEND", "10800.0"))
     lprobe = haskey(ENV, "DBG_TEND")
