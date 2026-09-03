@@ -1353,7 +1353,10 @@ function _save_mesh_cache(path::String, mesh; inputs=nothing, nparts::Int=1)
         end
         flds["__SD_nsd__"] = mesh.nsd
         fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
-        JLD2.jldsave(path; mesh_fields = flds, fingerprint = fp)
+        # IOStream, not the default MmapIO -- see the note in
+        # sem_setup.jl's _save_sem_cache. A write into an mmap'd page that
+        # the filesystem cannot back is SIGBUS, which no try/catch can see.
+        JLD2.jldsave(path, IOStream; mesh_fields = flds, fingerprint = fp)
         rank == 0 && println(" # Saved mesh topology cache: $path")
     catch e
         rank == 0 && @warn "Failed to save mesh cache $path" exception=(e, catch_backtrace())

@@ -392,6 +392,20 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
+        # PREPROCESS/MESH CACHE: OFF, AND THAT IS A SIZE DECISION.
+        #
+        # The cache stores per-rank metrics + matrix so a LATER run of the same
+        # case skips the metric build. At 1024 ranks on this grid it wrote
+        # 573 GB in 2048 files, filled a 2 TB GPFS to 100%, and killed the job
+        # with SIGBUS on every rank (JLD2 writes through an mmap; a page the
+        # filesystem cannot back is signal 7, which no try/catch sees). The
+        # saving it was buying is one metric build -- 8.4 s.
+        #
+        # It stays off by default here BECAUSE OF THE ARITHMETIC, not because
+        # caching is wrong: ~0.5 GB/rank x nranks is fine at 4 ranks and absurd
+        # at 1024. JEXPRESSO_MESH_CACHE=1 turns it back on if you have the
+        # space and are starting the same case repeatedly.
+        :luse_mesh_cache  => parse(Bool, get(ENV, "JEXPRESSO_MESH_CACHE", "false")),
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
 	:gmsh_filename    => "./problems/CompEuler/LESICP2-128x128x60-imex/LESICP_128x128x60_10240mX10240mX5000m.msh",
 		

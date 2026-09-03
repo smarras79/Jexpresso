@@ -216,6 +216,11 @@ function user_inputs()
         #   gmsh -3 problems/CompEuler/LESICP2-4col-imex/LESICP_2x2x60.geo \
         #        -o problems/CompEuler/LESICP2-4col-imex/LESICP_2x2x60_1280mX1280mX5000m.msh
         #---------------------------------------------------------------------------
+        # Metrics/mesh cache. ON here -- 8 small files for 4 ranks -- but the
+        # same switch the production deck defaults to FALSE, where 1024 ranks
+        # wrote 573 GB and filled a 2 TB GPFS. JEXPRESSO_MESH_CACHE=0 to test
+        # the no-cache path on a laptop before trusting it at scale.
+        :luse_mesh_cache  => parse(Bool, get(ENV, "JEXPRESSO_MESH_CACHE", "true")),
         :lread_gmsh       => true,
         :gmsh_filename    => "./problems/CompEuler/LESICP2-4col-imex/LESICP_2x2x60_1280mX1280mX5000m.msh",
         # The .geo is UNIFORM in z; the grading is applied here at read time.

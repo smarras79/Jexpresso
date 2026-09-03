@@ -121,7 +121,20 @@ function _save_sem_cache(path::String, metrics, matrix; inputs=nothing, nparts::
         _ensure_cache_dir(path)
         fp = inputs === nothing ? Dict{String,Any}() : _cache_fingerprint(inputs, nparts)
         slim_matrix = _matrix_for_cache(matrix)
-        JLD2.jldsave(path; metrics, matrix = slim_matrix, fingerprint = fp)
+        # IOStream, NOT JLD2's default MmapIO. JLD2 writes through an mmap,
+        # and a memcpy into an mmap'd page the filesystem cannot back raises
+        # SIGBUS -- a fatal signal, so the `try` around this cannot catch it
+        # and the process dies with no Julia-level error, only
+        # `__memmove_avx_unaligned_erms` above libc. That is not theoretical:
+        # this deck's caches filled a 2 TB GPFS to 100% (573 GB, 2048 files,
+        # 1024 ranks x MESH + PREPROCESS) and every rank took signal 7 here,
+        # immediately after "Matrix wrapper ...... END".
+        #
+        # With plain buffered IO a full filesystem comes back as a
+        # SystemError, the catch below turns it into a warning, and the run
+        # CONTINUES without a cache -- which is the correct outcome, since the
+        # cache only ever saves startup time on a LATER run.
+        JLD2.jldsave(path, IOStream; metrics, matrix = slim_matrix, fingerprint = fp)
         rank == 0 && println(" # Saved SEM preprocess cache: $path")
     catch e
         rank == 0 && @warn "Failed to save SEM cache $path" exception=(e, catch_backtrace())
