@@ -69,7 +69,7 @@ export sphere_relative_vorticity!
 #---------------------------------------------------------------------------------
 # Scratch space, allocated once and reused every stage of every step.
 #---------------------------------------------------------------------------------
-mutable struct St_sphere_params{TFloat, TDSS, TDSS1, TForc}
+mutable struct St_sphere_params{TFloat, TDSS, TDSS1, TForc, TDSGS}
     neqs ::Int
     F    ::Array{TFloat, 3}    # ngl × ngl × neqs
     G    ::Array{TFloat, 3}
@@ -115,11 +115,21 @@ mutable struct St_sphere_params{TFloat, TDSS, TDSS1, TForc}
     # `=== nothing` test in sphere_rhs! then compiles away.
     #
     forcing ::TForc
+
+    #
+    # DYNAMIC SGS VISCOSITY (sphere_dsgs.jl): `nothing` unless the deck sets
+    # :lvisc => true with :visc_model => DSGS(); then the per-element
+    # residual-based coefficient ν_e that multiplies μ[ieq] in the viscous
+    # term. Δt is the (fixed) step the residual's BDF2 stencil uses, set by
+    # the time loop before the first RHS evaluation.
+    #
+    dsgs ::TDSGS
+    Δt   ::TFloat
 end
 
 
 function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
-                             neqs = 4, TF = TFloat, verbose = true)
+                             neqs = 4, TF = TFloat, verbose = true, q0 = nothing)
 
     ngl = Int(mesh.ngl)
 
@@ -161,7 +171,16 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                             build_sphere_forcing(mesh, metrics, inputs;
                                                  neqs = neqs, TF = TF,
                                                  verbose = verbose &&
-                                                           MPI.Comm_rank(get_mpi_comm()) == 0))
+                                                           MPI.Comm_rank(get_mpi_comm()) == 0),
+                            # DynSGS needs the initial state for its history;
+                            # without q0 (the tests build params without a
+                            # state) a resting layer is assumed.
+                            build_sphere_dsgs(mesh, inputs,
+                                              q0 === nothing ? zeros(TF, npoin, neqs + 1) : q0;
+                                              neqs = neqs, TF = TF,
+                                              verbose = verbose &&
+                                                        MPI.Comm_rank(get_mpi_comm()) == 0),
+                            zero(TF))
 end
 
 
@@ -222,6 +241,10 @@ function build_sphere_viscosity(inputs, neqs::Int, TF = TFloat)
 
     get(inputs, :lvisc, false) == true || return μ
 
+    # With :visc_model => DSGS() the same :μ is the per-equation MULTIPLIER of
+    # the dynamic coefficient ν_e (sphere_dsgs.jl), dimensionless, [0,1,1,1]
+    # for momentum only — same convention as the flat DSGS decks.
+
     μin = get(inputs, :μ, 0.0)
     ieq_visc = get(inputs, :ivisc_equations, 2:neqs)
 
@@ -266,25 +289,68 @@ function sphere_rhs!(RHS, q, qe,
                      sp::St_sphere_params,
                      SVT)
 
+    npoin = Int(mesh.npoin)
+    neqs  = Int(sp.neqs)
+    ldsgs = sp.dsgs !== nothing
+
+    # On a DynSGS run the viscous term is NOT assembled in this pass: its
+    # coefficient is built from the inviscid residual, which needs the
+    # inviscid RHS first.
     _sphere_rhs_kernel!(RHS, q, qe,
                         mesh.connijk, mesh.coords,
-                        Int(mesh.nelem), Int(mesh.ngl), Int(mesh.npoin),
+                        Int(mesh.nelem), Int(mesh.ngl), npoin,
                         mesh, mesh.SD,
                         metrics.Je,
                         metrics.dξdx, metrics.dξdy, metrics.dξdz,
                         metrics.dηdx, metrics.dηdy, metrics.dηdz,
                         metrics.dψ, metrics.ω,
-                        sp.F, sp.G, sp.H, sp.S, Int(sp.neqs), SVT,
-                        sp.lvisc, sp.μ, sp.gξ, sp.gη)
+                        sp.F, sp.G, sp.H, sp.S, neqs, SVT,
+                        sp.lvisc && !ldsgs, sp.μ, sp.gξ, sp.gη)
 
     # cross-rank DSS (a no-op on one rank), then M⁻¹
-    _sphere_dss_scale!(RHS, metrics.Minv, Int(mesh.npoin), Int(sp.neqs), sp.dss)
+    _sphere_dss_scale!(RHS, metrics.Minv, npoin, neqs, sp.dss)
 
     # the Scott & Polvani forcing and large-scale dissipation, if the deck asked
     # for them — nodal terms, hence AFTER the M⁻¹ scaling (sphere_forcing.jl)
-    sphere_forcing_apply!(RHS, q, qe, sp.forcing, Int(mesh.npoin))
+    sphere_forcing_apply!(RHS, q, qe, sp.forcing, npoin)
+
+    # DynSGS: ν_e from the residual of what is assembled so far, then the
+    # viscous term with that coefficient, assembled into scratch and added
+    if ldsgs && sp.lvisc
+        sphere_dsgs_viscosity!(sp.dsgs, q, RHS, mesh, metrics, sp.Δt, neqs)
+        _sphere_visc_assemble!(sp.acc, q, mesh.connijk, Int(mesh.nelem), Int(mesh.ngl),
+                               metrics.Je,
+                               metrics.dξdx, metrics.dξdy, metrics.dξdz,
+                               metrics.dηdx, metrics.dηdy, metrics.dηdz,
+                               metrics.dψ, metrics.ω, sp.μ, sp.gξ, sp.gη, neqs,
+                               sp.dsgs.νel)
+        _sphere_dss_scale!(sp.acc, metrics.Minv, npoin, neqs, sp.dss)
+        @inbounds for ieq = 1:neqs, ip = 1:npoin
+            RHS[ip, ieq] += sp.acc[ip, ieq]
+        end
+    end
 
     return RHS
+end
+
+
+#
+# The viscous term alone, element by element with a per-element coefficient
+# scale νel[iel] (the DynSGS ν_e), accumulated UNSCALED into `acc`; the caller
+# completes the assembly with _sphere_dss_scale!.
+#
+function _sphere_visc_assemble!(acc::AbstractMatrix{TF}, q, connijk, nelem::Int, ngl::Int,
+                                Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                                dψ, ω, μ::AbstractVector{TF}, gξ, gη, neqs::Int,
+                                νel::AbstractVector{TF}) where {TF}
+    fill!(acc, zero(TF))
+    @inbounds for iel = 1:nelem
+        νel[iel] > zero(TF) || continue
+        _sphere_visc_el!(acc, q, connijk, iel, ngl,
+                         Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
+                         dψ, ω, μ, gξ, gη, neqs; scale = νel[iel])
+    end
+    return acc
 end
 
 function _sphere_rhs_kernel!(RHS::AbstractMatrix{TF}, q, qe,
@@ -421,11 +487,14 @@ end
 #---------------------------------------------------------------------------------
 function _sphere_visc_el!(RHS::AbstractMatrix{TF}, q, connijk, iel::Int, ngl::Int,
                           Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz,
-                          dψ, ω, μ::AbstractVector{TF}, gξ, gη, neqs::Int) where {TF}
+                          dψ, ω, μ::AbstractVector{TF}, gξ, gη, neqs::Int;
+                          scale::TF = one(TF)) where {TF}
 
     @inbounds for ieq = 1:neqs
 
-        ν = μ[ieq]
+        # μ[ieq] is the coefficient itself on the constant-ν path, and the
+        # per-equation multiplier of the element's ν_e on a DynSGS run
+        ν = μ[ieq]*scale
         ν > zero(TF) || continue
 
         #--- ν ∇ₛq at every node of the element, in the contravariant basis
