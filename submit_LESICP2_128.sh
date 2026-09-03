@@ -313,13 +313,30 @@ if [ "$LAUNCHER" = "mpirun" ] && [ -n "${SLURM_NODELIST:-}" ]; then
 fi
 trap '[ -n "${NODEFILE:-}" ] && rm -f "$NODEFILE"' EXIT
 
+# RANKS PER NODE, STATED RATHER THAN ASSUMED. --ntasks-per-node shapes the
+# ALLOCATION; what actually places ranks is mpirun, and its default mapping is
+# its own business. Our hostfile lists each node ONCE, so `--map-by node`
+# round-robins and happens to land 1024/16 = 64 per node -- correct by
+# arithmetic, not by instruction, and silently wrong the moment NTASKS is not
+# an exact multiple of NNODES. The flag that says it outright differs by
+# family, so pick it from the launcher's own banner.
+PPN=$(( NTASKS / NNODES ))
+MPIRUN_BANNER="$(mpirun --version 2>&1 | head -3)"
+case "$MPIRUN_BANNER" in
+    *Hydra*|*HYDRA*|*MPICH*)      MAP_FLAGS=(-ppn "$PPN") ;;         # MPICH/Hydra
+    *"Open MPI"*|*OpenRTE*|*prte*) MAP_FLAGS=(--map-by "ppr:${PPN}:node") ;;
+    *)                            MAP_FLAGS=(--map-by node) ;;        # unknown: as before
+esac
+echo "    ranks/node    : $PPN  (mpirun flags: ${MAP_FLAGS[*]})"
+
 launch() {
     if [ "$LAUNCHER" = "srun" ]; then
+        # srun honours --ntasks-per-node from the allocation natively.
         srun --mpi="$SRUN_MPI" -n "$NTASKS" -c "${SLURM_CPUS_PER_TASK:-1}" "${JULIA[@]}" "$@"
     elif [ -s "${NODEFILE:-/nonexistent}" ]; then
-        mpirun -np "$NTASKS" -hostfile "$NODEFILE" --map-by node "${JULIA[@]}" "$@"
+        mpirun -np "$NTASKS" -hostfile "$NODEFILE" "${MAP_FLAGS[@]}" "${JULIA[@]}" "$@"
     else
-        mpirun -np "$NTASKS" "${JULIA[@]}" "$@"
+        mpirun -np "$NTASKS" "${MAP_FLAGS[@]}" "${JULIA[@]}" "$@"
     fi
 }
 
@@ -329,12 +346,35 @@ launch() {
 # success. Catch it before the mesh read.
 export JEXPRESSO_EXPECT_RANKS="$NTASKS"
 echo "--- Preflight: MPI_Init_thread + one Allreduce on $NTASKS ranks ---"
+export JEXPRESSO_EXPECT_PPN="$PPN"
 launch "${JULIA_FLAGS[@]}" -e '
     using MPI; MPI.Init()
     c = MPI.COMM_WORLD; n = MPI.Comm_size(c); r = MPI.Comm_rank(c)
     s = MPI.Allreduce(1, MPI.SUM, c)
     want = parse(Int, ENV["JEXPRESSO_EXPECT_RANKS"])
     ok = (n == want) && (s == n)
+
+    # WHERE THE RANKS ACTUALLY LANDED. Asking for 64/node and getting 128 on
+    # half the nodes is how a job OOMs or SIGBUSes with every resource request
+    # looking correct in the SLURM accounting -- so count them rather than
+    # trust the flag. Gathered as fixed-width bytes: hostnames vary in length
+    # and Gather wants a uniform count.
+    hn = gethostname(); W = 64
+    buf = zeros(UInt8, W); b = codeunits(hn); copyto!(buf, 1, b, 1, min(length(b), W))
+    all_hn = MPI.Gather(buf, 0, c)
+    if r == 0
+        hosts = [replace(String(all_hn[(i-1)*W+1 : i*W]), "\0" => "") for i in 1:n]
+        tally = Dict{String,Int}(); for h in hosts; tally[h] = get(tally, h, 0) + 1; end
+        wantppn = parse(Int, ENV["JEXPRESSO_EXPECT_PPN"])
+        counts  = sort(collect(values(tally)))
+        even    = all(==(wantppn), counts)
+        println("    placement     : ", length(tally), " node(s), ",
+                even ? "$wantppn ranks each -- as asked" :
+                       "UNEVEN $(minimum(counts))..$(maximum(counts)) ranks/node (wanted $wantppn)")
+        even || for (h, k) in sort(collect(tally)); println("        ", h, "  ", k); end
+        ok &= even
+    end
+    ok_arr = [ok]; MPI.Bcast!(ok_arr, 0, c); ok = ok_arr[1]
     r == 0 && println("    MPI ", ok ? "OK" : "**BROKEN**", ": Comm_size = ", n,
                       " (asked for ", want, "), Allreduce(1) = ", s)
     MPI.Barrier(c); MPI.Finalize(); exit(ok ? 0 : 1)' || {
