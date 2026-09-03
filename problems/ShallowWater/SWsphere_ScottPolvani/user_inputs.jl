@@ -102,7 +102,9 @@ function user_inputs()
     # rotation, equatorial gravity); only L_D and Ro enter the dynamics, since
     # the equations are scale-free in a and Ω and carry φ = gh rather than h.
     #---------------------------------------------------------------------------
-    planet = :jupiter
+    #planet = :jupiter
+    planet = :saturn
+    #planet = :neptune
 
     # the environment override, and :Saturn / "saturn" / "SATURN" all read as :saturn
     haskey(ENV, "SP_PLANET") && (planet = ENV["SP_PLANET"])
@@ -224,7 +226,8 @@ function user_inputs()
         # vertices, 10 elements per panel edge) — the SWsphere grid.
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere.msh",
+        #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere.msh",
+        :gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere_32x32.msh",
         #---------------------------------------------------------------------------
         # Time integration. The paper integrates for 10⁴-10⁵ rotations; this deck
         # covers the spin-up (the energy grows linearly to t ≈ 500 rotations,
