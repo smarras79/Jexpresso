@@ -98,6 +98,19 @@ export JEXPRESSO_OUTDIR="${JEXPRESSO_OUTDIR:-/scratch/smarras/hw59/output_new}"
 # `module load bright shared mpich/ge/gcc/64` here.
 MODULES=(bright shared mpich/ge/gcc/64)
 
+# JULIA SELECTOR. `+1.11.9` is juliaup syntax: it picks that channel for the
+# invocation. INSTALL.md recommends 1.11.9 and Project.toml's floor is 1.11.5.
+# Every julia call below goes through this array, so it is the ONE place to
+# change -- and, more to the point, the serial precompile and the 1024 ranks
+# are then guaranteed to be the same Julia. They must be: a mismatch means
+# every rank finds an unusable cache and falls back to compiling privately,
+# which is the failure the two-phase setup exists to prevent.
+#
+# If julia here is NOT juliaup, `+1.11.9` is passed through as a script
+# argument and Julia will complain -- set JULIA=(julia) in that case, or point
+# JEXPRESSO_JULIA at an absolute path.
+JULIA=("${JEXPRESSO_JULIA:-julia}" +1.11.9)
+
 #=============================================================================
 #  Nothing below here needs editing.
 #=============================================================================
@@ -197,20 +210,30 @@ export JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
 # launch instead means every rank compiles the same code at once.
 export JULIA_PKG_PRECOMPILE_AUTO=1
 
+# Resolve the selector before anything depends on it. juliaup will try to
+# INSTALL a missing channel, which needs the network and is not something to
+# discover 16 nodes into an allocation.
+echo "--- Julia ---"
+"${JULIA[@]}" --version || {
+    echo "ERROR: ${JULIA[*]} does not run. If julia here is not juliaup, drop" >&2
+    echo "       the +1.11.9 selector (JULIA=(julia)); if it is, install the" >&2
+    echo "       channel on a login node first: juliaup add 1.11.9" >&2
+    exit 1; }
+
 echo "--- MPI preferences (must precede any compilation) ---"
-julia --project=. --startup-file=no \
+"${JULIA[@]}" --project=. --startup-file=no \
     -e 'using MPIPreferences; MPIPreferences.use_system_binary()' || exit 1
 
 echo "--- Syntax check (seconds, before paying minutes for a precompile) ---"
-julia --startup-file=no tools/syntax_check.jl src test problems tools || {
+"${JULIA[@]}" --startup-file=no tools/syntax_check.jl src test problems tools || {
     echo "ERROR: syntax error in the source tree. Nothing compiled, no ranks launched." >&2
     exit 1; }
 
 echo "--- Precompile ---"
-julia --project=. --startup-file=no -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()' || exit 1
+"${JULIA[@]}" --project=. --startup-file=no -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()' || exit 1
 
 echo "--- Serial load (exercises the real load path) ---"
-julia --project=. --startup-file=no -e '
+"${JULIA[@]}" --project=. --startup-file=no -e '
     t = @elapsed (using MPI; using Jexpresso)
     println("    Jexpresso loaded in ", round(t, digits=2), " s")' || {
     echo "ERROR: Jexpresso failed to load serially. Fix that before launching ranks." >&2
@@ -220,8 +243,8 @@ export JULIA_PKG_PRECOMPILE_AUTO=0 JULIA_NUM_PRECOMPILE_TASKS=1
 
 #-- 4. julia flags --------------------------------------------------------
 JULIA_FLAGS=(--project=. --startup-file=no)
-julia --compiled-modules=existing -e 'exit(0)' >/dev/null 2>&1 && JULIA_FLAGS+=(--compiled-modules=existing)
-julia --pkgimages=existing       -e 'exit(0)' >/dev/null 2>&1 && JULIA_FLAGS+=(--pkgimages=existing)
+"${JULIA[@]}" --compiled-modules=existing -e 'exit(0)' >/dev/null 2>&1 && JULIA_FLAGS+=(--compiled-modules=existing)
+"${JULIA[@]}" --pkgimages=existing       -e 'exit(0)' >/dev/null 2>&1 && JULIA_FLAGS+=(--pkgimages=existing)
 
 # Julia sizes its heap from /proc/meminfo, i.e. the whole NODE, not the cgroup
 # this job actually gets -- so without a hint it happily grows past the limit
@@ -234,7 +257,7 @@ else
     RANK_MB=0
 fi
 HEAP_MB=0
-if [ "$RANK_MB" -gt 0 ] && julia --heap-size-hint=1G -e 'exit(0)' >/dev/null 2>&1; then
+if [ "$RANK_MB" -gt 0 ] && "${JULIA[@]}" --heap-size-hint=1G -e 'exit(0)' >/dev/null 2>&1; then
     HEAP_MB=$(( RANK_MB * 85 / 100 ))
     JULIA_FLAGS+=(--heap-size-hint=${HEAP_MB}M)
 fi
@@ -268,11 +291,11 @@ trap '[ -n "${NODEFILE:-}" ] && rm -f "$NODEFILE"' EXIT
 
 launch() {
     if [ "$LAUNCHER" = "srun" ]; then
-        srun --mpi="$SRUN_MPI" -n "$NTASKS" -c "${SLURM_CPUS_PER_TASK:-1}" julia "$@"
+        srun --mpi="$SRUN_MPI" -n "$NTASKS" -c "${SLURM_CPUS_PER_TASK:-1}" "${JULIA[@]}" "$@"
     elif [ -s "${NODEFILE:-/nonexistent}" ]; then
-        mpirun -np "$NTASKS" -hostfile "$NODEFILE" --map-by node julia "$@"
+        mpirun -np "$NTASKS" -hostfile "$NODEFILE" --map-by node "${JULIA[@]}" "$@"
     else
-        mpirun -np "$NTASKS" julia "$@"
+        mpirun -np "$NTASKS" "${JULIA[@]}" "$@"
     fi
 }
 
