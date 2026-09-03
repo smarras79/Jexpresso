@@ -1,3 +1,48 @@
+#=============================================================================
+ LESICP2 at 20 m EFFECTIVE HORIZONTAL RESOLUTION -- 128 x 128 x 60 over
+ 10240 x 10240 x 5000 m.
+
+ Same case, same physics, same vertical grid as LESICP2-64x64x60-imex. The
+ only change is horizontal: 80 m elements instead of 160 m, i.e. 20 m
+ effective resolution instead of 40 m.
+
+   128 x 128 x 60 elements at p = 4      element 80 x 80 m
+   983 040 elements, 63 423 729 gridpoints        (4x the 64x64x60 deck)
+   smallest LGL gaps  h_x = h_y = 13.82 m   h_z = 6.91 m   ANISOTROPY 2:1
+
+ WHAT THE REFINEMENT COSTS, AND WHY IT IS MORE THAN 4x.
+ Four times the degrees of freedom, and h_x halves, so the advective rate
+ |u|/h_x doubles. With ALL acoustics implicit that rate IS the explicit half
+ of the IMEX split, so the step limit roughly halves too: about 8x the work
+ of the 64x64x60 run for the same tend, before any change in Krylov count.
+
+ Δt = 0.25 s HERE IS AN ESTIMATE, NOT A MEASUREMENT -- it is the 64x64x60
+ deck's 0.5 s halved on that argument. THE FIRST THING TO DO IS READ THE
+ REPORT: the run prints
+
+     wedge neutral up to Δt = X s; this run is at NN% of it
+
+ at t = 0, and 65-70% is the margin every other deck here carries. A short
+ probe is enough to see it:
+
+     DBG_TEND=100 JEXPRESSO_HEVI_PROFILE=1 sbatch submit_LESICP2_128.sh
+
+ RANK COUNT -- 1024, AND IT IS NOT FREE TO CHOOSE.
+ :lxy_partition cuts the mesh into vertical COLUMNS, so ranks must divide the
+ 128 x 128 = 16384 column grid:
+
+     julia tools/pick_nranks.jl 128 128 60 4 4096
+
+     ranks   rank grid   cols/rank   pts/rank   halo/elem
+     512     16 x 32     32          123874     0.75
+     1024    32 x 32     16          61937      1.0        <== RECOMMENDED
+     2048    32 x 64     8           30969      1.5   (thin: comms-bound)
+
+ 1024 keeps 62k points per rank -- the same per-rank load the 64x64x60 deck
+ runs at on 256 ranks, so its memory sizing carries over unchanged.
+ 1280 ranks DOES NOT WORK here: 16384/1280 = 12.8 columns per rank.
+=============================================================================#
+
 function user_inputs()
 
     # IMPLICIT VERTICAL DIFFUSION -- ON BY DEFAULT, AND WHY THAT CHANGED.
@@ -39,6 +84,9 @@ function user_inputs()
     # -- used only when use_imex. Each is also an env override so an A/B
     #    needs no edit here; the value shown is the default.
     lschur      = parse(Bool,    get(ENV, "DBG_SCHUR",     string(use_schur)))
+    # 0.25 = the 64x64x60 deck's 0.5 halved because h_x halved. AN ESTIMATE.
+    # Replace it with 65-70% of the "wedge neutral up to" figure the run
+    # prints at t = 0 -- see the header.
     dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.5"))
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
     # Krylov basis costs (restart+4)*npoin*nvar*8 B/rank: ~19 MB on the scalar
@@ -58,7 +106,7 @@ function user_inputs()
     monitor_every = parse(Int,   get(ENV, "DBG_IMEXMONEVERY", "200"))
     scheme = Symbol(get(ENV, "DBG_SCHEME", use_imex ? "imex" : "explicit"))
     scheme in (:imex, :hevi, :explicit) ||
-        error("LESICP2-64x64x60-imex: DBG_SCHEME must be imex, hevi or explicit; got $scheme")
+        error("LESICP2-128x128x60-imex: DBG_SCHEME must be imex, hevi or explicit; got $scheme")
 
     #---------------------------------------------------------------------------
     # STEP SIZE -- one per scheme, each at its own limit. These are NOT
@@ -67,7 +115,13 @@ function user_inputs()
     # completion, so the SAFETY MARGIN and the spectral correction kappa are
     # inherited from a run that works rather than guessed.
     #
-    #   smallest LGL gaps   h_x = 27.63 m   h_z = 6.91 m   (anisotropy 4.0:1)
+    #   smallest LGL gaps   h_x = 13.82 m   h_z = 6.91 m   (anisotropy 2.0:1)
+    #
+    #   THE THREE ROWS BELOW WERE COMPUTED FOR THE 64x64x60 GRID (h_x 27.63 m)
+    #   and are kept because the ARGUMENT is unchanged -- what binds, and why
+    #   IMEX3D wins. The horizontal acoustic and advective RATES both double
+    #   here, so the explicit and HEVI limits roughly halve and the IMEX3D
+    #   wedge limit with them. Do not read the dt column as this grid's.
     #
     #   rate [1/s]          vertical acoustic   50.2
     #                       horizontal acoustic 25.1
@@ -142,7 +196,11 @@ function user_inputs()
     # third range. Commenting this line out left that reference dangling,
     # which is a UndefVarError at startup on every rank -- the DBG_TEND
     # override is gone, as intended, but the local still has to exist.
-    tend  = 10800.0
+    # DBG_TEND is READ here, unlike LESICP2-64x64x60-imex where it is
+    # currently ignored while submit_jexpresso_profile.sh still exports it --
+    # so `DBG_TEND=100 sbatch` there silently runs the full 10800 s. Probing
+    # this grid is expensive enough that the override has to work.
+    tend  = parse(Float64, get(ENV, "DBG_TEND", "10800.0"))
     lprobe = haskey(ENV, "DBG_TEND")
 
     inputs = Dict(
@@ -202,9 +260,10 @@ function user_inputs()
         :imex_monitor_every   => monitor_every,
         :Δt                   => Δt,
         :tinit                => 0.0,
-        :tend                 => 10800.0,
+        :tend                 => tend,
 	:lrestart             => false,
-	:restart_time         => 9000.0,
+	#:restart_time         => 9000.0,
+        :lrestart_vtk         => true,
 	# EVERY range needs its own `...`; the third was missing one, which made this
 	# a tuple of 28 Floats followed by a StepRangeLen and killed the run in
 	# time_loop! (collect(Float64, ...) cannot convert a range to a Float64).
@@ -334,8 +393,23 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
+        # PREPROCESS/MESH CACHE: OFF, AND THAT IS A SIZE DECISION.
+        #
+        # The cache stores per-rank metrics + matrix so a LATER run of the same
+        # case skips the metric build. At 1024 ranks on this grid it wrote
+        # 573 GB in 2048 files, filled a 2 TB GPFS to 100%, and killed the job
+        # with SIGBUS on every rank (JLD2 writes through an mmap; a page the
+        # filesystem cannot back is signal 7, which no try/catch sees). The
+        # saving it was buying is one metric build -- 8.4 s.
+        #
+        # It stays off by default here BECAUSE OF THE ARITHMETIC, not because
+        # caching is wrong: ~0.5 GB/rank x nranks is fine at 4 ranks and absurd
+        # at 1024. JEXPRESSO_MESH_CACHE=1 turns it back on if you have the
+        # space and are starting the same case repeatedly.
+        :luse_mesh_cache  => parse(Bool, get(ENV, "JEXPRESSO_MESH_CACHE", "false")),
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
-	:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
+	:gmsh_filename    => "./problems/CompEuler/LESICP2-128x128x60-imex/LESICP_128x128x60_10240mX10240mX5000m.msh",
+        :gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
 		
         # Stretching. The .geo is UNIFORM in z (Progression 1.0); the vertical
         # grading is applied here, at read time, by stretching.jl.
@@ -393,9 +467,22 @@ function user_inputs()
         :outformat           => "vtk",
 	# One tree per scheme, so an A/B/C leaves all three solutions on disk
 	# rather than overwriting each other.
-	:output_dir          => "/scratch/smarras/smarras/output_new/filter_LESICP2_64x64x60_10240mX10240mX5000m_" * String(scheme) * "/",
+	# JEXPRESSO_OUTDIR overrides the parent directory without editing this
+	# file, because the default below is one user's scratch and this deck is
+	# shared. The scheme suffix is appended either way, so an A/B/C leaves all
+	# three trees on disk rather than overwriting each other.
+	#
+	# BUDGET FOR IT: :diagnostics_at_times below is 209 dumps and each is
+	# ~2.6 GB on this grid, i.e. ~543 GB for a full run. The 9000:10:10800
+	# range alone is 181 of them. Thin that cadence if scratch is tight.
+	:output_dir          => joinpath(get(ENV, "JEXPRESSO_OUTDIR",
+	                                     "/scratch/smarras/smarras/output_AFTER_HW"),
+	                                 "LESICP2_64x64x60_10240mX10240mX5000m_" * String(scheme)) * "/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
-        :lwrite_initial      => true,
+        # ~2.6 GB on this grid (4x the 64x64x60 dump) and it lands before the
+        # time loop, so it does not distort s/step -- but it is minutes of I/O
+        # for a run that will be thrown away. Off whenever tend is overridden.
+        :lwrite_initial      => parse(Bool, get(ENV, "DBG_WRITE_INITIAL", lprobe ? "false" : "true")),
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
