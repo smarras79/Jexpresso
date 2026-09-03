@@ -1,5 +1,18 @@
 function user_inputs()
 
+    # Robustness-sweep knobs (ENV-driven; defaults reproduce the standalone case).
+    _mu   = parse(Float64, get(ENV, "JEXP_MU",   "1.0"))
+    _npv  = get(ENV, "JEXP_NPV",  "true") == "true"
+    _ent  = get(ENV, "JEXP_ENT",  "true") == "true"
+    _lkep = get(ENV, "JEXP_LKEP", "true") == "true"
+    _flux = get(ENV, "JEXP_FLUX", "ranocha")
+    _volume_flux = _flux == "kennedy_gruber" ? kennedy_gruber() :
+                   _flux == "shima"          ? shima()          :
+                   _flux == "chandrashekar"  ? chandrashekar()  : ranocha()
+    _tend = parse(Float64, get(ENV, "JEXP_TEND", "10.0"))
+    _mesh = get(ENV, "JEXP_MESH", "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh")
+    _outdir = get(ENV, "JEXP_OUTDIR", "./output-nse/")
+
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
@@ -7,7 +20,7 @@ function user_inputs()
 	:ode_solver           => CarpenterKennedy2N54(),
         :Δt                   => 2.5e-3,
         :tinit                => 0.0,
-        :tend                 => 10.0,
+        :tend                 => _tend,
         :diagnostics_at_times => (0.0:1.0:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
@@ -20,12 +33,12 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 7,
+        :nop                 => 4,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc            => true, #false by default NOTICE: works only for Inexact
-        :μ                => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
+        :μ                => [0.0, _mu, _mu, _mu], #SGS intensity multiplier (ENV JEXP_MU)
         #:μ                => [0.0, 1e-4, 1e-4, 1e-4], #horizontal viscosity constant for momentum
         :visc_model       => SMAG(),
         #:visc_model       => VREM(),
@@ -34,9 +47,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
-        :lkep        => true,
-        :entropy_variables => false,
-        :volume_flux => ranocha(),
+        :lkep        => _lkep,
+        # Navier-Stokes parabolic path (flux_parabolic). Master switch:
+        :new_primitive_variables => _npv,
+        # Within the NS path: true => entropy gradient variables (Trixi),
+        #                     false => primitive gradient variables.
+        :entropy_variables => _ent,
+        :volume_flux => _volume_flux,
         #:volume_flux => artiano_tec(),
         #:volume_flux => central_theta(),
         #---------------------------------------------------------------------------
@@ -45,7 +62,7 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
 	#:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_40x40_unitsquare.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
+        :gmsh_filename       => _mesh, #ENV JEXP_MESH (default 32x32)
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -60,7 +77,7 @@ function user_inputs()
         :loverwrite_output   => false,
         :lwrite_initial      => false,
        # :lwrite_initial      => true,
-        :output_dir          => "./output-nse/",
+        :output_dir          => _outdir,
         #:output_dir          => "./test/CI-run",
         :loutput_pert        => false,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
