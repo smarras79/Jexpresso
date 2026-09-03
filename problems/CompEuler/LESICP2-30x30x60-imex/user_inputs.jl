@@ -261,13 +261,8 @@ function user_inputs()
         :Δt                   => Δt,
         :tinit                => 0.0,
         :tend                 => tend,
-	#:lrestart             => false,
-	# A LIST of restart times, one per diagnostic dump, rather than the usual
-	# period (`:restart_time => 9000.0`). Either form is accepted; the list is
-	# added to tstops so every entry is landed on exactly. Each entry
-	# overwrites :restart_output_file_path, so the last one written wins.
-	#:restart_time         => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0..., 9000.0:10.0:tend...),
-        :lrestart_vtk         => true,
+	:lrestart             => false,
+	:restart_time         => 9000.0,
 	# EVERY range needs its own `...`; the third was missing one, which made this
 	# a tuple of 28 Floats followed by a StepRangeLen and killed the run in
 	# time_loop! (collect(Float64, ...) cannot convert a range to a Float64).
@@ -413,8 +408,7 @@ function user_inputs()
         :luse_mesh_cache  => parse(Bool, get(ENV, "JEXPRESSO_MESH_CACHE", "false")),
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
 	#:gmsh_filename    => "./problems/CompEuler/LESICP2-128x128x60-imex/LESICP_128x128x60_10240mX10240mX5000m.msh",
-        #:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
-        :gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_30x30x60_10240mX10240mX5000m.msh",
+        :gmsh_filename    => "./problems/CompEuler/LESICP2-30x30x60-imex/LESICP_30x30x60_10240mX10240mX5000m.msh",
 		
         # Stretching. The .geo is UNIFORM in z (Progression 1.0); the vertical
         # grading is applied here, at read time, by stretching.jl.
@@ -480,7 +474,7 @@ function user_inputs()
 	# BUDGET FOR IT: :diagnostics_at_times below is 209 dumps and each is
 	# ~2.6 GB on this grid, i.e. ~543 GB for a full run. The 9000:10:10800
 	# range alone is 181 of them. Thin that cadence if scratch is tight.
-	:output_dir          => "/scratch/smarras/smarras/output_AFTER_HW/LESICP2_30x30x60_10240mX10240mX5000m",
+	:output_dir          => "/scratch/smarras/smarras/output_HANG/LESICP2_30x30x60_10240mX10240mX5000m_imex",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         # ~2.6 GB on this grid (4x the 64x64x60 dump) and it lands before the
         # time loop, so it does not distort s/step -- but it is minutes of I/O
