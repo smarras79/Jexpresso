@@ -41,7 +41,7 @@ function user_inputs()
         error("LESICP2-30x30x60-imex: scheme must be :imex, :hevi or :explicit; got :$scheme")
     #---------------------------------------------------------------------------
     Δt = scheme === :imex ? dt_imex :
-         parse(Float64, get(ENV, "DBG_DT", scheme === :hevi ? "0.024" : "0.02"))
+         parse(Float64, get(ENV, "DBG_DT", scheme === :hevi ? "0.1" : "0.02"))
     
     tend  = parse(Float64, get(ENV, "DBG_TEND", "10800.0"))
     lprobe = haskey(ENV, "DBG_TEND")
