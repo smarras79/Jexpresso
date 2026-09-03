@@ -1,90 +1,13 @@
-#=============================================================================
- LESICP2 at 20 m EFFECTIVE HORIZONTAL RESOLUTION -- 128 x 128 x 60 over
- 10240 x 10240 x 5000 m.
-
- Same case, same physics, same vertical grid as LESICP2-64x64x60-imex. The
- only change is horizontal: 80 m elements instead of 160 m, i.e. 20 m
- effective resolution instead of 40 m.
-
-   128 x 128 x 60 elements at p = 4      element 80 x 80 m
-   983 040 elements, 63 423 729 gridpoints        (4x the 64x64x60 deck)
-   smallest LGL gaps  h_x = h_y = 13.82 m   h_z = 6.91 m   ANISOTROPY 2:1
-
- WHAT THE REFINEMENT COSTS, AND WHY IT IS MORE THAN 4x.
- Four times the degrees of freedom, and h_x halves, so the advective rate
- |u|/h_x doubles. With ALL acoustics implicit that rate IS the explicit half
- of the IMEX split, so the step limit roughly halves too: about 8x the work
- of the 64x64x60 run for the same tend, before any change in Krylov count.
-
- Δt = 0.25 s HERE IS AN ESTIMATE, NOT A MEASUREMENT -- it is the 64x64x60
- deck's 0.5 s halved on that argument. THE FIRST THING TO DO IS READ THE
- REPORT: the run prints
-
-     wedge neutral up to Δt = X s; this run is at NN% of it
-
- at t = 0, and 65-70% is the margin every other deck here carries. A short
- probe is enough to see it:
-
-     DBG_TEND=100 JEXPRESSO_HEVI_PROFILE=1 sbatch submit_LESICP2_128.sh
-
- RANK COUNT -- 1024, AND IT IS NOT FREE TO CHOOSE.
- :lxy_partition cuts the mesh into vertical COLUMNS, so ranks must divide the
- 128 x 128 = 16384 column grid:
-
-     julia tools/pick_nranks.jl 128 128 60 4 4096
-
-     ranks   rank grid   cols/rank   pts/rank   halo/elem
-     512     16 x 32     32          123874     0.75
-     1024    32 x 32     16          61937      1.0        <== RECOMMENDED
-     2048    32 x 64     8           30969      1.5   (thin: comms-bound)
-
- 1024 keeps 62k points per rank -- the same per-rank load the 64x64x60 deck
- runs at on 256 ranks, so its memory sizing carries over unchanged.
- 1280 ranks DOES NOT WORK here: 16384/1280 = 12.8 columns per rank.
-=============================================================================#
-
 function user_inputs()
 
-    # IMPLICIT VERTICAL DIFFUSION -- ON BY DEFAULT, AND WHY THAT CHANGED.
-    #
-    # This was opt-in (DBG_VDIFF=1) and the run died at t = 500 s -- REPRODUCED
-    # at t = 550 s with the modal filter off and the Schur arm, so the filter
-    # was never implicated and the explicit viscous rate is the whole story:
-    # dt*2*(:mu[5]/Pr_t)*nu_t/h_z^2 <= 2 caps nu_t at 33 m^2/s here. A blow-up at
-    # a fixed MODEL time, on a step size the acoustic analysis below says is
-    # 47% of neutral, is the signature of a rate that is not in that analysis
-    # and arrives on its own schedule -- and on this mesh there is exactly one:
-    # the SGS diffusion of the vertical derivative, nu_eff/dz^2, which is
-    # invisible at t = 0 (the CFL report is taken on a laminar sounding where
-    # nu_t ~ 0) and grows with the boundary layer. See the rate table under
-    # "STEP SIZE" below for the arithmetic; the short version is that at
-    # dz_min = 6.91 m the vertical viscous rate reaches the whole explicit
-    # budget by the time nu_t reaches ~30 m^2/s, which a convective boundary
-    # layer does in the first few hundred seconds.
-    #
-    # :implicit_vdiff puts d/dz(mu d/dz) on u, v, w and theta into the same
-    # column operator that already carries the vertical acoustics: a wider
-    # band, no new solve. It is the only lever here that removes the term
-    # rather than tiptoeing around it, which is why it is now the default.
-    # DBG_VDIFF=0 restores the old behaviour for an A/B.
-    #
-    # Read into a local rather than inline because two keys below have to agree
-    # about it -- switching it on also switches the linearisation to :PS,
-    # without which the implicit operator would carry no diffusion at all.
     _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "true"))
 
     #---------------------------------------------------------------------------
-    # THE INTEGRATOR. This ONE line picks it; everything else in this block is
-    # a sub-option of :imex and is ignored by the other two.
-    #
-    #   :imex      IMEX-ARK(ARS343), ALL acoustics implicit        dt_imex below
-    #   :hevi      HEVI-ARK(ARS232), vertical acoustics implicit   dt 0.024
-    #   :explicit  CarpenterKennedy2N54                            dt 0.02
-    #
     # DBG_SCHEME=imex|hevi|explicit in the environment overrides it without an
     # edit, e.g.  DBG_SCHEME=hevi sbatch submit_LESICP2_128.sh
     #---------------------------------------------------------------------------
-    scheme_default = :imex
+    #scheme_default = :imex
+    scheme_default = :hevi
 
     # IMEX ONLY: how the stage system is solved. Turning this off does NOT go
     # explicit or HEVI -- that is scheme_default above.
@@ -116,99 +39,10 @@ function user_inputs()
     scheme = Symbol(get(ENV, "DBG_SCHEME", string(scheme_default)))
     scheme in (:imex, :hevi, :explicit) ||
         error("LESICP2-30x30x60-imex: scheme must be :imex, :hevi or :explicit; got :$scheme")
-
     #---------------------------------------------------------------------------
-    # STEP SIZE -- one per scheme, each at its own limit. These are NOT
-    # placeholders: they are derived from this grid's rate budget, anchored on
-    # the fully explicit dt = 0.02 s that is known to run this case to
-    # completion, so the SAFETY MARGIN and the spectral correction kappa are
-    # inherited from a run that works rather than guessed.
-    #
-    #   smallest LGL gaps   h_x = 13.82 m   h_z = 6.91 m   (anisotropy 2.0:1)
-    #
-    #   THE THREE ROWS BELOW WERE COMPUTED FOR THE 64x64x60 GRID (h_x 27.63 m)
-    #   and are kept because the ARGUMENT is unchanged -- what binds, and why
-    #   IMEX3D wins. The horizontal acoustic and advective RATES both double
-    #   here, so the explicit and HEVI limits roughly halve and the IMEX3D
-    #   wedge limit with them. Do not read the dt column as this grid's.
-    #
-    #   rate [1/s]          vertical acoustic   50.2
-    #                       horizontal acoustic 25.1
-    #                       advection            1.7   (|u| 15, |w| 4 m/s)
-    #                       SGS diffusion        2.4   (nu_eff ~ 57 m^2/s, see below)
-    #
-    #   explicit    all of it              79.5     CK2N54 radius 3.34  -> dt 0.020 (47% of neutral)
-    #   HEVI        loses the vertical     29.2     ARS232 joint limit  -> dt 0.024 (1.2x)
-    #   IMEX3D      loses ALL acoustics     4.1     ARS343 wedge limit  -> dt 0.506 (25x)
-    #
-    # WHERE THE SGS ROW COMES FROM, AND WHY IT IS THE ONE THAT KILLED THE RUN.
-    # nu_eff is the largest diffusivity ANY equation is handed, not nu_t. With
-    # :mu = [0, 1, 1, 1, 2] and Pr_t = 0.7 the theta equation gets
-    # 2/0.7 = 2.857 x nu_t, so nu_eff = 2.857 * nu_t, and the vertical rate is
-    #
-    #     2 nu_eff / h_z^2   with h_z = 6.91 m
-    #
-    #     nu_t [m^2/s]     5     10     20     40     80
-    #     rate [1/s]      0.6    1.2    2.4    4.8    9.6
-    #     dt * rate       0.3    0.6    1.2    2.4    4.8      at dt = 0.5
-    #
-    # ARS343's explicit tableau is neutral on the negative real axis out to
-    # about 2, so this term alone takes the step unstable somewhere between
-    # nu_t = 20 and 40 m^2/s -- which a convective boundary layer over a
-    # 0.12 K m/s surface flux reaches within the first few hundred seconds.
-    # That is the t = 500 s failure, and it is why :implicit_vdiff is now on by
-    # default at the top of this function rather than opt-in: it is the only
-    # lever that REMOVES this rate.
-    #
-    # WHAT DOES NOT FIX IT, RECORDED SO IT IS NOT TRIED AGAIN:
-    #   * raising :C_s. nu_t goes as C_s^2, so 0.16 -> 0.20 multiplies every
-    #     number in the table above by 1.56 and brings the failure FORWARD.
-    #   * the filter. It damps the top Legendre mode; it does not change an
-    #     eigenvalue of the semi-discrete operator. Worth having anyway (it is
-    #     back on below), but it is not this.
-    #   * a smaller dt. It works -- dt = 0.2 buys a factor of 2.5 -- and it
-    #     costs the entire reason this deck exists.
-    #
-    # WHY HEVI BUYS ALMOST NOTHING HERE, AND IT IS NOT THE SPLIT'S FAULT.
-    # Removing the vertical acoustic term cuts the explicit budget by 2.8x --
-    # but ARS232's explicit imaginary radius is 1.732 against
-    # CarpenterKennedy2N54's 3.34, so nearly half of that is handed straight
-    # back at the tableau, and the joint (rectangle) limit trims the rest. Net
-    # 1.2x on the step against 3 RHS/step instead of 5, i.e. about 2x in
-    # wall-clock. ARS343 would have the radius (2.828) but is unusable for HEVI
-    # -- the two halves are loaded by INDEPENDENT wavenumbers there, so the
-    # whole rectangle has to be neutral and ARS343 amplifies over most of it
-    # (measured on this grid: dt 0.0022 s, i.e. 0.05x explicit).
-    #
-    # IMEX3D has no such problem: with the acoustics ENTIRELY implicit one
-    # wavenumber loads both halves, only the wedge zE <= Mach*zI is reachable,
-    # and ARS343 is neutral across it. That is why the ranking reverses.
-    #---------------------------------------------------------------------------
-    # dt_imex is set in the switch block above (and honours DBG_DT); the other
-    # two schemes keep their own limits here.
     Δt = scheme === :imex ? dt_imex :
          parse(Float64, get(ENV, "DBG_DT", scheme === :hevi ? "0.024" : "0.02"))
-
-    # A SHORT PROBE RUN, without editing this file. The point of measuring is
-    # to decide the production settings, and a measurement that needs the deck
-    # edited first is one that gets taken against a deck that no longer matches
-    # the run it is being used to plan.
-    #
-    #   DBG_TEND=100  JEXPRESSO_HEVI_PROFILE=1   -> 200 steps at Δt = 0.5 with
-    #                                               the cost breakdown printed
-    #
-    # The initial VTK dump is ~640 MB on this grid and lands before the time
-    # loop, so it does not distort s/step -- but it is minutes of I/O for a run
-    # that will be thrown away, and it is off by default whenever :tend has
-    # been overridden.
-    # Still needed: :diagnostics_at_times below closes over `tend` for its
-    # third range. Commenting this line out left that reference dangling,
-    # which is a UndefVarError at startup on every rank -- the DBG_TEND
-    # override is gone, as intended, but the local still has to exist.
-    # DBG_TEND is READ here, unlike LESICP2-64x64x60-imex where it is
-    # currently ignored while submit_jexpresso_profile.sh still exports it --
-    # so `DBG_TEND=100 sbatch` there silently runs the full 10800 s. Probing
-    # this grid is expensive enough that the override has to work.
+    
     tend  = parse(Float64, get(ENV, "DBG_TEND", "10800.0"))
     lprobe = haskey(ENV, "DBG_TEND")
 
