@@ -138,12 +138,28 @@ export JEXPRESSO_HEVI_PROFILE_EVERY="${JEXPRESSO_HEVI_PROFILE_EVERY:-50}"
 export JEXPRESSO_HEVI_PROFILE_SKIP="${JEXPRESSO_HEVI_PROFILE_SKIP:-10}"
 export JEXPRESSO_PRECOMPILE_PASS="${JEXPRESSO_PRECOMPILE_PASS:-1}"
 export JEXPRESSO_STEP_HEARTBEAT=1
-# THE SCHUR ARM IS THIS SCRIPT'S DEFAULT: explicit vertical diffusion, so
-# `use_schur = !_vdiff` in the deck leaves the scalar Schur stage solve on.
-# `:-0` rather than a bare 0 so `DBG_VDIFF=1 sbatch ...` still reaches the deck
-# -- a launcher that overrides the caller's environment is how an A/B silently
-# measures the same arm twice.
-export DBG_VDIFF="${DBG_VDIFF:-0}"
+# DBG_VDIFF IS NOT SET HERE. THE DECK OWNS IT -- same rule as DBG_SCHUR above,
+# and it is only passed through when the caller put it in the environment
+# (see the `[ -n "${DBG_VDIFF:-}" ] && export DBG_VDIFF` line further up).
+#
+# This used to read `export DBG_VDIFF="${DBG_VDIFF:-0}"`, and that default was
+# not a preference, it was a silent override of the deck with the arm the deck
+# documents as fatal:
+#
+#   LESICP2-64x64x60-imex sets  _vdiff = get(ENV, "DBG_VDIFF", "true")
+#                               use_schur = !_vdiff
+#
+# so exporting 0 before Julia starts meant the deck's own default of `true`
+# COULD NEVER APPLY. Every sbatch ran with implicit vertical diffusion OFF,
+# which puts the SGS vertical rate 2*(mu[5]/Pr_t)*nu_t/h_z^2 back in the
+# explicit budget -- the deck's opening paragraph records that arm dying at
+# t = 500 s, reproduced at 550 s. A launcher that quietly picks the arm the
+# deck was changed to stop using is how a fixed bug stays fixed only on paper.
+#
+# `:-0` was there so `DBG_VDIFF=1 sbatch ...` could still reach the deck. The
+# pass-through line above does that already, for both values, without
+# deciding anything. `DBG_VDIFF=0 sbatch ...` still selects the Schur arm for
+# a timing run, which is what this script is for.
 
 # One BLAS/Julia thread per rank: the ranks already fill the node, and nested
 # threading oversubscribes it.
