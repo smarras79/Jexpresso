@@ -130,10 +130,26 @@ MODULES=(bright shared mpich/ge/gcc/64)
 # every rank finds an unusable cache and falls back to compiling privately,
 # which is the failure the two-phase setup exists to prevent.
 #
-# If julia here is NOT juliaup, `+1.11.9` is passed through as a script
-# argument and Julia will complain -- set JULIA=(julia) in that case, or point
-# JEXPRESSO_JULIA at an absolute path.
-JULIA=("${JEXPRESSO_JULIA:-julia}" +1.11.9)
+# TWO WAYS PEOPLE GET JULIA HERE, AND THIS HAS TO WORK FOR BOTH:
+#
+#   juliaup      `julia +1.11.9` selects the channel      (hw59)
+#   module load  a bare `julia`, version fixed by the module   (smarras)
+#
+# A module-provided julia treats `+1.11.9` as a FILENAME and dies. So the
+# selector is a variable, not a constant, and the resolution step below drops
+# it automatically when the julia in front of us is not juliaup -- nobody has
+# to know which case they are in.
+#
+#   JEXPRESSO_JULIA=/path/to/julia    a specific binary
+#   JEXPRESSO_JULIA_CHANNEL=          empty: never pass a selector
+#   JEXPRESSO_JULIA_CHANNEL=+1.10.4   a different channel
+#
+# `${VAR-default}` not `${VAR:-default}`: the empty string has to be honoured,
+# and only the former distinguishes "set to empty" from "unset".
+JULIA_BIN="${JEXPRESSO_JULIA:-julia}"
+JULIA_CHANNEL="${JEXPRESSO_JULIA_CHANNEL-+1.11.9}"
+if [ -n "$JULIA_CHANNEL" ]; then JULIA=("$JULIA_BIN" "$JULIA_CHANNEL")
+else                             JULIA=("$JULIA_BIN"); fi
 
 #=============================================================================
 #  Nothing below here needs editing.
@@ -255,15 +271,32 @@ export JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
 # launch instead means every rank compiles the same code at once.
 export JULIA_PKG_PRECOMPILE_AUTO=1
 
-# Resolve the selector before anything depends on it. juliaup will try to
-# INSTALL a missing channel, which needs the network and is not something to
-# discover 16 nodes into an allocation.
+# Resolve Julia before anything depends on it, and fall back off the selector
+# by itself. juliaup also tries to INSTALL a missing channel, which needs the
+# network and is not something to discover 16 nodes into an allocation.
 echo "--- Julia ---"
-"${JULIA[@]}" --version || {
-    echo "ERROR: ${JULIA[*]} does not run. If julia here is not juliaup, drop" >&2
-    echo "       the +1.11.9 selector (JULIA=(julia)); if it is, install the" >&2
-    echo "       channel on a login node first: juliaup add 1.11.9" >&2
-    exit 1; }
+if ! "${JULIA[@]}" --version >/dev/null 2>&1; then
+    if [ -n "$JULIA_CHANNEL" ] && "$JULIA_BIN" --version >/dev/null 2>&1; then
+        echo "    NOTE: '$JULIA_BIN' does not accept the $JULIA_CHANNEL selector, so this"
+        echo "          is not juliaup -- a module-provided julia, most likely. Dropping"
+        echo "          the selector and using whatever the modules give."
+        JULIA=("$JULIA_BIN")
+    else
+        echo "ERROR: neither '${JULIA[*]}' nor '$JULIA_BIN' runs." >&2
+        echo "       juliaup: install the channel on a login node -- juliaup add 1.11.9" >&2
+        echo "       module:  check 'module avail julia' and the MODULES array above" >&2
+        echo "       neither: set JEXPRESSO_JULIA to an absolute path." >&2
+        exit 1
+    fi
+fi
+JULIA_VERSION="$("${JULIA[@]}" --version 2>&1)"
+echo "    $JULIA_VERSION   (${JULIA[*]})"
+# Project.toml's floor is 1.11.5; INSTALL.md recommends 1.11.9. Say so rather
+# than let Pkg.instantiate fail with a resolver message ten minutes from now.
+case "$JULIA_VERSION" in
+    *" 1.11."*|*" 1.12."*) ;;
+    *) echo "    WARNING: Project.toml requires julia >= 1.11.5. This may not instantiate." ;;
+esac
 
 echo "--- MPI preferences (must precede any compilation) ---"
 "${JULIA[@]}" --project=. --startup-file=no \
