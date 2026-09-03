@@ -74,14 +74,23 @@ function user_inputs()
     _vdiff = parse(Bool, get(ENV, "DBG_VDIFF", "true"))
 
     #---------------------------------------------------------------------------
-    # TWO INDEPENDENT SWITCHES: the first picks the INTEGRATOR, the second only
-    # picks how the IMEX stage system is solved. Turning the second off does
-    # NOT go explicit.
+    # THE INTEGRATOR. This ONE line picks it; everything else in this block is
+    # a sub-option of :imex and is ignored by the other two.
+    #
+    #   :imex      IMEX-ARK(ARS343), ALL acoustics implicit        dt_imex below
+    #   :hevi      HEVI-ARK(ARS232), vertical acoustics implicit   dt 0.024
+    #   :explicit  CarpenterKennedy2N54                            dt 0.02
+    #
+    # DBG_SCHEME=imex|hevi|explicit in the environment overrides it without an
+    # edit, e.g.  DBG_SCHEME=hevi sbatch submit_LESICP2_128.sh
     #---------------------------------------------------------------------------
-    use_imex  = true      # true -> IMEX-ARK(ARS343), all acoustics implicit, dt 0.5;  false -> fully explicit, dt 0.02
-    use_schur = !_vdiff   # IMEX only: scalar Schur stage solve, Np not 5*Np, 3.56x/step. IMPOSSIBLE with :implicit_vdiff -- the reduction cannot see the diffusion operator
+    scheme_default = :imex
 
-    # -- used only when use_imex. Each is also an env override so an A/B
+    # IMEX ONLY: how the stage system is solved. Turning this off does NOT go
+    # explicit or HEVI -- that is scheme_default above.
+    use_schur = !_vdiff   # scalar Schur stage solve, Np not 5*Np, 3.56x/step. IMPOSSIBLE with :implicit_vdiff -- the reduction cannot see the diffusion operator
+
+    # -- used only when scheme is :imex. Each is also an env override so an A/B
     #    needs no edit here; the value shown is the default.
     lschur      = parse(Bool,    get(ENV, "DBG_SCHUR",     string(use_schur)))
     # 0.25 = the 64x64x60 deck's 0.5 halved because h_x halved. AN ESTIMATE.
@@ -104,9 +113,9 @@ function user_inputs()
     lat_walls   = Symbol(        get(ENV, "DBG_LATWALL",   "auto"))
     monitor     = parse(Bool,    get(ENV, "DBG_IMEXMON",   "true"))
     monitor_every = parse(Int,   get(ENV, "DBG_IMEXMONEVERY", "200"))
-    scheme = Symbol(get(ENV, "DBG_SCHEME", use_imex ? "imex" : "explicit"))
+    scheme = Symbol(get(ENV, "DBG_SCHEME", string(scheme_default)))
     scheme in (:imex, :hevi, :explicit) ||
-        error("LESICP2-128x128x60-imex: DBG_SCHEME must be imex, hevi or explicit; got $scheme")
+        error("LESICP2-30x30x60-imex: scheme must be :imex, :hevi or :explicit; got :$scheme")
 
     #---------------------------------------------------------------------------
     # STEP SIZE -- one per scheme, each at its own limit. These are NOT
