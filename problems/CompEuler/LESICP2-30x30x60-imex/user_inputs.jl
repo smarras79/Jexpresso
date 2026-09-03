@@ -87,7 +87,7 @@ function user_inputs()
     # 0.25 = the 64x64x60 deck's 0.5 halved because h_x halved. AN ESTIMATE.
     # Replace it with 65-70% of the "wedge neutral up to" figure the run
     # prints at t = 0 -- see the header.
-    dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "0.5"))
+    dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "1.0"))
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
     # Krylov basis costs (restart+4)*npoin*nvar*8 B/rank: ~19 MB on the scalar
     # Schur system, ~95 MB on the five-field one (npoin/rank ~ 70k at 256 ranks).
