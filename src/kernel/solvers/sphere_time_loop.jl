@@ -222,6 +222,9 @@ function _sphere_step_limiter!(u, integrator, p::St_sphere_ode_params, t)
     p.lproject && project_momentum_to_sphere!(u, p.mesh; ivar = 2)
     p.sp.forcing === nothing ||
         sphere_forcing_update!(p.sp.forcing, u, integrator.dt, p.mesh, p.metrics, p.sp)
+    # DynSGS: this step is complete, so its end state becomes qⁿ of the BDF2
+    # residual stencil (sphere_dsgs.jl) — once per STEP, never per stage
+    p.sp.dsgs === nothing || sphere_dsgs_roll!(p.sp.dsgs, u)
     return nothing
 end
 
@@ -346,6 +349,14 @@ function (mon::St_sphere_monitor)(integrator)
         # the Rossby number Ro = U/(2aΩ) it implies, and how much energy the
         # forcing has actually been injecting relative to the ε₀ it was asked
         # for. Collective (reductions inside), so outside the verbose gate.
+        if mon.sp.dsgs !== nothing
+            dd = sphere_dsgs_diagnostics(mon.sp.dsgs, mon.mesh)
+            if mon.verbose
+                @printf(" #           DynSGS: ν_e max = %9.3e m²/s  mean = %9.3e  at the cap: %5.1f%% of the elements\n",
+                        dd.νmax, dd.νmean, 100dd.fcap)
+                flush(stdout)
+            end
+        end
         if mon.sp.forcing !== nothing
             fd = sphere_forcing_diagnostics(u, mon.sp.forcing, mon.mesh, mon.metrics)
             if mon.verbose
@@ -367,7 +378,7 @@ function (mon::St_sphere_monitor)(integrator)
         sphere_potential_vorticity!(mon.pv, mon.ζ, u, mon.mesh, mon.Ωpv, mon.gpv)
         _sphere_write!(mon.q, mon.mesh, mon.inputs, mon.OUTPUT_DIR, mon.iout, t, mon.SVT;
                        verbose = mon.verbose,
-                       extra   = _sphere_extra_fields(mon.ζ, mon.pv, mon.sp))
+                       extra   = _sphere_extra_fields(mon.ζ, mon.pv, mon.sp, mon.mesh))
         _sphere_write_zonal_mean(u, mon.mesh, mon.metrics, mon.inputs, mon.OUTPUT_DIR,
                                  mon.iout, t, mon.sp; verbose = mon.verbose)
         mon.tnext += mon.outdt
@@ -385,10 +396,13 @@ end
 # F = ∇ₛ²ψ_F on a forced run, so the scale and the strength of what drives the
 # flow can be looked at on the same file.
 #
-function _sphere_extra_fields(ζ, pv, sp)
+function _sphere_extra_fields(ζ, pv, sp, mesh)
     fields = Pair{String, Vector{Float64}}["vorticity" => ζ]
     isempty(pv) || push!(fields, "pv" => pv)
     sp.forcing === nothing || push!(fields, "vorticity_forcing" => sp.forcing.F)
+    # the DynSGS coefficient of the last RHS evaluation, as a nodal field (the
+    # largest ν_e of the elements at a node), so WHERE the model acts is visible
+    sp.dsgs === nothing || push!(fields, "dsgs_nu" => sphere_dsgs_nodal!(sp.dsgs, mesh))
     return Tuple(fields)
 end
 
@@ -475,8 +489,11 @@ function _sphere_march!(mesh::St_mesh,
     lcfl         = get(inputs, :lcfl_dt, true) == true
 
     # the largest artificial viscosity in play, for the diffusive branch of the
-    # CFL condition (0 when :lvisc is off, and then that branch is skipped)
-    μmax::Float64 = Float64(maximum(sp.μ))
+    # CFL condition (0 when :lvisc is off, and then that branch is skipped). On
+    # a DynSGS run sp.μ holds dimensionless multipliers; the coefficient can be
+    # at most the cap C₂ Δ (|u|+√φ), estimated here on the initial state.
+    μmax::Float64 = sp.dsgs === nothing ? Float64(maximum(sp.μ)) :
+                    Float64(maximum(sp.μ))*Float64(sphere_dsgs_cap_estimate(sp.dsgs, q.qn, npoin))
 
     local Δt::Float64
     if lcfl
@@ -489,6 +506,7 @@ function _sphere_march!(mesh::St_mesh,
 
     nsteps::Int = max(1, ceil(Int, (tend - t)/Δt))
     Δt          = (tend - t)/nsteps     # land exactly on tend
+    sp.Δt       = Δt                    # the DynSGS residual stencil needs it
 
     #
     # A guard, not a limit: an accidental Δt (see above) turns into hours of
@@ -526,7 +544,10 @@ function _sphere_march!(mesh::St_mesh,
         @printf(" #   Δt = %.4f s ; %d steps to t = %.1f s (%.3f days) ; CFL = %.2f\n",
                 Δt, nsteps, tend, tend/86400, cfl)
         println(" #   filter: ", sp.lfilter ? "ON" : "OFF")
-        if sp.lvisc
+        if sp.lvisc && sp.dsgs !== nothing
+            @printf(" #   artificial viscosity: DynSGS (residual-based, per element), multipliers [%s], cap ≤ %.3e m²/s on the initial state\n",
+                    join((@sprintf("%.3g", ν) for ν in sp.μ), ", "), μmax)
+        elseif sp.lvisc
             @printf(" #   artificial viscosity: ON, ν = [%s] m²/s per equation\n",
                     join((@sprintf("%.3g", ν) for ν in sp.μ), ", "))
         else
@@ -569,7 +590,7 @@ function _sphere_march!(mesh::St_mesh,
     sphere_potential_vorticity!(pv, ζ, q.qn, mesh, Ωpv, gpv)
     _sphere_write!(q, mesh, inputs, OUTPUT_DIR, 0, t, SVT; verbose = verbose,
                    lwrite = get(inputs, :lwrite_initial, true) == true,
-                   extra = _sphere_extra_fields(ζ, pv, sp))
+                   extra = _sphere_extra_fields(ζ, pv, sp, mesh))
     get(inputs, :lwrite_initial, true) == true &&
         _sphere_write_zonal_mean(q.qn, mesh, metrics, inputs, OUTPUT_DIR, 0, t, sp;
                                  verbose = verbose)

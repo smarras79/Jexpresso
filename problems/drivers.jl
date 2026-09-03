@@ -167,7 +167,9 @@ function driver(nparts,
         # then one VTK file per output time, and applies the Lagrange projection
         # after every RK stage.
         #
-        sparams = build_sphere_params(smesh, smetrics, inputs; neqs = qsphere.neqs)
+        # q0: the initial state, which a DynSGS run seeds its residual history with
+        sparams = build_sphere_params(smesh, smetrics, inputs; neqs = qsphere.neqs,
+                                      q0 = qsphere.qn)
 
         @time tfinal = sphere_time_loop!(smesh, smetrics, sparams, qsphere,
                                          inputs, OUTPUT_DIR; verbose = (rank == 0))

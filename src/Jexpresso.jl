@@ -232,6 +232,10 @@ include(joinpath( "kernel", "operators", "sphere_rhs.jl"))
 # (Scott & Polvani 2007), used by the SWsphere_ScottPolvani case.
 include(joinpath( "kernel", "operators", "sphere_forcing.jl"))
 
+# Residual-based dynamic SGS viscosity on the shell (Marras, Nazarov &
+# Giraldo 2015), :visc_model => DSGS(); used by SWsphere_ScottPolvani_DynSGS.
+include(joinpath( "kernel", "operators", "sphere_dsgs.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
