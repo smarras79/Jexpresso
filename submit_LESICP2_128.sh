@@ -152,6 +152,27 @@ if [ $# -gt 0 ]; then
     exit 2
 fi
 
+# LOCKED MEMORY, BEFORE ANYTHING TOUCHES THE FABRIC.
+#
+# InfiniBand registers ("pins") the buffers it sends from, and pinned pages
+# count against RLIMIT_MEMLOCK -- `ulimit -l` -- not against the node's RAM.
+# When that limit is small, MPI_Init fails at scale with
+#
+#     Unable to alloc send buffer MR on mlx5_0: Cannot allocate memory
+#     Unable to allocate UD send buffer pool
+#
+# which is what killed job 1220165 in the PREFLIGHT (a bare MPI_Init plus one
+# Allreduce) on 1024 ranks, while the node had ~395 GiB of RAM free. It is a
+# limit, not a shortage, and it scales with ranks-per-node: 64 ranks each
+# pinning their own send pools is 64x one rank''s demand.
+#
+# Raising it is allowed only if the hard limit permits, so this is best-effort
+# and never fatal -- and the value actually in force is printed either way,
+# because "we asked" and "we got" are different things and the difference is
+# exactly what this failure looks like.
+ulimit -l unlimited 2>/dev/null || true
+echo "--- Limits: locked memory (ulimit -l) = $(ulimit -l), hard = $(ulimit -H -l) ---"
+
 for m in "${MODULES[@]}"; do module load "$m" || exit 1; done
 cd "$ROOT" || exit 1
 # Fail here, with the path in hand, rather than 200 lines later on a missing
@@ -385,6 +406,12 @@ launch "${JULIA_FLAGS[@]}" -e '
     echo "       back wrong-but-not-1, the allocation and the launch disagree." >&2
     echo "       Single node failing too means it is not the network: check /dev/shm" >&2
     echo "       and that --mem-per-cpu x --ntasks-per-node fits the node." >&2
+    echo "       'Unable to alloc send buffer MR on mlx5_x: Cannot allocate memory'" >&2
+    echo "       or 'Unable to allocate UD send buffer pool' is NOT a shortage of" >&2
+    echo "       RAM -- it is RLIMIT_MEMLOCK. See the 'Limits:' line above; if it" >&2
+    echo "       is not unlimited the site caps it, and the fix is fewer ranks per" >&2
+    echo "       node (--nodes=32 --ntasks-per-node=32 --cpus-per-task=4 keeps the" >&2
+    echo "       same 1024 ranks) or a raised hard limit from the admins." >&2
     exit $rc; }
 
 #-- 7. run ----------------------------------------------------------------
