@@ -16,10 +16,12 @@ function user_inputs()
     # -- used only when scheme is :imex. Each is also an env override so an A/B
     #    needs no edit here; the value shown is the default.
     lschur      = parse(Bool,    get(ENV, "DBG_SCHUR",     string(use_schur)))
-    # 0.25 = the 64x64x60 deck's 0.5 halved because h_x halved. AN ESTIMATE.
-    # Replace it with 65-70% of the "wedge neutral up to" figure the run
-    # prints at t = 0 -- see the header.
-    dt_imex     = parse(Float64, get(ENV, "DBG_DT",        "1.0"))
+    # STEP SIZES, one per scheme, set HERE and nowhere else: no environment
+    # variable overrides them, so the deck is the record of what ran. The
+    # budget behind each number is under "STEP SIZE" below.
+    dt_imex     = 1.0     # :imex     wedge neutral ~2.6 s; re-read the t = 0 report
+    dt_hevi     = 0.05    # :hevi     ARS232 neutral 0.0749 s measured on this mesh
+    dt_explicit = 0.02    # :explicit CK2N54, known to run this case
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
     # Krylov basis costs (restart+4)*npoin*nvar*8 B/rank: ~19 MB on the scalar
     # Schur system, ~95 MB on the five-field one (npoin/rank ~ 70k at 256 ranks).
@@ -40,7 +42,7 @@ function user_inputs()
     scheme in (:imex, :hevi, :explicit) ||
         error("LESICP2-30x30x60-imex: scheme must be :imex, :hevi or :explicit; got :$scheme")
     #---------------------------------------------------------------------------
-    # STEP SIZE for :hevi and :explicit (dt_imex above covers :imex).
+    # STEP SIZE -- the budget behind dt_imex / dt_hevi / dt_explicit above.
     #
     # MEASURED, NOT ESTIMATED: build_hevi refuses to start above the neutral
     # limit and prints the budget, which on this mesh (30 x 30 x 60, p = 4,
@@ -66,8 +68,7 @@ function user_inputs()
     # HEVI is only ~2.5x explicit here: the horizontal acoustics stay explicit
     # and ARS232's imaginary radius is 1.73 against CK2N54's 3.34. 0.1 was
     # refused (amplification 1.92/step); 0.08 would be refused too.
-    Δt = scheme === :imex ? dt_imex :
-         parse(Float64, get(ENV, "DBG_DT", scheme === :hevi ? "0.05" : "0.02"))
+    Δt = scheme === :imex ? dt_imex : scheme === :hevi ? dt_hevi : dt_explicit
     
     tend  = parse(Float64, get(ENV, "DBG_TEND", "10800.0"))
     lprobe = haskey(ENV, "DBG_TEND")
