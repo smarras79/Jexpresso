@@ -308,6 +308,40 @@ flatten_times(x) = (out = Float64[]; _push_times!(out, x); out)
 _push_times!(out::Vector{Float64}, x::Number) = (push!(out, Float64(x)); out)
 _push_times!(out::Vector{Float64}, x) = (for y in x; _push_times!(out, y); end; out)
 
+"""
+    restart_times(spec) -> Union{Nothing, Vector{Float64}}
+    restart_due(t, spec, times) -> Bool
+
+`:restart_time` takes two forms and the HDF5 restart callback has to serve
+both:
+
+  * a NUMBER is a period: a restart is written whenever `t` is a multiple of
+    it, and `0.0` disables restarts (the default). This is the historical form,
+    `:restart_time => 9000.0`;
+
+  * anything else -- a range, a vector, a tuple of splatted ranges -- is a LIST
+    of explicit times, exactly what `:diagnostics_at_times` takes, so a deck
+    can write a restart next to every diagnostic dump:
+
+        :restart_time => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0..., 9000.0:10.0:tend...),
+
+The list form used to be fed to `rem(t, restart_time)` and died on the first
+step with `MethodError: no method matching rem(::Float64, ::NTuple{209, Float64})`
+-- inside the pre-compilation pass, so the run then fell back to a single-phase
+solve and died again there, minutes into a job on the full rank count.
+
+`restart_times` normalises the deck value once: `nothing` for the period form,
+the flattened list otherwise. The list also has to go into `tstops` (see
+`time_loop!`), or the integrator steps OVER the times instead of landing on
+them and `restart_due` never matches; with tstops in place the match is exact,
+the same test `condition` applies to `:diagnostics_at_times`.
+"""
+restart_times(spec::Number) = nothing
+restart_times(spec)         = flatten_times(spec)
+
+restart_due(t, period::Number, ::Nothing)       = period != 0.0 && rem(t, period) < 1e-3
+restart_due(t, _,              times::Vector{Float64}) = any(==(t), times)
+
 function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
@@ -337,10 +371,14 @@ function time_loop!(inputs, params, u, args...)
     #------------------------------------------------------------------------
     dosetimes    = inputs[:diagnostics_at_times]
     les_stat_t   = inputs[:statistics_time]
-    tstops_all   = sort(unique(vcat(flatten_times(dosetimes), flatten_times(les_stat_t))))
+    restart_time = inputs[:restart_time]
+    # Period (Number -> nothing) or explicit list; see `restart_times` above.
+    # A list has to be in tstops, or the integrator steps over its entries.
+    restart_list = restart_times(restart_time)
+    tstops_all   = sort(unique(vcat(flatten_times(dosetimes), flatten_times(les_stat_t),
+                                    restart_list === nothing ? Float64[] : restart_list)))
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
-    restart_time = inputs[:restart_time]
     stats_online_start = get(inputs, :statistics_online_start, Inf)
     rad_time           = inputs[:radiation_time_step]
     lnew_mesh    = true   
@@ -466,11 +504,7 @@ function time_loop!(inputs, params, u, args...)
     end
 
     function restart_condition(u, t, integrator)
-        if restart_time ≠ 0.0 && (rem(t,restart_time) < 1e-3)
-            return true
-        else
-            return false
-        end
+        return restart_due(t, restart_time, restart_list)
     end
     function do_restart!(integrator)
         idx         = idx_ref[]
