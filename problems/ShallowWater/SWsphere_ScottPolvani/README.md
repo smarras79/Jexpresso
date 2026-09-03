@@ -18,7 +18,7 @@ What is different is the *problem*:
 
 | | `SWsphere` | `SWsphere_ScottPolvani` |
 |---|---|---|
-| planet | Earth | Jupiter (or Saturn, Uranus, Neptune — one symbol in the deck) |
+| planet | Earth | the three of the paper's Fig. 14 — Jupiter, Saturn, Neptune (Uranus/Neptune) — one symbol in the deck or `SP_PLANET` in the environment |
 | initial state | balanced mid-latitude jet + bump | **fluid at rest**, uniform depth `H` set by the deformation radius |
 | forcing | none (an initial-value problem) | **random, isotropic, small-scale vorticity forcing** injecting energy at a prescribed rate `ε₀` |
 | large-scale dissipation | none | **Rayleigh friction** on the momentum and/or **radiative relaxation** of the height |
@@ -33,9 +33,20 @@ julia> using Jexpresso
 julia> Jexpresso.run_case("ShallowWater", "SWsphere_ScottPolvani")
 ```
 
-Pick the planet at the top of `user_inputs.jl` (`planet = :jupiter`), and the
-length of the run in rotations (`nrot`). Everything else is derived. In parallel
-nothing changes; see the `SWsphere` README.
+Pick the planet at the top of `user_inputs.jl` (`planet = …`), and the length
+of the run in rotations (`nrot`). Everything else is derived. Both can also be
+set from the environment without editing the file, which is how the three
+panels of the paper's Fig. 14 are run in a row:
+
+```bash
+for p in jupiter saturn neptune; do
+  SP_PLANET=$p SP_NROT=2000 julia --project=. -e 'using Jexpresso; Jexpresso.run_case("ShallowWater", "SWsphere_ScottPolvani")'
+  mv output/ShallowWater/SWsphere_ScottPolvani/output output/ShallowWater/SWsphere_ScottPolvani/output_$p
+done
+```
+
+(`:loverwrite_output => true` in the deck, so move each result aside before
+the next planet.) In parallel nothing changes; see the `SWsphere` README.
 
 ## The model (paper, section 3)
 
@@ -108,15 +119,20 @@ Ro  = U/(2aΩ)            Rossby number of the equilibrated flow
 L_D = √(gH)/(2Ω a)       polar deformation radius, in planetary radii
 ```
 
-Its section-7 planetary runs (values from Cho & Polvani 1996b) and the
-dimensional constants the deck attaches to them:
+Its section-7 planetary runs — Fig. 13 (zonal-mean wind) and Fig. 14
+(potential vorticity, panels a–c, and vorticity, panels d–f), values from Cho &
+Polvani 1996b — and the dimensional constants the deck attaches to them:
 
-| planet | `a` [m] | `Ω` [1/s] | `g` [m/s²] | `L_D/a` | `Ro` |
-|---|---|---|---|---|---|
-| Jupiter | 7.1492e7 | 1.7585e-4 | 24.79 | 0.025 | 0.002 |
-| Saturn | 6.0268e7 | 1.6378e-4 | 10.44 | 0.025 | 0.013 |
-| Uranus | 2.5559e7 | 1.0124e-4 | 8.87 | 0.1 | 0.06 |
-| Neptune | 2.4764e7 | 1.0834e-4 | 11.15 | 0.1 | 0.06 |
+| `planet` | Fig. 14 | `a` [m] | `Ω` [1/s] | `g` [m/s²] | `L_D/a` | `Ro` |
+|---|---|---|---|---|---|---|
+| `:jupiter` | (a)/(d) | 7.1492e7 | 1.7585e-4 | 24.79 | 0.025 | 0.002 |
+| `:saturn` | (b)/(e) | 6.0268e7 | 1.6378e-4 | 10.44 | 0.025 | 0.013 |
+| `:neptune` | (c)/(f) | 2.4764e7 | 1.0834e-4 | 11.15 | 0.1 | 0.06 |
+| `:uranus` | (c)/(f), alias | 2.5559e7 | 1.0124e-4 | 8.87 | 0.1 | 0.06 |
+
+The paper labels the third panel "Uranus/Neptune" and treats the two as one
+case; `:neptune` is the option, `:uranus` an accepted alias carrying Uranus's
+own constants (the dynamics see only `Ro` and `L_D`, which are the same).
 
 `H = (2Ω L_D a)²/g` follows (≈ 15.9 km for Jupiter; `g` then drops out of the
 dynamics, since the equations carry `φ = gh`, and only reappears when `h` is
@@ -208,7 +224,7 @@ Output, in `problems/ShallowWater/SWsphere_ScottPolvani/output/`:
 | file | what it is |
 |---|---|
 | `sphere_grid_ho.vtu` | the initial (rest) state |
-| `sphere_NNNN.vtu` | one per output time: `h`, `u` (zonal), `v` (meridional), `w` (radial, ≈ 0), `vorticity`, **`vorticity_forcing`** `= ∇ₛ²ψ_F` — the `F` the paper forces with, so its scale and strength can be seen next to the flow |
+| `sphere_NNNN.vtu` | one per output time: `h`, `u` (zonal), `v` (meridional), `w` (radial, ≈ 0), `vorticity` (Fig. 14 d–f), **`pv`** `= (ζ + f)/h` the potential vorticity (Fig. 14 a–c; written when the deck gives `:sphere_Omega` and `:sphere_gravity`), **`vorticity_forcing`** `= ∇ₛ²ψ_F` — the `F` the paper forces with, so its scale and strength can be seen next to the flow |
 | `zonal_mean_NNNN.dat` | **the paper's diagnostic**: `lat, ū, v̄, φ̄, nodes` in 2° bands (`:zonal_mean_nbins`), mass-weighted, written with every VTK file. Stack them to get the paper's Hovmöller plots of `ū(φ, t)` (Figs. 2, 4, 6, 7) or plot the last one against Fig. 13. |
 
 In parallel the `.vtu` become `.pvtu`, as for `SWsphere`; the `.dat` is written
@@ -228,7 +244,7 @@ by rank 0 from globally reduced sums.
 | `:forcing_normalize` | renormalise every step to inject exactly `ε₀` (Eq. 14); default `true` |
 | `:rayleigh_friction` | `ν_r` [1/s] on the momentum; `0` = off |
 | `:radiative_relaxation` | `ν_h` [1/s] on `φ − φ_ref`; `0` = off |
-| `:sphere_Omega` | `Ω` for the `Ro` diagnostic only |
+| `:sphere_Omega`, `:sphere_gravity` | `Ω` for the `Ro` diagnostic; both for the `pv` output field |
 | `:lzonal_mean`, `:zonal_mean_nbins` | the zonal-mean files |
 
 `user_inputs.jl` fills all of them from the planet and the paper's

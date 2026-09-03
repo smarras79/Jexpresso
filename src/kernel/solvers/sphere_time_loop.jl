@@ -268,6 +268,9 @@ mutable struct St_sphere_monitor{TQ, TMesh, TMetrics, TParams, TIn, TSVT}
     OUTPUT_DIR::String
     ζ::Vector{Float64}
     ζ0::Vector{Float64}
+    pv::Vector{Float64}         # potential vorticity (ζ + f)/h; empty unless Ω and g are known
+    Ωpv::Float64                # :sphere_Omega   (0 = not given ⇒ no PV output)
+    gpv::Float64                # :sphere_gravity (0 = not given ⇒ no PV output)
     mass0::Float64
     ener0::Float64
     npoin::Int
@@ -361,9 +364,10 @@ function (mon::St_sphere_monitor)(integrator)
         # works on its own copy of the state, so refresh it first.
         copyto!(mon.q.qn, u)
         sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
+        sphere_potential_vorticity!(mon.pv, mon.ζ, u, mon.mesh, mon.Ωpv, mon.gpv)
         _sphere_write!(mon.q, mon.mesh, mon.inputs, mon.OUTPUT_DIR, mon.iout, t, mon.SVT;
                        verbose = mon.verbose,
-                       extra   = _sphere_extra_fields(mon.ζ, mon.sp))
+                       extra   = _sphere_extra_fields(mon.ζ, mon.pv, mon.sp))
         _sphere_write_zonal_mean(u, mon.mesh, mon.metrics, mon.inputs, mon.OUTPUT_DIR,
                                  mon.iout, t, mon.sp; verbose = mon.verbose)
         mon.tnext += mon.outdt
@@ -374,13 +378,41 @@ end
 
 
 #
-# The point fields written next to the state: the relative vorticity always,
-# plus the vorticity forcing F = ∇ₛ²ψ_F on a forced run, so the scale and the
-# strength of what drives the flow can be looked at on the same file.
+# The point fields written next to the state: the relative vorticity always;
+# the POTENTIAL VORTICITY q = (ζ + f)/h when the deck gives Ω and g
+# (:sphere_Omega, :sphere_gravity) — the field Scott & Polvani (2007) plot in
+# Fig. 14 (a)-(c) and read the PV staircase off; and the vorticity forcing
+# F = ∇ₛ²ψ_F on a forced run, so the scale and the strength of what drives the
+# flow can be looked at on the same file.
 #
-_sphere_extra_fields(ζ, sp) = sp.forcing === nothing ?
-    ("vorticity" => ζ,) :
-    ("vorticity" => ζ, "vorticity_forcing" => sp.forcing.F)
+function _sphere_extra_fields(ζ, pv, sp)
+    fields = Pair{String, Vector{Float64}}["vorticity" => ζ]
+    isempty(pv) || push!(fields, "pv" => pv)
+    sp.forcing === nothing || push!(fields, "vorticity_forcing" => sp.forcing.F)
+    return Tuple(fields)
+end
+
+#
+# Shallow-water potential vorticity q = (ζ + f)/h, f = 2Ω sin φ = 2Ω z/r,
+# h = φ/g. A no-op (pv stays empty) when Ω or g is unknown. Typed barrier: the
+# mesh fields are ::Any.
+#
+function sphere_potential_vorticity!(pv::Vector{Float64}, ζ::Vector{Float64}, q,
+                                     mesh::St_mesh, Ω::Float64, g::Float64)
+    isempty(pv) && return pv
+    _sphere_pv_kernel!(pv, ζ, q, mesh.coords, Int(mesh.npoin), Ω, g)
+    return pv
+end
+
+function _sphere_pv_kernel!(pv::Vector{Float64}, ζ::Vector{Float64}, q::AbstractMatrix{TF},
+                            crd::AbstractMatrix{TF}, npoin::Int, Ω::Float64, g::Float64) where {TF}
+    @inbounds for ip = 1:npoin
+        x, y, z = crd[1, ip], crd[2, ip], crd[3, ip]
+        f = 2Ω*z/sqrt(x*x + y*y + z*z)
+        pv[ip] = (ζ[ip] + f)*g/q[ip, 1]
+    end
+    return pv
+end
 
 
 #---------------------------------------------------------------------------------
@@ -530,9 +562,14 @@ function _sphere_march!(mesh::St_mesh,
     # the initial condition
     sphere_relative_vorticity!(ζ, q.qn, mesh, metrics, sp)
     copyto!(ζ0, ζ)
+    # potential vorticity, if the deck says what Ω and g are
+    Ωpv = Float64(get(inputs, :sphere_Omega,   0.0))
+    gpv = Float64(get(inputs, :sphere_gravity, 0.0))
+    pv  = (Ωpv > 0 && gpv > 0) ? zeros(Float64, npoin) : Float64[]
+    sphere_potential_vorticity!(pv, ζ, q.qn, mesh, Ωpv, gpv)
     _sphere_write!(q, mesh, inputs, OUTPUT_DIR, 0, t, SVT; verbose = verbose,
                    lwrite = get(inputs, :lwrite_initial, true) == true,
-                   extra = _sphere_extra_fields(ζ, sp))
+                   extra = _sphere_extra_fields(ζ, pv, sp))
     get(inputs, :lwrite_initial, true) == true &&
         _sphere_write_zonal_mean(q.qn, mesh, metrics, inputs, OUTPUT_DIR, 0, t, sp;
                                  verbose = verbose)
@@ -540,7 +577,7 @@ function _sphere_march!(mesh::St_mesh,
     params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0))
 
     monitor = St_sphere_monitor(q, mesh, metrics, sp, inputs, SVT, OUTPUT_DIR,
-                                ζ, ζ0, mass0, ener0, npoin, nsteps, nprint,
+                                ζ, ζ0, pv, Ωpv, gpv, mass0, ener0, npoin, nsteps, nprint,
                                 nout, outdt, t + outdt, 0, verbose)
 
     # save_positions = (false,false): the monitor only reads the state, so there

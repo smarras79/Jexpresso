@@ -134,6 +134,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
 
         @printf(" #   planet: %s   a = %.4e m   Ω = %.4e 1/s (T = %.3e s = %.3f h)   g = %.3f m/s²\n",
                 String(planet), a, Ω, T, T/3600, g)
+        println(" #   Scott & Polvani (2007): ", get(inputs, :sp_figure, "?"))
         @printf(" #   L_D/a = %.4f  →  H = %.2f m,  φ_ref = gH = %.4e m²/s²,  √(gH) = %.2f m/s\n",
                 LD, H, φref, c)
         @printf(" #   L_D = %.3e m ,  L_eq = √(a L_D) = %.3e m (%.3f a)\n", LD*a, Leq, Leq/a)

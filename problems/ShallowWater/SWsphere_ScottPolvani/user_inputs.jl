@@ -32,11 +32,14 @@
 #   Ro  = U/(2aΩ)          the Rossby number of the equilibrated flow
 #   L_D = √(gH)/(2Ω a)     the polar deformation radius, in planetary radii
 #
-# and the paper's section 7 runs (values from Cho & Polvani 1996b):
+# and the paper's section 7 runs — its Figs. 13 and 14 — (values from Cho &
+# Polvani 1996b):
 #
-#   Jupiter         Ro = 0.002   L_D = 0.025
-#   Saturn          Ro = 0.013   L_D = 0.025
-#   Uranus/Neptune  Ro = 0.06    L_D = 0.1
+#   Jupiter         Ro = 0.002   L_D = 0.025     Fig. 14 (a)/(d)
+#   Saturn          Ro = 0.013   L_D = 0.025     Fig. 14 (b)/(e)
+#   Uranus/Neptune  Ro = 0.06    L_D = 0.1       Fig. 14 (c)/(f)
+#
+# All three are selectable below (`planet`, or SP_PLANET in the environment).
 #
 # Ro is an OUTCOME of forcing and dissipation, not an input. With Rayleigh
 # friction ν_l the paper's closure is E ≈ ε/(2ν_l) with ε ≈ 0.4 ε₀ the part of
@@ -66,21 +69,46 @@
 function user_inputs()
 
     #---------------------------------------------------------------------------
-    # THE PLANET. Pick one; everything dimensional below follows from it.
+    # THE PROBLEM: which planet. This is the one user choice of the deck;
+    # everything dimensional below follows from it.
     #
-    #   a  equatorial radius [m]     Ω  rotation rate [1/s]     g  gravity [m/s²]
-    #   LD deformation radius / a    Ro target Rossby number    (paper, section 7)
+    # The three simulations of the paper's section 7 — Fig. 13 (zonal-mean
+    # wind) and Fig. 14 (potential vorticity, panels a-c; vorticity, panels
+    # d-f), parameters from Cho & Polvani (1996b):
+    #
+    #   :jupiter    Fig. 14 (a)/(d)    Ro = 0.002   L_D = 0.025
+    #   :saturn     Fig. 14 (b)/(e)    Ro = 0.013   L_D = 0.025
+    #   :neptune    Fig. 14 (c)/(f)    Ro = 0.06    L_D = 0.1
+    #
+    # The paper labels the third "Uranus/Neptune" and treats the two as one
+    # case; :uranus is accepted as an alias of that panel, with Uranus's own
+    # a, Ω, g (the dynamics only see Ro and L_D, which are the same).
+    #
+    # Select by editing `planet` here, or without touching the file through the
+    # environment, which is how one scripts the three panels in a row:
+    #
+    #   SP_PLANET=saturn julia --project=. -e 'using Jexpresso; Jexpresso.run_case("ShallowWater", "SWsphere_ScottPolvani")'
+    #
+    # (SP_NROT overrides the run length in rotations the same way.)
+    #
+    #   a   equatorial radius [m]      Ω   rotation rate [1/s]     g  gravity [m/s²]
+    #   LD  deformation radius / a     Ro  target Rossby number    fig  the panel
+    #
+    # a, Ω, g are the bodies' measured values (equatorial radius, sidereal
+    # rotation, equatorial gravity); only L_D and Ro enter the dynamics, since
+    # the equations are scale-free in a and Ω and carry φ = gh rather than h.
     #---------------------------------------------------------------------------
-    planet = :jupiter
+    planet = Symbol(lowercase(get(ENV, "SP_PLANET", "jupiter")))
 
     planets = Dict(
-        :jupiter => (a = 7.1492e7, Ω = 1.7585e-4, g = 24.79, LD = 0.025, Ro = 0.002),
-        :saturn  => (a = 6.0268e7, Ω = 1.6378e-4, g = 10.44, LD = 0.025, Ro = 0.013),
-        :uranus  => (a = 2.5559e7, Ω = 1.0124e-4, g =  8.87, LD = 0.1,   Ro = 0.06),
-        :neptune => (a = 2.4764e7, Ω = 1.0834e-4, g = 11.15, LD = 0.1,   Ro = 0.06),
+        :jupiter => (a = 7.1492e7, Ω = 1.7585e-4, g = 24.79, LD = 0.025, Ro = 0.002, fig = "Fig. 14 (a)/(d), Jupiter"),
+        :saturn  => (a = 6.0268e7, Ω = 1.6378e-4, g = 10.44, LD = 0.025, Ro = 0.013, fig = "Fig. 14 (b)/(e), Saturn"),
+        :neptune => (a = 2.4764e7, Ω = 1.0834e-4, g = 11.15, LD = 0.1,   Ro = 0.06,  fig = "Fig. 14 (c)/(f), Uranus/Neptune"),
+        :uranus  => (a = 2.5559e7, Ω = 1.0124e-4, g =  8.87, LD = 0.1,   Ro = 0.06,  fig = "Fig. 14 (c)/(f), Uranus/Neptune (Uranus's constants)"),
     )
     haskey(planets, planet) ||
-        error(" # ERROR user_inputs.jl: unknown planet ", planet, "; choose one of ", keys(planets))
+        error(" # ERROR user_inputs.jl: unknown planet :", planet,
+              "; choose :jupiter, :saturn or :neptune (the three panels of Fig. 14; :uranus is an alias of the third), or set SP_PLANET")
     P = planets[planet]
 
     a, Ω, g = P.a, P.Ω, P.g
@@ -110,7 +138,7 @@ function user_inputs()
     tau   = tau_nd*T                   # forcing decorrelation time         [s]
     μvisc = nu_nd*a^2*Ω                # artificial diffusion               [m²/s]
 
-    nrot  = 500                        # length of the run, in rotations
+    nrot  = parse(Float64, get(ENV, "SP_NROT", "500"))   # length of the run, in rotations
 
     inputs = Dict(
         :lspherical_shell     => true,
@@ -132,6 +160,7 @@ function user_inputs()
         # user_source.jl / user_primitives.jl through their module globals).
         #---------------------------------------------------------------------------
         :sp_planet            => planet,
+        :sp_figure            => P.fig,
         :sp_radius            => a,
         :sp_Omega             => Ω,
         :sp_gravity           => g,
@@ -170,7 +199,8 @@ function user_inputs()
         :forcing_normalize    => true,
         :rayleigh_friction    => nu_r,
         :radiative_relaxation => nu_h,
-        :sphere_Omega         => Ω,            # for the Ro diagnostic only
+        :sphere_Omega         => Ω,            # for the Ro diagnostic and the PV output
+        :sphere_gravity       => g,            # for the PV output q = (ζ + f)/h, Fig. 14 (a)-(c)
         #---------------------------------------------------------------------------
         # Keeping the flow ON the shell: the μx source of user_source.jl and the
         # P = I - xxᵀ/r² projection, applied after every RK stage.
@@ -238,9 +268,11 @@ function user_inputs()
         :filter_order         => 8,
         :filter_kcut          => 2/3,
         #---------------------------------------------------------------------------
-        # Output: VTK with h, (u_zonal, v_merid, w_radial), ζ, and the vorticity
-        # forcing; plus the paper's diagnostic — the ZONAL-MEAN zonal velocity
-        # against latitude — as a text file zonal_mean_NNNN.dat per output.
+        # Output: VTK with h, (u_zonal, v_merid, w_radial), ζ (Fig. 14 d-f), the
+        # potential vorticity q = (ζ + f)/h (Fig. 14 a-c) and the vorticity
+        # forcing; plus the paper's other diagnostic — the ZONAL-MEAN zonal
+        # velocity against latitude (Fig. 13) — as a text file
+        # zonal_mean_NNNN.dat per output.
         #---------------------------------------------------------------------------
         :outformat            => "vtk",
         :loverwrite_output    => true,
