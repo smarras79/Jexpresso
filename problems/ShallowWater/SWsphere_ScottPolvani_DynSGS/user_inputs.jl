@@ -107,7 +107,7 @@ function user_inputs()
     # rotation, equatorial gravity); only L_D and Ro enter the dynamics, since
     # the equations are scale-free in a and Ω and carry φ = gh rather than h.
     #---------------------------------------------------------------------------
-    planet = :jupiter
+    planet = :saturn
 
     # the environment override, and :Saturn / "saturn" / "SATURN" all read as :saturn
     haskey(ENV, "SP_PLANET") && (planet = ENV["SP_PLANET"])
@@ -236,10 +236,11 @@ function user_inputs()
         # paper Fig. 1) at ~70 steps per rotation. Raise nrot for equilibrium.
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK33(),
+        :ode_solver           => CarpenterKennedy2N54(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
-        :cfl                  => 0.35,
+        :cfl                  => 0.95,
         :tinit                => 0.0,
-        :tend                 => nrot*T,
+        :tend                 => 2*nrot*T,
         :ndiagnostics_outputs => 50,             # a VTK dump every nrot/50 rotations
         :ndiagnostics_prints  => 500,            # steps between diagnostic lines
         :max_steps            => 5_000_000,

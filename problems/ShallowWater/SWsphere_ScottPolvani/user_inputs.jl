@@ -239,10 +239,10 @@ function user_inputs()
         #:ode_solver           => SSPRK33(),
         :ode_solver           => CarpenterKennedy2N54(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
-        :cfl                  => 0.75,
+        :cfl                  => 0.95,
         :tinit                => 0.0,
-        :tend                 => nrot*T,
-        :ndiagnostics_outputs => 50,             # a VTK dump every nrot/50 rotations
+        :tend                 => 2*nrot*T,
+        :ndiagnostics_outputs => nrot,             # a VTK dump every nrot/50 rotations
         :ndiagnostics_prints  => 500,            # steps between diagnostic lines
         :max_steps            => 15_000_000,
         :case                 => "swsphere_scottpolvani",
