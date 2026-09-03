@@ -216,6 +216,18 @@ Two consequences worth knowing:
    curves) rather than stitching it back together at read time — which is what
    the old `:lmerge_coincident_nodes` did, and why it is gone.
 
+   **Winding is not your problem, though.** gmsh orients each panel's surface
+   on its own, from the direction of the curve loop that bounds it, and the six
+   panels do not always come out the same way: a 32×32 grid written by gmsh
+   4.1 from this same `.geo` had its whole −z panel wound inward, which is a
+   negative surface Jacobian and used to stop `build_sphere_metrics` on
+   "element 1". `orient_shell_elements_outward!` (in `mesh.jl`, run right
+   after the nodes are placed on the shell) now transposes the (ξ,η)
+   numbering of every element whose `a_ξ × a_η` points inward, reports how
+   many it flipped, and the metrics see a consistently outward grid whatever
+   the file's winding. `test/test_sphere_orientation.jl` reads a copy of this
+   grid with one panel reversed and checks the metrics come out identical.
+
 2. **The node count is the check.** On a closed shell
 
    ```
