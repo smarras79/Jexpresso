@@ -412,8 +412,9 @@ function user_inputs()
         # space and are starting the same case repeatedly.
         :luse_mesh_cache  => parse(Bool, get(ENV, "JEXPRESSO_MESH_CACHE", "false")),
         :lread_gmsh       => true, #If false, a 1D problem will be enforce
-	:gmsh_filename    => "./problems/CompEuler/LESICP2-128x128x60-imex/LESICP_128x128x60_10240mX10240mX5000m.msh",
-        :gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
+	#:gmsh_filename    => "./problems/CompEuler/LESICP2-128x128x60-imex/LESICP_128x128x60_10240mX10240mX5000m.msh",
+        #:gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_64x64x60_10240mX10240mX5000m.msh",
+        :gmsh_filename    => "./problems/CompEuler/LESICP2-64x64x60-imex/LESICP_30x30x60_10240mX10240mX5000m.msh",
 		
         # Stretching. The .geo is UNIFORM in z (Progression 1.0); the vertical
         # grading is applied here, at read time, by stretching.jl.
