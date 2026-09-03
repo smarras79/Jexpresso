@@ -48,10 +48,34 @@
 #      rtb2d_schur               4  (a slab has only 20 columns)
 #
 #  cpus-per-task BUYS MEMORY, NOT SPEED. This is pure MPI -- the job exports
-#  JULIA_NUM_THREADS=1 -- so the second core per task sits idle and its only
-#  effect is that each rank gets mem-per-cpu x cpus-per-task. 64 x 2 = 128
-#  fills a Wulver node; 3500M x 2 = 7000M/rank is what setup_les_run.sh found
-#  this domain needs, and 64 x 7000M = 448 GB/node leaves the node headroom.
+#  JULIA_NUM_THREADS=1 -- so the extra cores per task sit idle and their only
+#  effect is that each rank gets mem-per-cpu x cpus-per-task.
+#
+#  4000M IS THE NODE'S OWN RATIO: a Wulver node is 128 cores x 4000M = 512 GB,
+#  and hw59's submit_high_LESICP2.sh ran 128 x 4000M, so the scheduler accepts
+#  it. It replaces the 3500M this script was copied with -- that figure came
+#  from setup_les_run.sh sizing the 64x64x60 DOMAIN, not from any property of
+#  the hardware, and at 64 ranks/node it left 64 GB/node unclaimed while we
+#  were busy suspecting a memory wall.
+#
+#  MEMORY PER RANK IS SET BY RANKS-PER-NODE, NOT BY mem-per-cpu. Keep
+#  ntasks-per-node x cpus-per-task = 128 and the node total is 512 GB either
+#  way; what moves is how it is divided:
+#
+#    nodes  tasks/node  cpus/task   mem/rank   ranks
+#      16       64          2         8 GB      1024   <- here
+#      32       32          4        16 GB      1024
+#      64       16          8        32 GB      1024
+#
+#  All three are the same 1024 ranks and the same 32 x 32 rank grid; they
+#  differ only in how thinly each node is packed. THE GLOBAL MESH IS THE
+#  REASON THIS MATTERS: :lxy_partition uses the rank-0-read + MPI.bcast path,
+#  so every rank transiently holds the WHOLE 63.4 M-point mesh -- ~1.5 GB of
+#  coordinates plus ~1.0 GB of connectivity plus Gridap's structures -- before
+#  it is partitioned. That transient is 4x what the 64x64x60 deck needed at
+#  the same 7000M/rank, which is the leading suspect for the SIGBUS on job
+#  1219979. If 8 GB/rank still dies in the mesh read, go to the 32-node row:
+#  it is a three-line change and nothing else in the deck moves.
 #-----------------------------------------------------------------------------
 #SBATCH --exclusive
 #SBATCH --nodes=16
@@ -62,7 +86,7 @@
 # it about 9% in. Drop this back to something short only for a TEND-limited
 # probe run.
 #SBATCH --time=71:59:00
-#SBATCH --mem-per-cpu=3500M
+#SBATCH --mem-per-cpu=4000M
 #
 #  Site settings -- set once for your cluster, then forget.
 #SBATCH --partition=general
