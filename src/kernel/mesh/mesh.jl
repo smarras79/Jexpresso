@@ -1866,6 +1866,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             (MPI.Allreduce(local_loaded ? 1 : 0, MPI.MIN, comm) == 1) :
             local_loaded
         if all_loaded
+            # A cache holds connijk as it was when the cache was written. On a
+            # shell that winding must be outward, and a cache from before the
+            # reader enforced it (or from any other writer) may not be — the
+            # schema version rejects the known-bad ones, and this pass, which
+            # is idempotent and cheap, covers the rest.
+            if mesh.lmanifold && orient_shell_elements_outward!(mesh) > 0
+                # the cache was inward: write the repaired mesh back so the
+                # next run loads it clean (no-op when caching is off)
+                _save_mesh_cache(_mesh_cache, mesh; inputs=inputs, nparts=nparts)
+            end
             return nothing
         elseif local_loaded && !all_loaded
             rank == 0 && println(" # Mesh cache: some ranks failed to load — discarding all and rebuilding")
