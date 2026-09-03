@@ -79,7 +79,14 @@ EQS="CompEuler"
 CASE="LESICP2-128x128x60-imex"
 TEND="10800.0"
 MESH=""
-ROOT="/project/smarras/hw59/Jexpresso/Jexpresso"
+# ROOT: the repo checkout. Defaults to the directory you ran `sbatch` FROM,
+# which SLURM records in SLURM_SUBMIT_DIR -- so a second clone at a different
+# path needs no edit here. Override with JEXPRESSO_ROOT=... if you sbatch from
+# somewhere else.
+#
+# NOT `dirname $0` / BASH_SOURCE: SLURM runs a COPY of this script out of its
+# spool directory, so inside the job those point at the spool, not the repo.
+ROOT="${JEXPRESSO_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"
 # Where the VTK trees go. INFERRED from ROOT by analogy -- hw59's old script
 # did not set it, the deck defaults to another user's scratch, and ~543 GB
 # lands here. CHECK IT EXISTS AND HAS THE QUOTA before a long run.
@@ -110,6 +117,17 @@ fi
 
 for m in "${MODULES[@]}"; do module load "$m" || exit 1; done
 cd "$ROOT" || exit 1
+# Fail here, with the path in hand, rather than 200 lines later on a missing
+# deck -- a wrong ROOT is the single most likely thing to be wrong in a fresh
+# clone or a moved checkout.
+[ -f "$ROOT/src/Jexpresso.jl" ] || {
+    echo "ERROR: ROOT=$ROOT is not a Jexpresso checkout (no src/Jexpresso.jl)." >&2
+    echo "       sbatch this script FROM the repo root, or set JEXPRESSO_ROOT." >&2
+    exit 1; }
+[ -d "$ROOT/problems/$EQS/$CASE" ] || {
+    echo "ERROR: no deck at $ROOT/problems/$EQS/$CASE" >&2
+    echo "       Are you on the branch that carries it? git log --oneline -1" >&2
+    exit 1; }
 
 #-- 2. deck settings, passed through the environment ----------------------
 # DBG_SCHUR is NOT set here -- the deck owns it. Passed through only when the
