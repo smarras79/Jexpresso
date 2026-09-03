@@ -167,7 +167,12 @@ julia tools/generate_cubed_sphere.jl 20 6.371e6 problems/ShallowWater/SWsphere_S
 ```
 
 (the radius in the file is immaterial: the deck's `:sphere_radius` rescales it),
-and raise `n_f` in step, keeping `N/n_f ≳ 2–4`.
+or edit `n` in `cubed_sphere.geo` and run gmsh on it, and raise `n_f` in step,
+keeping `N/n_f ≳ 2–4`. `SP_MESH=/path/to/other.msh` in the environment points a
+run at the new file without editing the deck, like `SP_PLANET`. A gmsh-written
+grid may have whole panels wound inward (a 32×32 one from gmsh 4.1 did, its −z
+panel); the reader now re-orients those at read time and says so, see the
+`SWsphere` README.
 
 ### Time
 

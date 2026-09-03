@@ -93,7 +93,8 @@ function user_inputs()
     #
     #   SP_PLANET=saturn julia --project=. -e 'using Jexpresso; Jexpresso.run_case("ShallowWater", "SWsphere_ScottPolvani")'
     #
-    # SP_NROT overrides the run length in rotations the same way.
+    # SP_NROT overrides the run length in rotations, and SP_MESH the grid file,
+    # the same way.
     #
     #   a   equatorial radius [m]      Ω   rotation rate [1/s]     g  gravity [m/s²]
     #   LD  deformation radius / a     Ro  target Rossby number    fig  the panel
@@ -225,6 +226,8 @@ function user_inputs()
         # Mesh: the cubed sphere that ships with this case (600 quads, 602
         # vertices, 10 elements per panel edge) — the SWsphere grid.
         #---------------------------------------------------------------------------
+        # SP_MESH in the environment points a run at another .msh (a finer
+        # cubed sphere, say) without editing this line, like SP_PLANET.
         :lread_gmsh           => true,
         #:gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere.msh",
         :gmsh_filename        => "./problems/ShallowWater/SWsphere_ScottPolvani/cubed_sphere_32x32.msh",

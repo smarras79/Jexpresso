@@ -1513,6 +1513,86 @@ end
 # it runs inside the x/y/z construction chain, before mesh.coords is filled from
 # them at the end of mod_mesh_read_gmsh!.
 #---------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------
+# orient_shell_elements_outward!(mesh) -> number of elements flipped
+#
+# On the shell the surface Jacobian is the SIGNED triple product
+# J = x̂·(a_ξ × a_η) (sphere_metrics.jl), so every element has to be wound
+# counter-clockwise as seen from OUTSIDE the sphere — a_ξ × a_η pointing
+# outward — or build_sphere_metrics stops with "non-positive surface Jacobian".
+#
+# gmsh does not guarantee that. It orients each `Ruled Surface` on its own,
+# from the direction of the curve loop that bounds it, and the six panels of a
+# cubed sphere built from twelve shared arcs do not all come out the same way:
+# a 32×32 cubed_sphere.geo written with gmsh 4.1 had its whole -z panel (all
+# 1024 quads) wound inward while the other five were outward, and the 10×10
+# MSH 2.2 file the cases ship happened to have all six outward. Which way a
+# panel lands depends on the gmsh version and the loop directions in the .geo,
+# so trusting the file is not an option; the winding is a property the solver
+# needs, and it is enforced here.
+#
+# THE FIX IS A TRANSPOSITION OF THE ELEMENT'S TENSOR-PRODUCT NUMBERING,
+# connijk[iel, i, j] ↔ connijk[iel, j, i], which swaps ξ and η and therefore
+# reverses a_ξ × a_η. It touches nothing else: the nodes, their coordinates,
+# the edge tables and the global numbering all stay as they are, and every
+# consumer of the shell — the metrics, the RHS, the filter, the mass matrix,
+# the VTK writer, the parallel assembler — reads connijk and is otherwise
+# indifferent to which of the two reference directions is which. (mesh.conn,
+# the flat corner/edge/interior list, keeps gmsh's winding: the shell path never
+# reads it, and the boundary-edge machinery that does has nothing to do on a
+# closed surface.)
+#
+# The test is on the LINEAR corners, (p₂ - p₁) × (p₄ - p₁) · p₁ with
+# p₁ = (1,1), p₂ = (ngl,1), p₄ = (1,ngl): the chords are a first-order estimate
+# of a_ξ and a_η, and the sign of their cross product against the position
+# vector is unambiguous for any element that is small against the sphere. It
+# runs on this rank's elements (orientation is element-local) and reports the
+# total.
+#---------------------------------------------------------------------------------
+function orient_shell_elements_outward!(mesh::St_mesh)
+
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+
+    mesh.radius > 0 || return 0          # not a sphere (see project_nodes_to_shell!)
+
+    ngl   = Int(mesh.ngl)
+    nelem = Int(mesh.nelem)
+    nflip = 0
+    tmp   = zeros(Int64, ngl, ngl)
+
+    for iel = 1:nelem
+        i1 = mesh.connijk[iel, 1,   1]
+        i2 = mesh.connijk[iel, ngl, 1]
+        i4 = mesh.connijk[iel, 1,   ngl]
+
+        ax = mesh.x[i2] - mesh.x[i1]; ay = mesh.y[i2] - mesh.y[i1]; az = mesh.z[i2] - mesh.z[i1]
+        bx = mesh.x[i4] - mesh.x[i1]; by = mesh.y[i4] - mesh.y[i1]; bz = mesh.z[i4] - mesh.z[i1]
+
+        # (a × b) · p₁
+        s = (ay*bz - az*by)*mesh.x[i1] + (az*bx - ax*bz)*mesh.y[i1] + (ax*by - ay*bx)*mesh.z[i1]
+
+        s < 0 || continue
+
+        for j = 1:ngl, i = 1:ngl
+            tmp[i, j] = mesh.connijk[iel, j, i]
+        end
+        for j = 1:ngl, i = 1:ngl
+            mesh.connijk[iel, i, j] = tmp[i, j]
+        end
+        nflip += 1
+    end
+
+    ntot = MPI.Allreduce(nflip, MPI.SUM, comm)
+    if ntot > 0
+        println_rank(string(" #   ", ntot, " element(s) were wound inward in the grid file; re-oriented outward"
+                            , " (a transposition of their (ξ,η) numbering)");
+                     msg_rank = rank, suppress = mesh.msg_suppress)
+    end
+    return nflip
+end
+
+
 function remap_cubed_sphere_nodes!(mesh::St_mesh, inputs::Dict{Symbol,Any})
 
     to = get(inputs, :cubed_sphere_map, :none)
@@ -2504,6 +2584,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         # panel decomposition are untouched; only where the nodes sit within
         # each panel changes. No-op unless :cubed_sphere_map is set.
         remap_cubed_sphere_nodes!(mesh, inputs)
+        # Every element must be wound COUNTER-CLOCKWISE SEEN FROM OUTSIDE, or
+        # its surface Jacobian comes out negative. gmsh does not guarantee that
+        # across the six panels of a cubed sphere, so it is enforced here.
+        orient_shell_elements_outward!(mesh)
     end
 
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
