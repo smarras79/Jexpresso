@@ -262,6 +262,10 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => tend,
 	#:lrestart             => false,
+	# A LIST of restart times, one per diagnostic dump, rather than the usual
+	# period (`:restart_time => 9000.0`). Either form is accepted; the list is
+	# added to tstops so every entry is landed on exactly. Each entry
+	# overwrites :restart_output_file_path, so the last one written wins.
 	:restart_time         => (0.0:100.0:1000.0..., 1000.0:500.0:9000.0..., 9000.0:10.0:tend...),
         #:lrestart_vtk         => true,
 	# EVERY range needs its own `...`; the third was missing one, which made this

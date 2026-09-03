@@ -573,6 +573,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:radiation_time_step] = inputs[:Δt]*100
     end
 
+    # :restart_time is either a period (a Number; 0.0 = never) or a list of
+    # explicit times in the same form as :diagnostics_at_times. Both are
+    # handled by restart_times/restart_due in TimeIntegrators.jl.
     if(!haskey(inputs, :restart_time))
         inputs[:restart_time] = 0.0
     end
