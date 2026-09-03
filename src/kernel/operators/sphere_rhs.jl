@@ -69,7 +69,7 @@ export sphere_relative_vorticity!
 #---------------------------------------------------------------------------------
 # Scratch space, allocated once and reused every stage of every step.
 #---------------------------------------------------------------------------------
-mutable struct St_sphere_params{TFloat, TDSS, TDSS1}
+mutable struct St_sphere_params{TFloat, TDSS, TDSS1, TForc}
     neqs ::Int
     F    ::Array{TFloat, 3}    # ngl × ngl × neqs
     G    ::Array{TFloat, 3}
@@ -106,11 +106,20 @@ mutable struct St_sphere_params{TFloat, TDSS, TDSS1}
     # either way.
     dss  ::TDSS
     dss1 ::TDSS1
+
+    #
+    # FORCING AND LARGE-SCALE DISSIPATION (sphere_forcing.jl): `nothing` unless
+    # the deck sets :lsphere_forcing => true, in which case the Scott & Polvani
+    # (2007) random small-scale vorticity forcing plus Rayleigh friction /
+    # radiative relaxation. A type parameter for the same reason as dss: the
+    # `=== nothing` test in sphere_rhs! then compiles away.
+    #
+    forcing ::TForc
 end
 
 
 function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
-                             neqs = 4, TF = TFloat)
+                             neqs = 4, TF = TFloat, verbose = true)
 
     ngl = Int(mesh.ngl)
 
@@ -145,7 +154,14 @@ function build_sphere_params(mesh::St_mesh, metrics::St_sphere_metrics, inputs;
                             lvisc,
                             zeros(TF, ngl, ngl, neqs),
                             zeros(TF, ngl, ngl, neqs),
-                            dss, dss1)
+                            dss, dss1,
+                            # `nothing` unless :lsphere_forcing => true. Collective
+                            # in parallel only through what the RHS already does
+                            # (it needs `dss`), so built after it.
+                            build_sphere_forcing(mesh, metrics, inputs;
+                                                 neqs = neqs, TF = TF,
+                                                 verbose = verbose &&
+                                                           MPI.Comm_rank(get_mpi_comm()) == 0))
 end
 
 
@@ -263,6 +279,10 @@ function sphere_rhs!(RHS, q, qe,
 
     # cross-rank DSS (a no-op on one rank), then M⁻¹
     _sphere_dss_scale!(RHS, metrics.Minv, Int(mesh.npoin), Int(sp.neqs), sp.dss)
+
+    # the Scott & Polvani forcing and large-scale dissipation, if the deck asked
+    # for them — nodal terms, hence AFTER the M⁻¹ scaling (sphere_forcing.jl)
+    sphere_forcing_apply!(RHS, q, qe, sp.forcing, Int(mesh.npoin))
 
     return RHS
 end

@@ -213,9 +213,15 @@ end
 # mass exactly, but it does NOT preserve the tangency constraint, hence the
 # second projection behind it.
 #
+# Then, on a forced run, the forcing for the NEXT step is drawn here, from the
+# state that step will start from: the forcing is held fixed over a step
+# (every stage sees the same u_F), which is what its amplitude assumes.
+#
 function _sphere_step_limiter!(u, integrator, p::St_sphere_ode_params, t)
     sphere_filter!(u, p.mesh, p.metrics, p.sp)
     p.lproject && project_momentum_to_sphere!(u, p.mesh; ivar = 2)
+    p.sp.forcing === nothing ||
+        sphere_forcing_update!(p.sp.forcing, u, integrator.dt, p.mesh, p.metrics, p.sp)
     return nothing
 end
 
@@ -331,6 +337,21 @@ function (mon::St_sphere_monitor)(integrator)
         end
         # mass is a reduced quantity, so this fires on every rank at once.
         isfinite(mass) || error(" # ERROR sphere_time_loop.jl: the solution has gone non-finite. Reduce :cfl, or switch on :lfilter and/or :lvisc (with :μ > 0).")
+
+        # On a forced run (Scott & Polvani 2007) the quantities the paper is
+        # read in: the kinetic energy per unit mass, the velocity scale U and
+        # the Rossby number Ro = U/(2aΩ) it implies, and how much energy the
+        # forcing has actually been injecting relative to the ε₀ it was asked
+        # for. Collective (reductions inside), so outside the verbose gate.
+        if mon.sp.forcing !== nothing
+            fd = sphere_forcing_diagnostics(u, mon.sp.forcing, mon.mesh, mon.metrics)
+            if mon.verbose
+                @printf(" #           forced: KE/mass = %9.3e m²/s²  U_rms = %8.3f m/s  Ro = %9.3e  ε_inj/ε₀ = %6.3f (mean)  %6.3f (now)  gain = %8.3f\n",
+                        fd.KE, fd.U, fd.Ro, fd.Pmean_rel,
+                        mon.sp.forcing.ε > 0 ? fd.Pinj/mon.sp.forcing.ε : NaN, fd.gain)
+                flush(stdout)
+            end
+        end
     end
 
     #--- output
@@ -341,12 +362,25 @@ function (mon::St_sphere_monitor)(integrator)
         copyto!(mon.q.qn, u)
         sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
         _sphere_write!(mon.q, mon.mesh, mon.inputs, mon.OUTPUT_DIR, mon.iout, t, mon.SVT;
-                       verbose = mon.verbose, extra = ("vorticity" => mon.ζ,))
+                       verbose = mon.verbose,
+                       extra   = _sphere_extra_fields(mon.ζ, mon.sp))
+        _sphere_write_zonal_mean(u, mon.mesh, mon.metrics, mon.inputs, mon.OUTPUT_DIR,
+                                 mon.iout, t, mon.sp; verbose = mon.verbose)
         mon.tnext += mon.outdt
     end
 
     return nothing
 end
+
+
+#
+# The point fields written next to the state: the relative vorticity always,
+# plus the vorticity forcing F = ∇ₛ²ψ_F on a forced run, so the scale and the
+# strength of what drives the flow can be looked at on the same file.
+#
+_sphere_extra_fields(ζ, sp) = sp.forcing === nothing ?
+    ("vorticity" => ζ,) :
+    ("vorticity" => ζ, "vorticity_forcing" => sp.forcing.F)
 
 
 #---------------------------------------------------------------------------------
@@ -468,7 +502,18 @@ function _sphere_march!(mesh::St_mesh,
         end
         sp.lfilter || sp.lvisc ||
             @warn " # sphere_time_loop.jl: BOTH :lfilter and :lvisc are off. The inviscid unfiltered shell solution grows grid-scale modes and is expected to blow up (Marras/Kopera/Giraldo 2015, section 4.2)."
+        if sp.forcing !== nothing
+            @printf(" #   forcing: ON (Scott & Polvani 2007), ε₀ = %.3e m²/s³, n ∈ [%d, %d], %s; drawn every step\n",
+                    sp.forcing.ε, minimum(sp.forcing.n), maximum(sp.forcing.n),
+                    sp.forcing.τ > 0 ? @sprintf("τ = %.3e s", sp.forcing.τ) : "white in time")
+        end
     end
+
+    # On a forced run the first step needs a forcing too: the step limiter draws
+    # the forcing for the step AFTER the one that just completed, so the very
+    # first draw happens here, from the initial state.
+    sp.forcing === nothing ||
+        sphere_forcing_update!(sp.forcing, q.qn, Δt, mesh, metrics, sp)
 
     # relative vorticity: the field the Galewsky test is judged on. h barely
     # moves while the instability develops, so a height plot makes the roll-up
@@ -487,7 +532,10 @@ function _sphere_march!(mesh::St_mesh,
     copyto!(ζ0, ζ)
     _sphere_write!(q, mesh, inputs, OUTPUT_DIR, 0, t, SVT; verbose = verbose,
                    lwrite = get(inputs, :lwrite_initial, true) == true,
-                   extra = ("vorticity" => ζ,))
+                   extra = _sphere_extra_fields(ζ, sp))
+    get(inputs, :lwrite_initial, true) == true &&
+        _sphere_write_zonal_mean(q.qn, mesh, metrics, inputs, OUTPUT_DIR, 0, t, sp;
+                                 verbose = verbose)
 
     params = St_sphere_ode_params(mesh, metrics, sp, q.qe, SVT, lproject, Ref(0.0))
 
@@ -595,5 +643,43 @@ function _sphere_write!(q, mesh::St_mesh, inputs, OUTPUT_DIR::String,
     verbose && @printf(" #   writing %s%s at t = %.1f s ... DONE\n",
                        joinpath(abspath(OUTPUT_DIR), fname),
                        MPI.Comm_size(get_mpi_comm()) > 1 ? ".pvtu" : ".vtu", t)
+    return nothing
+end
+
+
+#
+# ZONAL MEANS, as a small text file next to each VTK output — one row per
+# latitude band: lat [deg], ū (zonal, m/s), v̄ (meridional, m/s), h̄ = φ̄/g
+# is NOT formed here (g belongs to the case), so φ̄ [m²/s²] is written instead,
+# and the number of nodes in the band.
+#
+# Written when the deck sets :lzonal_mean => true, which the forced
+# (Scott & Polvani) decks do: the paper's principal figures are exactly ū(φ,t),
+# and ParaView will not produce a zonal average of an unstructured shell. The
+# number of bands is :zonal_mean_nbins (default 90, i.e. 2°).
+#
+# Collective (sphere_zonal_mean reduces across ranks); rank 0 writes.
+#
+function _sphere_write_zonal_mean(u, mesh::St_mesh, metrics::St_sphere_metrics,
+                                  inputs, OUTPUT_DIR::String, iout::Int, t::Float64, sp;
+                                  verbose = true)
+
+    get(inputs, :lzonal_mean, false) == true || return nothing
+
+    nbins = Int(get(inputs, :zonal_mean_nbins, 90))
+    lat, ū, v̄, φ̄, cnt = sphere_zonal_mean(u, mesh, metrics; nbins = nbins)
+
+    MPI.Comm_rank(get_mpi_comm()) == 0 || return nothing
+
+    isdir(OUTPUT_DIR) || mkpath(OUTPUT_DIR)
+    fname = joinpath(OUTPUT_DIR, @sprintf("zonal_mean_%04d.dat", iout))
+    open(fname, "w") do io
+        @printf(io, "# zonal means at t = %.6e s (output %d)\n", t, iout)
+        @printf(io, "# %10s %16s %16s %16s %8s\n", "lat[deg]", "u_zonal[m/s]", "v_merid[m/s]", "phi[m2/s2]", "nodes")
+        for b = 1:nbins
+            @printf(io, "  %10.4f %16.8e %16.8e %16.8e %8d\n", lat[b], ū[b], v̄[b], φ̄[b], cnt[b])
+        end
+    end
+    verbose && @printf(" #   writing %s ... DONE\n", fname)
     return nothing
 end
