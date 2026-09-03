@@ -26,7 +26,15 @@
 #   2. build_sphere_metrics does not throw, every surface Jacobian is positive,
 #      the mass matrix sums to 4πR², and check_sphere_metrics passes all its
 #      tests — i.e. the re-oriented grid is as good as the original;
-#   3. the original grid is untouched by the pass (0 flips).
+#   3. the original grid is untouched by the pass (0 flips);
+#   4. a STALE MESH CACHE is repaired too. mod_mesh_read_gmsh! saves its cache
+#      (.jexpresso_cache/MESH_*.jld2) BEFORE the metrics run, so the run that
+#      died on the negative Jacobian left a cache with the inward connijk
+#      behind, and pulling the fix did not help: the next run loaded that
+#      cache and returned before the orientation pass. Here the cache written
+#      for the fixture is edited back to inward (its fingerprint left intact,
+#      so it is accepted), and reading through the driver again must load it
+#      AND come out outward.
 #---------------------------------------------------------------------------------
 
 using Test
@@ -34,6 +42,7 @@ using Jexpresso
 using Jexpresso: mod_mesh_mesh_driver, build_sphere_metrics, check_sphere_metrics
 using PartitionedArrays, MPI
 using Printf
+using JLD2
 
 const CASE_MSH = joinpath(@__DIR__, "..", "problems", "ShallowWater", "SWsphere",
                           "cubed_sphere.msh")
@@ -44,7 +53,10 @@ const CASE_MSH = joinpath(@__DIR__, "..", "problems", "ShallowWater", "SWsphere"
     user_input_file            = "test/test_sphere_orientation.jl"
 end
 
-function shell_inputs(msh, nop)
+# `case_dir` decides where the mesh cache goes (<case_dir>/.jexpresso_cache);
+# without one no cache is written, which is what the first reads want and what
+# the stale-cache scenario (4) must not have.
+function shell_inputs(msh, nop; case_dir = "")
     inputs = Dict{Symbol,Any}(
         :lread_gmsh           => true,
         :gmsh_filename        => msh,
@@ -59,6 +71,7 @@ function shell_inputs(msh, nop)
     Jexpresso.mod_inputs_user_inputs!(inputs, 1)
     inputs[:gmsh_filename] = msh
     inputs[:nop]           = nop
+    isempty(case_dir) || (inputs[:_case_dir] = case_dir)
     return inputs
 end
 
@@ -102,7 +115,7 @@ end
 function count_inward(mesh)
     ngl = Int(mesh.ngl); n = 0
     for iel = 1:Int(mesh.nelem)
-        i1 = mesh.connijk[iel,1,1]; i2 = mesh.connijk[iel,ngl,1]; i4 = mesh.connijk[iel,1,ngl]
+        i1 = mesh.connijk[iel,1,1,1]; i2 = mesh.connijk[iel,ngl,1,1]; i4 = mesh.connijk[iel,1,ngl,1]
         a = (mesh.x[i2]-mesh.x[i1], mesh.y[i2]-mesh.y[i1], mesh.z[i2]-mesh.z[i1])
         b = (mesh.x[i4]-mesh.x[i1], mesh.y[i4]-mesh.y[i1], mesh.z[i4]-mesh.z[i1])
         s = (a[2]*b[3]-a[3]*b[2])*mesh.x[i1] + (a[3]*b[1]-a[1]*b[3])*mesh.y[i1] + (a[1]*b[2]-a[2]*b[1])*mesh.z[i1]
@@ -152,5 +165,43 @@ end
         # are the same set of numbers
         @test isapprox(sort(vec(sum(metrics.Je, dims = (2, 3)))),
                        sort(vec(sum(metrics0.Je, dims = (2, 3)))); rtol = 1.0e-12)
+
+        #--- (4) a stale cache with inward elements: read once with a case
+        #    directory so a cache is written, edit that cache back to inward,
+        #    then read again
+        inputs_c = shell_inputs(bad, nop; case_dir = tmpdir)
+        mod_mesh_mesh_driver(inputs_c, 1, distribute)
+        cpath    = Jexpresso._mesh_cache_path(inputs_c, 1)
+        @test !isempty(cpath) && isfile(cpath)
+        flds = JLD2.load(cpath, "mesh_fields")
+        fp   = JLD2.load(cpath, "fingerprint")
+        conn = flds["connijk"]
+        ngl  = size(conn, 2)
+        nrev2 = 0
+        for iel = 1:size(conn, 1)
+            i1 = conn[iel,1,1,1]; i2 = conn[iel,ngl,1,1]; i4 = conn[iel,1,ngl,1]
+            x, y, z = flds["x"], flds["y"], flds["z"]
+            c = (z[i1] + z[i2] + z[i4])/3
+            (c < 0 && abs(c) > max(abs(x[i1] + x[i2] + x[i4]), abs(y[i1] + y[i2] + y[i4]))/3) || continue
+            conn[iel, :, :, 1] .= permutedims(conn[iel, :, :, 1])   # back to inward
+            nrev2 += 1
+        end
+        @test nrev2 == 100
+        flds["connijk"] = conn
+        JLD2.jldsave(cpath; mesh_fields = flds, fingerprint = fp)
+
+        # the stale cache really is inward now
+        @test count_inward((x = flds["x"], y = flds["y"], z = flds["z"], connijk = conn,
+                            ngl = ngl, nelem = size(conn, 1))) == 100
+
+        mesh_c, _ = mod_mesh_mesh_driver(inputs_c, 1, distribute)
+        @test count_inward(mesh_c) == 0
+        # ... and the reader wrote the repaired mesh back over the stale cache
+        conn2 = JLD2.load(cpath, "mesh_fields")["connijk"]
+        @test count_inward((x = flds["x"], y = flds["y"], z = flds["z"], connijk = conn2,
+                            ngl = ngl, nelem = size(conn2, 1))) == 0
+        metrics_c = build_sphere_metrics(mesh_c, inputs_c; verbose = false)
+        @test minimum(metrics_c.Je) > 0
+        @test check_sphere_metrics(mesh_c, metrics_c; verbose = false)
     end
 end

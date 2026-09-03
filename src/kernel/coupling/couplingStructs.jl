@@ -215,7 +215,12 @@ const _CACHE_FINGERPRINT_KEYS = (
 # rebuilt.
 # v4: cache identity reworked — per-case paths, adaptive runs never read a
 # cache, struct-shape signature added to the fingerprint.
-const _CACHE_SCHEMA_VERSION = 4
+# v5: spherical-shell elements wound inward by gmsh are re-oriented at read
+# time (orient_shell_elements_outward! in mesh.jl). A cache written before
+# that carries the grid file's own winding in connijk — and the cache is
+# saved BEFORE the metrics run, so the very run that died on "non-positive
+# surface Jacobian" left one behind. Every earlier cache must be rebuilt.
+const _CACHE_SCHEMA_VERSION = 5
 
 # Signature of the field sets of the structs that get serialized into the
 # caches (St_mesh in the mesh cache, St_metrics in the SEM cache).
