@@ -33,10 +33,15 @@ julia> using Jexpresso
 julia> Jexpresso.run_case("ShallowWater", "SWsphere_ScottPolvani")
 ```
 
-Pick the planet at the top of `user_inputs.jl` (`planet = …`), and the length
-of the run in rotations (`nrot`). Everything else is derived. Both can also be
-set from the environment without editing the file, which is how the three
-panels of the paper's Fig. 14 are run in a row:
+Pick the planet at the top of `user_inputs.jl`,
+
+```julia
+planet = :jupiter        # or :saturn, :neptune  (a string, "saturn", works too)
+```
+
+and the length of the run in rotations (`nrot`). Everything else is derived.
+Both can also be set from the environment without editing the file, which is
+how the three panels of the paper's Fig. 14 are run in a row:
 
 ```bash
 for p in jupiter saturn neptune; do

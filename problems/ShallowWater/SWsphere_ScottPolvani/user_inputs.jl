@@ -84,12 +84,16 @@ function user_inputs()
     # case; :uranus is accepted as an alias of that panel, with Uranus's own
     # a, Ω, g (the dynamics only see Ro and L_D, which are the same).
     #
-    # Select by editing `planet` here, or without touching the file through the
-    # environment, which is how one scripts the three panels in a row:
+    # SELECT HERE — a symbol or a string, either works:
+    #
+    #   planet = :jupiter        planet = :saturn        planet = :neptune
+    #
+    # or leave the line alone and set SP_PLANET in the environment, which is
+    # how one scripts the three panels in a row (it overrides the line):
     #
     #   SP_PLANET=saturn julia --project=. -e 'using Jexpresso; Jexpresso.run_case("ShallowWater", "SWsphere_ScottPolvani")'
     #
-    # (SP_NROT overrides the run length in rotations the same way.)
+    # SP_NROT overrides the run length in rotations the same way.
     #
     #   a   equatorial radius [m]      Ω   rotation rate [1/s]     g  gravity [m/s²]
     #   LD  deformation radius / a     Ro  target Rossby number    fig  the panel
@@ -98,7 +102,11 @@ function user_inputs()
     # rotation, equatorial gravity); only L_D and Ro enter the dynamics, since
     # the equations are scale-free in a and Ω and carry φ = gh rather than h.
     #---------------------------------------------------------------------------
-    planet = Symbol(lowercase(get(ENV, "SP_PLANET", "jupiter")))
+    planet = :jupiter
+
+    # the environment override, and :Saturn / "saturn" / "SATURN" all read as :saturn
+    haskey(ENV, "SP_PLANET") && (planet = ENV["SP_PLANET"])
+    planet = Symbol(lowercase(strip(string(planet))))
 
     planets = Dict(
         :jupiter => (a = 7.1492e7, Ω = 1.7585e-4, g = 24.79, LD = 0.025, Ro = 0.002, fig = "Fig. 14 (a)/(d), Jupiter"),
