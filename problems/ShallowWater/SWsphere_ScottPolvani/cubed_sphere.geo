@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 R = 6371000.0;      // sphere radius [m] (Earth)
-n = 32;             // elements per panel edge -> 6*n^2 quads
+n = 64;             // elements per panel edge -> 6*n^2 quads
 
 a  = R/Sqrt(3);
 lc = 2*Pi*R/(4*n);  // only a hint: the grid is transfinite
