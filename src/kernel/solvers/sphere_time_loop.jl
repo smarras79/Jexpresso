@@ -325,7 +325,7 @@ function (mon::St_sphere_monitor)(integrator)
         # rising by orders of magnitude is how the barotropic instability
         # announces itself long before it is visible in h.
         sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
-        ζmax = maximum(abs, mon.ζ)
+        ζmax = maximum(abs, mon.ζ; init = 0.0)   # init: a rank may own no node
         dζ   = 0.0
         for ip = 1:mon.npoin
             dζ = max(dζ, abs(mon.ζ[ip] - mon.ζ0[ip]))

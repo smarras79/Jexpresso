@@ -154,11 +154,20 @@ function build_sphere_dsgs(mesh::St_mesh, inputs, q0::AbstractMatrix; neqs = 4,
                             Matrix{TF}(q0[1:npoin, :]), Matrix{TF}(q0[1:npoin, :]),
                             zero(TF), zero(TF), 0)
 
+    # Δ range over the WHOLE grid for the printout. `init`: a rank can own no
+    # element at all (the x-y box partition of a sphere leaves the corner boxes
+    # of the bounding square empty at large rank counts), and a bare
+    # maximum() over an empty vector throws.
+    comm = get_mpi_comm()
+    Δlo  = minimum(Δ; init = TF(Inf)); Δhi = maximum(Δ; init = zero(TF))
+    if MPI.Comm_size(comm) > 1
+        Δlo = MPI.Allreduce(Δlo, MPI.MIN, comm); Δhi = MPI.Allreduce(Δhi, MPI.MAX, comm)
+    end
     if verbose
         println(" # SHELL DynSGS (Marras, Nazarov & Giraldo 2015) ..................")
         @printf(" #   ν_e = max(0, min(C₂ Δ (|u|+√φ), C₁ Δ² max_i ‖R_i‖/‖q_i-⟨q_i⟩‖)),  C₁ = %.3g, C₂ = %.3g\n", C1, C2)
         @printf(" #   Δ = shortest corner edge / ngl ∈ [%.4e, %.4e] m ; normalisation floor %.1e of the natural scales ; norms %s\n",
-                minimum(Δ), maximum(Δ), floor, lglob ? "global" : "rank-local")
+                Δlo, Δhi, floor, lglob ? "global" : "rank-local")
         println(" # SHELL DynSGS ................................................. DONE")
     end
     return ds
@@ -312,7 +321,7 @@ function sphere_dsgs_cap_estimate(ds::St_sphere_dsgs{TF}, q, npoin::Int) where {
         cmax = max(cmax, sqrt(q[ip,2]^2 + q[ip,3]^2 + q[ip,4]^2)/φ + sqrt(max(φ, zero(TF))))
     end
     comm = get_mpi_comm()
-    Δmax = maximum(ds.Δ)
+    Δmax = maximum(ds.Δ; init = zero(TF))     # init: this rank may own no element
     if MPI.Comm_size(comm) > 1
         cmax = MPI.Allreduce(cmax, MPI.MAX, comm)
         Δmax = MPI.Allreduce(Δmax, MPI.MAX, comm)
