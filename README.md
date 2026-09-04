@@ -210,11 +210,12 @@ Example of shallow cumuli simulations (right) for the type of Barbados clouds sh
 Below are just a few pre-packaged examples available in Jexpresso.
 To add your own new problem, see [ADD_A_NEW_TEST.md](ADD_A_NEW_TEST.md).
 
-## Dynamics of the atmisphere of plane Saturn:
+## Saturn's atmosphere (idealized):
 500 days of simulated dynamics on the plane Saturn.
 Original test described by Scott and Polvani "Forced-Dissipative Shallow-Water Turbulence on the Sphere and the Atmospheric Circulation of the Giant Planets" J. Atmos. Sci. Vol 64, 2007
 
-<iframe width="560" height="315" src="https://youtu.be/YsEUA5es6E8" title="Saturn" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+
+<iframe width="560" height="315" src="https://youtu.be/YsEUA5es6E8" title="Saturn" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 [Saturn atmospheric motion for 500 days](https://youtu.be/YsEUA5es6E8)
 
