@@ -44,7 +44,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :visc_model           => AV(),
-        :μ                    => [0.05, 0.05, 0.05],
+        :μ                    => [0.0, 300.0, 300.0],
         #---------------------------------------------------------------------------
         # CG filter: OFF. The filter acts on the full depth H (it only
         # subtracts qe from the momentum components), and at rest H is
@@ -58,7 +58,7 @@ function user_inputs()
         # Mesh
         # Generate with:
         #   gmsh -2 problems/ShallowWater/ReducedGravity/DoubleGyre.geo \
-        #        -o meshes/gmsh_grids/DoubleGyre.msh
+        #        -o problems/ShallowWater/ReducedGravity/DoubleGyre.msh
         #---------------------------------------------------------------------------
 
         #NOTE - need to create that geo file and mesh for the double gyre case, and check if it is appropriate for the time step I want to use

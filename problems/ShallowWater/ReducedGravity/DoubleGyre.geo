@@ -1,7 +1,7 @@
 // ============================================================
 // DoubleGyre: Square basin with free-slip boundaries
 // Domain: [0, 2e6] x [0, 2e6] m  (2,000 km x 2,000 km)
-// 16x16 structured quad elements
+// 25x25 structured quad elements
 //
 // Generate with:  gmsh -2 DoubleGyre.geo
 // ============================================================

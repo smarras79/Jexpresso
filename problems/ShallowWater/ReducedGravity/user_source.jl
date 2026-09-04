@@ -18,7 +18,7 @@
 # velocity to zero on dry nodes); σΔt ≈ 0.25 keeps the term well inside
 # the explicit SSPRK54 stability region.
 
-const _SIGMA_DRY_SWE = 25.0 / 1200   # NOTE - need to choose it appropriately with dt
+const _SIGMA_DRY_SWE = 0.25 / 1200   # NOTE - need to choose it appropriately with dt
 const _F0_SWE        = 8.37e-5 # Coriolis parameter [1/s]  (Choi et al. 2004, Sec. 3.1)
 const _BETA_SWE      = 1.8e-11 # Coriolis beta parameter [1/(m s)] (Choi et al. 2004, Sec. 3.1)
 const _TAU0_SWE      = 0.03    # maximum wind stress [N/m²]
@@ -45,7 +45,7 @@ end
     ))
     yn = (y - ymin) / Ly
 
-    τx = _TAU0_SWE * cospi(2.0 * yn)
+    τx = - _TAU0_SWE * cospi(2.0 * yn)
     τy = 0.0
 
     return τx, τy
