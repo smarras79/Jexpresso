@@ -236,14 +236,15 @@ function user_inputs()
         # covers the spin-up (the energy grows linearly to t ≈ 500 rotations,
         # paper Fig. 1) at ~70 steps per rotation. Raise nrot for equilibrium.
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK33(),
+        #:ode_solver           => SSPRK33(),
+        :ode_solver           => CarpenterKennedy2N54(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
-        :cfl                  => 0.35,
+        :cfl                  => 0.95,
         :tinit                => 0.0,
-        :tend                 => nrot*T,
-        :ndiagnostics_outputs => 50,             # a VTK dump every nrot/50 rotations
+        :tend                 => 2*nrot*T,
+        :ndiagnostics_outputs => nrot,             # a VTK dump every nrot/50 rotations
         :ndiagnostics_prints  => 500,            # steps between diagnostic lines
-        :max_steps            => 5_000_000,
+        :max_steps            => 15_000_000,
         :case                 => "swsphere_scottpolvani",
         :SOL_VARS_TYPE        => TOTAL(),
         :lsource              => true,
