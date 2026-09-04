@@ -240,7 +240,7 @@ function user_inputs()
         #:ode_solver           => SSPRK33(),
         :ode_solver           => CarpenterKennedy2N54(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
-        :cfl                  => 0.95,
+        :cfl                  => parse(Float64, get(ENV, "SP_CFL", "0.95")),   # SP_CFL overrides, like SP_NROT
         :tinit                => 0.0,
         :tend                 => 2*nrot*T,
         :ndiagnostics_outputs => nrot,             # a VTK dump every nrot/50 rotations

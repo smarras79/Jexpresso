@@ -310,7 +310,9 @@ function build_sphere_metrics(mesh::St_mesh,
         assemble_mpi!(M, setup_assembler(mesh.SD, M, mesh.ip2gip, mesh.gip2owner))
     end
 
-    minimum(M) > 0 || error(" # ERROR sphere_metrics.jl: a node has zero mass — the grid is not covered by the elements.")
+    # init: a rank may own no node at all (the x-y box partition of a sphere
+    # leaves the corner boxes empty at large rank counts)
+    minimum(M; init = Inf) > 0 || error(" # ERROR sphere_metrics.jl: a node has zero mass — the grid is not covered by the elements.")
     Minv = one(TF) ./ M
 
     #-----------------------------------------------------------------------------

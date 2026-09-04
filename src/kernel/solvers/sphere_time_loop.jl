@@ -325,7 +325,7 @@ function (mon::St_sphere_monitor)(integrator)
         # rising by orders of magnitude is how the barotropic instability
         # announces itself long before it is visible in h.
         sphere_relative_vorticity!(mon.ζ, u, mon.mesh, mon.metrics, mon.sp)
-        ζmax = maximum(abs, mon.ζ)
+        ζmax = maximum(abs, mon.ζ; init = 0.0)   # init: a rank may own no node
         dζ   = 0.0
         for ip = 1:mon.npoin
             dζ = max(dζ, abs(mon.ζ[ip] - mon.ζ0[ip]))
@@ -652,6 +652,15 @@ function _sphere_march!(mesh::St_mesh,
     # Collective, so outside the verbose gate: sphere_diagnostics reduces across
     # ranks and calling it on rank 0 alone would hang the others.
     mass, ener, drift = sphere_diagnostics(q.qn, mesh, metrics)
+
+    # A fixed-step integrator never stops on a NaN by itself, and the monitor
+    # only looks every :ndiagnostics_prints steps — a short run that blew up
+    # between two print steps used to end with "DONE" and a NaN in its final
+    # line. Refuse that here.
+    isfinite(mass) && isfinite(ener) ||
+        error(string(" # ERROR sphere_time_loop.jl: the final state is not finite (mass = ", mass,
+                     ", energy = ", ener, ") — the run blew up between diagnostic prints.\n",
+                     " #   Reduce :cfl, or switch on :lfilter and/or :lvisc (with :μ > 0)."))
     driftmax = params.driftmax[]
     MPI.Comm_size(get_mpi_comm()) > 1 &&
         (driftmax = MPI.Allreduce(driftmax, MPI.MAX, get_mpi_comm()))

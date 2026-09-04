@@ -1816,7 +1816,51 @@ function _compute_xy_partition(model, nparts)
     xi = clamp.(floor.(Int, (cx .- x_min) ./ lx .* nx), 0, nx - 1)
     yi = clamp.(floor.(Int, (cy .- y_min) ./ ly .* ny), 0, ny - 1)
 
-    return xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+    part = xi .* ny .+ yi .+ 1   # 1-indexed, range 1:nparts
+
+    #
+    # EQUAL-AREA BOXES ARE THE WRONG PARTITION FOR A SPHERE, and can be wrong
+    # for any grid whose x-y footprint does not fill its bounding box. The
+    # centroids of a spherical shell fill a DISC; the nx × ny boxes tile the
+    # bounding SQUARE, so a corner box lies outside the disc once the boxes
+    # are small enough — 48 ranks and up with the aspect-aware (nx, ny) above
+    # — and its rank owns NO element and NO node. Every reduction on that
+    # rank is then over an empty array ("reducing over an empty collection
+    # is not allowed", from the reader's own bounding box on). Even where
+    # no box is empty the balance is poor: 60 against 278 elements per rank
+    # at 32 ranks on a 32×32 cubed sphere.
+    #
+    # So on a curved surface, and on any grid where a box came out empty,
+    # partition by COUNTS instead: sort the cells by x into nx slabs of equal
+    # size, then each slab by y into ny chunks of equal size. Every part gets
+    # its share to within one cell, and none is ever empty. Flat grids that
+    # fill their bounding box keep the box partition, so nothing changes for
+    # them.
+    #
+    ncell   = length(cx)
+    # (a flat 2-D grid has 2-vector nodes; the curvature test needs a z)
+    lcurved = num_point_dims(model) == 3 &&
+              _is_curved_surface(get_node_coordinates(get_grid(model)))
+    if lcurved || any(p -> count(==(p), part) == 0, 1:nparts)
+        part  = zeros(Int, ncell)
+        order = sortperm(cx)
+        for i = 1:nx
+            lo = div((i - 1)*ncell, nx) + 1
+            hi = div(i*ncell, nx)
+            slab = @view order[lo:hi]
+            sub  = sort(slab; by = k -> cy[k])
+            m    = length(sub)
+            for j = 1:ny
+                jlo = div((j - 1)*m, ny) + 1
+                jhi = div(j*m, ny)
+                for k = jlo:jhi
+                    part[sub[k]] = (i - 1)*ny + j
+                end
+            end
+        end
+    end
+
+    return part
 end
 
 
@@ -2600,13 +2644,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         orient_shell_elements_outward!(mesh)
     end
 
-    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
-    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
-    mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
-    mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+    # `init`: a rank can own NO node at all — the x-y box partition of a
+    # spherical shell leaves the corner boxes of the bounding square outside
+    # the disc at large rank counts (48 or more) — and a bare maximum() over
+    # an empty vector throws "reducing over an empty collection". The
+    # Allreduce then supplies the global bound from the ranks that have one.
+    mesh.xmax = MPI.Allreduce(maximum(mesh.x; init = -Inf), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(mesh.x; init =  Inf), MPI.MIN, comm)
+    mesh.ymax = MPI.Allreduce(maximum(mesh.y; init = -Inf), MPI.MAX, comm)
+    mesh.ymin = MPI.Allreduce(minimum(mesh.y; init =  Inf), MPI.MIN, comm)
     if (mesh.nsd > 2)
-        mesh.zmax = MPI.Allreduce(maximum(mesh.z), MPI.MAX, comm)
-        mesh.zmin = MPI.Allreduce(minimum(mesh.z), MPI.MIN, comm)
+        mesh.zmax = MPI.Allreduce(maximum(mesh.z; init = -Inf), MPI.MAX, comm)
+        mesh.zmin = MPI.Allreduce(minimum(mesh.z; init =  Inf), MPI.MIN, comm)
     end
 
     gpelm_ghost    = KernelAbstractions.zeros(backend, TInt, 0)
@@ -3046,7 +3095,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
 
 
-    mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
+    mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip; init = 0), MPI.MAX, comm)
     mesh.gip2owner = find_gip_owner(mesh.ip2gip)
     mesh.gip2ip    = KernelAbstractions.zeros(backend, TInt, mesh.gnpoin)
 
@@ -3320,7 +3369,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             for (ip, gip) in enumerate(mesh.ip2gip)
                 mesh.gip2ip[gip] = ip
             end
-            mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
+            mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip; init = 0), MPI.MAX, comm)
             
         end
     elseif mesh.nsd > 2
@@ -5973,8 +6022,8 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     for ie = 1:mesh.nelem
          compute_element_size!(SD, ie, mesh::St_mesh, T)
     end
-    mesh.Δelem_s      = MPI.Allreduce(minimum(mesh.Δelem), MPI.MIN, comm) 
-    mesh.Δelem_l      = MPI.Allreduce(maximum(mesh.Δelem), MPI.MAX, comm)
+    mesh.Δelem_s      = MPI.Allreduce(minimum(mesh.Δelem; init = Inf), MPI.MIN, comm)   # init: a rank may own no element
+    mesh.Δelem_l      = MPI.Allreduce(maximum(mesh.Δelem; init = 0.0), MPI.MAX, comm)
     mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
     mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
 

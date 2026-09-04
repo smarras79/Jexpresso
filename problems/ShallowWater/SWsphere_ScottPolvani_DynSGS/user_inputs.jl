@@ -238,7 +238,12 @@ function user_inputs()
         :ode_solver           => SSPRK33(),
         :ode_solver           => CarpenterKennedy2N54(),
         :lcfl_dt              => true,           # take Δt from the CFL condition
-        :cfl                  => 0.95,
+        # SP_CFL overrides, like SP_NROT. MEASURED with CarpenterKennedy2N54 on
+        # Saturn, this grid, half a rotation: 0.35 and 0.5 run, 0.65 and 0.8
+        # blow up within ~8 steps (the DynSGS cap C₂Δ(|u|+√φ) sets a diffusive
+        # limit Δt ν/Δ² ≈ C₂·CFL·Δ/Δmin that the constant-ν sibling does not
+        # have; that deck runs at 0.95). Keep this at 0.5 or below with DynSGS.
+        :cfl                  => parse(Float64, get(ENV, "SP_CFL", "0.95")),
         :tinit                => 0.0,
         :tend                 => 2*nrot*T,
         :ndiagnostics_outputs => 50,             # a VTK dump every nrot/50 rotations
