@@ -101,7 +101,7 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax; ymin = params.ymin
     for iel=1:params.mesh.nelem_semi_inf
         
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
@@ -118,7 +118,7 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=x[ip],y=y[ip], xmax = xmax, xmin=xmin, ymax=ymax)
+                             neqs=params.neqs, x=x[ip],y=y[ip], xmax = xmax, xmin=xmin, ymax=ymax, ymin=ymin)
             end
         end
         _expansion_inviscid_laguerre!(u, params.neqs, params.mesh.ngl, params.mesh.ngr, params.basis.dψ, params.basis_lag.dψ, params.ω, params.ω_lag, params.F_lag, params.G_lag, params.S_lag, 

@@ -18,7 +18,7 @@
 # velocity to zero on dry nodes); σΔt ≈ 0.25 keeps the term well inside
 # the explicit SSPRK54 stability region.
 
-const _SIGMA_DRY_SWE = 25.0
+const _SIGMA_DRY_SWE = 25.0 / 1200   # NOTE - need to choose it appropriately with dt
 const _F0_SWE        = 8.37e-5 # Coriolis parameter [1/s]  (Choi et al. 2004, Sec. 3.1)
 const _BETA_SWE      = 1.8e-11 # Coriolis beta parameter [1/(m s)] (Choi et al. 2004, Sec. 3.1)
 const _TAU0_SWE      = 0.03    # maximum wind stress [N/m²]
@@ -33,13 +33,16 @@ end
 
 #Calculate coriolis parameter with beta-plane approximation f(y) = f0 + β (y - yc) [1/s]
 @inline function _swe_coriolis(y, ymin, ymax)
-    yc = 0.5 * (ymin + ymax) # NOTE - check whether y should be measured from the center of the domain or from y=0 
-    return _F0_SWE + _BETA_SWE * (y - yc)
+    y_center = 0.5 * (ymin + ymax)
+    return _F0_SWE + _BETA_SWE * (y - y_center)
 end
 
 #Calculate wind stress with a zonal cosine profile in y-direction
 @inline function _swe_wind_stress(y, ymin, ymax)
     Ly = ymax - ymin
+    Ly > 0 || throw(ArgumentError(
+        "Invalid y bounds: ymin=$ymin, ymax=$ymax"
+    ))
     yn = (y - ymin) / Ly
 
     τx = _TAU0_SWE * cospi(2.0 * yn)
@@ -66,7 +69,7 @@ function user_source!(S,
 
     f = _swe_coriolis(y, ymin, ymax)
 
-    #Pressure term
+    #Bathymetry (pressure) source term
     S[1] = 0.0
     S[2] = -_G_SWE * dH * dHbdx 
     S[3] = -_G_SWE * dH * dHbdy 
@@ -75,13 +78,14 @@ function user_source!(S,
     S[2] += f * Hv
     S[3] -= f * Hu
 
-    #Wind shear term
-    S[2] += τx / _RHO_SWE
-    S[3] += τy / _RHO_SWE
+    #Wind shear stress term
+    wet = H >= _H_WET_SWE ? one(H) : zero(H) #apply wind stress only to wet nodes
+    S[2] += wet * τx / _RHO_SWE
+    S[3] += wet * τy / _RHO_SWE
 
     #bottom drag term
-    S[2] -= _KAPPA_D_SWE * Hu
-    S[3] -= _KAPPA_D_SWE * Hv
+    S[2] -= _KAPPA_SWE * Hu
+    S[3] -= _KAPPA_SWE * Hv
     #S[2] -= _C_D_SWE * Hu * sqrt(Hu^2 + Hv^2) / H
     #S[3] -= _C_D_SWE * Hv * sqrt(Hu^2 + Hv^2) / H
 
@@ -106,30 +110,21 @@ end
 function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
     T  = eltype(q)
     H  = q[1]
-    dH = max(H, T(0.0)) - qe[1]
-
-    dx = x - T(_XC_CONE_SWE)
-    dy = y - T(_YC_CONE_SWE)
-    r  = sqrt(dx*dx + dy*dy)
-
-    #bathymetry gradient
-    dHbdx = T(0.0)
-    dHbdy = T(0.0)
-
-    #if r < T(_RC_CONE_SWE) && r > T(1.0e-12)
-    #    slope = -T(_HC_CONE_SWE) / (T(_RC_CONE_SWE) * r)
-    #    dHbdx = slope * dx
-    #    dHbdy = slope * dy
-    #end
-
+    Hu = q[2]
+    Hv = q[3]
+    
     #Wind stress
     Ly = ymax - ymin
     yn = (y - ymin) / Ly    
     τx = T(_TAU0_SWE) * cospi(T(2.0) * yn)
     τy = T(0.0)
 
+    # Do not apply wind stress to the artificial dry film.
+    wet = ifelse(H >= T(_H_WET_SWE), one(T), zero(T))
+
     #Coriolis
-    f = T(_F0_SWE) + T(_BETA_SWE) * (y - T(0.5) * (ymin + ymax))
+    yc = T(0.5) * (ymin + ymax)
+    f = T(_F0_SWE) + T(_BETA_SWE) * (y - yc)
 
     #Bottom drag
     ρ = T(_RHO_SWE)
@@ -137,5 +132,8 @@ function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
 
     g = T(_G_SWE)
     σ = H < T(_H_WET_SWE) ? T(_SIGMA_DRY_SWE) : T(0.0)
-    return T(0.0), T(-g * dH * dHbdx + f*q[3] + τx/ρ - κ*q[2] - σ * q[2]  ), T(-g * dH * dHbdy - f*q[2] + τy/ρ - κ*q[3] - σ * q[3]) #NOTE - this line needs work
+    #return T(0.0), T(-g * dH * dHbdx + f*q[3] + τx/ρ - κ*q[2] - σ * q[2]  ), T(-g * dH * dHbdy - f*q[2] + τy/ρ - κ*q[3] - σ * q[3])
+    return T(0.0), 
+           f*Hv + wet*τx/ρ - (σ + κ) * Hu , 
+          -f*Hu + wet*τy/ρ - (σ + κ) * Hv #pressure term removed - flat bathymetry assumed
 end

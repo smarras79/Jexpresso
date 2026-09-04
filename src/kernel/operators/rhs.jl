@@ -738,7 +738,7 @@ function inviscid_rhs_el!(u, params,
     nelem::Int = params.mesh.nelem
     neqs::Int  = params.neqs
 
-    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax; ymin = params.ymin
     
     for iel=1:nelem   
         for i=1:ngl
@@ -762,7 +762,7 @@ function inviscid_rhs_el!(u, params,
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=coords[1, ip], y=0.0, xmax=xmax,xmin=xmin)
+                             neqs=params.neqs, x=coords[1, ip], y=0.0, xmax=xmax, xmin=xmin)
             end
         end
 
@@ -789,7 +789,7 @@ function inviscid_rhs_el!(u, params,
     ngl   = params.mesh.ngl
     nelem = params.mesh.nelem
 
-    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax; ymin = params.ymin
 
     # Kinetic-energy/entropy preserving flux differencing (M. Artiano,
     # ported from ma/ab_dev): instead of the pointwise flux F,G we
@@ -824,7 +824,7 @@ function inviscid_rhs_el!(u, params,
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
-                             x=coords[1, ip], y=coords[2, ip], ymax=ymax)
+                             x=coords[1, ip], y=coords[2, ip], ymax=ymax, ymin=ymin, xmax=xmax, xmin=xmin)
 
                 if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]

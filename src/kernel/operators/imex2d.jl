@@ -249,7 +249,7 @@ function build_imex_rhs_explicit_simple_2d!(u, params, connij, qe, coords, lsour
                                  @view(qe[ip,:]),
                                  params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                                  neqs=params.neqs,
-                                 x=coords[1, ip], y=coords[2, ip])
+                                 x=coords[1, ip], y=coords[2, ip], ymin=params.mesh.ymin, ymax=params.mesh.ymax, xmin=params.mesh.xmin, xmax=params.mesh.xmax)
                 catch e
                     @warn "Source function call failed: $e"
                     fill!(@view(params.S[i,j,:]), 0.0)  # Zero source as fallback
