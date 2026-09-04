@@ -28,6 +28,7 @@ Suggested Julia version: 1.11.9
   5. [2D Euler equations of compressible flows with gravity and passive chemicals](#5-2d-euler-equations-of-compressible-flows-with-gravity-and-passive-chemicals)
   6. [3D Euler equations of compressible flows with gravity](#6-3d-euler-equations-of-compressible-flows-with-gravity)
 - [Showcase](#turbulent-abl)
+  - [Planet Saturn](#planet-saturn)
   - [Turbulent ABL](#turbulent-abl)
   - [Shallow cumuli](#shallow-cumuli)
 - [Examples available in this branch](#examples-available-in-this-branch)
