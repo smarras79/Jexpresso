@@ -213,7 +213,11 @@ $$
 ## 4. 2D ideal GLM-MHD — `orszagTangBormanis2024`
 
 `compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_2D)` in `src/kernel/physics/SGS.jl`,
-selected with `:visc_model => DSGS_MHD()`.
+selected with `:visc_model => DSGS_MHD()`. Also used, with `:dsgs_gamma => 1.05`,
+by the stratified flux-emergence case
+[`problems/MHD/fluxEmergenceSon2025`](problems/MHD/fluxEmergenceSon2025/README.md),
+where the same model regularizes the fast/slow/intermediate shocks of an
+emerging loop across eight decades of density.
 
 This is a separate `AbstractVT` tag rather than an extension of `DSGS()` because
 the residual set, the equation of state and the wave speed all differ from the
