@@ -381,6 +381,48 @@ function _vector_potential(Bxr, Byr, xg, yg)
     return A
 end
 
+#
+# Isolines of the raster field z(xg, yg) at the given levels by marching
+# squares, returned as one polyline pair with NaN separators so that a
+# single Plots.plot! draws them all. Used instead of Plots.contour! for
+# overlays: under GR a contour series added on top of a filled-contour
+# panel takes the PANEL's color limits as the range of its level set, so
+# the requested levels of a field with a different range are never drawn.
+#
+function _isolines(xg, yg, z, levels)
+    nx, ny = size(z)
+    xs = Float64[]; ys = Float64[]
+    interp(p1, p2, v1, v2, lev) = p1 + (lev - v1)/(v2 - v1)*(p2 - p1)
+    pts = NTuple{2,Float64}[]
+    for lev in levels
+        for j = 1:ny-1, i = 1:nx-1
+            v1 = z[i,j]; v2 = z[i+1,j]; v3 = z[i+1,j+1]; v4 = z[i,j+1]
+            (isfinite(v1) && isfinite(v2) && isfinite(v3) && isfinite(v4)) || continue
+            empty!(pts)
+            # edge crossings: bottom (1-2), right (2-3), top (4-3), left (1-4)
+            if (v1 < lev) != (v2 < lev); push!(pts, (interp(xg[i], xg[i+1], v1, v2, lev), yg[j]));   end
+            if (v2 < lev) != (v3 < lev); push!(pts, (xg[i+1], interp(yg[j], yg[j+1], v2, v3, lev))); end
+            if (v4 < lev) != (v3 < lev); push!(pts, (interp(xg[i], xg[i+1], v4, v3, lev), yg[j+1])); end
+            if (v1 < lev) != (v4 < lev); push!(pts, (xg[i], interp(yg[j], yg[j+1], v1, v4, lev)));   end
+            np = length(pts)
+            if np == 2
+                push!(xs, pts[1][1], pts[2][1], NaN); push!(ys, pts[1][2], pts[2][2], NaN)
+            elseif np == 4
+                # saddle cell: pair the crossings by the cell-center value
+                vc = 0.25*(v1 + v2 + v3 + v4)
+                if (vc < lev) == (v1 < lev)
+                    push!(xs, pts[1][1], pts[2][1], NaN, pts[3][1], pts[4][1], NaN)
+                    push!(ys, pts[1][2], pts[2][2], NaN, pts[3][2], pts[4][2], NaN)
+                else
+                    push!(xs, pts[1][1], pts[4][1], NaN, pts[2][1], pts[3][1], NaN)
+                    push!(ys, pts[1][2], pts[4][2], NaN, pts[2][2], pts[3][2], NaN)
+                end
+            end
+        end
+    end
+    return xs, ys
+end
+
 function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing)
 
     """
@@ -525,7 +567,9 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
             Lref  = 0.09*Lx                 # drawn length of the reference speed
             scale = Lref/ref
             xs = Float64[]; ys = Float64[]; us = Float64[]; vs = Float64[]
+            vmin = 0.01*ref          # vectors below 1% of the reference speed are not drawn
             for j in jy, i in ix
+                sqrt(Ur[i,j]^2 + Vr[i,j]^2) >= vmin || continue
                 push!(xs, xg[i]); push!(ys, yg[j])
                 push!(us, scale*Ur[i,j]); push!(vs, scale*Vr[i,j])
             end
@@ -533,20 +577,31 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         end
     end
 
+    flines = nothing
+    if Araster !== nothing
+        amin, amax = extrema(Araster)
+        nlev = get(inputs, :plot_fieldlines_levels, 40)
+        if amax > amin
+            lev    = collect(range(amin, amax, length=nlev + 2)[2:end-1])
+            flines = _isolines(xg, yg, Araster, lev)
+        end
+    end
+
+    # Arrow heads: the small open head, explicitly — GR's default closed
+    # head is drawn at full size even for a zero-length vector.
+    arrowhead = Plots.arrow(:simple, :head, 0.1, 0.1)
+
     function _overlay!(plt)
-        if Araster !== nothing
-            Plots.contour!(plt, xg, yg, Araster';
-                           levels = get(inputs, :plot_fieldlines_levels, 40),
-                           color = :black, linewidth = 0.8,
-                           colorbar_entry = false)
+        if flines !== nothing
+            Plots.plot!(plt, flines[1], flines[2]; color = :black, linewidth = 0.8, label = "")
         end
         if quiv !== nothing
             xs, ys, us, vs, Lref, ref = quiv
-            Plots.quiver!(plt, xs, ys; quiver = (us, vs), color = :white, linewidth = 0.6)
+            Plots.quiver!(plt, xs, ys; quiver = (us, vs), color = :white, linewidth = 0.6, arrow = arrowhead)
             # reference arrow, bottom-left corner
             x0 = xmin + 0.02*Lx
             y0 = ymin + 0.05*Ly
-            Plots.quiver!(plt, [x0], [y0]; quiver = ([Lref], [0.0]), color = :white, linewidth = 1.2)
+            Plots.quiver!(plt, [x0], [y0]; quiver = ([Lref], [0.0]), color = :white, linewidth = 1.2, arrow = arrowhead)
             Plots.annotate!(plt, x0 + Lref + 0.01*Lx, y0, Plots.text(string("= ", ref), 8, :white, :left))
         end
         return plt
@@ -609,7 +664,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
                             ylabel = ylab,
                             title = string(label, "  ", title),
                             show = false,
-                            size = (wfig, hfig))
+                            size = (wfig, hfig),
+                            bottom_margin = 5Plots.mm, left_margin = 3Plots.mm)
         _add_lines!(plt)
         if overlay_on === nothing || var in overlay_on
             _overlay!(plt)
@@ -654,7 +710,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
                                   ylabel = ylab,
                                   title = string(name, "  ", title),
                                   show = false,
-                                  size = (wfig, hfig))
+                                  size = (wfig, hfig),
+                                  bottom_margin = 5Plots.mm, left_margin = 3Plots.mm)
             if !lmatrix
                 _savefig_silent(pltμ, string(OUTPUT_DIR, "/", name, "-it", iout, ".png"))
             end
