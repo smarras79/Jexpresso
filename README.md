@@ -393,6 +393,27 @@ finished run by `julia --project=. tools/plot_orszag_tang.jl`; see the
 
 
 
+## Magneto-Hydrodynamics (MHD), flux emergence in the solar atmosphere:
+
+The two-dimensional emergence of a horizontal magnetic flux sheet through a
+two-temperature (chromosphere + corona) stratified atmosphere — the nonlinear
+Parker instability of Shibata et al. (1989) — with the setup of Son, Jang &
+Magara, *ApJS* **277**:46 (2025): γ = 1.05, [0, 80 H₀] × [0, 35 H₀],
+t ∈ [0, 54 τ₀]. The problem is defined in
+[`problems/MHD/fluxEmergenceSon2025`](problems/MHD/fluxEmergenceSon2025)
+(see its `README.md` and `EQUATIONS.md`).
+
+```bash
+mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025
+```
+
+Stabilized with **DynSGS**, integrated with Carpenter–Kennedy 2N54 on the
+coarsest N = 4 grid the problem admits (80×35 elements). The solver writes PNGs
+styled after the paper's figures (log₁₀ density on the paper's `jet` scale
+with magnetic field lines and velocity vectors; centerline profiles of the
+rise velocity, Alfvén speed, field and density on the axes of its Fig. 5)
+directly, gathered on one rank under MPI.
+
 ## Cloud simulation: shallow cumuli with BOMEX conditions:
 
 ```julia

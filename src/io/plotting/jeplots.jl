@@ -176,13 +176,15 @@ end
 # require the silent export path, which closes the GKS session and with
 # it the window -- that is what :plot_matrix => false selects.
 #
-function render_plot_matrix(lmatrix, plts, OUTPUT_DIR, iout; wfig=600, hfig=400)
+function render_plot_matrix(lmatrix, plts, OUTPUT_DIR, iout; wfig=600, hfig=400, piece=nothing)
     lmatrix || return nothing
     nplt = length(plts)
     nplt == 0 && return nothing
-    comm    = get_mpi_comm()
-    mpisize = MPI.Comm_size(comm)
-    piece   = mpisize > 1 ? string("-rank", MPI.Comm_rank(comm)) : ""
+    if piece === nothing
+        comm    = get_mpi_comm()
+        mpisize = MPI.Comm_size(comm)
+        piece   = mpisize > 1 ? string("-rank", MPI.Comm_rank(comm)) : ""
+    end
     try
         ncols = ceil(Int, sqrt(nplt))
         nrows = ceil(Int, nplt/ncols)
@@ -348,6 +350,37 @@ function _grid_nearest(x, y, v, xg, yg)
     return z
 end
 
+#
+# Concatenate what MPI.gather hands back on the root (a vector of the
+# per-rank arrays, or already one flat array depending on the MPI.jl
+# version) into one flat vector.
+#
+_flat_gathered(g::AbstractVector{<:AbstractArray}) = reduce(vcat, g)
+_flat_gathered(g) = g
+
+#
+# In-plane vector potential A on a raster grid from the rasterized field
+# components (Bx, By):  Bx = ∂A/∂y, By = -∂A/∂x, i.e.
+#
+#   A(x, y) = ∫₀ʸ Bx(x, y') dy'  -  ∫₀ˣ By(x', y₀) dx'
+#
+# by cumulative trapezoids. Its isocontours are the magnetic field lines
+# (exact for a divergence-free field, and a faithful rendering otherwise).
+#
+function _vector_potential(Bxr, Byr, xg, yg)
+    nx, ny = size(Bxr)
+    A = zeros(nx, ny)
+    # bottom row: -∫ By dx
+    for i = 2:nx
+        A[i,1] = A[i-1,1] - 0.5*(Byr[i,1] + Byr[i-1,1])*(xg[i] - xg[i-1])
+    end
+    # columns: +∫ Bx dy
+    for i = 1:nx, j = 2:ny
+        A[i,j] = A[i,j-1] + 0.5*(Bxr[i,j] + Bxr[i,j-1])*(yg[j] - yg[j-1])
+    end
+    return A
+end
+
 function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing)
 
     """
@@ -358,29 +391,72 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         to fields-it<iout>.png. With :plot_matrix => false one silent
         PNG per variable is written instead (<var>-it<iout>.png) and no
         window is opened (see render_plot_matrix for why these two modes
-        are mutually exclusive). On multi-rank runs each rank writes its
-        own piece with a -rankN suffix.
+        are mutually exclusive). Under MPI the nodal data of all ranks is
+        gathered on rank 0, which renders the whole domain; the other
+        ranks return at once.
 
-        Inputs honoured: :plot_matrix, :plot_colormap (default :balance —
-        a desaturated diverging map that brings the waves out),
-        :plot_vlines/:plot_hlines.
+        Inputs honoured (all optional, see mod_inputs.jl for the defaults):
+          :plot_matrix, :plot_colormap (default :balance — a desaturated
+          diverging map that brings the waves out), :plot_vlines/:plot_hlines,
+          :plot_xlabel/:plot_ylabel, :plot_raster_nmax,
+          :plot_vars             names of the variables to render (default: all)
+          :plot_log10            names rendered as log10(var)
+          :plot_clims            Dict(name => (lo, hi)) fixed color range, data clamped to it
+          :plot_fieldlines       (Bx_name, By_name): overlay the isocontours of the
+                                 vector potential of that in-plane field (black lines,
+                                 :plot_fieldlines_levels of them)
+          :plot_vectors          (u_name, v_name): overlay a velocity-vector field
+                                 (white arrows, :plot_vectors_n = (nx, ny) arrows,
+                                 reference arrow of speed :plot_vectors_ref)
+          :plot_overlay_on       names of the panels that get the overlays (default: all)
+          :plot_dsgs             render the μ_dsgs panels of a DynSGS run (default: true)
+          :plot_profile_x        x at which a vertical profile figure profile-it<iout>.png
+                                 of :plot_profile_vars is written (nodes on that line,
+                                 or the nearest raster column); :plot_profile_log10,
+                                 :plot_profile_ylims (Dict(name => (lo, hi))) and
+                                 :plot_profile_vlines (heights marked) style it.
     """
 
     comm    = get_mpi_comm()
     rank    = MPI.Comm_rank(comm)
     mpisize = MPI.Comm_size(comm)
-    piece   = mpisize > 1 ? string("-rank", rank) : ""
 
     npoin = mesh.npoin
-    xn = view(mesh.x, 1:npoin)
-    yn = view(mesh.y, 1:npoin)
+    names = [(varnames === nothing || length(varnames) < ivar) ?
+                 string("ivar", ivar) : string(varnames[ivar]) for ivar = 1:nvar]
+    nμ    = μ_nodes === nothing ? 0 : size(μ_nodes, 2)
+    μnames = [(μ_names === nothing || length(μ_names) < ieq) ?
+                  string("μ_dsgs_", ieq) : string("μ_dsgs_", μ_names[ieq]) for ieq = 1:nμ]
+
+    #
+    # Nodal data, gathered on rank 0 under MPI. Points shared by two
+    # partitions appear twice, which the nearest-neighbour raster below does
+    # not mind.
+    #
+    xn = collect(view(mesh.x, 1:npoin))
+    yn = collect(view(mesh.y, 1:npoin))
+    qv = [collect(view(q, (ivar - 1)*npoin + 1:ivar*npoin)) for ivar = 1:nvar]
+    μv = [collect(view(μ_nodes, 1:npoin, ieq)) for ieq = 1:nμ]
+    if mpisize > 1
+        xg_ = MPI.gather(xn, comm)
+        yg_ = MPI.gather(yn, comm)
+        qg_ = [MPI.gather(qv[ivar], comm) for ivar = 1:nvar]
+        μg_ = [MPI.gather(μv[ieq], comm) for ieq = 1:nμ]
+        rank == 0 || return nothing
+        xn = _flat_gathered(xg_)
+        yn = _flat_gathered(yg_)
+        qv = [_flat_gathered(qg_[ivar]) for ivar = 1:nvar]
+        μv = [_flat_gathered(μg_[ieq]) for ieq = 1:nμ]
+    end
+    npts = length(xn)
+
     xmin, xmax = extrema(xn)
     ymin, ymax = extrema(yn)
     Lx = xmax - xmin
     Ly = ymax - ymin
 
     # raster resolution proportional to the domain aspect ratio
-    nmax = 400
+    nmax = get(inputs, :plot_raster_nmax, 400)
     if Lx >= Ly
         nxi = nmax
         nyi = max(64, round(Int, nmax*Ly/Lx))
@@ -398,24 +474,124 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
 
     cmap = Plots.cgrad(Symbol(get(inputs, :plot_colormap, :balance)))
 
-    lmatrix = get(inputs, :plot_matrix, true)
+    lmatrix    = get(inputs, :plot_matrix, true)
+    xlab       = string(get(inputs, :plot_xlabel, "x"))
+    ylab       = string(get(inputs, :plot_ylabel, "y"))
+    plot_vars  = get(inputs, :plot_vars, nothing)
+    logvars    = get(inputs, :plot_log10, String[])
+    clims_d    = get(inputs, :plot_clims, Dict{String,Any}())
+    fieldlines = get(inputs, :plot_fieldlines, nothing)
+    vectors    = get(inputs, :plot_vectors, nothing)
+    overlay_on = get(inputs, :plot_overlay_on, nothing)
+    vlines     = get(inputs, :plot_vlines, "empty")
+    hlines     = get(inputs, :plot_hlines, "empty")
+
+    findvar(name) = findfirst(==(string(name)), names)
+
+    # Rasterize on demand, once per variable
+    raster = Dict{Int, Matrix{Float64}}()
+    getraster(ivar) = get!(raster, ivar) do
+        _grid_nearest(xn, yn, qv[ivar], xg, yg)
+    end
+
+    #
+    # Overlays: magnetic field lines (isocontours of the vector potential)
+    # and a velocity-vector field, both built on the raster.
+    #
+    Araster = nothing
+    if fieldlines !== nothing
+        ib = findvar(fieldlines[1]); jb = findvar(fieldlines[2])
+        if ib === nothing || jb === nothing
+            @warn " plot_triangulation: :plot_fieldlines => $(fieldlines) names a variable that is not in the output set $(names); no field lines drawn."
+        else
+            Araster = _vector_potential(getraster(ib), getraster(jb), xg, yg)
+        end
+    end
+    quiv = nothing
+    if vectors !== nothing
+        iu = findvar(vectors[1]); iv = findvar(vectors[2])
+        if iu === nothing || iv === nothing
+            @warn " plot_triangulation: :plot_vectors => $(vectors) names a variable that is not in the output set $(names); no vectors drawn."
+        else
+            Ur = getraster(iu); Vr = getraster(iv)
+            nqx, nqy = get(inputs, :plot_vectors_n, (30, 13))
+            ix  = unique(round.(Int, range(1, nxi, length=nqx + 2)[2:end-1]))
+            jy  = unique(round.(Int, range(1, nyi, length=nqy + 2)[2:end-1]))
+            ref = get(inputs, :plot_vectors_ref, nothing)
+            if ref === nothing
+                ref = maximum(sqrt.(Ur.^2 .+ Vr.^2))
+                ref = ref > 0 ? ref : 1.0
+            end
+            Lref  = 0.09*Lx                 # drawn length of the reference speed
+            scale = Lref/ref
+            xs = Float64[]; ys = Float64[]; us = Float64[]; vs = Float64[]
+            for j in jy, i in ix
+                push!(xs, xg[i]); push!(ys, yg[j])
+                push!(us, scale*Ur[i,j]); push!(vs, scale*Vr[i,j])
+            end
+            quiv = (xs, ys, us, vs, Lref, ref)
+        end
+    end
+
+    function _overlay!(plt)
+        if Araster !== nothing
+            Plots.contour!(plt, xg, yg, Araster';
+                           levels = get(inputs, :plot_fieldlines_levels, 40),
+                           color = :black, linewidth = 0.8,
+                           colorbar_entry = false)
+        end
+        if quiv !== nothing
+            xs, ys, us, vs, Lref, ref = quiv
+            Plots.quiver!(plt, xs, ys; quiver = (us, vs), color = :white, linewidth = 0.6)
+            # reference arrow, bottom-left corner
+            x0 = xmin + 0.02*Lx
+            y0 = ymin + 0.05*Ly
+            Plots.quiver!(plt, [x0], [y0]; quiver = ([Lref], [0.0]), color = :white, linewidth = 1.2)
+            Plots.annotate!(plt, x0 + Lref + 0.01*Lx, y0, Plots.text(string("= ", ref), 8, :white, :left))
+        end
+        return plt
+    end
+
+    function _add_lines!(plt)
+        if !(vlines == "empty")
+            for i = 1:size(vlines, 1)
+                Plots.vline!(plt, [vlines[i]]; color = :red, linestyle = :dash, label = "")
+            end
+        end
+        if !(hlines == "empty")
+            for i = 1:size(hlines, 1)
+                Plots.hline!(plt, [hlines[i]]; color = :red, linestyle = :dash, label = "")
+            end
+        end
+        return plt
+    end
 
     plts = []
-    for ivar=1:nvar
-        idx  = (ivar - 1)*npoin
-        var  = (varnames === nothing || length(varnames) < ivar) ?
-                   string("ivar", ivar) : string(varnames[ivar])
-        fout_name = string(OUTPUT_DIR, "/", var, piece, "-it", iout, ".png")
+    for ivar = 1:nvar
+        var = names[ivar]
+        (plot_vars === nothing || var in plot_vars) || continue
+        fout_name = string(OUTPUT_DIR, "/", var, "-it", iout, ".png")
 
-        qvar = @view q[idx+1:idx+npoin]
+        zg    = copy(getraster(ivar))
+        label = var
+        if var in logvars
+            zg    = log10.(max.(zg, 1e-300))
+            label = string("log10(", var, ")")
+        end
 
-        # Color range: explicit, and padded when the field is uniform (a
-        # degenerate range breaks the colorbar).
-        minq = minimum(qvar)
-        maxq = maximum(qvar)
-        clims = maxq > minq ? (minq, maxq) : (minq - 0.5, maxq + 0.5)
-
-        zg = _grid_nearest(xn, yn, qvar, xg, yg)
+        # Color range: fixed by the user (data clamped to it so that the
+        # out-of-range values take the end colors, as a colorbar with
+        # "extend" would show them), otherwise the data range, padded when
+        # the field is uniform (a degenerate range breaks the colorbar).
+        if haskey(clims_d, var)
+            clims = (Float64(clims_d[var][1]), Float64(clims_d[var][2]))
+            zg    = clamp.(zg, clims[1], clims[2])
+        else
+            finite = filter(isfinite, zg)
+            minq = isempty(finite) ? 0.0 : minimum(finite)
+            maxq = isempty(finite) ? 0.0 : maximum(finite)
+            clims = maxq > minq ? (minq, maxq) : (minq - 0.5, maxq + 0.5)
+        end
 
         # Filled contours (no contour lines) of the rasterized field
         plt = Plots.contourf(xg, yg, zg';
@@ -429,23 +605,14 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
                             xlims = (xmin, xmax),
                             ylims = (ymin, ymax),
                             framestyle = :box,
-                            xlabel = "x",
-                            ylabel = "y",
-                            title = string(var, "  ", title),
+                            xlabel = xlab,
+                            ylabel = ylab,
+                            title = string(label, "  ", title),
                             show = false,
                             size = (wfig, hfig))
-
-        vlines = inputs[:plot_vlines]
-        hlines = inputs[:plot_hlines]
-        if !(vlines == "empty")
-            for i=1:size(vlines,1)
-                Plots.vline!(plt, [vlines[i]]; color = :red, linestyle = :dash, label = "")
-            end
-        end
-        if !(hlines == "empty")
-            for i=1:size(hlines,1)
-                Plots.hline!(plt, [hlines[i]]; color = :red, linestyle = :dash, label = "")
-            end
+        _add_lines!(plt)
+        if overlay_on === nothing || var in overlay_on
+            _overlay!(plt)
         end
 
         if !lmatrix
@@ -464,16 +631,14 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     # dynamic ρ̄μ, magnetic and ψ slots the kinematic μ — so each panel is
     # scaled to its own range and should be read against itself over time,
     # not against a neighbouring panel.
-    if μ_nodes !== nothing
-        for ieq = 1:size(μ_nodes, 2)
-            μvar = @view μ_nodes[1:npoin, ieq]
+    if nμ > 0 && get(inputs, :plot_dsgs, true)
+        for ieq = 1:nμ
+            μvar = μv[ieq]
             μmax = maximum(μvar)
             μmax > 0 || continue
 
-            name = (μ_names === nothing || length(μ_names) < ieq) ?
-                       string("μ_dsgs_", ieq) : string("μ_dsgs_", μ_names[ieq])
-
-            zgμ = _grid_nearest(xn, yn, μvar, xg, yg)
+            name = μnames[ieq]
+            zgμ  = _grid_nearest(xn, yn, μvar, xg, yg)
             pltμ = Plots.contourf(xg, yg, zgμ';
                                   color = cmap,
                                   clims = (minimum(μvar), μmax),
@@ -485,20 +650,78 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
                                   xlims = (xmin, xmax),
                                   ylims = (ymin, ymax),
                                   framestyle = :box,
-                                  xlabel = "x",
-                                  ylabel = "y",
+                                  xlabel = xlab,
+                                  ylabel = ylab,
                                   title = string(name, "  ", title),
                                   show = false,
                                   size = (wfig, hfig))
             if !lmatrix
-                _savefig_silent(pltμ, string(OUTPUT_DIR, "/", name, piece, "-it", iout, ".png"))
+                _savefig_silent(pltμ, string(OUTPUT_DIR, "/", name, "-it", iout, ".png"))
             end
             push!(plts, pltμ)
         end
     end
 
-    render_plot_matrix(lmatrix, plts, OUTPUT_DIR, iout; wfig=wfig, hfig=hfig)
+    #
+    # Vertical profiles at x = :plot_profile_x (e.g. the centerline of a
+    # rising loop): the nodes lying on that line if the mesh has any,
+    # otherwise the nearest raster column.
+    #
+    xp = get(inputs, :plot_profile_x, nothing)
+    if xp !== nothing
+        pvars = get(inputs, :plot_profile_vars, nothing)
+        pvars = pvars === nothing ? names : pvars
+        plog  = get(inputs, :plot_profile_log10, String[])
+        pyl   = get(inputs, :plot_profile_ylims, Dict{String,Any}())
+        pvl   = get(inputs, :plot_profile_vlines, Float64[])
+
+        sel   = findall(ip -> abs(xn[ip] - xp) <= 1e-6*Lx, 1:npts)
+        use_nodes = length(sel) >= 3
+        if use_nodes
+            order = sortperm(yn[sel])
+            zs    = yn[sel][order]
+        else
+            ii = argmin(abs.(xg .- xp))
+            zs = collect(yg)
+        end
+
+        pl = []
+        for var in pvars
+            ivp = findvar(var)
+            ivp === nothing && continue
+            vals = use_nodes ? qv[ivp][sel][order] : getraster(ivp)[ii, :]
+            lab  = string(var)
+            if var in plog
+                vals = log10.(max.(vals, 1e-300))
+                lab  = string("log10(", var, ")")
+            end
+            p = Plots.scatter(zs, vals;
+                              markersize = 2.0, markerstrokewidth = 0, color = :steelblue,
+                              xlabel = ylab, ylabel = lab,
+                              xlims = (ymin, ymax),
+                              title = string(lab, " at ", xlab, " = ", xp, "  ", title),
+                              titlefontsize = 9,
+                              legend = false, framestyle = :box, show = false)
+            if haskey(pyl, var)
+                Plots.ylims!(p, (Float64(pyl[var][1]), Float64(pyl[var][2])))
+            end
+            for v in pvl
+                Plots.vline!(p, [v]; color = :black, linestyle = :dashdot, label = "")
+            end
+            push!(pl, p)
+        end
+        if !isempty(pl)
+            np  = length(pl)
+            fig = Plots.plot(pl...; layout = (1, np), size = (420*np, 360),
+                             left_margin = 6Plots.mm, bottom_margin = 6Plots.mm, show = false)
+            _savefig_silent(fig, string(OUTPUT_DIR, "/profile-it", iout, ".png"))
+        end
+    end
+
+    render_plot_matrix(lmatrix, plts, OUTPUT_DIR, iout; wfig=wfig, hfig=hfig, piece="")
+
 end
+
 function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; nvar=1) nothing end
 function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; nvar=1) nothing end
 

@@ -330,6 +330,36 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
       inputs[:plot_matrix] = true
     end
 
+    # 2D PNG writer extras (plot_triangulation in plotting/jeplots.jl):
+    # variable selection, log10 rendering, fixed color ranges, magnetic
+    # field-line and velocity-vector overlays, a vertical-profile figure.
+    # All optional; these defaults reproduce the plain behaviour. See
+    # problems/MHD/fluxEmergenceSon2025/user_inputs.jl for a full use.
+    for (key, val) in (
+        (:plot_vars,             nothing),            # names to render (nothing = all output variables)
+        (:plot_log10,            String[]),           # names rendered as log10(var)
+        (:plot_clims,            Dict{String,Any}()), # name => (lo, hi) fixed color range
+        (:plot_fieldlines,       nothing),            # (Bx, By) names -> vector-potential isocontours
+        (:plot_fieldlines_levels, 40),
+        (:plot_vectors,          nothing),            # (u, v) names -> arrow overlay
+        (:plot_vectors_ref,      nothing),            # speed of the reference arrow (nothing = max)
+        (:plot_vectors_n,        (30, 13)),           # arrows per direction
+        (:plot_overlay_on,       nothing),            # panels that get the overlays (nothing = all)
+        (:plot_xlabel,           "x"),
+        (:plot_ylabel,           "y"),
+        (:plot_time_unit,        " s"),               # appended to "t = ..." in the titles
+        (:plot_dsgs,             true),               # μ_dsgs panels of a DynSGS run
+        (:plot_raster_nmax,      400),                # raster points along the longer side
+        (:plot_profile_x,        nothing),            # x of the vertical-profile figure (nothing = none)
+        (:plot_profile_vars,     nothing),
+        (:plot_profile_log10,    String[]),
+        (:plot_profile_ylims,    Dict{String,Any}()),
+        (:plot_profile_vlines,   Float64[]))
+        if(!haskey(inputs, key))
+            inputs[key] = val
+        end
+    end
+
     if(!haskey(inputs, :plot_axis))
       inputs[:plot_axis] = "empty"
     end

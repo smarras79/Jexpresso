@@ -180,17 +180,40 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
     end
 
-    title = @sprintf "t = %.4f s" t
+    #
+    # Render the OUTPUT variables (qoutvars, filled by the case's
+    # user_uout!) exactly as the VTK writer does, so that a case can plot
+    # derived quantities (velocity, pressure, temperature, ...) and not only
+    # the conserved set. Cases without user_uout! get their solution
+    # variables back unchanged (callback_user_uout!).
+    #
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+    qplot     = q
+    nplot     = nvar
+    plotnames = varnames
+    if (inputs[:backend] == CPU())
+        npoin   = mesh.npoin
+        noutvar = length(outvarnames)
+        qout    = zeros(Float64, npoin, noutvar)
+        u2uaux!(uaux, q, nvar, npoin)
+        call_user_uout(qout, uaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                       μ_dsgs_pnode=μ_dsgs_pnode)
+        qplot     = vec(qout)
+        nplot     = noutvar
+        plotnames = outvarnames
+    end
+
+    title = @sprintf("t = %.4f%s", t, string(get(inputs, :plot_time_unit, " s")))
     if (inputs[:lplot_surf3d])
-        plot_surf3d(SD, mesh, q, title, OUTPUT_DIR;
-                    iout=iout, nvar=nvar,
-                    smoothing_factor=inputs[:smoothing_factor], varnames=varnames)
+        plot_surf3d(SD, mesh, qplot, title, OUTPUT_DIR;
+                    iout=iout, nvar=nplot,
+                    smoothing_factor=inputs[:smoothing_factor], varnames=plotnames)
     else
         # DSGS runs render the per-equation eddy viscosity as extra panels
         # of the same output time (the per-node broadcast is μ_dsgs_pnode).
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
-        plot_triangulation(SD, mesh, q, title, OUTPUT_DIR, inputs;
-                           iout=iout, nvar=nvar, varnames=varnames,
+        plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
+                           iout=iout, nvar=nplot, varnames=plotnames,
                            μ_nodes=μ_nodes, μ_names=varnames)
     end
 
