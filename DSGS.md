@@ -322,9 +322,20 @@ density spans eight decades between the photosphere and the corona:
 
 - **`:dsgs_local_norms => true`** normalizes the residual of equation $i$ in
   element $e$ by the spread of $q_i$ over that element,
-  $\lVert q_i - \langle q_i\rangle_e\rVert_{\infty,e}$, floored at the same
-  $10^{-3}$ fraction of the *element-mean* scales of §4.2, instead of the
-  domain spread. With the domain norm the dense bottom of the atmosphere sets
+  $\lVert q_i - \langle q_i\rangle_e\rVert_{\infty,e}$, floored at
+  `:dsgs_local_rel` (default 1) times the *element-mean* scales of §4.2
+  ($\rho_e$, $\rho_e c_e$, $\rho_e c_e^2$, $\sqrt{\rho_e}c_e$), instead of the
+  domain spread. Unlike the domain norms, whose $10^{-3}$ floors only guard
+  against a degenerate spread, here the floors *are* the normalization of a
+  quiescent element (the spread of $\rho\mathbf{v}$ in an atmosphere at rest
+  is zero): with a $10^{-3}$ floor a residual of $2.5\times10^{-3}\rho c$ per
+  unit time already drove $\mu$ to the wave-speed cap over the whole quiet
+  chromosphere of the flux-emergence case, whose sheet then eroded by
+  resistive diffusion (12% of its peak field in $2\tau_0$) and sank at
+  $0.05\,C_s$; at the default value the same run keeps $\mu \approx 4\times10^{-4}$
+  in the sheet, its peak field to four digits, and a horizontal-mean vertical
+  velocity below $10^{-4}$, while a grid-scale sawtooth (ratio $\sim v_{saw}/\Delta$)
+  or a shock ($\sim c/\Delta$) still saturates the cap. With the domain norm the dense bottom of the atmosphere sets
   the scale of $\rho$, $\rho\mathbf{v}$ and $E$, and a residual in the corona
   — where those fields are $10^{-8}$ of it — is invisible: in the flux-emergence
   run a grid-scale sawtooth grew across the chromosphere–corona transition with

@@ -84,6 +84,7 @@ function user_inputs()
         # stratified element by ρ̄/ρ, up to 25 at the transition region,
         # past the explicit viscous limit).
         :dsgs_local_norms => true,
+        :dsgs_local_rel   => 1.0,   # floor of the element spread = the local ρ, ρc, ρc², √ρc themselves (see SGS.jl)
         :dsgs_nodal_rho   => true,
         :lrichardson      => false,      # gravity enters through user_source.jl, not the SGS closure
         # Slot 4 carries the TOTAL ENERGY ρE: "energy" keeps the kernel's τ·u

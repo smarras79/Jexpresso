@@ -79,7 +79,10 @@ quadruples (twice the elements, twice the steps).
   absorbing layer.
 - **Initial condition** (`initialize.jl`): the paper's Eqs. (1)–(5). The
   magnetostatic equilibrium is integrated numerically on a $10^{-4}H_0$
-  table and interpolated at the nodes. **The paper never states the
+  table and interpolated at the nodes, and the residual of the *discrete*
+  vertical balance of that interpolant (at most $4\times10^{-4}$ of $\rho g$
+  on the shipped mesh) is subtracted as a static source (`fe_well_balanced`),
+  so the initial state is an exact equilibrium of the discrete operator. **The paper never states the
   plasma beta $\beta_*$ of the sheet**; $\beta_* = 1$ was inferred from
   its Fig. 1(b) (table in EQUATIONS.md §3) and is a `Ref`
   (`fe_beta_star`).
@@ -89,9 +92,12 @@ quadruples (twice the elements, twice the steps).
   `:dsgs_local_norms` (per-element normalization of the residual — with
   the domain norm the $10^8$-times denser photosphere hides the corona from
   the sensor, and a grid-scale sawtooth grew across the transition region
-  at $t \approx 1.5\tau_0$) and `:dsgs_nodal_rho` (dynamic coefficient with
-  the nodal density — the element mean over-diffuses the light side of a
-  transition-region element by a factor 25 and breaks the viscous CFL).
+  at $t \approx 1.5\tau_0$; its floor `:dsgs_local_rel = 1` measures the
+  residual against the local $\rho c/\tau$, a $10^{-3}$ floor saturated the
+  model over the whole quiet chromosphere and eroded the sheet) and
+  `:dsgs_nodal_rho` (dynamic coefficient with the nodal density — the
+  element mean over-diffuses the light side of a transition-region element
+  by a factor 25 and breaks the viscous CFL).
   The paper's shocks (fast and intermediate along the loop sides, slow
   near the footpoints) are captured by its HLLD/WENO machinery; here the
   residual-based eddy viscosity regularizes them. No filter, no

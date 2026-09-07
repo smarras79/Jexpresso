@@ -1127,6 +1127,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 Int(params.mesh.nelem), Int(params.mesh.ngl);
                                 lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
                                 llocal_norms  = get(params.inputs, :dsgs_local_norms, false),
+                                local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
                                 lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false))
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,

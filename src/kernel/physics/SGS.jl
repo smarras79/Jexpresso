@@ -1185,8 +1185,9 @@ end
 #
 #  *  llocal_norms (:dsgs_local_norms). The residual of equation i is
 #     normalized by the spread of q_i over the ELEMENT, ‖q_i − ⟨q_i⟩_e‖∞,e,
-#     floored at the same 10⁻³ fraction of the element-mean scales, instead
-#     of the domain spread. With the domain norm the dense bottom of the
+#     floored at local_rel (:dsgs_local_rel, default 1) times the
+#     element-mean scales ρ_e, ρ_e c_e, ρ_e c_e², √ρ_e c_e, instead of the
+#     domain spread. With the domain norm the dense bottom of the
 #     atmosphere sets the scale of ρ, ρv and E, and a residual in the
 #     corona — where those fields are 10⁻⁸ of it — is invisible: a
 #     grid-scale sawtooth in the transition region grew unchecked with μ
@@ -1221,6 +1222,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
                                  llocal_norms::Bool=false,
+                                 local_rel::TT=one(TT),
                                  lnodal_rho::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
@@ -1329,17 +1331,29 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                     den_e[ieq] = max(den_e[ieq], abs(q[ip,ieq] - avg_e[ieq]))
                 end
             end
+            # Floors at local_rel × the element's natural scales (ρ_e, ρ_e c_e,
+            # ρ_e c_e², √ρ_e c_e). Unlike the domain norms, whose 10⁻³ floors
+            # only guard against a degenerate spread, these floors ARE the
+            # normalization of a quiescent element: the spread of ρv in an
+            # atmosphere at rest is zero, and with a 10⁻³ floor a residual
+            # of 2.5·10⁻³ ρc per unit time already drove μ to the wave-speed
+            # cap over the whole quiet chromosphere of the flux-emergence
+            # case (measured), whose sheet then eroded by resistive diffusion
+            # (12% of its peak field in 2 τ₀) and sank. With local_rel = 1 the
+            # ratio is the residual relative to the local physical rate ρc/τ,
+            # which leaves a smooth settling flow at μ ~ 10⁻³ and still fires
+            # on a grid-scale sawtooth (ratio ~ v_saw/Δ) or a shock (~ c/Δ).
             ρ_e = max(abs(avg_e[1]), eps)
             p_e = γm1*max(avg_e[4] - TT(0.5)*(avg_e[2]*avg_e[2] + avg_e[3]*avg_e[3] + avg_e[5]*avg_e[5])/ρ_e
                           - TT(0.5)*(avg_e[6]*avg_e[6] + avg_e[7]*avg_e[7] + avg_e[8]*avg_e[8]), zero(TT))
             c_e = sqrt(max(γ*p_e/ρ_e, eps))
-            den_e[1] = max(den_e[1], rel*ρ_e)
-            mom_e    = rel*ρ_e*c_e
+            den_e[1] = max(den_e[1], local_rel*ρ_e)
+            mom_e    = local_rel*ρ_e*c_e
             den_e[2] = max(den_e[2], mom_e)
             den_e[3] = max(den_e[3], mom_e)
-            den_e[4] = max(den_e[4], rel*ρ_e*c_e*c_e)
+            den_e[4] = max(den_e[4], local_rel*ρ_e*c_e*c_e)
             if neqs >= 5; den_e[5] = max(den_e[5], mom_e); end
-            b_e = rel*sqrt(ρ_e)*c_e
+            b_e = local_rel*sqrt(ρ_e)*c_e
             for ieq = 6:min(neqs,8)
                 den_e[ieq] = max(den_e[ieq], b_e)
             end

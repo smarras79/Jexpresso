@@ -25,7 +25,13 @@
 #    The paper adopts α_p = 0.2 for all WENO schemes (its Section 4.2). Δh is
 #    the smallest LGL nodal spacing of the mesh, measured in initialize.jl.
 #
-# 3. Absorbing layer: Rayleigh damping of the departure from the initial
+# 3. Well-balanced correction: the LGL interpolant of the magnetostatic
+#    state is not a discrete equilibrium where its tanh transitions are
+#    under-resolved; the residual of the vertical momentum balance of the
+#    initial state, tabulated against height by initialize.jl, is subtracted
+#    as a static body force (S[3] += -R(z)). See initialize.jl, item 5.
+#
+# 4. Absorbing layer: Rayleigh damping of the departure from the initial
 #    (magnetostatic) state above z_s,
 #
 #        S[i] -= σ(z) (q[i] - q_e[i]),   σ(z) = σ_max sin²[ (π/2) (z - z_s)/(Z_max - z_s) ],
@@ -79,6 +85,12 @@ function user_source!(S,
     # Gravity, g = (0, -g₀): momentum and energy (ρ V·g = -ρ v g₀)
     S[3] = -ρ*g_mhd
     S[4] = -ρv*g_mhd
+
+    # Well-balanced correction: minus the discrete residual of the vertical
+    # balance of the initial state (initialize.jl, header item 5)
+    if fe_well_balanced[]
+        S[3] += fe_wb_lookup(y)
+    end
 
     # GLM ψ damping: S_ψ = -(c_h²/c_p²) ψ = -(α_p c_h/Δh) ψ
     S[9] = -(glm_alpha_p_mhd[]*c_h_mhd[]/glm_dh_mhd[])*q[9]

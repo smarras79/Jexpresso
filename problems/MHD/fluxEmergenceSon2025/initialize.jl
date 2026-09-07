@@ -58,6 +58,22 @@
 # (as is ψ), but they are carried along because the equation set implemented
 # here is the full nine-field GLM-MHD system.
 #
+# 5. Discrete (well-balanced) equilibrium. The continuous state above is in
+#    exact magnetostatic balance; its LGL interpolant is not, exactly. The
+#    discrete residual of the vertical momentum balance of the initial state
+#    is evaluated once (fe_well_balanced_table) and its negative is added as
+#    a static source by user_source.jl, so that the initial state is an exact
+#    equilibrium of the DISCRETE operator and no spurious settling flow, and
+#    no spurious DynSGS residual, is seeded. On the shipped 80×35 mesh the
+#    residual is small — at most 4·10⁻⁴ of ρg₀, at z = 0 — so the correction
+#    is a refinement, not a rescue (the 0.2 C_s x-uniform settling seen in
+#    early runs was resistive erosion of the sheet by an over-sensitive
+#    DynSGS floor, see :dsgs_local_rel in user_inputs.jl). The residual is
+#    x-independent, so it is tabulated against height, on a virtual column of
+#    elements with the mesh's element height and LGL nodes — the same table
+#    on every MPI rank, whatever the partition. Switch off with
+#    fe_well_balanced[] = false.
+#
 # The divergence-cleaning speed c_h is set to the maximum wave speed
 # |v| + c_f of the initial condition (the coronal sound speed √25 = 5 C_s, plus
 # the perturbation) and kept constant throughout the simulation. The paper
@@ -132,6 +148,82 @@ end
     k  = clamp(1 + floor(Int, (z - ztab[1])/dz), 1, nz - 1)
     w  = clamp((z - ztab[k])/dz, 0.0, 1.0)
     return (1.0 - w)*vtab[k] + w*vtab[k+1]
+end
+
+#
+# Well-balanced correction (header item 5). Refs shared with user_source.jl.
+#
+if !@isdefined(fe_well_balanced)
+    const fe_well_balanced = Ref{Bool}(true)
+end
+if !@isdefined(fe_wb_y)
+    const fe_wb_y    = Ref{Vector{Float64}}(Float64[])   # sorted node heights
+    const fe_wb_corr = Ref{Vector{Float64}}(Float64[])   # -residual of the ρv equation at rest
+end
+
+# Lagrange derivative matrix on the nodes ξ (barycentric form)
+function fe_derivative_matrix(ξ::AbstractVector)
+    n = length(ξ)
+    w = ones(n)
+    for j = 1:n, k = 1:n
+        k == j && continue
+        w[j] /= (ξ[j] - ξ[k])
+    end
+    D = zeros(n, n)
+    for i = 1:n
+        for j = 1:n
+            i == j && continue
+            D[i,j] = (w[j]/w[i])/(ξ[i] - ξ[j])
+        end
+        D[i,i] = -sum(D[i,:])
+    end
+    return D
+end
+
+#
+# Discrete residual R(z) = -d(p + ½Bx²)/dz|_SEM - ρ g₀ of the vertical
+# momentum equation at rest, on a virtual column of uniform elements of
+# height Δy_el with the LGL node layout ξ (in [-1,1]) between 0 and ymax.
+# At an element interface the CG assembly with lumped mass averages the two
+# one-sided derivatives (equal weights for equal elements), which is what is
+# tabulated there. Returns the sorted node heights and the CORRECTION -R.
+#
+function fe_well_balanced_table(Δy_el, ξ, ymax, ztab, ptab, ρtab, Btab)
+    ngl = length(ξ)
+    ne  = max(1, round(Int, ymax/Δy_el))
+    D   = fe_derivative_matrix(ξ)
+    ys   = Float64[]
+    corr = Float64[]
+    prev_top = nothing               # residual at the top node of the element below
+    for ie = 1:ne
+        y0 = (ie - 1)*Δy_el
+        yn = [y0 + 0.5*(ξ[j] + 1.0)*Δy_el for j = 1:ngl]
+        P  = [fe_interp(ztab, ptab, y) + 0.5*fe_interp(ztab, Btab, y)^2 for y in yn]
+        ρ  = [fe_interp(ztab, ρtab, y) for y in yn]
+        dPdy = (2.0/Δy_el)*(D*P)
+        R = -dPdy .- ρ .* g_mhd
+        for j = 1:ngl
+            if j == 1 && prev_top !== nothing
+                corr[end] = -0.5*(prev_top + R[1])      # shared interface node
+            else
+                push!(ys, yn[j]); push!(corr, -R[j])
+            end
+        end
+        prev_top = R[ngl]
+    end
+    return ys, corr
+end
+
+# Correction at height y (nearest tabulated node; the table holds every
+# node height of the column, so the lookup is exact on the mesh).
+@inline function fe_wb_lookup(y)
+    ys = fe_wb_y[]
+    n  = length(ys)
+    n == 0 && return 0.0
+    k = searchsortedfirst(ys, y)
+    k > n && return fe_wb_corr[][n]
+    k == 1 && return fe_wb_corr[][1]
+    return (y - ys[k-1] < ys[k] - y) ? fe_wb_corr[][k-1] : fe_wb_corr[][k]
 end
 
 function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, TFloat)
@@ -266,6 +358,31 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
         end
     end
     glm_dh_mhd[] = MPI.Allreduce(dh_local, MPI.MIN, comm)
+
+    #
+    # Well-balanced correction table (header item 5): element height and LGL
+    # layout read off the first local element's vertical edge, then the
+    # residual of the discrete vertical balance tabulated on a virtual column.
+    #
+    if fe_well_balanced[]
+        ngl  = mesh.ngl
+        # the local index that runs along y
+        y11 = mesh.y[mesh.connijk[1,1,1]]
+        jdir_is_j = abs(mesh.y[mesh.connijk[1,1,2]] - y11) > abs(mesh.y[mesh.connijk[1,2,1]] - y11)
+        ycol = [jdir_is_j ? mesh.y[mesh.connijk[1,1,j]] : mesh.y[mesh.connijk[1,j,1]] for j = 1:ngl]
+        ylo, yhi = extrema(ycol)
+        Δy_el = yhi - ylo
+        ξ     = sort((2.0 .* (ycol .- ylo) ./ Δy_el) .- 1.0)
+        ys, corr = fe_well_balanced_table(Δy_el, ξ, ymax_g, ztab, ptab, ρtab, Btab)
+        fe_wb_y[]    = ys
+        fe_wb_corr[] = corr
+        if rank == 0
+            imax = argmax(abs.(corr))
+            @info " Well-balanced correction: $(length(ys)) node heights, max |residual| of the vertical balance = $(abs(corr[imax])) at z = $(ys[imax]) (ρg₀ there = $(fe_interp(ztab, ρtab, ys[imax])*g_mhd))"
+        end
+    else
+        fe_wb_y[] = Float64[]; fe_wb_corr[] = Float64[]
+    end
 
     if rank == 0
         @info " Flux sheet plasma beta β_* = $(fe_beta_star[]) (inferred from the paper's Fig. 1(b), see initialize.jl)"

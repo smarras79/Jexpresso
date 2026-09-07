@@ -1030,6 +1030,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_local_norms))
         inputs[:dsgs_local_norms] = false
     end
+    #   :dsgs_local_rel    with :dsgs_local_norms, the floor of the element
+    #                      spread as a fraction of the element's natural
+    #                      scales (ρ, ρc, ρc², √ρ c); 1 = the residual is
+    #                      measured against the local physical rate ρc/τ
+    if(!haskey(inputs, :dsgs_local_rel))
+        inputs[:dsgs_local_rel] = 1.0
+    end
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end
