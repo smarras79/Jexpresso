@@ -154,3 +154,12 @@ sensor fires there. That drift is the positivity mechanism; it also acts
 on loop mass crossing the fixed height $z_{cor}$, a bias of $0.1$–$0.2\,C_s$
 against a rise speed of $0.5$–$0.8\,C_s$ (the measured crest heights agree
 with the sibling's within $1H_0$, so it is modest, but it is there).
+During the emergence ($t = 51\tau_0$, `log10_μ_dsgs_ρ-it52.png`) the
+sensor fires where the paper places its shocks: along the oblique loop-side
+downflow fronts from $(x, z) \approx (5, 20)$ up to $(30, 28)H_0$ and their
+mirror ($0.1$–$0.3$), at the loop top ($z \approx 30H_0$, $0.2$), and at the
+transition-region band $z = 17$–$19H_0$ outside the loop where the lateral
+downflows land, the only place the cap ($0.5$–$0.8$) is reached; the loop
+interior stays at $0.03$–$0.05$ and the chromosphere at the floor. The
+rerun that produced these panels reproduced the first run (same crest
+heights and centerline values to the plotted precision) in 1842 s.
