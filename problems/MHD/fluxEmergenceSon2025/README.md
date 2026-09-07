@@ -109,6 +109,23 @@ quadruples (twice the elements, twice the steps).
   sheet and $10^{-2}$ only at the transition region, the Parker crest rising
   at $0.1\,C_s$. No filter, no entropy-stable/KEP fluxes. All multipliers
   `:μ` are 1.
+- **Positivity floors** (`fe_positivity_limiter!`, top of `user_inputs.jl`,
+  passed to `CarpenterKennedy2N54` as its stage limiter): $\rho \ge 0.05\rho_e(z)$
+  and $p \ge 0.05p_e(z)$ at every Runge–Kutta stage, $p$ raised through the
+  total energy at fixed velocity and field. Why: the sheet's initial
+  adjustment launches an acoustic wave (period ≈ 6 τ₀, above the isothermal
+  cutoff) whose amplitude grows as $\rho^{-1/2}$ up the 8-decade
+  stratification — ≈ 0.02 C_s at the sheet, 0.1 at $z = 13H_0$ ($t = 8$),
+  0.4 at the transition region ($t = 12$) — lifts the corona, which falls
+  back under gravity at $2\,C_s$ ($t = 15$) and corrugates the 25× density
+  contact; in the rarefied troughs $\rho$ fell below the coronal value and
+  $T$ past 300 with the DynSGS coefficient already near its cap there, and the
+  run broke (measured). Dissipation cannot prevent an evacuation; the
+  floors are the density/pressure floor of the finite-volume solar codes
+  (the paper itself refers to its schemes' behaviour "in near-vacuum
+  regions with high-Mach-number flows"). The run prints the first floor
+  hit and every decade of hits with time and place (`# positivity
+  floors:` lines), so the log says whether they were ever needed.
 - **A shared-code fix this case needed**: the boundary routine only imposes
   a value that differs from the current one, and that test used an
   absolute tolerance of $2\times10^{-6}$ — with $\rho = 7\times10^{-9}$ at the

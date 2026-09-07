@@ -1,3 +1,81 @@
+#---------------------------------------------------------------------------------
+# Positivity floors, applied at every Runge-Kutta stage through the solver's
+# stage limiter (:ode_solver below).
+#
+# The initial adjustment of the sheet launches an acoustic wave whose
+# amplitude grows as ρ^(-1/2) up the 8-decade stratification: launched at
+# ~0.02 C_s it reaches the transition region at Mach ~0.5 by t ≈ 12 τ₀,
+# lifts the corona, which then falls back under gravity at 2 C_s (t ≈ 15),
+# and corrugates the 25× density contact; in the rarefied troughs the
+# density dropped below the coronal value (10⁻⁹) and T shot past 300 before
+# the run broke. A residual-based dissipation cannot prevent an evacuation.
+# The floors keep ρ ≥ fe_floor_frac·ρ_e(z) and p ≥ fe_floor_frac·p_e(z)
+# (the reference magnetostatic state; p is raised through the total energy
+# at fixed velocity and field), i.e. a state may rarefy to 1/5 of the
+# ambient but not to vacuum. The fraction also bounds the temperature of a
+# floored pocket, T ≤ T_e·(p/p_e)/0.2 — at 0.05 the troughs sat at the
+# floor with a still-coronal pressure, T reached 500 and the sound speed
+# 70 C_s, i.e. an acoustic CFL of 1 on this time step. This is the density/pressure floor of the
+# finite-volume solar codes (the paper notes its schemes' behaviour "in
+# near-vacuum regions with high-Mach-number flows"). It adds mass/energy
+# only where it fires; the run reports whether it ever did.
+#---------------------------------------------------------------------------------
+if !@isdefined(fe_floor_frac)
+    const fe_floor_frac  = Ref{Float64}(0.2)
+    const fe_floor_hits  = Ref{Int}(0)       # stage-nodes floored so far (this rank)
+    const fe_floor_next  = Ref{Int}(1)       # next hit count at which to report
+end
+
+function fe_positivity_limiter!(u, integrator, p, t)
+    npoin = p.mesh.npoin
+    qe    = p.qp.qe
+    frac  = fe_floor_frac[]
+    γm1   = γ_mhd - 1.0
+    nhit  = 0
+    @inbounds for ip = 1:npoin
+        iρ  = ip
+        iρu = npoin + ip
+        iρv = 2*npoin + ip
+        iE  = 3*npoin + ip
+        iρw = 4*npoin + ip
+        iBx = 5*npoin + ip
+        iBy = 6*npoin + ip
+        iBz = 7*npoin + ip
+        iψ  = 8*npoin + ip
+        ρmin = frac*qe[ip,1]
+        pmin = frac*qe[ip,end]
+        ρ = u[iρ]
+        if ρ < ρmin
+            u[iρ] = ρmin
+            ρ = ρmin
+            nhit += 1
+        end
+        ke = 0.5*(u[iρu]*u[iρu] + u[iρv]*u[iρv] + u[iρw]*u[iρw])/ρ
+        me = 0.5*(u[iBx]*u[iBx] + u[iBy]*u[iBy] + u[iBz]*u[iBz]) + 0.5*u[iψ]*u[iψ]
+        pl = γm1*(u[iE] - ke - me)
+        if pl < pmin
+            u[iE] = pmin/γm1 + ke + me
+            nhit += 1
+        end
+    end
+    fe_floor_hits[] += nhit
+    # Report the first hit and then every decade of hits, with time and
+    # place, so a run says whether (and where) it ever needed the floors.
+    if nhit > 0 && fe_floor_hits[] >= fe_floor_next[]
+        ip = 1
+        @inbounds for jp = 1:npoin
+            if u[jp] <= frac*qe[jp,1]*(1.0 + 1e-12) || γm1*(u[3*npoin+jp] - 0.5*(u[npoin+jp]^2 + u[2*npoin+jp]^2 + u[4*npoin+jp]^2)/u[jp]
+               - 0.5*(u[5*npoin+jp]^2 + u[6*npoin+jp]^2 + u[7*npoin+jp]^2) - 0.5*u[8*npoin+jp]^2) <= frac*qe[jp,end]*(1.0 + 1e-12)
+                ip = jp; break
+            end
+        end
+        println(" # positivity floors: ", fe_floor_hits[], " stage-node hits so far on this rank (", nhit,
+                " this stage) at t = ", round(t, digits=3), ", e.g. (x, z) = (", round(p.mesh.x[ip], digits=2), ", ", round(p.mesh.y[ip], digits=2), ")")
+        fe_floor_next[] = 10*fe_floor_next[]
+    end
+    return nothing
+end
+
 function user_inputs()
 
     inputs = Dict(
@@ -13,7 +91,7 @@ function user_inputs()
         # Run with (10 MPI ranks):
         #   mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025
         #---------------------------------------------------------------------------
-        :ode_solver           => CarpenterKennedy2N54(),
+        :ode_solver           => CarpenterKennedy2N54(stage_limiter! = fe_positivity_limiter!),  # floors, see top of file
         # Δt = 2.5e-3 τ₀ is CFL ≈ 0.07 against the initial maximum wave speed
         # (the coronal sound speed, = c_h ≈ 5.05 C_s) and the smallest LGL
         # spacing (0.173 H₀ at :nop => 4 on 1 H₀ elements). The margin is for

@@ -356,6 +356,13 @@ density spans eight decades between the photosphere and the corona:
   sinking at $0.3\,C_s$ by $t = 8\tau_0$, measured), on $q - q_e$ the operator
   vanishes at rest and reduces to the plain conserved-variable Laplacian
   wherever the state has left the reference.
+- **`:dsgs_C0`** (default 0) floors the coefficient at $C_0\Delta(\lVert\mathbf{v}\rVert + c_f)$,
+  a fraction of the $C_2$ cap. The residual cannot see a node-to-node mode
+  (the discrete operator returns nearly nothing on it), and the CG
+  discretization leaves such a mode undamped; the flux-emergence case uses
+  $C_0 = 0.03$, which damps it at a rate $C_0\Delta c(\pi/\Delta)^2 \approx 7/\tau_0$ in
+  its corona while spreading a resolved structure by $\sqrt{C_0\Delta c\,t} \approx 1H_0$
+  over the whole run.
 - **`:dsgs_nodal_rho => true`** forms the dynamic coefficient of the momentum
   and energy slots with the density of the quadrature point (in
   `SGS_diffusion(::DSGS_MHD)`) instead of the element mean $\bar\rho$, i.e.
