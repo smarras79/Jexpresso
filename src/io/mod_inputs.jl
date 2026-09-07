@@ -1016,6 +1016,24 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ldsgs_global_norms] = false
     end
 
+    # DSGS_MHD variants for strongly stratified atmospheres (see
+    # compute_dsgs_viscosity!(::DSGS_MHD) in kernel/physics/SGS.jl and
+    # problems/MHD/fluxEmergenceSon2025). Both default to the original model.
+    #   :dsgs_local_norms  normalize each element's residual by the spread of
+    #                      the variable over that element instead of over
+    #                      the domain (otherwise the dense layers hide the
+    #                      corona from the sensor)
+    #   :dsgs_nodal_rho    dynamic coefficient ρ·μ with the density of the
+    #                      quadrature point instead of the element mean
+    #                      (otherwise the light side of a stratified element
+    #                      gets (ρ̄/ρ)·μ and breaks the viscous CFL)
+    if(!haskey(inputs, :dsgs_local_norms))
+        inputs[:dsgs_local_norms] = false
+    end
+    if(!haskey(inputs, :dsgs_nodal_rho))
+        inputs[:dsgs_nodal_rho] = false
+    end
+
     #
     # Viscous models:
     #

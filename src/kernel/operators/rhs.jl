@@ -1109,6 +1109,10 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
 
+        # Nodal-density scaling of the momentum/energy coefficients, read by
+        # SGS_diffusion(::DSGS_MHD) inside the assembly below.
+        dsgs_nodal_rho[] = get(params.inputs, :dsgs_nodal_rho, false)
+
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                 params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                 params.RHS, params.Minv, params.visc_coeff,
@@ -1121,7 +1125,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 TT(get(params.inputs, :dsgs_C2,    0.5)),
                                 get_mpi_comm(),
                                 Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
+                                llocal_norms  = get(params.inputs, :dsgs_local_norms, false),
+                                lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false))
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,

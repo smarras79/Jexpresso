@@ -66,6 +66,16 @@ function user_inputs()
         :dsgs_C2          => 0.5,
         :dsgs_gamma       => 1.05,
         :dsgs_Prt         => 0.7,
+        # Stratification variants of the model (kernel/physics/SGS.jl): the
+        # residual is normalized per element, not by the domain spread that
+        # the 10⁸-times denser photosphere sets (the sensor was blind to the
+        # corona and a grid-scale sawtooth grew across the transition
+        # region), and the dynamic coefficient uses the nodal density, not
+        # the element mean (which over-diffuses the light side of a
+        # stratified element by ρ̄/ρ, up to 25 at the transition region,
+        # past the explicit viscous limit).
+        :dsgs_local_norms => true,
+        :dsgs_nodal_rho   => true,
         :lrichardson      => false,      # gravity enters through user_source.jl, not the SGS closure
         # Slot 4 carries the TOTAL ENERGY ρE: "energy" keeps the kernel's τ·u
         # viscous-work augmentation of the energy equation active.

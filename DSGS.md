@@ -313,14 +313,42 @@ state in `params_setup.jl`, so the first residual is identically zero rather
 than $3q/(2\Delta t)$. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` —
 `uaux` carries one extra trailing column beyond the `neqs` solution slots.
 
-### 4.5 MPI
+### 4.5 Stratified atmospheres: `:dsgs_local_norms`, `:dsgs_nodal_rho`
+
+Two opt-in variants of the MHD kernel, both `false` by default (the
+Orszag–Tang results below are unchanged), added for
+[`fluxEmergenceSon2025`](problems/MHD/fluxEmergenceSon2025/README.md), whose
+density spans eight decades between the photosphere and the corona:
+
+- **`:dsgs_local_norms => true`** normalizes the residual of equation $i$ in
+  element $e$ by the spread of $q_i$ over that element,
+  $\lVert q_i - \langle q_i\rangle_e\rVert_{\infty,e}$, floored at the same
+  $10^{-3}$ fraction of the *element-mean* scales of §4.2, instead of the
+  domain spread. With the domain norm the dense bottom of the atmosphere sets
+  the scale of $\rho$, $\rho\mathbf{v}$ and $E$, and a residual in the corona
+  — where those fields are $10^{-8}$ of it — is invisible: in the flux-emergence
+  run a grid-scale sawtooth grew across the chromosphere–corona transition with
+  $\mu = 10^{-11}$ there. The element spread of a smooth stratified field is
+  $O(q_i)$ ($\rho$ changes by $e^{-1}$ across a $1H_0$ element), so the ratio
+  keeps the meaning of a relative under-resolution rate.
+- **`:dsgs_nodal_rho => true`** forms the dynamic coefficient of the momentum
+  and energy slots with the density of the quadrature point (in
+  `SGS_diffusion(::DSGS_MHD)`) instead of the element mean $\bar\rho$, i.e.
+  the viscous flux is $\nabla\cdot(\rho\mu\nabla u)$. With $\bar\rho$ the
+  effective diffusivity at the light side of an element is $(\bar\rho/\rho)\mu$
+  — up to $25\mu$ across the transition region — and breaks the explicit
+  viscous stability limit as soon as the model switches on there. With this
+  option the `mu_dsgs_ρu`, `mu_dsgs_ρv`, `mu_dsgs_ρw` and `mu_dsgs_ρE` output
+  fields hold the kinematic coefficient, like the magnetic slots.
+
+### 4.6 MPI
 
 $\langle q_i\rangle$ and $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
 are **domain** norms by definition, so both reductions are `MPI.Allreduce`d. A
 rank-local version would make the eddy viscosity depend on the partitioning. The
 cost is two small collectives per RHS call.
 
-### 4.6 Measured effect
+### 4.7 Measured effect
 
 On the Orszag–Tang vortex at $128^2$, run to $t = 1$ (see
 `problems/MHD/orszagTangBormanis2024/README.md` for the full table):

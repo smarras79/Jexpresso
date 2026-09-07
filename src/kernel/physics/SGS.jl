@@ -504,6 +504,16 @@ end
 # (The ::DSGS, ::NSD_2D pair above only defines the `inputs` form, so the
 # Euler-θ 2D DSGS path MethodErrors on the first call — it has evidently
 # never been exercised. Not touched here.)
+#
+# :dsgs_nodal_rho (see compute_dsgs_viscosity!(::DSGS_MHD)): when set, the
+# momentum and energy slots of μ_dsgs hold the KINEMATIC coefficient and the
+# dynamic one is formed here with the density of the quadrature point, i.e.
+# the viscous flux is ∇·(ρ μ ∇u) with the local ρ instead of ∇·(ρ̄ μ ∇u)
+# with the element mean. rhs.jl sets the Ref from the inputs before each
+# DynSGS assembly.
+#
+const dsgs_nodal_rho = Ref{Bool}(false)
+
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
                                u11, u22, u12, u21,
@@ -512,7 +522,7 @@ end
                                ltheta_eqn=true,
                                lrichardson=false)
 
-    return visc_coeffieq[ieq]
+    return (dsgs_nodal_rho[] && 2 <= ieq <= 5) ? ρ*visc_coeffieq[ieq] : visc_coeffieq[ieq]
 
 end
 
@@ -525,7 +535,7 @@ end
                                ltheta_eqn=true,
                                lrichardson=false)
 
-    return visc_coeffieq[ieq]
+    return (dsgs_nodal_rho[] && 2 <= ieq <= 5) ? ρ*visc_coeffieq[ieq] : visc_coeffieq[ieq]
 
 end
 
@@ -1168,6 +1178,30 @@ end
 #
 # ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :ldsgs_global_norms is set — see
 # _dsgs_norm_scope above. `comm` is what the global mode reduces over.
+#
+# Stratified atmospheres (problems/MHD/fluxEmergenceSon2025, eight decades
+# of density between the photosphere and the corona) need two variants of
+# the above, both off by default:
+#
+#  *  llocal_norms (:dsgs_local_norms). The residual of equation i is
+#     normalized by the spread of q_i over the ELEMENT, ‖q_i − ⟨q_i⟩_e‖∞,e,
+#     floored at the same 10⁻³ fraction of the element-mean scales, instead
+#     of the domain spread. With the domain norm the dense bottom of the
+#     atmosphere sets the scale of ρ, ρv and E, and a residual in the
+#     corona — where those fields are 10⁻⁸ of it — is invisible: a
+#     grid-scale sawtooth in the transition region grew unchecked with μ
+#     at 10⁻¹¹ there. The element spread of a smooth stratified field is
+#     O(q_i) (ρ changes by e⁻¹ across a 1 H₀ element), so the ratio stays
+#     the relative under-resolution rate the model intends.
+#
+#  *  lnodal_rho (:dsgs_nodal_rho). Slots 2-5 receive the KINEMATIC μ (and
+#     μγ/((γ−1)Pr_t) for E) and SGS_diffusion(::DSGS_MHD) multiplies by the
+#     density OF THE QUADRATURE POINT. With the element mean ρ̄, the
+#     effective diffusivity of u at the light side of an element is
+#     (ρ̄/ρ)μ — up to 25μ across the chromosphere-corona transition — and
+#     exceeds the explicit viscous stability limit as soon as the model
+#     switches on there. The μ_dsgs output fields of slots 2-5 are then
+#     kinematic too.
 # ================================================================================
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS_MHD, ::NSD_2D,
@@ -1185,10 +1219,15 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  γ::TT, Pr_t::TT, C1::TT, C2::TT,
                                  comm,
                                  nelem::Int, ngl::Int;
-                                 lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lglobal_norms::Bool=false,
+                                 llocal_norms::Bool=false,
+                                 lnodal_rho::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
+    rel  = TT(1.0e-3)            # floor fraction of the physical scales
+    avg_e = zeros(TT, neqs)      # element mean / spread (llocal_norms)
+    den_e = zeros(TT, neqs)
     γm1  = γ - one(TT)
     eps  = TT(1.0e-16)
 
@@ -1240,7 +1279,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     p_avg = γm1*max(avg[4] - TT(0.5)*(avg[2]*avg[2] + avg[3]*avg[3] + avg[5]*avg[5])/ρ_avg
                     - TT(0.5)*(avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]), zero(TT))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
-    rel   = TT(1.0e-3)
     @inbounds begin
         denom[1] = max(denom[1], rel*ρ_avg)                 # ρ
         mom_fl   = rel*ρ_avg*c_avg
@@ -1268,6 +1306,49 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         wmax  = zero(TT)      # (‖v‖ + c_f)∞,e
         ρ_el  = zero(TT)      # element-mean density
 
+        # Element-local normalization: ⟨q_i⟩_e and ‖q_i − ⟨q_i⟩_e‖∞,e, floored
+        # at `rel` of the element-mean scales exactly as the domain norms are.
+        if llocal_norms
+            for ieq = 1:neqs
+                avg_e[ieq] = zero(TT)
+                den_e[ieq] = zero(TT)
+            end
+            for j = 1:ngl, i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                for ieq = 1:neqs
+                    avg_e[ieq] += q[ip,ieq]
+                end
+            end
+            inv_ne = one(TT)/TT(ngl*ngl)
+            for ieq = 1:neqs
+                avg_e[ieq] *= inv_ne
+            end
+            for j = 1:ngl, i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                for ieq = 1:neqs
+                    den_e[ieq] = max(den_e[ieq], abs(q[ip,ieq] - avg_e[ieq]))
+                end
+            end
+            ρ_e = max(abs(avg_e[1]), eps)
+            p_e = γm1*max(avg_e[4] - TT(0.5)*(avg_e[2]*avg_e[2] + avg_e[3]*avg_e[3] + avg_e[5]*avg_e[5])/ρ_e
+                          - TT(0.5)*(avg_e[6]*avg_e[6] + avg_e[7]*avg_e[7] + avg_e[8]*avg_e[8]), zero(TT))
+            c_e = sqrt(max(γ*p_e/ρ_e, eps))
+            den_e[1] = max(den_e[1], rel*ρ_e)
+            mom_e    = rel*ρ_e*c_e
+            den_e[2] = max(den_e[2], mom_e)
+            den_e[3] = max(den_e[3], mom_e)
+            den_e[4] = max(den_e[4], rel*ρ_e*c_e*c_e)
+            if neqs >= 5; den_e[5] = max(den_e[5], mom_e); end
+            b_e = rel*sqrt(ρ_e)*c_e
+            for ieq = 6:min(neqs,8)
+                den_e[ieq] = max(den_e[ieq], b_e)
+            end
+            for ieq = 1:neqs
+                den_e[ieq] += eps
+            end
+        end
+        den = llocal_norms ? den_e : denom
+
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
@@ -1275,7 +1356,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
                 for ieq = 1:NRES
                     R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
-                    r = R/denom[ieq]
+                    r = R/den[ieq]
                     ratio = max(ratio, r)
                 end
 
@@ -1300,7 +1381,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_max = C2*Δ*wmax
         μ     = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s
 
-        μ_dyn = ρ_el*μ                              # dynamic, for u/v/w/T
+        # dynamic coefficient for u/v/w/T: ρ̄·μ with the element mean, or the
+        # kinematic μ that SGS_diffusion(::DSGS_MHD) scales by the nodal ρ
+        μ_dyn = lnodal_rho ? μ : ρ_el*μ
 
         μ_dsgs[ie,1] = zero(TT)                                    # ρ
         μ_dsgs[ie,2] = visc_coeff[2]*μ_dyn                         # ρu

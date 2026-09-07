@@ -85,10 +85,24 @@ vertical spacing set `ny = 70` in `FE_80x35.geo`, regenerate the mesh
   (`fe_beta_star`).
 - **Stabilization: DynSGS** (`:visc_model => DSGS_MHD()`, see
   [DSGS.md](../../../DSGS.md) §4), with `:dsgs_gamma => 1.05` matching the
-  flux. The paper's shocks (fast and intermediate along the loop sides,
-  slow near the footpoints) are captured by its HLLD/WENO machinery; here
-  the residual-based eddy viscosity regularizes them. No filter, no
+  flux, and the two stratification variants of DSGS.md §4.5 switched on:
+  `:dsgs_local_norms` (per-element normalization of the residual — with
+  the domain norm the $10^8$-times denser photosphere hides the corona from
+  the sensor, and a grid-scale sawtooth grew across the transition region
+  at $t \approx 1.5\tau_0$) and `:dsgs_nodal_rho` (dynamic coefficient with
+  the nodal density — the element mean over-diffuses the light side of a
+  transition-region element by a factor 25 and breaks the viscous CFL).
+  The paper's shocks (fast and intermediate along the loop sides, slow
+  near the footpoints) are captured by its HLLD/WENO machinery; here the
+  residual-based eddy viscosity regularizes them. No filter, no
   entropy-stable/KEP fluxes.
+- **A shared-code fix this case needed**: the boundary routine only imposes
+  a value that differs from the current one, and that test used an
+  absolute tolerance of $2\times10^{-6}$ — with $\rho = 7\times10^{-9}$ at the
+  top of the corona the wall-normal momentum never reached it, the
+  free-slip top was silently never applied and the atmosphere drained
+  through it with an exponentially growing downflow. The test is now
+  relative (`bc_value_changed` in `src/kernel/boundaryconditions/BCs.jl`).
 - **NOT implemented**: the paper's per-step update of $c_h$ (the initial
   value already bounds the coronal sound speed and is of the order of the
   late-time Alfvén speed); the Powell/Galilean-GLM non-conservative term
