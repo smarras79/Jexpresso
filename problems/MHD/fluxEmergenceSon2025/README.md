@@ -43,7 +43,7 @@ Output goes to `./output/MHD/fluxEmergenceSon2025/<run>/`.
 
 | | value |
 |---|---|
-| elements | $80\times35$, each $1H_0\times1H_0$ (`FE_80x35.geo/.msh`, shipped) |
+| elements | $80\times35$, each $1H_0\times1H_0$ (`FE_80x35.geo/.msh`, shipped; `FE_80x70` also ships) |
 | polynomial order | 4 (LGL) → $320\times140$ unique points |
 | nodal spacing | 0.25 $H_0$ mean, 0.173 $H_0$ smallest |
 | time step | $2.5\times10^{-3}\tau_0$, Courant ≈ 0.07 initially, ≈ 0.15 at late times |
@@ -55,9 +55,9 @@ $0.6H_0$ (chromosphere–corona), so $1H_0$ elements at $N = 4$ are the
 coarsest grid that keeps three nodes across them. It is comparable to the
 paper's coarsest $300^2$ grid horizontally ($\Delta x = 0.27H_0$) and two
 times coarser vertically ($\Delta z = 0.12H_0$). To match the paper's
-vertical spacing set `ny = 70` in `FE_80x35.geo`, regenerate the mesh
-(`gmsh -2 FE_80x35.geo -o FE_70.msh`, point `:gmsh_filename` at it) and halve
-`:Δt`; cost doubles.
+vertical spacing point `:gmsh_filename` at the shipped `FE_80x70.msh`
+($0.5H_0$ tall elements, $320\times280$ points) and halve `:Δt`; the cost
+quadruples (twice the elements, twice the steps).
 
 ## What is (and is not) implemented
 
@@ -95,7 +95,12 @@ vertical spacing set `ny = 70` in `FE_80x35.geo`, regenerate the mesh
   The paper's shocks (fast and intermediate along the loop sides, slow
   near the footpoints) are captured by its HLLD/WENO machinery; here the
   residual-based eddy viscosity regularizes them. No filter, no
-  entropy-stable/KEP fluxes.
+  entropy-stable/KEP fluxes. **The energy slot gets no thermal diffusion**
+  (`:μ[4] = 0`; the τ·u viscous work is kept): κ∇T is the one DynSGS term
+  that acts on an atmosphere at rest, and wherever the sensor fired on the
+  under-resolved 25× temperature jump it smeared the transition region
+  within ~0.5 τ₀ and launched a 0.7 C_s pulse into the corona; with it off
+  the corona stays quiet at the perturbation level (measured to t = 3 τ₀).
 - **A shared-code fix this case needed**: the boundary routine only imposes
   a value that differs from the current one, and that test used an
   absolute tolerance of $2\times10^{-6}$ — with $\rho = 7\times10^{-9}$ at the
@@ -170,6 +175,6 @@ was applied.
 | `user_source.jl` | gravity, GLM ψ damping (α_p), absorbing layer |
 | `user_bc.jl` | symmetric bottom, free-slip top; periodic x at mesh level |
 | `user_primitives.jl` | conserved → primitive/output mapping (adds `vA`, `β`) |
-| `FE_80x35.geo` | gmsh geometry of the $[0,80]\times[0,35]$ grid |
-| `FE_80x35.msh` | the generated mesh |
+| `FE_80x35.geo`, `.msh` | gmsh geometry of the $[0,80]\times[0,35]$ grid and the generated mesh (default) |
+| `FE_80x70.geo`, `.msh` | the same with $0.5H_0$ tall elements (the paper's vertical spacing) |
 | `EQUATIONS.md` | equations, units, initial condition, expected results |

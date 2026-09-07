@@ -53,14 +53,23 @@ function user_inputs()
         # that it appears at the shocks and stays near zero elsewhere.
         #
         # :μ are per-equation multipliers on the DynSGS coefficient for
-        # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): no mass diffusion, everything
-        # else at full strength. The B entries act as a turbulent
-        # resistivity. C1/C2 are Marras's residual and wave-speed-cap
-        # coefficients; dsgs_gamma MUST match γ_mhd = 1.05 of user_flux.jl
-        # (the DynSGS wave speed and pressure are built from it).
+        # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): no mass diffusion, momentum, ρw,
+        # B (turbulent resistivity) and ψ at full strength, and NO thermal
+        # diffusion on the energy slot. The energy slot's κ∇T is the one
+        # DynSGS term that acts on an atmosphere at rest: wherever the
+        # sensor fires on the under-resolved 25× temperature jump of the
+        # transition region it smears it within ~0.5 τ₀ and the heated
+        # chromosphere top launches a 0.7 C_s upward pulse into the corona
+        # (measured; with :μ[4] = 0 the corona stays quiet to the
+        # perturbation level). The τ·u viscous-work term of the energy
+        # equation is kept (it rides on the momentum coefficient), so the
+        # shocks of the emerging loop still dissipate consistently. C1/C2
+        # are Marras's residual and wave-speed-cap coefficients; dsgs_gamma
+        # MUST match γ_mhd = 1.05 of user_flux.jl (the DynSGS wave speed and
+        # pressure are built from it).
         #---------------------------------------------------------------------------
         :lvisc            => true,
-        :μ                => [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                => [0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
         :dsgs_C1          => 1.0,
         :dsgs_C2          => 0.5,
@@ -94,6 +103,9 @@ function user_inputs()
         #
         #   gmsh -2 problems/MHD/fluxEmergenceSon2025/FE_80x35.geo \
         #        -o problems/MHD/fluxEmergenceSon2025/FE_80x35.msh
+        #
+        # FE_80x70.msh (0.5 H₀ tall elements, the paper's vertical spacing)
+        # also ships: point :gmsh_filename at it and halve :Δt.
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
         :gmsh_filename       => "./problems/MHD/fluxEmergenceSon2025/FE_80x35.msh",
