@@ -3049,6 +3049,66 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             end
         end
 
+        # DG (DiscGal): poin_in_bdy_edge was just copied from poin_in_edge,
+        # which the CG edge builder filled with shared-node (CG) point ids.
+        # Under the duplicated-DOF DG numbering, mesh.x/y are DG-sized, so
+        # those ids index arbitrary DG nodes — every consumer of this list
+        # (elem_to_edge, DSS_global_normals!, BCs.jl, the periodic-NCF
+        # detector) would read wrong coordinates with no error. Rebuild the
+        # list from the owning element's connijk slice: a boundary edge has
+        # exactly one owner (bdy_edge_in_elem, topology-derived), and its
+        # nodes are one of the four edge slices of that element. The slice is
+        # chosen by matching its endpoints to the edge's two Gridap vertices,
+        # and ordered as CG orders it (k=1 at conn_unique_edges[iedge][1]) so
+        # no downstream convention changes.
+        if inputs[:AD] == DiscGal()
+            node_coords = get_node_coordinates(get_grid(model))
+            ngl_dg = mesh.ngl
+
+            dg_slice_ip(e, lfid, k) = lfid == 1 ? mesh.connijk[e, 1,      k] :
+                                      lfid == 2 ? mesh.connijk[e, ngl_dg, k] :
+                                      lfid == 3 ? mesh.connijk[e, k,      1] :
+                                                  mesh.connijk[e, k, ngl_dg]
+
+            n_bdy_dg = 0
+            iedge_bdy = 1
+            for iedge = 1:mesh.nedges
+                isboundary_edge[iedge] || continue
+
+                e  = mesh.bdy_edge_in_elem[iedge_bdy]
+                v1 = mesh.conn_unique_edges[iedge][1]
+                v2 = mesh.conn_unique_edges[iedge][2]
+                x1, y1 = node_coords[v1][1], node_coords[v1][2]
+                x2, y2 = node_coords[v2][1], node_coords[v2][2]
+                tol = 1.0e-8 * hypot(x2 - x1, y2 - y1)
+
+                found = 0
+                rev   = false
+                for lf = 1:4
+                    ipa = dg_slice_ip(e, lf, 1)
+                    ipb = dg_slice_ip(e, lf, ngl_dg)
+                    fwd = abs(mesh.x[ipa] - x1) <= tol && abs(mesh.y[ipa] - y1) <= tol &&
+                          abs(mesh.x[ipb] - x2) <= tol && abs(mesh.y[ipb] - y2) <= tol
+                    bwd = abs(mesh.x[ipa] - x2) <= tol && abs(mesh.y[ipa] - y2) <= tol &&
+                          abs(mesh.x[ipb] - x1) <= tol && abs(mesh.y[ipb] - y1) <= tol
+                    if fwd || bwd
+                        found = lf
+                        rev   = bwd
+                        break
+                    end
+                end
+                found == 0 && error("DG boundary-edge rebuild: no connijk slice of element $e matches boundary edge $iedge (bdy $iedge_bdy) with vertices ($x1,$y1)-($x2,$y2)")
+
+                for igl = 1:ngl_dg
+                    k = rev ? ngl_dg - igl + 1 : igl
+                    mesh.poin_in_bdy_edge[iedge_bdy, igl] = dg_slice_ip(e, found, k)
+                end
+                n_bdy_dg  += 1
+                iedge_bdy += 1
+            end
+            println_rank(" # DG boundary-edge lists rebuilt from connijk: $(n_bdy_dg) edges"; msg_rank = rank, suppress = mesh.msg_suppress)
+        end
+
         # PERF: elem_to_edge by hash lookup, not by scanning.
         #
         # This used to be, for every one of the nelem*ngl^2 element nodes:
