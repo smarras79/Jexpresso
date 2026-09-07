@@ -313,7 +313,7 @@ state in `params_setup.jl`, so the first residual is identically zero rather
 than $3q/(2\Delta t)$. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` —
 `uaux` carries one extra trailing column beyond the `neqs` solution slots.
 
-### 4.5 Stratified atmospheres: `:dsgs_local_norms`, `:dsgs_nodal_rho`
+### 4.5 Stratified atmospheres: `:dsgs_local_norms`, `:dsgs_conserved`, `:dsgs_ref_weight`, `:dsgs_nodal_rho`
 
 Two opt-in variants of the MHD kernel, both `false` by default (the
 Orszag–Tang results below are unchanged), added for
@@ -363,6 +363,25 @@ density spans eight decades between the photosphere and the corona:
   $C_0 = 0.03$, which damps it at a rate $C_0\Delta c(\pi/\Delta)^2 \approx 7/\tau_0$ in
   its corona while spreading a resolved structure by $\sqrt{C_0\Delta c\,t} \approx 1H_0$
   over the whole run.
+- **`:dsgs_ref_weight => true`** (with `:dsgs_conserved`) diffuses the fluid
+  slots as the *relative* departure from the reference state with the
+  reference density as weight, $\nabla\cdot(\mu\rho_e\nabla((q - q_e)/\rho_e))$
+  on $(\rho, \rho\mathbf{v}, E)$, the magnetic slots as before. The case's
+  `user_primitives!` returns $(q - q_e)/\rho_e$ in slots 1–5 and stores
+  $\rho_e$ in the spare slot `neqs+1` of `uprimitive`, which
+  `_expansion_visc!` multiplies into the coefficient at the quadrature
+  point. Like the $q - q_e$ form it vanishes at rest and is conservative;
+  unlike it, it obeys a maximum principle across a reference jump: a
+  $-10\%$ departure on the dense side of the solar transition region is,
+  in absolute terms, more than the whole density of the light side, and
+  the $q - q_e$ Laplacian carries it across — that is how the
+  flux-emergence case lost positivity at $t \approx 14\tau_0$ with $\mu$
+  already at its cap and came to need its floors. The weighted form pulls
+  $\rho/\rho_e$ toward its neighbours and no further. Where $q_e$ is
+  negligible (the emerged loop) it reduces to the conserved-variable
+  Laplacian. Used by
+  [`fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS/README.md),
+  the limiter-free version of the flux-emergence case.
 - **`:dsgs_nodal_rho => true`** forms the dynamic coefficient of the momentum
   and energy slots with the density of the quadrature point (in
   `SGS_diffusion(::DSGS_MHD)`) instead of the element mean $\bar\rho$, i.e.

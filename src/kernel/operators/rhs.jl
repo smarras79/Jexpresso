@@ -1112,6 +1112,10 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # Nodal-density scaling of the momentum/energy coefficients, read by
         # SGS_diffusion(::DSGS_MHD) inside the assembly below.
         dsgs_nodal_rho[] = get(params.inputs, :dsgs_nodal_rho, false) && !get(params.inputs, :dsgs_conserved, false)
+        # Reference-weighted operator (see the Ref in SGS.jl), only meaningful
+        # with the conserved form: slots 1-5 are diffused as (q − q_e)/ρ_e
+        # with coefficient μ·ρ_e read from uprimitive[:, :, neqs+1].
+        dsgs_ref_weight[] = get(params.inputs, :dsgs_ref_weight, false) && get(params.inputs, :dsgs_conserved, false)
 
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                 params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
@@ -2144,6 +2148,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             @inbounds begin
                 Je_kl = Je[iel,k,l]
                 ωJac  = ω[k]*ωl*Je_kl
+
+                # DynSGS-MHD reference weight (SGS.jl, dsgs_ref_weight): the
+                # case stores ρ_e in the spare slot of uprimitive and slots
+                # 1-5 hold (q − q_e)/ρ_e, so the flux below is μρ_e∇(…).
+                wgt = (dsgs_ref_weight[] && ieq <= 5) ? uprimitiveieq[k,l,end] : 1.0
                 
                 # Quantities for Smagorinsky 
                 dudξ = 0.0; dudη = 0.0
@@ -2176,7 +2185,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                          uprimitiveieq[k,l,1],
                                                          dudx, dvdy, dudy, dvdx,
                                                          PHYS_CONST, Δ2,
-                                                         VT, SD)
+                                                         VT, SD)*wgt
 
                     τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
                     τ_xy = effective_viscosity * (dudy + dvdx)
@@ -2190,7 +2199,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                          uprimitiveieq[k,l,1],
                                                          dudx, dvdy, dudy, dvdx,
                                                          PHYS_CONST, Δ2,
-                                                         VT, SD)
+                                                         VT, SD)*wgt
                     
                     τ_xy = effective_viscosity * (dudy + dvdx)
                     τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
@@ -2214,7 +2223,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                               uprimitiveieq[k,l,1],
                                                               dudx, dvdy, dudy, dvdx,
                                                               PHYS_CONST, Δ2,
-                                                              VT, SD)
+                                                              VT, SD)*wgt
                         flux_x = effective_diffusivity * dθdx
                         flux_y = effective_diffusivity * dθdy
 
@@ -2293,7 +2302,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                           uprimitiveieq[k,l,1],
                                                           dudx, dvdy, dudy, dvdx,
                                                           PHYS_CONST, Δ2,
-                                                          VT, SD)
+                                                          VT, SD)*wgt
 
                     # Compute temperature gradient
                     dqdξ = 0.0; dqdη = 0.0

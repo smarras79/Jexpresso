@@ -514,6 +514,20 @@ end
 #
 const dsgs_nodal_rho = Ref{Bool}(false)
 
+# :dsgs_ref_weight (fluxEmergenceSon2025DSGS): the coefficient of slots 1-5
+# is multiplied, at the quadrature point, by the weight the case's
+# user_primitives! stores in the spare slot neqs+1 of uprimitive (there:
+# the reference density ρ_e), and the primitives of those slots are the
+# conserved perturbations divided by that weight. The operator is then
+# ∇·(μ ρ_e ∇((q − q_e)/ρ_e)): zero at rest like the q − q_e form, but a
+# weighted diffusion of the RELATIVE departure, which obeys a maximum
+# principle across a reference jump — the q − q_e form does not (a −10%
+# departure of the 25× denser chromosphere side of the solar transition
+# region, diffused into the coronal side, exceeds the whole coronal
+# density). Read by _expansion_visc!(…, ::ContGal, NSD_2D); rhs.jl sets it
+# from the inputs before each DynSGS assembly.
+const dsgs_ref_weight = Ref{Bool}(false)
+
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
                                u11, u22, u12, u21,

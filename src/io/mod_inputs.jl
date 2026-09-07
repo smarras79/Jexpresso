@@ -1053,6 +1053,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_C0))
         inputs[:dsgs_C0] = 0.0
     end
+    #   :dsgs_ref_weight   with :dsgs_conserved, slots 1-5 diffuse the
+    #                      relative departure (q − q_e)/w with coefficient
+    #                      μ·w, w = the weight user_primitives! stores in
+    #                      uprimitive[neqs+1] (fluxEmergenceSon2025DSGS: ρ_e)
+    if(!haskey(inputs, :dsgs_ref_weight))
+        inputs[:dsgs_ref_weight] = false
+    end
 
     #
     # Viscous models:

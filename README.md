@@ -414,6 +414,15 @@ with magnetic field lines and velocity vectors; centerline profiles of the
 rise velocity, Alfvén speed, field and density on the axes of its Fig. 5)
 directly, gathered on one rank under MPI.
 
+[`problems/MHD/fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS)
+is the same problem with **DynSGS alone** keeping the solution admissible:
+no positivity limiter, the dissipation acting on the relative departure from
+the magnetostatic reference state (`:dsgs_ref_weight`, DSGS.md §4.5).
+
+```bash
+mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
+```
+
 ## Cloud simulation: shallow cumuli with BOMEX conditions:
 
 ```julia
