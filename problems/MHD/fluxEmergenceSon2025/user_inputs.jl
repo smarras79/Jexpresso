@@ -22,8 +22,8 @@ function user_inputs()
         # and CFL ≈ 0.15. The paper's own Courant number is 0.23.
         :Δt                   => 2.5e-3,
         :tinit                => 0.0,
-        :tend                 => 8.0,
-        :diagnostics_at_times => (0.0:0.5:8.0),
+        :tend                 => 54.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
+        :diagnostics_at_times => (0.0:1.0:54.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # gravity + GLM ψ damping + absorbing layer (user_source.jl)
@@ -136,7 +136,7 @@ function user_inputs()
         # Switch to :outformat => "vtk" for ParaView output (plus the
         # mu_dsgs_<var> DynSGS fields).
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "png",
         :plot_matrix         => false,        # silent per-variable PNGs, no GR window
         :plot_colormap       => :jet,         # the paper's colormap (Fig. 2)
         :plot_vars           => ["ρ", "v", "vA", "Bx", "p", "T", "β"],
