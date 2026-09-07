@@ -28,6 +28,7 @@ Suggested Julia version: 1.11.9
   5. [2D Euler equations of compressible flows with gravity and passive chemicals](#5-2d-euler-equations-of-compressible-flows-with-gravity-and-passive-chemicals)
   6. [3D Euler equations of compressible flows with gravity](#6-3d-euler-equations-of-compressible-flows-with-gravity)
 - [Showcase](#turbulent-abl)
+  - [Planet Saturn](#planet-saturn)
   - [Turbulent ABL](#turbulent-abl)
   - [Shallow cumuli](#shallow-cumuli)
 - [Examples available in this branch](#examples-available-in-this-branch)
@@ -92,7 +93,6 @@ and are taken to be zero vectors of the appropriate size when not explicitly sta
 The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/stable/) is used for time discretization and stepping.
 
 In order, we provide tests and results for the following equations:
-
 
 ### 1. 1D wave equation
 
@@ -228,12 +228,22 @@ w_{xx} + w_{yy} + w_{zz}\\
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)
 
+## Planet Saturn:
+Example of a relatively coarse simulation of the atmosphere of planet Saturn during 500 days.
+
+Original test described by Scott and Polvani "Forced-Dissipative Shallow-Water Turbulence on the Sphere and the Atmospheric Circulation of the Giant Planets" J. Atmos. Sci. Vol 64, 2007
+
+<img src="assets/vorticity-grey-scale.gif"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
 ## Turbulent ABL:
 Example of coarse simulation of the turbulent atmospheric boundary layer. Domain size: 10240m X 10240m X 3000m using 64x64x24 spectral elements of order 4.
 Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smagorinsky.
 <img src="assets/ABLfullDomain.gif"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
+
 
 ## Shallow cumuli:
 Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
