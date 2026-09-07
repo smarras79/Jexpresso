@@ -1111,7 +1111,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
 
         # Nodal-density scaling of the momentum/energy coefficients, read by
         # SGS_diffusion(::DSGS_MHD) inside the assembly below.
-        dsgs_nodal_rho[] = get(params.inputs, :dsgs_nodal_rho, false)
+        dsgs_nodal_rho[] = get(params.inputs, :dsgs_nodal_rho, false) && !get(params.inputs, :dsgs_conserved, false)
 
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                 params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
@@ -1128,7 +1128,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
                                 llocal_norms  = get(params.inputs, :dsgs_local_norms, false),
                                 local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
-                                lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false))
+                                lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
+                                lconserved    = get(params.inputs, :dsgs_conserved, false))
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -2042,7 +2043,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     # Total-energy form: the energy slot also needs the viscous-work term
     # ∂(τ_ij u_j)/∂x_i so momentum dissipation is returned to the energy
     # budget. ρθ has no such term, so the augmentation is gated off for it.
-    add_tau_u = (ieq == 4) && (inputs[:energy_equation] != "theta")
+    add_tau_u = (ieq == 4) && (inputs[:energy_equation] != "theta") && !get(inputs, :dsgs_conserved, false)
 
     for l = 1:ngl
         ωl = ω[l]
@@ -2219,7 +2220,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                         # Total-energy equation: also add the viscous-work term τ·u so that
                         # the SGS-momentum dissipation is consistently returned to the energy
                         # budget. Skip for the θ form where the ρθ equation has no τ·u term.
-                        if inputs[:energy_equation] != "theta"
+                        if inputs[:energy_equation] != "theta" && !get(inputs, :dsgs_conserved, false)
                             effective_viscosity = SGS_diffusion(visc_coeffieq, 2,
                                                                 uprimitiveieq[k,l,1],
                                                                 dudx, dvdy, dudy, dvdx,

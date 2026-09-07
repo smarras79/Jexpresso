@@ -1040,6 +1040,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_nodal_rho))
         inputs[:dsgs_nodal_rho] = false
     end
+    #   :dsgs_conserved    one kinematic coefficient on every slot and no
+    #                      τ·u term: with a user_primitives! that returns the
+    #                      conserved variables, a Laplacian on (ρ, ρv, E, B, ψ)
+    #                      — contacts diffuse consistently, p stays positive
+    if(!haskey(inputs, :dsgs_conserved))
+        inputs[:dsgs_conserved] = false
+    end
 
     #
     # Viscous models:

@@ -88,25 +88,27 @@ quadruples (twice the elements, twice the steps).
   (`fe_beta_star`).
 - **Stabilization: DynSGS** (`:visc_model => DSGS_MHD()`, see
   [DSGS.md](../../../DSGS.md) §4), with `:dsgs_gamma => 1.05` matching the
-  flux, and the two stratification variants of DSGS.md §4.5 switched on:
-  `:dsgs_local_norms` (per-element normalization of the residual — with
-  the domain norm the $10^8$-times denser photosphere hides the corona from
-  the sensor, and a grid-scale sawtooth grew across the transition region
-  at $t \approx 1.5\tau_0$; its floor `:dsgs_local_rel = 1` measures the
-  residual against the local $\rho c/\tau$, a $10^{-3}$ floor saturated the
-  model over the whole quiet chromosphere and eroded the sheet) and
-  `:dsgs_nodal_rho` (dynamic coefficient with the nodal density — the
-  element mean over-diffuses the light side of a transition-region element
-  by a factor 25 and breaks the viscous CFL).
-  The paper's shocks (fast and intermediate along the loop sides, slow
-  near the footpoints) are captured by its HLLD/WENO machinery; here the
-  residual-based eddy viscosity regularizes them. No filter, no
-  entropy-stable/KEP fluxes. **The energy slot gets no thermal diffusion**
-  (`:μ[4] = 0`; the τ·u viscous work is kept): κ∇T is the one DynSGS term
-  that acts on an atmosphere at rest, and wherever the sensor fired on the
-  under-resolved 25× temperature jump it smeared the transition region
-  within ~0.5 τ₀ and launched a 0.7 C_s pulse into the corona; with it off
-  the corona stays quiet at the perturbation level (measured to t = 3 τ₀).
+  flux and the stratified-atmosphere variants of DSGS.md §4.5 switched on:
+  `:dsgs_local_norms` with `:dsgs_local_rel = 1` (the residual is measured
+  against the element's own $\rho c/\tau$; with the domain norm the
+  $10^8$-times denser photosphere hid the corona from the sensor and a
+  grid-scale sawtooth grew across the transition region, with a $10^{-3}$
+  floor the sensor saturated over the whole quiet chromosphere and eroded
+  the sheet), and `:dsgs_conserved` — one kinematic coefficient and a
+  Laplacian on the conserved variables, applied to the departure from the
+  magnetostatic reference state $q - q_e$ (`user_primitives.jl`). That
+  last choice is what keeps the density positive at the transition region
+  without breaking the thermodynamics: the physical form of the
+  Orszag–Tang case (κ∇T on the energy, no mass diffusion) smeared the
+  temperature jump and let the contact undershoot below its $10^{-8}$ light
+  side; mass diffusion under the $T$ closure drove $p$ negative; the
+  conserved Laplacian on $q$ itself is a steady mass source in an
+  exponential atmosphere. On $q - q_e$ it vanishes at rest: measured to
+  $t = 8\tau_0$, horizontal-mean vertical velocity $\lesssim 10^{-4}$, sheet
+  field unchanged to three digits, $\mu \approx 10^{-4}$–$10^{-3}$ in the
+  sheet and $10^{-2}$ only at the transition region, the Parker crest rising
+  at $0.1\,C_s$. No filter, no entropy-stable/KEP fluxes. All multipliers
+  `:μ` are 1.
 - **A shared-code fix this case needed**: the boundary routine only imposes
   a value that differs from the current one, and that test used an
   absolute tolerance of $2\times10^{-6}$ — with $\rho = 7\times10^{-9}$ at the

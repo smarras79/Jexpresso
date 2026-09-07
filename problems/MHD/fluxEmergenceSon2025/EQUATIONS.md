@@ -175,7 +175,7 @@ $V_z = w = B_z = \psi = 0$.
 | space | finite volume, 5th-order WENO-Z+M / WENO-NZ / IMWENO-P / TENO-LAD reconstructions, HLLD Riemann solver | continuous-Galerkin spectral elements, LGL, $N = 4$ |
 | grid | $300^2$ to $2400^2$ uniform cells | $80\times35$ elements of $1H_0\times1H_0$, $320\times140$ unique points (0.25 $H_0$ mean, 0.17 $H_0$ min spacing) |
 | time | SSP-RK3, Courant number 0.23 | Carpenter–Kennedy 2N54 (low-storage RK4), $\Delta t = 2.5\times10^{-3}\tau_0$ |
-| shocks | the Riemann solver's dissipation | Marras–Nazarov DynSGS (`DSGS_MHD`, per-element norms, nodal density), residual-based eddy viscosity on momentum and $\mathbf{B}$, none on the energy (see README) |
+| shocks | the Riemann solver's dissipation | Marras–Nazarov DynSGS (`DSGS_MHD`, per-element norms), residual-based coefficient on a Laplacian of the conserved variables' departure from the reference state (see README) |
 | $\nabla\cdot\mathbf{B}$ | GLM, $c_h$ per step, $\alpha_p = 0.2$ | GLM, $c_h$ of the IC, $\alpha_p = 0.2$ |
 | final time | $54\tau_0$ (Fig. 2 at $51\tau_0$) | $54\tau_0$, output every $\tau_0$ |
 

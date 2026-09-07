@@ -53,27 +53,21 @@ function user_inputs()
         # that it appears at the shocks and stays near zero elsewhere.
         #
         # :μ are per-equation multipliers on the DynSGS coefficient for
-        # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): mass, momentum, ρw, B (turbulent
-        # resistivity) and ψ at full strength, and NO thermal diffusion on
-        # the energy slot. Mass diffusion (off in the other MHD cases) is
-        # needed here: the density drops 25× across the 0.6 H₀ transition
-        # region, and with nothing acting on ρ the LGL undershoot of that
-        # contact went below the 10⁻⁸ of its light side as soon as the first
-        # disturbance from the sheet reached it (t ≈ 3.5 τ₀, measured). The energy slot's κ∇T is the one
-        # DynSGS term that acts on an atmosphere at rest: wherever the
-        # sensor fires on the under-resolved 25× temperature jump of the
-        # transition region it smears it within ~0.5 τ₀ and the heated
-        # chromosphere top launches a 0.7 C_s upward pulse into the corona
-        # (measured; with :μ[4] = 0 the corona stays quiet to the
-        # perturbation level). The τ·u viscous-work term of the energy
-        # equation is kept (it rides on the momentum coefficient), so the
-        # shocks of the emerging loop still dissipate consistently. C1/C2
-        # are Marras's residual and wave-speed-cap coefficients; dsgs_gamma
-        # MUST match γ_mhd = 1.05 of user_flux.jl (the DynSGS wave speed and
-        # pressure are built from it).
+        # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ), all at full strength. The
+        # operator runs in its CONSERVED-VARIABLE form (:dsgs_conserved, see
+        # user_primitives.jl and kernel/physics/SGS.jl): one kinematic
+        # coefficient, a Laplacian on every conserved variable, no τ·u term.
+        # The physical form of the Orszag-Tang case (u, v, T primitives) is
+        # not usable here: the 25× density drop of the transition region
+        # needs mass diffusion to stay positive, and mass diffusion under a
+        # T-based energy closure drove p negative within a few τ₀ (measured),
+        # while its κ∇T smeared the temperature jump and launched a 0.7 C_s
+        # pulse into the corona. C1/C2 are Marras's residual and
+        # wave-speed-cap coefficients; dsgs_gamma MUST match γ_mhd = 1.05 of
+        # user_flux.jl (the DynSGS wave speed and pressure are built from it).
         #---------------------------------------------------------------------------
         :lvisc            => true,
-        :μ                => [1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
         :dsgs_C1          => 1.0,
         :dsgs_C2          => 0.5,
@@ -89,7 +83,8 @@ function user_inputs()
         # past the explicit viscous limit).
         :dsgs_local_norms => true,
         :dsgs_local_rel   => 1.0,   # floor of the element spread = the local ρ, ρc, ρc², √ρc themselves (see SGS.jl)
-        :dsgs_nodal_rho   => true,
+        :dsgs_conserved   => true,  # Laplacian on the conserved variables (user_primitives.jl); implies no nodal-ρ scaling
+        :dsgs_nodal_rho   => true,  # (inactive with :dsgs_conserved; kept for the physical-form variant)
         :lrichardson      => false,      # gravity enters through user_source.jl, not the SGS closure
         # Slot 4 carries the TOTAL ENERGY ρE: "energy" keeps the kernel's τ·u
         # viscous-work augmentation of the energy equation active.

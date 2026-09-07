@@ -342,6 +342,20 @@ density spans eight decades between the photosphere and the corona:
   $\mu = 10^{-11}$ there. The element spread of a smooth stratified field is
   $O(q_i)$ ($\rho$ changes by $e^{-1}$ across a $1H_0$ element), so the ratio
   keeps the meaning of a relative under-resolution rate.
+- **`:dsgs_conserved => true`** hands every slot the same kinematic $\mu$ and
+  drops the $\tau\cdot u$ term; with a `user_primitives!` that returns the
+  conserved variables the operator becomes a Laplacian on
+  $(\rho, \rho\mathbf{v}, E, \mathbf{B}, \psi)$, the form in which an isobaric
+  contact (the 25× density drop of the solar transition region) diffuses
+  consistently: $\rho$ spreads, $E$ (constant across it) does not, $p$ stays
+  what it was. Diffusing $\rho$ alone under the $T$-based energy closure drove
+  $p$ negative within a few $\tau_0$. The flux-emergence case applies it to the
+  *departure from its magnetostatic reference state*, $q - q_e$ (see its
+  `user_primitives.jl`): on $q$ itself the Laplacian of the exponential
+  stratification is a steady mass source that the sensor feeds on (sheet
+  sinking at $0.3\,C_s$ by $t = 8\tau_0$, measured), on $q - q_e$ the operator
+  vanishes at rest and reduces to the plain conserved-variable Laplacian
+  wherever the state has left the reference.
 - **`:dsgs_nodal_rho => true`** forms the dynamic coefficient of the momentum
   and energy slots with the density of the quadrature point (in
   `SGS_diffusion(::DSGS_MHD)`) instead of the element mean $\bar\rho$, i.e.

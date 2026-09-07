@@ -1195,6 +1195,14 @@ end
 #     O(q_i) (ρ changes by e⁻¹ across a 1 H₀ element), so the ratio stays
 #     the relative under-resolution rate the model intends.
 #
+#  *  lconserved (:dsgs_conserved). Every slot receives the kinematic μ and
+#     the case's user_primitives! hands the assembly the conserved variables
+#     themselves, so the operator is a Laplacian on (ρ, ρv, E, B, ψ) — the
+#     form in which a contact discontinuity (p continuous, ρ and T jumping)
+#     diffuses consistently. rhs.jl drops the τ·u viscous-work term in this
+#     mode (E already carries the dissipated kinetic energy) and the nodal-ρ
+#     scaling below is not applied.
+#
 #  *  lnodal_rho (:dsgs_nodal_rho). Slots 2-5 receive the KINEMATIC μ (and
 #     μγ/((γ−1)Pr_t) for E) and SGS_diffusion(::DSGS_MHD) multiplies by the
 #     density OF THE QUADRATURE POINT. With the element mean ρ̄, the
@@ -1223,7 +1231,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lglobal_norms::Bool=false,
                                  llocal_norms::Bool=false,
                                  local_rel::TT=one(TT),
-                                 lnodal_rho::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lnodal_rho::Bool=false,
+                                 lconserved::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
@@ -1406,11 +1415,27 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         # needs it — the LGL undershoot of that contact goes below the 1e-8
         # of its light side as soon as it is displaced (fluxEmergenceSon2025).
         μ_dsgs[ie,1] = visc_coeff[1]*μ                             # ρ
-        μ_dsgs[ie,2] = visc_coeff[2]*μ_dyn                         # ρu
-        μ_dsgs[ie,3] = visc_coeff[3]*μ_dyn                         # ρv
-        μ_dsgs[ie,4] = visc_coeff[4]*μ_dyn*γ/(γm1*Pr_t)            # E
-        if neqs >= 5
-            μ_dsgs[ie,5] = visc_coeff[5]*μ_dyn                     # ρw
+        if lconserved
+            # Laplacian on the CONSERVED variables (the case's user_primitives!
+            # returns ρ, ρu, ρv, E, ρw, B, ψ themselves, rhs.jl drops the τ·u
+            # term): one kinematic coefficient for every slot, so that an
+            # isobaric contact diffuses consistently — ρ spreads, E (constant
+            # across it) does not, and p stays what it was. Diffusing ρ alone
+            # under a T-based energy closure had driven p negative within a
+            # few τ₀ at the 25× density drop of the solar transition region.
+            μ_dsgs[ie,2] = visc_coeff[2]*μ                         # ρu
+            μ_dsgs[ie,3] = visc_coeff[3]*μ                         # ρv
+            μ_dsgs[ie,4] = visc_coeff[4]*μ                         # E
+            if neqs >= 5
+                μ_dsgs[ie,5] = visc_coeff[5]*μ                     # ρw
+            end
+        else
+            μ_dsgs[ie,2] = visc_coeff[2]*μ_dyn                     # ρu
+            μ_dsgs[ie,3] = visc_coeff[3]*μ_dyn                     # ρv
+            μ_dsgs[ie,4] = visc_coeff[4]*μ_dyn*γ/(γm1*Pr_t)        # E
+            if neqs >= 5
+                μ_dsgs[ie,5] = visc_coeff[5]*μ_dyn                 # ρw
+            end
         end
         for ieq = 6:min(neqs,8)
             μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ                     # B (resistivity)

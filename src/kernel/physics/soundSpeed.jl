@@ -257,13 +257,24 @@ function local_max_diffusivity(npoin, params, visc)
     neqsν = size(params.μ_dsgs_pnode, 2)
     tiny  = 1.0e-16
 
+    # Which slots hold a DYNAMIC coefficient (to be divided by ρ) and which a
+    # KINEMATIC one (a diffusivity already). The MHD kernel stores the
+    # magnetic and ψ slots (6-9) as kinematic resistivities, and with
+    # :dsgs_nodal_rho or :dsgs_conserved its momentum/energy slots too (the
+    # ρ factor is then applied per quadrature point at assembly, or absent).
+    # Dividing those by the 7e-9 of a solar corona printed a "max ν" of 1e7
+    # for a run whose real parabolic number was 0.04.
+    mhd    = (params.VT == DSGS_MHD())
+    allkin = mhd && (get(params.inputs, :dsgs_nodal_rho, false) || get(params.inputs, :dsgs_conserved, false))
+
     ν = 0.0
     @inbounds for ip = 1:npoin
         ρ = lpert ? q[ip,1] + qe[ip,1] : q[ip,1]
         ρ = max(ρ, tiny)
-        ν = max(ν, params.μ_dsgs_pnode[ip,1])           # β, already kinematic
+        ν = max(ν, params.μ_dsgs_pnode[ip,1])           # β / mass diffusion, kinematic
         for ieq = 2:neqsν
-            ν = max(ν, params.μ_dsgs_pnode[ip,ieq]/ρ)   # dynamic → kinematic
+            kin = allkin || (mhd && ieq >= 6)
+            ν = max(ν, kin ? params.μ_dsgs_pnode[ip,ieq] : params.μ_dsgs_pnode[ip,ieq]/ρ)
         end
     end
 
