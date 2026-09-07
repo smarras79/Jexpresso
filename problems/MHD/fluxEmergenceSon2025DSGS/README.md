@@ -94,6 +94,45 @@ of any kind was added to it.
 
 The mesh is the sibling's `FE_80x35.msh` (shared, not copied).
 
-## Results
+## Results (4 ranks, run to $54\tau_0$)
 
-(filled in from the validation run below)
+The run completed without an abort, with nothing clipped anywhere: the
+density and pressure stayed positive through the transition-region
+disturbance of $t \approx 13$–$18\tau_0$ that made the sibling fire its floors
+$10^6$ times, and the temperature never left its initial range $[1, 25]$
+during that phase (the sibling's floored pockets reached $T \approx 90$).
+The operation count per step is the sibling's (one extra multiply per
+quadrature point); the measured wall clock, 2012 s for the 21,600 steps on
+four cores of the development container, is not comparable with the
+sibling's 5194 s, which was taken in an earlier, slower session of the same
+container.
+
+**Against the sibling and the paper** (same comparison points as the
+sibling's README; the paper's numbers are IMWENO-P at $300^2$ unless noted):
+
+| quantity | paper | sibling (floors) | this case (DynSGS only) |
+|---|---|---|---|
+| max $\lvert\mathbf{v}\rvert$ at $t = 15$ / $18\tau_0$ | — | $2.06$ / $1.61\,C_s$ | $0.97$ / $0.82\,C_s$ |
+| crest at $t = 30$–$33\tau_0$ (Fig. 14b) | $\approx 10H_0$ | $11.5H_0$ ($t = 33$) | $10.5H_0$ ($t = 30$) |
+| loop top at $t = 47\tau_0$ (Fig. 14d) | $\approx 21H_0$ | $21H_0$ | $21H_0$ |
+| loop at $t = 51\tau_0$ (Fig. 2) | top $\approx 25H_0$, legs at $x \approx 25$, $55H_0$, pockets at $z \approx 7H_0$ | the same | the same |
+| centerline $V_z$ peak, $t = 51\tau_0$ (Fig. 5c) | $\approx 1.2\,C_s$ at $z \approx 26H_0$ | $1.15\,C_s$ at $27H_0$ | $1.23\,C_s$ at $27H_0$ |
+| centerline $V_A$ peak, $t = 51\tau_0$ (Fig. 5g) | $\approx 3.9\,C_s$ at $z \approx 21H_0$ | $3.2\,C_s$ | $3.1\,C_s$ at $20H_0$ |
+| centerline $\log_{10}\rho$, $t = 51\tau_0$ (Fig. 5o) | $-5$ at $z = 20$, drop to $-8$ at $27$–$28H_0$ | $-5$, drop over $28$–$30H_0$ | $-5$, drop over $28$–$30H_0$ |
+| downflows at $t = 51\tau_0$ | $4$–$5\,C_s$ at the loop sides, $2$–$3\,C_s$ near the footpoints | $5$ / $3\,C_s$ | $3$ / $3\,C_s$ |
+| centerline $\beta$ in the loop (Fig. 6e) | $\approx 0.15$–$0.2$ | $0.03$–$0.1$ | $0.03$–$0.1$ |
+| $t = 54\tau_0$ | $V_z \approx 1.25\,C_s$ at $z \approx 28H_0$ | $1.28\,C_s$ at $32H_0$ | $1.57\,C_s$ at $32H_0$, $V_A$ $3.45\,C_s$ at $21H_0$ |
+
+The emergence is the same as the sibling's and the paper's — timing,
+height, loop shape, rise speed, density inside and above the loop. The
+pre-emergence phase is cleaner than the sibling's: with the relative
+operator the transition-region corrugation of $t = 13$–$18\tau_0$ diffuses
+without evacuating, so there are no floored pockets, no $T \approx 90$ spots,
+and the coronal fall-back peaks at $1\,C_s$ instead of $2\,C_s$. The
+lateral downflows at $t = 51$ are weaker than the sibling's ($3$ against
+$5\,C_s$; the paper has $4$–$5$).
+
+**The coefficient.** `log10_μ_dsgs_ρ-it<n>.png` shows where the run's only
+dissipation acts (written by the rerun with `:plot_dsgs => true`; the
+description here is from that rerun): at rest the $C_0$ floor
+($10^{-1.4}$ in the corona, $10^{-2.2}$ in the chromosphere); MUDESC
