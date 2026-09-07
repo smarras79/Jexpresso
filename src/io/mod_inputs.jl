@@ -349,6 +349,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         (:plot_ylabel,           "y"),
         (:plot_time_unit,        " s"),               # appended to "t = ..." in the titles
         (:plot_dsgs,             true),               # μ_dsgs panels of a DynSGS run
+        (:plot_dsgs_vars,        nothing),            # damped variables whose μ_dsgs panel is written (nothing = all)
+        (:plot_dsgs_log10,       false),              # log₁₀ μ_dsgs panels, floored at :plot_dsgs_floor
+        (:plot_dsgs_floor,       1.0e-6),
         (:plot_raster_nmax,      400),                # raster points along the longer side
         (:plot_profile_x,        nothing),            # x of the vertical-profile figure (nothing = none)
         (:plot_profile_vars,     nothing),

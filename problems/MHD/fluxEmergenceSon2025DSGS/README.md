@@ -22,7 +22,12 @@ mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
 
 Output goes to `./output/MHD/fluxEmergenceSon2025DSGS/<run>/`, the same PNG
 set as the sibling (`ρ-it<n>.png` with field lines and vectors on the paper's
-colour scale, `profile-it<n>.png` on the axes of the paper's Fig. 5, …).
+colour scale, `profile-it<n>.png` on the axes of the paper's Fig. 5, …) plus
+`log10_μ_dsgs_ρ-it<n>.png`, the DynSGS coefficient actually applied
+($\log_{10}$ of the kinematic $\mu$, floored at $10^{-6}$; all nine slots
+carry the same $\mu$ in the conserved form). This is the only dissipation in
+the run, so that panel is the whole story of where and how much the scheme
+regularizes.
 
 ## What changes, and why it is enough
 

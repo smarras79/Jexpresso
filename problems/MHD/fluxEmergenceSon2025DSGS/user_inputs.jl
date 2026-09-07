@@ -178,7 +178,14 @@ function user_inputs()
         :plot_xlabel         => "X/H₀",
         :plot_ylabel         => "Z/H₀",
         :plot_time_unit      => " τ₀",
-        :plot_dsgs           => false,        # no μ_dsgs panels (set true to inspect the viscosity)
+        # The DynSGS coefficient actually applied, log10_μ_dsgs_ρ-it<n>.png:
+        # log₁₀ of the kinematic μ (H₀ C_s), floored at 1e-6. In the conserved
+        # form every slot carries the same coefficient, so the ρ slot stands
+        # for all nine. (:outformat => "vtk" writes all nine as mu_dsgs_<var>.)
+        :plot_dsgs           => true,
+        :plot_dsgs_vars      => ["ρ"],
+        :plot_dsgs_log10     => true,
+        :plot_dsgs_floor     => 1.0e-6,
         :plot_profile_x      => 40.0,         # paper Fig. 5: x = X_max/2
         :plot_profile_vars   => ["v", "vA", "Bx", "ρ"],
         :plot_profile_log10  => ["Bx", "ρ"],

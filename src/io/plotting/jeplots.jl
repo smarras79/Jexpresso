@@ -452,6 +452,10 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
                                  reference arrow of speed :plot_vectors_ref)
           :plot_overlay_on       names of the panels that get the overlays (default: all)
           :plot_dsgs             render the μ_dsgs panels of a DynSGS run (default: true)
+          :plot_dsgs_vars        names of the damped variables whose μ_dsgs panel is
+                                 written (default: all slots with a non-zero coefficient)
+          :plot_dsgs_log10       render log₁₀ μ_dsgs floored at :plot_dsgs_floor
+                                 (default: false; floor 1e-6), file log10_μ_dsgs_<var>-it<n>.png
           :plot_profile_x        x at which a vertical profile figure profile-it<iout>.png
                                  of :plot_profile_vars is written (nodes on that line,
                                  or the nearest raster column); :plot_profile_log10,
@@ -687,13 +691,30 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     # dynamic ρ̄μ, magnetic and ψ slots the kinematic μ — so each panel is
     # scaled to its own range and should be read against itself over time,
     # not against a neighbouring panel.
+    #
+    # :plot_dsgs_vars selects the slots by the name of the variable they damp
+    # (a DynSGS-MHD run in its conserved form gives every slot the same
+    # kinematic coefficient, so one panel says it all); :plot_dsgs_log10
+    # renders log₁₀ μ floored at :plot_dsgs_floor, since a residual-based
+    # coefficient spans several decades between the quiet flow and the cap.
+    μsel   = get(inputs, :plot_dsgs_vars, nothing)
+    μlog   = get(inputs, :plot_dsgs_log10, false)
+    μfloor = get(inputs, :plot_dsgs_floor, 1.0e-6)
     if nμ > 0 && get(inputs, :plot_dsgs, true)
         for ieq = 1:nμ
+            if μsel !== nothing && !(μ_names !== nothing && length(μ_names) >= ieq && string(μ_names[ieq]) in μsel)
+                continue
+            end
             μvar = μv[ieq]
             μmax = maximum(μvar)
             μmax > 0 || continue
 
             name = μnames[ieq]
+            if μlog
+                μvar = log10.(max.(μvar, μfloor))
+                μmax = maximum(μvar)
+                name = string("log10_", name)
+            end
             zgμ  = _grid_nearest(xn, yn, μvar, xg, yg)
             pltμ = Plots.contourf(xg, yg, zgμ';
                                   color = cmap,

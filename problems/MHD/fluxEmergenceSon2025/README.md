@@ -148,6 +148,7 @@ post-processed. At every output time, in the run directory:
 | `ρ-it<n>.png` | $\log_{10}(\rho/\rho_0)$, `jet` colormap fixed to $[-8.5, 0]$, black magnetic field lines (isocontours of $A_y$), white velocity vectors with the "= 5.0" reference arrow | Fig. 2 (and the Fig. 14 sequence) |
 | `v-it<n>.png`, `vA-it<n>.png`, `Bx-it<n>.png` | $V_z/C_s$, $V_A/C_s$, $B_x/B_0$ maps | — |
 | `p-it<n>.png`, `T-it<n>.png`, `β-it<n>.png` | $\log_{10}p$, $T/T_0$, $\log_{10}\beta$ maps | Fig. 6(e) for $\beta$ |
+| `log10_μ_dsgs_ρ-it<n>.png` | $\log_{10}$ of the DynSGS coefficient $\mu$ (kinematic, $H_0C_s$) actually applied, floored at $10^{-6}$; in the conserved form all nine slots carry the same $\mu$, so the $\rho$ slot stands for all | — |
 | `profile-it<n>.png` | $V_z/C_s$, $V_A/C_s$, $\log_{10}(B_x/B_0)$, $\log_{10}(\rho/\rho_0)$ along $x = 40H_0$, axes fixed to $[0,1.7]$, $[0,4.5]$, $[-2,1]$, $[-8.5,1]$, $z_{cor} = 18H_0$ marked | Fig. 5 (paper times 33, 40, 47, 51–54 $\tau_0$) |
 
 `iter` counter `n` = output slot: `it1` is $t = 0$, `it52` is $t = 51\tau_0$
@@ -159,9 +160,9 @@ These figures use the generic options of the 2D PNG writer added with this
 case (`:plot_vars`, `:plot_log10`, `:plot_clims`, `:plot_fieldlines`,
 `:plot_vectors`, `:plot_overlay_on`, `:plot_profile_*`, …; defaults and
 meaning in `src/io/mod_inputs.jl`), so they can be re-styled from
-`user_inputs.jl` alone. Set `:plot_dsgs => true` to also get one
-`μ_dsgs_<var>-it<n>.png` panel per equation with the DynSGS viscosity that
-was applied.
+`user_inputs.jl` alone. `:plot_dsgs_vars` selects which slots' coefficient
+panels are written (all nine with `nothing`), `:plot_dsgs_log10 => false`
+gives them on a linear scale.
 
 `:outformat => "vtk"` writes the same twelve output variables
 (`ρ u v w p Bx By Bz ψ T vA β`) plus the `mu_dsgs_<var>` fields to
