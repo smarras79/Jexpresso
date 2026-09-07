@@ -110,8 +110,8 @@ quadruples (twice the elements, twice the steps).
   at $0.1\,C_s$. No filter, no entropy-stable/KEP fluxes. All multipliers
   `:μ` are 1.
 - **Positivity floors** (`fe_positivity_limiter!`, top of `user_inputs.jl`,
-  passed to `CarpenterKennedy2N54` as its stage limiter): $\rho \ge 0.05\rho_e(z)$
-  and $p \ge 0.05p_e(z)$ at every Runge–Kutta stage, $p$ raised through the
+  passed to `CarpenterKennedy2N54` as its stage limiter): $\rho \ge 0.2\rho_e(z)$
+  and $p \ge 0.2p_e(z)$ at every Runge–Kutta stage, $p$ raised through the
   total energy at fixed velocity and field. Why: the sheet's initial
   adjustment launches an acoustic wave (period ≈ 6 τ₀, above the isothermal
   cutoff) whose amplitude grows as $\rho^{-1/2}$ up the 8-decade
