@@ -133,6 +133,24 @@ lateral downflows at $t = 51$ are weaker than the sibling's ($3$ against
 $5\,C_s$; the paper has $4$–$5$).
 
 **The coefficient.** `log10_μ_dsgs_ρ-it<n>.png` shows where the run's only
-dissipation acts (written by the rerun with `:plot_dsgs => true`; the
-description here is from that rerun): at rest the $C_0$ floor
-($10^{-1.4}$ in the corona, $10^{-2.2}$ in the chromosphere); MUDESC
+dissipation acts. At rest it is the $C_0$ floor, $0.03\Delta c_f$:
+$10^{-1.4} = 0.037$ in the corona, $10^{-2.1} = 0.008$ in the chromosphere,
+slightly more in the sheet. The residual sensor lifts it above the floor
+in three places only: the transition-region band $z = 17$–$19H_0$ under
+the perturbation ($0.05$–$0.12$ at $t = 10$, up to $0.3$ at $t = 33$ where
+the contact is displaced), the coronal fall-back region above it at
+$t = 15$ ($0.1$, $z = 18$–$27H_0$), and the absorbing layer. Inside the
+rising sheet and loop it stays at $0.01$–$0.03$, and the wave-speed cap
+($C_2\Delta c_f \approx 0.6$ in the corona) is never reached before the
+emergence. Two consequences worth knowing: the coronal smoothing seen in
+the $\beta$ maps (blurred edges of the low-$\beta$ region above $z = 18H_0$)
+is the floor, which alone spreads a structure by $\sqrt{2\mu t} \approx 1.6H_0$
+by $t = 33\tau_0$, in this case and the sibling alike; and the relative
+operator, written out, is $\nabla\cdot(\mu\nabla\delta q) - \nabla\cdot(\mu\,\delta q\,\nabla\ln\rho_e)$,
+i.e. a Laplacian plus a drift of the departure toward higher $\rho_e$ at
+speed $\mu\lvert\mathrm{d}\ln\rho_e/\mathrm{d}z\rvert$ — $5.4\mu$ at the
+transition region, so $0.2\,C_s$ at the floor and $1.6\,C_s$ where the
+sensor fires there. That drift is the positivity mechanism; it also acts
+on loop mass crossing the fixed height $z_{cor}$, a bias of $0.1$–$0.2\,C_s$
+against a rise speed of $0.5$–$0.8\,C_s$ (the measured crest heights agree
+with the sibling's within $1H_0$, so it is modest, but it is there).
