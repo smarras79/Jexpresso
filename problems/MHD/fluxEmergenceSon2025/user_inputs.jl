@@ -22,8 +22,8 @@ function user_inputs()
         # and CFL ≈ 0.15. The paper's own Courant number is 0.23.
         :Δt                   => 2.5e-3,
         :tinit                => 0.0,
-        :tend                 => 54.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
-        :diagnostics_at_times => (0.0:1.0:54.0),
+        :tend                 => 8.0,
+        :diagnostics_at_times => (0.0:0.5:8.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # gravity + GLM ψ damping + absorbing layer (user_source.jl)
@@ -53,9 +53,13 @@ function user_inputs()
         # that it appears at the shocks and stays near zero elsewhere.
         #
         # :μ are per-equation multipliers on the DynSGS coefficient for
-        # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): no mass diffusion, momentum, ρw,
-        # B (turbulent resistivity) and ψ at full strength, and NO thermal
-        # diffusion on the energy slot. The energy slot's κ∇T is the one
+        # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): mass, momentum, ρw, B (turbulent
+        # resistivity) and ψ at full strength, and NO thermal diffusion on
+        # the energy slot. Mass diffusion (off in the other MHD cases) is
+        # needed here: the density drops 25× across the 0.6 H₀ transition
+        # region, and with nothing acting on ρ the LGL undershoot of that
+        # contact went below the 10⁻⁸ of its light side as soon as the first
+        # disturbance from the sheet reached it (t ≈ 3.5 τ₀, measured). The energy slot's κ∇T is the one
         # DynSGS term that acts on an atmosphere at rest: wherever the
         # sensor fires on the under-resolved 25× temperature jump of the
         # transition region it smears it within ~0.5 τ₀ and the heated
@@ -69,7 +73,7 @@ function user_inputs()
         # pressure are built from it).
         #---------------------------------------------------------------------------
         :lvisc            => true,
-        :μ                => [0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                => [1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
         :dsgs_C1          => 1.0,
         :dsgs_C2          => 0.5,
@@ -132,7 +136,7 @@ function user_inputs()
         # Switch to :outformat => "vtk" for ParaView output (plus the
         # mu_dsgs_<var> DynSGS fields).
         #---------------------------------------------------------------------------
-        :outformat           => "png",
+        :outformat           => "vtk",
         :plot_matrix         => false,        # silent per-variable PNGs, no GR window
         :plot_colormap       => :jet,         # the paper's colormap (Fig. 2)
         :plot_vars           => ["ρ", "v", "vA", "Bx", "p", "T", "β"],

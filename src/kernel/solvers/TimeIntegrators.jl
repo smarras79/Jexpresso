@@ -596,6 +596,31 @@ function time_loop!(inputs, params, u, args...)
         # printing it nparts times is pure noise.  Root rank still sees
         # the warning once, which is the right amount.
         solve_logger = rank == 0 ? current_logger() : NullLogger()
+
+        # Instability check that is COLLECTIVE. OrdinaryDiffEq's default
+        # unstable_check is rank-local: a rank whose state goes non-finite
+        # aborts its own solve (its warning silenced by the NullLogger above)
+        # and proceeds to the barrier below, while every other rank keeps
+        # integrating and blocks forever in the next halo exchange — the run
+        # looks hung right after its last output. Every rank now reports its
+        # own verdict, the failing rank says where (rank, time, node, field,
+        # coordinates), and all ranks abort together.
+        function mpi_unstable_check(dt_, u_, p_, t_)
+            bad = !all(isfinite, u_)
+            if bad
+                k    = findfirst(x -> !isfinite(x), u_)
+                np   = p_.mesh.npoin
+                ip   = (k - 1) % np + 1
+                ieq  = (k - 1) ÷ np + 1
+                xs   = p_.mesh.x[ip]
+                ys   = p_.mesh.y[ip]
+                println(" # rank ", rank, ": non-finite solution at t = ", t_,
+                        " (first in field ", ieq, " at node ", ip, ", x = ", xs, ", y = ", ys, "); aborting on all ranks")
+                flush(stdout)
+            end
+            return MPI.Allreduce(bad, MPI.LOR, comm)
+        end
+
         solution = with_logger(solve_logger) do
             solve(prob,
                   inputs[:ode_solver], dt=dt,
@@ -603,6 +628,7 @@ function time_loop!(inputs, params, u, args...)
                   callback = callbacks_main, tstops = tstops_all,
                   save_everystep = false,
                   adaptive=inputs[:ode_adaptive_solver],
+                  unstable_check = mpi_unstable_check,
                   saveat = range(inputs[:tinit],
                                  inputs[:tend],
                                  length=inputs[:ndiagnostics_outputs]))

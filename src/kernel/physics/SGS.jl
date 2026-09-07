@@ -1164,7 +1164,7 @@ end
 #     ρ̄ is the element-mean density.
 #
 # Per-equation split (Marras eq. 10, adapted to the GLM-MHD field set):
-#     [1] ρ  : 0                       — mass stays conservative
+#     [1] ρ  : :μ[1]·μ                 — 0 (Marras) unless the case asks
 #     [2,3,5] ρu, ρv, ρw : ρ̄·μ
 #     [4] E  : ρ̄·μ·γ/((γ−1)·Pr_t)      — see below
 #     [6,7,8] B          : μ           — turbulent resistivity
@@ -1399,7 +1399,13 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         # kinematic μ that SGS_diffusion(::DSGS_MHD) scales by the nodal ρ
         μ_dyn = lnodal_rho ? μ : ρ_el*μ
 
-        μ_dsgs[ie,1] = zero(TT)                                    # ρ
+        # ρ: the user's :μ[1] times the kinematic μ (its primitive is ρ
+        # itself, so ∇·(μ∇ρ) is a conservative mass diffusion). The MHD
+        # cases at rest keep :μ[1] = 0; a stratified atmosphere whose
+        # density drops 25× across an under-resolved transition region
+        # needs it — the LGL undershoot of that contact goes below the 1e-8
+        # of its light side as soon as it is displaced (fluxEmergenceSon2025).
+        μ_dsgs[ie,1] = visc_coeff[1]*μ                             # ρ
         μ_dsgs[ie,2] = visc_coeff[2]*μ_dyn                         # ρu
         μ_dsgs[ie,3] = visc_coeff[3]*μ_dyn                         # ρv
         μ_dsgs[ie,4] = visc_coeff[4]*μ_dyn*γ/(γm1*Pr_t)            # E

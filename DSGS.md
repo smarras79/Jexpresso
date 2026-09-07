@@ -277,7 +277,7 @@ the magnetic slots. So:
 
 | slot | coefficient | units |
 |---|---|---|
-| $\rho$ | $0$ | — (mass stays conservative) |
+| $\rho$ | $\texttt{:μ}[1]\cdot\mu$ | kinematic (a conservative mass diffusion $\nabla\cdot(\mu\nabla\rho)$; 0 in the Orszag–Tang and KH cases, on in `fluxEmergenceSon2025` whose transition-region contact would otherwise undershoot below its $10^{-8}$ light side) |
 | $\rho u,\rho v,\rho w$ | $\texttt{:μ}[i]\cdot\bar\rho\,\mu$ | dynamic |
 | $E$ | $\texttt{:μ}[4]\cdot\bar\rho\,\mu\cdot\dfrac{\gamma}{(\gamma-1)Pr_t}$ | dynamic |
 | $B_x,B_y,B_z$ | $\texttt{:μ}[i]\cdot\mu$ | kinematic (turbulent resistivity) |
