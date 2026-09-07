@@ -78,6 +78,6 @@ function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[8]  = u[8]     # Bz
     uout[9]  = u[9]     # ψ
     uout[10] = γ_mhd*p/ρ             # T/T₀
-    uout[11] = sqrt(B2/ρ)            # V_A/C_s
+    uout[11] = sqrt(max(B2/ρ, 0.0))  # V_A/C_s (guarded: a run that went bad must still write its last output)
     uout[12] = min(2.0*p/max(B2, 1e-300), 1.0e6)   # plasma β
 end

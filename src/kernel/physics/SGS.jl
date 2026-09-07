@@ -1195,6 +1195,10 @@ end
 #     O(q_i) (ρ changes by e⁻¹ across a 1 H₀ element), so the ratio stays
 #     the relative under-resolution rate the model intends.
 #
+#  *  C0 (:dsgs_C0). Background floor C0·Δ·(‖v‖+c_f) on μ, a fraction of the
+#     C2 cap, for the node-to-node modes the residual cannot sense (see the
+#     kernel). 0 by default.
+#
 #  *  lconserved (:dsgs_conserved). Every slot receives the kinematic μ and
 #     the case's user_primitives! hands the assembly the conserved variables
 #     themselves, so the operator is a Laplacian on (ρ, ρv, E, B, ψ) — the
@@ -1232,7 +1236,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  llocal_norms::Bool=false,
                                  local_rel::TT=one(TT),
                                  lnodal_rho::Bool=false,
-                                 lconserved::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lconserved::Bool=false,
+                                 C0::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
@@ -1403,6 +1408,19 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_res = C1*Δ*Δ*ratio
         μ_max = C2*Δ*wmax
         μ     = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s
+
+        # Background floor C0·Δ·(‖v‖+c_f), a fraction of the wave-speed cap
+        # (C0 = 0 by default: pure Marras). The residual sensor is blind to a
+        # node-to-node (checkerboard) mode — the discrete operator returns
+        # nearly nothing on it, which is exactly why the CG discretization
+        # leaves it undamped — and in the low-density corona of the
+        # flux-emergence case such a mode grew from 0.02 to 0.5 C_s in three
+        # τ₀ with μ_res ≈ 10⁻³ there. A floor of a few percent of the cap damps
+        # it at rate C0 Δ c (π/Δ)² ≈ 7/τ₀ for C0 = 0.03 while diffusing a
+        # resolved structure by only √(C0 Δ c t) ≈ 1 H₀ over the whole run.
+        if C0 > zero(TT)
+            μ = max(μ, C0*Δ*wmax)
+        end
 
         # dynamic coefficient for u/v/w/T: ρ̄·μ with the element mean, or the
         # kinematic μ that SGS_diffusion(::DSGS_MHD) scales by the nodal ρ

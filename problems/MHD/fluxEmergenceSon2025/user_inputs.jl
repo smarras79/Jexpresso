@@ -71,6 +71,13 @@ function user_inputs()
         :visc_model       => DSGS_MHD(),
         :dsgs_C1          => 1.0,
         :dsgs_C2          => 0.5,
+        # Background floor of 3% of the wave-speed cap: the residual sensor
+        # cannot see a node-to-node mode (the discrete operator returns
+        # nearly nothing on it), and in the corona above the rising crest
+        # such a mode grew from 0.02 to 0.5 C_s between t = 8 and 11 τ₀ and
+        # ended the run (measured). μ_floor = 0.03·Δ·c damps it at ≈ 7/τ₀
+        # and spreads a resolved structure by ≈ 1 H₀ over the whole run.
+        :dsgs_C0          => 0.03,
         :dsgs_gamma       => 1.05,
         :dsgs_Prt         => 0.7,
         # Stratification variants of the model (kernel/physics/SGS.jl): the

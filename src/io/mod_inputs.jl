@@ -1047,6 +1047,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_conserved))
         inputs[:dsgs_conserved] = false
     end
+    #   :dsgs_C0           background floor C0·Δ·(|v|+c_f) on the coefficient
+    #                      (a fraction of the :dsgs_C2 cap) for the
+    #                      node-to-node modes the residual cannot sense
+    if(!haskey(inputs, :dsgs_C0))
+        inputs[:dsgs_C0] = 0.0
+    end
 
     #
     # Viscous models:
