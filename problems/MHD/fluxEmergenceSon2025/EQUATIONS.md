@@ -215,10 +215,25 @@ $t = 54\tau_0$.
    and field-aligned downflows of $2$–$3\,C_s$ near the footpoints.
 4. **Late time, $t = 52$–$54\tau_0$**: the top of the loop approaches the
    absorbing layer; $V_z$ peaks at $\approx 1.25\,C_s$ at $z \approx 27H_0$,
-   $V_A$ at $\approx 4\,C_s$, $\beta$ inside the loop $\sim 10^{-4}$.
+   $V_A$ at $\approx 4\,C_s$; along the centerline $\beta$ falls to
+   $\approx 0.15$–$0.2$ inside the loop ($z \approx 15$–$22H_0$, paper
+   Fig. 6(e)) and rises past 2 at the loop top and in the sheet.
 
-Departures to expect from a CG-SEM + DynSGS run at this resolution: the
-contact surface at the loop top is smeared over $\sim 1H_0$; the current
+A remark on the paper's $B_x$ curves (Fig. 5 row 3, Fig. 6(c)): their peak
+sits at $\log_{10}(B_x/B_0) \approx -0.5$ ($t = 33\tau_0$) to $-0.65$
+($t = 51\tau_0$), while the paper's own Fig. 1(b) puts the initial sheet
+peak at $B_x/B_0 = 0.113$, i.e. $-0.95$, and a rising, expanding sheet
+cannot triple its field. The offset is $0.55$ dex $= \log_{10}\sqrt{4\pi}$:
+those panels are drawn with the Gaussian-unit field $\sqrt{4\pi}\,B$,
+the equations and Fig. 1(b) with the Heaviside–Lorentz one. Jexpresso's
+output `Bx` is Heaviside–Lorentz throughout (magnetic pressure
+$\tfrac12 B^2$); subtract $0.55$ from the paper's Fig. 5/6 $B_x$ curves,
+or add it to `profile-it<n>.png`, before comparing. $V_A$ is unaffected.
+
+Departures to expect from a CG-SEM + DynSGS run at this resolution (the
+measured ones of the shipped configuration are tabulated in README.md,
+"Results"): the contact surface at the loop top is smeared over
+$\sim 1$–$2H_0$; the current
 sheets at the feet and the Gibbs-free shocks of the paper's IMWENO-P are
 regularized by the eddy viscosity (which also acts on $\mathbf{B}$ as a
 turbulent resistivity, so the footpoint field will diffuse slightly); the

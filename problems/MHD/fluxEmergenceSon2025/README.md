@@ -167,6 +167,55 @@ was applied.
 (`ρ u v w p Bx By Bz ψ T vA β`) plus the `mu_dsgs_<var>` fields to
 `iter_<n>.pvtu` for ParaView.
 
+## Results (shipped configuration, run to $54\tau_0$)
+
+Measured on the run that produced this commit: 4 MPI ranks, `FE_80x35`,
+$N = 4$, $\Delta t = 2.5\times10^{-3}\tau_0$, 21,600 steps, PNG output every
+$\tau_0$. It ran to $t = 54\tau_0$ without an abort in 5194 s of wall
+clock on four cores of the development container, of which ≈ 5 min were
+start-up and compilation (≈ 0.23 s per step, ≈ 1.6 min per $\tau_0$), so
+ten cores should need roughly 35–40 min.
+
+**Against the paper** (IMWENO-P at $300^2$ unless noted; the PNGs named
+below are in the run directory):
+
+| quantity | paper | this run |
+|---|---|---|
+| crest height at $t = 33\tau_0$ (Fig. 14b) | $\approx 10H_0$ | $11.5H_0$ (`ρ-it34.png`) |
+| crest at $t = 43$ / $47\tau_0$ (Fig. 14c,d) | $\approx 17$ / $21H_0$ | $18.5H_0$ at $t = 44$ / $21H_0$ at $47$ (`ρ-it45/48.png`) |
+| loop at $t = 51\tau_0$ (Fig. 2) | top $\approx 23$–$25H_0$, corona lifted to $27H_0$, legs at $x \approx 25$, $55H_0$, dense pockets ($\log_{10}\rho \approx -3$) at $z \approx 7H_0$ | the same: top $25H_0$, lifted corona to $27H_0$, legs at $25$, $55H_0$, pockets at $z \approx 7H_0$ (`ρ-it52.png`) |
+| centerline $V_z$, $t = 51\tau_0$ (Fig. 5c, 6a) | peak $\approx 1.2\,C_s$ at $z \approx 26H_0$ | $1.15\,C_s$ at $z \approx 27H_0$ (`profile-it52.png`) |
+| centerline $V_A$, $t = 51\tau_0$ (Fig. 5g, 6b) | peak $\approx 3.9\,C_s$ at $z \approx 21H_0$ | $3.2\,C_s$ at $z \approx 20H_0$ |
+| centerline $\log_{10}\rho$, $t = 51\tau_0$ (Fig. 5o) | $-4$ at $z = 15$, $-5$ at $20$, $-5.3$ at $25H_0$, drop to $-8$ at $27$–$28H_0$ | $-4.2$, $-5$, $-5.4$; drop to $-8$ over $z = 28$–$30H_0$ |
+| centerline $\log_{10}B_x$, $t = 51\tau_0$ (Fig. 5k) | $-0.65$ at $z = 5$, $-1.5$ at $18H_0$ (Gaussian units, see EQUATIONS.md §6) | $-1.2$ at $z = 5$, $-2.0$ at $18H_0$: the paper's curves minus $\log_{10}\sqrt{4\pi} = 0.55$ |
+| downflows at $t = 51\tau_0$ (paper text) | $4$–$5\,C_s$ along the loop sides, $2$–$3\,C_s$ near the footpoints | $5\,C_s$ at $(x, z) \approx (5, 16)$ and $(75, 16)$, $3\,C_s$ at $(25, 13)$ and $(55, 13)$ (`v-it52.png`) |
+| centerline $\beta$ inside the loop (Fig. 6e, TENO-LAD $2400^2$) | $\approx 0.15$–$0.2$ | $\approx 0.03$–$0.1$ (`β-it52.png`) |
+| $t = 54\tau_0$ (Fig. 6a,b,d, TENO-LAD $2400^2$) | $V_z$ peak $\approx 1.25\,C_s$ at $z \approx 28H_0$, $V_A$ peak $\approx 4.1\,C_s$ at $z \approx 21H_0$, $\rho$ drop at $z \approx 29$–$30H_0$ | $1.28\,C_s$ at $z \approx 32H_0$, $3.65\,C_s$ at $z \approx 21H_0$, drop at $z \approx 31H_0$; loop top at $29H_0$, inside the absorbing layer (`profile-it55.png`, `ρ-it55.png`) |
+
+The emergence itself — timing, height, loop shape, rise speed, density
+inside and above the loop, the downflows — is reproduced at this
+"coarsest admissible" resolution. The departures are: the Alfvén-speed
+peak 15–20 % low and the loop $\beta$ 2–5 times low (both point to the loop
+interior being slightly denser in gas pressure terms / weaker in field
+than the paper's; the eddy viscosity acts on $\mathbf{B}$ too); the contact
+at the loop top smeared over $\approx 2H_0$ against $\approx 1H_0$ in the
+paper; and, before the emergence, a transition-region disturbance the
+paper's snapshots do not show — the coronal fall-back described under
+"Positivity floors" leaves $\pm1\,C_s$ vertical oscillations above
+$z = 18H_0$ at $t = 25$–$33\tau_0$ (`v-it26/34.png`) and hot ($T \approx 90$)
+floored pockets at the transition region (`T-it26.png`). They are gone by
+the time the loop passes through ($t \gtrsim 40\tau_0$) and do not visibly
+alter it.
+
+**Floors.** First hit at $t = 13.85\tau_0$ at $(x, z) = (27.5, 17.8)$, i.e.
+the transition region under the perturbation; $10^4$ stage-node hits by
+$t = 14.5$, $10^6$ per central rank by $t = 32\tau_0$, all at
+$z \approx 17$–$18.5H_0$ (the corrugated contact). From $t \approx 50\tau_0$
+they also fire, at ≈ 200 nodes per stage, in the evacuated downflow
+regions at the loop sides ($(4, 16)$, $(62, 8)$) — the paper's
+"near-vacuum regions with high-Mach-number flows". They never fire inside
+the loop.
+
 ## Notes
 
 - **Coordinates**: Jexpresso's `y` is the paper's `z`; `v` is $V_z$ and
@@ -177,12 +226,17 @@ was applied.
   Heaviside–Lorentz $\mathbf{B}$ ($\tfrac12B^2$ magnetic pressure). The
   output `T` is $T/T_0 = \gamma p/\rho$, i.e. exactly 1 in the chromosphere
   and 25 in the corona at $t = 0$.
-- **Ignore the CFL printout.** The shared diagnostic in
-  `src/kernel/physics/soundSpeed.jl` is written for CompEuler (γ = 1.4, no
-  magnetic pressure, multiplier instead of the actual eddy viscosity) and is
-  not meaningful for this case — same as for the other two MHD cases.
-- **Low β.** With $\gamma - 1 = 0.05$ and $\beta \sim 10^{-4}$ inside the
-  emerged loop, the pressure is a $10^{-5}$ residue of the total energy.
+- **The CFL printout.** The advective and acoustic lines of the shared
+  diagnostic in `src/kernel/physics/soundSpeed.jl` are written for
+  CompEuler (γ = 1.4, pressure without the magnetic energy) and are not
+  meaningful for this case — same as for the other two MHD cases (they
+  report a "sound speed" of 16–35 where the true maximum is 5–10). The
+  viscous line is meaningful: it uses the DynSGS coefficient actually
+  applied, kinematic on every slot in the conserved form of this case
+  (0.007 at $t = 0$, at most ≈ 0.09 during the run).
+- **Low β, γ close to 1.** With $\gamma - 1 = 0.05$ the gas pressure is
+  $(\gamma - 1)$ times the internal energy: at $\beta \approx 0.05$ inside
+  the emerged loop $p$ is a 2 % residue of the total energy.
   `initialize.jl` prints the smallest initial pressure; if a run reports
   `p` at the floor of `user_flux.jl` ($10^{-9}$) in the loop, the
   regularization is too weak there — raise `:dsgs_C1`, or `:μ[4]`.
