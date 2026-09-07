@@ -203,6 +203,16 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         plotnames = outvarnames
     end
 
+    # Silent per-variable PNGs want no screen workstation at all. Under MPI
+    # only rank 0 renders, and a GR that tries to open a gksqt window there
+    # (no display, a remote shell, a batch job) blocks rank 0 while the other
+    # ranks wait at the next collective — the run looks hung right after
+    # "Write initial condition". GKSwstype=100 (workstation "no output")
+    # keeps the file export and drops the window; honour a user setting.
+    if !get(inputs, :plot_matrix, true) && !haskey(ENV, "GKSwstype")
+        ENV["GKSwstype"] = "100"
+    end
+
     title = @sprintf("t = %.4f%s", t, string(get(inputs, :plot_time_unit, " s")))
     if (inputs[:lplot_surf3d])
         plot_surf3d(SD, mesh, qplot, title, OUTPUT_DIR;
