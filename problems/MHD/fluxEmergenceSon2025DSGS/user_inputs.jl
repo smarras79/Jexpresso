@@ -44,7 +44,7 @@ function user_inputs()
         # the late-time flows: the emerged loop reaches V_A ≈ 4-7 C_s and the
         # lateral downflows 4-5 C_s (paper Sec. 4.1), i.e. |v| + c_f ≈ 10 C_s
         # and CFL ≈ 0.15. The paper's own Courant number is 0.23.
-        :Δt                   => 2.5e-3,
+        :Δt                   => 7.5e-3,
         :tinit                => 0.0,
         :tend                 => 54.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
         :diagnostics_at_times => (0.0:1.0:54.0),
@@ -172,7 +172,7 @@ function user_inputs()
         # Switch to :outformat => "vtk" for ParaView output (plus the
         # mu_dsgs_<var> DynSGS fields).
         #---------------------------------------------------------------------------
-        :outformat           => "png",
+        :outformat           => "vtk",
         :plot_matrix         => false,        # silent per-variable PNGs, no GR window
         :plot_colormap       => :jet,         # the paper's colormap (Fig. 2)
         :plot_vars           => ["ρ", "v", "vA", "Bx", "p", "T", "β"],
