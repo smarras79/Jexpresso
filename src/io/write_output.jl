@@ -448,10 +448,25 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
         # primitives are u, v, w, T) while the magnetic and ψ slots carry
         # the KINEMATIC μ as a turbulent resistivity. Compare a slot against
         # itself over time, not against a different slot.
+        #
+        # A DynSGS-MHD run in its conserved form (:dsgs_conserved, e.g. the
+        # flux-emergence cases) gives every slot the same kinematic μ, so
+        # when all columns are identical one field, mu_dsgs, is written
+        # instead of nine copies of it.
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
-            for ieq = 1:size(μ_dsgs_pnode, 2)
-                mu_name = (ieq <= length(varnames)) ?
-                    string("mu_dsgs_", varnames[ieq]) : string("mu_dsgs_", ieq)
+            nμ = size(μ_dsgs_pnode, 2)
+            # one field per DISTINCT coefficient: a slot identical to an
+            # earlier one is not written again (its name lists the slots)
+            written = Int[]
+            for ieq = 1:nμ
+                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
+                dup && continue
+                push!(written, ieq)
+            end
+            for ieq in written
+                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
+                mu_name = (length(written) == 1) ? "mu_dsgs" :
+                    string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
             end
         end
@@ -577,10 +592,25 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
         # primitives are u, v, w, T) while the magnetic and ψ slots carry
         # the KINEMATIC μ as a turbulent resistivity. Compare a slot against
         # itself over time, not against a different slot.
+        #
+        # A DynSGS-MHD run in its conserved form (:dsgs_conserved, e.g. the
+        # flux-emergence cases) gives every slot the same kinematic μ, so
+        # when all columns are identical one field, mu_dsgs, is written
+        # instead of nine copies of it.
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
-            for ieq = 1:size(μ_dsgs_pnode, 2)
-                mu_name = (ieq <= length(varnames)) ?
-                    string("mu_dsgs_", varnames[ieq]) : string("mu_dsgs_", ieq)
+            nμ = size(μ_dsgs_pnode, 2)
+            # one field per DISTINCT coefficient: a slot identical to an
+            # earlier one is not written again (its name lists the slots)
+            written = Int[]
+            for ieq = 1:nμ
+                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
+                dup && continue
+                push!(written, ieq)
+            end
+            for ieq in written
+                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
+                mu_name = (length(written) == 1) ? "mu_dsgs" :
+                    string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
             end
         end

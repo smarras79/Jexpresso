@@ -157,7 +157,16 @@ function user_inputs()
         # and spreads a resolved structure by ≈ 1 H₀ over the whole run.
         :dsgs_C0          => 0.03,
         :dsgs_gamma       => 1.05,
-        :dsgs_Prt         => 0.7,
+        # Coefficients by equation as in Dao & Nazarov (2022, JSC 92:77, §4.4):
+        # one kinematic ν from the residual (the max over the normalized
+        # residuals of all components, their eq. 4.8), then ν on ∇ρ, ρν in
+        # the momentum stress, κ = ρν/Pr on the temperature, η = ν on B. In
+        # the conserved form below the ρ, ρv and B slots are those already;
+        # the energy slot is scaled by γ(γ−1)/Pr so that the heat
+        # conduction it carries is ρν/Pr and not ρν/(γ(γ−1)), 19× larger
+        # (kernel/physics/SGS.jl). Pr = 1 as in their runs.
+        :dsgs_Prt         => 1.0,
+        :dsgs_conserved_prandtl => true,
         # Stratification variants of the model (kernel/physics/SGS.jl): the
         # residual is normalized per element, not by the domain spread that
         # the 10⁸-times denser photosphere sets (the sensor was blind to the
@@ -231,12 +240,14 @@ function user_inputs()
         :plot_xlabel         => "X/H₀",
         :plot_ylabel         => "Z/H₀",
         :plot_time_unit      => " τ₀",
-        # The DynSGS coefficient actually applied, log10_μ_dsgs_ρ-it<n>.png:
-        # log₁₀ of the kinematic μ (H₀ C_s), floored at 1e-6. In the conserved
-        # form every slot carries the same coefficient, so the ρ slot stands
-        # for all nine. (:outformat => "vtk" writes all nine as mu_dsgs_<var>.)
+        # The DynSGS coefficients actually applied, log10_μ_dsgs_<var>-it<n>.png:
+        # log₁₀ of the kinematic coefficient (H₀ C_s), floored at 1e-6. The
+        # ρ, ρu, ρv, ρw, Bx, By, Bz, ψ slots carry ν and ρE carries
+        # ν·γ(γ−1)/Pr (see :dsgs_conserved_prandtl), so two panels say it
+        # all. (:outformat => "vtk" writes one field per distinct
+        # coefficient, mu_dsgs_<slots...>.)
         :plot_dsgs           => true,
-        :plot_dsgs_vars      => ["ρ"],
+        :plot_dsgs_vars      => ["ρ", "ρE"],  # ν (ρ, ρv, B, ψ slots) and the energy coefficient
         :plot_dsgs_log10     => true,
         :plot_dsgs_floor     => 1.0e-6,
         :plot_profile_x      => 40.0,         # paper Fig. 5: x = X_max/2

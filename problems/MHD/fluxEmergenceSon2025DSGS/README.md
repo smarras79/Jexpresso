@@ -25,9 +25,10 @@ set as the sibling (`ρ-it<n>.png` with field lines and vectors on the paper's
 colour scale, `profile-it<n>.png` on the axes of the paper's Fig. 5, …) plus
 `log10_μ_dsgs_ρ-it<n>.png`, the DynSGS coefficient actually applied
 ($\log_{10}$ of the kinematic $\mu$, floored at $10^{-6}$; all nine slots
-carry the same $\mu$ in the conserved form). This is the only dissipation in
-the run, so that panel is the whole story of where and how much the scheme
-regularizes.
+carry the same $\nu$ except the energy slot, `log10_μ_dsgs_ρE-it<n>.png`, at
+$\nu\gamma(\gamma-1)/\mathrm{Pr}$, see "Coefficients by equation"). This is
+the only dissipation in the run, so those panels are the whole story of
+where and how much the scheme regularizes.
 
 ## What changes, and why it is enough
 
@@ -82,6 +83,41 @@ cap $C_2\Delta(\lVert\mathbf{v}\rVert + c_f)$, background floor $C_0$ —
 untouched. No state-dependent trigger, no positivity sensor, no extra term
 of any kind was added to it.
 
+## Coefficients by equation (Dao & Nazarov 2022)
+
+Dao & Nazarov, *J. Sci. Comput.* 92:77 (2022), apply the residual-based
+viscosity to these same GLM-MHD equations with continuous Lagrange elements.
+Their construction: one kinematic viscosity $\nu = \min(C_{max}h\lambda_{max},\ C_R h^2 R)$
+from the *maximum* over the normalized residuals of all components (their
+eq. 4.8) — the $\mu$ of this kernel — and then, by the nature of each
+equation (their §4.4), $\nu$ on $\nabla\rho$, the dynamic $\mu = \rho\nu$ in
+the momentum stress, $\kappa = \mu/\mathrm{Pr}$ on $\nabla T$, and the
+resistivity $\eta = \nu$ on $\mathbf{B}$. This case follows that
+(`:dsgs_conserved_prandtl => true`, `:dsgs_Prt => 1` as in their runs):
+
+| equation | Dao & Nazarov | here (conserved variables) |
+|---|---|---|
+| mass | $\nu\nabla\rho$ | $\nu\rho_e\nabla(\delta\rho/\rho_e)$ |
+| momentum | $\rho\nu(\nabla\mathbf{u} + \nabla\mathbf{u}^T)$ | $\nu\rho_e\,\tau(\delta(\rho\mathbf{v})/\rho_e)$, i.e. $\rho\nu\nabla\mathbf{v}$ to leading order |
+| energy | $\kappa\nabla T$, $\kappa = \rho\nu/\mathrm{Pr}$, plus $\mathbf{u}\cdot\tau$ and the magnetic work | $\nu\,\tfrac{\gamma(\gamma-1)}{\mathrm{Pr}}\,\rho_e\nabla(\delta E/\rho_e)$: the same $\kappa$ on the thermal part of $E$ |
+| induction | $\eta(\nabla\mathbf{B} - \nabla\mathbf{B}^T)$, $\eta = \nu$ | $\nu\nabla\delta\mathbf{B}$ |
+
+so the coefficient fields are $\nu$ on eight slots and $\nu\gamma(\gamma-1)/\mathrm{Pr} = 0.0525\,\nu$
+on the energy (`log10_μ_dsgs_ρ-it<n>.png`, `log10_μ_dsgs_ρE-it<n>.png`;
+in VTK `mu_dsgs_ρ_ρu_ρv_ρw_Bx_By_Bz_ψ` and `mu_dsgs_ρE`). Two departures
+from their form are deliberate. The operators act on the departure from the
+magnetostatic reference state (relative, see above), because on $q$ itself
+the Laplacian of an exponential atmosphere is a steady mass source and the
+$C_0$ floor alone would move 0.75 % of the chromospheric mass per $\tau_0$.
+And the energy is diffused as total energy, not as $\kappa\nabla T$: the
+reference state has a 25× temperature jump at $z_{cor}$ but no jump in $E$
+(the contact is isobaric), so $\kappa\nabla T$ conducts across it at rest,
+$\kappa\nabla(T - T_e)$ heats loop gas that crosses the fixed height
+$z_{cor}$, while $\nabla\delta E$ sees neither. What is kept from their
+energy equation is the size of the conduction; what changes is the variable
+it is written on. Before this option the conserved form conducted heat
+19× more than Nazarov's $\kappa$ at $\gamma = 1.05$.
+
 ## Implementation
 
 | where | what |
@@ -95,6 +131,11 @@ of any kind was added to it.
 The mesh is the sibling's `FE_80x35.msh` (shared, not copied).
 
 ## Results (4 ranks, run to $54\tau_0$)
+
+*Measured with a single coefficient on every slot, i.e. before
+`:dsgs_conserved_prandtl` (previous section) reduced the energy-slot
+coefficient 19×. The shipped configuration compiles, steps and writes both
+coefficient panels; its full run is to be reported.*
 
 The run completed without an abort, with nothing clipped anywhere: the
 density and pressure stayed positive through the transition-region

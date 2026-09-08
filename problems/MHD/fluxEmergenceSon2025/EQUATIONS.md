@@ -255,4 +255,5 @@ the loop feet.
   Fig. 5, with $z_{cor} = 18H_0$ marked.
 
 `:outformat => "vtk"` writes the same output variables plus the
-`mu_dsgs_<var>` DynSGS fields for ParaView.
+DynSGS coefficient (`mu_dsgs`; one `mu_dsgs_<var>` field per slot only
+when the slots differ) for ParaView.
