@@ -1221,6 +1221,12 @@ end
 #     mode (E already carries the dissipated kinetic energy) and the nodal-ρ
 #     scaling below is not applied.
 #
+#  *  lconserved_prandtl (:dsgs_conserved_prandtl). With lconserved, the
+#     energy slot gets μ·γ(γ−1)/Pr_t instead of μ, so that the heat
+#     conduction hidden in ν∇E equals Dao & Nazarov's κ = ρν/Pr (see the
+#     assignment below). The coefficients then differ by equation the way
+#     their §4.4 prescribes: ν on ρ, ρν on u, ρν/Pr on T, ν on B.
+#
 #  *  lnodal_rho (:dsgs_nodal_rho). Slots 2-5 receive the KINEMATIC μ (and
 #     μγ/((γ−1)Pr_t) for E) and SGS_diffusion(::DSGS_MHD) multiplies by the
 #     density OF THE QUADRATURE POINT. With the element mean ρ̄, the
@@ -1251,7 +1257,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  local_rel::TT=one(TT),
                                  lnodal_rho::Bool=false,
                                  lconserved::Bool=false,
-                                 C0::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                                 C0::TT=zero(TT),
+                                 lconserved_prandtl::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
@@ -1455,9 +1462,22 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             # across it) does not, and p stays what it was. Diffusing ρ alone
             # under a T-based energy closure had driven p negative within a
             # few τ₀ at the 25× density drop of the solar transition region.
+            #
+            # Coefficients by equation (Dao & Nazarov 2022, JSC 92:77, §4.4):
+            # ONE kinematic ν from the max of the normalized residuals (their
+            # eq. 4.8, this μ), and per equation ν on ∇ρ, μ = ρν in the
+            # stress, κ = μ/Pr on ∇T, η = ν on B. In conserved variables
+            # ν∇(ρu) ≈ ρν∇u and ν∇B are those already; the energy slot is
+            # not: ν∇E carries the internal energy ρT/(γ(γ−1)) at ν, i.e. a
+            # heat conduction κ = ρν/(γ(γ−1)), 19× Nazarov's ρν/Pr at
+            # γ = 1.05, Pr = 1. lconserved_prandtl (:dsgs_conserved_prandtl)
+            # scales the energy slot by γ(γ−1)/Pr_t so that its thermal
+            # part is Nazarov's κ. (The kinetic/magnetic parts of E are
+            # scaled with it; the operator stays conservative either way.)
+            fE = lconserved_prandtl ? γ*γm1/Pr_t : one(TT)
             μ_dsgs[ie,2] = visc_coeff[2]*μ                         # ρu
             μ_dsgs[ie,3] = visc_coeff[3]*μ                         # ρv
-            μ_dsgs[ie,4] = visc_coeff[4]*μ                         # E
+            μ_dsgs[ie,4] = visc_coeff[4]*μ*fE                      # E
             if neqs >= 5
                 μ_dsgs[ie,5] = visc_coeff[5]*μ                     # ρw
             end

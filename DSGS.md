@@ -313,7 +313,7 @@ state in `params_setup.jl`, so the first residual is identically zero rather
 than $3q/(2\Delta t)$. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` —
 `uaux` carries one extra trailing column beyond the `neqs` solution slots.
 
-### 4.5 Stratified atmospheres: `:dsgs_local_norms`, `:dsgs_conserved`, `:dsgs_ref_weight`, `:dsgs_nodal_rho`
+### 4.5 Stratified atmospheres: `:dsgs_local_norms`, `:dsgs_conserved`, `:dsgs_ref_weight`, `:dsgs_conserved_prandtl`, `:dsgs_nodal_rho`
 
 Two opt-in variants of the MHD kernel, both `false` by default (the
 Orszag–Tang results below are unchanged), added for
@@ -382,6 +382,23 @@ density spans eight decades between the photosphere and the corona:
   Laplacian. Used by
   [`fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS/README.md),
   the limiter-free version of the flux-emergence case.
+- **`:dsgs_conserved_prandtl => true`** (with `:dsgs_conserved`) gives the
+  slots the coefficients of Dao & Nazarov (2022, *J. Sci. Comput.* 92:77,
+  §4.4): one kinematic $\nu$ from the maximum of the normalized residuals
+  (their eq. 4.8, the $\mu$ of §4.1), then $\nu$ on $\nabla\rho$, $\rho\nu$ in
+  the momentum stress, $\kappa = \rho\nu/\mathrm{Pr}$ on the temperature and
+  $\eta = \nu$ on $\mathbf{B}$. In conserved variables the $\rho$, $\rho\mathbf{v}$
+  and $\mathbf{B}$ slots already are that ($\nu\nabla(\rho\mathbf{v}) \approx \rho\nu\nabla\mathbf{v}$),
+  the energy slot is not: $\nu\nabla E$ conducts the internal energy
+  $\rho T/(\gamma(\gamma-1))$ at $\nu$, a heat conduction
+  $\rho\nu/(\gamma(\gamma-1))$ that is $19\times$ Nazarov's at $\gamma = 1.05$,
+  $\mathrm{Pr} = 1$. The option scales the energy slot by $\gamma(\gamma-1)/\mathrm{Pr}_t$
+  (`:dsgs_Prt`). Their $\kappa\nabla T$ itself cannot be used in a
+  two-temperature atmosphere: at rest it conducts across the reference
+  temperature jump of the transition region, and on $T - T_e$ it heats loop
+  gas crossing the fixed height of that jump; $E$ has no such jump (the
+  contact is isobaric), which is why the conserved form is kept and only
+  the coefficient is Nazarov's.
 - **`:dsgs_nodal_rho => true`** forms the dynamic coefficient of the momentum
   and energy slots with the density of the quadrature point (in
   `SGS_diffusion(::DSGS_MHD)`) instead of the element mean $\bar\rho$, i.e.
@@ -451,7 +468,10 @@ should look like.
 **Output.** The per-element coefficients are broadcast to nodes by
 `broadcast_dsgs_to_nodes!` and written to VTK as one point-data field per
 equation, named after the solution variable each one damps:
-`mu_dsgs_ρ`, `mu_dsgs_ρu`, …, `mu_dsgs_ψ`. They are piecewise constant per
+`mu_dsgs_ρ`, `mu_dsgs_ρu`, …, `mu_dsgs_ψ`. Slots that carry the same
+coefficient are written once, under a name listing them
+(`mu_dsgs_ρ_ρu_ρv_ρw_Bx_By_Bz_ψ` and `mu_dsgs_ρE` in the conserved form of
+§4.5, or a single `mu_dsgs` when all nine agree). They are piecewise constant per
 element by construction, and shared (DSS) nodes take the value of the last
 element that writes them — fine for visualization, not a nodal field.
 
