@@ -163,14 +163,14 @@ function user_inputs()
         # Switch to :outformat => "vtk" for ParaView output (plus the
         # mu_dsgs_<var> DynSGS fields).
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "png", #"vtk",
         :plot_matrix         => false,        # silent per-variable PNGs, no GR window
         :plot_colormap       => :jet,         # the paper's colormap (Fig. 2)
         :plot_vars           => ["ρ", "v", "vA", "Bx", "p", "T", "β"],
         :plot_log10          => ["ρ", "p", "β"],
-        :plot_clims          => Dict("ρ" => (-8.5, 0.0)),   # paper Fig. 2 colorbar
+        :plot_clims          => Dict("ρ" => (-8.1, 0.0)),   # paper Fig. 2 colorbar
         :plot_fieldlines     => ("Bx", "By"),
-        :plot_fieldlines_levels => 40,
+        :plot_fieldlines_levels => 29,
         :plot_vectors        => ("u", "v"),
         :plot_vectors_ref    => 5.0,          # paper Fig. 2: reference arrow "= 5.0"
         :plot_vectors_n      => (30, 13),
