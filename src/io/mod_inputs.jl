@@ -1063,9 +1063,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_ref_weight))
         inputs[:dsgs_ref_weight] = false
     end
-    #   :dsgs_conserved_prandtl  with :dsgs_conserved, the energy slot gets
-    #                      μ·γ(γ−1)/Pr_t so that the heat conduction in ν∇E
-    #                      is Dao & Nazarov's κ = ρν/Pr (JSC 2022, §4.4)
+    #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
+    #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
+    #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the
+    #                      physical form, ν γ(γ−1)/Pr_t on ∇E in the
+    #                      conserved form (:dsgs_conserved_prandtl = alias)
+    if(!haskey(inputs, :dsgs_nazarov_energy))
+        inputs[:dsgs_nazarov_energy] = get(inputs, :dsgs_conserved_prandtl, false)
+    end
     if(!haskey(inputs, :dsgs_conserved_prandtl))
         inputs[:dsgs_conserved_prandtl] = false
     end

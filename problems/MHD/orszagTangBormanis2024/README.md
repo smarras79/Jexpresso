@@ -32,8 +32,12 @@ julia> Jexpresso.run_case("MHD", "orszagTangBormanis2024")
 
 Output is VTK in `./output/`, written every 0.05 time units:
 `ρ, u, v, w, p, Bx, By, Bz, ψ, T`, plus — because this case runs with
-`:visc_model => DSGS_MHD()` — one `mu_dsgs_<var>` point-data field per equation
-holding the DynSGS eddy viscosity actually applied on that step. Each file also
+`:visc_model => DSGS_MHD()` — the DynSGS coefficients actually applied on that
+step, one point-data field per distinct coefficient named after the slots it
+serves: with $\mathrm{Pr} = 1$, `mu_dsgs_ρ_Bx_By_Bz_ψ` ($\nu$) and
+`mu_dsgs_ρu_ρv_ρE_ρw` ($\bar\rho\nu$, which is both the dynamic viscosity
+and $\kappa$); for $\mathrm{Pr} \neq 1$ the energy slot splits off as
+`mu_dsgs_ρE` ($\bar\rho\nu/\mathrm{Pr}$). Each file also
 carries the simulation time as `TimeValue` field data, so ParaView shows the
 physical time rather than the output counter.
 
@@ -142,25 +146,34 @@ startup).
   the `glm_cr_mhd` Ref); without it the undamped ψ waves have no dissipation
   mechanism in a CG discretization (no interface Riemann fluxes) and
   accumulate grid-scale noise on a periodic domain.
-- **Stabilization: Smagorinsky SGS at 8× strength** (`:visc_model => SMAG()`,
-  `:μ = [0, 8, 8, …]`), not the entropy-stable / KEP two-point fluxes
-  (`:lkep => false`, `:entropy_variables => false`). The paper solves *ideal*
-  (inviscid, non-resistive) MHD and gets its dissipation from a finite-volume
-  Riemann solver; a collocated CG scheme has none, and the Orszag–Tang shocks
-  need explicit regularization. Momentum gets the full deviatoric stress, the
-  energy gets `κ∇T` plus the `τ·u` viscous work, and `ρw`, `B`, `ψ` are
-  diffused as scalars (a turbulent resistivity for `B`). The 8× multiplier is
-  not a tuned LES constant — it is the dissipation this discretization needs
-  to get through the shocks; see the next section.
+- **Stabilization: DynSGS** (`:visc_model => DSGS_MHD()`, [DSGS.md](../../../DSGS.md)
+  §4) with the coefficients by equation of Dao & Nazarov, *J. Sci. Comput.*
+  92:77 (2022), who apply the residual-based viscosity to these same
+  equations with continuous elements — not the entropy-stable / KEP
+  two-point fluxes (`:lkep => false`, `:entropy_variables => false`). The
+  paper solves *ideal* (inviscid, non-resistive) MHD and gets its dissipation
+  from a finite-volume Riemann solver; a collocated CG scheme has none, and
+  the Orszag–Tang shocks need explicit regularization. One kinematic $\nu$
+  comes from the maximum of the normalized residuals of all equations
+  (their eq. 4.8), capped at $C_2\Delta\lambda_{max}$; then, by equation
+  (their §4.4): $\nu\nabla\rho$ on the mass (`:μ[1] = 1`, the term that keeps
+  $\rho$ positive), the full deviatoric stress with the dynamic $\rho\nu$ on
+  the momentum, $\kappa\nabla T$ with $\kappa = \rho\nu/\mathrm{Pr}$,
+  $\mathrm{Pr} = 1$, plus the $\tau\cdot\mathbf{v}$ viscous work and the
+  $\eta\mathbf{B}\cdot\nabla\mathbf{B}$ resistive work on the energy, so that
+  total energy is conserved (`:dsgs_nazarov_energy`; the default would be the Fourier-law
+  $c_p\rho\nu/\mathrm{Pr}$, 2.5× larger at $\gamma = 5/3$), and $\nu$ on
+  $\rho w$, $\mathbf{B}$ (a resistivity) and $\psi$. The Smagorinsky
+  alternative that was tried first is described in the next section.
 - **NOT implemented**: the non-conservative Powell / Galilean-GLM term Υ. It
   is only required for entropy stability of split-form discretizations, which
   are not used here.
 
-Because Smagorinsky is an eddy-viscosity closure and not a shock-capturing
-scheme, expect the large-scale morphology (the X-shaped density pattern, the
-central magnetic island, overall `ρ` and `B` structure) to match the paper's
-Figures 3 and 5–8 well, while peak values across shocks are smeared and the
-finest late-time structures are damped. See §4 of
+Because an artificial viscosity smears a shock over a few nodes rather than
+capturing it, expect the large-scale morphology (the X-shaped density pattern,
+the central magnetic island, overall `ρ` and `B` structure) to match the
+paper's Figures 3 and 5–8 well, while peak values across shocks are smeared
+and the finest late-time structures are damped. See §4 of
 [EQUATIONS.md](EQUATIONS.md) for the full list of expected departures and the
 knobs to tune.
 

@@ -1106,6 +1106,14 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # but the coefficient itself comes from compute_dsgs_viscosity!(::DSGS_MHD)
     # which uses the MHD equation of state, the fast magnetosonic speed and
     # its own step-cadenced BDF2 history. See the header of that function.
+    # The two module-level switches read inside _expansion_visc! /
+    # SGS_diffusion(::DSGS_MHD) are set from the inputs of a DSGS_MHD case
+    # below; reset them here so that they cannot leak into a non-MHD case
+    # run later in the same session (run_case), where uprimitive[:, end] is
+    # the pressure slot and not a weight.
+    dsgs_ref_weight[] = false
+    dsgs_nodal_rho[]  = false
+
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
 
@@ -1135,7 +1143,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
                                 lconserved    = get(params.inputs, :dsgs_conserved, false),
                                 C0            = TT(get(params.inputs, :dsgs_C0, 0.0)),
-                                lconserved_prandtl = get(params.inputs, :dsgs_conserved_prandtl, false))
+                                lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
+                                                  get(params.inputs, :dsgs_conserved_prandtl, false))
 
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -2245,6 +2254,39 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                             v_loc = uprimitiveieq[k,l,3]
                             flux_x += τ_xx * u_loc + τ_xy * v_loc
                             flux_y += τ_xy * u_loc + τ_yy * v_loc
+
+                            # Resistive work η B·∇B (Dao & Nazarov 2022, eq. 4.4, written
+                            # for the component-Laplacian induction term ∇·(η∇B) of this
+                            # kernel): the magnetic energy that the B slots remove
+                            # reappears as Joule heat, so the total energy is conserved
+                            # by the physical-form DynSGS-MHD operator exactly as the
+                            # kinetic energy is through τ·u above. η is the B-slot
+                            # coefficient (kinematic, never ρ-scaled).
+                            if VT isa DSGS_MHD && size(uprimitiveieq, 3) >= 9
+                                η = visc_coeffieq[6]
+                                dBxdξ = 0.0; dBxdη = 0.0
+                                dBydξ = 0.0; dBydη = 0.0
+                                dBzdξ = 0.0; dBzdη = 0.0
+                                @turbo for ii = 1:ngl
+                                    dBxdξ += dψ[ii,k]*uprimitiveieq[ii,l,6]
+                                    dBxdη += dψ[ii,l]*uprimitiveieq[k,ii,6]
+                                    dBydξ += dψ[ii,k]*uprimitiveieq[ii,l,7]
+                                    dBydη += dψ[ii,l]*uprimitiveieq[k,ii,7]
+                                    dBzdξ += dψ[ii,k]*uprimitiveieq[ii,l,8]
+                                    dBzdη += dψ[ii,l]*uprimitiveieq[k,ii,8]
+                                end
+                                dBxdx = dBxdξ*dξdx_kl + dBxdη*dηdx_kl
+                                dBxdy = dBxdξ*dξdy_kl + dBxdη*dηdy_kl
+                                dBydx = dBydξ*dξdx_kl + dBydη*dηdx_kl
+                                dBydy = dBydξ*dξdy_kl + dBydη*dηdy_kl
+                                dBzdx = dBzdξ*dξdx_kl + dBzdη*dηdx_kl
+                                dBzdy = dBzdξ*dξdy_kl + dBzdη*dηdy_kl
+                                Bx_loc = uprimitiveieq[k,l,6]
+                                By_loc = uprimitiveieq[k,l,7]
+                                Bz_loc = uprimitiveieq[k,l,8]
+                                flux_x += η*(Bx_loc*dBxdx + By_loc*dBydx + Bz_loc*dBzdx)
+                                flux_y += η*(Bx_loc*dBxdy + By_loc*dBydy + Bz_loc*dBzdy)
+                            end
                         end
 
                     elseif (micro > 1)

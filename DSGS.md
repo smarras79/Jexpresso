@@ -277,9 +277,9 @@ the magnetic slots. So:
 
 | slot | coefficient | units |
 |---|---|---|
-| $\rho$ | $\texttt{:μ}[1]\cdot\mu$ | kinematic (a conservative mass diffusion $\nabla\cdot(\mu\nabla\rho)$; 0 in the Orszag–Tang and KH cases, on in `fluxEmergenceSon2025` whose transition-region contact would otherwise undershoot below its $10^{-8}$ light side) |
+| $\rho$ | $\texttt{:μ}[1]\cdot\mu$ | kinematic (a conservative mass diffusion $\nabla\cdot(\mu\nabla\rho)$, the $\nu\nabla\rho$ of Dao & Nazarov's eq. 4.4 that keeps $\rho$ positive; on in the Orszag–Tang and flux-emergence cases, 0 in KH) |
 | $\rho u,\rho v,\rho w$ | $\texttt{:μ}[i]\cdot\bar\rho\,\mu$ | dynamic |
-| $E$ | $\texttt{:μ}[4]\cdot\bar\rho\,\mu\cdot\dfrac{\gamma}{(\gamma-1)Pr_t}$ | dynamic |
+| $E$ | $\texttt{:μ}[4]\cdot\bar\rho\,\mu\cdot\dfrac{\gamma}{(\gamma-1)Pr_t}$, or $\texttt{:μ}[4]\cdot\bar\rho\,\mu/Pr_t$ with `:dsgs_nazarov_energy` | dynamic |
 | $B_x,B_y,B_z$ | $\texttt{:μ}[i]\cdot\mu$ | kinematic (turbulent resistivity) |
 | $\psi$ | $\texttt{:μ}[9]\cdot\mu$ | kinematic |
 
@@ -287,7 +287,18 @@ $\bar\rho$ is the element-mean density. The energy factor follows from slot 4's
 primitive being $T = p/\rho\ (= R\,T_{phys})$: the physical flux is
 $\nabla\cdot(k\nabla T_{phys})$ with $k = \mu_{dyn}c_p/Pr_t$, so rewriting in
 terms of $T$ gives $k/R = \mu_{dyn}\gamma/((\gamma-1)Pr_t)$ since
-$c_p = \gamma R/(\gamma-1)$.
+$c_p = \gamma R/(\gamma-1)$. Dao & Nazarov (2022, §4.4) instead take
+$\kappa = \mu_{dyn}/Pr$ directly on $T = p/\rho$, i.e. $c_p = 1$ in these
+units, a conduction $\gamma/(\gamma-1)$ times weaker (2.5× at $\gamma = 5/3$);
+`:dsgs_nazarov_energy => true` selects that, and the MHD cases use it with
+$Pr = 1$ as in their runs. With `:μ[1] = 1` the slot coefficients are then
+exactly their set by equation: $\nu$ on $\rho$, $\rho\nu$ on $\mathbf{u}$,
+$\rho\nu/Pr$ on $T$, $\nu$ on $\mathbf{B}$. The energy equation of the
+physical form also carries, next to the $\tau\cdot\mathbf{v}$ viscous work, the
+resistive work $\nabla\cdot(\eta\,\mathbf{B}\cdot\nabla\mathbf{B})$ that matches the
+component-Laplacian induction term, so that the magnetic energy removed from
+$\mathbf{B}$ reappears as heat and the total energy is conserved (their
+eq. 4.4 has the same term for their curl-curl form).
 
 ### 4.4 Step-cadenced history
 
@@ -313,7 +324,7 @@ state in `params_setup.jl`, so the first residual is identically zero rather
 than $3q/(2\Delta t)$. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` —
 `uaux` carries one extra trailing column beyond the `neqs` solution slots.
 
-### 4.5 Stratified atmospheres: `:dsgs_local_norms`, `:dsgs_conserved`, `:dsgs_ref_weight`, `:dsgs_conserved_prandtl`, `:dsgs_nodal_rho`
+### 4.5 Stratified atmospheres: `:dsgs_local_norms`, `:dsgs_conserved`, `:dsgs_ref_weight`, `:dsgs_nazarov_energy`, `:dsgs_nodal_rho`
 
 Two opt-in variants of the MHD kernel, both `false` by default (the
 Orszag–Tang results below are unchanged), added for
@@ -382,7 +393,7 @@ density spans eight decades between the photosphere and the corona:
   Laplacian. Used by
   [`fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS/README.md),
   the limiter-free version of the flux-emergence case.
-- **`:dsgs_conserved_prandtl => true`** (with `:dsgs_conserved`) gives the
+- **`:dsgs_nazarov_energy => true`** (with `:dsgs_conserved`) gives the
   slots the coefficients of Dao & Nazarov (2022, *J. Sci. Comput.* 92:77,
   §4.4): one kinematic $\nu$ from the maximum of the normalized residuals
   (their eq. 4.8, the $\mu$ of §4.1), then $\nu$ on $\nabla\rho$, $\rho\nu$ in
