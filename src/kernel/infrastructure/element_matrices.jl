@@ -1408,11 +1408,74 @@ end
 
 function matrix_wrapper(::DiscGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
                         ldss_laplace=false, ldss_differentiation=false, backend = CPU(), interp)
-    # DG mass is built from the DG connijk via the same DSS_mass! gather → the
-    # block/diagonal DG mass falls out automatically. Delegate to the ContGal flow.
-    return matrix_wrapper(ContGal(), SD, QT, basis, ω, mesh, metrics, N, Q, TFloat;
-                          ldss_laplace=ldss_laplace, ldss_differentiation=ldss_differentiation,
-                          backend=backend, interp=interp)
+    # DG mass assembly. Under the duplicated-DOF DG numbering, DSS_mass! on
+    # mesh.connijk is non-summing (each (iel,i,j) owns a unique point), so the
+    # gather yields the block-diagonal DG mass directly — diagonal under
+    # collocated LGL quadrature.
+    #
+    # This is deliberately NOT a delegate to the ContGal method. Under :ladapt
+    # that flow applies the CG mortar projections DSS_nc_gather_mass! /
+    # DSS_nc_scatter_mass! (parent face rows gain the projected child mass;
+    # child face rows are overwritten with interpolated parent mass). Both are
+    # correct for a shared conforming space and both corrupt the DG mass at
+    # every mortar node with no error: under DG the parent's and children's
+    # face nodes are independent DOFs whose mass comes from their own elements,
+    # and the 2:1 coupling lives in the numerical flux, not in the mass.
+    # `interp` is accepted for signature compatibility with the call site and
+    # is unused here.
+
+    backend == CPU() ||
+        error("matrix_wrapper(::DiscGal): the DG path is CPU-only (no GPU surface-term kernels)")
+    (QT == Exact() && inputs[:llump] == false) &&
+        error("matrix_wrapper(::DiscGal): the DG path requires a diagonal mass — use collocated LGL (:lexact_integration => false) or :llump => true")
+    (ldss_laplace || ldss_differentiation) &&
+        error("matrix_wrapper(::DiscGal): global Laplace/differentiation assembly is not defined for DG (needs interface terms); not implemented")
+
+    if typeof(SD) == NSD_1D
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
+    elseif typeof(SD) == NSD_2D
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
+    elseif typeof(SD) == NSD_3D
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
+    end
+    build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
+
+    M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+    Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+
+    DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
+
+    g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+
+    DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, SD)
+
+    if (inputs[:bdy_fluxes])
+        if SD == NSD_3D()
+            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_surf,g_dss_cache)
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_surf_inv, M_surf, QT)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        else
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_edge,g_dss_cache)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_edge_inv, M_edge, QT)
+        end
+    else
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+    end
+
+    mass_inverse!(Minv, M, QT)
+
+    Le = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+    L  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+    De = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+    D  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+
+    return (; Me, De, Le, M, Minv, g_dss_cache, D, L, M_surf_inv, M_edge_inv)
 end
 
 
