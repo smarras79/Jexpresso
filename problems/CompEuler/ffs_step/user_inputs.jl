@@ -120,7 +120,8 @@ function user_inputs()
         # setting ref = 2 in ffs_step_transfinite.geo.
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./meshes/gmsh_grids/ffs_step_transfinite.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/ffs_step_transfinite.msh",
+        :gmsh_filename        => "./problems/CompEuler/ffs_step/ffs_step_transfinite.msh",
         #---------------------------------------------------------------------------
         # Plotting
         #---------------------------------------------------------------------------
