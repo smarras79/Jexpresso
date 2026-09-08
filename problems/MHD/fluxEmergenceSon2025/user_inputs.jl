@@ -166,7 +166,7 @@ function user_inputs()
         # conduction it carries is ρν/Pr and not ρν/(γ(γ−1)), 19× larger
         # (kernel/physics/SGS.jl). Pr = 1 as in their runs.
         :dsgs_Prt         => 1.0,
-        :dsgs_conserved_prandtl => true,
+        :dsgs_nazarov_energy => true,
         # Stratification variants of the model (kernel/physics/SGS.jl): the
         # residual is normalized per element, not by the domain spread that
         # the 10⁸-times denser photosphere sets (the sensor was blind to the
@@ -243,7 +243,7 @@ function user_inputs()
         # The DynSGS coefficients actually applied, log10_μ_dsgs_<var>-it<n>.png:
         # log₁₀ of the kinematic coefficient (H₀ C_s), floored at 1e-6. The
         # ρ, ρu, ρv, ρw, Bx, By, Bz, ψ slots carry ν and ρE carries
-        # ν·γ(γ−1)/Pr (see :dsgs_conserved_prandtl), so two panels say it
+        # ν·γ(γ−1)/Pr (see :dsgs_nazarov_energy), so two panels say it
         # all. (:outformat => "vtk" writes one field per distinct
         # coefficient, mu_dsgs_<slots...>.)
         :plot_dsgs           => true,

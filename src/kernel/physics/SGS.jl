@@ -1221,11 +1221,15 @@ end
 #     mode (E already carries the dissipated kinetic energy) and the nodal-ρ
 #     scaling below is not applied.
 #
-#  *  lconserved_prandtl (:dsgs_conserved_prandtl). With lconserved, the
-#     energy slot gets μ·γ(γ−1)/Pr_t instead of μ, so that the heat
-#     conduction hidden in ν∇E equals Dao & Nazarov's κ = ρν/Pr (see the
-#     assignment below). The coefficients then differ by equation the way
-#     their §4.4 prescribes: ν on ρ, ρν on u, ρν/Pr on T, ν on B.
+#  *  lnazarov_energy (:dsgs_nazarov_energy). The energy slot conducts heat
+#     with Dao & Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of the
+#     Fourier-law κ = ρν γ/((γ−1)Pr) = c_p ρν/Pr of the default: in the
+#     physical form the coefficient on ∇T (T = p/ρ) becomes ρν/Pr_t, in
+#     the conserved form the energy slot gets ν γ(γ−1)/Pr_t so that the
+#     thermal part of ν∇E carries that same κ. With :μ[1] = 1 (ν on ∇ρ)
+#     the coefficients are then exactly their §4.4 set by equation: ν on
+#     ρ, ρν on u, ρν/Pr on T, ν on B. (:dsgs_conserved_prandtl is accepted
+#     as an alias.)
 #
 #  *  lnodal_rho (:dsgs_nodal_rho). Slots 2-5 receive the KINEMATIC μ (and
 #     μγ/((γ−1)Pr_t) for E) and SGS_diffusion(::DSGS_MHD) multiplies by the
@@ -1258,7 +1262,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lnodal_rho::Bool=false,
                                  lconserved::Bool=false,
                                  C0::TT=zero(TT),
-                                 lconserved_prandtl::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+                                 lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
@@ -1470,11 +1474,11 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             # ν∇(ρu) ≈ ρν∇u and ν∇B are those already; the energy slot is
             # not: ν∇E carries the internal energy ρT/(γ(γ−1)) at ν, i.e. a
             # heat conduction κ = ρν/(γ(γ−1)), 19× Nazarov's ρν/Pr at
-            # γ = 1.05, Pr = 1. lconserved_prandtl (:dsgs_conserved_prandtl)
+            # γ = 1.05, Pr = 1. lnazarov_energy (:dsgs_nazarov_energy)
             # scales the energy slot by γ(γ−1)/Pr_t so that its thermal
             # part is Nazarov's κ. (The kinetic/magnetic parts of E are
             # scaled with it; the operator stays conservative either way.)
-            fE = lconserved_prandtl ? γ*γm1/Pr_t : one(TT)
+            fE = lnazarov_energy ? γ*γm1/Pr_t : one(TT)
             μ_dsgs[ie,2] = visc_coeff[2]*μ                         # ρu
             μ_dsgs[ie,3] = visc_coeff[3]*μ                         # ρv
             μ_dsgs[ie,4] = visc_coeff[4]*μ*fE                      # E
@@ -1484,7 +1488,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         else
             μ_dsgs[ie,2] = visc_coeff[2]*μ_dyn                     # ρu
             μ_dsgs[ie,3] = visc_coeff[3]*μ_dyn                     # ρv
-            μ_dsgs[ie,4] = visc_coeff[4]*μ_dyn*γ/(γm1*Pr_t)        # E
+            # κ∇T on the energy: the Fourier law κ = c_p ρν/Pr with
+            # c_p = γ/(γ−1) (T = p/ρ), or Dao & Nazarov's κ = ρν/Pr
+            μ_dsgs[ie,4] = lnazarov_energy ? visc_coeff[4]*μ_dyn/Pr_t :
+                                             visc_coeff[4]*μ_dyn*γ/(γm1*Pr_t)   # E
             if neqs >= 5
                 μ_dsgs[ie,5] = visc_coeff[5]*μ_dyn                 # ρw
             end

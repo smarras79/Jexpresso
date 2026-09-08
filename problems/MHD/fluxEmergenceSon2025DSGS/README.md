@@ -93,14 +93,20 @@ eq. 4.8) — the $\mu$ of this kernel — and then, by the nature of each
 equation (their §4.4), $\nu$ on $\nabla\rho$, the dynamic $\mu = \rho\nu$ in
 the momentum stress, $\kappa = \mu/\mathrm{Pr}$ on $\nabla T$, and the
 resistivity $\eta = \nu$ on $\mathbf{B}$. This case follows that
-(`:dsgs_conserved_prandtl => true`, `:dsgs_Prt => 1` as in their runs):
+(`:dsgs_nazarov_energy => true`, `:dsgs_Prt => 1` as in their runs):
 
-| equation | Dao & Nazarov | here (conserved variables) |
-|---|---|---|
-| mass | $\nu\nabla\rho$ | $\nu\rho_e\nabla(\delta\rho/\rho_e)$ |
-| momentum | $\rho\nu(\nabla\mathbf{u} + \nabla\mathbf{u}^T)$ | $\nu\rho_e\,\tau(\delta(\rho\mathbf{v})/\rho_e)$, i.e. $\rho\nu\nabla\mathbf{v}$ to leading order |
-| energy | $\kappa\nabla T$, $\kappa = \rho\nu/\mathrm{Pr}$, plus $\mathbf{u}\cdot\tau$ and the magnetic work | $\nu\,\tfrac{\gamma(\gamma-1)}{\mathrm{Pr}}\,\rho_e\nabla(\delta E/\rho_e)$: the same $\kappa$ on the thermal part of $E$ |
-| induction | $\eta(\nabla\mathbf{B} - \nabla\mathbf{B}^T)$, $\eta = \nu$ | $\nu\nabla\delta\mathbf{B}$ |
+| equation | Dao & Nazarov (uniform background) | here (stratified background $q_e$) | why it differs |
+|---|---|---|---|
+| mass | $\nu\nabla\rho$ | $\nu\rho_e\nabla(\delta\rho/\rho_e)$, $\delta\rho = \rho - \rho_e$; $= \nu\nabla\delta\rho$ to leading order | $\nu\nabla^2\rho_e = \nu\rho_e/H^2 \neq 0$: on $\rho$ itself the term is a steady mass source in an exponential atmosphere (0.75 % of the chromospheric mass per $\tau_0$ from the $C_0$ floor alone; the sheet sank at $0.3\,C_s$ when the sensor fed on it). The $\rho_e$ weight is the positivity fix at the 25× reference jump (previous section). |
+| momentum | $\rho\nu(\nabla\mathbf{u} + \nabla\mathbf{u}^T)$ | the kernel's deviatoric stress $\tau$ with coefficient $\nu\rho_e$ on $\delta(\rho\mathbf{v})/\rho_e$; $= \rho\nu\nabla\mathbf{v}$ to leading order | same term ($\rho\mathbf{v}_e = 0$), written on the conserved variable |
+| energy | $\kappa\nabla T$, $\kappa = \rho\nu/\mathrm{Pr}$, $T = p/\rho$, plus $\mathbf{u}\cdot\tau$ and the magnetic work | $\nu\,\tfrac{\gamma(\gamma-1)}{\mathrm{Pr}}\,\rho_e\nabla(\delta E/\rho_e)$: the same $\kappa$ on the thermal part of $E$, the viscous and magnetic work carried by the $E$ Laplacian | $T_e$ jumps 25× at $z_{cor}$, $E_e$ does not (isobaric contact): $\kappa\nabla T$ conducts across the jump at rest (measured: the transition region smeared, a $0.7\,C_s$ pulse), $\kappa\nabla(T - T_e)$ heats loop gas crossing the fixed height $z_{cor}$ at $\sim 100\,\%$ of its internal energy per $\tau_0$; $\nabla\delta E$ sees neither. Only the size of the conduction is kept. |
+| induction | $\eta\,\nabla\cdot(\nabla\mathbf{B} - \nabla\mathbf{B}^T)$, $\eta = \nu$ | $\nu\nabla^2\delta\mathbf{B}$ | differs by $\eta\nabla(\nabla\cdot\mathbf{B})$, zero for a solenoidal field; $\delta\mathbf{B}$ so that the sheet field is not eroded at rest |
+
+In short: Nazarov's coefficients, his terms written on the perturbation from
+the magnetostatic reference state (the device atmospheric codes use with
+$\rho'$, $\theta'$), and the energy on $E$ instead of $T$. In the
+Orszag–Tang case, which has no background state, the terms are his literally
+(`problems/MHD/orszagTangBormanis2024`).
 
 so the coefficient fields are $\nu$ on eight slots and $\nu\gamma(\gamma-1)/\mathrm{Pr} = 0.0525\,\nu$
 on the energy (`log10_μ_dsgs_ρ-it<n>.png`, `log10_μ_dsgs_ρE-it<n>.png`;
@@ -133,7 +139,7 @@ The mesh is the sibling's `FE_80x35.msh` (shared, not copied).
 ## Results (4 ranks, run to $54\tau_0$)
 
 *Measured with a single coefficient on every slot, i.e. before
-`:dsgs_conserved_prandtl` (previous section) reduced the energy-slot
+`:dsgs_nazarov_energy` (previous section) reduced the energy-slot
 coefficient 19×. The shipped configuration compiles, steps and writes both
 coefficient panels; its full run is to be reported.*
 
