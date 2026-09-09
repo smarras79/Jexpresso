@@ -116,7 +116,7 @@ function user_source_gpu(q, qe, x, y, PhysConst, xmax, xmin, ymax, ymin, lpert)
     #Wind stress
     Ly = ymax - ymin
     yn = (y - ymin) / Ly    
-    τx = T(_TAU0_SWE) * cospi(T(2.0) * yn)
+    τx = -T(_TAU0_SWE) * cospi(T(2.0) * yn)
     τy = T(0.0)
 
     # Do not apply wind stress to the artificial dry film.
