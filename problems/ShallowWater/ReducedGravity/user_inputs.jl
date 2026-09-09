@@ -19,14 +19,14 @@ function user_inputs()
         #   q = [H, Hu, Hv]
         # where H is the local water depth.
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(),
-        :Δt                   => 1200.0, 
+        :ode_solver           => SSPRK54(), #CarpenterKennedy2N54(),
+        :Δt                   => 600.0, 
         :tinit                => 0.0,
         :tend                 => 6.0 * year, #6 years in seconds
         :diagnostics_at_times => (0: 30*day : 6.0*year),
-        # Debugging diagnostic: print the MPI-global minimum layer thickness
-        # after every accepted timestep. Increase the interval (for example,
-        # to 100) once the timestep at which H fails has been localized.
+        # Debugging diagnostic: check the MPI-global minimum layer thickness
+        # after every accepted timestep and print only when it is negative.
+        # Increase the interval to throttle output after H becomes negative.
         :lmin_h_diagnostic    => true,
         :min_h_diagnostic_interval => 1,
         :case                 => "double_gyre_reduced_gravity",

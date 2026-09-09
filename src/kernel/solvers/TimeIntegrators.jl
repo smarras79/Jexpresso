@@ -505,26 +505,28 @@ function time_loop!(inputs, params, u, args...)
 
         # DEBUG: report the MPI-global minimum of the first prognostic
         # variable after accepted timesteps.  For shallow-water cases the
-        # first variable is H, so this catches a negative layer thickness at
-        # the timestep where it first appears instead of waiting for the next
-        # (potentially much later) diagnostic output.  Keep this opt-in: an
-        # MPI reduction and terminal write every step are intentionally
-        # expensive debugging operations.
+        # first variable is H. Check every accepted timestep, but only print
+        # when the global minimum is negative. Keep this opt-in: the MPI
+        # reduction every step is intentionally an expensive debugging
+        # operation.
         _min_h_step_count = Ref{Int}(0)
         _min_h_diagnostic_active = Ref{Bool}(true)
+        _min_h_global = Ref{Float64}(Inf)
         _min_h_interval = max(1, Int(get(inputs, :min_h_diagnostic_interval, 1)))
         function min_h_condition(u, t, integrator)
             _min_h_diagnostic_active[] || return false
             _min_h_step_count[] += 1
-            return _min_h_step_count[] % _min_h_interval == 0
-        end
-        function min_h_affect!(integrator)
             npoin = integrator.p.mesh.npoin
             local_min_h = minimum(@view integrator.u[1:npoin])
             global_min_h = MPI.Allreduce(local_min_h, MPI.MIN, comm)
+            _min_h_global[] = global_min_h
+            return global_min_h < zero(global_min_h) &&
+                   _min_h_step_count[] % _min_h_interval == 0
+        end
+        function min_h_affect!(integrator)
             if rank == 0
                 @printf(" #   min-H step %d   t = %.6f   min(H) = %.16e\n",
-                        _min_h_step_count[], integrator.t, global_min_h)
+                        _min_h_step_count[], integrator.t, _min_h_global[])
                 flush(stdout)
             end
         end
