@@ -503,10 +503,40 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback(step_heartbeat_condition, step_heartbeat_affect!) :
             nothing
 
+        # DEBUG: report the MPI-global minimum of the first prognostic
+        # variable after accepted timesteps.  For shallow-water cases the
+        # first variable is H, so this catches a negative layer thickness at
+        # the timestep where it first appears instead of waiting for the next
+        # (potentially much later) diagnostic output.  Keep this opt-in: an
+        # MPI reduction and terminal write every step are intentionally
+        # expensive debugging operations.
+        _min_h_step_count = Ref{Int}(0)
+        _min_h_diagnostic_active = Ref{Bool}(true)
+        _min_h_interval = max(1, Int(get(inputs, :min_h_diagnostic_interval, 1)))
+        function min_h_condition(u, t, integrator)
+            _min_h_diagnostic_active[] || return false
+            _min_h_step_count[] += 1
+            return _min_h_step_count[] % _min_h_interval == 0
+        end
+        function min_h_affect!(integrator)
+            npoin = integrator.p.mesh.npoin
+            local_min_h = minimum(@view integrator.u[1:npoin])
+            global_min_h = MPI.Allreduce(local_min_h, MPI.MIN, comm)
+            if rank == 0
+                @printf(" #   min-H step %d   t = %.6f   min(H) = %.16e\n",
+                        _min_h_step_count[], integrator.t, global_min_h)
+                flush(stdout)
+            end
+        end
+        cb_min_h = get(inputs, :lmin_h_diagnostic, false) == true ?
+            DiscreteCallback(min_h_condition, min_h_affect!) :
+            nothing
+
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
+        cb_min_h !== nothing                   && push!(_cbs, cb_min_h)
         callbacks_main = CallbackSet(_cbs...)
 
         # PERF: SciML integrator warmup with the REAL callback set.
@@ -558,6 +588,7 @@ function time_loop!(inputs, params, u, args...)
             # only deviation is `tstops = [t0_w + Δt_w]` (just one point)
             # to keep the warmup cheap.
             warm_saveat = range(t0_w, t0_w + Δt_w, length = inputs[:ndiagnostics_outputs])
+            _min_h_diagnostic_active[] = false
             with_logger(NullLogger()) do
                 try
                     solve(warmup_prob,
@@ -571,6 +602,7 @@ function time_loop!(inputs, params, u, args...)
                     rank == 0 && @warn "integrator warm-up failed; continuing without it" exception=e
                 end
             end
+            _min_h_diagnostic_active[] = true
             u .= u_snap
             params.qp.qnm1 .= qnm1_snap
             params.qp.qnm2 .= qnm2_snap
@@ -582,6 +614,7 @@ function time_loop!(inputs, params, u, args...)
             # Reset the heartbeat counter so the real solve gets its
             # own first-5-steps detail (the warmup just consumed one).
             _step_count[] = 0
+            _min_h_step_count[] = 0
             MPI.Barrier(comm)
             #rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
         end

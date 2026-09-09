@@ -24,6 +24,11 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => 6.0 * year, #6 years in seconds
         :diagnostics_at_times => (0: 30*day : 6.0*year),
+        # Debugging diagnostic: print the MPI-global minimum layer thickness
+        # after every accepted timestep. Increase the interval (for example,
+        # to 100) once the timestep at which H fails has been localized.
+        :lmin_h_diagnostic    => true,
+        :min_h_diagnostic_interval => 1,
         :case                 => "double_gyre_reduced_gravity",
         :lsource              => true,
         :SOL_VARS_TYPE        => TOTAL(),
