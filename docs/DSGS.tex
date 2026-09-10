@@ -318,7 +318,8 @@ interfaces.
 
 For every node $i$, with
 \begin{equation}
-h_i = \max_{K\ni i}\ \frac{\Delta_K}{k},
+h_i = \max_{K\ni i}\ \frac{\Delta_K}{k+1}
+\qquad(\text{the element form's }\Delta\text{ of the elements containing } i),
 \end{equation}
 \begin{equation}
 \boxed{\;
@@ -652,7 +653,7 @@ Fixed $\Delta t$ from the deck; SSPRK53 or CarpenterKennedy2N54 (deck choice) \\
 
 Mesh function $h$ &
 $h_h\in Q_h$, the $L^2$ projection of $h_K/k$, $h_K$ the circumradius of $K$ (eq.~2.2) &
-Element: $\Delta=\Delta_K/(k+1)$ with $\Delta_K$ the min corner extent~\eqref{eq:DeltaK}. Nodal: $h_i=\max_{K\ni i}\Delta_K/k$ \\
+Element: $\Delta=\Delta_K/(k+1)$ with $\Delta_K$ the min corner extent~\eqref{eq:DeltaK}. Nodal: $h_i=\max_{K\ni i}\Delta_K/(k+1)$, the same length. (DN22's $h_K/k$ with the circumradius is $\Delta_K/(\sqrt2 k)$ on a square, within 12\,\% of $\Delta_K/(k+1)$ at $k=4$; $\Delta_K/k$ gave a start-up coefficient 1.56$\times$ the element form's on the rising-bubble case and exceeded the explicit viscous limit) \\
 
 Wave speed $\lambda_{\max}$ &
 $\max_{i=1..8}|\lambda_i|$ of the eigenvalues~(3.6) along a direction $e$: $|u\!\cdot\!e| + c_f(e)$ &

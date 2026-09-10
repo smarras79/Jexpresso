@@ -467,7 +467,11 @@ total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
   $C_l$ (0 = the classical $\bar S$, 0.4 in their runs), with the
   $n^2/(n^2+\epsilon)$ guard of eq. 4.8;
 - $\nu_i = \min(C_{max}h_i\lambda_i,\ C_R h_i^2 R_i)$ at every node (eq. 4.10),
-  $h_i = \max h_K/k$ over the support, $C_{max} =$ `:dsgs_Cmax`, $C_R =$ `:dsgs_CR`,
+  $h_i = \max \Delta_K/(k+1)$ over the support (the element form's $\Delta$;
+  the paper's $h_K/k$ with the circumradius is $\Delta_K/(\sqrt2 k)$ on a
+  square, within 12 % of it at $k = 4$, while $\Delta_K/k$ put the
+  rising-bubble case past the explicit viscous limit at start-up),
+  $C_{max} =$ `:dsgs_Cmax`, $C_R =$ `:dsgs_CR`,
   floored at $C_{min} h_i\lambda_i$;
 - the slot coefficients from $\nu_i$ exactly as in the element kernels, with
   the **nodal** density in the dynamic coefficients;

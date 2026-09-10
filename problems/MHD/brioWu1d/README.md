@@ -58,7 +58,7 @@ writes those panels as separate files).
   the assembled lumped-mass BDF2 residual, normalized by their eq. 4.7 with
   $C_l = 0.4$ (`:dsgs_Cl`), the maximum over the equations (eq. 4.8), and
   $\nu_i = \min(C_{max}h_i\lambda_i, C_R h_i^2 R_i)$ with the fast
-  magnetosonic speed, $h_i = h_K/k$, $C_{max} = 0.5$ (`:dsgs_Cmax`), $C_R = 1$ (`:dsgs_CR`)
+  magnetosonic speed, $h_i = \Delta x/(k+1)$ (the element form's $\Delta$), $C_{max} = 0.5$ (`:dsgs_Cmax`), $C_R = 1$ (`:dsgs_CR`)
   (eq. 4.10); $\nu$ is a continuous field the element loop interpolates,
   so the diffusive flux has no jump at element interfaces. Applied in the
   **conserved form**, $\nabla\cdot(\nu\nabla q)$ on every slot (`user_primitives.jl`),

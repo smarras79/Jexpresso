@@ -1746,7 +1746,7 @@ end
 # is the classical S̄), the residual ratio R_i = max over the equations of
 # R_i/n_i (eq. 4.8, with the n²/(n²+ε) guard), and
 #
-#     ν_i = min(C_max h_i λ_max,i,  C_R h_i² R_i)      (eq. 4.10),   h_i = h_K/k
+#     ν_i = min(C_max h_i λ_max,i,  C_R h_i² R_i)      (eq. 4.10),   h_i = Δ_K/(k+1)
 #
 # at every node, floored at Cmin h_i λ_i as in the element kernel. ν is then a
 # continuous (C⁰, "DSS'd") field: the element loop interpolates the nodal
@@ -1847,7 +1847,14 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         end
     end
     @inbounds for ie = 1:nelem
-        h_e = Δx[ie]/TT(k)
+        # Mesh function of the node: the element form's Δ = Δ_K/(k+1)
+        # (Marras), the same length the element kernel uses, so the two
+        # forms differ only in where the coefficient lives. Dao & Nazarov's
+        # h_K/k with h_K the circumradius is Δ_K/(√2 k) on a square, within
+        # 12% of Δ_K/(k+1) at k = 4; Δ_K/k (25% larger) drove the nodal
+        # coefficient of the rising-bubble case 1.56× above the element
+        # form's at start-up and past the explicit viscous limit.
+        h_e = Δx[ie]/TT(ngl)
         for ieq = 1:neqs
             emin = typemax(TT); emax = typemin(TT)
             for i = 1:ngl
@@ -1935,7 +1942,7 @@ end
 # Global mean, spread S̄ and range of every equation over the local nodes,
 # the local range of every equation over the support of each node (the
 # elements containing it, their eq. 4.7) and the nodal mesh function
-# h_i = max h_K/k over those elements. All buffers are preallocated
+# h_i = max Δ_K/(k+1) over those elements. All buffers are preallocated
 # (params.dsgs_*), nothing is allocated here.
 # ================================================================================
 function _dsgs_nodal_stats_2d!(q::AbstractMatrix{TT},
@@ -1978,7 +1985,7 @@ function _dsgs_nodal_stats_2d!(q::AbstractMatrix{TT},
         end
     end
     @inbounds for ie = 1:nelem
-        h_e = Δelem[ie]/TT(k)
+        h_e = Δelem[ie]/TT(ngl)      # Δ_K/(k+1), the element form's Δ (see the 1D kernel)
         for ieq = 1:neqs
             emin = typemax(TT); emax = typemin(TT)
             for j = 1:ngl, i = 1:ngl
