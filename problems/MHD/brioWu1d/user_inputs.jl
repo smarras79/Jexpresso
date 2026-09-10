@@ -43,8 +43,10 @@ function user_inputs()
         :visc_model       => DSGS_MHD(),
         :dsgs_CR          => 1.0,
         :dsgs_Cmax        => 0.5,
-        # Background floor C_min (not in the paper), 3 % of the first-order
-        # viscosity C_max·h·(|u|+c_f).
+        # Background floor C_min (not in the paper), 6 % of the first-order
+        # viscosity C_max·h·(|u|+c_f). (0.03 was enough before the residual's
+        # time derivative was made stage-consistent, DSGS.md §4.4: the old
+        # stencil added its own dissipation on the moving waves.)
         # The residual viscosity is C_R h² R: it scales with the amplitude
         # of what it sees, so the element-scale ripples that the slowly
         # moving compound wave radiates into the plateau behind it (±0.5 %
@@ -55,7 +57,7 @@ function user_inputs()
         # leaves a trace of them, 0.03 none (measured). Dao & Nazarov's P3
         # elements with exact quadrature do not show these ripples; the
         # collocated LGL flux of this code is the remaining difference.
-        :dsgs_Cmin        => 0.03,
+        :dsgs_Cmin        => 0.06,
         :dsgs_gamma       => 2.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,

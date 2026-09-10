@@ -328,7 +328,7 @@ function params_setup(sem,
     #     [:,2] = μ_ρu          [:,3] = μ_ρv
     #     [:,4] = κ_θ  (already scaled by Pr/(γ-1))
     ldsgs     = inputs[:lvisc] == true && inputs[:visc_model] == DSGS()
-    ldsgs_mhd = inputs[:lvisc] == true && inputs[:visc_model] == DSGS_MHD()
+    ldsgs_mhd = inputs[:lvisc] == true && (inputs[:visc_model] == DSGS_MHD() || inputs[:visc_model] == DSGS_SW())
     if ldsgs || ldsgs_mhd
         μ_dsgs       = KernelAbstractions.zeros(backend, TFloat,
                                                 Int64(sem.mesh.nelem), Int64(qp.neqs))
@@ -341,7 +341,8 @@ function params_setup(sem,
 
     # DynSGS-MHD extras.
     #
-    # dsgs_qnm1/qnm2 are the BDF2 history the residual is built on. They
+    # dsgs_qn/qnm1/qnm2 are the history (qⁿ, qⁿ⁻¹, qⁿ⁻²) the residual's time
+    # derivative is built on (rhs.jl, _dsgs_stencil). They
     # exist separately from qp.qnm1/qnm2 because those are advanced on
     # every RK *stage* — fine as generic scratch, useless as a time
     # derivative. rhs! advances this pair exactly once per time step, and
@@ -355,11 +356,14 @@ function params_setup(sem,
         # extra trailing column (pressure) beyond the neqs solution slots,
         # which is why qp.qnm1/qnm2 are allocated from dims1 too. Sizing
         # these to neqs makes `dsgs_qnm2 .= uaux` a DimensionMismatch.
+        dsgs_qn   = KernelAbstractions.zeros(backend, TFloat,
+                                             Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
         dsgs_qnm1 = KernelAbstractions.zeros(backend, TFloat,
                                              Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
         dsgs_qnm2 = KernelAbstractions.zeros(backend, TFloat,
                                              Int64(size(qp.qn,1)), Int64(size(qp.qn,2)))
         for i = 1:size(qp.qn,2)
+            dsgs_qn[:,i]   = @view(qp.qn[:,i])
             dsgs_qnm1[:,i] = @view(qp.qn[:,i])
             dsgs_qnm2[:,i] = @view(qp.qn[:,i])
         end
@@ -381,6 +385,7 @@ function params_setup(sem,
                      sem.mesh.SD == NSD_2D() ? KernelAbstractions.zeros(backend, TFloat, ngl_, ngl_, Int64(qp.neqs)) :
                                                KernelAbstractions.zeros(backend, TFloat, ngl_, ngl_, ngl_, Int64(qp.neqs))
     else
+        dsgs_qn    = KernelAbstractions.zeros(backend, TFloat, 1, 1)
         dsgs_qnm1  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
         dsgs_qnm2  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
         dsgs_avg   = KernelAbstractions.zeros(backend, TFloat, 1)
@@ -395,6 +400,9 @@ function params_setup(sem,
         dsgs_μloc  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
     end
     dsgs_thist = Ref{Float64}(-1.0e30)
+    # stage stencil of the residual's time derivative (rhs.jl, _dsgs_stencil)
+    dsgs_wt    = Ref{NTuple{3,Float64}}((0.0, 0.0, 0.0))
+    dsgs_stage = Ref{Bool}(false)
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:
@@ -446,7 +454,7 @@ function params_setup(sem,
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
-                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist,
+                  dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_wt, dsgs_stage,
                   dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_μloc,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
@@ -485,7 +493,7 @@ function params_setup(sem,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
-                  dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist,
+                  dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_wt, dsgs_stage,
                   dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_μloc,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,

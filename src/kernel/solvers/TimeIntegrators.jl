@@ -129,6 +129,7 @@ function precompile_warmup_run!(inputs, params, u,
     qnm2_snapshot = copy(params.qp.qnm2)
     # DynSGS-MHD carries its own step-cadenced history plus the time stamp
     # that gates it; the warm-up step would advance both.
+    dsgs_qn_snapshot   = copy(params.dsgs_qn)
     dsgs_qnm1_snapshot = copy(params.dsgs_qnm1)
     dsgs_qnm2_snapshot = copy(params.dsgs_qnm2)
     dsgs_thist_snapshot = params.dsgs_thist[]
@@ -165,6 +166,7 @@ function precompile_warmup_run!(inputs, params, u,
     u .= u_snapshot
     params.qp.qnm1 .= qnm1_snapshot
     params.qp.qnm2 .= qnm2_snapshot
+    params.dsgs_qn   .= dsgs_qn_snapshot
     params.dsgs_qnm1 .= dsgs_qnm1_snapshot
     params.dsgs_qnm2 .= dsgs_qnm2_snapshot
     params.dsgs_thist[] = dsgs_thist_snapshot
@@ -267,7 +269,7 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe,
-                     μ_dsgs_pnode = (params.VT == DSGS() || params.VT == DSGS_MHD()) ? params.μ_dsgs_pnode : nothing,
+                     μ_dsgs_pnode = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) ? params.μ_dsgs_pnode : nothing,
                      schlieren = maybe_compute_schlieren(inputs, params, u))
         if (lwrite_time == true)
             append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
@@ -405,7 +407,7 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe,
-                         μ_dsgs_pnode = (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD()) ? integrator.p.μ_dsgs_pnode : nothing,
+                         μ_dsgs_pnode = (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD() || integrator.p.VT == DSGS_SW()) ? integrator.p.μ_dsgs_pnode : nothing,
                          schlieren = maybe_compute_schlieren(inputs, integrator.p, integrator.u))
             # The DSGS viscosity panel is rendered by the 1D PNG writer
             # itself (write_output -> plot_results, fed by μ_dsgs_pnode
@@ -531,6 +533,7 @@ function time_loop!(inputs, params, u, args...)
             u_snap    = copy(u)
             qnm1_snap = copy(params.qp.qnm1)
             qnm2_snap = copy(params.qp.qnm2)
+            dsgs_qn_snap   = copy(params.dsgs_qn)
             dsgs_qnm1_snap = copy(params.dsgs_qnm1)
             dsgs_qnm2_snap = copy(params.dsgs_qnm2)
             dsgs_thist_snap = params.dsgs_thist[]
@@ -574,6 +577,7 @@ function time_loop!(inputs, params, u, args...)
             u .= u_snap
             params.qp.qnm1 .= qnm1_snap
             params.qp.qnm2 .= qnm2_snap
+            params.dsgs_qn   .= dsgs_qn_snap
             params.dsgs_qnm1 .= dsgs_qnm1_snap
             params.dsgs_qnm2 .= dsgs_qnm2_snap
             params.dsgs_thist[] = dsgs_thist_snap

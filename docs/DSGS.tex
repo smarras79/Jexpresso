@@ -141,16 +141,35 @@ strongly on the nodes after each stage.
 \section{The discrete residual}
 \label{sec:residual}
 
-\subsection{Time derivative: a step-cadenced BDF2}
+\subsection{Time derivative: a step-cadenced history and a stage-consistent stencil}
 
-\dsgs\ keeps its own pair of state snapshots, $\bq^{n-1}$ and $\bq^{n-2}$
-(\code{params.dsgs\_qnm1}, \code{dsgs\_qnm2}), advanced \emph{once per time
-step}: inside \code{rhs!}, when the stage time satisfies
-$t - t_{\rm hist} \ge 0.999\,\Delta t$, the pair is rolled
-($\bq^{n-2}\leftarrow\bq^{n-1}$, $\bq^{n-1}\leftarrow\bq_h$) and
+\dsgs\ keeps its own three state snapshots, $\bq^{n}$, $\bq^{n-1}$ and
+$\bq^{n-2}$ (\code{params.dsgs\_qn}, \code{dsgs\_qnm1}, \code{dsgs\_qnm2}),
+advanced \emph{once per time step}: inside \code{rhs!}, when the stage time
+satisfies $t - t_{\rm hist} \ge 0.999\,\Delta t$, i.e.\ at the first stage of
+every step, the triple is rolled ($\bq^{n-2}\leftarrow\bq^{n-1}$,
+$\bq^{n-1}\leftarrow\bq^{n}$, $\bq^{n}\leftarrow\bq_h$) and
 $t_{\rm hist}\leftarrow t$. The Runge--Kutta stage snapshots
 \code{qp.qnm1/qnm2} are \emph{not} used. $\Delta t$ is the deck's fixed time
 step; there is no adaptive CFL time step.
+
+At a stage with $\tau = t - t^n \in [0,\Delta t]$ and stage state $\bq_h$, the
+time derivative is estimated as $w_1 q_i + w_2 q_{A,i} + w_3 q_{B,i}$ with
+\begin{equation}
+\begin{aligned}
+\tau = 0:&\quad (q_A, q_B) = (q^{n-1}, q^{n-2}),\quad
+w = \Big(\frac{3}{2h},\,-\frac{2}{h},\,\frac{1}{2h}\Big)\ \text{(BDF2)},\\
+\tau > 0:&\quad (q_A, q_B) = (q^{n}, q^{n-1}),\quad
+w = \Big(\frac{2\tau+h}{\tau(\tau+h)},\,-\frac{\tau+h}{\tau h},\,\frac{\tau}{h(\tau+h)}\Big),
+\end{aligned}
+\qquad h = \Delta t,
+\label{eq:stencil}
+\end{equation}
+the second line being the three-point derivative at $\tau$ through
+$(q(\tau), q^n, q^{n-1})$: second-order at every stage, equal to BDF2 at
+$\tau = h$, weights summing to zero. (A fixed BDF2 on $(q(\tau), q^n, q^{n-1})$
+reads $-\tfrac12\partial_t q$ at $\tau=0$ and drove the sensor to the cap
+over every smooth moving structure.)
 
 \subsection{The residual of slot $q$ at node $i$}
 
@@ -158,13 +177,13 @@ At every RHS evaluation (every stage), with $\bq_h$ the current stage
 state,
 \begin{equation}
 \boxed{\;
-R^{q}_i \;=\; \Big|\;\frac{3q_i - 4q^{\,n-1}_i + q^{\,n-2}_i}{2\Delta t}
+R^{q}_i \;=\; \Big|\;w_1 q_i + w_2 q_{A,i} + w_3 q_{B,i}
 \;-\; \frac{\mathrm{RHS}_i^{\,q}}{m_i}\;\Big| \;}
 \qquad i = 1,\dots,N_h,
 \label{eq:residual}
 \end{equation}
 i.e.\ the absolute value of the \emph{nodal} value of the lumped-mass
-strong residual $|\mathrm{BDF2}(q) + \nabla\!\cdot\!\bF^q - S^q|$. The
+strong residual $|\partial_t q + \nabla\!\cdot\!\bF^q - S^q|$. The
 absolute value is taken \emph{after} the assembly and the division by $m_i$.
 
 \subsection{The residual set}
@@ -503,7 +522,7 @@ resistive work term in 1D; the conserved form on
 $(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z)$ is exactly conservative.
 
 %======================================================================
-\section{The Euler kernels (\code{DSGS})}
+\section{The Euler kernels (\code{DSGS}) and the shallow-water kernel (\code{DSGS\_SW})}
 \label{sec:euler}
 
 These predate the MHD kernel and keep their own hard-coded constants.
@@ -564,6 +583,23 @@ $n^q=\Sbar^q+\epsilon$ (no physical lower bounds), $\Delta=\Delta_K/n_{gl}$,
 $\lambda_i=|u_i|+\sqrt{\gamma(\gamma-1)e_i}$ with
 $e_i=\max(E_i/\rho_i-\tfrac12u_i^2,0)$, and the \emph{same} $\nu_K$ on all
 three slots, times $\mu_q$.
+
+\subsection{2D shallow water (\code{DSGS\_SW})}
+
+$\bq=(H,\,Hu,\,Hv)$, $\bq_e = (H_e,0,0)$ the lake at rest of the case,
+$\CR,\Cmax,\Cmin,\Cl$ from the deck. The statistics of
+Section~\ref{sec:norm} are taken on the departure $\delta\bq = \bq-\bq_e$
+(the depth itself is cone-shaped over an island), with the lower bounds
+$n^{H} = \max(\Sbar^{H}, 10^{-3}\bar H)$,
+$n^{Hu} = n^{Hv} = \max(\Sbar, 10^{-3}\bar H\sqrt{g\bar H})$, $\bar H$ the
+mean depth; the residual set is the three equations. The wave speed is
+$\lambda_i = |\bv_i| + \sqrt{g\max(H_i,0)}$ with
+$\bv_i = (Hu, Hv)_i/\max(H_i, h_{min})$, $h_{min}$ = \code{:dsgs\_swe\_hmin}
+(the case's wet/dry threshold) and $g$ = \code{:dsgs\_swe\_g}. Then $\nu_K$
+as in~\eqref{eq:nuK} (element form) or $\nu_i$ as in~\eqref{eq:nui} (nodal
+form), and the \emph{same} kinematic $\nu$ on the three slots, times
+$\mu_q$, applied on the primitives $(H-H_e,\,Hu,\,Hv)$ through the 2D
+fluxes~\eqref{eq:fmass}--\eqref{eq:fmomy} (no energy slot).
 
 %======================================================================
 \section{Output of the coefficients}
@@ -640,7 +676,7 @@ $\rho,\ \rho u,\ \rho v,\ E,\ \rho w,\ B_x,\ B_y,\ B_z$; $\psi$ excluded. Identi
 
 Time derivative in the residual &
 $\mathrm{BDF2}(q)^n = (3q^n-4q^{n-1}+q^{n-2})/(2h)$, $h$ the time step &
-Identical stencil, eq.~\eqref{eq:residual}; $q^{n-1},q^{n-2}$ are once-per-step snapshots, $q$ the current RK stage state \\
+BDF2 at the first stage of a step; at a later stage the second-order three-point derivative through the stage state, $q^n$ and $q^{n-1}$, eq.~\eqref{eq:stencil}; the snapshots are once-per-step \\
 
 Residual $R(q)$ &
 Lumped $L^2$ projection of the absolute value: $R_i = \frac1{m_i}\int|\mathrm{BDF2}+\nabla\!\cdot f|\,\phi_i$ (eq.~4.9) &

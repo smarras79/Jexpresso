@@ -423,6 +423,15 @@ reference solution overlaid at t = 0.2.
 julia --project=. src/Jexpresso.jl MHD brioWu1d
 ```
 
+[`problems/ShallowWater/SoliWaveIslandDSGS`](problems/ShallowWater/SoliWaveIslandDSGS)
+is the solitary wave on a conical island of Marras et al. (2018, §5.5)
+stabilized by DynSGS for the shallow-water system (`DSGS_SW()`) instead of the
+constant viscosity of `ShallowWater/SoliWaveIsland`.
+
+```bash
+julia --project=. src/Jexpresso.jl ShallowWater SoliWaveIslandDSGS
+```
+
 [`problems/MHD/fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS)
 is the same problem with **DynSGS alone** keeping the solution admissible:
 no positivity limiter, the dissipation acting on the relative departure from

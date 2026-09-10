@@ -242,7 +242,7 @@ end
 # -----------------------------------------------------------------------------
 function local_max_diffusivity(npoin, params, visc)
 
-    ldsgs = (params.VT == DSGS() || params.VT == DSGS_MHD()) &&
+    ldsgs = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) &&
             size(params.μ_dsgs_pnode, 1) == npoin
 
     if !ldsgs
@@ -265,7 +265,8 @@ function local_max_diffusivity(npoin, params, visc)
     # Dividing those by the 7e-9 of a solar corona printed a "max ν" of 1e7
     # for a run whose real parabolic number was 0.04.
     mhd    = (params.VT == DSGS_MHD())
-    allkin = mhd && (get(params.inputs, :dsgs_nodal_rho, false) || get(params.inputs, :dsgs_conserved, false))
+    allkin = (mhd && (get(params.inputs, :dsgs_nodal_rho, false) || get(params.inputs, :dsgs_conserved, false))) ||
+             params.VT == DSGS_SW()      # shallow water: one kinematic ν on (H, Hu, Hv)
 
     ν = 0.0
     @inbounds for ip = 1:npoin

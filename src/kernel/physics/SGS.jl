@@ -569,6 +569,29 @@ end
 
 end
 
+# Shallow water (DSGS_SW): the element's (or, in the nodal form, the node's)
+# kinematic coefficient of the slot, nothing else.
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               ::DSGS_SW, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+    return visc_coeffieq[ieq]
+end
+
+@inline function SGS_diffusion(visc_coeffieq, ieq,
+                               ρ,
+                               u11, u22, u12, u21,
+                               PhysConst, Δ2,
+                               inputs,
+                               ::DSGS_SW, ::NSD_2D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
+    return visc_coeffieq[ieq]
+end
+
 # ================================================================================
 # _dsgs_norm_scope — how far the DynSGS normalising scales reach
 #
@@ -618,7 +641,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  rhs::AbstractMatrix{TT},
                                  Minv::AbstractVector{TT},
                                  visc_coeff::AbstractVector{TT},
-                                 Δt::TT,
+                                 wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
                                  nelem::Int, ngl::Int;
@@ -683,7 +706,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     denom1 += eps; denom2 += eps; denom3 += eps
 
     # --- Pass 3: per-element loop --------------------------------------
-    inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
         Δ = Δx[ie]/ngl
 
@@ -693,9 +715,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             ip = connijk[ie,i,1,1]
             Mi = Minv[ip]
 
-            R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
-            R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2])
-            R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3])
+            R1 = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - Mi*rhs[ip,1])
+            R2 = abs((wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - Mi*rhs[ip,2])
+            R3 = abs((wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - Mi*rhs[ip,3])
             n1 = max(n1, R1); n2 = max(n2, R2); n3 = max(n3, R3)
 
             ρl = q[ip,1]
@@ -756,7 +778,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  rhs::AbstractMatrix{TT},
                                  Minv::AbstractVector{TT},
                                  visc_coeff::AbstractVector{TT},
-                                 Δt::TT,
+                                 wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
                                  Δelem::AbstractVector{TT},
                                  PhysConst::PhysicalConst{TT},
@@ -767,7 +789,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
     if !ltheta
         _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs, Minv, visc_coeff,
-                         Δt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
+                         wt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
                          lglobal_norms)
         return nothing
     end
@@ -893,10 +915,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 # dimensionally meaningful: ∂q/∂t has units q/time, the raw
                 # weak RHS has units (mass matrix)·q/time. The 1D path has
                 # always done this; the 2D path did not.
-                R1 = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) - Mi*rhs[ip,1])
-                R2 = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) - Mi*rhs[ip,2])
-                R3 = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) - Mi*rhs[ip,3])
-                R4 = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) - Mi*rhs[ip,4])
+                R1 = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - Mi*rhs[ip,1])
+                R2 = abs((wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - Mi*rhs[ip,2])
+                R3 = abs((wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - Mi*rhs[ip,3])
+                R4 = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - Mi*rhs[ip,4])
                 n1 = max(n1, R1); n2 = max(n2, R2)
                 n3 = max(n3, R3); n4 = max(n4, R4)
 
@@ -1001,7 +1023,7 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           rhs::AbstractMatrix{TT},
                           Minv::AbstractVector{TT},
                           visc_coeff::AbstractVector{TT},
-                          Δt::TT,
+                          wt::NTuple{3,TT},
                           connijk::AbstractArray{TI,4},
                           Δelem::AbstractVector{TT},
                           PhysConst::PhysicalConst{TT},
@@ -1081,7 +1103,6 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
     dE = max(dE, rel*ρ_ref*c_avg*c_avg)  + eps
 
     # --- Pass 3: per-element residual L∞, wave-speed cap, split --------
-    inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
 
         # Marras's element length scale: min edge / (N+1). Δelem[ie] is
@@ -1097,11 +1118,11 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                 ip = connijk[ie,i,j,1]
                 Mi = Minv[ip]
 
-                Rρ  = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])*inv2Δt - Mi*rhs[ip,1])
-                Rmu = (3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])*inv2Δt - Mi*rhs[ip,2]
-                Rmv = (3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])*inv2Δt - Mi*rhs[ip,3]
+                Rρ  = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - Mi*rhs[ip,1])
+                Rmu = (wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - Mi*rhs[ip,2]
+                Rmv = (wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - Mi*rhs[ip,3]
                 Rm  = sqrt(Rmu*Rmu + Rmv*Rmv)
-                RE  = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])*inv2Δt - Mi*rhs[ip,4])
+                RE  = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - Mi*rhs[ip,4])
 
                 ratio = max(ratio, Rρ/dρ, Rm/dm, RE/dE)
 
@@ -1157,7 +1178,12 @@ end
 #
 # with the BDF2 residual of equation i
 #
-#     R_i = (3qⁿ_i − 4qⁿ⁻¹_i + qⁿ⁻²_i)/(2Δt) − M⁻¹·RHS_i
+#     R_i = ∂ₜq_i − M⁻¹·RHS_i,   ∂ₜq_i = wt₁ q_i + wt₂ q1_i + wt₃ q2_i
+#
+#     with (q1, q2, wt) the stage-consistent stencil chosen by rhs.jl
+#     (_dsgs_stencil): at the first stage of a step the BDF2 of
+#     (qⁿ, qⁿ⁻¹, qⁿ⁻²), at a later stage t = tⁿ + τ the second-order
+#     three-point derivative at τ through (q(τ), qⁿ, qⁿ⁻¹).
 #
 # Notes specific to this implementation:
 #
@@ -1169,9 +1195,14 @@ end
 #
 #  *  Step-cadenced history.  params.qp.qnm1/qnm2 are advanced on every RK
 #     *stage*, so they are stage snapshots, not states one Δt apart, and a
-#     BDF2 stencil built on them does not approximate ∂q/∂t. DynSGS-MHD
-#     therefore carries its own pair (params.dsgs_qnm1/qnm2), advanced once
-#     per time step by rhs!.
+#     BDF2 stencil built on them does not approximate ∂q/∂t. DynSGS
+#     therefore carries its own triple (params.dsgs_qn/qnm1/qnm2 = qⁿ, qⁿ⁻¹,
+#     qⁿ⁻²), rolled once per time step by rhs!, and the stencil weights are
+#     rebuilt at every stage from the stage time (rhs.jl, _dsgs_stencil):
+#     a fixed BDF2 on (q_stage, qⁿ, qⁿ⁻¹) is right only at τ = Δt and reads
+#     −∂ₜq/2 at the first stage, which fired the sensor on every smooth
+#     moving structure (measured on the solitary wave of
+#     ShallowWater/SoliWaveIslandDSGS: ν at the cap over the whole wave).
 #
 #  *  Residual set.  The max runs over the eight genuine conservation laws
 #     (ρ, ρu, ρv, E, ρw, Bx, By, Bz) and EXCLUDES ψ: the GLM field is a
@@ -1270,7 +1301,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  denom::AbstractVector{TT},
                                  avg_e::AbstractVector{TT},
                                  den_e::AbstractVector{TT},
-                                 Δt::TT,
+                                 wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
                                  Δelem::AbstractVector{TT},
                                  γ::TT, Pr_t::TT, CR::TT, Cmax::TT,
@@ -1356,7 +1387,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     end
 
     # --- Pass 3: per-element residual L∞, wave-speed cap, split --------
-    inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
 
         # Marras's element length scale: min edge / (N+1).
@@ -1427,7 +1457,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 Mi = Minv[ip]
 
                 for ieq = 1:NRES
-                    R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+                    R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
                     r = R/den[ieq]
                     ratio = max(ratio, r)
                 end
@@ -1560,7 +1590,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  denom::AbstractVector{TT},
                                  avg_e::AbstractVector{TT},
                                  den_e::AbstractVector{TT},
-                                 Δt::TT,
+                                 wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
                                  γ::TT, Pr_t::TT, CR::TT, Cmax::TT,
@@ -1634,7 +1664,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     end
 
     # --- Pass 2: per element ------------------------------------------
-    inv2Δt = one(TT)/(2*Δt)
     @inbounds for ie = 1:nelem
         Δ = Δx[ie]/ngl
         ratio = zero(TT)
@@ -1684,7 +1713,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             ip = connijk[ie,i,1,1]
             Mi = Minv[ip]
             for ieq = 1:NRES
-                R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+                R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
                 ratio = max(ratio, R/den[ieq])
             end
             ρl = max(q[ip,1], eps)
@@ -1774,7 +1803,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nmin::AbstractMatrix{TT},
                                        nmax::AbstractMatrix{TT},
                                        hnod::AbstractVector{TT},
-                                       Δt::TT,
+                                       wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δx::AbstractVector{TT},
                                        γ::TT, Pr_t::TT, CR::TT, Cmax::TT, Cl::TT,
@@ -1873,12 +1902,11 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     end
 
     # --- nodal viscosity ---------------------------------------------------
-    inv2Δt = one(TT)/(2*Δt)
     @inbounds for ip = 1:npoin
         Mi = Minv[ip]
         ratio = zero(TT)
         for ieq = 1:NRES
-            R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+            R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
             grange = qmax[ieq] - qmin[ieq]
             lfac   = grange > eps ? Cl*(nmax[ip,ieq] - nmin[ip,ieq])/grange : zero(TT)
             n      = denom[ieq]*(one(TT) - lfac)
@@ -1953,14 +1981,19 @@ function _dsgs_nodal_stats_2d!(q::AbstractMatrix{TT},
                                qmin::AbstractVector{TT}, qmax::AbstractVector{TT},
                                nmin::AbstractMatrix{TT}, nmax::AbstractMatrix{TT},
                                hnod::AbstractVector{TT},
-                               lglobal_norms::Bool, comm) where {TT<:AbstractFloat, TI<:Integer}
+                               lglobal_norms::Bool, comm;
+                               qe::Union{Nothing,AbstractMatrix{TT}}=nothing) where {TT<:AbstractFloat, TI<:Integer}
+    # qe given: every statistic is taken on the departure q − qe from the
+    # reference state (the shallow-water kernel: the lake at rest)
+    @inline dq(ip, ieq) = qe === nothing ? q[ip,ieq] : q[ip,ieq] - qe[ip,ieq]
     @inbounds for ieq = 1:neqs
         avg[ieq] = zero(TT); denom[ieq] = zero(TT)
         qmin[ieq] = typemax(TT); qmax[ieq] = typemin(TT)
     end
     @inbounds for ip = 1:npoin, ieq = 1:neqs
-        avg[ieq] += q[ip,ieq]
-        qmin[ieq] = min(qmin[ieq], q[ip,ieq]); qmax[ieq] = max(qmax[ieq], q[ip,ieq])
+        v = dq(ip, ieq)
+        avg[ieq] += v
+        qmin[ieq] = min(qmin[ieq], v); qmax[ieq] = max(qmax[ieq], v)
     end
     inv_npts = one(TT)/max(TT(npoin), one(TT))
     if lglobal_norms
@@ -1973,7 +2006,7 @@ function _dsgs_nodal_stats_2d!(q::AbstractMatrix{TT},
         avg[ieq] *= inv_npts
     end
     @inbounds for ip = 1:npoin, ieq = 1:neqs
-        denom[ieq] = max(denom[ieq], abs(q[ip,ieq] - avg[ieq]))
+        denom[ieq] = max(denom[ieq], abs(dq(ip, ieq) - avg[ieq]))
     end
     if lglobal_norms
         MPI.Allreduce!(denom, MPI.MAX, comm)
@@ -1990,7 +2023,8 @@ function _dsgs_nodal_stats_2d!(q::AbstractMatrix{TT},
             emin = typemax(TT); emax = typemin(TT)
             for j = 1:ngl, i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                emin = min(emin, q[ip,ieq]); emax = max(emax, q[ip,ieq])
+                v  = dq(ip, ieq)
+                emin = min(emin, v); emax = max(emax, v)
             end
             for j = 1:ngl, i = 1:ngl
                 ip = connijk[ie,i,j,1]
@@ -2007,12 +2041,12 @@ end
 
 # Nodal residual ratio max_i R_i/n_i (eq. 4.8) with the local-jump
 # normalization (eq. 4.7) and the n²/(n²+ε) guard.
-@inline function _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, inv2Δt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+@inline function _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, wt, denom, qmin, qmax, nmin, nmax, Cl, eps)
     TT = eltype(denom)
     Mi = Minv[ip]
     ratio = zero(TT)
     @inbounds for ieq = 1:NRES
-        R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+        R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
         grange = qmax[ieq] - qmin[ieq]
         lfac   = grange > eps ? Cl*(nmax[ip,ieq] - nmin[ip,ieq])/grange : zero(TT)
         n      = denom[ieq]*(one(TT) - lfac)
@@ -2061,7 +2095,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nmin::AbstractMatrix{TT},
                                        nmax::AbstractMatrix{TT},
                                        hnod::AbstractVector{TT},
-                                       Δt::TT,
+                                       wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
                                        γ::TT, Pr_t::TT, CR::TT, Cmax::TT, Cl::TT,
@@ -2099,10 +2133,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         end
     end
 
-    inv2Δt = one(TT)/(2*Δt)
     fE = lnazarov_energy ? γ*γm1/Pr_t : one(TT)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, inv2Δt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, wt, denom, qmin, qmax, nmin, nmax, Cl, eps)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2168,7 +2201,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nmin::AbstractMatrix{TT},
                                        nmax::AbstractMatrix{TT},
                                        hnod::AbstractVector{TT},
-                                       Δt::TT,
+                                       wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
                                        PhysConst::PhysicalConst{TT},
@@ -2206,9 +2239,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         denom[4] = max(denom[4], ltheta ? rel*abs(avg[4]) : rel*ρ_avg*c_avg*c_avg)
     end
 
-    inv2Δt = one(TT)/(2*Δt)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, inv2Δt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, wt, denom, qmin, qmax, nmin, nmax, Cl, eps)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2238,6 +2270,221 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         end
         for ieq = 5:neqs
             μ_pnode[ip,ieq] = visc_coeff[ieq]*μd
+        end
+    end
+    _dsgs_nodal_to_elements_2d!(μ_dsgs, μ_pnode, connijk, nelem, ngl)
+    return nothing
+end
+
+# ================================================================================
+# compute_dsgs_viscosity!(::DSGS_SW, ::NSD_2D)
+#
+# Marras-Nazarov DynSGS for the 2D non-linear shallow-water system
+#
+#     q = (H, Hu, Hv),     H the water depth above the bathymetry,
+#
+# after Marras, Kopera, Constantinescu, Suckale, Giraldo, Adv. Water
+# Resour. 114 (2018) 45-63 (residual-based shock capturing for the SWE with
+# CG/DG spectral elements), in the form of the Euler and MHD kernels of
+# this file:
+#
+#     ν_res|e = C_R · Δ² · max_i ‖R_i‖∞,e / ‖δq_i − ⟨δq_i⟩‖∞,Ω
+#     ν_max|e = C_max · Δ · (‖v‖ + √(gH))∞,e
+#     ν|e     = max(ν_floor, max(0, min(ν_max, ν_res))),  ν_floor = C_min Δ (‖v‖ + √(gH))∞,e
+#
+# with the BDF2 lumped-mass residual R_i of every equation (see the MHD
+# header) and the statistics taken on the DEPARTURE δq = q − qe from the
+# reference state qe = (He, 0, 0), the lake at rest of the case: the depth
+# itself is cone-shaped over an island (‖H − ⟨H⟩‖ is the island, not the
+# wave), while the solitary wave is a small perturbation of it. The
+# denominators are floored at 10⁻³ of the still-water scales H̄, H̄√(gH̄)
+# (H̄ the mean depth) so that a field that is uniform, or at rest,
+# contributes 0/floor = 0.
+#
+# The velocity of the wave speed is Hu/max(H, h_min) with h_min the
+# case's wet/dry threshold (:dsgs_swe_hmin), so a thin film does not
+# produce |v| = |Hu|/ε; g is :dsgs_swe_g. The three slots receive the SAME
+# kinematic ν (times the deck's :μ multipliers): the case's
+# user_primitives! hands (H − He, Hu, Hv), so the operator is
+# ∇·(ν∇(H − He)) on the continuity equation, which vanishes at the lake at
+# rest, and the divergence of ν(∇(Hv) + ∇(Hv)ᵀ − ⅔∇·(Hv) I) on the momenta
+# (the stress form of _expansion_visc! on the conserved momenta).
+# ================================================================================
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
+                                 ::DSGS_SW, ::NSD_2D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 avg::AbstractVector{TT},
+                                 denom::AbstractVector{TT},
+                                 wt::NTuple{3,TT},
+                                 connijk::AbstractArray{TI,4},
+                                 Δelem::AbstractVector{TT},
+                                 g::TT, hmin::TT, CR::TT, Cmax::TT,
+                                 comm,
+                                 nelem::Int, ngl::Int;
+                                 lglobal_norms::Bool=false,
+                                 Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs = size(μ_dsgs, 2)
+    NRES = min(neqs, 3)
+    rel  = TT(1.0e-3)
+    eps  = TT(1.0e-16)
+
+    # --- Pass 1: means of δq = q − qe and of the depth --------------------
+    @inbounds for ieq = 1:neqs
+        avg[ieq] = zero(TT)
+    end
+    Hsum = zero(TT)
+    @inbounds for ie = 1:nelem, j = 1:ngl, i = 1:ngl
+        ip = connijk[ie,i,j,1]
+        for ieq = 1:neqs
+            avg[ieq] += q[ip,ieq] - qe[ip,ieq]
+        end
+        Hsum += q[ip,1]
+    end
+    inv_npts = one(TT)/max(TT(nelem*ngl*ngl), one(TT))
+    if lglobal_norms
+        npts_glob = MPI.Allreduce(TT(nelem*ngl*ngl), MPI.SUM, comm)
+        MPI.Allreduce!(avg, MPI.SUM, comm)
+        Hsum      = MPI.Allreduce(Hsum, MPI.SUM, comm)
+        inv_npts  = one(TT)/max(npts_glob, one(TT))
+    end
+    @inbounds for ieq = 1:neqs
+        avg[ieq] *= inv_npts
+    end
+    H_avg = max(Hsum*inv_npts, hmin)
+
+    # --- Pass 2: L∞ spreads of δq, floored at the still-water scales -------
+    @inbounds for ieq = 1:neqs
+        denom[ieq] = zero(TT)
+    end
+    @inbounds for ie = 1:nelem, j = 1:ngl, i = 1:ngl
+        ip = connijk[ie,i,j,1]
+        for ieq = 1:neqs
+            denom[ieq] = max(denom[ieq], abs(q[ip,ieq] - qe[ip,ieq] - avg[ieq]))
+        end
+    end
+    if lglobal_norms
+        MPI.Allreduce!(denom, MPI.MAX, comm)
+    end
+    c_avg = sqrt(g*H_avg)
+    @inbounds begin
+        denom[1] = max(denom[1], rel*H_avg) + eps
+        for ieq = 2:NRES
+            denom[ieq] = max(denom[ieq], rel*H_avg*c_avg) + eps
+        end
+    end
+
+    # --- Pass 3: per element ------------------------------------------------
+    @inbounds for ie = 1:nelem
+        Δ     = Δelem[ie]/ngl
+        ratio = zero(TT)
+        wmax  = zero(TT)
+        for j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,1]
+            Mi = Minv[ip]
+            for ieq = 1:NRES
+                R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
+                ratio = max(ratio, R/denom[ieq])
+            end
+            Hc = max(q[ip,1], zero(TT))
+            Hd = max(q[ip,1], hmin)
+            ul = q[ip,2]/Hd
+            vl = q[ip,3]/Hd
+            wmax = max(wmax, sqrt(ul*ul + vl*vl) + sqrt(g*Hc))
+        end
+        ν_res = CR*Δ*Δ*ratio
+        ν_max = Cmax*Δ*wmax
+        ν     = max(zero(TT), min(ν_max, ν_res))
+        ν     = Cmin > zero(TT) ? max(ν, Cmin*Δ*wmax) : ν
+        for ieq = 1:neqs
+            μ_dsgs[ie,ieq] = visc_coeff[ieq]*ν
+        end
+    end
+    return nothing
+end
+
+# ================================================================================
+# compute_dsgs_viscosity_nodal!(::DSGS_SW, ::NSD_2D)
+#
+# The nodal (Dao & Nazarov) form of the shallow-water kernel: ν_i at every
+# node from the assembled residual, the eq. 4.7 normalization with C_l on
+# the departure δq = q − qe, h_i = Δ_K/(k+1), the wave speed |v_i| + √(gH_i),
+# the C_min floor; one kinematic ν_i on the three slots. μ_dsgs receives the
+# element means for the output staircase.
+# ================================================================================
+function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
+                                       μ_pnode::AbstractMatrix{TT},
+                                       ::DSGS_SW, ::NSD_2D,
+                                       q::AbstractMatrix{TT},
+                                       q1::AbstractMatrix{TT},
+                                       q2::AbstractMatrix{TT},
+                                       qe::AbstractMatrix{TT},
+                                       rhs::AbstractMatrix{TT},
+                                       Minv::AbstractVector{TT},
+                                       visc_coeff::AbstractVector{TT},
+                                       avg::AbstractVector{TT},
+                                       denom::AbstractVector{TT},
+                                       qmin::AbstractVector{TT},
+                                       qmax::AbstractVector{TT},
+                                       nmin::AbstractMatrix{TT},
+                                       nmax::AbstractMatrix{TT},
+                                       hnod::AbstractVector{TT},
+                                       wt::NTuple{3,TT},
+                                       connijk::AbstractArray{TI,4},
+                                       Δelem::AbstractVector{TT},
+                                       g::TT, hmin::TT, CR::TT, Cmax::TT, Cl::TT,
+                                       comm,
+                                       nelem::Int, ngl::Int, npoin::Int;
+                                       lglobal_norms::Bool=false,
+                                       Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs = size(μ_dsgs, 2)
+    NRES = min(neqs, 3)
+    rel  = TT(1.0e-3)
+    eps  = TT(1.0e-16)
+    k    = max(ngl - 1, 1)
+
+    _dsgs_nodal_stats_2d!(q, connijk, Δelem, nelem, ngl, npoin, neqs, k,
+                          avg, denom, qmin, qmax, nmin, nmax, hnod, lglobal_norms, comm; qe=qe)
+
+    # mean depth for the floors of the spreads
+    Hsum = zero(TT)
+    @inbounds for ip = 1:npoin
+        Hsum += q[ip,1]
+    end
+    inv_npts = one(TT)/max(TT(npoin), one(TT))
+    if lglobal_norms
+        npts_glob = MPI.Allreduce(TT(npoin), MPI.SUM, comm)
+        Hsum      = MPI.Allreduce(Hsum, MPI.SUM, comm)
+        inv_npts  = one(TT)/max(npts_glob, one(TT))
+    end
+    H_avg = max(Hsum*inv_npts, hmin)
+    c_avg = sqrt(g*H_avg)
+    @inbounds begin
+        denom[1] = max(denom[1], rel*H_avg)
+        for ieq = 2:NRES
+            denom[ieq] = max(denom[ieq], rel*H_avg*c_avg)
+        end
+    end
+
+    @inbounds for ip = 1:npoin
+        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, wt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        Hc = max(q[ip,1], zero(TT))
+        Hd = max(q[ip,1], hmin)
+        ul = q[ip,2]/Hd
+        vl = q[ip,3]/Hd
+        λ  = sqrt(ul*ul + vl*vl) + sqrt(g*Hc)
+        h  = hnod[ip]
+        ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
+        ν   = Cmin > zero(TT) ? max(ν_c, Cmin*h*λ) : ν_c
+        for ieq = 1:neqs
+            μ_pnode[ip,ieq] = visc_coeff[ieq]*ν
         end
     end
     _dsgs_nodal_to_elements_2d!(μ_dsgs, μ_pnode, connijk, nelem, ngl)

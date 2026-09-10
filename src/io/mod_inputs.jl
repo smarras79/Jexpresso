@@ -1117,6 +1117,25 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_conserved_prandtl))
         inputs[:dsgs_conserved_prandtl] = false
     end
+    #   :dsgs_swe_g, :dsgs_swe_hmin   DSGS_SW (2D shallow water): the gravity of
+    #                      the wave speed |v| + √(gH) and the depth below which
+    #                      the velocity Hu/H is desingularized (keep them equal
+    #                      to the case's g and wet/dry threshold)
+    if(!haskey(inputs, :dsgs_swe_g))
+        inputs[:dsgs_swe_g] = 9.81
+    end
+    if(!haskey(inputs, :dsgs_swe_hmin))
+        inputs[:dsgs_swe_hmin] = 1.0e-3
+    end
+    #   :dsgs_legacy_stencil  time derivative of the residual as a BDF2 on
+    #                      (q_stage, qⁿ, qⁿ⁻¹) at every RK stage — the stencil
+    #                      of every DynSGS run before Sep 2026, which reads
+    #                      −∂ₜq/2 at the first stage and over-fires on smooth
+    #                      moving structures; false (default) = the
+    #                      stage-consistent stencil (rhs.jl, _dsgs_stencil)
+    if(!haskey(inputs, :dsgs_legacy_stencil))
+        inputs[:dsgs_legacy_stencil] = false
+    end
 
     #
     # Viscous models:

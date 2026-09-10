@@ -303,29 +303,63 @@ component-Laplacian induction term, so that the magnetic energy removed from
 $\mathbf{B}$ reappears as heat and the total energy is conserved (their
 eq. 4.4 has the same term for their curl-curl form).
 
-### 4.4 Step-cadenced history
+### 4.4 Step-cadenced history and the stage stencil
 
 `params.qp.qnm1/qnm2` are advanced on every RK **stage** (`rhs.jl`, in
 `_build_rhs!`), so they hold consecutive *stage* snapshots. A BDF2 stencil built
 on them differences intermediate stage states over a full $\Delta t$ and is not
 an approximation of $\partial q/\partial t$ at all.
 
-DynSGS-MHD therefore carries its own pair, `params.dsgs_qnm1/dsgs_qnm2`, rolled
-exactly once per time step by a gate in `rhs!`:
+DynSGS therefore carries its own triple $(q^n, q^{n-1}, q^{n-2})$,
+`params.dsgs_qn/dsgs_qnm1/dsgs_qnm2`, rolled exactly once per time step by a
+gate in `rhs!`:
 
 ```julia
 if time - params.dsgs_thist[] >= 0.999*params.Δt
-    params.dsgs_qnm1 .= params.dsgs_qnm2
-    params.dsgs_qnm2 .= params.uaux
+    params.dsgs_qnm2 .= params.dsgs_qnm1
+    params.dsgs_qnm1 .= params.dsgs_qn
+    params.dsgs_qn   .= params.uaux
     params.dsgs_thist[] = time
 end
 ```
 
-`time` sweeps $t + c_i\Delta t$ within a step, so the gate fires once per step
-regardless of the stage layout. Both buffers are initialized to the initial
-state in `params_setup.jl`, so the first residual is identically zero rather
-than $3q/(2\Delta t)$. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` —
-`uaux` carries one extra trailing column beyond the `neqs` solution slots.
+`time` sweeps $t^n + c_i\Delta t$ within a step, so the gate fires at the first
+stage of every step, where `uaux` is $q^n$. The three buffers are initialized
+to the initial state in `params_setup.jl`, so the first residual is identically
+zero. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` — `uaux` carries
+one extra trailing column beyond the `neqs` solution slots.
+
+**The stencil at a stage.** The residual is evaluated at every RK stage with
+the stage state $q(\tau)$, $\tau = t - t^n \in [0, \Delta t]$. A BDF2 written
+on $(q(\tau), q^n, q^{n-1})$ is the derivative only at $\tau = \Delta t$: at
+$\tau = 0$ it reads $-\tfrac12\partial_t q$ and at mid-step $\tfrac14\partial_t q$,
+so the residual of a *smooth moving* structure was $0.75$–$1.5\,|\partial_t q|$ at
+every stage but the last, and the sensor drove the coefficient to the cap over
+the whole solitary wave of `ShallowWater/SoliWaveIslandDSGS` (measured). The
+kernels now receive the weights of the stage-consistent estimate
+(`rhs.jl`, `_dsgs_stencil`):
+
+$$
+\partial_t q \approx w_1\,q(\tau) + w_2\,q_A + w_3\,q_B,\qquad
+\begin{cases}
+\tau = 0: & (q_A, q_B) = (q^{n-1}, q^{n-2}),\ w = \big(\tfrac{3}{2h}, -\tfrac{2}{h}, \tfrac{1}{2h}\big)\ \text{(BDF2)},\\[4pt]
+\tau > 0: & (q_A, q_B) = (q^{n}, q^{n-1}),\ w = \Big(\tfrac{2\tau+h}{\tau(\tau+h)},\ -\tfrac{\tau+h}{\tau h},\ \tfrac{\tau}{h(\tau+h)}\Big),
+\end{cases}
+\qquad h = \Delta t,
+$$
+
+the second being the three-point derivative at $\tau$ through
+$(q(\tau), q^n, q^{n-1})$: second order at every stage, equal to BDF2 at
+$\tau = h$, weights summing to zero. Dao & Nazarov compute the coefficient once
+per step from $t^n$ and freeze it over the stages; here it is re-evaluated at
+every stage, consistently.
+
+Every DynSGS result obtained before this change (September 2026) used the
+fixed BDF2 on $(q(\tau), q^n, q^{n-1})$: `:dsgs_legacy_stencil => true`
+reproduces it for comparison. The consistent stencil removes the spurious
+dissipation the old one added on smooth moving structures, so a case that was
+clean with it may show element-scale ripples now and need a larger
+`:dsgs_Cmin` (the Brio–Wu tube: see its README).
 
 ### 4.5 Stratified atmospheres: `:dsgs_norms => "element"`, `:dsgs_conserved`, `:dsgs_ref_weight`, `:dsgs_nazarov_energy`, `:dsgs_nodal_rho`
 
@@ -523,12 +557,27 @@ should look like.
 
 ---
 
+### 4.10 Shallow water: `SoliWaveIslandDSGS`
+
+`compute_dsgs_viscosity!(::DSGS_SW, ::NSD_2D)` (and its nodal form) is the
+same model for the 2D non-linear shallow-water system $(H, Hu, Hv)$: the
+BDF2 residual of the three equations, normalized by the spread of the
+**departure from the lake at rest** $\delta q = q - q_e$ (the cone-shaped
+depth would otherwise set the scale of $H$), bounded from below at $10^{-3}$
+of the still-water scales $\bar H$, $\bar H\sqrt{g\bar H}$; the cap with
+$|\mathbf v| + \sqrt{gH}$, the velocity desingularized as $Hu/\max(H, h_{min})$
+(`:dsgs_swe_hmin`, the case's wet/dry threshold; `:dsgs_swe_g` its $g$); one
+kinematic $\nu$ on the three slots, applied on $(H - H_e, Hu, Hv)$ as the
+sibling's constant viscosity is. Selected with `:visc_model => DSGS_SW()`;
+[`problems/ShallowWater/SoliWaveIslandDSGS`](problems/ShallowWater/SoliWaveIslandDSGS/README.md)
+is `SoliWaveIsland` with it in place of `AV()`.
+
 ## 5. Code map, inputs and output
 
 | file | contents |
 |---|---|
-| `src/kernel/abstractTypes.jl` | `struct DSGS`, `struct DSGS_MHD` |
-| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-MHD), `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
+| `src/kernel/abstractTypes.jl` | `struct DSGS`, `struct DSGS_MHD`, `struct DSGS_SW` |
+| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-MHD, 2D shallow water) and the nodal forms, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
 | `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
 | `src/io/mod_inputs.jl` | `:dsgs_CR`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
@@ -542,6 +591,7 @@ should look like.
 :lvisc      => true,
 :visc_model => DSGS(),        # 1D CompEuler / 2D CompEuler θ
 :visc_model => DSGS_MHD(),    # 2D ideal GLM-MHD
+:visc_model => DSGS_SW(),     # 2D non-linear shallow water
 :μ          => [0.0, 1.0, …], # per-equation multipliers, length neqs
 :dsgs_CR    => 1.0,           # DSGS_MHD only
 :dsgs_Cmax    => 0.5,

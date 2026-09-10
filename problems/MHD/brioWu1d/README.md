@@ -105,12 +105,15 @@ nor the continuity of $\nu$ is their cause. The residual viscosity cannot
 remove them: $\nu = C_R h^2 R$ and the residual of a ripple is its
 amplitude over $h$, so $\nu \sim C_R h\,\times$ amplitude, far below the
 first-order cap for a $0.5\,\%$ ripple. The case therefore runs with
-`:dsgs_Cmin => 0.03`, a floor of 3 % of the first-order viscosity
+`:dsgs_Cmin => 0.06`, a floor of 6 % of the first-order viscosity
 $C_{max}h(|u| + c_f)$: it damps an element-scale mode at a rate
-$\nu(\pi/h)^2 \approx 300$ per unit time and diffuses a resolved profile by
-$\sqrt{2\nu t} \approx 0.004$ over the run, less than one element; with
-0.01 a trace of the ripples remains, with 0.03 none (measured), at the
-price of a contact about one node wider. Dao & Nazarov's $\mathbb{P}_3$
+$\nu(\pi/h)^2 \approx 600$ per unit time and diffuses a resolved profile by
+$\sqrt{2\nu t} \approx 0.006$ over the run, less than one element; with
+0.03 the ripples remain, with 0.06 none (measured), at the price of a
+contact about one node wider. (Before the residual's time derivative was
+made stage-consistent, DSGS.md §4.4, 0.03 was enough: the old stencil
+over-fired on the moving waves and supplied the rest of the damping
+itself; `:dsgs_legacy_stencil => true` reproduces those runs.) Dao & Nazarov's $\mathbb{P}_3$
 solution shows no ripples with no floor; their elements integrate the
 nonlinear flux exactly on uniform nodes, this code's collocated LGL flux
 does not, and that is the remaining difference between the two
