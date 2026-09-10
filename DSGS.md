@@ -476,8 +476,9 @@ total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
   itself and `μ_dsgs[ie,:]` its element means (for the staircase output).
 
 The whole path is allocation-free (`params.dsgs_qmin/qmax/nmin/nmax/hnod`
-are its scratch). The element form remains the default of every case;
-`brioWu1d` runs the nodal one. There is no 3D DynSGS kernel (the 3D viscous
+are its scratch). The element form remains the default of every case,
+`brioWu1d` included (its deck carries the nodal switch commented out; with
+the $C_0$ floor both forms give the same profile). There is no 3D DynSGS kernel (the 3D viscous
 path dispatches the Smagorinsky/Vreman caches only), so the switch has no
 3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
 solution, and the element-scale ripples the compound wave radiates into

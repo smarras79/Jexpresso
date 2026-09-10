@@ -13,7 +13,7 @@
 #---------------------------------------------------------------------------------
 function user_inputs()
     inputs = Dict(
-        :ode_solver           => SSPRK53(),
+        :ode_solver           => CarpenterKennedy2N54(),
         # Fastest signal: the fast magnetosonic speed of the right state,
         # √((γp + |B|²)/ρ) = 3.75, against the smallest LGL spacing
         # 0.146·(1/150) ≈ 1e-3: Δt = 5e-5 is a Courant number of 0.19.
@@ -63,7 +63,9 @@ function user_inputs()
         # the diffusive flux has no jump at element interfaces; the element
         # form (one ν per element) left one wiggle per element in the plateau
         # behind the compound wave. :dsgs_Cl is their C_l = 0.4 (eq. 4.7).
-        :ldsgs_nodal      => true,    # false (the default) = one ν per element
+        # With the C0 floor both forms give the same clean profile; the
+        # element form (the default) is kept here.
+#       :ldsgs_nodal      => true,    # false (the default) = one ν per element
         :dsgs_Cl          => 0.4,
         :dsgs_norms       => "domain",  # residual normalized by the spread over the whole tube
         :energy_equation  => "energy",

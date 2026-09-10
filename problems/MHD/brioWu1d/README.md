@@ -51,15 +51,16 @@ writes those panels as separate files).
   ($\nabla\cdot\mathbf{B} = \partial_x B_x = 0$ holds exactly with $B_x$
   constant; its slot carries a zero flux).
 - **Stabilization: DynSGS** (`:visc_model => DSGS_MHD()`), with the 1D MHD
-  kernel added to `kernel/physics/SGS.jl` for this case, in its **nodal
-  form** (`:ldsgs_nodal => true`), which is Dao & Nazarov's own: at every node
+  kernel added to `kernel/physics/SGS.jl` for this case. The deck runs the
+  default **element form** (one $\nu$ per element); the **nodal form**
+  (`:ldsgs_nodal => true`) is Dao & Nazarov's own and gives the same profile
+  once the $C_0$ floor is on (see below): at every node
   the assembled lumped-mass BDF2 residual, normalized by their eq. 4.7 with
   $C_l = 0.4$ (`:dsgs_Cl`), the maximum over the equations (eq. 4.8), and
   $\nu_i = \min(C_{max}h_i\lambda_i, C_R h_i^2 R_i)$ with the fast
   magnetosonic speed, $h_i = h_K/k$, $C_{max} = C_2 = 0.5$, $C_R = C_1 = 1$
   (eq. 4.10); $\nu$ is a continuous field the element loop interpolates,
-  so the diffusive flux has no jump at element interfaces (the element form,
-  one $\nu$ per element, is `:ldsgs_nodal => false`). Applied in the
+  so the diffusive flux has no jump at element interfaces. Applied in the
   **conserved form**, $\nabla\cdot(\nu\nabla q)$ on every slot (`user_primitives.jl`),
   i.e. exactly conservative, with the magnetic and kinetic energy removed
   from $\mathbf{B}$ and $\rho\mathbf{v}$ accounted for in $E$. This is the
