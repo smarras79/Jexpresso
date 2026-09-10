@@ -1281,11 +1281,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :zsponge))
         inputs[:zsponge] = 14000.0
     end
-    if  inputs[:lsponge] == true
-        if(!haskey(inputs, :zsponge))
-            inputs[:zsponge] = 14000.0
-        end
-    end
+    # the case source terms read these at every node with a type assertion
+    # (inputs[:lsponge]::Bool, inputs[:zsponge]::Float64: a bare read of the
+    # global Dict boxes and allocates 176 bytes per node per stage), so the
+    # deck's values are normalized to those types here
+    inputs[:lsponge] = Bool(inputs[:lsponge])
+    inputs[:zsponge] = Float64(inputs[:zsponge])
 
     if(!haskey(inputs, :lmoist))
         inputs[:lmoist] = false
