@@ -414,6 +414,15 @@ with magnetic field lines and velocity vectors; centerline profiles of the
 rise velocity, Alfvén speed, field and density on the axes of its Fig. 5)
 directly, gathered on one rank under MPI.
 
+[`problems/MHD/brioWu1d`](problems/MHD/brioWu1d) is the 1D Brio–Wu MHD
+shock tube (Dao & Nazarov 2022, §5.2), the MHD counterpart of `CompEuler/sod1d`:
+DynSGS in its conserved form with the 1D MHD kernel, 600 LGL points, the
+reference solution overlaid at t = 0.2.
+
+```bash
+julia --project=. src/Jexpresso.jl MHD brioWu1d
+```
+
 [`problems/MHD/fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS)
 is the same problem with **DynSGS alone** keeping the solution admissible:
 no positivity limiter, the dissipation acting on the relative departure from

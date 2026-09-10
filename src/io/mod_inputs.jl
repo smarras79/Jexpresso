@@ -1066,8 +1066,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
     #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
     #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the
-    #                      physical form, ν γ(γ−1)/Pr_t on ∇E in the
-    #                      conserved form (:dsgs_conserved_prandtl = alias)
+    #                      physical form; in the conserved form the energy
+    #                      flux is split: ν on the non-thermal part of E,
+    #                      max(γ(γ−1)/Pr_t·ν_res, ν_floor) on p/(γ−1)
+    #                      (kernel/physics/SGS.jl, dsgs_split_energy;
+    #                      :dsgs_conserved_prandtl = alias)
     if(!haskey(inputs, :dsgs_nazarov_energy))
         inputs[:dsgs_nazarov_energy] = get(inputs, :dsgs_conserved_prandtl, false)
     end

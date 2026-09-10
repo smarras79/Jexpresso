@@ -403,8 +403,22 @@ density spans eight decades between the photosphere and the corona:
   the energy slot is not: $\nu\nabla E$ conducts the internal energy
   $\rho T/(\gamma(\gamma-1))$ at $\nu$, a heat conduction
   $\rho\nu/(\gamma(\gamma-1))$ that is $19\times$ Nazarov's at $\gamma = 1.05$,
-  $\mathrm{Pr} = 1$. The option scales the energy slot by $\gamma(\gamma-1)/\mathrm{Pr}_t$
-  (`:dsgs_Prt`). Their $\kappa\nabla T$ itself cannot be used in a
+  $\mathrm{Pr} = 1$. The option therefore **splits the energy flux**: the
+  case's `user_primitives!` hands slot 4 the non-thermal part
+  $\delta(\tfrac12\rho|\mathbf{v}|^2 + \tfrac12|\mathbf{B}|^2)$, which the
+  kernel diffuses with the $\rho\mathbf{v}$ slot's $\nu$ so that its
+  magnetic and kinetic fluxes keep matching the $\mathbf{B}$ and
+  $\rho\mathbf{v}$ Laplacians, and the spare slot `neqs+2` the thermal part
+  $\delta(p/(\gamma-1))$, diffused with $\max(\gamma(\gamma-1)/\mathrm{Pr}_t\cdot\nu_{res},\ \nu_{floor})$
+  — Nazarov's $\kappa = \rho\nu/\mathrm{Pr}$ on the residual viscosity with
+  the $C_0$ floor of §4.5 kept in full (`dsgs_split_energy` in SGS.jl,
+  `_expansion_visc!` in rhs.jl). Scaling the whole energy slot instead —
+  the first implementation — let $\nu\nabla\mathbf{B}$ spread the flux
+  sheet's field while 95 % of its magnetic energy stayed put, and cut the
+  floor that damps the node-to-node mode: on the flux-emergence case the
+  sheet core overheated, a temperature sawtooth grew across the corona by
+  $t = 10\tau_0$ and the emergence stalled (measured; with the slot back
+  at $\nu$ the validated result returned). Their $\kappa\nabla T$ itself cannot be used in a
   two-temperature atmosphere: at rest it conducts across the reference
   temperature jump of the transition region, and on $T - T_e$ it heats loop
   gas crossing the fixed height of that jump; $E$ has no such jump (the
@@ -420,14 +434,27 @@ density spans eight decades between the photosphere and the corona:
   option the `mu_dsgs_ρu`, `mu_dsgs_ρv`, `mu_dsgs_ρw` and `mu_dsgs_ρE` output
   fields hold the kinematic coefficient, like the magnetic slots.
 
-### 4.6 MPI
+### 4.6 The 1D kernel: `brioWu1d`
+
+`compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_1D)` is the same model for the
+8-variable 1D system $(\rho, \rho u, \rho v, \rho E, \rho w, B_x, B_y, B_z)$
+(no GLM field in 1D): the same residual, normalization, cap with the
+1D fast speed, floor and slot assignment as §4.1–4.5, called from the 1D
+viscous path (`viscous_rhs_el!(…, ::NSD_1D)`), which then applies one scalar
+Laplacian per slot exactly as the Euler `DSGS()` path does. Used by
+[`problems/MHD/brioWu1d`](problems/MHD/brioWu1d/README.md) in the conserved
+form; the physical-form coefficients are available but the 1D loop carries no
+$\tau\cdot u$ or $\eta\mathbf{B}\cdot\nabla\mathbf{B}$ work terms, so
+only the conserved form conserves total energy in 1D.
+
+### 4.7 MPI
 
 $\langle q_i\rangle$ and $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
 are **domain** norms by definition, so both reductions are `MPI.Allreduce`d. A
 rank-local version would make the eddy viscosity depend on the partitioning. The
 cost is two small collectives per RHS call.
 
-### 4.7 Measured effect
+### 4.8 Measured effect
 
 On the Orszag–Tang vortex at $128^2$, run to $t = 1$ (see
 `problems/MHD/orszagTangBormanis2024/README.md` for the full table):

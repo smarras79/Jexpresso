@@ -1058,6 +1058,37 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  Int(nelem), Int(ngl), SD)
     end
 
+    # DynSGS for the 1D ideal-MHD system (problems/MHD/brioWu1d): the MHD
+    # kernel fills μ_dsgs[1:nelem, 1:neqs] with its own equation of state
+    # and fast-speed cap (kernel/physics/SGS.jl, ::DSGS_MHD, ::NSD_1D); the
+    # element loop below then applies one scalar Laplacian per slot exactly
+    # as for DSGS().
+    if params.VT == DSGS_MHD()
+        TT = eltype(params.μ_dsgs)
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
+                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                params.RHS, params.Minv, params.visc_coeff,
+                                params.dsgs_avg, params.dsgs_denom,
+                                TT(params.Δt),
+                                params.mesh.connijk, params.mesh.Δx,
+                                TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
+                                TT(get(params.inputs, :dsgs_Prt,   0.7)),
+                                TT(get(params.inputs, :dsgs_C1,    1.0)),
+                                TT(get(params.inputs, :dsgs_C2,    0.5)),
+                                get_mpi_comm(),
+                                Int(nelem), Int(ngl);
+                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
+                                llocal_norms  = get(params.inputs, :dsgs_local_norms, false),
+                                local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
+                                lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
+                                lconserved    = get(params.inputs, :dsgs_conserved, false),
+                                C0            = TT(get(params.inputs, :dsgs_C0, 0.0)),
+                                lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false))
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(nelem), Int(ngl), SD)
+    end
+
     _visc_el_loop_1d!(params.rhs_diffξ_el, params.uprimitive,
                       params.μ_dsgs, params.visc_coeff,
                       params.ω, ngl, params.basis.dψ,
@@ -1065,7 +1096,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                       params.inputs, params.rhs_el,
                       nelem, neqs, connijk, params.uaux, qe,
                       params.SOL_VARS_TYPE, params.QT, params.VT, params.AD, SD,
-                      params.VT == DSGS())
+                      params.VT == DSGS() || params.VT == DSGS_MHD())
 
     params.rhs_diff_el .= @views (params.rhs_diffξ_el)
 
@@ -1111,8 +1142,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     # below; reset them here so that they cannot leak into a non-MHD case
     # run later in the same session (run_case), where uprimitive[:, end] is
     # the pressure slot and not a weight.
-    dsgs_ref_weight[] = false
-    dsgs_nodal_rho[]  = false
+    dsgs_ref_weight[]   = false
+    dsgs_nodal_rho[]    = false
+    dsgs_split_energy[] = false
 
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
@@ -1124,6 +1156,10 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # with the conserved form: slots 1-5 are diffused as (q − q_e)/ρ_e
         # with coefficient μ·ρ_e read from uprimitive[:, :, neqs+1].
         dsgs_ref_weight[] = get(params.inputs, :dsgs_ref_weight, false) && get(params.inputs, :dsgs_conserved, false)
+        # Split energy flux (SGS.jl, dsgs_split_energy): the case's
+        # user_primitives! reads this Ref to fill slots 4 and neqs+2.
+        dsgs_split_energy[] = get(params.inputs, :dsgs_conserved, false) &&
+            (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
 
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                 params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
@@ -2162,7 +2198,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 # DynSGS-MHD reference weight (SGS.jl, dsgs_ref_weight): the
                 # case stores ρ_e in the spare slot of uprimitive and slots
                 # 1-5 hold (q − q_e)/ρ_e, so the flux below is μρ_e∇(…).
-                wgt = (dsgs_ref_weight[] && ieq <= 5) ? uprimitiveieq[k,l,end] : 1.0
+                wgt = (dsgs_ref_weight[] && ieq <= 5) ? uprimitiveieq[k,l,end-1] : 1.0
                 
                 # Quantities for Smagorinsky 
                 dudξ = 0.0; dudη = 0.0
@@ -2234,8 +2270,28 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                                                               dudx, dvdy, dudy, dvdx,
                                                               PHYS_CONST, Δ2,
                                                               VT, SD)*wgt
-                        flux_x = effective_diffusivity * dθdx
-                        flux_y = effective_diffusivity * dθdy
+                        if dsgs_split_energy[]
+                            # Conserved-form DynSGS-MHD with Nazarov's κ (SGS.jl,
+                            # dsgs_split_energy): slot 4 holds the non-thermal
+                            # energy departure, diffused with the ρv slot's ν so
+                            # that its magnetic/kinetic fluxes match the B and ρv
+                            # Laplacians; the spare slot `end` holds the thermal
+                            # part, diffused with this slot's coefficient.
+                            nsl   = size(uprimitiveieq, 3)   # (@turbo cannot index with `end`)
+                            dEtdξ = 0.0; dEtdη = 0.0
+                            @turbo for ii = 1:ngl
+                                dEtdξ += dψ[ii,k]*uprimitiveieq[ii,l,nsl]
+                                dEtdη += dψ[ii,l]*uprimitiveieq[k,ii,nsl]
+                            end
+                            dEtdx = dEtdξ*dξdx_kl + dEtdη*dηdx_kl
+                            dEtdy = dEtdξ*dξdy_kl + dEtdη*dηdy_kl
+                            ν_nth = visc_coeffieq[2]*wgt
+                            flux_x = ν_nth * dθdx + effective_diffusivity * dEtdx
+                            flux_y = ν_nth * dθdy + effective_diffusivity * dEtdy
+                        else
+                            flux_x = effective_diffusivity * dθdx
+                            flux_y = effective_diffusivity * dθdy
+                        end
 
                         # Total-energy equation: also add the viscous-work term τ·u so that
                         # the SGS-momentum dissipation is consistently returned to the energy

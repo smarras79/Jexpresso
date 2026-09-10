@@ -99,7 +99,7 @@ resistivity $\eta = \nu$ on $\mathbf{B}$. This case follows that
 |---|---|---|---|
 | mass | $\nu\nabla\rho$ | $\nu\rho_e\nabla(\delta\rho/\rho_e)$, $\delta\rho = \rho - \rho_e$; $= \nu\nabla\delta\rho$ to leading order | $\nu\nabla^2\rho_e = \nu\rho_e/H^2 \neq 0$: on $\rho$ itself the term is a steady mass source in an exponential atmosphere (0.75 % of the chromospheric mass per $\tau_0$ from the $C_0$ floor alone; the sheet sank at $0.3\,C_s$ when the sensor fed on it). The $\rho_e$ weight is the positivity fix at the 25× reference jump (previous section). |
 | momentum | $\rho\nu(\nabla\mathbf{u} + \nabla\mathbf{u}^T)$ | the kernel's deviatoric stress $\tau$ with coefficient $\nu\rho_e$ on $\delta(\rho\mathbf{v})/\rho_e$; $= \rho\nu\nabla\mathbf{v}$ to leading order | same term ($\rho\mathbf{v}_e = 0$), written on the conserved variable |
-| energy | $\kappa\nabla T$, $\kappa = \rho\nu/\mathrm{Pr}$, $T = p/\rho$, plus $\mathbf{u}\cdot\tau$ and the magnetic work | $\nu\,\tfrac{\gamma(\gamma-1)}{\mathrm{Pr}}\,\rho_e\nabla(\delta E/\rho_e)$: the same $\kappa$ on the thermal part of $E$, the viscous and magnetic work carried by the $E$ Laplacian | $T_e$ jumps 25× at $z_{cor}$, $E_e$ does not (isobaric contact): $\kappa\nabla T$ conducts across the jump at rest (measured: the transition region smeared, a $0.7\,C_s$ pulse), $\kappa\nabla(T - T_e)$ heats loop gas crossing the fixed height $z_{cor}$ at $\sim 100\,\%$ of its internal energy per $\tau_0$; $\nabla\delta E$ sees neither. Only the size of the conduction is kept. |
+| energy | $\kappa\nabla T$, $\kappa = \rho\nu/\mathrm{Pr}$, $T = p/\rho$, plus $\mathbf{u}\cdot\tau$ and the magnetic work | split: $\nu\rho_e\nabla(\delta E_{nth}/\rho_e)$ on the kinetic + magnetic part, $\max(\tfrac{\gamma(\gamma-1)}{\mathrm{Pr}}\nu_{res}, \nu_{floor})\,\rho_e\nabla(\delta E_{th}/\rho_e)$ on the thermal part $E_{th} = p/(\gamma-1)$: the same $\kappa$ on the conduction, the viscous and magnetic work carried by the non-thermal Laplacian at the same $\nu$ as the $\rho\mathbf{v}$ and $\mathbf{B}$ slots | $T_e$ jumps 25× at $z_{cor}$, $E_e$ does not (isobaric contact): $\kappa\nabla T$ conducts across the jump at rest (measured: the transition region smeared, a $0.7\,C_s$ pulse), $\kappa\nabla(T - T_e)$ heats loop gas crossing the fixed height $z_{cor}$ at $\sim 100\,\%$ of its internal energy per $\tau_0$; $\nabla\delta E$ sees neither. Only the size of the conduction is kept. |
 | induction | $\eta\,\nabla\cdot(\nabla\mathbf{B} - \nabla\mathbf{B}^T)$, $\eta = \nu$ | $\nu\nabla^2\delta\mathbf{B}$ | differs by $\eta\nabla(\nabla\cdot\mathbf{B})$, zero for a solenoidal field; $\delta\mathbf{B}$ so that the sheet field is not eroded at rest |
 
 In short: Nazarov's coefficients, his terms written on the perturbation from
@@ -108,9 +108,20 @@ $\rho'$, $\theta'$), and the energy on $E$ instead of $T$. In the
 Orszag–Tang case, which has no background state, the terms are his literally
 (`problems/MHD/orszagTangBormanis2024`).
 
-so the coefficient fields are $\nu$ on eight slots and $\nu\gamma(\gamma-1)/\mathrm{Pr} = 0.0525\,\nu$
-on the energy (`log10_μ_dsgs_ρ-it<n>.png`, `log10_μ_dsgs_ρE-it<n>.png`;
-in VTK `mu_dsgs_ρ_ρu_ρv_ρw_Bx_By_Bz_ψ` and `mu_dsgs_ρE`). Two departures
+so the coefficient fields are $\nu$ on eight slots and, on the energy, the
+thermal coefficient $\max(0.0525\,\nu_{res}, \nu_{floor})$
+(`log10_μ_dsgs_ρ-it<n>.png`, `log10_μ_dsgs_ρE-it<n>.png`; in VTK
+`mu_dsgs_ρ_ρu_ρv_ρw_Bx_By_Bz_ψ` and `mu_dsgs_ρE`); the non-thermal part of
+$E$ is diffused with $\nu$, which is not a separate field. Why the split
+and not a scaled slot: $\nabla\cdot(\nu\nabla E)$ contains
+$\nabla\cdot(\nu\mathbf{B}\cdot\nabla\mathbf{B})$ and the kinetic analogue,
+exactly the conservative energy fluxes of the $\nu\nabla\mathbf{B}$ and
+$\nu\nabla(\rho\mathbf{v})$ Laplacians; scaling the whole slot by 0.0525 —
+the first implementation — let the field spread while its energy stayed
+put, and cut the $C_0$ floor that damps the node-to-node mode on $E$. The
+sheet core overheated, a temperature sawtooth grew across the corona by
+$t = 10\tau_0$ (measured) and the emergence stalled; with the slot back at
+$\nu$ the validated emergence returned. Two departures
 from their form are deliberate. The operators act on the departure from the
 magnetostatic reference state (relative, see above), because on $q$ itself
 the Laplacian of an exponential atmosphere is a steady mass source and the

@@ -528,6 +528,22 @@ const dsgs_nodal_rho = Ref{Bool}(false)
 # from the inputs before each DynSGS assembly.
 const dsgs_ref_weight = Ref{Bool}(false)
 
+# Split energy flux of a conserved-form DynSGS-MHD case with
+# :dsgs_nazarov_energy (set by rhs.jl from the inputs). The case's
+# user_primitives! then hands the E slot the NON-THERMAL departure
+# δ(½ρ|v|² + ½|B|² + ½ψ²) (relative to ρ_e where :dsgs_ref_weight) in slot 4
+# and the THERMAL one δ(p/(γ−1)) in the spare slot neqs+2, and
+# _expansion_visc! diffuses the first with the ρv-slot coefficient ν — so
+# that the magnetic and kinetic energy fluxes of the E equation stay those
+# of the B and ρv Laplacians (measured: scaling the whole slot let ν∇B
+# spread the flux sheet while its magnetic energy stayed put, the sheet
+# core overheated and the emergence stalled) — and the second with the
+# E-slot coefficient max(γ(γ−1)/Pr_t·ν_res, ν_floor): Dao & Nazarov's
+# κ = ρν/Pr on the residual part, the full C0 floor kept (measured: with
+# the floor cut 19× too, a node-to-node temperature mode grew across the
+# corona within 10 τ₀).
+const dsgs_split_energy = Ref{Bool}(false)
+
 @inline function SGS_diffusion(visc_coeffieq, ieq,
                                ρ,
                                u11, u22, u12, u21,
@@ -1224,9 +1240,11 @@ end
 #  *  lnazarov_energy (:dsgs_nazarov_energy). The energy slot conducts heat
 #     with Dao & Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of the
 #     Fourier-law κ = ρν γ/((γ−1)Pr) = c_p ρν/Pr of the default: in the
-#     physical form the coefficient on ∇T (T = p/ρ) becomes ρν/Pr_t, in
-#     the conserved form the energy slot gets ν γ(γ−1)/Pr_t so that the
-#     thermal part of ν∇E carries that same κ. With :μ[1] = 1 (ν on ∇ρ)
+#     physical form the coefficient on ∇T (T = p/ρ) becomes ρν/Pr_t. In
+#     the conserved form the energy flux is split (dsgs_split_energy):
+#     the non-thermal part of E keeps ν, the thermal part p/(γ−1) gets
+#     max(γ(γ−1)/Pr_t·ν_res, ν_floor), i.e. κ = ρν/Pr on the residual
+#     viscosity with the C0 floor intact. With :μ[1] = 1 (ν on ∇ρ)
 #     the coefficients are then exactly their §4.4 set by equation: ν on
 #     ρ, ρν on u, ρν/Pr on T, ν on B. (:dsgs_conserved_prandtl is accepted
 #     as an alias.)
@@ -1432,7 +1450,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
         μ_res = C1*Δ*Δ*ratio
         μ_max = C2*Δ*wmax
-        μ     = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s
+        μ_c   = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s (residual, capped)
+        μ     = μ_c
 
         # Background floor C0·Δ·(‖v‖+c_f), a fraction of the wave-speed cap
         # (C0 = 0 by default: pure Marras). The residual sensor is blind to a
@@ -1443,9 +1462,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         # τ₀ with μ_res ≈ 10⁻³ there. A floor of a few percent of the cap damps
         # it at rate C0 Δ c (π/Δ)² ≈ 7/τ₀ for C0 = 0.03 while diffusing a
         # resolved structure by only √(C0 Δ c t) ≈ 1 H₀ over the whole run.
-        if C0 > zero(TT)
-            μ = max(μ, C0*Δ*wmax)
-        end
+        μ_floor = C0 > zero(TT) ? C0*Δ*wmax : zero(TT)
+        μ = max(μ, μ_floor)
 
         # dynamic coefficient for u/v/w/T: ρ̄·μ with the element mean, or the
         # kinematic μ that SGS_diffusion(::DSGS_MHD) scales by the nodal ρ
@@ -1474,14 +1492,18 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             # ν∇(ρu) ≈ ρν∇u and ν∇B are those already; the energy slot is
             # not: ν∇E carries the internal energy ρT/(γ(γ−1)) at ν, i.e. a
             # heat conduction κ = ρν/(γ(γ−1)), 19× Nazarov's ρν/Pr at
-            # γ = 1.05, Pr = 1. lnazarov_energy (:dsgs_nazarov_energy)
-            # scales the energy slot by γ(γ−1)/Pr_t so that its thermal
-            # part is Nazarov's κ. (The kinetic/magnetic parts of E are
-            # scaled with it; the operator stays conservative either way.)
+            # γ = 1.05, Pr = 1.
+            # Energy slot. With lnazarov_energy the case splits the E
+            # primitive (dsgs_split_energy above): this coefficient then
+            # acts on the THERMAL part only — Dao & Nazarov's κ = ρν/Pr on
+            # the residual viscosity, with the full background floor — and
+            # the non-thermal part is diffused with the ρv slot's ν by
+            # _expansion_visc!. Without it, ν on the whole of E.
             fE = lnazarov_energy ? γ*γm1/Pr_t : one(TT)
             μ_dsgs[ie,2] = visc_coeff[2]*μ                         # ρu
             μ_dsgs[ie,3] = visc_coeff[3]*μ                         # ρv
-            μ_dsgs[ie,4] = visc_coeff[4]*μ*fE                      # E
+            μ_dsgs[ie,4] = lnazarov_energy ? visc_coeff[4]*max(fE*μ_c, μ_floor) :
+                                             visc_coeff[4]*μ                       # E (thermal part if split)
             if neqs >= 5
                 μ_dsgs[ie,5] = visc_coeff[5]*μ                     # ρw
             end
@@ -1504,6 +1526,211 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
     end
 
+    return nothing
+end
+
+# ================================================================================
+# compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_1D)
+#
+# The 1D version of the MHD kernel above, for the 8-variable system
+# (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz) of a 1D ideal-MHD shock tube (Bx constant;
+# a 9th ψ slot, if present, is carried but excluded from the residual max).
+# Same residual (BDF2 history, max over the equations of the normalized
+# residual — Dao & Nazarov 2022, eq. 4.8), same domain/element normalization,
+# same cap C2·Δ·(|u| + c_f) with the fast magnetosonic speed and the same
+# C0 floor; see the 2D header for the meaning of every option. The
+# coefficients by slot follow the 2D assignment: conserved form — one ν on
+# every slot (the case's user_primitives! returns the conserved variables);
+# physical form — ν on ρ, ρ̄ν on the momenta (u, v, w primitives),
+# ρ̄ν γ/((γ−1)Pr_t) or, with lnazarov_energy, ρ̄ν/Pr_t on T = p/ρ, ν on B.
+# The 1D viscous loop applies a scalar Laplacian per slot (no deviatoric
+# stress, no τ·u), so the conserved form is the exactly conservative one and
+# the default of problems/MHD/brioWu1d.
+# ================================================================================
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
+                                 ::DSGS_MHD, ::NSD_1D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 rhs::AbstractMatrix{TT},
+                                 Minv::AbstractVector{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 avg::AbstractVector{TT},
+                                 denom::AbstractVector{TT},
+                                 Δt::TT,
+                                 connijk::AbstractArray{TI,4},
+                                 Δx::AbstractVector{TT},
+                                 γ::TT, Pr_t::TT, C1::TT, C2::TT,
+                                 comm,
+                                 nelem::Int, ngl::Int;
+                                 lglobal_norms::Bool=false,
+                                 llocal_norms::Bool=false,
+                                 local_rel::TT=one(TT),
+                                 lnodal_rho::Bool=false,
+                                 lconserved::Bool=false,
+                                 C0::TT=zero(TT),
+                                 lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs = size(μ_dsgs, 2)
+    NRES = min(neqs, 8)
+    rel  = TT(1.0e-3)
+    avg_e = zeros(TT, neqs)
+    den_e = zeros(TT, neqs)
+    γm1  = γ - one(TT)
+    eps  = TT(1.0e-16)
+
+    @inline function pres(ρ, mu, mv, E, mw, bx, by, bz)
+        ρp = max(ρ, eps)
+        return γm1*max(E - TT(0.5)*(mu*mu + mv*mv + mw*mw)/ρp - TT(0.5)*(bx*bx + by*by + bz*bz), zero(TT))
+    end
+
+    # --- Pass 1: means and spreads over the (rank-local or global) domain
+    @inbounds for ieq = 1:neqs
+        avg[ieq] = zero(TT); denom[ieq] = zero(TT)
+    end
+    @inbounds for ie = 1:nelem, i = 1:ngl
+        ip = connijk[ie,i,1,1]
+        for ieq = 1:neqs
+            avg[ieq] += q[ip,ieq]
+        end
+    end
+    inv_npts = one(TT)/max(TT(nelem*ngl), one(TT))
+    if lglobal_norms
+        npts_glob = MPI.Allreduce(TT(nelem*ngl), MPI.SUM, comm)
+        MPI.Allreduce!(avg, MPI.SUM, comm)
+        inv_npts  = one(TT)/max(npts_glob, one(TT))
+    end
+    @inbounds for ieq = 1:neqs
+        avg[ieq] *= inv_npts
+    end
+    @inbounds for ie = 1:nelem, i = 1:ngl
+        ip = connijk[ie,i,1,1]
+        for ieq = 1:neqs
+            denom[ieq] = max(denom[ieq], abs(q[ip,ieq] - avg[ieq]))
+        end
+    end
+    if lglobal_norms
+        MPI.Allreduce!(denom, MPI.MAX, comm)
+    end
+    ρ_avg = max(abs(avg[1]), eps)
+    p_avg = pres(avg[1], avg[2], avg[3], avg[4], (neqs >= 5 ? avg[5] : zero(TT)),
+                 (neqs >= 6 ? avg[6] : zero(TT)), (neqs >= 7 ? avg[7] : zero(TT)), (neqs >= 8 ? avg[8] : zero(TT)))
+    c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
+    @inbounds begin
+        denom[1] = max(denom[1], rel*ρ_avg)
+        mom_fl   = rel*ρ_avg*c_avg
+        denom[2] = max(denom[2], mom_fl)
+        denom[3] = max(denom[3], mom_fl)
+        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        b_fl = rel*sqrt(ρ_avg)*c_avg
+        for ieq = 6:min(neqs,8)
+            denom[ieq] = max(denom[ieq], b_fl)
+        end
+        for ieq = 1:neqs
+            denom[ieq] += eps
+        end
+    end
+
+    # --- Pass 2: per element ------------------------------------------
+    inv2Δt = one(TT)/(2*Δt)
+    @inbounds for ie = 1:nelem
+        Δ = Δx[ie]/ngl
+        ratio = zero(TT)
+        wmax  = zero(TT)
+        ρ_el  = zero(TT)
+        if llocal_norms
+            for ieq = 1:neqs
+                avg_e[ieq] = zero(TT); den_e[ieq] = zero(TT)
+            end
+            for i = 1:ngl
+                ip = connijk[ie,i,1,1]
+                for ieq = 1:neqs
+                    avg_e[ieq] += q[ip,ieq]
+                end
+            end
+            inv_ne = one(TT)/TT(ngl)
+            for ieq = 1:neqs
+                avg_e[ieq] *= inv_ne
+            end
+            for i = 1:ngl
+                ip = connijk[ie,i,1,1]
+                for ieq = 1:neqs
+                    den_e[ieq] = max(den_e[ieq], abs(q[ip,ieq] - avg_e[ieq]))
+                end
+            end
+            ρ_e = max(abs(avg_e[1]), eps)
+            p_e = pres(avg_e[1], avg_e[2], avg_e[3], avg_e[4], (neqs >= 5 ? avg_e[5] : zero(TT)),
+                       (neqs >= 6 ? avg_e[6] : zero(TT)), (neqs >= 7 ? avg_e[7] : zero(TT)), (neqs >= 8 ? avg_e[8] : zero(TT)))
+            c_e = sqrt(max(γ*p_e/ρ_e, eps))
+            den_e[1] = max(den_e[1], local_rel*ρ_e)
+            mom_e    = local_rel*ρ_e*c_e
+            den_e[2] = max(den_e[2], mom_e)
+            den_e[3] = max(den_e[3], mom_e)
+            den_e[4] = max(den_e[4], local_rel*ρ_e*c_e*c_e)
+            if neqs >= 5; den_e[5] = max(den_e[5], mom_e); end
+            b_e = local_rel*sqrt(ρ_e)*c_e
+            for ieq = 6:min(neqs,8)
+                den_e[ieq] = max(den_e[ieq], b_e)
+            end
+            for ieq = 1:neqs
+                den_e[ieq] += eps
+            end
+        end
+        den = llocal_norms ? den_e : denom
+
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            Mi = Minv[ip]
+            for ieq = 1:NRES
+                R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+                ratio = max(ratio, R/den[ieq])
+            end
+            ρl = max(q[ip,1], eps)
+            ul = q[ip,2]/ρl
+            vl = q[ip,3]/ρl
+            wl = (neqs >= 5) ? q[ip,5]/ρl : zero(TT)
+            bx = (neqs >= 6) ? q[ip,6] : zero(TT)
+            by = (neqs >= 7) ? q[ip,7] : zero(TT)
+            bz = (neqs >= 8) ? q[ip,8] : zero(TT)
+            B2 = bx*bx + by*by + bz*bz
+            pl = pres(q[ip,1], q[ip,2], q[ip,3], q[ip,4], (neqs >= 5 ? q[ip,5] : zero(TT)), bx, by, bz)
+            # fast magnetosonic speed along x (the only propagation direction)
+            a2  = γ*pl/ρl
+            b2  = B2/ρl
+            bx2 = bx*bx/ρl
+            cf  = sqrt(max(TT(0.5)*(a2 + b2 + sqrt(max((a2 + b2)*(a2 + b2) - 4*a2*bx2, zero(TT)))), zero(TT)))
+            wmax  = max(wmax, sqrt(ul*ul + vl*vl + wl*wl) + cf)
+            ρ_el += ρl
+        end
+        ρ_el /= TT(ngl)
+
+        μ_res = C1*Δ*Δ*ratio
+        μ_max = C2*Δ*wmax
+        μ_c   = max(zero(TT), min(μ_max, μ_res))
+        μ_fl  = C0 > zero(TT) ? C0*Δ*wmax : zero(TT)
+        μ     = max(μ_c, μ_fl)
+        μ_dyn = lnodal_rho ? μ : ρ_el*μ
+
+        μ_dsgs[ie,1] = visc_coeff[1]*μ
+        if lconserved
+            μ_dsgs[ie,2] = visc_coeff[2]*μ
+            μ_dsgs[ie,3] = visc_coeff[3]*μ
+            μ_dsgs[ie,4] = visc_coeff[4]*μ
+            if neqs >= 5; μ_dsgs[ie,5] = visc_coeff[5]*μ; end
+        else
+            μ_dsgs[ie,2] = visc_coeff[2]*μ_dyn
+            μ_dsgs[ie,3] = visc_coeff[3]*μ_dyn
+            μ_dsgs[ie,4] = lnazarov_energy ? visc_coeff[4]*μ_dyn/Pr_t : visc_coeff[4]*μ_dyn*γ/(γm1*Pr_t)
+            if neqs >= 5; μ_dsgs[ie,5] = visc_coeff[5]*μ_dyn; end
+        end
+        for ieq = 6:min(neqs,8)
+            μ_dsgs[ie,ieq] = visc_coeff[ieq]*μ
+        end
+        if neqs >= 9
+            μ_dsgs[ie,9] = visc_coeff[9]*μ
+        end
+    end
     return nothing
 end
 

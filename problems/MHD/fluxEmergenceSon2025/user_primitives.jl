@@ -35,14 +35,32 @@
 # ρ_e(z_cor) ≈ 10⁻⁷ that is far below the loop densities that then occupy
 # the region.)
 #---------------------------------------------------------------------------------
+# Energy slot: with :dsgs_nazarov_energy the solver sets dsgs_split_energy[]
+# and the energy flux is split — slot 4 = δ(E − p/(γ−1)), the non-thermal
+# departure, diffused with the ρv slot's ν; slot 11 (= neqs+2) = δ(p/(γ−1)),
+# the thermal one, diffused with Dao & Nazarov's κ = ρν/Pr (floor kept).
+# See problems/MHD/fluxEmergenceSon2025DSGS/user_primitives.jl.
+@inline function fe_energy_split(u)
+    p = pressure_mhd(u[1], u[2], u[3], u[5], u[4], u[6], u[7], u[8], u[9])
+    eth = p/(γ_mhd - 1.0)
+    return u[4] - eth, eth
+end
+
 function user_primitives!(u, qe, uprimitive, ::TOTAL)
     for ieq = 1:9
         uprimitive[ieq] = u[ieq] - qe[ieq]    # ρ, ρu, ρv, E, ρw, Bx, By, Bz, ψ minus the reference state
     end
+    if dsgs_split_energy[]
+        nth, eth   = fe_energy_split(u)
+        nthe, ethe = fe_energy_split(qe)
+        uprimitive[4]  = nth - nthe
+        uprimitive[11] = eth - ethe
+    end
 end
 
 function user_primitives(u, qe, uprimitive, ::TOTAL)
-    return SVector(u[1] - qe[1], u[2] - qe[2], u[3] - qe[3], u[4] - qe[4], u[5] - qe[5],
+    e4 = dsgs_split_energy[] ? fe_energy_split(u)[1] - fe_energy_split(qe)[1] : u[4] - qe[4]
+    return SVector(u[1] - qe[1], u[2] - qe[2], u[3] - qe[3], e4, u[5] - qe[5],
                    u[6] - qe[6], u[7] - qe[7], u[8] - qe[8], u[9] - qe[9])
 end
 

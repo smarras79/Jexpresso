@@ -141,7 +141,21 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # DSGS runs render the viscosity staircase as one more panel of
         # the same output time (the per-node broadcast is in μ_dsgs_pnode)
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
-            if (inputs[:backend] == CPU())
+        # A case whose qoutvars differ from its solution variables (it
+        # defines user_uout!, e.g. problems/MHD/brioWu1d: ρ, u, v, p, By from
+        # the conserved (ρ, ρu, ρv, ρE, …)) gets those output variables
+        # plotted, as the 2D writer does; otherwise the solution itself.
+        if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+        npoin_1d = mesh.npoin
+        if inputs[:backend] == CPU() && outvarnames !== nothing && length(outvarnames) > 0 &&
+           collect(outvarnames) != collect(varnames)
+            noutvar = length(outvarnames)
+            qout1d  = zeros(Float64, npoin_1d, noutvar)
+            qe1d = (size(qexact, 1) == npoin_1d) ? qexact : zeros(Float64, npoin_1d, max(nvar, 1))
+            call_user_uout(qout1d, uaux, qe1d, mp, inputs[:SOL_VARS_TYPE], npoin_1d, nvar, noutvar;
+                           μ_dsgs_pnode=μ_dsgs_pnode)
+            plot_results(SD, mesh, vec(qout1d), title, OUTPUT_DIR, outvarnames, inputs; iout=iout, nvar=noutvar, PT=nothing, μ_nodes=μ_nodes, t=t)
+        elseif (inputs[:backend] == CPU())
                 plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))

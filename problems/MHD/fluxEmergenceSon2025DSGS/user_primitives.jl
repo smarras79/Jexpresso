@@ -44,12 +44,42 @@
 # conserved-variable Laplacian, so the shock capturing in the loop is the
 # same DynSGS as before.
 #---------------------------------------------------------------------------------
+# Energy slot. E = ½ρ|v|² + ½|B|² (+ ½ψ²) + p/(γ−1), and the Laplacian on E
+# contains ∇·(νB·∇B) and the kinetic analogue: exactly the conservative
+# energy fluxes of the ν∇B and ν∇(ρv) Laplacians of the other slots, which
+# is what makes the single-ν conserved form energy-consistent (the Joule and
+# viscous heating are what is left). With :dsgs_nazarov_energy the solver
+# sets dsgs_split_energy[] (kernel/physics/SGS.jl) and the energy flux is
+# split: slot 4 gets the NON-THERMAL departure, diffused by the kernel with
+# the ρv slot's ν, and the spare slot 11 (= neqs+2) the THERMAL one
+# δ(p/(γ−1)), diffused with the E-slot coefficient max(γ(γ−1)/Pr·ν_res,
+# ν_floor), i.e. Dao & Nazarov's κ = ρν/Pr with the background floor kept.
+# Without it slot 4 is δE and slot 11 is unused. (Scaling the whole slot
+# instead — the first implementation — let ν∇B spread the sheet's field
+# while its magnetic energy stayed put, and cut the floor that damps the
+# node-to-node mode: the sheet core overheated, a temperature sawtooth grew
+# across the corona and the emergence stalled.)
+@inline function fe_energy_split(u)
+    p = pressure_mhd(u[1], u[2], u[3], u[5], u[4], u[6], u[7], u[8], u[9])
+    eth = p/(γ_mhd - 1.0)
+    return u[4] - eth, eth      # (non-thermal, thermal) energy
+end
+
 function user_primitives!(u, qe, uprimitive, ::TOTAL)
     ρe  = qe[1]
     iρe = 1.0/ρe
-    for ieq = 1:5
-        uprimitive[ieq] = (u[ieq] - qe[ieq])*iρe   # (ρ, ρu, ρv, E, ρw): relative departure
+    uprimitive[1] = (u[1] - qe[1])*iρe            # ρ  : relative departure
+    uprimitive[2] = (u[2] - qe[2])*iρe            # ρu
+    uprimitive[3] = (u[3] - qe[3])*iρe            # ρv
+    if dsgs_split_energy[]
+        nth, eth   = fe_energy_split(u)
+        nthe, ethe = fe_energy_split(qe)
+        uprimitive[4]  = (nth - nthe)*iρe         # E: non-thermal part (coefficient ν)
+        uprimitive[11] = (eth - ethe)*iρe         #    thermal part (Nazarov's κ)
+    else
+        uprimitive[4]  = (u[4] - qe[4])*iρe       # E
     end
+    uprimitive[5] = (u[5] - qe[5])*iρe            # ρw
     for ieq = 6:9
         uprimitive[ieq] = u[ieq] - qe[ieq]         # Bx, By, Bz, ψ: absolute departure
     end
@@ -58,7 +88,8 @@ end
 
 function user_primitives(u, qe, uprimitive, ::TOTAL)
     iρe = 1.0/qe[1]
-    return SVector((u[1] - qe[1])*iρe, (u[2] - qe[2])*iρe, (u[3] - qe[3])*iρe, (u[4] - qe[4])*iρe, (u[5] - qe[5])*iρe,
+    e4  = dsgs_split_energy[] ? (fe_energy_split(u)[1] - fe_energy_split(qe)[1])*iρe : (u[4] - qe[4])*iρe
+    return SVector((u[1] - qe[1])*iρe, (u[2] - qe[2])*iρe, (u[3] - qe[3])*iρe, e4, (u[5] - qe[5])*iρe,
                    u[6] - qe[6], u[7] - qe[7], u[8] - qe[8], u[9] - qe[9])
 end
 
