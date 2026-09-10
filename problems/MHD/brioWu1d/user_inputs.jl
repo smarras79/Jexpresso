@@ -58,12 +58,13 @@ function user_inputs()
         :xmax                 => 1.0,
         :nelx                 => 150,
         #---------------------------------------------------------------------------
-        # Output: one PNG per output variable (ρ, u, v, p, By) at every
-        # output time, plus the DynSGS coefficient staircase mu_dsgs-it<n>.png;
-        # at t = 0.2 the reference solution of reference_hll.dat is overlaid.
+        # Output, as for CompEuler/sod1d: one figure fields-it<n>.png per
+        # output time with a panel per output variable (ρ, u, v, p, By;
+        # Jexpresso in blue, the reference solution of reference_hll.dat
+        # dashed at t = 0.2) and a last panel with the DynSGS coefficient
+        # per element. :plot_matrix => false writes one PNG per panel instead.
         #---------------------------------------------------------------------------
         :outformat            => "png",
-        :plot_matrix          => false,
         :loverwrite_output    => true,
         :output_dir           => "./output",
     )

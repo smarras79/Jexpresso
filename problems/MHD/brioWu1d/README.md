@@ -23,10 +23,12 @@ julia --project=. src/Jexpresso.jl MHD brioWu1d
 ```
 
 Serial; a few seconds of time stepping after compilation. Output goes to
-`./output/MHD/brioWu1d/output/`: one PNG per output variable
-($\rho$, $u$, $v$, $p$, $B_y$ as `ivar1`–`ivar5-it<n>.png`) at $t = 0, 0.05, \dots, 0.2$,
-plus `mu_dsgs-it<n>.png`, the DynSGS coefficient per element. At $t = 0.2$
-the reference solution is overlaid (dashed).
+`./output/MHD/brioWu1d/output/` in the format of `CompEuler/sod1d`: one
+figure `fields-it<n>.png` per output time ($t = 0, 0.05, \dots, 0.2$) with a
+panel per output variable ($\rho$, $u$, $v$, $p$, $B_y$; the numerical
+solution in blue, the reference dashed at $t = 0.2$) and a last panel with
+the DynSGS coefficient per element. `:plot_matrix => false` writes the
+panels as separate files (`ivar<k>-it<n>.png`, `mu_dsgs-it<n>.png`).
 
 ## What is implemented
 
@@ -77,7 +79,7 @@ the reference solution is overlaid (dashed).
 ## Results
 
 Serial, 600 points, $\Delta t = 5\times10^{-5}$, 4000 steps: a few seconds
-of time stepping. At $t = 0.2$ (`ivar1`–`ivar5-it5.png`, reference dashed):
+of time stepping. At $t = 0.2$ (`fields-it5.png`, reference dashed):
 
 - every wave is where the reference puts it: fast rarefaction head at
   $x \approx 0.13$ and foot at $0.34$, compound wave at $0.44$, contact and
@@ -87,7 +89,7 @@ of time stepping. At $t = 0.2$ (`ivar1`–`ivar5-it5.png`, reference dashed):
   smoothed) reference's $0.80$; $p$, $B_y$ and $u$ follow the reference to
   plotting accuracy, with $\pm0.01$ post-shock ripples in $u$ behind the
   right fast wave;
-- the DynSGS coefficient (`mu_dsgs-it5.png`) is $\lesssim 3\times10^{-5}$ in the
+- the DynSGS coefficient (last panel) is $\lesssim 3\times10^{-5}$ in the
   smooth regions, $2\times10^{-4}$ at the compound wave and $7.5\times10^{-4}$ at
   the fast shock, i.e. a quarter of its cap $C_2\Delta(|u| + c_f) \approx 3\times10^{-3}$;
   its largest value, $1.6\times10^{-3}$, is the boundary glitch at $x = 1$.
