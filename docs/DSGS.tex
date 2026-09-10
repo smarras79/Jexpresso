@@ -574,10 +574,14 @@ for the momenta. Then per element,
 $\nu_K$ as in~\eqref{eq:nuK} with $\Cmin=0$, $\lambda_i=|\bv_i|+c_i$, and the coefficients
 \begin{equation}
 \rho:\ 0,\qquad u,v:\ \mu_{2,3}\,\bar\rho_K\,\nu_K,\qquad
-\theta:\ \mu_4\,\frac{\mathrm{Pr}}{\gamma-1}\,\bar\rho_K\,\nu_K ,
+\theta:\ \mu_4\,\frac{\mathrm{Pr}}{\gamma-1}\,\bar\rho_K\,\nu_K ,\qquad
+q\ge5:\ \mu_q\,\nu_K ,
 \end{equation}
-with $\mathrm{Pr}$ = \code{:Pr} (the decks use $0.1$). The primitives are
-$(\rho,u,v,\theta)$.
+with $\mathrm{Pr}$ = \code{:Pr}, the artificial Prandtl number of
+Nazarov \& Hoffman (default $0.1$, the value of every DSGS deck). The primitives are
+$(\rho,u,v,\theta)$; slots $q\ge5$ are passive tracers
+(\code{CompEuler/thetaTracers}), transported un-weighted and diffused with the
+kinematic $\nu_K$; they enter neither the residual nor the normalization.
 
 \subsection{2D, energy form (\code{:energy\_equation => "energy"}; Nazarov \& Hoffman 2013)}
 
@@ -597,7 +601,8 @@ which is a \emph{dynamic} viscosity, and the coefficients
 \begin{equation}
 \rho:\ \mu_1\,\frac{\mu_K}{\max_{i\in K}\rho_i},\qquad
 u,v:\ \mu_{2,3}\,\mu_K,\qquad
-T:\ \mu_4\,\frac{\mathrm{Pr}}{\gamma-1}\,\mu_K ,
+T:\ \mu_4\,\frac{\mathrm{Pr}}{\gamma-1}\,\mu_K ,\qquad
+q\ge5:\ \mu_q\,\frac{\mu_K}{\max_{i\in K}\rho_i} ,
 \end{equation}
 on the primitives $(\rho,u,v,T)$ with $T = E/\rho-\tfrac12|\bv|^2$; the
 $\tau\cdot\bu$ term of~\eqref{eq:fE} is included.
@@ -610,7 +615,7 @@ $\CR,\Cmax,\Cmin,\Cl$ from the deck, $\lambda_i=|\bv_i|+c_i$ ($c$ from the
 $\theta$ or the energy equation of state), and the slot coefficients
 $\theta$ form: $(0,\ \rho_i\nu_i,\ \rho_i\nu_i,\ \tfrac{\mathrm{Pr}}{\gamma-1}\rho_i\nu_i)$;
 energy form: $(\nu_i,\ \rho_i\nu_i,\ \rho_i\nu_i,\ \tfrac{\mathrm{Pr}}{\gamma-1}\rho_i\nu_i)$,
-each times $\mu_q$.
+passive tracers $\nu_i$, each times $\mu_q$.
 
 \subsection{1D Euler}
 
@@ -672,7 +677,7 @@ key & default & meaning \\
 \code{:dsgs\_nazarov\_energy} & false & $\kappa=\rho\nu/\Prt$ instead of $c_p\rho\nu/\Prt$; split energy flux in the conserved form \\
 \code{:dsgs\_nodal\_rho} & false & $\varrho=\rho(\bm{x}_q)$ in the physical form \\
 \code{:dsgs\_ref\_weight} & false & reference-weighted operator (Section~\ref{sec:refweight}) \\
-\code{:Pr} & -- & $\mathrm{Pr}$ of the Euler kernels \\
+\code{:Pr} & 0.1 & artificial $\mathrm{Pr}$ of the Euler kernels ($\kappa = \tfrac{\mathrm{Pr}}{\gamma-1}\mu$) \\
 \bottomrule
 \end{tabularx}
 \end{center}

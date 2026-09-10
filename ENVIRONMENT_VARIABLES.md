@@ -400,6 +400,7 @@ the level of the usual round-off divergence.
 | `:dsgs_Cmax`           | real | `0.5`   | Dao & Nazarov's $C_{max}$: first-order viscosity $C_{max} h \lambda_{max}$ (their §4.2; was `:dsgs_C2`) |
 | `:dsgs_Cmin`           | real | `0.0`   | Background floor $C_{min} h \lambda_{max}$ on the coefficient; not in the paper (was `:dsgs_C0`) |
 | `:dsgs_Cl`             | real | `0.0`   | Dao & Nazarov's $C_l$ in the local-jump normalization (their eq. 4.7); paper 0.4, nodal form |
+| `:Pr`                  | real | `0.1`   | Artificial Prandtl number of the DynSGS Euler kernels (`DSGS()`, 2D): $\kappa = \tfrac{Pr}{\gamma-1}\mu$ on the θ/energy slot (Nazarov & Hoffman's $P \approx 0.1$). Not the Smagorinsky $Pr_t$ (`PhysConst.Pr_t`). Was 0.7 before September 2026 |
 | `:dsgs_swe_g`          | real | `9.81`  | `DSGS_SW` (shallow water): $g$ of the wave speed $\lvert\mathbf v\rvert + \sqrt{gH}$ |
 | `:dsgs_swe_hmin`       | real | `1e-3`  | `DSGS_SW`: depth below which $Hu/H$ is desingularized (the case's wet/dry threshold) |
 | `:dsgs_reference`      | bool | `false` | `"residual"` sensor, TOTAL variables: subtract the element RHS of the reference state $q_e$ (a hydrostatic atmosphere); off for shock tubes, whose $q_e$ is the initial jump |

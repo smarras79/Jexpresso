@@ -178,6 +178,11 @@ function precompile_warmup_run!(inputs, params, u,
     MPI.Barrier(comm)
     rank == 0 && @printf("%.2f s\n", (time_ns() - t0) / 1e9)
 
+    # DynSGS: the warm-up step filled μ_dsgs_pnode with the coefficient of
+    # the first step; warn now if the explicit step cannot carry it
+    # (soundSpeed.jl), before the real solve dies on it.
+    dsgs_first_step_check(params, inputs, params.SD)
+
     # Reset JEXPRESSO_TIMER so the alloc summary table only reflects
     # steady-state allocations from the real solve. The
     # @timeit_debug compile-time gate is set at module load time in

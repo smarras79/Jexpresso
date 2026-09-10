@@ -250,8 +250,20 @@ $$
 \mu_{dsgs}[e,1] = 0,\quad
 \mu_{dsgs}[e,2] = \texttt{:μ}[2]\,\bar\rho\mu,\quad
 \mu_{dsgs}[e,3] = \texttt{:μ}[3]\,\bar\rho\mu,\quad
-\mu_{dsgs}[e,4] = \texttt{:μ}[4]\,\frac{Pr}{\gamma-1}\,\bar\rho\mu
+\mu_{dsgs}[e,4] = \texttt{:μ}[4]\,\frac{Pr}{\gamma-1}\,\bar\rho\mu,\quad
+\mu_{dsgs}[e,q] = \texttt{:μ}[q]\,\mu\ \ (q \ge 5)
 $$
+
+$Pr$ is `:Pr`, the **artificial** Prandtl number of Nazarov & Hoffman / Marras
+et al. (default 0.1, the value every DSGS deck of the repository sets; it is
+not the turbulent Prandtl number of the Smagorinsky model, which is
+`PhysConst.Pr_t`). Slots 5 and above are passive tracers
+(`CompEuler/thetaTracers`: $q_{tr}$, $q_{tr2}$, transported un-weighted as
+$\partial_t q + \nabla\cdot(q\mathbf{u}) = 0$ and handed to the viscous
+operator as the scalar itself), so they take the **kinematic** $\mu$, as the
+scalar branch of the Smagorinsky model does; they enter neither the residual
+nor the normalization. The same holds for the energy form ($\mu_K/\max_K\rho$)
+and for the nodal form ($\nu_i$).
 
 ---
 
