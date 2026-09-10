@@ -61,7 +61,10 @@ it rises towards the first-order cap $0.5\,\Delta(|\mathbf v| + \sqrt{gH})$
 **The floor.** With $C_{min} = 0$ the CG solution of the solitary wave grows
 an element-scale transverse mode ($Hv$ ripples along the whole front by
 $t = 2$ s): a mode of that size has a residual the sensor does not see until
-it is large. The deck therefore keeps a background floor `:dsgs_Cmin => 0.05`,
+it is large. The run still completes ($t = 25$ s, the residual catches the
+mode once it has grown, $\nu$ up to 0.21 on the front at $t = 2$ s, and the
+late fields differ little from the floored run's), but the deck keeps a
+background floor `:dsgs_Cmin => 0.05` so that the mode never appears,
 i.e. $\nu \ge 0.05\,\Delta(|\mathbf v|+\sqrt{gH}) \approx 0.02$ m²/s in the
 still basin, 40 % of the sibling's constant 0.05, and the run to $t = 25$ s is
 clean. The difference from the sibling is then where the extra dissipation

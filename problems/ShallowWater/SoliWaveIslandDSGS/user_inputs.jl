@@ -59,8 +59,10 @@ function user_inputs()
         # residual cannot see the element-scale transverse mode that the CG
         # solution of the solitary wave develops when ν vanishes on it
         # (measured: Hv ripples along the whole wave front by t = 2 s with
-        # C_min = 0); with 0.05 the run to t = 25 s is clean and the residual
-        # part still rises to 0.035 at the island and 0.14 at the run-up.
+        # C_min = 0, caught by the residual only once grown; that run still
+        # completes). With 0.05 the mode never appears, the run to t = 25 s
+        # is clean and the residual part still rises to 0.035 at the island
+        # and 0.14 at the run-up.
         :dsgs_Cmin            => 0.05,
         :dsgs_norms           => "domain",  # residual normalized by the spread over the whole basin
         :ldsgs_nodal          => false,     # true: ν at every node (Dao & Nazarov form), :dsgs_Cl its C_l
