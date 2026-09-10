@@ -1,17 +1,14 @@
 #---------------------------------------------------------------------------------
 # Dirichlet boundary conditions of the Brio-Wu shock tube: both ends are
-# held at their initial states. The left end is genuinely undisturbed at
-# t = 0.2 (the left fast rarefaction's head is at x ≈ 0.13). The right end
-# is not: the right-going fast wave travels at the fast speed of the right
-# state, 3.75, and leaves the domain at t ≈ 0.13, after which the gas at
-# x = 1 moves at u ≈ −0.24 while the boundary node is pinned at u = 0 —
-# visible as a one-node glitch and a spike of the DynSGS coefficient at
-# x = 1 in the output, nowhere else (the reference solution of
-# reference_hll.dat uses an outflow boundary, hence its −0.24 at x = 1).
-# Leaving the right end free (no value prescribed) is not an outflow
-# condition for the CG discretization: the natural boundary drained the
-# domain (u → −1.2 at t = 0.2, measured), so the pinned end is kept, as in
-# the paper's finite-element setting.
+# held at their initial states. At the final time t = 0.1 the outermost
+# waves are the left fast rarefaction's head at x ≈ 0.32 and the right fast
+# rarefaction's head at x ≈ 0.87 (both move at the fast speed of their
+# undisturbed state, 1.8 and 3.75), so both ends are still undisturbed.
+# Running past t ≈ 0.13 lets the right wave leave the domain, after which
+# the pinned right end shows a one-node glitch; a free (natural) end is not
+# an outflow condition for the CG discretization and drained the domain
+# when tried, so the pinned ends stay, as in the paper's finite-element
+# setting.
 #---------------------------------------------------------------------------------
 function user_bc_dirichlet!(q, coords, t, tag::String, qbdy, qe, ::TOTAL)
     if tag == "left"

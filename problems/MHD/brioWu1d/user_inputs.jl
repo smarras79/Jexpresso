@@ -1,14 +1,15 @@
 #---------------------------------------------------------------------------------
 # Brio-Wu MHD shock tube, 1D ideal MHD (Brio & Wu 1988), as set up in Dao &
 # Nazarov, J. Sci. Comput. 92:77 (2022), Sec. 5.2: domain (0, 1), γ = 2,
-# t ∈ [0, 0.2], left/right states in initialize.jl. The MHD counterpart of
+# t ∈ [0, 0.1] (see below), left/right states in initialize.jl. The MHD counterpart of
 # problems/CompEuler/sod1d: stabilized by DynSGS (kernel/physics/SGS.jl,
 # the 1D DSGS_MHD kernel) in its conserved form, integrated with SSPRK53.
 #
 #   julia --project=. src/Jexpresso.jl MHD brioWu1d
 #
 # 150 elements at N = 4 are 600 LGL points, the "600 DOFs" of the paper's
-# Fig. 2(a); :nelx => 300 gives its 1200-DOF case.
+# Fig. 2(a); :nelx => 300 gives its 1200-DOF case. Final time 0.1 on (0, 1)
+# = Brio & Wu's 0.2 on (−1, 1), the state the paper's Fig. 2 shows.
 #---------------------------------------------------------------------------------
 function user_inputs()
     inputs = Dict(
@@ -18,8 +19,10 @@ function user_inputs()
         # 0.146·(1/150) ≈ 1e-3: Δt = 5e-5 is a Courant number of 0.19.
         :Δt                   => 5.0e-5,
         :tinit                => 0.0,
-        :tend                 => 0.2,
-        :diagnostics_at_times => (0:0.05:0.2),
+        # t = 0.1 on (0, 1) is Brio & Wu's t = 0.2 on (−1, 1), the state of
+        # the paper's Fig. 2 (its "t̂ = 0.2"): see README.md.
+        :tend                 => 0.1,
+        :diagnostics_at_times => (0:0.025:0.1),
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         :lperiodic_1d         => false,
@@ -58,13 +61,17 @@ function user_inputs()
         :xmax                 => 1.0,
         :nelx                 => 150,
         #---------------------------------------------------------------------------
-        # Output, as for CompEuler/sod1d: one figure fields-it<n>.png per
-        # output time with a panel per output variable (ρ, u, v, p, By;
-        # Jexpresso in blue, the reference solution of reference_hll.dat
-        # dashed at t = 0.2) and a last panel with the DynSGS coefficient
-        # per element. :plot_matrix => false writes one PNG per panel instead.
+        # Output. Default: the density figure of the paper's Fig. 2
+        # (user_plot.jl), density-it<n>.png, with the reference solution of
+        # reference_hll.dat and its three zoom boxes at the final time.
+        # :plot_user => false gives instead the format of CompEuler/sod1d: one
+        # figure fields-it<n>.png per output time with a panel per output
+        # variable (ρ, u, v, p, By; the reference dashed at the final time)
+        # and a last panel with the DynSGS coefficient per element
+        # (:plot_matrix => false writes those panels as separate files).
         #---------------------------------------------------------------------------
         :outformat            => "png",
+        :plot_user            => true,
         :loverwrite_output    => true,
         :output_dir           => "./output",
     )

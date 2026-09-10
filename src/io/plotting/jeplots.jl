@@ -88,6 +88,26 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
             qref = nothing
         end
     end
+    # Optional per-case figure. A case may ship a user_plot.jl defining
+    #
+    #     user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
+    #
+    # (x: node coordinates, q: npoin × nvar output variables, qref: the
+    # reference of user_analytic_solution or nothing, μ_nodes: the DynSGS
+    # coefficient at the nodes or nothing) that renders and saves its own
+    # figure — e.g. the single density plot of a paper — in place of the
+    # generic panels below (see problems/MHD/brioWu1d). :plot_user => false
+    # in the inputs falls back to the generic panels.
+    if get(inputs, :_has_user_plot, false) && get(inputs, :plot_user, true) &&
+        isdefined(@__MODULE__, :user_plot_1d)
+        try
+            user_plot_1d(x_coords, qout, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
+            return nothing
+        catch err
+            @warn "user_plot_1d failed; falling back to the generic panels." exception=err
+        end
+    end
+
     for ivar=1:nvar
 
         idx = (ivar - 1)*npoin
@@ -451,6 +471,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
                                  (white arrows, :plot_vectors_n = (nx, ny) arrows,
                                  reference arrow of speed :plot_vectors_ref)
           :plot_overlay_on       names of the panels that get the overlays (default: all)
+          :plot_user             1D: use the case's user_plot_1d (user_plot.jl) figure when
+                                 the case ships one (default: true); false gives the generic panels
           :plot_dsgs             render the μ_dsgs panels of a DynSGS run (default: true)
           :plot_dsgs_vars        names of the damped variables whose μ_dsgs panel is
                                  written (default: all slots with a non-zero coefficient)

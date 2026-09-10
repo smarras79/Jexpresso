@@ -35,22 +35,23 @@ and the DynSGS cap uses $|u| + c_f$.
 
 $(\rho, u, p, B_x, B_y) = (1, 0, 1, 0.75, 1)$ for $x < 0.5$ and
 $(0.125, 0, 0.1, 0.75, -1)$ for $x \ge 0.5$; $v = w = B_z = 0$. Final time
-$t = 0.2$.
+$t = 0.1$ on $(0, 1)$, i.e. Brio & Wu's $t = 0.2$ on $(-1, 1)$, the state of
+the paper's Fig. 2 (see README.md).
 
-## Solution structure at $t = 0.2$
+## Solution structure at $t = 0.1$
 
 From left to right (Brio & Wu 1988, Fig. 2; the reference solution here):
 
-1. a **fast rarefaction** moving left, head at $x \approx 0.06$, foot at $\approx 0.30$;
-2. a **slow compound wave** at $x \approx 0.45$ — a slow shock with an attached
+1. a **fast rarefaction** moving left, head at $x \approx 0.32$, foot at $\approx 0.42$;
+2. a **slow compound wave** at $x \approx 0.47$ — a slow shock with an attached
    slow rarefaction, the feature unique to this problem (the density spike
    to $\approx 0.72$ in Fig. 2 of the paper); it exists because the
    intermediate shock across which $B_y$ changes sign is admissible in the
    planar problem;
-3. a **contact discontinuity** at $x \approx 0.56$ ($\rho$ from $\approx 0.68$ to
-   $\approx 0.27$ at constant $p$, $u$, $B_y$);
-4. a **slow shock** at $x \approx 0.59$;
-5. a **fast rarefaction** moving right, foot at $\approx 0.87$, head at $\approx 0.94$.
+3. a **contact discontinuity** at $x \approx 0.56$ ($\rho$ from $\approx 0.70$ to
+   $\approx 0.23$ at constant $p$, $u$, $B_y$);
+4. a **slow shock** at $x \approx 0.64$;
+5. a **fast rarefaction** moving right, between $x \approx 0.84$ and $0.87$.
 
 ## Regularization
 

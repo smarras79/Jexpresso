@@ -348,6 +348,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         (:plot_xlabel,           "x"),
         (:plot_ylabel,           "y"),
         (:plot_time_unit,        " s"),               # appended to "t = ..." in the titles
+        (:plot_user,             true),               # 1D: the case's user_plot_1d figure, if it ships one
         (:plot_dsgs,             true),               # μ_dsgs panels of a DynSGS run
         (:plot_dsgs_vars,        nothing),            # damped variables whose μ_dsgs panel is written (nothing = all)
         (:plot_dsgs_log10,       false),              # log₁₀ μ_dsgs panels, floored at :plot_dsgs_floor

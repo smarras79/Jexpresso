@@ -58,13 +58,13 @@ end
     end
 end
 
-function run(ncells, nout)
+function run(ncells, nout, tend)
     dx = 1.0/ncells
     x  = [(i - 0.5)*dx for i = 1:ncells]
     UL = cons(1.0,   0.0, 0.0, 0.0, 1.0,  1.0, 0.0)
     UR = cons(0.125, 0.0, 0.0, 0.0, 0.1, -1.0, 0.0)
     U  = [xi < 0.5 ? UL : UR for xi in x]
-    t = 0.0; tend = 0.2
+    t = 0.0
     F = Vector{NTuple{7,Float64}}(undef, ncells + 1)
     while t < tend - 1e-15
         smax = maximum(abs(Ui[2]/Ui[1]) + cfast(Ui) for Ui in U)
@@ -80,7 +80,7 @@ function run(ncells, nout)
     end
     out = joinpath(@__DIR__, "..", "problems", "MHD", "brioWu1d", "reference_hll.dat")
     open(out, "w") do io
-        println(io, "# Brio-Wu, gamma = 2, Bx = 0.75, t = 0.2: HLL finite volume, $ncells cells, sampled at $nout points")
+        println(io, "# Brio-Wu, gamma = 2, Bx = 0.75, t = $tend: HLL finite volume, $ncells cells, sampled at $nout points")
         println(io, "# x rho u v w p By Bz")
         for j = 1:nout
             i = clamp(round(Int, (j - 0.5)/nout*ncells + 0.5), 1, ncells)
@@ -93,4 +93,5 @@ end
 
 ncells = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 10000
 nout   = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 2000
-run(ncells, nout)
+tend   = length(ARGS) >= 3 ? parse(Float64, ARGS[3]) : 0.1
+run(ncells, nout, tend)

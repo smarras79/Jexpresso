@@ -5,7 +5,8 @@
 #     (ρ, u, p, Bx, By) = (1,     0, 1,   0.75,  1)   x ∈ [0, 0.5)
 #                         (0.125, 0, 0.1, 0.75, -1)   x ∈ [0.5, 1]
 #
-# v = w = Bz = 0, γ = 2, domain (0, 1), final time 0.2. Output variables
+# v = w = Bz = 0, γ = 2, domain (0, 1), final time 0.1 (Brio & Wu's 0.2 on
+# (−1, 1), the state of the paper's Fig. 2). Output variables
 # (user_uout! in user_primitives.jl): ρ, u, v, p, By — the panels of the
 # classical Brio-Wu figure — against the reference solution of
 # reference_hll.dat (see user_analytic.jl).
