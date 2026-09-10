@@ -1108,7 +1108,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      continuous field) instead of the default per
     #                      ELEMENT (one ν per element, Marras's form). true
     #                      implies the element form off. 1D and 2D kernels
-    #                      (DSGS and DSGS_MHD); there is no 3D DynSGS kernel.
+    #                      (DSGS and DSGS_MHD); the 3D DSGS kernel is
+    #                      element-form only.
     #   :dsgs_Cl           its local-jump normalization constant C_l (their eq.
     #                      4.7; 0 = classical global spread, the paper uses 0.4)
     if(!haskey(inputs, :ldsgs_nodal))

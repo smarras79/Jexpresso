@@ -282,7 +282,11 @@ function local_max_diffusivity(npoin, params, visc)
     # Dividing those by the 7e-9 of a solar corona printed a "max ν" of 1e7
     # for a run whose real parabolic number was 0.04.
     mhd    = (params.VT == DSGS_MHD())
-    euler  = (params.VT == DSGS())        # Euler kernels: passive-tracer slots (5..neqs) are kinematic
+    # Euler kernels: the passive-tracer slots carry the KINEMATIC ν. They
+    # start after the energy slot, which is 4 in 2D (ρ, ρu, ρv, ρθ) and 5 in
+    # 3D (ρ, ρu, ρv, ρw, ρθ).
+    euler   = (params.VT == DSGS())
+    tracer0 = (params.SD == NSD_3D()) ? 6 : 5
     allkin = (mhd && (get(params.inputs, :dsgs_nodal_rho, false) || get(params.inputs, :dsgs_conserved, false))) ||
              params.VT == DSGS_SW()      # shallow water: one kinematic ν on (H, Hu, Hv)
 
@@ -292,7 +296,7 @@ function local_max_diffusivity(npoin, params, visc)
         ρ = max(ρ, tiny)
         ν = max(ν, params.μ_dsgs_pnode[ip,1])           # β / mass diffusion, kinematic
         for ieq = 2:neqsν
-            kin = allkin || (mhd && ieq >= 6) || (euler && ieq >= 5)
+            kin = allkin || (mhd && ieq >= 6) || (euler && ieq >= tracer0)
             ν = max(ν, kin ? params.μ_dsgs_pnode[ip,ieq] : params.μ_dsgs_pnode[ip,ieq]/ρ)
         end
     end
