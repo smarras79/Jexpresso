@@ -1268,6 +1268,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  visc_coeff::AbstractVector{TT},
                                  avg::AbstractVector{TT},
                                  denom::AbstractVector{TT},
+                                 avg_e::AbstractVector{TT},
+                                 den_e::AbstractVector{TT},
                                  Δt::TT,
                                  connijk::AbstractArray{TI,4},
                                  Δelem::AbstractVector{TT},
@@ -1285,8 +1287,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
     rel  = TT(1.0e-3)            # floor fraction of the physical scales
-    avg_e = zeros(TT, neqs)      # element mean / spread (llocal_norms)
-    den_e = zeros(TT, neqs)
+    # avg_e / den_e: preallocated element mean / spread scratch (llocal_norms)
     γm1  = γ - one(TT)
     eps  = TT(1.0e-16)
 
@@ -1557,6 +1558,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  visc_coeff::AbstractVector{TT},
                                  avg::AbstractVector{TT},
                                  denom::AbstractVector{TT},
+                                 avg_e::AbstractVector{TT},
+                                 den_e::AbstractVector{TT},
                                  Δt::TT,
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
@@ -1574,8 +1577,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)
     rel  = TT(1.0e-3)
-    avg_e = zeros(TT, neqs)
-    den_e = zeros(TT, neqs)
     γm1  = γ - one(TT)
     eps  = TT(1.0e-16)
 
@@ -1768,6 +1769,11 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        visc_coeff::AbstractVector{TT},
                                        avg::AbstractVector{TT},
                                        denom::AbstractVector{TT},
+                                       qmin::AbstractVector{TT},
+                                       qmax::AbstractVector{TT},
+                                       nmin::AbstractMatrix{TT},
+                                       nmax::AbstractMatrix{TT},
+                                       hnod::AbstractVector{TT},
                                        Δt::TT,
                                        connijk::AbstractArray{TI,4},
                                        Δx::AbstractVector{TT},
@@ -1792,9 +1798,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     end
 
     # --- global mean, spread S̄ and range per equation --------------------
-    qmin = fill(typemax(TT), neqs); qmax = fill(typemin(TT), neqs)
     @inbounds for ieq = 1:neqs
         avg[ieq] = zero(TT); denom[ieq] = zero(TT)
+        qmin[ieq] = typemax(TT); qmax[ieq] = typemin(TT)
     end
     @inbounds for ip = 1:npoin, ieq = 1:neqs
         avg[ieq] += q[ip,ieq]
@@ -1834,8 +1840,12 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     end
 
     # --- local range over the support of each node (eq. 4.7) and h_i -------
-    nmin = fill(typemax(TT), npoin, neqs); nmax = fill(typemin(TT), npoin, neqs)
-    hnod = zeros(TT, npoin)
+    @inbounds for ip = 1:npoin
+        hnod[ip] = zero(TT)
+        for ieq = 1:neqs
+            nmin[ip,ieq] = typemax(TT); nmax[ip,ieq] = typemin(TT)
+        end
+    end
     @inbounds for ie = 1:nelem
         h_e = Δx[ie]/TT(k)
         for ieq = 1:neqs
@@ -1916,6 +1926,314 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         end
         μ_dsgs[ie,ieq] = m*inv_ngl
     end
+    return nothing
+end
+
+# ================================================================================
+# Nodal (Dao & Nazarov 2022) form in 2D — shared statistics
+#
+# Global mean, spread S̄ and range of every equation over the local nodes,
+# the local range of every equation over the support of each node (the
+# elements containing it, their eq. 4.7) and the nodal mesh function
+# h_i = max h_K/k over those elements. All buffers are preallocated
+# (params.dsgs_*), nothing is allocated here.
+# ================================================================================
+function _dsgs_nodal_stats_2d!(q::AbstractMatrix{TT},
+                               connijk::AbstractArray{TI,4},
+                               Δelem::AbstractVector{TT},
+                               nelem::Int, ngl::Int, npoin::Int, neqs::Int, k::Int,
+                               avg::AbstractVector{TT}, denom::AbstractVector{TT},
+                               qmin::AbstractVector{TT}, qmax::AbstractVector{TT},
+                               nmin::AbstractMatrix{TT}, nmax::AbstractMatrix{TT},
+                               hnod::AbstractVector{TT},
+                               lglobal_norms::Bool, comm) where {TT<:AbstractFloat, TI<:Integer}
+    @inbounds for ieq = 1:neqs
+        avg[ieq] = zero(TT); denom[ieq] = zero(TT)
+        qmin[ieq] = typemax(TT); qmax[ieq] = typemin(TT)
+    end
+    @inbounds for ip = 1:npoin, ieq = 1:neqs
+        avg[ieq] += q[ip,ieq]
+        qmin[ieq] = min(qmin[ieq], q[ip,ieq]); qmax[ieq] = max(qmax[ieq], q[ip,ieq])
+    end
+    inv_npts = one(TT)/max(TT(npoin), one(TT))
+    if lglobal_norms
+        npts_glob = MPI.Allreduce(TT(npoin), MPI.SUM, comm)
+        MPI.Allreduce!(avg, MPI.SUM, comm)
+        MPI.Allreduce!(qmin, MPI.MIN, comm); MPI.Allreduce!(qmax, MPI.MAX, comm)
+        inv_npts  = one(TT)/max(npts_glob, one(TT))
+    end
+    @inbounds for ieq = 1:neqs
+        avg[ieq] *= inv_npts
+    end
+    @inbounds for ip = 1:npoin, ieq = 1:neqs
+        denom[ieq] = max(denom[ieq], abs(q[ip,ieq] - avg[ieq]))
+    end
+    if lglobal_norms
+        MPI.Allreduce!(denom, MPI.MAX, comm)
+    end
+    @inbounds for ip = 1:npoin
+        hnod[ip] = zero(TT)
+        for ieq = 1:neqs
+            nmin[ip,ieq] = typemax(TT); nmax[ip,ieq] = typemin(TT)
+        end
+    end
+    @inbounds for ie = 1:nelem
+        h_e = Δelem[ie]/TT(k)
+        for ieq = 1:neqs
+            emin = typemax(TT); emax = typemin(TT)
+            for j = 1:ngl, i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                emin = min(emin, q[ip,ieq]); emax = max(emax, q[ip,ieq])
+            end
+            for j = 1:ngl, i = 1:ngl
+                ip = connijk[ie,i,j,1]
+                nmin[ip,ieq] = min(nmin[ip,ieq], emin); nmax[ip,ieq] = max(nmax[ip,ieq], emax)
+            end
+        end
+        for j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,1]
+            hnod[ip] = max(hnod[ip], h_e)
+        end
+    end
+    return nothing
+end
+
+# Nodal residual ratio max_i R_i/n_i (eq. 4.8) with the local-jump
+# normalization (eq. 4.7) and the n²/(n²+ε) guard.
+@inline function _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, inv2Δt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+    TT = eltype(denom)
+    Mi = Minv[ip]
+    ratio = zero(TT)
+    @inbounds for ieq = 1:NRES
+        R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+        grange = qmax[ieq] - qmin[ieq]
+        lfac   = grange > eps ? Cl*(nmax[ip,ieq] - nmin[ip,ieq])/grange : zero(TT)
+        n      = denom[ieq]*(one(TT) - lfac)
+        ratio  = max(ratio, R*n/(n*n + eps))
+    end
+    return ratio
+end
+
+# Element means of a nodal coefficient, for the output staircase.
+function _dsgs_nodal_to_elements_2d!(μ_dsgs::AbstractMatrix{TT}, μ_pnode::AbstractMatrix{TT},
+                                     connijk::AbstractArray{TI,4}, nelem::Int, ngl::Int) where {TT<:AbstractFloat, TI<:Integer}
+    neqs = size(μ_dsgs, 2)
+    inv_n = one(TT)/TT(ngl*ngl)
+    @inbounds for ie = 1:nelem, ieq = 1:neqs
+        m = zero(TT)
+        for j = 1:ngl, i = 1:ngl
+            m += μ_pnode[connijk[ie,i,j,1], ieq]
+        end
+        μ_dsgs[ie,ieq] = m*inv_n
+    end
+    return nothing
+end
+
+# ================================================================================
+# compute_dsgs_viscosity_nodal!(::DSGS_MHD, ::NSD_2D)
+#
+# The nodal form of the 2D MHD kernel (see the 1D header above): ν_i at every
+# node from the assembled residual, the 2D fast speed √(γp/ρ + |B|²/ρ) in the
+# cap, the C0 floor, and the element kernel's slot assignment with the
+# NODAL density in the physical form. μ_pnode receives the coefficients
+# (no broadcast afterwards), μ_dsgs the element means.
+# ================================================================================
+function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
+                                       μ_pnode::AbstractMatrix{TT},
+                                       ::DSGS_MHD, ::NSD_2D,
+                                       q::AbstractMatrix{TT},
+                                       q1::AbstractMatrix{TT},
+                                       q2::AbstractMatrix{TT},
+                                       rhs::AbstractMatrix{TT},
+                                       Minv::AbstractVector{TT},
+                                       visc_coeff::AbstractVector{TT},
+                                       avg::AbstractVector{TT},
+                                       denom::AbstractVector{TT},
+                                       qmin::AbstractVector{TT},
+                                       qmax::AbstractVector{TT},
+                                       nmin::AbstractMatrix{TT},
+                                       nmax::AbstractMatrix{TT},
+                                       hnod::AbstractVector{TT},
+                                       Δt::TT,
+                                       connijk::AbstractArray{TI,4},
+                                       Δelem::AbstractVector{TT},
+                                       γ::TT, Pr_t::TT, C1::TT, C2::TT, Cl::TT,
+                                       comm,
+                                       nelem::Int, ngl::Int, npoin::Int;
+                                       lglobal_norms::Bool=false,
+                                       lconserved::Bool=false,
+                                       C0::TT=zero(TT),
+                                       lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs = size(μ_dsgs, 2)
+    NRES = min(neqs, 8)
+    rel  = TT(1.0e-3)
+    γm1  = γ - one(TT)
+    eps  = TT(1.0e-16)
+    k    = max(ngl - 1, 1)
+
+    _dsgs_nodal_stats_2d!(q, connijk, Δelem, nelem, ngl, npoin, neqs, k,
+                          avg, denom, qmin, qmax, nmin, nmax, hnod, lglobal_norms, comm)
+
+    ρ_avg = max(abs(avg[1]), eps)
+    p_avg = γm1*max(avg[4] - TT(0.5)*(avg[2]*avg[2] + avg[3]*avg[3] + avg[5]*avg[5])/ρ_avg
+                    - TT(0.5)*(avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]), zero(TT))
+    c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
+    @inbounds begin
+        denom[1] = max(denom[1], rel*ρ_avg)
+        mom_fl   = rel*ρ_avg*c_avg
+        denom[2] = max(denom[2], mom_fl)
+        denom[3] = max(denom[3], mom_fl)
+        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        b_fl = rel*sqrt(ρ_avg)*c_avg
+        for ieq = 6:min(neqs,8)
+            denom[ieq] = max(denom[ieq], b_fl)
+        end
+    end
+
+    inv2Δt = one(TT)/(2*Δt)
+    fE = lnazarov_energy ? γ*γm1/Pr_t : one(TT)
+    @inbounds for ip = 1:npoin
+        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, inv2Δt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ρl = max(q[ip,1], eps)
+        ul = q[ip,2]/ρl
+        vl = q[ip,3]/ρl
+        wl = (neqs >= 5) ? q[ip,5]/ρl : zero(TT)
+        B2 = q[ip,6]*q[ip,6] + q[ip,7]*q[ip,7] + q[ip,8]*q[ip,8]
+        pl = γm1*max(q[ip,4] - TT(0.5)*ρl*(ul*ul + vl*vl + wl*wl) - TT(0.5)*B2, zero(TT))
+        cf = sqrt(max(γ*pl/ρl + B2/ρl, zero(TT)))
+        λ  = sqrt(ul*ul + vl*vl + wl*wl) + cf
+        h  = hnod[ip]
+
+        ν_c = max(zero(TT), min(C2*h*λ, C1*h*h*ratio))
+        ν_f = C0 > zero(TT) ? C0*h*λ : zero(TT)
+        ν   = max(ν_c, ν_f)
+        ν_d = ρl*ν
+
+        μ_pnode[ip,1] = visc_coeff[1]*ν
+        if lconserved
+            μ_pnode[ip,2] = visc_coeff[2]*ν
+            μ_pnode[ip,3] = visc_coeff[3]*ν
+            μ_pnode[ip,4] = lnazarov_energy ? visc_coeff[4]*max(fE*ν_c, ν_f) : visc_coeff[4]*ν
+            if neqs >= 5; μ_pnode[ip,5] = visc_coeff[5]*ν; end
+        else
+            μ_pnode[ip,2] = visc_coeff[2]*ν_d
+            μ_pnode[ip,3] = visc_coeff[3]*ν_d
+            μ_pnode[ip,4] = lnazarov_energy ? visc_coeff[4]*ν_d/Pr_t : visc_coeff[4]*ν_d*γ/(γm1*Pr_t)
+            if neqs >= 5; μ_pnode[ip,5] = visc_coeff[5]*ν_d; end
+        end
+        for ieq = 6:min(neqs,8)
+            μ_pnode[ip,ieq] = visc_coeff[ieq]*ν
+        end
+        if neqs >= 9
+            μ_pnode[ip,9] = visc_coeff[9]*ν
+        end
+    end
+    _dsgs_nodal_to_elements_2d!(μ_dsgs, μ_pnode, connijk, nelem, ngl)
+    return nothing
+end
+
+# ================================================================================
+# compute_dsgs_viscosity_nodal!(::DSGS, ::NSD_2D)
+#
+# The nodal form of the 2D Euler kernel, θ form (ρ, ρu, ρv, ρθ) or total
+# energy form (ρ, ρu, ρv, ρE): per-equation denominators with the element
+# kernels' floors, ν_i as above with |u| + c at the node, and the element
+# kernels' slot assignment with the NODAL density — θ form: 0 on ρ, ρν on
+# the momenta, (Pr/(γ−1))ρν on ρθ; energy form: (ν on ∇ρ), ρν on u, v,
+# (Pr/(γ−1))ρν on T. (The element energy kernel normalizes the momentum
+# residual as a vector; here every component is normalized on its own.)
+# ================================================================================
+function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
+                                       μ_pnode::AbstractMatrix{TT},
+                                       ::DSGS, ::NSD_2D,
+                                       q::AbstractMatrix{TT},
+                                       q1::AbstractMatrix{TT},
+                                       q2::AbstractMatrix{TT},
+                                       rhs::AbstractMatrix{TT},
+                                       Minv::AbstractVector{TT},
+                                       visc_coeff::AbstractVector{TT},
+                                       avg::AbstractVector{TT},
+                                       denom::AbstractVector{TT},
+                                       qmin::AbstractVector{TT},
+                                       qmax::AbstractVector{TT},
+                                       nmin::AbstractMatrix{TT},
+                                       nmax::AbstractMatrix{TT},
+                                       hnod::AbstractVector{TT},
+                                       Δt::TT,
+                                       connijk::AbstractArray{TI,4},
+                                       Δelem::AbstractVector{TT},
+                                       PhysConst::PhysicalConst{TT},
+                                       Pr::TT, C1::TT, C2::TT, Cl::TT,
+                                       comm,
+                                       nelem::Int, ngl::Int, npoin::Int;
+                                       ltheta::Bool=true,
+                                       lglobal_norms::Bool=false,
+                                       C0::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs = size(μ_dsgs, 2)
+    NRES = min(neqs, 4)
+    rel  = TT(1.0e-3)
+    γ    = PhysConst.γ
+    γm1  = PhysConst.γm1
+    Cθ   = PhysConst.C0
+    eps  = TT(1.0e-16)
+    k    = max(ngl - 1, 1)
+
+    _dsgs_nodal_stats_2d!(q, connijk, Δelem, nelem, ngl, npoin, neqs, k,
+                          avg, denom, qmin, qmax, nmin, nmax, hnod, lglobal_norms, comm)
+
+    ρ_avg = max(abs(avg[1]), eps)
+    if ltheta
+        θ_avg = avg[4]/ρ_avg
+        p_avg = Cθ*(max(ρ_avg*θ_avg, zero(TT)))^γ
+    else
+        p_avg = γm1*max(avg[4] - TT(0.5)*(avg[2]*avg[2] + avg[3]*avg[3])/ρ_avg, zero(TT))
+    end
+    c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
+    @inbounds begin
+        denom[1] = max(denom[1], rel*ρ_avg)
+        denom[2] = max(denom[2], rel*ρ_avg*c_avg)
+        denom[3] = max(denom[3], rel*ρ_avg*c_avg)
+        denom[4] = max(denom[4], ltheta ? rel*abs(avg[4]) : rel*ρ_avg*c_avg*c_avg)
+    end
+
+    inv2Δt = one(TT)/(2*Δt)
+    @inbounds for ip = 1:npoin
+        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, inv2Δt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ρl = max(q[ip,1], eps)
+        ul = q[ip,2]/ρl
+        vl = q[ip,3]/ρl
+        if ltheta
+            θl = q[ip,4]/ρl
+            pl = Cθ*(max(ρl*θl, zero(TT)))^γ
+            c  = sqrt(max(γ*pl/ρl, zero(TT)))
+        else
+            Tl = max(q[ip,4]/ρl - TT(0.5)*(ul*ul + vl*vl), zero(TT))
+            c  = sqrt(γ*Tl)
+        end
+        λ  = sqrt(ul*ul + vl*vl) + c
+        h  = hnod[ip]
+        ν_c = max(zero(TT), min(C2*h*λ, C1*h*h*ratio))
+        ν   = C0 > zero(TT) ? max(ν_c, C0*h*λ) : ν_c
+        μd  = ρl*ν
+        if ltheta
+            μ_pnode[ip,1] = zero(TT)
+            μ_pnode[ip,2] = visc_coeff[2]*μd
+            μ_pnode[ip,3] = visc_coeff[3]*μd
+            μ_pnode[ip,4] = visc_coeff[4]*(Pr/γm1)*μd
+        else
+            μ_pnode[ip,1] = visc_coeff[1]*ν
+            μ_pnode[ip,2] = visc_coeff[2]*μd
+            μ_pnode[ip,3] = visc_coeff[3]*μd
+            μ_pnode[ip,4] = visc_coeff[4]*(Pr/γm1)*μd
+        end
+        for ieq = 5:neqs
+            μ_pnode[ip,ieq] = visc_coeff[ieq]*μd
+        end
+    end
+    _dsgs_nodal_to_elements_2d!(μ_dsgs, μ_pnode, connijk, nelem, ngl)
     return nothing
 end
 

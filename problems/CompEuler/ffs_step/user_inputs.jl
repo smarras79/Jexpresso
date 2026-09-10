@@ -109,7 +109,7 @@ function user_inputs()
         # the paper's domain norms — 2 Allreduce per RHS call, 10 per step
         # here — when μ has to be identical across rank counts. No effect on a
         # serial run. See ENVIRONMENT_VARIABLES.md.
-        # :ldsgs_global_norms   => true,
+        # :dsgs_norms => "domain",
         #---------------------------------------------------------------------------
         # Mesh
         #

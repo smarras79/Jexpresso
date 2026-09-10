@@ -43,7 +43,18 @@ function user_inputs()
         :visc_model       => DSGS_MHD(),
         :dsgs_C1          => 1.0,
         :dsgs_C2          => 0.5,
-        :dsgs_C0          => 0.0,
+        # Background floor, 3 % of the first-order viscosity C2·h·(|u|+c_f).
+        # The residual viscosity is C_R h² R: it scales with the amplitude
+        # of what it sees, so the element-scale ripples that the slowly
+        # moving compound wave radiates into the plateau behind it (±0.5 %
+        # in ρ, one wiggle per element, present at P3 and P4, with the
+        # element and the nodal coefficient alike) are never damped by it.
+        # The floor damps them at a rate ν(π/h)² ≈ 300/unit time while
+        # diffusing a resolved profile by √(2νt) ≈ 0.004 over the run; 0.01
+        # leaves a trace of them, 0.03 none (measured). Dao & Nazarov's P3
+        # elements with exact quadrature do not show these ripples; the
+        # collocated LGL flux of this code is the remaining difference.
+        :dsgs_C0          => 0.03,
         :dsgs_gamma       => 2.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,
@@ -52,10 +63,9 @@ function user_inputs()
         # the diffusive flux has no jump at element interfaces; the element
         # form (one ν per element) left one wiggle per element in the plateau
         # behind the compound wave. :dsgs_Cl is their C_l = 0.4 (eq. 4.7).
-        :dsgs_nodal       => true,
+        :ldsgs_nodal      => true,    # false (the default) = one ν per element
         :dsgs_Cl          => 0.4,
-        :dsgs_local_norms => false,   # the whole tube is the reference scale
-        :ldsgs_global_norms => true,  # (only matters under MPI)
+        :dsgs_norms       => "domain",  # residual normalized by the spread over the whole tube
         :energy_equation  => "energy",
         :lkep              => false,
         :entropy_variables => false,

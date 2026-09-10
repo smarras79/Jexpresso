@@ -25,7 +25,7 @@ function user_inputs()
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
-        #:ldsgs_global_norms   => true,
+        # :dsgs_norms => "domain",
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         #:gmsh_filename        => "./meshes/gmsh_grids/ffs_step_transfinite.msh",

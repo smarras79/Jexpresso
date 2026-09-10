@@ -1003,11 +1003,11 @@ end
 function _visc_el_loop_1d!(rhs_diffxi_el, uprimitive, mu_dsgs, visc_coeff,
                            omega, ngl::Int, dpsi, Je, dxidx, inputs, rhs_el,
                            nelem::Int, neqs::Int, connijk, uaux, qe, SVT,
-                           QT, VT, AD, SD, ldsgs::Bool; μ_pnode=nothing)
+                           QT, VT, AD, SD, ldsgs::Bool; μ_pnode=nothing, μloc=nothing)
 
     # Nodal DynSGS (μ_pnode given): the element's coefficient is the vector
-    # of its nodes' values, interpolated by _expansion_visc!.
-    μloc = μ_pnode === nothing ? nothing : zeros(eltype(μ_pnode), ngl)
+    # of its nodes' values, gathered into the preallocated μloc (ngl × neqs,
+    # params.dsgs_μloc) and interpolated by _expansion_visc!.
 
     for iel = 1:nelem
 
@@ -1020,9 +1020,9 @@ function _visc_el_loop_1d!(rhs_diffxi_el, uprimitive, mu_dsgs, visc_coeff,
         if ldsgs && μ_pnode !== nothing
             for ieq = 1:neqs
                 for i = 1:ngl
-                    μloc[i] = μ_pnode[connijk[iel,i], ieq]
+                    μloc[i, ieq] = μ_pnode[connijk[iel,i], ieq]
                 end
-                _expansion_visc!(rhs_diffxi_el, uprimitive, μloc,
+                _expansion_visc!(rhs_diffxi_el, uprimitive, @view(μloc[:, ieq]),
                                  omega, ngl, dpsi, Je, dxidx, inputs, rhs_el,
                                  iel, ieq, QT, DSGS(), SD, AD)
             end
@@ -1079,7 +1079,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     lnodal_mhd = false
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        lnodal_mhd = get(params.inputs, :dsgs_nodal, false)
+        lnodal_mhd = get(params.inputs, :ldsgs_nodal, false)
         if lnodal_mhd
             # Nodal (Dao & Nazarov) form: ν at every node, a continuous field
             # the element loop interpolates; μ_dsgs gets the element means.
@@ -1087,6 +1087,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                           params.RHS, params.Minv, params.visc_coeff,
                                           params.dsgs_avg, params.dsgs_denom,
+                                          params.dsgs_qmin, params.dsgs_qmax,
+                                          params.dsgs_nmin, params.dsgs_nmax, params.dsgs_hnod,
                                           TT(params.Δt),
                                           params.mesh.connijk, params.mesh.Δx,
                                           TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
@@ -1105,6 +1107,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
                                     params.RHS, params.Minv, params.visc_coeff,
                                     params.dsgs_avg, params.dsgs_denom,
+                                    params.dsgs_avg_e, params.dsgs_den_e,
                                     TT(params.Δt),
                                     params.mesh.connijk, params.mesh.Δx,
                                     TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
@@ -1134,7 +1137,8 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                       nelem, neqs, connijk, params.uaux, qe,
                       params.SOL_VARS_TYPE, params.QT, params.VT, params.AD, SD,
                       params.VT == DSGS() || params.VT == DSGS_MHD();
-                      μ_pnode = lnodal_mhd ? params.μ_dsgs_pnode : nothing)
+                      μ_pnode = lnodal_mhd ? params.μ_dsgs_pnode : nothing,
+                      μloc    = params.dsgs_μloc)
 
     params.rhs_diff_el .= @views (params.rhs_diffξ_el)
 
@@ -1199,31 +1203,57 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         dsgs_split_energy[] = get(params.inputs, :dsgs_conserved, false) &&
             (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
 
-        compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
-                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
-                                params.RHS, params.Minv, params.visc_coeff,
-                                params.dsgs_avg, params.dsgs_denom,
-                                TT(params.Δt),
-                                params.mesh.connijk, params.mesh.Δelem,
-                                TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
-                                TT(get(params.inputs, :dsgs_Prt,   0.7)),
-                                TT(get(params.inputs, :dsgs_C1,    1.0)),
-                                TT(get(params.inputs, :dsgs_C2,    0.5)),
-                                get_mpi_comm(),
-                                Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
-                                llocal_norms  = get(params.inputs, :dsgs_local_norms, false),
-                                local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
-                                lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
-                                lconserved    = get(params.inputs, :dsgs_conserved, false),
-                                C0            = TT(get(params.inputs, :dsgs_C0, 0.0)),
-                                lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
-                                                  get(params.inputs, :dsgs_conserved_prandtl, false))
-
-        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
-                                 params.mesh.connijk,
-                                 Int(params.mesh.nelem),
-                                 Int(params.mesh.ngl), SD)
+        lnodal_mhd2d = get(params.inputs, :ldsgs_nodal, false)
+        if lnodal_mhd2d
+            # Nodal (Dao & Nazarov) form: ν at every node (SGS.jl); the
+            # element loop interpolates it, no broadcast.
+            compute_dsgs_viscosity_nodal!(params.μ_dsgs, params.μ_dsgs_pnode, DSGS_MHD(), SD,
+                                          params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                          params.RHS, params.Minv, params.visc_coeff,
+                                          params.dsgs_avg, params.dsgs_denom,
+                                          params.dsgs_qmin, params.dsgs_qmax,
+                                          params.dsgs_nmin, params.dsgs_nmax, params.dsgs_hnod,
+                                          TT(params.Δt),
+                                          params.mesh.connijk, params.mesh.Δelem,
+                                          TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
+                                          TT(get(params.inputs, :dsgs_Prt,   0.7)),
+                                          TT(get(params.inputs, :dsgs_C1,    1.0)),
+                                          TT(get(params.inputs, :dsgs_C2,    0.5)),
+                                          TT(get(params.inputs, :dsgs_Cl,    0.0)),
+                                          get_mpi_comm(),
+                                          Int(params.mesh.nelem), Int(params.mesh.ngl), Int(params.mesh.npoin);
+                                          lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
+                                          lconserved    = get(params.inputs, :dsgs_conserved, false),
+                                          C0            = TT(get(params.inputs, :dsgs_C0, 0.0)),
+                                          lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
+                                                            get(params.inputs, :dsgs_conserved_prandtl, false))
+        else
+            compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
+                                    params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                    params.RHS, params.Minv, params.visc_coeff,
+                                    params.dsgs_avg, params.dsgs_denom,
+                                    params.dsgs_avg_e, params.dsgs_den_e,
+                                    TT(params.Δt),
+                                    params.mesh.connijk, params.mesh.Δelem,
+                                    TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
+                                    TT(get(params.inputs, :dsgs_Prt,   0.7)),
+                                    TT(get(params.inputs, :dsgs_C1,    1.0)),
+                                    TT(get(params.inputs, :dsgs_C2,    0.5)),
+                                    get_mpi_comm(),
+                                    Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
+                                    llocal_norms  = get(params.inputs, :dsgs_local_norms, false),
+                                    local_rel     = TT(get(params.inputs, :dsgs_local_rel, 1.0)),
+                                    lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
+                                    lconserved    = get(params.inputs, :dsgs_conserved, false),
+                                    C0            = TT(get(params.inputs, :dsgs_C0, 0.0)),
+                                    lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
+                                                      get(params.inputs, :dsgs_conserved_prandtl, false))
+            broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                     params.mesh.connijk,
+                                     Int(params.mesh.nelem),
+                                     Int(params.mesh.ngl), SD)
+        end
 
         _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
                                  params.rhs_diffξ_el, params.rhs_diffη_el,
@@ -1238,7 +1268,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  Int64(params.mesh.nelem), Int64(params.neqs),
                                  connijk, Float64(params.mesh.Δeffective_l),
                                  params.QT, params.AD, params.SOL_VARS_TYPE,
-                                 DSGS_MHD())
+                                 DSGS_MHD();
+                                 μ_pnode = lnodal_mhd2d ? params.μ_dsgs_pnode : nothing,
+                                 μloc    = params.dsgs_μloc)
         return
     end
 
@@ -1251,22 +1283,45 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # keeps the L∞ denominators measuring perturbations, not the
         # hydrostatic background.
         Pr_TT = TT(params.inputs[:Pr])
-        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
-                                params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
-                                params.qp.qe,
-                                params.RHS, params.Minv, params.visc_coeff,
-                                TT(params.Δt),
-                                params.mesh.connijk, params.mesh.Δelem,
-                                PHYS_CONST, Pr_TT,
-                                Int(params.mesh.nelem), Int(params.mesh.ngl);
-                                ltheta = (params.inputs[:energy_equation] == "theta"),
-                                lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
+        lnodal_2d = get(params.inputs, :ldsgs_nodal, false)
+        if lnodal_2d
+            # Nodal (Dao & Nazarov) form: ν at every node (SGS.jl); the
+            # element loop interpolates it, no broadcast.
+            compute_dsgs_viscosity_nodal!(params.μ_dsgs, params.μ_dsgs_pnode, DSGS(), SD,
+                                          params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                          params.RHS, params.Minv, params.visc_coeff,
+                                          params.dsgs_avg, params.dsgs_denom,
+                                          params.dsgs_qmin, params.dsgs_qmax,
+                                          params.dsgs_nmin, params.dsgs_nmax, params.dsgs_hnod,
+                                          TT(params.Δt),
+                                          params.mesh.connijk, params.mesh.Δelem,
+                                          PHYS_CONST, Pr_TT,
+                                          TT(get(params.inputs, :dsgs_C1, 1.0)),
+                                          TT(get(params.inputs, :dsgs_C2, 0.5)),
+                                          TT(get(params.inputs, :dsgs_Cl, 0.0)),
+                                          get_mpi_comm(),
+                                          Int(params.mesh.nelem), Int(params.mesh.ngl), Int(params.mesh.npoin);
+                                          ltheta = (params.inputs[:energy_equation] == "theta"),
+                                          lglobal_norms = get(params.inputs, :ldsgs_global_norms, false),
+                                          C0 = TT(get(params.inputs, :dsgs_C0, 0.0)))
+        else
+            compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                    params.uaux, params.dsgs_qnm2, params.dsgs_qnm1,
+                                    params.qp.qe,
+                                    params.RHS, params.Minv, params.visc_coeff,
+                                    TT(params.Δt),
+                                    params.mesh.connijk, params.mesh.Δelem,
+                                    PHYS_CONST, Pr_TT,
+                                    Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                    ltheta = (params.inputs[:energy_equation] == "theta"),
+                                    lglobal_norms = get(params.inputs, :ldsgs_global_norms, false))
 
-        # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
-        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
-                                 params.mesh.connijk,
-                                 Int(params.mesh.nelem),
-                                 Int(params.mesh.ngl), SD)
+            # Step 2 — broadcast μ_dsgs[iel,ieq] onto every node for VTU.
+            broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                     params.mesh.connijk,
+                                     Int(params.mesh.nelem),
+                                     Int(params.mesh.ngl), SD)
+        end
 
         # Step 3 — assemble the viscous RHS through the typed barrier.
         _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,
@@ -1281,7 +1336,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                  params.mesh.connijk, params.inputs, params.rhs_el,
                                  Int64(params.mesh.nelem), Int64(params.neqs),
                                  connijk, Float64(params.mesh.Δeffective_l),
-                                 params.QT, params.AD, params.SOL_VARS_TYPE)
+                                 params.QT, params.AD, params.SOL_VARS_TYPE;
+                                 μ_pnode = lnodal_2d ? params.μ_dsgs_pnode : nothing,
+                                 μloc    = params.dsgs_μloc)
         return
     end
 
@@ -1333,13 +1390,20 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   nelem, neqs,
                                   connijk, Δ,
                                   QT, AD, SOL_VARS_TYPE,
-                                  VT = DSGS())
+                                  VT = DSGS(); μ_pnode=nothing, μloc=nothing)
 
     for iel = 1:nelem
         # Slot 1 is whatever compute_dsgs_viscosity! decided: identically
         # zero for Marras eq. (10), β for Nazarov & Hoffman eq. (3.7).
         for ieq = 1:neqs
             visc_coeff_dsgs[ieq] = μ_dsgs[iel, ieq]
+        end
+        # Nodal DynSGS: gather the element's nodal coefficients into the
+        # preallocated μloc (ngl × ngl × neqs, params.dsgs_μloc)
+        if μ_pnode !== nothing
+            for ieq = 1:neqs, j = 1:ngl, i = 1:ngl
+                μloc[i,j,ieq] = μ_pnode[connijk[iel,i,j], ieq]
+            end
         end
 
         for j = 1:ngl, i = 1:ngl
@@ -1364,7 +1428,8 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                              connijk_mesh,
                              inputs, rhs_el,
                              iel, ieq,
-                             QT, VT, NSD_2D(), AD; Δ=Δ)
+                             QT, VT, NSD_2D(), AD; Δ=Δ,
+                             μnod = (μ_pnode === nothing ? nothing : μloc))
         end
     end
 
@@ -2219,7 +2284,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           connijk,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0, lrichardson=false, vargs...)
+                          QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0, lrichardson=false, μnod=nothing, vargs...)
 
     Δ2    = Δ^2
     micro = size(Tabs, 1)
@@ -2269,11 +2334,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
 
                 if is_u_momentum
                     # USE EFFECTIVE VISCOSITY
-                    effective_viscosity =  SGS_diffusion(visc_coeffieq, ieq,
+                    effective_viscosity =  (μnod === nothing ? SGS_diffusion(visc_coeffieq, ieq,
                                                          uprimitiveieq[k,l,1],
                                                          dudx, dvdy, dudy, dvdx,
                                                          PHYS_CONST, Δ2,
-                                                         VT, SD)*wgt
+                                                         VT, SD) : μnod[k,l,ieq])*wgt
 
                     τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
                     τ_xy = effective_viscosity * (dudy + dvdx)
@@ -2283,11 +2348,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
 
                 elseif is_v_momentum
                     # USE EFFECTIVE VISCOSITY
-                    effective_viscosity =  SGS_diffusion(visc_coeffieq, ieq,
+                    effective_viscosity =  (μnod === nothing ? SGS_diffusion(visc_coeffieq, ieq,
                                                          uprimitiveieq[k,l,1],
                                                          dudx, dvdy, dudy, dvdx,
                                                          PHYS_CONST, Δ2,
-                                                         VT, SD)*wgt
+                                                         VT, SD) : μnod[k,l,ieq])*wgt
                     
                     τ_xy = effective_viscosity * (dudy + dvdx)
                     τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
@@ -2307,11 +2372,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                         dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl
                         dθdy = dθdξ*dξdy_kl + dθdη*dηdy_kl
 
-                        effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
+                        effective_diffusivity = (μnod === nothing ? SGS_diffusion(visc_coeffieq, ieq,
                                                               uprimitiveieq[k,l,1],
                                                               dudx, dvdy, dudy, dvdx,
                                                               PHYS_CONST, Δ2,
-                                                              VT, SD)*wgt
+                                                              VT, SD) : μnod[k,l,ieq])*wgt
                         if dsgs_split_energy[]
                             # Conserved-form DynSGS-MHD with Nazarov's κ (SGS.jl,
                             # dsgs_split_energy): slot 4 holds the non-thermal
@@ -2327,7 +2392,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                             end
                             dEtdx = dEtdξ*dξdx_kl + dEtdη*dηdx_kl
                             dEtdy = dEtdξ*dξdy_kl + dEtdη*dηdy_kl
-                            ν_nth = visc_coeffieq[2]*wgt
+                            ν_nth = (μnod === nothing ? visc_coeffieq[2] : μnod[k,l,2])*wgt
                             flux_x = ν_nth * dθdx + effective_diffusivity * dEtdx
                             flux_y = ν_nth * dθdy + effective_diffusivity * dEtdy
                         else
@@ -2339,12 +2404,12 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                         # the SGS-momentum dissipation is consistently returned to the energy
                         # budget. Skip for the θ form where the ρθ equation has no τ·u term.
                         if inputs[:energy_equation] != "theta" && !get(inputs, :dsgs_conserved, false)
-                            effective_viscosity = SGS_diffusion(visc_coeffieq, 2,
+                            effective_viscosity = (μnod === nothing ? SGS_diffusion(visc_coeffieq, 2,
                                                                 uprimitiveieq[k,l,1],
                                                                 dudx, dvdy, dudy, dvdx,
                                                                 PHYS_CONST, Δ2,
                                                                 inputs,
-                                                                VT, SD)
+                                                                VT, SD) : μnod[k,l,2])
                             τ_xx = 2.0 * effective_viscosity * dudx - (2.0/3.0) * effective_viscosity * div_u
                             τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
                             τ_xy = effective_viscosity * (dudy + dvdx)
@@ -2439,11 +2504,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 else
                     # Other scalars (use appropriate Schmidt number)
                     # USE EFFECTIVE DIFFUSIVITY
-                    effective_diffusivity = SGS_diffusion(visc_coeffieq, ieq,
+                    effective_diffusivity = (μnod === nothing ? SGS_diffusion(visc_coeffieq, ieq,
                                                           uprimitiveieq[k,l,1],
                                                           dudx, dvdy, dudy, dvdx,
                                                           PHYS_CONST, Δ2,
-                                                          VT, SD)*wgt
+                                                          VT, SD) : μnod[k,l,ieq])*wgt
 
                     # Compute temperature gradient
                     dqdξ = 0.0; dqdη = 0.0

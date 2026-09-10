@@ -89,7 +89,7 @@ quadruples (twice the elements, twice the steps).
 - **Stabilization: DynSGS** (`:visc_model => DSGS_MHD()`, see
   [DSGS.md](../../../DSGS.md) §4), with `:dsgs_gamma => 1.05` matching the
   flux and the stratified-atmosphere variants of DSGS.md §4.5 switched on:
-  `:dsgs_local_norms` with `:dsgs_local_rel = 1` (the residual is measured
+  `:dsgs_norms => "element"` with `:dsgs_local_rel = 1` (the residual is measured
   against the element's own $\rho c/\tau$; with the domain norm the
   $10^8$-times denser photosphere hid the corona from the sensor and a
   grid-scale sawtooth grew across the transition region, with a $10^{-3}$

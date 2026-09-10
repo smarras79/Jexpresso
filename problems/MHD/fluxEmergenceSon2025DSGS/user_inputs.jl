@@ -45,11 +45,11 @@ function user_inputs()
         # lateral downflows 4-5 C_s (paper Sec. 4.1), i.e. |v| + c_f ≈ 10 C_s
         # and CFL ≈ 0.15. The paper's own Courant number is 0.23.
         :Δt                   => 7.5e-3,
-        :tinit                => 37.0,
+        :tinit                => 0.0,
         :tend                 => 54.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
         :diagnostics_at_times => (0.0:1.0:54.0),
-        :restart_time         => 37.0,
-        :lrestart             => true,
+        :restart_time         => 0.0,
+        :lrestart             => false,
         :lsource              => true,   # gravity + GLM ψ damping + absorbing layer (user_source.jl)
         :SOL_VARS_TYPE        => TOTAL(),
         :ode_adaptive_solver  => false,
@@ -121,7 +121,7 @@ function user_inputs()
         # the element mean (which over-diffuses the light side of a
         # stratified element by ρ̄/ρ, up to 25 at the transition region,
         # past the explicit viscous limit).
-        :dsgs_local_norms => true,
+        :dsgs_norms       => "element",   # residual normalized per element ("domain": the whole domain)
         :dsgs_local_rel   => 1.0,   # floor of the element spread = the local ρ, ρc, ρc², √ρc themselves (see SGS.jl)
         :dsgs_conserved   => true,  # Laplacian on the conserved variables (user_primitives.jl); implies no nodal-ρ scaling
         :dsgs_ref_weight  => true,  # ... of the RELATIVE departure (q − q_e)/ρ_e, coefficient μ·ρ_e (see top of file)

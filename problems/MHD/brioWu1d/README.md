@@ -51,12 +51,16 @@ writes those panels as separate files).
   ($\nabla\cdot\mathbf{B} = \partial_x B_x = 0$ holds exactly with $B_x$
   constant; its slot carries a zero flux).
 - **Stabilization: DynSGS** (`:visc_model => DSGS_MHD()`), with the 1D MHD
-  kernel `compute_dsgs_viscosity!(::DSGS_MHD, ::NSD_1D)` added to
-  `kernel/physics/SGS.jl` for this case: one kinematic $\nu$ per element from
-  the maximum over the equations of the normalized BDF2 residual (Dao &
-  Nazarov's eq. 4.8, $C_1 = C_R$), capped at $C_2\Delta(|u| + c_f)$ with the
-  fast magnetosonic speed ($C_2 = C_{max}$), and applied in the **conserved
-  form**, $\nabla\cdot(\nu\nabla q)$ on every slot (`user_primitives.jl`),
+  kernel added to `kernel/physics/SGS.jl` for this case, in its **nodal
+  form** (`:ldsgs_nodal => true`), which is Dao & Nazarov's own: at every node
+  the assembled lumped-mass BDF2 residual, normalized by their eq. 4.7 with
+  $C_l = 0.4$ (`:dsgs_Cl`), the maximum over the equations (eq. 4.8), and
+  $\nu_i = \min(C_{max}h_i\lambda_i, C_R h_i^2 R_i)$ with the fast
+  magnetosonic speed, $h_i = h_K/k$, $C_{max} = C_2 = 0.5$, $C_R = C_1 = 1$
+  (eq. 4.10); $\nu$ is a continuous field the element loop interpolates,
+  so the diffusive flux has no jump at element interfaces (the element form,
+  one $\nu$ per element, is `:ldsgs_nodal => false`). Applied in the
+  **conserved form**, $\nabla\cdot(\nu\nabla q)$ on every slot (`user_primitives.jl`),
   i.e. exactly conservative, with the magnetic and kinetic energy removed
   from $\mathbf{B}$ and $\rho\mathbf{v}$ accounted for in $E$. This is the
   form the residual method reduces to at its cap (a Lax–Friedrichs-type
@@ -87,6 +91,30 @@ writes those panels as separate files).
   the compound wave's peak is the one place where the two would differ
   visibly.
 
+## The ripples behind the compound wave, and the floor
+
+Without a background floor the density plateau between the fast
+rarefaction and the compound wave ($x = 0.42$–$0.46$ at $t = 0.1$) carries
+ripples of $\pm0.5\,\%$ with one wiggle per element. They are radiated by
+the compound wave — a slowly moving slow shock, the classical source of
+post-shock oscillations — into the plateau; they are present at
+$\mathbb{P}_3$ (200 elements, the paper's 600-DOF layout) and $\mathbb{P}_4$,
+and with the element and the nodal coefficient alike, so neither the order
+nor the continuity of $\nu$ is their cause. The residual viscosity cannot
+remove them: $\nu = C_R h^2 R$ and the residual of a ripple is its
+amplitude over $h$, so $\nu \sim C_R h\,\times$ amplitude, far below the
+first-order cap for a $0.5\,\%$ ripple. The case therefore runs with
+`:dsgs_C0 => 0.03`, a floor of 3 % of the first-order viscosity
+$C_{max}h(|u| + c_f)$: it damps an element-scale mode at a rate
+$\nu(\pi/h)^2 \approx 300$ per unit time and diffuses a resolved profile by
+$\sqrt{2\nu t} \approx 0.004$ over the run, less than one element; with
+0.01 a trace of the ripples remains, with 0.03 none (measured), at the
+price of a contact about one node wider. Dao & Nazarov's $\mathbb{P}_3$
+solution shows no ripples with no floor; their elements integrate the
+nonlinear flux exactly on uniform nodes, this code's collocated LGL flux
+does not, and that is the remaining difference between the two
+discretizations.
+
 ## Results
 
 Serial, 600 points, $\Delta t = 5\times10^{-5}$, 2000 steps: a few seconds
@@ -101,10 +129,10 @@ of time stepping. At $t = 0.1$ (`density-it5.png`; `fields-it5.png` with
   $\approx 0.82$; the contact and the slow shock are 2–3 nodes wide, the
   paper's zoom boxes show the same smearing for its $\mathbb{P}_3$ solution;
   $p$, $B_y$, $u$, $v$ follow the reference to plotting accuracy;
-- the DynSGS coefficient (last panel of `fields-it5.png`) is $\lesssim 3\times10^{-5}$
-  in the smooth regions, $1$–$2\times10^{-4}$ at the compound wave and the
-  contact and $1\times10^{-3}$ at the slow shock, a third of its cap
-  $C_2\Delta(|u| + c_f) \approx 3\times10^{-3}$.
+- the DynSGS coefficient (last panel of `fields-it5.png`) is at its floor,
+  $\approx 1\times10^{-4}$, in the smooth regions, $2$–$4\times10^{-4}$ at the
+  compound wave and the contact and $1\times10^{-3}$ at the slow shock, a
+  third of its cap $C_{max}h(|u| + c_f) \approx 3\times10^{-3}$.
 
 ## Files
 

@@ -324,14 +324,14 @@ state in `params_setup.jl`, so the first residual is identically zero rather
 than $3q/(2\Delta t)$. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` —
 `uaux` carries one extra trailing column beyond the `neqs` solution slots.
 
-### 4.5 Stratified atmospheres: `:dsgs_local_norms`, `:dsgs_conserved`, `:dsgs_ref_weight`, `:dsgs_nazarov_energy`, `:dsgs_nodal_rho`
+### 4.5 Stratified atmospheres: `:dsgs_norms => "element"`, `:dsgs_conserved`, `:dsgs_ref_weight`, `:dsgs_nazarov_energy`, `:dsgs_nodal_rho`
 
 Two opt-in variants of the MHD kernel, both `false` by default (the
 Orszag–Tang results below are unchanged), added for
 [`fluxEmergenceSon2025`](problems/MHD/fluxEmergenceSon2025/README.md), whose
 density spans eight decades between the photosphere and the corona:
 
-- **`:dsgs_local_norms => true`** normalizes the residual of equation $i$ in
+- **`:dsgs_norms => "element"`** normalizes the residual of equation $i$ in
   element $e$ by the spread of $q_i$ over that element,
   $\lVert q_i - \langle q_i\rangle_e\rVert_{\infty,e}$, floored at
   `:dsgs_local_rel` (default 1) times the *element-mean* scales of §4.2
@@ -447,14 +447,52 @@ form; the physical-form coefficients are available but the 1D loop carries no
 $\tau\cdot u$ or $\eta\mathbf{B}\cdot\nabla\mathbf{B}$ work terms, so
 only the conserved form conserves total energy in 1D.
 
-### 4.7 MPI
+### 4.7 Element or nodal coefficient: `:ldsgs_nodal`
+
+Every kernel above computes **one coefficient per element** (Marras's form):
+the maximum of the normalized residual over the element's nodes, applied
+as a constant over the element, so that $\nu$ is a staircase with a jump
+at every element interface. `:ldsgs_nodal => true` (default `false`, i.e.
+element form) selects instead the **nodal form**, which is Dao & Nazarov's
+(2022) formulation itself, for the 1D and 2D kernels, `DSGS` (θ and
+total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
+
+- the residual is the assembled lumped-mass nodal residual
+  $R_i = |\mathrm{BDF2}(q)_i - M_i^{-1}\,\mathrm{rhs}_i|$;
+- it is normalized by $n(w)_i = \bar S(w)\,(1 - C_l\,(\max_{I(i)} w - \min_{I(i)} w)/(\max w - \min w))$,
+  their eq. 4.7: $\bar S$ the global spread of §4.2 (with its floors), $I(i)$
+  the support of node $i$ (the elements containing it), `:dsgs_Cl` their
+  $C_l$ (0 = the classical $\bar S$, 0.4 in their runs), with the
+  $n^2/(n^2+\epsilon)$ guard of eq. 4.8;
+- $\nu_i = \min(C_{max}h_i\lambda_i,\ C_R h_i^2 R_i)$ at every node (eq. 4.10),
+  $h_i = \max h_K/k$ over the support, $C_{max} =$ `:dsgs_C2`, $C_R =$ `:dsgs_C1`,
+  floored at $C_0 h_i\lambda_i$;
+- the slot coefficients from $\nu_i$ exactly as in the element kernels, with
+  the **nodal** density in the dynamic coefficients;
+- $\nu$ is a continuous ($C^0$, DSS'd) field: the element loop gathers the
+  element's nodal values (`params.dsgs_μloc`, preallocated) and the viscous
+  expansion uses $\nu$ at each quadrature point, so the diffusive flux has
+  no jump at element interfaces. `μ_dsgs_pnode` holds the nodal field
+  itself and `μ_dsgs[ie,:]` its element means (for the staircase output).
+
+The whole path is allocation-free (`params.dsgs_qmin/qmax/nmin/nmax/hnod`
+are its scratch). The element form remains the default of every case;
+`brioWu1d` runs the nodal one. There is no 3D DynSGS kernel (the 3D viscous
+path dispatches the Smagorinsky/Vreman caches only), so the switch has no
+3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
+solution, and the element-scale ripples the compound wave radiates into
+the plateau behind it are damped by neither — the residual viscosity
+scales with their amplitude — and need the $C_0$ floor (3 % there, see the
+case README).
+
+### 4.8 MPI
 
 $\langle q_i\rangle$ and $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
 are **domain** norms by definition, so both reductions are `MPI.Allreduce`d. A
 rank-local version would make the eddy viscosity depend on the partitioning. The
 cost is two small collectives per RHS call.
 
-### 4.8 Measured effect
+### 4.9 Measured effect
 
 On the Orszag–Tang vortex at $128^2$, run to $t = 1$ (see
 `problems/MHD/orszagTangBormanis2024/README.md` for the full table):

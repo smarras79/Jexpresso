@@ -320,7 +320,7 @@ These are deck keys, not environment variables — there is no shell
 form. They are documented here because, like the variables above, what
 they change is a run's parallel cost rather than its physics.
 
-### `:ldsgs_global_norms`
+### `:dsgs_norms`
 
 Scope of the two normalising scales the DynSGS (`:visc_model =>
 DSGS()` / `DSGS_MHD()`) residual indicator divides by: the mean
@@ -357,8 +357,8 @@ the level of the usual round-off divergence.
     interesting structure lives on another rank).
 - **Example:**
   ```julia
-  :visc_model         => DSGS(),
-  :ldsgs_global_norms => true,   # paper's domain norms; costs 2-3 Allreduce/RHS
+  :visc_model => DSGS(),
+  :dsgs_norms => "domain",   # the papers' domain norms (default); "rank" skips the 2-3 Allreduce/RHS; "element" (DSGS_MHD) per element
   ```
 - **History:** the 2D total-energy and MHD implementations used to do
   these reductions unconditionally, and the 1D and Euler-θ ones never
@@ -395,4 +395,4 @@ the level of the usual round-off divergence.
 
 | Key                    | Type | Default | Purpose                                   |
 |------------------------|------|---------|-------------------------------------------|
-| `:ldsgs_global_norms`  | bool | `false` | DynSGS norms: rank-local vs domain-global |
+| `:dsgs_norms`          | str  | `"domain"` | DynSGS normalization scope: `"domain"` (MPI-global), `"rank"` (rank-local, no reductions), `"element"` |

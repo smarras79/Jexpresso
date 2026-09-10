@@ -1010,31 +1010,47 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     # These two quantities only set the SCALE the element residual is measured
     # against, and a partition of a connected domain resolves that scale as
-    # well as the whole domain does, so the default costs nothing and changes
-    # the solution only at round-off level. Set it true when μ has to be
-    # reproducible across rank counts (bit-for-bit regression tests), or when
-    # a rank's subdomain genuinely cannot see the solution's scale. Serial
-    # runs are unaffected either way. See kernel/physics/SGS.jl
-    # (_dsgs_norm_scope) and ENVIRONMENT_VARIABLES.md.
-    if(!haskey(inputs, :ldsgs_global_norms))
-        inputs[:ldsgs_global_norms] = false
+    # well as the whole domain does, so "rank" costs nothing and changes the
+    # solution only at round-off level; "domain" makes μ reproducible across
+    # rank counts and is what the papers write, at a few small reductions
+    # per RHS. Serial runs are unaffected either way. See
+    # kernel/physics/SGS.jl (_dsgs_norm_scope) and ENVIRONMENT_VARIABLES.md.
+    #
+    # ONE user-facing key sets that scope, :dsgs_norms:
+    #   "domain"  (default) the whole domain — the paper's definition; under
+    #             MPI the mean and spread are reduced across the ranks
+    #   "rank"    this rank's part of the domain only (no reductions; the
+    #             solution then depends on the partition at round-off level)
+    #   "element" the element itself (DSGS_MHD only; :dsgs_local_rel floors
+    #             the element spread) — strongly stratified atmospheres
+    # The two booleans the kernels read, :dsgs_local_norms and
+    # :ldsgs_global_norms, are derived from it here and are not inputs.
+    if haskey(inputs, :ldsgs_global_norms) || haskey(inputs, :dsgs_local_norms)
+        error(" user_inputs.jl: :ldsgs_global_norms and :dsgs_local_norms have been replaced by the single key :dsgs_norms => \"domain\" | \"rank\" | \"element\".")
     end
+    if(!haskey(inputs, :dsgs_norms))
+        inputs[:dsgs_norms] = "domain"
+    end
+    dsgs_norms = lowercase(string(inputs[:dsgs_norms]))
+    if !(dsgs_norms in ("domain", "rank", "element"))
+        error(" user_inputs.jl: :dsgs_norms must be \"domain\", \"rank\" or \"element\" (got $(inputs[:dsgs_norms])).")
+    end
+    inputs[:dsgs_norms]         = dsgs_norms
+    inputs[:ldsgs_global_norms] = (dsgs_norms == "domain")
+    inputs[:dsgs_local_norms]   = (dsgs_norms == "element")
 
     # DSGS_MHD variants for strongly stratified atmospheres (see
     # compute_dsgs_viscosity!(::DSGS_MHD) in kernel/physics/SGS.jl and
     # problems/MHD/fluxEmergenceSon2025). Both default to the original model.
-    #   :dsgs_local_norms  normalize each element's residual by the spread of
-    #                      the variable over that element instead of over
-    #                      the domain (otherwise the dense layers hide the
-    #                      corona from the sensor)
+    #   :dsgs_norms => "element" (above) normalizes each element's residual
+    #                      by the spread of the variable over that element
+    #                      instead of over the domain (otherwise the dense
+    #                      layers hide the corona from the sensor)
     #   :dsgs_nodal_rho    dynamic coefficient ρ·μ with the density of the
     #                      quadrature point instead of the element mean
     #                      (otherwise the light side of a stratified element
     #                      gets (ρ̄/ρ)·μ and breaks the viscous CFL)
-    if(!haskey(inputs, :dsgs_local_norms))
-        inputs[:dsgs_local_norms] = false
-    end
-    #   :dsgs_local_rel    with :dsgs_local_norms, the floor of the element
+    #   :dsgs_local_rel    with :dsgs_norms => "element", the floor of the element
     #                      spread as a fraction of the element's natural
     #                      scales (ρ, ρc, ρc², √ρ c); 1 = the residual is
     #                      measured against the local physical rate ρc/τ
@@ -1064,13 +1080,16 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_ref_weight))
         inputs[:dsgs_ref_weight] = false
     end
-    #   :dsgs_nodal        1D MHD kernel: the nodal (Dao & Nazarov 2022) form
-    #                      — ν at every node from the assembled residual, a
-    #                      continuous coefficient — instead of one ν per element
+    #   :ldsgs_nodal       DynSGS coefficient per NODE (Dao & Nazarov 2022:
+    #                      ν at every node from the assembled residual, a
+    #                      continuous field) instead of the default per
+    #                      ELEMENT (one ν per element, Marras's form). true
+    #                      implies the element form off. 1D and 2D kernels
+    #                      (DSGS and DSGS_MHD); there is no 3D DynSGS kernel.
     #   :dsgs_Cl           its local-jump normalization constant C_l (their eq.
     #                      4.7; 0 = classical global spread, the paper uses 0.4)
-    if(!haskey(inputs, :dsgs_nodal))
-        inputs[:dsgs_nodal] = false
+    if(!haskey(inputs, :ldsgs_nodal))
+        inputs[:ldsgs_nodal] = false
     end
     if(!haskey(inputs, :dsgs_Cl))
         inputs[:dsgs_Cl] = 0.0
