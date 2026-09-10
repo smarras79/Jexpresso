@@ -43,7 +43,7 @@ function user_inputs()
         :visc_model       => DSGS_MHD(),
         :dsgs_C1          => 1.0,
         :dsgs_C2          => 0.5,
-        :dsgs_C0          => 0.0,
+        :dsgs_C0          => 0.03,
         :dsgs_gamma       => 2.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,
@@ -52,7 +52,7 @@ function user_inputs()
         # the diffusive flux has no jump at element interfaces; the element
         # form (one ν per element) left one wiggle per element in the plateau
         # behind the compound wave. :dsgs_Cl is their C_l = 0.4 (eq. 4.7).
-        :dsgs_nodal       => true,
+#        :dsgs_nodal       => true,
         :dsgs_Cl          => 0.4,
         :dsgs_local_norms => false,   # the whole tube is the reference scale
         :ldsgs_global_norms => true,  # (only matters under MPI)
