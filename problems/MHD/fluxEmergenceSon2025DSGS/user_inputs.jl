@@ -45,11 +45,11 @@ function user_inputs()
         # lateral downflows 4-5 C_s (paper Sec. 4.1), i.e. |v| + c_f ≈ 10 C_s
         # and CFL ≈ 0.15. The paper's own Courant number is 0.23.
         :Δt                   => 7.5e-3,
-        :tinit                => 0.0,
+        :tinit                => 37.0,
         :tend                 => 54.0,  # paper Fig. 5 runs to t = 54 τ₀ (snapshots of Fig. 2 at t = 51 τ₀)
         :diagnostics_at_times => (0.0:1.0:54.0),
-        :restart_time         => 0.0,
-        :lrestart             => false,
+        :restart_time         => 37.0,
+        :lrestart             => true,
         :lsource              => true,   # gravity + GLM ψ damping + absorbing layer (user_source.jl)
         :SOL_VARS_TYPE        => TOTAL(),
         :ode_adaptive_solver  => false,
