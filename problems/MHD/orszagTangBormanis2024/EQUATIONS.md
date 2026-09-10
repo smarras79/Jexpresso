@@ -210,8 +210,13 @@ the standard Dedner-type formulation and is well-posed on its own.
 - **No entropy-stable / KEP flux differencing** (`:lkep => false`,
   `:entropy_variables => false`): the inviscid terms are the plain weak-form
   divergence of the pointwise fluxes above.
-- **Stabilization: Smagorinsky LES viscosity** (`:visc_model => SMAG()`),
-  with turbulent viscosity
+- **Stabilization: DynSGS** (`:visc_model => DSGS_MHD()`, DSGS.md §4): the
+  residual-based kinematic viscosity $\nu = \min(C_R\Delta^2 R, C_{max}\Delta\lambda_{max})$,
+  $R$ the maximum over the equations of the normalized residual (Dao &
+  Nazarov 2022, eq. 4.8), applied by equation as in their §4.4 — see the
+  table below, where $\mu_e$ now stands for $\rho\nu$. (The Smagorinsky
+  closure that was tried first, `:visc_model => SMAG()`, had the turbulent
+  viscosity
 
 $$
 \mu_t = \rho\, C_s^2\, \Delta^2\, |S|,
@@ -221,20 +226,19 @@ $$
 S_{ij} = \tfrac{1}{2}\left(\partial_j v_i + \partial_i v_j\right),
 $$
 
-  applied per equation through the per-equation multipliers
-  `:μ = [0, 8, 8, 8, 8, 8, 8, 8, 8]` (no mass diffusion):
+  and needed the multipliers `:μ = [0, 8, 8, …]` to survive the shocks.)
+  The per-equation multipliers are now `:μ = [1, 1, 1, 1, 1, 1, 1, 1, 1]`:
 
-  | equation | SGS term |
+  | equation | dissipative term (Dao & Nazarov 2022, eq. 4.4) |
   |---|---|
-  | $\rho u,\ \rho v$ | full deviatoric stress $\nabla\cdot\boldsymbol{\tau}$, $\ \boldsymbol{\tau} = 2\mu_e \mathbf{S} - \tfrac{2}{3}\mu_e (\nabla\cdot\mathbf{v})\mathbf{I}$ |
-  | $E$ | heat flux $\nabla\cdot(\kappa_e \nabla T)$ + viscous work $\nabla\cdot(\boldsymbol{\tau}\,\mathbf{v})$, $\ T = p/\rho$ |
-  | $\rho w$ | scalar diffusion $\nabla\cdot(\kappa_e \nabla w)$ |
-  | $B_x, B_y, B_z$ | scalar diffusion of each component — an effective **turbulent resistivity** |
-  | $\psi$ | scalar diffusion |
+  | $\rho$ | mass diffusion $\nabla\cdot(\nu\nabla\rho)$ |
+  | $\rho u,\ \rho v$ | full deviatoric stress $\nabla\cdot\boldsymbol{\tau}$, $\ \boldsymbol{\tau} = 2\mu_e \mathbf{S} - \tfrac{2}{3}\mu_e (\nabla\cdot\mathbf{v})\mathbf{I}$, $\mu_e = \rho\nu$ |
+  | $E$ | heat flux $\nabla\cdot(\kappa \nabla T)$, $\kappa = \rho\nu/\mathrm{Pr}$, $\mathrm{Pr} = 1$, $T = p/\rho$ + viscous work $\nabla\cdot(\boldsymbol{\tau}\,\mathbf{v})$ + resistive work $\nabla\cdot(\eta\,\mathbf{B}\cdot\nabla\mathbf{B})$, so that the kinetic and magnetic energy removed by the momentum and induction terms reappear as heat and $E$ is conserved |
+  | $\rho w$ | scalar diffusion $\nabla\cdot(\rho\nu \nabla w)$ |
+  | $B_x, B_y, B_z$ | $\nabla\cdot(\eta\nabla B_i)$, $\eta = \nu$ — an effective **resistivity** |
+  | $\psi$ | scalar diffusion $\nabla\cdot(\nu\nabla\psi)$ |
 
-  with $\mu_e = \mu_{mol} + \mu_t$ and the eddy diffusivities
-  $\kappa_e \sim \mu_t/(\rho\,\mathrm{Pr}_t)$ (energy) and
-  $\mu_t/(\rho\,\mathrm{Sc}_t)$ (scalars). No Richardson correction
+  No Richardson correction
   (`:lrichardson => false`; there is no gravity in this problem) and no
   spectral filter (`:lfilter => false`).
 

@@ -113,6 +113,9 @@ user_primitives_file = string(case_name_dir, "/user_primitives.jl")
 # overlays on its output (see problems/CompEuler/sod1d/user_analytic.jl).
 # Most cases have none, so this one is included only when present.
 user_analytic_file   = string(case_name_dir, "/user_analytic.jl")
+# OPTIONAL per-case file: a case-specific figure the 1D plotter renders
+# instead of its generic panels (see problems/MHD/brioWu1d/user_plot.jl).
+user_plot_file       = string(case_name_dir, "/user_plot.jl")
 
 # PERF: only (re-)include the driver + the case's user_*.jl files when
 # something actually changed since the last run in this session. Re-running
@@ -131,6 +134,7 @@ _case_load_files = [driver_file, user_input_file, user_flux_file,
                     user_source_file, user_bc_file, user_initialize_file,
                     user_primitives_file]
 isfile(user_analytic_file) && push!(_case_load_files, user_analytic_file)
+isfile(user_plot_file)     && push!(_case_load_files, user_plot_file)
 _need_case_reload = (_LOADED_CASE_DIR[] != case_name_dir) ||
     any(f -> get(_CASE_FILE_MTIMES, f, -1.0) != mtime(f), _case_load_files)
 if _need_case_reload
@@ -183,6 +187,7 @@ inputs[:_case_dir]            = case_name_dir
 # survives a switch to another 1D case, and a bare isdefined() would then
 # happily overlay Sod's exact solution on an unrelated problem.
 inputs[:_has_analytic]        = isfile(user_analytic_file)
+inputs[:_has_user_plot]       = isfile(user_plot_file)
 inputs[:_parsed_equations]    = parsed_equations
 inputs[:_parsed_case_name]    = parsed_equations_case_name
 inputs[:_user_input_file]     = user_input_file

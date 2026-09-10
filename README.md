@@ -393,6 +393,54 @@ finished run by `julia --project=. tools/plot_orszag_tang.jl`; see the
 
 
 
+## Magneto-Hydrodynamics (MHD), flux emergence in the solar atmosphere:
+
+The two-dimensional emergence of a horizontal magnetic flux sheet through a
+two-temperature (chromosphere + corona) stratified atmosphere — the nonlinear
+Parker instability of Shibata et al. (1989) — with the setup of Son, Jang &
+Magara, *ApJS* **277**:46 (2025): γ = 1.05, [0, 80 H₀] × [0, 35 H₀],
+t ∈ [0, 54 τ₀]. The problem is defined in
+[`problems/MHD/fluxEmergenceSon2025`](problems/MHD/fluxEmergenceSon2025)
+(see its `README.md` and `EQUATIONS.md`).
+
+```bash
+mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025
+```
+
+Stabilized with **DynSGS**, integrated with Carpenter–Kennedy 2N54 on the
+coarsest N = 4 grid the problem admits (80×35 elements). The solver writes PNGs
+styled after the paper's figures (log₁₀ density on the paper's `jet` scale
+with magnetic field lines and velocity vectors; centerline profiles of the
+rise velocity, Alfvén speed, field and density on the axes of its Fig. 5)
+directly, gathered on one rank under MPI.
+
+[`problems/MHD/brioWu1d`](problems/MHD/brioWu1d) is the 1D Brio–Wu MHD
+shock tube (Dao & Nazarov 2022, §5.2), the MHD counterpart of `CompEuler/sod1d`:
+DynSGS in its conserved form with the 1D MHD kernel, 600 LGL points, the
+reference solution overlaid at t = 0.2.
+
+```bash
+julia --project=. src/Jexpresso.jl MHD brioWu1d
+```
+
+[`problems/ShallowWater/SoliWaveIslandDSGS`](problems/ShallowWater/SoliWaveIslandDSGS)
+is the solitary wave on a conical island of Marras et al. (2018, §5.5)
+stabilized by DynSGS for the shallow-water system (`DSGS_SW()`) instead of the
+constant viscosity of `ShallowWater/SoliWaveIsland`.
+
+```bash
+julia --project=. src/Jexpresso.jl ShallowWater SoliWaveIslandDSGS
+```
+
+[`problems/MHD/fluxEmergenceSon2025DSGS`](problems/MHD/fluxEmergenceSon2025DSGS)
+is the same problem with **DynSGS alone** keeping the solution admissible:
+no positivity limiter, the dissipation acting on the relative departure from
+the magnetostatic reference state (`:dsgs_ref_weight`, DSGS.md §4.5).
+
+```bash
+mpiexec -n 10 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
+```
+
 ## Cloud simulation: shallow cumuli with BOMEX conditions:
 
 ```julia

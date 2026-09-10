@@ -47,7 +47,7 @@ function user_inputs()
         # Δt = 5e-7 is already ≈ 0.22 with :μ => 1.0. Scaling :μ up without
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
-        :Δt                   => 0.5e-7,
+        :Δt                   => 1.0e-7,
         :diagnostics_at_times => (0:5.0e-5:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
         # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
@@ -68,7 +68,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :energy_equation      => "energy",        # slot 4 is ρE — see note (1)
         :lvisc                => true,
+        # DynSGS sensor: "legacy" = the sensor this case was validated with
+        # (the assembled RHS against a fixed BDF2 of the stage state, in
+        # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
+        # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model           => DSGS(),          # residual-based shock capturing
+        :dsgs_sensor          => "legacy",
         # Per-equation multiplier on the DynSGS coefficient. The method is
         # parameter-free, so 1.0 is the paper's own setting; the ×4 on the
         # momentum and energy slots is this case's, and it is measured, not
@@ -109,7 +114,7 @@ function user_inputs()
         # the paper's domain norms — 2 Allreduce per RHS call, 10 per step
         # here — when μ has to be identical across rank counts. No effect on a
         # serial run. See ENVIRONMENT_VARIABLES.md.
-        # :ldsgs_global_norms   => true,
+        # :dsgs_norms => "domain",
         #---------------------------------------------------------------------------
         # Mesh
         #
@@ -120,7 +125,8 @@ function user_inputs()
         # setting ref = 2 in ffs_step_transfinite.geo.
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./meshes/gmsh_grids/ffs_step_transfinite.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/ffs_step_transfinite.msh",
+        :gmsh_filename        => "./problems/CompEuler/ffs_step/ffs_step_transfinite.msh",
         #---------------------------------------------------------------------------
         # Plotting
         #---------------------------------------------------------------------------

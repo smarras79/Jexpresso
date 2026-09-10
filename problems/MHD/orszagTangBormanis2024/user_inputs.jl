@@ -19,7 +19,7 @@ function user_inputs()
         # is deliberate — the vortex steepens into shocks by t ≈ 0.5 and the
         # local wave speeds grow. The reference simulation of the paper used
         # Δt = 8e-4 on its 128² finite-volume grid.
-        :Δt                   => 5.0e-4,
+        :Δt                   => 1.5e-4,
         :tinit                => 0.0,
         :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
         :diagnostics_at_times => (0.0:0.05:1.0),
@@ -54,18 +54,35 @@ function user_inputs()
         # the shocks, which over-damped everything else.
         #
         # :μ are per-equation multipliers on the DynSGS coefficient for
-        # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ): no mass diffusion, everything
-        # else at full strength. The B entries act as a turbulent
-        # resistivity. C1/C2 are Marras's residual and wave-speed-cap
-        # coefficients; dsgs_gamma must match γ_mhd in user_flux.jl.
+        # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ), all at full strength. The
+        # coefficients by equation are those of Dao & Nazarov (2022, JSC
+        # 92:77, §4.4), who apply the residual viscosity to these same
+        # equations with continuous elements: one kinematic ν from the max
+        # of the normalized residuals (their eq. 4.8; :dsgs_CR and :dsgs_Cmax
+        # are their C_R and C_max),
+        # then ν on ∇ρ (:μ[1] = 1, their eq. 4.4, the term that keeps ρ
+        # positive), the dynamic ρν in the momentum stress, κ = ρν/Pr on
+        # ∇T with T = p/ρ (:dsgs_nazarov_energy; the default is the
+        # Fourier-law c_p ρν/Pr, 2.5× larger at γ = 5/3), η = ν on B. Pr = 1
+        # as in their runs. dsgs_gamma must match γ_mhd in user_flux.jl.
+        # The VTK output carries one mu_dsgs_<slots> field per distinct
+        # coefficient; with Pr = 1 that is mu_dsgs_ρ_Bx_By_Bz_ψ (ν) and
+        # mu_dsgs_ρu_ρv_ρE_ρw (ρ̄ν = κ), a third field mu_dsgs_ρE (ρ̄ν/Pr)
+        # appearing for Pr ≠ 1.
         #---------------------------------------------------------------------------
         :lvisc            => true,
-        :μ                => [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        # DynSGS sensor: "legacy" = the sensor this case was validated with
+        # (the assembled RHS against a fixed BDF2 of the stage state, in
+        # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
+        # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model       => DSGS_MHD(),
-        :dsgs_C1          => 1.0,
-        :dsgs_C2          => 0.5,
+        :dsgs_sensor      => "legacy",
+        :dsgs_CR          => 1.0,
+        :dsgs_Cmax        => 0.5,
         :dsgs_gamma       => 5.0/3.0,
-        :dsgs_Prt         => 0.7,
+        :dsgs_Prt         => 1.0,
+        :dsgs_nazarov_energy => true,
         :lrichardson      => false,      # no gravity/stratification in this problem
         # Slot 4 carries the TOTAL ENERGY ρE: "energy" keeps the kernel's τ·u
         # viscous-work augmentation of the energy equation active.
@@ -105,7 +122,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "vtk",   # ParaView: the output variables plus the DynSGS coefficient fields
         :loverwrite_output   => false,
         :lwrite_initial      => true,
         :output_dir          => "./output/",
@@ -113,7 +130,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # AMR (off)
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
+        :linitial_refine     => true,
+        :init_refine_lvl     => 2,
         :ladapt              => false,
         #---------------------------------------------------------------------------
     ) #Dict

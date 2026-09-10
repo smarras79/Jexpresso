@@ -109,7 +109,10 @@ function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
         dims2 = (Int64(ngl), Int64(neqs+1)) 
     elseif SD == NSD_2D()
         dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
-        dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+1)) 
+        # neqs+1: pressure / the DynSGS-MHD reference weight; neqs+2: the
+        # thermal part of the energy primitive of a split-energy DynSGS-MHD
+        # case (kernel/physics/SGS.jl, dsgs_split_energy)
+        dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+2)) 
     elseif SD == NSD_3D()
         dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
         dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs+1)) 
