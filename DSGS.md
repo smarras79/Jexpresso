@@ -615,7 +615,9 @@ $|\mathbf v| + \sqrt{gH}$, the velocity desingularized as $Hu/\max(H, h_{min})$
 kinematic $\nu$ on the three slots, applied on $(H - H_e, Hu, Hv)$ as the
 sibling's constant viscosity is. Selected with `:visc_model => DSGS_SW()`;
 [`problems/ShallowWater/SoliWaveIslandDSGS`](problems/ShallowWater/SoliWaveIslandDSGS/README.md)
-is `SoliWaveIsland` with it in place of `AV()`.
+is `SoliWaveIsland` with it in place of `AV()`;
+[`problems/ShallowWater/SW_DSGS.md`](problems/ShallowWater/SW_DSGS.md) describes
+the kernel on its own.
 
 ## 5. Code map, inputs and output
 

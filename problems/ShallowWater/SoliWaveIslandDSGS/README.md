@@ -17,6 +17,9 @@ julia --project=. src/Jexpresso.jl ShallowWater SoliWaveIslandDSGS
 
 ## The coefficient
 
+A self-contained description of the shallow-water kernel, equation by
+equation, is in [`../SW_DSGS.md`](../SW_DSGS.md).
+
 With $\mathbf q = (H, Hu, Hv)$ and $\mathbf q_e = (H_e, 0, 0)$ the lake at
 rest of `initialize.jl`, per element $K$ ($\Delta = \Delta_K/(k+1)$, the
 element form; the nodal form of `:ldsgs_nodal` puts the same $\nu$ at every
