@@ -76,10 +76,10 @@ Properties:
   ($\rho_e \approx 10^{-8}$ in the corona against $10^{-5}$ inside the
   emerged loop) the operator is the conserved-variable Laplacian
   $\nabla\cdot(\mu\nabla q)$ with the same residual-based $\mu$, same
-  $C_1$, $C_2$, $C_0$ and local norms as the sibling.
+  $C_R$, $C_{max}$, $C_{min}$ and local norms as the sibling.
 
 The coefficient $\mu$ itself is the sibling's — residual sensor, wave-speed
-cap $C_2\Delta(\lVert\mathbf{v}\rVert + c_f)$, background floor $C_0$ —
+cap $C_{max}\Delta(\lVert\mathbf{v}\rVert + c_f)$, background floor $C_{min}$ —
 untouched. No state-dependent trigger, no positivity sensor, no extra term
 of any kind was added to it.
 
@@ -97,7 +97,7 @@ resistivity $\eta = \nu$ on $\mathbf{B}$. This case follows that
 
 | equation | Dao & Nazarov (uniform background) | here (stratified background $q_e$) | why it differs |
 |---|---|---|---|
-| mass | $\nu\nabla\rho$ | $\nu\rho_e\nabla(\delta\rho/\rho_e)$, $\delta\rho = \rho - \rho_e$; $= \nu\nabla\delta\rho$ to leading order | $\nu\nabla^2\rho_e = \nu\rho_e/H^2 \neq 0$: on $\rho$ itself the term is a steady mass source in an exponential atmosphere (0.75 % of the chromospheric mass per $\tau_0$ from the $C_0$ floor alone; the sheet sank at $0.3\,C_s$ when the sensor fed on it). The $\rho_e$ weight is the positivity fix at the 25× reference jump (previous section). |
+| mass | $\nu\nabla\rho$ | $\nu\rho_e\nabla(\delta\rho/\rho_e)$, $\delta\rho = \rho - \rho_e$; $= \nu\nabla\delta\rho$ to leading order | $\nu\nabla^2\rho_e = \nu\rho_e/H^2 \neq 0$: on $\rho$ itself the term is a steady mass source in an exponential atmosphere (0.75 % of the chromospheric mass per $\tau_0$ from the $C_{min}$ floor alone; the sheet sank at $0.3\,C_s$ when the sensor fed on it). The $\rho_e$ weight is the positivity fix at the 25× reference jump (previous section). |
 | momentum | $\rho\nu(\nabla\mathbf{u} + \nabla\mathbf{u}^T)$ | the kernel's deviatoric stress $\tau$ with coefficient $\nu\rho_e$ on $\delta(\rho\mathbf{v})/\rho_e$; $= \rho\nu\nabla\mathbf{v}$ to leading order | same term ($\rho\mathbf{v}_e = 0$), written on the conserved variable |
 | energy | $\kappa\nabla T$, $\kappa = \rho\nu/\mathrm{Pr}$, $T = p/\rho$, plus $\mathbf{u}\cdot\tau$ and the magnetic work | split: $\nu\rho_e\nabla(\delta E_{nth}/\rho_e)$ on the kinetic + magnetic part, $\max(\tfrac{\gamma(\gamma-1)}{\mathrm{Pr}}\nu_{res}, \nu_{floor})\,\rho_e\nabla(\delta E_{th}/\rho_e)$ on the thermal part $E_{th} = p/(\gamma-1)$: the same $\kappa$ on the conduction, the viscous and magnetic work carried by the non-thermal Laplacian at the same $\nu$ as the $\rho\mathbf{v}$ and $\mathbf{B}$ slots | $T_e$ jumps 25× at $z_{cor}$, $E_e$ does not (isobaric contact): $\kappa\nabla T$ conducts across the jump at rest (measured: the transition region smeared, a $0.7\,C_s$ pulse), $\kappa\nabla(T - T_e)$ heats loop gas crossing the fixed height $z_{cor}$ at $\sim 100\,\%$ of its internal energy per $\tau_0$; $\nabla\delta E$ sees neither. Only the size of the conduction is kept. |
 | induction | $\eta\,\nabla\cdot(\nabla\mathbf{B} - \nabla\mathbf{B}^T)$, $\eta = \nu$ | $\nu\nabla^2\delta\mathbf{B}$ | differs by $\eta\nabla(\nabla\cdot\mathbf{B})$, zero for a solenoidal field; $\delta\mathbf{B}$ so that the sheet field is not eroded at rest |
@@ -118,14 +118,14 @@ $\nabla\cdot(\nu\mathbf{B}\cdot\nabla\mathbf{B})$ and the kinetic analogue,
 exactly the conservative energy fluxes of the $\nu\nabla\mathbf{B}$ and
 $\nu\nabla(\rho\mathbf{v})$ Laplacians; scaling the whole slot by 0.0525 —
 the first implementation — let the field spread while its energy stayed
-put, and cut the $C_0$ floor that damps the node-to-node mode on $E$. The
+put, and cut the $C_{min}$ floor that damps the node-to-node mode on $E$. The
 sheet core overheated, a temperature sawtooth grew across the corona by
 $t = 10\tau_0$ (measured) and the emergence stalled; with the slot back at
 $\nu$ the validated emergence returned. Two departures
 from their form are deliberate. The operators act on the departure from the
 magnetostatic reference state (relative, see above), because on $q$ itself
 the Laplacian of an exponential atmosphere is a steady mass source and the
-$C_0$ floor alone would move 0.75 % of the chromospheric mass per $\tau_0$.
+$C_{min}$ floor alone would move 0.75 % of the chromospheric mass per $\tau_0$.
 And the energy is diffused as total energy, not as $\kappa\nabla T$: the
 reference state has a 25× temperature jump at $z_{cor}$ but no jump in $E$
 (the contact is isobaric), so $\kappa\nabla T$ conducts across it at rest,
@@ -196,7 +196,7 @@ lateral downflows at $t = 51$ are weaker than the sibling's ($3$ against
 $5\,C_s$; the paper has $4$–$5$).
 
 **The coefficient.** `log10_μ_dsgs_ρ-it<n>.png` shows where the run's only
-dissipation acts. At rest it is the $C_0$ floor, $0.03\Delta c_f$:
+dissipation acts. At rest it is the $C_{min}$ floor, $0.03\Delta c_f$:
 $10^{-1.4} = 0.037$ in the corona, $10^{-2.1} = 0.008$ in the chromosphere,
 slightly more in the sheet. The residual sensor lifts it above the floor
 in three places only: the transition-region band $z = 17$–$19H_0$ under
@@ -204,7 +204,7 @@ the perturbation ($0.05$–$0.12$ at $t = 10$, up to $0.3$ at $t = 33$ where
 the contact is displaced), the coronal fall-back region above it at
 $t = 15$ ($0.1$, $z = 18$–$27H_0$), and the absorbing layer. Inside the
 rising sheet and loop it stays at $0.01$–$0.03$, and the wave-speed cap
-($C_2\Delta c_f \approx 0.6$ in the corona) is never reached before the
+($C_{max}\Delta c_f \approx 0.6$ in the corona) is never reached before the
 emergence. Two consequences worth knowing: the coronal smoothing seen in
 the $\beta$ maps (blurred edges of the low-$\beta$ region above $z = 18H_0$)
 is the floor, which alone spreads a structure by $\sqrt{2\mu t} \approx 1.6H_0$

@@ -155,7 +155,7 @@ startup).
   from a finite-volume Riemann solver; a collocated CG scheme has none, and
   the Orszag–Tang shocks need explicit regularization. One kinematic $\nu$
   comes from the maximum of the normalized residuals of all equations
-  (their eq. 4.8), capped at $C_2\Delta\lambda_{max}$; then, by equation
+  (their eq. 4.8), capped at $C_{max}\Delta\lambda_{max}$; then, by equation
   (their §4.4): $\nu\nabla\rho$ on the mass (`:μ[1] = 1`, the term that keeps
   $\rho$ positive), the full deviatoric stress with the dynamic $\rho\nu$ on
   the momentum, $\kappa\nabla T$ with $\kappa = \rho\nu/\mathrm{Pr}$,

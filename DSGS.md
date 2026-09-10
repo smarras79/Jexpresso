@@ -65,15 +65,15 @@ Per element $e$:
 
 $$
 \boxed{\;
-\mu_{res}\big|_e = C_1\,\Delta_e^2\,
+\mu_{res}\big|_e = C_R\,\Delta_e^2\,
 \max_i \frac{\lVert R_i\rVert_{\infty,e}}{\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}},
 \qquad
-\mu_{max}\big|_e = C_2\,\Delta_e\,\big(\lVert\mathbf{v}\rVert + c\big)_{\infty,e},
+\mu_{max}\big|_e = C_{max}\,\Delta_e\,\big(\lVert\mathbf{v}\rVert + c\big)_{\infty,e},
 \qquad
 \mu\big|_e = \max\!\big(0,\ \min(\mu_{max},\ \mu_{res})\big)\;}
 $$
 
-with $C_1 \approx 1$, $C_2 \approx 0.5$, and $\Delta_e$ the element length scale
+with $C_R \approx 1$, $C_{max} \approx 0.5$ (Dao & Nazarov's names, kept throughout), and $\Delta_e$ the element length scale
 divided by the polynomial count, $\Delta_e = \Delta_{elem}/(N+1)$.
 
 The three ingredients:
@@ -86,7 +86,7 @@ The three ingredients:
 
 - **Units.** $R_i/\lVert\cdot\rVert$ has units $1/T$ and $\Delta^2$ has units
   $L^2$, so $\mu$ comes out as $L^2/T$ — a **kinematic** viscosity. The
-  wave-speed cap $C_2\Delta(\lVert v\rVert+c)$ is $L \cdot L/T$, the same.
+  wave-speed cap $C_{max}\Delta(\lVert v\rVert+c)$ is $L \cdot L/T$, the same.
   Whether the applied coefficient must be multiplied by $\rho$ depends on which
   primitive variable the diffusion operator acts on — see §4.3.
 
@@ -138,7 +138,7 @@ case file without touching the kernel.
 
 **State.** $\mathbf{q} = (\rho,\ \rho u,\ \rho E)$, `neqs = 3`, total-energy form.
 
-**Coefficients.** $C_1 = 1$, $C_2 = 0.5$, $\gamma = 1.4$ (hardcoded in the
+**Coefficients.** $C_R = 1$, $C_{max} = 0.5$, $\gamma = 1.4$ (hardcoded in the
 function).
 
 **Element scale.** $\Delta = \Delta x_e/n_{gl}$, from `mesh.Δx`.
@@ -229,7 +229,7 @@ the residual set, the equation of state and the wave speed all differ from the
 for the equation set.
 
 **Coefficients.** From `inputs`, defaulted in `mod_inputs.jl`:
-`:dsgs_C1` (1.0), `:dsgs_C2` (0.5), `:dsgs_gamma` (5/3), `:dsgs_Prt` (0.7).
+`:dsgs_CR` (1.0), `:dsgs_Cmax` (0.5), `:dsgs_gamma` (5/3), `:dsgs_Prt` (0.7).
 $\gamma$ is a case input rather than `PhysConst.γ` because the latter is air's
 1.4, not the monatomic plasma's 5/3.
 
@@ -367,12 +367,12 @@ density spans eight decades between the photosphere and the corona:
   sinking at $0.3\,C_s$ by $t = 8\tau_0$, measured), on $q - q_e$ the operator
   vanishes at rest and reduces to the plain conserved-variable Laplacian
   wherever the state has left the reference.
-- **`:dsgs_C0`** (default 0) floors the coefficient at $C_0\Delta(\lVert\mathbf{v}\rVert + c_f)$,
-  a fraction of the $C_2$ cap. The residual cannot see a node-to-node mode
+- **`:dsgs_Cmin`** (default 0) floors the coefficient at $C_{min}\Delta(\lVert\mathbf{v}\rVert + c_f)$,
+  a fraction of the $C_{max}$ cap (not in Dao & Nazarov). The residual cannot see a node-to-node mode
   (the discrete operator returns nearly nothing on it), and the CG
   discretization leaves such a mode undamped; the flux-emergence case uses
-  $C_0 = 0.03$, which damps it at a rate $C_0\Delta c(\pi/\Delta)^2 \approx 7/\tau_0$ in
-  its corona while spreading a resolved structure by $\sqrt{C_0\Delta c\,t} \approx 1H_0$
+  $C_{min} = 0.03$, which damps it at a rate $C_{min}\Delta c(\pi/\Delta)^2 \approx 7/\tau_0$ in
+  its corona while spreading a resolved structure by $\sqrt{C_{min}\Delta c\,t} \approx 1H_0$
   over the whole run.
 - **`:dsgs_ref_weight => true`** (with `:dsgs_conserved`) diffuses the fluid
   slots as the *relative* departure from the reference state with the
@@ -411,7 +411,7 @@ density spans eight decades between the photosphere and the corona:
   $\rho\mathbf{v}$ Laplacians, and the spare slot `neqs+2` the thermal part
   $\delta(p/(\gamma-1))$, diffused with $\max(\gamma(\gamma-1)/\mathrm{Pr}_t\cdot\nu_{res},\ \nu_{floor})$
   — Nazarov's $\kappa = \rho\nu/\mathrm{Pr}$ on the residual viscosity with
-  the $C_0$ floor of §4.5 kept in full (`dsgs_split_energy` in SGS.jl,
+  the $C_{min}$ floor of §4.5 kept in full (`dsgs_split_energy` in SGS.jl,
   `_expansion_visc!` in rhs.jl). Scaling the whole energy slot instead —
   the first implementation — let $\nu\nabla\mathbf{B}$ spread the flux
   sheet's field while 95 % of its magnetic energy stayed put, and cut the
@@ -465,8 +465,8 @@ total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
   $C_l$ (0 = the classical $\bar S$, 0.4 in their runs), with the
   $n^2/(n^2+\epsilon)$ guard of eq. 4.8;
 - $\nu_i = \min(C_{max}h_i\lambda_i,\ C_R h_i^2 R_i)$ at every node (eq. 4.10),
-  $h_i = \max h_K/k$ over the support, $C_{max} =$ `:dsgs_C2`, $C_R =$ `:dsgs_C1`,
-  floored at $C_0 h_i\lambda_i$;
+  $h_i = \max h_K/k$ over the support, $C_{max} =$ `:dsgs_Cmax`, $C_R =$ `:dsgs_CR`,
+  floored at $C_{min} h_i\lambda_i$;
 - the slot coefficients from $\nu_i$ exactly as in the element kernels, with
   the **nodal** density in the dynamic coefficients;
 - $\nu$ is a continuous ($C^0$, DSS'd) field: the element loop gathers the
@@ -478,12 +478,12 @@ total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
 The whole path is allocation-free (`params.dsgs_qmin/qmax/nmin/nmax/hnod`
 are its scratch). The element form remains the default of every case,
 `brioWu1d` included (its deck carries the nodal switch commented out; with
-the $C_0$ floor both forms give the same profile). There is no 3D DynSGS kernel (the 3D viscous
+the $C_{min}$ floor both forms give the same profile). There is no 3D DynSGS kernel (the 3D viscous
 path dispatches the Smagorinsky/Vreman caches only), so the switch has no
 3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
 solution, and the element-scale ripples the compound wave radiates into
 the plateau behind it are damped by neither — the residual viscosity
-scales with their amplitude — and need the $C_0$ floor (3 % there, see the
+scales with their amplitude — and need the $C_{min}$ floor (3 % there, see the
 case README).
 
 ### 4.8 MPI
@@ -524,7 +524,7 @@ should look like.
 | `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-MHD), `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
 | `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
-| `src/io/mod_inputs.jl` | `:dsgs_C1`, `:dsgs_C2`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
+| `src/io/mod_inputs.jl` | `:dsgs_CR`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
 | `src/io/write_output.jl` | the `mu_dsgs_*` VTK fields |
 | `tools/plot_orszag_tang.jl` | off-line figures from a finished MHD run, including the viscosity map |
 | `tools/vtu_reader.jl` | the minimal `.pvtu`/`.vtu` reader that script uses |
@@ -536,8 +536,8 @@ should look like.
 :visc_model => DSGS(),        # 1D CompEuler / 2D CompEuler θ
 :visc_model => DSGS_MHD(),    # 2D ideal GLM-MHD
 :μ          => [0.0, 1.0, …], # per-equation multipliers, length neqs
-:dsgs_C1    => 1.0,           # DSGS_MHD only
-:dsgs_C2    => 0.5,
+:dsgs_CR    => 1.0,           # DSGS_MHD only
+:dsgs_Cmax    => 0.5,
 :dsgs_gamma => 5.0/3.0,
 :dsgs_Prt   => 0.7,
 ```
@@ -590,7 +590,7 @@ reasoning matters if the model is revisited.
    comment was written while defect 4 was also present: with a stage-cadenced
    history the BDF2 term is not a time derivative at all, so removing $M^{-1}$
    was compensating for a broken numerator. Had it still under-stabilized, the
-   fix would have been to raise $C_1$, not to restore wrong units.
+   fix would have been to raise $C_R$, not to restore wrong units.
 
 2. **The 2D θ-path had its momentum slots zeroed** by a leftover diagnostic
    (`# DIAG: momentum DSGS forced to zero …`), so only $\rho\theta$ was
@@ -646,7 +646,7 @@ All three cases run to completion with the fixes in place:
 The corrected model is **active and residual-governed**, not switched off — the
 worry attached to defect 1. Measured DynSGS coefficients:
 
-| case | $\mu$ range | vs. the $C_2\Delta(\lVert v\rVert+c)$ cap |
+| case | $\mu$ range | vs. the $C_{max}\Delta(\lVert v\rVert+c)$ cap |
 |---|---|---|
 | MHD, $t=0.55$ | mean 1.6e-4, max 9.9e-4 (kinematic) | ≈ 10% of cap |
 | `theta_dsgs`, $t=1000$ | mean 74, max 321 (dynamic $\bar\rho\mu$) | ≈ 10% of cap |

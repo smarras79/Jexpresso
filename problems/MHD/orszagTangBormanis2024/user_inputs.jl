@@ -58,8 +58,8 @@ function user_inputs()
         # coefficients by equation are those of Dao & Nazarov (2022, JSC
         # 92:77, §4.4), who apply the residual viscosity to these same
         # equations with continuous elements: one kinematic ν from the max
-        # of the normalized residuals (their eq. 4.8; C1/C2 are Marras's
-        # residual and wave-speed-cap coefficients, C_R and C_max there),
+        # of the normalized residuals (their eq. 4.8; :dsgs_CR and :dsgs_Cmax
+        # are their C_R and C_max),
         # then ν on ∇ρ (:μ[1] = 1, their eq. 4.4, the term that keeps ρ
         # positive), the dynamic ρν in the momentum stress, κ = ρν/Pr on
         # ∇T with T = p/ρ (:dsgs_nazarov_energy; the default is the
@@ -73,8 +73,8 @@ function user_inputs()
         :lvisc            => true,
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
-        :dsgs_C1          => 1.0,
-        :dsgs_C2          => 0.5,
+        :dsgs_CR          => 1.0,
+        :dsgs_Cmax        => 0.5,
         :dsgs_gamma       => 5.0/3.0,
         :dsgs_Prt         => 1.0,
         :dsgs_nazarov_energy => true,

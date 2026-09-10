@@ -980,19 +980,27 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     #
-    # Marras-Nazarov DynSGS (visc_model = DSGS_MHD()) parameters.
-    #   :dsgs_C1    coefficient of the residual viscosity  C1·Δ²·‖R‖/‖q−⟨q⟩‖
-    #   :dsgs_C2    coefficient of the wave-speed cap      C2·Δ·(|v|+c_f)
+    # Marras-Nazarov DynSGS (visc_model = DSGS_MHD()) parameters, named as
+    # in Dao & Nazarov (2022):
+    #   :dsgs_CR    C_R,   coefficient of the residual viscosity C_R·Δ²·‖R‖/‖q−⟨q⟩‖
+    #               (their eq. 4.10, typical range [0.1, 1], paper 1)
+    #   :dsgs_Cmax  C_max, coefficient of the first-order viscosity C_max·Δ·(|v|+c_f)
+    #               (their §4.2, typical range [0.15, 0.5], paper 0.5)
     #   :dsgs_gamma ratio of specific heats used by the MHD EOS and the fast
     #               magnetosonic speed (5/3 for the monatomic plasma cases;
     #               deliberately NOT PhysConst.γ, which is air's 1.4)
     #   :dsgs_Prt   turbulent Prandtl number for the energy slot
     #
-    if(!haskey(inputs, :dsgs_C1))
-        inputs[:dsgs_C1] = 1.0
+    for (old, new) in ((:dsgs_C1, :dsgs_CR), (:dsgs_C2, :dsgs_Cmax), (:dsgs_C0, :dsgs_Cmin))
+        if haskey(inputs, old)
+            error(" user_inputs.jl: $(old) has been renamed $(new) (Dao & Nazarov's C_R, C_max; C_min is the background floor).")
+        end
     end
-    if(!haskey(inputs, :dsgs_C2))
-        inputs[:dsgs_C2] = 0.5
+    if(!haskey(inputs, :dsgs_CR))
+        inputs[:dsgs_CR] = 1.0
+    end
+    if(!haskey(inputs, :dsgs_Cmax))
+        inputs[:dsgs_Cmax] = 0.5
     end
     if(!haskey(inputs, :dsgs_gamma))
         inputs[:dsgs_gamma] = 5.0/3.0
@@ -1067,11 +1075,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_conserved))
         inputs[:dsgs_conserved] = false
     end
-    #   :dsgs_C0           background floor C0·Δ·(|v|+c_f) on the coefficient
-    #                      (a fraction of the :dsgs_C2 cap) for the
+    #   :dsgs_Cmin         C_min, background floor C_min·Δ·(|v|+c_f) on the
+    #                      coefficient (a fraction of the C_max first-order
+    #                      viscosity; not in Dao & Nazarov) for the
     #                      node-to-node modes the residual cannot sense
-    if(!haskey(inputs, :dsgs_C0))
-        inputs[:dsgs_C0] = 0.0
+    if(!haskey(inputs, :dsgs_Cmin))
+        inputs[:dsgs_Cmin] = 0.0
     end
     #   :dsgs_ref_weight   with :dsgs_conserved, slots 1-5 diffuse the
     #                      relative departure (q − q_e)/w with coefficient

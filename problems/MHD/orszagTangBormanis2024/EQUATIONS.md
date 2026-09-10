@@ -211,7 +211,7 @@ the standard Dedner-type formulation and is well-posed on its own.
   `:entropy_variables => false`): the inviscid terms are the plain weak-form
   divergence of the pointwise fluxes above.
 - **Stabilization: DynSGS** (`:visc_model => DSGS_MHD()`, DSGS.md §4): the
-  residual-based kinematic viscosity $\nu = \min(C_1\Delta^2 R, C_2\Delta\lambda_{max})$,
+  residual-based kinematic viscosity $\nu = \min(C_R\Delta^2 R, C_{max}\Delta\lambda_{max})$,
   $R$ the maximum over the equations of the normalized residual (Dao &
   Nazarov 2022, eq. 4.8), applied by equation as in their §4.4 — see the
   table below, where $\mu_e$ now stands for $\rho\nu$. (The Smagorinsky

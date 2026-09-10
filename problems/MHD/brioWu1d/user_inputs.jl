@@ -32,8 +32,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # DynSGS-MHD, conserved form: one residual-based kinematic ν per
         # element (max over the equations of the normalized residual, Dao &
-        # Nazarov eq. 4.8; C1 = their C_R, C2 = C_max), capped at
-        # C2·Δ·(|u| + c_f), applied as ∇·(ν∇q) to every conserved variable
+        # Nazarov eq. 4.8; :dsgs_CR, :dsgs_Cmax are their C_R, C_max), capped at
+        # C_max·Δ·(|u| + c_f), applied as ∇·(ν∇q) to every conserved variable
         # (user_primitives.jl). :μ are the per-slot multipliers for
         # (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz); :dsgs_gamma must equal γ_mhd = 2
         # of user_flux.jl.
@@ -41,9 +41,10 @@ function user_inputs()
         :lvisc            => true,
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
-        :dsgs_C1          => 1.0,
-        :dsgs_C2          => 0.5,
-        # Background floor, 3 % of the first-order viscosity C2·h·(|u|+c_f).
+        :dsgs_CR          => 1.0,
+        :dsgs_Cmax        => 0.5,
+        # Background floor C_min (not in the paper), 3 % of the first-order
+        # viscosity C_max·h·(|u|+c_f).
         # The residual viscosity is C_R h² R: it scales with the amplitude
         # of what it sees, so the element-scale ripples that the slowly
         # moving compound wave radiates into the plateau behind it (±0.5 %
@@ -54,7 +55,7 @@ function user_inputs()
         # leaves a trace of them, 0.03 none (measured). Dao & Nazarov's P3
         # elements with exact quadrature do not show these ripples; the
         # collocated LGL flux of this code is the remaining difference.
-        :dsgs_C0          => 0.03,
+        :dsgs_Cmin        => 0.03,
         :dsgs_gamma       => 2.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,
@@ -63,7 +64,7 @@ function user_inputs()
         # the diffusive flux has no jump at element interfaces; the element
         # form (one ν per element) left one wiggle per element in the plateau
         # behind the compound wave. :dsgs_Cl is their C_l = 0.4 (eq. 4.7).
-        # With the C0 floor both forms give the same clean profile; the
+        # With the C_min floor both forms give the same clean profile; the
         # element form (the default) is kept here.
 #       :ldsgs_nodal      => true,    # false (the default) = one ν per element
         :dsgs_Cl          => 0.4,

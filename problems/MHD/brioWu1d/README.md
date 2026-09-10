@@ -54,11 +54,11 @@ writes those panels as separate files).
   kernel added to `kernel/physics/SGS.jl` for this case. The deck runs the
   default **element form** (one $\nu$ per element); the **nodal form**
   (`:ldsgs_nodal => true`) is Dao & Nazarov's own and gives the same profile
-  once the $C_0$ floor is on (see below): at every node
+  once the $C_{min}$ floor is on (see below): at every node
   the assembled lumped-mass BDF2 residual, normalized by their eq. 4.7 with
   $C_l = 0.4$ (`:dsgs_Cl`), the maximum over the equations (eq. 4.8), and
   $\nu_i = \min(C_{max}h_i\lambda_i, C_R h_i^2 R_i)$ with the fast
-  magnetosonic speed, $h_i = h_K/k$, $C_{max} = C_2 = 0.5$, $C_R = C_1 = 1$
+  magnetosonic speed, $h_i = h_K/k$, $C_{max} = 0.5$ (`:dsgs_Cmax`), $C_R = 1$ (`:dsgs_CR`)
   (eq. 4.10); $\nu$ is a continuous field the element loop interpolates,
   so the diffusive flux has no jump at element interfaces. Applied in the
   **conserved form**, $\nabla\cdot(\nu\nabla q)$ on every slot (`user_primitives.jl`),
@@ -105,7 +105,7 @@ nor the continuity of $\nu$ is their cause. The residual viscosity cannot
 remove them: $\nu = C_R h^2 R$ and the residual of a ripple is its
 amplitude over $h$, so $\nu \sim C_R h\,\times$ amplitude, far below the
 first-order cap for a $0.5\,\%$ ripple. The case therefore runs with
-`:dsgs_C0 => 0.03`, a floor of 3 % of the first-order viscosity
+`:dsgs_Cmin => 0.03`, a floor of 3 % of the first-order viscosity
 $C_{max}h(|u| + c_f)$: it damps an element-scale mode at a rate
 $\nu(\pi/h)^2 \approx 300$ per unit time and diffuses a resolved profile by
 $\sqrt{2\nu t} \approx 0.004$ over the run, less than one element; with

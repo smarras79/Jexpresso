@@ -244,7 +244,7 @@ the loop.
   the emerged loop $p$ is a 2 % residue of the total energy.
   `initialize.jl` prints the smallest initial pressure; if a run reports
   `p` at the floor of `user_flux.jl` ($10^{-9}$) in the loop, the
-  regularization is too weak there — raise `:dsgs_C1`, or `:μ[4]`.
+  regularization is too weak there — raise `:dsgs_CR`, or `:μ[4]`.
 - **Constants shared by name** (`γ_mhd`, `c_h_mhd`, …) with the other MHD
   cases: `user_flux.jl` refuses to run if a γ = 5/3 case was loaded earlier
   in the same Julia session. Restart Julia.

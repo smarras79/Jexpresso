@@ -422,8 +422,8 @@ end
 # artificial viscosity, parameter free.
 #
 # Per-element coefficient:
-#     μ_res = C1 · Δ² · max_i ‖R_i‖∞,Ω / ‖q_i − ⟨q_i⟩‖∞,Ω
-#     μ_max = C2 · Δ · max(|u| + c)
+#     μ_res = CR · Δ² · max_i ‖R_i‖∞,Ω / ‖q_i − ⟨q_i⟩‖∞,Ω
+#     μ_max = Cmax · Δ · max(|u| + c)
 #     μ_dsgs[iel] = max(0, min(μ_res, μ_max))
 # where R_i is the STRONG-form BDF2 residual of conservation law i —
 # (3qⁿ − 4qⁿ⁻¹ + qⁿ⁻²)/(2Δt) − M⁻¹·RHS. Since jexpresso assembles RHS
@@ -539,7 +539,7 @@ const dsgs_ref_weight = Ref{Bool}(false)
 # spread the flux sheet while its magnetic energy stayed put, the sheet
 # core overheated and the emergence stalled) — and the second with the
 # E-slot coefficient max(γ(γ−1)/Pr_t·ν_res, ν_floor): Dao & Nazarov's
-# κ = ρν/Pr on the residual part, the full C0 floor kept (measured: with
+# κ = ρν/Pr on the residual part, the full Cmin floor kept (measured: with
 # the floor cut 19× too, a node-to-node temperature mode grew across the
 # corona within 10 τ₀).
 const dsgs_split_energy = Ref{Bool}(false)
@@ -635,8 +635,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
     invnp = one(TT)/(nelem*ngl)
     γ     = TT(1.4)
-    C1    = TT(1.0)
-    C2    = TT(0.5)
+    CR    = TT(1.0)
+    Cmax    = TT(0.5)
     eps   = Base.eps(TT)
     neqs  = size(μ_dsgs, 2)
 
@@ -710,8 +710,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             uTmx = max(uTmx, abs(ul) + sqrt(γ*(γ - one(TT))*eint))
         end
 
-        μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
-        μ_max = C2*Δ*uTmx
+        μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
+        μ_max = Cmax*Δ*uTmx
         μ     = max(zero(TT), min(μ_max, μ_res))
 
         # Same coefficient on every equation (1D E-form, Marras eq. 10),
@@ -781,8 +781,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     # meshes and effectively turn DSGS off, which is not what the
     # algorithm was designed for in this lineage.
     #
-    #     μ_res|e = C1 · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
-    #     μ_max|e = C2 · Δ · (|u| + c)_∞,e
+    #     μ_res|e = CR · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
+    #     μ_max|e = Cmax · Δ · (|u| + c)_∞,e
     #     μ|e     = max(0, min(μ_max, μ_res))
     #
     # Per-equation split (Marras eq. 10), with the user-supplied
@@ -798,8 +798,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     invnp = one(TT)/(nelem*ngl*ngl)
     γ     = PhysConst.γ
     C0    = PhysConst.C0
-    C1    = TT(1.0)
-    C2    = TT(0.5)
+    CR    = TT(1.0)
+    Cmax    = TT(0.5)
     γm1   = γ - one(TT)
     eps   = TT(1.0e-16)
 
@@ -858,7 +858,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     # at t = 0 the fluid is at rest globally, so ‖ρu − ⟨ρu⟩‖∞,Ω and
     # ‖ρv − ⟨ρv⟩‖∞,Ω literally start at zero. With only machine eps to
     # absorb that, the R/denom ratio runs away and caps μ at the
-    # wave-speed bound C2·Δ·(|u|+c) before any flow has developed,
+    # wave-speed bound Cmax·Δ·(|u|+c) before any flow has developed,
     # which on this case is enough to push ρθ past zero in the very
     # first RK substage. The floor is a tiny fraction (1e-3) of the
     # natural momentum scale ρ_avg·c_avg — large enough to keep the
@@ -913,8 +913,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl)
 
-        μ_res = C1*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
-        μ_max = C2*Δ*uTmx
+        μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
+        μ_max = Cmax*Δ*uTmx
         μ     = max(zero(TT), min(μ_max, μ_res))   # kinematic, m²/s
 
         # μ above is KINEMATIC. _expansion_visc! applies visc_coeff·∇²(prim)
@@ -962,15 +962,15 @@ end
 #
 # Then eq. (3.5)-(3.7):
 #
-#     μ₁|K   = C1·h_K²·‖ρ−ρ̄‖_{∞,Ω}·max( ‖R_ρ‖_{∞,K}/‖ρ−ρ̄‖_{∞,Ω},
+#     μ₁|K   = CR·h_K²·‖ρ−ρ̄‖_{∞,Ω}·max( ‖R_ρ‖_{∞,K}/‖ρ−ρ̄‖_{∞,Ω},
 #                                        ‖R_m‖_{∞,K}/‖m−m̄‖_{∞,Ω},
 #                                        ‖R_E‖_{∞,K}/‖E−Ē‖_{∞,Ω} )
-#     μ_max|K = C2·h_K·‖ρ‖_{∞,K}·‖ |u| + √(γT) ‖_{∞,K}
+#     μ_max|K = Cmax·h_K·‖ρ‖_{∞,K}·‖ |u| + √(γT) ‖_{∞,K}
 #     μ|K     = min(μ_max|K, μ₁|K)
 #     κ|K     = P/(γ−1)·μ|K            (heat conduction, on ∇T)
 #     β|K     = μ|K/‖ρ‖_{∞,K}          (density diffusion, on ∇ρ)
 #
-# with C1 = 1, C2 = 0.5 and P ≈ 0.1 the artificial Prandtl number
+# with CR = 1, Cmax = 0.5 and P ≈ 0.1 the artificial Prandtl number
 # (inputs[:Pr]). NOTE that the leading ‖ρ−ρ̄‖_{∞,Ω} factor in μ₁ and the
 # ‖ρ‖_{∞,K} factor in μ_max make μ a DYNAMIC viscosity, which is what
 # _expansion_visc! wants for the momentum slots — so, unlike the θ path
@@ -1011,8 +1011,8 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
 
     γ    = PhysConst.γ
     γm1  = γ - one(TT)
-    C1   = TT(1.0)
-    C2   = TT(0.5)
+    CR   = TT(1.0)
+    Cmax   = TT(0.5)
     eps  = TT(1.0e-16)
 
     # --- Pass 1: rank-local means ⟨ρ⟩, ⟨ρu⟩, ⟨ρv⟩, ⟨ρE⟩ ----------------
@@ -1118,8 +1118,8 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         end
 
         # eq. (3.5)-(3.7). Both branches carry a density, so μ is DYNAMIC.
-        μ_res = C1*h*h*dρ*ratio
-        μ_cap = C2*h*ρmax*wmax
+        μ_res = CR*h*h*dρ*ratio
+        μ_cap = Cmax*h*ρmax*wmax
         μ     = max(zero(TT), min(μ_cap, μ_res))
 
         μ_dsgs[ie,1] = visc_coeff[1] * μ/max(ρmax, eps)   # β on ∇ρ
@@ -1151,8 +1151,8 @@ end
 # globally (8x on this grid) to survive the shocks — which then over-damps
 # the smooth 90% of the domain.
 #
-#     μ_res|e = C1 · Δ² · max_i ( ‖R_i‖_{∞,e} / ‖q_i − ⟨q_i⟩‖_{∞,Ω} )
-#     μ_max|e = C2 · Δ  · (‖v‖ + c_f)_{∞,e}
+#     μ_res|e = CR · Δ² · max_i ( ‖R_i‖_{∞,e} / ‖q_i − ⟨q_i⟩‖_{∞,Ω} )
+#     μ_max|e = Cmax · Δ  · (‖v‖ + c_f)_{∞,e}
 #     μ|e     = max(0, min(μ_max, μ_res))
 #
 # with the BDF2 residual of equation i
@@ -1225,8 +1225,8 @@ end
 #     O(q_i) (ρ changes by e⁻¹ across a 1 H₀ element), so the ratio stays
 #     the relative under-resolution rate the model intends.
 #
-#  *  C0 (:dsgs_C0). Background floor C0·Δ·(‖v‖+c_f) on μ, a fraction of the
-#     C2 cap, for the node-to-node modes the residual cannot sense (see the
+#  *  Cmin (:dsgs_Cmin). Background floor Cmin·Δ·(‖v‖+c_f) on μ, a fraction of the
+#     Cmax cap, for the node-to-node modes the residual cannot sense (see the
 #     kernel). 0 by default.
 #
 #  *  lconserved (:dsgs_conserved). Every slot receives the kinematic μ and
@@ -1244,7 +1244,7 @@ end
 #     the conserved form the energy flux is split (dsgs_split_energy):
 #     the non-thermal part of E keeps ν, the thermal part p/(γ−1) gets
 #     max(γ(γ−1)/Pr_t·ν_res, ν_floor), i.e. κ = ρν/Pr on the residual
-#     viscosity with the C0 floor intact. With :μ[1] = 1 (ν on ∇ρ)
+#     viscosity with the Cmin floor intact. With :μ[1] = 1 (ν on ∇ρ)
 #     the coefficients are then exactly their §4.4 set by equation: ν on
 #     ρ, ρν on u, ρν/Pr on T, ν on B. (:dsgs_conserved_prandtl is accepted
 #     as an alias.)
@@ -1273,7 +1273,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Δt::TT,
                                  connijk::AbstractArray{TI,4},
                                  Δelem::AbstractVector{TT},
-                                 γ::TT, Pr_t::TT, C1::TT, C2::TT,
+                                 γ::TT, Pr_t::TT, CR::TT, Cmax::TT,
                                  comm,
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
@@ -1281,7 +1281,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  local_rel::TT=one(TT),
                                  lnodal_rho::Bool=false,
                                  lconserved::Bool=false,
-                                 C0::TT=zero(TT),
+                                 Cmin::TT=zero(TT),
                                  lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
@@ -1449,21 +1449,21 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl)
 
-        μ_res = C1*Δ*Δ*ratio
-        μ_max = C2*Δ*wmax
+        μ_res = CR*Δ*Δ*ratio
+        μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s (residual, capped)
         μ     = μ_c
 
-        # Background floor C0·Δ·(‖v‖+c_f), a fraction of the wave-speed cap
-        # (C0 = 0 by default: pure Marras). The residual sensor is blind to a
+        # Background floor Cmin·Δ·(‖v‖+c_f), a fraction of the wave-speed cap
+        # (Cmin = 0 by default: pure Marras). The residual sensor is blind to a
         # node-to-node (checkerboard) mode — the discrete operator returns
         # nearly nothing on it, which is exactly why the CG discretization
         # leaves it undamped — and in the low-density corona of the
         # flux-emergence case such a mode grew from 0.02 to 0.5 C_s in three
         # τ₀ with μ_res ≈ 10⁻³ there. A floor of a few percent of the cap damps
-        # it at rate C0 Δ c (π/Δ)² ≈ 7/τ₀ for C0 = 0.03 while diffusing a
-        # resolved structure by only √(C0 Δ c t) ≈ 1 H₀ over the whole run.
-        μ_floor = C0 > zero(TT) ? C0*Δ*wmax : zero(TT)
+        # it at rate Cmin Δ c (π/Δ)² ≈ 7/τ₀ for Cmin = 0.03 while diffusing a
+        # resolved structure by only √(Cmin Δ c t) ≈ 1 H₀ over the whole run.
+        μ_floor = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ = max(μ, μ_floor)
 
         # dynamic coefficient for u/v/w/T: ρ̄·μ with the element mean, or the
@@ -1538,8 +1538,8 @@ end
 # a 9th ψ slot, if present, is carried but excluded from the residual max).
 # Same residual (BDF2 history, max over the equations of the normalized
 # residual — Dao & Nazarov 2022, eq. 4.8), same domain/element normalization,
-# same cap C2·Δ·(|u| + c_f) with the fast magnetosonic speed and the same
-# C0 floor; see the 2D header for the meaning of every option. The
+# same cap Cmax·Δ·(|u| + c_f) with the fast magnetosonic speed and the same
+# Cmin floor; see the 2D header for the meaning of every option. The
 # coefficients by slot follow the 2D assignment: conserved form — one ν on
 # every slot (the case's user_primitives! returns the conserved variables);
 # physical form — ν on ρ, ρ̄ν on the momenta (u, v, w primitives),
@@ -1563,7 +1563,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Δt::TT,
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
-                                 γ::TT, Pr_t::TT, C1::TT, C2::TT,
+                                 γ::TT, Pr_t::TT, CR::TT, Cmax::TT,
                                  comm,
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
@@ -1571,7 +1571,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  local_rel::TT=one(TT),
                                  lnodal_rho::Bool=false,
                                  lconserved::Bool=false,
-                                 C0::TT=zero(TT),
+                                 Cmin::TT=zero(TT),
                                  lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
@@ -1706,10 +1706,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl)
 
-        μ_res = C1*Δ*Δ*ratio
-        μ_max = C2*Δ*wmax
+        μ_res = CR*Δ*Δ*ratio
+        μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))
-        μ_fl  = C0 > zero(TT) ? C0*Δ*wmax : zero(TT)
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
         μ     = max(μ_c, μ_fl)
         μ_dyn = lnodal_rho ? μ : ρ_el*μ
 
@@ -1748,7 +1748,7 @@ end
 #
 #     ν_i = min(C_max h_i λ_max,i,  C_R h_i² R_i)      (eq. 4.10),   h_i = h_K/k
 #
-# at every node, floored at C0 h_i λ_i as in the element kernel. ν is then a
+# at every node, floored at Cmin h_i λ_i as in the element kernel. ν is then a
 # continuous (C⁰, "DSS'd") field: the element loop interpolates the nodal
 # values, so the diffusive flux ∂x(ν ∂x q) has no jump at element interfaces.
 # The element form above takes the maximum over each element and applies one
@@ -1777,12 +1777,12 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        Δt::TT,
                                        connijk::AbstractArray{TI,4},
                                        Δx::AbstractVector{TT},
-                                       γ::TT, Pr_t::TT, C1::TT, C2::TT, Cl::TT,
+                                       γ::TT, Pr_t::TT, CR::TT, Cmax::TT, Cl::TT,
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        lglobal_norms::Bool=false,
                                        lconserved::Bool=false,
-                                       C0::TT=zero(TT),
+                                       Cmin::TT=zero(TT),
                                        lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
@@ -1893,8 +1893,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         λ   = sqrt(ul*ul + vl*vl + wl*wl) + cf
         h   = hnod[ip]
 
-        ν_c = max(zero(TT), min(C2*h*λ, C1*h*h*ratio))
-        ν   = C0 > zero(TT) ? max(ν_c, C0*h*λ) : ν_c
+        ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
+        ν   = Cmin > zero(TT) ? max(ν_c, Cmin*h*λ) : ν_c
         ν_d = ρl*ν
 
         μ_pnode[ip,1] = visc_coeff[1]*ν
@@ -2034,7 +2034,7 @@ end
 #
 # The nodal form of the 2D MHD kernel (see the 1D header above): ν_i at every
 # node from the assembled residual, the 2D fast speed √(γp/ρ + |B|²/ρ) in the
-# cap, the C0 floor, and the element kernel's slot assignment with the
+# cap, the Cmin floor, and the element kernel's slot assignment with the
 # NODAL density in the physical form. μ_pnode receives the coefficients
 # (no broadcast afterwards), μ_dsgs the element means.
 # ================================================================================
@@ -2057,12 +2057,12 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        Δt::TT,
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
-                                       γ::TT, Pr_t::TT, C1::TT, C2::TT, Cl::TT,
+                                       γ::TT, Pr_t::TT, CR::TT, Cmax::TT, Cl::TT,
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        lglobal_norms::Bool=false,
                                        lconserved::Bool=false,
-                                       C0::TT=zero(TT),
+                                       Cmin::TT=zero(TT),
                                        lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
@@ -2106,8 +2106,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         λ  = sqrt(ul*ul + vl*vl + wl*wl) + cf
         h  = hnod[ip]
 
-        ν_c = max(zero(TT), min(C2*h*λ, C1*h*h*ratio))
-        ν_f = C0 > zero(TT) ? C0*h*λ : zero(TT)
+        ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
+        ν_f = Cmin > zero(TT) ? Cmin*h*λ : zero(TT)
         ν   = max(ν_c, ν_f)
         ν_d = ρl*ν
 
@@ -2165,12 +2165,12 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
                                        PhysConst::PhysicalConst{TT},
-                                       Pr::TT, C1::TT, C2::TT, Cl::TT,
+                                       Pr::TT, CR::TT, Cmax::TT, Cl::TT,
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        ltheta::Bool=true,
                                        lglobal_norms::Bool=false,
-                                       C0::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                                       Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 4)
@@ -2215,8 +2215,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         end
         λ  = sqrt(ul*ul + vl*vl) + c
         h  = hnod[ip]
-        ν_c = max(zero(TT), min(C2*h*λ, C1*h*h*ratio))
-        ν   = C0 > zero(TT) ? max(ν_c, C0*h*λ) : ν_c
+        ν_c = max(zero(TT), min(Cmax*h*λ, CR*h*h*ratio))
+        ν   = Cmin > zero(TT) ? max(ν_c, Cmin*h*λ) : ν_c
         μd  = ρl*ν
         if ltheta
             μ_pnode[ip,1] = zero(TT)
