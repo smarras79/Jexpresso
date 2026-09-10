@@ -257,7 +257,8 @@ reason unrelated to the sensor's purpose. $\psi$ still *receives* viscosity.
 
 Every field is uniform at $t=0$, and $\rho w$ and $B_z$ are identically zero for
 all time in this problem, so $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
-is exactly zero for them. Each denominator is floored at $10^{-3}$ of that
+is exactly zero for them. Each denominator is bounded from below ("floored":
+`denom = max(denom, a)`, so it can never be smaller than `a`) at $10^{-3}$ of that
 field's natural scale, built from the domain-mean state:
 
 | slot | floor |
@@ -335,7 +336,7 @@ density spans eight decades between the photosphere and the corona:
 
 - **`:dsgs_norms => "element"`** normalizes the residual of equation $i$ in
   element $e$ by the spread of $q_i$ over that element,
-  $\lVert q_i - \langle q_i\rangle_e\rVert_{\infty,e}$, floored at
+  $\lVert q_i - \langle q_i\rangle_e\rVert_{\infty,e}$, bounded from below at
   `:dsgs_local_rel` (default 1) times the *element-mean* scales of §4.2
   ($\rho_e$, $\rho_e c_e$, $\rho_e c_e^2$, $\sqrt{\rho_e}c_e$), instead of the
   domain spread. Unlike the domain norms, whose $10^{-3}$ floors only guard
@@ -472,7 +473,7 @@ total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
   square, within 12 % of it at $k = 4$, while $\Delta_K/k$ put the
   rising-bubble case past the explicit viscous limit at start-up),
   $C_{max} =$ `:dsgs_Cmax`, $C_R =$ `:dsgs_CR`,
-  floored at $C_{min} h_i\lambda_i$;
+  bounded from below by $C_{min} h_i\lambda_i$ (a `max`, the counterpart of the `min` cap);
 - the slot coefficients from $\nu_i$ exactly as in the element kernels, with
   the **nodal** density in the dynamic coefficients;
 - $\nu$ is a continuous ($C^0$, DSS'd) field: the element loop gathers the

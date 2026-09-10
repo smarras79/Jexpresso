@@ -198,8 +198,9 @@ With \code{:dsgs\_norms => "domain"} both are reduced over all MPI ranks
 (the count $|\mathcal P|$, the sum, then the max); with \code{"rank"} they
 are taken over the rank's own elements without communication.
 
-The spread $\Sbar^q$ is then floored at a fraction $r = 10^{-3}$ of a
-physical scale of the slot built from the mean state
+The spread $\Sbar^q$ is then bounded from below (``floored'': replaced by
+$\max(\Sbar^q, a)$, so that it can never be smaller than $a$) at a
+fraction $r = 10^{-3}$ of a physical scale of the slot built from the mean state
 $\bar\rho = \max(|\langle\rho\rangle|,\epsilon)$,
 $\bar p = (\gamma-1)\max\!\big(\langle E\rangle - \tfrac12(\langle\rho u\rangle^2+\langle\rho v\rangle^2+\langle\rho w\rangle^2)/\bar\rho - \tfrac12(\langle B_x\rangle^2+\langle B_y\rangle^2+\langle B_z\rangle^2),0\big)$,
 $\bar c = \sqrt{\max(\gamma\bar p/\bar\rho,\epsilon)}$, $\epsilon=10^{-16}$:
@@ -223,7 +224,7 @@ and $n^{\psi}=\Sbar^{\psi}+\epsilon$ (never used in the max).
 With \code{:dsgs\_norms => "element"} (\code{DSGS\_MHD} only), $n^q$ is
 recomputed inside every element $K$ from the element's own $n_{gl}^d$
 nodes: $\langle q\rangle_K$ and $\Sbar^q_K = \max_{i\in K}|q_i-\langle q\rangle_K|$,
-and the floors~\eqref{eq:floors} are applied with the \emph{element-mean}
+and the lower bounds~\eqref{eq:floors} are applied with the \emph{element-mean}
 state $(\bar\rho_K,\bar c_K)$ and the fraction $r_{\rm loc}$ =
 \code{:dsgs\_local\_rel} (default $1$) in place of $10^{-3}$:
 \begin{equation}
@@ -243,8 +244,8 @@ With \code{:ldsgs\_nodal => true} the statistics are taken over the
 \Sbar^{q} = \max_i |q_i-\langle q\rangle|,\qquad
 q_{\max}=\max_i q_i,\quad q_{\min}=\min_i q_i ,
 \end{equation}
-reduced over the ranks with \code{"domain"}, and $\Sbar^q$ is floored as
-in~\eqref{eq:floors} \emph{without} the trailing $+\epsilon$. For every node
+reduced over the ranks with \code{"domain"}, and $\Sbar^q$ is bounded from
+below as in~\eqref{eq:floors} \emph{without} the trailing $+\epsilon$. For every node
 $i$ the local range over its support $I(i)$ = the nodes of all elements that
 contain $i$ (on the rank) is
 \begin{equation}
@@ -309,7 +310,9 @@ For every element $K$, with
 \end{equation}
 with $\CR$ = \code{:dsgs\_CR} (default $1$), $\Cmax$ = \code{:dsgs\_Cmax}
 (default $0.5$), $\Cmin$ = \code{:dsgs\_Cmin} (default $0$). The last
-operation is the background floor; with $\Cmin=0$ it is absent and
+operation is the background floor, a lower bound $\nu \ge \Cmin\Delta\lambda_K$
+applied with a $\max$ (the counterpart of the cap $\nu \le \Cmax\Delta\lambda_K$
+applied with a $\min$); with $\Cmin=0$ it is absent and
 $\nu_K=\nu_c$. One value $\nu_K$ is used at every quadrature point of $K$;
 $\nu$ is therefore piecewise constant and discontinuous across element
 interfaces.
@@ -510,7 +513,7 @@ These predate the MHD kernel and keep their own hard-coded constants.
 $\bq=(\rho,\rho u,\rho v,\rho\theta)$, $\CR=1$, $\Cmax=0.5$ (not deck
 inputs), $p = C_0(\rho\theta)^\gamma$ with $C_0,\gamma$ from
 \code{PhysConst}, $c=\sqrt{\gamma p/\rho}$. Domain scope of
-Section~\ref{sec:norm-domain} with the floors replaced by $n^q = \Sbar^q+\epsilon$
+Section~\ref{sec:norm-domain} with the lower bounds replaced by $n^q = \Sbar^q+\epsilon$
 for $\rho$ and $\rho\theta$ and $n^q=\max(\Sbar^q, 10^{-3}\bar\rho\bar c)+\epsilon$
 for the momenta. Then per element,
 $\nu_K$ as in~\eqref{eq:nuK} with $\Cmin=0$, $\lambda_i=|\bv_i|+c_i$, and the coefficients
@@ -527,7 +530,7 @@ $\bq=(\rho,\rho u,\rho v,\rho E)$, $\CR=1$, $\Cmax=0.5$. The momentum
 residual and spread are taken as vectors:
 $R^{m}_i = \sqrt{(R^{\rho u}_i)^2+(R^{\rho v}_i)^2}$,
 $\Sbar^{m}=\max_i\sqrt{(\rho u_i-\langle\rho u\rangle)^2+(\rho v_i-\langle\rho v\rangle)^2}$,
-floored as in~\eqref{eq:floors} for $\rho$, $m$, $E$. With
+bounded from below as in~\eqref{eq:floors} for $\rho$, $m$, $E$. With
 $T_i = \max(E_i/\rho_i - \tfrac12|\bv_i|^2,0)$ and $\lambda_i=|\bv_i|+\sqrt{\gamma T_i}$,
 per element ($h=\Delta_K/n_{gl}$)
 \begin{equation}
@@ -557,7 +560,7 @@ each times $\mu_q$.
 \subsection{1D Euler}
 
 $\bq=(\rho,\rho u,\rho E)$, $\gamma=1.4$, $\CR=1$, $\Cmax=0.5$,
-$n^q=\Sbar^q+\epsilon$ (no physical floors), $\Delta=\Delta_K/n_{gl}$,
+$n^q=\Sbar^q+\epsilon$ (no physical lower bounds), $\Delta=\Delta_K/n_{gl}$,
 $\lambda_i=|u_i|+\sqrt{\gamma(\gamma-1)e_i}$ with
 $e_i=\max(E_i/\rho_i-\tfrac12u_i^2,0)$, and the \emph{same} $\nu_K$ on all
 three slots, times $\mu_q$.
@@ -667,9 +670,9 @@ Global spread $\Sbar(w)$ &
 $\|w-\mathrm{mean}(w)\|_{L^\infty(\Omega)}$ &
 Same, with the mean and max over the nodes (nodal form: unique nodes; element form: element--node pairs, shared nodes counted once per element); over the rank only with \code{:dsgs\_norms => "rank"} \\
 
-Floors on $\Sbar$ &
+Lower bounds on $\Sbar$ &
 None; the ratio uses $R\,n/(n^2+\epsilon)$, $\epsilon\approx2.2\times10^{-16}$ &
-$\Sbar^q$ floored at $10^{-3}$ of the slot's physical scale~\eqref{eq:floors} from the mean state; then the same guard in the nodal form, $R/(n+\epsilon)$ in the element form \\
+$\Sbar^q \leftarrow \max(\Sbar^q, 10^{-3}s^q)$ with $s^q$ the slot's physical scale~\eqref{eq:floors} from the mean state; then the same guard in the nodal form, $R/(n+\epsilon)$ in the element form \\
 
 Local-jump normalization &
 $n(w)_i = \Sbar(w)\big(1-\Cl\,\frac{\max_{I(i)}w-\min_{I(i)}w}{\max w-\min w}\big)$, eq.~4.7, $\Cl=0.4$, $I(i)$ the neighbours of node $i$ &
