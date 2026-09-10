@@ -1064,6 +1064,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_ref_weight))
         inputs[:dsgs_ref_weight] = false
     end
+    #   :dsgs_nodal        1D MHD kernel: the nodal (Dao & Nazarov 2022) form
+    #                      — ν at every node from the assembled residual, a
+    #                      continuous coefficient — instead of one ν per element
+    #   :dsgs_Cl           its local-jump normalization constant C_l (their eq.
+    #                      4.7; 0 = classical global spread, the paper uses 0.4)
+    if(!haskey(inputs, :dsgs_nodal))
+        inputs[:dsgs_nodal] = false
+    end
+    if(!haskey(inputs, :dsgs_Cl))
+        inputs[:dsgs_Cl] = 0.0
+    end
     #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
     #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
     #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the

@@ -1734,6 +1734,191 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     return nothing
 end
 
+# ================================================================================
+# compute_dsgs_viscosity_nodal!(::DSGS_MHD, ::NSD_1D)
+#
+# The NODAL form of the 1D MHD kernel, i.e. the residual viscosity of Dao &
+# Nazarov (2022, JSC 92:77, §4.2–4.3) as they define it: the residual is the
+# assembled (lumped-mass) nodal residual R_i = |BDF2(q)_i − M⁻¹_i rhs_i|, the
+# normalization n(w)_i = S̄(w)·(1 − C_l·(local range of w over the support
+# of node i)/(global range of w)) (their eq. 4.7, S̄ the global spread; C_l = 0
+# is the classical S̄), the residual ratio R_i = max over the equations of
+# R_i/n_i (eq. 4.8, with the n²/(n²+ε) guard), and
+#
+#     ν_i = min(C_max h_i λ_max,i,  C_R h_i² R_i)      (eq. 4.10),   h_i = h_K/k
+#
+# at every node, floored at C0 h_i λ_i as in the element kernel. ν is then a
+# continuous (C⁰, "DSS'd") field: the element loop interpolates the nodal
+# values, so the diffusive flux ∂x(ν ∂x q) has no jump at element interfaces.
+# The element form above takes the maximum over each element and applies one
+# ν per element; the resulting staircase in ν kinks the flux at every element
+# boundary, which on the Brio–Wu tube appeared as one wiggle per element in
+# the smooth plateau behind the compound wave (measured). The slot assignment
+# is the element kernel's, with nodal ρ in the physical form. μ_dsgs[ie,:]
+# receives the element mean of the nodal values for the output staircase.
+# ================================================================================
+function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
+                                       μ_pnode::AbstractMatrix{TT},
+                                       ::DSGS_MHD, ::NSD_1D,
+                                       q::AbstractMatrix{TT},
+                                       q1::AbstractMatrix{TT},
+                                       q2::AbstractMatrix{TT},
+                                       rhs::AbstractMatrix{TT},
+                                       Minv::AbstractVector{TT},
+                                       visc_coeff::AbstractVector{TT},
+                                       avg::AbstractVector{TT},
+                                       denom::AbstractVector{TT},
+                                       Δt::TT,
+                                       connijk::AbstractArray{TI,4},
+                                       Δx::AbstractVector{TT},
+                                       γ::TT, Pr_t::TT, C1::TT, C2::TT, Cl::TT,
+                                       comm,
+                                       nelem::Int, ngl::Int, npoin::Int;
+                                       lglobal_norms::Bool=false,
+                                       lconserved::Bool=false,
+                                       C0::TT=zero(TT),
+                                       lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+
+    neqs = size(μ_dsgs, 2)
+    NRES = min(neqs, 8)
+    rel  = TT(1.0e-3)
+    γm1  = γ - one(TT)
+    eps  = TT(1.0e-16)
+    k    = max(ngl - 1, 1)          # polynomial degree
+
+    @inline function pres(ρ, mu, mv, E, mw, bx, by, bz)
+        ρp = max(ρ, eps)
+        return γm1*max(E - TT(0.5)*(mu*mu + mv*mv + mw*mw)/ρp - TT(0.5)*(bx*bx + by*by + bz*bz), zero(TT))
+    end
+
+    # --- global mean, spread S̄ and range per equation --------------------
+    qmin = fill(typemax(TT), neqs); qmax = fill(typemin(TT), neqs)
+    @inbounds for ieq = 1:neqs
+        avg[ieq] = zero(TT); denom[ieq] = zero(TT)
+    end
+    @inbounds for ip = 1:npoin, ieq = 1:neqs
+        avg[ieq] += q[ip,ieq]
+        qmin[ieq] = min(qmin[ieq], q[ip,ieq]); qmax[ieq] = max(qmax[ieq], q[ip,ieq])
+    end
+    inv_npts = one(TT)/max(TT(npoin), one(TT))
+    if lglobal_norms
+        npts_glob = MPI.Allreduce(TT(npoin), MPI.SUM, comm)
+        MPI.Allreduce!(avg, MPI.SUM, comm)
+        MPI.Allreduce!(qmin, MPI.MIN, comm); MPI.Allreduce!(qmax, MPI.MAX, comm)
+        inv_npts  = one(TT)/max(npts_glob, one(TT))
+    end
+    @inbounds for ieq = 1:neqs
+        avg[ieq] *= inv_npts
+    end
+    @inbounds for ip = 1:npoin, ieq = 1:neqs
+        denom[ieq] = max(denom[ieq], abs(q[ip,ieq] - avg[ieq]))
+    end
+    if lglobal_norms
+        MPI.Allreduce!(denom, MPI.MAX, comm)
+    end
+    ρ_avg = max(abs(avg[1]), eps)
+    p_avg = pres(avg[1], avg[2], avg[3], avg[4], (neqs >= 5 ? avg[5] : zero(TT)),
+                 (neqs >= 6 ? avg[6] : zero(TT)), (neqs >= 7 ? avg[7] : zero(TT)), (neqs >= 8 ? avg[8] : zero(TT)))
+    c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
+    @inbounds begin
+        denom[1] = max(denom[1], rel*ρ_avg)
+        mom_fl   = rel*ρ_avg*c_avg
+        denom[2] = max(denom[2], mom_fl)
+        denom[3] = max(denom[3], mom_fl)
+        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        b_fl = rel*sqrt(ρ_avg)*c_avg
+        for ieq = 6:min(neqs,8)
+            denom[ieq] = max(denom[ieq], b_fl)
+        end
+    end
+
+    # --- local range over the support of each node (eq. 4.7) and h_i -------
+    nmin = fill(typemax(TT), npoin, neqs); nmax = fill(typemin(TT), npoin, neqs)
+    hnod = zeros(TT, npoin)
+    @inbounds for ie = 1:nelem
+        h_e = Δx[ie]/TT(k)
+        for ieq = 1:neqs
+            emin = typemax(TT); emax = typemin(TT)
+            for i = 1:ngl
+                ip = connijk[ie,i,1,1]
+                emin = min(emin, q[ip,ieq]); emax = max(emax, q[ip,ieq])
+            end
+            for i = 1:ngl
+                ip = connijk[ie,i,1,1]
+                nmin[ip,ieq] = min(nmin[ip,ieq], emin); nmax[ip,ieq] = max(nmax[ip,ieq], emax)
+            end
+        end
+        for i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            hnod[ip] = max(hnod[ip], h_e)
+        end
+    end
+
+    # --- nodal viscosity ---------------------------------------------------
+    inv2Δt = one(TT)/(2*Δt)
+    @inbounds for ip = 1:npoin
+        Mi = Minv[ip]
+        ratio = zero(TT)
+        for ieq = 1:NRES
+            R = abs((3*q[ip,ieq] - 4*q1[ip,ieq] + q2[ip,ieq])*inv2Δt - Mi*rhs[ip,ieq])
+            grange = qmax[ieq] - qmin[ieq]
+            lfac   = grange > eps ? Cl*(nmax[ip,ieq] - nmin[ip,ieq])/grange : zero(TT)
+            n      = denom[ieq]*(one(TT) - lfac)
+            ratio  = max(ratio, R*n/(n*n + eps))
+        end
+        ρl = max(q[ip,1], eps)
+        ul = q[ip,2]/ρl
+        vl = q[ip,3]/ρl
+        wl = (neqs >= 5) ? q[ip,5]/ρl : zero(TT)
+        bx = (neqs >= 6) ? q[ip,6] : zero(TT)
+        by = (neqs >= 7) ? q[ip,7] : zero(TT)
+        bz = (neqs >= 8) ? q[ip,8] : zero(TT)
+        B2 = bx*bx + by*by + bz*bz
+        pl = pres(q[ip,1], q[ip,2], q[ip,3], q[ip,4], (neqs >= 5 ? q[ip,5] : zero(TT)), bx, by, bz)
+        a2  = γ*pl/ρl
+        b2  = B2/ρl
+        bx2 = bx*bx/ρl
+        cf  = sqrt(max(TT(0.5)*(a2 + b2 + sqrt(max((a2 + b2)*(a2 + b2) - 4*a2*bx2, zero(TT)))), zero(TT)))
+        λ   = sqrt(ul*ul + vl*vl + wl*wl) + cf
+        h   = hnod[ip]
+
+        ν_c = max(zero(TT), min(C2*h*λ, C1*h*h*ratio))
+        ν   = C0 > zero(TT) ? max(ν_c, C0*h*λ) : ν_c
+        ν_d = ρl*ν
+
+        μ_pnode[ip,1] = visc_coeff[1]*ν
+        if lconserved
+            μ_pnode[ip,2] = visc_coeff[2]*ν
+            μ_pnode[ip,3] = visc_coeff[3]*ν
+            μ_pnode[ip,4] = visc_coeff[4]*ν
+            if neqs >= 5; μ_pnode[ip,5] = visc_coeff[5]*ν; end
+        else
+            μ_pnode[ip,2] = visc_coeff[2]*ν_d
+            μ_pnode[ip,3] = visc_coeff[3]*ν_d
+            μ_pnode[ip,4] = lnazarov_energy ? visc_coeff[4]*ν_d/Pr_t : visc_coeff[4]*ν_d*γ/(γm1*Pr_t)
+            if neqs >= 5; μ_pnode[ip,5] = visc_coeff[5]*ν_d; end
+        end
+        for ieq = 6:min(neqs,8)
+            μ_pnode[ip,ieq] = visc_coeff[ieq]*ν
+        end
+        if neqs >= 9
+            μ_pnode[ip,9] = visc_coeff[9]*ν
+        end
+    end
+
+    # --- element means for the staircase output ----------------------------
+    inv_ngl = one(TT)/TT(ngl)
+    @inbounds for ie = 1:nelem, ieq = 1:neqs
+        m = zero(TT)
+        for i = 1:ngl
+            m += μ_pnode[connijk[ie,i,1,1], ieq]
+        end
+        μ_dsgs[ie,ieq] = m*inv_ngl
+    end
+    return nothing
+end
+
 # Helper: expand the per-element, per-equation μ_dsgs[1:nelem,1:neqs]
 # onto every node so the per-equation coefficients can be written to
 # PNG / VTU like any other field. Shared (DSS) nodes get the value of

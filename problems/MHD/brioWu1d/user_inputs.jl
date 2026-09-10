@@ -47,6 +47,13 @@ function user_inputs()
         :dsgs_gamma       => 2.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,
+        # Nodal form of the kernel (Dao & Nazarov's own): ν at every node from
+        # the assembled residual, so the coefficient is a continuous field and
+        # the diffusive flux has no jump at element interfaces; the element
+        # form (one ν per element) left one wiggle per element in the plateau
+        # behind the compound wave. :dsgs_Cl is their C_l = 0.4 (eq. 4.7).
+        :dsgs_nodal       => true,
+        :dsgs_Cl          => 0.4,
         :dsgs_local_norms => false,   # the whole tube is the reference scale
         :ldsgs_global_norms => true,  # (only matters under MPI)
         :energy_equation  => "energy",
