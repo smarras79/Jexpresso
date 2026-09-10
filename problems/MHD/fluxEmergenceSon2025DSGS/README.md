@@ -150,9 +150,14 @@ The mesh is the sibling's `FE_80x35.msh` (shared, not copied).
 ## Results (4 ranks, run to $54\tau_0$)
 
 *Measured with a single coefficient on every slot, i.e. before
-`:dsgs_nazarov_energy` (previous section) reduced the energy-slot
-coefficient 19×. The shipped configuration compiles, steps and writes both
-coefficient panels; its full run is to be reported.*
+`:dsgs_nazarov_energy` (previous section). The shipped configuration — the
+split energy flux, $\Delta t = 7.5\times10^{-3}$ — was rerun on 2 ranks to
+$t = 40\tau_0$ side by side with the single-coefficient form at the same
+$\Delta t$: no transition-region sawtooth, crest at $9$, $10.5$ and
+$15.5H_0$ at $t = 20$, $30$, $40\tau_0$ in both, identical to plotting
+accuracy, i.e. the numbers below hold for it up to $t = 40$; its $t = 51$
+comparison is to be reported. (The first, whole-slot implementation of the
+option stalled the emergence, see "Coefficients by equation".)*
 
 The run completed without an abort, with nothing clipped anywhere: the
 density and pressure stayed positive through the transition-region
