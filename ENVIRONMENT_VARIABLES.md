@@ -320,7 +320,7 @@ These are deck keys, not environment variables — there is no shell
 form. They are documented here because, like the variables above, what
 they change is a run's parallel cost rather than its physics.
 
-### `:ldsgs_global_norms`
+### `:dsgs_norms`
 
 Scope of the two normalising scales the DynSGS (`:visc_model =>
 DSGS()` / `DSGS_MHD()`) residual indicator divides by: the mean
@@ -357,8 +357,8 @@ the level of the usual round-off divergence.
     interesting structure lives on another rank).
 - **Example:**
   ```julia
-  :visc_model         => DSGS(),
-  :ldsgs_global_norms => true,   # paper's domain norms; costs 2-3 Allreduce/RHS
+  :visc_model => DSGS(),
+  :dsgs_norms => "domain",   # the papers' domain norms (default); "rank" skips the 2-3 Allreduce/RHS; "element" (DSGS_MHD) per element
   ```
 - **History:** the 2D total-energy and MHD implementations used to do
   these reductions unconditionally, and the 1D and Euler-θ ones never
@@ -395,4 +395,13 @@ the level of the usual round-off divergence.
 
 | Key                    | Type | Default | Purpose                                   |
 |------------------------|------|---------|-------------------------------------------|
-| `:ldsgs_global_norms`  | bool | `false` | DynSGS norms: rank-local vs domain-global |
+| `:dsgs_norms`          | str  | `"domain"` | DynSGS normalization scope: `"domain"` (MPI-global), `"rank"` (rank-local, no reductions), `"element"` |
+| `:dsgs_CR`             | real | `1.0`   | Dao & Nazarov's $C_R$: residual viscosity $C_R h^2 R$ (their eq. 4.10; was `:dsgs_C1`) |
+| `:dsgs_Cmax`           | real | `0.5`   | Dao & Nazarov's $C_{max}$: first-order viscosity $C_{max} h \lambda_{max}$ (their §4.2; was `:dsgs_C2`) |
+| `:dsgs_Cmin`           | real | `0.0`   | Background floor $C_{min} h \lambda_{max}$ on the coefficient; not in the paper (was `:dsgs_C0`) |
+| `:dsgs_Cl`             | real | `0.0`   | Dao & Nazarov's $C_l$ in the local-jump normalization (their eq. 4.7); paper 0.4, nodal form |
+| `:dsgs_swe_g`          | real | `9.81`  | `DSGS_SW` (shallow water): $g$ of the wave speed $\lvert\mathbf v\rvert + \sqrt{gH}$ |
+| `:dsgs_swe_hmin`       | real | `1e-3`  | `DSGS_SW`: depth below which $Hu/H$ is desingularized (the case's wet/dry threshold) |
+| `:dsgs_reference`      | bool | `false` | `"residual"` sensor, TOTAL variables: subtract the element RHS of the reference state $q_e$ (a hydrostatic atmosphere); off for shock tubes, whose $q_e$ is the initial jump |
+| `:dsgs_sensor`         | str  | `"residual"` | `"residual"`: element-wise strong residual with the stage-consistent stencil (DSGS.md §1.2, §4.4); `"legacy"`: the pre-Sep-2026 sensor (assembled RHS, fixed BDF2 of the stage state), selected by the decks validated with it |
+| `:plot_markers`        | int  | `20`    | 1D PNG output: markers drawn along each curve (the line carries the solution; 0 = lines only) |
