@@ -417,6 +417,7 @@ function params_setup(sem,
     dsgs_ref_done = Ref{Bool}(false)
     dsgs_have_ref = Ref{Bool}(false)
     dsgs_bdy_done  = Ref{Bool}(false)
+    dsgs_legacy    = Ref{Bool}(get(inputs, :dsgs_sensor, "residual") == "legacy")
     dsgs_bdy_pairs = NTuple{3,Int}[]
 
     # Per-equation scratch the 2D DSGS path uses to pack the
@@ -470,7 +471,7 @@ function params_setup(sem,
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_wt, dsgs_stage,
-                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs,
+                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
@@ -509,7 +510,7 @@ function params_setup(sem,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_wt, dsgs_stage,
-                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs,
+                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,

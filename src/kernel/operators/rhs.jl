@@ -171,32 +171,13 @@ function _dsgs_residual_rhs!(u, params, SD)
     # with, and their decks select it; the element residual below is the
     # default. The assembled value is written into the element layout so
     # that the kernels need not know.
-    if get(params.inputs, :dsgs_sensor, "residual") == "legacy"
-        res  = params.dsgs_rhs_res
-        RHS  = params.RHS
-        Minv = params.Minv
-        ω    = params.ω
-        Je   = params.metrics.Je
-        neqs = params.neqs
-        ngl  = params.mesh.ngl
-        if SD == NSD_1D()
-            @inbounds for ie = 1:params.mesh.nelem, i = 1:ngl
-                ip = params.mesh.connijk[ie,i,1,1]
-                f  = ω[i]*Je[ie,i]*Minv[ip]
-                for ieq = 1:neqs
-                    res[ie,i,ieq] = f*RHS[ip,ieq]
-                end
-            end
-        else
-            @inbounds for ie = 1:params.mesh.nelem, j = 1:ngl, i = 1:ngl
-                ip = params.mesh.connijk[ie,i,j,1]
-                f  = ω[i]*ω[j]*Je[ie,i,j]*Minv[ip]
-                for ieq = 1:neqs
-                    res[ie,i,j,ieq] = f*RHS[ip,ieq]
-                end
-            end
-        end
-        return res
+    # (the mesh and metrics structs have untyped fields: every array is
+    # handed to a typed kernel below, never indexed inline — an inline loop
+    # here boxed each access and allocated 6 MB per RHS call, measured)
+    if params.dsgs_legacy[]
+        _dsgs_legacy_fill!(params.dsgs_rhs_res, params.RHS, params.Minv, params.ω, params.metrics.Je,
+                           params.mesh.connijk, Int(params.mesh.nelem), Int(params.mesh.ngl), Int(params.neqs), SD)
+        return params.dsgs_rhs_res
     end
     if !params.dsgs_ref_done[]
         params.dsgs_ref_done[] = true
@@ -252,30 +233,57 @@ function _dsgs_residual_rhs!(u, params, SD)
     if !isempty(params.dsgs_bdy_pairs)
         TT = eltype(params.dsgs_rhs_res)
         qA, qB, wt = _dsgs_stencil(params, TT)
-        q  = params.uaux
-        ω  = params.ω
-        Je = params.metrics.Je
-        res = params.dsgs_rhs_res
-        neqs = params.neqs
-        if SD == NSD_1D()
-            @inbounds for (ie, i, j) in params.dsgs_bdy_pairs
-                ip = params.mesh.connijk[ie,i,1,1]
-                m  = ω[i]*Je[ie,i]
-                for ieq = 1:neqs
-                    res[ie,i,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
-                end
+        _dsgs_bdy_zero!(params.dsgs_rhs_res, params.dsgs_bdy_pairs, params.uaux, qA, qB, wt,
+                        params.ω, params.metrics.Je, params.mesh.connijk, Int(params.neqs), SD)
+    end
+    return params.dsgs_rhs_res
+end
+
+function _dsgs_legacy_fill!(res::AbstractArray{TT}, RHS::AbstractMatrix{TT}, Minv::AbstractVector{TT},
+                            ω::AbstractVector{TT}, Je::AbstractArray{TT}, connijk::AbstractArray{TI,4},
+                            nelem::Int, ngl::Int, neqs::Int, SD) where {TT<:AbstractFloat, TI<:Integer}
+    if SD == NSD_1D()
+        @inbounds for ie = 1:nelem, i = 1:ngl
+            ip = connijk[ie,i,1,1]
+            f  = ω[i]*Je[ie,i]*Minv[ip]
+            for ieq = 1:neqs
+                res[ie,i,ieq] = f*RHS[ip,ieq]
             end
-        else
-            @inbounds for (ie, i, j) in params.dsgs_bdy_pairs
-                ip = params.mesh.connijk[ie,i,j,1]
-                m  = ω[i]*ω[j]*Je[ie,i,j]
-                for ieq = 1:neqs
-                    res[ie,i,j,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
-                end
+        end
+    else
+        @inbounds for ie = 1:nelem, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,1]
+            f  = ω[i]*ω[j]*Je[ie,i,j]*Minv[ip]
+            for ieq = 1:neqs
+                res[ie,i,j,ieq] = f*RHS[ip,ieq]
             end
         end
     end
-    return params.dsgs_rhs_res
+    return nothing
+end
+
+function _dsgs_bdy_zero!(res::AbstractArray{TT}, pairs::Vector{NTuple{3,Int}}, q::AbstractMatrix{TT},
+                         qA::AbstractMatrix{TT}, qB::AbstractMatrix{TT}, wt::NTuple{3,TT},
+                         ω::AbstractVector{TT}, Je::AbstractArray{TT}, connijk::AbstractArray{TI,4},
+                         neqs::Int, SD) where {TT<:AbstractFloat, TI<:Integer}
+    if SD == NSD_1D()
+        @inbounds for (ie, i, j) in pairs
+            ip = connijk[ie,i,1,1]
+            m  = ω[i]*Je[ie,i]
+            for ieq = 1:neqs
+                res[ie,i,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
+            end
+        end
+    else
+        @inbounds for (ie, i, j) in pairs
+            ip = connijk[ie,i,j,1]
+            m  = ω[i]*ω[j]*Je[ie,i,j]
+            for ieq = 1:neqs
+                res[ie,i,j,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
+            end
+        end
+    end
+    return nothing
 end
 
 # The (element, i, j) pairs of the Dirichlet boundary nodes, built once.
@@ -847,7 +855,7 @@ function _build_rhs!(RHS, u, params, time)
         # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
         τ = time - params.dsgs_thist[]
         h = params.Δt
-        if get(params.inputs, :dsgs_sensor, "residual") == "legacy"
+        if params.dsgs_legacy[]
             # the sensor of the runs before Sep 2026 (see _dsgs_residual_rhs!):
             # BDF2 on (q_stage, qⁿ, qⁿ⁻¹) at every stage, which is ∂ₜq only at
             # τ = Δt (−∂ₜq/2 at τ = 0), against the assembled RHS
@@ -2571,6 +2579,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     is_u_momentum  = (ieq == 2)
     is_v_momentum  = (ieq == 3)
     is_temperature = (ieq == 4)
+    # hoisted out of the point loop: a Dict lookup per quadrature point
+    # boxes its result and allocates
+    add_tau_u = is_temperature && (inputs[:energy_equation] != "theta") && !get(inputs, :dsgs_conserved, false)
     
     for l = 1:ngl
         ωl = ω[l]
@@ -2681,7 +2692,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                         # Total-energy equation: also add the viscous-work term τ·u so that
                         # the SGS-momentum dissipation is consistently returned to the energy
                         # budget. Skip for the θ form where the ρθ equation has no τ·u term.
-                        if inputs[:energy_equation] != "theta" && !get(inputs, :dsgs_conserved, false)
+                        if add_tau_u
                             effective_viscosity = (μnod === nothing ? SGS_diffusion(visc_coeffieq, 2,
                                                                 uprimitiveieq[k,l,1],
                                                                 dudx, dvdy, dudy, dvdx,
