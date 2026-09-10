@@ -169,8 +169,11 @@ function user_inputs()
         #                    V_A/C_s, log₁₀(B_x/B₀), log₁₀(ρ/ρ₀) on the axes of
         #                    the paper's Fig. 5, with z_cor = 18 H₀ marked
         #
-        # Switch to :outformat => "vtk" for ParaView output (plus the
-        # mu_dsgs_<var> DynSGS fields).
+        # Switch to :outformat => "vtk" for ParaView output: the same
+        # variables, plus log10_<var> for every name in :plot_log10 (the
+        # paper's scales), the mu_dsgs_<var> DynSGS fields and, with
+        # :plot_dsgs_log10, their log10_mu_dsgs_<var> counterparts floored
+        # at :plot_dsgs_floor.
         #---------------------------------------------------------------------------
         :outformat           => "png", #"vtk",
         :plot_matrix         => false,        # silent per-variable PNGs, no GR window

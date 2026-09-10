@@ -449,6 +449,15 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
+        # log10 fields, as the PNG writer renders them (:plot_log10, floored
+        # at 1e-300): one extra field log10_<var> per listed variable, next
+        # to the linear one, so ParaView shows the decades the literature
+        # plots (the flux-emergence cases: ρ, p, β over eight decades).
+        for var in get(inputs, :plot_log10, String[])
+            ivar = findfirst(==(string(var)), string.(outvarnames))
+            ivar === nothing && continue
+            vtkf[string("log10_", var), VTKPointData()] = log10.(max.(@view(qout[1:npoin,ivar]), 1.0e-300))
+        end
 
         # DynSGS: write the per-equation eddy viscosity actually applied on
         # this step, one field per equation, named after the solution
@@ -482,6 +491,12 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
                 mu_name = (length(written) == 1) ? "mu_dsgs" :
                     string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
+                # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
+                # field the PNG writer renders with :plot_dsgs_log10
+                if get(inputs, :plot_dsgs_log10, false)
+                    μfloor = get(inputs, :plot_dsgs_floor, 1.0e-6)
+                    vtkf[string("log10_", mu_name), VTKPointData()] = log10.(max.(@view(μ_dsgs_pnode[1:npoin, ieq]), μfloor))
+                end
             end
         end
 
@@ -593,6 +608,15 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
+        # log10 fields, as the PNG writer renders them (:plot_log10, floored
+        # at 1e-300): one extra field log10_<var> per listed variable, next
+        # to the linear one, so ParaView shows the decades the literature
+        # plots (the flux-emergence cases: ρ, p, β over eight decades).
+        for var in get(inputs, :plot_log10, String[])
+            ivar = findfirst(==(string(var)), string.(outvarnames))
+            ivar === nothing && continue
+            vtkf[string("log10_", var), VTKPointData()] = log10.(max.(@view(qout[1:npoin,ivar]), 1.0e-300))
+        end
 
         # DynSGS: write the per-equation eddy viscosity actually applied on
         # this step, one field per equation, named after the solution
@@ -626,6 +650,12 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
                 mu_name = (length(written) == 1) ? "mu_dsgs" :
                     string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
+                # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
+                # field the PNG writer renders with :plot_dsgs_log10
+                if get(inputs, :plot_dsgs_log10, false)
+                    μfloor = get(inputs, :plot_dsgs_floor, 1.0e-6)
+                    vtkf[string("log10_", mu_name), VTKPointData()] = log10.(max.(@view(μ_dsgs_pnode[1:npoin, ieq]), μfloor))
+                end
             end
         end
 

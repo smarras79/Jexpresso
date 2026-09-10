@@ -111,7 +111,10 @@ Orszag–Tang case, which has no background state, the terms are his literally
 so the coefficient fields are $\nu$ on eight slots and, on the energy, the
 thermal coefficient $\max(0.0525\,\nu_{res}, \nu_{floor})$
 (`log10_μ_dsgs_ρ-it<n>.png`, `log10_μ_dsgs_ρE-it<n>.png`; in VTK
-`mu_dsgs_ρ_ρu_ρv_ρw_Bx_By_Bz_ψ` and `mu_dsgs_ρE`); the non-thermal part of
+`mu_dsgs_ρ_ρu_ρv_ρw_Bx_By_Bz_ψ` and `mu_dsgs_ρE`, with their
+`log10_mu_dsgs_…` counterparts floored at `:plot_dsgs_floor`, and
+`log10_ρ`, `log10_p`, `log10_β` next to the linear fields, the scales of
+the paper's figures); the non-thermal part of
 $E$ is diffused with $\nu$, which is not a separate field. Why the split
 and not a scaled slot: $\nabla\cdot(\nu\nabla E)$ contains
 $\nabla\cdot(\nu\mathbf{B}\cdot\nabla\mathbf{B})$ and the kinetic analogue,

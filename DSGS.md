@@ -1,5 +1,7 @@
 # DynSGS — residual-based Dynamic Sub-Grid Scale stabilization in Jexpresso
 
+> The equations exactly as implemented, with a term-by-term comparison against Dao & Nazarov (2022), are in [`docs/DSGS.tex`](docs/DSGS.tex) (compile with `pdflatex`).
+
 This document describes the Marras–Nazarov Dynamic SGS model (`DSGS`), how it is
 formulated for a general conservation law, and how it is implemented for each of
 the three equation sets that use it in Jexpresso:

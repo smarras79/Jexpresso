@@ -1,0 +1,744 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{tabularx,booktabs,array,longtable}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{xcolor}
+\usepackage[hyphens]{url}
+\usepackage{hyperref}
+\sloppy
+\emergencystretch=3em
+
+\makeatletter
+\newcommand{\code}[1]{{\def\_{\char`\_\discretionary{}{}{}}\texttt{#1}}}
+\makeatother
+
+\newcommand{\bU}{\mathbf{U}}
+\newcommand{\bq}{\mathbf{q}}
+\newcommand{\bv}{\mathbf{v}}
+\newcommand{\bu}{\mathbf{u}}
+\newcommand{\bB}{\mathbf{B}}
+\newcommand{\bn}{\mathbf{n}}
+\newcommand{\bF}{\mathbf{F}}
+\newcommand{\Real}{\mathbb{R}}
+\newcommand{\dd}{\,\mathrm{d}}
+\newcommand{\Sbar}{\bar{S}}
+\newcommand{\Cmax}{C_{\max}}
+\newcommand{\Cmin}{C_{\min}}
+\newcommand{\CR}{C_R}
+\newcommand{\Cl}{C_l}
+\newcommand{\Prt}{\mathrm{Pr}_t}
+\newcommand{\dsgs}{\textsc{DynSGS}}
+
+\title{The dynamic sub-grid-scale (\dsgs) model of JEXPRESSO\\
+\large The equations exactly as implemented, and their correspondence with Dao \& Nazarov (2022)}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent This note writes down, term by term, the residual-based artificial
+viscosity (\dsgs) as it is coded in \code{src/kernel/physics/SGS.jl} and
+applied in \code{src/kernel/operators/rhs.jl}: the discrete residual, its
+normalization, the element and the nodal coefficient, the coefficient
+assigned to every equation, and the viscous fluxes that are actually
+assembled. Section~\ref{sec:table} tabulates, term by term, how each
+ingredient is defined by Dao \& Nazarov (\emph{J.\ Sci.\ Comput.}\ 92:77,
+2022, hereafter DN22) and how it is defined in JEXPRESSO. Nothing in this
+note is a recommendation; it is a description of the code.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section{Setting and notation}
+\label{sec:setting}
+
+\paragraph{Unknowns.} The conserved state is a vector of $N_{eq}$ fields,
+called \emph{slots}, in the following orders:
+\begin{align}
+\text{2D GLM-MHD (\code{DSGS\_MHD}, 9 slots):}\quad&
+\bq = (\rho,\ \rho u,\ \rho v,\ E,\ \rho w,\ B_x,\ B_y,\ B_z,\ \psi), \label{eq:slots2d}\\
+\text{1D MHD (\code{DSGS\_MHD}, 8 slots):}\quad&
+\bq = (\rho,\ \rho u,\ \rho v,\ E,\ \rho w,\ B_x,\ B_y,\ B_z), \label{eq:slots1d}\\
+\text{2D Euler, $\theta$ form (\code{DSGS}):}\quad&
+\bq = (\rho,\ \rho u,\ \rho v,\ \rho\theta), \\
+\text{2D Euler, energy form (\code{DSGS}):}\quad&
+\bq = (\rho,\ \rho u,\ \rho v,\ \rho E), \\
+\text{1D Euler (\code{DSGS}):}\quad&
+\bq = (\rho,\ \rho u,\ \rho E).
+\end{align}
+$E$ is the total energy density. For MHD the pressure is
+\begin{equation}
+p = (\gamma-1)\Big(E - \tfrac12\rho|\bv|^2 - \tfrac12|\bB|^2 - \tfrac12\psi^2\Big),
+\qquad \bv = (u,v,w),
+\label{eq:pmhd}
+\end{equation}
+with $\psi\equiv 0$ in 1D; $\gamma$ is the deck's \code{:dsgs\_gamma}
+(the case's $\gamma_{\rm mhd}$), not the air value of \code{PhysConst}.
+
+\paragraph{Discretization.} Continuous Galerkin spectral elements of degree
+$k$ on quadrilaterals (2D) or intervals (1D), $n_{gl}=k+1$ Legendre--Gauss--Lobatto
+(LGL) points per direction, \emph{collocated} LGL quadrature (the flux is
+interpolated at the nodes and integrated with the LGL rule; there is no
+over-integration). The mass matrix is the LGL-lumped, diagonal matrix
+$M = \mathrm{diag}(m_i)$; $M^{-1}$ is stored as the vector \code{Minv}. All
+element contributions are assembled by direct stiffness summation (DSS).
+
+For an element $K$, $\Delta_K$ is the mesh spacing stored in
+\texttt{mesh.}$\Delta$\texttt{elem} (2D) or \texttt{mesh.}$\Delta$\texttt{x} (1D):
+\begin{equation}
+\Delta_K =
+\begin{cases}
+\min\big(\max_{c}x_c - \min_{c}x_c,\ \max_{c}y_c - \min_{c}y_c\big) & \text{2D, over the corner nodes $c$ of $K$},\\[2pt]
+(x_{\max}-x_{\min})/N_{el} & \text{1D (uniform grid)}.
+\end{cases}
+\label{eq:DeltaK}
+\end{equation}
+
+\paragraph{Right-hand side.} At every evaluation of the semi-discrete
+right-hand side (every Runge--Kutta stage), the inviscid weak form is built
+element by element and assembled,
+\begin{equation}
+\mathrm{RHS}_i^{\,q} = -\int_\Omega \nabla\!\cdot\!\bF^{q}(\bq_h)\,\phi_i \dd x
+\;+\; \int_\Omega S^{q}\,\phi_i \dd x ,
+\qquad i = 1,\dots,N_h,
+\label{eq:rhs}
+\end{equation}
+for each slot $q$ ($\bF^q$ its flux, $S^q$ its source), stored in
+\code{params.RHS} \emph{before} the division by the mass matrix. The
+viscous contribution of Section~\ref{sec:fluxes} is assembled separately
+into \code{params.RHS\_visc}, added, and the sum is divided by $M$ to give
+$\partial_t\bq_h$.
+
+\paragraph{Per-slot multipliers.} The deck vector \texttt{:}$\mu$
+$=(\mu_1,\dots,\mu_{N_{eq}})$ (called \code{visc\_coeff} in the code)
+multiplies the coefficient of every slot. It is $1$ in all the MHD decks
+except where noted, and it is written explicitly below.
+
+%======================================================================
+\section{The semi-discrete regularized system}
+\label{sec:weak}
+
+With $V_h$ the continuous nodal space, the code solves, for every slot $q$
+and every test function $\phi_i\in V_h$,
+\begin{equation}
+\int_\Omega \partial_t q_h\,\phi_i \dd x
+= \mathrm{RHS}_i^{\,q}
+\;-\;\int_\Omega \bF_V^{q}(\bq_h)\cdot\nabla\phi_i \dd x ,
+\label{eq:semidiscrete}
+\end{equation}
+with the mass matrix lumped. The viscous flux $\bF_V^{q}$ of each slot is
+given in Section~\ref{sec:fluxes}. \textbf{No boundary integral}
+$\int_{\partial\Omega}\bn\cdot\bF_V\,\phi_i$ is assembled: the diffusive
+flux through the boundary is zero in the weak sense (homogeneous natural
+condition), and Dirichlet data, where the case prescribes them, are imposed
+strongly on the nodes after each stage.
+
+%======================================================================
+\section{The discrete residual}
+\label{sec:residual}
+
+\subsection{Time derivative: a step-cadenced BDF2}
+
+\dsgs\ keeps its own pair of state snapshots, $\bq^{n-1}$ and $\bq^{n-2}$
+(\code{params.dsgs\_qnm1}, \code{dsgs\_qnm2}), advanced \emph{once per time
+step}: inside \code{rhs!}, when the stage time satisfies
+$t - t_{\rm hist} \ge 0.999\,\Delta t$, the pair is rolled
+($\bq^{n-2}\leftarrow\bq^{n-1}$, $\bq^{n-1}\leftarrow\bq_h$) and
+$t_{\rm hist}\leftarrow t$. The Runge--Kutta stage snapshots
+\code{qp.qnm1/qnm2} are \emph{not} used. $\Delta t$ is the deck's fixed time
+step; there is no adaptive CFL time step.
+
+\subsection{The residual of slot $q$ at node $i$}
+
+At every RHS evaluation (every stage), with $\bq_h$ the current stage
+state,
+\begin{equation}
+\boxed{\;
+R^{q}_i \;=\; \Big|\;\frac{3q_i - 4q^{\,n-1}_i + q^{\,n-2}_i}{2\Delta t}
+\;-\; \frac{\mathrm{RHS}_i^{\,q}}{m_i}\;\Big| \;}
+\qquad i = 1,\dots,N_h,
+\label{eq:residual}
+\end{equation}
+i.e.\ the absolute value of the \emph{nodal} value of the lumped-mass
+strong residual $|\mathrm{BDF2}(q) + \nabla\!\cdot\!\bF^q - S^q|$. The
+absolute value is taken \emph{after} the assembly and the division by $m_i$.
+
+\subsection{The residual set}
+
+The maximum over equations (Section~\ref{sec:norm}) runs over the first
+$N_{R}$ slots:
+\begin{equation}
+N_R = \min(N_{eq},8)\ \text{(MHD: $\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z$; $\psi$ excluded)},\qquad
+N_R = N_{eq}\ \text{(Euler)}.
+\end{equation}
+
+%======================================================================
+\section{Normalization of the residual}
+\label{sec:norm}
+
+Each residual $R^q$ is divided by a scale $n^q$ with the units of $q$. Three
+scopes exist, selected by \code{:dsgs\_norms} and by \code{:ldsgs\_nodal}.
+
+\subsection{Domain (and rank) scope, element form}
+\label{sec:norm-domain}
+
+For each slot $q$, over the set $\mathcal{P}$ of \emph{element--node pairs}
+$(K,i)$, $i\in K$ (so a node shared by $s$ elements is counted $s$ times),
+\begin{equation}
+\langle q\rangle = \frac{1}{|\mathcal{P}|}\sum_{(K,i)\in\mathcal{P}} q_i ,
+\qquad
+\Sbar^{q} = \max_{(K,i)\in\mathcal{P}} \big|q_i - \langle q\rangle\big| .
+\label{eq:Sbar}
+\end{equation}
+With \code{:dsgs\_norms => "domain"} both are reduced over all MPI ranks
+(the count $|\mathcal P|$, the sum, then the max); with \code{"rank"} they
+are taken over the rank's own elements without communication.
+
+The spread $\Sbar^q$ is then floored at a fraction $r = 10^{-3}$ of a
+physical scale of the slot built from the mean state
+$\bar\rho = \max(|\langle\rho\rangle|,\epsilon)$,
+$\bar p = (\gamma-1)\max\!\big(\langle E\rangle - \tfrac12(\langle\rho u\rangle^2+\langle\rho v\rangle^2+\langle\rho w\rangle^2)/\bar\rho - \tfrac12(\langle B_x\rangle^2+\langle B_y\rangle^2+\langle B_z\rangle^2),0\big)$,
+$\bar c = \sqrt{\max(\gamma\bar p/\bar\rho,\epsilon)}$, $\epsilon=10^{-16}$:
+\begin{equation}
+n^{q} = \max\!\big(\Sbar^{q},\ r\,s^{q}\big) + \epsilon,
+\qquad
+s^{q} =
+\begin{cases}
+\bar\rho & q=\rho,\\
+\bar\rho\,\bar c & q\in\{\rho u,\rho v,\rho w\},\\
+\bar\rho\,\bar c^{\,2} & q = E,\\
+\sqrt{\bar\rho}\,\bar c & q\in\{B_x,B_y,B_z\},
+\end{cases}
+\label{eq:floors}
+\end{equation}
+and $n^{\psi}=\Sbar^{\psi}+\epsilon$ (never used in the max).
+
+\subsection{Element scope}
+\label{sec:norm-element}
+
+With \code{:dsgs\_norms => "element"} (\code{DSGS\_MHD} only), $n^q$ is
+recomputed inside every element $K$ from the element's own $n_{gl}^d$
+nodes: $\langle q\rangle_K$ and $\Sbar^q_K = \max_{i\in K}|q_i-\langle q\rangle_K|$,
+and the floors~\eqref{eq:floors} are applied with the \emph{element-mean}
+state $(\bar\rho_K,\bar c_K)$ and the fraction $r_{\rm loc}$ =
+\code{:dsgs\_local\_rel} (default $1$) in place of $10^{-3}$:
+\begin{equation}
+n^{q}_K = \max\!\big(\Sbar^{q}_K,\ r_{\rm loc}\,s^{q}_K\big) + \epsilon .
+\label{eq:nelem}
+\end{equation}
+With $r_{\rm loc}=1$ a quiescent element measures its residual against the
+local rate $\rho c$ per unit time.
+
+\subsection{Nodal form (Dao--Nazarov normalization)}
+\label{sec:norm-nodal}
+
+With \code{:ldsgs\_nodal => true} the statistics are taken over the
+\emph{unique} nodes $i=1,\dots,N_h$ (each counted once):
+\begin{equation}
+\langle q\rangle = \frac1{N_h}\sum_i q_i,\qquad
+\Sbar^{q} = \max_i |q_i-\langle q\rangle|,\qquad
+q_{\max}=\max_i q_i,\quad q_{\min}=\min_i q_i ,
+\end{equation}
+reduced over the ranks with \code{"domain"}, and $\Sbar^q$ is floored as
+in~\eqref{eq:floors} \emph{without} the trailing $+\epsilon$. For every node
+$i$ the local range over its support $I(i)$ = the nodes of all elements that
+contain $i$ (on the rank) is
+\begin{equation}
+\delta^{q}_i = \max_{j\in I(i)} q_j - \min_{j\in I(i)} q_j ,
+\end{equation}
+and the normalization is DN22 eq.~(4.7) with $\Cl$ = \code{:dsgs\_Cl}
+(default $0$; DN22 use $0.4$):
+\begin{equation}
+\boxed{\;
+n^{q}_i = \max\!\big(\Sbar^{q}, r s^{q}\big)\,
+\Big(1 - \Cl\,\frac{\delta^{q}_i}{q_{\max}-q_{\min}}\Big)\;}
+\qquad(\text{the bracket is } 1 \text{ if } q_{\max}-q_{\min}\le\epsilon).
+\label{eq:n47}
+\end{equation}
+
+\subsection{The normalized residual}
+
+\begin{align}
+\text{element form:}\qquad&
+\mathcal{R}_K = \max_{i\in K}\ \max_{q=1}^{N_R} \frac{R^{q}_i}{n^{q}}
+\quad\big(n^{q}\to n^{q}_K \text{ in element scope}\big), \label{eq:RK}\\[4pt]
+\text{nodal form:}\qquad&
+\mathcal{R}_i = \max_{q=1}^{N_R}\ R^{q}_i\,\frac{n^{q}_i}{(n^{q}_i)^2+\epsilon},
+\qquad \epsilon = 10^{-16}, \label{eq:Ri}
+\end{align}
+the latter being DN22 eq.~(4.8) with their division guard.
+
+%======================================================================
+\section{The kinematic viscosity}
+\label{sec:nu}
+
+\subsection{Wave speed}
+
+At a node, with $\rho_i=\max(\rho,\epsilon)$, $\bv_i=\mathbf{m}_i/\rho_i$, $p_i$
+from~\eqref{eq:pmhd} (clamped at $0$ in the nodal kernels and in 1D), and
+$a^2=\gamma p_i/\rho_i$, $b^2=|\bB_i|^2/\rho_i$, $b_x^2 = B_{x,i}^2/\rho_i$:
+\begin{align}
+\text{2D:}\quad& \lambda_i = |\bv_i| + \sqrt{\max(a^2+b^2,0)}
+\qquad\text{(an upper bound of the fast speed over all directions)},\label{eq:lam2d}\\
+\text{1D:}\quad& \lambda_i = |\bv_i| + c_{f,i},\qquad
+c_{f}^2 = \tfrac12\Big(a^2+b^2+\sqrt{(a^2+b^2)^2-4a^2 b_x^2}\Big)
+\quad\text{(the exact fast speed along $x$)},\label{eq:lam1d}
+\end{align}
+where $|\bv_i| = \sqrt{u^2+v^2+w^2}$ with all three components.
+
+\subsection{Element form (default, \code{:ldsgs\_nodal => false})}
+
+For every element $K$, with
+\begin{equation}
+\Delta = \frac{\Delta_K}{n_{gl}} = \frac{\Delta_K}{k+1},\qquad
+\lambda_K = \max_{i\in K}\lambda_i ,
+\end{equation}
+\begin{equation}
+\boxed{\;
+\begin{aligned}
+\nu_{\rm res} &= \CR\,\Delta^2\,\mathcal{R}_K, &
+\nu_{\max} &= \Cmax\,\Delta\,\lambda_K,\\
+\nu_c &= \max\big(0,\ \min(\nu_{\max},\nu_{\rm res})\big), &
+\nu_K &= \max\big(\nu_c,\ \Cmin\,\Delta\,\lambda_K\big)
+\end{aligned}\;}
+\label{eq:nuK}
+\end{equation}
+with $\CR$ = \code{:dsgs\_CR} (default $1$), $\Cmax$ = \code{:dsgs\_Cmax}
+(default $0.5$), $\Cmin$ = \code{:dsgs\_Cmin} (default $0$). The last
+operation is the background floor; with $\Cmin=0$ it is absent and
+$\nu_K=\nu_c$. One value $\nu_K$ is used at every quadrature point of $K$;
+$\nu$ is therefore piecewise constant and discontinuous across element
+interfaces.
+
+\subsection{Nodal form (\code{:ldsgs\_nodal => true})}
+
+For every node $i$, with
+\begin{equation}
+h_i = \max_{K\ni i}\ \frac{\Delta_K}{k},
+\end{equation}
+\begin{equation}
+\boxed{\;
+\nu_c = \max\big(0,\ \min(\Cmax\,h_i\,\lambda_i,\ \CR\,h_i^2\,\mathcal{R}_i)\big),\qquad
+\nu_i = \max\big(\nu_c,\ \Cmin\,h_i\,\lambda_i\big)\;}
+\label{eq:nui}
+\end{equation}
+(DN22 eqs.~(4.2), (4.10) plus the floor). $\nu_i$ is a continuous nodal
+field in $V_h$: inside an element the coefficient at a quadrature point is
+the nodal value at that (collocated) point, so the diffusive flux is
+continuous across interfaces. The element means
+$\bar\nu_K = n_{gl}^{-d}\sum_{i\in K}\nu_i$ are stored only for output.
+
+%======================================================================
+\section{Coefficients by equation}
+\label{sec:byeq}
+
+Let $\nu$ be $\nu_K$ (element form) or $\nu_i$ (nodal form), $\nu_c$ and
+$\nu_{\rm fl}=\Cmin\Delta\lambda$ its residual and floor parts, and
+$\mu_q$ the deck multiplier of slot $q$. Two forms exist, selected by
+\code{:dsgs\_conserved}.
+
+\subsection{Conserved form (\code{:dsgs\_conserved => true}; all MHD decks)}
+\label{sec:conserved}
+
+The case's \code{user\_primitives!} hands the assembly the conserved
+variables themselves (or their departure from a reference state), and every
+slot receives a kinematic coefficient:
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabularx}{\textwidth}{l l Y}
+\toprule
+slot & coefficient & condition \\
+\midrule
+$\rho$ & $\mu_1\,\nu$ & \\
+$\rho u,\ \rho v,\ \rho w$ & $\mu_{2,3,5}\,\nu$ & \\
+$E$ & $\mu_4\,\nu$ & \code{:dsgs\_nazarov\_energy => false}, and always in 1D \\
+$E$ & $\mu_4\,\max\!\big(\tfrac{\gamma(\gamma-1)}{\Prt}\,\nu_c,\ \nu_{\rm fl}\big)$ &
+  \code{:dsgs\_nazarov\_energy => true}, 2D; acts on the thermal part only (Section~\ref{sec:split}) \\
+$B_x,\ B_y,\ B_z$ & $\mu_{6,7,8}\,\nu$ & \\
+$\psi$ & $\mu_9\,\nu$ & \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\label{eq:cons}
+The 1D kernels have no split energy flux. $\Prt$ = \code{:dsgs\_Prt} (default $0.7$; the MHD decks set $1$).
+
+\subsection{Physical form (\code{:dsgs\_conserved => false})}
+\label{sec:physical}
+
+The case's \code{user\_primitives!} hands the assembly
+$(\rho, u, v, T, w, B_x, B_y, B_z, \psi)$ with $T = p/\rho$, and
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabularx}{\textwidth}{l l Y}
+\toprule
+slot & coefficient & condition \\
+\midrule
+$\rho$ & $\mu_1\,\nu$ & \\
+$u,\ v,\ w$ & $\mu_{2,3,5}\,\varrho\,\nu$ & \\
+$T$ & $\mu_4\,\varrho\,\nu\,\dfrac{\gamma}{(\gamma-1)\Prt}$ & \code{:dsgs\_nazarov\_energy => false}: Fourier law, $\kappa = c_p\varrho\nu/\Prt$ \\
+$T$ & $\mu_4\,\varrho\,\nu/\Prt$ & \code{:dsgs\_nazarov\_energy => true}: DN22, $\kappa=\rho\nu/\mathrm{Pr}$ \\
+$B_x,\ B_y,\ B_z,\ \psi$ & $\mu_{6,7,8,9}\,\nu$ & \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\label{eq:phys}
+where the density $\varrho$ that makes the coefficient dynamic is
+\begin{equation}
+\varrho =
+\begin{cases}
+\bar\rho_K = n_{gl}^{-d}\sum_{i\in K}\rho_i & \text{element form, \code{:dsgs\_nodal\_rho => false}},\\
+\rho(\bm{x}_{q}) & \text{element form with \code{:dsgs\_nodal\_rho} (the quadrature point's density)},\\
+\rho_i & \text{nodal form}.
+\end{cases}
+\end{equation}
+
+\subsection{The split energy flux (\code{:dsgs\_conserved} with \code{:dsgs\_nazarov\_energy}, 2D)}
+\label{sec:split}
+
+The energy primitive is split by the case into a non-thermal and a thermal
+part,
+\begin{equation}
+E = E_{\rm nth} + E_{\rm th},\qquad E_{\rm th} = \frac{p}{\gamma-1},\qquad
+E_{\rm nth} = \tfrac12\rho|\bv|^2 + \tfrac12|\bB|^2 + \tfrac12\psi^2 ,
+\end{equation}
+slot 4 of \code{uprimitive} carrying $E_{\rm nth}$ (minus its reference
+value) and the spare slot $N_{eq}+2$ carrying $E_{\rm th}$ (minus its
+reference value). The energy flux assembled is then
+\begin{equation}
+\bF_V^{E} = \mu_2\,\nu\,\nabla E_{\rm nth} \;+\;
+\mu_4\max\!\big(\tfrac{\gamma(\gamma-1)}{\Prt}\nu_c,\ \nu_{\rm fl}\big)\,\nabla E_{\rm th},
+\label{eq:splitflux}
+\end{equation}
+so that the kinetic and magnetic energy removed by the $\nu\nabla(\rho\bv)$
+and $\nu\nabla\bB$ Laplacians reappears in $E$ with the same coefficient,
+while the thermal part conducts with
+$\kappa = \rho\nu_c\,\gamma(\gamma-1)/\Prt$ on $\nabla(p/(\gamma-1))$,
+i.e.\ $\kappa\nabla T$ with $\kappa=\rho\nu_c/\Prt$ to leading order
+($T=p/\rho$, $\rho$ frozen), with the floor kept in full.
+
+\subsection{The reference-weighted operator (\code{:dsgs\_ref\_weight}, 2D conserved form)}
+\label{sec:refweight}
+
+The case stores a positive weight $w(\bm{x})$ (the reference density
+$\rho_e$ of \code{fluxEmergenceSon2025DSGS}) in the spare slot $N_{eq}+1$,
+and hands slots $1$--$5$ as the relative departures $(q-q_e)/w$ and slots
+$6$--$9$ as the absolute departures $q-q_e$. The assembled fluxes become
+\begin{equation}
+\bF_V^{q} = \mu_q\,\nu\,w\,\nabla\!\Big(\frac{q-q_e}{w}\Big),\ q=1..5,
+\qquad
+\bF_V^{q} = \mu_q\,\nu\,\nabla(q-q_e),\ q=6..9,
+\end{equation}
+with the energy split of~\eqref{eq:splitflux} applied to
+$(E_{\rm nth}-E_{{\rm nth},e})/w$ and $(E_{\rm th}-E_{{\rm th},e})/w$.
+
+%======================================================================
+\section{The viscous fluxes assembled}
+\label{sec:fluxes}
+
+Write $\nu_q$ for the coefficient of slot $q$ from Section~\ref{sec:byeq}
+(already including $\mu_q$ and, in the physical form, $\varrho$), $g_q$ for
+the primitive of slot $q$ handed by the case, and $\eta = \nu_6$.
+
+\subsection{2D (\code{\_expansion\_visc!}, ContGal, DSGS/DSGS\_MHD)}
+
+At every LGL point of every element the flux vector $\bF_V^q$ of
+\eqref{eq:semidiscrete} is
+\begin{align}
+q=1\ (\rho):\qquad& \bF_V = \nu_1\,\nabla g_1, \label{eq:fmass}\\[2pt]
+q=2\ (x\text{-mom.}):\quad& \bF_V = \big(\tau_{xx},\ \tau_{xy}\big),\quad
+\tau_{xx} = 2\nu_2\,\partial_x g_2 - \tfrac23\nu_2\,(\partial_x g_2+\partial_y g_3), \label{eq:fmomx}\\
+&\phantom{\bF_V = \big(\tau_{xx},\ \tau_{xy}\big),\quad}
+\tau_{xy} = \nu_2\,(\partial_y g_2+\partial_x g_3), \nonumber\\
+q=3\ (y\text{-mom.}):\quad& \bF_V = \big(\tau_{xy},\ \tau_{yy}\big),\quad
+\tau_{yy} = 2\nu_3\,\partial_y g_3 - \tfrac23\nu_3\,(\partial_x g_2+\partial_y g_3), \label{eq:fmomy}\\
+&\phantom{\bF_V = \big(\tau_{xy},\ \tau_{yy}\big),\quad}
+\tau_{xy} = \nu_3\,(\partial_y g_2+\partial_x g_3), \nonumber\\[2pt]
+q=4\ (E):\qquad& \bF_V = \nu_4\,\nabla g_4
+\;+\;\underbrace{\tau\cdot(g_2,g_3)}_{\text{physical form only}}
+\label{eq:fE}\\
+&\phantom{\bF_V = \nu_4\,\nabla g_4}\;+\;\underbrace{\eta\,\big(B_x\nabla g_6 + B_y\nabla g_7 + B_z\nabla g_8\big)}_{\text{physical form, \code{DSGS\_MHD} only}}, \nonumber\\[2pt]
+q\ge5\ (\rho w,\ \bB,\ \psi):\qquad& \bF_V = \nu_q\,\nabla g_q. \label{eq:fscalar}
+\end{align}
+Remarks. (i) The stress uses the Stokes hypothesis
+$\lambda=-\tfrac23\mu$; in the conserved form $g_2=\rho u$, $g_3=\rho v$
+and the same expressions are applied to the momenta. (ii) The work term
+$\tau\cdot\bu$ in~\eqref{eq:fE} uses the momentum coefficient $\nu_2$
+recomputed at the point and the primitives $g_2,g_3$ as velocities; it is
+skipped in the $\theta$ form and in the conserved form. (iii) The resistive
+work term uses the component-Laplacian form $\eta\,\bB\cdot\nabla\bB$, the
+energy counterpart of the induction term~\eqref{eq:fscalar}; it is not the
+$\eta\bB\cdot(\nabla\bB-\nabla\bB^{\!\top})$ of DN22 eq.~(4.4). (iv) With
+the split energy flux, $\nu_4\nabla g_4$ in~\eqref{eq:fE} is replaced
+by~\eqref{eq:splitflux}. (v) The induction slots receive a scalar Laplacian
+per component, $\eta\nabla B_x$, $\eta\nabla B_y$, $\eta\nabla B_z$, not the
+antisymmetric tensor $\eta(\nabla\bB-\nabla\bB^{\!\top})$.
+
+The weak form is assembled as
+\begin{equation}
+\mathrm{RHS}^{\rm visc}_{i}
+\mathrel{-}= \sum_{\text{LGL pts}} \omega_k\omega_l J_{kl}\;
+\nabla\phi_i(\bm{x}_{kl})\cdot\bF_V(\bm{x}_{kl}),
+\end{equation}
+with $\nabla\phi_i$ built from the reference derivatives and the metric
+terms at the point, exactly as for any other viscous model of the code.
+
+\subsection{1D (\code{\_expansion\_visc!}, DSGS, NSD\_1D)}
+
+Every slot receives a scalar diffusion,
+\begin{equation}
+\bF_V^{q} = \nu_q\,\partial_x g_q ,\qquad
+\mathrm{RHS}^{\rm visc}_{i} \mathrel{-}= \sum_{k}\omega_k J_k\,(\partial_x\phi_i)_k\,\nu_{q,k}\,(\partial_x g_q)_k ,
+\end{equation}
+with $\nu_{q,k}=\nu_{q,K}$ (element form) or the nodal value $\nu_{q,i(k)}$
+(nodal form). There is no deviatoric stress, no $\tau\cdot u$ and no
+resistive work term in 1D; the conserved form on
+$(\rho,\rho u,\rho v,E,\rho w,B_x,B_y,B_z)$ is exactly conservative.
+
+%======================================================================
+\section{The Euler kernels (\code{DSGS})}
+\label{sec:euler}
+
+These predate the MHD kernel and keep their own hard-coded constants.
+
+\subsection{2D, $\theta$ form (\code{:energy\_equation => "theta"})}
+
+$\bq=(\rho,\rho u,\rho v,\rho\theta)$, $\CR=1$, $\Cmax=0.5$ (not deck
+inputs), $p = C_0(\rho\theta)^\gamma$ with $C_0,\gamma$ from
+\code{PhysConst}, $c=\sqrt{\gamma p/\rho}$. Domain scope of
+Section~\ref{sec:norm-domain} with the floors replaced by $n^q = \Sbar^q+\epsilon$
+for $\rho$ and $\rho\theta$ and $n^q=\max(\Sbar^q, 10^{-3}\bar\rho\bar c)+\epsilon$
+for the momenta. Then per element,
+$\nu_K$ as in~\eqref{eq:nuK} with $\Cmin=0$, $\lambda_i=|\bv_i|+c_i$, and the coefficients
+\begin{equation}
+\rho:\ 0,\qquad u,v:\ \mu_{2,3}\,\bar\rho_K\,\nu_K,\qquad
+\theta:\ \mu_4\,\frac{\mathrm{Pr}}{\gamma-1}\,\bar\rho_K\,\nu_K ,
+\end{equation}
+with $\mathrm{Pr}$ = \code{:Pr} (the decks use $0.1$). The primitives are
+$(\rho,u,v,\theta)$.
+
+\subsection{2D, energy form (\code{:energy\_equation => "energy"}; Nazarov \& Hoffman 2013)}
+
+$\bq=(\rho,\rho u,\rho v,\rho E)$, $\CR=1$, $\Cmax=0.5$. The momentum
+residual and spread are taken as vectors:
+$R^{m}_i = \sqrt{(R^{\rho u}_i)^2+(R^{\rho v}_i)^2}$,
+$\Sbar^{m}=\max_i\sqrt{(\rho u_i-\langle\rho u\rangle)^2+(\rho v_i-\langle\rho v\rangle)^2}$,
+floored as in~\eqref{eq:floors} for $\rho$, $m$, $E$. With
+$T_i = \max(E_i/\rho_i - \tfrac12|\bv_i|^2,0)$ and $\lambda_i=|\bv_i|+\sqrt{\gamma T_i}$,
+per element ($h=\Delta_K/n_{gl}$)
+\begin{equation}
+\mu_{\rm res} = \CR\,h^2\,\Sbar^{\rho}\,\mathcal{R}_K,\qquad
+\mu_{\rm cap} = \Cmax\,h\,\max_{i\in K}\rho_i\,\max_{i\in K}\lambda_i,\qquad
+\mu_K = \max(0,\min(\mu_{\rm cap},\mu_{\rm res})),
+\end{equation}
+which is a \emph{dynamic} viscosity, and the coefficients
+\begin{equation}
+\rho:\ \mu_1\,\frac{\mu_K}{\max_{i\in K}\rho_i},\qquad
+u,v:\ \mu_{2,3}\,\mu_K,\qquad
+T:\ \mu_4\,\frac{\mathrm{Pr}}{\gamma-1}\,\mu_K ,
+\end{equation}
+on the primitives $(\rho,u,v,T)$ with $T = E/\rho-\tfrac12|\bv|^2$; the
+$\tau\cdot\bu$ term of~\eqref{eq:fE} is included.
+
+\subsection{2D nodal form of the Euler kernel}
+
+With \code{:ldsgs\_nodal => true}, $\nu_i$ from~\eqref{eq:nui} with the
+per-slot normalization~\eqref{eq:n47} (every momentum component on its own),
+$\CR,\Cmax,\Cmin,\Cl$ from the deck, $\lambda_i=|\bv_i|+c_i$ ($c$ from the
+$\theta$ or the energy equation of state), and the slot coefficients
+$\theta$ form: $(0,\ \rho_i\nu_i,\ \rho_i\nu_i,\ \tfrac{\mathrm{Pr}}{\gamma-1}\rho_i\nu_i)$;
+energy form: $(\nu_i,\ \rho_i\nu_i,\ \rho_i\nu_i,\ \tfrac{\mathrm{Pr}}{\gamma-1}\rho_i\nu_i)$,
+each times $\mu_q$.
+
+\subsection{1D Euler}
+
+$\bq=(\rho,\rho u,\rho E)$, $\gamma=1.4$, $\CR=1$, $\Cmax=0.5$,
+$n^q=\Sbar^q+\epsilon$ (no physical floors), $\Delta=\Delta_K/n_{gl}$,
+$\lambda_i=|u_i|+\sqrt{\gamma(\gamma-1)e_i}$ with
+$e_i=\max(E_i/\rho_i-\tfrac12u_i^2,0)$, and the \emph{same} $\nu_K$ on all
+three slots, times $\mu_q$.
+
+%======================================================================
+\section{Output of the coefficients}
+
+\texttt{params.}$\mu$\texttt{\_dsgs[K,q]} holds $\nu_q$ per element (element form) or
+the element mean of the nodal $\nu_{q,i}$ (nodal form);
+\texttt{params.}$\mu$\texttt{\_dsgs\_pnode[i,q]} holds the value written to VTK/PNG:
+the nodal field itself in the nodal form, and in the element form the
+element value broadcast to the nodes (a shared node receives the value of
+the last element that owns it). The writer emits one field
+\code{mu\_dsgs\_<slots>} per distinct coefficient.
+
+%======================================================================
+\section{Deck keys}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{l l Y}
+\toprule
+key & default & meaning \\
+\midrule
+\code{:visc\_model} & -- & \code{DSGS\_MHD()} or \code{DSGS()} \\
+\texttt{:}$\mu$ & -- & per-slot multipliers $\mu_q$ \\
+\code{:dsgs\_CR} & 1.0 & $\CR$ (residual viscosity) \\
+\code{:dsgs\_Cmax} & 0.5 & $\Cmax$ (first-order viscosity) \\
+\code{:dsgs\_Cmin} & 0.0 & $\Cmin$ (background floor; not in DN22) \\
+\code{:dsgs\_Cl} & 0.0 & $\Cl$ of eq.~\eqref{eq:n47} (nodal form) \\
+\code{:dsgs\_gamma} & 5/3 & $\gamma$ of the MHD kernel \\
+\code{:dsgs\_Prt} & 0.7 & $\Prt$ of the MHD energy slot \\
+\code{:dsgs\_norms} & \code{"domain"} & scope of $\langle q\rangle,\Sbar^q$: \code{"domain"}, \code{"rank"}, \code{"element"} \\
+\code{:dsgs\_local\_rel} & 1.0 & $r_{\rm loc}$ of eq.~\eqref{eq:nelem} \\
+\code{:ldsgs\_nodal} & false & nodal form (\code{true}) or element form \\
+\code{:dsgs\_conserved} & false & conserved form (Section~\ref{sec:conserved}) \\
+\code{:dsgs\_nazarov\_energy} & false & $\kappa=\rho\nu/\Prt$ instead of $c_p\rho\nu/\Prt$; split energy flux in the conserved form \\
+\code{:dsgs\_nodal\_rho} & false & $\varrho=\rho(\bm{x}_q)$ in the physical form \\
+\code{:dsgs\_ref\_weight} & false & reference-weighted operator (Section~\ref{sec:refweight}) \\
+\code{:Pr} & -- & $\mathrm{Pr}$ of the Euler kernels \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+%======================================================================
+\section{Dao \& Nazarov (2022) versus JEXPRESSO, term by term}
+\label{sec:table}
+
+The table compares DN22 with the \code{DSGS\_MHD} kernel. ``Element'' and
+``nodal'' refer to \code{:ldsgs\_nodal => false / true}. Where the two are
+identical the entry says so.
+
+\begin{small}
+\begin{longtable}{@{}p{0.18\textwidth} p{0.37\textwidth} p{0.39\textwidth}@{}}
+\toprule
+term & Dao \& Nazarov 2022 & JEXPRESSO \\
+\midrule
+\endfirsthead
+\toprule
+term & Dao \& Nazarov 2022 & JEXPRESSO \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+Discretization &
+Continuous Lagrange $P_k$ ($P_1$, $P_3$) on simplices, FEniCS, inner products integrated exactly &
+Continuous LGL spectral elements of degree $k$ on quadrilaterals / intervals, collocated LGL quadrature (inexact) \\
+
+Mass matrix &
+Consistent $M$ in the solve $MK_l = F$; lumped $m_i=\int\phi_i$ in the residual only &
+Lumped (diagonal) $M$ everywhere, including the residual \\
+
+Unknowns in the residual &
+$\rho,\ m_1..m_d,\ E,\ B_1..B_d$ (eq.~4.8); $\Psi_l$ of the GLM system not included &
+$\rho,\ \rho u,\ \rho v,\ E,\ \rho w,\ B_x,\ B_y,\ B_z$; $\psi$ excluded. Identical set \\
+
+Time derivative in the residual &
+$\mathrm{BDF2}(q)^n = (3q^n-4q^{n-1}+q^{n-2})/(2h)$, $h$ the time step &
+Identical stencil, eq.~\eqref{eq:residual}; $q^{n-1},q^{n-2}$ are once-per-step snapshots, $q$ the current RK stage state \\
+
+Residual $R(q)$ &
+Lumped $L^2$ projection of the absolute value: $R_i = \frac1{m_i}\int|\mathrm{BDF2}+\nabla\!\cdot f|\,\phi_i$ (eq.~4.9) &
+Absolute value of the nodal lumped residual: $R_i = |\mathrm{BDF2}_i - \mathrm{RHS}_i/m_i|$, the assembled inviscid RHS (fluxes and sources) divided by $m_i$ \\
+
+When $\nu$ is computed &
+Once per time step from $U^n$; frozen over the RK stages &
+At every RHS evaluation (every RK stage) from the stage state, with the step-cadenced history \\
+
+Time step &
+Adaptive, $\tau_n = \mathrm{CFL}\,\min h_h/\max\lambda_{\max}$, CFL $=0.3$, classical RK4 &
+Fixed $\Delta t$ from the deck; SSPRK53 or CarpenterKennedy2N54 (deck choice) \\
+
+Mesh function $h$ &
+$h_h\in Q_h$, the $L^2$ projection of $h_K/k$, $h_K$ the circumradius of $K$ (eq.~2.2) &
+Element: $\Delta=\Delta_K/(k+1)$ with $\Delta_K$ the min corner extent~\eqref{eq:DeltaK}. Nodal: $h_i=\max_{K\ni i}\Delta_K/k$ \\
+
+Wave speed $\lambda_{\max}$ &
+$\max_{i=1..8}|\lambda_i|$ of the eigenvalues~(3.6) along a direction $e$: $|u\!\cdot\!e| + c_f(e)$ &
+2D: $|\bv|+\sqrt{a^2+|\bB|^2/\rho}$, the bound of $c_f$ over all directions, with the full 3-component $|\bv|$. 1D: $|\bv|+c_f(x)$, exact. Element form takes the max over the element's nodes \\
+
+First-order viscosity &
+$\nu^L_i = \Cmax h_i\lambda_{\max,i}$, $\Cmax=0.5$ (\S4.2) &
+Element: $\Cmax\Delta\lambda_K$. Nodal: identical, $\Cmax h_i\lambda_i$. \code{:dsgs\_Cmax}, default $0.5$ \\
+
+Global spread $\Sbar(w)$ &
+$\|w-\mathrm{mean}(w)\|_{L^\infty(\Omega)}$ &
+Same, with the mean and max over the nodes (nodal form: unique nodes; element form: element--node pairs, shared nodes counted once per element); over the rank only with \code{:dsgs\_norms => "rank"} \\
+
+Floors on $\Sbar$ &
+None; the ratio uses $R\,n/(n^2+\epsilon)$, $\epsilon\approx2.2\times10^{-16}$ &
+$\Sbar^q$ floored at $10^{-3}$ of the slot's physical scale~\eqref{eq:floors} from the mean state; then the same guard in the nodal form, $R/(n+\epsilon)$ in the element form \\
+
+Local-jump normalization &
+$n(w)_i = \Sbar(w)\big(1-\Cl\,\frac{\max_{I(i)}w-\min_{I(i)}w}{\max w-\min w}\big)$, eq.~4.7, $\Cl=0.4$, $I(i)$ the neighbours of node $i$ &
+Nodal: identical, eq.~\eqref{eq:n47}, $I(i)$ = the nodes of the elements containing $i$, \code{:dsgs\_Cl} (default $0$). Element: not applied ($\Cl=0$); \code{"element"} scope uses the element spread~\eqref{eq:nelem} instead \\
+
+Normalized residual &
+$R^n_h = \max_q R(q)/n(q)$ at every node, eq.~4.8 &
+Nodal: identical, eq.~\eqref{eq:Ri}. Element: $\max$ over the element's nodes and the equations, eq.~\eqref{eq:RK} \\
+
+High-order viscosity &
+$\nu^H_i = \CR h_i^2 R^n_i$, $\CR=1$ (eq.~4.10) &
+Element: $\CR\Delta^2\mathcal R_K$. Nodal: identical. \code{:dsgs\_CR}, default $1$ \\
+
+Combination &
+$\nu_i = \min(\nu^L_i,\nu^H_i)$ (eq.~4.10) &
+$\max(0,\min(\nu_{\max},\nu_{\rm res}))$, then $\max(\cdot,\Cmin\Delta\lambda)$; with $\Cmin=0$ identical \\
+
+Background floor &
+None &
+$\Cmin\,h\,\lambda$ (\code{:dsgs\_Cmin}), $0$ by default; the Brio--Wu deck uses $0.03$ \\
+
+Where $\nu$ lives &
+Nodal field in $Q_h$ (continuous) &
+Nodal: identical. Element: one value per element (discontinuous), the default \\
+
+Mass equation &
+$\nu_h\nabla\rho_h$ (eq.~4.4) &
+$\mu_1\nu\nabla\rho$; identical with $\mu_1=1$ (the MHD decks) \\
+
+Dynamic viscosity &
+$\mu_h = \rho_h\nu_h$ (\S4.4), nodal $\rho$ &
+Physical form: $\varrho\nu$ with $\varrho$ = element-mean $\bar\rho_K$ (default), nodal $\rho$ (\code{:dsgs\_nodal\_rho} or nodal form). Conserved form: $\nu\nabla(\rho\bv)$, no explicit $\rho$ \\
+
+Stress tensor &
+$\tau = \mu(\nabla u+\nabla u^{\!\top}) + \lambda\nabla\!\cdot\!u\,I$ with $\lambda=0$ &
+$\tau = \mu(\nabla u+\nabla u^{\!\top}) - \tfrac23\mu\nabla\!\cdot\!u\,I$ (Stokes hypothesis), eqs.~\eqref{eq:fmomx}--\eqref{eq:fmomy}; applied to $(u,v)$ in the physical form and to $(\rho u,\rho v)$ in the conserved form. The third component $\rho w$ receives a scalar Laplacian. 1D: scalar Laplacian on every slot \\
+
+Heat conduction &
+$\kappa_h = \mu_h/\mathrm{Pr}$ on $\nabla T_h$, $T=p/\rho$ &
+Physical form: $\varrho\nu\,\gamma/((\gamma-1)\Prt)$ on $\nabla(p/\rho)$ by default (Fourier, $c_p$), or $\varrho\nu/\Prt$ with \code{:dsgs\_nazarov\_energy} (identical to DN22). Conserved form: $\nu\nabla E$ by default; with \code{:dsgs\_nazarov\_energy} the split flux~\eqref{eq:splitflux}, $\kappa=\rho\nu_c/\Prt$ to leading order on the thermal part with the floor kept \\
+
+Viscous work in $E$ &
+$u_h\cdot\tau_h$ &
+Physical form: $\tau\cdot(g_2,g_3)$, same. Conserved form: not added (the $\nu\nabla E$ Laplacian carries it) \\
+
+Resistive work in $E$ &
+$\eta_h B_h\cdot(\nabla B_h-\nabla B_h^{\!\top})$ &
+Physical form: $\eta\,\bB\cdot\nabla\bB$ (component-Laplacian form, matching the induction term below). Conserved form: not added \\
+
+Induction equation &
+$\eta_h(\nabla B_h-\nabla B_h^{\!\top})$, $\eta_h=\nu_h$ &
+$\eta\nabla B_x$, $\eta\nabla B_y$, $\eta\nabla B_z$ (a scalar Laplacian per component), $\eta=\mu_{6,7,8}\nu$ \\
+
+Divergence cleaning &
+Projection, pseudo-time, or hyperbolic GLM ($\Psi_l$, $c_h=\max\lambda$, damping $c_r=0.3$ in 2D) &
+2D: Dedner mixed GLM with $\psi$ as slot 9 (case files); $\psi$ is diffused with $\mu_9\nu$ and excluded from the residual. 1D: $B_x$ constant, no cleaning \\
+
+Boundary term of the viscous form &
+$(n\cdot F_V, V_h)_\Gamma$ kept (Neumann as a boundary integral); Dirichlet and slip strongly &
+Boundary integral not assembled (zero diffusive flux); Dirichlet strongly on the nodes \\
+
+Bulk viscosity &
+$\lambda_h = 0$ &
+$-\tfrac23\mu$ (through the deviatoric stress) \\
+
+Parameters used &
+$\Cmax=0.5$, $\CR=1$, $\Cl=0.4$, CFL $0.3$, $\mathrm{Pr}$ (unstated in \S5) &
+Brio--Wu: $\Cmax=0.5$, $\CR=1$, $\Cl=0.4$ (nodal), $\Cmin=0.03$, $\Prt=1$, conserved form, element form by default \\
+
+\end{longtable}
+\end{small}
+
+\end{document}

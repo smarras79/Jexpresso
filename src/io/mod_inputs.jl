@@ -337,7 +337,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # problems/MHD/fluxEmergenceSon2025/user_inputs.jl for a full use.
     for (key, val) in (
         (:plot_vars,             nothing),            # names to render (nothing = all output variables)
-        (:plot_log10,            String[]),           # names rendered as log10(var)
+        (:plot_log10,            String[]),           # names rendered as log10(var) (PNG); VTK adds a log10_<var> field
         (:plot_clims,            Dict{String,Any}()), # name => (lo, hi) fixed color range
         (:plot_fieldlines,       nothing),            # (Bx, By) names -> vector-potential isocontours
         (:plot_fieldlines_levels, 40),
@@ -351,7 +351,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         (:plot_user,             true),               # 1D: the case's user_plot_1d figure, if it ships one
         (:plot_dsgs,             true),               # μ_dsgs panels of a DynSGS run
         (:plot_dsgs_vars,        nothing),            # damped variables whose μ_dsgs panel is written (nothing = all)
-        (:plot_dsgs_log10,       false),              # log₁₀ μ_dsgs panels, floored at :plot_dsgs_floor
+        (:plot_dsgs_log10,       false),              # log₁₀ μ_dsgs panels (PNG) / log10_mu_dsgs fields (VTK), floored at :plot_dsgs_floor
         (:plot_dsgs_floor,       1.0e-6),
         (:plot_raster_nmax,      400),                # raster points along the longer side
         (:plot_profile_x,        nothing),            # x of the vertical-profile figure (nothing = none)
