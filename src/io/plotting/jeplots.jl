@@ -25,11 +25,22 @@ function _savefig_silent(plt, fout_name)
     return nothing
 end
 
+# 1D curves are drawn as lines with a few markers only (:plot_markers of
+# them across the domain, default 20; 0 = none), so that the numerical
+# solution stays distinguishable from the dashed reference without a circle
+# on every one of the hundreds of nodes.
+function _sparse_marker_idx(n::Int, inputs)
+    nmark = get(inputs, :plot_markers, 20)
+    (nmark <= 0 || n <= nmark) && return nmark <= 0 ? (1:0) : (1:n)
+    stride = max(1, n ÷ nmark)
+    return 1:stride:n
+end
+
 function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
 
     npoin = length(q)
-    plt = Plots.scatter(x[1:npoin], q[1:npoin];
-                        markersize = 5,
+    plt = Plots.plot(x[1:npoin], q[1:npoin];
+                        line = (:blue, 2),
                         color = :blue,
                         xlabel = "x",
                         ylabel = "q(x)",
@@ -114,7 +125,6 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
 
         plt = Plots.plot(x_coords[sort_idx], qout[sort_idx, ivar];
                         line = (:blue, 2),
-                        marker = (:circle, 5, :blue),
                         title = string(outvar[ivar], "  ", title),
                         xlabel = "x",
                         titlefontsize = 22,
@@ -125,6 +135,9 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
                         label = "Jexpresso",
                         show = false,
                         size = (600, 400))
+        midx = _sparse_marker_idx(length(sort_idx), inputs)
+        Plots.scatter!(plt, x_coords[sort_idx][midx], qout[sort_idx, ivar][midx];
+                       marker = (:circle, 4, :blue), markerstrokewidth = 0.5, label = "")
 
         if qref !== nothing && any(isfinite, @view(qref[:, ivar]))
             Plots.plot!(plt, x_coords[sort_idx], qref[sort_idx, ivar];
@@ -164,7 +177,6 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
         ieq = min(2, size(μ_nodes, 2))
         plt_μ = Plots.plot(x_coords[sort_idx], μ_nodes[sort_idx, ieq];
                            line = (:red, 2),
-                           marker = (:circle, 3, :red),
                            title = string("μ_dsgs  ", title),
                            xlabel = "x",
                            titlefontsize = 22,
@@ -173,6 +185,9 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
                            legend = false,
                            show = false,
                            size = (600, 400))
+        midx = _sparse_marker_idx(length(sort_idx), inputs)
+        Plots.scatter!(plt_μ, x_coords[sort_idx][midx], μ_nodes[sort_idx, ieq][midx];
+                       marker = (:circle, 3, :red), markerstrokewidth = 0.5, label = "")
         if !lmatrix
             _savefig_silent(plt_μ, string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".png"))
         end
@@ -236,22 +251,14 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
                            show = false)
         end
 
-        if !(p==[])
-            # Add to existing plot without decorations
-            Plots.scatter!(fig, mesh.x[1:mesh.npoin_original],
-                         q[idx+1:(ivar-1)*npoin+mesh.npoin_original];
-                         marker = marker,
-                         markersize = 5,
-                         color = color,
-                         label = "")
-        else
-            Plots.scatter!(fig, mesh.x[1:mesh.npoin_original],
-                         q[idx+1:(ivar-1)*npoin+mesh.npoin_original];
-                         marker = marker,
-                         markersize = 5,
-                         color = color,
-                         label = "")
-        end
+        xs = mesh.x[1:mesh.npoin_original]
+        qs = q[idx+1:(ivar-1)*npoin+mesh.npoin_original]
+        sidx = sortperm(xs)
+        Plots.plot!(fig, xs[sidx], qs[sidx]; line = (color, 2), label = "")
+        midx = _sparse_marker_idx(length(sidx), inputs)
+        Plots.scatter!(fig, xs[sidx][midx], qs[sidx][midx];
+                       marker = marker, markersize = 4, markerstrokewidth = 0.5,
+                       color = color, label = "")
 
         Plots.ylims!(fig, -0.03, 0.03)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".eps")
@@ -287,7 +294,6 @@ function plot_dsgs_1d(mesh::St_mesh, μ_dsgs::AbstractMatrix, t, OUTPUT_DIR::Str
 
     plt = Plots.plot(xs[sort_idx], ys[sort_idx];
                      line = (:red, 2),
-                     marker = (:circle, 3, :red),
                      title = string(varname, " (DSGS)  t = ", round(t, digits=4)),
                      xlabel = "x",
                      ylabel = varname,
@@ -298,6 +304,9 @@ function plot_dsgs_1d(mesh::St_mesh, μ_dsgs::AbstractMatrix, t, OUTPUT_DIR::Str
                      legend = false,
                      show = false,
                      size = (600, 400))
+    midx = _sparse_marker_idx(length(sort_idx), inputs)
+    Plots.scatter!(plt, xs[sort_idx][midx], ys[sort_idx][midx];
+                   marker = (:circle, 3, :red), markerstrokewidth = 0.5, label = "")
 
     fout_name = string(OUTPUT_DIR, "/mu_dsgs-it", iout, ".png")
     _savefig_silent(plt, fout_name)

@@ -68,7 +68,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :energy_equation      => "energy",        # slot 4 is ρE — see note (1)
         :lvisc                => true,
+        # DynSGS sensor: "legacy" = the sensor this case was validated with
+        # (the assembled RHS against a fixed BDF2 of the stage state, in
+        # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
+        # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model           => DSGS(),          # residual-based shock capturing
+        :dsgs_sensor          => "legacy",
         # Per-equation multiplier on the DynSGS coefficient. The method is
         # parameter-free, so 1.0 is the paper's own setting; the ×4 on the
         # momentum and energy slots is this case's, and it is measured, not

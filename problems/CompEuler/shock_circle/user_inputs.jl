@@ -20,7 +20,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :energy_equation      => "energy",        # slot 4 is ρE — see note (1)
         :lvisc                => true,
+        # DynSGS sensor: "legacy" = the sensor this case was validated with
+        # (the assembled RHS against a fixed BDF2 of the stage state, in
+        # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
+        # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model           => DSGS(),          # residual-based shock capturing     
+        :dsgs_sensor          => "legacy",
         :μ                    => [1.0, 4.0, 4.0, 4.0],
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.

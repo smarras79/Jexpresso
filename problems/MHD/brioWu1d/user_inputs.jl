@@ -41,6 +41,7 @@ function user_inputs()
         :lvisc            => true,
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
+        :dsgs_sensor      => "residual",  # element-wise strong residual (DSGS.md §1.2); "legacy" = the pre-Sep-2026 sensor
         :dsgs_CR          => 1.0,
         :dsgs_Cmax        => 0.5,
         # Background floor C_min (not in the paper), 6 % of the first-order

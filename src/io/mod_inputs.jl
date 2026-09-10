@@ -338,6 +338,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     for (key, val) in (
         (:plot_vars,             nothing),            # names to render (nothing = all output variables)
         (:plot_log10,            String[]),           # names rendered as log10(var) (PNG); VTK adds a log10_<var> field
+        (:plot_markers,          20),                 # 1D PNG: number of markers drawn along each curve (0 = lines only)
         (:plot_clims,            Dict{String,Any}()), # name => (lo, hi) fixed color range
         (:plot_fieldlines,       nothing),            # (Bx, By) names -> vector-potential isocontours
         (:plot_fieldlines_levels, 40),
@@ -1090,7 +1091,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:dsgs_ref_weight] = false
     end
     #   :ldsgs_nodal       DynSGS coefficient per NODE (Dao & Nazarov 2022:
-    #                      ν at every node from the assembled residual, a
+    #                      ν at every node from the element residuals, a
     #                      continuous field) instead of the default per
     #                      ELEMENT (one ν per element, Marras's form). true
     #                      implies the element form off. 1D and 2D kernels
@@ -1127,14 +1128,34 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_swe_hmin))
         inputs[:dsgs_swe_hmin] = 1.0e-3
     end
-    #   :dsgs_legacy_stencil  time derivative of the residual as a BDF2 on
-    #                      (q_stage, qⁿ, qⁿ⁻¹) at every RK stage — the stencil
-    #                      of every DynSGS run before Sep 2026, which reads
-    #                      −∂ₜq/2 at the first stage and over-fires on smooth
-    #                      moving structures; false (default) = the
-    #                      stage-consistent stencil (rhs.jl, _dsgs_stencil)
-    if(!haskey(inputs, :dsgs_legacy_stencil))
-        inputs[:dsgs_legacy_stencil] = false
+    #   :dsgs_sensor       "residual" (default): the element-wise strong
+    #                      residual with the stage-consistent time stencil
+    #                      (rhs.jl, _dsgs_residual_rhs!, _dsgs_stencil;
+    #                      DSGS.md §1.2, §4.4). "legacy": the sensor of every
+    #                      DynSGS run before Sep 2026 — the assembled RHS
+    #                      against a fixed BDF2 of the stage state, which
+    #                      amounts to a |∂ₜq| gradient sensor — kept for the
+    #                      cases validated with it (their decks set it).
+    if(!haskey(inputs, :dsgs_sensor))
+        inputs[:dsgs_sensor] = "residual"
+    end
+    #   :dsgs_reference    with the "residual" sensor and TOTAL variables:
+    #                      subtract the element RHS of the reference state qe
+    #                      (evaluated once) so that the residual is that of the
+    #                      departure from it — for a hydrostatic atmosphere
+    #                      advanced in total variables (CompEuler theta cases),
+    #                      whose full-flux residual at rest is the
+    #                      interpolation error of the balance. Off by default:
+    #                      a shock tube's qe is its initial jump.
+    if(!haskey(inputs, :dsgs_reference))
+        inputs[:dsgs_reference] = false
+    end
+    if haskey(inputs, :dsgs_legacy_stencil)
+        error(" user_inputs.jl: :dsgs_legacy_stencil has been replaced by :dsgs_sensor => \"legacy\" | \"residual\".")
+    end
+    inputs[:dsgs_sensor] = lowercase(string(inputs[:dsgs_sensor]))
+    if !(inputs[:dsgs_sensor] in ("residual", "legacy"))
+        error(" user_inputs.jl: :dsgs_sensor must be \"residual\" or \"legacy\" (got $(inputs[:dsgs_sensor])).")
     end
 
     #

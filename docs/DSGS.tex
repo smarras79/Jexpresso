@@ -108,9 +108,12 @@ element by element and assembled,
 \label{eq:rhs}
 \end{equation}
 for each slot $q$ ($\bF^q$ its flux, $S^q$ its source), stored in
-\code{params.RHS} \emph{before} the division by the mass matrix. The
-viscous contribution of Section~\ref{sec:fluxes} is assembled separately
-into \code{params.RHS\_visc}, added, and the sum is divided by $M$ to give
+\code{params.RHS} \emph{before} the division by the mass matrix; the
+element contributions $\mathrm{rhs}^{q}_{K,i}$ it is summed from (the same
+integrals over one element $K$) are kept in \code{params.rhs\_el} and are
+what the residual of Section~\ref{sec:residual} reads. The viscous
+contribution of Section~\ref{sec:fluxes} is assembled separately into
+\code{params.RHS\_visc}, added, and the sum is divided by $M$ to give
 $\partial_t\bq_h$.
 
 \paragraph{Per-slot multipliers.} The deck vector \texttt{:}$\mu$
@@ -177,14 +180,47 @@ At every RHS evaluation (every stage), with $\bq_h$ the current stage
 state,
 \begin{equation}
 \boxed{\;
-R^{q}_i \;=\; \Big|\;w_1 q_i + w_2 q_{A,i} + w_3 q_{B,i}
-\;-\; \frac{\mathrm{RHS}_i^{\,q}}{m_i}\;\Big| \;}
-\qquad i = 1,\dots,N_h,
+R^{q,K}_i \;=\; \Big|\;w_1 q_i + w_2 q_{A,i} + w_3 q_{B,i}
+\;-\; \frac{\mathrm{rhs}^{\,q}_{K,i}}{m^K_i}\;\Big| \;}
+\qquad i \in K,
 \label{eq:residual}
 \end{equation}
-i.e.\ the absolute value of the \emph{nodal} value of the lumped-mass
-strong residual $|\partial_t q + \nabla\!\cdot\!\bF^q - S^q|$. The
-absolute value is taken \emph{after} the assembly and the division by $m_i$.
+where $\mathrm{rhs}^{q}_{K,i}$ is element $K$'s own weak inviscid right-hand
+side at its node $i$ (fluxes and sources, before the direct stiffness
+summation) and $m^K_i = \omega_i(\omega_j)J_{K,i}$ its lumped mass entry.
+This is the \emph{element-wise} strong residual. With the lumped LGL mass
+matrix the assembled rate $\mathrm{RHS}_i/m_i$ is exactly what the
+integrator advances, so a residual built on it is the time-integration
+error and nothing else; the element residual equals it at the interior
+nodes of $K$ (summation-by-parts: $\mathrm{rhs}_{K,i}/m^K_i$ is the strong
+nodal divergence) and differs from it at the interface nodes by the
+mass-weighted jump of the flux divergence across the interface, $O(h^k)$
+where the solution is smooth and $O(1/h)$ at a discontinuity. It is DN22's
+$\frac1{m_i}\int|\mathrm{BDF}(q)+\nabla\!\cdot\! f(q)|\phi_i$ with the
+absolute value inside the integral, evaluated with the LGL rule. The
+element form takes $\max_{i\in K}R^{q,K}_i$; the nodal form the
+mass-weighted average
+\begin{equation}
+R^{q}_i = \frac{\sum_{K\ni i} m^K_i\,R^{q,K}_i}{\sum_{K\ni i} m^K_i}
+\qquad(\text{over the elements of the rank}).
+\label{eq:Rnodal}
+\end{equation}
+When the case advances the total variables on top of a non-trivial
+reference state $\bq_e$ (the hydrostatic atmosphere of the Euler $\theta$
+cases, whose flux and source are the full ones) and the deck sets
+\code{:dsgs\_reference => true}, $\mathrm{rhs}_{K,i}$
+in~\eqref{eq:residual} is replaced by $\mathrm{rhs}_{K,i}(\bq_h) -
+\mathrm{rhs}_{K,i}(\bq_e)$, the reference's element RHS being evaluated once:
+at rest the element residual of the full equations is the interpolation
+error of the hydrostatic balance at every interface, not an
+under-resolution. Cases written on the perturbation (the well-balanced MHD
+and shallow-water splits) have $\mathrm{rhs}_{K,i}(\bq_e) = 0$.
+At the nodes of a Dirichlet boundary (a free-slip wall, a 1D end) the
+boundary condition constrains the assembled rate while $\mathrm{rhs}_{K,i}$
+carries the unconstrained tendency, so the element residual there is the
+constraint force; it is set to zero at those nodes for every equation
+(periodic and Laguerre edges are not constrained). A discontinuity reaching
+a wall is still seen by the interior nodes of the same element.
 
 \subsection{The residual set}
 
@@ -668,7 +704,7 @@ Continuous LGL spectral elements of degree $k$ on quadrilaterals / intervals, co
 
 Mass matrix &
 Consistent $M$ in the solve $MK_l = F$; lumped $m_i=\int\phi_i$ in the residual only &
-Lumped (diagonal) $M$ everywhere, including the residual \\
+Lumped (diagonal) $M$ everywhere; the residual uses the element mass entries $m^K_i$ \\
 
 Unknowns in the residual &
 $\rho,\ m_1..m_d,\ E,\ B_1..B_d$ (eq.~4.8); $\Psi_l$ of the GLM system not included &
@@ -680,7 +716,7 @@ BDF2 at the first stage of a step; at a later stage the second-order three-point
 
 Residual $R(q)$ &
 Lumped $L^2$ projection of the absolute value: $R_i = \frac1{m_i}\int|\mathrm{BDF2}+\nabla\!\cdot f|\,\phi_i$ (eq.~4.9) &
-Absolute value of the nodal lumped residual: $R_i = |\mathrm{BDF2}_i - \mathrm{RHS}_i/m_i|$, the assembled inviscid RHS (fluxes and sources) divided by $m_i$ \\
+Element-wise: $R^K_i = |\partial_t q_i - \mathrm{rhs}_{K,i}/m^K_i|$ with the element's own weak RHS and lumped mass entry, eq.~\eqref{eq:residual}; nodal form: mass-weighted average over the elements of the node, eq.~\eqref{eq:Rnodal}; the absolute value is inside the average as in DN22 \\
 
 When $\nu$ is computed &
 Once per time step from $U^n$; frozen over the RK stages &

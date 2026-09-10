@@ -92,7 +92,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc            => true,
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        # DynSGS sensor: "legacy" = the sensor this case was validated with
+        # (the assembled RHS against a fixed BDF2 of the stage state, in
+        # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
+        # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model       => DSGS_MHD(),
+        :dsgs_sensor      => "legacy",
         :dsgs_CR          => 1.0,
         :dsgs_Cmax        => 0.5,
         # Background floor of 3% of the wave-speed cap: the residual sensor

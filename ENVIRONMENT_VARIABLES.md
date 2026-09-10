@@ -402,4 +402,6 @@ the level of the usual round-off divergence.
 | `:dsgs_Cl`             | real | `0.0`   | Dao & Nazarov's $C_l$ in the local-jump normalization (their eq. 4.7); paper 0.4, nodal form |
 | `:dsgs_swe_g`          | real | `9.81`  | `DSGS_SW` (shallow water): $g$ of the wave speed $\lvert\mathbf v\rvert + \sqrt{gH}$ |
 | `:dsgs_swe_hmin`       | real | `1e-3`  | `DSGS_SW`: depth below which $Hu/H$ is desingularized (the case's wet/dry threshold) |
-| `:dsgs_legacy_stencil` | bool | `false` | residual time derivative as the pre-Sep-2026 BDF2 on (stage state, $q^n$, $q^{n-1}$) at every stage, for reproducing older runs; `false` = stage-consistent stencil (DSGS.md §4.4) |
+| `:dsgs_reference`      | bool | `false` | `"residual"` sensor, TOTAL variables: subtract the element RHS of the reference state $q_e$ (a hydrostatic atmosphere); off for shock tubes, whose $q_e$ is the initial jump |
+| `:dsgs_sensor`         | str  | `"residual"` | `"residual"`: element-wise strong residual with the stage-consistent stencil (DSGS.md §1.2, §4.4); `"legacy"`: the pre-Sep-2026 sensor (assembled RHS, fixed BDF2 of the stage state), selected by the decks validated with it |
+| `:plot_markers`        | int  | `20`    | 1D PNG output: markers drawn along each curve (the line carries the solution; 0 = lines only) |

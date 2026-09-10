@@ -148,6 +148,167 @@ end
     end
 end
 
+# DynSGS residual right-hand side. The kernels compare the assembled rate
+# ∂ₜq with the ELEMENT's weak RHS (see _dsgs_nodal_residual_1d! in SGS.jl).
+# For a case that advances the TOTAL variables on top of a non-trivial
+# reference state qe (the hydrostatic atmosphere of the CompEuler theta
+# cases: the flux and source are the full ones, and their element-wise
+# strong residual at rest is the interpolation error of the hydrostatic
+# balance — O(1/h)·(h/H)^(k+1)·p/H at every interface, 30 % of ρg on the
+# 1 km elements of the rising bubble, measured: ν grew to 7·10³ m²/s and the
+# run blew up), the residual is taken on the DEPARTURE from qe: the element
+# RHS of qe itself, which is time-independent, is evaluated once on the
+# first call and subtracted. Cases whose flux/source are already written on
+# the perturbation (the well-balanced MHD and shallow-water splits, PERT
+# variables) have a vanishing reference RHS and pass rhs_el through.
+function _dsgs_residual_rhs!(u, params, SD)
+    # :dsgs_sensor => "legacy": the pre-September-2026 sensor, the assembled
+    # RHS divided by the lumped mass against the fixed BDF2 of the stage
+    # state (set in rhs!). With a lumped mass matrix that difference is the
+    # time-integration error, and the stencil's error at the intermediate
+    # stages makes it ≈ |∂ₜq|: a gradient sensor rather than a residual.
+    # It is what the atmospheric and MHD cases of this code were validated
+    # with, and their decks select it; the element residual below is the
+    # default. The assembled value is written into the element layout so
+    # that the kernels need not know.
+    if get(params.inputs, :dsgs_sensor, "residual") == "legacy"
+        res  = params.dsgs_rhs_res
+        RHS  = params.RHS
+        Minv = params.Minv
+        ω    = params.ω
+        Je   = params.metrics.Je
+        neqs = params.neqs
+        ngl  = params.mesh.ngl
+        if SD == NSD_1D()
+            @inbounds for ie = 1:params.mesh.nelem, i = 1:ngl
+                ip = params.mesh.connijk[ie,i,1,1]
+                f  = ω[i]*Je[ie,i]*Minv[ip]
+                for ieq = 1:neqs
+                    res[ie,i,ieq] = f*RHS[ip,ieq]
+                end
+            end
+        else
+            @inbounds for ie = 1:params.mesh.nelem, j = 1:ngl, i = 1:ngl
+                ip = params.mesh.connijk[ie,i,j,1]
+                f  = ω[i]*ω[j]*Je[ie,i,j]*Minv[ip]
+                for ieq = 1:neqs
+                    res[ie,i,j,ieq] = f*RHS[ip,ieq]
+                end
+            end
+        end
+        return res
+    end
+    if !params.dsgs_ref_done[]
+        params.dsgs_ref_done[] = true
+        neqs  = params.neqs
+        npoin = params.mesh.npoin
+        qe    = params.qp.qe
+        # only when the deck says qe is a steady reference state to subtract
+        # (:dsgs_reference): for a shock tube qe holds the initial jump and
+        # subtracting its element RHS would plant a residual at x = 0.5 for
+        # the whole run (measured on sod1d)
+        lref  = get(params.inputs, :dsgs_reference, false) &&
+                params.SOL_VARS_TYPE == TOTAL() && size(qe, 2) >= neqs &&
+                any(x -> x != 0, @view(qe[1:npoin, 1:neqs]))
+        params.dsgs_have_ref[] = lref
+        if lref
+            # keep this stage's element RHS, evaluate the reference's, restore
+            params.dsgs_rhs_res .= params.rhs_el
+            for ieq = 1:neqs
+                params.dsgs_qe_flat[(ieq-1)*npoin+1:ieq*npoin] .= @view(qe[1:npoin, ieq])
+            end
+            fill!(params.rhs_el, zero(params.T))
+            # the 2D routine reads the state from params.uaux, not from its u argument
+            u2uaux!(@view(params.uaux[:,:]), params.dsgs_qe_flat, neqs, npoin)
+            inviscid_rhs_el!(params.dsgs_qe_flat, params, params.mesh.connijk, params.qp.qe, params.mesh.coords,
+                             params.inputs[:lsource], params.mp.S_micro, params.mp.qn,
+                             params.mp.flux_lw, params.mp.flux_sw, SD)
+            params.dsgs_rhs_ref .= params.rhs_el
+            params.rhs_el .= params.dsgs_rhs_res
+            u2uaux!(@view(params.uaux[:,:]), u, neqs, npoin)
+        end
+    end
+    # Dirichlet boundary nodes. The boundary condition constrains the
+    # assembled rate of change there (free-slip: the normal momentum stays
+    # zero; a 1D end: the prescribed components stay put) while the element's
+    # own RHS carries the unconstrained tendency, so the element residual of
+    # a constrained node is the constraint force, not an under-resolution
+    # (measured on the rising bubble: −∂ₓp of the atmosphere's adjustment at
+    # the free-slip wall, 0.05 m/s², drove ν to the cap along the whole wall
+    # column and blew the run up; on sod1d it was the 9e-5 spike of the
+    # coefficient at x = 0). The residual of every equation is therefore
+    # made to vanish at those nodes: their entries of the residual RHS are
+    # set to the assembled rate times the element mass. Periodic and
+    # Laguerre edges are not constrained and are left alone.
+    if !params.dsgs_bdy_done[]
+        params.dsgs_bdy_done[] = true
+        _dsgs_boundary_pairs!(params, SD)
+    end
+    if params.dsgs_have_ref[]
+        params.dsgs_rhs_res .= params.rhs_el .- params.dsgs_rhs_ref
+    else
+        params.dsgs_rhs_res .= params.rhs_el
+    end
+    if !isempty(params.dsgs_bdy_pairs)
+        TT = eltype(params.dsgs_rhs_res)
+        qA, qB, wt = _dsgs_stencil(params, TT)
+        q  = params.uaux
+        ω  = params.ω
+        Je = params.metrics.Je
+        res = params.dsgs_rhs_res
+        neqs = params.neqs
+        if SD == NSD_1D()
+            @inbounds for (ie, i, j) in params.dsgs_bdy_pairs
+                ip = params.mesh.connijk[ie,i,1,1]
+                m  = ω[i]*Je[ie,i]
+                for ieq = 1:neqs
+                    res[ie,i,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
+                end
+            end
+        else
+            @inbounds for (ie, i, j) in params.dsgs_bdy_pairs
+                ip = params.mesh.connijk[ie,i,j,1]
+                m  = ω[i]*ω[j]*Je[ie,i,j]
+                for ieq = 1:neqs
+                    res[ie,i,j,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
+                end
+            end
+        end
+    end
+    return params.dsgs_rhs_res
+end
+
+# The (element, i, j) pairs of the Dirichlet boundary nodes, built once.
+function _dsgs_boundary_pairs!(params, SD)
+    mesh  = params.mesh
+    npoin = mesh.npoin
+    nelem = mesh.nelem
+    ngl   = mesh.ngl
+    mask  = falses(npoin)
+    if SD == NSD_1D()
+        mask[1] = true
+        mask[mesh.npoin_linear] = true
+        for ie = 1:nelem, i = 1:ngl
+            ip = mesh.connijk[ie,i,1,1]
+            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, 1))
+        end
+    else
+        for iedge = 1:mesh.nedges_bdy
+            et = mesh.bdy_edge_type[iedge]
+            (et === nothing || startswith(string(et), "periodic") || string(et) == "Laguerre") && continue
+            for k = 1:ngl
+                ip = mesh.poin_in_bdy_edge[iedge,k]
+                ip > 0 && (mask[ip] = true)
+            end
+        end
+        for ie = 1:nelem, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,1]
+            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, j))
+        end
+    end
+    return nothing
+end
+
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
     # for @timers, do not delete
@@ -686,10 +847,10 @@ function _build_rhs!(RHS, u, params, time)
         # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
         τ = time - params.dsgs_thist[]
         h = params.Δt
-        if get(params.inputs, :dsgs_legacy_stencil, false)
-            # the stencil of the runs before Sep 2026: BDF2 on (q_stage, qⁿ, qⁿ⁻¹)
-            # at every stage, which is ∂ₜq only at τ = Δt (−∂ₜq/2 at τ = 0);
-            # kept so that those results can be reproduced and compared
+        if get(params.inputs, :dsgs_sensor, "residual") == "legacy"
+            # the sensor of the runs before Sep 2026 (see _dsgs_residual_rhs!):
+            # BDF2 on (q_stage, qⁿ, qⁿ⁻¹) at every stage, which is ∂ₜq only at
+            # τ = Δt (−∂ₜq/2 at τ = 0), against the assembled RHS
             params.dsgs_stage[] = true
             params.dsgs_wt[]    = (1.5/h, -2.0/h, 0.5/h)
         elseif τ <= 1.0e-8*h
@@ -1096,10 +1257,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     if params.VT == DSGS()
         TT = eltype(params.μ_dsgs)
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                 params.uaux, dsgs_qA, dsgs_qB,
                                 params.qp.qe,
-                                params.RHS, params.Minv, params.visc_coeff,
+                                dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                 dsgs_wt,
                                 params.mesh.connijk, params.mesh.Δx,
                                 Int(nelem), Int(ngl);
@@ -1118,16 +1280,18 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         lnodal_mhd = get(params.inputs, :ldsgs_nodal, false)
         if lnodal_mhd
             # Nodal (Dao & Nazarov) form: ν at every node, a continuous field
             # the element loop interpolates; μ_dsgs gets the element means.
             compute_dsgs_viscosity_nodal!(params.μ_dsgs, params.μ_dsgs_pnode, DSGS_MHD(), SD,
                                           params.uaux, dsgs_qA, dsgs_qB,
-                                          params.RHS, params.Minv, params.visc_coeff,
+                                          dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                           params.dsgs_avg, params.dsgs_denom,
                                           params.dsgs_qmin, params.dsgs_qmax,
                                           params.dsgs_nmin, params.dsgs_nmax, params.dsgs_hnod,
+                                          params.dsgs_Rnod, params.dsgs_mnod,
                                           dsgs_wt,
                                           params.mesh.connijk, params.mesh.Δx,
                                           TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
@@ -1144,7 +1308,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
-                                    params.RHS, params.Minv, params.visc_coeff,
+                                    dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                     params.dsgs_avg, params.dsgs_denom,
                                     params.dsgs_avg_e, params.dsgs_den_e,
                                     dsgs_wt,
@@ -1230,6 +1394,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
 
         # Nodal-density scaling of the momentum/energy coefficients, read by
         # SGS_diffusion(::DSGS_MHD) inside the assembly below.
@@ -1249,10 +1414,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             # element loop interpolates it, no broadcast.
             compute_dsgs_viscosity_nodal!(params.μ_dsgs, params.μ_dsgs_pnode, DSGS_MHD(), SD,
                                           params.uaux, dsgs_qA, dsgs_qB,
-                                          params.RHS, params.Minv, params.visc_coeff,
+                                          dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                           params.dsgs_avg, params.dsgs_denom,
                                           params.dsgs_qmin, params.dsgs_qmax,
                                           params.dsgs_nmin, params.dsgs_nmax, params.dsgs_hnod,
+                                          params.dsgs_Rnod, params.dsgs_mnod,
                                           dsgs_wt,
                                           params.mesh.connijk, params.mesh.Δelem,
                                           TT(get(params.inputs, :dsgs_gamma, 5.0/3.0)),
@@ -1270,7 +1436,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
-                                    params.RHS, params.Minv, params.visc_coeff,
+                                    dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                     params.dsgs_avg, params.dsgs_denom,
                                     params.dsgs_avg_e, params.dsgs_den_e,
                                     dsgs_wt,
@@ -1323,16 +1489,18 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         # returns the element's or the node's coefficient).
         TT = eltype(params.μ_dsgs)
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         lnodal_sw = get(params.inputs, :ldsgs_nodal, false)
         g_TT    = TT(get(params.inputs, :dsgs_swe_g,    9.81))
         hmin_TT = TT(get(params.inputs, :dsgs_swe_hmin, 1.0e-3))
         if lnodal_sw
             compute_dsgs_viscosity_nodal!(params.μ_dsgs, params.μ_dsgs_pnode, DSGS_SW(), SD,
                                           params.uaux, dsgs_qA, dsgs_qB, params.qp.qe,
-                                          params.RHS, params.Minv, params.visc_coeff,
+                                          dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                           params.dsgs_avg, params.dsgs_denom,
                                           params.dsgs_qmin, params.dsgs_qmax,
                                           params.dsgs_nmin, params.dsgs_nmax, params.dsgs_hnod,
+                                          params.dsgs_Rnod, params.dsgs_mnod,
                                           dsgs_wt,
                                           params.mesh.connijk, params.mesh.Δelem,
                                           g_TT, hmin_TT,
@@ -1346,7 +1514,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
         else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_SW(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB, params.qp.qe,
-                                    params.RHS, params.Minv, params.visc_coeff,
+                                    dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                     params.dsgs_avg, params.dsgs_denom,
                                     dsgs_wt,
                                     params.mesh.connijk, params.mesh.Δelem,
@@ -1384,6 +1552,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
     if params.VT == DSGS()
         TT = eltype(params.μ_dsgs)
         dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
 
         # Step 1 — fill the per-equation per-element μ_dsgs buffer. All
         # arguments are concretely typed so compute_dsgs_viscosity!
@@ -1397,10 +1566,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             # element loop interpolates it, no broadcast.
             compute_dsgs_viscosity_nodal!(params.μ_dsgs, params.μ_dsgs_pnode, DSGS(), SD,
                                           params.uaux, dsgs_qA, dsgs_qB,
-                                          params.RHS, params.Minv, params.visc_coeff,
+                                          dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                           params.dsgs_avg, params.dsgs_denom,
                                           params.dsgs_qmin, params.dsgs_qmax,
                                           params.dsgs_nmin, params.dsgs_nmax, params.dsgs_hnod,
+                                          params.dsgs_Rnod, params.dsgs_mnod,
                                           dsgs_wt,
                                           params.mesh.connijk, params.mesh.Δelem,
                                           PHYS_CONST, Pr_TT,
@@ -1416,7 +1586,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
                                     params.uaux, dsgs_qA, dsgs_qB,
                                     params.qp.qe,
-                                    params.RHS, params.Minv, params.visc_coeff,
+                                    dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
                                     dsgs_wt,
                                     params.mesh.connijk, params.mesh.Δelem,
                                     PHYS_CONST, Pr_TT,

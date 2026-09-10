@@ -51,6 +51,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true,
         :visc_model           => DSGS_SW(),
+        :dsgs_sensor          => "residual",  # element-wise strong residual (DSGS.md §1.2)
         :μ                    => [1.0, 1.0, 1.0],
         :dsgs_CR              => 1.0,       # C_R,   residual viscosity
         :dsgs_Cmax            => 0.5,       # C_max, first-order cap

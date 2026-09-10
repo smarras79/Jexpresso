@@ -55,7 +55,7 @@ writes those panels as separate files).
   default **element form** (one $\nu$ per element); the **nodal form**
   (`:ldsgs_nodal => true`) is Dao & Nazarov's own and gives the same profile
   once the $C_{min}$ floor is on (see below): at every node
-  the assembled lumped-mass BDF2 residual, normalized by their eq. 4.7 with
+  the element-wise residual (DSGS.md §1.2) averaged at the node, normalized by their eq. 4.7 with
   $C_l = 0.4$ (`:dsgs_Cl`), the maximum over the equations (eq. 4.8), and
   $\nu_i = \min(C_{max}h_i\lambda_i, C_R h_i^2 R_i)$ with the fast
   magnetosonic speed, $h_i = \Delta x/(k+1)$ (the element form's $\Delta$), $C_{max} = 0.5$ (`:dsgs_Cmax`), $C_R = 1$ (`:dsgs_CR`)
@@ -110,10 +110,12 @@ $C_{max}h(|u| + c_f)$: it damps an element-scale mode at a rate
 $\nu(\pi/h)^2 \approx 600$ per unit time and diffuses a resolved profile by
 $\sqrt{2\nu t} \approx 0.006$ over the run, less than one element; with
 0.03 the ripples remain, with 0.06 none (measured), at the price of a
-contact about one node wider. (Before the residual's time derivative was
-made stage-consistent, DSGS.md §4.4, 0.03 was enough: the old stencil
-over-fired on the moving waves and supplied the rest of the damping
-itself; `:dsgs_legacy_stencil => true` reproduces those runs.) Dao & Nazarov's $\mathbb{P}_3$
+contact about one node wider; 0.03 leaves a faint trace of them (±0.1 %)
+with sharper shocks, 0 gives the sharpest shocks with the ripples in full.
+(With the residual and the time stencil of the runs before September 2026,
+DSGS.md §1.2 and §4.4, 0.03 was enough: the old sensor over-fired on the
+moving waves and supplied the rest of the damping itself;
+`:dsgs_sensor => "legacy"` reproduces that sensor.) Dao & Nazarov's $\mathbb{P}_3$
 solution shows no ripples with no floor; their elements integrate the
 nonlinear flux exactly on uniform nodes, this code's collocated LGL flux
 does not, and that is the remaining difference between the two

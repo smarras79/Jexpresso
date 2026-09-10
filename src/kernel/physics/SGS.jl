@@ -425,11 +425,11 @@ end
 #     μ_res = CR · Δ² · max_i ‖R_i‖∞,Ω / ‖q_i − ⟨q_i⟩‖∞,Ω
 #     μ_max = Cmax · Δ · max(|u| + c)
 #     μ_dsgs[iel] = max(0, min(μ_res, μ_max))
-# where R_i is the STRONG-form BDF2 residual of conservation law i —
-# (3qⁿ − 4qⁿ⁻¹ + qⁿ⁻²)/(2Δt) − M⁻¹·RHS. Since jexpresso assembles RHS
-# in weak form (post-DSS, pre-mass-matrix division), the rhs argument
-# is multiplied by Minv[ip] inline before the BDF2 minus, which makes
-# μ_dsgs dimensionally a kinematic viscosity (m²/s) regardless of SD.
+# where R_i is the element-wise strong residual of conservation law i,
+# ∂ₜq_i − rhs_el[K,i]/m_i^K (the stage-consistent time derivative minus the
+# element's own weak RHS divided by its lumped mass entry; see
+# _dsgs_nodal_residual_1d! for why the assembled RHS cannot be used), which
+# makes μ_dsgs dimensionally a kinematic viscosity (m²/s) regardless of SD.
 #
 # Both numerators and denominators are L∞ norms over a region larger than
 # one element — the rank's subdomain by default, the whole domain under
@@ -638,8 +638,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  q1::AbstractMatrix{TT},
                                  q2::AbstractMatrix{TT},
                                  qe::AbstractMatrix{TT},
-                                 rhs::AbstractMatrix{TT},
-                                 Minv::AbstractVector{TT},
+                                 rhs_el::AbstractArray{TT},
+                                 ω::AbstractVector{TT},
+                                 Je::AbstractArray{TT},
                                  visc_coeff::AbstractVector{TT},
                                  wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
@@ -713,11 +714,11 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         uTmx = zero(TT)
         @simd for i = 1:ngl
             ip = connijk[ie,i,1,1]
-            Mi = Minv[ip]
+            imK = one(TT)/(ω[i]*Je[ie,i])   # element lumped mass at the node
 
-            R1 = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - Mi*rhs[ip,1])
-            R2 = abs((wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - Mi*rhs[ip,2])
-            R3 = abs((wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - Mi*rhs[ip,3])
+            R1 = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - imK*rhs_el[ie,i,1])
+            R2 = abs((wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - imK*rhs_el[ie,i,2])
+            R3 = abs((wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - imK*rhs_el[ie,i,3])
             n1 = max(n1, R1); n2 = max(n2, R2); n3 = max(n3, R3)
 
             ρl = q[ip,1]
@@ -775,8 +776,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  q1::AbstractMatrix{TT},
                                  q2::AbstractMatrix{TT},
                                  qe::AbstractMatrix{TT},
-                                 rhs::AbstractMatrix{TT},
-                                 Minv::AbstractVector{TT},
+                                 rhs_el::AbstractArray{TT},
+                                 ω::AbstractVector{TT},
+                                 Je::AbstractArray{TT},
                                  visc_coeff::AbstractVector{TT},
                                  wt::NTuple{3,TT},
                                  connijk::AbstractArray{TI,4},
@@ -788,20 +790,19 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
 
     if !ltheta
-        _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs, Minv, visc_coeff,
+        _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs_el, ω, Je, visc_coeff,
                          wt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
                          lglobal_norms)
         return nothing
     end
 
-    # Marras et al. (JCP 2015) eq. (8-10), implemented exactly as in
-    # the lineage from fp/mymaster — the version that was already
-    # known to run the rising-bubble case to completion. Residual is
-    # the weak-form rhs[ip, i] directly (post-DSS, pre-mass-matrix
-    # division); attempts to "correct" it with M⁻¹·rhs (the strong-
-    # form residual) shrink the residual by ~10³ on 2D atmospheric
-    # meshes and effectively turn DSGS off, which is not what the
-    # algorithm was designed for in this lineage.
+    # Marras et al. (JCP 2015) eq. (8-10). The residual is the
+    # ELEMENT-WISE strong residual, ∂ₜq_i − rhs_el[K,i]/m_i^K (see
+    # _dsgs_nodal_residual_1d!): the earlier lineage found that the
+    # assembled M⁻¹·RHS "shrinks the residual by ~10³ and turns DSGS off"
+    # — because with a lumped mass matrix it is the time-integration
+    # error, not a residual — and used the un-divided weak RHS instead;
+    # the element residual has the units and the meaning both lacked.
     #
     #     μ_res|e = CR · Δ² · max_i ‖R_i‖∞,e / ‖q_i − ⟨q_i⟩‖∞,Ω
     #     μ_max|e = Cmax · Δ · (|u| + c)_∞,e
@@ -814,7 +815,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     #     μ_dsgs[iel, 3] = visc_coeff[3] · μ              (ρv)
     #     μ_dsgs[iel, 4] = visc_coeff[4] · Pr/(γ-1) · μ   (ρθ)
     #
-    # Minv and qe stay in the function-barrier signature so the rhs.jl
+    # qe stays in the function-barrier signature so the rhs.jl
     # call site doesn't have to change, but they are unused here.
 
     invnp = one(TT)/(nelem*ngl*ngl)
@@ -907,7 +908,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         for j = 1:ngl
             @simd for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                Mi = Minv[ip]
+                imK = one(TT)/(ω[i]*ω[j]*Je[ie,i,j])   # element lumped mass at the node
 
                 # Strong-form residual. rhs[] here is the DSS-assembled
                 # WEAK-form RHS (rhs! divides by the mass matrix later), so
@@ -915,10 +916,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                 # dimensionally meaningful: ∂q/∂t has units q/time, the raw
                 # weak RHS has units (mass matrix)·q/time. The 1D path has
                 # always done this; the 2D path did not.
-                R1 = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - Mi*rhs[ip,1])
-                R2 = abs((wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - Mi*rhs[ip,2])
-                R3 = abs((wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - Mi*rhs[ip,3])
-                R4 = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - Mi*rhs[ip,4])
+                R1 = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - imK*rhs_el[ie,i,j,1])
+                R2 = abs((wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - imK*rhs_el[ie,i,j,2])
+                R3 = abs((wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - imK*rhs_el[ie,i,j,3])
+                R4 = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - imK*rhs_el[ie,i,j,4])
                 n1 = max(n1, R1); n2 = max(n2, R2)
                 n3 = max(n3, R3); n4 = max(n4, R4)
 
@@ -1020,8 +1021,9 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           q::AbstractMatrix{TT},
                           q1::AbstractMatrix{TT},
                           q2::AbstractMatrix{TT},
-                          rhs::AbstractMatrix{TT},
-                          Minv::AbstractVector{TT},
+                          rhs_el::AbstractArray{TT},
+                          ω::AbstractVector{TT},
+                          Je::AbstractArray{TT},
                           visc_coeff::AbstractVector{TT},
                           wt::NTuple{3,TT},
                           connijk::AbstractArray{TI,4},
@@ -1116,13 +1118,13 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                Mi = Minv[ip]
+                imK = one(TT)/(ω[i]*ω[j]*Je[ie,i,j])   # element lumped mass at the node
 
-                Rρ  = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - Mi*rhs[ip,1])
-                Rmu = (wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - Mi*rhs[ip,2]
-                Rmv = (wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - Mi*rhs[ip,3]
+                Rρ  = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - imK*rhs_el[ie,i,j,1])
+                Rmu = (wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - imK*rhs_el[ie,i,j,2]
+                Rmv = (wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - imK*rhs_el[ie,i,j,3]
                 Rm  = sqrt(Rmu*Rmu + Rmv*Rmv)
-                RE  = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - Mi*rhs[ip,4])
+                RE  = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - imK*rhs_el[ie,i,j,4])
 
                 ratio = max(ratio, Rρ/dρ, Rm/dm, RE/dE)
 
@@ -1187,11 +1189,12 @@ end
 #
 # Notes specific to this implementation:
 #
-#  *  M⁻¹·RHS, not RHS.  R must have units of q/time for the ratio
-#     R/‖q−⟨q⟩‖ to be a frequency and μ_res to come out as m²/s. params.RHS
-#     inside viscous_rhs_el! is the DSS-assembled *weak-form* inviscid RHS
-#     (the mass-matrix division happens later in rhs!), so it is multiplied
-#     by Minv here — matching the 1D implementation.
+#  *  Element-wise residual.  R must have units of q/time for the ratio
+#     R/‖q−⟨q⟩‖ to be a frequency and μ_res to come out as m²/s, and it
+#     must be the ELEMENT's residual: rhs_el[K,i]/m_i^K, the element's weak
+#     inviscid RHS over its lumped mass entry, against the assembled rate
+#     ∂ₜq_i (see _dsgs_nodal_residual_1d! for why the assembled RHS is not
+#     a residual at all with a lumped mass matrix).
 #
 #  *  Step-cadenced history.  params.qp.qnm1/qnm2 are advanced on every RK
 #     *stage*, so they are stage snapshots, not states one Δt apart, and a
@@ -1294,8 +1297,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  q::AbstractMatrix{TT},
                                  q1::AbstractMatrix{TT},
                                  q2::AbstractMatrix{TT},
-                                 rhs::AbstractMatrix{TT},
-                                 Minv::AbstractVector{TT},
+                                 rhs_el::AbstractArray{TT},
+                                 ω::AbstractVector{TT},
+                                 Je::AbstractArray{TT},
                                  visc_coeff::AbstractVector{TT},
                                  avg::AbstractVector{TT},
                                  denom::AbstractVector{TT},
@@ -1454,10 +1458,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
-                Mi = Minv[ip]
+                imK = one(TT)/(ω[i]*ω[j]*Je[ie,i,j])   # element lumped mass at the node
 
                 for ieq = 1:NRES
-                    R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
+                    R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - imK*rhs_el[ie,i,j,ieq])
                     r = R/den[ieq]
                     ratio = max(ratio, r)
                 end
@@ -1583,8 +1587,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  q::AbstractMatrix{TT},
                                  q1::AbstractMatrix{TT},
                                  q2::AbstractMatrix{TT},
-                                 rhs::AbstractMatrix{TT},
-                                 Minv::AbstractVector{TT},
+                                 rhs_el::AbstractArray{TT},
+                                 ω::AbstractVector{TT},
+                                 Je::AbstractArray{TT},
                                  visc_coeff::AbstractVector{TT},
                                  avg::AbstractVector{TT},
                                  denom::AbstractVector{TT},
@@ -1711,9 +1716,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
         for i = 1:ngl
             ip = connijk[ie,i,1,1]
-            Mi = Minv[ip]
+            imK = one(TT)/(ω[i]*Je[ie,i])   # element lumped mass at the node
             for ieq = 1:NRES
-                R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
+                R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - imK*rhs_el[ie,i,ieq])
                 ratio = max(ratio, R/den[ieq])
             end
             ρl = max(q[ip,1], eps)
@@ -1793,8 +1798,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        q::AbstractMatrix{TT},
                                        q1::AbstractMatrix{TT},
                                        q2::AbstractMatrix{TT},
-                                       rhs::AbstractMatrix{TT},
-                                       Minv::AbstractVector{TT},
+                                       rhs_el::AbstractArray{TT},
+                                       ω::AbstractVector{TT},
+                                       Je::AbstractArray{TT},
                                        visc_coeff::AbstractVector{TT},
                                        avg::AbstractVector{TT},
                                        denom::AbstractVector{TT},
@@ -1803,6 +1809,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nmin::AbstractMatrix{TT},
                                        nmax::AbstractMatrix{TT},
                                        hnod::AbstractVector{TT},
+                                       Rnod::AbstractMatrix{TT},
+                                       mnod::AbstractVector{TT},
                                        wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δx::AbstractVector{TT},
@@ -1902,16 +1910,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     end
 
     # --- nodal viscosity ---------------------------------------------------
+    _dsgs_nodal_residual_1d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        Mi = Minv[ip]
-        ratio = zero(TT)
-        for ieq = 1:NRES
-            R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
-            grange = qmax[ieq] - qmin[ieq]
-            lfac   = grange > eps ? Cl*(nmax[ip,ieq] - nmin[ip,ieq])/grange : zero(TT)
-            n      = denom[ieq]*(one(TT) - lfac)
-            ratio  = max(ratio, R*n/(n*n + eps))
-        end
+        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2041,12 +2042,93 @@ end
 
 # Nodal residual ratio max_i R_i/n_i (eq. 4.8) with the local-jump
 # normalization (eq. 4.7) and the n²/(n²+ε) guard.
-@inline function _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, wt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+# ================================================================================
+# The element-wise residual.
+#
+# With a lumped (LGL-collocated) mass matrix the assembled rate of change
+# ∂ₜq_i = M⁻¹RHS_i IS what the integrator advances, so a residual built from
+# the assembled RHS is the time-integration error and nothing else: it
+# vanishes on a resolved AND on an under-resolved solution alike (measured on
+# sod1d: ν at the shock 0.5 % of the cap). The residual of the method is the
+# one-sided one of each element,
+#
+#     R_i^K = | ∂ₜq_i − rhs_el[K,i]/m_i^K |,    m_i^K = ω_i (ω_j) J_K,i(,j),
+#
+# rhs_el the element's own weak inviscid RHS (fluxes and sources) before the
+# direct stiffness summation and m_i^K its lumped mass entry: at the interior
+# nodes of K it equals the assembled one (the SBP property of the LGL
+# operator makes rhs_el/m the strong nodal divergence), at the interface
+# nodes it differs from the assembled rate by the mass-weighted JUMP of the
+# flux divergence across the interface — O(h^k) where the solution is
+# smooth, O(1/h) at a discontinuity, which is what the sensor is for. This
+# is Dao & Nazarov's (1/m_i)∫|BDF(q) + ∇·f(q)|φ_i with the absolute value
+# inside the integral, evaluated with the LGL rule; the element kernels take
+# max_i R_i^K over the element, the nodal kernels the mass-weighted average
+# Σ_K m_i^K R_i^K / Σ_K m_i^K over the elements that contain the node.
+# ================================================================================
+function _dsgs_nodal_residual_1d!(Rnod::AbstractMatrix{TT}, mnod::AbstractVector{TT},
+                                  q::AbstractMatrix{TT}, q1::AbstractMatrix{TT}, q2::AbstractMatrix{TT},
+                                  wt::NTuple{3,TT}, rhs_el::AbstractArray{TT},
+                                  ω::AbstractVector{TT}, Je::AbstractArray{TT},
+                                  connijk::AbstractArray{TI,4}, nelem::Int, ngl::Int, npoin::Int,
+                                  NRES::Int) where {TT<:AbstractFloat, TI<:Integer}
+    @inbounds for ip = 1:npoin
+        mnod[ip] = zero(TT)
+        for ieq = 1:NRES
+            Rnod[ip,ieq] = zero(TT)
+        end
+    end
+    @inbounds for ie = 1:nelem, i = 1:ngl
+        ip = connijk[ie,i,1,1]
+        m  = ω[i]*Je[ie,i]
+        mnod[ip] += m
+        for ieq = 1:NRES
+            Rnod[ip,ieq] += abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq])*m - rhs_el[ie,i,ieq])
+        end
+    end
+    @inbounds for ip = 1:npoin
+        im = one(TT)/max(mnod[ip], TT(1.0e-300))
+        for ieq = 1:NRES
+            Rnod[ip,ieq] *= im
+        end
+    end
+    return nothing
+end
+
+function _dsgs_nodal_residual_2d!(Rnod::AbstractMatrix{TT}, mnod::AbstractVector{TT},
+                                  q::AbstractMatrix{TT}, q1::AbstractMatrix{TT}, q2::AbstractMatrix{TT},
+                                  wt::NTuple{3,TT}, rhs_el::AbstractArray{TT},
+                                  ω::AbstractVector{TT}, Je::AbstractArray{TT},
+                                  connijk::AbstractArray{TI,4}, nelem::Int, ngl::Int, npoin::Int,
+                                  NRES::Int) where {TT<:AbstractFloat, TI<:Integer}
+    @inbounds for ip = 1:npoin
+        mnod[ip] = zero(TT)
+        for ieq = 1:NRES
+            Rnod[ip,ieq] = zero(TT)
+        end
+    end
+    @inbounds for ie = 1:nelem, j = 1:ngl, i = 1:ngl
+        ip = connijk[ie,i,j,1]
+        m  = ω[i]*ω[j]*Je[ie,i,j]
+        mnod[ip] += m
+        for ieq = 1:NRES
+            Rnod[ip,ieq] += abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq])*m - rhs_el[ie,i,j,ieq])
+        end
+    end
+    @inbounds for ip = 1:npoin
+        im = one(TT)/max(mnod[ip], TT(1.0e-300))
+        for ieq = 1:NRES
+            Rnod[ip,ieq] *= im
+        end
+    end
+    return nothing
+end
+
+@inline function _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
     TT = eltype(denom)
-    Mi = Minv[ip]
     ratio = zero(TT)
     @inbounds for ieq = 1:NRES
-        R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
+        R = Rnod[ip,ieq]
         grange = qmax[ieq] - qmin[ieq]
         lfac   = grange > eps ? Cl*(nmax[ip,ieq] - nmin[ip,ieq])/grange : zero(TT)
         n      = denom[ieq]*(one(TT) - lfac)
@@ -2085,8 +2167,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        q::AbstractMatrix{TT},
                                        q1::AbstractMatrix{TT},
                                        q2::AbstractMatrix{TT},
-                                       rhs::AbstractMatrix{TT},
-                                       Minv::AbstractVector{TT},
+                                       rhs_el::AbstractArray{TT},
+                                       ω::AbstractVector{TT},
+                                       Je::AbstractArray{TT},
                                        visc_coeff::AbstractVector{TT},
                                        avg::AbstractVector{TT},
                                        denom::AbstractVector{TT},
@@ -2095,6 +2178,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nmin::AbstractMatrix{TT},
                                        nmax::AbstractMatrix{TT},
                                        hnod::AbstractVector{TT},
+                                       Rnod::AbstractMatrix{TT},
+                                       mnod::AbstractVector{TT},
                                        wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
@@ -2134,8 +2219,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     end
 
     fE = lnazarov_energy ? γ*γm1/Pr_t : one(TT)
+    _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, wt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2191,8 +2277,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        q::AbstractMatrix{TT},
                                        q1::AbstractMatrix{TT},
                                        q2::AbstractMatrix{TT},
-                                       rhs::AbstractMatrix{TT},
-                                       Minv::AbstractVector{TT},
+                                       rhs_el::AbstractArray{TT},
+                                       ω::AbstractVector{TT},
+                                       Je::AbstractArray{TT},
                                        visc_coeff::AbstractVector{TT},
                                        avg::AbstractVector{TT},
                                        denom::AbstractVector{TT},
@@ -2201,6 +2288,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nmin::AbstractMatrix{TT},
                                        nmax::AbstractMatrix{TT},
                                        hnod::AbstractVector{TT},
+                                       Rnod::AbstractMatrix{TT},
+                                       mnod::AbstractVector{TT},
                                        wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
@@ -2239,8 +2328,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         denom[4] = max(denom[4], ltheta ? rel*abs(avg[4]) : rel*ρ_avg*c_avg*c_avg)
     end
 
+    _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, wt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2316,8 +2406,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  q1::AbstractMatrix{TT},
                                  q2::AbstractMatrix{TT},
                                  qe::AbstractMatrix{TT},
-                                 rhs::AbstractMatrix{TT},
-                                 Minv::AbstractVector{TT},
+                                 rhs_el::AbstractArray{TT},
+                                 ω::AbstractVector{TT},
+                                 Je::AbstractArray{TT},
                                  visc_coeff::AbstractVector{TT},
                                  avg::AbstractVector{TT},
                                  denom::AbstractVector{TT},
@@ -2387,9 +2478,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         wmax  = zero(TT)
         for j = 1:ngl, i = 1:ngl
             ip = connijk[ie,i,j,1]
-            Mi = Minv[ip]
+            imK = one(TT)/(ω[i]*ω[j]*Je[ie,i,j])   # element lumped mass at the node
             for ieq = 1:NRES
-                R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - Mi*rhs[ip,ieq])
+                R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - imK*rhs_el[ie,i,j,ieq])
                 ratio = max(ratio, R/denom[ieq])
             end
             Hc = max(q[ip,1], zero(TT))
@@ -2425,8 +2516,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        q1::AbstractMatrix{TT},
                                        q2::AbstractMatrix{TT},
                                        qe::AbstractMatrix{TT},
-                                       rhs::AbstractMatrix{TT},
-                                       Minv::AbstractVector{TT},
+                                       rhs_el::AbstractArray{TT},
+                                       ω::AbstractVector{TT},
+                                       Je::AbstractArray{TT},
                                        visc_coeff::AbstractVector{TT},
                                        avg::AbstractVector{TT},
                                        denom::AbstractVector{TT},
@@ -2435,6 +2527,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nmin::AbstractMatrix{TT},
                                        nmax::AbstractMatrix{TT},
                                        hnod::AbstractVector{TT},
+                                       Rnod::AbstractMatrix{TT},
+                                       mnod::AbstractVector{TT},
                                        wt::NTuple{3,TT},
                                        connijk::AbstractArray{TI,4},
                                        Δelem::AbstractVector{TT},
@@ -2473,8 +2567,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
         end
     end
 
+    _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(q, q1, q2, rhs, Minv, ip, NRES, wt, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
         Hc = max(q[ip,1], zero(TT))
         Hd = max(q[ip,1], hmin)
         ul = q[ip,2]/Hd

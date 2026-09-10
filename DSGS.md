@@ -108,19 +108,62 @@ $$
 \frac{3q_i^n - 4q_i^{n-1} + q_i^{n-2}}{2\Delta t},
 $$
 
-and the spatial part $\nabla\cdot\mathbf{F}_i - s_i$ is read off the RHS the
-solver has just assembled. Since Jexpresso's `params.RHS` holds
-$-(\nabla\cdot\mathbf{F} - \mathbf{s})$ in **weak form** at the point where the
-viscous term is built — the mass-matrix division happens later in `rhs!` — the
-strong-form residual is
+(at the first stage of a step; at a later stage the stage-consistent
+three-point stencil of §4.4), and the spatial part $\nabla\cdot\mathbf{F}_i - s_i$
+is read off the **element's own** weak RHS, `params.rhs_el`, divided by the
+element's lumped mass entry $m_i^K = \omega_i(\omega_j)J_{K,i}$:
 
 $$
-R_i = \frac{3q_i^n - 4q_i^{n-1} + q_i^{n-2}}{2\Delta t} - M^{-1}\,\mathrm{RHS}_i .
+R_i^K = \Big|\frac{\partial q_i}{\partial t} - \frac{\mathrm{rhs\_el}[K,i]}{m_i^K}\Big| .
 $$
 
-The $M^{-1}$ is **required** for the units above to work out; all three paths
-apply it (see [§6](#6-defects-found-and-fixed) — the 2D θ-path did not until
-recently).
+**Why the element residual and not the assembled one.** With the lumped LGL
+mass matrix the assembled rate $M^{-1}\mathrm{RHS}_i$ *is* what the integrator
+advances, so $\partial_t q_i - M^{-1}\mathrm{RHS}_i$ is the time-integration
+error and nothing else: it vanishes on an under-resolved solution exactly as on
+a resolved one (measured on sod1d once the time stencil was made consistent:
+$\nu$ at the shock 0.5 % of the cap, oscillating plateaus). The element residual
+equals the assembled one at the interior nodes of $K$ (the LGL operator is
+summation-by-parts, so $\mathrm{rhs\_el}/m$ is the strong nodal divergence) and
+differs from it at the interface nodes by the mass-weighted **jump of the flux
+divergence** across the interface: $O(h^k)$ where the solution is smooth,
+$O(1/h)$ at a discontinuity. That is Dao & Nazarov's
+$\frac{1}{m_i}\int|\mathrm{BDF}(q) + \nabla\cdot f(q)|\phi_i$ with the absolute
+value *inside* the integral, evaluated with the LGL rule. The element kernels
+take $\max_{i\in K} R_i^K$; the nodal kernels the mass-weighted average
+$\sum_K m_i^K R_i^K/\sum_K m_i^K$ over the elements containing the node
+(`_dsgs_nodal_residual_*!` in SGS.jl). Before September 2026 the kernels used
+the assembled RHS, and the sensor only worked through the inconsistent time
+stencil of §4.4 (which made $R \approx |\partial_t q|$, a gradient sensor).
+
+**The reference state.** A case that advances the *total* variables on top of
+a non-trivial reference state $q_e$ (the hydrostatic atmosphere of the
+CompEuler θ cases, whose flux and source are the full ones) has, at rest, an
+element residual equal to the interpolation error of the hydrostatic balance
+at every interface — 30 % of $\rho g$ on the 1 km elements of the rising
+bubble, which drove $\nu$ to $7\times10^3$ m²/s and blew the run up. The
+residual is therefore taken on the departure from $q_e$ when the deck sets
+`:dsgs_reference => true` (the θ cases): the element RHS of $q_e$ itself,
+time-independent, is evaluated once on the first call (`_dsgs_residual_rhs!`
+in rhs.jl) and subtracted, $\mathrm{rhs\_el}(q) - \mathrm{rhs\_el}(q_e)$. It is
+off by default because a shock tube's $q_e$ is its initial jump, whose element
+RHS would plant a residual at the diaphragm for the whole run (measured on
+sod1d). Cases whose flux and source are already written on the perturbation
+(the well-balanced MHD and shallow-water splits, PERT variables) have a
+vanishing reference RHS and need nothing.
+
+**Dirichlet boundary nodes.** The boundary condition constrains the assembled
+rate at those nodes (free-slip wall: the normal momentum stays zero; a 1D end:
+the prescribed components stay put) while the element RHS carries the
+unconstrained tendency, so the element residual there is the constraint force,
+not an under-resolution: on the rising bubble the $-\partial_x p$ of the
+atmosphere's adjustment at the free-slip wall, $0.05$ m/s², drove $\nu$ to the
+cap along the whole wall column and blew the run up; on sod1d it was the
+$9\times10^{-5}$ spike of the coefficient at $x = 0$. The residual of every
+equation is therefore made to vanish at the Dirichlet boundary nodes
+(`_dsgs_boundary_pairs!` in rhs.jl builds the list once; periodic and
+Laguerre edges are not constrained and are left alone). A shock reaching a
+wall is still sensed by the interior nodes of the same element.
 
 ### 1.3 Per-equation split
 
@@ -355,8 +398,10 @@ per step from $t^n$ and freeze it over the stages; here it is re-evaluated at
 every stage, consistently.
 
 Every DynSGS result obtained before this change (September 2026) used the
-fixed BDF2 on $(q(\tau), q^n, q^{n-1})$: `:dsgs_legacy_stencil => true`
-reproduces it for comparison. The consistent stencil removes the spurious
+fixed BDF2 on $(q(\tau), q^n, q^{n-1})$ together with the assembled RHS
+(§1.2): `:dsgs_sensor => "legacy"` reproduces that sensor, and the decks of
+the cases validated with it (`theta_dsgs`, `ffs_step`, `shock_circle`,
+`orszagTangBormanis2024`, both flux-emergence cases) select it explicitly. The consistent stencil removes the spurious
 dissipation the old one added on smooth moving structures, so a case that was
 clean with it may show element-scale ripples now and need a larger
 `:dsgs_Cmin` (the Brio–Wu tube: see its README).
@@ -494,7 +539,7 @@ element form) selects instead the **nodal form**, which is Dao & Nazarov's
 (2022) formulation itself, for the 1D and 2D kernels, `DSGS` (θ and
 total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
 
-- the residual is the assembled lumped-mass nodal residual
+- the residual is the element-wise residual averaged at the node with the element mass entries (§1.2)
   $R_i = |\mathrm{BDF2}(q)_i - M_i^{-1}\,\mathrm{rhs}_i|$;
 - it is normalized by $n(w)_i = \bar S(w)\,(1 - C_l\,(\max_{I(i)} w - \min_{I(i)} w)/(\max w - \min w))$,
   their eq. 4.7: $\bar S$ the global spread of §4.2 (with its floors), $I(i)$
