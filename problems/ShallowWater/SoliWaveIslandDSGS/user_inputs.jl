@@ -21,9 +21,10 @@ function user_inputs()
         # bathymetry, and the still-water depth far from the island is h0.
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(),
+        #:ode_solver           => CarpenterKennedy2N54(),
         :Δt                   => 0.01,
         :tinit                => 0.0,
-        :tend                 => 25.0,
+        :tend                 => 12.0,
         :diagnostics_at_times => (0:1.0:25.0),
         :case                 => "soliwave_island",
         :lsource              => true,
@@ -95,7 +96,7 @@ function user_inputs()
         # true for the Spline2D surface rendering instead of the nodal map,
         # or switch to "vtk" for ParaView output (fields H, Hu, Hv, mu_dsgs).
         #---------------------------------------------------------------------------
-        :outformat            => "png",
+        :outformat            => "vtk",
         :plot_dsgs            => true,
         :plot_dsgs_vars       => ["H"],
         :loverwrite_output    => true,
