@@ -13,7 +13,7 @@
 #---------------------------------------------------------------------------------
 function user_inputs()
     inputs = Dict(
-        :ode_solver           => SSPRK53(),
+        :ode_solver           => CarpenterKennedy2N54(),
         # Fastest signal: the fast magnetosonic speed of the right state,
         # √((γp + |B|²)/ρ) = 3.75, against the smallest LGL spacing
         # 0.146·(1/150) ≈ 1e-3: Δt = 5e-5 is a Courant number of 0.19.
