@@ -1036,27 +1036,30 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # kernel/physics/SGS.jl (_dsgs_norm_scope) and ENVIRONMENT_VARIABLES.md.
     #
     # ONE user-facing key sets that scope, :dsgs_norms:
-    #   "domain"  (default) the whole domain — the paper's definition; under
-    #             MPI the mean and spread are reduced across the ranks
-    #   "rank"    this rank's part of the domain only (no reductions; the
-    #             solution then depends on the partition at round-off level)
+    #   "rank"    (default) this rank's part of the domain only: no
+    #             reductions, nothing on the critical path of the RHS; the
+    #             solution then depends on the partition at round-off level.
+    #             Identical to "domain" on one rank.
+    #   "domain"  the whole domain — the papers' definition; under MPI the
+    #             mean and spread are Allreduce'd across the ranks (2-3
+    #             collectives per RHS call)
     #   "element" the element itself (DSGS_MHD only; :dsgs_local_rel floors
     #             the element spread) — strongly stratified atmospheres
-    # The two booleans the kernels read, :dsgs_local_norms and
-    # :ldsgs_global_norms, are derived from it here and are not inputs.
+    # This is the only key: params_setup.jl turns it into the two typed
+    # Bools (params.dsgs_global_norms, params.dsgs_local_norms) the RHS
+    # call sites hand the kernels. The former deck keys :ldsgs_global_norms
+    # and :dsgs_local_norms are rejected.
     if haskey(inputs, :ldsgs_global_norms) || haskey(inputs, :dsgs_local_norms)
-        error(" user_inputs.jl: :ldsgs_global_norms and :dsgs_local_norms have been replaced by the single key :dsgs_norms => \"domain\" | \"rank\" | \"element\".")
+        error(" user_inputs.jl: :ldsgs_global_norms and :dsgs_local_norms have been replaced by the single key :dsgs_norms => \"rank\" | \"domain\" | \"element\".")
     end
     if(!haskey(inputs, :dsgs_norms))
-        inputs[:dsgs_norms] = "domain"
+        inputs[:dsgs_norms] = "rank"
     end
     dsgs_norms = lowercase(string(inputs[:dsgs_norms]))
     if !(dsgs_norms in ("domain", "rank", "element"))
         error(" user_inputs.jl: :dsgs_norms must be \"domain\", \"rank\" or \"element\" (got $(inputs[:dsgs_norms])).")
     end
-    inputs[:dsgs_norms]         = dsgs_norms
-    inputs[:ldsgs_global_norms] = (dsgs_norms == "domain")
-    inputs[:dsgs_local_norms]   = (dsgs_norms == "element")
+    inputs[:dsgs_norms] = dsgs_norms
 
     # DSGS_MHD variants for strongly stratified atmospheres (see
     # compute_dsgs_viscosity!(::DSGS_MHD) in kernel/physics/SGS.jl and

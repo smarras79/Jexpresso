@@ -249,9 +249,10 @@ $(K,i)$, $i\in K$ (so a node shared by $s$ elements is counted $s$ times),
 \Sbar^{q} = \max_{(K,i)\in\mathcal{P}} \big|q_i - \langle q\rangle\big| .
 \label{eq:Sbar}
 \end{equation}
-With \code{:dsgs\_norms => "domain"} both are reduced over all MPI ranks
-(the count $|\mathcal P|$, the sum, then the max); with \code{"rank"} they
-are taken over the rank's own elements without communication.
+With \code{:dsgs\_norms => "rank"} (the default) both are taken over the
+rank's own elements without communication; with \code{"domain"} they are
+reduced over all MPI ranks (the count $|\mathcal P|$, the sum, then the max).
+On one rank the two coincide.
 
 The spread $\Sbar^q$ is then bounded from below (``floored'': replaced by
 $\max(\Sbar^q, a)$, so that it can never be smaller than $a$) at a
@@ -670,7 +671,7 @@ key & default & meaning \\
 \code{:dsgs\_Cl} & 0.0 & $\Cl$ of eq.~\eqref{eq:n47} (nodal form) \\
 \code{:dsgs\_gamma} & 5/3 & $\gamma$ of the MHD kernel \\
 \code{:dsgs\_Prt} & 0.7 & $\Prt$ of the MHD energy slot \\
-\code{:dsgs\_norms} & \code{"domain"} & scope of $\langle q\rangle,\Sbar^q$: \code{"domain"}, \code{"rank"}, \code{"element"} \\
+\code{:dsgs\_norms} & \code{"rank"} & scope of $\langle q\rangle,\Sbar^q$: \code{"rank"} (no reductions), \code{"domain"}, \code{"element"} \\
 \code{:dsgs\_local\_rel} & 1.0 & $r_{\rm loc}$ of eq.~\eqref{eq:nelem} \\
 \code{:ldsgs\_nodal} & false & nodal form (\code{true}) or element form \\
 \code{:dsgs\_conserved} & false & conserved form (Section~\ref{sec:conserved}) \\

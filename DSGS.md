@@ -587,9 +587,13 @@ case README).
 ### 4.8 MPI
 
 $\langle q_i\rangle$ and $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
-are **domain** norms by definition, so both reductions are `MPI.Allreduce`d. A
-rank-local version would make the eddy viscosity depend on the partitioning. The
-cost is two small collectives per RHS call.
+are **domain** norms in the papers. By default (`:dsgs_norms => "rank"`) every
+DynSGS kernel takes them over the rank's own elements and communicates
+nothing: the two quantities only set the scale the residual is measured
+against, and a partition of a connected domain resolves that scale as well as
+the whole domain does, so the eddy viscosity depends on the partitioning only
+at round-off level. `:dsgs_norms => "domain"` restores the papers' definition
+with two or three `MPI.Allreduce` per RHS call (identical numbers on one rank).
 
 ### 4.9 Measured effect
 

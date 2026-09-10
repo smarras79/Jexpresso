@@ -418,6 +418,11 @@ function params_setup(sem,
     dsgs_have_ref = Ref{Bool}(false)
     dsgs_bdy_done  = Ref{Bool}(false)
     dsgs_legacy    = Ref{Bool}(get(inputs, :dsgs_sensor, "residual") == "legacy")
+    # Scope of the DynSGS normalizing scales, from the single deck key
+    # :dsgs_norms ("rank" default | "domain" | "element"); typed here so the
+    # RHS call sites read a Bool, not a String in the inputs Dict.
+    dsgs_global_norms = (get(inputs, :dsgs_norms, "rank") == "domain")::Bool
+    dsgs_local_norms  = (get(inputs, :dsgs_norms, "rank") == "element")::Bool
     dsgs_bdy_pairs = NTuple{3,Int}[]
 
     # Per-equation scratch the 2D DSGS path uses to pack the
@@ -471,7 +476,7 @@ function params_setup(sem,
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_wt, dsgs_stage,
-                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy,
+                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy, dsgs_global_norms, dsgs_local_norms,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
@@ -510,7 +515,7 @@ function params_setup(sem,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff, μ_dsgs, μ_dsgs_pnode, visc_coeff_dsgs,
                   dsgs_qn, dsgs_qnm1, dsgs_qnm2, dsgs_avg, dsgs_denom, dsgs_thist, dsgs_wt, dsgs_stage,
-                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy,
+                  dsgs_avg_e, dsgs_den_e, dsgs_qmin, dsgs_qmax, dsgs_nmin, dsgs_nmax, dsgs_hnod, dsgs_Rnod, dsgs_mnod, dsgs_μloc, dsgs_rhs_ref, dsgs_rhs_res, dsgs_qe_flat, dsgs_ref_done, dsgs_have_ref, dsgs_bdy_done, dsgs_bdy_pairs, dsgs_legacy, dsgs_global_norms, dsgs_local_norms,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,

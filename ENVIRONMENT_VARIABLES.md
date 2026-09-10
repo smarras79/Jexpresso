@@ -323,7 +323,7 @@ they change is a run's parallel cost rather than its physics.
 ### `:dsgs_norms`
 
 Scope of the two normalising scales the DynSGS (`:visc_model =>
-DSGS()` / `DSGS_MHD()`) residual indicator divides by: the mean
+DSGS()` / `DSGS_MHD()` / `DSGS_SW()`) residual indicator divides by: the mean
 `⟨q_i⟩` and the L∞ spread `‖q_i − ⟨q_i⟩‖`.
 
 Marras eq. (9) and Nazarov & Hoffman eq. (3.5) write both over the
@@ -332,33 +332,40 @@ every rank on **every RHS call** — five times per step under
 `CarpenterKennedy2N54`, two or three reductions each, so 10–15
 `Allreduce` per time step.
 
-The default is rank-local and communicates nothing. These two
+The default, `"rank"`, is rank-local and communicates nothing. These two
 quantities only set the *scale* the element residual is measured
 against; what the model needs from them is the order of magnitude of
 the solution's variation, and a partition of a connected domain
 resolves that as well as the whole domain does. μ is bounded by
 `min(μ_res, μ_max)` either way, so the flow solution differs only at
-the level of the usual round-off divergence.
+the level of the usual round-off divergence. On one rank `"rank"` and
+`"domain"` are the same numbers.
 
-- **Type:** boolean
-- **Default:** `false` (rank-local, no communication)
-- **Read in:** `src/io/mod_inputs.jl` (default),
-  `src/kernel/operators/rhs.jl` (threaded to all three call sites),
+- **Type:** string, `"rank"` | `"domain"` | `"element"`
+- **Default:** `"rank"` (rank-local, no communication)
+- **Read in:** `src/io/mod_inputs.jl` (default and validation; this is
+  the only key — `params_setup.jl` turns it into the two typed Bools
+  `params.dsgs_global_norms` / `params.dsgs_local_norms` the call sites
+  hand the kernels),
+  `src/kernel/operators/rhs.jl` (threaded to every `compute_dsgs_viscosity!`
+  / `compute_dsgs_viscosity_nodal!` call: 1D Euler, 1D/2D MHD, 2D
+  shallow water, 2D Euler, element and nodal forms),
   `src/kernel/physics/SGS.jl` (`_dsgs_norm_scope` block)
-- **Applies to:** all four DynSGS implementations — 1D, 2D Euler-θ,
-  2D total-energy, 2D GLM-MHD
 - **No effect on:** serial runs, and any run whose `:visc_model` is
   not a DynSGS variant
-- **Set it `true` when:**
+- **Set it `"domain"` when:**
   - μ has to be reproducible across rank counts — e.g. a regression
     test comparing a 1-rank and an N-rank run field-by-field;
   - a rank's subdomain genuinely cannot see the solution's scale (a
     partition lying entirely inside a uniform region while the
     interesting structure lives on another rank).
+- **`"element"`** (DSGS_MHD only): the spread of the element itself,
+  floored with `:dsgs_local_rel` — the strongly stratified atmospheres
+  (DSGS.md §4.5).
 - **Example:**
   ```julia
   :visc_model => DSGS(),
-  :dsgs_norms => "domain",   # the papers' domain norms (default); "rank" skips the 2-3 Allreduce/RHS; "element" (DSGS_MHD) per element
+  :dsgs_norms => "rank",     # default: this rank's elements, no Allreduce; "domain": the papers' norms; "element" (DSGS_MHD) per element
   ```
 - **History:** the 2D total-energy and MHD implementations used to do
   these reductions unconditionally, and the 1D and Euler-θ ones never
@@ -395,7 +402,7 @@ the level of the usual round-off divergence.
 
 | Key                    | Type | Default | Purpose                                   |
 |------------------------|------|---------|-------------------------------------------|
-| `:dsgs_norms`          | str  | `"domain"` | DynSGS normalization scope: `"domain"` (MPI-global), `"rank"` (rank-local, no reductions), `"element"` |
+| `:dsgs_norms`          | str  | `"rank"` | DynSGS normalization scope: `"rank"` (rank-local, no reductions), `"domain"` (MPI-global, the papers'), `"element"` (DSGS_MHD, per element) |
 | `:dsgs_CR`             | real | `1.0`   | Dao & Nazarov's $C_R$: residual viscosity $C_R h^2 R$ (their eq. 4.10; was `:dsgs_C1`) |
 | `:dsgs_Cmax`           | real | `0.5`   | Dao & Nazarov's $C_{max}$: first-order viscosity $C_{max} h \lambda_{max}$ (their §4.2; was `:dsgs_C2`) |
 | `:dsgs_Cmin`           | real | `0.0`   | Background floor $C_{min} h \lambda_{max}$ on the coefficient; not in the paper (was `:dsgs_C0`) |

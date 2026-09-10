@@ -66,7 +66,7 @@ function user_inputs()
         # is clean and the residual part still rises to 0.035 at the island
         # and 0.14 at the run-up.
         :dsgs_Cmin            => 0.05,
-        :dsgs_norms           => "domain",  # residual normalized by the spread over the whole basin
+        :dsgs_norms           => "rank",    # residual normalized by the spread over this rank's elements (default; "domain": the whole basin, MPI-reduced)
         :ldsgs_nodal          => false,     # true: ν at every node (Dao & Nazarov form), :dsgs_Cl its C_l
         :dsgs_Cl              => 0.0,
         :dsgs_swe_g           => 9.81,      # = _G_SWE of user_flux.jl

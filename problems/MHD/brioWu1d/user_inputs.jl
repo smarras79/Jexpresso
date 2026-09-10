@@ -71,7 +71,7 @@ function user_inputs()
         # element form (the default) is kept here.
 #       :ldsgs_nodal      => true,    # false (the default) = one ν per element
         :dsgs_Cl          => 0.4,
-        :dsgs_norms       => "domain",  # residual normalized by the spread over the whole tube
+        :dsgs_norms       => "rank",    # residual normalized by the spread over this rank's elements (default; "domain": the whole tube, MPI-reduced)
         :energy_equation  => "energy",
         :lkep              => false,
         :entropy_variables => false,

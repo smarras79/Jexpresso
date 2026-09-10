@@ -433,7 +433,7 @@ end
 #
 # Both numerators and denominators are L∞ norms over a region larger than
 # one element — the rank's subdomain by default, the whole domain under
-# :ldsgs_global_norms (see _dsgs_norm_scope below) — so the coefficient
+# :dsgs_norms => "domain" (see _dsgs_norm_scope below) — so the coefficient
 # cannot be inlined into the (k,l) loop the way
 # SMAG/VREM are — it is precomputed once per RHS call into the
 # pre-allocated μ_dsgs[1:nelem] buffer. SGS_diffusion(::DSGS, ::SD)
@@ -602,7 +602,9 @@ end
 # — five times per step under CarpenterKennedy2N54, times two or three
 # reductions each.
 #
-# Default: RANK-LOCAL (`lglobal_norms = false`). These two quantities only set
+# Default: RANK-LOCAL (`lglobal_norms = false`, :dsgs_norms => "rank" in
+# mod_inputs.jl; every kernel below and every call site in rhs.jl takes the
+# same flag). These two quantities only set
 # the SCALE the residual indicator is measured against; what the model needs
 # from them is the order of magnitude of the solution's variation, and a
 # partition of a connected domain resolves that as well as the whole domain
@@ -612,9 +614,11 @@ end
 #
 # Opt-in: the paper's domain norms, with
 #
-#     :ldsgs_global_norms => true      # in user_inputs.jl
+#     :dsgs_norms => "domain"          # in user_inputs.jl
 #
-# threaded down from rhs.jl. Use it when you want μ reproducible across rank
+# (params_setup.jl turns it into params.dsgs_global_norms, the Bool the
+# call sites in rhs.jl thread down; "element", DSGS_MHD only, normalizes
+# per element: params.dsgs_local_norms). Use it when you want μ reproducible across rank
 # counts — a regression test that compares fields bit-for-bit between a
 # 1-rank and an N-rank run — or when a subdomain genuinely cannot see the
 # solution's scale (a partition that lies entirely inside a uniform region
@@ -1021,7 +1025,7 @@ end
 # jump from ringing. The user's inputs[:μ][1] multiplier scales it and
 # can switch it off with 0.0.
 #
-# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :ldsgs_global_norms is set — see
+# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :dsgs_norms => "domain" — see
 # _dsgs_norm_scope above. In the default (rank-local) mode everything in this
 # routine is allocation-free, same discipline as the other implementations
 # here; the global mode allocates the two small reduction buffers, once per
@@ -1254,14 +1258,14 @@ end
 # k = μ_dyn·cp/Pr_t. Rewriting in terms of T gives the coefficient
 # k/R = μ_dyn·γ/((γ−1)·Pr_t), since cp = γR/(γ−1).
 #
-# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :ldsgs_global_norms is set — see
+# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :dsgs_norms => "domain" — see
 # _dsgs_norm_scope above. `comm` is what the global mode reduces over.
 #
 # Stratified atmospheres (problems/MHD/fluxEmergenceSon2025, eight decades
 # of density between the photosphere and the corona) need two variants of
 # the above, both off by default:
 #
-#  *  llocal_norms (:dsgs_local_norms). The residual of equation i is
+#  *  llocal_norms (:dsgs_norms => "element"). The residual of equation i is
 #     normalized by the spread of q_i over the ELEMENT, ‖q_i − ⟨q_i⟩_e‖∞,e,
 #     floored at local_rel (:dsgs_local_rel, default 1) times the
 #     element-mean scales ρ_e, ρ_e c_e, ρ_e c_e², √ρ_e c_e, instead of the
