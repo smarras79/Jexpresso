@@ -179,6 +179,15 @@ function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD)
     ien       = nsd + 2
     lacoustic = neqs >= ien
     tiny      = 1.0e-16
+    # Shallow water (no acoustic slot): slot 1 is the depth H. The velocity
+    # is Hu/H only down to the case's wet/dry threshold — the fluxes
+    # desingularize it the same way — and the wave speed is √(gH). Dividing
+    # by a thin film of 1e-16 printed |u| = 6e12 m/s and a CFL of 4e11 on a
+    # run that was perfectly fine (SoliWaveIslandDSGS at t = 5 s, when the
+    # wave reaches the island).
+    lswe  = !lacoustic && neqs == nsd + 1
+    g_swe = Float64(get(integrator.p.inputs, :dsgs_swe_g,    9.81))
+    h_min = Float64(get(integrator.p.inputs, :dsgs_swe_hmin, 1.0e-3))
 
     velomax = 0.0
     cmax    = 0.0
@@ -187,6 +196,7 @@ function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD)
     @inbounds for ip = 1:npoin
 
         ρ = lpert ? q[ip] + qe[ip] : q[ip]
+        H = ρ
         ρ = max(ρ, tiny)   # a field that has already gone bad must still print
 
         ke = 0.0
@@ -197,7 +207,14 @@ function local_wave_speeds(npoin, neqs, mp, p_m, integrator, SD)
         vel = sqrt(ke)/ρ
 
         c = 0.0
-        if lacoustic
+        if lswe
+            # the desingularized velocity of the shallow-water fluxes
+            # (Kurganov & Petrova): Hu/H above the threshold, → 0 below it
+            Hc  = max(H, 0.0)
+            H4  = max(Hc, h_min)
+            vel = sqrt(2.0)*Hc*sqrt(ke)/sqrt(Hc^4 + H4^4)
+            c   = sqrt(g_swe*Hc)
+        elseif lacoustic
             pl = 0.0
             if lmicro
                 pl = p_m[ip]
