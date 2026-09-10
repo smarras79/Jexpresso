@@ -282,6 +282,7 @@ function local_max_diffusivity(npoin, params, visc)
     # Dividing those by the 7e-9 of a solar corona printed a "max ν" of 1e7
     # for a run whose real parabolic number was 0.04.
     mhd    = (params.VT == DSGS_MHD())
+    euler  = (params.VT == DSGS())        # Euler kernels: passive-tracer slots (5..neqs) are kinematic
     allkin = (mhd && (get(params.inputs, :dsgs_nodal_rho, false) || get(params.inputs, :dsgs_conserved, false))) ||
              params.VT == DSGS_SW()      # shallow water: one kinematic ν on (H, Hu, Hv)
 
@@ -291,13 +292,42 @@ function local_max_diffusivity(npoin, params, visc)
         ρ = max(ρ, tiny)
         ν = max(ν, params.μ_dsgs_pnode[ip,1])           # β / mass diffusion, kinematic
         for ieq = 2:neqsν
-            kin = allkin || (mhd && ieq >= 6)
+            kin = allkin || (mhd && ieq >= 6) || (euler && ieq >= 5)
             ν = max(ν, kin ? params.μ_dsgs_pnode[ip,ieq] : params.μ_dsgs_pnode[ip,ieq]/ρ)
         end
     end
 
     return ν
 end
+
+# -----------------------------------------------------------------------------
+# One-time parabolic-number check for the DynSGS models, called after the
+# warm-up step (TimeIntegrators.jl) once μ_dsgs_pnode holds the coefficient
+# of the first step. A residual viscosity sits at its first-order cap
+# C_max·Δ·(|u|+c) wherever the initial condition has a kink (the cone edge of
+# a θ bubble, a tracer top-hat, a diaphragm), and an explicit RK step can only
+# carry ν·Δt/Δx_min² up to O(1): CompEuler/thetaTracers with DSGS() blew up
+# at the first step at 1.6 while its deck's SMAG run reads 2e-4 for the same
+# Δt. The diagnostics callback prints the same number, but only at the first
+# output time, which the run never reached. Nothing is changed here; the
+# warning names the number and the two knobs (Δt, the :μ multipliers).
+# -----------------------------------------------------------------------------
+function dsgs_first_step_check(params, inputs, SD::Union{NSD_2D, NSD_3D})
+    ldsgs = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) &&
+            size(params.μ_dsgs_pnode, 1) == params.mesh.npoin
+    ldsgs || return nothing
+    comm  = get_mpi_comm()
+    νmax  = MPI.Allreduce(local_max_diffusivity(params.mesh.npoin, params, inputs[:μ]), MPI.MAX, comm)
+    Δnode = Float64(params.mesh.Δnode_s)
+    Δ     = (isfinite(Δnode) && Δnode > 0.0) ? Δnode : Float64(params.mesh.Δeffective_s)
+    pnum  = νmax*Float64(inputs[:Δt])/(Δ*Δ)
+    if pnum > 0.5 && MPI.Comm_rank(comm) == 0
+        @warn @sprintf("DynSGS after the first step: max ν = %.3e m²/s, ν·Δt/Δx_min² = %.2f (Δx_min = %.1f m, Δt = %g s). Above ~0.5 the explicit step cannot carry the diffusion and the run blows up: reduce :Δt (or the :μ multipliers of the slots that carry the largest coefficient).",
+                       νmax, pnum, Δ, Float64(inputs[:Δt]))
+    end
+    return nothing
+end
+dsgs_first_step_check(params, inputs, SD) = nothing
 
 function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_1D; visc=[0.0])
     nothing

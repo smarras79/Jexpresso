@@ -976,8 +976,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :C2))
         inputs[:C2] = 0.0
     end
+    # :Pr is the ARTIFICIAL Prandtl number of the DynSGS Euler kernels
+    # (Nazarov & Hoffman 2013, Marras et al. 2015: κ = Pr/(γ-1)·μ on the
+    # energy/θ slot), read only there (rhs.jl, compute_dsgs_viscosity!(::DSGS,
+    # ::NSD_2D)). Its default is the references' P ≈ 0.1, the value every
+    # DSGS deck of the repository sets; the turbulent Prandtl number of the
+    # Smagorinsky/Vreman models is PhysConst.Pr_t, not this key. (Before
+    # September 2026 the default was 0.7: a deck that switched
+    # :visc_model to DSGS() without setting :Pr got a θ diffusivity 7×
+    # the references' — 3.5·ν with :μ[4] = 2 — and blew up at the first
+    # step, CompEuler/thetaTracers.)
     if(!haskey(inputs, :Pr))
-        inputs[:Pr] = 0.7
+        inputs[:Pr] = 0.1
     end
 
     #

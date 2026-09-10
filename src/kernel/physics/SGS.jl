@@ -818,6 +818,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     # qe stays in the function-barrier signature so the rhs.jl
     # call site doesn't have to change, but they are unused here.
 
+    neqs  = size(μ_dsgs, 2)
     invnp = one(TT)/(nelem*ngl*ngl)
     γ     = PhysConst.γ
     C0    = PhysConst.C0
@@ -952,6 +953,15 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,2] = visc_coeff[2] * μ_dyn                # ρu (eq. 10a)
         μ_dsgs[ie,3] = visc_coeff[3] * μ_dyn                # ρv (eq. 10a)
         μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ_dyn     # ρθ (eq. 10b)
+        # Passive tracers (slots 5..neqs, e.g. CompEuler/thetaTracers): the
+        # case transports them as un-weighted scalars (∂ₜq + ∇·(q u) = 0)
+        # and hands the scalar itself to _expansion_visc!, so the
+        # diffusivity is the KINEMATIC ν (m²/s), as the scalar branch of
+        # the Smagorinsky model (μ_turb/(ρ Sc_t)). Left unfilled before
+        # this, the tracers ran without any stabilization.
+        for ieq = 5:neqs
+            μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ
+        end
     end
 
     return nothing
@@ -1037,6 +1047,7 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
     γm1  = γ - one(TT)
     CR   = TT(1.0)
     Cmax   = TT(0.5)
+    neqs = size(μ_dsgs, 2)
     eps  = TT(1.0e-16)
 
     # --- Pass 1: rank-local means ⟨ρ⟩, ⟨ρu⟩, ⟨ρv⟩, ⟨ρE⟩ ----------------
@@ -1149,6 +1160,9 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         μ_dsgs[ie,2] = visc_coeff[2] * μ                  # μ on ∇u
         μ_dsgs[ie,3] = visc_coeff[3] * μ                  # μ on ∇v
         μ_dsgs[ie,4] = visc_coeff[4] * (Pr/γm1) * μ       # κ on ∇T
+        for ieq = 5:neqs                                  # passive tracers: kinematic ν
+            μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ/max(ρmax, eps)
+        end
     end
 
     return nothing
@@ -2358,8 +2372,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
             μ_pnode[ip,3] = visc_coeff[3]*μd
             μ_pnode[ip,4] = visc_coeff[4]*(Pr/γm1)*μd
         end
-        for ieq = 5:neqs
-            μ_pnode[ip,ieq] = visc_coeff[ieq]*μd
+        for ieq = 5:neqs                       # passive tracers: kinematic ν (as the element form)
+            μ_pnode[ip,ieq] = visc_coeff[ieq]*ν
         end
     end
     _dsgs_nodal_to_elements_2d!(μ_dsgs, μ_pnode, connijk, nelem, ngl)
