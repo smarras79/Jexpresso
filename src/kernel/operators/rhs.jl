@@ -824,6 +824,13 @@ function _build_rhs!(RHS, u, params, time)
                            params.mesh.pgip_local, ngl-1, neqs, params.interp)
 
     end
+
+    if AD == DiscGal()
+        @timeit_debug JEXPRESSO_TIMER "surface_rhs" surface_rhs_el!(
+            params, params.uaux, params.mesh.connijk, params.qp.qe, params.mesh,
+            nelem, ngl, neqs, CL, params.SOL_VARS_TYPE, params.inputs[:numerical_flux], SD)
+    end
+    
     @timeit_debug JEXPRESSO_TIMER "DSS_rhs" DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
     #-----------------------------------------------------------------------------------
@@ -1993,6 +2000,22 @@ function _expansion_inviscid!(u, neqs, ngl,
     end
 end
 
+function _expansion_inviscid!(u, neqs, ngl,
+                              dψ, ω,
+                              F, S,
+                              Je,
+                              rhs_el,
+                              iel, ::CL, QT::Inexact, SD::NSD_1D, AD::DiscGal)
+    for ieq = 1:neqs
+        for i = 1:ngl
+            dFdξ = 0.0
+            for k = 1:ngl
+                dFdξ += dψ[k,i]*F[k,ieq]
+            end
+            rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*Je[iel,i]*S[i,ieq]  # identical to ContGal: volume weak form is discretization-agnostic
+        end
+    end
+end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
