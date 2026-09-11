@@ -24,6 +24,7 @@
 #   JEXPRESSO_SV_TEND   final time                              (default 1.0)
 #   JEXPRESSO_SV_CMIN   the DynSGS background floor :dsgs_Cmin  (default 0)
 #   JEXPRESSO_SV_CR     :dsgs_CR                                 (default 1)
+#   JEXPRESSO_SV_REL    :dsgs_rel, the normalization floor        (default 1)
 #   JEXPRESSO_SV_CMAX   :dsgs_Cmax                               (default 0.5)
 #   JEXPRESSO_SV_VISC   "dsgs" (default) or "none" for the plain Galerkin run,
 #                       the two panels of the paper's Fig. 1
@@ -50,6 +51,11 @@ _sv_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMIN", "")), 0.0
 # residual of a clean solution, which is how one checks that the sensor
 # itself converges under refinement.
 _sv_cr()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CR",   "")), 1.0)
+# :dsgs_rel — how far below its own physical scale a variable's spread may fall
+# before that scale normalizes its residual. 1 is the fix; 1e-3 is what the
+# kernels used before it, and reproduces the first-order convergence this case
+# was built to expose.
+_sv_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_REL",  "")), 1.0)
 _sv_cmax() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMAX", "")), 0.5)
 _sv_visc() = lowercase(strip(get(ENV, "JEXPRESSO_SV_VISC", "dsgs")))
 # "residual" (the default) measures the ELEMENT's own strong residual against
@@ -91,6 +97,7 @@ function user_inputs()
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => _sv_sensor(),
+        :dsgs_rel         => _sv_rel(),
         :dsgs_CR          => _sv_cr(),
         :dsgs_Cmax        => _sv_cmax(),
         :dsgs_Cmin        => _sv_cmin(),   # no background floor: it would be an
