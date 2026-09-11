@@ -2865,7 +2865,9 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
 end
 
 function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
-                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, params; ladapt = true, neqs = 4) nothing end
+                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, params; ladapt = true, neqs = 4) 
+    nothing 
+end
 
 function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
                            SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD,
@@ -2913,6 +2915,19 @@ function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
         q[:,ieq] .= @view(q_tmp[:,ieq])
     end
 
+end
+
+
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
+                           SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD::DiscGal,
+                           q_el, q_el_pro,
+                           cache_ghost_p, q_ghost_p,
+                           cache_ghost_c, q_ghost_c,
+                           interp; ladapt = true, neqs = 4)
+    # DG: no projection onto the conforming space — inter-element coupling is the
+    # numerical flux. Strictly more specific than the untyped-AD method above
+    # (AD is a value argument there, not a dispatch parameter), so fully additive.
+    nothing
 end
 
 

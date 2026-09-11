@@ -249,4 +249,21 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     extra_mesh = Array{St_extra_mesh}(undef, 0, 0)
 
+    # ------------------------------------------------------------------
+    # DG (DiscGal) interior + periodic face list — built by
+    # build_dg_faces_2D! (mesh.jl) inside mod_mesh_read_gmsh!'s cached
+    # region; consumed by surface_rhs_el!(::NSD_2D). Flat arrays so the
+    # mesh cache saves/restores them (nested containers are skip-listed).
+    # Empty under ContGal/FD. lfid slice convention over the (i,j)
+    # lattice: 1=x-min(i=1), 2=x-max(i=ngl), 3=y-min(j=1), 4=y-max(j=ngl).
+    # ------------------------------------------------------------------
+    dg_face_eL::Vector{TInt}    = TInt[]     # left element; unit normal points L→R
+    dg_face_eR::Vector{TInt}    = TInt[]     # right element
+    dg_face_lfL::Vector{TInt}   = TInt[]     # local facet id of the face in eL
+    dg_face_lfR::Vector{TInt}   = TInt[]     # local facet id of the face in eR
+    dg_face_revR::Vector{Bool}  = Bool[]     # reverse eR's trace to align with eL's
+    dg_face_nx::Vector{TFloat}  = TFloat[]   # unit normal (L→R), x component
+    dg_face_ny::Vector{TFloat}  = TFloat[]   # unit normal (L→R), y component
+    dg_face_Jf::Vector{TFloat}  = TFloat[]   # face Jacobian = edge length / 2 (straight edges)
+
 end
