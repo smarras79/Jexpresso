@@ -16,9 +16,12 @@
 # which are what make one run a different method from another. Curves of any
 # other form are reported on stdout and left off the figure:
 #
-#   density-it<n>.png             one curve per polynomial order (the finest
-#                                 resolution stored for that order) against the
-#                                 reference, with the zoom boxes
+#   density_dof<M>-it<n>.png      ONE FILE PER RESOLUTION: every order that ran
+#                                 at ~M degrees of freedom, against the
+#                                 reference, with the zoom boxes. A sweep
+#                                 leaves density_dof150, density_dof300, ...
+#   density-it<n>.png             the same for the finest resolution in the
+#                                 store, under the plain name
 #   convergence-it<n>.png         Dao & Nazarov Fig. 1 layout: the L¹, L² and
 #                                 L∞ error against 1/#DOFs on log-log axes, one
 #                                 line per order, with slope guides
@@ -388,47 +391,20 @@ function _bw_label(c, lshow_cmin)
     return LaTeXStrings.latexstring(s)
 end
 
-function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
-    iρ = findfirst(==("ρ"), string.(outvar))
-    iρ === nothing && error("user_plot_1d (brioWu1d): no ρ among the output variables")
-    idx = sortperm(x)
-    xs  = x[idx]
-    ρs  = q[idx, iρ]
-    href = (qref !== nothing && any(isfinite, @view(qref[:, iρ]))) ? qref[idx, iρ] : nothing
-
-    nop   = Int(get(inputs, :nop, 0))
-    Cmin  = Float64(get(inputs, :dsgs_Cmin, 0.0))
-
-    # The reference is supplied at the final time only; that is the figure the
-    # orders are compared on, so that is where the curve is stored and where
-    # every stored curve is drawn.
-    lfinal = href !== nothing
-    stored = NamedTuple[]
-    form   = _bw_form(inputs)
-    if lfinal
-        _bw_save_curve(xs, ρs, inputs, t)
-        # Only this run's form: the element and the nodal coefficient, and the
-        # two length-scale conventions, are different methods and do not belong
-        # on one comparison. Say so when the store holds curves from another —
-        # a leftover sweep silently appearing on the figure is the one way this
-        # comparison can lie.
-        every  = _bw_load_curves(t)
-        stored = filter(c -> c.form == form, every)
-        other  = sort(unique(c.form for c in every if c.form != form))
-        isempty(other) || println(" #   brioWu1d: ", length(every) - length(stored),
-                                  " stored curve(s) of another method (", join(other, ", "),
-                                  ") are NOT drawn; this figure is the \"", form,
-                                  "\" comparison. rm problems/MHD/brioWu1d/curves to clear the store.")
-    end
-    curves = isempty(stored) ? [(nop = nop, ndofs = length(xs), Cmin = Cmin, form = form, x = xs, y = ρs)] :
-                               _bw_finest(stored)
-
+#---------------------------------------------------------------------------------
+# The density figure itself: the curves handed to it (one per order, ALL at the
+# same resolution — the comparison is only meaningful at equal degrees of
+# freedom), the reference, and the four zoom boxes. `tag` goes into the file
+# name, so one call per resolution leaves one file per resolution behind.
+#---------------------------------------------------------------------------------
+function _bw_plot_density(curves, xs, href, inputs, OUTPUT_DIR, iout, tag)
+    isempty(curves) && return nothing
     # C_min in the title when every curve used the same one, in the legend
     # entries when they differ.
     lcommon    = length(unique(c -> round(c.Cmin; digits = 12), curves)) == 1
     lshow_cmin = !lcommon
-    fname = string("\\ (", startswith(form, "nodal") ? "\\mathrm{nodal}" : "\\mathrm{element}",
-                   "\\ \\nu,\\ \\Delta_K/", endswith(form, "H") ? "k" : "(k{+}1)", ")")
+    fname = string("\\ (", startswith(curves[1].form, "nodal") ? "\\mathrm{nodal}" : "\\mathrm{element}",
+                   "\\ \\nu,\\ \\Delta_K/", endswith(curves[1].form, "H") ? "k" : "(k{+}1)", ")")
     ttl = lcommon ? LaTeXStrings.latexstring(string("\\mathrm{Density},\\ C_{min} = ", curves[1].Cmin, fname)) :
                     LaTeXStrings.latexstring(string("\\mathrm{Density}", fname))
 
@@ -488,7 +464,58 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
             end
         end
     end
-    _savefig_silent(plt, string(OUTPUT_DIR, "/density-it", iout, ".png"))
+    _savefig_silent(plt, string(OUTPUT_DIR, "/density", tag, "-it", iout, ".png"))
+    return nothing
+end
+
+function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
+    iρ = findfirst(==("ρ"), string.(outvar))
+    iρ === nothing && error("user_plot_1d (brioWu1d): no ρ among the output variables")
+    idx = sortperm(x)
+    xs  = x[idx]
+    ρs  = q[idx, iρ]
+    href = (qref !== nothing && any(isfinite, @view(qref[:, iρ]))) ? qref[idx, iρ] : nothing
+
+    nop   = Int(get(inputs, :nop, 0))
+    Cmin  = Float64(get(inputs, :dsgs_Cmin, 0.0))
+
+    # The reference is supplied at the final time only; that is the figure the
+    # orders are compared on, so that is where the curve is stored and where
+    # every stored curve is drawn.
+    lfinal = href !== nothing
+    stored = NamedTuple[]
+    form   = _bw_form(inputs)
+    if lfinal
+        _bw_save_curve(xs, ρs, inputs, t)
+        # Only this run's form: the element and the nodal coefficient, and the
+        # two length-scale conventions, are different methods and do not belong
+        # on one comparison. Say so when the store holds curves from another —
+        # a leftover sweep silently appearing on the figure is the one way this
+        # comparison can lie.
+        every  = _bw_load_curves(t)
+        stored = filter(c -> c.form == form, every)
+        other  = sort(unique(c.form for c in every if c.form != form))
+        isempty(other) || println(" #   brioWu1d: ", length(every) - length(stored),
+                                  " stored curve(s) of another method (", join(other, ", "),
+                                  ") are NOT drawn; this figure is the \"", form,
+                                  "\" comparison. rm problems/MHD/brioWu1d/curves to clear the store.")
+    end
+    if isempty(stored)
+        # Not the final time (or an empty store): this run's own curve only.
+        _bw_plot_density([(nop = nop, ndofs = length(xs), Cmin = Cmin, form = form, x = xs, y = ρs)],
+                         xs, href, inputs, OUTPUT_DIR, iout, "")
+    else
+        # ONE FIGURE PER RESOLUTION. Orders may only be compared at equal
+        # degrees of freedom, so each DOF bucket gets its own file and a sweep
+        # leaves density_dof150, density_dof300, ... behind, each holding every
+        # order that ran at that resolution.
+        for b in sort(unique(_bw_bucket(c.ndofs) for c in stored))
+            sub = _bw_finest(filter(c -> _bw_bucket(c.ndofs) == b, stored))
+            _bw_plot_density(sub, xs, href, inputs, OUTPUT_DIR, iout, string("_dof", b))
+        end
+        # The finest resolution keeps the plain name as the headline figure.
+        _bw_plot_density(_bw_finest(stored), xs, href, inputs, OUTPUT_DIR, iout, "")
+    end
 
     # Error table and the convergence history, from every stored curve.
     if lfinal && !isempty(stored)

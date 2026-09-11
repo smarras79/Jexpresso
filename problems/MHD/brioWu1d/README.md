@@ -73,7 +73,8 @@ on stdout and leaves them off the figure.
 
 | figure | contents |
 |---|---|
-| `density-it<n>.png` | one curve per order (the finest resolution stored for it) against the reference, with the four zoom boxes |
+| `density_dof<M>-it<n>.png` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.png`, `density_dof300-it<n>.png`, … side by side |
+| `density-it<n>.png` | the same figure for the finest resolution in the store, under the plain name |
 | `convergence-it<n>.png` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
 | `convergence_smooth-it<n>.png` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
 
@@ -110,7 +111,9 @@ $1.15\times10^{-3}$ at $N = 4$ to $7.5\times10^{-4}$ at $N = 7$, so the Courant
 number against the fast speed of the right state runs from 0.16 to 0.25 and
 the parabolic number stays below 0.25.
 
-The last figure written holds the whole sweep.
+The last run of a sweep rewrites every one of these figures from the whole
+store, so its output directory holds the complete comparison: one density
+figure per resolution and the two convergence histories.
 `rm -r problems/MHD/brioWu1d/curves` starts a fresh one; the store is
 git-ignored. Curves whose stored final time differs from the current one are
 ignored, so changing `:tend` cannot silently mix solutions from different
