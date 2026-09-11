@@ -238,18 +238,35 @@ function _sv_panel(sub, nops, fld, nm, tag)
                     markerstrokewidth = 1.0, color = col, label = lab)
     end
     # Slope guides: the nominal rates of the lowest and the highest order on
-    # the figure, N+1, anchored above and below the data.
+    # the figure, N+1. Each is drawn ALONGSIDE the curve it annotates — over a
+    # 6x span of h a slope-7 line covers five decades, so a guide anchored at
+    # the corner of the axes leaves the panel at once — and the axes are then
+    # clipped to the data.
     if !isempty(allx)
-        x2 = maximum(allx); ymax = maximum(ally); ymin = minimum(ally)
-        slopes = unique((minimum(nops) + 1, maximum(nops) + 1))
-        for (k, sl) in enumerate(slopes)
-            anchor = (k == 1 && length(slopes) > 1) ? 2.5*ymax : 0.4*ymin
-            col    = (k == 1 && length(slopes) > 1) ? :gray40 : :gray60
-            xg = [minimum(allx), x2]
-            Plots.plot!(pl, xg, [anchor*(xi/x2)^sl for xi in xg];
+        x1 = minimum(allx); x2 = maximum(allx)
+        ymax = maximum(ally); ymin = minimum(ally)
+        for (sl, nop, shift, col) in ((minimum(nops) + 1, minimum(nops), 3.0,   :gray40),
+                                      (maximum(nops) + 1, maximum(nops), 1/4.0, :gray55))
+            g = sort(filter(r -> r.nop == nop, sub), by = r -> r.ndofs)
+            ys = [getfield(r, fld) for r in g]
+            xs = [1.0/sqrt(r.ndofs) for r in g]
+            keep = isfinite.(ys) .& (ys .> 0)
+            any(keep) || continue
+            xs = xs[keep]; ys = ys[keep]
+            # anchor at the geometric middle of that order's own curve
+            xm = exp(sum(log, xs)/length(xs)); ym = shift*exp(sum(log, ys)/length(ys))
+            Plots.plot!(pl, [x1, x2], [ym*(xi/xm)^sl for xi in (x1, x2)];
                         line = (col, 2.0, :dash),
                         label = LaTeXStrings.latexstring(string("\\mathrm{slope}\\ ", sl)))
         end
+        # Ticks at the resolutions actually run, thinned to four: 10^-1.8 says
+        # nothing, and one label per (order, mesh) pair overlaps.
+        xu = sort(unique(allx))
+        idx = length(xu) <= 4 ? eachindex(xu) :
+              unique(round.(Int, range(1, length(xu); length = 4)))
+        xt  = xu[idx]
+        Plots.plot!(pl; xlims = (0.85*x1, 1.18*x2), ylims = (0.25*ymin, 4.0*ymax),
+                    xticks = (xt, [LaTeXStrings.latexstring(@sprintf("%.3g", x)) for x in xt]))
     end
     return pl
 end
