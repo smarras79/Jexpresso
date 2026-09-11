@@ -19,6 +19,8 @@
 #   mesh     this rank's mesh (coordinates, connectivity, extents)
 #   q        flat npoin*nvar vector of the OUTPUT variables (`outvar`)
 #   t        simulation time
+#   Minv     the solver's assembled inverse lumped mass — the quadrature
+#            weights the norms below are taken with
 #---------------------------------------------------------------------------------
 const SV_ERR_DIR = joinpath(@__DIR__, "errors")
 
@@ -36,79 +38,43 @@ _sv_style(nop) = get(SV_STYLE, nop, (:gray, :cross))
 
 _sv_tag(inputs) = (get(inputs, :lvisc, true) ? "dsgs" : "galerkin")
 
-# Legendre P_N(x) by the three-term recurrence.
-function _sv_legendre(N::Int, x)
-    N == 0 && return one(x)
-    p0 = one(x); p1 = x
-    for k = 1:N-1
-        p0, p1 = p1, ((2k + 1)*x*p1 - k*p0)/(k + 1)
-    end
-    return p1
-end
-
-# Gauss-Lobatto-Legendre weights of the nodes ξ (which include ±1):
-#   w_i = 2 / ( N(N+1) [P_N(ξ_i)]² ),   N = length(ξ) - 1.
-function _sv_lgl_weights(ξ)
-    N = length(ξ) - 1
-    N >= 1 || return [2.0]
-    return [2.0/(N*(N + 1)*_sv_legendre(N, ξi)^2) for ξi in ξ]
-end
-
-# Distance between two nodes of the mesh.
-@inline _sv_dist(mesh, ia, ib) = hypot(mesh.x[ib] - mesh.x[ia], mesh.y[ib] - mesh.y[ia])
-
-# The reference coordinates of the nodes, read back off the first element as
-# the arc length along its i-direction edge, normalized to [-1, 1]:
-#
-#     ξ_i = 2 d(node(1,1), node(i,1)) / d(node(1,1), node(ngl,1)) - 1.
-#
-# Taken along the edge rather than from x alone because the i index of
-# `connijk` is not tied to a coordinate axis: on this mesh it runs along y,
-# and reading ξ off x gave a spacing of 1e-16 and weights of 1e-24.
-function _sv_reference_nodes(mesh)
-    ngl = mesh.ngl
-    c11 = mesh.connijk[1,1,1,1]
-    L   = _sv_dist(mesh, c11, mesh.connijk[1,ngl,1,1])
-    L > 0 || return collect(range(-1.0, 1.0, length = ngl))
-    return [2.0*_sv_dist(mesh, c11, mesh.connijk[1,i,1,1])/L - 1.0 for i = 1:ngl]
-end
-
 #---------------------------------------------------------------------------------
 # Error of the velocity (u, v) against the exact solution: the vortex of
 # initialize.jl translated by v₀t and wrapped periodically. Integral norms are
 # taken with the nodal quadrature weights of the mesh, which for LGL nodes is
 # the mass-matrix lumping the solver itself uses.
 #---------------------------------------------------------------------------------
-function _sv_velocity_error(mesh, q, t, outvar, inputs)
+function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
     names = string.(outvar)
     iu = findfirst(==("u"), names)
     iv = findfirst(==("v"), names)
     (iu === nothing || iv === nothing) && return nothing
     npoin = mesh.npoin
-    ngl   = mesh.ngl
+
     γ  = γ_mhd
     Lx = mesh.xmax - mesh.xmin
     Ly = mesh.ymax - mesh.ymin
 
-    # Nodal quadrature weights = the lumped mass of this (uniform, Cartesian)
-    # mesh: sum over the elements containing the node of ω_i ω_j |J|, with the
-    # LGL weights of the case's order and |J| = (hx/2)(hy/2). Shared nodes get
-    # a contribution from each of their elements, which is what the assembled
-    # mass matrix does. The reference nodes are read back off the mesh and the
-    # weights from the closed form, so this needs nothing from the solver's
-    # own basis structures.
-    ω = _sv_lgl_weights(_sv_reference_nodes(mesh))
-    w = zeros(npoin)
-    for iel = 1:mesh.nelem
-        c11 = mesh.connijk[iel,1,1,1]
-        # |J| of a rectangular element: half of each edge length. Again by
-        # edge length, not by coordinate, so the element orientation does not
-        # matter.
-        jac = 0.25*_sv_dist(mesh, c11, mesh.connijk[iel,ngl,1,1])*
-                   _sv_dist(mesh, c11, mesh.connijk[iel,1,ngl,1])
-        for j = 1:ngl, i = 1:ngl
-            w[mesh.connijk[iel,i,j,1]] += ω[i]*ω[j]*jac
-        end
+    # Nodal quadrature weights: the SOLVER'S OWN assembled lumped mass,
+    # w_i = M_ii = 1/Minv_i, handed down by the plotting hook. That is the
+    # same quadrature the DSS and the mass-matrix inversion of the run use, so
+    # the norms below are the solver's own integrals and not a rule invented
+    # here. On this mesh they sum to the domain area to 14 digits.
+    (Minv !== nothing && length(Minv) >= npoin) ||
+        error("smoothVortex: the error norms need the solver's lumped mass (Minv) from the plotting hook")
+    # One weight per PHYSICAL point. On a doubly periodic mesh the node list
+    # still holds the images of the periodic edges — the right column is the
+    # same point as the left one — so summing over all npoin counts those
+    # edges twice and the weights integrate 105 instead of the box's 100.
+    # Keep the first node at each position modulo the period.
+    seen = Set{Tuple{Int,Int}}()
+    w    = zeros(npoin)
+    key(v, v0, L) = (k = round(Int, 1.0e9*mod(v - v0, L)/L); k == 1_000_000_000 ? 0 : k)
+    for ip = 1:npoin
+        kk = (key(mesh.x[ip], mesh.xmin, Lx), key(mesh.y[ip], mesh.ymin, Ly))
+        kk in seen && continue
+        push!(seen, kk)
+        w[ip] = 1.0/Minv[ip]
     end
 
     s1 = 0.0; s2 = 0.0; si = 0.0
@@ -126,8 +92,10 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs)
         r1 += w[ip]*m;   r2 += w[ip]*m*m;   ri = max(ri, m)
     end
 
+    # The weights must integrate the domain: a cheap check that the lumped
+    # mass handed down is this rank's and complete.
     if get(ENV, "JEXPRESSO_SV_DEBUG", "") == "1"
-        @info "sv debug" sumw=sum(w) minw=minimum(w) maxw=maximum(w) s1=s1 s2=s2 r1=r1 r2=r2 si=si ri=ri npoin=npoin ngl=ngl nop=mesh.nop lenω=length(ω)
+        @info "smoothVortex quadrature check" sum_w = sum(w) area = Lx*Ly npoin = npoin nunique = length(seen)
     end
     comm = get_mpi_comm()
     ndofs = npoin
@@ -273,11 +241,11 @@ function _sv_report(rows)
     return nothing
 end
 
-function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout)
+function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothing)
     isfinite(t) && t > 0.0 || return nothing         # the error figure is a final-time product
     abs(t - Float64(get(inputs, :tend, t))) < 1.0e-8*max(1.0, abs(t)) || return nothing
 
-    e = _sv_velocity_error(mesh, q, t, outvar, inputs)
+    e = _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
     e === nothing && return nothing
     _sv_save_error(e, inputs, t)
 

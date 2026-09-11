@@ -66,6 +66,9 @@ const BW_CURVE_DIR = joinpath(@__DIR__, "curves")
 # broken (dash/dot); the reference is the only solid line, so the curves are
 # told apart by line type and not by colour alone.
 const BW_STYLE = Dict(
+    1 => (:darkorange, :dash,     :star5),
+    2 => (:teal,       :dashdot,  :cross),
+    3 => (:magenta,    :dot,      :hexagon),
     4 => (:red,      :dash,       :circle),
     5 => (:blue,     :dashdot,    :rect),
     6 => (:seagreen, :dot,        :diamond),
@@ -152,8 +155,26 @@ function _bw_load_curves(t)
     return curves
 end
 
-# The curve shown on the density figure for each order: its finest resolution.
+# The curves shown on the density figure: ONE per order, all at the same
+# resolution — the comparison is only meaningful at equal degrees of freedom
+# (Dao & Nazarov's Fig. 2 is captioned "under the same number of degrees of
+# freedom"). Take the finest DOF count that every order in the store has;
+# counts are bucketed to the nearest 50 because nelx = DOFs/nop is rounded
+# (601, 601, 601, 603 points for orders 4, 5, 6, 7 at a target of 600). If the
+# orders share no resolution, fall back to the finest of each.
+_bw_bucket(ndofs) = 50*round(Int, ndofs/50)
+
 function _bw_finest(curves)
+    isempty(curves) && return curves
+    nops    = sort(unique(c.nop for c in curves))
+    buckets = [Set(_bw_bucket(c.ndofs) for c in curves if c.nop == n) for n in nops]
+    common  = reduce(intersect, buckets)
+    if !isempty(common)
+        b = maximum(common)
+        out = [first(sort(filter(c -> c.nop == n && _bw_bucket(c.ndofs) == b, curves),
+                          by = c -> -c.ndofs)) for n in nops]
+        return out
+    end
     best = Dict{Int,Any}()
     for c in curves
         (!haskey(best, c.nop) || c.ndofs > best[c.nop].ndofs) && (best[c.nop] = c)

@@ -452,7 +452,7 @@ function _isolines(xg, yg, z, levels)
     return xs, ys
 end
 
-function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing)
+function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing, Minv=nothing)
 
     """
         Plot arbitrarily gridded unstructured 2D nodal data as filled
@@ -505,12 +505,14 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     # Optional per-case figure, the 2D counterpart of the user_plot_1d hook
     # above. A case may ship a user_plot.jl defining
     #
-    #     user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout)
+    #     user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv=...)
     #
     # (mesh: THIS rank's mesh, for the node coordinates, the connectivity and
     # the extents; q: flat npoin*nvar vector of the output variables; t: the
-    # simulation time parsed back from `title`) which writes its own extra
-    # figures — an accuracy history against an exact solution, say (see
+    # simulation time parsed back from `title`; Minv: the solver's assembled
+    # inverse lumped mass, so a case that measures an integral norm uses the
+    # SAME quadrature the solver does rather than a rule of its own) which
+    # writes its own extra figures — an accuracy history against an exact solution, say (see
     # problems/MHD/smoothVortex). Unlike the 1D hook this one is ADDITIVE: it
     # is called on every rank, before the gather, and the generic panels below
     # are rendered as usual afterwards. A case that needs the whole domain
@@ -519,7 +521,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         isdefined(@__MODULE__, :user_plot_2d)
         try
             t_ = something(tryparse(Float64, replace(split(title, "=")[end], r"[^0-9eE.+-]" => "")), NaN)
-            user_plot_2d(mesh, q, t_, varnames, inputs, OUTPUT_DIR, iout)
+            user_plot_2d(mesh, q, t_, varnames, inputs, OUTPUT_DIR, iout; Minv = Minv)
         catch err
             @warn "user_plot_2d failed; continuing with the generic panels." exception=err
         end
