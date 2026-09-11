@@ -105,14 +105,31 @@ git-ignored. Curves whose stored final time differs from the current one are
 ignored, so changing `:tend` cannot silently mix solutions from different
 times.
 
-**Why the orders nearly coincide at fixed DOFs.** The DynSGS length scale is
-$\Delta = \Delta_K/(N+1) = L/(n_{elx}(N+1))$, which at a fixed number of
-degrees of freedom is very nearly the same for every order — so the cap
-$C_{max}\Delta\lambda$, the floor $C_{min}\Delta\lambda$ and the residual
-viscosity $C_R\Delta^2\mathcal R$ are all nearly the same, and so is the
-solution. The comparison at equal DOFs therefore measures the artificial
-viscosity, not the polynomial order. Setting `JEXPRESSO_BW_CMIN=0` removes
-the part of it that is independent of the solution.
+**The two regimes, and what the paper's Fig. 2 shows.** Dao & Nazarov compare
+$\mathbb{P}_1$ against $\mathbb{P}_3$ — "under the same number of degrees of
+freedom, the $\mathbb{P}_3$ solution captures the compound structure more
+accurately than the $\mathbb{P}_1$ solution". That is the low-order regime,
+where raising the order buys a large gain in the accuracy of the underlying
+Galerkin scheme.
+
+Above that the picture changes, because the DynSGS length scale is
+$\Delta = \Delta_K/(N+1) = L/(n_{elx}(N+1))$ and $n_{elx} = \#\mathrm{DOFs}/N$,
+so at a fixed number of degrees of freedom
+
+$$
+\Delta = \frac{L\,(N+1)}{N\,\#\mathrm{DOFs}}
+$$
+
+*grows* with the order: $n_{elx}(N+1)$ is 750, 720, 700 and 686 for
+$N = 4, 5, 6, 7$ at 600 DOFs, i.e. $\Delta$ is 9 % larger at $N = 7$ than at
+$N = 4$. The cap $C_{max}\Delta\lambda$, the floor $C_{min}\Delta\lambda$ and
+the residual viscosity $C_R\Delta^2\mathcal R$ all follow it, so once the
+underlying scheme is accurate enough that the artificial viscosity sets the
+error — which it is by $N = 4$ on a solution made of jumps — the higher
+orders are very slightly *worse*, and the measured curves lie on top of each
+other. The comparison at equal DOFs then measures the artificial viscosity,
+not the polynomial order. `JEXPRESSO_BW_CMIN=0` removes the part of it that
+is independent of the solution.
 
 ## What is implemented
 

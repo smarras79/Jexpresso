@@ -76,7 +76,16 @@ const BW_STYLE = Dict(
 )
 _bw_style(nop) = get(BW_STYLE, nop, (:darkorange, :dash, :xcross))
 
-_bw_curve_file(nop, ndofs) = joinpath(BW_CURVE_DIR, string("nop", nop, "_dof", ndofs, ".dat"))
+# Element- and nodal-form runs are different methods, so they are stored
+# apart and only drawn together when the figure says which is which.
+function _bw_form(inputs)
+    f = get(inputs, :ldsgs_nodal, false) ? "nodal" : "elem"
+    # the element length-scale convention is part of the method too
+    lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", "ngl"))) == "nop" && (f = string(f, "H"))
+    return f
+end
+_bw_curve_file(nop, ndofs, form) =
+    joinpath(BW_CURVE_DIR, string("nop", nop, "_dof", ndofs, "_", form, ".dat"))
 
 #---------------------------------------------------------------------------------
 # Store this run's density profile. One file per (order, DOFs), so a re-run at
@@ -87,7 +96,7 @@ function _bw_save_curve(xs, ρs, inputs, t)
     nop > 0 || return nothing
     try
         mkpath(BW_CURVE_DIR)
-        open(_bw_curve_file(nop, length(xs)), "w") do io
+        open(_bw_curve_file(nop, length(xs), _bw_form(inputs)), "w") do io
             println(io, "# Brio-Wu density profile, written by user_plot.jl for the order comparison.")
             println(io, "# nop=", nop,
                         " ndofs=", length(xs),
@@ -98,7 +107,7 @@ function _bw_save_curve(xs, ρs, inputs, t)
                         " CR=", Float64(get(inputs, :dsgs_CR, 1.0)),
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.5)),
                         " sensor=", string(get(inputs, :dsgs_sensor, "residual")),
-                        " nodal=", string(get(inputs, :ldsgs_nodal, false)))
+                        " form=", _bw_form(inputs))
             println(io, "# x rho")
             for i in eachindex(xs)
                 println(io, xs[i], " ", ρs[i])
@@ -149,10 +158,20 @@ function _bw_load_curves(t)
         push!(curves, (nop  = nop,
                        ndofs = length(xs),
                        Cmin = something(tryparse(Float64, get(meta, "Cmin", "")), 0.0),
+                       form = get(meta, "form", "elem"),
+                       mtime = mtime(joinpath(BW_CURVE_DIR, fname)),
                        x = xs, y = ys))
     end
-    sort!(curves, by = c -> (c.nop, c.ndofs))
-    return curves
+    # One curve per (order, DOFs, form): the store has carried two file-naming
+    # conventions, so keep the most recently written of any duplicates.
+    sort!(curves, by = c -> (c.nop, c.ndofs, c.form, -c.mtime))
+    out = eltype(curves)[]
+    for c in curves
+        isempty(out) && (push!(out, c); continue)
+        l = out[end]
+        (l.nop == c.nop && l.ndofs == c.ndofs && l.form == c.form) || push!(out, c)
+    end
+    return out
 end
 
 # The curves shown on the density figure: ONE per order, all at the same
@@ -366,19 +385,24 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     # every stored curve is drawn.
     lfinal = href !== nothing
     stored = NamedTuple[]
+    form   = _bw_form(inputs)
     if lfinal
         _bw_save_curve(xs, ρs, inputs, t)
-        stored = _bw_load_curves(t)
+        # Only this run's form: the element and the nodal coefficient are two
+        # different methods and do not belong on one comparison.
+        stored = filter(c -> c.form == form, _bw_load_curves(t))
     end
-    curves = isempty(stored) ? [(nop = nop, ndofs = length(xs), Cmin = Cmin, x = xs, y = ρs)] :
+    curves = isempty(stored) ? [(nop = nop, ndofs = length(xs), Cmin = Cmin, form = form, x = xs, y = ρs)] :
                                _bw_finest(stored)
 
     # C_min in the title when every curve used the same one, in the legend
     # entries when they differ.
     lcommon    = length(unique(c -> round(c.Cmin; digits = 12), curves)) == 1
     lshow_cmin = !lcommon
-    ttl = lcommon ? LaTeXStrings.latexstring(string("\\mathrm{Density},\\ C_{min} = ", curves[1].Cmin)) :
-                    LaTeXStrings.latexstring("\\mathrm{Density}")
+    fname = string("\\ (", startswith(form, "nodal") ? "\\mathrm{nodal}" : "\\mathrm{element}",
+                   "\\ \\nu,\\ \\Delta_K/", endswith(form, "H") ? "k" : "(k{+}1)", ")")
+    ttl = lcommon ? LaTeXStrings.latexstring(string("\\mathrm{Density},\\ C_{min} = ", curves[1].Cmin, fname)) :
+                    LaTeXStrings.latexstring(string("\\mathrm{Density}", fname))
 
     xl = (0.0, 1.0); yl = (0.1, 1.0)
     plt = Plots.plot(; title = ttl,
@@ -444,6 +468,7 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
         _bw_report_errors(rows)
         _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth = false)
         _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth = true)
+        println(" #   (", form, " form of the DynSGS coefficient)")
     end
     return nothing
 end

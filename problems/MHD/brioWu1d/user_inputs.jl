@@ -50,6 +50,36 @@ _bw_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_NOP",  "")), 4)
 _bw_dofs() = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_DOFS", "")), BW_DOFS_DEFAULT)
 _bw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CMIN", "")), 0.06)
 
+# The coefficient per NODE (Dao & Nazarov's own form, their eq. 4.10) instead
+# of per element. At a fixed number of degrees of freedom the element form
+# gives the higher orders fewer, larger elements and therefore a coarser
+# staircase of nu, which is not a fair comparison across orders; the nodal
+# form has no such bias.
+_bw_nodal() = lowercase(strip(get(ENV, "JEXPRESSO_BW_NODAL", "false"))) in ("1", "true", "yes", "on")
+
+# Element length scale of the DynSGS coefficient. The kernels use
+# Δ = Δ_K/(k+1) (`ngl`); Dao & Nazarov's eq. 4.10 uses h_K/k, the polynomial
+# DEGREE. The difference is a factor (k+1)/k, and it is not innocent when
+# orders are compared at a FIXED number of degrees of freedom: with
+# n_elx = DOFs/k,
+#
+#     Δ_K/(k+1) = (L/DOFs)·k/(k+1)      grows with k  (0.8 at k=4, 0.875 at k=7)
+#     Δ_K/k     =  L/DOFs               the same for every order
+#
+# so the (k+1) convention gives the higher orders a systematically larger
+# viscosity, while the paper's is order-independent. Δ enters the cap and the
+# floor linearly and the residual viscosity quadratically, so the convention
+# can be switched here without touching the kernels, by scaling the
+# coefficients: C_max, C_min by (k+1)/k and C_R by ((k+1)/k)².
+#
+#     JEXPRESSO_BW_HSCALE=nop     the paper's Δ_K/k
+#     JEXPRESSO_BW_HSCALE=ngl     Δ_K/(k+1)  (the default, the kernels' own)
+function _bw_hfac()
+    lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", "ngl"))) == "nop" || return 1.0
+    N = _bw_nop()
+    return (N + 1)/N
+end
+
 function _bw_nelx()
     n = tryparse(Int, get(ENV, "JEXPRESSO_BW_NELX", ""))
     n === nothing || return n
@@ -95,8 +125,8 @@ function user_inputs()
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "residual",  # element-wise strong residual (DSGS.md §1.2); "legacy" = the pre-Sep-2026 sensor
-        :dsgs_CR          => 1.0,
-        :dsgs_Cmax        => 0.5,
+        :dsgs_CR          => 1.0*_bw_hfac()^2,
+        :dsgs_Cmax        => 0.5*_bw_hfac(),
         # Background floor C_min (not in the paper), 6 % of the first-order
         # viscosity C_max·h·(|u|+c_f). (0.03 was enough before the residual's
         # time derivative was made stage-consistent, DSGS.md §4.4: the old
@@ -111,7 +141,7 @@ function user_inputs()
         # leaves a trace of them, 0.03 none (measured). Dao & Nazarov's P3
         # elements with exact quadrature do not show these ripples; the
         # collocated LGL flux of this code is the remaining difference.
-        :dsgs_Cmin        => _bw_cmin(),  # JEXPRESSO_BW_CMIN overrides
+        :dsgs_Cmin        => _bw_cmin()*_bw_hfac(),  # JEXPRESSO_BW_CMIN overrides
         :dsgs_gamma       => 2.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,
@@ -124,6 +154,7 @@ function user_inputs()
         # element form (the default) is kept here.
 #       :ldsgs_nodal      => true,    # false (the default) = one ν per element
         :dsgs_Cl          => 0.4,
+        :ldsgs_nodal      => _bw_nodal(),  # JEXPRESSO_BW_NODAL=1 for the paper's nodal form
         :dsgs_norms       => "rank",    # residual normalized by the spread over this rank's elements (default; "domain": the whole tube, MPI-reduced)
         :energy_equation  => "energy",
         :lkep              => false,

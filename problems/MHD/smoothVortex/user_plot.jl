@@ -62,18 +62,19 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
     # here. On this mesh they sum to the domain area to 14 digits.
     (Minv !== nothing && length(Minv) >= npoin) ||
         error("smoothVortex: the error norms need the solver's lumped mass (Minv) from the plotting hook")
-    # One weight per PHYSICAL point. On a doubly periodic mesh the node list
-    # still holds the images of the periodic edges — the right column is the
-    # same point as the left one — so summing over all npoin counts those
-    # edges twice and the weights integrate 105 instead of the box's 100.
-    # Keep the first node at each position modulo the period.
-    seen = Set{Tuple{Int,Int}}()
+    # One weight per DEGREE OF FREEDOM. On a doubly periodic mesh two local
+    # nodes can be the same unknown — the right column of the box is the left
+    # one — and they carry the same assembled mass, so summing over all npoin
+    # counts the periodic edges twice (the weights integrate 105 instead of
+    # the box's 100 at 4x4). The solver's own local-to-global map,
+    # mesh.ip2gip, is what says which nodes are the same unknown; use it
+    # rather than any geometric test of ours.
+    seen = Set{eltype(mesh.ip2gip)}()
     w    = zeros(npoin)
-    key(v, v0, L) = (k = round(Int, 1.0e9*mod(v - v0, L)/L); k == 1_000_000_000 ? 0 : k)
     for ip = 1:npoin
-        kk = (key(mesh.x[ip], mesh.xmin, Lx), key(mesh.y[ip], mesh.ymin, Ly))
-        kk in seen && continue
-        push!(seen, kk)
+        g = mesh.ip2gip[ip]
+        g in seen && continue
+        push!(seen, g)
         w[ip] = 1.0/Minv[ip]
     end
 
