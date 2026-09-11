@@ -1,9 +1,9 @@
 #!/bin/bash -l
-#SBATCH --job-name=LESsmago
+#SBATCH --job-name=fluxEmergence
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 #SBATCH --partition=general
-#SBATCH --qos=low
+#SBATCH --qos=standard
 #SBATCH --account=smarras
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=64
@@ -31,4 +31,5 @@ julia --project=. -e 'using MPI; using Jexpresso' 2>/dev/null || \
 echo "--- Setup complete, launching 64 ranks ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 
-mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step
+#mpirun -np 64 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
+mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS

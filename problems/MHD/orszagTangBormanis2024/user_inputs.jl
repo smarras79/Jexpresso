@@ -19,7 +19,7 @@ function user_inputs()
         # is deliberate — the vortex steepens into shocks by t ≈ 0.5 and the
         # local wave speeds grow. The reference simulation of the paper used
         # Δt = 8e-4 on its 128² finite-volume grid.
-        :Δt                   => 1.5e-4,
+        :Δt                   => 0.7e-5,
         :tinit                => 0.0,
         :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
         :diagnostics_at_times => (0.0:0.05:1.0),
@@ -36,7 +36,7 @@ function user_inputs()
         # reference data set of the paper.
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl",
-        :nop                 => 4,
+        :nop                 => 7,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #
@@ -125,7 +125,8 @@ function user_inputs()
         :outformat           => "vtk",   # ParaView: the output variables plus the DynSGS coefficient fields
         :loverwrite_output   => false,
         :lwrite_initial      => true,
-        :output_dir          => "./output/",
+        :output_dir          => "/scratch/smarras/smarras/MHD/",
+        #:output_dir          => "./output/",
         :loutput_pert        => false,
         #---------------------------------------------------------------------------
         # AMR (off)
