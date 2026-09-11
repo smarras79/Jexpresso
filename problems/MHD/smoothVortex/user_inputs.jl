@@ -23,8 +23,12 @@
 #   JEXPRESSO_SV_DT     time step, overrides the rule below
 #   JEXPRESSO_SV_TEND   final time                              (default 1.0)
 #   JEXPRESSO_SV_CMIN   the DynSGS background floor :dsgs_Cmin  (default 0)
+#   JEXPRESSO_SV_CR     :dsgs_CR                                 (default 1)
+#   JEXPRESSO_SV_CMAX   :dsgs_Cmax                               (default 0.5)
 #   JEXPRESSO_SV_VISC   "dsgs" (default) or "none" for the plain Galerkin run,
 #                       the two panels of the paper's Fig. 1
+#   JEXPRESSO_SV_SENSOR "residual" (default, the element's own residual) or
+#                       "legacy" (the assembled rate)
 #
 # The time step follows the resolution, Δt ∝ 1/(nelx·nop), so the Courant
 # number is the same at every point of a sweep and the comparison is not
@@ -40,7 +44,19 @@ _sv_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_SV_NOP",  "")), SV_
 _sv_nelx() = something(tryparse(Int,     get(ENV, "JEXPRESSO_SV_NELX", "")), SV_NELX_DEFAULT)
 _sv_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_TEND", "")), 1.0)
 _sv_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMIN", "")), 0.0)
+# C_R and C_max as well, so that a run can keep the SENSOR (and its
+# diagnostics) while applying no viscosity at all: with both zero the
+# solution is the plain Galerkin one and the printed residual is the
+# residual of a clean solution, which is how one checks that the sensor
+# itself converges under refinement.
+_sv_cr()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CR",   "")), 1.0)
+_sv_cmax() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMAX", "")), 0.5)
 _sv_visc() = lowercase(strip(get(ENV, "JEXPRESSO_SV_VISC", "dsgs")))
+# "residual" (the default) measures the ELEMENT's own strong residual against
+# the BDF history; "legacy" measures the ASSEMBLED rate instead. Which one is
+# used decides whether an inter-element mismatch can reach the sensor, so the
+# convergence test needs to be able to run both.
+_sv_sensor() = lowercase(strip(get(ENV, "JEXPRESSO_SV_SENSOR", "residual")))
 
 function _sv_dt()
     d = tryparse(Float64, get(ENV, "JEXPRESSO_SV_DT", ""))
@@ -74,9 +90,9 @@ function user_inputs()
         :lvisc            => (_sv_visc() != "none"),
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
-        :dsgs_sensor      => "residual",
-        :dsgs_CR          => 1.0,
-        :dsgs_Cmax        => 0.5,
+        :dsgs_sensor      => _sv_sensor(),
+        :dsgs_CR          => _sv_cr(),
+        :dsgs_Cmax        => _sv_cmax(),
         :dsgs_Cmin        => _sv_cmin(),   # no background floor: it would be an
                                            # order-independent O(h) error on a
                                            # smooth solution (see the README)

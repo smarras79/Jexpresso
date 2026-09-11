@@ -1487,6 +1487,8 @@ const _DSGS_DBGN  = Ref(0)
 const _DSGS_DBGV  = zeros(Float64, 8)
 const _DSGS_DBGNU = Ref(0.0)
 const _DSGS_DBGCAP = Ref(0.0)
+const _DSGS_DBGLOC = zeros(Int, 4)     # (ie, i, j, ieq) of the largest ratio
+const _DSGS_DBGTOP = Ref(0.0)
 
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS_MHD, ::NSD_2D,
@@ -1522,6 +1524,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     _DSGS_DBG[] = ldbg
     if ldbg
         fill!(_DSGS_DBGV, 0.0); _DSGS_DBGNU[] = 0.0; _DSGS_DBGCAP[] = 0.0
+        _DSGS_DBGTOP[] = 0.0; fill!(_DSGS_DBGLOC, 0)
     end
     # avg_e / den_e: preallocated element mean / spread scratch (llocal_norms)
     γm1  = γ - one(TT)
@@ -1667,6 +1670,11 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                     ratio = max(ratio, r)
                     if ldbg
                         _DSGS_DBGV[ieq] = max(_DSGS_DBGV[ieq], Float64(r))
+                        if Float64(r) > _DSGS_DBGTOP[]
+                            _DSGS_DBGTOP[] = Float64(r)
+                            _DSGS_DBGLOC[1] = ie; _DSGS_DBGLOC[2] = i
+                            _DSGS_DBGLOC[3] = j;  _DSGS_DBGLOC[4] = ieq
+                        end
                     end
                 end
 
@@ -1771,9 +1779,12 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
     if ldbg
         _DSGS_DBGN[] += 1
-        if _DSGS_DBGN[] % 200 == 0
-            @printf(" # DSGS dbg call %6d  nu_max=%.4e cap=%.4e  ratio by eq: %s   denom: %s\n",
+        if _DSGS_DBGN[] <= 12 || _DSGS_DBGN[] % 200 == 0
+            edge = (_DSGS_DBGLOC[2] == 1 || _DSGS_DBGLOC[2] == ngl ||
+                    _DSGS_DBGLOC[3] == 1 || _DSGS_DBGLOC[3] == ngl) ? "EDGE" : "int "
+            @printf(" # DSGS dbg call %6d  nu_max=%.4e cap=%.4e  argmax: eq %d node (%d,%d) of %d %s  ratio by eq: %s   denom: %s\n",
                     _DSGS_DBGN[], _DSGS_DBGNU[], _DSGS_DBGCAP[],
+                    _DSGS_DBGLOC[4], _DSGS_DBGLOC[2], _DSGS_DBGLOC[3], ngl, edge,
                     join((@sprintf("%.2e", _DSGS_DBGV[k]) for k = 1:NRES), " "),
                     join((@sprintf("%.2e", Float64(denom[k])) for k = 1:NRES), " "))
         end
