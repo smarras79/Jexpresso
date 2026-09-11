@@ -231,6 +231,22 @@ SV_NP=16 SV_JOBS=4 SV_NOPS="1 3" tools/smooth_vortex_mpi_scan.sh
 SV_NP=1  SV_JOBS=8 tools/smooth_vortex_mpi_scan.sh       # 8 serial cases at once
 ```
 
+On a SLURM cluster, `tools/smooth_vortex_slurm.sh` is the same sweep as a
+batch job — as written, orders 4 and 6 on 32² and 64² elements, both panels,
+16 ranks per case and 4 cases at a time:
+
+```bash
+sbatch tools/smooth_vortex_slurm.sh
+```
+
+`SV_NP × SV_JOBS` must equal `--ntasks` in its header, or the job steps queue
+behind each other (too few tasks) or leave cores idle (too many). Each case is
+one `srun --exclusive -n $SV_NP` step — `--exclusive` at *step* level is what
+keeps four concurrent steps off each other's cores — and the script does one
+serial warm-up case first so that four cases do not compile at once and
+contend for the depot's precompile locks. Jexpresso's MPI.jl must be built
+against the MPI the modules provide; `tools/check_mpi_setup.sh` checks that.
+
 `SV_NP` is ranks per case — what a big grid needs, since one run must fit and
 finish — and `SV_JOBS` is how many (independent) cases run at the same time;
 their product is what you are asking the machine for. The norms are

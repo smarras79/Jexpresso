@@ -17,7 +17,13 @@ using Plots, LaTeXStrings, Printf
 const CASE = joinpath(@__DIR__, "..", "problems", "MHD", "smoothVortex")
 
 # The case's hook calls this; here it is the whole of the output side.
-_savefig_silent(plt, f) = (mkpath(dirname(f)); Plots.savefig(plt, f); println(" # wrote ", f))
+function _savefig_silent(plt, f)
+    mkpath(dirname(f))
+    Plots.savefig(plt, f)
+    # the case writes through a temporary name and renames (atomic, so that
+    # concurrent cases of a sweep cannot tear a figure); report the destination
+    println(" # wrote ", replace(String(f), r"\.tmp\d+(?=\.)" => ""))
+end
 
 include(joinpath(CASE, "user_plot.jl"))
 

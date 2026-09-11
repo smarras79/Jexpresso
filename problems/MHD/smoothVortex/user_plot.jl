@@ -25,6 +25,30 @@
 #---------------------------------------------------------------------------------
 const SV_ERR_DIR = joinpath(@__DIR__, "errors")
 
+# ATOMIC WRITES. A sweep runs several cases at the same time (SV_JOBS in
+# tools/smooth_vortex_mpi_scan.sh), every one of them redraws the same figures
+# from the shared store as it finishes, and two processes writing one PNG
+# leave a torn file. Write beside the target and rename: on POSIX the rename
+# is atomic, so a reader sees either the old file or the new one, never half
+# of each. The same for the stored error, which the other cases are reading
+# while it is being written.
+function _sv_atomic(path::AbstractString, write!::Function)
+    mkpath(dirname(path))
+    # keep the extension: Plots picks the format from it
+    base, ext = splitext(path)
+    tmp = string(base, ".tmp", getpid(), ext)
+    try
+        write!(tmp)
+        mv(tmp, path; force = true)
+    catch err
+        isfile(tmp) && (try; rm(tmp); catch; end)
+        rethrow(err)
+    end
+    return nothing
+end
+
+_sv_savefig(plt, path) = _sv_atomic(path, f -> _savefig_silent(plt, f))
+
 # One (colour, marker) per order, fixed so an order looks the same from one
 # figure to the next.
 const SV_STYLE = Dict(
@@ -144,7 +168,7 @@ function _sv_save_error(e, inputs, t)
     try
         mkpath(SV_ERR_DIR)
         f = joinpath(SV_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _sv_tag(inputs), ".dat"))
-        open(f, "w") do io
+        _sv_atomic(f, tmp -> open(tmp, "w") do io
             println(io, "# smooth MHD vortex: ABSOLUTE velocity error against the exact solution")
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", ndofs,
                         " t=", t, " visc=", _sv_tag(inputs),
@@ -155,7 +179,7 @@ function _sv_save_error(e, inputs, t)
             println(io, "# relative, for reference: L1=", e.r1, " L2=", e.r2, " Linf=", e.rinf)
             println(io, "# L1 L2 Linf")
             println(io, e.l1, " ", e.l2, " ", e.linf)
-        end
+        end)
     catch err
         @warn "smoothVortex: could not store the error" exception=err
     end
@@ -306,12 +330,12 @@ function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::Str
             pl = _sv_panel(sub, nops, fld, nm, tag)
             # one file per norm, for the paper
             plt1 = Plots.plot(pl; size = (900, 780), show = false)
-            _savefig_silent(plt1, string(OUTPUT_DIR, "/convergence_", tag, suffix, "_", fname, "-it", iout, ".png"))
+            _sv_savefig(plt1, string(OUTPUT_DIR, "/convergence_", tag, suffix, "_", fname, "-it", iout, ".png"))
             push!(panels, pl)
         end
         plt = Plots.plot(panels...; layout = (1, 3), size = (2400, 800),
                          left_margin = 16Plots.mm, bottom_margin = 14Plots.mm, show = false)
-        _savefig_silent(plt, string(OUTPUT_DIR, "/convergence_", tag, suffix, "-it", iout, ".png"))
+        _sv_savefig(plt, string(OUTPUT_DIR, "/convergence_", tag, suffix, "-it", iout, ".png"))
     end
     return nothing
 end

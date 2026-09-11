@@ -77,18 +77,26 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
 }
 
 mkdir -p logs
-# The runs of one (visc, mesh) group are independent; JOBS of them at a time.
+# EVERY case is independent of every other, so the slots are filled from one
+# flat list rather than from each (visc, mesh) group in turn: a sweep over two
+# orders would otherwise never run more than two at a time, whatever SV_JOBS
+# said, and half of a 64-core allocation would sit idle.
+CASES=""
 for V in $VISCS; do
     for M in $NELX; do
-        n=0
         for N in $NOPS; do
-            run_one "$V" "$N" "$M" &
-            n=$((n + 1))
-            if [ "$n" -ge "$JOBS" ]; then wait; n=0; fi
+            CASES="$CASES $V:$N:$M"
         done
-        wait
     done
 done
+
+for c in $CASES; do
+    V=${c%%:*}; rest=${c#*:}; N=${rest%%:*}; M=${rest##*:}
+    # keep SV_JOBS of them in flight
+    while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do sleep 5; done
+    run_one "$V" "$N" "$M" &
+done
+wait
 
 echo "=== done. The figures of the last run hold the whole sweep:"
 echo "    output/MHD/smoothVortex/output/convergence_{dsgs,galerkin}[-<subset>]-it<n>.png"
