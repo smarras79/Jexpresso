@@ -2,7 +2,7 @@
 # Initial conditions for the 1D scalar advection DG case.
 #
 # Both ICs below are transcriptions of cases in the Python reference's
-# `exact_solution` (drl-amr/backends/python_1d/solvers/utils.py), so the two
+# `exact_solution` function, so the two
 # codes can be compared on identical data:
 #
 #   :sine     -> Python icase 8 : sin(pi*x)
