@@ -78,6 +78,15 @@ _bw_style(nop) = get(BW_STYLE, nop, (:darkorange, :dash, :xcross))
 
 # Element- and nodal-form runs are different methods, so they are stored
 # apart and only drawn together when the figure says which is which.
+# The deck folds the Δ_K/k convention into the coefficients as a factor
+# (k+1)/k on C_max, C_min. Divide it back out so the figure reports the
+# method's C_min and not the per-order number that implements it.
+function _bw_hfac(inputs)
+    lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", "ngl"))) == "nop" || return 1.0
+    N = Int(get(inputs, :nop, 0))
+    return N > 0 ? (N + 1)/N : 1.0
+end
+
 function _bw_form(inputs)
     f = get(inputs, :ldsgs_nodal, false) ? "nodal" : "elem"
     # the element length-scale convention is part of the method too
@@ -103,7 +112,7 @@ function _bw_save_curve(xs, ρs, inputs, t)
                         " nelx=", get(inputs, :nelx, 0),
                         " t=", t,
                         " dt=", Float64(get(inputs, :Δt, 0.0)),
-                        " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
+                        " Cmin=", round(Float64(get(inputs, :dsgs_Cmin, 0.0))/_bw_hfac(inputs); digits = 6),
                         " CR=", Float64(get(inputs, :dsgs_CR, 1.0)),
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.5)),
                         " sensor=", string(get(inputs, :dsgs_sensor, "residual")),
