@@ -351,18 +351,41 @@ reason unrelated to the sensor's purpose. $\psi$ still *receives* viscosity.
 Every field is uniform at $t=0$, and $\rho w$ and $B_z$ are identically zero for
 all time in this problem, so $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
 is exactly zero for them. Each denominator is bounded from below ("floored":
-`denom = max(denom, a)`, so it can never be smaller than `a`) at $10^{-3}$ of that
-field's natural scale, built from the domain-mean state:
+`denom = max(denom, a)`, so it can never be smaller than `a`) at that field's
+natural scale, built from the domain-mean state:
 
 | slot | floor |
 |---|---|
-| $\rho$ | $10^{-3}\bar\rho$ |
-| $\rho u,\ \rho v,\ \rho w$ | $10^{-3}\bar\rho\,\bar c$ |
-| $E$ | $10^{-3}\bar\rho\,\bar c^2$ |
-| $B_x, B_y, B_z$ | $10^{-3}\sqrt{\bar\rho}\,\bar c$ |
+| $\rho$ | $c_{rel}\,\bar\rho$ |
+| $\rho u,\ \rho v,\ \rho w$ | $c_{rel}\,\bar\rho\,\bar c$ |
+| $E$ | $c_{rel}\,\bar\rho\,\bar c^2$ |
+| $B_x, B_y, B_z$ | $c_{rel}\sqrt{\bar\rho}\,\bar c$ |
 
-A degenerate field then contributes $0/\text{floor} = 0$ rather than
-$0/\texttt{eps} = $ garbage.
+with $c_{rel} = $ **`:dsgs_rel`, default 1**. A degenerate field then
+contributes $0/\text{floor} = 0$ rather than $0/\texttt{eps} = $ garbage.
+
+**Why the floor is the scale and not a thousandth of it.** $c_{rel}$ was
+$10^{-3}$ until the smooth-vortex test of `problems/MHD/smoothVortex` was
+built, and that is a very different thing from a guard against dividing by
+zero: *some* variable is always nearly uniform — $\rho$ in an isentropic
+vortex, $B_x$ in a 1D shock tube, a tracer nobody has released — and for it the
+floor **is** the normalization, so its ordinary numerical error was amplified
+by up to 1000 and the max over the equations, eq. 4.8, was taken over the one
+variable with nothing to say. Measured on the vortex, reading the sensor on
+the clean viscosity-free solution ($C_R = C_{max} = C_{min} = 0$), the $\rho$
+ratio came out 40–60× every other equation's at every resolution, on its own
+enough to hold $\nu$ at its cap $C_{max}\Delta\lambda$ — an $O(h)$ viscosity,
+identical for every polynomial order, which flattened that case's convergence
+to first order and made the Brio-Wu orders indistinguishable at equal DOFs.
+
+Where a variable genuinely varies the spread exceeds the scale and wins, so
+the change is invisible to the shock cases (`sod1d` and `brioWu1d` reproduce
+to the digit). Dropping a below-floor equation from the max **altogether** was
+tried first and is wrong: the deviation of a should-be-constant variable is a
+real oscillation detector — $B_x$ is exactly that in `brioWu1d` — and without
+it that case at `:nop => 7` loses the dissipation that keeps it stable and
+aborts. `:dsgs_rel => 1.0e-3` restores the old behaviour for a case that wants
+the hair trigger.
 
 ### 4.3 Per-equation split and units
 
@@ -418,8 +441,19 @@ end
 
 `time` sweeps $t^n + c_i\Delta t$ within a step, so the gate fires at the first
 stage of every step, where `uaux` is $q^n$. The three buffers are initialized
-to the initial state in `params_setup.jl`, so the first residual is identically
-zero. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` — `uaux` carries
+to the initial state in `params_setup.jl`.
+
+**The first two steps.** With the history seeded from the initial condition the
+BDF2 returns $0$ on the first step and $1.5\,\partial_t q$ on the second: it is
+not a time derivative yet. A zero time term does **not** make the residual zero
+— it makes it $\lVert\nabla\cdot F\rVert$, the whole flux divergence, so the
+sensor reads a smooth, fully resolved initial condition as unresolved
+everywhere and puts $\nu$ on its cap at the very first call (measured on the
+smooth vortex: $\nu = $ the cap exactly, on a solution the same scheme
+integrates to seven digits without it). `params.dsgs_nhist` counts the
+committed states and `_dsgs_residual_rhs!` holds the residual at zero, weights
+included, until it reaches three, so those two steps carry the $C_{min}$
+background and nothing else. They are shaped from `size(qp.qn)`, not `(npoin, neqs)` — `uaux` carries
 one extra trailing column beyond the `neqs` solution slots.
 
 **The stencil at a stage.** The residual is evaluated at every RK stage with
@@ -785,7 +819,39 @@ reasoning matters if the model is revisited.
    *Fixed*: the `dsgs_qnm1/qnm2` buffers built for `DSGS_MHD` (§4.4) are now
    allocated and used for `DSGS()` as well.
 
-5. **The 1D wave-speed cap used `sqrt(γ·e_int)`.** For a perfect gas
+5. **The normalization floor was $10^{-3}$ of the physical scale.** It was
+   meant as a guard against a degenerate spread, but for any variable that is
+   nearly uniform — and there always is one — it *is* the normalization, and
+   it amplified that variable's ordinary numerical error by up to 1000. The
+   max over the equations (eq. 4.8) was then taken over the variable with the
+   least to say, and it was enough on its own to hold $\nu$ at the cap
+   $C_{max}\Delta\lambda$: an $O(h)$ viscosity, the same for every polynomial
+   order. *Fixed* (§4.2): the floor is the scale itself, `:dsgs_rel` default 1.
+
+6. **The residual was evaluated before its time stencil existed.** With the
+   history seeded from the initial condition the BDF2 returns zero on the
+   first step, which makes the residual the whole flux divergence rather than
+   zero — $\nu$ went to the cap at the first call of every run, on smooth and
+   discontinuous initial conditions alike. *Fixed* (§4.4): held at zero until
+   three states are committed.
+
+   Together, 5 and 6 are why `problems/MHD/smoothVortex` converged at rate 1
+   with DynSGS and at 4–5.5 without it, and why the Brio-Wu orders were
+   indistinguishable at equal degrees of freedom. Measured after the fix, the
+   vortex at `:nop => 4` (velocity $L^1$ at $t = 1$, 4/8/16/32 elements per
+   side):
+
+   | | 4 | 8 | 16 | 32 | rate |
+   |---|---|---|---|---|---|
+   | DynSGS, before | 1.004e-2 | 5.240e-3 | 2.678e-3 | 1.142e-3 | 1.0 |
+   | DynSGS, after | 4.26e-3 | 5.220e-5 | 2.208e-6 | 1.639e-7 | 4.6, 3.8 |
+   | plain Galerkin | 1.570e-3 | 3.541e-5 | 2.039e-6 | 1.631e-7 | 4.1, 3.6 |
+
+   — the residual viscosity costs 0.5 % of the error at the finest mesh
+   instead of 7000×, and $\max\nu$ falls as $h^{5.6}$ instead of sitting on
+   the cap.
+
+7. **The 1D wave-speed cap used `sqrt(γ·e_int)`.** For a perfect gas
    $p = (\gamma-1)\rho e_{int}$, so $a^2 = \gamma(\gamma-1)e_{int}$; the cap was
    inflated by $1/\sqrt{\gamma-1} \approx 1.58$ at $\gamma = 1.4$, letting
    $\mu_{res}$ govern more often than the Marras bound intends. *Fixed.*
