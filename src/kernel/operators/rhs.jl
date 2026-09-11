@@ -2003,6 +2003,7 @@ end
 function _expansion_inviscid!(u, neqs, ngl,
                               dψ, ω,
                               F, S,
+                              Je,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::DiscGal)
     for ieq = 1:neqs
@@ -2011,7 +2012,7 @@ function _expansion_inviscid!(u, neqs, ngl,
             for k = 1:ngl
                 dFdξ += dψ[k,i]*F[k,ieq]
             end
-            rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*S[i,ieq]   # identical to ContGal: volume weak form is discretization-agnostic
+            rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*Je[iel,i]*S[i,ieq]  # identical to ContGal: volume weak form is discretization-agnostic
         end
     end
 end
