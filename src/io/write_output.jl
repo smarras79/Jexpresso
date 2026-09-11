@@ -92,7 +92,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::NONE;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
     nothing
 end
 
@@ -111,7 +112,8 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -174,7 +176,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::PNG;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing, Minv=nothing)
 
     #
     # 2D PNG of q(t): one colored map per variable and output time.
@@ -238,7 +240,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
         plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
                            iout=iout, nvar=nplot, varnames=plotnames,
-                           μ_nodes=μ_nodes, μ_names=varnames)
+                           μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)
@@ -289,7 +291,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -323,7 +326,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                     varnames, outvarnames,
                     outformat::NETCDF;
                     nvar=1, qexact=zeros(1,nvar), case="",
-                    μ_dsgs_pnode=nothing, schlieren=nothing)
+                    μ_dsgs_pnode=nothing, schlieren=nothing,
+                    Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
@@ -1027,7 +1031,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::HDF5;
                       nvar=1, qexact=zeros(1,nvar), case="",
-                      μ_dsgs_pnode=nothing, schlieren=nothing)
+                      μ_dsgs_pnode=nothing, schlieren=nothing,
+                      Minv=nothing)   # the 2D PNG path hands it to user_plot_2d; ignored elsewhere
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)

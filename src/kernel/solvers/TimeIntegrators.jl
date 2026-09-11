@@ -274,8 +274,15 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe,
-                     μ_dsgs_pnode = (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW()) ? params.μ_dsgs_pnode : nothing,
-                     schlieren = maybe_compute_schlieren(inputs, params, u))
+                     # :lvisc is part of the test because params_setup only allocates
+                     # the real npoin x neqs buffer when it is on; with a DSGS model and
+                     # :lvisc => false (the natural way to run an unstabilized comparison)
+                     # it is a 1x1 dummy, which the 2D PNG writer then sliced to npoin.
+                     μ_dsgs_pnode = (inputs[:lvisc] == true &&
+                                     (params.VT == DSGS() || params.VT == DSGS_MHD() || params.VT == DSGS_SW())) ?
+                                    params.μ_dsgs_pnode : nothing,
+                     schlieren = maybe_compute_schlieren(inputs, params, u),
+                     Minv = params.Minv)
         if (lwrite_time == true)
             append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
         end
@@ -412,8 +419,11 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe,
-                         μ_dsgs_pnode = (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD() || integrator.p.VT == DSGS_SW()) ? integrator.p.μ_dsgs_pnode : nothing,
-                         schlieren = maybe_compute_schlieren(inputs, integrator.p, integrator.u))
+                         μ_dsgs_pnode = (inputs[:lvisc] == true &&
+                                         (integrator.p.VT == DSGS() || integrator.p.VT == DSGS_MHD() || integrator.p.VT == DSGS_SW())) ?
+                                        integrator.p.μ_dsgs_pnode : nothing,
+                         schlieren = maybe_compute_schlieren(inputs, integrator.p, integrator.u),
+                         Minv = integrator.p.Minv)
             # The DSGS viscosity panel is rendered by the 1D PNG writer
             # itself (write_output -> plot_results, fed by μ_dsgs_pnode
             # above) so that the whole output time is a single GR render:

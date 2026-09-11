@@ -33,15 +33,146 @@ Serial; a few seconds of time stepping after compilation. Output goes to
 `./output/MHD/brioWu1d/output/`. By default (`:plot_user => true`) the case
 writes the figure of the paper's Fig. 2: `density-it<n>.png` at every
 output time ($t = 0, 0.025, \dots, 0.1$), density against $x$ on the paper's
-axes, the numerical solution in red labelled with its polynomial order and
-number of degrees of freedom, and at the final time the reference solution
-in black with the paper's three zoom boxes (the foot of the fast
-rarefaction, the compound wave, the contact) — `user_plot.jl`. With
+axes, the numerical solution labelled `nop <N>, <n> DOFs`, and at the final
+time the reference solution with four zoom boxes: the paper's three (the
+foot of the fast rarefaction, the compound wave, the contact) and one more
+on the slow shock at $x \approx 0.647$ — `user_plot.jl`. Every
+numerical curve is drawn with a broken line and its own marker
+(nop 4 red dashed circles, nop 5 blue dash-dot squares, nop 6 green dotted
+diamonds, nop 7 purple dash-dot-dot triangles); the reference is the only
+solid line, so the curves are told apart in print and by line type, not by
+colour alone. The background floor `:dsgs_Cmin` is written in the title when
+all the curves on the figure share it, and in their legend entries when they
+do not. With
 `:plot_user => false` the output is the format of `CompEuler/sod1d`: one
 figure `fields-it<n>.png` per output time with a panel per output variable
 ($\rho$, $u$, $v$, $p$, $B_y$; the reference dashed at the final time) and a
 last panel with the DynSGS coefficient per element (`:plot_matrix => false`
 writes those panels as separate files).
+
+### Comparing polynomial orders, and the convergence history
+
+At the final time a run stores its density profile in
+`curves/nop<N>_dof<M>_<form>.dat` in this case directory, and the figures are
+drawn from **every** curve stored there whose `<form>` — the coefficient form
+and the length-scale convention, the two things that make one run a different
+method from another — matches the run drawing them. A sweep over orders and
+resolutions therefore builds the whole comparison and each run replaces only
+its own (order, DOFs) point:
+
+```bash
+tools/brio_wu_order_scan.sh          # orders 4-7 at 150, 300, 600, 1200 DOFs
+```
+
+**The scan clears the store before it starts** (`BW_KEEP=1` to accumulate
+instead, to finish a partial sweep). Since the figure is redrawn from the
+whole store at every run, a leftover sweep would otherwise appear on the
+comparison from its very first run — with orders that this comparison has not
+computed yet. A run that finds curves of another method in the store says so
+on stdout and leaves them off the figure.
+
+| figure | contents |
+|---|---|
+| `density_dof<M>-it<n>.png` | **one file per resolution**: every order that ran at $M$ degrees of freedom, against the reference, with the four zoom boxes. A sweep over 150, 300, 600 and 1200 DOFs leaves `density_dof150-it<n>.png`, `density_dof300-it<n>.png`, … side by side |
+| `density-it<n>.png` | the same figure for the finest resolution in the store, under the plain name |
+| `convergence-it<n>.png` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
+| `convergence_smooth-it<n>.png` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
+
+The abscissa is $1/\#\mathrm{DOFs}$ because the problem is 1D and the mesh
+size is $h \propto 1/\#\mathrm{DOFs}$; the paper's $1/\sqrt{\#\mathrm{DOFs}}$
+is the same quantity for its 2D vortex.
+
+The error is measured against `reference_hll.dat`, which is itself a
+**first-order** finite-volume solution on 10 000 cells. Its own error is
+$O(\Delta x) \approx 10^{-4}$ in the smooth fan, but a few cells of smearing at
+every discontinuity — far larger there than the difference between two
+spectral-element orders. That is why the smooth-window figure is the one that
+can say anything about the order, and the whole-tube figure mostly measures
+how wide the jumps are.
+
+Overrides, all optional, so a sweep needs no file edits:
+
+| variable | default | meaning |
+|---|---|---|
+| `JEXPRESSO_BW_NOP` | 4 | polynomial order |
+| `JEXPRESSO_BW_DOFS` | 600 | degrees of freedom; sets the element count as DOFs/nop |
+| `JEXPRESSO_BW_NELX` | — | element count, overriding `JEXPRESSO_BW_DOFS` |
+| `JEXPRESSO_BW_DT` | — | time step, overriding the rule below |
+| `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
+| `JEXPRESSO_BW_HSCALE` | `nop` | the DynSGS length scale: `nop` is the paper's $\Delta_K/k$, `ngl` the kernels' own $\Delta_K/(k+1)$ |
+| `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
+
+At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
+elements for $N = 4, 5, 6, 7$ at 600 DOFs, i.e. 601, 601, 601 and 603 points.
+The time step follows the resolution, $\Delta t = 5\times10^{-5}\cdot 600/\#\mathrm{DOFs}$,
+so the Courant and the DynSGS parabolic numbers are the same at every point
+of a sweep. At 600 DOFs the smallest LGL spacing falls from
+$1.15\times10^{-3}$ at $N = 4$ to $7.5\times10^{-4}$ at $N = 7$, so the Courant
+number against the fast speed of the right state runs from 0.16 to 0.25 and
+the parabolic number stays below 0.25.
+
+The last run of a sweep rewrites every one of these figures from the whole
+store, so its output directory holds the complete comparison: one density
+figure per resolution and the two convergence histories.
+`rm -r problems/MHD/brioWu1d/curves` starts a fresh one; the store is
+git-ignored. Curves whose stored final time differs from the current one are
+ignored, so changing `:tend` cannot silently mix solutions from different
+times.
+
+**The two regimes, and what the paper's Fig. 2 shows.** Dao & Nazarov compare
+$\mathbb{P}_1$ against $\mathbb{P}_3$ — "under the same number of degrees of
+freedom, the $\mathbb{P}_3$ solution captures the compound structure more
+accurately than the $\mathbb{P}_1$ solution". That is the low-order regime,
+where raising the order buys a large gain in the accuracy of the underlying
+Galerkin scheme.
+
+**The length scale, and why it decides the comparison.** The kernels of
+`src/kernel/physics/SGS.jl` build the coefficient on $\Delta = \Delta_K/(k+1)$
+(`ngl`, the number of LGL points per element); Dao & Nazarov's eq. 4.10 uses
+$h_K/k$, the polynomial **degree**. The difference is a factor $(k+1)/k$ — and
+at a *fixed* number of degrees of freedom, where $n_{elx} = \#\mathrm{DOFs}/k$,
+
+$$
+\frac{\Delta_K}{k+1} = \frac{L}{\#\mathrm{DOFs}}\cdot\frac{k}{k+1},
+\qquad
+\frac{\Delta_K}{k} = \frac{L}{\#\mathrm{DOFs}} ,
+$$
+
+so the paper's convention is the same for every order while the kernels' grows
+with $k$ (0.8 of it at $k=4$, 0.875 at $k=7$). That factor varies by 75 % over
+$k = 1\ldots7$, it is monotone in $k$, and it enters the cap and the floor
+linearly and the residual viscosity $C_R\Delta^2\mathcal{R}$ quadratically. On
+a solution made of jumps, where the artificial viscosity and not the
+polynomial order sets the error, it is the whole comparison. Measured here on
+the nodal coefficient at 601 DOFs, relative $L^1$ error of $\rho$:
+
+| length scale | spread over orders 1-7 | order 1 $\to$ 7 |
+|---|---|---|
+| $\Delta_K/(k+1)$ | 64 % | +64 % (each order worse than the last) |
+| $\Delta_K/k$ | 5.5 % | −2.1 % |
+
+With $\Delta_K/k$ the monotone penalty on the higher orders disappears, and in
+the smooth fan order 1 is the worst of the seven ($5.39\times10^{-3}$ against
+$3.3$–$3.5\times10^{-3}$ for orders 2-7) — which is the statement of the
+paper's Fig. 2, that $\mathbb{P}_3$ captures the compound structure more
+accurately than $\mathbb{P}_1$ at equal degrees of freedom.
+
+**This case therefore runs $\Delta_K/k$ by default** (`JEXPRESSO_BW_HSCALE=ngl`
+for the other). It is a *deck-level* switch: `user_inputs.jl` folds the factor
+into this case's own coefficients — $C_{max}$ and $C_{min}$ by $(k+1)/k$,
+$C_R$ by $((k+1)/k)^2$, which is algebraically identical to changing $\Delta$ —
+and no kernel is touched. Every other case (`orszagTangBormanis2024`,
+`sod1d`, `thetaTracers`, the forward-facing step, the rising bubble) keeps
+$\Delta_K/(k+1)$ and is bit-for-bit unaffected. Two things to know before
+making it general: $\Delta_K/k$ is $(k+1)/k$ *larger*, so the absolute error
+level rises (at order 4, $5.6\to7.1\times10^{-3}$ over the whole tube), and it
+was the larger scale that pushed the rising bubble past the explicit viscous
+stability limit at start-up, which is why the kernels moved to $(k+1)$ in the
+first place. Making it a real `:dsgs_hscale` input, read by the kernels so
+every case can choose, is the clean way to settle that.
+
+`JEXPRESSO_BW_CMIN=0` removes the part of the viscosity that is independent of
+the solution altogether.
 
 ## What is implemented
 
@@ -78,8 +209,9 @@ writes those panels as separate files).
   that the pinned right end shows a one-node glitch (a free end is not an
   outflow condition in CG and drained the domain when tried).
 - **Resolution**: 150 elements at $N = 4$ = 600 LGL points, the paper's
-  "600 DOFs" ($\mathbb{P}_3$) case of its Fig. 2(a); `:nelx => 300` is its
-  1200-DOF case. $\Delta t = 5\times10^{-5}$ is a Courant number of 0.19
+  "600 DOFs" ($\mathbb{P}_3$) case of its Fig. 2(a); `:nelx => 300`
+  (`JEXPRESSO_BW_NELX=300`) is its 1200-DOF case. `JEXPRESSO_BW_NOP` changes
+  the order at fixed DOFs, see above. $\Delta t = 5\times10^{-5}$ is a Courant number of 0.19
   against the fast speed of the right state (3.75) on the smallest LGL
   spacing; 2000 steps to $t = 0.1$.
 - **Reference solution** (`reference_hll.dat`, `user_analytic.jl`): the paper
