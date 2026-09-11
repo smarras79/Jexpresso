@@ -30,21 +30,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #:lwall_model          => true,
         :lvisc                => true, #false by default
-        :visc_model           => VREM(),
-        #:visc_model           => DSGS(),  # residual-based DynSGS, 3D θ form (DSGS.md §3.1).
-                                           # :μ are multipliers of its ν, not a viscosity: with
-                                           # [1,1,1,1,1] this case runs to t = 1000 s (ν ≈ 250 Pa·s
-                                           # in the developed flow, 1.3e4 at start-up on the
-                                           # bubble's cone edge). :μ[5] = 2 doubles the θ slot and
-                                           # crosses the explicit parabolic limit at start-up
-                                           # (ν·Δt/Δx_min² = 0.77; the run says so and dies at the
-                                           # first step) — halve :Δt for that.
         #:visc_model           => AV(),
         #:visc_model           => SMAG(),
+        :visc_model           => DSGS(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
         #:μ                    => [0.0, 125.0, 125.0, 125.0, 125.0],
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 2.0],
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         :energy_equation     => "theta",
         #:lrichardson => true,
         #---------------------------------------------------------------------------
