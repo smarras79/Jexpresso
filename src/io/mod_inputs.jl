@@ -1454,6 +1454,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if inputs[:lpreadapt] == true
         inputs[:ladapt] = true
     end
+    # DG with mesh adaptivity is not supported yet: the DG mass matrix and the
+    # interface fluxes are built for a conforming mesh only. Refuse the run
+    # rather than let it proceed -- the CG non-conforming projections would
+    # otherwise be applied to the DG assembly and produce plausible-looking
+    # wrong numbers without any error.
+    if inputs[:AD] == DiscGal() && inputs[:ladapt] == true
+        @mystop(" :AD => DiscGal() does not support mesh adaptivity yet: :lamr, :ladapt and :lpreadapt must all be false.")
+    end
     #------------------------------------------------------------------------
     # The following quantities stored in the inputs[] dictionary are only
     # auxiliary and are NEVER to be defined by the user
