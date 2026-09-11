@@ -1,8 +1,9 @@
 #---------------------------------------------------------------------------------
 # Convergence history of the smooth MHD vortex, in the layout of
-# Dao & Nazarov, J. Sci. Comput. 92:77 (2022), Fig. 1: the error of the
-# velocity against the EXACT solution, against 1/sqrt(#DOFs) on log-log axes,
-# one line per polynomial order, with slope guides.
+# Dao & Nazarov, J. Sci. Comput. 92:77 (2022), Fig. 1: the ABSOLUTE error of
+# the velocity against the EXACT solution — ∫|u_h − u|dΩ, sqrt(∫|u_h − u|²dΩ),
+# max|u_h − u| — against 1/sqrt(#DOFs) on log-log axes, one line per
+# polynomial order, with slope guides at min(nop)+1 and max(nop)+1.
 #
 # At the final time every run stores its error in
 # `errors/nop<N>_nelx<M>_<visc>.dat` in this case directory, and the figure is
@@ -107,10 +108,17 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
         si, ri = maxs[1], maxs[2]
         ndofs  = round(Int, sums[5])
     end
+    # ABSOLUTE norms, as in the paper's Fig. 1:
+    #   L¹   = ∫|u_h − u|dΩ,   L² = sqrt(∫|u_h − u|²dΩ),   L∞ = max|u_h − u|.
+    # The relative ones go in the stored header, since they cost nothing and
+    # say how big the error is against the solution it is measured on.
     return (ndofs = ndofs,
-            l1 = s1/max(r1, eps()),
-            l2 = sqrt(s2)/max(sqrt(r2), eps()),
-            linf = si/max(ri, eps()))
+            l1   = s1,
+            l2   = sqrt(s2),
+            linf = si,
+            r1   = s1/max(r1, eps()),
+            r2   = sqrt(s2)/max(sqrt(r2), eps()),
+            rinf = si/max(ri, eps()))
 end
 
 function _sv_save_error(e, inputs, t)
@@ -123,11 +131,14 @@ function _sv_save_error(e, inputs, t)
         mkpath(SV_ERR_DIR)
         f = joinpath(SV_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _sv_tag(inputs), ".dat"))
         open(f, "w") do io
-            println(io, "# smooth MHD vortex: relative velocity error against the exact solution")
+            println(io, "# smooth MHD vortex: ABSOLUTE velocity error against the exact solution")
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", e.ndofs,
                         " t=", t, " visc=", _sv_tag(inputs),
+                        " norm=abs",            # absolute norms: see _sv_load_errors
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
+                        " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
                         " dt=", Float64(get(inputs, :Δt, 0.0)))
+            println(io, "# relative, for reference: L1=", e.r1, " L2=", e.r2, " Linf=", e.rinf)
             println(io, "# L1 L2 Linf")
             println(io, e.l1, " ", e.l2, " ", e.linf)
         end
@@ -164,6 +175,9 @@ function _sv_load_errors(t)
         ndofs = tryparse(Int, get(meta, "ndofs", "")); ndofs === nothing && continue
         tc    = tryparse(Float64, get(meta, "t", ""))
         (tc === nothing || abs(tc - t) > 1.0e-8*max(1.0, abs(t))) && continue
+        # Errors written before the norms became absolute have no norm= key;
+        # they are a different quantity and are not drawn with these.
+        get(meta, "norm", "") == "abs" || continue
         push!(rows, (nop = nop, ndofs = ndofs, visc = get(meta, "visc", "dsgs"),
                      nelx = something(tryparse(Int, get(meta, "nelx", "")), 0),
                      l1 = vals[1], l2 = vals[2], linf = vals[3]))
@@ -175,10 +189,71 @@ _sv_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
                    log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
 
 #---------------------------------------------------------------------------------
-# The figure: one panel per norm, one line per order, one figure per
-# stabilization (DynSGS / plain Galerkin) — the two panels of the paper's
-# Fig. 1. The abscissa is 1/sqrt(#DOFs) ∝ h, as in the paper.
+# The figure, in the layout of Dao & Nazarov (2022), Fig. 1: the ABSOLUTE
+# velocity error against 1/sqrt(#DOFs) ∝ h on log-log axes, one line per
+# polynomial order, one panel per norm, one figure per stabilization (DynSGS /
+# plain Galerkin — their two panels). Written both as the three-panel figure
+# and as one file per norm, at publication sizes.
+#
+# The slope guides bracket the orders on the figure: the steeper one is
+# max(nop) + 1, the nominal rate of the highest order present, and the
+# shallower one min(nop) + 1.
 #---------------------------------------------------------------------------------
+const SV_FS_TITLE  = 22
+const SV_FS_GUIDE  = 20
+const SV_FS_TICK   = 17
+const SV_FS_LEGEND = 15
+const SV_LW        = 2.8
+const SV_MS        = 9
+
+function _sv_panel(sub, nops, fld, nm, tag)
+    allx = Float64[]; ally = Float64[]
+    pl = Plots.plot(; xscale = :log10, yscale = :log10,
+                    xlabel = LaTeXStrings.L"1/\sqrt{\#\mathrm{DOFs}}",
+                    ylabel = LaTeXStrings.latexstring(string(
+                        "\\|\\mathbf{u}_h-\\mathbf{u}_{exact}\\|_{", nm, "}")),
+                    framestyle = :box, grid = true, gridalpha = 0.25,
+                    legend = :bottomright, legendfontsize = SV_FS_LEGEND,
+                    titlefontsize = SV_FS_TITLE, guidefontsize = SV_FS_GUIDE,
+                    tickfontsize = SV_FS_TICK,
+                    left_margin = 12Plots.mm, bottom_margin = 10Plots.mm,
+                    top_margin = 4Plots.mm, right_margin = 6Plots.mm,
+                    title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error},\\ \\mathrm{",
+                             tag == "dsgs" ? "RV\\ (DynSGS)" : "Galerkin", "}")),
+                    show = false)
+    for nop in nops
+        g  = sort(filter(r -> r.nop == nop, sub), by = r -> r.ndofs)
+        xs = [1.0/sqrt(r.ndofs) for r in g]
+        ys = [getfield(r, fld) for r in g]
+        keep = isfinite.(ys) .& (ys .> 0)
+        any(keep) || continue
+        xs = xs[keep]; ys = ys[keep]
+        append!(allx, xs); append!(ally, ys)
+        col, mk = _sv_style(nop)
+        p = _sv_rate(xs, ys)
+        lab = isfinite(p) ?
+              LaTeXStrings.latexstring(string("\\mathrm{nop}\\ ", nop, "\\ (p=", round(p; digits = 2), ")")) :
+              LaTeXStrings.latexstring(string("\\mathrm{nop}\\ ", nop))
+        Plots.plot!(pl, xs, ys; line = (col, SV_LW, :solid), marker = (mk, SV_MS),
+                    markerstrokewidth = 1.0, color = col, label = lab)
+    end
+    # Slope guides: the nominal rates of the lowest and the highest order on
+    # the figure, N+1, anchored above and below the data.
+    if !isempty(allx)
+        x2 = maximum(allx); ymax = maximum(ally); ymin = minimum(ally)
+        slopes = unique((minimum(nops) + 1, maximum(nops) + 1))
+        for (k, sl) in enumerate(slopes)
+            anchor = (k == 1 && length(slopes) > 1) ? 2.5*ymax : 0.4*ymin
+            col    = (k == 1 && length(slopes) > 1) ? :gray40 : :gray60
+            xg = [minimum(allx), x2]
+            Plots.plot!(pl, xg, [anchor*(xi/x2)^sl for xi in xg];
+                        line = (col, 2.0, :dash),
+                        label = LaTeXStrings.latexstring(string("\\mathrm{slope}\\ ", sl)))
+        end
+    end
+    return pl
+end
+
 function _sv_plot(rows, OUTPUT_DIR, iout)
     for tag in unique(r.visc for r in rows)
         sub  = filter(r -> r.visc == tag, rows)
@@ -186,54 +261,22 @@ function _sv_plot(rows, OUTPUT_DIR, iout)
         any(n -> count(r -> r.nop == n, sub) >= 2, nops) || continue
 
         panels = Plots.Plot[]
-        for (fld, nm) in ((:l1, "L^1"), (:l2, "L^2"), (:linf, "L^\\infty"))
-            allx = Float64[]; ally = Float64[]
-            pl = Plots.plot(; xscale = :log10, yscale = :log10,
-                            xlabel = LaTeXStrings.L"1/\sqrt{\#\mathrm{DOFs}}",
-                            ylabel = LaTeXStrings.latexstring(string(
-                                "\\|\\mathbf{u}_h-\\mathbf{u}_{exact}\\|_{", nm, "}\\ /\\ \\|\\mathbf{u}_{exact}\\|_{", nm, "}")),
-                            framestyle = :box, grid = true,
-                            legend = :bottomright, legendfontsize = 8,
-                            titlefontsize = 13, guidefontsize = 11, tickfontsize = 10,
-                            title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error},\\ \\mathrm{",
-                                     tag == "dsgs" ? "RV\\ (DynSGS)" : "Galerkin", "}")),
-                            show = false)
-            for nop in nops
-                g  = sort(filter(r -> r.nop == nop, sub), by = r -> r.ndofs)
-                xs = [1.0/sqrt(r.ndofs) for r in g]
-                ys = [getfield(r, fld) for r in g]
-                keep = isfinite.(ys) .& (ys .> 0)
-                any(keep) || continue
-                xs = xs[keep]; ys = ys[keep]
-                append!(allx, xs); append!(ally, ys)
-                col, mk = _sv_style(nop)
-                p = _sv_rate(xs, ys)
-                lab = isfinite(p) ?
-                      LaTeXStrings.latexstring(string("\\mathrm{nop}\\ ", nop, "\\ (p=", round(p; digits = 2), ")")) :
-                      LaTeXStrings.latexstring(string("\\mathrm{nop}\\ ", nop))
-                Plots.plot!(pl, xs, ys; line = (col, 1.8, :solid), marker = (mk, 5),
-                            markerstrokewidth = 0.8, color = col, label = lab)
-            end
-            if !isempty(allx)
-                x2 = maximum(allx); ymax = maximum(ally); ymin = minimum(ally)
-                for (sl, col, anchor) in ((2, :gray40, 2.0*ymax), (5, :gray70, 0.5*ymin))
-                    xg = [minimum(allx), x2]
-                    Plots.plot!(pl, xg, [anchor*(xi/x2)^sl for xi in xg];
-                                line = (col, 1.4, :dash),
-                                label = LaTeXStrings.latexstring(string("\\mathrm{slope}\\ ", sl)))
-                end
-            end
+        for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
+            pl = _sv_panel(sub, nops, fld, nm, tag)
+            # one file per norm, for the paper
+            plt1 = Plots.plot(pl; size = (900, 780), show = false)
+            _savefig_silent(plt1, string(OUTPUT_DIR, "/convergence_", tag, "_", fname, "-it", iout, ".png"))
             push!(panels, pl)
         end
-        plt = Plots.plot(panels...; layout = (1, 3), size = (1500, 450),
-                         left_margin = 9Plots.mm, bottom_margin = 8Plots.mm, show = false)
+        plt = Plots.plot(panels...; layout = (1, 3), size = (2400, 800),
+                         left_margin = 16Plots.mm, bottom_margin = 14Plots.mm, show = false)
         _savefig_silent(plt, string(OUTPUT_DIR, "/convergence_", tag, "-it", iout, ".png"))
     end
     return nothing
 end
 
 function _sv_report(rows)
-    println(" # smoothVortex: relative velocity error against the exact solution")
+    println(" # smoothVortex: ABSOLUTE velocity error against the exact solution")
     println(" #   visc      nop  nelx   DOFs           L1           L2         Linf")
     for r in rows
         println(@sprintf(" #   %-8s  %3d  %4d %6d   %10.3e   %10.3e   %10.3e",

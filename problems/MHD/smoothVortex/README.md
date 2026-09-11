@@ -47,18 +47,43 @@ the header of `initialize.jl`.
 
 ## What the run produces
 
-At the final time each run measures the relative $L^1$, $L^2$ and $L^\infty$
-error of the **velocity** against the exact solution, using the mesh's own
-nodal quadrature weights (the lumped mass: $\omega_i\omega_j|J|$ summed over
-the elements at each node; they integrate the domain area to 14 digits), and
-stores it in `errors/nop<N>_nelx<M>_<visc>.dat`. The figure is then drawn
-from **every** error stored there:
+At the final time each run measures the **absolute** $L^1$, $L^2$ and
+$L^\infty$ error of the **velocity** against the exact solution,
+
+$$
+\int_\Omega |\mathbf u_h - \mathbf u|\,d\Omega, \qquad
+\Big(\int_\Omega |\mathbf u_h - \mathbf u|^2 d\Omega\Big)^{1/2}, \qquad
+\max_\Omega |\mathbf u_h - \mathbf u| ,
+$$
+
+as the paper's Fig. 1 plots them, using the mesh's own nodal quadrature
+weights (the lumped mass: $\omega_i\omega_j|J|$ summed over the elements at
+each node; they integrate the domain area to 14 digits), and stores it in
+`errors/nop<N>_nelx<M>_<visc>.dat` — with the relative norms in the header
+too, since they cost nothing and say how large the error is against the
+solution it is measured on. The figures are then drawn from **every** error
+stored there that carries the same final time (and the `norm=abs` marker, so a
+store written before the norms became absolute is never mixed in):
 
 | file | contents |
 |---|---|
-| `convergence_dsgs-it<n>.png` | the paper's Fig. 1 layout: error against $1/\sqrt{\#\mathrm{DOFs}}$ on log-log axes, one line per polynomial order, with slope guides, and the measured rate of each order in its legend |
-| `convergence_galerkin-it<n>.png` | the same for the plain Galerkin run (`JEXPRESSO_SV_VISC=none`), the second panel of their figure |
+| `convergence_dsgs-it<n>.png` | the paper's Fig. 1 layout: the three norms side by side against $1/\sqrt{\#\mathrm{DOFs}}$ on log-log axes, one line per polynomial order, with slope guides, and the measured rate $p$ of each order in its legend |
+| `convergence_dsgs_L1-it<n>.png`, `_L2`, `_Linf` | the same panels one per file, at publication size |
+| `convergence_galerkin-it<n>.png` and its three panels | the same for the plain Galerkin run (`JEXPRESSO_SV_VISC=none`), the second panel of their figure |
 | `<var>-it<n>.png` | the usual field panels |
+
+**$p$ in the legend** is the measured convergence rate: the slope of that
+order's last two points on the log-log axes,
+
+$$
+p = \frac{\log(e_{i-1}/e_i)}{\log(h_{i-1}/h_i)},\qquad h = 1/\sqrt{\#\mathrm{DOFs}},
+$$
+
+so it is the order in the mesh size $h$ between the two finest resolutions that
+order has run — the number the dashed slope guides are there to be compared
+against. It needs at least two resolutions per order; with one, the legend
+carries the order alone. The guides are the nominal rates of the lowest and
+highest orders on the figure, $\min(N)+1$ and $\max(N)+1$.
 
 So a sweep over orders and meshes builds the whole figure and each run
 replaces only its own point. **The scan clears the store before it starts**
@@ -77,9 +102,10 @@ field panels are still rendered.
 ## Running it
 
 ```bash
-tools/smooth_vortex_scan.sh                          # orders 4-7, meshes 4-32
+tools/smooth_vortex_scan.sh                          # orders 4-7, meshes 4-32,
+                                                     # DynSGS and Galerkin
 SV_NOPS="3 4" SV_NELX="8 16 32" tools/smooth_vortex_scan.sh
-SV_VISC="dsgs none" tools/smooth_vortex_scan.sh      # both panels of Fig. 1
+SV_VISC=dsgs tools/smooth_vortex_scan.sh             # only the DynSGS panel
 ```
 
 or one run at a time:
@@ -97,6 +123,9 @@ JEXPRESSO_SV_NOP=3 JEXPRESSO_SV_NELX=16 \
 | `JEXPRESSO_SV_TEND` | 1.0 | final time |
 | `JEXPRESSO_SV_CMIN` | 0 | the DynSGS background floor `:dsgs_Cmin` |
 | `JEXPRESSO_SV_VISC` | `dsgs` | `none` for the plain Galerkin run |
+| `JEXPRESSO_SV_CR`, `JEXPRESSO_SV_CMAX` | 1, 0.5 | `:dsgs_CR`, `:dsgs_Cmax`; both zero keeps the sensor and applies no viscosity |
+| `JEXPRESSO_SV_REL` | 1 | `:dsgs_rel`, the normalization floor; `1e-3` is what the kernels used before the fix |
+| `JEXPRESSO_SV_SENSOR` | `residual` | `legacy` for the assembled-rate sensor |
 
 The time step follows the resolution so that the Courant number is the same
 at every point of a sweep (about 0.05 against the fastest wave of this
