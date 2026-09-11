@@ -524,7 +524,10 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
             @warn "user_plot_2d failed; continuing with the generic panels." exception=err
         end
     end
-    nμ    = μ_nodes === nothing ? 0 : size(μ_nodes, 2)
+    # A DSGS case run with :lvisc => false carries a 1x1 dummy instead of the
+    # npoin x neqs coefficient (params_setup only allocates the real one when
+    # :lvisc is on), so check the shape and not just `nothing`.
+    nμ    = (μ_nodes === nothing || size(μ_nodes, 1) < npoin) ? 0 : size(μ_nodes, 2)
     μnames = [(μ_names === nothing || length(μ_names) < ieq) ?
                   string("μ_dsgs_", ieq) : string("μ_dsgs_", μ_names[ieq]) for ieq = 1:nμ]
 
