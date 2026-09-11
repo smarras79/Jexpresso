@@ -24,3 +24,4 @@ test/CI-runs/**/output/
 
 # SEM preprocess caches written next to a case (mod_mesh: MESH_<grid>_nop<N>.jld2)
 MESH_*.jld2
+problems/MHD/brioWu1d/curves/

@@ -33,15 +33,51 @@ Serial; a few seconds of time stepping after compilation. Output goes to
 `./output/MHD/brioWu1d/output/`. By default (`:plot_user => true`) the case
 writes the figure of the paper's Fig. 2: `density-it<n>.png` at every
 output time ($t = 0, 0.025, \dots, 0.1$), density against $x$ on the paper's
-axes, the numerical solution in red labelled with its polynomial order and
-number of degrees of freedom, and at the final time the reference solution
-in black with the paper's three zoom boxes (the foot of the fast
-rarefaction, the compound wave, the contact) — `user_plot.jl`. With
+axes, the numerical solution labelled `nop <N>, <n> DOFs`, and at the final
+time the reference solution with the paper's three zoom boxes (the foot of
+the fast rarefaction, the compound wave, the contact) — `user_plot.jl`. Every
+numerical curve is drawn with a broken line and its own marker
+(nop 4 red dashed circles, nop 5 blue dash-dot squares, nop 6 green dotted
+diamonds, nop 7 purple dash-dot-dot triangles); the reference is the only
+solid line, so the curves are told apart in print and by line type, not by
+colour alone. The background floor `:dsgs_Cmin` is written in the title when
+all the curves on the figure share it, and in their legend entries when they
+do not. With
 `:plot_user => false` the output is the format of `CompEuler/sod1d`: one
 figure `fields-it<n>.png` per output time with a panel per output variable
 ($\rho$, $u$, $v$, $p$, $B_y$; the reference dashed at the final time) and a
 last panel with the DynSGS coefficient per element (`:plot_matrix => false`
 writes those panels as separate files).
+
+### One figure for several polynomial orders
+
+At the final time a run also stores its density profile in
+`curves/nop<N>.dat` in this case directory, and the figure is drawn from
+**every** curve stored there. Running the case at several orders therefore
+builds a single superimposed figure, each re-run replacing only its own
+order's curve:
+
+```bash
+for N in 4 5 6 7; do
+    JEXPRESSO_BW_NOP=$N julia --project=. src/Jexpresso.jl MHD brioWu1d
+done
+```
+
+`JEXPRESSO_BW_NOP` sets `:nop` and, unless `JEXPRESSO_BW_NELX` is given as
+well, the element count is taken as $600/N$ so that all four orders run at
+the **same ~600 degrees of freedom** and the comparison is at equal cost:
+150, 120, 100 and 86 elements for $N = 4, 5, 6, 7$, i.e. 601, 601, 601 and
+603 points. The deck's $\Delta t = 5\times10^{-5}$ carries all of them: the
+smallest LGL spacing falls from $1.15\times10^{-3}$ at $N = 4$ to
+$7.5\times10^{-4}$ at $N = 7$, so the Courant number against the fast speed
+of the right state goes from 0.16 to 0.25 and the DynSGS parabolic number
+stays below 0.25.
+
+The last figure written holds them all, so the final run of the loop
+produces the comparison. `rm -r problems/MHD/brioWu1d/curves` starts a fresh
+one; the store is git-ignored. Curves whose stored final time differs from
+the current one are ignored, so changing `:tend` cannot silently mix
+solutions from different times.
 
 ## What is implemented
 
@@ -78,8 +114,9 @@ writes those panels as separate files).
   that the pinned right end shows a one-node glitch (a free end is not an
   outflow condition in CG and drained the domain when tried).
 - **Resolution**: 150 elements at $N = 4$ = 600 LGL points, the paper's
-  "600 DOFs" ($\mathbb{P}_3$) case of its Fig. 2(a); `:nelx => 300` is its
-  1200-DOF case. $\Delta t = 5\times10^{-5}$ is a Courant number of 0.19
+  "600 DOFs" ($\mathbb{P}_3$) case of its Fig. 2(a); `:nelx => 300`
+  (`JEXPRESSO_BW_NELX=300`) is its 1200-DOF case. `JEXPRESSO_BW_NOP` changes
+  the order at fixed DOFs, see above. $\Delta t = 5\times10^{-5}$ is a Courant number of 0.19
   against the fast speed of the right state (3.75) on the smallest LGL
   spacing; 2000 steps to $t = 0.1$.
 - **Reference solution** (`reference_hll.dat`, `user_analytic.jl`): the paper
