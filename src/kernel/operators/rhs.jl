@@ -1433,8 +1433,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
 
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
-        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
+        # TEMPORARY EXPERIMENT (JEXPRESSO_DSGS_FREEZE=1): evaluate the
+        # coefficient ONCE per step, at the step start (τ = 0, where the
+        # residual's time derivative is the BDF2 of committed states), and
+        # hold it through the RK stages. Not for commit.
+        _dsgs_recompute = !(get(ENV, "JEXPRESSO_DSGS_FREEZE", "") == "1" && params.dsgs_stage[])
 
         # Nodal-density scaling of the momentum/energy coefficients, read by
         # SGS_diffusion(::DSGS_MHD) inside the assembly below.
@@ -1449,6 +1452,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
 
         lnodal_mhd2d = get(params.inputs, :ldsgs_nodal, false)
+        if _dsgs_recompute
+        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         if lnodal_mhd2d
             # Nodal (Dao & Nazarov) form: ν at every node (SGS.jl); the
             # element loop interpolates it, no broadcast.
@@ -1499,6 +1505,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                      params.mesh.connijk,
                                      Int(params.mesh.nelem),
                                      Int(params.mesh.ngl), SD)
+        end
         end
 
         _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,

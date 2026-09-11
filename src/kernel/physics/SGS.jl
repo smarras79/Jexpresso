@@ -1480,6 +1480,14 @@ end
 #     switches on there. The μ_dsgs output fields of slots 2-5 are then
 #     kinematic too.
 # ================================================================================
+# TEMPORARY DIAGNOSTIC (JEXPRESSO_DSGS_DEBUG=1): per-equation maximum of the
+# normalized residual, printed every 200 calls. Not for commit.
+const _DSGS_DBG   = Ref(false)
+const _DSGS_DBGN  = Ref(0)
+const _DSGS_DBGV  = zeros(Float64, 8)
+const _DSGS_DBGNU = Ref(0.0)
+const _DSGS_DBGCAP = Ref(0.0)
+
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS_MHD, ::NSD_2D,
                                  q::AbstractMatrix{TT},
@@ -1510,6 +1518,11 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
     rel  = TT(1.0e-3)            # floor fraction of the physical scales
+    ldbg = get(ENV, "JEXPRESSO_DSGS_DEBUG", "") == "1"   # hoisted: no Ref read in the loops
+    _DSGS_DBG[] = ldbg
+    if ldbg
+        fill!(_DSGS_DBGV, 0.0); _DSGS_DBGNU[] = 0.0; _DSGS_DBGCAP[] = 0.0
+    end
     # avg_e / den_e: preallocated element mean / spread scratch (llocal_norms)
     γm1  = γ - one(TT)
     eps  = TT(1.0e-16)
@@ -1652,6 +1665,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                     R = abs((wt[1]*q[ip,ieq] + wt[2]*q1[ip,ieq] + wt[3]*q2[ip,ieq]) - imK*rhs_el[ie,i,j,ieq])
                     r = R/den[ieq]
                     ratio = max(ratio, r)
+                    if ldbg
+                        _DSGS_DBGV[ieq] = max(_DSGS_DBGV[ieq], Float64(r))
+                    end
                 end
 
                 ρl = max(q[ip,1], eps)
@@ -1675,6 +1691,10 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s (residual, capped)
         μ     = μ_c
+        if ldbg
+            _DSGS_DBGNU[]  = max(_DSGS_DBGNU[],  Float64(μ_c))
+            _DSGS_DBGCAP[] = max(_DSGS_DBGCAP[], Float64(μ_max))
+        end
 
         # Background floor Cmin·Δ·(‖v‖+c_f), a fraction of the wave-speed cap
         # (Cmin = 0 by default: pure Marras). The residual sensor is blind to a
@@ -1749,6 +1769,15 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
     end
 
+    if ldbg
+        _DSGS_DBGN[] += 1
+        if _DSGS_DBGN[] % 200 == 0
+            @printf(" # DSGS dbg call %6d  nu_max=%.4e cap=%.4e  ratio by eq: %s   denom: %s\n",
+                    _DSGS_DBGN[], _DSGS_DBGNU[], _DSGS_DBGCAP[],
+                    join((@sprintf("%.2e", _DSGS_DBGV[k]) for k = 1:NRES), " "),
+                    join((@sprintf("%.2e", Float64(denom[k])) for k = 1:NRES), " "))
+        end
+    end
     return nothing
 end
 
