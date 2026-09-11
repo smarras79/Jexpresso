@@ -34,8 +34,9 @@ Serial; a few seconds of time stepping after compilation. Output goes to
 writes the figure of the paper's Fig. 2: `density-it<n>.png` at every
 output time ($t = 0, 0.025, \dots, 0.1$), density against $x$ on the paper's
 axes, the numerical solution labelled `nop <N>, <n> DOFs`, and at the final
-time the reference solution with the paper's three zoom boxes (the foot of
-the fast rarefaction, the compound wave, the contact) — `user_plot.jl`. Every
+time the reference solution with four zoom boxes: the paper's three (the
+foot of the fast rarefaction, the compound wave, the contact) and one more
+on the slow shock at $x \approx 0.647$ — `user_plot.jl`. Every
 numerical curve is drawn with a broken line and its own marker
 (nop 4 red dashed circles, nop 5 blue dash-dot squares, nop 6 green dotted
 diamonds, nop 7 purple dash-dot-dot triangles); the reference is the only
@@ -49,35 +50,69 @@ figure `fields-it<n>.png` per output time with a panel per output variable
 last panel with the DynSGS coefficient per element (`:plot_matrix => false`
 writes those panels as separate files).
 
-### One figure for several polynomial orders
+### Comparing polynomial orders, and the convergence history
 
-At the final time a run also stores its density profile in
-`curves/nop<N>.dat` in this case directory, and the figure is drawn from
-**every** curve stored there. Running the case at several orders therefore
-builds a single superimposed figure, each re-run replacing only its own
-order's curve:
+At the final time a run stores its density profile in
+`curves/nop<N>_dof<M>.dat` in this case directory, and the figures are drawn
+from **every** curve stored there, so a sweep over orders and resolutions
+builds the whole comparison and each run replaces only its own
+(order, DOFs) point:
 
 ```bash
-for N in 4 5 6 7; do
-    JEXPRESSO_BW_NOP=$N julia --project=. src/Jexpresso.jl MHD brioWu1d
-done
+tools/brio_wu_order_scan.sh          # orders 4-7 at 150, 300, 600, 1200 DOFs
 ```
 
-`JEXPRESSO_BW_NOP` sets `:nop` and, unless `JEXPRESSO_BW_NELX` is given as
-well, the element count is taken as $600/N$ so that all four orders run at
-the **same ~600 degrees of freedom** and the comparison is at equal cost:
-150, 120, 100 and 86 elements for $N = 4, 5, 6, 7$, i.e. 601, 601, 601 and
-603 points. The deck's $\Delta t = 5\times10^{-5}$ carries all of them: the
-smallest LGL spacing falls from $1.15\times10^{-3}$ at $N = 4$ to
-$7.5\times10^{-4}$ at $N = 7$, so the Courant number against the fast speed
-of the right state goes from 0.16 to 0.25 and the DynSGS parabolic number
-stays below 0.25.
+| figure | contents |
+|---|---|
+| `density-it<n>.png` | one curve per order (the finest resolution stored for it) against the reference, with the four zoom boxes |
+| `convergence-it<n>.png` | the layout of the paper's Fig. 1: the relative $L^1$, $L^2$ and $L^\infty$ error of $\rho$ against $1/\#\mathrm{DOFs}$ on log-log axes, one line per order, with slope guides and the measured rate in each legend entry |
+| `convergence_smooth-it<n>.png` | the same, restricted to $x \in (0.33, 0.41)$ inside the fast rarefaction — the one smooth, non-constant part of this solution |
 
-The last figure written holds them all, so the final run of the loop
-produces the comparison. `rm -r problems/MHD/brioWu1d/curves` starts a fresh
-one; the store is git-ignored. Curves whose stored final time differs from
-the current one are ignored, so changing `:tend` cannot silently mix
-solutions from different times.
+The abscissa is $1/\#\mathrm{DOFs}$ because the problem is 1D and the mesh
+size is $h \propto 1/\#\mathrm{DOFs}$; the paper's $1/\sqrt{\#\mathrm{DOFs}}$
+is the same quantity for its 2D vortex.
+
+The error is measured against `reference_hll.dat`, which is itself a
+**first-order** finite-volume solution on 10 000 cells. Its own error is
+$O(\Delta x) \approx 10^{-4}$ in the smooth fan, but a few cells of smearing at
+every discontinuity — far larger there than the difference between two
+spectral-element orders. That is why the smooth-window figure is the one that
+can say anything about the order, and the whole-tube figure mostly measures
+how wide the jumps are.
+
+Overrides, all optional, so a sweep needs no file edits:
+
+| variable | default | meaning |
+|---|---|---|
+| `JEXPRESSO_BW_NOP` | 4 | polynomial order |
+| `JEXPRESSO_BW_DOFS` | 600 | degrees of freedom; sets the element count as DOFs/nop |
+| `JEXPRESSO_BW_NELX` | — | element count, overriding `JEXPRESSO_BW_DOFS` |
+| `JEXPRESSO_BW_DT` | — | time step, overriding the rule below |
+| `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
+
+At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
+elements for $N = 4, 5, 6, 7$ at 600 DOFs, i.e. 601, 601, 601 and 603 points.
+The time step follows the resolution, $\Delta t = 5\times10^{-5}\cdot 600/\#\mathrm{DOFs}$,
+so the Courant and the DynSGS parabolic numbers are the same at every point
+of a sweep. At 600 DOFs the smallest LGL spacing falls from
+$1.15\times10^{-3}$ at $N = 4$ to $7.5\times10^{-4}$ at $N = 7$, so the Courant
+number against the fast speed of the right state runs from 0.16 to 0.25 and
+the parabolic number stays below 0.25.
+
+The last figure written holds the whole sweep.
+`rm -r problems/MHD/brioWu1d/curves` starts a fresh one; the store is
+git-ignored. Curves whose stored final time differs from the current one are
+ignored, so changing `:tend` cannot silently mix solutions from different
+times.
+
+**Why the orders nearly coincide at fixed DOFs.** The DynSGS length scale is
+$\Delta = \Delta_K/(N+1) = L/(n_{elx}(N+1))$, which at a fixed number of
+degrees of freedom is very nearly the same for every order — so the cap
+$C_{max}\Delta\lambda$, the floor $C_{min}\Delta\lambda$ and the residual
+viscosity $C_R\Delta^2\mathcal R$ are all nearly the same, and so is the
+solution. The comparison at equal DOFs therefore measures the artificial
+viscosity, not the polynomial order. Setting `JEXPRESSO_BW_CMIN=0` removes
+the part of it that is independent of the solution.
 
 ## What is implemented
 

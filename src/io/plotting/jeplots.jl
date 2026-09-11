@@ -501,6 +501,29 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     npoin = mesh.npoin
     names = [(varnames === nothing || length(varnames) < ivar) ?
                  string("ivar", ivar) : string(varnames[ivar]) for ivar = 1:nvar]
+
+    # Optional per-case figure, the 2D counterpart of the user_plot_1d hook
+    # above. A case may ship a user_plot.jl defining
+    #
+    #     user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout)
+    #
+    # (mesh: THIS rank's mesh, for the node coordinates, the connectivity and
+    # the extents; q: flat npoin*nvar vector of the output variables; t: the
+    # simulation time parsed back from `title`) which writes its own extra
+    # figures — an accuracy history against an exact solution, say (see
+    # problems/MHD/smoothVortex). Unlike the 1D hook this one is ADDITIVE: it
+    # is called on every rank, before the gather, and the generic panels below
+    # are rendered as usual afterwards. A case that needs the whole domain
+    # reduces across ranks itself. :plot_user => false switches it off.
+    if get(inputs, :_has_user_plot, false) && get(inputs, :plot_user, true) &&
+        isdefined(@__MODULE__, :user_plot_2d)
+        try
+            t_ = something(tryparse(Float64, replace(split(title, "=")[end], r"[^0-9eE.+-]" => "")), NaN)
+            user_plot_2d(mesh, q, t_, varnames, inputs, OUTPUT_DIR, iout)
+        catch err
+            @warn "user_plot_2d failed; continuing with the generic panels." exception=err
+        end
+    end
     nμ    = μ_nodes === nothing ? 0 : size(μ_nodes, 2)
     μnames = [(μ_names === nothing || length(μ_names) < ieq) ?
                   string("μ_dsgs_", ieq) : string("μ_dsgs_", μ_names[ieq]) for ieq = 1:nμ]

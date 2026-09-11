@@ -1,26 +1,41 @@
 #---------------------------------------------------------------------------------
 # The figure of Dao & Nazarov (2022), Fig. 2: density against the reference
-# solution with three zoom boxes (the foot of the fast rarefaction, the
-# compound wave, the contact), in place of the generic multi-panel figure
-# of the 1D plotter. Written as density-it<n>.png at every output time; the
-# reference and the insets appear at the final time only, when
-# user_analytic.jl supplies the reference. Set :plot_user => false in
+# solution with four zoom boxes (the foot of the fast rarefaction, the
+# compound wave, the contact, the slow shock), in place of the generic
+# multi-panel figure of the 1D plotter. Written as density-it<n>.png at every
+# output time; the reference and the insets appear at the final time only,
+# when user_analytic.jl supplies the reference. Set :plot_user => false in
 # user_inputs.jl to get the generic fields-it<n>.png with every output
 # variable and the DynSGS coefficient panel instead.
 #
-# MULTI-ORDER OVERLAY. At the final time the run also writes its own density
-# profile to `curves/nop<N>.dat` in this case directory, and the figure is
-# then drawn from EVERY curve stored there, not only from the run that is
-# writing it. Running the case at several polynomial orders therefore builds
-# one figure with all of them superimposed, each re-run replacing its own
-# order's curve:
+# ORDER COMPARISON AND CONVERGENCE HISTORY. At the final time the run stores
+# its density profile in `curves/nop<N>_dof<M>.dat` in this case directory,
+# and the figures are drawn from EVERY curve stored there, not only from the
+# run that is writing them:
 #
-#     for N in 4 5 6 7; do
-#         JEXPRESSO_BW_NOP=$N julia --project=. src/Jexpresso.jl MHD brioWu1d
+#   density-it<n>.png             one curve per polynomial order (the finest
+#                                 resolution stored for that order) against the
+#                                 reference, with the zoom boxes
+#   convergence-it<n>.png         Dao & Nazarov Fig. 1 layout: the L¹, L² and
+#                                 L∞ error against 1/#DOFs on log-log axes, one
+#                                 line per order, with slope guides
+#   convergence_smooth-it<n>.png  the same restricted to BW_SMOOTH_WINDOW, the
+#                                 one smooth non-constant part of this solution
+#
+# A sweep over orders and resolutions therefore builds the whole comparison,
+# and each run replaces only its own (order, DOFs) point:
+#
+#     tools/brio_wu_order_scan.sh          # 4 orders x 4 resolutions
+#
+# or by hand,
+#
+#     for D in 150 300 600 1200; do
+#       for N in 4 5 6 7; do
+#         JEXPRESSO_BW_DOFS=$D JEXPRESSO_BW_NOP=$N \
+#             julia --project=. src/Jexpresso.jl MHD brioWu1d
+#       done
 #     done
 #
-# `JEXPRESSO_BW_NOP` also picks the element count that keeps the number of
-# DOFs at ~600 (user_inputs.jl), so the orders are compared at equal cost.
 # `rm -r problems/MHD/brioWu1d/curves` starts a fresh comparison. Curves whose
 # stored final time differs from the current one are ignored, so a change of
 # `:tend` cannot silently mix solutions from different times.
@@ -34,10 +49,16 @@
 const BW_INSETS = [   # (x-range, y-range, inset position as fractions of the axes from the bottom-left: x, y, w, h)
     ((0.30, 0.33), (0.94, 1.00), (0.07, 0.44, 0.28, 0.30)),   # foot of the fast rarefaction
     ((0.40, 0.46), (0.66, 0.74), (0.16, 0.06, 0.28, 0.30)),   # compound wave
-    ((0.56, 0.59), (0.20, 0.35), (0.66, 0.28, 0.28, 0.30)),   # contact
+    ((0.56, 0.59), (0.20, 0.35), (0.66, 0.50, 0.28, 0.26)),   # contact
+    ((0.625, 0.675), (0.11, 0.26), (0.70, 0.16, 0.28, 0.26)), # slow shock
 ]
 
-# Where the per-order curves accumulate, one file per polynomial order.
+# A window inside the fast rarefaction: smooth, and not one of the constant
+# states, so it is the one place on this solution where the order of the
+# scheme can show. The errors are reported there as well as over the whole tube.
+const BW_SMOOTH_WINDOW = (0.33, 0.41)
+
+# Where the per-(order, resolution) curves accumulate.
 const BW_CURVE_DIR = joinpath(@__DIR__, "curves")
 
 # One (colour, line style, marker) per order, fixed so that a given order
@@ -52,23 +73,24 @@ const BW_STYLE = Dict(
 )
 _bw_style(nop) = get(BW_STYLE, nop, (:darkorange, :dash, :xcross))
 
-_bw_curve_file(nop) = joinpath(BW_CURVE_DIR, string("nop", nop, ".dat"))
+_bw_curve_file(nop, ndofs) = joinpath(BW_CURVE_DIR, string("nop", nop, "_dof", ndofs, ".dat"))
 
 #---------------------------------------------------------------------------------
-# Store this run's density profile for the overlay. One file per order, so a
-# re-run at the same order replaces its own curve and leaves the others.
+# Store this run's density profile. One file per (order, DOFs), so a re-run at
+# the same order and resolution replaces its own point and leaves the others.
 #---------------------------------------------------------------------------------
 function _bw_save_curve(xs, ρs, inputs, t)
     nop = Int(get(inputs, :nop, 0))
     nop > 0 || return nothing
     try
         mkpath(BW_CURVE_DIR)
-        open(_bw_curve_file(nop), "w") do io
-            println(io, "# Brio-Wu density profile, written by user_plot.jl for the multi-order overlay.")
+        open(_bw_curve_file(nop, length(xs)), "w") do io
+            println(io, "# Brio-Wu density profile, written by user_plot.jl for the order comparison.")
             println(io, "# nop=", nop,
                         " ndofs=", length(xs),
                         " nelx=", get(inputs, :nelx, 0),
                         " t=", t,
+                        " dt=", Float64(get(inputs, :Δt, 0.0)),
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
                         " CR=", Float64(get(inputs, :dsgs_CR, 1.0)),
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.5)),
@@ -80,7 +102,7 @@ function _bw_save_curve(xs, ρs, inputs, t)
             end
         end
     catch err
-        @warn "brioWu1d: could not store the density curve for the multi-order overlay" exception=err
+        @warn "brioWu1d: could not store the density curve for the order comparison" exception=err
     end
     return nothing
 end
@@ -92,7 +114,7 @@ function _bw_load_curves(t)
     curves = NamedTuple[]
     isdir(BW_CURVE_DIR) || return curves
     for fname in readdir(BW_CURVE_DIR)
-        endswith(fname, ".dat") || continue
+        (endswith(fname, ".dat") && startswith(fname, "nop")) || continue
         meta = Dict{String,String}()
         xs = Float64[]; ys = Float64[]
         try
@@ -112,7 +134,7 @@ function _bw_load_curves(t)
                 push!(ys, parse(Float64, p[2]))
             end
         catch err
-            @warn "brioWu1d: skipping an unreadable overlay curve" file=fname exception=err
+            @warn "brioWu1d: skipping an unreadable curve" file=fname exception=err
             continue
         end
         isempty(xs) && continue
@@ -126,8 +148,17 @@ function _bw_load_curves(t)
                        Cmin = something(tryparse(Float64, get(meta, "Cmin", "")), 0.0),
                        x = xs, y = ys))
     end
-    sort!(curves, by = c -> c.nop)
+    sort!(curves, by = c -> (c.nop, c.ndofs))
     return curves
+end
+
+# The curve shown on the density figure for each order: its finest resolution.
+function _bw_finest(curves)
+    best = Dict{Int,Any}()
+    for c in curves
+        (!haskey(best, c.nop) || c.ndofs > best[c.nop].ndofs) && (best[c.nop] = c)
+    end
+    return sort!(collect(values(best)), by = c -> c.nop)
 end
 
 # Marker positions for curve `k` of `n`, staggered so that the orders do not
@@ -139,6 +170,155 @@ function _bw_marker_idx(npts, k, n, inputs)
     stride = max(1, step(base))
     off    = (n <= 1) ? 0 : ((k - 1)*stride) ÷ n
     return (1 + off):stride:npts
+end
+
+#---------------------------------------------------------------------------------
+# Errors against the reference solution.
+#
+# NOTE what the reference is (user_analytic.jl): a FIRST-ORDER finite-volume
+# (HLL) solution on 10 000 cells, sampled at 2000 points. Its own error is
+# O(Δx) — about 1e-4 in the smooth fan, but a few cells of smearing at every
+# discontinuity, where it is far larger than the difference between two
+# spectral-element orders. A norm over the whole tube is therefore dominated
+# by the jumps and says little about the order; the same norm over
+# BW_SMOOTH_WINDOW is the one that can.
+#---------------------------------------------------------------------------------
+_bw_trapz(x, f) = sum(0.5*(f[i] + f[i+1])*(x[i+1] - x[i]) for i = 1:length(x)-1; init = 0.0)
+
+function _bw_ref_at(xq)
+    tab = _bw_read_reference()
+    xr  = view(tab, :, 1)
+    yr  = view(tab, :, 2)          # ρ
+    out = similar(xq)
+    for (i, xi) in enumerate(xq)
+        xc = clamp(xi, xr[1], xr[end])
+        j  = clamp(searchsortedlast(xr, xc), 1, length(xr) - 1)
+        θ  = (xc - xr[j])/(xr[j+1] - xr[j])
+        out[i] = (1 - θ)*yr[j] + θ*yr[j+1]
+    end
+    return out
+end
+
+# Relative L¹, L² (integral norms) and L∞ of ρ_h − ρ_ref over the window `w`.
+function _bw_norms(xs, e, ρr, w)
+    sel = (xs .>= w[1]) .& (xs .<= w[2])
+    count(sel) >= 2 || return (NaN, NaN, NaN)
+    x  = xs[sel]
+    l1 = _bw_trapz(x, abs.(e[sel]))    / max(_bw_trapz(x, abs.(ρr[sel])), eps())
+    l2 = sqrt(_bw_trapz(x, e[sel].^2)) / max(sqrt(_bw_trapz(x, ρr[sel].^2)), eps())
+    li = maximum(abs, e[sel])          / max(maximum(abs, ρr[sel]), eps())
+    return (l1, l2, li)
+end
+
+function _bw_error_table(curves)
+    rows = NamedTuple[]
+    for c in curves
+        ρr = _bw_ref_at(c.x)
+        e  = c.y .- ρr
+        a1, a2, ai = _bw_norms(c.x, e, ρr, (0.0, 1.0))
+        s1, s2, si = _bw_norms(c.x, e, ρr, BW_SMOOTH_WINDOW)
+        push!(rows, (nop = c.nop, ndofs = c.ndofs, Cmin = c.Cmin,
+                     l1_all = a1, l2_all = a2, linf_all = ai,
+                     l1_sm  = s1, l2_sm  = s2, linf_sm  = si))
+    end
+    return sort!(rows, by = r -> (r.nop, r.ndofs))
+end
+
+function _bw_report_errors(rows)
+    println(" # brioWu1d: density error against the reference (relative norms)")
+    println(" #   nop  DOFs     L1 (0,1)     L2 (0,1)   Linf (0,1)     L1 (fan)     L2 (fan)   Linf (fan)")
+    for r in rows
+        println(@sprintf(" #   %3d %5d   %10.3e   %10.3e   %10.3e   %10.3e   %10.3e   %10.3e",
+                         r.nop, r.ndofs, r.l1_all, r.l2_all, r.linf_all,
+                         r.l1_sm, r.l2_sm, r.linf_sm))
+    end
+    try
+        mkpath(BW_CURVE_DIR)
+        open(joinpath(BW_CURVE_DIR, "errors.dat"), "w") do io
+            println(io, "# density error against reference_hll.dat, relative norms")
+            println(io, "# smooth window = ", BW_SMOOTH_WINDOW)
+            println(io, "# nop ndofs Cmin L1_all L2_all Linf_all L1_sm L2_sm Linf_sm")
+            for r in rows
+                println(io, r.nop, " ", r.ndofs, " ", r.Cmin, " ",
+                        r.l1_all, " ", r.l2_all, " ", r.linf_all, " ",
+                        r.l1_sm, " ", r.l2_sm, " ", r.linf_sm)
+            end
+        end
+    catch err
+        @warn "brioWu1d: could not write the error table" exception=err
+    end
+    return nothing
+end
+
+# Observed rate from the two finest resolutions of one order: error ~ h^p with
+# h ∝ 1/DOFs.
+function _bw_rate(xs, ys)
+    length(xs) >= 2 || return NaN
+    (ys[end-1] > 0 && ys[end] > 0) || return NaN
+    return log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
+end
+
+#---------------------------------------------------------------------------------
+# Convergence history in the layout of Dao & Nazarov (2022), Fig. 1: the error
+# against 1/#DOFs on log-log axes, one line per polynomial order, with dashed
+# slope guides. (Their abscissa is 1/sqrt(#DOFs) because the vortex problem is
+# 2D; in 1D the mesh size is h ∝ 1/#DOFs, so that is the abscissa here, and it
+# plays the same role.) The legend carries the rate measured between the two
+# finest resolutions of each order.
+#---------------------------------------------------------------------------------
+function _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth::Bool)
+    fields = smooth ? (:l1_sm, :l2_sm, :linf_sm) : (:l1_all, :l2_all, :linf_all)
+    names  = ("L^1", "L^2", "L^\\infty")
+    nops   = sort(unique(r.nop for r in rows))
+    # Nothing to show unless at least one order has two resolutions.
+    any(nop -> count(r -> r.nop == nop, rows) >= 2, nops) || return nothing
+
+    panels = Plots.Plot[]
+    for (fld, nm) in zip(fields, names)
+        allx = Float64[]; ally = Float64[]
+        pl = Plots.plot(; xscale = :log10, yscale = :log10,
+                        xlabel = LaTeXStrings.L"1/\#\mathrm{DOFs}",
+                        ylabel = LaTeXStrings.latexstring(string(
+                            "\\|\\rho_h-\\rho_{ref}\\|_{", nm, "}\\ /\\ \\|\\rho_{ref}\\|_{", nm, "}")),
+                        framestyle = :box, grid = true,
+                        legend = :bottomright, legendfontsize = 8,
+                        titlefontsize = 13, guidefontsize = 11, tickfontsize = 10,
+                        title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error},\\ ",
+                                 smooth ? "\\mathrm{fast\\ rarefaction}" : "\\mathrm{whole\\ tube}")),
+                        show = false)
+        for nop in nops
+            sub = sort(filter(r -> r.nop == nop, rows), by = r -> r.ndofs)
+            xs  = [1.0/r.ndofs for r in sub]
+            ys  = [getfield(r, fld) for r in sub]
+            keep = isfinite.(ys) .& (ys .> 0)
+            any(keep) || continue
+            xs = xs[keep]; ys = ys[keep]
+            append!(allx, xs); append!(ally, ys)
+            col, ls, mk = _bw_style(nop)
+            p   = _bw_rate(xs, ys)
+            lab = isfinite(p) ?
+                  LaTeXStrings.latexstring(string("\\mathrm{nop}\\ ", nop, "\\ (p=", round(p; digits = 2), ")")) :
+                  LaTeXStrings.latexstring(string("\\mathrm{nop}\\ ", nop))
+            Plots.plot!(pl, xs, ys; line = (col, 1.8, :solid), marker = (mk, 5),
+                        markerstrokewidth = 0.8, color = col, label = lab)
+        end
+        # Slope guides bracketing the data, as in the paper.
+        if !isempty(allx)
+            x2   = maximum(allx)
+            ymax = maximum(ally); ymin = minimum(ally)
+            for (sl, col, anchor) in ((1, :gray40, 1.8*ymax), (2, :gray70, 0.55*ymin))
+                xg = [minimum(allx), x2]
+                yg = [anchor*(xi/x2)^sl for xi in xg]
+                Plots.plot!(pl, xg, yg; line = (col, 1.4, :dash),
+                            label = LaTeXStrings.latexstring(string("\\mathrm{slope}\\ ", sl)))
+            end
+        end
+        push!(panels, pl)
+    end
+    plt = Plots.plot(panels...; layout = (1, 3), size = (1500, 450),
+                     left_margin = 9Plots.mm, bottom_margin = 8Plots.mm, show = false)
+    _savefig_silent(plt, string(OUTPUT_DIR, "/convergence", smooth ? "_smooth" : "", "-it", iout, ".png"))
+    return nothing
 end
 
 # Legend entry: "nop 4, 601 DOFs" — with C_min appended only when the curves
@@ -164,21 +344,18 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     # orders are compared on, so that is where the curve is stored and where
     # every stored curve is drawn.
     lfinal = href !== nothing
+    stored = NamedTuple[]
     if lfinal
         _bw_save_curve(xs, ρs, inputs, t)
-        curves = _bw_load_curves(t)
-    else
-        curves = NamedTuple[]
+        stored = _bw_load_curves(t)
     end
-    if isempty(curves)   # intermediate time, or the store could not be read
-        curves = [(nop = nop, ndofs = length(xs), Cmin = Cmin, x = xs, y = ρs)]
-    end
+    curves = isempty(stored) ? [(nop = nop, ndofs = length(xs), Cmin = Cmin, x = xs, y = ρs)] :
+                               _bw_finest(stored)
 
     # C_min in the title when every curve used the same one, in the legend
     # entries when they differ.
-    cmins       = unique(c -> round(c.Cmin; digits = 12), curves)
-    lcommon     = length(cmins) == 1
-    lshow_cmin  = !lcommon
+    lcommon    = length(unique(c -> round(c.Cmin; digits = 12), curves)) == 1
+    lshow_cmin = !lcommon
     ttl = lcommon ? LaTeXStrings.latexstring(string("\\mathrm{Density},\\ C_{min} = ", curves[1].Cmin)) :
                     LaTeXStrings.latexstring("\\mathrm{Density}")
 
@@ -239,5 +416,13 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
         end
     end
     _savefig_silent(plt, string(OUTPUT_DIR, "/density-it", iout, ".png"))
+
+    # Error table and the convergence history, from every stored curve.
+    if lfinal && !isempty(stored)
+        rows = _bw_error_table(stored)
+        _bw_report_errors(rows)
+        _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth = false)
+        _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth = true)
+    end
     return nothing
 end

@@ -18,23 +18,50 @@
 # freedom (~600, the paper's Fig. 2(a) resolution): unless the element count
 # is given explicitly with `JEXPRESSO_BW_NELX`, it is chosen as 600/nop.
 #
-#     for N in 4 5 6 7; do
-#         JEXPRESSO_BW_NOP=$N julia --project=. src/Jexpresso.jl MHD brioWu1d
+#     tools/brio_wu_order_scan.sh        # the whole sweep
+#
+# or by hand,
+#
+#     for D in 150 300 600 1200; do
+#       for N in 4 5 6 7; do
+#         JEXPRESSO_BW_DOFS=$D JEXPRESSO_BW_NOP=$N \
+#             julia --project=. src/Jexpresso.jl MHD brioWu1d
+#       done
 #     done
 #
-# Δt = 5e-5 carries every one of those orders: the smallest LGL spacing at
-# nop 7 (86 elements) is 7.5e-4 against 1.15e-3 at nop 4 (150 elements), so
-# the Courant number against the fast speed of the right state goes from 0.16
-# to 0.25 and the DynSGS parabolic number stays below 0.25.
+# The time step follows the resolution, Δt = 5e-5 * (600/DOFs), so the Courant
+# and the DynSGS parabolic numbers are the same at every point of the sweep
+# and the comparison is not contaminated by a changing time error. At 600 DOFs
+# the smallest LGL spacing is 1.15e-3 at nop 4 (150 elements) and 7.5e-4 at
+# nop 7 (86 elements), so the Courant number against the fast speed of the
+# right state runs from 0.16 to 0.25 and the parabolic number stays below 0.25.
+#
+# Overrides, all optional:
+#   JEXPRESSO_BW_NOP    polynomial order                       (default 4)
+#   JEXPRESSO_BW_DOFS   degrees of freedom, sets the element count (default 600)
+#   JEXPRESSO_BW_NELX   element count, overrides JEXPRESSO_BW_DOFS
+#   JEXPRESSO_BW_DT     time step, overrides the rule above
+#   JEXPRESSO_BW_CMIN   the DynSGS background floor :dsgs_Cmin (default 0.06)
 #---------------------------------------------------------------------------------
-const BW_NDOFS_TARGET = 600
+const BW_DOFS_DEFAULT = 600
+const BW_DT_AT_DEFAULT = 5.0e-5
 
-_bw_nop() = something(tryparse(Int, get(ENV, "JEXPRESSO_BW_NOP", "")), 4)
+_bw_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_NOP",  "")), 4)
+_bw_dofs() = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_DOFS", "")), BW_DOFS_DEFAULT)
+_bw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CMIN", "")), 0.06)
 
 function _bw_nelx()
     n = tryparse(Int, get(ENV, "JEXPRESSO_BW_NELX", ""))
     n === nothing || return n
-    return max(1, round(Int, BW_NDOFS_TARGET/_bw_nop()))
+    return max(1, round(Int, _bw_dofs()/_bw_nop()))
+end
+
+# Δt ∝ 1/DOFs: the Courant and parabolic numbers are then the same at every
+# resolution of a convergence sweep.
+function _bw_dt()
+    d = tryparse(Float64, get(ENV, "JEXPRESSO_BW_DT", ""))
+    d === nothing || return d
+    return BW_DT_AT_DEFAULT*BW_DOFS_DEFAULT/max(1, _bw_nelx()*_bw_nop())
 end
 
 function user_inputs()
@@ -43,7 +70,7 @@ function user_inputs()
         # Fastest signal: the fast magnetosonic speed of the right state,
         # √((γp + |B|²)/ρ) = 3.75, against the smallest LGL spacing
         # 0.146·(1/150) ≈ 1e-3: Δt = 5e-5 is a Courant number of 0.19.
-        :Δt                   => 5.0e-5,
+        :Δt                   => _bw_dt(),   # 5e-5 at 600 DOFs, scaled by 1/DOFs
         :tinit                => 0.0,
         # t = 0.1 on (0, 1) is Brio & Wu's t = 0.2 on (−1, 1), the state of
         # the paper's Fig. 2 (its "t̂ = 0.2"): see README.md.
@@ -84,7 +111,7 @@ function user_inputs()
         # leaves a trace of them, 0.03 none (measured). Dao & Nazarov's P3
         # elements with exact quadrature do not show these ripples; the
         # collocated LGL flux of this code is the remaining difference.
-        :dsgs_Cmin        => 0.06,
+        :dsgs_Cmin        => _bw_cmin(),  # JEXPRESSO_BW_CMIN overrides
         :dsgs_gamma       => 2.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,
