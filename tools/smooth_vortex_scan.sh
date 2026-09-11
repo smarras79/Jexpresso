@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 NOPS=${SV_NOPS:-"4 5 6 7"}
 NELX=${SV_NELX:-"4 8 16 32"}
 VISCS=${SV_VISC:-"dsgs"}
-JULIA=${JULIA:-julia}
+JULIA=/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia
 
 [ "${SV_KEEP:-0}" = "1" ] || rm -rf problems/MHD/smoothVortex/errors
 

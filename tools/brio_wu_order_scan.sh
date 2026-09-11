@@ -18,12 +18,12 @@
 set -u
 cd "$(dirname "$0")/.."
 
-DOFS=${BW_DOFS:-"150 300 600 1200"}
+DOFS=${BW_DOFS:-"600 1200"}
 NOPS=${BW_NOPS:-"4 5 6 7"}
 CMIN=${BW_CMIN:-""}
 HSCALE=${BW_HSCALE:-nop}
 NODAL=${BW_NODAL:-""}
-JULIA=${JULIA:-julia}
+JULIA=/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia
 
 [ "${BW_KEEP:-0}" = "1" ] || rm -rf problems/MHD/brioWu1d/curves
 
