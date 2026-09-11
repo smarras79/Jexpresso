@@ -250,6 +250,14 @@ function _dsgs_legacy_fill!(res::AbstractArray{TT}, RHS::AbstractMatrix{TT}, Min
                 res[ie,i,ieq] = f*RHS[ip,ieq]
             end
         end
+    elseif SD == NSD_3D()
+        @inbounds for ie = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            f  = ω[i]*ω[j]*ω[k]*Je[ie,i,j,k]*Minv[ip]
+            for ieq = 1:neqs
+                res[ie,i,j,k,ieq] = f*RHS[ip,ieq]
+            end
+        end
     else
         @inbounds for ie = 1:nelem, j = 1:ngl, i = 1:ngl
             ip = connijk[ie,i,j,1]
@@ -262,20 +270,28 @@ function _dsgs_legacy_fill!(res::AbstractArray{TT}, RHS::AbstractMatrix{TT}, Min
     return nothing
 end
 
-function _dsgs_bdy_zero!(res::AbstractArray{TT}, pairs::Vector{NTuple{3,Int}}, q::AbstractMatrix{TT},
+function _dsgs_bdy_zero!(res::AbstractArray{TT}, pairs::Vector{NTuple{4,Int}}, q::AbstractMatrix{TT},
                          qA::AbstractMatrix{TT}, qB::AbstractMatrix{TT}, wt::NTuple{3,TT},
                          ω::AbstractVector{TT}, Je::AbstractArray{TT}, connijk::AbstractArray{TI,4},
                          neqs::Int, SD) where {TT<:AbstractFloat, TI<:Integer}
     if SD == NSD_1D()
-        @inbounds for (ie, i, j) in pairs
+        @inbounds for (ie, i, j, k) in pairs
             ip = connijk[ie,i,1,1]
             m  = ω[i]*Je[ie,i]
             for ieq = 1:neqs
                 res[ie,i,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
             end
         end
+    elseif SD == NSD_3D()
+        @inbounds for (ie, i, j, k) in pairs
+            ip = connijk[ie,i,j,k]
+            m  = ω[i]*ω[j]*ω[k]*Je[ie,i,j,k]
+            for ieq = 1:neqs
+                res[ie,i,j,k,ieq] = m*(wt[1]*q[ip,ieq] + wt[2]*qA[ip,ieq] + wt[3]*qB[ip,ieq])
+            end
+        end
     else
-        @inbounds for (ie, i, j) in pairs
+        @inbounds for (ie, i, j, k) in pairs
             ip = connijk[ie,i,j,1]
             m  = ω[i]*ω[j]*Je[ie,i,j]
             for ieq = 1:neqs
@@ -286,7 +302,7 @@ function _dsgs_bdy_zero!(res::AbstractArray{TT}, pairs::Vector{NTuple{3,Int}}, q
     return nothing
 end
 
-# The (element, i, j) pairs of the Dirichlet boundary nodes, built once.
+# The (element, i, j, k) node addresses of the Dirichlet boundary nodes, built once.
 function _dsgs_boundary_pairs!(params, SD)
     mesh  = params.mesh
     npoin = mesh.npoin
@@ -298,7 +314,23 @@ function _dsgs_boundary_pairs!(params, SD)
         mask[mesh.npoin_linear] = true
         for ie = 1:nelem, i = 1:ngl
             ip = mesh.connijk[ie,i,1,1]
-            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, 1))
+            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, 1, 1))
+        end
+    elseif SD == NSD_3D()
+        # 3D: the constrained nodes are those of the non-periodic boundary
+        # FACES (mesh.poin_in_bdy_face) — the free-slip top and bottom of an
+        # atmospheric box; the periodic sides constrain nothing.
+        for iface = 1:mesh.nfaces_bdy
+            ft = mesh.bdy_face_type[iface]
+            (ft === nothing || startswith(string(ft), "periodic") || string(ft) == "Laguerre") && continue
+            for j = 1:ngl, i = 1:ngl
+                ip = mesh.poin_in_bdy_face[iface,i,j]
+                ip > 0 && (mask[ip] = true)
+            end
+        end
+        for ie = 1:nelem, k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[ie,i,j,k]
+            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, j, k))
         end
     else
         for iedge = 1:mesh.nedges_bdy
@@ -311,7 +343,7 @@ function _dsgs_boundary_pairs!(params, SD)
         end
         for ie = 1:nelem, j = 1:ngl, i = 1:ngl
             ip = mesh.connijk[ie,i,j,1]
-            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, j))
+            mask[ip] && push!(params.dsgs_bdy_pairs, (ie, i, j, 1))
         end
     end
     return nothing
@@ -1842,6 +1874,55 @@ end
 
 
 function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, SD::NSD_3D)
+    # Marras-style Dynamic SGS in 3D. Same three steps as the 2D branch of
+    # viscous_rhs_el!(NSD_2D): fill the per-element, per-equation μ_dsgs
+    # from the element residual, broadcast it to the nodes for the output,
+    # then assemble the viscous RHS with that coefficient instead of the
+    # deck's constant :μ.
+    #
+    # Before this existed a 3D case with :visc_model => DSGS() reached the
+    # constant-coefficient assembly below (params.sgs is `nothing` for every
+    # model but Smagorinsky and Vreman) and ran the deck's :μ as a plain
+    # Laplacian coefficient in m²/s — no residual, no sensor, and a mass
+    # diffusion whenever :μ[1] ≠ 0.
+    if params.VT == DSGS()
+        TT = eltype(params.μ_dsgs)
+        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
+        Pr_TT    = TT(params.inputs[:Pr])
+
+        compute_dsgs_viscosity!(params.μ_dsgs, DSGS(), SD,
+                                params.uaux, dsgs_qA, dsgs_qB,
+                                params.qp.qe,
+                                dsgs_rhs, params.ω, params.metrics.Je, params.visc_coeff,
+                                dsgs_wt,
+                                params.mesh.connijk, params.mesh.Δelem,
+                                PHYS_CONST, Pr_TT,
+                                Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                ltheta = (params.inputs[:energy_equation] == "theta"),
+                                lglobal_norms = params.dsgs_global_norms)
+
+        broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
+                                 params.mesh.connijk,
+                                 Int(params.mesh.nelem),
+                                 Int(params.mesh.ngl), SD)
+
+        _viscous_rhs_el_3d_dsgs!(params.uaux, qe, params.uprimitive,
+                                 params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el,
+                                 params.rhs_diff_el,
+                                 params.visc_coeff_dsgs, params.μ_dsgs, params.ω,
+                                 Int64(params.mesh.ngl), params.basis.dψ, params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                                 params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                                 params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                                 params.rhs_el, params.mesh.connijk,
+                                 params.mesh.coords, params.mesh.poin_in_bdy_face,
+                                 params.mesh.elem_to_face, params.mesh.bdy_face_type,
+                                 Int64(params.mesh.nelem), Int64(params.neqs),
+                                 connijk, params.QT, params.AD, params.SOL_VARS_TYPE)
+        return
+    end
+
     # Typed function barrier (paired with FullSpecialize at the
     # ODEProblem construction site in TimeIntegrators.jl): pull every
     # params.* field used in the hot loop out into concretely-typed
@@ -1925,6 +2006,63 @@ function _viscous_rhs_el_3d!(uaux, qe, uprimitive,
                              QT, VT, SD, AD
                              )
 
+        end
+    end
+    rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el .+ rhs_diffζ_el)
+end
+
+# Function barrier for the 3D DynSGS viscous assembly — the 3D twin of
+# _viscous_rhs_el_2d_dsgs!. μ_dsgs[iel, ieq] already carries the
+# per-equation coefficient compute_dsgs_viscosity!(::DSGS, ::NSD_3D) set:
+#   ieq = 1     : 0 (Marras eq. 10 drops mass diffusion)
+#   ieq = 2,3,4 : ρ̄ν on the three momenta
+#   ieq = 5     : ρ̄ν·Pr/(γ-1) on ρθ
+#   ieq ≥ 6     : ν on a passive tracer
+# so this loop unpacks the element's column into the visc_coeff_dsgs
+# scratch and hands it to the generic 3D _expansion_visc!, which applies
+# ∇·(coeff ∇q) slot by slot on the primitives of user_primitives!.
+function _viscous_rhs_el_3d_dsgs!(uaux, qe, uprimitive,
+                                  rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                                  rhs_diff_el,
+                                  visc_coeff_dsgs, μ_dsgs, ω,
+                                  ngl, dψ, Je,
+                                  dξdx, dξdy, dξdz,
+                                  dηdx, dηdy, dηdz,
+                                  dζdx, dζdy, dζdz,
+                                  rhs_el, connijk_mesh,
+                                  coords, poin_in_bdy_face,
+                                  elem_to_face, bdy_face_type,
+                                  nelem, neqs,
+                                  connijk, QT, AD, SOL_VARS_TYPE)
+
+    for iel = 1:nelem
+        for ieq = 1:neqs
+            visc_coeff_dsgs[ieq] = μ_dsgs[iel, ieq]
+        end
+
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[iel,i,j,k]
+            user_primitives!(@view(uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(uprimitive[i,j,k,:]),
+                             SOL_VARS_TYPE)
+        end
+
+        for ieq = 1:neqs
+            _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                             uprimitive,
+                             visc_coeff_dsgs,
+                             ω,
+                             ngl, dψ, Je,
+                             dξdx, dξdy, dξdz,
+                             dηdx, dηdy, dηdz,
+                             dζdx, dζdy, dζdz,
+                             rhs_el, iel, ieq,
+                             connijk_mesh,
+                             coords,
+                             poin_in_bdy_face, elem_to_face, bdy_face_type,
+                             nothing,
+                             QT, DSGS(), NSD_3D(), AD)
         end
     end
     rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el .+ rhs_diffζ_el)

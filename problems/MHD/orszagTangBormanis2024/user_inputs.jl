@@ -19,10 +19,11 @@ function user_inputs()
         # is deliberate — the vortex steepens into shocks by t ≈ 0.5 and the
         # local wave speeds grow. The reference simulation of the paper used
         # Δt = 8e-4 on its 128² finite-volume grid.
+        #:Δt                   => 1.5e-4,
         :Δt                   => 0.7e-5,
         :tinit                => 0.0,
         :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
-        :diagnostics_at_times => (0.0:0.05:1.0),
+        :diagnostics_at_times => (0.0:0.5:1.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning; see user_source.jl)
@@ -36,7 +37,7 @@ function user_inputs()
         # reference data set of the paper.
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl",
-        :nop                 => 7,
+        :nop                 => 4,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #
@@ -103,7 +104,8 @@ function user_inputs()
         #        -o meshes/gmsh_grids/OT_32x32_periodic.msh
         #---------------------------------------------------------------------------
         :lread_gmsh          => true,
-        :gmsh_filename       => "./problems/MHD/orszagTangBormanis2024/OT_32x32_periodic.msh",
+        #:gmsh_filename       => "./problems/MHD/orszagTangBormanis2024/OT_32x32_periodic.msh",
+        :gmsh_filename       => "./problems/MHD/orszagTangBormanis2024/OT_56x56_periodic.msh",
         #---------------------------------------------------------------------------
         # Filter parameters.
         #

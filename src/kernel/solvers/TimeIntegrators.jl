@@ -532,6 +532,16 @@ function time_loop!(inputs, params, u, args...)
         # production run sees the original IC. The throw-away step's
         # diagnostic-VTK output, if any, goes to a per-rank mktempdir that's
         # removed right after.
+        # First scheduled output after t0, for the "next output at" line
+        # printed when the warm-up below finishes.
+        _t0_all     = params.tspan[1]
+        _next_out_t = try
+            _c = [t for t in tstops_all if t > _t0_all]
+            isempty(_c) ? Float64(inputs[:tend]) : Float64(minimum(_c))
+        catch
+            Float64(inputs[:tend])
+        end
+
         if precompile_warmup_enabled(inputs)
             rank == 0 && (print(YELLOW_FG(" # Integrator warm-up with real callbacks (PATIENCE: ONLY DONE ON 1st RUN!) ......... ")); flush(stdout))
             _t_wm = time_ns()
@@ -592,7 +602,17 @@ function time_loop!(inputs, params, u, args...)
             # own first-5-steps detail (the warmup just consumed one).
             _step_count[] = 0
             MPI.Barrier(comm)
-            #rank == 0 && (print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9))); flush(stdout))
+            # Say when the warm-up is over. Without this the run prints
+            # nothing between the "PATIENCE" line above and the first
+            # diagnostic output — the step heartbeat is off by default — so
+            # a long first step, a many-rank JIT or simply a small Δt makes a
+            # perfectly healthy solve look hung.
+            if rank == 0
+                print(YELLOW_FG(@sprintf("DONE (%.2f s)\n", (time_ns() - _t_wm) / 1e9)))
+                @printf(" # Time loop running: next output at t = %.6g (%d steps of Δt = %g). Per-step progress: JEXPRESSO_STEP_HEARTBEAT=1\n",
+                        _next_out_t, max(1, ceil(Int, (_next_out_t - params.tspan[1])/Float64(inputs[:Δt]))), Float64(inputs[:Δt]))
+                flush(stdout)
+            end
         end
 
         if alloc_summary_enabled(inputs)
