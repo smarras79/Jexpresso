@@ -636,6 +636,40 @@ end
 # a hand-typed function barrier (concrete arrays, no params.* lookups)
 # so Julia can specialize and the inner loop is allocation-free.
 #
+# Normalizing scale of one equation's residual (Dao & Nazarov 2022, eq. 4.8:
+# the residual is divided by the spread ‖q_i − ⟨q_i⟩‖∞ of that variable).
+#
+# THE FLOOR IS THE VARIABLE'S OWN PHYSICAL SCALE, not a thousandth of it.
+# Some variable is always nearly uniform — ρ in an isentropic vortex (ρ ≡ 1),
+# Bx in a 1D shock tube (constant by construction), a tracer nobody has
+# released — and its spread is then tiny while its residual is ordinary
+# numerical error. Dividing by 1e-3·scale AMPLIFIED that error by up to 1000
+# and the max over the equations was taken over the one variable with nothing
+# to say. Measured on the smooth vortex, on the clean (viscosity-free)
+# solution: the ρ ratio came out 40-60x every other equation's at every
+# resolution, on its own enough to hold ν at the cap C_max·Δ·λ — an O(h)
+# viscosity, identical for every polynomial order, which is what flattened
+# that case to first order and what made the Brio-Wu orders indistinguishable.
+#
+# Flooring at the scale itself leaves the equation in the max (its residual
+# still counts, now measured against something physical) and costs nothing
+# where the variable genuinely varies, since the spread then wins: no shock
+# case measurably changed. Dropping such an equation from the max altogether
+# was tried first and is WRONG — the deviation of a should-be-constant
+# variable is a real oscillation detector, and without it Brio-Wu at nop 7
+# lost the dissipation that keeps it stable (measured: it aborts). The
+# thousandth is still available as :dsgs_rel => 1.0e-3.
+# How far below its own physical scale a variable's spread may fall before
+# the scale, and not the spread, normalizes that equation's residual.
+# `rel` inside the kernels is the OLD value, 1e-3; this multiplies it, so
+# 1000 (the default, :dsgs_rel => 1.0) makes the floor the physical scale
+# itself and 1 restores the pre-fix behaviour. Set from :dsgs_rel once per
+# RHS call in _dsgs_residual_rhs! (rhs.jl).
+const _DSGS_RELMUL = Ref(1000.0)
+
+@inline _dsgs_denom(spread::TT, fl::TT) where {TT<:AbstractFloat} =
+    max(spread, TT(_DSGS_RELMUL[])*fl)
+
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,
                                  q::AbstractMatrix{TT},
@@ -1285,9 +1319,9 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
     p_avg = γm1*max(ρE_avg - TT(0.5)*(ρu_avg*ρu_avg + ρv_avg*ρv_avg)/ρ_ref, zero(TT))
     c_avg = sqrt(max(γ*p_avg/ρ_ref, eps))
     rel   = TT(1.0e-3)
-    dρ = max(dρ, rel*ρ_ref)              + eps
-    dm = max(dm, rel*ρ_ref*c_avg)        + eps
-    dE = max(dE, rel*ρ_ref*c_avg*c_avg)  + eps
+    dρ = _dsgs_denom(dρ, rel*ρ_ref)              + eps
+    dm = _dsgs_denom(dm, rel*ρ_ref*c_avg)        + eps
+    dE = _dsgs_denom(dE, rel*ρ_ref*c_avg*c_avg)  + eps
 
     # --- Pass 3: per-element residual L∞, wave-speed cap, split --------
     @inbounds for ie = 1:nelem
@@ -1579,15 +1613,15 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                     - TT(0.5)*(avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]), zero(TT))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)                 # ρ
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)                 # ρ
         mom_fl   = rel*ρ_avg*c_avg
-        denom[2] = max(denom[2], mom_fl)                    # ρu
-        denom[3] = max(denom[3], mom_fl)                    # ρv
-        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)     # E
-        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end # ρw
+        denom[2] = _dsgs_denom(denom[2], mom_fl)                    # ρu
+        denom[3] = _dsgs_denom(denom[3], mom_fl)                    # ρv
+        denom[4] = _dsgs_denom(denom[4], rel*ρ_avg*c_avg*c_avg)     # E
+        if neqs >= 5; denom[5] = _dsgs_denom(denom[5], mom_fl); end # ρw
         b_fl = rel*sqrt(ρ_avg)*c_avg
         for ieq = 6:min(neqs,8)
-            denom[ieq] = max(denom[ieq], b_fl)              # B
+            denom[ieq] = _dsgs_denom(denom[ieq], b_fl)              # B
         end
         for ieq = 1:neqs
             denom[ieq] += eps
@@ -1881,15 +1915,15 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                  (neqs >= 6 ? avg[6] : zero(TT)), (neqs >= 7 ? avg[7] : zero(TT)), (neqs >= 8 ? avg[8] : zero(TT)))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
         mom_fl   = rel*ρ_avg*c_avg
-        denom[2] = max(denom[2], mom_fl)
-        denom[3] = max(denom[3], mom_fl)
-        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
-        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        denom[2] = _dsgs_denom(denom[2], mom_fl)
+        denom[3] = _dsgs_denom(denom[3], mom_fl)
+        denom[4] = _dsgs_denom(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = _dsgs_denom(denom[5], mom_fl); end
         b_fl = rel*sqrt(ρ_avg)*c_avg
         for ieq = 6:min(neqs,8)
-            denom[ieq] = max(denom[ieq], b_fl)
+            denom[ieq] = _dsgs_denom(denom[ieq], b_fl)
         end
         for ieq = 1:neqs
             denom[ieq] += eps
@@ -2092,15 +2126,15 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                  (neqs >= 6 ? avg[6] : zero(TT)), (neqs >= 7 ? avg[7] : zero(TT)), (neqs >= 8 ? avg[8] : zero(TT)))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
         mom_fl   = rel*ρ_avg*c_avg
-        denom[2] = max(denom[2], mom_fl)
-        denom[3] = max(denom[3], mom_fl)
-        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
-        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        denom[2] = _dsgs_denom(denom[2], mom_fl)
+        denom[3] = _dsgs_denom(denom[3], mom_fl)
+        denom[4] = _dsgs_denom(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = _dsgs_denom(denom[5], mom_fl); end
         b_fl = rel*sqrt(ρ_avg)*c_avg
         for ieq = 6:min(neqs,8)
-            denom[ieq] = max(denom[ieq], b_fl)
+            denom[ieq] = _dsgs_denom(denom[ieq], b_fl)
         end
     end
 
@@ -2434,15 +2468,15 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                     - TT(0.5)*(avg[6]*avg[6] + avg[7]*avg[7] + avg[8]*avg[8]), zero(TT))
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
         mom_fl   = rel*ρ_avg*c_avg
-        denom[2] = max(denom[2], mom_fl)
-        denom[3] = max(denom[3], mom_fl)
-        denom[4] = max(denom[4], rel*ρ_avg*c_avg*c_avg)
-        if neqs >= 5; denom[5] = max(denom[5], mom_fl); end
+        denom[2] = _dsgs_denom(denom[2], mom_fl)
+        denom[3] = _dsgs_denom(denom[3], mom_fl)
+        denom[4] = _dsgs_denom(denom[4], rel*ρ_avg*c_avg*c_avg)
+        if neqs >= 5; denom[5] = _dsgs_denom(denom[5], mom_fl); end
         b_fl = rel*sqrt(ρ_avg)*c_avg
         for ieq = 6:min(neqs,8)
-            denom[ieq] = max(denom[ieq], b_fl)
+            denom[ieq] = _dsgs_denom(denom[ieq], b_fl)
         end
     end
 
@@ -2550,10 +2584,10 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     end
     c_avg = sqrt(max(γ*p_avg/ρ_avg, eps))
     @inbounds begin
-        denom[1] = max(denom[1], rel*ρ_avg)
-        denom[2] = max(denom[2], rel*ρ_avg*c_avg)
-        denom[3] = max(denom[3], rel*ρ_avg*c_avg)
-        denom[4] = max(denom[4], ltheta ? rel*abs(avg[4]) : rel*ρ_avg*c_avg*c_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*ρ_avg)
+        denom[2] = _dsgs_denom(denom[2], rel*ρ_avg*c_avg)
+        denom[3] = _dsgs_denom(denom[3], rel*ρ_avg*c_avg)
+        denom[4] = _dsgs_denom(denom[4], ltheta ? rel*abs(avg[4]) : rel*ρ_avg*c_avg*c_avg)
     end
 
     _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
@@ -2693,9 +2727,9 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     end
     c_avg = sqrt(g*H_avg)
     @inbounds begin
-        denom[1] = max(denom[1], rel*H_avg) + eps
+        denom[1] = _dsgs_denom(denom[1], rel*H_avg) + eps
         for ieq = 2:NRES
-            denom[ieq] = max(denom[ieq], rel*H_avg*c_avg) + eps
+            denom[ieq] = _dsgs_denom(denom[ieq], rel*H_avg*c_avg) + eps
         end
     end
 
@@ -2789,9 +2823,9 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     H_avg = max(Hsum*inv_npts, hmin)
     c_avg = sqrt(g*H_avg)
     @inbounds begin
-        denom[1] = max(denom[1], rel*H_avg)
+        denom[1] = _dsgs_denom(denom[1], rel*H_avg)
         for ieq = 2:NRES
-            denom[ieq] = max(denom[ieq], rel*H_avg*c_avg)
+            denom[ieq] = _dsgs_denom(denom[ieq], rel*H_avg*c_avg)
         end
     end
 
