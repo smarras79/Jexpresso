@@ -10,7 +10,7 @@
 # axes, one line per polynomial order, with slope guides.
 #
 #     tools/smooth_vortex_mesh.sh          # the meshes, once
-#     tools/smooth_vortex_scan.sh          # the sweep: 3 orders x 4 meshes
+#     tools/smooth_vortex_scan.sh          # the sweep: 4 orders x 4 meshes
 #
 # or by hand,
 #

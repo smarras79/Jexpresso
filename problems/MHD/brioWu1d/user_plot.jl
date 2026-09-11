@@ -9,9 +9,12 @@
 # variable and the DynSGS coefficient panel instead.
 #
 # ORDER COMPARISON AND CONVERGENCE HISTORY. At the final time the run stores
-# its density profile in `curves/nop<N>_dof<M>.dat` in this case directory,
-# and the figures are drawn from EVERY curve stored there, not only from the
-# run that is writing them:
+# its density profile in `curves/nop<N>_dof<M>_<form>.dat` in this case
+# directory, and the figures are drawn from EVERY curve stored there whose
+# <form> matches this run's — the coefficient form (element or nodal) and the
+# length-scale convention ("H" = the paper's Δ_K/k, the default of this deck),
+# which are what make one run a different method from another. Curves of any
+# other form are reported on stdout and left off the figure:
 #
 #   density-it<n>.png             one curve per polynomial order (the finest
 #                                 resolution stored for that order) against the
@@ -23,7 +26,9 @@
 #                                 one smooth non-constant part of this solution
 #
 # A sweep over orders and resolutions therefore builds the whole comparison,
-# and each run replaces only its own (order, DOFs) point:
+# and each run replaces only its own (order, DOFs) point. The scan CLEARS the
+# store first (BW_KEEP=1 to accumulate), so that a leftover sweep cannot show
+# up on the figure of a new comparison before that comparison has run:
 #
 #     tools/brio_wu_order_scan.sh          # 4 orders x 4 resolutions
 #
@@ -81,16 +86,21 @@ _bw_style(nop) = get(BW_STYLE, nop, (:darkorange, :dash, :xcross))
 # The deck folds the Δ_K/k convention into the coefficients as a factor
 # (k+1)/k on C_max, C_min. Divide it back out so the figure reports the
 # method's C_min and not the per-order number that implements it.
+# `_bw_hscale()` is the deck's own switch (user_inputs.jl); it defaults to the
+# paper's "nop" here and to nothing at all anywhere else in the code.
 function _bw_hfac(inputs)
-    lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", "ngl"))) == "nop" || return 1.0
+    _bw_hscale() == "nop" || return 1.0
     N = Int(get(inputs, :nop, 0))
     return N > 0 ? (N + 1)/N : 1.0
 end
 
+# The key under which a run's curve is stored, and the only key drawn on one
+# figure: the coefficient form AND the length-scale convention. A curve from a
+# run with different settings is a different method and is never silently
+# mixed into the comparison — the "H" suffix marks Δ_K/k.
 function _bw_form(inputs)
     f = get(inputs, :ldsgs_nodal, false) ? "nodal" : "elem"
-    # the element length-scale convention is part of the method too
-    lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", "ngl"))) == "nop" && (f = string(f, "H"))
+    _bw_hscale() == "nop" && (f = string(f, "H"))
     return f
 end
 _bw_curve_file(nop, ndofs, form) =
@@ -397,9 +407,18 @@ function user_plot_1d(x, q, qref, μ_nodes, t, outvar, inputs, OUTPUT_DIR, iout)
     form   = _bw_form(inputs)
     if lfinal
         _bw_save_curve(xs, ρs, inputs, t)
-        # Only this run's form: the element and the nodal coefficient are two
-        # different methods and do not belong on one comparison.
-        stored = filter(c -> c.form == form, _bw_load_curves(t))
+        # Only this run's form: the element and the nodal coefficient, and the
+        # two length-scale conventions, are different methods and do not belong
+        # on one comparison. Say so when the store holds curves from another —
+        # a leftover sweep silently appearing on the figure is the one way this
+        # comparison can lie.
+        every  = _bw_load_curves(t)
+        stored = filter(c -> c.form == form, every)
+        other  = sort(unique(c.form for c in every if c.form != form))
+        isempty(other) || println(" #   brioWu1d: ", length(every) - length(stored),
+                                  " stored curve(s) of another method (", join(other, ", "),
+                                  ") are NOT drawn; this figure is the \"", form,
+                                  "\" comparison. rm problems/MHD/brioWu1d/curves to clear the store.")
     end
     curves = isempty(stored) ? [(nop = nop, ndofs = length(xs), Cmin = Cmin, form = form, x = xs, y = ρs)] :
                                _bw_finest(stored)

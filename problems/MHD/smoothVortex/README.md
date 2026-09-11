@@ -61,9 +61,13 @@ from **every** error stored there:
 | `<var>-it<n>.png` | the usual field panels |
 
 So a sweep over orders and meshes builds the whole figure and each run
-replaces only its own point. `rm -r problems/MHD/smoothVortex/errors` starts
-a fresh comparison; the store is git-ignored. Only errors from the same final
-time are drawn together.
+replaces only its own point. **The scan clears the store before it starts**
+(`SV_KEEP=1` to accumulate instead, to finish a partial sweep): since the
+figure is redrawn from the whole store at every run, a leftover sweep would
+otherwise appear on the comparison of a new one — with orders that this
+comparison has not computed yet. `rm -r problems/MHD/smoothVortex/errors`
+does the same by hand; the store is git-ignored. Only errors from the same
+final time are drawn together.
 
 The hook is `user_plot_2d` in `user_plot.jl`, the 2D counterpart of the
 `user_plot_1d` hook the 1D cases use, added to
@@ -73,7 +77,7 @@ field panels are still rendered.
 ## Running it
 
 ```bash
-tools/smooth_vortex_scan.sh                          # orders 2-4, meshes 4-32
+tools/smooth_vortex_scan.sh                          # orders 4-7, meshes 4-32
 SV_NOPS="3 4" SV_NELX="8 16 32" tools/smooth_vortex_scan.sh
 SV_VISC="dsgs none" tools/smooth_vortex_scan.sh      # both panels of Fig. 1
 ```

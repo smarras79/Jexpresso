@@ -53,14 +53,23 @@ writes those panels as separate files).
 ### Comparing polynomial orders, and the convergence history
 
 At the final time a run stores its density profile in
-`curves/nop<N>_dof<M>.dat` in this case directory, and the figures are drawn
-from **every** curve stored there, so a sweep over orders and resolutions
-builds the whole comparison and each run replaces only its own
-(order, DOFs) point:
+`curves/nop<N>_dof<M>_<form>.dat` in this case directory, and the figures are
+drawn from **every** curve stored there whose `<form>` — the coefficient form
+and the length-scale convention, the two things that make one run a different
+method from another — matches the run drawing them. A sweep over orders and
+resolutions therefore builds the whole comparison and each run replaces only
+its own (order, DOFs) point:
 
 ```bash
 tools/brio_wu_order_scan.sh          # orders 4-7 at 150, 300, 600, 1200 DOFs
 ```
+
+**The scan clears the store before it starts** (`BW_KEEP=1` to accumulate
+instead, to finish a partial sweep). Since the figure is redrawn from the
+whole store at every run, a leftover sweep would otherwise appear on the
+comparison from its very first run — with orders that this comparison has not
+computed yet. A run that finds curves of another method in the store says so
+on stdout and leaves them off the figure.
 
 | figure | contents |
 |---|---|
@@ -89,6 +98,8 @@ Overrides, all optional, so a sweep needs no file edits:
 | `JEXPRESSO_BW_NELX` | — | element count, overriding `JEXPRESSO_BW_DOFS` |
 | `JEXPRESSO_BW_DT` | — | time step, overriding the rule below |
 | `JEXPRESSO_BW_CMIN` | 0.06 | the DynSGS background floor `:dsgs_Cmin` |
+| `JEXPRESSO_BW_HSCALE` | `nop` | the DynSGS length scale: `nop` is the paper's $\Delta_K/k$, `ngl` the kernels' own $\Delta_K/(k+1)$ |
+| `JEXPRESSO_BW_NODAL` | 0 | 1 for the nodal coefficient (`:ldsgs_nodal`, their eq. 4.10) |
 
 At a fixed DOF count the orders run at equal cost: 150, 120, 100 and 86
 elements for $N = 4, 5, 6, 7$ at 600 DOFs, i.e. 601, 601, 601 and 603 points.
@@ -112,24 +123,53 @@ accurately than the $\mathbb{P}_1$ solution". That is the low-order regime,
 where raising the order buys a large gain in the accuracy of the underlying
 Galerkin scheme.
 
-Above that the picture changes, because the DynSGS length scale is
-$\Delta = \Delta_K/(N+1) = L/(n_{elx}(N+1))$ and $n_{elx} = \#\mathrm{DOFs}/N$,
-so at a fixed number of degrees of freedom
+**The length scale, and why it decides the comparison.** The kernels of
+`src/kernel/physics/SGS.jl` build the coefficient on $\Delta = \Delta_K/(k+1)$
+(`ngl`, the number of LGL points per element); Dao & Nazarov's eq. 4.10 uses
+$h_K/k$, the polynomial **degree**. The difference is a factor $(k+1)/k$ — and
+at a *fixed* number of degrees of freedom, where $n_{elx} = \#\mathrm{DOFs}/k$,
 
 $$
-\Delta = \frac{L\,(N+1)}{N\,\#\mathrm{DOFs}}
+\frac{\Delta_K}{k+1} = \frac{L}{\#\mathrm{DOFs}}\cdot\frac{k}{k+1},
+\qquad
+\frac{\Delta_K}{k} = \frac{L}{\#\mathrm{DOFs}} ,
 $$
 
-*grows* with the order: $n_{elx}(N+1)$ is 750, 720, 700 and 686 for
-$N = 4, 5, 6, 7$ at 600 DOFs, i.e. $\Delta$ is 9 % larger at $N = 7$ than at
-$N = 4$. The cap $C_{max}\Delta\lambda$, the floor $C_{min}\Delta\lambda$ and
-the residual viscosity $C_R\Delta^2\mathcal R$ all follow it, so once the
-underlying scheme is accurate enough that the artificial viscosity sets the
-error — which it is by $N = 4$ on a solution made of jumps — the higher
-orders are very slightly *worse*, and the measured curves lie on top of each
-other. The comparison at equal DOFs then measures the artificial viscosity,
-not the polynomial order. `JEXPRESSO_BW_CMIN=0` removes the part of it that
-is independent of the solution.
+so the paper's convention is the same for every order while the kernels' grows
+with $k$ (0.8 of it at $k=4$, 0.875 at $k=7$). That factor varies by 75 % over
+$k = 1\ldots7$, it is monotone in $k$, and it enters the cap and the floor
+linearly and the residual viscosity $C_R\Delta^2\mathcal{R}$ quadratically. On
+a solution made of jumps, where the artificial viscosity and not the
+polynomial order sets the error, it is the whole comparison. Measured here on
+the nodal coefficient at 601 DOFs, relative $L^1$ error of $\rho$:
+
+| length scale | spread over orders 1-7 | order 1 $\to$ 7 |
+|---|---|---|
+| $\Delta_K/(k+1)$ | 64 % | +64 % (each order worse than the last) |
+| $\Delta_K/k$ | 5.5 % | −2.1 % |
+
+With $\Delta_K/k$ the monotone penalty on the higher orders disappears, and in
+the smooth fan order 1 is the worst of the seven ($5.39\times10^{-3}$ against
+$3.3$–$3.5\times10^{-3}$ for orders 2-7) — which is the statement of the
+paper's Fig. 2, that $\mathbb{P}_3$ captures the compound structure more
+accurately than $\mathbb{P}_1$ at equal degrees of freedom.
+
+**This case therefore runs $\Delta_K/k$ by default** (`JEXPRESSO_BW_HSCALE=ngl`
+for the other). It is a *deck-level* switch: `user_inputs.jl` folds the factor
+into this case's own coefficients — $C_{max}$ and $C_{min}$ by $(k+1)/k$,
+$C_R$ by $((k+1)/k)^2$, which is algebraically identical to changing $\Delta$ —
+and no kernel is touched. Every other case (`orszagTangBormanis2024`,
+`sod1d`, `thetaTracers`, the forward-facing step, the rising bubble) keeps
+$\Delta_K/(k+1)$ and is bit-for-bit unaffected. Two things to know before
+making it general: $\Delta_K/k$ is $(k+1)/k$ *larger*, so the absolute error
+level rises (at order 4, $5.6\to7.1\times10^{-3}$ over the whole tube), and it
+was the larger scale that pushed the rising bubble past the explicit viscous
+stability limit at start-up, which is why the kernels moved to $(k+1)$ in the
+first place. Making it a real `:dsgs_hscale` input, read by the kernels so
+every case can choose, is the clean way to settle that.
+
+`JEXPRESSO_BW_CMIN=0` removes the part of the viscosity that is independent of
+the solution altogether.
 
 ## What is implemented
 

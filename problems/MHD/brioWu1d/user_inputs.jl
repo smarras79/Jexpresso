@@ -72,10 +72,21 @@ _bw_nodal() = lowercase(strip(get(ENV, "JEXPRESSO_BW_NODAL", "false"))) in ("1",
 # can be switched here without touching the kernels, by scaling the
 # coefficients: C_max, C_min by (k+1)/k and C_R by ((k+1)/k)².
 #
-#     JEXPRESSO_BW_HSCALE=nop     the paper's Δ_K/k
-#     JEXPRESSO_BW_HSCALE=ngl     Δ_K/(k+1)  (the default, the kernels' own)
+# THE ORDER COMPARISON OF THIS CASE USES THE PAPER'S Δ_K/k BY DEFAULT: it is
+# the only one of the two that is order-independent at fixed DOFs, and the
+# comparison exists to reproduce their Fig. 2. Nothing outside this deck
+# changes — `src/kernel/physics/SGS.jl` still computes Δ = Δ_K/ngl for every
+# case, and every other deck (orszagTangBormanis2024, sod1d, thetaTracers, the
+# forward-facing step, the rising bubble) is untouched by this switch.
+#
+#     JEXPRESSO_BW_HSCALE=nop     the paper's Δ_K/k          (the default here)
+#     JEXPRESSO_BW_HSCALE=ngl     Δ_K/(k+1), the kernels' own, unscaled
+const BW_HSCALE_DEFAULT = "nop"
+
+_bw_hscale() = lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", BW_HSCALE_DEFAULT)))
+
 function _bw_hfac()
-    lowercase(strip(get(ENV, "JEXPRESSO_BW_HSCALE", "ngl"))) == "nop" || return 1.0
+    _bw_hscale() == "nop" || return 1.0
     N = _bw_nop()
     return (N + 1)/N
 end
