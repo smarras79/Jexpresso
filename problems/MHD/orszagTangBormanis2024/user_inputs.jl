@@ -1,3 +1,5 @@
+_ot_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_TEND", "")), 1.0)
+
 function user_inputs()
 
     inputs = Dict(
@@ -22,8 +24,11 @@ function user_inputs()
         #:Δt                   => 1.5e-4,
         :Δt                   => 0.7e-5,
         :tinit                => 0.0,
-        :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
-        :diagnostics_at_times => (0.0:0.5:1.0),
+        # JEXPRESSO_OT_TEND shortens the run without editing the deck — a
+        # smoke test of a change to the model is one short run, not 143 000
+        # steps.
+        :tend                 => _ot_tend(),   # the paper's t ∈ [0, 1] interval
+        :diagnostics_at_times => (0.0:0.5*_ot_tend():_ot_tend()),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning; see user_source.jl)

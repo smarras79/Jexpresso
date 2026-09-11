@@ -162,6 +162,16 @@ end
 # the perturbation (the well-balanced MHD and shallow-water splits, PERT
 # variables) have a vanishing reference RHS and pass rhs_el through.
 function _dsgs_residual_rhs!(u, params, SD)
+    # How far below its physical scale a variable's spread may fall before
+    # that scale normalizes its residual (SGS.jl, _dsgs_denom). The kernels
+    # carry the old 1e-3 as `rel`, so this is the factor onto it.
+    _DSGS_RELMUL[] = 1.0e3*Float64(get(params.inputs, :dsgs_rel, 1.0))
+    # Startup: while the BDF2 history is still the initial condition the
+    # residual has no meaning (see the weights in rhs!). Hold it at zero.
+    if params.dsgs_nhist[] < 3
+        fill!(params.dsgs_rhs_res, zero(params.T))
+        return params.dsgs_rhs_res
+    end
     # :dsgs_sensor => "legacy": the pre-September-2026 sensor, the assembled
     # RHS divided by the lumped mass against the fixed BDF2 of the stage
     # state (set in rhs!). With a lumped mass matrix that difference is the
@@ -882,12 +892,26 @@ function _build_rhs!(RHS, u, params, time)
             params.dsgs_qnm1 .= params.dsgs_qn
             params.dsgs_qn   .= params.uaux
             params.dsgs_thist[] = time
+            params.dsgs_nhist[] += 1
         end
         # Stage-consistent time-derivative stencil for the residual (see
         # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
         τ = time - params.dsgs_thist[]
         h = params.Δt
-        if params.dsgs_legacy[]
+        if params.dsgs_nhist[] < 3
+            # The history is still seeded from the initial condition, so the
+            # BDF2 is not a time derivative yet: 0 on the first step, 1.5·∂ₜq
+            # on the second. Left alone it makes the residual the WHOLE flux
+            # divergence on step one — the sensor then reads a smooth, fully
+            # resolved initial condition as unresolved everywhere and puts ν
+            # on its cap (measured on the smooth vortex: ν = the cap exactly
+            # at the first call, on a solution the same scheme integrates to
+            # seven digits without it). Zero weights, and a residual RHS held
+            # at zero in _dsgs_residual_rhs!, make R ≡ 0 for those two steps,
+            # so ν is the background floor and nothing else.
+            params.dsgs_stage[] = false
+            params.dsgs_wt[]    = (0.0, 0.0, 0.0)
+        elseif params.dsgs_legacy[]
             # the sensor of the runs before Sep 2026 (see _dsgs_residual_rhs!):
             # BDF2 on (q_stage, qⁿ, qⁿ⁻¹) at every stage, which is ∂ₜq only at
             # τ = Δt (−∂ₜq/2 at τ = 0), against the assembled RHS
@@ -1433,8 +1457,11 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
 
     if params.VT == DSGS_MHD()
         TT = eltype(params.μ_dsgs)
-        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
-        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
+        # TEMPORARY EXPERIMENT (JEXPRESSO_DSGS_FREEZE=1): evaluate the
+        # coefficient ONCE per step, at the step start (τ = 0, where the
+        # residual's time derivative is the BDF2 of committed states), and
+        # hold it through the RK stages. Not for commit.
+        _dsgs_recompute = !(get(ENV, "JEXPRESSO_DSGS_FREEZE", "") == "1" && params.dsgs_stage[])
 
         # Nodal-density scaling of the momentum/energy coefficients, read by
         # SGS_diffusion(::DSGS_MHD) inside the assembly below.
@@ -1449,6 +1476,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
             (get(params.inputs, :dsgs_nazarov_energy, false) || get(params.inputs, :dsgs_conserved_prandtl, false))
 
         lnodal_mhd2d = get(params.inputs, :ldsgs_nodal, false)
+        if _dsgs_recompute
+        dsgs_qA, dsgs_qB, dsgs_wt = _dsgs_stencil(params, TT)
+        dsgs_rhs = _dsgs_residual_rhs!(u, params, SD)
         if lnodal_mhd2d
             # Nodal (Dao & Nazarov) form: ν at every node (SGS.jl); the
             # element loop interpolates it, no broadcast.
@@ -1499,6 +1529,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                      params.mesh.connijk,
                                      Int(params.mesh.nelem),
                                      Int(params.mesh.ngl), SD)
+        end
         end
 
         _viscous_rhs_el_2d_dsgs!(params.uaux, qe, params.uprimitive,

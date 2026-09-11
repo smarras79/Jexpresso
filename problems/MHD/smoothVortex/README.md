@@ -111,6 +111,42 @@ gmsh -2 -setnumber nx 16 vortex_periodic.geo -o vortex_16x16.msh
 
 which `tools/smooth_vortex_mesh.sh` wraps.
 
+## What this test found
+
+It is the test that caught two defects in the DynSGS sensor itself, both fixed
+in `src/kernel/physics/SGS.jl` and `src/kernel/operators/rhs.jl` (DSGS.md §4.2,
+§4.4 and the defect list in §6). Before, DynSGS held $\nu$ on its cap
+$C_{max}\Delta\lambda$ — an $O(h)$ viscosity, the same for every polynomial
+order — and the case converged at **rate 1** while the same scheme without it
+converged at its design order. Velocity $L^1$ at $t = 1$, `:nop => 4`:
+
+| elements per side | 4 | 8 | 16 | 32 | rate |
+|---|---|---|---|---|---|
+| DynSGS, before | 1.004e-2 | 5.240e-3 | 2.678e-3 | 1.142e-3 | 1.0 |
+| **DynSGS, after** | 4.26e-3 | 5.220e-5 | 2.208e-6 | 1.639e-7 | 4.6, 3.8 |
+| plain Galerkin | 1.570e-3 | 3.541e-5 | 2.039e-6 | 1.631e-7 | 4.1, 3.6 |
+
+The residual viscosity now costs 0.5 % of the error at the finest mesh instead
+of 7000×, which is the statement this problem exists to check. (The Galerkin
+rate falls from 5.5 toward 4 because $\Delta t \propto 1/(n_{elx}N)$ here, so
+the fourth-order time error takes over; fix $\Delta t$ with `JEXPRESSO_SV_DT`
+to see the spatial rate alone.)
+
+The runs that isolated the cause are worth repeating after any change to the
+sensor:
+
+```bash
+# the sensor with no viscosity applied: the solution is the Galerkin one and
+# the printed residual is the sensor's reading of a clean solution
+JEXPRESSO_SV_CR=0 JEXPRESSO_SV_CMAX=0 JEXPRESSO_SV_CMIN=0 \
+JEXPRESSO_DSGS_DEBUG=1 JEXPRESSO_SV_NELX=16 \
+    julia --project=. src/Jexpresso.jl MHD smoothVortex
+```
+
+`JEXPRESSO_DSGS_DEBUG=1` prints, every 200 kernel calls and for the first
+twelve, $\nu_{max}$, the cap, and each equation's normalized residual and
+denominator, with the node carrying the largest one.
+
 ## Why the background floor is off here
 
 `:dsgs_Cmin` defaults to **0** in this case, unlike the shock cases. The floor
