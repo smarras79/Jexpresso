@@ -608,6 +608,36 @@ q\ge5:\ \mu_q\,\frac{\mu_K}{\max_{i\in K}\rho_i} ,
 on the primitives $(\rho,u,v,T)$ with $T = E/\rho-\tfrac12|\bv|^2$; the
 $\tau\cdot\bu$ term of~\eqref{eq:fE} is included.
 
+\subsection{3D, $\theta$ form (\code{CompEuler/3d}, the LES cases)}
+\label{sec:euler3d}
+
+$\bq=(\rho,\rho u,\rho v,\rho w,\rho\theta)$: the $\theta$ kernel above with the
+node loop over the three directions and the lumped mass entry
+$m^K_i=\omega_i\omega_j\omega_k J_{K,ijk}$. All five residuals enter the max;
+the momentum floor $10^{-3}\bar\rho\bar c$ is applied to all three momenta
+(the atmospheric cases start globally at rest, so those spreads start at
+exactly zero); $\Delta=\Delta_K/n_{gl}$, $\lambda_i=|\bv_i|+c_i$ with
+$c=\sqrt{\gamma p/\rho}$ from $p=C_0(\rho\theta)^\gamma$. The primitives are
+$(\rho,u,v,w,\theta)$ and the slot coefficients
+\begin{equation}
+\rho:\ 0,\qquad u,v,w:\ \mu_{2,3,4}\,\bar\rho_K\,\nu_K,\qquad
+\theta:\ \mu_5\,\frac{\mathrm{Pr}}{\gamma-1}\,\bar\rho_K\,\nu_K,\qquad
+q\ge6:\ \mu_q\,\nu_K .
+\end{equation}
+The residual is zeroed on the nodes of the non-periodic boundary
+\emph{faces} (\code{mesh.poin\_in\_bdy\_face}), the 3D counterpart of the
+boundary-edge rule of Section~\ref{sec:residual}. The viscous operator is the
+per-slot Laplacian $\nabla\cdot(\mu_q\nabla q)$, not the 2D path's stress
+form. Only the $\theta$ form exists in 3D: \code{:energy\_equation => "energy"}
+with \code{DSGS()} in 3D raises rather than building a $\theta$-form
+coefficient from a total-energy state, and there is no 3D nodal form.
+
+Before September 2026 there was no 3D kernel at all, and the omission was
+silent: \code{params.sgs} is \code{nothing} for every model but Smagorinsky
+and Vreman, so a 3D case with \code{:visc\_model => DSGS()} reached the
+constant-coefficient branch of \code{\_viscous\_rhs\_el\_3d!} and ran the deck's
+per-equation multipliers $\mu_q$ as plain Laplacian coefficients in m$^2$/s.
+
 \subsection{2D nodal form of the Euler kernel}
 
 With \code{:ldsgs\_nodal => true}, $\nu_i$ from~\eqref{eq:nui} with the

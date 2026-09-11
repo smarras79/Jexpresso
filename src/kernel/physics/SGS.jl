@@ -971,6 +971,176 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     return nothing
 end
 
+# ---------------- 3D --------------------------------------------------
+#
+# Conservation form q = (ρ, ρu, ρv, ρw, ρθ) for the Euler-θ system in
+# three dimensions — the same model as the 2D kernel above, node loop and
+# element scale extended to the third direction. Written because
+# `:visc_model => DSGS()` on a 3D case (problems/CompEuler/3d, the LES
+# cases) had no kernel to dispatch to at all: params.sgs is `nothing` for
+# every model but Smagorinsky and Vreman, so the 3D viscous assembly fell
+# through to its constant-coefficient branch and ran the deck's :μ as a
+# plain Laplacian coefficient in m²/s — a DynSGS run that was silently not
+# DynSGS, and, with :μ[1] ≠ 0, a mass diffusion the model never asks for.
+#
+# Same structure as the 2D θ kernel:
+#
+#     ν_K = max(0, min(C_max Δ λ_K, C_R Δ² R_K)),  Δ = Δ_K/(k+1)
+#
+# with the element residual of DSGS.md §1.2 and the slot split of Marras
+# et al. eq. (10). The primitives handed to the viscous operator are
+# (ρ, u, v, w, θ), so the momentum and θ slots carry the DYNAMIC ρ̄ν.
+#
+# The energy form (:energy_equation => "energy", q with ρE in the last
+# slot) has no 3D kernel: `ltheta = false` raises rather than silently
+# building a θ-form coefficient from a total-energy state.
+#
+function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
+                                 ::DSGS, ::NSD_3D,
+                                 q::AbstractMatrix{TT},
+                                 q1::AbstractMatrix{TT},
+                                 q2::AbstractMatrix{TT},
+                                 qe::AbstractMatrix{TT},
+                                 rhs_el::AbstractArray{TT},
+                                 ω::AbstractVector{TT},
+                                 Je::AbstractArray{TT},
+                                 visc_coeff::AbstractVector{TT},
+                                 wt::NTuple{3,TT},
+                                 connijk::AbstractArray{TI,4},
+                                 Δelem::AbstractVector{TT},
+                                 PhysConst::PhysicalConst{TT},
+                                 Pr::TT,
+                                 nelem::Int, ngl::Int;
+                                 ltheta::Bool=true,
+                                 lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+
+    ltheta || error(" compute_dsgs_viscosity!(::DSGS, ::NSD_3D): only the θ form is implemented in 3D.\n" *
+                    "   Set :energy_equation => \"theta\", or use :visc_model => SMAG() / VREM() / AV().")
+
+    neqs  = size(μ_dsgs, 2)
+    invnp = one(TT)/(nelem*ngl*ngl*ngl)
+    γ     = PhysConst.γ
+    C0    = PhysConst.C0
+    CR    = TT(1.0)
+    Cmax  = TT(0.5)
+    γm1   = γ - one(TT)
+    eps   = TT(1.0e-16)
+
+    # --- Pass 1: averages of (ρ, ρu, ρv, ρw, ρθ) — see _dsgs_norm_scope --
+    ρ_avg  = zero(TT); ρu_avg = zero(TT); ρv_avg = zero(TT)
+    ρw_avg = zero(TT); ρθ_avg = zero(TT)
+    @inbounds for ie = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            ρ_avg  += q[ip,1]
+            ρu_avg += q[ip,2]
+            ρv_avg += q[ip,3]
+            ρw_avg += q[ip,4]
+            ρθ_avg += q[ip,5]
+        end
+    end
+    if lglobal_norms
+        sums = TT[ρ_avg, ρu_avg, ρv_avg, ρw_avg, ρθ_avg, TT(nelem*ngl*ngl*ngl)]
+        MPI.Allreduce!(sums, MPI.SUM, get_mpi_comm())
+        invnp_g = one(TT)/max(sums[6], one(TT))
+        ρ_avg  = sums[1]*invnp_g; ρu_avg = sums[2]*invnp_g; ρv_avg = sums[3]*invnp_g
+        ρw_avg = sums[4]*invnp_g; ρθ_avg = sums[5]*invnp_g
+    else
+        ρ_avg  *= invnp; ρu_avg *= invnp; ρv_avg *= invnp
+        ρw_avg *= invnp; ρθ_avg *= invnp
+    end
+
+    # --- Pass 2: L∞ norms of |q - ⟨q⟩| ---------------------------------
+    denom1 = zero(TT); denom2 = zero(TT); denom3 = zero(TT)
+    denom4 = zero(TT); denom5 = zero(TT)
+    @inbounds for ie = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = connijk[ie,i,j,k]
+            denom1 = max(denom1, abs(q[ip,1] - ρ_avg))
+            denom2 = max(denom2, abs(q[ip,2] - ρu_avg))
+            denom3 = max(denom3, abs(q[ip,3] - ρv_avg))
+            denom4 = max(denom4, abs(q[ip,4] - ρw_avg))
+            denom5 = max(denom5, abs(q[ip,5] - ρθ_avg))
+        end
+    end
+    if lglobal_norms
+        norms = TT[denom1, denom2, denom3, denom4, denom5]
+        MPI.Allreduce!(norms, MPI.MAX, get_mpi_comm())
+        denom1 = norms[1]; denom2 = norms[2]; denom3 = norms[3]
+        denom4 = norms[4]; denom5 = norms[5]
+    end
+    denom1 += eps; denom2 += eps; denom3 += eps
+    denom4 += eps; denom5 += eps
+
+    # Momentum floor, exactly as in 2D: the atmosphere starts globally at
+    # rest, so the three momentum spreads start at zero and only `eps`
+    # would separate the ratio from infinity — which pins ν at the
+    # wave-speed cap on the very first stage.
+    θ_avg  = ρθ_avg/max(abs(ρ_avg), eps)
+    p_avg  = C0*(max(ρ_avg*θ_avg, zero(TT)))^γ
+    c_avg  = sqrt(max(γ*p_avg/max(abs(ρ_avg), eps), zero(TT)))
+    mom_floor = TT(1.0e-3) * abs(ρ_avg) * c_avg
+    denom2 = max(denom2, mom_floor)
+    denom3 = max(denom3, mom_floor)
+    denom4 = max(denom4, mom_floor)
+
+    # --- Pass 3: per-element residual L∞, μ_max bound, μ_dsgs[ie] ------
+    @inbounds for ie = 1:nelem
+        Δ = Δelem[ie]/ngl
+
+        n1 = zero(TT); n2 = zero(TT); n3 = zero(TT)
+        n4 = zero(TT); n5 = zero(TT)
+        uTmx = zero(TT)
+        ρ_el = zero(TT)
+
+        for k = 1:ngl, j = 1:ngl
+            @simd for i = 1:ngl
+                ip  = connijk[ie,i,j,k]
+                imK = one(TT)/(ω[i]*ω[j]*ω[k]*Je[ie,i,j,k])  # element lumped mass at the node
+
+                R1 = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - imK*rhs_el[ie,i,j,k,1])
+                R2 = abs((wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - imK*rhs_el[ie,i,j,k,2])
+                R3 = abs((wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - imK*rhs_el[ie,i,j,k,3])
+                R4 = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - imK*rhs_el[ie,i,j,k,4])
+                R5 = abs((wt[1]*q[ip,5] + wt[2]*q1[ip,5] + wt[3]*q2[ip,5]) - imK*rhs_el[ie,i,j,k,5])
+                n1 = max(n1, R1); n2 = max(n2, R2); n3 = max(n3, R3)
+                n4 = max(n4, R4); n5 = max(n5, R5)
+
+                ρl = q[ip,1]
+                ul = q[ip,2]/ρl
+                vl = q[ip,3]/ρl
+                wl = q[ip,4]/ρl
+                θl = q[ip,5]/ρl
+                # p = C0·(ρθ)^γ  ⇒  c² = γp/ρ. ρθ is clamped at 0 so that a
+                # solution already going negative is reported by the flux,
+                # which says which equation broke, and not by a DomainError
+                # raised inside the viscosity kernel.
+                pl  = C0 * max(ρl*θl, zero(TT))^γ
+                c_l = sqrt(max(γ*pl/ρl, zero(TT)))
+                uTmx = max(uTmx, sqrt(ul*ul + vl*vl + wl*wl) + c_l)
+                ρ_el += ρl
+            end
+        end
+        ρ_el /= TT(ngl*ngl*ngl)
+
+        μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4, n5/denom5)
+        μ_max = Cmax*Δ*uTmx
+        μ     = max(zero(TT), min(μ_max, μ_res))   # kinematic, m²/s
+        μ_dyn = ρ_el*μ
+
+        μ_dsgs[ie,1] = zero(TT)                             # ρ : no mass diffusion
+        μ_dsgs[ie,2] = visc_coeff[2] * μ_dyn                # ρu (eq. 10a)
+        μ_dsgs[ie,3] = visc_coeff[3] * μ_dyn                # ρv (eq. 10a)
+        μ_dsgs[ie,4] = visc_coeff[4] * μ_dyn                # ρw (eq. 10a)
+        μ_dsgs[ie,5] = visc_coeff[5] * (Pr/γm1) * μ_dyn     # ρθ (eq. 10b)
+        for ieq = 6:neqs                                    # passive tracers: kinematic ν
+            μ_dsgs[ie,ieq] = visc_coeff[ieq] * μ
+        end
+    end
+
+    return nothing
+end
+
 # ================================================================================
 # Residual-based artificial viscosity (DynSGS) — 2D, compressible Euler in
 # TOTAL-ENERGY form q = (ρ, ρu, ρv, ρE).

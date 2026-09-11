@@ -265,6 +265,44 @@ scalar branch of the Smagorinsky model does; they enter neither the residual
 nor the normalization. The same holds for the energy form ($\mu_K/\max_K\rho$)
 and for the nodal form ($\nu_i$).
 
+### 3.1 3D θ-form — `CompEuler/3d`, the LES cases
+
+`compute_dsgs_viscosity!(::DSGS, ::NSD_3D)`, the same model with
+$\mathbf{q} = (\rho, \rho u, \rho v, \rho w, \rho\theta)$ and the node loop
+over the three directions:
+
+- **Residual**: all five equations enter the max, element-wise as in §1.2,
+  with the lumped mass entry $m^K_i = \omega_i\omega_j\omega_k J_{K,ijk}$.
+- **Normalization**: the domain (or, by default, rank) spreads of §1.1, with
+  the momentum floor $10^{-3}\bar\rho\bar c$ on all three momenta — the
+  atmospheric cases start globally at rest, so those three spreads start at
+  exactly zero.
+- **Element scale**: $\Delta = \Delta_K/(k+1)$ from `mesh.Δelem`;
+  $\lambda_K = \max_{i\in K}(|\mathbf v_i| + c_i)$, $c$ from
+  $p = C_0(\rho\theta)^\gamma$.
+- **Split**: the primitives are $(\rho, u, v, w, \theta)$, so
+  $\mu[1] = 0$, $\mu[2{:}4] = \texttt{:μ}[2{:}4]\,\bar\rho\nu$,
+  $\mu[5] = \texttt{:μ}[5]\,\frac{Pr}{\gamma-1}\bar\rho\nu$, and
+  $\mu[q\ge6] = \texttt{:μ}[q]\,\nu$ for passive tracers.
+- **Boundary nodes**: the residual is zeroed on the nodes of the
+  non-periodic boundary *faces* (`mesh.poin_in_bdy_face`), the 3D
+  counterpart of the boundary-edge rule of §1.2.
+
+Only the θ form exists in 3D; `:energy_equation => "energy"` with
+`DSGS()` in 3D raises rather than building a θ-form coefficient from a
+total-energy state. The nodal form (`:ldsgs_nodal`) has no 3D counterpart
+either, and the 3D viscous operator is the per-slot Laplacian
+$\nabla\cdot(\mu_q\nabla q)$ rather than the 2D path's stress form.
+
+> Until September 2026 there was **no 3D kernel at all**, and this was
+> silent: `params.sgs` is `nothing` for every model but Smagorinsky and
+> Vreman, so a 3D case with `:visc_model => DSGS()` fell through to the
+> constant-coefficient branch of `_viscous_rhs_el_3d!` and ran the deck's
+> `:μ` as a plain Laplacian coefficient in m²/s. `CompEuler/3d` with
+> `:μ = [1,1,1,1,1]` then blew up at $t \approx 750$ s — identically to
+> the same deck with `:visc_model => AV()`, which is what it had in fact
+> been running, with a mass diffusion on top whenever `:μ[1] ≠ 0`.
+
 ---
 
 ## 4. 2D ideal GLM-MHD — `orszagTangBormanis2024`
@@ -576,9 +614,8 @@ total-energy forms) and `DSGS_MHD` alike (`compute_dsgs_viscosity_nodal!`):
 The whole path is allocation-free (`params.dsgs_qmin/qmax/nmin/nmax/hnod`
 are its scratch). The element form remains the default of every case,
 `brioWu1d` included (its deck carries the nodal switch commented out; with
-the $C_{min}$ floor both forms give the same profile). There is no 3D DynSGS kernel (the 3D viscous
-path dispatches the Smagorinsky/Vreman caches only), so the switch has no
-3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
+the $C_{min}$ floor both forms give the same profile). The 3D kernel
+(§3.1) is element-form only, so the switch has no 3D counterpart yet. Measured on the Brio–Wu tube: both forms give the same
 solution, and the element-scale ripples the compound wave radiates into
 the plateau behind it are damped by neither — the residual viscosity
 scales with their amplitude — and need the $C_{min}$ floor (3 % there, see the
@@ -640,8 +677,8 @@ the kernel on its own.
 | file | contents |
 |---|---|
 | `src/kernel/abstractTypes.jl` | `struct DSGS`, `struct DSGS_MHD`, `struct DSGS_SW` |
-| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 2D-MHD, 2D shallow water) and the nodal forms, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
-| `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
+| `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 3D-θ, 2D-MHD, 2D shallow water) and the nodal forms, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
+| `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!` / `_viscous_rhs_el_3d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
 | `src/io/mod_inputs.jl` | `:dsgs_CR`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
 | `src/io/write_output.jl` | the `mu_dsgs_*` VTK fields |
@@ -652,7 +689,7 @@ the kernel on its own.
 
 ```julia
 :lvisc      => true,
-:visc_model => DSGS(),        # 1D CompEuler / 2D CompEuler θ
+:visc_model => DSGS(),        # 1D CompEuler / 2D and 3D CompEuler θ
 :visc_model => DSGS_MHD(),    # 2D ideal GLM-MHD
 :visc_model => DSGS_SW(),     # 2D non-linear shallow water
 :μ          => [0.0, 1.0, …], # per-equation multipliers, length neqs

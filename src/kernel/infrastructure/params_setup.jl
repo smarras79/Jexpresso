@@ -423,7 +423,7 @@ function params_setup(sem,
     # RHS call sites read a Bool, not a String in the inputs Dict.
     dsgs_global_norms = (get(inputs, :dsgs_norms, "rank") == "domain")::Bool
     dsgs_local_norms  = (get(inputs, :dsgs_norms, "rank") == "element")::Bool
-    dsgs_bdy_pairs = NTuple{3,Int}[]
+    dsgs_bdy_pairs = NTuple{4,Int}[]
 
     # Per-equation scratch the 2D DSGS path uses to pack the
     # per-element coefficient before calling _expansion_visc!:
