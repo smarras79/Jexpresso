@@ -17,6 +17,10 @@ A CPU and GPU research software for the numerical solution of a system of arbitr
 
 Suggested Julia version: 1.11.9
 
+# A note about the use of AI
+Jexpresso has been developed by humans since 2021 and continues to be so. Since Spring 2026, AI has been assisting the developers for new problems additions, debugging, and code's documentation. As AI becomes more reliable, we foresee an increased use of it for code development under the direct supervision of a human expert. 
+The Jexpresso core team uses Claude whereas some external developers have been successfully using OpenAI's Codex for their own implementations.
+
 # Table of Contents
 
 - [Installation](#installation)
