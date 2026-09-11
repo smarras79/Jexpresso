@@ -1227,7 +1227,12 @@ else
 #
 # 1D periodicity
 #
-if inputs[:AD] != FD()
+# DG (DiscGal) keeps duplicated interface DOFs: the periodic wrap is a flux
+# face handled by surface_rhs_el!, not a node collapse. Skipping this block
+# leaves npoin = nelem*ngl and connijk un-remapped. Note ip_kill = npoin_linear
+# below assumes the CG numbering, so this guard must precede any change to how
+# npoin_linear is set on the DG path.
+if inputs[:AD] != FD() && inputs[:AD] != DiscGal()
     ip_dest = 1
     ip_kill = npoin_linear
     for e=1:nelem
