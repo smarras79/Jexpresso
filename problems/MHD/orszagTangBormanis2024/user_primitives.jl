@@ -5,10 +5,10 @@
 # _expansion_visc! (per-equation gradient diffusion), so the ordering must
 # match the equation ordering (ρ, ρu, ρv, ρE, ρw, Bx, By, Bz, ψ):
 #
-#   1: ρ    (visc multiplier :μ[1] = 0 -> no mass diffusion)
-#   2: u    (momentum: full deviatoric stress built by the kernel)
-#   3: v    (momentum: full deviatoric stress built by the kernel)
-#   4: T    (energy slot: κ∇T heat flux + τ·u viscous work added by the kernel)
+#   1: ρ    (mass diffusion ν∇ρ, Dao & Nazarov 2022 eq. 4.4; :μ[1] = 1)
+#   2: u    (momentum: full deviatoric stress built by the kernel, ρν)
+#   3: v    (momentum: full deviatoric stress built by the kernel, ρν)
+#   4: T    (energy slot: κ∇T heat flux, κ = ρν/Pr, + τ·u viscous work added by the kernel)
 #   5: w    (out-of-plane momentum, diffused as a scalar)
 #   6-8: B  (magnetic field, scalar diffusion = turbulent resistivity)
 #   9: ψ    (GLM field, scalar diffusion)

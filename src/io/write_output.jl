@@ -141,7 +141,21 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # DSGS runs render the viscosity staircase as one more panel of
         # the same output time (the per-node broadcast is in μ_dsgs_pnode)
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
-            if (inputs[:backend] == CPU())
+        # A case whose qoutvars differ from its solution variables (it
+        # defines user_uout!, e.g. problems/MHD/brioWu1d: ρ, u, v, p, By from
+        # the conserved (ρ, ρu, ρv, ρE, …)) gets those output variables
+        # plotted, as the 2D writer does; otherwise the solution itself.
+        if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+        npoin_1d = mesh.npoin
+        if inputs[:backend] == CPU() && outvarnames !== nothing && length(outvarnames) > 0 &&
+           collect(outvarnames) != collect(varnames)
+            noutvar = length(outvarnames)
+            qout1d  = zeros(Float64, npoin_1d, noutvar)
+            qe1d = (size(qexact, 1) == npoin_1d) ? qexact : zeros(Float64, npoin_1d, max(nvar, 1))
+            call_user_uout(qout1d, uaux, qe1d, mp, inputs[:SOL_VARS_TYPE], npoin_1d, nvar, noutvar;
+                           μ_dsgs_pnode=μ_dsgs_pnode)
+            plot_results(SD, mesh, vec(qout1d), title, OUTPUT_DIR, outvarnames, inputs; iout=iout, nvar=noutvar, PT=nothing, μ_nodes=μ_nodes, t=t)
+        elseif (inputs[:backend] == CPU())
                 plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, PT=nothing, μ_nodes=μ_nodes, t=t)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
@@ -180,17 +194,50 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
     end
 
-    title = @sprintf "t = %.4f s" t
+    #
+    # Render the OUTPUT variables (qoutvars, filled by the case's
+    # user_uout!) exactly as the VTK writer does, so that a case can plot
+    # derived quantities (velocity, pressure, temperature, ...) and not only
+    # the conserved set. Cases without user_uout! get their solution
+    # variables back unchanged (callback_user_uout!).
+    #
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+    qplot     = q
+    nplot     = nvar
+    plotnames = varnames
+    if (inputs[:backend] == CPU())
+        npoin   = mesh.npoin
+        noutvar = length(outvarnames)
+        qout    = zeros(Float64, npoin, noutvar)
+        u2uaux!(uaux, q, nvar, npoin)
+        call_user_uout(qout, uaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;
+                       μ_dsgs_pnode=μ_dsgs_pnode)
+        qplot     = vec(qout)
+        nplot     = noutvar
+        plotnames = outvarnames
+    end
+
+    # Silent per-variable PNGs want no screen workstation at all. Under MPI
+    # only rank 0 renders, and a GR that tries to open a gksqt window there
+    # (no display, a remote shell, a batch job) blocks rank 0 while the other
+    # ranks wait at the next collective — the run looks hung right after
+    # "Write initial condition". GKSwstype=100 (workstation "no output")
+    # keeps the file export and drops the window; honour a user setting.
+    if !get(inputs, :plot_matrix, true) && !haskey(ENV, "GKSwstype")
+        ENV["GKSwstype"] = "100"
+    end
+
+    title = @sprintf("t = %.4f%s", t, string(get(inputs, :plot_time_unit, " s")))
     if (inputs[:lplot_surf3d])
-        plot_surf3d(SD, mesh, q, title, OUTPUT_DIR;
-                    iout=iout, nvar=nvar,
-                    smoothing_factor=inputs[:smoothing_factor], varnames=varnames)
+        plot_surf3d(SD, mesh, qplot, title, OUTPUT_DIR;
+                    iout=iout, nvar=nplot,
+                    smoothing_factor=inputs[:smoothing_factor], varnames=plotnames)
     else
         # DSGS runs render the per-equation eddy viscosity as extra panels
         # of the same output time (the per-node broadcast is μ_dsgs_pnode).
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
-        plot_triangulation(SD, mesh, q, title, OUTPUT_DIR, inputs;
-                           iout=iout, nvar=nvar, varnames=varnames,
+        plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
+                           iout=iout, nvar=nplot, varnames=plotnames,
                            μ_nodes=μ_nodes, μ_names=varnames)
     end
 
@@ -402,6 +449,15 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
+        # log10 fields, as the PNG writer renders them (:plot_log10, floored
+        # at 1e-300): one extra field log10_<var> per listed variable, next
+        # to the linear one, so ParaView shows the decades the literature
+        # plots (the flux-emergence cases: ρ, p, β over eight decades).
+        for var in get(inputs, :plot_log10, String[])
+            ivar = findfirst(==(string(var)), string.(outvarnames))
+            ivar === nothing && continue
+            vtkf[string("log10_", var), VTKPointData()] = log10.(max.(@view(qout[1:npoin,ivar]), 1.0e-300))
+        end
 
         # DynSGS: write the per-equation eddy viscosity actually applied on
         # this step, one field per equation, named after the solution
@@ -415,11 +471,32 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
         # primitives are u, v, w, T) while the magnetic and ψ slots carry
         # the KINEMATIC μ as a turbulent resistivity. Compare a slot against
         # itself over time, not against a different slot.
+        #
+        # A DynSGS-MHD run in its conserved form (:dsgs_conserved, e.g. the
+        # flux-emergence cases) gives every slot the same kinematic μ, so
+        # when all columns are identical one field, mu_dsgs, is written
+        # instead of nine copies of it.
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
-            for ieq = 1:size(μ_dsgs_pnode, 2)
-                mu_name = (ieq <= length(varnames)) ?
-                    string("mu_dsgs_", varnames[ieq]) : string("mu_dsgs_", ieq)
+            nμ = size(μ_dsgs_pnode, 2)
+            # one field per DISTINCT coefficient: a slot identical to an
+            # earlier one is not written again (its name lists the slots)
+            written = Int[]
+            for ieq = 1:nμ
+                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
+                dup && continue
+                push!(written, ieq)
+            end
+            for ieq in written
+                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
+                mu_name = (length(written) == 1) ? "mu_dsgs" :
+                    string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
+                # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
+                # field the PNG writer renders with :plot_dsgs_log10
+                if get(inputs, :plot_dsgs_log10, false)
+                    μfloor = get(inputs, :plot_dsgs_floor, 1.0e-6)
+                    vtkf[string("log10_", mu_name), VTKPointData()] = log10.(max.(@view(μ_dsgs_pnode[1:npoin, ieq]), μfloor))
+                end
             end
         end
 
@@ -531,6 +608,15 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
             idx = (ivar - 1)*npoin
             vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
+        # log10 fields, as the PNG writer renders them (:plot_log10, floored
+        # at 1e-300): one extra field log10_<var> per listed variable, next
+        # to the linear one, so ParaView shows the decades the literature
+        # plots (the flux-emergence cases: ρ, p, β over eight decades).
+        for var in get(inputs, :plot_log10, String[])
+            ivar = findfirst(==(string(var)), string.(outvarnames))
+            ivar === nothing && continue
+            vtkf[string("log10_", var), VTKPointData()] = log10.(max.(@view(qout[1:npoin,ivar]), 1.0e-300))
+        end
 
         # DynSGS: write the per-equation eddy viscosity actually applied on
         # this step, one field per equation, named after the solution
@@ -544,11 +630,32 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
         # primitives are u, v, w, T) while the magnetic and ψ slots carry
         # the KINEMATIC μ as a turbulent resistivity. Compare a slot against
         # itself over time, not against a different slot.
+        #
+        # A DynSGS-MHD run in its conserved form (:dsgs_conserved, e.g. the
+        # flux-emergence cases) gives every slot the same kinematic μ, so
+        # when all columns are identical one field, mu_dsgs, is written
+        # instead of nine copies of it.
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
-            for ieq = 1:size(μ_dsgs_pnode, 2)
-                mu_name = (ieq <= length(varnames)) ?
-                    string("mu_dsgs_", varnames[ieq]) : string("mu_dsgs_", ieq)
+            nμ = size(μ_dsgs_pnode, 2)
+            # one field per DISTINCT coefficient: a slot identical to an
+            # earlier one is not written again (its name lists the slots)
+            written = Int[]
+            for ieq = 1:nμ
+                dup = any(j -> view(μ_dsgs_pnode, 1:npoin, ieq) == view(μ_dsgs_pnode, 1:npoin, j), written)
+                dup && continue
+                push!(written, ieq)
+            end
+            for ieq in written
+                slots = [j for j = ieq:nμ if view(μ_dsgs_pnode, 1:npoin, j) == view(μ_dsgs_pnode, 1:npoin, ieq)]
+                mu_name = (length(written) == 1) ? "mu_dsgs" :
+                    string("mu_dsgs_", join([(j <= length(varnames)) ? string(varnames[j]) : string(j) for j in slots], "_"))
                 vtkf[mu_name, VTKPointData()] = @view(μ_dsgs_pnode[1:npoin, ieq])
+                # log₁₀ of the coefficient floored at :plot_dsgs_floor, the
+                # field the PNG writer renders with :plot_dsgs_log10
+                if get(inputs, :plot_dsgs_log10, false)
+                    μfloor = get(inputs, :plot_dsgs_floor, 1.0e-6)
+                    vtkf[string("log10_", mu_name), VTKPointData()] = log10.(max.(@view(μ_dsgs_pnode[1:npoin, ieq]), μfloor))
+                end
             end
         end
 

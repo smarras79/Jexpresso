@@ -13,6 +13,7 @@ export mod_mesh_read_gmsh!
 
 include("warping.jl")
 include("stretching.jl")
+include("exact_geometry.jl")
 
 function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     npoin = nelem*nop+1
@@ -3663,6 +3664,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #----------------------------------------------------------------------
     # END Extract boundary edges and faces nodes
     #----------------------------------------------------------------------
+
+    # The high-order nodes were interpolated on the STRAIGHT-SIDED element, so
+    # a boundary that the .geo defined as a curve (a gmsh `Circle`, say) is a
+    # polygon as far as the solver is concerned, however large :nop is. Where
+    # the case deck names the exact geometry, snap the boundary nodes onto it
+    # and blend the correction into the element interiors. This is the 2D
+    # counterpart of project_nodes_to_shell! above; it needs the boundary-edge
+    # tables and connijk, which is why it runs here and not up with the
+    # add_high_order_nodes_* calls. No-op unless :exact_geometry is set.
+    snap_nodes_to_exact_geometry!(mesh, lgl, inputs, mesh.SD)
 
     if (inputs[:extra_dimensions] > 0)
         println(" # constructing extra grids for extra dimensions ...................... IN PROGRESS")

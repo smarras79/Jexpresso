@@ -73,6 +73,10 @@ function user_inputs()
         :output_dir           => "./output",
         :loutput_pert         => false,
         #---------------------------------------------------------------------------
+        # init_refinement
+        #---------------------------------------------------------------------------
+        :linitial_refine     => false,
+        :init_refine_lvl     => 1,
     ) #Dict
 
     return inputs

@@ -76,6 +76,11 @@ struct DSGS  <: AbstractVT end
 # because the residual set, the equation-of-state and the wave speed all
 # differ from the Euler-theta system DSGS() is written for.
 struct DSGS_MHD <: AbstractVT end
+# Marras-Nazarov residual-based Dynamic SGS for the 2D non-linear
+# shallow-water system q = (H, Hu, Hv): residual of the three equations,
+# wave speed |v| + sqrt(g H), one kinematic coefficient on every slot
+# (problems/ShallowWater/SoliWaveIslandDSGS).
+struct DSGS_SW <: AbstractVT end
 
 
 abstract type AbstractVolumeFlux end

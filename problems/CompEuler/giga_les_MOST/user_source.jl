@@ -36,8 +36,8 @@ function user_source!(S,
     #--------------
     # SPONGE
     #--------------
-    if inputs[:lsponge] == true
-        zs = inputs[:zsponge]
+    if (inputs[:lsponge]::Bool)   # type-asserted: a bare read of the global Dict boxes and allocates at every node
+        zs = inputs[:zsponge]::Float64
     	xr = 0.0
     	xl = 0.0
     	α  = 1/60.0
@@ -132,8 +132,8 @@ function user_source!(S,
     #--------------
     # SPONGE
     #--------------
-    if inputs[:lsponge] == true
-        zs = inputs[:zsponge]
+    if (inputs[:lsponge]::Bool)   # type-asserted: a bare read of the global Dict boxes and allocates at every node
+        zs = inputs[:zsponge]::Float64
     	xr = 0.0
     	xl = 0.0
     	α  = 0.5

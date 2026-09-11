@@ -1,5 +1,28 @@
 include("custom_bcs.jl")
 
+#
+# Did the user's boundary routine prescribe a value for this component?
+#
+# user_bc_dirichlet! receives qbdy pre-filled with a sentinel and writes the
+# components it wants imposed; a component whose value it merely echoes
+# (e.g. the tangential momentum of a free-slip wall) must be left alone,
+# otherwise its RHS would be zeroed and the wall would become no-slip. That
+# "did it change?" test used to be Kopriva's AlmostEqual, which declares two
+# numbers equal whenever they are within an ABSOLUTE 2e-6 of each other and
+# either is below 1e-6. On a stratified atmosphere spanning many decades of
+# density this silently switches the walls off: with ρ ≈ 7e-9 at the top of
+# the solar corona of problems/MHD/fluxEmergenceSon2025, the wall-normal
+# momentum stays below 2e-6 up to a velocity of ~300 C_s, the prescribed
+# zero was never applied and the atmosphere drained through the "wall" with
+# an exponentially growing downflow. The test is now RELATIVE, scaled by the
+# larger of the two values and of the reference state of that point (which
+# keeps the roundoff of the PERT-form projections q + qe - qe, of order
+# eps·|qe|, below the threshold, as the old absolute tolerance did).
+#
+@inline function bc_value_changed(qb, ua, qref)
+    return abs(qb - ua) > 1.0e-10*max(abs(qb), abs(ua), abs(qref))
+end
+
 function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                               coords, 
                                               nx, ny, nz,
@@ -144,7 +167,7 @@ function build_custom_bcs_dirichlet!(::NSD_1D, t,
     fill!(qbdy, 4325789.0)
     user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
     for ieq =1:neqs
-        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
             uaux[ip,ieq] = qbdy[ieq]
             RHS[ip, ieq] = 0.0
         end
@@ -154,7 +177,7 @@ function build_custom_bcs_dirichlet!(::NSD_1D, t,
     fill!(qbdy, 4325789.0)
     user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, "right", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
     for ieq =1:neqs
-        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
             uaux[ip,ieq] = qbdy[ieq]
             RHS[ip, ieq] = 0.0
         end
@@ -210,7 +233,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
                 user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
                 
                 for ieq =1:neqs
-                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                    if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
                         uaux[ip,ieq] = qbdy[ieq]
                         RHS[ip, ieq] = 0.0
                     end
@@ -231,7 +254,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
                     user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
 
                     for ieq =1:neqs
-                        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
                             #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
                             uaux[ip,ieq] = qbdy[ieq]
                             RHS[ip, ieq] = 0.0
@@ -248,7 +271,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
                         tag = inputs[:laguerre_tag]
                         user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
                         for ieq =1:neqs
-                            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
+                            if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
                                 uaux[ip,ieq] = qbdy[ieq]
                                 RHS[ip, ieq] = 0.0
                             end
@@ -266,7 +289,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
                         user_bc_dirichlet!(@view(uaux[ip,:]), @view(coords[:, ip]), t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
 
                         for ieq =1:neqs
-                            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
+                            if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
                                 uaux[ip,ieq] = qbdy[ieq]
                                 RHS[ip, ieq] = 0.0
                             end
@@ -637,7 +660,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
                                        zmin, zmax,
                                        @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
                     for ieq =1:neqs
-                        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        if bc_value_changed(qbdy[ieq], uaux[ip,ieq], qe[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
                             uaux[ip,ieq] = qbdy[ieq]
                             RHS[ip, ieq] = 0.0
                         end
