@@ -32,7 +32,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./problems/AdvDiff/advection2d_dg/hexa_TFI_10x20_periodic.msh", #for nop=4
+        :gmsh_filename       => "./test/CI-runs/AdvDiff/advection2d_dg/hexa_TFI_10x20_periodic.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
