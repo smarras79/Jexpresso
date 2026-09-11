@@ -28,6 +28,7 @@ const SV_ERR_DIR = joinpath(@__DIR__, "errors")
 # One (colour, marker) per order, fixed so an order looks the same from one
 # figure to the next.
 const SV_STYLE = Dict(
+    1 => (:darkorange, :dtriangle),
     2 => (:goldenrod, :utriangle),
     3 => (:purple,    :rect),
     4 => (:seagreen,  :diamond),
@@ -70,9 +71,18 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
     # the box's 100 at 4x4). The solver's own local-to-global map,
     # mesh.ip2gip, is what says which nodes are the same unknown; use it
     # rather than any geometric test of ours.
-    seen = Set{eltype(mesh.ip2gip)}()
-    w    = zeros(npoin)
+    #
+    # ON MORE THAN ONE RANK the same unknown also lives on every rank that
+    # touches it, and its assembled mass is the GLOBAL one, so a node counted
+    # by two ranks is counted twice in the reduction below. mesh.gip2owner[ip]
+    # is the rank that owns local node ip — the same map the DSS assembler
+    # uses — so each unknown is weighed exactly once, by its owner.
+    rank   = MPI.Comm_rank(get_mpi_comm())
+    lowner = length(mesh.gip2owner) >= npoin
+    seen   = Set{eltype(mesh.ip2gip)}()
+    w      = zeros(npoin)
     for ip = 1:npoin
+        lowner && mesh.gip2owner[ip] != rank && continue
         g = mesh.ip2gip[ip]
         g in seen && continue
         push!(seen, g)
@@ -100,9 +110,9 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
         @info "smoothVortex quadrature check" sum_w = sum(w) area = Lx*Ly npoin = npoin nunique = length(seen)
     end
     comm = get_mpi_comm()
-    ndofs = npoin
+    ndofs = length(seen)
     if MPI.Comm_size(comm) > 1
-        sums  = MPI.Allreduce([s1, s2, r1, r2, Float64(npoin)], MPI.SUM, comm)
+        sums  = MPI.Allreduce([s1, s2, r1, r2, Float64(ndofs)], MPI.SUM, comm)
         maxs  = MPI.Allreduce([si, ri], MPI.MAX, comm)
         s1, s2, r1, r2 = sums[1], sums[2], sums[3], sums[4]
         si, ri = maxs[1], maxs[2]
@@ -127,12 +137,16 @@ function _sv_save_error(e, inputs, t)
     # element count from the mesh file name.
     m    = match(r"vortex_(\d+)x", string(get(inputs, :gmsh_filename, "")))
     nelx = m === nothing ? Int(get(inputs, :nelx, 0)) : parse(Int, m.captures[1])
+    # The unique unknowns of the doubly periodic square are exactly (nelx·N)²,
+    # so h = L/(nelx·N) ∝ 1/sqrt(#DOFs) exactly and the abscissa cannot move
+    # with the number of ranks. The counted value is the fallback.
+    ndofs = (nelx > 0 && nop > 0) ? (nelx*nop)^2 : e.ndofs
     try
         mkpath(SV_ERR_DIR)
         f = joinpath(SV_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _sv_tag(inputs), ".dat"))
         open(f, "w") do io
             println(io, "# smooth MHD vortex: ABSOLUTE velocity error against the exact solution")
-            println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", e.ndofs,
+            println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", ndofs,
                         " t=", t, " visc=", _sv_tag(inputs),
                         " norm=abs",            # absolute norms: see _sv_load_errors
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
@@ -271,9 +285,19 @@ function _sv_panel(sub, nops, fld, nm, tag)
     return pl
 end
 
-function _sv_plot(rows, OUTPUT_DIR, iout)
+# The orders to draw on their own, beside the all-orders figure:
+# JEXPRESSO_SV_PLOT_NOPS="1 3" gives the P1-vs-P3 comparison of the paper's
+# Fig. 1 in its own file, convergence_<visc>_nop1-3-it<n>.png.
+function _sv_plot_nops()
+    v = strip(get(ENV, "JEXPRESSO_SV_PLOT_NOPS", ""))
+    isempty(v) && return Int[]
+    return sort(unique(filter(!isnothing, tryparse.(Int, split(v, r"[,\s]+")))))
+end
+
+function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::String = "")
     for tag in unique(r.visc for r in rows)
         sub  = filter(r -> r.visc == tag, rows)
+        isempty(only) || (sub = filter(r -> r.nop in only, sub))
         nops = sort(unique(r.nop for r in sub))
         any(n -> count(r -> r.nop == n, sub) >= 2, nops) || continue
 
@@ -282,13 +306,24 @@ function _sv_plot(rows, OUTPUT_DIR, iout)
             pl = _sv_panel(sub, nops, fld, nm, tag)
             # one file per norm, for the paper
             plt1 = Plots.plot(pl; size = (900, 780), show = false)
-            _savefig_silent(plt1, string(OUTPUT_DIR, "/convergence_", tag, "_", fname, "-it", iout, ".png"))
+            _savefig_silent(plt1, string(OUTPUT_DIR, "/convergence_", tag, suffix, "_", fname, "-it", iout, ".png"))
             push!(panels, pl)
         end
         plt = Plots.plot(panels...; layout = (1, 3), size = (2400, 800),
                          left_margin = 16Plots.mm, bottom_margin = 14Plots.mm, show = false)
-        _savefig_silent(plt, string(OUTPUT_DIR, "/convergence_", tag, "-it", iout, ".png"))
+        _savefig_silent(plt, string(OUTPUT_DIR, "/convergence_", tag, suffix, "-it", iout, ".png"))
     end
+    return nothing
+end
+
+# Every figure a run writes: all the orders in the store, and — when
+# JEXPRESSO_SV_PLOT_NOPS asks for it — the chosen subset on its own axes.
+function _sv_plot_all(rows, OUTPUT_DIR, iout)
+    _sv_plot(rows, OUTPUT_DIR, iout)
+    sel = _sv_plot_nops()
+    length(sel) >= 1 || return nothing
+    _sv_plot(rows, OUTPUT_DIR, iout; only = sel,
+             suffix = string("_nop", join(sel, "-")))
     return nothing
 end
 
@@ -306,13 +341,16 @@ function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothi
     isfinite(t) && t > 0.0 || return nothing         # the error figure is a final-time product
     abs(t - Float64(get(inputs, :tend, t))) < 1.0e-8*max(1.0, abs(t)) || return nothing
 
+    # Collective: every rank must enter it (the norms are Allreduced).
     e = _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
     e === nothing && return nothing
-    _sv_save_error(e, inputs, t)
 
+    # One writer. The norms are identical on every rank after the reduction,
+    # so letting them all write the same file is a race, not redundancy.
     if MPI.Comm_rank(get_mpi_comm()) == 0
+        _sv_save_error(e, inputs, t)
         rows = _sv_load_errors(t)
-        isempty(rows) || (_sv_report(rows); _sv_plot(rows, OUTPUT_DIR, iout))
+        isempty(rows) || (_sv_report(rows); _sv_plot_all(rows, OUTPUT_DIR, iout))
     end
     return nothing
 end

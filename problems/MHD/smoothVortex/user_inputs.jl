@@ -21,6 +21,9 @@
 #   JEXPRESSO_SV_NOP    polynomial order                        (default 4)
 #   JEXPRESSO_SV_NELX   elements per side; picks the mesh file  (default 16)
 #   JEXPRESSO_SV_DT     time step, overrides the rule below
+#   JEXPRESSO_SV_SOLVER ck54 (default), vern9, vern7, dp8, ssprk54, tsit5 —
+#                       the time integrator; see the note by _sv_solver on why
+#                       a 4th-order one caps the measured rate at 4
 #   JEXPRESSO_SV_TEND   final time                              (default 1.0)
 #   JEXPRESSO_SV_CMIN   the DynSGS background floor :dsgs_Cmin  (default 0)
 #   JEXPRESSO_SV_CR     :dsgs_CR                                 (default 1)
@@ -70,11 +73,47 @@ function _sv_dt()
     return SV_DT_REF*64.0/max(1, _sv_nelx()*_sv_nop())
 end
 
+#---------------------------------------------------------------------------------
+# THE TIME ERROR IS PART OF A CONVERGENCE SWEEP, and on this case it is what
+# limits the measured rate. CarpenterKennedy2N54 is FOURTH order, and the rule
+# above takes Δt ∝ h, so the total error is
+#
+#       C_s h^{N+1} + C_t Δt^4 ∝ h^{N+1} + h^4,
+#
+# and no order above 3 can show its own rate: p saturates at 4 however fine
+# the mesh. Measured on the plain Galerkin runs (nop 4, 4/8/16 elements per
+# side): 5.47, then 4.12, then 3.64 as the second term takes over.
+#
+# Two ways out, both switchable here:
+#   JEXPRESSO_SV_DT=<fixed>      one Δt for the whole sweep (tools/
+#                                smooth_vortex_scan.sh sets it from the finest
+#                                run of the sweep), so the time error is a
+#                                CONSTANT and stops polluting the slope until
+#                                it dominates the finest point;
+#   JEXPRESSO_SV_SOLVER=vern9    an eighth/ninth-order integrator, so the time
+#                                error is below the spatial one at any Δt this
+#                                case can run.
+#
+# `vern9` (Vern9, 9th order) and `dp8` (DP8, 8th) are the two worth having;
+# `ck54` is the default low-storage CarpenterKennedy2N54, `ssprk54` the
+# strong-stability-preserving 5-stage 4th-order one the AdvDiff cases use.
+#---------------------------------------------------------------------------------
+function _sv_solver()
+    name = lowercase(strip(get(ENV, "JEXPRESSO_SV_SOLVER", "ck54")))
+    name == "vern9"   && return Vern9()
+    name == "vern7"   && return Vern7()
+    name == "dp8"     && return DP8()
+    name == "ssprk54" && return SSPRK54()
+    name == "tsit5"   && return Tsit5()
+    name == "ck54"    || @warn "smoothVortex: unknown JEXPRESSO_SV_SOLVER=$(name); using CarpenterKennedy2N54"
+    return CarpenterKennedy2N54()
+end
+
 _sv_mesh() = string("./problems/MHD/smoothVortex/vortex_", _sv_nelx(), "x", _sv_nelx(), ".msh")
 
 function user_inputs()
     inputs = Dict(
-        :ode_solver           => CarpenterKennedy2N54(),
+        :ode_solver           => _sv_solver(),
         :Δt                   => _sv_dt(),
         :tinit                => 0.0,
         :tend                 => _sv_tend(),

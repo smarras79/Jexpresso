@@ -176,6 +176,69 @@ JEXPRESSO_DSGS_DEBUG=1 JEXPRESSO_SV_NELX=16 \
 twelve, $\nu_{max}$, the cap, and each equation's normalized residual and
 denominator, with the node carrying the largest one.
 
+## The time error, and why a fourth-order integrator caps the rate at 4
+
+`CarpenterKennedy2N54` is **fourth order**, and the deck's default time step
+follows the resolution, $\Delta t \propto h$, so the measured error is
+
+$$
+C_s\,h^{N+1} \;+\; C_t\,\Delta t^4 \;\propto\; h^{N+1} + h^4 ,
+$$
+
+and no order above 3 can show its own rate — $p$ saturates at 4 however fine
+the mesh, on DynSGS and Galerkin alike. Measured on the plain Galerkin run at
+`:nop => 4` (4/8/16/32 elements per side): 5.47, then 4.12, then 3.64, as the
+second term takes over. That is the integrator, not the discretization.
+
+Two ways out, both switchable:
+
+| | |
+|---|---|
+| `JEXPRESSO_SV_DT=<fixed>` | one $\Delta t$ for the whole sweep, so the time error is a constant rather than something that shrinks at fourth order and pollutes the slope. `tools/smooth_vortex_mpi_scan.sh` sets it automatically from the finest (nelx, nop) of the sweep |
+| `JEXPRESSO_SV_SOLVER=vern9` | `Vern9` (9th order), `dp8` (8th), `vern7`, `ssprk54`, `tsit5`, or `ck54` for the default. With a ninth-order integrator the time error is below the spatial one at any step this case can run |
+
+Both are what `tools/smooth_vortex_mpi_scan.sh` uses by default, since its
+purpose is to measure the **spatial** order.
+
+## Comparing P1 and P3 directly, as in the paper
+
+Dao & Nazarov's Fig. 1 is a low-order comparison. Any subset of the orders in
+the store can be drawn on its own axes, either while running —
+
+```bash
+JEXPRESSO_SV_PLOT_NOPS="1 3" tools/smooth_vortex_mpi_scan.sh
+```
+
+which writes `convergence_<visc>_nop1-3-it<n>.png` beside the all-orders
+figure — or afterwards, from the stored errors alone, without running
+anything:
+
+```bash
+julia --project=. tools/smooth_vortex_plot.jl 1,3
+julia --project=. tools/smooth_vortex_plot.jl          # every order
+julia --project=. tools/smooth_vortex_plot.jl 1,3 --t=1.0 --out=figs
+```
+
+`tools/smooth_vortex_plot.jl` reads `errors/*.dat` and calls the case's own
+plotting code, so its figures are the same ones a run produces.
+
+## Running it on many cores
+
+```bash
+tools/smooth_vortex_mpi_scan.sh                          # 4 ranks per case
+SV_NP=8  SV_NELX="8 16 32 64" tools/smooth_vortex_mpi_scan.sh
+SV_NP=16 SV_JOBS=4 SV_NOPS="1 3" tools/smooth_vortex_mpi_scan.sh
+SV_NP=1  SV_JOBS=8 tools/smooth_vortex_mpi_scan.sh       # 8 serial cases at once
+```
+
+`SV_NP` is ranks per case — what a big grid needs, since one run must fit and
+finish — and `SV_JOBS` is how many (independent) cases run at the same time;
+their product is what you are asking the machine for. The norms are
+MPI-correct: each unknown is weighed once, by the rank that owns it
+(`mesh.gip2owner`, the map the DSS assembler uses), and the degree-of-freedom
+count on the abscissa is the exact $(n_{elx}N)^2$ of this periodic box, so a
+point does not move when the rank count changes.
+
 ## Why the background floor is off here
 
 `:dsgs_Cmin` defaults to **0** in this case, unlike the shock cases. The floor
