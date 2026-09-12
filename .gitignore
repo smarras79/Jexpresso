@@ -26,3 +26,6 @@ test/CI-runs/**/output/
 MESH_*.jld2
 problems/MHD/brioWu1d/curves/
 problems/MHD/smoothVortex/errors/
+
+# sweep logs written by tools/smooth_vortex_mpi_scan.sh
+logs/

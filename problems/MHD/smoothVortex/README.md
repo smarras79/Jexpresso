@@ -47,18 +47,43 @@ the header of `initialize.jl`.
 
 ## What the run produces
 
-At the final time each run measures the relative $L^1$, $L^2$ and $L^\infty$
-error of the **velocity** against the exact solution, using the mesh's own
-nodal quadrature weights (the lumped mass: $\omega_i\omega_j|J|$ summed over
-the elements at each node; they integrate the domain area to 14 digits), and
-stores it in `errors/nop<N>_nelx<M>_<visc>.dat`. The figure is then drawn
-from **every** error stored there:
+At the final time each run measures the **absolute** $L^1$, $L^2$ and
+$L^\infty$ error of the **velocity** against the exact solution,
+
+$$
+\int_\Omega |\mathbf u_h - \mathbf u|\,d\Omega, \qquad
+\Big(\int_\Omega |\mathbf u_h - \mathbf u|^2 d\Omega\Big)^{1/2}, \qquad
+\max_\Omega |\mathbf u_h - \mathbf u| ,
+$$
+
+as the paper's Fig. 1 plots them, using the mesh's own nodal quadrature
+weights (the lumped mass: $\omega_i\omega_j|J|$ summed over the elements at
+each node; they integrate the domain area to 14 digits), and stores it in
+`errors/nop<N>_nelx<M>_<visc>.dat` — with the relative norms in the header
+too, since they cost nothing and say how large the error is against the
+solution it is measured on. The figures are then drawn from **every** error
+stored there that carries the same final time (and the `norm=abs` marker, so a
+store written before the norms became absolute is never mixed in):
 
 | file | contents |
 |---|---|
-| `convergence_dsgs-it<n>.png` | the paper's Fig. 1 layout: error against $1/\sqrt{\#\mathrm{DOFs}}$ on log-log axes, one line per polynomial order, with slope guides, and the measured rate of each order in its legend |
-| `convergence_galerkin-it<n>.png` | the same for the plain Galerkin run (`JEXPRESSO_SV_VISC=none`), the second panel of their figure |
+| `convergence_dsgs-it<n>.png` | the paper's Fig. 1 layout: the three norms side by side against $1/\sqrt{\#\mathrm{DOFs}}$ on log-log axes, one line per polynomial order, with slope guides, and the measured rate $p$ of each order in its legend |
+| `convergence_dsgs_L1-it<n>.png`, `_L2`, `_Linf` | the same panels one per file, at publication size |
+| `convergence_galerkin-it<n>.png` and its three panels | the same for the plain Galerkin run (`JEXPRESSO_SV_VISC=none`), the second panel of their figure |
 | `<var>-it<n>.png` | the usual field panels |
+
+**$p$ in the legend** is the measured convergence rate: the slope of that
+order's last two points on the log-log axes,
+
+$$
+p = \frac{\log(e_{i-1}/e_i)}{\log(h_{i-1}/h_i)},\qquad h = 1/\sqrt{\#\mathrm{DOFs}},
+$$
+
+so it is the order in the mesh size $h$ between the two finest resolutions that
+order has run — the number the dashed slope guides are there to be compared
+against. It needs at least two resolutions per order; with one, the legend
+carries the order alone. The guides are the nominal rates of the lowest and
+highest orders on the figure, $\min(N)+1$ and $\max(N)+1$.
 
 So a sweep over orders and meshes builds the whole figure and each run
 replaces only its own point. **The scan clears the store before it starts**
@@ -77,9 +102,10 @@ field panels are still rendered.
 ## Running it
 
 ```bash
-tools/smooth_vortex_scan.sh                          # orders 4-7, meshes 4-32
+tools/smooth_vortex_scan.sh                          # orders 4-7, meshes 4-32,
+                                                     # DynSGS and Galerkin
 SV_NOPS="3 4" SV_NELX="8 16 32" tools/smooth_vortex_scan.sh
-SV_VISC="dsgs none" tools/smooth_vortex_scan.sh      # both panels of Fig. 1
+SV_VISC=dsgs tools/smooth_vortex_scan.sh             # only the DynSGS panel
 ```
 
 or one run at a time:
@@ -97,6 +123,9 @@ JEXPRESSO_SV_NOP=3 JEXPRESSO_SV_NELX=16 \
 | `JEXPRESSO_SV_TEND` | 1.0 | final time |
 | `JEXPRESSO_SV_CMIN` | 0 | the DynSGS background floor `:dsgs_Cmin` |
 | `JEXPRESSO_SV_VISC` | `dsgs` | `none` for the plain Galerkin run |
+| `JEXPRESSO_SV_CR`, `JEXPRESSO_SV_CMAX` | 1, 0.5 | `:dsgs_CR`, `:dsgs_Cmax`; both zero keeps the sensor and applies no viscosity |
+| `JEXPRESSO_SV_REL` | 1 | `:dsgs_rel`, the normalization floor; `1e-3` is what the kernels used before the fix |
+| `JEXPRESSO_SV_SENSOR` | `residual` | `legacy` for the assembled-rate sensor |
 
 The time step follows the resolution so that the Courant number is the same
 at every point of a sweep (about 0.05 against the fastest wave of this
@@ -146,6 +175,85 @@ JEXPRESSO_DSGS_DEBUG=1 JEXPRESSO_SV_NELX=16 \
 `JEXPRESSO_DSGS_DEBUG=1` prints, every 200 kernel calls and for the first
 twelve, $\nu_{max}$, the cap, and each equation's normalized residual and
 denominator, with the node carrying the largest one.
+
+## The time error, and why a fourth-order integrator caps the rate at 4
+
+`CarpenterKennedy2N54` is **fourth order**, and the deck's default time step
+follows the resolution, $\Delta t \propto h$, so the measured error is
+
+$$
+C_s\,h^{N+1} \;+\; C_t\,\Delta t^4 \;\propto\; h^{N+1} + h^4 ,
+$$
+
+and no order above 3 can show its own rate — $p$ saturates at 4 however fine
+the mesh, on DynSGS and Galerkin alike. Measured on the plain Galerkin run at
+`:nop => 4` (4/8/16/32 elements per side): 5.47, then 4.12, then 3.64, as the
+second term takes over. That is the integrator, not the discretization.
+
+Two ways out, both switchable:
+
+| | |
+|---|---|
+| `JEXPRESSO_SV_DT=<fixed>` | one $\Delta t$ for the whole sweep, so the time error is a constant rather than something that shrinks at fourth order and pollutes the slope. `tools/smooth_vortex_mpi_scan.sh` sets it automatically from the finest (nelx, nop) of the sweep |
+| `JEXPRESSO_SV_SOLVER=vern9` | `Vern9` (9th order), `dp8` (8th), `vern7`, `ssprk54`, `tsit5`, or `ck54` for the default. With a ninth-order integrator the time error is below the spatial one at any step this case can run |
+
+Both are what `tools/smooth_vortex_mpi_scan.sh` uses by default, since its
+purpose is to measure the **spatial** order.
+
+## Comparing P1 and P3 directly, as in the paper
+
+Dao & Nazarov's Fig. 1 is a low-order comparison. Any subset of the orders in
+the store can be drawn on its own axes, either while running —
+
+```bash
+JEXPRESSO_SV_PLOT_NOPS="1 3" tools/smooth_vortex_mpi_scan.sh
+```
+
+which writes `convergence_<visc>_nop1-3-it<n>.png` beside the all-orders
+figure — or afterwards, from the stored errors alone, without running
+anything:
+
+```bash
+julia --project=. tools/smooth_vortex_plot.jl 1,3
+julia --project=. tools/smooth_vortex_plot.jl          # every order
+julia --project=. tools/smooth_vortex_plot.jl 1,3 --t=1.0 --out=figs
+```
+
+`tools/smooth_vortex_plot.jl` reads `errors/*.dat` and calls the case's own
+plotting code, so its figures are the same ones a run produces.
+
+## Running it on many cores
+
+```bash
+tools/smooth_vortex_mpi_scan.sh                          # 4 ranks per case
+SV_NP=8  SV_NELX="8 16 32 64" tools/smooth_vortex_mpi_scan.sh
+SV_NP=16 SV_JOBS=4 SV_NOPS="1 3" tools/smooth_vortex_mpi_scan.sh
+SV_NP=1  SV_JOBS=8 tools/smooth_vortex_mpi_scan.sh       # 8 serial cases at once
+```
+
+On a SLURM cluster, `tools/smooth_vortex_slurm.sh` is the same sweep as a
+batch job — as written, orders 4 and 6 on 32² and 64² elements, both panels,
+16 ranks per case and 4 cases at a time:
+
+```bash
+sbatch tools/smooth_vortex_slurm.sh
+```
+
+`SV_NP × SV_JOBS` must equal `--ntasks` in its header, or the job steps queue
+behind each other (too few tasks) or leave cores idle (too many). Each case is
+one `srun --exclusive -n $SV_NP` step — `--exclusive` at *step* level is what
+keeps four concurrent steps off each other's cores — and the script does one
+serial warm-up case first so that four cases do not compile at once and
+contend for the depot's precompile locks. Jexpresso's MPI.jl must be built
+against the MPI the modules provide; `tools/check_mpi_setup.sh` checks that.
+
+`SV_NP` is ranks per case — what a big grid needs, since one run must fit and
+finish — and `SV_JOBS` is how many (independent) cases run at the same time;
+their product is what you are asking the machine for. The norms are
+MPI-correct: each unknown is weighed once, by the rank that owns it
+(`mesh.gip2owner`, the map the DSS assembler uses), and the degree-of-freedom
+count on the abscissa is the exact $(n_{elx}N)^2$ of this periodic box, so a
+point does not move when the rank count changes.
 
 ## Why the background floor is off here
 

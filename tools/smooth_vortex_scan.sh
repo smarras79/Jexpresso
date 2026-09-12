@@ -7,7 +7,12 @@
 #
 #   tools/smooth_vortex_scan.sh                    # orders 4-7, meshes 4-32
 #   SV_NOPS="3 4" SV_NELX="8 16 32" tools/smooth_vortex_scan.sh
-#   SV_VISC="dsgs none" tools/smooth_vortex_scan.sh    # both panels of Fig. 1
+#   SV_VISC=dsgs tools/smooth_vortex_scan.sh       # only the DynSGS panel
+#
+# BOTH panels of the paper's Fig. 1 are run by default: the DynSGS one and the
+# plain Galerkin one (SV_VISC="dsgs none"), since the point of the test is the
+# comparison — the residual viscosity must not cost the high-order solution its
+# accuracy where the solution is smooth.
 #
 # THE ERROR STORE IS CLEARED FIRST. Every run redraws the convergence figure
 # from every error in problems/MHD/smoothVortex/errors, so a leftover sweep
@@ -19,7 +24,7 @@ cd "$(dirname "$0")/.."
 
 NOPS=${SV_NOPS:-"4 5 6 7"}
 NELX=${SV_NELX:-"4 8 16 32"}
-VISCS=${SV_VISC:-"dsgs"}
+VISCS=${SV_VISC:-"dsgs none"}
 JULIA=/Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia
 
 [ "${SV_KEEP:-0}" = "1" ] || rm -rf problems/MHD/smoothVortex/errors
