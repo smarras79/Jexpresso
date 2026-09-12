@@ -73,7 +73,20 @@ function _ev_dt()
     return EV_DT_REF*64.0/max(1, _ev_nelx()*_ev_nop())
 end
 
-_ev_mesh() = string("./problems/MHD/smoothVortex/vortex_", _ev_nelx(), "x", _ev_nelx(), ".msh")
+# The BOX WIDTH. The vortex is a Gaussian, so on [-L/2, L/2]² the exact
+# solution is not periodic: the velocity perturbation at the middle of an
+# edge is (L/2)exp((1 - (L/2)²)/2)/2π with opposite sign on opposite edges,
+# so the initial condition jumps across the periodic seam by twice that —
+# 4.9e-06 on the L = 10 box of Balsara and of Dao & Nazarov. That jump is a
+# discontinuity in the DATA: it floors any accuracy study at ~1e-5, whatever
+# the order, and a 6th-order element reaches the floor sooner than a 4th.
+# L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
+# meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
+_ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 10.0)
+_ev_ltag() = (L = _ev_lbox(); L == 10.0 ? "" :
+                 string("L", L == round(L) ? string(Int(round(L))) : string(L), "_"))
+_ev_mesh() = string("./problems/MHD/smoothVortex/vortex_", _ev_ltag(),
+                       _ev_nelx(), "x", _ev_nelx(), ".msh")
 
 function user_inputs()
     inputs = Dict(

@@ -162,11 +162,15 @@ end
 # A compact, file-name-safe tag for the vortex strength: 5.0 -> "5", 2.5 -> "2.5".
 _ev_btag() = (b = _ev_beta(); b == round(b) ? string(Int(round(b))) : string(b))
 
-function _ev_save_error(e, inputs, t)
+function _ev_save_error(e, inputs, t, tnum = t)
     nop = Int(get(inputs, :nop, 0))
     # :nelx carries mod_inputs' placeholder for a gmsh case, so take the
     # element count from the mesh file name.
-    m    = match(r"vortex_(\d+)x", string(get(inputs, :gmsh_filename, "")))
+    # vortex_16x16.msh, and vortex_L20_16x16.msh for a box that is not the
+    # default one — the element count is the number before the "x", never the
+    # box tag (matching "L20_16x16" as nelx = 2 silently mislabels every
+    # record of a wide-box sweep, and with it the DOF count of the figure).
+    m    = match(r"vortex_(?:L[0-9.]+_)?(\d+)x", string(get(inputs, :gmsh_filename, "")))
     nelx = m === nothing ? Int(get(inputs, :nelx, 0)) : parse(Int, m.captures[1])
     # The unique unknowns of the doubly periodic square are exactly (nelx·N)²,
     # so h = L/(nelx·N) ∝ 1/sqrt(#DOFs) exactly and the abscissa cannot move
@@ -182,7 +186,7 @@ function _ev_save_error(e, inputs, t)
         _ev_atomic(f, tmp -> open(tmp, "w") do io
             println(io, "# isentropic (Shu) vortex: ABSOLUTE velocity error against the exact solution")
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", ndofs,
-                        " t=", t, " visc=", _ev_tag(inputs),
+                        " t=", t, " tnum=", tnum, " visc=", _ev_tag(inputs),
                         " norm=abs",            # absolute norms: see _ev_load_errors
                         " beta=", _ev_beta(),
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
@@ -241,19 +245,19 @@ function _ev_load_errors(t)
     return sort!(rows, by = r -> (r.visc, r.nop, r.ndofs))
 end
 
-_ev_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
-                   log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
-
 #---------------------------------------------------------------------------------
-# The figure, in the layout of Dao & Nazarov (2022), Fig. 1: the ABSOLUTE
-# velocity error against 1/sqrt(#DOFs) ∝ h on log-log axes, one line per
-# polynomial order, one panel per norm, one figure per stabilization (DynSGS /
-# plain Galerkin — their two panels). Written both as the three-panel figure
-# and as one file per norm, at publication sizes.
+# The figure, in the layout of the convergence figure of Dao & Nazarov (2022):
+# the ABSOLUTE velocity error against the NUMBER OF DEGREES OF FREEDOM on
+# log-log axes — that is their abscissa, and it is the honest one for
+# comparing orders, since it compares them at equal cost rather than at equal
+# h — with the residual-viscosity and the plain Galerkin solution of each
+# order ON THE SAME AXES (solid/filled vs dashed/hollow, one colour per
+# order), and reference slopes for the nominal rates. Written both as the
+# three-panel figure (one panel per norm) and as one file per norm, at
+# publication sizes.
 #
-# The slope guides bracket the orders on the figure: the steeper one is
-# max(nop) + 1, the nominal rate of the highest order present, and the
-# shallower one min(nop) + 1.
+# In two dimensions #DOFs ∝ h^(-2), so an O(h^(N+1)) method falls as
+# #DOFs^(-(N+1)/2); the guides carry that slope and are labelled O(h^(N+1)).
 #---------------------------------------------------------------------------------
 const EV_FS_TITLE  = 22
 const EV_FS_GUIDE  = 20
@@ -262,75 +266,96 @@ const EV_FS_LEGEND = 15
 const EV_LW        = 2.8
 const EV_MS        = 9
 
-function _ev_panel(sub, nops, fld, nm, tag)
+# The measured order of accuracy from the last two points. The abscissa is
+# the DOF COUNT, and in two dimensions h ∝ #DOFs^(-1/2), so an error ∝ h^p
+# falls as #DOFs^(-p/2): the order is minus twice the log-log slope.
+_ev_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
+                   -2.0*log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
+
+_ev_visc_label(tag) = tag == "dsgs" ? "RV" : "Galerkin"
+
+function _ev_panel(sub, nops, fld, nm)
     # The final time the errors were measured at, and the step they were taken
     # with, belong ON the figure: a sweep cut short for a pipeline check
-    # (SV_TEND=0.05) produces a perfectly plausible-looking set of flat lines,
-    # and nothing in the picture would otherwise say so.
+    # produces a perfectly plausible-looking set of flat lines, and nothing in
+    # the picture would otherwise say so.
     tt  = isempty(sub) ? NaN : sub[1].t
     dts = unique(r.dt for r in sub)
     stamp = string(",\\ t = ", isfinite(tt) ? tt : "?",
                    length(dts) == 1 && isfinite(dts[1]) ? string(",\\ \\Delta t = ", dts[1]) : "")
     allx = Float64[]; ally = Float64[]
     pl = Plots.plot(; xscale = :log10, yscale = :log10,
-                    xlabel = LaTeXStrings.L"1/\sqrt{\#\mathrm{DOFs}}",
+                    xlabel = LaTeXStrings.L"\#\mathrm{DOFs}",
                     ylabel = LaTeXStrings.latexstring(string(
                         "\\|\\mathbf{u}_h-\\mathbf{u}_{exact}\\|_{", nm, "}")),
                     framestyle = :box, grid = true, gridalpha = 0.25,
-                    legend = :bottomright, legendfontsize = EV_FS_LEGEND,
+                    legend = :bottomleft, legendfontsize = EV_FS_LEGEND,
                     titlefontsize = EV_FS_TITLE, guidefontsize = EV_FS_GUIDE,
                     tickfontsize = EV_FS_TICK,
-                    left_margin = 12Plots.mm, bottom_margin = 10Plots.mm,
+                    left_margin = 14Plots.mm, bottom_margin = 10Plots.mm,
                     top_margin = 4Plots.mm, right_margin = 6Plots.mm,
-                    title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error},\\ \\mathrm{",
-                             tag == "dsgs" ? "RV\\ (DynSGS)" : "Galerkin", "}", stamp)),
+                    title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error}", stamp)),
                     show = false)
-    for nop in nops
-        g  = sort(filter(r -> r.nop == nop, sub), by = r -> r.ndofs)
-        xs = [1.0/sqrt(r.ndofs) for r in g]
+
+    # One colour per order, the stabilization in the line style: RV solid with
+    # a filled marker, plain Galerkin dashed with a hollow one — the two are
+    # compared ON THE SAME AXES, as in the paper's convergence figure, because
+    # the question the figure answers is whether the viscosity costs accuracy.
+    for nop in nops, tag in ("dsgs", "galerkin")
+        g = sort(filter(r -> r.nop == nop && r.visc == tag, sub), by = r -> r.ndofs)
+        isempty(g) && continue
+        xs = [Float64(r.ndofs) for r in g]
         ys = [getfield(r, fld) for r in g]
         keep = isfinite.(ys) .& (ys .> 0)
         any(keep) || continue
         xs = xs[keep]; ys = ys[keep]
         append!(allx, xs); append!(ally, ys)
         col, mk = _ev_style(nop)
-        p = _ev_rate(xs, ys)
-        lab = isfinite(p) ?
-              LaTeXStrings.latexstring(string("\\mathrm{nop}\\ ", nop, "\\ (p=", round(p; digits = 2), ")")) :
-              LaTeXStrings.latexstring(string("\\mathrm{nop}\\ ", nop))
-        Plots.plot!(pl, xs, ys; line = (col, EV_LW, :solid), marker = (mk, EV_MS),
-                    markerstrokewidth = 1.0, color = col, label = lab)
+        p   = _ev_rate(xs, ys)
+        lab = LaTeXStrings.latexstring(string("\\mathbb{P}_", nop, "\\ \\mathrm{",
+                  _ev_visc_label(tag), "}", isfinite(p) ? string("\\ (p=", round(p; digits = 2), ")") : ""))
+        Plots.plot!(pl, xs, ys;
+                    line = (col, EV_LW, tag == "dsgs" ? :solid : :dash),
+                    marker = (mk, EV_MS), markerstrokecolor = col, markerstrokewidth = 1.6,
+                    markercolor = tag == "dsgs" ? col : :white,
+                    color = col, label = lab)
     end
-    # Slope guides: the nominal rates of the lowest and the highest order on
-    # the figure, N+1. Each is drawn ALONGSIDE the curve it annotates — over a
-    # 6x span of h a slope-7 line covers five decades, so a guide anchored at
-    # the corner of the axes leaves the panel at once — and the axes are then
-    # clipped to the data.
+
+    # Reference slopes, one per order on the figure: an error ∝ h^(N+1) falls
+    # as #DOFs^(-(N+1)/2). Each is drawn alongside the curve it annotates and
+    # labelled by the ORDER it stands for, not by the log-log slope.
     if !isempty(allx)
         x1 = minimum(allx); x2 = maximum(allx)
         ymax = maximum(ally); ymin = minimum(ally)
-        for (sl, nop, shift, col) in ((minimum(nops) + 1, minimum(nops), 3.0,   :gray40),
-                                      (maximum(nops) + 1, maximum(nops), 1/4.0, :gray55))
-            g = sort(filter(r -> r.nop == nop, sub), by = r -> r.ndofs)
+        for (nop, shift, col) in ((minimum(nops), 1/3.0, :gray40),
+                                  (maximum(nops), 3.0,   :gray55))
+            g  = sort(filter(r -> r.nop == nop, sub), by = r -> r.ndofs)
             ys = [getfield(r, fld) for r in g]
-            xs = [1.0/sqrt(r.ndofs) for r in g]
+            xs = [Float64(r.ndofs) for r in g]
             keep = isfinite.(ys) .& (ys .> 0)
             any(keep) || continue
             xs = xs[keep]; ys = ys[keep]
-            # anchor at the geometric middle of that order's own curve
             xm = exp(sum(log, xs)/length(xs)); ym = shift*exp(sum(log, ys)/length(ys))
+            sl = -(nop + 1)/2
             Plots.plot!(pl, [x1, x2], [ym*(xi/xm)^sl for xi in (x1, x2)];
-                        line = (col, 2.0, :dash),
-                        label = LaTeXStrings.latexstring(string("\\mathrm{slope}\\ ", sl)))
+                        line = (col, 2.0, :dashdot),
+                        label = LaTeXStrings.latexstring(string("\\mathcal{O}(h^{", nop + 1, "})")))
         end
-        # Ticks at the resolutions actually run, thinned to four: 10^-1.8 says
-        # nothing, and one label per (order, mesh) pair overlaps.
-        xu = sort(unique(allx))
-        idx = length(xu) <= 4 ? eachindex(xu) :
-              unique(round.(Int, range(1, length(xu); length = 4)))
-        xt  = xu[idx]
-        Plots.plot!(pl; xlims = (0.85*x1, 1.18*x2), ylims = (0.25*ymin, 4.0*ymax),
-                    xticks = (xt, [LaTeXStrings.latexstring(@sprintf("%.3g", x)) for x in xt]))
+
+        # Decades on the error axis, and the resolutions actually run on the
+        # DOF axis: 10^{-4.5} is not a number anyone reports.
+        lo = floor(Int, log10(ymin)); hi = ceil(Int, log10(ymax))
+        decs = collect(lo:hi)
+        stp  = max(1, cld(length(decs), 7))
+        yt   = [10.0^e for e in decs[1:stp:end]]
+        xu   = sort(unique(allx))
+        idx  = length(xu) <= 4 ? eachindex(xu) :
+               unique(round.(Int, range(1, length(xu); length = 4)))
+        xt   = xu[idx]
+        Plots.plot!(pl; xlims = (0.75*x1, 1.35*x2), ylims = (0.2*ymin, 5.0*ymax),
+                    xticks = (xt, [LaTeXStrings.latexstring(@sprintf("%d", round(Int, x))) for x in xt]),
+                    yticks = (yt, [LaTeXStrings.latexstring(string("10^{", e, "}"))
+                                   for e in decs[1:stp:end]]))
     end
     return pl
 end
@@ -345,24 +370,22 @@ function _ev_plot_nops()
 end
 
 function _ev_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::String = "")
-    for tag in unique(r.visc for r in rows)
-        sub  = filter(r -> r.visc == tag, rows)
-        isempty(only) || (sub = filter(r -> r.nop in only, sub))
-        nops = sort(unique(r.nop for r in sub))
-        any(n -> count(r -> r.nop == n, sub) >= 2, nops) || continue
+    sub = isempty(only) ? rows : filter(r -> r.nop in only, rows)
+    nops = sort(unique(r.nop for r in sub))
+    any(n -> count(r -> r.nop == n && r.visc == v, sub) >= 2
+             for n in nops, v in ("dsgs", "galerkin")) || return nothing
 
-        panels = Plots.Plot[]
-        for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
-            pl = _ev_panel(sub, nops, fld, nm, tag)
-            # one file per norm, for the paper
-            plt1 = Plots.plot(pl; size = (900, 780), show = false)
-            _ev_savefig(plt1, string(OUTPUT_DIR, "/convergence_", tag, suffix, "_", fname, "-it", iout, ".png"))
-            push!(panels, pl)
-        end
-        plt = Plots.plot(panels...; layout = (1, 3), size = (2400, 800),
-                         left_margin = 16Plots.mm, bottom_margin = 14Plots.mm, show = false)
-        _ev_savefig(plt, string(OUTPUT_DIR, "/convergence_", tag, suffix, "-it", iout, ".png"))
+    panels = Plots.Plot[]
+    for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
+        pl = _ev_panel(sub, nops, fld, nm)
+        # one file per norm, for the paper
+        plt1 = Plots.plot(pl; size = (900, 780), show = false)
+        _ev_savefig(plt1, string(OUTPUT_DIR, "/convergence", suffix, "_", fname, "-it", iout, ".png"))
+        push!(panels, pl)
     end
+    plt = Plots.plot(panels...; layout = (1, 3), size = (2400, 800),
+                     left_margin = 18Plots.mm, bottom_margin = 14Plots.mm, show = false)
+    _ev_savefig(plt, string(OUTPUT_DIR, "/convergence", suffix, "-it", iout, ".png"))
     return nothing
 end
 
@@ -389,7 +412,17 @@ end
 
 function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothing)
     isfinite(t) && t > 0.0 || return nothing         # the error figure is a final-time product
-    abs(t - Float64(get(inputs, :tend, t))) < 1.0e-8*max(1.0, abs(t)) || return nothing
+    # The time the run was ASKED for, and the time it actually stopped at.
+    # They are not always the same instant: a Δt that does not divide tend
+    # leaves the solution a fraction of a step away from it. The exact
+    # solution must be placed at the time the numerical one is AT (tnum) —
+    # this vortex moves, so |v₀|·(tnum − tend) is an error that refinement
+    # never removes — while the STORE is keyed by the time that was asked
+    # for (tnom), which is the same for every mesh and order of a sweep and
+    # is what groups them onto one curve.
+    tnom = Float64(get(inputs, :tend, t))
+    Δt   = abs(Float64(get(inputs, :Δt, 0.0)))
+    abs(t - tnom) <= max(1.0e-8*max(1.0, abs(t)), 0.51*Δt) || return nothing
 
     # Collective: every rank must enter it (the norms are Allreduced).
     e = _ev_velocity_error(mesh, q, t, outvar, inputs, Minv)
@@ -398,8 +431,8 @@ function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothi
     # One writer. The norms are identical on every rank after the reduction,
     # so letting them all write the same file is a race, not redundancy.
     if MPI.Comm_rank(get_mpi_comm()) == 0
-        _ev_save_error(e, inputs, t)
-        rows = _ev_load_errors(t)
+        _ev_save_error(e, inputs, tnom, t)
+        rows = _ev_load_errors(tnom)
         isempty(rows) || (_ev_report(rows); _ev_plot_all(rows, OUTPUT_DIR, iout))
     end
     return nothing

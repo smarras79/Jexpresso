@@ -1,5 +1,0 @@
-# isentropic (Shu) vortex: ABSOLUTE velocity error against the exact solution
-# nop=4 nelx=8 ndofs=1024 t=1.0 visc=dsgs norm=abs beta=1.0 Cmin=0.0 rel=1.0 dt=0.001
-# relative, for reference: L1=7.869998172866966e-5 L2=0.0001620529006381623 Linf=0.0012375155065432093
-# L1 L2 Linf
-0.011132869248086171 0.002293013140508459 0.0019411742912723994

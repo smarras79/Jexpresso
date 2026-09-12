@@ -452,7 +452,7 @@ function _isolines(xg, yg, z, levels)
     return xs, ys
 end
 
-function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing, Minv=nothing)
+function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs; iout=1, nvar=1, varnames=nothing, μ_nodes=nothing, μ_names=nothing, Minv=nothing, t=nothing)
 
     """
         Plot arbitrarily gridded unstructured 2D nodal data as filled
@@ -520,7 +520,17 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     if get(inputs, :_has_user_plot, false) && get(inputs, :plot_user, true) &&
         isdefined(@__MODULE__, :user_plot_2d)
         try
-            t_ = something(tryparse(Float64, replace(split(title, "=")[end], r"[^0-9eE.+-]" => "")), NaN)
+            # The TIME ITSELF, not the time read back out of the figure's
+            # label: the label is written with @sprintf("t = %.4f"), so
+            # parsing it back rounds the time to 1e-4. A case that measures
+            # its error against an exact solution that MOVES — the advected
+            # smooth vortex — then places that solution at the wrong instant,
+            # and |v₀|·δt is an additive error that no refinement removes:
+            # a convergence study floors out at ~1e-5 for every order and
+            # every mesh. `t` is passed down from write_output; the parsed
+            # label is only the fallback for a caller that has none.
+            t_ = t !== nothing ? Float64(t) :
+                 something(tryparse(Float64, replace(split(title, "=")[end], r"[^0-9eE.+-]" => "")), NaN)
             user_plot_2d(mesh, q, t_, varnames, inputs, OUTPUT_DIR, iout; Minv = Minv)
         catch err
             @warn "user_plot_2d failed; continuing with the generic panels." exception=err

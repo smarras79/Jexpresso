@@ -240,7 +240,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
         plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
                            iout=iout, nvar=nplot, varnames=plotnames,
-                           μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv)
+                           μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv, t=t)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/<var>-it", iout, ".png at t=", t, " s... DONE"); msg_rank = rank)

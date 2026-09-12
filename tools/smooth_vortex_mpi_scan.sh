@@ -69,6 +69,12 @@ TEND=${SV_TEND:-1.0}
 JULIA=${JULIA:-julia}
 MPIEXEC=${MPIEXEC:-mpiexec}
 PLOT_NOPS=${SV_PLOT_NOPS:-}
+# The box width. 10 is the box of Balsara and of Dao & Nazarov, and its
+# non-periodic vortex tail floors any error study at ~1e-5 (see the header of
+# tools/smooth_vortex_mesh.sh); SV_L=20 puts that floor at machine zero.
+LBOX=${SV_L:-10}
+LTAG=""
+[ "$(printf '%s' "$LBOX" | sed 's/\.0*$//')" = "10" ] || LTAG="L$(printf '%s' "$LBOX" | sed 's/\.0*$//')_"
 
 # One Δt for the sweep: the deck's rule at the finest (nelx, nop) of it.
 # 2.0e-3 * 64 / (nelx*nop) is that rule; keep the two in step.
@@ -82,11 +88,11 @@ fi
 
 [ "${SV_KEEP:-0}" = "1" ] || rm -rf "problems/$CASE/errors"
 
-SV_NELX="$NELX" tools/smooth_vortex_mesh.sh || true
+SV_NELX="$NELX" SV_L="$LBOX" tools/smooth_vortex_mesh.sh || true
 for M in $NELX; do
-    [ -f "problems/MHD/smoothVortex/vortex_${M}x${M}.msh" ] || {
-        echo "MISSING problems/MHD/smoothVortex/vortex_${M}x${M}.msh — generate it with"
-        echo "    SV_NELX=\"$NELX\" tools/smooth_vortex_mesh.sh   (needs gmsh)"
+    [ -f "problems/MHD/smoothVortex/vortex_${LTAG}${M}x${M}.msh" ] || {
+        echo "MISSING problems/MHD/smoothVortex/vortex_${LTAG}${M}x${M}.msh — generate it with"
+        echo "    SV_NELX=\"$NELX\" SV_L=$LBOX tools/smooth_vortex_mesh.sh   (needs gmsh)"
         exit 1
     }
 done
@@ -106,7 +112,7 @@ if [ "$NP" -gt 1 ] && [ "${SV_SKIP_LAUNCHER_CHECK:-0}" != "1" ]; then
     fi
 fi
 
-echo "=== $CASE: nops [$NOPS] x nelx [$NELX] x [$VISCS]"
+echo "=== $CASE: nops [$NOPS] x nelx [$NELX] x [$VISCS] on the [-$(awk -v l="$LBOX" 'BEGIN{printf "%g", l/2}'), $(awk -v l="$LBOX" 'BEGIN{printf "%g", l/2}')]^2 box"
 echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $DT, solver $SOLVER, tend $TEND"
 
 run_one() {   # $1 visc  $2 nop  $3 nelx
@@ -118,6 +124,7 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
     if [ "${DRYRUN:-0}" = "1" ]; then echo "    (dry run)"; return 0; fi
     env JEXPRESSO_${PFX}_NOP="$2" JEXPRESSO_${PFX}_NELX="$3" JEXPRESSO_${PFX}_VISC="$1" \
         JEXPRESSO_${PFX}_DT="$DT" JEXPRESSO_${PFX}_SOLVER="$SOLVER" JEXPRESSO_${PFX}_TEND="$TEND" \
+        JEXPRESSO_${PFX}_L="$LBOX" \
         ${PLOT_NOPS:+JEXPRESSO_${PFX}_PLOT_NOPS="$PLOT_NOPS"} \
         $launcher "$JULIA" --project=. src/Jexpresso.jl "$EQNS" "$CNAME" \
         > "$log" 2>&1
