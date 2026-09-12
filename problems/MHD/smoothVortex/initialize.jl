@@ -114,12 +114,25 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     c_h_mhd[] = MPI.Allreduce(ch_local, MPI.MAX, comm)
 
     if rank == 0
-        if abs(Lx - 10.0) > 1.0e-8 || abs(Ly - 10.0) > 1.0e-8
-            @warn string(" problems/MHD/smoothVortex: the vortex is written for the ",
-                         "[-5,5]² box of Balsara (2004), but this mesh spans ",
-                         "[$(mesh.xmin), $(mesh.xmax)] × [$(mesh.ymin), $(mesh.ymax)]. ",
-                         "Point :gmsh_filename at one of the meshes of this case, or ",
-                         "generate one with tools/smooth_vortex_mesh.sh.")
+        # What box this run is on, and what it costs. The vortex is a
+        # Gaussian, so on [-L/2, L/2]² the exact solution is NOT periodic:
+        # its velocity perturbation at the middle of an edge is
+        # (SV_KAPPA/2π)(L/2)exp((1 − (L/2)²)/2), and it has the opposite sign on
+        # the opposite edge, so the initial condition jumps across the
+        # periodic seam by twice that. That jump is a discontinuity in the
+        # DATA, so it floors the error of every scheme, at every order, at
+        # about its own size — 4.9e-06 on the L = 10 box of the published
+        # figure, where a 6th-order element reaches the floor sooner than a
+        # 4th and the convergence history flattens. Say so, with the number,
+        # rather than leave it to be rediscovered from a flat curve.
+        tail = (SV_KAPPA/(2.0*π))*(0.5*Lx)*exp(0.5*(1.0 - (0.5*Lx)^2))
+        hint = 2.0*tail > 1.0e-12 ?
+               "\n   which is the floor of any error study on this mesh, at every order (widen the box with JEXPRESSO_SV_L=20)" :
+               "\n   which is below round-off, so the error study is limited by the scheme and not by the box"
+        @info string(@sprintf(" box [%.3f, %.3f] x [%.3f, %.3f]: the periodic-seam jump of the exact solution is %.2e",
+                              mesh.xmin, mesh.xmax, mesh.ymin, mesh.ymax, 2.0*tail), hint)
+        if abs(Lx - Ly) > 1.0e-8
+            @warn " problems/MHD/smoothVortex: the box is not square; the vortex is written for a square one."
         end
         @info " GLM divergence-cleaning speed c_h = $(c_h_mhd[])"
         @info " Initialize fields for 2D ideal GLM-MHD (smooth vortex) ........... DONE"

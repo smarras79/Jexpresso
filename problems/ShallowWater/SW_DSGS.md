@@ -85,7 +85,7 @@ where
 
 Each residual is divided by a scale of its variable. The scales are taken on
 the **departure from the lake at rest**, $\delta\mathbf q = \mathbf q - \mathbf q_e$,
-over the rank's part of the basin (`:dsgs_norms => "rank"`, the default: no
+over the whole basin (`:dsgs_norms => "domain"`, the default; `"rank"` is no
 MPI reduction; `"domain"` reduces them over the ranks, the same numbers on
 one rank):
 
@@ -153,7 +153,7 @@ with `:outformat => "vtk"`.
 :dsgs_CR       => 1.0,
 :dsgs_Cmax     => 0.5,
 :dsgs_Cmin     => 0.05,
-:dsgs_norms    => "rank",            # scales over this rank's elements (default); "domain": the whole basin
+:dsgs_norms    => "domain",          # scales over the whole basin (default); "rank": this rank's elements only
 :dsgs_sensor   => "residual",        # element-wise residual (the legacy sensor is also available)
 :ldsgs_nodal   => false,             # element form; true = nodal form, with :dsgs_Cl
 :dsgs_swe_g    => 9.81,              # g of the wave speed  (= _G_SWE of user_flux.jl)

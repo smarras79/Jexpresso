@@ -1,20 +1,23 @@
 #---------------------------------------------------------------------------------
-# Convergence history of the smooth MHD vortex, in the layout of
-# Dao & Nazarov, J. Sci. Comput. 92:77 (2022), Fig. 1: the ABSOLUTE error of
-# the velocity against the EXACT solution — ∫|u_h − u|dΩ, sqrt(∫|u_h − u|²dΩ),
-# max|u_h − u| — against 1/sqrt(#DOFs) on log-log axes, one line per
-# polynomial order, with slope guides at min(nop)+1 and max(nop)+1.
+# Convergence history of the isentropic (Shu) vortex, in the layout of
+# Dao & Nazarov, J. Sci. Comput. 92:77 (2022), Fig. 1 — the same figure and
+# the same machinery as problems/MHD/smoothVortex, so that the two can be put
+# side by side. The ABSOLUTE error of the velocity against the EXACT solution
+# — ∫|u_h − u|dΩ, sqrt(∫|u_h − u|²dΩ), max|u_h − u| — against 1/sqrt(#DOFs) on
+# log-log axes, one line per polynomial order, with slope guides at
+# min(nop)+1 and max(nop)+1.
 #
 # At the final time every run stores its error in
-# `errors/nop<N>_nelx<M>_<visc>.dat` in this case directory, and the figure is
+# `errors/nop<N>_nelx<M>_b<beta>_<visc>.dat` in this case directory, and the figure is
 # drawn from EVERY error stored there — so a sweep over orders and meshes
 # builds the whole figure and each run replaces only its own point:
 #
-#     tools/smooth_vortex_mesh.sh     # the meshes, once
-#     tools/smooth_vortex_scan.sh     # the sweep
+#     tools/smooth_vortex_mesh.sh                          # the meshes, once
+#     SV_CASE=CompEuler/smoothVortex tools/smooth_vortex_mpi_scan.sh
 #
-# `rm -r problems/MHD/smoothVortex/errors` starts a fresh comparison. Only
-# errors from the same final time are drawn together.
+# `rm -r problems/CompEuler/smoothVortex/errors` starts a fresh comparison.
+# Only errors from the same final time AND the same vortex strength β are
+# drawn together.
 #
 # The hook is src/io/plotting/jeplots.jl (plot_triangulation, NSD_2D):
 #   mesh     this rank's mesh (coordinates, connectivity, extents)
@@ -23,7 +26,7 @@
 #   Minv     the solver's assembled inverse lumped mass — the quadrature
 #            weights the norms below are taken with
 #---------------------------------------------------------------------------------
-const SV_ERR_DIR = joinpath(@__DIR__, "errors")
+const EV_ERR_DIR = joinpath(@__DIR__, "errors")
 
 # ATOMIC WRITES. A sweep runs several cases at the same time (SV_JOBS in
 # tools/smooth_vortex_mpi_scan.sh), every one of them redraws the same figures
@@ -32,7 +35,7 @@ const SV_ERR_DIR = joinpath(@__DIR__, "errors")
 # is atomic, so a reader sees either the old file or the new one, never half
 # of each. The same for the stored error, which the other cases are reading
 # while it is being written.
-function _sv_atomic(path::AbstractString, write!::Function)
+function _ev_atomic(path::AbstractString, write!::Function)
     mkpath(dirname(path))
     # keep the extension: Plots picks the format from it
     base, ext = splitext(path)
@@ -47,11 +50,11 @@ function _sv_atomic(path::AbstractString, write!::Function)
     return nothing
 end
 
-_sv_savefig(plt, path) = _sv_atomic(path, f -> _savefig_silent(plt, f))
+_ev_savefig(plt, path) = _ev_atomic(path, f -> _savefig_silent(plt, f))
 
 # One (colour, marker) per order, fixed so an order looks the same from one
 # figure to the next.
-const SV_STYLE = Dict(
+const EV_STYLE = Dict(
     1 => (:darkorange, :dtriangle),
     2 => (:goldenrod, :utriangle),
     3 => (:purple,    :rect),
@@ -60,9 +63,9 @@ const SV_STYLE = Dict(
     6 => (:crimson,   :star5),
     7 => (:black,     :xcross),
 )
-_sv_style(nop) = get(SV_STYLE, nop, (:gray, :cross))
+_ev_style(nop) = get(EV_STYLE, nop, (:gray, :cross))
 
-_sv_tag(inputs) = (get(inputs, :lvisc, true) ? "dsgs" : "galerkin")
+_ev_tag(inputs) = (get(inputs, :lvisc, true) ? "dsgs" : "galerkin")
 
 #---------------------------------------------------------------------------------
 # Error of the velocity (u, v) against the exact solution: the vortex of
@@ -70,14 +73,15 @@ _sv_tag(inputs) = (get(inputs, :lvisc, true) ? "dsgs" : "galerkin")
 # taken with the nodal quadrature weights of the mesh, which for LGL nodes is
 # the mass-matrix lumping the solver itself uses.
 #---------------------------------------------------------------------------------
-function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
+function _ev_velocity_error(mesh, q, t, outvar, inputs, Minv)
     names = string.(outvar)
     iu = findfirst(==("u"), names)
     iv = findfirst(==("v"), names)
     (iu === nothing || iv === nothing) && return nothing
     npoin = mesh.npoin
 
-    γ  = γ_mhd
+    γ  = PhysicalConst{Float64}().γ
+    β  = _ev_beta()
     Lx = mesh.xmax - mesh.xmin
     Ly = mesh.ymax - mesh.ymin
 
@@ -87,7 +91,7 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
     # the norms below are the solver's own integrals and not a rule invented
     # here. On this mesh they sum to the domain area to 14 digits.
     (Minv !== nothing && length(Minv) >= npoin) ||
-        error("smoothVortex: the error norms need the solver's lumped mass (Minv) from the plotting hook")
+        error("CompEuler/smoothVortex: the error norms need the solver's lumped mass (Minv) from the plotting hook")
     # One weight per DEGREE OF FREEDOM. On a doubly periodic mesh two local
     # nodes can be the same unknown — the right column of the box is the left
     # one — and they carry the same assembled mass, so summing over all npoin
@@ -116,9 +120,9 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
     s1 = 0.0; s2 = 0.0; si = 0.0
     r1 = 0.0; r2 = 0.0; ri = 0.0
     for ip = 1:npoin
-        xr = sv_wrap(mesh.x[ip] - SV_XC - SV_U0*t, Lx)
-        yr = sv_wrap(mesh.y[ip] - SV_YC - SV_V0*t, Ly)
-        se = sv_state(xr, yr, γ)
+        xr = ev_wrap(mesh.x[ip] - EV_XC - EV_U0*t, Lx)
+        yr = ev_wrap(mesh.y[ip] - EV_YC - EV_V0*t, Ly)
+        se = ev_state(xr, yr, γ, β)
         ue = se[2]/se[1]; ve = se[3]/se[1]
         uh = q[(iu - 1)*npoin + ip]
         vh = q[(iv - 1)*npoin + ip]
@@ -130,8 +134,8 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
 
     # The weights must integrate the domain: a cheap check that the lumped
     # mass handed down is this rank's and complete.
-    if get(ENV, "JEXPRESSO_SV_DEBUG", "") == "1"
-        @info "smoothVortex quadrature check" sum_w = sum(w) area = Lx*Ly npoin = npoin nunique = length(seen)
+    if get(ENV, "JEXPRESSO_EV_DEBUG", "") == "1"
+        @info "CompEuler/smoothVortex quadrature check" sum_w = sum(w) area = Lx*Ly npoin = npoin nunique = length(seen)
     end
     comm = get_mpi_comm()
     ndofs = length(seen)
@@ -155,7 +159,10 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
             rinf = si/max(ri, eps()))
 end
 
-function _sv_save_error(e, inputs, t, tnum = t)
+# A compact, file-name-safe tag for the vortex strength: 5.0 -> "5", 2.5 -> "2.5".
+_ev_btag() = (b = _ev_beta(); b == round(b) ? string(Int(round(b))) : string(b))
+
+function _ev_save_error(e, inputs, t, tnum = t)
     nop = Int(get(inputs, :nop, 0))
     # :nelx carries mod_inputs' placeholder for a gmsh case, so take the
     # element count from the mesh file name.
@@ -170,13 +177,18 @@ function _sv_save_error(e, inputs, t, tnum = t)
     # with the number of ranks. The counted value is the fallback.
     ndofs = (nelx > 0 && nop > 0) ? (nelx*nop)^2 : e.ndofs
     try
-        mkpath(SV_ERR_DIR)
-        f = joinpath(SV_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _sv_tag(inputs), ".dat"))
-        _sv_atomic(f, tmp -> open(tmp, "w") do io
-            println(io, "# smooth MHD vortex: ABSOLUTE velocity error against the exact solution")
+        mkpath(EV_ERR_DIR)
+        # β is part of the identity of the record: the β = 5 classical vortex
+        # and the β = 1 vortex matched to the MHD case are different solutions
+        # and must not overwrite one another, nor share a curve.
+        f = joinpath(EV_ERR_DIR, string("nop", nop, "_nelx", nelx,
+                                        "_b", _ev_btag(), "_", _ev_tag(inputs), ".dat"))
+        _ev_atomic(f, tmp -> open(tmp, "w") do io
+            println(io, "# isentropic (Shu) vortex: ABSOLUTE velocity error against the exact solution")
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", ndofs,
-                        " t=", t, " tnum=", tnum, " visc=", _sv_tag(inputs),
-                        " norm=abs",            # absolute norms: see _sv_load_errors
+                        " t=", t, " tnum=", tnum, " visc=", _ev_tag(inputs),
+                        " norm=abs",            # absolute norms: see _ev_load_errors
+                        " beta=", _ev_beta(),
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
                         " dt=", Float64(get(inputs, :Δt, 0.0)))
@@ -185,19 +197,19 @@ function _sv_save_error(e, inputs, t, tnum = t)
             println(io, e.l1, " ", e.l2, " ", e.linf)
         end)
     catch err
-        @warn "smoothVortex: could not store the error" exception=err
+        @warn "CompEuler/smoothVortex: could not store the error" exception=err
     end
     return nothing
 end
 
-function _sv_load_errors(t)
+function _ev_load_errors(t)
     rows = NamedTuple[]
-    isdir(SV_ERR_DIR) || return rows
-    for fname in readdir(SV_ERR_DIR)
+    isdir(EV_ERR_DIR) || return rows
+    for fname in readdir(EV_ERR_DIR)
         (endswith(fname, ".dat") && startswith(fname, "nop")) || continue
         meta = Dict{String,String}(); vals = Float64[]
         try
-            for line in eachline(joinpath(SV_ERR_DIR, fname))
+            for line in eachline(joinpath(EV_ERR_DIR, fname))
                 if startswith(line, "#")
                     for tok in split(line)
                         occursin('=', tok) || continue
@@ -209,7 +221,7 @@ function _sv_load_errors(t)
                 append!(vals, parse.(Float64, split(line)))
             end
         catch err
-            @warn "smoothVortex: skipping an unreadable error file" file=fname exception=err
+            @warn "CompEuler/smoothVortex: skipping an unreadable error file" file=fname exception=err
             continue
         end
         length(vals) >= 3 || continue
@@ -220,6 +232,10 @@ function _sv_load_errors(t)
         # Errors written before the norms became absolute have no norm= key;
         # they are a different quantity and are not drawn with these.
         get(meta, "norm", "") == "abs" || continue
+        # Only the records measured on THIS vortex: a β = 1 sweep and a β = 5
+        # sweep are different problems, and a figure mixing them is nonsense.
+        bc = tryparse(Float64, get(meta, "beta", ""))
+        (bc === nothing || abs(bc - _ev_beta()) > 1.0e-8*max(1.0, abs(_ev_beta()))) && continue
         push!(rows, (nop = nop, ndofs = ndofs, visc = get(meta, "visc", "dsgs"),
                      nelx = something(tryparse(Int, get(meta, "nelx", "")), 0),
                      t    = something(tc, NaN),
@@ -243,22 +259,22 @@ end
 # In two dimensions #DOFs ∝ h^(-2), so an O(h^(N+1)) method falls as
 # #DOFs^(-(N+1)/2); the guides carry that slope and are labelled O(h^(N+1)).
 #---------------------------------------------------------------------------------
-const SV_FS_TITLE  = 22
-const SV_FS_GUIDE  = 20
-const SV_FS_TICK   = 17
-const SV_FS_LEGEND = 15
-const SV_LW        = 2.8
-const SV_MS        = 9
+const EV_FS_TITLE  = 22
+const EV_FS_GUIDE  = 20
+const EV_FS_TICK   = 17
+const EV_FS_LEGEND = 15
+const EV_LW        = 2.8
+const EV_MS        = 9
 
 # The measured order of accuracy from the last two points. The abscissa is
 # the DOF COUNT, and in two dimensions h ∝ #DOFs^(-1/2), so an error ∝ h^p
 # falls as #DOFs^(-p/2): the order is minus twice the log-log slope.
-_sv_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
+_ev_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
                    -2.0*log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
 
-_sv_visc_label(tag) = tag == "dsgs" ? "RV" : "Galerkin"
+_ev_visc_label(tag) = tag == "dsgs" ? "RV" : "Galerkin"
 
-function _sv_panel(sub, nops, fld, nm)
+function _ev_panel(sub, nops, fld, nm)
     # The final time the errors were measured at, and the step they were taken
     # with, belong ON the figure: a sweep cut short for a pipeline check
     # produces a perfectly plausible-looking set of flat lines, and nothing in
@@ -273,9 +289,9 @@ function _sv_panel(sub, nops, fld, nm)
                     ylabel = LaTeXStrings.latexstring(string(
                         "\\|\\mathbf{u}_h-\\mathbf{u}_{exact}\\|_{", nm, "}")),
                     framestyle = :box, grid = true, gridalpha = 0.25,
-                    legend = :bottomleft, legendfontsize = SV_FS_LEGEND,
-                    titlefontsize = SV_FS_TITLE, guidefontsize = SV_FS_GUIDE,
-                    tickfontsize = SV_FS_TICK,
+                    legend = :bottomleft, legendfontsize = EV_FS_LEGEND,
+                    titlefontsize = EV_FS_TITLE, guidefontsize = EV_FS_GUIDE,
+                    tickfontsize = EV_FS_TICK,
                     left_margin = 14Plots.mm, bottom_margin = 10Plots.mm,
                     top_margin = 4Plots.mm, right_margin = 6Plots.mm,
                     title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error}", stamp)),
@@ -294,13 +310,13 @@ function _sv_panel(sub, nops, fld, nm)
         any(keep) || continue
         xs = xs[keep]; ys = ys[keep]
         append!(allx, xs); append!(ally, ys)
-        col, mk = _sv_style(nop)
-        p   = _sv_rate(xs, ys)
+        col, mk = _ev_style(nop)
+        p   = _ev_rate(xs, ys)
         lab = LaTeXStrings.latexstring(string("\\mathbb{P}_", nop, "\\ \\mathrm{",
-                  _sv_visc_label(tag), "}", isfinite(p) ? string("\\ (p=", round(p; digits = 2), ")") : ""))
+                  _ev_visc_label(tag), "}", isfinite(p) ? string("\\ (p=", round(p; digits = 2), ")") : ""))
         Plots.plot!(pl, xs, ys;
-                    line = (col, SV_LW, tag == "dsgs" ? :solid : :dash),
-                    marker = (mk, SV_MS), markerstrokecolor = col, markerstrokewidth = 1.6,
+                    line = (col, EV_LW, tag == "dsgs" ? :solid : :dash),
+                    marker = (mk, EV_MS), markerstrokecolor = col, markerstrokewidth = 1.6,
                     markercolor = tag == "dsgs" ? col : :white,
                     color = col, label = lab)
     end
@@ -345,15 +361,15 @@ function _sv_panel(sub, nops, fld, nm)
 end
 
 # The orders to draw on their own, beside the all-orders figure:
-# JEXPRESSO_SV_PLOT_NOPS="1 3" gives the P1-vs-P3 comparison of the paper's
+# JEXPRESSO_EV_PLOT_NOPS="1 3" gives the P1-vs-P3 comparison of the paper's
 # Fig. 1 in its own file, convergence_<visc>_nop1-3-it<n>.png.
-function _sv_plot_nops()
-    v = strip(get(ENV, "JEXPRESSO_SV_PLOT_NOPS", ""))
+function _ev_plot_nops()
+    v = strip(get(ENV, "JEXPRESSO_EV_PLOT_NOPS", ""))
     isempty(v) && return Int[]
     return sort(unique(filter(!isnothing, tryparse.(Int, split(v, r"[,\s]+")))))
 end
 
-function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::String = "")
+function _ev_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::String = "")
     sub = isempty(only) ? rows : filter(r -> r.nop in only, rows)
     nops = sort(unique(r.nop for r in sub))
     any(n -> count(r -> r.nop == n && r.visc == v, sub) >= 2
@@ -361,31 +377,31 @@ function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::Str
 
     panels = Plots.Plot[]
     for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
-        pl = _sv_panel(sub, nops, fld, nm)
+        pl = _ev_panel(sub, nops, fld, nm)
         # one file per norm, for the paper
         plt1 = Plots.plot(pl; size = (900, 780), show = false)
-        _sv_savefig(plt1, string(OUTPUT_DIR, "/convergence", suffix, "_", fname, "-it", iout, ".png"))
+        _ev_savefig(plt1, string(OUTPUT_DIR, "/convergence", suffix, "_", fname, "-it", iout, ".png"))
         push!(panels, pl)
     end
     plt = Plots.plot(panels...; layout = (1, 3), size = (2400, 800),
                      left_margin = 18Plots.mm, bottom_margin = 14Plots.mm, show = false)
-    _sv_savefig(plt, string(OUTPUT_DIR, "/convergence", suffix, "-it", iout, ".png"))
+    _ev_savefig(plt, string(OUTPUT_DIR, "/convergence", suffix, "-it", iout, ".png"))
     return nothing
 end
 
 # Every figure a run writes: all the orders in the store, and — when
-# JEXPRESSO_SV_PLOT_NOPS asks for it — the chosen subset on its own axes.
-function _sv_plot_all(rows, OUTPUT_DIR, iout)
-    _sv_plot(rows, OUTPUT_DIR, iout)
-    sel = _sv_plot_nops()
+# JEXPRESSO_EV_PLOT_NOPS asks for it — the chosen subset on its own axes.
+function _ev_plot_all(rows, OUTPUT_DIR, iout)
+    _ev_plot(rows, OUTPUT_DIR, iout)
+    sel = _ev_plot_nops()
     length(sel) >= 1 || return nothing
-    _sv_plot(rows, OUTPUT_DIR, iout; only = sel,
+    _ev_plot(rows, OUTPUT_DIR, iout; only = sel,
              suffix = string("_nop", join(sel, "-")))
     return nothing
 end
 
-function _sv_report(rows)
-    println(" # smoothVortex: ABSOLUTE velocity error against the exact solution")
+function _ev_report(rows)
+    println(" # CompEuler/smoothVortex: ABSOLUTE velocity error against the exact solution")
     println(" #   visc      nop  nelx   DOFs           L1           L2         Linf")
     for r in rows
         println(@sprintf(" #   %-8s  %3d  %4d %6d   %10.3e   %10.3e   %10.3e",
@@ -409,15 +425,15 @@ function user_plot_2d(mesh, q, t, outvar, inputs, OUTPUT_DIR, iout; Minv = nothi
     abs(t - tnom) <= max(1.0e-8*max(1.0, abs(t)), 0.51*Δt) || return nothing
 
     # Collective: every rank must enter it (the norms are Allreduced).
-    e = _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
+    e = _ev_velocity_error(mesh, q, t, outvar, inputs, Minv)
     e === nothing && return nothing
 
     # One writer. The norms are identical on every rank after the reduction,
     # so letting them all write the same file is a race, not redundancy.
     if MPI.Comm_rank(get_mpi_comm()) == 0
-        _sv_save_error(e, inputs, tnom, t)
-        rows = _sv_load_errors(tnom)
-        isempty(rows) || (_sv_report(rows); _sv_plot_all(rows, OUTPUT_DIR, iout))
+        _ev_save_error(e, inputs, tnom, t)
+        rows = _ev_load_errors(tnom)
+        isempty(rows) || (_ev_report(rows); _ev_plot_all(rows, OUTPUT_DIR, iout))
     end
     return nothing
 end

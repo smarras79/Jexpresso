@@ -47,7 +47,7 @@ function user_inputs()
         # Δt = 5e-7 is already ≈ 0.22 with :μ => 1.0. Scaling :μ up without
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
-        :Δt                   => 1.0e-7,
+        :Δt                   => 0.5e-7,
         :diagnostics_at_times => (0:5.0e-5:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
         # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
@@ -154,7 +154,7 @@ function user_inputs()
         # DynSGS is what handles what is left under-resolved.
         #---------------------------------------------------------------------------
         :linitial_refine      => true,
-        :init_refine_lvl      => 1,
+        :init_refine_lvl      => 2,
         :ladapt               => false,
     ) #Dict
 

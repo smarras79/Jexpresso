@@ -29,3 +29,8 @@ problems/MHD/smoothVortex/errors/
 
 # sweep logs written by tools/smooth_vortex_mpi_scan.sh
 logs/
+
+# Measured errors of the smooth-vortex convergence sweeps: run output, not
+# source. The sweep driver rewrites the whole store on every run (SV_KEEP=1
+# to append instead), so tracking them makes every run dirty the tree.
+problems/*/smoothVortex/errors/
