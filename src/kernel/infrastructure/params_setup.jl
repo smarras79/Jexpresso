@@ -428,10 +428,10 @@ function params_setup(sem,
     dsgs_bdy_done  = Ref{Bool}(false)
     dsgs_legacy    = Ref{Bool}(get(inputs, :dsgs_sensor, "residual") == "legacy")
     # Scope of the DynSGS normalizing scales, from the single deck key
-    # :dsgs_norms ("rank" default | "domain" | "element"); typed here so the
+    # :dsgs_norms ("domain" default | "rank" | "element"); typed here so the
     # RHS call sites read a Bool, not a String in the inputs Dict.
-    dsgs_global_norms = (get(inputs, :dsgs_norms, "rank") == "domain")::Bool
-    dsgs_local_norms  = (get(inputs, :dsgs_norms, "rank") == "element")::Bool
+    dsgs_global_norms = (get(inputs, :dsgs_norms, "domain") == "domain")::Bool
+    dsgs_local_norms  = (get(inputs, :dsgs_norms, "domain") == "element")::Bool
     dsgs_bdy_pairs = NTuple{4,Int}[]
 
     # Per-equation scratch the 2D DSGS path uses to pack the

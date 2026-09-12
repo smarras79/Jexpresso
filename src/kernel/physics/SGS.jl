@@ -432,7 +432,7 @@ end
 # makes μ_dsgs dimensionally a kinematic viscosity (m²/s) regardless of SD.
 #
 # Both numerators and denominators are L∞ norms over a region larger than
-# one element — the rank's subdomain by default, the whole domain under
+# one element — the whole domain by default, the rank's subdomain under
 # :dsgs_norms => "domain" (see _dsgs_norm_scope below) — so the coefficient
 # cannot be inlined into the (k,l) loop the way
 # SMAG/VREM are — it is precomputed once per RHS call into the
@@ -602,28 +602,36 @@ end
 # — five times per step under CarpenterKennedy2N54, times two or three
 # reductions each.
 #
-# Default: RANK-LOCAL (`lglobal_norms = false`, :dsgs_norms => "rank" in
-# mod_inputs.jl; every kernel below and every call site in rhs.jl takes the
-# same flag). These two quantities only set
-# the SCALE the residual indicator is measured against; what the model needs
-# from them is the order of magnitude of the solution's variation, and a
-# partition of a connected domain resolves that as well as the whole domain
-# does. μ is bounded by min(μ_res, μ_max) either way, so the flow solution
-# differs only at the level of the usual round-off divergence. No
-# communication at all.
+# Default: THE WHOLE DOMAIN (`lglobal_norms = true`, :dsgs_norms => "domain"
+# in mod_inputs.jl; every kernel below and every call site in rhs.jl takes
+# the same flag), which is what the papers write. Costs 2-3 Allreduce of a
+# few doubles per RHS call — nothing next to the RHS itself.
 #
-# Opt-in: the paper's domain norms, with
+# RANK-LOCAL (:dsgs_norms => "rank") was the default until September 2026, on
+# the argument that these quantities only set the SCALE the residual is
+# measured against and that a partition of a connected domain resolves that
+# scale as well as the whole domain does, so the solution would differ only
+# at round-off. THAT ARGUMENT IS WRONG, and the case it fails on is the
+# common one: a rank that holds none of the interesting flow sees only its
+# own quiet background, normalizes by that, and applies a different viscosity
+# to the same solution than its neighbour does. Measured on
+# problems/MHD/smoothVortex (nop 6, 32² elements, ck54, Δt = 3.3333e-4,
+# t = 1, absolute velocity L¹):
 #
-#     :dsgs_norms => "domain"          # in user_inputs.jl
+#     1-2 ranks     3.935e-07
+#     4, 8 ranks    7.155e-06     identical to each other, 18x worse
 #
-# (params_setup.jl turns it into params.dsgs_global_norms, the Bool the
-# call sites in rhs.jl thread down; "element", DSGS_MHD only, normalizes
-# per element: params.dsgs_local_norms). Use it when you want μ reproducible across rank
-# counts — a regression test that compares fields bit-for-bit between a
-# 1-rank and an N-rank run — or when a subdomain genuinely cannot see the
-# solution's scale (a partition that lies entirely inside a uniform region
-# while the interesting structure lives on another rank). Costs 2-3
-# Allreduce per RHS call.
+# — an error floor that no mesh refinement goes below, and on a 2D field the
+# partition drawn into the coefficient as banding at the rank boundaries
+# (orszagTangBormanis2024, 120² elements over 128 ranks). It saturates
+# because the outcome is bimodal: ranks holding the structure normalize by
+# the structure, ranks holding nothing normalize by their floor, and more
+# ranks only changes how many of each there are.
+#
+# So "rank" is now opt-in, for cases whose subdomains are known to be
+# statistically alike and where the reductions have been measured to matter.
+# "element" (DSGS_MHD only) normalizes per element instead:
+# params.dsgs_local_norms, for strongly stratified atmospheres.
 #
 # The communicator is Jexpresso's own get_mpi_comm(), NOT MPI.COMM_WORLD:
 # under MPMD coupling COMM_WORLD also carries Alya's ranks, which never call
@@ -1229,11 +1237,11 @@ end
 # jump from ringing. The user's inputs[:μ][1] multiplier scales it and
 # can switch it off with 0.0.
 #
-# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :dsgs_norms => "domain" — see
-# _dsgs_norm_scope above. In the default (rank-local) mode everything in this
+# ⟨q⟩ and ‖q−⟨q⟩‖ are over the whole domain unless :dsgs_norms => "rank" —
+# see _dsgs_norm_scope above. In the rank-local mode everything in this
 # routine is allocation-free, same discipline as the other implementations
-# here; the global mode allocates the two small reduction buffers, once per
-# RHS call and not per node.
+# here; the domain mode (the default) allocates the two small reduction
+# buffers, once per RHS call and not per node.
 # ================================================================================
 function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           q::AbstractMatrix{TT},
@@ -1462,8 +1470,8 @@ end
 # k = μ_dyn·cp/Pr_t. Rewriting in terms of T gives the coefficient
 # k/R = μ_dyn·γ/((γ−1)·Pr_t), since cp = γR/(γ−1).
 #
-# ⟨q⟩ and ‖q−⟨q⟩‖ are rank-local unless :dsgs_norms => "domain" — see
-# _dsgs_norm_scope above. `comm` is what the global mode reduces over.
+# ⟨q⟩ and ‖q−⟨q⟩‖ are over the whole domain unless :dsgs_norms => "rank" —
+# see _dsgs_norm_scope above. `comm` is what the domain mode reduces over.
 #
 # Stratified atmospheres (problems/MHD/fluxEmergenceSon2025, eight decades
 # of density between the photosphere and the corona) need two variants of

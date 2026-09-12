@@ -47,6 +47,18 @@
 set -u
 cd "$(dirname "$0")/.."
 
+# WHICH CASE. The MHD vortex by default; SV_CASE=CompEuler/smoothVortex runs
+# the hydrodynamic control (the classical isentropic vortex: same box, same
+# meshes, same figures, no magnetic field), whose deck reads JEXPRESSO_EV_*
+# instead of JEXPRESSO_SV_*.
+CASE=${SV_CASE:-MHD/smoothVortex}
+EQNS=${CASE%%/*}
+CNAME=${CASE##*/}
+if [ "${SV_PREFIX:-}" != "" ]; then PFX=$SV_PREFIX
+elif [ "$EQNS" = "CompEuler" ];  then PFX=EV
+else                                  PFX=SV
+fi
+
 NOPS=${SV_NOPS:-"1 2 3 4"}
 NELX=${SV_NELX:-"4 8 16 32"}
 VISCS=${SV_VISC:-"dsgs none"}
@@ -68,7 +80,7 @@ else
     DT=$(awk -v n="$MAXN" -v m="$MAXM" 'BEGIN{printf "%.6g", 2.0e-3*64.0/(n*m)}')
 fi
 
-[ "${SV_KEEP:-0}" = "1" ] || rm -rf problems/MHD/smoothVortex/errors
+[ "${SV_KEEP:-0}" = "1" ] || rm -rf "problems/$CASE/errors"
 
 SV_NELX="$NELX" tools/smooth_vortex_mesh.sh || true
 for M in $NELX; do
@@ -94,23 +106,23 @@ if [ "$NP" -gt 1 ] && [ "${SV_SKIP_LAUNCHER_CHECK:-0}" != "1" ]; then
     fi
 fi
 
-echo "=== smooth vortex: nops [$NOPS] x nelx [$NELX] x [$VISCS]"
+echo "=== $CASE: nops [$NOPS] x nelx [$NELX] x [$VISCS]"
 echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $DT, solver $SOLVER, tend $TEND"
 
 run_one() {   # $1 visc  $2 nop  $3 nelx
-    log="logs/sv_${1}_nop$2_nelx$3.log"
+    log="logs/${CNAME}_${1}_nop$2_nelx$3.log"
     launcher=$([ "$NP" -gt 1 ] && echo "$MPIEXEC -n $NP")
     echo "--- START visc $1, nop $2, ${3}x${3} elements   $(date +%T)"
-    echo "    $launcher $JULIA --project=. src/Jexpresso.jl MHD smoothVortex"
+    echo "    $launcher $JULIA --project=. src/Jexpresso.jl $EQNS $CNAME"
     echo "    everything this case prints goes to $log"
     if [ "${DRYRUN:-0}" = "1" ]; then echo "    (dry run)"; return 0; fi
-    env JEXPRESSO_SV_NOP="$2" JEXPRESSO_SV_NELX="$3" JEXPRESSO_SV_VISC="$1" \
-        JEXPRESSO_SV_DT="$DT" JEXPRESSO_SV_SOLVER="$SOLVER" JEXPRESSO_SV_TEND="$TEND" \
-        ${PLOT_NOPS:+JEXPRESSO_SV_PLOT_NOPS="$PLOT_NOPS"} \
-        $launcher "$JULIA" --project=. src/Jexpresso.jl MHD smoothVortex \
+    env JEXPRESSO_${PFX}_NOP="$2" JEXPRESSO_${PFX}_NELX="$3" JEXPRESSO_${PFX}_VISC="$1" \
+        JEXPRESSO_${PFX}_DT="$DT" JEXPRESSO_${PFX}_SOLVER="$SOLVER" JEXPRESSO_${PFX}_TEND="$TEND" \
+        ${PLOT_NOPS:+JEXPRESSO_${PFX}_PLOT_NOPS="$PLOT_NOPS"} \
+        $launcher "$JULIA" --project=. src/Jexpresso.jl "$EQNS" "$CNAME" \
         > "$log" 2>&1
     rc=$?
-    err="problems/MHD/smoothVortex/errors/nop$2_nelx$3_$([ "$1" = none ] && echo galerkin || echo dsgs).dat"
+    err=$(err_file "$2" "$3" "$([ "$1" = none ] && echo galerkin || echo dsgs)")
     if [ "$rc" -ne 0 ]; then
         echo "--- FAILED (exit $rc) visc $1, nop $2, nelx $3   $(date +%T)"
         echo "    last lines of $log:"
@@ -122,6 +134,17 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
         echo "    last lines of $log:"
         tail -n 8 "$log" | sed 's/^/      /'
     fi
+}
+
+# Where a case stores its error. The Euler deck tags the record with the vortex
+# strength (nop4_nelx8_b1_dsgs.dat), the MHD deck does not (nop4_nelx8_dsgs.dat),
+# so match either and report the plain name when nothing is there yet.
+err_file() {
+    _plain="problems/$CASE/errors/nop$1_nelx$2_$3.dat"
+    for _f in "$_plain" problems/"$CASE"/errors/nop"$1"_nelx"$2"_b*_"$3".dat; do
+        [ -f "$_f" ] && { echo "$_f"; return 0; }
+    done
+    echo "$_plain"
 }
 
 mkdir -p logs
@@ -153,14 +176,15 @@ for V in $VISCS; do
     for M in $NELX; do
         for N in $NOPS; do
             n_want=$((n_want + 1))
-            f="problems/MHD/smoothVortex/errors/nop${N}_nelx${M}_${tag}.dat"
+            f=$(err_file "$N" "$M" "$tag")
             if [ -f "$f" ]; then n_have=$((n_have + 1)); else echo "    MISSING $f"; fi
         done
     done
 done
 echo "=== $n_have of $n_want cases stored an error"
 echo "=== done. The figures of the last run hold the whole sweep:"
-echo "    \$PWD/output/MHD/smoothVortex/output/convergence_{dsgs,galerkin}[_<subset>]-it<n>.png"
+echo "    \$PWD/output/$CASE/output/convergence_{dsgs,galerkin}[_<subset>]-it<n>.png"
 echo "    (a case writes them only when it REACHES ITS FINAL TIME, so nothing"
 echo "     appears until the first case completes; watch logs/sv_*.log meanwhile)"
-echo "    (replot any subset without rerunning: tools/smooth_vortex_plot.jl 1,3)"
+echo "    (replot any subset without rerunning:"
+echo "         julia --project=. tools/smooth_vortex_plot.jl 1,3 --case=$CASE)"

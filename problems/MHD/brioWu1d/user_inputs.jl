@@ -166,7 +166,7 @@ function user_inputs()
 #       :ldsgs_nodal      => true,    # false (the default) = one ν per element
         :dsgs_Cl          => 0.4,
         :ldsgs_nodal      => _bw_nodal(),  # JEXPRESSO_BW_NODAL=1 for the paper's nodal form
-        :dsgs_norms       => "rank",    # residual normalized by the spread over this rank's elements (default; "domain": the whole tube, MPI-reduced)
+        :dsgs_norms       => "domain",  # residual normalized by the spread over the whole tube (the default; "rank" = this rank's elements only, which makes the answer depend on the partition)
         :energy_equation  => "energy",
         :lkep              => false,
         :entropy_variables => false,

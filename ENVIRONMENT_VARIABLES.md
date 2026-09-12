@@ -365,7 +365,7 @@ the level of the usual round-off divergence. On one rank `"rank"` and
 - **Example:**
   ```julia
   :visc_model => DSGS(),
-  :dsgs_norms => "rank",     # default: this rank's elements, no Allreduce; "domain": the papers' norms; "element" (DSGS_MHD) per element
+  :dsgs_norms => "domain",   # default: the papers' norms over the whole domain; "rank": this rank's elements only (no Allreduce, but the answer then depends on the partition); "element" (DSGS_MHD) per element
   ```
 - **History:** the 2D total-energy and MHD implementations used to do
   these reductions unconditionally, and the 1D and Euler-θ ones never
