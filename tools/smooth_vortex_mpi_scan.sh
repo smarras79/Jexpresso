@@ -122,7 +122,7 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
         $launcher "$JULIA" --project=. src/Jexpresso.jl "$EQNS" "$CNAME" \
         > "$log" 2>&1
     rc=$?
-    err="problems/$CASE/errors/nop$2_nelx$3_$([ "$1" = none ] && echo galerkin || echo dsgs).dat"
+    err=$(err_file "$2" "$3" "$([ "$1" = none ] && echo galerkin || echo dsgs)")
     if [ "$rc" -ne 0 ]; then
         echo "--- FAILED (exit $rc) visc $1, nop $2, nelx $3   $(date +%T)"
         echo "    last lines of $log:"
@@ -134,6 +134,17 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
         echo "    last lines of $log:"
         tail -n 8 "$log" | sed 's/^/      /'
     fi
+}
+
+# Where a case stores its error. The Euler deck tags the record with the vortex
+# strength (nop4_nelx8_b1_dsgs.dat), the MHD deck does not (nop4_nelx8_dsgs.dat),
+# so match either and report the plain name when nothing is there yet.
+err_file() {
+    _plain="problems/$CASE/errors/nop$1_nelx$2_$3.dat"
+    for _f in "$_plain" problems/"$CASE"/errors/nop"$1"_nelx"$2"_b*_"$3".dat; do
+        [ -f "$_f" ] && { echo "$_f"; return 0; }
+    done
+    echo "$_plain"
 }
 
 mkdir -p logs
@@ -165,7 +176,7 @@ for V in $VISCS; do
     for M in $NELX; do
         for N in $NOPS; do
             n_want=$((n_want + 1))
-            f="problems/$CASE/errors/nop${N}_nelx${M}_${tag}.dat"
+            f=$(err_file "$N" "$M" "$tag")
             if [ -f "$f" ]; then n_have=$((n_have + 1)); else echo "    MISSING $f"; fi
         done
     done
