@@ -86,7 +86,15 @@ else
     DT=$(awk -v n="$MAXN" -v m="$MAXM" 'BEGIN{printf "%.6g", 2.0e-3*64.0/(n*m)}')
 fi
 
-[ "${SV_KEEP:-0}" = "1" ] || rm -rf "problems/$CASE/errors"
+# A sweep is self-contained: it starts from an empty store unless SV_KEEP=1
+# says to add to what is there. The old store is MOVED ASIDE, not deleted —
+# a sweep that took hours should not be lost to a mistyped command — and a
+# dry run touches nothing at all.
+if [ "${SV_KEEP:-0}" != "1" ] && [ "${DRYRUN:-0}" != "1" ] && [ -d "problems/$CASE/errors" ]; then
+    rm -rf "problems/$CASE/errors.prev"
+    mv "problems/$CASE/errors" "problems/$CASE/errors.prev"
+    echo "=== the previous store is in problems/$CASE/errors.prev"
+fi
 
 SV_NELX="$NELX" SV_L="$LBOX" tools/smooth_vortex_mesh.sh || true
 for M in $NELX; do

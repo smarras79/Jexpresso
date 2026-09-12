@@ -52,25 +52,45 @@ export MPIEXEC="srun --exclusive --mpi=pmi2"
 # ---------------------------------------------------------------------------
 export SV_L=${SV_L:-20}
 
-# The meshes of that box. The repository ships 4,8,16,32,64 for both boxes,
-# so this is a no-op unless a resolution is missing (and it needs gmsh).
-SV_NELX="16 32 64" tools/smooth_vortex_mesh.sh || true
+# ---------------------------------------------------------------------------
+# THE SWEEP. These are the settings the reference figures were measured with,
+# extended from P4/P6 to P4..P7. Override any of them from the command line:
+#
+#   SV_NOPS="4 6" sbatch submit_Jexpresso_compare.sh
+#
+# Δt is NOT pinned: the driver computes one step for the whole sweep from its
+# finest (nelx, nop), so every order and mesh is integrated with the same
+# step and the comparison is of the SPACE discretization. At nop 7 / 64
+# elements that rule gives 2.86e-04.
+#
+# t = 0.5 is half a crossing of the box. It is not the paper's t = 0.05: this
+# is a longer integration, so the errors are larger than theirs and the
+# orders are what is being compared, not the absolute numbers.
+# ---------------------------------------------------------------------------
+export SV_NOPS=${SV_NOPS:-"4 5 6 7"}
+export SV_NELX=${SV_NELX:-"16 32 64"}
+export SV_VISC=${SV_VISC:-"dsgs none"}
+export SV_TEND=${SV_TEND:-0.5}
+export SV_SOLVER=${SV_SOLVER:-ck54}
+export SV_NP=${SV_NP:-16}
+export SV_JOBS=${SV_JOBS:-6}
+export SV_PLOT_NOPS=${SV_PLOT_NOPS:-"4 7"}   # the extremes, on their own axes
 
-SWEEP='SV_NOPS=4 5 6 7 | SV_NELX=16 32 64 | dsgs and Galerkin | 16 ranks x 6 jobs'
+# The meshes of that box. The repository ships 4, 8, 16, 32 and 64 elements
+# per side for both boxes, so this is a no-op unless a resolution is missing
+# (and only then does it need gmsh).
+tools/smooth_vortex_mesh.sh || true
 
-echo "=== 1/2  ideal GLM-MHD smooth vortex   [$SWEEP]"
-SV_CASE=MHD/smoothVortex \
-SV_NOPS="4 5 6 7" SV_NELX="16 32 64" SV_VISC="dsgs none" SV_NP=16 SV_JOBS=6 \
-SV_PLOT_NOPS="4 6" tools/smooth_vortex_mpi_scan.sh
+echo "=== 1/2  ideal GLM-MHD smooth vortex"
+echo "===      nops [$SV_NOPS] x nelx [$SV_NELX] x [$SV_VISC], t = $SV_TEND, box width $SV_L"
+SV_CASE=MHD/smoothVortex tools/smooth_vortex_mpi_scan.sh
 
 # The same vortex without the magnetic field, at the amplitude that matches
 # the MHD one (JEXPRESSO_EV_BETA=1): what the MHD error would be if div(B)
 # cost nothing. JEXPRESSO_EV_BETA=5 is the classical Shu vortex instead; the
 # two are stored and plotted separately, they never share a curve.
-echo "=== 2/2  Euler control, same vortex without B   [$SWEEP]"
-SV_CASE=CompEuler/smoothVortex JEXPRESSO_EV_BETA=1 \
-SV_NOPS="4 5 6 7" SV_NELX="16 32 64" SV_VISC="dsgs none" SV_NP=16 SV_JOBS=6 \
-SV_PLOT_NOPS="4 6" tools/smooth_vortex_mpi_scan.sh
+echo "=== 2/2  Euler control, the same vortex without B"
+SV_CASE=CompEuler/smoothVortex JEXPRESSO_EV_BETA=1 tools/smooth_vortex_mpi_scan.sh
 
 echo "=== both sweeps finished. The figures:"
 echo "    output/MHD/smoothVortex/output/convergence[_L1|_L2|_Linf]-it<n>.png"
