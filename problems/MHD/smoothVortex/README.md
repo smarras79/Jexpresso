@@ -195,10 +195,34 @@ Two ways out, both switchable:
 | | |
 |---|---|
 | `JEXPRESSO_SV_DT=<fixed>` | one $\Delta t$ for the whole sweep, so the time error is a constant rather than something that shrinks at fourth order and pollutes the slope. `tools/smooth_vortex_mpi_scan.sh` sets it automatically from the finest (nelx, nop) of the sweep |
-| `JEXPRESSO_SV_SOLVER=vern9` | `Vern9` (9th order), `dp8` (8th), `vern7`, `ssprk54`, `tsit5`, or `ck54` for the default. With a ninth-order integrator the time error is below the spatial one at any step this case can run |
+| `JEXPRESSO_SV_SOLVER=vern9` | `Vern9` (9th order), `dp8` (8th), `vern7`, `ssprk54`, `tsit5`, or `ck54` for the default |
 
-Both are what `tools/smooth_vortex_mpi_scan.sh` uses by default, since its
-purpose is to measure the **spatial** order.
+**Measured, the fourth-order integrator is not what limits these runs.** At
+32×32 elements and `:nop => 4`, absolute velocity $L^1$ at $t = 1$:
+
+| | |
+|---|---|
+| `ck54`, $\Delta t = 10^{-3}$ | 2.318e-5 |
+| `vern9`, $\Delta t = 10^{-3}$ | 2.320e-5 |
+| `vern9`, $\Delta t = 3.3\times10^{-4}$ | 2.314e-5 |
+
+Neither the integrator nor the step moves the error: it is purely spatial
+there, and Vern9's 16 stages per step cost 3× for nothing. So
+`tools/smooth_vortex_mpi_scan.sh` runs `ck54` with one fixed $\Delta t$ for
+the sweep, and the honest check on any sweep is to re-run its **finest** case
+at half `SV_DT` and see that the error does not move.
+
+## The final time is part of the measurement
+
+`SV_TEND` shortens a run, which is the right way to check that a sweep's
+machinery works before committing hours to it — and the wrong thing to leave
+set. At $t = 0.05$ the vortex has moved a twentieth of the box, the error is
+dominated by the initial transient, and it barely converges with resolution:
+measured at $\Delta t = 3.3\times10^{-4}$, `:nop => 4` on 32² gives 7.539e-6
+and `:nop => 6` on 32² gives 1.433e-6, against 2.3e-5 and far less at
+$t = 1$ — flat lines and negative rates that look exactly like a broken
+solver. The figures therefore carry the final time and the step in their
+titles.
 
 ## Comparing P1 and P3 directly, as in the paper
 

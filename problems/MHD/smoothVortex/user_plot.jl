@@ -218,6 +218,8 @@ function _sv_load_errors(t)
         get(meta, "norm", "") == "abs" || continue
         push!(rows, (nop = nop, ndofs = ndofs, visc = get(meta, "visc", "dsgs"),
                      nelx = something(tryparse(Int, get(meta, "nelx", "")), 0),
+                     t    = something(tc, NaN),
+                     dt   = something(tryparse(Float64, get(meta, "dt", "")), NaN),
                      l1 = vals[1], l2 = vals[2], linf = vals[3]))
     end
     return sort!(rows, by = r -> (r.visc, r.nop, r.ndofs))
@@ -245,6 +247,14 @@ const SV_LW        = 2.8
 const SV_MS        = 9
 
 function _sv_panel(sub, nops, fld, nm, tag)
+    # The final time the errors were measured at, and the step they were taken
+    # with, belong ON the figure: a sweep cut short for a pipeline check
+    # (SV_TEND=0.05) produces a perfectly plausible-looking set of flat lines,
+    # and nothing in the picture would otherwise say so.
+    tt  = isempty(sub) ? NaN : sub[1].t
+    dts = unique(r.dt for r in sub)
+    stamp = string(",\\ t = ", isfinite(tt) ? tt : "?",
+                   length(dts) == 1 && isfinite(dts[1]) ? string(",\\ \\Delta t = ", dts[1]) : "")
     allx = Float64[]; ally = Float64[]
     pl = Plots.plot(; xscale = :log10, yscale = :log10,
                     xlabel = LaTeXStrings.L"1/\sqrt{\#\mathrm{DOFs}}",
@@ -257,7 +267,7 @@ function _sv_panel(sub, nops, fld, nm, tag)
                     left_margin = 12Plots.mm, bottom_margin = 10Plots.mm,
                     top_margin = 4Plots.mm, right_margin = 6Plots.mm,
                     title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error},\\ \\mathrm{",
-                             tag == "dsgs" ? "RV\\ (DynSGS)" : "Galerkin", "}")),
+                             tag == "dsgs" ? "RV\\ (DynSGS)" : "Galerkin", "}", stamp)),
                     show = false)
     for nop in nops
         g  = sort(filter(r -> r.nop == nop, sub), by = r -> r.ndofs)
