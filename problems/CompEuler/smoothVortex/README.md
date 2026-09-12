@@ -47,8 +47,11 @@ vortex**, whose perturbation amplitude ($\kappa = \mu = 1$) is comparable;
 Exactly what the MHD case produces, from the same code: at the final time each
 run measures the **absolute** $L^1$, $L^2$ and $L^\infty$ error of the velocity
 against the exact solution, with the solver's own lumped-mass quadrature
-weights, and stores it in `errors/nop<N>_nelx<M>_<visc>.dat`; the figures are
-drawn from every error in that store.
+weights, and stores it in `errors/nop<N>_nelx<M>_b<beta>_<visc>.dat`; the figures are
+drawn from every error in that store. β is part of both the record name and
+the filter that builds the figure, so the classical β = 5 sweep and a β = 1
+sweep (the one amplitude-matched to the MHD vortex) neither overwrite each
+other nor share a curve.
 
 | file | contents |
 |---|---|

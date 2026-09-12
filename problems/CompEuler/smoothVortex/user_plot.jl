@@ -8,7 +8,7 @@
 # min(nop)+1 and max(nop)+1.
 #
 # At the final time every run stores its error in
-# `errors/nop<N>_nelx<M>_<visc>.dat` in this case directory, and the figure is
+# `errors/nop<N>_nelx<M>_b<beta>_<visc>.dat` in this case directory, and the figure is
 # drawn from EVERY error stored there — so a sweep over orders and meshes
 # builds the whole figure and each run replaces only its own point:
 #
@@ -16,7 +16,8 @@
 #     SV_CASE=CompEuler/smoothVortex tools/smooth_vortex_mpi_scan.sh
 #
 # `rm -r problems/CompEuler/smoothVortex/errors` starts a fresh comparison.
-# Only errors from the same final time are drawn together.
+# Only errors from the same final time AND the same vortex strength β are
+# drawn together.
 #
 # The hook is src/io/plotting/jeplots.jl (plot_triangulation, NSD_2D):
 #   mesh     this rank's mesh (coordinates, connectivity, extents)
@@ -158,6 +159,9 @@ function _ev_velocity_error(mesh, q, t, outvar, inputs, Minv)
             rinf = si/max(ri, eps()))
 end
 
+# A compact, file-name-safe tag for the vortex strength: 5.0 -> "5", 2.5 -> "2.5".
+_ev_btag() = (b = _ev_beta(); b == round(b) ? string(Int(round(b))) : string(b))
+
 function _ev_save_error(e, inputs, t)
     nop = Int(get(inputs, :nop, 0))
     # :nelx carries mod_inputs' placeholder for a gmsh case, so take the
@@ -170,7 +174,11 @@ function _ev_save_error(e, inputs, t)
     ndofs = (nelx > 0 && nop > 0) ? (nelx*nop)^2 : e.ndofs
     try
         mkpath(EV_ERR_DIR)
-        f = joinpath(EV_ERR_DIR, string("nop", nop, "_nelx", nelx, "_", _ev_tag(inputs), ".dat"))
+        # β is part of the identity of the record: the β = 5 classical vortex
+        # and the β = 1 vortex matched to the MHD case are different solutions
+        # and must not overwrite one another, nor share a curve.
+        f = joinpath(EV_ERR_DIR, string("nop", nop, "_nelx", nelx,
+                                        "_b", _ev_btag(), "_", _ev_tag(inputs), ".dat"))
         _ev_atomic(f, tmp -> open(tmp, "w") do io
             println(io, "# isentropic (Shu) vortex: ABSOLUTE velocity error against the exact solution")
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", ndofs,
@@ -220,6 +228,10 @@ function _ev_load_errors(t)
         # Errors written before the norms became absolute have no norm= key;
         # they are a different quantity and are not drawn with these.
         get(meta, "norm", "") == "abs" || continue
+        # Only the records measured on THIS vortex: a β = 1 sweep and a β = 5
+        # sweep are different problems, and a figure mixing them is nonsense.
+        bc = tryparse(Float64, get(meta, "beta", ""))
+        (bc === nothing || abs(bc - _ev_beta()) > 1.0e-8*max(1.0, abs(_ev_beta()))) && continue
         push!(rows, (nop = nop, ndofs = ndofs, visc = get(meta, "visc", "dsgs"),
                      nelx = something(tryparse(Int, get(meta, "nelx", "")), 0),
                      t    = something(tc, NaN),
