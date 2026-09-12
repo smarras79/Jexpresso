@@ -69,12 +69,12 @@ TEND=${SV_TEND:-1.0}
 JULIA=${JULIA:-julia}
 MPIEXEC=${MPIEXEC:-mpiexec}
 PLOT_NOPS=${SV_PLOT_NOPS:-}
-# The box width. 10 is the box of Balsara and of Dao & Nazarov, and its
-# non-periodic vortex tail floors any error study at ~1e-5 (see the header of
-# tools/smooth_vortex_mesh.sh); SV_L=20 puts that floor at machine zero.
-LBOX=${SV_L:-10}
-LTAG=""
-[ "$(printf '%s' "$LBOX" | sed 's/\.0*$//')" = "10" ] || LTAG="L$(printf '%s' "$LBOX" | sed 's/\.0*$//')_"
+# The box WIDTH. The default 20 is [-10,10]^2, the box Dao & Nazarov run this
+# accuracy test on. SV_L=10 is [-5,5]^2, where the vortex tail at the periodic
+# seam floors every order at ~1e-5 (see the header of
+# tools/smooth_vortex_mesh.sh).
+LBOX=${SV_L:-20}
+LTAG="L$(printf '%s' "$LBOX" | sed 's/\.0*$//')_"
 
 # One Δt for the sweep: the deck's rule at the finest (nelx, nop) of it.
 # 2.0e-3 * 64 / (nelx*nop) is that rule; keep the two in step.

@@ -26,6 +26,14 @@
 #   Minv     the solver's assembled inverse lumped mass — the quadrature
 #            weights the norms below are taken with
 #---------------------------------------------------------------------------------
+# β, the vortex strength. The deck (user_inputs.jl) defines this; define it
+# here too for the case where this file is included WITHOUT the deck — which
+# is how tools/smooth_vortex_plot.jl redraws a figure from the stored errors.
+# Both read the same environment variable, so the two agree.
+if !isdefined(@__MODULE__, :_ev_beta)
+    _ev_beta() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_BETA", "")), 5.0)
+end
+
 const EV_ERR_DIR = joinpath(@__DIR__, "errors")
 
 # ATOMIC WRITES. A sweep runs several cases at the same time (SV_JOBS in
@@ -372,8 +380,9 @@ end
 function _ev_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::String = "")
     sub = isempty(only) ? rows : filter(r -> r.nop in only, rows)
     nops = sort(unique(r.nop for r in sub))
-    any(n -> count(r -> r.nop == n && r.visc == v, sub) >= 2
-             for n in nops, v in ("dsgs", "galerkin")) || return nothing
+    # At least one (order, stabilization) pair with two points to join.
+    any(count(r -> r.nop == n && r.visc == v, sub) >= 2
+        for n in nops, v in ("dsgs", "galerkin")) || return nothing
 
     panels = Plots.Plot[]
     for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))

@@ -238,6 +238,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # DSGS runs render the per-equation eddy viscosity as extra panels
         # of the same output time (the per-node broadcast is μ_dsgs_pnode).
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
         plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
                            iout=iout, nvar=nplot, varnames=plotnames,
                            μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv, t=t)
@@ -361,6 +362,37 @@ end
 #------------
 # VTK writer
 #------------
+#
+# JEXPRESSO_DSGS_DUMP=1 writes the nodal DynSGS viscosity as plain numbers
+# beside the figures: x y mu_1 ... mu_neqs, one line per node, one file per
+# rank and output. A RENDERED field cannot separate an artefact of the data
+# from an artefact of the renderer (a raster that samples fewer pixels than
+# there are nodes, a ParaView interpolation of a per-element constant), and
+# a pattern that a picture suggests has to be measured in the numbers before
+# it is chased in the kernel.
+#
+function _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
+    (μ_nodes !== nothing && get(ENV, "JEXPRESSO_DSGS_DUMP", "") == "1") || return nothing
+    try
+        mkpath(OUTPUT_DIR)
+        f = string(OUTPUT_DIR, "/mu_nodes-it", iout, "-rank",
+                   MPI.Comm_rank(get_mpi_comm()), ".txt")
+        npoin = min(mesh.npoin, size(μ_nodes, 1))
+        open(f, "w") do io
+            println(io, "# x y ", join(string.("mu_", 1:size(μ_nodes, 2)), " "))
+            for ip = 1:npoin
+                print(io, mesh.x[ip], " ", mesh.y[ip])
+                for ieq = 1:size(μ_nodes, 2); print(io, " ", μ_nodes[ip, ieq]); end
+                println(io)
+            end
+        end
+        @info " wrote $f"
+    catch err
+        @warn "could not dump the nodal DynSGS viscosity" exception=err
+    end
+    return nothing
+end
+
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs, varnames, outvarnames;
@@ -480,6 +512,7 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
         # flux-emergence cases) gives every slot the same kinematic μ, so
         # when all columns are identical one field, mu_dsgs, is written
         # instead of nine copies of it.
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
             nμ = size(μ_dsgs_pnode, 2)
             # one field per DISTINCT coefficient: a slot identical to an
@@ -639,6 +672,7 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
         # flux-emergence cases) gives every slot the same kinematic μ, so
         # when all columns are identical one field, mu_dsgs, is written
         # instead of nine copies of it.
+        _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
             nμ = size(μ_dsgs_pnode, 2)
             # one field per DISTINCT coefficient: a slot identical to an

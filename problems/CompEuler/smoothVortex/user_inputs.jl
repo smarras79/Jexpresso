@@ -82,8 +82,12 @@ end
 # the order, and a 6th-order element reaches the floor sooner than a 4th.
 # L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
-_ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 10.0)
-_ev_ltag() = (L = _ev_lbox(); L == 10.0 ? "" :
+# The default is the box of the paper, [-10,10]^2, i.e. L = 20.
+_ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 20.0)
+# The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
+# does not say which box it is cannot be told apart from one that is a
+# different box, and reading the wrong one costs a whole sweep.
+_ev_ltag() = (L = _ev_lbox();
                  string("L", L == round(L) ? string(Int(round(L))) : string(L), "_"))
 _ev_mesh() = string("./problems/MHD/smoothVortex/vortex_", _ev_ltag(),
                        _ev_nelx(), "x", _ev_nelx(), ".msh")

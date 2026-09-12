@@ -356,8 +356,9 @@ end
 function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::String = "")
     sub = isempty(only) ? rows : filter(r -> r.nop in only, rows)
     nops = sort(unique(r.nop for r in sub))
-    any(n -> count(r -> r.nop == n && r.visc == v, sub) >= 2
-             for n in nops, v in ("dsgs", "galerkin")) || return nothing
+    # At least one (order, stabilization) pair with two points to join.
+    any(count(r -> r.nop == n && r.visc == v, sub) >= 2
+        for n in nops, v in ("dsgs", "galerkin")) || return nothing
 
     panels = Plots.Plot[]
     for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
