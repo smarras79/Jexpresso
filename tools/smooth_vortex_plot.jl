@@ -8,13 +8,20 @@
 #   julia --project=. tools/smooth_vortex_plot.jl              # every order
 #   julia --project=. tools/smooth_vortex_plot.jl 1,3          # P1 and P3 alone
 #   julia --project=. tools/smooth_vortex_plot.jl 1,3 --t=1.0 --out=figs
+#   julia --project=. tools/smooth_vortex_plot.jl --case=CompEuler/smoothVortex
 #
 # It reads problems/MHD/smoothVortex/errors/*.dat (what every run writes) and
 # uses the case's own plotting code, so the figures are identical to the ones
 # a run produces. Files are written as convergence_<visc>[_nop1-3]-it0.png.
 using Plots, LaTeXStrings, Printf
 
-const CASE = joinpath(@__DIR__, "..", "problems", "MHD", "smoothVortex")
+# --case=MHD/smoothVortex (default) or CompEuler/smoothVortex, the
+# hydrodynamic control. Parsed here because the case's own plotting code is
+# what gets included below.
+const CASEREL = let a = filter(x -> startswith(x, "--case="), ARGS)
+    isempty(a) ? "MHD/smoothVortex" : split(a[1], '='; limit = 2)[2]
+end
+const CASE = joinpath(@__DIR__, "..", "problems", split(CASEREL, '/')...)
 
 # The case's hook calls this; here it is the whole of the output side.
 function _savefig_silent(plt, f)
@@ -30,10 +37,12 @@ include(joinpath(CASE, "user_plot.jl"))
 function main(args)
     nops = Int[]
     t    = nothing
-    out  = joinpath(@__DIR__, "..", "output", "MHD", "smoothVortex", "output")
+    out  = joinpath(@__DIR__, "..", "output", split(CASEREL, '/')..., "output")
     for a in args
         if startswith(a, "--t=")
             t = parse(Float64, split(a, '=')[2])
+        elseif startswith(a, "--case=")
+            continue                      # handled above, before the include
         elseif startswith(a, "--out=")
             out = split(a, '='; limit = 2)[2]
         elseif startswith(a, "--")
@@ -43,13 +52,14 @@ function main(args)
         end
     end
 
-    isdir(SV_ERR_DIR) || error("no error store at $(SV_ERR_DIR) — run the case first")
+    ERRDIR = isdefined(@__MODULE__, :SV_ERR_DIR) ? SV_ERR_DIR : EV_ERR_DIR
+    isdir(ERRDIR) || error("no error store at $(ERRDIR) — run the case first")
 
     # Final times present in the store; without --t, take the largest.
     times = Float64[]
-    for f in readdir(SV_ERR_DIR)
+    for f in readdir(ERRDIR)
         endswith(f, ".dat") || continue
-        for line in eachline(joinpath(SV_ERR_DIR, f))
+        for line in eachline(joinpath(ERRDIR, f))
             startswith(line, "#") || continue
             for tok in split(line)
                 startswith(tok, "t=") || continue
@@ -58,16 +68,18 @@ function main(args)
             end
         end
     end
-    isempty(times) && error("no stored errors under $(SV_ERR_DIR)")
+    isempty(times) && error("no stored errors under $(ERRDIR)")
     t === nothing && (t = maximum(times))
 
-    rows = _sv_load_errors(t)
+    load, report, plot = isdefined(@__MODULE__, :SV_ERR_DIR) ?
+        (_sv_load_errors, _sv_report, _sv_plot) : (_ev_load_errors, _ev_report, _ev_plot)
+    rows = load(t)
     isempty(rows) && error("no stored errors at t = $t (present: $(sort(unique(times))))")
-    _sv_report(rows)
+    report(rows)
     if isempty(nops)
-        _sv_plot(rows, out, 0)
+        plot(rows, out, 0)
     else
-        _sv_plot(rows, out, 0; only = sort(unique(nops)),
+        plot(rows, out, 0; only = sort(unique(nops)),
                  suffix = string("_nop", join(sort(unique(nops)), "-")))
     end
     return nothing

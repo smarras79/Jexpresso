@@ -1021,28 +1021,43 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖.
     #
-    #   false (default) : rank-local. No communication at all.
-    #   true            : the domain norms of Marras eq. (9) / Nazarov &
-    #                     Hoffman eq. (3.5). Costs 2-3 MPI Allreduce per RHS
-    #                     call — 10-15 per step under a five-stage RK — on
-    #                     every rank's critical path.
+    #   true (default)  : the domain norms of Marras eq. (9) / Nazarov &
+    #                     Hoffman eq. (3.5). Costs 2-3 MPI Allreduce of a few
+    #                     doubles per RHS call — 10-15 per step under a
+    #                     five-stage RK, and negligible beside the RHS.
+    #   false           : rank-local. No communication, but the solution then
+    #                     depends on the partition (see below).
     #
-    # These two quantities only set the SCALE the element residual is measured
-    # against, and a partition of a connected domain resolves that scale as
-    # well as the whole domain does, so "rank" costs nothing and changes the
-    # solution only at round-off level; "domain" makes μ reproducible across
-    # rank counts and is what the papers write, at a few small reductions
-    # per RHS. Serial runs are unaffected either way. See
-    # kernel/physics/SGS.jl (_dsgs_norm_scope) and ENVIRONMENT_VARIABLES.md.
+    # These two quantities set the SCALE the element residual is measured
+    # against, and it was long assumed here that a partition of a connected
+    # domain resolves that scale as well as the whole domain does — that
+    # "rank" was free and changed the solution only at round-off. IT IS NOT.
+    # A rank that holds none of the interesting flow measures a spread that
+    # is only its own quiet background, normalizes by that, and applies a
+    # different viscosity to the same solution than its neighbour does.
+    # Measured on problems/MHD/smoothVortex (nop 6, 32² elements, ck54,
+    # Δt = 3.3333e-4, t = 1, absolute velocity L¹):
+    #
+    #     1-2 ranks     3.935e-07
+    #     4, 8 ranks    7.155e-06      identical to each other, 18x worse
+    #
+    # — an error floor no mesh refinement can go below, and on a 2D field it
+    # draws the partition into the coefficient as banding at the rank
+    # boundaries (seen on orszagTangBormanis2024 at 120² elements over 128
+    # ranks). The saturation is the shape of it: ranks holding the structure
+    # normalize by the structure, ranks holding nothing normalize by their
+    # floor, and adding more ranks only changes how many of each.
     #
     # ONE user-facing key sets that scope, :dsgs_norms:
-    #   "rank"    (default) this rank's part of the domain only: no
-    #             reductions, nothing on the critical path of the RHS; the
-    #             solution then depends on the partition at round-off level.
-    #             Identical to "domain" on one rank.
-    #   "domain"  the whole domain — the papers' definition; under MPI the
-    #             mean and spread are Allreduce'd across the ranks (2-3
-    #             collectives per RHS call)
+    #   "domain"  (default) the whole domain — the papers' definition; under
+    #             MPI the mean and spread are Allreduce'd across the ranks
+    #             (2-3 collectives of a few doubles per RHS call, which is
+    #             nothing next to the RHS itself). The solution is then the
+    #             same however the domain is cut.
+    #   "rank"    this rank's part of the domain only: no reductions, but the
+    #             solution then depends on the partition — as above. Identical
+    #             to "domain" on one rank. Use it only where the subdomains
+    #             are known to be statistically alike.
     #   "element" the element itself (DSGS_MHD only; :dsgs_local_rel floors
     #             the element spread) — strongly stratified atmospheres
     # This is the only key: params_setup.jl turns it into the two typed
@@ -1053,7 +1068,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         error(" user_inputs.jl: :ldsgs_global_norms and :dsgs_local_norms have been replaced by the single key :dsgs_norms => \"rank\" | \"domain\" | \"element\".")
     end
     if(!haskey(inputs, :dsgs_norms))
-        inputs[:dsgs_norms] = "rank"
+        inputs[:dsgs_norms] = "domain"
     end
     dsgs_norms = lowercase(string(inputs[:dsgs_norms]))
     if !(dsgs_norms in ("domain", "rank", "element"))

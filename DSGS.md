@@ -658,13 +658,40 @@ case README).
 ### 4.8 MPI
 
 $\langle q_i\rangle$ and $\lVert q_i - \langle q_i\rangle\rVert_{\infty,\Omega}$
-are **domain** norms in the papers. By default (`:dsgs_norms => "rank"`) every
-DynSGS kernel takes them over the rank's own elements and communicates
-nothing: the two quantities only set the scale the residual is measured
-against, and a partition of a connected domain resolves that scale as well as
-the whole domain does, so the eddy viscosity depends on the partitioning only
-at round-off level. `:dsgs_norms => "domain"` restores the papers' definition
-with two or three `MPI.Allreduce` per RHS call (identical numbers on one rank).
+are **domain** norms in the papers, and that is the default here
+(`:dsgs_norms => "domain"`): two or three `MPI.Allreduce` of a few doubles per
+RHS call, which is nothing next to the RHS itself, and the same answer however
+the domain is cut.
+
+`:dsgs_norms => "rank"` takes them over the rank's own elements and
+communicates nothing. It was the default until September 2026, on the argument
+that these quantities only set the scale the residual is measured against and
+that a partition of a connected domain resolves that scale as well as the
+whole domain does — so the viscosity would depend on the partition only at
+round-off. **That argument is wrong**, and it fails on the ordinary case: a
+rank holding none of the interesting flow sees only its own quiet background,
+normalizes by that, and applies a different viscosity to the same solution
+than its neighbour does. Measured on `problems/MHD/smoothVortex` (nop 6, 32²
+elements, `ck54`, $\Delta t = 3.3333\times10^{-4}$, $t = 1$, absolute velocity
+$L^1$):
+
+| ranks | error |
+|---|---|
+| 1–2 | 3.935e-07 |
+| 4 | 7.155e-06 |
+| 8 | 7.155e-06 |
+
+an 18× difference from nothing but the partition, and a floor no mesh
+refinement goes below — which is what made that case's convergence study look
+broken at every order past 32² elements. On a 2D field the same mechanism
+draws the partition into the coefficient: on Orszag–Tang at 120² elements over
+128 ranks, $\nu$ jumps at every rank boundary and `mu_SGS` bands vertically.
+It saturates in the rank count because the outcome is bimodal — ranks holding
+the structure normalize by the structure, ranks holding nothing normalize by
+their floor, and more ranks only changes how many of each there are.
+
+Use `"rank"` only where the subdomains are known to be statistically alike and
+the reductions have been measured to matter.
 
 ### 4.9 Measured effect
 
