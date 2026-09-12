@@ -2850,20 +2850,38 @@ end
 
 # Helper: expand the per-element, per-equation μ_dsgs[1:nelem,1:neqs]
 # onto every node so the per-equation coefficients can be written to
-# PNG / VTU like any other field. Shared (DSS) nodes get the value of
-# the last element they belong to — that's fine for visualization.
+# PNG / VTU like any other field. Output only — the solution never reads this
+# array unless the NODAL form is on, and then the nodal kernel fills it
+# instead of this.
+#
+# A shared (DSS) node gets the LARGEST of the values of the elements it
+# belongs to. It used to get the value of the last element written, and that
+# is not a harmless choice: the element loop runs in element order, which on a
+# structured mesh means the neighbour to the RIGHT wins at every vertical
+# interface while the neighbour a whole row later wins at every horizontal
+# one. The asymmetry draws a line of the right-hand element's value along
+# every vertical element boundary — a regular vertical striping of the
+# plotted coefficient, at the element spacing, that is in the picture and not
+# in the run (reported on Orszag-Tang at 120² elements, nop 4). The maximum
+# is symmetric, costs no storage, and does not under-report the dissipation a
+# node sits next to.
 function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
                                   μ_dsgs::AbstractMatrix{TT},
                                   connijk::AbstractArray{TI,4},
                                   nelem::Int, ngl::Int,
                                   SD::AbstractSpaceDimensions) where {TT,TI}
     neqs = size(μ_dsgs, 2)
+    # TEMPORARY (JEXPRESSO_DSGS_BCAST=last): the previous last-writer rule,
+    # to show what it does to a plotted coefficient. Not for commit.
+    llast = get(ENV, "JEXPRESSO_DSGS_BCAST", "") == "last"
+    llast || fill!(μ_dsgs_pnode, zero(TT))
     if SD === NSD_1D()
         @inbounds for ie = 1:nelem
             for i = 1:ngl
                 ip = connijk[ie,i,1,1]
                 for ieq = 1:neqs
-                    μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                    μ_dsgs_pnode[ip, ieq] = llast ? μ_dsgs[ie, ieq] :
+                                            max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
                 end
             end
         end
@@ -2873,7 +2891,8 @@ function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
                 for i = 1:ngl
                     ip = connijk[ie,i,j,1]
                     for ieq = 1:neqs
-                        μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                        μ_dsgs_pnode[ip, ieq] = llast ? μ_dsgs[ie, ieq] :
+                                                max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
                     end
                 end
             end
@@ -2885,7 +2904,7 @@ function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
                     for i = 1:ngl
                         ip = connijk[ie,i,j,k]
                         for ieq = 1:neqs
-                            μ_dsgs_pnode[ip, ieq] = μ_dsgs[ie, ieq]
+                            μ_dsgs_pnode[ip, ieq] = max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
                         end
                     end
                 end

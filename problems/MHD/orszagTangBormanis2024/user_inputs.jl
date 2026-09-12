@@ -1,4 +1,11 @@
 _ot_tend() = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_TEND", "")), 1.0)
+_ot_dt()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_DT",   "")), 0.7e-5)
+# :dsgs_rel — how far below its own physical scale a variable's spread may
+# fall before that scale, and not the spread, normalizes its residual.
+# 1 is the current rule; 1e-3 is what the kernels used before September 2026,
+# which for this problem amplified the continuity-equation residual by up to
+# 1000 (ρ is uniform at t = 0, so the floor WAS its normalization).
+_ot_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_REL",  "")), 1.0)
 
 function user_inputs()
 
@@ -22,7 +29,7 @@ function user_inputs()
         # local wave speeds grow. The reference simulation of the paper used
         # Δt = 8e-4 on its 128² finite-volume grid.
         #:Δt                   => 1.5e-4,
-        :Δt                   => 0.7e-5,
+        :Δt                   => _ot_dt(),
         :tinit                => 0.0,
         # JEXPRESSO_OT_TEND shortens the run without editing the deck — a
         # smoke test of a change to the model is one short run, not 143 000
@@ -84,6 +91,7 @@ function user_inputs()
         # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "legacy",
+        :dsgs_rel         => _ot_rel(),
         :dsgs_CR          => 1.0,
         :dsgs_Cmax        => 0.5,
         :dsgs_gamma       => 5.0/3.0,
