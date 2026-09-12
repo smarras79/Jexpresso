@@ -63,6 +63,9 @@ export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 # case at a time on all 64 ranks. It is the same 8 cases and the same
 # figures, just without the 4-way overlap.
 #---------------------------------------------------------------------------
+# MPICH on this cluster means PMI2. `srun --mpi=list` says what this SLURM
+# was built with; the scan runs a 2-rank hello through this launcher before
+# the sweep, so a wrong value fails in one line instead of eight log files.
 export MPIEXEC=${MPIEXEC:-"srun --exclusive --mpi=pmi2"}
 SV_NP=${SV_NP:-16}
 SV_JOBS=${SV_JOBS:-4}
@@ -78,9 +81,14 @@ SV_NP="$SV_NP" \
 SV_JOBS="$SV_JOBS" \
 SV_SOLVER=vern9 \
 SV_PLOT_NOPS="4 6" \
+SV_TEND=${SV_TEND:-1.0} \
     tools/smooth_vortex_mpi_scan.sh
 
 echo "--- done ---"
+echo "Nothing appears in THIS file while a case runs: each case writes to"
+echo "logs/sv_<visc>_nop<N>_nelx<M>.log, and its error and the figures are"
+echo "written when it reaches its final time. SV_TEND=0.05 first is a"
+echo "ten-minute check of the whole pipeline before an eight-hour sweep."
 echo "figures: output/MHD/smoothVortex/output/convergence_{dsgs,galerkin}*-it*.png"
 echo "errors:  problems/MHD/smoothVortex/errors/"
 echo "replot any subset without rerunning:"

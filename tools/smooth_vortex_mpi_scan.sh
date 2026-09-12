@@ -60,20 +60,58 @@ fi
 
 [ "${SV_KEEP:-0}" = "1" ] || rm -rf problems/MHD/smoothVortex/errors
 
-SV_NELX="$NELX" tools/smooth_vortex_mesh.sh
+SV_NELX="$NELX" tools/smooth_vortex_mesh.sh || true
+for M in $NELX; do
+    [ -f "problems/MHD/smoothVortex/vortex_${M}x${M}.msh" ] || {
+        echo "MISSING problems/MHD/smoothVortex/vortex_${M}x${M}.msh — generate it with"
+        echo "    SV_NELX=\"$NELX\" tools/smooth_vortex_mesh.sh   (needs gmsh)"
+        exit 1
+    }
+done
+
+# Does the launcher work at all? One 2-rank hello before committing hours to
+# it: a wrong --mpi= flag or a launcher the cluster will not run inside a job
+# step fails here, in one line, instead of eight times in eight log files.
+if [ "$NP" -gt 1 ] && [ "${SV_SKIP_LAUNCHER_CHECK:-0}" != "1" ]; then
+    echo "=== launcher check: $MPIEXEC -n 2 $JULIA -e 'using MPI; ...'"
+    if ! $MPIEXEC -n 2 "$JULIA" --project=. -e \
+            'using MPI; MPI.Init(); r=MPI.Comm_rank(MPI.COMM_WORLD); n=MPI.Comm_size(MPI.COMM_WORLD); println("    rank $r of $n on ", gethostname()); MPI.Finalize()' \
+            2>&1 | sed 's/^/    /'; then
+        echo "=== the launcher FAILED. Nothing else will run. Check:"
+        echo "      srun --mpi=list                 (pmi2 for MPICH, pmix for OpenMPI)"
+        echo "      MPIEXEC=\"mpirun\" SV_NP=$((NP*JOBS)) SV_JOBS=1   as a fallback"
+        exit 1
+    fi
+fi
 
 echo "=== smooth vortex: nops [$NOPS] x nelx [$NELX] x [$VISCS]"
 echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $DT, solver $SOLVER, tend $TEND"
 
 run_one() {   # $1 visc  $2 nop  $3 nelx
-    echo "--- visc $1, nop $2, ${3}x${3} elements   $(date +%T)"
+    log="logs/sv_${1}_nop$2_nelx$3.log"
+    launcher=$([ "$NP" -gt 1 ] && echo "$MPIEXEC -n $NP")
+    echo "--- START visc $1, nop $2, ${3}x${3} elements   $(date +%T)"
+    echo "    $launcher $JULIA --project=. src/Jexpresso.jl MHD smoothVortex"
+    echo "    everything this case prints goes to $log"
+    if [ "${DRYRUN:-0}" = "1" ]; then echo "    (dry run)"; return 0; fi
     env JEXPRESSO_SV_NOP="$2" JEXPRESSO_SV_NELX="$3" JEXPRESSO_SV_VISC="$1" \
         JEXPRESSO_SV_DT="$DT" JEXPRESSO_SV_SOLVER="$SOLVER" JEXPRESSO_SV_TEND="$TEND" \
         ${PLOT_NOPS:+JEXPRESSO_SV_PLOT_NOPS="$PLOT_NOPS"} \
-        $([ "$NP" -gt 1 ] && echo "$MPIEXEC -n $NP") \
-        "$JULIA" --project=. src/Jexpresso.jl MHD smoothVortex \
-        > "logs/sv_${1}_nop$2_nelx$3.log" 2>&1 \
-        || echo "    FAILED: visc $1, nop $2, nelx $3 — see logs/sv_${1}_nop$2_nelx$3.log"
+        $launcher "$JULIA" --project=. src/Jexpresso.jl MHD smoothVortex \
+        > "$log" 2>&1
+    rc=$?
+    err="problems/MHD/smoothVortex/errors/nop$2_nelx$3_$([ "$1" = none ] && echo galerkin || echo dsgs).dat"
+    if [ "$rc" -ne 0 ]; then
+        echo "--- FAILED (exit $rc) visc $1, nop $2, nelx $3   $(date +%T)"
+        echo "    last lines of $log:"
+        tail -n 15 "$log" | sed 's/^/      /'
+    elif [ -f "$err" ]; then
+        echo "--- done visc $1, nop $2, ${3}x${3}   $(date +%T)   error: $(tail -n 1 "$err")"
+    else
+        echo "--- done visc $1, nop $2, ${3}x${3}   $(date +%T)   BUT NO ERROR FILE at $err"
+        echo "    last lines of $log:"
+        tail -n 8 "$log" | sed 's/^/      /'
+    fi
 }
 
 mkdir -p logs
@@ -98,6 +136,21 @@ for c in $CASES; do
 done
 wait
 
+echo "=== sweep finished $(date +%T). What is in the store:"
+n_have=0; n_want=0
+for V in $VISCS; do
+    tag=$([ "$V" = none ] && echo galerkin || echo dsgs)
+    for M in $NELX; do
+        for N in $NOPS; do
+            n_want=$((n_want + 1))
+            f="problems/MHD/smoothVortex/errors/nop${N}_nelx${M}_${tag}.dat"
+            if [ -f "$f" ]; then n_have=$((n_have + 1)); else echo "    MISSING $f"; fi
+        done
+    done
+done
+echo "=== $n_have of $n_want cases stored an error"
 echo "=== done. The figures of the last run hold the whole sweep:"
-echo "    output/MHD/smoothVortex/output/convergence_{dsgs,galerkin}[-<subset>]-it<n>.png"
+echo "    \$PWD/output/MHD/smoothVortex/output/convergence_{dsgs,galerkin}[_<subset>]-it<n>.png"
+echo "    (a case writes them only when it REACHES ITS FINAL TIME, so nothing"
+echo "     appears until the first case completes; watch logs/sv_*.log meanwhile)"
 echo "    (replot any subset without rerunning: tools/smooth_vortex_plot.jl 1,3)"
