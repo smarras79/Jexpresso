@@ -28,6 +28,8 @@
 #   JEXPRESSO_SV_CMIN   the DynSGS background floor :dsgs_Cmin  (default 0)
 #   JEXPRESSO_SV_CR     :dsgs_CR                                 (default 1)
 #   JEXPRESSO_SV_REL    :dsgs_rel, the normalization floor        (default 1)
+#   JEXPRESSO_SV_NORMS  :dsgs_norms, "domain" (default) | "rank" | "element";
+#                       "rank" makes the answer depend on the rank count
 #   JEXPRESSO_SV_CMAX   :dsgs_Cmax                               (default 0.5)
 #   JEXPRESSO_SV_VISC   "dsgs" (default) or "none" for the plain Galerkin run,
 #                       the two panels of the paper's Fig. 1
@@ -59,6 +61,8 @@ _sv_cr()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CR",   "")), 1.0
 # kernels used before it, and reproduces the first-order convergence this case
 # was built to expose.
 _sv_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_REL",  "")), 1.0)
+# "domain" (the default here) | "rank" | "element" — see :dsgs_norms below.
+_sv_norms() = lowercase(strip(get(ENV, "JEXPRESSO_SV_NORMS", "domain")))
 _sv_cmax() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CMAX", "")), 0.5)
 _sv_visc() = lowercase(strip(get(ENV, "JEXPRESSO_SV_VISC", "dsgs")))
 # "residual" (the default) measures the ELEMENT's own strong residual against
@@ -145,7 +149,16 @@ function user_inputs()
         :dsgs_gamma       => 5.0/3.0,
         :dsgs_Prt         => 1.0,
         :dsgs_conserved   => true,
-        :dsgs_norms       => "rank",
+        # THE NORMALIZATION SCOPE CHANGES THE ANSWER, and by a lot. "rank"
+        # normalizes each rank's residual by ITS OWN subdomain's spread, so ν
+        # — and therefore the solution — depends on how the domain was cut.
+        # Measured on this case (nop 6, 32² elements, Δt = 3.3333e-4, t = 1,
+        # absolute velocity L¹): 3.935e-7 on 2 ranks against 7.155e-6 on 4,
+        # an 18x difference from nothing but the partition, and a floor that
+        # no mesh refinement can go below. "domain" costs two small Allreduces
+        # per RHS call (a few doubles) and is what Dao & Nazarov's eq. 4.8
+        # means by the norm over Ω.
+        :dsgs_norms       => _sv_norms(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep              => false,
