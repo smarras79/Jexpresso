@@ -25,11 +25,21 @@
 # measured rate saturates at 4 whatever the polynomial order (see the note by
 # _sv_solver in the deck). This script therefore
 #   * runs every case at ONE Δt, computed from the finest (nelx, nop) of the
-#     sweep, so the time error is the same constant everywhere, and
-#   * uses Vern9 (ninth order) by default, so that constant is far below the
-#     spatial error.
-# SV_DT and SV_SOLVER override both; SV_SOLVER=ck54 restores the low-storage
-# integrator of the production decks.
+#     sweep, so the time error is the same constant everywhere rather than
+#     something that shrinks with h and contaminates the slope.
+#
+# The integrator is the deck's CarpenterKennedy2N54. Vern9 was the default
+# here for a while, on the theory that a 4th-order integrator caps the
+# measurable rate at 4 — MEASURED, at 32x32 elements and nop 4, it does not:
+#
+#   ck54,  dt = 1.0e-3     2.318e-5
+#   vern9, dt = 1.0e-3     2.320e-5
+#   vern9, dt = 3.3e-4     2.314e-5
+#
+# The error there is purely spatial: neither the integrator nor the step
+# moves it, and Vern9's 16 stages per step cost 3x for nothing.
+# SV_SOLVER=vern9 brings it back; the honest check on any sweep is to re-run
+# its FINEST case at half SV_DT and see that the error does not move.
 #
 # THE ERROR STORE IS CLEARED FIRST (SV_KEEP=1 to add to it instead): every run
 # redraws the figures from the whole store, so a leftover sweep would appear
@@ -42,7 +52,7 @@ NELX=${SV_NELX:-"4 8 16 32"}
 VISCS=${SV_VISC:-"dsgs none"}
 NP=${SV_NP:-4}
 JOBS=${SV_JOBS:-1}
-SOLVER=${SV_SOLVER:-vern9}
+SOLVER=${SV_SOLVER:-ck54}
 TEND=${SV_TEND:-1.0}
 JULIA=${JULIA:-julia}
 MPIEXEC=${MPIEXEC:-mpiexec}

@@ -79,7 +79,7 @@ SV_NELX="32 64" \
 SV_VISC="dsgs none" \
 SV_NP="$SV_NP" \
 SV_JOBS="$SV_JOBS" \
-SV_SOLVER=vern9 \
+SV_SOLVER=ck54 \
 SV_PLOT_NOPS="4 6" \
 SV_TEND=${SV_TEND:-1.0} \
     tools/smooth_vortex_mpi_scan.sh
