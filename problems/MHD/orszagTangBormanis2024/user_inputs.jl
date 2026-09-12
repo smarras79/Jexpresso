@@ -6,6 +6,7 @@ _ot_dt()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_DT",   "")), 0.7
 # which for this problem amplified the continuity-equation residual by up to
 # 1000 (ρ is uniform at t = 0, so the floor WAS its normalization).
 _ot_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_REL",  "")), 1.0)
+_ot_norms() = lowercase(strip(get(ENV, "JEXPRESSO_OT_NORMS", "domain")))
 
 function user_inputs()
 
@@ -92,6 +93,16 @@ function user_inputs()
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "legacy",
         :dsgs_rel         => _ot_rel(),
+        # NORMALIZATION SCOPE. The code-wide default is "rank": every rank
+        # normalizes the residual by ITS OWN subdomain's spread, so ν — and
+        # with it the solution — depends on how the domain was cut. On this
+        # case at 120² elements over 128 ranks that draws the partition into
+        # the coefficient as vertical banding; measured on the smooth vortex
+        # (nop 6, 32² elements): the error is 3.935e-7 on 2 ranks and 7.155e-6
+        # on 4, from nothing but the number of ranks. "domain" is two small
+        # Allreduces per RHS call and is what the method means by the norm
+        # over Ω. JEXPRESSO_OT_NORMS=rank restores the cheaper scope.
+        :dsgs_norms       => _ot_norms(),
         :dsgs_CR          => 1.0,
         :dsgs_Cmax        => 0.5,
         :dsgs_gamma       => 5.0/3.0,
