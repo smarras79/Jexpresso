@@ -2871,17 +2871,13 @@ function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
                                   nelem::Int, ngl::Int,
                                   SD::AbstractSpaceDimensions) where {TT,TI}
     neqs = size(μ_dsgs, 2)
-    # TEMPORARY (JEXPRESSO_DSGS_BCAST=last): the previous last-writer rule,
-    # to show what it does to a plotted coefficient. Not for commit.
-    llast = get(ENV, "JEXPRESSO_DSGS_BCAST", "") == "last"
-    llast || fill!(μ_dsgs_pnode, zero(TT))
+    fill!(μ_dsgs_pnode, zero(TT))
     if SD === NSD_1D()
         @inbounds for ie = 1:nelem
             for i = 1:ngl
                 ip = connijk[ie,i,1,1]
                 for ieq = 1:neqs
-                    μ_dsgs_pnode[ip, ieq] = llast ? μ_dsgs[ie, ieq] :
-                                            max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
+                    μ_dsgs_pnode[ip, ieq] = max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
                 end
             end
         end
@@ -2891,8 +2887,7 @@ function broadcast_dsgs_to_nodes!(μ_dsgs_pnode::AbstractMatrix{TT},
                 for i = 1:ngl
                     ip = connijk[ie,i,j,1]
                     for ieq = 1:neqs
-                        μ_dsgs_pnode[ip, ieq] = llast ? μ_dsgs[ie, ieq] :
-                                                max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
+                        μ_dsgs_pnode[ip, ieq] = max(μ_dsgs_pnode[ip, ieq], μ_dsgs[ie, ieq])
                     end
                 end
             end
