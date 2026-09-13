@@ -71,6 +71,15 @@ export SV_NOPS=${SV_NOPS:-"4 5 6 7"}
 export SV_NELX=${SV_NELX:-"16 32 64"}
 export SV_VISC=${SV_VISC:-"dsgs none"}
 export SV_TEND=${SV_TEND:-0.5}
+# Δt PER CASE, from the deck's CFL rule, refined WITH the mesh. One step for
+# the whole sweep is right when only the space discretization is compared —
+# a plain Galerkin study — but wrong with the residual viscosity on: nu is
+# C_R h^2 R, and at a FIXED step R stops falling once it reaches its time
+# floor, so nu stalls and every RV curve bends to slope h^2 as soon as its
+# spatial error drops under it. That is what caps P6 and P7 at p = 2.6 and
+# 2.4 while their Galerkin curves hold 5.7 and 9.6.
+#   SV_DT=2.857e-4 sbatch ...   pins one step again (the old behaviour)
+export SV_DT=${SV_DT:-auto}
 export SV_SOLVER=${SV_SOLVER:-ck54}
 export SV_NP=${SV_NP:-16}
 export SV_JOBS=${SV_JOBS:-6}
@@ -82,7 +91,7 @@ export SV_PLOT_NOPS=${SV_PLOT_NOPS:-"4 7"}   # the extremes, on their own axes
 tools/smooth_vortex_mesh.sh || true
 
 echo "=== 1/2  ideal GLM-MHD smooth vortex"
-echo "===      nops [$SV_NOPS] x nelx [$SV_NELX] x [$SV_VISC], t = $SV_TEND, box width $SV_L"
+echo "===      nops [$SV_NOPS] x nelx [$SV_NELX] x [$SV_VISC], t = $SV_TEND, box width $SV_L, dt $SV_DT"
 SV_CASE=MHD/smoothVortex tools/smooth_vortex_mpi_scan.sh
 
 # The same vortex without the magnetic field, at the amplitude that matches
