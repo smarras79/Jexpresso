@@ -699,6 +699,27 @@ const _DSGS_RELMUL = Ref(1000.0)
 # at once and leave μ_dsgs as the step's stage-zero value.
 const _DSGS_FROZEN = Ref(false)
 
+# JEXPRESSO_DSGS_RSPLIT=1 — record, per element, HOW the residual that sets ν
+# was made: the time term ∂ₜq of the three-level stencil, the space term
+# rhs_el/m_K, and the normalized ratio itself, all at the node where the ratio
+# is largest. R = |time − space|, and the two can be large and nearly
+# cancelling, or one can be zero. A ν that is large where the solution is flat
+# says one of those two is reading something the other is not, and the split
+# is what tells them apart. Written out beside the ν dump by write_output.
+const _DSGS_RSPLIT = Ref(false)
+const _DSGS_RT     = Float64[]     # |time term|  at the element's argmax node
+const _DSGS_RS     = Float64[]     # |space term| there
+const _DSGS_RR     = Float64[]     # the normalized ratio there
+
+@inline function _dsgs_rsplit_size!(nelem::Int)
+    _DSGS_RSPLIT[] || return nothing
+    if length(_DSGS_RT) != nelem
+        resize!(_DSGS_RT, nelem); resize!(_DSGS_RS, nelem); resize!(_DSGS_RR, nelem)
+        fill!(_DSGS_RT, 0.0); fill!(_DSGS_RS, 0.0); fill!(_DSGS_RR, 0.0)
+    end
+    return nothing
+end
+
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,
                                  q::AbstractMatrix{TT},
@@ -1288,6 +1309,7 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
     γm1  = γ - one(TT)
     neqs = size(μ_dsgs, 2)
     eps  = TT(1.0e-16)
+    _dsgs_rsplit_size!(nelem)
 
     # --- Pass 1: rank-local means ⟨ρ⟩, ⟨ρu⟩, ⟨ρv⟩, ⟨ρE⟩ ----------------
     ρ_avg = zero(TT); ρu_avg = zero(TT)
@@ -1365,18 +1387,44 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         wmax  = zero(TT)   # ‖ |u| + √(γT) ‖_{∞,K}
         ρmax  = zero(TT)   # ‖ρ‖_{∞,K}
 
+        rbest = zero(TT); tbest = zero(TT); sbest = zero(TT)   # the split, at the argmax
+
         for j = 1:ngl
             for i = 1:ngl
                 ip = connijk[ie,i,j,1]
                 imK = one(TT)/(ω[i]*ω[j]*Je[ie,i,j])   # element lumped mass at the node
 
-                Rρ  = abs((wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]) - imK*rhs_el[ie,i,j,1])
-                Rmu = (wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]) - imK*rhs_el[ie,i,j,2]
-                Rmv = (wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]) - imK*rhs_el[ie,i,j,3]
-                Rm  = sqrt(Rmu*Rmu + Rmv*Rmv)
-                RE  = abs((wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]) - imK*rhs_el[ie,i,j,4])
+                # each residual as its two halves: the three-level time
+                # difference, and this element's own weak RHS per unit mass
+                Tρ  = wt[1]*q[ip,1] + wt[2]*q1[ip,1] + wt[3]*q2[ip,1]
+                Sρ  = imK*rhs_el[ie,i,j,1]
+                Tmu = wt[1]*q[ip,2] + wt[2]*q1[ip,2] + wt[3]*q2[ip,2]
+                Smu = imK*rhs_el[ie,i,j,2]
+                Tmv = wt[1]*q[ip,3] + wt[2]*q1[ip,3] + wt[3]*q2[ip,3]
+                Smv = imK*rhs_el[ie,i,j,3]
+                TE  = wt[1]*q[ip,4] + wt[2]*q1[ip,4] + wt[3]*q2[ip,4]
+                SE  = imK*rhs_el[ie,i,j,4]
 
-                ratio = max(ratio, Rρ/dρ, Rm/dm, RE/dE)
+                Rρ  = abs(Tρ - Sρ)
+                Rmu = Tmu - Smu
+                Rmv = Tmv - Smv
+                Rm  = sqrt(Rmu*Rmu + Rmv*Rmv)
+                RE  = abs(TE - SE)
+
+                r1 = Rρ/dρ; r2 = Rm/dm; r3 = RE/dE
+                ratio = max(ratio, r1, r2, r3)
+                if _DSGS_RSPLIT[]
+                    if r1 >= rbest
+                        rbest = r1; tbest = abs(Tρ); sbest = abs(Sρ)
+                    end
+                    if r2 >= rbest
+                        rbest = r2
+                        tbest = sqrt(Tmu*Tmu + Tmv*Tmv); sbest = sqrt(Smu*Smu + Smv*Smv)
+                    end
+                    if r3 >= rbest
+                        rbest = r3; tbest = abs(TE); sbest = abs(SE)
+                    end
+                end
 
                 ρl = max(q[ip,1], eps)
                 ul = q[ip,2]/ρl
@@ -1388,6 +1436,10 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                 wmax = max(wmax, sqrt(ul*ul + vl*vl) + sqrt(γ*Tl))
                 ρmax = max(ρmax, ρl)
             end
+        end
+
+        if _DSGS_RSPLIT[]
+            _DSGS_RT[ie] = Float64(tbest); _DSGS_RS[ie] = Float64(sbest); _DSGS_RR[ie] = Float64(rbest)
         end
 
         # eq. (3.5)-(3.7). Both branches carry a density, so μ is DYNAMIC.

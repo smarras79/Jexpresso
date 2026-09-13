@@ -166,6 +166,9 @@ function _dsgs_residual_rhs!(u, params, SD)
     # that scale normalizes its residual (SGS.jl, _dsgs_denom). The kernels
     # carry the old 1e-3 as `rel`, so this is the factor onto it.
     _DSGS_RELMUL[] = 1.0e3*Float64(get(params.inputs, :dsgs_rel, 1.0))
+    # JEXPRESSO_DSGS_RSPLIT=1: record how each element's residual was made
+    # (SGS.jl, _DSGS_RSPLIT). Diagnostic only; off unless the variable is set.
+    _DSGS_RSPLIT[] = get(ENV, "JEXPRESSO_DSGS_RSPLIT", "") == "1"
     # Startup: while the BDF2 history is still the initial condition the
     # residual has no meaning (see the weights in rhs!). Hold it at zero.
     if params.dsgs_nhist[] < 3

@@ -239,6 +239,7 @@ function write_output(SD::NSD_2D, sol, uaux, t, iout,  mesh::St_mesh, mp,
         # of the same output time (the per-node broadcast is μ_dsgs_pnode).
         μ_nodes = (μ_dsgs_pnode !== nothing && inputs[:backend] == CPU()) ? μ_dsgs_pnode : nothing
         _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         plot_triangulation(SD, mesh, qplot, title, OUTPUT_DIR, inputs;
                            iout=iout, nvar=nplot, varnames=plotnames,
                            μ_nodes=μ_nodes, μ_names=varnames, Minv=Minv, t=t)
@@ -371,6 +372,36 @@ end
 # a pattern that a picture suggests has to be measured in the numbers before
 # it is chased in the kernel.
 #
+# The companion of the nu dump: WHERE the residual that set nu came from.
+# One line per element — its centroid, the normalized ratio, and the two
+# halves of R at the node where that ratio peaked: the time difference and
+# this element's own weak RHS per unit mass.
+function _dump_rsplit(OUTPUT_DIR, mesh, iout)
+    (_DSGS_RSPLIT[] && length(_DSGS_RR) == mesh.nelem) || return nothing
+    try
+        mkpath(OUTPUT_DIR)
+        f = string(OUTPUT_DIR, "/rsplit-it", iout, "-rank",
+                   MPI.Comm_rank(get_mpi_comm()), ".txt")
+        ngl = mesh.ngl
+        open(f, "w") do io
+            println(io, "# xc yc ratio time_term space_term")
+            for ie = 1:mesh.nelem
+                xc = 0.0; yc = 0.0
+                for j = 1:ngl, i = 1:ngl
+                    ip = mesh.connijk[ie,i,j,1]
+                    xc += mesh.x[ip]; yc += mesh.y[ip]
+                end
+                xc /= ngl*ngl; yc /= ngl*ngl
+                println(io, xc, " ", yc, " ", _DSGS_RR[ie], " ", _DSGS_RT[ie], " ", _DSGS_RS[ie])
+            end
+        end
+        @info " wrote $f"
+    catch err
+        @warn "could not dump the DynSGS residual split" exception=err
+    end
+    return nothing
+end
+
 function _dump_mu_nodes(OUTPUT_DIR, mesh, μ_nodes, iout)
     (μ_nodes !== nothing && get(ENV, "JEXPRESSO_DSGS_DUMP", "") == "1") || return nothing
     try
@@ -513,6 +544,7 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, Int64[ip1, ip2, ip3, ip4])
         # when all columns are identical one field, mu_dsgs, is written
         # instead of nine copies of it.
         _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
             nμ = size(μ_dsgs_pnode, 2)
             # one field per DISTINCT coefficient: a slot identical to an
@@ -673,6 +705,7 @@ cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, Int64[ip1, ip2, ip3, ip4, ip
         # when all columns are identical one field, mu_dsgs, is written
         # instead of nine copies of it.
         _dump_mu_nodes(OUTPUT_DIR, mesh, μ_dsgs_pnode, iout)
+        _dump_rsplit(OUTPUT_DIR, mesh, iout)
         if μ_dsgs_pnode !== nothing && size(μ_dsgs_pnode, 1) == npoin
             nμ = size(μ_dsgs_pnode, 2)
             # one field per DISTINCT coefficient: a slot identical to an
