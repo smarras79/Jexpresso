@@ -78,7 +78,15 @@ LTAG="L$(printf '%s' "$LBOX" | sed 's/\.0*$//')_"
 
 # One Δt for the sweep: the deck's rule at the finest (nelx, nop) of it.
 # 2.0e-3 * 64 / (nelx*nop) is that rule; keep the two in step.
-if [ -n "${SV_DT:-}" ]; then
+if [ "${SV_DT:-}" = "auto" ] || [ "${SV_DT:-}" = "percase" ]; then
+    # Δt PER CASE, from the deck's own CFL rule (DT_REF*64/(nelx*nop)): the
+    # step is refined WITH the mesh instead of being held fixed for the whole
+    # sweep. That is the study to run when the residual viscosity is on: nu
+    # is C_R h^2 R, and at a fixed step R stops falling once it reaches the
+    # time-discretization error, so nu stalls and every RV curve eventually
+    # bends to slope h^2. A step that shrinks with h keeps that floor falling.
+    DT=percase
+elif [ -n "${SV_DT:-}" ]; then
     DT=$SV_DT
 else
     MAXN=0; for N in $NOPS;  do [ "$N" -gt "$MAXN" ] && MAXN=$N; done
@@ -121,7 +129,7 @@ if [ "$NP" -gt 1 ] && [ "${SV_SKIP_LAUNCHER_CHECK:-0}" != "1" ]; then
 fi
 
 echo "=== $CASE: nops [$NOPS] x nelx [$NELX] x [$VISCS] on the [-$(awk -v l="$LBOX" 'BEGIN{printf "%g", l/2}'), $(awk -v l="$LBOX" 'BEGIN{printf "%g", l/2}')]^2 box"
-echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $DT, solver $SOLVER, tend $TEND"
+echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $([ "$DT" = percase ] && echo "per case (the deck's CFL rule)" || echo "$DT"), solver $SOLVER, tend $TEND"
 
 run_one() {   # $1 visc  $2 nop  $3 nelx
     log="logs/${CNAME}_${1}_nop$2_nelx$3.log"
@@ -131,7 +139,8 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
     echo "    everything this case prints goes to $log"
     if [ "${DRYRUN:-0}" = "1" ]; then echo "    (dry run)"; return 0; fi
     env JEXPRESSO_${PFX}_NOP="$2" JEXPRESSO_${PFX}_NELX="$3" JEXPRESSO_${PFX}_VISC="$1" \
-        JEXPRESSO_${PFX}_DT="$DT" JEXPRESSO_${PFX}_SOLVER="$SOLVER" JEXPRESSO_${PFX}_TEND="$TEND" \
+        $([ "$DT" = percase ] || echo JEXPRESSO_${PFX}_DT="$DT") \
+        JEXPRESSO_${PFX}_SOLVER="$SOLVER" JEXPRESSO_${PFX}_TEND="$TEND" \
         JEXPRESSO_${PFX}_L="$LBOX" \
         ${PLOT_NOPS:+JEXPRESSO_${PFX}_PLOT_NOPS="$PLOT_NOPS"} \
         $launcher "$JULIA" --project=. src/Jexpresso.jl "$EQNS" "$CNAME" \
