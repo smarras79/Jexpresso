@@ -924,6 +924,16 @@ function _build_rhs!(RHS, u, params, time)
             params.dsgs_stage[] = true
             params.dsgs_wt[]    = ((2τ + h)/(τ*(τ + h)), -(τ + h)/(τ*h), τ/(h*(τ + h)))
         end
+        # :dsgs_freeze_stage (SGS.jl, _DSGS_FROZEN): compute the coefficient
+        # only at the stage that sits on tⁿ and hold it for the rest of the
+        # step. The stage-consistent stencil above is second order in the
+        # values it is given, but at τ > 0 one of them is an RK internal
+        # stage, whose own error is O(Δt) — so the residual, and with it ν,
+        # stalls at O(Δt) however well resolved the solution is. At τ = 0 the
+        # three values are step-level states and the residual is the BDF2
+        # truncation error, O(Δt²).
+        _DSGS_FROZEN[] = get(params.inputs, :dsgs_freeze_stage, false) &&
+                         params.dsgs_nhist[] >= 3 && τ > 1.0e-8*h
     end
 
     #-----------------------------------------------------------------------------------

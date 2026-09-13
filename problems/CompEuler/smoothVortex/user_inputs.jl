@@ -83,6 +83,7 @@ end
 # L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
 # The default is the box of the paper, [-10,10]^2, i.e. L = 20.
+_ev_freeze() = get(ENV, "JEXPRESSO_EV_FREEZE", "0") in ("1", "true", "yes")
 _ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 20.0)
 # The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
 # does not say which box it is cannot be told apart from one that is a
@@ -125,6 +126,11 @@ function user_inputs()
         :dsgs_Prt         => 0.7,
         :dsgs_rel         => _ev_rel(),
         :dsgs_norms       => _ev_norms(),
+        # Compute the coefficient once per step instead of once per stage:
+        # JEXPRESSO_EV_FREEZE=1 (see :dsgs_freeze_stage in mod_inputs.jl).
+        # It is what keeps the residual, and with it nu, from stalling at
+        # O(dt) and capping a high-order accuracy test at second order.
+        :dsgs_freeze_stage => _ev_freeze(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep             => false,

@@ -678,6 +678,27 @@ const _DSGS_RELMUL = Ref(1000.0)
 @inline _dsgs_denom(spread::TT, fl::TT) where {TT<:AbstractFloat} =
     max(spread, TT(_DSGS_RELMUL[])*fl)
 
+# :dsgs_freeze_stage — the coefficient is computed ONCE PER TIME STEP, at the
+# stage that sits on tⁿ, and held for the rest of the step.
+#
+# Why it matters for accuracy. ν = C_R h² R̃, and R̃ is measured with a
+# three-point time difference across the RK stages (rhs.jl, _dsgs_stencil).
+# Those weights are second-order in the values they are GIVEN, but at an
+# intermediate stage one of those values is an RK internal stage, whose own
+# error is O(Δt) — explicit RK schemes have low stage order. So R̃ never
+# falls below O(Δt), no matter how smooth and how well resolved the solution
+# is, and ν stalls at C_R h²·O(Δt): on a smooth problem the RV solution then
+# departs from the Galerkin one by O(h²), which caps the measured order at 2
+# as soon as the spatial error drops under it (measured: P6 and P7 of the
+# smooth vortex bend to p = 2.4 and 2.1 exactly there).
+#
+# Computed at tⁿ instead, from step-level states only, R̃ is the BDF2
+# truncation error O(Δt²) and the floor drops by a factor Δt.
+#
+# Set from rhs.jl once per RHS call; when it is true the kernels below return
+# at once and leave μ_dsgs as the step's stage-zero value.
+const _DSGS_FROZEN = Ref(false)
+
 function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  ::DSGS, ::NSD_1D,
                                  q::AbstractMatrix{TT},
@@ -693,6 +714,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Δx::AbstractVector{TT},
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     # 1D CompEuler in total-energy form q = (ρ, ρu, ρE). Marras's
     # unified formula gives ONE residual-based coefficient per element;
@@ -834,6 +856,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  nelem::Int, ngl::Int;
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     if !ltheta
         _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs_el, ω, Je, visc_coeff,
@@ -1055,6 +1078,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  nelem::Int, ngl::Int;
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     ltheta || error(" compute_dsgs_viscosity!(::DSGS, ::NSD_3D): only the θ form is implemented in 3D.\n" *
                     "   Set :energy_equation => \"theta\", or use :visc_model => SMAG() / VREM() / AV().")
@@ -1558,6 +1582,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lconserved::Bool=false,
                                  Cmin::TT=zero(TT),
                                  lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)          # residual max excludes the ψ slot
@@ -1878,6 +1903,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lconserved::Bool=false,
                                  Cmin::TT=zero(TT),
                                  lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)
@@ -2091,6 +2117,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        lconserved::Bool=false,
                                        Cmin::TT=zero(TT),
                                        lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)
@@ -2460,6 +2487,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        lconserved::Bool=false,
                                        Cmin::TT=zero(TT),
                                        lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 8)
@@ -2570,6 +2598,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        ltheta::Bool=true,
                                        lglobal_norms::Bool=false,
                                        Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 4)
@@ -2690,6 +2719,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
                                  Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 3)
@@ -2807,6 +2837,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nelem::Int, ngl::Int, npoin::Int;
                                        lglobal_norms::Bool=false,
                                        Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+    _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
     NRES = min(neqs, 3)

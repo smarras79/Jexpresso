@@ -1133,6 +1133,33 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_Cl))
         inputs[:dsgs_Cl] = 0.0
     end
+    #   :dsgs_freeze_stage  compute the coefficient ONCE PER TIME STEP, at the
+    #                      stage that sits on tⁿ, and hold it for the rest of
+    #                      the step (default false: it is computed at every
+    #                      stage).
+    #
+    #                      ν = C_R h² R̃, and R̃ is a three-point time
+    #                      difference across the stages. At an intermediate
+    #                      stage one of those three values is an RK internal
+    #                      stage, whose own error is O(Δt) — explicit RK
+    #                      schemes have low stage order — so R̃ never falls
+    #                      below O(Δt) however smooth and however well
+    #                      resolved the solution is. ν then stalls at
+    #                      C_R h²·O(Δt), the RV solution departs from the
+    #                      Galerkin one by O(h²), and the measured order of a
+    #                      smooth accuracy test is capped at 2 as soon as the
+    #                      spatial error drops under it — measured on the
+    #                      smooth vortex, where P6 and P7 bend to p = 2.4 and
+    #                      2.1 at 50k-200k DOFs while their Galerkin curves
+    #                      hold 5.7 and 9.8.
+    #
+    #                      At tⁿ the three values are step-level states, R̃ is
+    #                      the BDF2 truncation error O(Δt²), and the floor
+    #                      drops by a factor Δt. It also removes the stage
+    #                      cost of the sensor.
+    if(!haskey(inputs, :dsgs_freeze_stage))
+        inputs[:dsgs_freeze_stage] = false
+    end
     #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
     #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
     #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the
