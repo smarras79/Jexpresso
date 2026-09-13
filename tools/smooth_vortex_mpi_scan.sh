@@ -134,6 +134,17 @@ echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $([ "$DT" = percas
 run_one() {   # $1 visc  $2 nop  $3 nelx
     log="logs/${CNAME}_${1}_nop$2_nelx$3.log"
     launcher=$([ "$NP" -gt 1 ] && echo "$MPIEXEC -n $NP")
+    # SV_KEEP=1 adds to the store instead of starting a fresh one, so a case
+    # whose record is already there has nothing to add: skip it. That makes a
+    # sweep RESUMABLE — a machine that goes down, or a job that hits its wall
+    # clock, costs only the cases that were in flight, not the whole run.
+    if [ "${SV_KEEP:-0}" = "1" ] && [ "${SV_REDO:-0}" != "1" ]; then
+        _e=$(err_file "$2" "$3" "$([ "$1" = none ] && echo galerkin || echo dsgs)")
+        if [ -f "$_e" ]; then
+            echo "--- have visc $1, nop $2, ${3}x${3} already: $(tail -n 1 "$_e")"
+            return 0
+        fi
+    fi
     echo "--- START visc $1, nop $2, ${3}x${3} elements   $(date +%T)"
     echo "    $launcher $JULIA --project=. src/Jexpresso.jl $EQNS $CNAME"
     echo "    everything this case prints goes to $log"
