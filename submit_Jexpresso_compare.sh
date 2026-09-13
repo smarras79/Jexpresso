@@ -67,7 +67,7 @@ export SV_L=${SV_L:-20}
 # is a longer integration, so the errors are larger than theirs and the
 # orders are what is being compared, not the absolute numbers.
 # ---------------------------------------------------------------------------
-export SV_NOPS=${SV_NOPS:-"4 5 6 7"}
+export SV_NOPS=${SV_NOPS:-"4 5 6"}
 export SV_NELX=${SV_NELX:-"16 32 64"}
 export SV_VISC=${SV_VISC:-"dsgs none"}
 export SV_TEND=${SV_TEND:-0.5}
