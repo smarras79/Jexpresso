@@ -713,6 +713,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  connijk::AbstractArray{TI,4},
                                  Δx::AbstractVector{TT},
                                  nelem::Int, ngl::Int;
+                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
@@ -727,8 +728,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
     invnp = one(TT)/(nelem*ngl)
     γ     = TT(1.4)
-    CR    = TT(1.0)
-    Cmax    = TT(0.5)
     eps   = Base.eps(TT)
     neqs  = size(μ_dsgs, 2)
 
@@ -803,7 +802,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
         μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
         μ_max = Cmax*Δ*uTmx
-        μ     = max(zero(TT), min(μ_max, μ_res))
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
+        μ     = max(μ_fl, min(μ_max, μ_res))
 
         # Same coefficient on every equation (1D E-form, Marras eq. 10),
         # scaled per equation by the user-supplied inputs[:μ] vector.
@@ -854,6 +854,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  PhysConst::PhysicalConst{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int;
+                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
@@ -861,7 +862,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     if !ltheta
         _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs_el, ω, Je, visc_coeff,
                          wt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
-                         lglobal_norms)
+                         lglobal_norms; CR = CR, Cmax = Cmax, Cmin = Cmin)
         return nothing
     end
 
@@ -891,8 +892,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     invnp = one(TT)/(nelem*ngl*ngl)
     γ     = PhysConst.γ
     C0    = PhysConst.C0
-    CR    = TT(1.0)
-    Cmax    = TT(0.5)
     γm1   = γ - one(TT)
     eps   = TT(1.0e-16)
 
@@ -1008,7 +1007,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
         μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
         μ_max = Cmax*Δ*uTmx
-        μ     = max(zero(TT), min(μ_max, μ_res))   # kinematic, m²/s
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
+        μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
 
         # μ above is KINEMATIC. _expansion_visc! applies visc_coeff·∇²(prim)
         # and user_primitives! hands this system (ρ, u, v, θ), so momentum
@@ -1076,6 +1076,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  PhysConst::PhysicalConst{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int;
+                                 CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
@@ -1087,8 +1088,6 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     invnp = one(TT)/(nelem*ngl*ngl*ngl)
     γ     = PhysConst.γ
     C0    = PhysConst.C0
-    CR    = TT(1.0)
-    Cmax  = TT(0.5)
     γm1   = γ - one(TT)
     eps   = TT(1.0e-16)
 
@@ -1191,7 +1190,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
 
         μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4, n5/denom5)
         μ_max = Cmax*Δ*uTmx
-        μ     = max(zero(TT), min(μ_max, μ_res))   # kinematic, m²/s
+        μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
+        μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
         μ_dyn = ρ_el*μ
 
         μ_dsgs[ie,1] = zero(TT)                             # ρ : no mass diffusion
@@ -1281,12 +1281,11 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           PhysConst::PhysicalConst{TT},
                           Pr::TT,
                           nelem::Int, ngl::Int,
-                          lglobal_norms::Bool) where {TT<:AbstractFloat, TI<:Integer}
+                          lglobal_norms::Bool;
+                          CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
 
     γ    = PhysConst.γ
     γm1  = γ - one(TT)
-    CR   = TT(1.0)
-    Cmax   = TT(0.5)
     neqs = size(μ_dsgs, 2)
     eps  = TT(1.0e-16)
 
@@ -1394,7 +1393,8 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         # eq. (3.5)-(3.7). Both branches carry a density, so μ is DYNAMIC.
         μ_res = CR*h*h*dρ*ratio
         μ_cap = Cmax*h*ρmax*wmax
-        μ     = max(zero(TT), min(μ_cap, μ_res))
+        μ_fl  = Cmin > zero(TT) ? Cmin*h*ρmax*wmax : zero(TT)   # background floor
+        μ     = max(μ_fl, min(μ_cap, μ_res))
 
         μ_dsgs[ie,1] = visc_coeff[1] * μ/max(ρmax, eps)   # β on ∇ρ
         μ_dsgs[ie,2] = visc_coeff[2] * μ                  # μ on ∇u

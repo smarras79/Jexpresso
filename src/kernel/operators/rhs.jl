@@ -1339,6 +1339,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 dsgs_wt,
                                 params.mesh.connijk, params.mesh.Δx,
                                 Int(nelem), Int(ngl);
+                                CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
+                                Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                 lglobal_norms = params.dsgs_global_norms)
         broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                  params.mesh.connijk,
@@ -1672,6 +1675,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     params.mesh.connijk, params.mesh.Δelem,
                                     PHYS_CONST, Pr_TT,
                                     Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                    CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                    Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
+                                    Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                     ltheta = (params.inputs[:energy_equation] == "theta"),
                                     lglobal_norms = params.dsgs_global_norms)
 
@@ -1940,6 +1946,9 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                 params.mesh.connijk, params.mesh.Δelem,
                                 PHYS_CONST, Pr_TT,
                                 Int(params.mesh.nelem), Int(params.mesh.ngl);
+                                CR   = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_CR,   1.0)),
+                                Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
+                                Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                 ltheta = (params.inputs[:energy_equation] == "theta"),
                                 lglobal_norms = params.dsgs_global_norms)
 
