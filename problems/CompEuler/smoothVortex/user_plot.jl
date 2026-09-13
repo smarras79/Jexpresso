@@ -290,7 +290,7 @@ const EV_MS        = 9
 _ev_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
                    -2.0*log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
 
-_ev_visc_label(tag) = tag == "dsgs" ? "RV" : "Galerkin"
+_ev_visc_label(tag) = tag == "dsgs" ? "DSGS" : "Galerkin"
 
 function _ev_panel(sub, nops, fld, nm)
     # The final time the errors were measured at, and the step they were taken
@@ -345,17 +345,21 @@ function _ev_panel(sub, nops, fld, nm)
     if !isempty(allx)
         x1 = minimum(allx); x2 = maximum(allx)
         ymax = maximum(ally); ymin = minimum(ally)
-        for (nop, shift, col) in ((minimum(nops), 1/3.0, :gray40),
-                                  (maximum(nops), 3.0,   :gray55))
-            g  = sort(filter(r -> r.nop == nop, sub), by = r -> r.ndofs)
-            ys = [getfield(r, fld) for r in g]
-            xs = [Float64(r.ndofs) for r in g]
-            keep = isfinite.(ys) .& (ys .> 0)
-            any(keep) || continue
-            xs = xs[keep]; ys = ys[keep]
-            xm = exp(sum(log, xs)/length(xs)); ym = shift*exp(sum(log, ys)/length(ys))
+        # The reference slopes BRACKET the data rather than run through it:
+        # the shallow one (the lowest order on the figure) is drawn ABOVE
+        # every curve and the steep one (the highest order) BELOW every
+        # curve, so neither crosses the lines it is there to measure. For
+        # y = A x^s the offset A is read off the data itself — the largest
+        # y_i x_i^(-s) puts the line through the topmost point, the smallest
+        # through the bottom one — and a factor of two moves it clear. The
+        # axes stay clipped to the data, so a steep guide simply leaves the
+        # panel at its ends.
+        for (nop, above, col) in ((minimum(nops), true,  :gray40),
+                                  (maximum(nops), false, :gray55))
             sl = -(nop + 1)/2
-            Plots.plot!(pl, [x1, x2], [ym*(xi/xm)^sl for xi in (x1, x2)];
+            r  = [ally[i]*allx[i]^(-sl) for i in eachindex(allx)]
+            A  = above ? 2.0*maximum(r) : 0.5*minimum(r)
+            Plots.plot!(pl, [x1, x2], [A*xi^sl for xi in (x1, x2)];
                         line = (col, 2.0, :dashdot),
                         label = LaTeXStrings.latexstring(string("\\mathcal{O}(h^{", nop + 1, "})")))
         end
