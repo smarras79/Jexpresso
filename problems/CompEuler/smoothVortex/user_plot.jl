@@ -171,6 +171,9 @@ end
 _ev_btag() = (b = _ev_beta(); b == round(b) ? string(Int(round(b))) : string(b))
 
 function _ev_save_error(e, inputs, t, tnum = t)
+    # The BOX is part of the identity of a record: [-5,5]^2 floors the error at
+    # ~1e-5 and [-10,10]^2 does not, so the two must never share a curve.
+    mesh_box = isdefined(@__MODULE__, :_ev_lbox) ? _ev_lbox() : 20.0
     nop = Int(get(inputs, :nop, 0))
     # :nelx carries mod_inputs' placeholder for a gmsh case, so take the
     # element count from the mesh file name.
@@ -196,6 +199,7 @@ function _ev_save_error(e, inputs, t, tnum = t)
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", ndofs,
                         " t=", t, " tnum=", tnum, " visc=", _ev_tag(inputs),
                         " norm=abs",            # absolute norms: see _ev_load_errors
+                        " L=", mesh_box,        # the box: see _ev_load_errors
                         " beta=", _ev_beta(),
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
@@ -240,6 +244,12 @@ function _ev_load_errors(t)
         # Errors written before the norms became absolute have no norm= key;
         # they are a different quantity and are not drawn with these.
         get(meta, "norm", "") == "abs" || continue
+        # Same box only. A record written before the box was stamped carries no
+        # L= key; those are kept, since every one of them predates the option.
+        let lb = tryparse(Float64, get(meta, "L", "")),
+            lw = isdefined(@__MODULE__, :_ev_lbox) ? _ev_lbox() : 20.0
+            lb === nothing || abs(lb - lw) <= 1.0e-8*max(1.0, lw) || continue
+        end
         # Only the records measured on THIS vortex: a β = 1 sweep and a β = 5
         # sweep are different problems, and a figure mixing them is nonsense.
         bc = tryparse(Float64, get(meta, "beta", ""))

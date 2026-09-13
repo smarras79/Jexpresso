@@ -156,6 +156,9 @@ function _sv_velocity_error(mesh, q, t, outvar, inputs, Minv)
 end
 
 function _sv_save_error(e, inputs, t, tnum = t)
+    # The BOX is part of the identity of a record: [-5,5]^2 floors the error at
+    # ~1e-5 and [-10,10]^2 does not, so the two must never share a curve.
+    mesh_box = isdefined(@__MODULE__, :_sv_lbox) ? _sv_lbox() : 20.0
     nop = Int(get(inputs, :nop, 0))
     # :nelx carries mod_inputs' placeholder for a gmsh case, so take the
     # element count from the mesh file name.
@@ -177,6 +180,7 @@ function _sv_save_error(e, inputs, t, tnum = t)
             println(io, "# nop=", nop, " nelx=", nelx, " ndofs=", ndofs,
                         " t=", t, " tnum=", tnum, " visc=", _sv_tag(inputs),
                         " norm=abs",            # absolute norms: see _sv_load_errors
+                        " L=", mesh_box,        # the box: see _sv_load_errors
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
                         " dt=", Float64(get(inputs, :Δt, 0.0)))
@@ -220,6 +224,12 @@ function _sv_load_errors(t)
         # Errors written before the norms became absolute have no norm= key;
         # they are a different quantity and are not drawn with these.
         get(meta, "norm", "") == "abs" || continue
+        # Same box only. A record written before the box was stamped carries no
+        # L= key; those are kept, since every one of them predates the option.
+        let lb = tryparse(Float64, get(meta, "L", "")),
+            lw = isdefined(@__MODULE__, :_sv_lbox) ? _sv_lbox() : 20.0
+            lb === nothing || abs(lb - lw) <= 1.0e-8*max(1.0, lw) || continue
+        end
         push!(rows, (nop = nop, ndofs = ndofs, visc = get(meta, "visc", "dsgs"),
                      nelx = something(tryparse(Int, get(meta, "nelx", "")), 0),
                      t    = something(tc, NaN),
