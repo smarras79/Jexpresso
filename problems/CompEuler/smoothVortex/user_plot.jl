@@ -202,6 +202,11 @@ function _ev_save_error(e, inputs, t, tnum = t)
                         " L=", mesh_box,        # the box: see _ev_load_errors
                         " beta=", _ev_beta(),
                         " Cmin=", Float64(get(inputs, :dsgs_Cmin, 0.0)),
+                        # the coefficients that MADE this number: nu is linear
+                        # in CR, so a record that does not carry it cannot be
+                        # compared with one measured at another CR
+                        " CR=", Float64(get(inputs, :dsgs_CR, 1.0)),
+                        " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.0)),
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
                         " dt=", Float64(get(inputs, :Δt, 0.0)))
             println(io, "# relative, for reference: L1=", e.r1, " L2=", e.r2, " Linf=", e.rinf)
