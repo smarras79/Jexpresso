@@ -1686,7 +1686,6 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     Cmax = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmax, 0.5)),
                                     Cmin = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_Cmin, 0.0)),
                                     cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
-                                cutoff = eltype(params.μ_dsgs)(get(params.inputs, :dsgs_cutoff, 0.0)),
                                     ltheta = (params.inputs[:energy_equation] == "theta"),
                                     lglobal_norms = params.dsgs_global_norms)
 
