@@ -62,7 +62,13 @@ const SV_STYLE = Dict(
 )
 _sv_style(nop) = get(SV_STYLE, nop, (:gray, :cross))
 
-_sv_tag(inputs) = (get(inputs, :lvisc, true) ? "dsgs" : "galerkin")
+# A run with the smoothness cutoff on is a DIFFERENT experiment from one with
+# it off, so it gets its own tag and its own curve rather than overwriting the
+# other's record.
+function _sv_tag(inputs)
+    get(inputs, :lvisc, true) || return "galerkin"
+    return Float64(get(inputs, :dsgs_cutoff, 0.0)) > 0 ? "dsgs_cut" : "dsgs"
+end
 
 #---------------------------------------------------------------------------------
 # Error of the velocity (u, v) against the exact solution: the vortex of
@@ -271,7 +277,10 @@ const SV_MS        = 9
 _sv_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
                    -2.0*log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
 
-_sv_visc_label(tag) = tag == "dsgs" ? "DSGS" : "Galerkin"
+_sv_visc_label(tag) = tag == "dsgs"     ? "DSGS" :
+                        tag == "dsgs_cut" ? "DSGS + cutoff" : "Galerkin"
+# solid = DSGS, dash-dot = DSGS with the cutoff, dashed = plain Galerkin
+_sv_visc_style(tag) = tag == "dsgs" ? :solid : tag == "dsgs_cut" ? :dashdot : :dash
 
 function _sv_panel(sub, nops, fld, nm)
     # The final time the errors were measured at, and the step they were taken
@@ -300,7 +309,7 @@ function _sv_panel(sub, nops, fld, nm)
     # a filled marker, plain Galerkin dashed with a hollow one — the two are
     # compared ON THE SAME AXES, as in the paper's convergence figure, because
     # the question the figure answers is whether the viscosity costs accuracy.
-    for nop in nops, tag in ("dsgs", "galerkin")
+    for nop in nops, tag in ("dsgs", "dsgs_cut", "galerkin")
         g = sort(filter(r -> r.nop == nop && r.visc == tag, sub), by = r -> r.ndofs)
         isempty(g) && continue
         xs = [Float64(r.ndofs) for r in g]
@@ -314,7 +323,7 @@ function _sv_panel(sub, nops, fld, nm)
         lab = LaTeXStrings.latexstring(string("\\mathbb{P}_", nop, "\\ \\mathrm{",
                   _sv_visc_label(tag), "}", isfinite(p) ? string("\\ (p=", round(p; digits = 2), ")") : ""))
         Plots.plot!(pl, xs, ys;
-                    line = (col, SV_LW, tag == "dsgs" ? :solid : :dash),
+                    line = (col, SV_LW, _sv_visc_style(tag)),
                     marker = (mk, SV_MS), markerstrokecolor = col, markerstrokewidth = 1.6,
                     markercolor = tag == "dsgs" ? col : :white,
                     color = col, label = lab)
@@ -377,7 +386,7 @@ function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::Str
     nops = sort(unique(r.nop for r in sub))
     # At least one (order, stabilization) pair with two points to join.
     any(count(r -> r.nop == n && r.visc == v, sub) >= 2
-        for n in nops, v in ("dsgs", "galerkin")) || return nothing
+        for n in nops, v in ("dsgs", "dsgs_cut", "galerkin")) || return nothing
 
     panels = Plots.Plot[]
     for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))

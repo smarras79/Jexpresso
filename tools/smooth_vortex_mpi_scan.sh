@@ -139,7 +139,7 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
     # sweep RESUMABLE — a machine that goes down, or a job that hits its wall
     # clock, costs only the cases that were in flight, not the whole run.
     if [ "${SV_KEEP:-0}" = "1" ] && [ "${SV_REDO:-0}" != "1" ]; then
-        _e=$(err_file "$2" "$3" "$([ "$1" = none ] && echo galerkin || echo dsgs)")
+        _e=$(err_file "$2" "$3" "$(_tag_of "$1")")
         if [ -f "$_e" ]; then
             echo "--- have visc $1, nop $2, ${3}x${3} already: $(tail -n 1 "$_e")"
             return 0
@@ -153,11 +153,12 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
         $([ "$DT" = percase ] || echo JEXPRESSO_${PFX}_DT="$DT") \
         JEXPRESSO_${PFX}_SOLVER="$SOLVER" JEXPRESSO_${PFX}_TEND="$TEND" \
         JEXPRESSO_${PFX}_L="$LBOX" \
+        ${SV_CUTOFF:+JEXPRESSO_${PFX}_CUTOFF="$SV_CUTOFF"} \
         ${PLOT_NOPS:+JEXPRESSO_${PFX}_PLOT_NOPS="$PLOT_NOPS"} \
         $launcher "$JULIA" --project=. src/Jexpresso.jl "$EQNS" "$CNAME" \
         > "$log" 2>&1
     rc=$?
-    err=$(err_file "$2" "$3" "$([ "$1" = none ] && echo galerkin || echo dsgs)")
+    err=$(err_file "$2" "$3" "$(_tag_of "$1")")
     if [ "$rc" -ne 0 ]; then
         echo "--- FAILED (exit $rc) visc $1, nop $2, nelx $3   $(date +%T)"
         echo "    last lines of $log:"
@@ -174,6 +175,13 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
 # Where a case stores its error. The Euler deck tags the record with the vortex
 # strength (nop4_nelx8_b1_dsgs.dat), the MHD deck does not (nop4_nelx8_dsgs.dat),
 # so match either and report the plain name when nothing is there yet.
+# What the deck will call this run's record: a run with the smoothness cutoff
+# on is its own experiment and stores its own curve (SV_CUTOFF > 0).
+_tag_of() {
+    [ "$1" = none ] && { echo galerkin; return 0; }
+    case "${SV_CUTOFF:-0}" in 0|0.0|"") echo dsgs ;; *) echo dsgs_cut ;; esac
+}
+
 err_file() {
     _plain="problems/$CASE/errors/nop$1_nelx$2_$3.dat"
     for _f in "$_plain" problems/"$CASE"/errors/nop"$1"_nelx"$2"_b*_"$3".dat; do
@@ -207,7 +215,7 @@ wait
 echo "=== sweep finished $(date +%T). What is in the store:"
 n_have=0; n_want=0
 for V in $VISCS; do
-    tag=$([ "$V" = none ] && echo galerkin || echo dsgs)
+    tag=$(_tag_of "$V")
     for M in $NELX; do
         for N in $NOPS; do
             n_want=$((n_want + 1))
