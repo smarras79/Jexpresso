@@ -2199,6 +2199,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        lglobal_norms::Bool=false,
                                        lconserved::Bool=false,
                                        Cmin::TT=zero(TT),
+                                       cutoff::TT=zero(TT),
                                        lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
@@ -2292,7 +2293,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     # --- nodal viscosity ---------------------------------------------------
     _dsgs_nodal_residual_1d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2569,6 +2570,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        lglobal_norms::Bool=false,
                                        lconserved::Bool=false,
                                        Cmin::TT=zero(TT),
+                                       cutoff::TT=zero(TT),
                                        lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
@@ -2602,7 +2604,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
     fE = lnazarov_energy ? γ*γm1/Pr_t : one(TT)
     _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2680,7 +2682,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        nelem::Int, ngl::Int, npoin::Int;
                                        ltheta::Bool=true,
                                        lglobal_norms::Bool=false,
-                                       Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                                       Cmin::TT=zero(TT),
+                                       cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
@@ -2712,7 +2715,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
 
     _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
         ρl = max(q[ip,1], eps)
         ul = q[ip,2]/ρl
         vl = q[ip,3]/ρl
@@ -2920,7 +2923,8 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
                                        comm,
                                        nelem::Int, ngl::Int, npoin::Int;
                                        lglobal_norms::Bool=false,
-                                       Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                                       Cmin::TT=zero(TT),
+                                       cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
@@ -2954,7 +2958,7 @@ function compute_dsgs_viscosity_nodal!(μ_dsgs::AbstractMatrix{TT},
 
     _dsgs_nodal_residual_2d!(Rnod, mnod, q, q1, q2, wt, rhs_el, ω, Je, connijk, nelem, ngl, npoin, NRES)
     @inbounds for ip = 1:npoin
-        ratio = _dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps)
+        ratio = _dsgs_cut(_dsgs_nodal_ratio(Rnod, ip, NRES, denom, qmin, qmax, nmin, nmax, Cl, eps), cutoff)
         Hc = max(q[ip,1], zero(TT))
         Hd = max(q[ip,1], hmin)
         ul = q[ip,2]/Hd

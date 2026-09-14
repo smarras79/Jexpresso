@@ -1385,6 +1385,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           lglobal_norms = params.dsgs_global_norms,
                                           lconserved    = get(params.inputs, :dsgs_conserved, false),
                                           Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                          cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                           lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false))
         else
             compute_dsgs_viscosity!(params.μ_dsgs, DSGS_MHD(), SD,
@@ -1406,6 +1407,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
                                     lconserved    = get(params.inputs, :dsgs_conserved, false),
                                     Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                    cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                     lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false))
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
                                      params.mesh.connijk,
@@ -1518,6 +1520,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                           lglobal_norms = params.dsgs_global_norms,
                                           lconserved    = get(params.inputs, :dsgs_conserved, false),
                                           Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                          cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                           lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                             get(params.inputs, :dsgs_conserved_prandtl, false))
         else
@@ -1540,6 +1543,7 @@ function viscous_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}
                                     lnodal_rho    = get(params.inputs, :dsgs_nodal_rho, false),
                                     lconserved    = get(params.inputs, :dsgs_conserved, false),
                                     Cmin            = TT(get(params.inputs, :dsgs_Cmin, 0.0)),
+                                    cutoff          = TT(get(params.inputs, :dsgs_cutoff, 0.0)),
                                     lnazarov_energy = get(params.inputs, :dsgs_nazarov_energy, false) ||
                                                       get(params.inputs, :dsgs_conserved_prandtl, false))
             broadcast_dsgs_to_nodes!(params.μ_dsgs_pnode, params.μ_dsgs,
