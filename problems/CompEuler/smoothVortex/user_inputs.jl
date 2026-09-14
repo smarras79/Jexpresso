@@ -83,6 +83,7 @@ end
 # L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
 # The default is the box of the paper, [-10,10]^2, i.e. L = 20.
+_ev_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_EV_HOLD", "")), 2)
 _ev_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CUTOFF", "")), 0.0)
 _ev_freeze() = get(ENV, "JEXPRESSO_EV_FREEZE", "0") in ("1", "true", "yes")
 _ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 20.0)
@@ -143,6 +144,11 @@ function user_inputs()
         # reading the element-local jump of a dt-proportional grid-scale
         # residue, which is the floor that caps this very study's order.
         :dsgs_cutoff       => _ev_cutoff(),
+        # Steps the coefficient is held at zero at the start of a run
+        # (JEXPRESSO_EV_HOLD, :dsgs_hold_steps). 2 is the minimum the BDF2
+        # history needs and the long-standing behaviour; more is the probe of
+        # whether the smooth-flow excess is a STARTUP dose.
+        :dsgs_hold_steps   => _ev_hold(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep             => false,

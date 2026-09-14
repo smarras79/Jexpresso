@@ -161,6 +161,22 @@ end
 # first call and subtracted. Cases whose flux/source are already written on
 # the perturbation (the well-balanced MHD and shallow-water splits, PERT
 # variables) have a vanishing reference RHS and pass rhs_el through.
+# :dsgs_hold_steps — how many steps the coefficient is held at zero at the
+# start of a run. The BDF2 history needs two steps before it is a time
+# derivative at all, so 2 is the minimum and the default: it is the behaviour
+# this code has always had.
+#
+# Beyond that it is a probe. The smooth vortex shows that a cutoff removes the
+# viscosity that survives to the end of a run and still leaves most of the
+# excess over Galerkin, which says the dose is given EARLY — while the sensor's
+# normalized score is above any usable threshold even though the initial
+# condition is smooth and fully resolved. Holding ν at zero for longer tests
+# exactly that reading.
+@inline function _dsgs_hold_steps(params)
+    h = Int(get(params.inputs, :dsgs_hold_steps, 2))
+    return max(2, h) + 1        # nhist counts rotations: < hold+1 means "hold steps of them"
+end
+
 function _dsgs_residual_rhs!(u, params, SD)
     # How far below its physical scale a variable's spread may fall before
     # that scale normalizes its residual (SGS.jl, _dsgs_denom). The kernels
@@ -171,7 +187,7 @@ function _dsgs_residual_rhs!(u, params, SD)
     _DSGS_RSPLIT[] = get(ENV, "JEXPRESSO_DSGS_RSPLIT", "") == "1"
     # Startup: while the BDF2 history is still the initial condition the
     # residual has no meaning (see the weights in rhs!). Hold it at zero.
-    if params.dsgs_nhist[] < 3
+    if params.dsgs_nhist[] < _dsgs_hold_steps(params)
         fill!(params.dsgs_rhs_res, zero(params.T))
         return params.dsgs_rhs_res
     end
@@ -901,7 +917,7 @@ function _build_rhs!(RHS, u, params, time)
         # _dsgs_stencil): the weights depend on the stage time τ = t − tⁿ.
         τ = time - params.dsgs_thist[]
         h = params.Δt
-        if params.dsgs_nhist[] < 3
+        if params.dsgs_nhist[] < _dsgs_hold_steps(params)
             # The history is still seeded from the initial condition, so the
             # BDF2 is not a time derivative yet: 0 on the first step, 1.5·∂ₜq
             # on the second. Left alone it makes the residual the WHOLE flux

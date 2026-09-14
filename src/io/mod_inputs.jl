@@ -1187,6 +1187,20 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_cutoff))
         inputs[:dsgs_cutoff] = 0.0
     end
+    #   :dsgs_hold_steps   steps the coefficient is held at zero at the START
+    #                      of a run (default 2, the minimum the BDF2 history
+    #                      needs and the behaviour this code has always had).
+    #
+    #                      A probe beyond that. On the smooth vortex a cutoff
+    #                      removes every bit of nu that survives to the final
+    #                      time and STILL leaves most of the excess over
+    #                      Galerkin, so the dose is given early — while the
+    #                      sensor's normalized score is above any usable
+    #                      threshold even though the initial condition is
+    #                      smooth and fully resolved.
+    if(!haskey(inputs, :dsgs_hold_steps))
+        inputs[:dsgs_hold_steps] = 2
+    end
     #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
     #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
     #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the
