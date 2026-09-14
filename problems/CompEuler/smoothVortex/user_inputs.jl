@@ -117,7 +117,13 @@ function user_inputs()
         :lvisc            => (_ev_visc() != "none"),
         :μ                => [1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS(),
-        :dsgs_sensor      => "residual",
+        # "residual" (default) or "legacy", the assembled M^-1.RHS sensor:
+        # JEXPRESSO_EV_SENSOR. Which one is used decides what the coefficient
+        # measures on a SMOOTH solution — the element-local form reads the
+        # inter-element jump of a dt-proportional grid-scale residue, which the
+        # assembly cancels (measured here: far from the vortex the element
+        # term is 18x the assembled rate, and both halve when dt halves).
+        :dsgs_sensor      => get(ENV, "JEXPRESSO_EV_SENSOR", "residual"),
         :dsgs_CR          => _ev_cr(),
         :dsgs_Cmax        => _ev_cmax(),
         :dsgs_Cmin        => _ev_cmin(),   # no background floor: it would be an
