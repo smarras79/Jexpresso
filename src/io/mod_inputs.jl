@@ -1054,6 +1054,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lwall_damping] = false
     end
 
+    if(!haskey(inputs, :wall_damping_zfloor))
+        # Wall-distance floor for the :lwall_damping limiter [m]. :auto = half
+        # the distance to the first node off the wall; 0.0 = no floor (l^2 is
+        # then identically zero ON the wall). See params_setup.jl.
+        inputs[:wall_damping_zfloor] = :auto
+    end
+
     #
     # Kinetic Energy or Entropy Preserving
     #

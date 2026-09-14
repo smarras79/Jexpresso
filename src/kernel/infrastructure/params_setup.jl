@@ -285,6 +285,36 @@ function params_setup(sem,
             # shifted wall distance is worse than the cost of one Allreduce.
             wall0    = MPI.Allreduce(minimum(@view coords_h[idir, :]), MPI.MIN, comm)
             zw       = max.(@view(coords_h[idir, :]) .- wall0, 0.0)
+
+            # Wall-distance floor. l -> kappa*z assumes the eddy viscosity is
+            # evaluated at cell centres, never on the wall face; a nodal SEM has
+            # a collocation point ON the face, where l^2 == 0 exactly and the
+            # SGS coupling between that node and the flow above it is severed.
+            # The wall node's tangential velocity is a free-slip prognostic DOF
+            # and the MOST traction is built from ip1, so with that link gone
+            # nothing in its momentum equation is proportional to its own
+            # velocity and it random-walks until tau ~ |u|^2 blows it up.
+            # Evaluating l at the centre of the node's own control volume
+            # (half-way to the first node off the wall) restores the link. The
+            # floor is below every interior node, so only the wall nodes move,
+            # and the surface flux rho*u_star^2 is untouched.
+            zfloor_in = get(inputs, :wall_damping_zfloor, :auto)
+            if zfloor_in === :auto
+                # Explicit loop, not filter(>(0.0), zw): `filter` is a local
+                # St_filter in this function and shadows Base.filter.
+                z1_loc = Inf
+                @inbounds for v in zw
+                    (v > 0.0 && v < z1_loc) && (z1_loc = v)
+                end
+                z1      = MPI.Allreduce(z1_loc, MPI.MIN, comm)
+                zfloor  = isfinite(z1) ? 0.5*z1 : 0.0
+            else
+                zfloor  = Float64(zfloor_in)
+            end
+            if zfloor > 0.0
+                zw = max.(zw, zfloor)
+                rank == 0 && @info ":lwall_damping wall-distance floor z_eff = $(round(zfloor, digits=3)) m"
+            end
             KernelAbstractions.copyto!(backend, sgs.zwall, TFloat.(zw))
             if inputs[:lwarp] && rank == 0
                 @warn(":lwall_damping uses height above the domain floor, but :lwarp is on. " *
