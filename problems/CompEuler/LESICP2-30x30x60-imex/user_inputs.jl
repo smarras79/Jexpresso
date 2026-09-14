@@ -169,10 +169,6 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
-        # :auto = evaluate l at half the distance to the first node off the
-        # wall, not at z = 0 where l^2 == 0 cut the wall node loose (see
-        # params_setup.jl). This is the default; written out for visibility.
-        :wall_damping_zfloor  => :auto,
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------

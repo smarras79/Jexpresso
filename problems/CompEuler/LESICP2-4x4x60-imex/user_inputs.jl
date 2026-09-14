@@ -246,11 +246,6 @@ function user_inputs()
         :lrichardson          => true,
         # DBG_WALLDAMP=false: no near-wall limit, (C_s*Delta)^2 everywhere.
         :lwall_damping        => parse(Bool, get(ENV, "DBG_WALLDAMP", "true")),
-        # DBG_ZFLOOR=0 evaluates l at z = 0 on the wall node (l^2 == 0, the
-        # configuration that crashed); :auto is half-way to the first node off
-        # the wall. See params_setup.jl.
-        :wall_damping_zfloor  => (haskey(ENV, "DBG_ZFLOOR") ?
-                                  parse(Float64, ENV["DBG_ZFLOOR"]) : :auto),
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         :les_filter_width     => :geometric,
         # MOST guard rails -- these ARE the defaults; written out because this
