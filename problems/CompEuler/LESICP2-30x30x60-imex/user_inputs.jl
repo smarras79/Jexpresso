@@ -169,6 +169,10 @@ function user_inputs()
         # roughly 30% of it. See sgs_mixing_length2 in kernel/physics/SGS.jl and
         # test/sgs/test_wall_damping.jl.
         :lwall_damping        => true,
+        # :auto = evaluate l at half the distance to the first node off the
+        # wall, not at z = 0 where l^2 == 0 cut the wall node loose (see
+        # params_setup.jl). This is the default; written out for visibility.
+        :wall_damping_zfloor  => :auto,
         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         :les_filter_width     => :geometric,
         #---------------------------------------------------------------------------
@@ -344,7 +348,10 @@ function user_inputs()
 	# BUDGET FOR IT: :diagnostics_at_times below is 209 dumps and each is
 	# ~2.6 GB on this grid, i.e. ~543 GB for a full run. The 9000:10:10800
 	# range alone is 181 of them. Thin that cadence if scratch is tight.
-	:output_dir          => "/scratch/smarras/smarras/output_HANG/LESICP2_30x30x60_10240mX10240mX5000m_imex",
+	# JEXPRESSO_OUTDIR overrides the parent; the submit script sets it.
+	:output_dir          => joinpath(get(ENV, "JEXPRESSO_OUTDIR",
+	                                     "/scratch/smarras/smarras/output_HANG"),
+	                                 "LESICP2_30x30x60_10240mX10240mX5000m_" * String(scheme)) * "/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         # ~2.6 GB on this grid (4x the 64x64x60 dump) and it lands before the
         # time loop, so it does not distort s/step -- but it is minutes of I/O
