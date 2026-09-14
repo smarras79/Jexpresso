@@ -123,6 +123,7 @@ end
 # L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
 # The default is the box of the paper, [-10,10]^2, i.e. L = 20.
+_sv_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CUTOFF", "")), 0.0)
 _sv_freeze() = get(ENV, "JEXPRESSO_SV_FREEZE", "0") in ("1", "true", "yes")
 _sv_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_L", "")), 20.0)
 # The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
@@ -182,6 +183,11 @@ function user_inputs()
         # It is what keeps the residual, and with it nu, from stalling at
         # O(dt) and capping a high-order accuracy test at second order.
         :dsgs_freeze_stage => _sv_freeze(),
+        # Smoothness cutoff on the normalized residual (JEXPRESSO_SV_CUTOFF,
+        # :dsgs_cutoff in mod_inputs.jl): nu is zero where the sensor is only
+        # reading the element-local jump of a dt-proportional grid-scale
+        # residue, which is the floor that caps this very study's order.
+        :dsgs_cutoff       => _sv_cutoff(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep              => false,

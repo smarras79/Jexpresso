@@ -1160,6 +1160,33 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_freeze_stage))
         inputs[:dsgs_freeze_stage] = false
     end
+    #   :dsgs_cutoff       smoothness cutoff on the NORMALIZED residual:
+    #                      ratio -> max(0, ratio - cutoff), so nu is exactly
+    #                      zero below it, continuous across it, and unchanged
+    #                      above it (default 0: no cutoff).
+    #
+    #                      On a smooth, resolved solution the sensor does not
+    #                      read zero. The residual is element-local, and where
+    #                      the flow is flat the element's own weak RHS is
+    #                      dominated by the inter-element jump of a grid-scale
+    #                      residue that assembly cancels — measured on the
+    #                      smooth vortex at P6/32^2: far from the vortex the
+    #                      element term is 2.2e-6 against an assembled rate of
+    #                      1.2e-7, eighteen times larger, and BOTH halve when
+    #                      dt halves. nu therefore carries a floor
+    #                      proportional to dt, which caps the measured order of
+    #                      a smooth accuracy test at 2 (fixed dt) or 3 (dt ~ h)
+    #                      while the Galerkin solution keeps design order.
+    #
+    #                      Normalized ratios measured there: 1.6e-6 in the far
+    #                      field, 1.9e-5 in the vortex core. At a shock the
+    #                      ratio is O(10^2), so a cutoff of 1e-3 removes the
+    #                      floor and changes a shock's coefficient in the sixth
+    #                      digit. Validate on brioWu1d and orszagTang before
+    #                      using it on a case with discontinuities.
+    if(!haskey(inputs, :dsgs_cutoff))
+        inputs[:dsgs_cutoff] = 0.0
+    end
     #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
     #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
     #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the

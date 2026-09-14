@@ -678,6 +678,31 @@ const _DSGS_RELMUL = Ref(1000.0)
 @inline _dsgs_denom(spread::TT, fl::TT) where {TT<:AbstractFloat} =
     max(spread, TT(_DSGS_RELMUL[])*fl)
 
+# :dsgs_cutoff — a smoothness cutoff on the NORMALIZED residual.
+#
+# On a smooth, resolved solution the sensor does not read zero: the residual
+# is formed element-locally, and where the flow is flat the element's own weak
+# RHS is dominated by the inter-element jump of a grid-scale residue that the
+# assembly cancels (measured on the smooth vortex: far from the vortex the
+# element term is 18x the assembled rate, and both halve when dt halves — so
+# nu inherits a floor proportional to dt). That floor is what caps a
+# high-order accuracy study at 2nd order once the spatial error drops under
+# it, while the plain Galerkin solution keeps design order.
+#
+# The cutoff removes it by SUBTRACTION rather than by a switch:
+#
+#     ratio -> max(0, ratio - cutoff)
+#
+# so nu is exactly zero below the cutoff, continuous across it (a hard on/off
+# on nu would flip element by element from step to step), and asymptotically
+# unchanged above it — at a shock the normalized ratio is O(10^2) and a cutoff
+# of 10^-3 changes it in the sixth digit. Measured ratios on the smooth vortex
+# at P6/32^2: 1.6e-6 in the far field, 1.9e-5 in the vortex core.
+#
+# 0 (the default) leaves the coefficient exactly as it was.
+@inline _dsgs_cut(ratio::TT, cut::TT) where {TT<:AbstractFloat} =
+    cut > zero(TT) ? max(ratio - cut, zero(TT)) : ratio
+
 # :dsgs_freeze_stage — the coefficient is computed ONCE PER TIME STEP, at the
 # stage that sits on tⁿ, and held for the rest of the step.
 #
@@ -735,6 +760,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Δx::AbstractVector{TT},
                                  nelem::Int, ngl::Int;
                                  CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
@@ -821,7 +847,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             uTmx = max(uTmx, abs(ul) + sqrt(γ*(γ - one(TT))*eint))
         end
 
-        μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3)
+        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3), cutoff)
         μ_max = Cmax*Δ*uTmx
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
         μ     = max(μ_fl, min(μ_max, μ_res))
@@ -876,6 +902,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int;
                                  CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
@@ -883,7 +910,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
     if !ltheta
         _dsgs_2d_energy!(μ_dsgs, q, q1, q2, rhs_el, ω, Je, visc_coeff,
                          wt, connijk, Δelem, PhysConst, Pr, nelem, ngl,
-                         lglobal_norms; CR = CR, Cmax = Cmax, Cmin = Cmin)
+                         lglobal_norms; CR = CR, Cmax = Cmax, Cmin = Cmin, cutoff = cutoff)
         return nothing
     end
 
@@ -1026,7 +1053,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl)
 
-        μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4)
+        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3, n4/denom4), cutoff)
         μ_max = Cmax*Δ*uTmx
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
         μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
@@ -1098,6 +1125,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  Pr::TT,
                                  nelem::Int, ngl::Int;
                                  CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  ltheta::Bool=true,
                                  lglobal_norms::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
@@ -1209,7 +1237,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl*ngl)
 
-        μ_res = CR*Δ*Δ*max(n1/denom1, n2/denom2, n3/denom3, n4/denom4, n5/denom5)
+        μ_res = CR*Δ*Δ*_dsgs_cut(max(n1/denom1, n2/denom2, n3/denom3, n4/denom4, n5/denom5), cutoff)
         μ_max = Cmax*Δ*uTmx
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*uTmx : zero(TT)   # background floor, as ::DSGS_MHD
         μ     = max(μ_fl, min(μ_max, μ_res))   # kinematic, m²/s
@@ -1303,7 +1331,8 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
                           Pr::TT,
                           nelem::Int, ngl::Int,
                           lglobal_norms::Bool;
-                          CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                          CR::TT=TT(1.0), Cmax::TT=TT(0.5), Cmin::TT=zero(TT),
+                          cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
 
     γ    = PhysConst.γ
     γm1  = γ - one(TT)
@@ -1443,7 +1472,7 @@ function _dsgs_2d_energy!(μ_dsgs::AbstractMatrix{TT},
         end
 
         # eq. (3.5)-(3.7). Both branches carry a density, so μ is DYNAMIC.
-        μ_res = CR*h*h*dρ*ratio
+        μ_res = CR*h*h*dρ*_dsgs_cut(ratio, cutoff)
         μ_cap = Cmax*h*ρmax*wmax
         μ_fl  = Cmin > zero(TT) ? Cmin*h*ρmax*wmax : zero(TT)   # background floor
         μ     = max(μ_fl, min(μ_cap, μ_res))
@@ -1633,6 +1662,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lnodal_rho::Bool=false,
                                  lconserved::Bool=false,
                                  Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
@@ -1814,7 +1844,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl*ngl)
 
-        μ_res = CR*Δ*Δ*ratio
+        μ_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
         μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))    # kinematic, m²/s (residual, capped)
         μ     = μ_c
@@ -1954,6 +1984,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  lnodal_rho::Bool=false,
                                  lconserved::Bool=false,
                                  Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT),
                                  lnazarov_energy::Bool=false) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
@@ -2088,7 +2119,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
         end
         ρ_el /= TT(ngl)
 
-        μ_res = CR*Δ*Δ*ratio
+        μ_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
         μ_max = Cmax*Δ*wmax
         μ_c   = max(zero(TT), min(μ_max, μ_res))
         μ_fl  = Cmin > zero(TT) ? Cmin*Δ*wmax : zero(TT)
@@ -2770,7 +2801,8 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
                                  comm,
                                  nelem::Int, ngl::Int;
                                  lglobal_norms::Bool=false,
-                                 Cmin::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
+                                 Cmin::TT=zero(TT),
+                                 cutoff::TT=zero(TT)) where {TT<:AbstractFloat, TI<:Integer}
     _DSGS_FROZEN[] && return nothing   # :dsgs_freeze_stage: keep this step's value
 
     neqs = size(μ_dsgs, 2)
@@ -2841,7 +2873,7 @@ function compute_dsgs_viscosity!(μ_dsgs::AbstractMatrix{TT},
             vl = q[ip,3]/Hd
             wmax = max(wmax, sqrt(ul*ul + vl*vl) + sqrt(g*Hc))
         end
-        ν_res = CR*Δ*Δ*ratio
+        ν_res = CR*Δ*Δ*_dsgs_cut(ratio, cutoff)
         ν_max = Cmax*Δ*wmax
         ν     = max(zero(TT), min(ν_max, ν_res))
         ν     = Cmin > zero(TT) ? max(ν, Cmin*Δ*wmax) : ν
