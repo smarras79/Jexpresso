@@ -52,7 +52,7 @@ function user_inputs()
         # Δt = 5e-7 is already ≈ 0.22 with :μ => 1.0. Scaling :μ up without
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
-        :Δt                   => 1.25e-7,
+        :Δt                   => 1.0e-7,
         :diagnostics_at_times => (0:5.0e-5:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
         # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
@@ -79,6 +79,24 @@ function user_inputs()
         # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model           => DSGS(),          # residual-based shock capturing
         :dsgs_sensor          => "legacy",
+        # Startup hold OFF — the single difference that this case cannot
+        # absorb. 7dd6f0c holds the coefficient at zero until the BDF2
+        # history is a time derivative (default 2 steps, 3 rotations),
+        # because the sensor was reading a SMOOTH initial condition as
+        # unresolved and pinning ν at its cap on step one. This initial
+        # condition is not smooth: a Mach-3 stream is started impulsively
+        # against the step, and the whole transient is at the step face and
+        # the convex corner. Holding ν at zero there integrates the most
+        # violent steps of the run with no dissipation at all, and the
+        # oscillation it plants at the corner is what the rest of the run
+        # has to carry. sm/newmaster predates the hold, never holds, and
+        # runs this case to t = 8e-3; with the hold on it dies at 1.46e-3,
+        # in that corner. 0 restores the older behaviour: the sensor fires
+        # from the first call on a history seeded from the initial
+        # condition, which reads 1.5x the forward difference of q — an
+        # over-estimate of the rate, which at an impulsive start is the
+        # side to err on.
+        :dsgs_hold_steps      => 0,
         # Per-equation multiplier on the DynSGS coefficient. The method is
         # parameter-free, so 1.0 is the paper's own setting; the ×4 on the
         # momentum and energy slots is this case's, and it is measured, not

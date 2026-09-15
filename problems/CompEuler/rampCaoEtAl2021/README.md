@@ -84,6 +84,36 @@ To refine, either raise `NX_PLATE` / `NX_RAMP` / `NY` in `generate_mesh.py`
 or set `:linitial_refine => true` with `:init_refine_lvl => 1`. Either way halve
 `:Δt` for each halving of the element size.
 
+## Running it: cores and wall time
+
+`ffs_step` is the same solver configuration at almost exactly the same size —
+4032 elements at `:init_refine_lvl => 1` = 16,128 elements, `:nop => 4`, 4
+equations, DynSGS with the legacy sensor — and its deck records 64,000 steps at
+about 12 h on one core, i.e. **0.68 s/step**. This case is 16,140 elements with
+the same everything, so the nominal run (400,000 steps) is **≈ 75 core-hours**,
+with maybe a factor 2 of slack in that "order 12 h".
+
+| cores | elements/rank | wall time (~80% efficiency) |
+|---|---|---|
+| 16 | 1009 | ~6 h |
+| **32** | **504** | **~3 h** |
+| 64 | 252 | ~1.8 h |
+
+**32 is the recommendation** — one node, and memory is trivial (a few hundred MB
+in total). Don't go much past 64: ~250 elements/rank is where a 2D `nop = 4` SEM
+starts being latency-bound, and this run makes 2 million RHS calls, each with a
+halo exchange and — with `:dsgs_norms => "domain"`, now the default — two or
+three `Allreduce`. Those collectives are only a minute or two of the run at
+32–64 ranks, but they grow with rank count while the compute per rank shrinks.
+
+Do **not** switch to `:dsgs_norms => "rank"` to dodge them. `ffs_step` records
+what that costs: rank-local norms make the viscosity depend on the partition,
+measured at 18× worse error on `smoothVortex` going from 2 to 8 ranks.
+
+One refinement level (`:init_refine_lvl => 1`) is 4× the elements and 2× the
+steps, so 8× the cost: ~600 core-hours, i.e. 32 cores for a day or 128 cores
+(504 elements/rank again) for ~7 h.
+
 ## What to check the result against
 
 | quantity | paper | where |
