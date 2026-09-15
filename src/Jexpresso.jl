@@ -266,6 +266,7 @@ include(joinpath( "kernel", "solvers", "hevi", "acoustic.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "ark.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "hevi.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "cfl_diagnostics.jl"))
+include(joinpath( "io", "wall_watch.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "substep.jl"))
 include(joinpath( "kernel", "solvers", "hevi", "krylov.jl"))
 # precond_api.jl declares the three generic functions a stage-solve

@@ -842,11 +842,33 @@ function time_loop!(inputs, params, u, args...)
             DiscreteCallback(cfl_periodic_condition, cfl_periodic_affect!) :
             nothing
 
+        #---------------------------------------------------------------------
+        # WALL-NODE WATCH -- JEXPRESSO_WALL_WATCH=<steps> in the environment.
+        # Default off. Collective like the CFL report (one Allreduce set per
+        # call), so the condition counts steps on every rank. One or two lines
+        # per call, see src/io/wall_watch.jl.
+        #---------------------------------------------------------------------
+        _ww_count = Ref{Int}(0)
+        _env_ww   = strip(get(ENV, "JEXPRESSO_WALL_WATCH", ""))
+        _ww_every = isempty(_env_ww) ? 0 : parse(Int, _env_ww)
+        function wall_watch_condition(u, t, integrator)
+            _ww_count[] += 1
+            return _ww_count[] % _ww_every == 0
+        end
+        function wall_watch_affect!(integrator)
+            wall_watch_report(params, integrator.u, integrator.t, _ww_count[])
+            return nothing
+        end
+        cb_ww = _ww_every > 0 ?
+            DiscreteCallback(wall_watch_condition, wall_watch_affect!) :
+            nothing
+
         _cbs = Any[cb, cb_restart, cb_les_stat, cb_les_online]
         lrad                                  && push!(_cbs, cb_rad)
         is_coupled && cb_coupling !== nothing  && push!(_cbs, cb_coupling)
         cb_heartbeat !== nothing               && push!(_cbs, cb_heartbeat)
         cb_cfl !== nothing                     && push!(_cbs, cb_cfl)
+        cb_ww !== nothing                      && push!(_cbs, cb_ww)
         callbacks_main = CallbackSet(_cbs...)
 
         # The `saveat` grid is built ONCE and shared by the pre-compilation
