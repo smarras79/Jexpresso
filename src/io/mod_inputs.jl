@@ -1271,6 +1271,30 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     #
+    # Molecular (laminar) viscosity from Sutherland's law, added on top of
+    # the DynSGS coefficient by _viscous_rhs_el_2d_dsgs! (rhs.jl). Off by
+    # default: a shock-capturing-only case such as CompEuler/ffs_step wants
+    # nothing here, a viscous one such as CompEuler/rampCaoEtAl2021 cannot
+    # do without it. See the header of that function for which slot gets
+    # what. Currently 2D, total-energy form only.
+    #
+    if(!haskey(inputs, :lsutherland))
+        inputs[:lsutherland] = false
+    end
+    if(!haskey(inputs, :sutherland_muref))
+        inputs[:sutherland_muref] = 1.716e-5   # Pa.s, air
+    end
+    if(!haskey(inputs, :sutherland_Tref))
+        inputs[:sutherland_Tref]  = 273.15     # K
+    end
+    if(!haskey(inputs, :sutherland_S))
+        inputs[:sutherland_S]     = 110.4      # K
+    end
+    if(!haskey(inputs, :Pr_lam))
+        inputs[:Pr_lam]           = 0.71       # molecular Prandtl number
+    end
+
+    #
     # Kinetic Energy or Entropy Preserving
     #
     if(!haskey(inputs, :lkep))

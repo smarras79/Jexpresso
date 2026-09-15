@@ -733,6 +733,50 @@ is `SoliWaveIsland` with it in place of `AV()`;
 [`problems/ShallowWater/SW_DSGS.md`](problems/ShallowWater/SW_DSGS.md) describes
 the kernel on its own.
 
+### 4.11 Molecular viscosity alongside the sensor: `:lsutherland`
+
+DynSGS is a **sensor**: $\mu$ is proportional to the residual, so it is
+$\approx 0$ wherever the solution is smooth and resolved. For an inviscid
+problem — `ffs_step`, `orszagTangBormanis2024` — that is the whole point. For a
+problem with a real Reynolds number it is a hole: a laminar boundary layer
+*is* the smooth, resolved region, so under DynSGS alone it never forms and the
+case degenerates to inviscid flow over the same geometry.
+
+`:lsutherland => true` (default `false`, 2D total-energy form only) adds the
+molecular viscosity of Sutherland's law
+
+$$\mu(T)=\mu_{ref}\left(\frac{T}{T_{ref}}\right)^{3/2}\frac{T_{ref}+S}{T+S}$$
+
+at every node, on top of whatever the sensor asked for. It has to be nodal:
+over the boundary layer of
+[`problems/CompEuler/rampCaoEtAl2021`](problems/CompEuler/rampCaoEtAl2021)
+$T$ runs from the 293 K wall to $\sim$1200 K, a factor 5 in $\mu$, which a
+per-element coefficient cannot carry. The air defaults
+$\mu_{ref} = 1.716\times10^{-5}$ Pa s, $T_{ref} = 273.15$ K, $S = 110.4$ K are
+`:sutherland_muref`, `:sutherland_Tref`, `:sutherland_S`.
+
+**Which slot gets what.** The 2D assembly this feeds is already the real
+Navier–Stokes viscous operator — `_expansion_visc!(::NSD_2D)` builds the
+deviatoric stress $\tau_{ij}=\mu(2S_{ij}-\tfrac23\delta_{ij}\nabla\!\cdot\mathbf u)$
+on the two momentum slots and adds the viscous work $\tau\!\cdot\!\mathbf u$ to
+the energy slot — so $\mu$ enters slots 2 and 3 unchanged. Slot 4 multiplies
+$\nabla(\texttt{uprimitive[4]})$, and on the total-energy path that is the
+**specific internal energy** $e = c_v T$ (§4.3; Nazarov & Hoffman scale
+$c_v = 1$). Fourier's law $-k\nabla T$ is therefore $-(k/c_v)\nabla e$, so the
+slot-4 addition is
+
+$$\frac{k}{c_v}=\frac{\mu c_p}{Pr\,c_v}=\frac{\gamma\mu}{Pr},\qquad Pr = \texttt{:Pr\_lam}\ (0.71).$$
+
+`:Pr_lam` is the **molecular** Prandtl number and is not `:Pr`, the artificial
+Prandtl number of eq. (3.7); the two coefficients are added on the same slot and
+are separately meaningful. Slot 1 gets nothing: physical Navier–Stokes has no
+mass diffusion, and the $\beta\nabla\rho$ sitting there is the sensor's own.
+
+The per-node coefficient rides the same `μloc` buffer the nodal form of §4.7
+uses, so the assembly is unchanged: `SGS_diffusion` is bypassed and
+`μnod[k,l,ieq]` read instead. With `:lsutherland => false` nothing runs and the
+path is bit-for-bit what it was.
+
 ## 5. Code map, inputs and output
 
 | file | contents |
@@ -741,7 +785,7 @@ the kernel on its own.
 | `src/kernel/physics/SGS.jl` | `compute_dsgs_viscosity!` (1D, 2D-θ, 3D-θ, 2D-MHD, 2D shallow water) and the nodal forms, `broadcast_dsgs_to_nodes!`, the `SGS_diffusion` accessors |
 | `src/kernel/operators/rhs.jl` | dispatch in `viscous_rhs_el!`, `_viscous_rhs_el_2d_dsgs!` / `_viscous_rhs_el_3d_dsgs!`, the step-cadenced history gate in `_build_rhs!` |
 | `src/kernel/infrastructure/params_setup.jl` | `μ_dsgs`, `μ_dsgs_pnode`, `visc_coeff_dsgs`, `dsgs_qnm1/2`, `dsgs_avg/denom`, `dsgs_thist` |
-| `src/io/mod_inputs.jl` | `:dsgs_CR`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt` defaults |
+| `src/io/mod_inputs.jl` | `:dsgs_CR`, `:dsgs_Cmax`, `:dsgs_gamma`, `:dsgs_Prt`, `:lsutherland`, `:sutherland_*`, `:Pr_lam` defaults |
 | `src/io/write_output.jl` | the `mu_dsgs_*` VTK fields |
 | `tools/plot_orszag_tang.jl` | off-line figures from a finished MHD run, including the viscosity map |
 | `tools/vtu_reader.jl` | the minimal `.pvtu`/`.vtu` reader that script uses |
@@ -758,6 +802,8 @@ the kernel on its own.
 :dsgs_Cmax    => 0.5,
 :dsgs_gamma => 5.0/3.0,
 :dsgs_Prt   => 0.7,
+:lsutherland => true,         # §4.11, molecular μ(T) on top of the sensor
+:Pr_lam      => 0.71,         # molecular Pr — NOT :Pr
 ```
 
 **Output.** The per-element coefficients are broadcast to nodes by
