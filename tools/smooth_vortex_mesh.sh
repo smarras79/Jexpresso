@@ -13,14 +13,13 @@
 # opposite edges. The initial condition therefore jumps across the periodic
 # seam by twice that, and no scheme of any order converges below it:
 #
-#     L = 10 (the box of Balsara and of Dao & Nazarov)   ~ 4.9e-06   <-- default
+#     L = 10  ([-5,5]^2, the box of Balsara)            ~ 4.9e-06
 #     L = 15                                             ~ 1.2e-12
-#     L = 20                                             ~ 5.1e-22   (machine zero)
+#     L = 20  ([-10,10]^2, the box of Dao & Nazarov)     ~ 5.1e-22   <-- default
 #
-# So L = 10 is right for reproducing the published figure and floors out at
-# ~1e-5; a study that must show the decay of a 6th-order element down to
-# 1e-8 or below needs SV_L=15 or SV_L=20 (and, for the same resolution, the
-# proportionally larger element count).
+# So the default L = 20 is the box the published accuracy test is run on, and
+# the one an error study needs: on L = 10 every order flattens at ~1e-5, the
+# high orders first, because the DATA is discontinuous at that size.
 #
 #   SV_L=20 SV_NELX="16 32 64" tools/smooth_vortex_mesh.sh
 #
@@ -30,12 +29,12 @@ set -eu
 cd "$(dirname "$0")/.."
 DIR=problems/MHD/smoothVortex
 NELX=${SV_NELX:-"4 8 16 32"}
-L=${SV_L:-10}
+L=${SV_L:-20}
 GMSH=${GMSH:-gmsh}
 
-# vortex_16x16.msh for the default box, vortex_L20_16x16.msh otherwise.
-LTAG=""
-[ "$(printf '%s' "$L" | sed 's/\.0*$//')" = "10" ] || LTAG="L$(printf '%s' "$L" | sed 's/\.0*$//')_"
+# The box is ALWAYS in the name: vortex_L20_16x16.msh. A mesh whose name does
+# not say which box it is cannot be told from one that is a different box.
+LTAG="L$(printf '%s' "$L" | sed 's/\.0*$//')_"
 
 for n in $NELX; do
     out="$DIR/vortex_${LTAG}${n}x${n}.msh"

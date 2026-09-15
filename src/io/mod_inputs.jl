@@ -1133,6 +1133,74 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :dsgs_Cl))
         inputs[:dsgs_Cl] = 0.0
     end
+    #   :dsgs_freeze_stage  compute the coefficient ONCE PER TIME STEP, at the
+    #                      stage that sits on tⁿ, and hold it for the rest of
+    #                      the step (default false: it is computed at every
+    #                      stage).
+    #
+    #                      ν = C_R h² R̃, and R̃ is a three-point time
+    #                      difference across the stages. At an intermediate
+    #                      stage one of those three values is an RK internal
+    #                      stage, whose own error is O(Δt) — explicit RK
+    #                      schemes have low stage order — so R̃ never falls
+    #                      below O(Δt) however smooth and however well
+    #                      resolved the solution is. ν then stalls at
+    #                      C_R h²·O(Δt), the RV solution departs from the
+    #                      Galerkin one by O(h²), and the measured order of a
+    #                      smooth accuracy test is capped at 2 as soon as the
+    #                      spatial error drops under it — measured on the
+    #                      smooth vortex, where P6 and P7 bend to p = 2.4 and
+    #                      2.1 at 50k-200k DOFs while their Galerkin curves
+    #                      hold 5.7 and 9.8.
+    #
+    #                      At tⁿ the three values are step-level states, R̃ is
+    #                      the BDF2 truncation error O(Δt²), and the floor
+    #                      drops by a factor Δt. It also removes the stage
+    #                      cost of the sensor.
+    if(!haskey(inputs, :dsgs_freeze_stage))
+        inputs[:dsgs_freeze_stage] = false
+    end
+    #   :dsgs_cutoff       smoothness cutoff on the NORMALIZED residual:
+    #                      ratio -> max(0, ratio - cutoff), so nu is exactly
+    #                      zero below it, continuous across it, and unchanged
+    #                      above it (default 0: no cutoff).
+    #
+    #                      On a smooth, resolved solution the sensor does not
+    #                      read zero. The residual is element-local, and where
+    #                      the flow is flat the element's own weak RHS is
+    #                      dominated by the inter-element jump of a grid-scale
+    #                      residue that assembly cancels — measured on the
+    #                      smooth vortex at P6/32^2: far from the vortex the
+    #                      element term is 2.2e-6 against an assembled rate of
+    #                      1.2e-7, eighteen times larger, and BOTH halve when
+    #                      dt halves. nu therefore carries a floor
+    #                      proportional to dt, which caps the measured order of
+    #                      a smooth accuracy test at 2 (fixed dt) or 3 (dt ~ h)
+    #                      while the Galerkin solution keeps design order.
+    #
+    #                      Normalized ratios measured there: 1.6e-6 in the far
+    #                      field, 1.9e-5 in the vortex core. At a shock the
+    #                      ratio is O(10^2), so a cutoff of 1e-3 removes the
+    #                      floor and changes a shock's coefficient in the sixth
+    #                      digit. Validate on brioWu1d and orszagTang before
+    #                      using it on a case with discontinuities.
+    if(!haskey(inputs, :dsgs_cutoff))
+        inputs[:dsgs_cutoff] = 0.0
+    end
+    #   :dsgs_hold_steps   steps the coefficient is held at zero at the START
+    #                      of a run (default 2, the minimum the BDF2 history
+    #                      needs and the behaviour this code has always had).
+    #
+    #                      A probe beyond that. On the smooth vortex a cutoff
+    #                      removes every bit of nu that survives to the final
+    #                      time and STILL leaves most of the excess over
+    #                      Galerkin, so the dose is given early — while the
+    #                      sensor's normalized score is above any usable
+    #                      threshold even though the initial condition is
+    #                      smooth and fully resolved.
+    if(!haskey(inputs, :dsgs_hold_steps))
+        inputs[:dsgs_hold_steps] = 2
+    end
     #   :dsgs_nazarov_energy  heat conduction of the energy slot is Dao &
     #                      Nazarov's κ = ρν/Pr (JSC 2022, §4.4) instead of
     #                      the Fourier-law c_p ρν/Pr: ρν/Pr_t on ∇T in the

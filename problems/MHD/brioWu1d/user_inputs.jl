@@ -48,6 +48,7 @@ const BW_DT_AT_DEFAULT = 5.0e-5
 
 _bw_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_NOP",  "")), 4)
 _bw_dofs() = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_DOFS", "")), BW_DOFS_DEFAULT)
+_bw_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CUTOFF", "")), 0.0)
 _bw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CMIN", "")), 0.06)
 
 # The coefficient per NODE (Dao & Nazarov's own form, their eq. 4.10) instead
@@ -136,6 +137,12 @@ function user_inputs()
         :μ                => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "residual",  # element-wise strong residual (DSGS.md §1.2); "legacy" = the pre-Sep-2026 sensor
+        # Smoothness cutoff on the normalized residual (JEXPRESSO_BW_CUTOFF,
+        # :dsgs_cutoff in mod_inputs.jl). This is the case that says whether a
+        # cutoff big enough to clear the smooth-flow floor still leaves a
+        # compound wave alone: at a discontinuity the normalized ratio is
+        # O(10^2), five orders above anything smooth flow produces.
+        :dsgs_cutoff      => _bw_cutoff(),
         :dsgs_CR          => 1.0*_bw_hfac()^2,
         :dsgs_Cmax        => 0.5*_bw_hfac(),
         # Background floor C_min (not in the paper), 6 % of the first-order

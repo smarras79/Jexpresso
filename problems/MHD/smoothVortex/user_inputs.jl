@@ -122,8 +122,15 @@ end
 # the order, and a 6th-order element reaches the floor sooner than a 4th.
 # L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
-_sv_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_L", "")), 10.0)
-_sv_ltag() = (L = _sv_lbox(); L == 10.0 ? "" :
+# The default is the box of the paper, [-10,10]^2, i.e. L = 20.
+_sv_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_SV_HOLD", "")), 2)
+_sv_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_CUTOFF", "")), 0.0)
+_sv_freeze() = get(ENV, "JEXPRESSO_SV_FREEZE", "0") in ("1", "true", "yes")
+_sv_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_SV_L", "")), 20.0)
+# The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
+# does not say which box it is cannot be told apart from one that is a
+# different box, and reading the wrong one costs a whole sweep.
+_sv_ltag() = (L = _sv_lbox();
                  string("L", L == round(L) ? string(Int(round(L))) : string(L), "_"))
 _sv_mesh() = string("./problems/MHD/smoothVortex/vortex_", _sv_ltag(),
                        _sv_nelx(), "x", _sv_nelx(), ".msh")
@@ -172,6 +179,21 @@ function user_inputs()
         # per RHS call (a few doubles) and is what Dao & Nazarov's eq. 4.8
         # means by the norm over Ω.
         :dsgs_norms       => _sv_norms(),
+        # Compute the coefficient once per step instead of once per stage:
+        # JEXPRESSO_SV_FREEZE=1 (see :dsgs_freeze_stage in mod_inputs.jl).
+        # It is what keeps the residual, and with it nu, from stalling at
+        # O(dt) and capping a high-order accuracy test at second order.
+        :dsgs_freeze_stage => _sv_freeze(),
+        # Smoothness cutoff on the normalized residual (JEXPRESSO_SV_CUTOFF,
+        # :dsgs_cutoff in mod_inputs.jl): nu is zero where the sensor is only
+        # reading the element-local jump of a dt-proportional grid-scale
+        # residue, which is the floor that caps this very study's order.
+        :dsgs_cutoff       => _sv_cutoff(),
+        # Steps the coefficient is held at zero at the start of a run
+        # (JEXPRESSO_SV_HOLD, :dsgs_hold_steps). 2 is the minimum the BDF2
+        # history needs and the long-standing behaviour; more is the probe of
+        # whether the smooth-flow excess is a STARTUP dose.
+        :dsgs_hold_steps   => _sv_hold(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep              => false,

@@ -69,16 +69,24 @@ TEND=${SV_TEND:-1.0}
 JULIA=${JULIA:-julia}
 MPIEXEC=${MPIEXEC:-mpiexec}
 PLOT_NOPS=${SV_PLOT_NOPS:-}
-# The box width. 10 is the box of Balsara and of Dao & Nazarov, and its
-# non-periodic vortex tail floors any error study at ~1e-5 (see the header of
-# tools/smooth_vortex_mesh.sh); SV_L=20 puts that floor at machine zero.
-LBOX=${SV_L:-10}
-LTAG=""
-[ "$(printf '%s' "$LBOX" | sed 's/\.0*$//')" = "10" ] || LTAG="L$(printf '%s' "$LBOX" | sed 's/\.0*$//')_"
+# The box WIDTH. The default 20 is [-10,10]^2, the box Dao & Nazarov run this
+# accuracy test on. SV_L=10 is [-5,5]^2, where the vortex tail at the periodic
+# seam floors every order at ~1e-5 (see the header of
+# tools/smooth_vortex_mesh.sh).
+LBOX=${SV_L:-20}
+LTAG="L$(printf '%s' "$LBOX" | sed 's/\.0*$//')_"
 
 # One Δt for the sweep: the deck's rule at the finest (nelx, nop) of it.
 # 2.0e-3 * 64 / (nelx*nop) is that rule; keep the two in step.
-if [ -n "${SV_DT:-}" ]; then
+if [ "${SV_DT:-}" = "auto" ] || [ "${SV_DT:-}" = "percase" ]; then
+    # Δt PER CASE, from the deck's own CFL rule (DT_REF*64/(nelx*nop)): the
+    # step is refined WITH the mesh instead of being held fixed for the whole
+    # sweep. That is the study to run when the residual viscosity is on: nu
+    # is C_R h^2 R, and at a fixed step R stops falling once it reaches the
+    # time-discretization error, so nu stalls and every RV curve eventually
+    # bends to slope h^2. A step that shrinks with h keeps that floor falling.
+    DT=percase
+elif [ -n "${SV_DT:-}" ]; then
     DT=$SV_DT
 else
     MAXN=0; for N in $NOPS;  do [ "$N" -gt "$MAXN" ] && MAXN=$N; done
@@ -86,7 +94,15 @@ else
     DT=$(awk -v n="$MAXN" -v m="$MAXM" 'BEGIN{printf "%.6g", 2.0e-3*64.0/(n*m)}')
 fi
 
-[ "${SV_KEEP:-0}" = "1" ] || rm -rf "problems/$CASE/errors"
+# A sweep is self-contained: it starts from an empty store unless SV_KEEP=1
+# says to add to what is there. The old store is MOVED ASIDE, not deleted —
+# a sweep that took hours should not be lost to a mistyped command — and a
+# dry run touches nothing at all.
+if [ "${SV_KEEP:-0}" != "1" ] && [ "${DRYRUN:-0}" != "1" ] && [ -d "problems/$CASE/errors" ]; then
+    rm -rf "problems/$CASE/errors.prev"
+    mv "problems/$CASE/errors" "problems/$CASE/errors.prev"
+    echo "=== the previous store is in problems/$CASE/errors.prev"
+fi
 
 SV_NELX="$NELX" SV_L="$LBOX" tools/smooth_vortex_mesh.sh || true
 for M in $NELX; do
@@ -113,23 +129,36 @@ if [ "$NP" -gt 1 ] && [ "${SV_SKIP_LAUNCHER_CHECK:-0}" != "1" ]; then
 fi
 
 echo "=== $CASE: nops [$NOPS] x nelx [$NELX] x [$VISCS] on the [-$(awk -v l="$LBOX" 'BEGIN{printf "%g", l/2}'), $(awk -v l="$LBOX" 'BEGIN{printf "%g", l/2}')]^2 box"
-echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $DT, solver $SOLVER, tend $TEND"
+echo "=== $NP rank(s) per case, $JOBS case(s) at a time, dt = $([ "$DT" = percase ] && echo "per case (the deck's CFL rule)" || echo "$DT"), solver $SOLVER, tend $TEND"
 
 run_one() {   # $1 visc  $2 nop  $3 nelx
     log="logs/${CNAME}_${1}_nop$2_nelx$3.log"
     launcher=$([ "$NP" -gt 1 ] && echo "$MPIEXEC -n $NP")
+    # SV_KEEP=1 adds to the store instead of starting a fresh one, so a case
+    # whose record is already there has nothing to add: skip it. That makes a
+    # sweep RESUMABLE — a machine that goes down, or a job that hits its wall
+    # clock, costs only the cases that were in flight, not the whole run.
+    if [ "${SV_KEEP:-0}" = "1" ] && [ "${SV_REDO:-0}" != "1" ]; then
+        _e=$(err_file "$2" "$3" "$(_tag_of "$1")")
+        if [ -f "$_e" ]; then
+            echo "--- have visc $1, nop $2, ${3}x${3} already: $(tail -n 1 "$_e")"
+            return 0
+        fi
+    fi
     echo "--- START visc $1, nop $2, ${3}x${3} elements   $(date +%T)"
     echo "    $launcher $JULIA --project=. src/Jexpresso.jl $EQNS $CNAME"
     echo "    everything this case prints goes to $log"
     if [ "${DRYRUN:-0}" = "1" ]; then echo "    (dry run)"; return 0; fi
     env JEXPRESSO_${PFX}_NOP="$2" JEXPRESSO_${PFX}_NELX="$3" JEXPRESSO_${PFX}_VISC="$1" \
-        JEXPRESSO_${PFX}_DT="$DT" JEXPRESSO_${PFX}_SOLVER="$SOLVER" JEXPRESSO_${PFX}_TEND="$TEND" \
+        $([ "$DT" = percase ] || echo JEXPRESSO_${PFX}_DT="$DT") \
+        JEXPRESSO_${PFX}_SOLVER="$SOLVER" JEXPRESSO_${PFX}_TEND="$TEND" \
         JEXPRESSO_${PFX}_L="$LBOX" \
+        ${SV_CUTOFF:+JEXPRESSO_${PFX}_CUTOFF="$SV_CUTOFF"} \
         ${PLOT_NOPS:+JEXPRESSO_${PFX}_PLOT_NOPS="$PLOT_NOPS"} \
         $launcher "$JULIA" --project=. src/Jexpresso.jl "$EQNS" "$CNAME" \
         > "$log" 2>&1
     rc=$?
-    err=$(err_file "$2" "$3" "$([ "$1" = none ] && echo galerkin || echo dsgs)")
+    err=$(err_file "$2" "$3" "$(_tag_of "$1")")
     if [ "$rc" -ne 0 ]; then
         echo "--- FAILED (exit $rc) visc $1, nop $2, nelx $3   $(date +%T)"
         echo "    last lines of $log:"
@@ -146,6 +175,13 @@ run_one() {   # $1 visc  $2 nop  $3 nelx
 # Where a case stores its error. The Euler deck tags the record with the vortex
 # strength (nop4_nelx8_b1_dsgs.dat), the MHD deck does not (nop4_nelx8_dsgs.dat),
 # so match either and report the plain name when nothing is there yet.
+# What the deck will call this run's record: a run with the smoothness cutoff
+# on is its own experiment and stores its own curve (SV_CUTOFF > 0).
+_tag_of() {
+    [ "$1" = none ] && { echo galerkin; return 0; }
+    case "${SV_CUTOFF:-0}" in 0|0.0|"") echo dsgs ;; *) echo dsgs_cut ;; esac
+}
+
 err_file() {
     _plain="problems/$CASE/errors/nop$1_nelx$2_$3.dat"
     for _f in "$_plain" problems/"$CASE"/errors/nop"$1"_nelx"$2"_b*_"$3".dat; do
@@ -179,7 +215,7 @@ wait
 echo "=== sweep finished $(date +%T). What is in the store:"
 n_have=0; n_want=0
 for V in $VISCS; do
-    tag=$([ "$V" = none ] && echo galerkin || echo dsgs)
+    tag=$(_tag_of "$V")
     for M in $NELX; do
         for N in $NOPS; do
             n_want=$((n_want + 1))

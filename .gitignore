@@ -34,3 +34,4 @@ logs/
 # source. The sweep driver rewrites the whole store on every run (SV_KEEP=1
 # to append instead), so tracking them makes every run dirty the tree.
 problems/*/smoothVortex/errors/
+problems/*/smoothVortex/errors.prev/

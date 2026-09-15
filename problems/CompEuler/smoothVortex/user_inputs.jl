@@ -82,8 +82,15 @@ end
 # the order, and a 6th-order element reaches the floor sooner than a 4th.
 # L = 15 puts the floor at 1e-12 and L = 20 at machine zero; generate those
 # meshes with SV_L=20 tools/smooth_vortex_mesh.sh.
-_ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 10.0)
-_ev_ltag() = (L = _ev_lbox(); L == 10.0 ? "" :
+# The default is the box of the paper, [-10,10]^2, i.e. L = 20.
+_ev_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_EV_HOLD", "")), 2)
+_ev_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_CUTOFF", "")), 0.0)
+_ev_freeze() = get(ENV, "JEXPRESSO_EV_FREEZE", "0") in ("1", "true", "yes")
+_ev_lbox() = something(tryparse(Float64, get(ENV, "JEXPRESSO_EV_L", "")), 20.0)
+# The box is ALWAYS in the mesh name (vortex_L20_32x32.msh): a mesh whose name
+# does not say which box it is cannot be told apart from one that is a
+# different box, and reading the wrong one costs a whole sweep.
+_ev_ltag() = (L = _ev_lbox();
                  string("L", L == round(L) ? string(Int(round(L))) : string(L), "_"))
 _ev_mesh() = string("./problems/MHD/smoothVortex/vortex_", _ev_ltag(),
                        _ev_nelx(), "x", _ev_nelx(), ".msh")
@@ -112,7 +119,13 @@ function user_inputs()
         :lvisc            => (_ev_visc() != "none"),
         :μ                => [1.0, 1.0, 1.0, 1.0],
         :visc_model       => DSGS(),
-        :dsgs_sensor      => "residual",
+        # "residual" (default) or "legacy", the assembled M^-1.RHS sensor:
+        # JEXPRESSO_EV_SENSOR. Which one is used decides what the coefficient
+        # measures on a SMOOTH solution — the element-local form reads the
+        # inter-element jump of a dt-proportional grid-scale residue, which the
+        # assembly cancels (measured here: far from the vortex the element
+        # term is 18x the assembled rate, and both halve when dt halves).
+        :dsgs_sensor      => get(ENV, "JEXPRESSO_EV_SENSOR", "residual"),
         :dsgs_CR          => _ev_cr(),
         :dsgs_Cmax        => _ev_cmax(),
         :dsgs_Cmin        => _ev_cmin(),   # no background floor: it would be an
@@ -121,6 +134,21 @@ function user_inputs()
         :dsgs_Prt         => 0.7,
         :dsgs_rel         => _ev_rel(),
         :dsgs_norms       => _ev_norms(),
+        # Compute the coefficient once per step instead of once per stage:
+        # JEXPRESSO_EV_FREEZE=1 (see :dsgs_freeze_stage in mod_inputs.jl).
+        # It is what keeps the residual, and with it nu, from stalling at
+        # O(dt) and capping a high-order accuracy test at second order.
+        :dsgs_freeze_stage => _ev_freeze(),
+        # Smoothness cutoff on the normalized residual (JEXPRESSO_EV_CUTOFF,
+        # :dsgs_cutoff in mod_inputs.jl): nu is zero where the sensor is only
+        # reading the element-local jump of a dt-proportional grid-scale
+        # residue, which is the floor that caps this very study's order.
+        :dsgs_cutoff       => _ev_cutoff(),
+        # Steps the coefficient is held at zero at the start of a run
+        # (JEXPRESSO_EV_HOLD, :dsgs_hold_steps). 2 is the minimum the BDF2
+        # history needs and the long-standing behaviour; more is the probe of
+        # whether the smooth-flow excess is a STARTUP dose.
+        :dsgs_hold_steps   => _ev_hold(),
         :lrichardson      => false,
         :energy_equation  => "energy",
         :lkep             => false,
