@@ -5,11 +5,10 @@
 # The `tag` argument is the gmsh physical-curve name carried by the edge,
 # so these five names are exactly the groups declared in ramp15.geo:
 #
-#   "inflow"    left boundary, x = -1 mm          free stream
+#   "inflow"    left boundary, x = 0              free stream
 #   "top"       upper boundary                    free stream
 #   "outflow"   right boundary, x = x_end         extrapolation
-#   "symmetry"  bottom, -1 mm < x < 0             free slip
-#   "wall"      bottom, x > 0 (plate and ramp)    no slip, isothermal
+#   "wall"      bottom (plate and ramp)           no slip, isothermal
 #
 # Free stream (inflow and top).  "The free stream condition is also
 # prescribed at the upper computational boundary" -- Section 2.3.  At
@@ -35,28 +34,34 @@
 # Density itself is left alone: it is the one variable a wall does not
 # constrain, and the continuity equation at the wall supplies it.
 #
-# Symmetry.  The 1 mm of free stream ahead of the leading edge exists so
-# that the stream is established before the plate starts (Section 2.3: "20
-# grid points are placed up to 1 mm ahead of the leading edge") and so that
-# the leading-edge singularity does not sit on the inflow boundary.  There
-# is no body there, so the lower boundary of that strip is a free-slip
-# (symmetry) line, not a wall.
+# NO UPSTREAM STRIP.  Section 2.3 puts 20 grid points in 1 mm of free
+# stream ahead of the leading edge, and this deck did too until the strip
+# turned out to be the single worst cell on the grid: conforming blocks
+# force it to carry the wall-clustered dy = 8e-6 m, while its lower
+# boundary is a symmetry line, so it has no boundary layer and runs the
+# full 1726 m/s at the finest wall-normal spacing in the domain.  When
+# DynSGS saturates there the viscous CFL it implies is ~3e-10 s.  Measured:
+# with the strip, the case died at step 304 at exactly that node.  The
+# strip is gone and the inflow now sits on the leading edge.
 #
-# THE LEADING EDGE (0,0) is the one node two different conditions claim:
-# it closes the "symmetry" edge and opens the "wall" edge.  The kernel
-# walks the boundary edge by edge and writes each result straight back into
-# uaux, so the node would be constrained twice and the later edge would
-# win, whichever that is.  The wall condition is the physical one -- the
-# leading edge is the first point of the plate, it is where the boundary
-# layer starts, and the whole viscous-interaction pressure gradient of
-# figure 2(b) hangs off it -- so the symmetry branch skips that node and
-# lets the wall have it, deterministically.
+# THE LEADING EDGE (0,0) is the node two conditions claim: it opens the
+# "wall" edge and closes the "inflow" edge.  The kernel walks the boundary
+# edge by edge and writes each result straight into uaux, so the node is
+# constrained twice and the later edge wins, whichever that is.  The wall
+# condition is the physical one -- the leading edge is the first point of
+# the plate, where the boundary layer starts and where the whole
+# viscous-interaction pressure gradient of figure 2(b) originates -- so the
+# inflow branch skips that node and lets the wall have it, deterministically.
 #---------------------------------------------------------------------------------
 
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,
                             qbdy::AbstractArray, nx, ny, qe, ::TOTAL)
 
     if tag == "inflow" || tag == "top"
+        # The leading edge belongs to the wall, not to the inflow (see above).
+        if tag == "inflow" && coords[2] < 1.0e-12
+            return nothing
+        end
         ρ∞, u∞, v∞, p∞, T∞, ρE∞ = ramp_freestream()
         qbdy[1] = ρ∞
         qbdy[2] = ρ∞*u∞
@@ -65,17 +70,6 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,
 
     elseif tag == "outflow"
         # Supersonic outflow: impose nothing.
-
-    elseif tag == "symmetry"
-        # Free slip ahead of the leading edge, except AT the leading edge,
-        # which belongs to the wall (see the note above).  x = 0 is the
-        # leading edge of ramp15.geo.
-        if coords[1] > -1.0e-12
-            return nothing
-        end
-        qnl     = nx*q[2] + ny*q[3]
-        qbdy[2] = q[2] - qnl*nx
-        qbdy[3] = q[3] - qnl*ny
 
     else
         # "wall": no slip, isothermal at T_w = 293 K.

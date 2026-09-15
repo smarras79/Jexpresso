@@ -120,52 +120,56 @@ function user_inputs()
         :lrestart             => false,
         :restart_time         => 0.0,
         #
-        # TIME STEP.  Explicit, on a hypersonic viscous grid, so it is small
-        # and there is no way around it.  At :nop => 4 the tightest LGL
-        # interval of an element is 0.17267 h, and the advective limit
-        # dx/(|u|+c) over the grid is
+        # TIME STEP.  Explicit, and the binding constraint is VISCOUS, not
+        # advective -- the same lesson ffs_step's deck records ("DynSGS
+        # saturates its own mu_max bound ... mu*dt/(rho*dx^2) is already
+        # 0.22"), and getting it backwards here is what made the first
+        # version of this deck blow up.
         #
-        #   where                element h   tightest dx  |u|+c     dt
-        #   x, inflow strip      2.0e-4 m    3.45e-5 m    1950 m/s  1.8e-8
-        #   x, leading edge      4.88e-4 m   8.43e-5 m    1950 m/s  4.3e-8
-        #   y, first element     4.62e-5 m   7.98e-6 m     343 m/s  2.3e-8
-        #   y, mid-boundary-layer 1.48e-4 m  2.56e-5 m    2100 m/s  1.2e-8
-        #   y, top element       4.53e-3 m   7.82e-4 m    1950 m/s  4.0e-7
+        # THE MECHANISM.  DynSGS bounds its coefficient by the first-order
+        # upwind viscosity, nu_cap = Cmax * Delem * (|u| + c).  Delem is the
+        # SHORTEST element side (mesh.jl, compute_element_size!), but the
+        # diffusion is resolved on the LGL spacing, which at nop = 4 is only
+        # 0.17267 of it.  So wherever the sensor saturates, the diffusion
+        # number it implies is
         #
-        # The binding one is NOT the wall: there u -> 0 and the gas is at
-        # the 293 K wall temperature, so the wave speed is only 343 m/s.
-        # It is the middle of the boundary layer, where the mesh has grown
-        # to 2.6e-5 m but the gas is at 1200 K and 1400 m/s -- 1.2e-8 s.
+        #     nu_cap*dt/dy_LGL^2 = (Cmax/0.17267^2) * (|u|+c)*dt/Delem
         #
-        # The viscous limit rho dy^2/mu at the wall is ~1e-7 s and does NOT
-        # bind, which is the opposite of ffs_step: there the viscosity was
-        # the artificial one, saturating at the step corner; here it is the
-        # physical one and the wall is where the density is highest.
+        # i.e. 5.8*Cmax times the advective CFL at the same node.  At the
+        # default Cmax = 0.5 that is 2.9x, and the viscous limit binds by a
+        # factor of a few everywhere the shocks live.  THIS is where the
+        # grid anisotropy bites -- not in the advective CFL, which the note
+        # below the integrator shows is isotropic to 1%.
         #
-        # 5.0e-9 s is CFL ~ 0.4 against that 1.2e-8 s, which is what the
-        # impulsive start needs.  1.0e-8 s is usually fine once the
-        # leading-edge transient has washed out (the first ~2000 steps).
+        # :dsgs_Cmax => 0.1 (set under the DynSGS block) is the answer to
+        # the 5.8: Nazarov's cap is meant to be the first-order upwind
+        # viscosity at the NODAL spacing, and using Delem with Cmax = 0.5
+        # overestimates it by exactly that factor on an LGL grid.  ffs_step
+        # keeps 0.5 because its grid is isotropic and it simply accepts the
+        # small dt; this grid cannot afford to.
         #
-        # WHERE THE REMAINING dt IS, if you want it.  The binding node is
-        # not on the ramp at all: it is at x = -1 mm, y = 2.3e-5 m, in the
-        # free-stream strip ahead of the leading edge.  That strip carries
-        # the wall-clustered y-spacing (the blocks are conforming, so it
-        # must) but has NO boundary layer -- its lower boundary is a
-        # symmetry line -- so it runs the full 1726 m/s at the finest
-        # wall-normal spacing on the grid, resolving nothing.  Cutting
-        # NX_UP in generate_mesh.py from 5 to 3 moves the limit from
-        # 1.27e-8 to 1.57e-8 s, +24%, and then it saturates: the next
-        # bottleneck is the leading-edge region at x = +1 mm.  The cost is
-        # 20 -> 12 points ahead of the leading edge, which is a deviation
-        # from Section 2.3.  Left at 5 here; it is the only free dt in the
-        # setup and it is worth exactly 24%.
-        :Δt                   => 5.0e-9,
+        # WHAT BINDS NOW.  With Cmax = 0.1 and the upstream strip removed
+        # (see the mesh block), at a diffusion number of 0.22:
+        #
+        #   where                   Delem      |u|+c    nu_cap     dt
+        #   leading-edge column     4.62e-5   1950     9.0e-3    1.6e-9
+        #   mid-boundary-layer      1.48e-4   2094     3.1e-2    4.6e-9
+        #   first wall element      4.62e-5    343     1.6e-3    8.9e-9
+        #   top of the domain       4.53e-3   1950     8.8e-1    1.5e-7
+        #
+        # so ~1.6e-9, set by the leading edge, where the inflow holds the
+        # free stream right down onto the wall-clustered mesh.  The
+        # advective limit is 2.0e-8 (CFL = 1), so it is NOT what sets dt.
+        #
+        # 1.0e-9 is that with room to spare.  It is MEASURED, not derived:
+        # 5.0e-9 died at step 3 and 1.0e-9 ran 304 steps before dying at the
+        # strip, which is the cell this deck no longer has.
+        :Δt                   => 1.0e-9,
         :diagnostics_at_times => (0:2.5e-5:2.0e-3),
-        # Wall-clock note, not a setting: 2.0e-3 s at 5e-9 is 400,000 steps
-        # on 16,140 elements.  Run it on several ranks and expect hours,
-        # not minutes; a long silence between the CFL/VTK lines is the run
-        # working, not a hang.  JEXPRESSO_STEP_HEARTBEAT=1 turns on a
-        # per-step trace without editing this deck.
+        # Wall-clock note, not a setting: 2.0e-3 s at 1e-9 is 2,000,000
+        # steps on 16,140 elements, about 380 core-hours (see README).
+        # A long silence between the CFL/VTK lines is the run working, not a
+        # hang; JEXPRESSO_STEP_HEARTBEAT=1 turns on a per-step trace.
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
@@ -215,6 +219,16 @@ function user_inputs()
         # and check the wall Stanton number afterwards — an artificial
         # conductivity that reaches the wall falsifies figure 3(c).
         :μ                    => [1.0, 1.0, 1.0, 1.0],
+        # Cap on the DynSGS coefficient, nu_cap = Cmax*Delem*(|u|+c).  The
+        # default 0.5 is Nazarov's, for a grid whose Delem IS the nodal
+        # spacing; on an LGL grid at nop = 4 the nodal spacing is 0.17267
+        # of Delem, so 0.5 overestimates the intended first-order-upwind
+        # bound by 5.8x and the viscous CFL it implies is 2.9x tighter than
+        # the advective one. 0.1 restores the intended magnitude and buys
+        # 5x in :Δt. It lowers the CAP only -- the residual coefficient
+        # itself is untouched, so this is a bound on how much artificial
+        # dissipation the sensor may apply, not a change to the sensor.
+        :dsgs_Cmax            => 0.1,
         # Artificial Prandtl number P of eq. (3.7): kappa = P/(gamma-1)*mu.
         # Nazarov & Hoffman use P ~ 0.1.  This is NOT :Pr_lam above; the
         # two coefficients are added on the same slot and are separately
@@ -223,10 +237,22 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh
         #
-        # ramp15.msh is a three-block transfinite quad mesh of the ramp,
+        # ramp15.msh is a two-block transfinite quad mesh of the ramp,
         # 269 x 60 elements, which at :nop => 4 is 1077 x 241 LGL points —
         # case G1 of Section 2.2 (1080 x 240), the coarser of the paper's
         # two grids in x and y.  Wall spacing 7.98e-6 m against its 8e-6 m.
+        #
+        # NO UPSTREAM STRIP.  Section 2.3 puts 20 points in 1 mm ahead of
+        # the leading edge; this deck does not, and the 269 streamwise
+        # elements are spent on the body instead (137 plate + 132 ramp).
+        # The strip was the worst cell on the grid: conforming blocks force
+        # it to carry the wall-clustered dy = 8e-6 m while its lower
+        # boundary is a symmetry line, so it has no boundary layer and runs
+        # the full 1726 m/s at the finest wall-normal spacing in the domain.
+        # Measured: with the strip the case died at step 304 at exactly that
+        # node. The cost is that the leading-edge singularity now sits on
+        # the inflow plane, which is what Section 2.3 used the strip to
+        # avoid; user_bc.jl gives that node to the wall.
         #
         # Regenerate with `python3 generate_mesh.py` (no gmsh needed) or
         # `gmsh -2 ramp15.geo -o ramp15.msh`; both files carry the same

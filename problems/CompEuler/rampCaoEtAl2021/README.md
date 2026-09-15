@@ -36,11 +36,12 @@ of them.
 
 | | |
 |---|---|
-| geometry | sharp leading edge, flat plate L = 100 mm, ramp 15°, also 100 mm along the surface; 1 mm of free stream ahead of the leading edge (§2.2, §2.3) |
+| geometry | sharp leading edge, flat plate L = 100 mm, ramp 15°, also 100 mm along the surface (§2.2). §2.3's 1 mm free-stream strip ahead of the leading edge is **not** included — see Mesh |
 | free stream | M = 7.7, T = 125 K, p = 760 Pa, u = 1726 m/s, Re/m = 4.2 × 10⁶ (Table 1, shock tunnel TH2) |
 | wall | no slip, isothermal, T_w = 293 K (T_w/T_∞ = 2.34) |
 | gas | perfect, γ = 1.4, Pr = 0.71, Sutherland's law for μ |
 | grid | `ramp15.msh`, 269 × 60 quads → 1077 × 241 LGL points at `:nop => 4` (paper G1: 1080 × 240), Δy_wall = 7.98 × 10⁻⁶ m (paper 8 × 10⁻⁶) |
+| time step | Δt = 1 × 10⁻⁹ s, set by the **viscous** limit from the DynSGS cap, not by advection — derived in `user_inputs.jl` |
 
 The Reynolds number is not an independent input: μ(125 K) = 8.656 × 10⁻⁶ Pa s
 from the standard air Sutherland constants, with the paper's own p, T, u and L,
@@ -71,18 +72,30 @@ python3 generate_mesh.py            # -> ramp15.msh
 gmsh -2 ramp15.geo -o ramp15.msh    # identical, if you have gmsh
 ```
 
-Three conforming transfinite blocks (strip ahead of the leading edge, plate,
-ramp). The upper boundary is the wall contour shifted *vertically* by
+Two conforming transfinite blocks (plate, ramp). The upper boundary is the wall contour shifted *vertically* by
 H = 60 mm, so every streamwise grid line is vertical and the ramp block is a
 uniform shear of a rectangle — no metric distortion. H puts the whole shock
 system inside the domain: the separation shock crosses the outflow plane some
 36 mm below the top, so the free-stream Dirichlet condition there is never
 asked to swallow a discontinuity.
 
+**No upstream strip.** §2.3 places 20 grid points in 1 mm ahead of the leading
+edge; this grid does not, and spends all 269 streamwise elements on the body
+(137 plate + 132 ramp). The strip was the single worst cell on the grid:
+conforming blocks force it to carry the wall-clustered Δy = 8e-6 m, while its
+lower boundary is a symmetry line, so it has no boundary layer and runs the full
+1726 m/s at the finest wall-normal spacing in the domain. When DynSGS saturates
+there, the viscous CFL it implies is ~3e-10 s — and measured, the case died at
+step 304 at exactly that node. The cost is that the leading-edge singularity now
+sits on the inflow plane, which is what the strip existed to avoid; `user_bc.jl`
+gives that node to the wall.
+
 To refine, either raise `NX_PLATE` / `NX_RAMP` / `NY` in `generate_mesh.py`
-(`NY = 80`, `NX_PLATE = 200`, `NX_RAMP = 195` is roughly case G2, 1600 × 320),
-or set `:linitial_refine => true` with `:init_refine_lvl => 1`. Either way halve
-`:Δt` for each halving of the element size.
+(`NY = 80`, `NX_PLATE = 203`, `NX_RAMP = 197` is roughly case G2, 1600 × 320),
+or set `:linitial_refine => true` with `:init_refine_lvl => 1`. Cut `:Δt` with
+it — but **not** by the square of the element size: Δt here is set by the DynSGS
+cap, whose ν_cap scales with Δelem while the stability limit scales with Δy², so
+refinement costs one factor of element size in Δt, not two.
 
 ## Running it: cores and wall time
 
@@ -90,18 +103,18 @@ or set `:linitial_refine => true` with `:init_refine_lvl => 1`. Either way halve
 4032 elements at `:init_refine_lvl => 1` = 16,128 elements, `:nop => 4`, 4
 equations, DynSGS with the legacy sensor — and its deck records 64,000 steps at
 about 12 h on one core, i.e. **0.68 s/step**. This case is 16,140 elements with
-the same everything, so the nominal run (400,000 steps) is **≈ 75 core-hours**,
-with maybe a factor 2 of slack in that "order 12 h".
+the same everything, so the nominal run at Δt = 1e-9 (2,000,000 steps) is
+**≈ 380 core-hours**, with maybe a factor 2 of slack in that "order 12 h".
 
 | cores | elements/rank | wall time (~80% efficiency) |
 |---|---|---|
-| 16 | 1009 | ~6 h |
-| **32** | **504** | **~3 h** |
-| 64 | 252 | ~1.8 h |
+| 16 | 1009 | ~30 h |
+| **32** | **504** | **~15 h** |
+| 64 | 252 | ~8 h |
 
 **32 is the recommendation** — one node, and memory is trivial (a few hundred MB
 in total). Don't go much past 64: ~250 elements/rank is where a 2D `nop = 4` SEM
-starts being latency-bound, and this run makes 2 million RHS calls, each with a
+starts being latency-bound, and this run makes 10 million RHS calls, each with a
 halo exchange and — with `:dsgs_norms => "domain"`, now the default — two or
 three `Allreduce`. Those collectives are only a minute or two of the run at
 32–64 ranks, but they grow with rank count while the compute per rank shrinks.
@@ -111,8 +124,8 @@ what that costs: rank-local norms make the viscosity depend on the partition,
 measured at 18× worse error on `smoothVortex` going from 2 to 8 ranks.
 
 One refinement level (`:init_refine_lvl => 1`) is 4× the elements and 2× the
-steps, so 8× the cost: ~600 core-hours, i.e. 32 cores for a day or 128 cores
-(504 elements/rank again) for ~7 h.
+steps (see Mesh for why it is 2× and not 4×), so 8× the cost: ~3000 core-hours,
+i.e. 128 cores (504 elements/rank again) for about a day.
 
 ## What to check the result against
 

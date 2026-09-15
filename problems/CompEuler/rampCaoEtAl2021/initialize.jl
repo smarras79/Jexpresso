@@ -234,8 +234,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs, OUTPUT_DIR::String, T
     for ip = 1:mesh.npoin
         x, y = mesh.x[ip], mesh.y[ip]
 
-        if x <= 0.0
-            s_wall, n_wall = -1.0, y                  # ahead of the leading edge
+        if x <= 1.0e-12
+            s_wall, n_wall = -1.0, y                  # the leading-edge column
         elseif x <= L
             s_wall, n_wall = x, y                     # flat plate
         else

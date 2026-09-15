@@ -17,23 +17,30 @@
 //   100 mm" as a horizontal extent instead — that moves the outflow from
 //   x/L = 1.966 to 2.0 and changes nothing else).
 //
-//   20 grid points are placed in the 1 mm ahead of the leading edge, as in
-//   Section 2.3, so that the free stream is established before the plate
-//   starts and the leading-edge singularity does not sit on the inflow.
+//   NO UPSTREAM STRIP. Section 2.3 places 20 grid points in 1 mm ahead of
+//   the leading edge; this grid does not, and spends its 269 streamwise
+//   elements on the body instead. The strip was the worst cell on the grid:
+//   conforming blocks force it to carry the wall-clustered dy = 8e-6 m,
+//   while its lower boundary is a symmetry line, so it has no boundary
+//   layer and runs the full 1726 m/s at the finest wall-normal spacing in
+//   the domain. When DynSGS saturates there the viscous CFL it implies is
+//   ~3e-10 s; measured, the case died at step 304 at exactly that node.
+//   The cost is that the leading edge now sits on the inflow plane, which
+//   is what the strip existed to avoid; user_bc.jl gives that node to the
+//   wall.
 //
-//   P8 ------- P7 ----------------------- P6                 y = H
-//   |    A     |             B            |    \ C
-//   |          |                          |         \
-//   |          |                          |              \  P5
-//   P1 ------- P2 ======================= P3                 y = 0
-//                                            \  ramp 15 deg
-//   x = -1 mm  x = 0                x = 100 mm    \  P4
+//   P6 ----------------------- P5                             y = H
+//   |             A            |    \  B
+//   |                          |         \
+//   |                          |              \  P4
+//   P1 ======================= P2                             y = 0
+//                                 \  ramp 15 deg
+//   x = 0                x = 100 mm   \  P3
 //
-//   A : free-stream strip ahead of the leading edge (bottom = "symmetry")
-//   B : above the flat plate                        (bottom = "wall")
-//   C : above the ramp, a parallelogram — the upper boundary is the wall
+//   A : above the flat plate   (bottom = "wall")
+//   B : above the ramp, a parallelogram -- the upper boundary is the wall
 //       contour shifted VERTICALLY by H, so every grid line of constant
-//       streamwise index is vertical and block C is a uniform shear of a
+//       streamwise index is vertical and block B is a uniform shear of a
 //       rectangle (no metric distortion, no skew beyond the 15 deg).
 //
 //   H = 60 mm.  The separation shock leaves the plate near x/L = 0.59 at
@@ -46,7 +53,7 @@
 //
 //   Jexpresso is a spectral-element code, so "points" are the LGL nodes of
 //   the elements: at :nop => 4 a curve of N elements carries 4N+1 nodes.
-//        x :   5 + 134 + 130 = 269 elements -> 1077 nodes  (paper 1080)
+//        x :       137 + 132 = 269 elements -> 1077 nodes  (paper 1080)
 //        y :               60 elements      ->  241 nodes  (paper  240)
 //
 //   The wall-normal progression 1.0808 over H = 60 mm puts the first
@@ -69,67 +76,56 @@
 L         = 0.1;                 // flat plate length [m]
 alpha     = 15.0*Pi/180.0;       // ramp deflection [rad]
 ramp_len  = 0.1;                 // ramp length ALONG the ramp surface [m]
-x_up      = 0.001;               // free-stream strip ahead of the leading edge
 H         = 0.06;                // domain height above the wall contour [m]
 
 x_end     = L + ramp_len*Cos(alpha);
 y_end     =     ramp_len*Sin(alpha);
 
 // -------- Resolution --------
-nx_up     =   5;   // uniform,          [-1 mm, 0]
-nx_plate  = 134;   // Progression 1.006, clustered at the leading edge
-nx_ramp   = 130;   // uniform,          along the ramp
+nx_plate  = 137;   // Progression 1.006, clustered at the leading edge
+nx_ramp   = 132;   // uniform, along the ramp
 ny        =  60;   // Progression 1.0808, clustered at the wall
 
 px        = 1.006;
 py        = 1.0808;
 
 // -------- Points --------
-Point(1) = {-x_up,  0.0,       0};   // inflow / symmetry corner
-Point(2) = { 0.0,   0.0,       0};   // SHARP LEADING EDGE
-Point(3) = { L,     0.0,       0};   // compression corner
-Point(4) = { x_end, y_end,     0};   // ramp end, outflow bottom
-Point(5) = { x_end, y_end + H, 0};   // outflow top
-Point(6) = { L,     H,         0};   // top, above the corner
-Point(7) = { 0.0,   H,         0};   // top, above the leading edge
-Point(8) = {-x_up,  H,         0};   // inflow top
+Point(1) = { 0.0,   0.0,       0};   // SHARP LEADING EDGE / inflow corner
+Point(2) = { L,     0.0,       0};   // compression corner
+Point(3) = { x_end, y_end,     0};   // ramp end, outflow bottom
+Point(4) = { x_end, y_end + H, 0};   // outflow top
+Point(5) = { L,     H,         0};   // top, above the corner
+Point(6) = { 0.0,   H,         0};   // inflow top
 
 // -------- Curves --------
 // Curves that face each other are given the SAME orientation so that one
 // Progression applies to both and the blocks stay conforming.
-Line(1)  = {1, 2};   // symmetry (ahead of the leading edge)
-Line(2)  = {2, 3};   // wall, flat plate
-Line(3)  = {3, 4};   // wall, ramp
-Line(4)  = {4, 5};   // outflow
-Line(5)  = {6, 5};   // top, above the ramp
-Line(6)  = {7, 6};   // top, above the plate
-Line(7)  = {8, 7};   // top, above the strip
-Line(8)  = {1, 8};   // inflow
-Line(9)  = {2, 7};   // block A | B interface
-Line(10) = {3, 6};   // block B | C interface
+Line(1) = {1, 2};   // wall, flat plate
+Line(2) = {2, 3};   // wall, ramp
+Line(3) = {3, 4};   // outflow
+Line(4) = {5, 4};   // top, above the ramp
+Line(5) = {6, 5};   // top, above the plate
+Line(6) = {1, 6};   // inflow
+Line(7) = {2, 5};   // block A | B interface
 
 // -------- Surfaces --------
-Curve Loop(1) = { 1,  9, -7, -8};   Plane Surface(1) = {1};   // A
-Curve Loop(2) = { 2, 10, -6, -9};   Plane Surface(2) = {2};   // B
-Curve Loop(3) = { 3,  4, -5, -10};  Plane Surface(3) = {3};   // C
+Curve Loop(1) = {1, 7, -5, -6};   Plane Surface(1) = {1};   // A
+Curve Loop(2) = {2, 3, -4, -7};   Plane Surface(2) = {2};   // B
 
 // -------- Transfinite distributions --------
-Transfinite Curve{1, 7}  = nx_up    + 1;
-Transfinite Curve{2, 6}  = nx_plate + 1 Using Progression px;
-Transfinite Curve{3, 5}  = nx_ramp  + 1;
-Transfinite Curve{4, 8, 9, 10} = ny + 1 Using Progression py;
+Transfinite Curve{1, 5} = nx_plate + 1 Using Progression px;
+Transfinite Curve{2, 4} = nx_ramp  + 1;
+Transfinite Curve{3, 6, 7} = ny + 1 Using Progression py;
 
 Transfinite Surface{1};
 Transfinite Surface{2};
-Transfinite Surface{3};
-Recombine Surface{1, 2, 3};
+Recombine Surface{1, 2};
 
 // -------- Physical groups (these names reach user_bc_dirichlet!) --------
-Physical Curve("inflow",   2) = {8};
-Physical Curve("outflow",  3) = {4};
-Physical Curve("wall",     4) = {2, 3};
-Physical Curve("top",      5) = {5, 6, 7};
-Physical Curve("symmetry", 6) = {1};
-Physical Surface("domain", 1) = {1, 2, 3};
+Physical Curve("inflow",  2) = {6};
+Physical Curve("outflow", 3) = {3};
+Physical Curve("wall",    4) = {1, 2};
+Physical Curve("top",     5) = {4, 5};
+Physical Surface("domain", 1) = {1, 2};
 
 Mesh.ElementOrder = 1;
