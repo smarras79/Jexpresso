@@ -41,7 +41,7 @@
 #      julia tools/pick_nranks.jl <nelemx> <nelemy> <nelemz> <nop> <max_cores>
 #
 #  Answers for the cases here:
-#      LESICP2-30x30x60-imex    100 (10 x 10 over 30 x 30 columns)   <- set below
+#      LESICP2-30x30x60-imex    900 (30 x 30 over 30 x 30 columns)   <- set below
 #      LESICP2-128x128x60-imex 1024 (32 x 32 over 128 x 128 columns)
 #      LESICP2-64x64x60-imex    256 (16 x 16 over 64 x 64 columns)
 #      1280 ranks DOES NOT divide 128x128 = 16384 columns (12.8 each).
@@ -78,12 +78,13 @@
 #  1219979. If 8 GB/rank still dies in the mesh read, go to the 32-node row:
 #  it is a three-line change and nothing else in the deck moves.
 #-----------------------------------------------------------------------------
-#  LESICP2-30x30x60-imex: 900 columns. tools/pick_nranks.jl 30 30 60 4 256
-#  lists 50/60/75/100/150/225; 128 (what submit_jexpresso_profile.sh asks
-#  for) is NOT among them -- 900/128 = 7.03. 100 ranks = 10 x 10 rank grid,
-#  3 x 3 columns and ~35k points per rank, all on one node at ~5 GB/rank.
+#  LESICP2-30x30x60-imex: 900 columns, one per rank. tools/pick_nranks.jl
+#  30 30 60 4 1024 lists 900 as valid (30 x 30 rank grid, 3921 points/rank,
+#  halo/elem 4.0, i.e. comms-bound); it recommends 60. 128 (what
+#  submit_jexpresso_profile.sh asks for) does NOT divide 900. 9 nodes x 100
+#  keeps 512 GB / 100 = ~5 GB/rank for the mesh broadcast.
 #SBATCH --exclusive
-#SBATCH --nodes=1
+#SBATCH --nodes=9
 #SBATCH --ntasks-per-node=100
 #SBATCH --cpus-per-task=1
 # The deck's IMEX dt is 1.0 s, so tend = 10800 is 10,800 steps. No rate has
