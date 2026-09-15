@@ -1820,6 +1820,12 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
     # Slot 1 gets nothing: physical Navier-Stokes has no mass diffusion.
     # The β∇ρ sitting there is DynSGS's own (Nazarov & Hoffman eq. 3.7).
     #
+    # μ(T) is added RAW, not through the deck's :μ multipliers: those tune
+    # how much ARTIFICIAL dissipation the sensor is allowed, and scaling
+    # the molecular viscosity with them would silently change the case's
+    # Reynolds number. A deck that raises :μ[2:4] to hold a shock keeps
+    # the same physical μ underneath it.
+    #
     # The per-node coefficient rides the SAME μloc buffer the nodal DynSGS
     # form already uses, so the assembly needs no change: SGS_diffusion is
     # bypassed and μnod[k,l,ieq] read instead. With :lsutherland => false

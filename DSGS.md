@@ -772,6 +772,12 @@ Prandtl number of eq. (3.7); the two coefficients are added on the same slot and
 are separately meaningful. Slot 1 gets nothing: physical Navier–Stokes has no
 mass diffusion, and the $\beta\nabla\rho$ sitting there is the sensor's own.
 
+$\mu(T)$ is added **raw**, not through the deck's `:μ` multipliers: those tune
+how much *artificial* dissipation the sensor is allowed, and scaling the
+molecular viscosity with them would silently change the case's Reynolds number.
+A deck that raises `:μ[2:4]` to hold a shock keeps the same physical $\mu$
+underneath it.
+
 The per-node coefficient rides the same `μloc` buffer the nodal form of §4.7
 uses, so the assembly is unchanged: `SGS_diffusion` is bypassed and
 `μnod[k,l,ieq]` read instead. With `:lsutherland => false` nothing runs and the

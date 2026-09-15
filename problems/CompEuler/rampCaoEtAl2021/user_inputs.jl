@@ -69,22 +69,31 @@ function user_inputs()
         :lrestart             => false,
         :restart_time         => 0.0,
         #
-        # TIME STEP.  Explicit, and the grid is a hypersonic viscous grid,
-        # so this is small and there is no way around it.  At :nop => 4 the
-        # tightest LGL interval of an element is 0.17267 h, which gives
+        # TIME STEP.  Explicit, on a hypersonic viscous grid, so it is small
+        # and there is no way around it.  At :nop => 4 the tightest LGL
+        # interval of an element is 0.17267 h, and the advective limit
+        # dx/(|u|+c) over the grid is
         #
-        #   direction  element h     tightest node   |u|+c      dt
-        #   x (inflow) 2.0e-4 m      3.45e-5 m       1950 m/s   1.8e-8 s
-        #   y (wall)   4.62e-5 m     7.98e-6 m        343 m/s   2.3e-8 s
-        #   y (2nd el) 5.0e-5 m      8.6e-6  m       ~1200      7e-9  s
+        #   where                element h   tightest dx  |u|+c     dt
+        #   x, inflow strip      2.0e-4 m    3.45e-5 m    1950 m/s  1.8e-8
+        #   x, leading edge      4.88e-4 m   8.43e-5 m    1950 m/s  4.3e-8
+        #   y, first element     4.62e-5 m   7.98e-6 m     343 m/s  2.3e-8
+        #   y, mid-boundary-layer 1.48e-4 m  2.56e-5 m    2100 m/s  1.2e-8
+        #   y, top element       4.53e-3 m   7.82e-4 m    1950 m/s  4.0e-7
         #
-        # so the advective limit is ~1.5e-8 s.  The viscous limit,
-        # rho dy^2/mu at the wall, is ~1e-7 s and does NOT bind: unlike
-        # ffs_step, this case's viscosity is the physical one and the wall
-        # is where the density is highest.  5.0e-9 s is CFL ~ 0.3 against
-        # the advective limit, which is what the impulsive start needs;
-        # 1.0e-8 s is usually fine once the leading-edge transient has
-        # washed out (the first ~2000 steps).
+        # The binding one is NOT the wall: there u -> 0 and the gas is at
+        # the 293 K wall temperature, so the wave speed is only 343 m/s.
+        # It is the middle of the boundary layer, where the mesh has grown
+        # to 2.6e-5 m but the gas is at 1200 K and 1400 m/s -- 1.2e-8 s.
+        #
+        # The viscous limit rho dy^2/mu at the wall is ~1e-7 s and does NOT
+        # bind, which is the opposite of ffs_step: there the viscosity was
+        # the artificial one, saturating at the step corner; here it is the
+        # physical one and the wall is where the density is highest.
+        #
+        # 5.0e-9 s is CFL ~ 0.4 against that 1.2e-8 s, which is what the
+        # impulsive start needs.  1.0e-8 s is usually fine once the
+        # leading-edge transient has washed out (the first ~2000 steps).
         :Δt                   => 5.0e-9,
         :diagnostics_at_times => (0:2.5e-5:2.0e-3),
         # Wall-clock note, not a setting: 2.0e-3 s at 5e-9 is 400,000 steps
