@@ -47,7 +47,7 @@ function user_inputs()
         # Δt = 5e-7 is already ≈ 0.22 with :μ => 1.0. Scaling :μ up without
         # scaling Δt down therefore blows the viscous limit — see the note
         # on :μ below. The pair (Δt, :μ) has to move together.
-        :Δt                   => 0.5e-7,
+        :Δt                   => 1.25e-7,
         :diagnostics_at_times => (0:5.0e-5:8.0e-3),
         # Wall-clock note, not a setting: at Δt = 1.25e-7 the diagnostics
         # above are 3200 steps apart, so the CFL/VTK lines are ~35-40 min
@@ -105,7 +105,7 @@ function user_inputs()
         # ref = 2 grid, :nop => 3, or a Woodward & Colella corner entropy
         # fix. Raising :μ further without lowering Δt will only blow the
         # viscous limit sooner.
-        :μ                    => [1.0, 4.0, 4.0, 4.0],
+        :μ                    => [1.0, 1.0, 1.0, 1.0],
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
@@ -154,7 +154,7 @@ function user_inputs()
         # DynSGS is what handles what is left under-resolved.
         #---------------------------------------------------------------------------
         :linitial_refine      => true,
-        :init_refine_lvl      => 2,
+        :init_refine_lvl      => 1,
         :ladapt               => false,
     ) #Dict
 
