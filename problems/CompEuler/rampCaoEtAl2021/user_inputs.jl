@@ -57,6 +57,57 @@ function user_inputs()
         #     from its own p, T and u to within 0.5% — see the note in
         #     initialize.jl.
         #---------------------------------------------------------------------------
+        #
+        # TIME INTEGRATOR.  Explicit, and it should stay explicit.
+        #
+        # WHY NOT IMEX / HEVI.  The grid is anisotropic -- hx/hy reaches 23
+        # at the wall -- so a directionally-split integrator looks
+        # attractive.  The CFL is NOT anisotropic, and that is what
+        # matters.  Swept over all 16,140 elements against a modelled
+        # compressible laminar profile (Crocco-Busemann temperature,
+        # Pohlhausen velocity, calibrated to the paper's delta = 1.38 mm
+        # at separation):
+        #
+        #   streamwise only   (|u|+c)/dx      ->  dt = 1.77e-8 s
+        #   wall-normal only  (|v|+c)/dy      ->  dt = 1.79e-8 s      ratio 0.99
+        #   fully explicit    both            ->  dt = 1.27e-8 s
+        #   y taken implicit  (HEVI-like)     ->  dt = 1.77e-8 s      1.40x
+        #
+        # The two anisotropies cancel.  Where dy is smallest (7.98e-6 m at
+        # the wall) the wave speed is smallest too -- no slip pins u = 0 and
+        # the isothermal wall pins T = 293 K, so |u|+c = 343 m/s.  Where the
+        # wave speed is largest (|u|+c ~ 2000 m/s at the boundary-layer edge
+        # and in the free stream) the wall-normal mesh has already stretched
+        # past 2.5e-5 m.  A vertical implicit solve would buy 1.40x and cost
+        # more than that per stage.
+        #
+        # The second reason is independent of the grid: at M = 7.7 the
+        # ACOUSTICS ARE THE SLOW WAVES.  c/u = 0.13, so advection is the
+        # fast part.  HEVI and IMEX in atmospheric codes take the pressure
+        # terms implicitly precisely because M << 1 there makes sound the
+        # fast, uninteresting wave; here that split removes the small
+        # eigenvalue and leaves the large one explicit.  (src/kernel/
+        # operators/imex.jl splits exactly that pressure Jacobian, has no
+        # directional form, and is not wired to any live case.)
+        #
+        # WHY CarpenterKennedy2N54.  It is what the total-energy DynSGS path
+        # is calibrated against -- ffs_step's :μ sweep was measured with this
+        # stage layout, and with :dsgs_sensor => "legacy" the sensor takes a
+        # BDF2 of the stage state at EVERY stage, so the stage layout is part
+        # of the effective viscosity.  SSPRK54 trades imaginary-axis
+        # stability for the SSP property, which is worth nothing here: DynSGS
+        # is the shock capturing, not a TVD limiter.  If you want to
+        # experiment, RDPK3SpFSAL49 is the one to try (built for compressible
+        # DG, better stability per RHS call) -- but re-check the shocks, not
+        # just that it runs.
+        #
+        # DO NOT set :ode_adaptive_solver => true.  params.Δt is the deck
+        # constant (params_setup.jl:299), and DynSGS reads it twice: the
+        # BDF2 weights are built on h = params.Δt and the once-per-step
+        # history gate fires on time - thist >= 0.999*params.Δt (rhs.jl).
+        # An integrator changing dt underneath that desynchronises the
+        # sensor from the step it is supposed to measure, silently.
+        #
         :ode_solver           => CarpenterKennedy2N54(),
         :tinit                => 0.0,
         # 2.0e-3 s is t*u_inf/L = 34.5, about 17 flow-throughs of the
@@ -94,6 +145,20 @@ function user_inputs()
         # 5.0e-9 s is CFL ~ 0.4 against that 1.2e-8 s, which is what the
         # impulsive start needs.  1.0e-8 s is usually fine once the
         # leading-edge transient has washed out (the first ~2000 steps).
+        #
+        # WHERE THE REMAINING dt IS, if you want it.  The binding node is
+        # not on the ramp at all: it is at x = -1 mm, y = 2.3e-5 m, in the
+        # free-stream strip ahead of the leading edge.  That strip carries
+        # the wall-clustered y-spacing (the blocks are conforming, so it
+        # must) but has NO boundary layer -- its lower boundary is a
+        # symmetry line -- so it runs the full 1726 m/s at the finest
+        # wall-normal spacing on the grid, resolving nothing.  Cutting
+        # NX_UP in generate_mesh.py from 5 to 3 moves the limit from
+        # 1.27e-8 to 1.57e-8 s, +24%, and then it saturates: the next
+        # bottleneck is the leading-edge region at x = +1 mm.  The cost is
+        # 20 -> 12 points ahead of the leading edge, which is a deviation
+        # from Section 2.3.  Left at 5 here; it is the only free dt in the
+        # setup and it is worth exactly 24%.
         :Δt                   => 5.0e-9,
         :diagnostics_at_times => (0:2.5e-5:2.0e-3),
         # Wall-clock note, not a setting: 2.0e-3 s at 5e-9 is 400,000 steps
