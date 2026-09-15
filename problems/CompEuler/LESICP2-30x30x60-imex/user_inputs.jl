@@ -19,7 +19,12 @@ function user_inputs()
     # STEP SIZES, one per scheme, set HERE and nowhere else: no environment
     # variable overrides them, so the deck is the record of what ran. The
     # budget behind each number is under "STEP SIZE" below.
-    dt_imex     = 1.0     # :imex     wedge neutral ~2.6 s; re-read the t = 0 report
+    # 0.5, not 1.0. The 2.6 s wedge limit was measured on the laminar t = 0
+    # state; at 1.0 the run died at t ~ 600 s on a negative rho*theta with the
+    # advective CFL already at 1.5 (the advection is the EXPLICIT half of
+    # IMEX). The 4x4x60 laptop deck runs the same closure and stretch at 0.5
+    # and never exceeds 0.15.
+    dt_imex     = 0.5     # :imex     see above; re-read the t = 0 report
     dt_hevi     = 0.05    # :hevi     ARS232 neutral 0.0749 s measured on this mesh
     dt_explicit = 0.02    # :explicit CK2N54, known to run this case
     rtol        = parse(Float64, get(ENV, "DBG_RTOL",      "1.0e-6"))
@@ -63,7 +68,7 @@ function user_inputs()
     #   explicit  CK2N54                    neutral 0.036 s   -> 0.017  (0.02 runs)
     #   HEVI      ARS232, :implicit_vdiff   neutral 0.075 s   -> 0.05   <- default
     #   HEVI      ARS443 would allow ~0.06 but costs 4 RHS/step for 3: no gain
-    #   IMEX3D    ARS343, :implicit_vdiff   wedge   2.6 s     -> 1.2    (dt_imex 1.0)
+    #   IMEX3D    ARS343, :implicit_vdiff   wedge   2.6 s     -> 1.2    (dt_imex 0.5: 1.0 died at t~600, see above)
     #
     # HEVI is only ~2.5x explicit here: the horizontal acoustics stay explicit
     # and ARS232's imaginary radius is 1.73 against CK2N54's 3.34. 0.1 was
