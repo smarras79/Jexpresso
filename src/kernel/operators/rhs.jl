@@ -1785,6 +1785,65 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                                   QT, AD, SOL_VARS_TYPE,
                                   VT = DSGS(); μ_pnode=nothing, μloc=nothing)
 
+    #
+    # MOLECULAR (LAMINAR) VISCOSITY ON TOP OF THE DynSGS COEFFICIENT.
+    #
+    # DynSGS is a residual sensor: it is ~0 wherever the solution is smooth
+    # and resolved. That is exactly right for an inviscid problem such as
+    # problems/CompEuler/ffs_step, and exactly wrong for a viscous one — a
+    # laminar boundary layer lives in the smooth region, so under DynSGS
+    # alone it never forms. Anything with a real Reynolds number needs the
+    # physical μ as well, and it has to be a function of temperature: over
+    # the boundary layer of problems/CompEuler/rampCaoEtAl2021, T runs from
+    # the 293 K wall to ~1200 K, a factor 5 in μ.
+    #
+    # :lsutherland => true (default false) adds Sutherland's law
+    #
+    #     μ(T) = μ_ref (T/T_ref)^(3/2) (T_ref + S)/(T + S)
+    #
+    # at every node, on top of whatever DynSGS asked for. The air defaults
+    # μ_ref = 1.716e-5 Pa·s, T_ref = 273.15 K, S = 110.4 K are
+    # :sutherland_muref, :sutherland_Tref and :sutherland_S.
+    #
+    # WHICH SLOT GETS WHAT. The 2D DynSGS assembly below is the real
+    # compressible Navier-Stokes viscous operator: _expansion_visc! builds
+    # the deviatoric stress τ_ij = μ(2S_ij − (2/3)δ_ij∇·u) on the two
+    # momentum slots and adds the viscous work τ·u to the energy slot, so
+    # μ enters slots 2 and 3 unchanged. Slot 4 multiplies ∇(uprimitive[4]),
+    # and on the total-energy path uprimitive[4] is the SPECIFIC INTERNAL
+    # ENERGY e = c_v T (Nazarov & Hoffman scale c_v = 1; see the header of
+    # problems/CompEuler/ffs_step/user_primitives.jl). Fourier's law −k∇T
+    # is therefore −(k/c_v)∇e, so the slot-4 addition is
+    #
+    #     k/c_v = μ c_p/(Pr c_v) = γ μ/Pr,        Pr = :Pr_lam (0.71).
+    #
+    # Slot 1 gets nothing: physical Navier-Stokes has no mass diffusion.
+    # The β∇ρ sitting there is DynSGS's own (Nazarov & Hoffman eq. 3.7).
+    #
+    # μ(T) is added RAW, not through the deck's :μ multipliers: those tune
+    # how much ARTIFICIAL dissipation the sensor is allowed, and scaling
+    # the molecular viscosity with them would silently change the case's
+    # Reynolds number. A deck that raises :μ[2:4] to hold a shock keeps
+    # the same physical μ underneath it.
+    #
+    # The per-node coefficient rides the SAME μloc buffer the nodal DynSGS
+    # form already uses, so the assembly needs no change: SGS_diffusion is
+    # bypassed and μnod[k,l,ieq] read instead. With :lsutherland => false
+    # nothing here runs and the path is bit-for-bit what it was.
+    #
+    TF     = eltype(μ_dsgs)
+    lsuth  = (get(inputs, :lsutherland, false) === true) &&
+             (μloc !== nothing) && (neqs == 4) &&
+             (get(inputs, :energy_equation, "energy") != "theta")
+    μ_ref  = TF(get(inputs, :sutherland_muref, 1.716e-5))
+    T_ref  = TF(get(inputs, :sutherland_Tref,  273.15))
+    S_suth = TF(get(inputs, :sutherland_S,     110.4))
+    Pr_lam = TF(get(inputs, :Pr_lam,           0.71))
+    κ_fac  = TF(PHYS_CONST.γ)/Pr_lam
+    cv_inv = TF(PHYS_CONST.γm1/PHYS_CONST.Rair)          # 1/c_v, EOS-consistent
+    Tfloor = TF(1.0)                                     # K, guards the transient
+    lnodal = lsuth || (μ_pnode !== nothing)
+
     for iel = 1:nelem
         # Slot 1 is whatever compute_dsgs_viscosity! decided: identically
         # zero for Marras eq. (10), β for Nazarov & Hoffman eq. (3.7).
@@ -1797,6 +1856,12 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
             for ieq = 1:neqs, j = 1:ngl, i = 1:ngl
                 μloc[i,j,ieq] = μ_pnode[connijk[iel,i,j], ieq]
             end
+        elseif lsuth
+            # Element-wise DynSGS, but μ still has to vary node by node
+            # because Sutherland's does: seed μloc with the element value.
+            for ieq = 1:neqs, j = 1:ngl, i = 1:ngl
+                μloc[i,j,ieq] = μ_dsgs[iel, ieq]
+            end
         end
 
         for j = 1:ngl, i = 1:ngl
@@ -1805,6 +1870,17 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                              @view(qe[ip,:]),
                              @view(uprimitive[i,j,:]),
                              SOL_VARS_TYPE)
+        end
+
+        if lsuth
+            for j = 1:ngl, i = 1:ngl
+                Tk  = max(uprimitive[i,j,4]*cv_inv, Tfloor)   # slot 4 is c_v·T
+                Tr  = Tk/T_ref
+                μ_l = μ_ref*Tr*sqrt(Tr)*(T_ref + S_suth)/(Tk + S_suth)
+                μloc[i,j,2] += μ_l
+                μloc[i,j,3] += μ_l
+                μloc[i,j,4] += κ_fac*μ_l
+            end
         end
 
         for ieq = 1:neqs
@@ -1822,7 +1898,7 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
                              inputs, rhs_el,
                              iel, ieq,
                              QT, VT, NSD_2D(), AD; Δ=Δ,
-                             μnod = (μ_pnode === nothing ? nothing : μloc))
+                             μnod = (lnodal ? μloc : nothing))
         end
     end
 
