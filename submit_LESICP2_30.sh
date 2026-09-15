@@ -83,11 +83,19 @@
 #  columns and ~15.7k points per rank. 300 is NOT balanced: the partitioner
 #  picks a 15 x 20 grid and 20 does not divide 30, so half the ranks own 2
 #  columns and wait on the half that own 4. 128 (submit_jexpresso_profile.sh)
-#  does not divide 900 at all. 3 nodes x 75 leaves ~6.8 GB/rank.
+#  does not divide 900 at all.
+#
+#  SPREAD THIN ON PURPOSE. At 100 ranks on ONE node the IMEX column solve
+#  measured 18.6 s/step with the Krylov matvec/precond/orthogonalise at
+#  0.12 s per iteration -- 9x the laptop's per-iteration cost for 1.8x the
+#  points, with MPI reduce at 4.5%. That is the signature of 100 ranks
+#  sharing one node's memory bandwidth, not of compute or comms. 25 ranks
+#  per node gives each rank 4x the bandwidth; cpus-per-task=5 is what makes
+#  SLURM place them 25 per node (25 x 5 = 125 of 128 cores).
 #SBATCH --exclusive
-#SBATCH --nodes=3
-#SBATCH --ntasks-per-node=75
-#SBATCH --cpus-per-task=1
+#SBATCH --nodes=9
+#SBATCH --ntasks-per-node=25
+#SBATCH --cpus-per-task=5
 # The deck's IMEX dt is 1.0 s, so tend = 10800 is 10,800 steps. No rate has
 # been measured on this grid at 100 ranks yet; the 128x128 case did ~3.7
 # s/step at 1024 ranks on 62k points/rank, and this one has 35k, so expect
