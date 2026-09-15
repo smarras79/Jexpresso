@@ -38,8 +38,13 @@ function user_inputs()
         # CFL. The grid is h = 0.025 m with :nop => 4, so the tightest LGL
         # node spacing is ≈ 0.0043 m; against the free-stream wave speed
         # |u| + c ≈ 1372 m/s that puts the ADVECTIVE limit near 1.4e-6 s.
-        # With :init_refine_lvl => 2 below, every one of those numbers
-        # shrinks by 4 (element size) and the viscous one by 16 (Δx²).
+        # Those are the numbers for the RAW gmsh grid. :init_refine_lvl
+        # below halves the element size once per level, so every length
+        # above shrinks by 2^lvl and the viscous limit by 4^lvl. All the
+        # measured constants in this deck — the 14.95 cap, the 0.22, and
+        # the whole sweep below — are at :init_refine_lvl => 1, i.e.
+        # h = 0.0125 m, smallest LGL gap 0.00216 m, advective limit
+        # 1.6e-6 s. Re-measure them if you change the level.
         #
         # The binding constraint is NOT advective, it is VISCOUS. DynSGS
         # saturates its own μ_max bound at the step corner (measured: μ =
@@ -97,7 +102,26 @@ function user_inputs()
         #   :μ [1,8,8,8]  Δt 5.0e-7   fails  <2e-4     ditto, worse
         #   :μ [0,1,1,1]  Δt 5.0e-7   fails  <2e-4     β∇ρ off — worst of all
         #   :μ [1,1,1,1]  Δt 5.0e-7   fails 6-8e-4     with :nop => 3
-        #   :μ [1,4,4,4]  Δt 1.25e-7  past 8e-4        <- what is set here
+        #   :μ [1,4,4,4]  Δt 1.25e-7  past 8e-4        <- the only row that survives
+        #
+        # WHAT THE SWEEP WAS MEASURED UNDER, because two DynSGS defaults
+        # moved after it and neither is a setting of this deck:
+        #
+        #   * :dsgs_norms was rank-local; it defaults to "domain" since
+        #     10b177a (2026-09-12). The domain denominator is the spread
+        #     over the WHOLE field, which the bow shock sets, so it is
+        #     larger than the local spread on the rank holding the step
+        #     corner — the same :μ therefore buys LESS viscosity there
+        #     than it did in this table. Pinned explicitly below.
+        #   * the normalization floor rose from 1e-3 of each variable's
+        #     physical scale to the scale itself, 7dd6f0c (2026-09-11),
+        #     :dsgs_rel. It binds only where a variable is nearly
+        #     uniform, which here is the free stream at startup, not the
+        #     developed field.
+        #
+        # Both move ν DOWN relative to the rows above, so treat the
+        # survival times as optimistic and :μ [1,4,4,4] as the floor of
+        # what this case needs, not the ceiling.
         #
         # The pattern: dissipation helps only when Δt is cut to match, and
         # cutting Δt alone does nothing. If this case still fails downstream
@@ -109,12 +133,16 @@ function user_inputs()
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
-        # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖. Default
-        # false = rank-local, which costs no MPI communication. Uncomment for
-        # the paper's domain norms — 2 Allreduce per RHS call, 10 per step
-        # here — when μ has to be identical across rank counts. No effect on a
-        # serial run. See ENVIRONMENT_VARIABLES.md.
-        # :dsgs_norms => "domain",
+        # Scope of the DynSGS normalising scales ⟨q⟩ and ‖q−⟨q⟩‖ — the
+        # paper's Ω, i.e. the whole domain, which is also the default since
+        # 10b177a. Pinned rather than left implicit: this case is run on 64
+        # ranks and the sweep above was measured under the OLD rank-local
+        # default, so the scope has to be visible in the deck to be
+        # comparable. Costs 2 Allreduce of three doubles per RHS call, 10
+        # per step here; no effect on a serial run. "rank" reverts to the
+        # pre-September-2026 behaviour and makes the answer depend on the
+        # partition. See ENVIRONMENT_VARIABLES.md.
+        :dsgs_norms           => "domain",
         #---------------------------------------------------------------------------
         # Mesh
         #
