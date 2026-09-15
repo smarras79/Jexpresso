@@ -102,7 +102,8 @@ function user_inputs()
         #   :μ [1,8,8,8]  Δt 5.0e-7   fails  <2e-4     ditto, worse
         #   :μ [0,1,1,1]  Δt 5.0e-7   fails  <2e-4     β∇ρ off — worst of all
         #   :μ [1,1,1,1]  Δt 5.0e-7   fails 6-8e-4     with :nop => 3
-        #   :μ [1,4,4,4]  Δt 1.25e-7  past 8e-4        <- the only row that survives
+        #   :μ [1,4,4,4]  Δt 1.25e-7  past 8e-4        <- the only row that
+        #                                                     survives; set here
         #
         # WHAT THE SWEEP WAS MEASURED UNDER, because two DynSGS defaults
         # moved after it and neither is a setting of this deck:
@@ -129,7 +130,7 @@ function user_inputs()
         # ref = 2 grid, :nop => 3, or a Woodward & Colella corner entropy
         # fix. Raising :μ further without lowering Δt will only blow the
         # viscous limit sooner.
-        :μ                    => [1.0, 1.0, 1.0, 1.0],
+        :μ                    => [1.0, 4.0, 4.0, 4.0],
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
