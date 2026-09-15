@@ -172,8 +172,16 @@ end
 # normalized score is above any usable threshold even though the initial
 # condition is smooth and fully resolved. Holding ν at zero for longer tests
 # exactly that reading.
+# 0 disables the hold entirely: the sensor fires from the first RHS call, on a
+# BDF2 history still seeded from the initial condition, which makes the weights
+# (1.5/h, -2/h, 0.5/h) read 1.5x the forward difference of q. That is an
+# OVER-estimate of the rate, not a meaningless number, and on a case whose first
+# steps are the most violent of the run — a Mach-3 stream started impulsively
+# against a wall — the viscosity it buys at the impulsive start is load-bearing.
+# See :dsgs_hold_steps in mod_inputs.jl.
 @inline function _dsgs_hold_steps(params)
     h = Int(get(params.inputs, :dsgs_hold_steps, 2))
+    h <= 0 && return 0          # never holds: nhist starts at 0
     return max(2, h) + 1        # nhist counts rotations: < hold+1 means "hold steps of them"
 end
 

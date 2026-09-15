@@ -1198,6 +1198,25 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #                      sensor's normalized score is above any usable
     #                      threshold even though the initial condition is
     #                      smooth and fully resolved.
+    #
+    #                      0 TURNS THE HOLD OFF, and a shock case with an
+    #                      impulsive start needs that. The hold exists because
+    #                      the sensor read a SMOOTH, fully resolved initial
+    #                      condition as unresolved everywhere and pinned nu at
+    #                      its cap on step one. Where the initial condition is
+    #                      genuinely violent — CompEuler/ffs_step starts a
+    #                      Mach-3 stream against a forward-facing step, with
+    #                      the whole transient at the step face and the convex
+    #                      corner — those first steps are the ones that most
+    #                      need the viscosity, and integrating them at nu = 0
+    #                      plants an oscillation at the corner that the rest of
+    #                      the run carries. ffs_step is reported to run to
+    #                      t = 8e-3 on sm/newmaster, which predates the hold
+    #                      and so never holds; on this branch, with the hold
+    #                      on, it dies at t = 1.46e-3 in exactly that corner.
+    #                      That pair also differs in Dt (1.0e-7 there, 1.25e-7
+    #                      here), so the hold is the leading suspect, not a
+    #                      one-variable measurement.
     if(!haskey(inputs, :dsgs_hold_steps))
         inputs[:dsgs_hold_steps] = 2
     end
