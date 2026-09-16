@@ -268,7 +268,7 @@ function user_inputs()
         # AMR off: the mesh already resolves the shocks at h/nop = 1/80, and
         # DynSGS is what handles what is left under-resolved.
         #---------------------------------------------------------------------------
-        :linitial_refine      => true,
+        :linitial_refine      => false,
         :init_refine_lvl      => 1,
         :ladapt               => false,
     ) #Dict
