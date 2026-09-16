@@ -295,6 +295,7 @@ function user_inputs()
         :linitial_refine      => false,
         :init_refine_lvl      => 1,
         :ladapt               => false,
+        :lxy_partition => false,
     ) #Dict
 
     return inputs
