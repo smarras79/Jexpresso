@@ -262,6 +262,27 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/CompEuler/rampCaoEtAl2021/ramp15.msh",
+        #
+        # DIAGNOSTIC GRID, no vertical stretching.  ramp15_uniform.msh is the
+        # same geometry with a UNIFORM wall-normal distribution: 401 elements
+        # over H, dy_wall = 2.58e-5 m, y+ = 1.00 (against 0.3 on G1).  Swap
+        # the line above for
+        #
+        #   "./problems/CompEuler/rampCaoEtAl2021/ramp15_uniform.msh"
+        #
+        # It exists because the stretching is what breaks this case, and that
+        # is measured, not suspected: a five-rung ladder from ffs_step showed
+        # that ffs_step passes; this geometry and these Mach-7.7 conditions
+        # pass on ffs_step's isotropic grid; this case passes on an
+        # unstretched grid; and it fails with the free-slip wall, the
+        # adiabatic wall and the isothermal wall alike on the stretched one.
+        # Conditions, geometry and boundary conditions are therefore all
+        # cleared, and dy_wall = 7.98e-6 m is the variable left standing.
+        #
+        # 269 x 401 = 107,869 elements, 6.7x the production grid, because a
+        # uniform grid fine enough at the wall has to carry that spacing all
+        # the way to H = 60 mm.  :Δt => 1.0e-9 runs it unchanged (the limits
+        # relax by ~5x on this grid); up to ~4e-9 should hold.
         #---------------------------------------------------------------------------
         # Plotting
         #---------------------------------------------------------------------------

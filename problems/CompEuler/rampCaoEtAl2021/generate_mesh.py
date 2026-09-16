@@ -40,6 +40,11 @@ PX, PY = 1.006, 1.0808            # Progression ratios (plate, wall-normal)
 NX = NX_PLATE + NX_RAMP           # 269
 I_CORNER = NX_PLATE               # streamwise index of the compression corner
 
+# y+ per metre of wall spacing, just upstream of separation.  Calibrated on
+# the paper's own two data points (Section 2.2): dy = 8e-6 m gives y+ ~ 0.3
+# on G1 and dy = 5e-6 m gives y+ ~ 0.2 on G2, i.e. 37500 and 40000 per metre.
+YPLUS_PER_M = 38750.0
+
 # physical tags, matching ramp15.geo
 PH_DOMAIN, PH_INFLOW, PH_OUTFLOW, PH_WALL, PH_TOP = 1, 2, 3, 4, 5
 
@@ -104,9 +109,27 @@ def surfaces():
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    global NY, PY, NX_PLATE, NX_RAMP, NX, I_CORNER
+
+    ap = argparse.ArgumentParser(
+        description="Write the compression-ramp mesh. The defaults are case G1 "
+                    "of the paper; the flags exist for the variants the README "
+                    "describes (an unstretched wall-normal grid, a refined grid).")
     ap.add_argument("-o", "--output", default="ramp15.msh")
+    ap.add_argument("--ny",       type=int,   default=NY,
+                    help="wall-normal elements (default %(default)s)")
+    ap.add_argument("--py",       type=float, default=PY,
+                    help="wall-normal Progression ratio; 1.0 = NO stretching "
+                         "(default %(default)s)")
+    ap.add_argument("--nx-plate", type=int,   default=NX_PLATE,
+                    help="streamwise elements on the plate (default %(default)s)")
+    ap.add_argument("--nx-ramp",  type=int,   default=NX_RAMP,
+                    help="streamwise elements on the ramp (default %(default)s)")
     args = ap.parse_args()
+
+    NY, PY = args.ny, args.py
+    NX_PLATE, NX_RAMP = args.nx_plate, args.nx_ramp
+    NX, I_CORNER = NX_PLATE + NX_RAMP, NX_PLATE
 
     xs, yws, fy = build_grid()
     node = lambda i, j: j*(NX + 1) + i + 1          # 1-based global node tag
@@ -233,6 +256,9 @@ def main():
           % (dy1, lgl1*dy1))
     print("  first x element  : %.4e m at the leading edge" % dx_plate1)
     print("  domain           : x in [%.4f, %.4f], H = %.3f m" % (xs[0], xs[-1], H))
+    print("  y+ at the wall   : %.2f   (paper G1: 0.3)" % (YPLUS_PER_M*lgl1*dy1))
+    print("  wall-normal      : %s" % ("UNIFORM (no stretching)" if abs(PY-1.0) < 1e-12
+                                       else "Progression %.4f" % PY))
 
 
 if __name__ == "__main__":

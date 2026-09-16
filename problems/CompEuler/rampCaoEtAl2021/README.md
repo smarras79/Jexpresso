@@ -90,6 +90,39 @@ step 304 at exactly that node. The cost is that the leading-edge singularity now
 sits on the inflow plane, which is what the strip existed to avoid; `user_bc.jl`
 gives that node to the wall.
 
+### The unstretched diagnostic grid
+
+`ramp15_uniform.msh` is the same geometry with **no wall-normal stretching** —
+401 uniform elements over H, Δy_wall = 2.58e-5 m, **y⁺ = 1.00** (G1 is 0.3).
+Point `:gmsh_filename` at it to run the case without the stretching.
+
+```bash
+python3 generate_mesh.py --py 1.0 --ny 401 -o ramp15_uniform.msh
+```
+
+It is a **diagnostic grid, not a substitute for G1**: at y⁺ = 1 the wall heat
+flux is under-resolved relative to the paper, so Stanton-number comparisons
+against figure 2(a) are not meaningful on it. What it is for is isolating the
+stretching, which a five-rung ladder from `ffs_step` identified as the cause of
+the blow-up at t = 2.53e-7 s:
+
+| test | result |
+|---|---|
+| `ffs_step` as shipped | passes |
+| ramp mesh + M 7.7, free-slip wall | fails |
+| ramp mesh + M 7.7, no-slip adiabatic | fails |
+| ramp geometry + M 7.7, **uniform** y-mesh | **passes** |
+| `ffs_step` isotropic mesh, **M 7.7** conditions | **passes** |
+
+Conditions, geometry and the wall treatment are all cleared; Δy_wall = 7.98e-6 m
+is what is left. The failure is also independent of Δt (identical failure *time*
+across a 5× range) and of MPI rank count (32 ranks and serial agree to 17
+digits), so it is neither a CFL violation nor a decomposition artifact.
+
+It costs 269 × 401 = 107,869 elements — 6.7× the production grid, because a
+uniform mesh fine enough at the wall must carry that spacing to H = 60 mm.
+`--ny 201` gives y⁺ ≈ 2 at half the cells if that is enough for a given test.
+
 To refine, either raise `NX_PLATE` / `NX_RAMP` / `NY` in `generate_mesh.py`
 (`NY = 80`, `NX_PLATE = 203`, `NX_RAMP = 197` is roughly case G2, 1600 × 320),
 or set `:linitial_refine => true` with `:init_refine_lvl => 1`. Cut `:Δt` with
