@@ -1,0 +1,117 @@
+# `CompEuler/ffs_step_M7` — Mach-7 forward-facing step
+
+```julia
+using Jexpresso
+Jexpresso.run_case("CompEuler", "ffs_step_M7")
+```
+
+This is `CompEuler/ffs_step` with **M∞ = 7 instead of 3**, and nothing else
+changed that is not forced by that one number.
+
+## Why it exists
+
+`rampCaoEtAl2021` on an unstretched grid goes non-finite at `t = 4.8e-7`
+(step 481 at its `Δt = 1e-9`), in slot 1 — ρ — on every rank at once. Two
+things are new in that deck at the same time, the Mach number *and* the ramp
+geometry/grid, so the failure names neither of them.
+
+`ffs_step` runs. Raising **only** the Mach number on `ffs_step` therefore
+splits the question in two:
+
+- **this deck reaches `tend`** → Mach 7 is not by itself the problem, and the
+  ramp's grid, its boundary conditions and its leading-edge/corner treatment
+  are what to look at next;
+- **this deck dies** → the same failure is reproduced on a configuration whose
+  mesh, boundary conditions, fluxes and DynSGS settings are *all* validated at
+  Mach 3, which is a far smaller thing to debug — and the levers listed in the
+  `:μ` block of `user_inputs.jl` get tried here rather than on the ramp.
+
+Mach 7 is the rung just below the ramp's 7.7: close enough that a deck
+surviving here makes the Mach number an unlikely sole culprit.
+
+## What differs from `ffs_step`
+
+Four values. Everything else is identical — mesh, boundary conditions, fluxes,
+primitives, `:nop`, `:init_refine_lvl`, `:μ`, `:Pr`, `:dsgs_sensor`,
+`:dsgs_hold_steps => 0`, `:dsgs_norms => "domain"`, `:energy_equation`.
+
+| setting | `ffs_step` | here | why |
+|---|---|---|---|
+| `M∞` (`initialize.jl`) | 3.0 | **7.0** | the point of the case |
+| `:Δt` | 1.0e-7 | **5.0e-8** | `\|u\|+c` doubles, 1371.6 → 2743.3 m/s, so the advective limit halves |
+| `:tend` | 8.0e-3 | **3.5e-3** | the same tunnel flow-through count, 2.74 → 2.80 |
+| `:diagnostics_at_times` step | 5.0e-5 | **2.5e-5** | the same output cadence in flow-through units |
+
+`user_flux.jl`, `user_source.jl`, `user_primitives.jl` are byte-identical
+copies; `user_bc.jl` and `initialize.jl` are identical in code and differ only
+in comments and in the one `M∞` literal. `ffs_step_transfinite.{geo,msh}` are
+copies too (the `.geo` differs only in its flow-condition comment), kept here
+so the case is self-contained.
+
+Keeping `:dsgs_hold_steps => 0` is not incidental. `ffs_step` needs it because
+its initial condition is *not* smooth — a supersonic stream started impulsively
+against the step — so holding ν at zero while the BDF2 history fills integrates
+the most violent steps of the run with no dissipation at all. That argument is
+stronger at Mach 7, not weaker.
+
+## Free stream
+
+Built in `ffs_freestream()` from `PhysConst` (γ = cp/cv = 1.398), so the stream
+is exactly Mach 7 for the gas the solver integrates:
+
+| | M = 3 | M = 7 |
+|---|---|---|
+| ρ∞ [kg/m³] | 1.20494 | 1.20494 |
+| c∞ [m/s] | 342.91 | 342.91 |
+| u∞ [m/s] | 1028.7 | **2400.4** |
+| ρE∞ [J/m³] | 8.92e5 | **3.73e6** |
+| stagnation T [K] | 818 | **3152** |
+| normal-shock ρ₂/ρ₁ | 3.86 | **5.46** |
+| flow-through, 3 m [s] | 2.92e-3 | 1.25e-3 |
+
+The gas stays calorically perfect: this is the ideal-gas Euler system, no
+dissociation and no vibrational excitation, so the run is a **numerical** test
+at Mach 7 and not a physical model of Mach-7 air. (The ramp deck, by contrast,
+runs `:lsutherland => true` because it has a real boundary layer to resolve;
+this one is inviscid apart from the DynSGS shock capturing, exactly as
+`ffs_step` is.)
+
+## Why `:μ` was *not* raised
+
+`ffs_step`'s own sweep — reproduced in `user_inputs.jl`, and **every row of it
+is at Mach 3** — shows that more DynSGS dissipation helps only when `Δt` is cut
+to match, because what binds on this configuration is the *viscous* step limit,
+not the advective one. At Mach 7 both sides of `μΔt/(ρΔx²)` move on their own
+and cancel:
+
+- `μ_max = C_max·Δ·(|u|+c)`, the bound DynSGS saturates at the step corner,
+  **doubles** with the wave speed;
+- `Δt` **halves**.
+
+So the viscous number lands where `ffs_step` measured it, with
+`:μ => [1.0, 4.0, 4.0, 4.0]` carried over untouched. Raising `:μ` on top of the
+`Δt` cut is the failure mode that sweep documents.
+
+## Cost, and a cheap first look
+
+`3.5e-3 / 5.0e-8` = **70 000 steps** — the same order as `ffs_step`'s 80 000,
+at the same per-step cost.
+
+The question this deck exists to answer does not need the full run: the step
+corner is where `ffs_step` failed in *every* row of its sweep, and it fails
+early or not at all. **`:tend => 2.0e-4` (4000 steps) already answers it.**
+
+`JEXPRESSO_STEP_HEARTBEAT=1` turns on a per-step trace without editing the deck.
+
+## What to look at
+
+`:lschlieren => true` writes `schlieren` and `schlieren_grad_rho` into the VTU;
+colour `schlieren` with a **reversed** greyscale in ParaView. Against the
+familiar Mach-3 picture, expect the bow shock to stand closer to the step, the
+shock layer to be thinner, and the roof reflection to strike further upstream.
+
+## Status
+
+**Not yet run.** The deck was written and checked by inspection against the
+current `ffs_step`; no Julia was available in the environment it was written
+in, so it has not been executed or even parsed. First run is the test.
