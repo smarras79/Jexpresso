@@ -22,7 +22,7 @@ _m7_i(k, d)  = parse(Int,     get(ENV, k, string(d)))
 function user_inputs()
 
     m7_tend   = _m7_f("JEXPRESSO_M7_TEND", 3.5e-3)
-    m7_filter = _m7_f("JEXPRESSO_M7_FILTER", 0.0)
+    m7_filter = _m7_f("JEXPRESSO_M7_FILTER", 0.005)
     m7_ref    = _m7_i("JEXPRESSO_M7_REF", 0)
 
     inputs = Dict(
@@ -150,7 +150,7 @@ function user_inputs()
         # Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  => "lgl",
-        :nop                  => 4,               # polynomial order
+        :nop                  => 3,               # polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters / constants
         #---------------------------------------------------------------------------
