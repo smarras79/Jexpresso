@@ -5,6 +5,7 @@ _ot_dt()   = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_DT",   "")), 0.7
 # 1 is the current rule; 1e-3 is what the kernels used before September 2026,
 # which for this problem amplified the continuity-equation residual by up to
 # 1000 (ρ is uniform at t = 0, so the floor WAS its normalization).
+_ot_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_OT_HOLD", "")), 2)
 _ot_rel()  = something(tryparse(Float64, get(ENV, "JEXPRESSO_OT_REL",  "")), 1.0)
 _ot_norms() = lowercase(strip(get(ENV, "JEXPRESSO_OT_NORMS", "domain")))
 
@@ -93,6 +94,10 @@ function user_inputs()
         :visc_model       => DSGS_MHD(),
         :dsgs_sensor      => "legacy",
         :dsgs_rel         => _ot_rel(),
+        # Steps the coefficient is held at zero at the start (JEXPRESSO_OT_HOLD,
+        # :dsgs_hold_steps): what a longer hold costs on a case whose shocks
+        # form OUT of smooth data, as opposed to Brio-Wu's discontinuous start.
+        :dsgs_hold_steps  => _ot_hold(),
         # NORMALIZATION SCOPE. The code-wide default is "rank": every rank
         # normalizes the residual by ITS OWN subdomain's spread, so ν — and
         # with it the solution — depends on how the domain was cut. On this
