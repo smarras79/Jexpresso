@@ -133,6 +133,7 @@ JEXPRESSO_M7_MU1=4.0        JEXPRESSO_M7_TEND=1.0e-3 $J   # more β∇ρ density
 | `JEXPRESSO_M7_MU1` | 1.0 | slot 1, the β∇ρ density diffusion |
 | `JEXPRESSO_M7_MU` | 4.0 | slots 2-4, applied *after* the cap |
 | `JEXPRESSO_M7_CMAX` | 0.5 | `μ_cap = Cmax·Δ·ρ_max·(|u|+c)` |
+| `JEXPRESSO_M7_CMIN` | 0.0 | unconditional floor `Cmin·Δ·ρ_max·(|u|+c)`; cell Re = 1/Cmin |
 | `JEXPRESSO_M7_FILTER` | 0.0 | Boyd-Vandeven blend μ_x; see below |
 | `JEXPRESSO_M7_DT` / `_TEND` / `_REF` | 5.0e-8 / 3.5e-3 / 0 | |
 
@@ -160,6 +161,50 @@ There is no setting that is both gentle and useful: anything fast enough to
 catch a Gibbs mode is a complete P4 → P3 truncation over the run, and anything
 slow enough to leave the mode alive cannot catch it. `0.005` is the value to
 try, and if it does not help, `0.05` will not either.
+
+## Measured so far
+
+| run | died at | vs baseline |
+|---|---|---|
+| baseline, coarse grid (`:linitial_refine => false`) | 7.5e-4 | — |
+| `JEXPRESSO_M7_FILTER=0.005` | 1.1e-3 | 1.47× |
+
+**The filter result is the informative one.** At `:nop => 4` that setting is a
+*complete* removal of the top mode (e-fold 40 steps, nothing left after a few
+hundred) — the sharpest available test of "this is undamped grid-scale
+ringing". It bought 1.47× and the spurious structures downstream of the corner
+survived it. So the defect does **not** live in the top mode: it is in modes
+0–3, which the P4 Boyd–Vandeven filter leaves untouched (weights
+`[1, 1, 1, 0.9957, 0]`). That is an element-scale structure, not a 2Δx mode.
+
+### Why the DynSGS knobs each buy a factor and none of them fixes it
+
+The trouble is in the **expansion**, and a residual sensor is structurally
+quiet there *by design*: a Prandtl–Meyer fan is a smooth solution, so
+`μ_res ≈ 0` in it — correctly. What the corner `(0.6, 0.2)` sheds is an
+entropy layer, a contact-type feature that convects downstream and never
+self-heals, and nothing in a shock-capturing sensor is aimed at it.
+
+This is a documented property of this exact problem, not a Jexpresso defect.
+Woodward & Colella (1984) §IV call the step corner *a singular point of the
+flow* and apply a special fix to the cells next to it — resetting their
+entropy and stagnation enthalpy to the upstream value — precisely because the
+spurious entropy layer otherwise streams downstream and corrupts the Mach
+stem. That is at Mach 3. At Mach 7 the expansion is far stronger and the
+density it expands into far lower.
+
+Three instruments actually target this, in increasing order of work:
+
+1. **`:dsgs_Cmin`** — a background viscosity floor, unconditional, acting on
+   every mode, scaling as `Δ·(|u|+c)`. The direct answer to "nothing damps the
+   structures downwind". One line.
+2. **De-singularize the geometry** — round the corner over 1–2 elements in
+   `ffs_step_transfinite.geo`. A point singularity is the worst case for a
+   high-order method; a small radius makes the fan non-centered. The ramp's
+   leading edge is the same kind of point, so this transfers.
+3. **A Woodward–Colella corner fix** — reset entropy and stagnation enthalpy in
+   the nodes adjacent to the corner. `user_source!` receives `x, y`, so this is
+   implementable in the case files with no kernel change.
 
 ## Status
 

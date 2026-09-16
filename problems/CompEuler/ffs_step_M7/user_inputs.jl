@@ -7,6 +7,7 @@
 #   JEXPRESSO_M7_MU1      slot-1 (β∇ρ) multiplier              default 1.0
 #   JEXPRESSO_M7_MU       slots 2-4 (μ, κ) multiplier          default 4.0
 #   JEXPRESSO_M7_CMAX     :dsgs_Cmax, the cap constant         default 0.5
+#   JEXPRESSO_M7_CMIN     :dsgs_Cmin, background floor         default 0.0
 #   JEXPRESSO_M7_FILTER   modal-filter blend μ_x, 0 = off      default 0.0
 #   JEXPRESSO_M7_DT       :Δt                                  default 5.0e-8
 #   JEXPRESSO_M7_TEND     :tend                                default 3.5e-3
@@ -258,6 +259,16 @@ function user_inputs()
         # coarse grid survived 3x longer than the refined one at the SAME Δt,
         # which is what a binding cap looks like: Δ doubled, so did the cap.
         :dsgs_Cmax            => _m7_f("JEXPRESSO_M7_CMAX", 0.5),
+        # JEXPRESSO_M7_CMIN. An UNCONDITIONAL floor μ_fl = Cmin·Δ·ρ_max·(|u|+c)
+        # (SGS.jl:1478), i.e. a bounded cell Reynolds number of 1/Cmin, applied
+        # whatever the sensor says. This is the knob for the structures that
+        # convect downstream of the corner: an expansion fan is a SMOOTH
+        # solution, so a residual sensor correctly returns ~0 in it, and the
+        # entropy layer the corner sheds is a contact-type feature that never
+        # self-heals — nothing else in this deck damps it. Unlike the modal
+        # filter it acts on every mode and scales with Δ and the wave speed.
+        # brioWu1d runs 0.06; the flux-emergence case 0.03. Try 0.02-0.05.
+        :dsgs_Cmin            => _m7_f("JEXPRESSO_M7_CMIN", 0.0),
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
