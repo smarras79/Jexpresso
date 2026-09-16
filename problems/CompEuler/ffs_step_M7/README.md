@@ -110,6 +110,57 @@ colour `schlieren` with a **reversed** greyscale in ParaView. Against the
 familiar Mach-3 picture, expect the bow shock to stand closer to the step, the
 shock layer to be thinner, and the roof reflection to strike further upstream.
 
+## Debugging sweep
+
+Every knob is an environment variable (defaults reproduce the deck, so an unset
+environment is the baseline):
+
+```bash
+J=julia --project=. src/Jexpresso.jl CompEuler ffs_step_M7
+
+JEXPRESSO_M7_TEND=1.0e-3 $J                               # baseline, short
+JEXPRESSO_M7_SENSOR=residual JEXPRESSO_M7_TEND=1.0e-3 $J  # (a) element residual, not |∂ₜq|
+JEXPRESSO_M7_FILTER=0.005   JEXPRESSO_M7_TEND=1.0e-3 $J   # (a') kill the top mode instead
+JEXPRESSO_M7_NORMS=rank     JEXPRESSO_M7_TEND=1.0e-3 $J   # (b) shrink the normalising Ω
+JEXPRESSO_M7_CMAX=2.0       JEXPRESSO_M7_TEND=1.0e-3 $J   # (c) raise the cap
+JEXPRESSO_M7_MU1=4.0        JEXPRESSO_M7_TEND=1.0e-3 $J   # more β∇ρ density diffusion
+```
+
+| variable | default | notes |
+|---|---|---|
+| `JEXPRESSO_M7_SENSOR` | `legacy` | `residual` = stage-consistent element residual |
+| `JEXPRESSO_M7_NORMS` | `domain` | only `domain`/`rank` exist for this kernel; `element` is DSGS_MHD only |
+| `JEXPRESSO_M7_MU1` | 1.0 | slot 1, the β∇ρ density diffusion |
+| `JEXPRESSO_M7_MU` | 4.0 | slots 2-4, applied *after* the cap |
+| `JEXPRESSO_M7_CMAX` | 0.5 | `μ_cap = Cmax·Δ·ρ_max·(|u|+c)` |
+| `JEXPRESSO_M7_FILTER` | 0.0 | Boyd-Vandeven blend μ_x; see below |
+| `JEXPRESSO_M7_DT` / `_TEND` / `_REF` | 5.0e-8 / 3.5e-3 / 0 | |
+
+### What the filter actually is at `:nop => 4`
+
+**A top-mode killer and nothing else.** Boyd-Vandeven only acts on modes
+`k > 2n/3`, so at `n = 4` the transfer weights are `[1, 1, 1, 0.9957, 0]`:
+modes 0-2 exactly untouched, mode 3 cut by 0.4% at *full* strength, mode 4
+annihilated. `filter_type` `exp` and `quad` collapse to the same operator at
+this order.
+
+So `μ_x` is a **rate**, not an amplitude. `filter!` runs inside `rhs!`
+(`rhs.jl:799`), i.e. once per RK stage, five times a step, and the top mode
+decays as `(1-μ_x)` per call — e-folding in `1/(5·μ_x)` steps:
+
+| μ_x | top mode e-folds in | left after 15 000 steps |
+|---|---|---|
+| 0.01 | 20 steps | 0 |
+| 0.005 | 40 steps | 1e-164 |
+| 0.001 | 200 steps | 3e-33 |
+| 1e-4 | 2000 steps | 5e-4 |
+| 8e-6 | 25 000 steps (one flow-through) | 0.55 |
+
+There is no setting that is both gentle and useful: anything fast enough to
+catch a Gibbs mode is a complete P4 → P3 truncation over the run, and anything
+slow enough to leave the mode alive cannot catch it. `0.005` is the value to
+try, and if it does not help, `0.05` will not either.
+
 ## Status
 
 **Not yet run.** The deck was written and checked by inspection against the

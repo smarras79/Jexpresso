@@ -1,4 +1,29 @@
+#---------------------------------------------------------------------------------
+# SWEEP SWITCHES. Every knob this case is being debugged on is an environment
+# variable, so a variant is one line on the command line and never a deck edit:
+#
+#   JEXPRESSO_M7_SENSOR   "legacy" (default) | "residual"
+#   JEXPRESSO_M7_NORMS    "domain" (default) | "rank"
+#   JEXPRESSO_M7_MU1      slot-1 (β∇ρ) multiplier              default 1.0
+#   JEXPRESSO_M7_MU       slots 2-4 (μ, κ) multiplier          default 4.0
+#   JEXPRESSO_M7_CMAX     :dsgs_Cmax, the cap constant         default 0.5
+#   JEXPRESSO_M7_FILTER   modal-filter blend μ_x, 0 = off      default 0.0
+#   JEXPRESSO_M7_DT       :Δt                                  default 5.0e-8
+#   JEXPRESSO_M7_TEND     :tend                                default 3.5e-3
+#   JEXPRESSO_M7_REF      initial refinement level, 0 = off    default 0
+#
+# Every default reproduces the deck as it stands, so an unset environment is
+# the baseline run and nothing below changes behaviour on its own.
+#---------------------------------------------------------------------------------
+_m7_s(k, d)  = get(ENV, k, d)
+_m7_f(k, d)  = parse(Float64, get(ENV, k, string(d)))
+_m7_i(k, d)  = parse(Int,     get(ENV, k, string(d)))
+
 function user_inputs()
+
+    m7_tend   = _m7_f("JEXPRESSO_M7_TEND", 3.5e-3)
+    m7_filter = _m7_f("JEXPRESSO_M7_FILTER", 0.0)
+    m7_ref    = _m7_i("JEXPRESSO_M7_REF", 0)
 
     inputs = Dict(
         #---------------------------------------------------------------------------
@@ -70,7 +95,7 @@ function user_inputs()
         # One tunnel flow-through is 3 m / 2400.4 m/s = 1.25e-3 s at Mach 7
         # (2.92e-3 s at Mach 3). ffs_step integrates 2.74 of them; 3.5e-3
         # here is 2.80, i.e. the same picture at the same stage.
-        :tend                 => 3.5e-3,          # ≈ 2.8 tunnel flow-throughs
+        :tend                 => m7_tend,          # ≈ 2.8 tunnel flow-throughs
         :lrestart             => false,
         :restart_time         => 0.0,
         # CFL. The grid is h = 0.025 m with :nop => 4, so the tightest LGL
@@ -105,8 +130,8 @@ function user_inputs()
         # helps only when Δt is cut to match applies here in reverse, Δt
         # having already been cut to pay for the dissipation Mach 7 brings
         # on its own.
-        :Δt                   => 5.0e-8,
-        :diagnostics_at_times => (0:2.5e-5:3.5e-3),
+        :Δt                   => _m7_f("JEXPRESSO_M7_DT", 5.0e-8),
+        :diagnostics_at_times => (0:(m7_tend/140):m7_tend),
         # Wall-clock note, not a setting: at Δt = 5.0e-8 the diagnostics
         # above are 500 steps apart and the whole run is 70000 steps — the
         # same step count and the same per-step cost as ffs_step, so the
@@ -136,7 +161,13 @@ function user_inputs()
         # effect a |∂ₜq| sensor); "residual" (the default) = the element-wise
         # strong residual with the stage-consistent stencil, DSGS.md §1.2.
         :visc_model           => DSGS(),          # residual-based shock capturing
-        :dsgs_sensor          => "legacy",
+        # JEXPRESSO_M7_SENSOR. "legacy" is R ≈ |∂ₜq| (rhs.jl:205), a RATE
+        # sensor: it fires on a moving front and is blind to an oscillation
+        # that is merely standing there. "residual" is the stage-consistent
+        # element residual, which is O(1/h) at a discontinuity whether or not
+        # it is moving. That difference is the first hypothesis for the
+        # per-element beads along the oblique shock.
+        :dsgs_sensor          => _m7_s("JEXPRESSO_M7_SENSOR", "legacy"),
         # Startup hold OFF — the single difference that this case cannot
         # absorb. 7dd6f0c holds the coefficient at zero until the BDF2
         # history is a time derivative (default 2 steps, 3 rotations),
@@ -214,7 +245,19 @@ function user_inputs()
         # grid, (d) a Woodward & Colella corner entropy fix. Raising :μ
         # alone will only blow the viscous limit sooner — that is measured,
         # not a guess.
-        :μ                    => [1.0, 4.0, 4.0, 4.0],
+        # JEXPRESSO_M7_MU1 (slot 1) and JEXPRESSO_M7_MU (slots 2-4). Both
+        # multiply the coefficient AFTER the cap (SGS.jl:1481), so they still
+        # bite when μ is pinned at μ_cap — but they cannot help where the
+        # sensor has switched the coefficient off, which is what makes the
+        # sensor the first thing to test.
+        :μ                    => [_m7_f("JEXPRESSO_M7_MU1", 1.0),
+                                  _m7_f("JEXPRESSO_M7_MU",  4.0),
+                                  _m7_f("JEXPRESSO_M7_MU",  4.0),
+                                  _m7_f("JEXPRESSO_M7_MU",  4.0)],
+        # JEXPRESSO_M7_CMAX. μ_cap = Cmax·Δ·ρ_max·(|u|+c) (SGS.jl:1477). The
+        # coarse grid survived 3x longer than the refined one at the SAME Δt,
+        # which is what a binding cap looks like: Δ doubled, so did the cap.
+        :dsgs_Cmax            => _m7_f("JEXPRESSO_M7_CMAX", 0.5),
         # Artificial Prandtl number P of eq. (3.7): κ = P/(γ-1)·μ. Nazarov &
         # Hoffman use P ≈ 0.1.
         :Pr                   => 0.1,
@@ -227,7 +270,13 @@ function user_inputs()
         # per step here; no effect on a serial run. "rank" reverts to the
         # pre-September-2026 behaviour and makes the answer depend on the
         # partition. See ENVIRONMENT_VARIABLES.md.
-        :dsgs_norms           => "domain",
+        # JEXPRESSO_M7_NORMS. NOTE only "domain" and "rank" exist for the
+        # CompEuler total-energy kernel — it takes a lglobal_norms::Bool
+        # (SGS.jl:1333). "element" is DSGS_MHD only (SGS.jl:633), so the
+        # per-element normalization that would remove the weak-feature
+        # starvation outright is NOT available here; "rank" only shrinks Ω,
+        # and makes the answer depend on the partition.
+        :dsgs_norms           => _m7_s("JEXPRESSO_M7_NORMS", "domain"),
         #---------------------------------------------------------------------------
         # Mesh
         #
@@ -244,6 +293,28 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting
         #---------------------------------------------------------------------------
+        # JEXPRESSO_M7_FILTER: the Boyd-Vandeven modal filter, blended as
+        # F = μ_x·(L W L⁻¹) + (1-μ_x)·I (filter.jl:791-800).
+        #
+        # AT :nop => 4 THIS IS A TOP-MODE KILLER AND NOTHING ELSE. The
+        # Boyd-Vandeven transfer function only acts on k > 2n/3, which at
+        # n = 4 leaves the weights [1, 1, 1, 0.9957, 0] — modes 0-2 exactly
+        # untouched, mode 3 cut by 0.4% at FULL strength, mode 4 annihilated.
+        # ("exp" and "quad" reduce to the same thing at this order.) So μ_x
+        # is not an amplitude, it is a RATE: the top mode decays as
+        # (1-μ_x) per RHS call, and filter! runs inside rhs! (rhs.jl:799),
+        # i.e. once per RK stage, five times a step. The top mode therefore
+        # e-folds in 1/(5·μ_x) steps:
+        #
+        #   μ_x = 0.01   -> 20 steps      μ_x = 1e-4 -> 2000 steps
+        #   μ_x = 0.005  -> 40 steps      μ_x = 8e-6 -> one flow-through
+        #
+        # Anything fast enough to catch a Gibbs mode is a complete P4 -> P3
+        # truncation over the run; anything gentle enough to leave the mode
+        # alive is too slow to matter. 0.005 is the value to try.
+        :lfilter              => (m7_filter > 0.0),
+        :mu_x                 => m7_filter,
+        :mu_y                 => m7_filter,
         :outformat            => "vtk",
         :loverwrite_output    => true,
         :lwrite_initial       => true,
@@ -268,8 +339,8 @@ function user_inputs()
         # AMR off: the mesh already resolves the shocks at h/nop = 1/80, and
         # DynSGS is what handles what is left under-resolved.
         #---------------------------------------------------------------------------
-        :linitial_refine      => false,
-        :init_refine_lvl      => 1,
+        :linitial_refine      => (m7_ref > 0),
+        :init_refine_lvl      => max(m7_ref, 1),
         :ladapt               => false,
     ) #Dict
 
