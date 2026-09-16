@@ -6,7 +6,7 @@
 #SBATCH --qos=standard
 #SBATCH --account=smarras
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=32
+#SBATCH --ntasks-per-node=128
 #SBATCH --time=71:59:00
 #SBATCH --mem-per-cpu=4000M
 
@@ -31,7 +31,6 @@ julia --project=. -e 'using MPI; using Jexpresso' 2>/dev/null || \
 echo "--- Setup complete, launching ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 
-mpirun -np 32 julia --project=. src/Jexpresso.jl CompEuler rampCaoEtAl2021
-#mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step
-#mpirun -np 32 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
-#mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
+mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step_M7
+#mpirun -np 32 julia --project=. src/Jexpresso.jl CompEuler rampCaoEtAl2021
+

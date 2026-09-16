@@ -261,7 +261,7 @@ function user_inputs()
         # way to add resolution uniformly.
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
-        :gmsh_filename        => "./problems/CompEuler/rampCaoEtAl2021/ramp15.msh",
+        :gmsh_filename        => "./problems/CompEuler/rampCaoEtAl2021/ramp15_uniform.msh",
         #
         # DIAGNOSTIC GRID, no vertical stretching.  ramp15_uniform.msh is the
         # same geometry with a UNIFORM wall-normal distribution: 401 elements

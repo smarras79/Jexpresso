@@ -30,14 +30,14 @@ function user_inputs()
         # is deliberate — the vortex steepens into shocks by t ≈ 0.5 and the
         # local wave speeds grow. The reference simulation of the paper used
         # Δt = 8e-4 on its 128² finite-volume grid.
-        #:Δt                   => 1.5e-4,
-        :Δt                   => _ot_dt(),
+        :Δt                   => 1.5e-4,
+        #:Δt                   => _ot_dt(),
         :tinit                => 0.0,
         # JEXPRESSO_OT_TEND shortens the run without editing the deck — a
         # smoke test of a change to the model is one short run, not 143 000
         # steps.
-        :tend                 => _ot_tend(),   # the paper's t ∈ [0, 1] interval
-        :diagnostics_at_times => (0.0:0.5*_ot_tend():_ot_tend()),
+        :tend                 => 1.0,   # the paper's t ∈ [0, 1] interval
+        :diagnostics_at_times => (0.0:0.25:1.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :lsource              => true,   # GLM ψ-damping source (Dedner mixed cleaning; see user_source.jl)
