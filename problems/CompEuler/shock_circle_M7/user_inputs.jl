@@ -169,6 +169,39 @@ function user_inputs()
         # the first thing to try, and the heat flux must then be re-checked.
         #---------------------------------------------------------------------------
         :visc_model           => DSGS(),
+        #---------------------------------------------------------------------------
+        # NODAL DynSGS. The one change in this run, and the mu_dsgs field is
+        # what asks for it.
+        #
+        # By default the coefficient is ELEMENT-WISE CONSTANT: compute_dsgs_-
+        # viscosity! fills μ_dsgs[ie, ieq], and broadcast_dsgs_to_nodes!
+        # (SGS.jl:3017) then spreads it to nodes with
+        #
+        #     μ_pnode[ip] = max(μ_pnode[ip], μ_dsgs[ie])
+        #
+        # a MAX over the elements sharing the node — a morphological dilation,
+        # not a smoothing. Two consequences, both visible in the plotted
+        # mu_dsgs: the field is blocky at element scale, and a hot element
+        # bleeds its value onto every neighbour it touches while the value
+        # itself still jumps from ~0.8 to ~0 between adjacent elements.
+        #
+        # A CG discretization cannot absorb that. ∇·(μ∇q) with μ jumping
+        # across an element interface produces a spurious forcing there
+        # proportional to the jump, the forcing makes element-scale
+        # oscillation, the sensor reads that oscillation as under-resolution,
+        # and μ gets more speckled still. That loop is a much better
+        # explanation of a salt-and-pepper μ sitting on top of a
+        # salt-and-pepper velocity field than anything about the shock.
+        #
+        # :ldsgs_nodal => true takes the nodal (Dao & Nazarov) form instead
+        # (compute_dsgs_viscosity_nodal!, reached for DSGS() 2D at
+        # rhs.jl:1681): ν is built AT EVERY NODE from the mass-weighted
+        # average of the residual over the elements containing it
+        # (DSGS.md §1.2), and the element loop interpolates it. There is no
+        # element-wise constant, no jump at the interfaces, and no broadcast.
+        # It is the same model, evaluated in a form a continuous Galerkin
+        # method can actually carry.
+        :ldsgs_nodal          => true,
         :dsgs_sensor          => "residual",
         #
         # STARTUP HOLD OFF, as ffs_step has it. I turned it on for one run on

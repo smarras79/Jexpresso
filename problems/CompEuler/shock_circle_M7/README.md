@@ -185,7 +185,46 @@ steps the run is wrong** — it is a guard, not a fix.
 |---|---|---|---|---|
 | 1 | hold 0, Cmax 0.1, Δt 1.5e-8 | 1.33e-5 | 887 | 20.9 mm |
 | 2 | hold 2, Cmax 0.03, Δt 1.5e-8 | 5.97e-6 | 398 | 9.4 mm |
-| 3 | hold 0, Cmax 0.1, **Δt 7.5e-9** | — | — | — |
+| 3 | hold 0, Cmax 0.1, **Δt 7.5e-9** | 2.98e-5 | 3969 | 46.7 mm |
+| 4 | run 3 + **`:ldsgs_nodal`** | — | — | — |
+
+Run 3 confirmed `Δt` was the right lever: halving it took the failure from
+1.33e-5 to 2.98e-5 s and from 887 to 3969 steps, and the shock layer finally
+got past its 42 mm standoff. But the state at failure is the *same disease*
+`ffs_step_M7` has:
+
+| reported | ceiling from `h₀` | ratio |
+|---|---|---|
+| `max\|u\| = 2839 m/s` | `√(2h₀) = 1646` | **1.72×** |
+| `max(\|u\|+c) = 2839` | 1803 | 1.57× |
+| `max c = 989` → T = 2439 K | `T₀ = 1349 K` | **1.81×** |
+| `p_min ≈ −150 Pa` | 0 | — |
+
+The advective and acoustic CFLs are *identical*, both 2839, which means at the
+worst node `c` was clamped to zero by `sqrt(max(γp/ρ, 0))` — i.e. `p ≤ 0`
+there. (`ρ_max = 3.1e-3` is **not** an overshoot: `p_w/(R·T_w) = 460/(287·300)
+= 5.3e-3`, so the cold-wall boundary-layer density is physical.)
+
+**`:lkep => true` with `ranocha()` was active for all of this.** So
+entropy-conservative flux differencing does not remove the element-scale
+speckle — a clean negative for the aliasing hypothesis as that flux tests it.
+
+### What the `mu_dsgs` field says instead
+
+It is blocky and salt-and-pepper: adjacent elements at ~0.8 and ~0. That is
+what the default coefficient *is* — element-wise constant, then spread to nodes
+by `max` over the sharing elements (`SGS.jl:3017`), a dilation rather than a
+smoothing. A CG method cannot absorb a μ that jumps across element interfaces:
+`∇·(μ∇q)` then carries a spurious interface forcing proportional to the jump,
+which makes element-scale oscillation, which the sensor reads as
+under-resolution, which speckles μ further. That loop explains a speckled μ on
+top of a speckled velocity far better than anything about the shock does.
+
+Run 4 sets **`:ldsgs_nodal => true`** — the nodal Dao & Nazarov form
+(`compute_dsgs_viscosity_nodal!`, reached for `DSGS()` 2D at `rhs.jl:1681`):
+ν built at every node from the mass-weighted average of the residual over the
+elements containing it, interpolated by the element loop. No element-wise
+constant, no interface jump, no broadcast. Same model, in a form CG can carry.
 
 The shock standoff is 42 mm, so **both runs died with the shock layer only
 half formed.** The whole difficulty is the *formation* of the normal shock,
