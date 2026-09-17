@@ -67,7 +67,7 @@ export SV_L=${SV_L:-20}
 # is a longer integration, so the errors are larger than theirs and the
 # orders are what is being compared, not the absolute numbers.
 # ---------------------------------------------------------------------------
-export SV_NOPS=${SV_NOPS:-"4 5 6"}
+export SV_NOPS=${SV_NOPS:-"3 4 5 6"}
 export SV_NELX=${SV_NELX:-"16 32 64"}
 export SV_VISC=${SV_VISC:-"dsgs none"}
 export SV_TEND=${SV_TEND:-0.5}
@@ -83,7 +83,31 @@ export SV_DT=${SV_DT:-auto}
 export SV_SOLVER=${SV_SOLVER:-ck54}
 export SV_NP=${SV_NP:-16}
 export SV_JOBS=${SV_JOBS:-6}
-export SV_PLOT_NOPS=${SV_PLOT_NOPS:-"4 7"}   # the extremes, on their own axes
+export SV_PLOT_NOPS=${SV_PLOT_NOPS:-"3 6"}   # the extremes, on their own axes
+
+# ---------------------------------------------------------------------------
+# THE DynSGS KNOBS, and how to add a curve without losing the one you have.
+#
+#   SV_HOLD    the startup hold: the number of steps at the beginning of a run
+#              over which the viscosity is held off (default 2, the minimum the
+#              BDF2 residual needs). The DynSGS excess at P6/P7 is mostly the
+#              startup transient, so a longer hold is the knob that recovers
+#              the rate; measured at P6/32x32, hold 20 removed 96% of it.
+#   SV_CUTOFF  the smoothness cutoff on nu (default 0, off).
+#
+# Either one makes the run a DIFFERENT experiment, so its records are tagged
+# dsgs_hold / dsgs_cut and drawn as their own curve beside the default DynSGS
+# one rather than overwriting it. SV_KEEP=1 ADDS to the store instead of
+# starting a fresh one, which is what puts both on the same figure:
+#
+#   SV_HOLD=20 SV_KEEP=1 SV_VISC=dsgs SV_NOPS="5 6" sbatch submit_Jexpresso_compare.sh
+#
+# Without SV_KEEP=1 the store is cleared first and the figure shows this
+# sweep alone.
+# ---------------------------------------------------------------------------
+export SV_HOLD=${SV_HOLD:-2}
+export SV_CUTOFF=${SV_CUTOFF:-0}
+export SV_KEEP=${SV_KEEP:-0}
 
 # The meshes of that box. The repository ships 4, 8, 16, 32 and 64 elements
 # per side for both boxes, so this is a no-op unless a resolution is missing

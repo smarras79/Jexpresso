@@ -1891,22 +1891,44 @@ function _viscous_rhs_el_2d_dsgs!(uaux, qe, uprimitive,
             end
         end
 
-        for ieq = 1:neqs
-            _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
-                             uprimitive,
-                             visc_coeff_dsgs,
-                             ω,
-                             Tabs, qn_mp, qsatt,
-                             uaux,
-                             ngl,
-                             dψ, Je,
-                             dξdx, dξdy,
-                             dηdx, dηdy,
-                             connijk_mesh,
-                             inputs, rhs_el,
-                             iel, ieq,
-                             QT, VT, NSD_2D(), AD; Δ=Δ,
-                             μnod = (lnodal ? μloc : nothing))
+        # WHY THIS IS TWO CALL SITES AND NOT A TERNARY.
+        #
+        # `μnod` decides, inside the hot loop of _expansion_visc!, whether the
+        # coefficient comes from SGS_diffusion or is read per node — a check
+        # made several times per quadrature point per equation. It has to be
+        # STATICALLY typed at the call site or that check becomes a runtime
+        # branch on a Union and the indexing stops being inferrable.
+        #
+        # This routine is called with μ_pnode::Nothing on every non-nodal
+        # case, and in that specialization the old
+        #     μnod = (μ_pnode === nothing ? nothing : μloc)
+        # folded to `nothing` at compile time. Writing it as
+        #     μnod = (lnodal ? μloc : nothing)
+        # does NOT: `lnodal` carries :lsutherland, which is a runtime Dict
+        # lookup, so μnod became Union{Nothing,Array} for every DSGS,
+        # DSGS_MHD and DSGS_SW case in 2D — measured as a large slowdown on
+        # MHD/orszagTangBormanis2024, which runs nine equations through here
+        # every stage. Branching at the call site gives each path its own
+        # specialization and restores the original code exactly when the
+        # nodal coefficient is not in use.
+        if lnodal
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                                 uprimitive, visc_coeff_dsgs, ω,
+                                 Tabs, qn_mp, qsatt, uaux, ngl,
+                                 dψ, Je, dξdx, dξdy, dηdx, dηdy,
+                                 connijk_mesh, inputs, rhs_el, iel, ieq,
+                                 QT, VT, NSD_2D(), AD; Δ=Δ, μnod = μloc)
+            end
+        else
+            for ieq = 1:neqs
+                _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                                 uprimitive, visc_coeff_dsgs, ω,
+                                 Tabs, qn_mp, qsatt, uaux, ngl,
+                                 dψ, Je, dξdx, dξdy, dηdx, dηdy,
+                                 connijk_mesh, inputs, rhs_el, iel, ieq,
+                                 QT, VT, NSD_2D(), AD; Δ=Δ, μnod = nothing)
+            end
         end
     end
 

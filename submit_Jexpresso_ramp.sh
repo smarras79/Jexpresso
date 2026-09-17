@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=orszag
+#SBATCH --job-name=mach7
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 #SBATCH --partition=general
@@ -28,9 +28,9 @@ echo "--- 3. Serial warm-up: exercise the real load path ---"
 julia --project=. -e 'using MPI; using Jexpresso' 2>/dev/null || \
   julia --project=. -e 'include("src/Jexpresso.jl")' --warmup-only
 
-echo "--- Setup complete, launching 64 ranks ---"
+echo "--- Setup complete, launching ---"
 export JULIA_PKG_PRECOMPILE_AUTO=0  # ranks must never attempt to precompile
 
-#mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step
-mpirun -np 32 julia --project=. src/Jexpresso.jl MHD orszagTangBormanis2024
-#mpirun -np 64 julia --project=. src/Jexpresso.jl MHD fluxEmergenceSon2025DSGS
+mpirun -np 64 julia --project=. src/Jexpresso.jl CompEuler ffs_step_M7
+#mpirun -np 32 julia --project=. src/Jexpresso.jl CompEuler rampCaoEtAl2021
+

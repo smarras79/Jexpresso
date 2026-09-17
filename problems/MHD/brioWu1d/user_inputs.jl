@@ -48,6 +48,7 @@ const BW_DT_AT_DEFAULT = 5.0e-5
 
 _bw_nop()  = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_NOP",  "")), 4)
 _bw_dofs() = something(tryparse(Int,     get(ENV, "JEXPRESSO_BW_DOFS", "")), BW_DOFS_DEFAULT)
+_bw_hold() = something(tryparse(Int, get(ENV, "JEXPRESSO_BW_HOLD", "")), 2)
 _bw_cutoff() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CUTOFF", "")), 0.0)
 _bw_cmin() = something(tryparse(Float64, get(ENV, "JEXPRESSO_BW_CMIN", "")), 0.06)
 
@@ -143,6 +144,12 @@ function user_inputs()
         # compound wave alone: at a discontinuity the normalized ratio is
         # O(10^2), five orders above anything smooth flow produces.
         :dsgs_cutoff      => _bw_cutoff(),
+        # Steps the coefficient is held at zero at the start (JEXPRESSO_BW_HOLD,
+        # :dsgs_hold_steps). The smooth vortex says a longer hold removes 96% of
+        # the viscosity's damage there; this case says what a longer hold costs
+        # where there ARE shocks, and the Brio-Wu initial condition is a
+        # discontinuity at t = 0, so it is the hard test of it.
+        :dsgs_hold_steps  => _bw_hold(),
         :dsgs_CR          => 1.0*_bw_hfac()^2,
         :dsgs_Cmax        => 0.5*_bw_hfac(),
         # Background floor C_min (not in the paper), 6 % of the first-order
