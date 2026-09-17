@@ -225,10 +225,30 @@ function _dsgs_residual_rhs!(u, params, SD)
         # (:dsgs_reference): for a shock tube qe holds the initial jump and
         # subtracting its element RHS would plant a residual at x = 0.5 for
         # the whole run (measured on sod1d)
-        lref  = get(params.inputs, :dsgs_reference, false) &&
-                params.SOL_VARS_TYPE == TOTAL() && size(qe, 2) >= neqs &&
+        lqe   = params.SOL_VARS_TYPE == TOTAL() && size(qe, 2) >= neqs &&
                 any(x -> x != 0, @view(qe[1:npoin, 1:neqs]))
+        lref  = get(params.inputs, :dsgs_reference, false) && lqe
         params.dsgs_have_ref[] = lref
+
+        # A θ case advancing the TOTAL variables over a hydrostatic qe and
+        # NOT subtracting it is the one configuration in which this sensor
+        # cannot work: the element residual at rest is the interpolation
+        # error of the hydrostatic balance, a STEADY O(30 % of ρg) imbalance
+        # at every interface that has nothing to do with the flow. It holds
+        # the normalized ratio above 1 for the whole run, so ν sits at its
+        # cap Cmax·Δ·(|u|+c) — 10³-10⁴ m²/s on a 0.5-1 km mesh, three orders
+        # above what SMAG() gives the same case — and the run is destroyed
+        # by its own stabilization at a physical time that does NOT move
+        # when Δt is reduced, because the cap does not contain Δt.
+        # Nothing here can tell that state from a legitimate one, so this is
+        # a warning and not a default: say it once, name both exits.
+        # (CompEuler/thetaTracers was silently in this state from the
+        # September 2026 sensor change until its deck was fixed.)
+        if !lref && lqe && SD != NSD_1D() &&
+           get(params.inputs, :energy_equation, "energy") == "theta" &&
+           MPI.Comm_rank(get_mpi_comm()) == 0
+            @warn "DynSGS :dsgs_sensor => \"residual\" on a θ case with TOTAL variables and a non-trivial reference state qe, and :dsgs_reference is not set. At rest the element residual is then the hydrostatic-balance interpolation error, not the flow, and ν sits at its cap Cmax·Δ·(|u|+c) for the whole run (DSGS.md §1.2, 'The reference state'). Set :dsgs_reference => true to take the residual on the departure from qe, or :dsgs_sensor => \"legacy\" to use the sensor the θ cases were validated with."
+        end
         if lref
             # keep this stage's element RHS, evaluate the reference's, restore
             params.dsgs_rhs_res .= params.rhs_el

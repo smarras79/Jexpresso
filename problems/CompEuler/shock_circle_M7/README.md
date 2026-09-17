@@ -179,7 +179,40 @@ degrading the answer, it was throwing `DomainError` out of `log` and killing the
 run from inside the RHS. **If that floor engages anywhere but the first few
 steps the run is wrong** — it is a guard, not a fix.
 
-## Run 1: died at t = 1.33e-5 (887 steps) — two findings
+## Run log
+
+| run | config | died at | steps | flow travel |
+|---|---|---|---|---|
+| 1 | hold 0, Cmax 0.1, Δt 1.5e-8 | 1.33e-5 | 887 | 20.9 mm |
+| 2 | hold 2, Cmax 0.03, Δt 1.5e-8 | 5.97e-6 | 398 | 9.4 mm |
+| 3 | hold 0, Cmax 0.1, **Δt 7.5e-9** | — | — | — |
+
+The shock standoff is 42 mm, so **both runs died with the shock layer only
+half formed.** The whole difficulty is the *formation* of the normal shock,
+not any developed state.
+
+## Where it fails: the stagnation streamline
+
+Run 2 reported per-rank first-bad nodes that cluster tightly — every one within
+**±13° of the stagnation streamline**, spanning the wall out through the shock
+standoff:
+
+| x | y | wall distance | angle from stagnation |
+|---|---|---|---|
+| 0.8000 | 0.0000 | **0.0 mm** (the stagnation point itself) | 0.0° |
+| 0.8049 | 0.0438 | 0.0 mm | 12.7° |
+| 0.7921 | −0.0109 | 8.2 mm | −3.0° |
+| 0.7610 | −0.0189 | 39.8 mm (≈ the 42 mm standoff) | −4.5° |
+| 0.7570 | 0.0534 | 48.8 mm | 12.4° |
+| 0.7452 | 0.0252 | 56.0 mm | 5.6° |
+
+That is a *localised, physical* failure, unlike the `ffs_step_M7` runs where the
+whole field went at once. Four things coincide at that point and nowhere else:
+the shock is **normal** (its strongest, ρ₂/ρ₁ = 5.46, p₂/p₁ = 57), the
+temperature is highest (T₀ = 1345 K), the boundary layer is thinnest, and the
+wall is coldest (300 K) — a 1045 K drop across ~2.8 mm.
+
+## Run 1 diagnostics — two findings
 
 **The printed `Viscous CFL` is a diagnostic artifact on this mesh.** `computeCFL`
 forms it as `max(ν)` over the whole mesh × `Δt` / `min(Δx)²` over the whole
@@ -197,22 +230,21 @@ the wall cell. `3.0749 × 1.5e-8 / (3.85e-4)² = 0.312`, exactly what was printe
 The number is right on the near-uniform meshes it was written against
 (`ffs_step`) and meaningless here.
 
-**And `:dsgs_hold_steps => 0` was wrong for this case** — I copied it from
-`ffs_step` without checking that its justification applies. It does not. The
-hold exists because the sensor reads a *smooth* initial condition as
-unresolved and pins ν at its cap on step one (`7dd6f0c`); `ffs_step` disables
-it because its IC is *not* smooth — a Mach-3 stream started impulsively
-against a step. This case's starting field is smooth **by construction**,
-since the previous fix blended the velocity and temperature into the wall
-condition over 5 mm precisely so there would be no jump. So it is exactly the
-IC the hold was written for, and `max ν = 3.07` — the coefficient at its
-ceiling in an undisturbed free stream — is the documented symptom, verbatim.
+**`max ν = 3.07` is the cap in the 77 mm cells**, i.e. the coefficient at its
+ceiling in an undisturbed free stream — which looked like the documented
+symptom of the missing startup hold, so run 2 turned the hold on *and* dropped
+`:dsgs_Cmax` to 0.03. **Both were wrong, and changing two things at once made
+the result harder to read.** Both cut dissipation; the run died sooner. Both
+reverted.
 
-Now at the default (2), with `:dsgs_Cmax` lowered 0.1 → 0.03 because
-`μ_cap ∝ Δ` and this mesh is graded 34×: at 0.1 the coarse cells are allowed
-44× the molecular viscosity, at 0.03 that is 13×. If grading is still the
-binding problem, drop `lc_far` in the `.geo` from 0.06 to ~0.03 and pay the
-elements — the Δ-proportionality of the cap cannot be undone from the deck.
+The reasoning error is worth keeping: the hold protects against a sensor
+misreading a smooth *field*, but what kills this case is a violent first few
+*steps*, and those are violent however smooth the field is — a 1568 m/s stream
+is standing on a no-slip wall at `t = 0` and a normal shock has to form in
+front of it. That is `ffs_step`'s own argument for `hold => 0` ("holding ν at
+zero there integrates the most violent steps of the run with no dissipation at
+all"), and it applies here for the same reason. I was looking at the initial
+condition instead of the first steps.
 
 ## Status
 

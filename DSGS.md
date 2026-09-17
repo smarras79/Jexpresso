@@ -152,6 +152,18 @@ sod1d). Cases whose flux and source are already written on the perturbation
 (the well-balanced MHD and shallow-water splits, PERT variables) have a
 vanishing reference RHS and need nothing.
 
+A θ deck that advances TOTAL variables over a non-trivial $q_e$ and sets
+neither `:dsgs_reference => true` nor `:dsgs_sensor => "legacy"` is therefore
+running the sensor on the hydrostatic imbalance rather than on its flow, and
+`_dsgs_residual_rhs!` now says so once, on the first RHS call, in a warning
+naming both exits. `CompEuler/thetaTracers` was in that state between the
+September 2026 sensor change and the fix to its deck: $\nu$ sat at the cap
+$C_{max}\Delta(|u|+c)\approx 10^4$ m²/s on its 283-500 m elements, against the
+$\approx 2$ m²/s the same case gets from `SMAG()`, and the run was destroyed by
+its own stabilization at $t \approx 200$ s at every $\Delta t$ tried — the cap
+does not contain $\Delta t$, so neither the coefficient nor the failure time
+moves when the step is reduced.
+
 **Dirichlet boundary nodes.** The boundary condition constrains the assembled
 rate at those nodes (free-slip wall: the normal momentum stays zero; a 1D end:
 the prescribed components stay put) while the element RHS carries the
