@@ -341,7 +341,7 @@ function _bw_plot_convergence(rows, OUTPUT_DIR, iout; smooth::Bool)
         pl = Plots.plot(; xscale = :log10, yscale = :log10,
                         xlabel = LaTeXStrings.L"1/\#\mathrm{DOFs}",
                         ylabel = LaTeXStrings.latexstring(string(
-                            "\\|\\rho_h-\\rho_{ref}\\|_{", nm, "}\\ /\\ \\|\\rho_{ref}\\|_{", nm, "}")),
+                            "\\Vert\\rho_h-\\rho_{ref}\\Vert_{", nm, "}\\ /\\ \\Vert\\rho_{ref}\\Vert_{", nm, "}")),
                         framestyle = :box, grid = true,
                         legend = :bottomright, legendfontsize = 8,
                         titlefontsize = 13, guidefontsize = 11, tickfontsize = 10,

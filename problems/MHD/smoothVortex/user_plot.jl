@@ -306,11 +306,11 @@ function _sv_panel(sub, nops, fld, nm)
     pl = Plots.plot(; xscale = :log10, yscale = :log10,
                     xlabel = LaTeXStrings.L"\#\mathrm{DOFs}",
                     ylabel = LaTeXStrings.latexstring(string(
-                        "\\|\\mathbf{u}_h-\\mathbf{u}_{exact}\\|_{", nm, "}")),
+                        "\\Vert\\mathbf{u}_h-\\mathbf{u}_{exact}\\Vert_{", nm, "}")),
                     framestyle = :box, grid = true, gridalpha = 0.25,
                     background_color_legend = Plots.RGBA(1, 1, 1, 0.72),
                     foreground_color_legend = :gray60,
-                    legend = :bottomleft, legendfontsize = SV_FS_LEGEND,
+                    legend = :outertopright, legendfontsize = SV_FS_LEGEND,
                     titlefontsize = SV_FS_TITLE, guidefontsize = SV_FS_GUIDE,
                     tickfontsize = SV_FS_TICK,
                     left_margin = 14Plots.mm, bottom_margin = 10Plots.mm,
@@ -405,7 +405,7 @@ function _sv_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::Str
     for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
         pl = _sv_panel(sub, nops, fld, nm)
         # one file per norm, for the paper
-        plt1 = Plots.plot(pl; size = (900, 780), show = false)
+        plt1 = Plots.plot(pl; size = (1180, 780), show = false)
         _sv_savefig(plt1, string(OUTPUT_DIR, "/convergence", suffix, "_", fname, "-it", iout, ".png"))
         push!(panels, pl)
     end
