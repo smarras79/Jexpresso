@@ -134,6 +134,8 @@ JEXPRESSO_M7_MU1=4.0        JEXPRESSO_M7_TEND=1.0e-3 $J   # more β∇ρ density
 | `JEXPRESSO_M7_MU` | 4.0 | slots 2-4, applied *after* the cap |
 | `JEXPRESSO_M7_CMAX` | 0.5 | `μ_cap = Cmax·Δ·ρ_max·(|u|+c)` |
 | `JEXPRESSO_M7_CMIN` | 0.0 | unconditional floor `Cmin·Δ·ρ_max·(|u|+c)`; cell Re = 1/Cmin |
+| `JEXPRESSO_M7_KEP` | `none` | `ranocha` / `kg` / `central`: KEP flux differencing |
+| `JEXPRESSO_M7_MACH` | 7.0 | free-stream Mach number |
 | `JEXPRESSO_M7_FILTER` | 0.0 | Boyd-Vandeven blend μ_x; see below |
 | `JEXPRESSO_M7_DT` / `_TEND` / `_REF` | 5.0e-8 / 3.5e-3 / 0 | |
 
@@ -166,8 +168,10 @@ try, and if it does not help, `0.05` will not either.
 
 | run | died at | vs baseline |
 |---|---|---|
+| refined grid (`:init_refine_lvl => 1`) | 2.4e-4 | — |
 | baseline, coarse grid (`:linitial_refine => false`) | 7.5e-4 | — |
 | `JEXPRESSO_M7_FILTER=0.005` | 1.1e-3 | 1.47× |
+| **`ffs_step_M7_round`** (filleted corner, exact geometry) | **7.5e-4** | **1.00×** |
 
 **The filter result is the informative one.** At `:nop => 4` that setting is a
 *complete* removal of the top mode (e-fold 40 steps, nothing left after a few
@@ -176,6 +180,80 @@ ringing". It bought 1.47× and the spurious structures downstream of the corner
 survived it. So the defect does **not** live in the top mode: it is in modes
 0–3, which the P4 Boyd–Vandeven filter leaves untouched (weights
 `[1, 1, 1, 0.9957, 0]`). That is an element-scale structure, not a 2Δx mode.
+
+**The filleted corner changed nothing.** Same failure, same time, to the
+digit — see `ffs_step_M7_round`. The corner singularity is exonerated, and so
+is the `user_bc.jl` double-projection at `(0.6, 0.2)` that went away with it.
+
+**And the finer grid dies EARLIER** (2.4e-4 against 7.5e-4). A physical feature
+that is under-resolved gets *better* with resolution. Something whose growth
+rate scales with the number of modes gets worse.
+
+### The remaining suspect: the total-energy formulation at high Mach
+
+Look at where the checkerboard is in the density plots. It is everywhere —
+including the **undisturbed free stream upstream of the bow shock**, where the
+exact solution is exactly uniform, no physical feature exists, and no
+shock-capturing sensor can legitimately fire. Nothing about a corner, a shock
+or an expansion explains structure *there*.
+
+A collocation CG integrates the nonlinear flux with the same LGL rule it
+interpolates on, so the flux is **aliased**: energy is transferred into the
+grid-scale modes, and CG has nothing to take it back out. That is true at any
+Mach number. What changes at Mach 7 is what the aliasing *costs*:
+
+```
+p = (γ-1)(ρE - ½ρ|u|²)
+```
+
+is a difference of two nearly equal numbers, so a relative error in `ρE` or
+`ρu` comes out of the subtraction amplified by
+
+```
+(γ-1)·ρE/p  =  1 + γ(γ-1)M²/2
+```
+
+| M | 3 | 4 | 5 | 6 | 7 | 7.7 |
+|---|---|---|---|---|---|---|
+| amplification | 3.51 | 5.46 | 7.96 | 11.03 | **14.65** | 17.51 |
+
+At Mach 7 the free stream carries `ρE = 3.73e6` against `½ρ\|u\|² = 3.47e6`:
+they agree to one part in fifteen, and `p = 1.01e5` is what is left. **The same
+aliasing error buys 4.2× the pressure error it buys at Mach 3**, the pressure
+drives the momentum flux, and the loop closes — everywhere, uniformly, with no
+geometric feature required.
+
+This is the one hypothesis left that predicts *all* of the evidence: corner-
+independent, worse on finer grids, barely touched by removing one mode, present
+in the undisturbed free stream, and the reason Mach 3 runs while Mach 7 does not.
+
+**Two switches now test it.**
+
+`JEXPRESSO_M7_MACH` runs the identical configuration at another Mach number. If
+the survival time collapses with the amplification column above rather than
+with anything geometric, that is the answer. (`|u|+c` only doubles between M3
+and M7 while the amplification quadruples, so the two scalings are
+distinguishable.)
+
+`JEXPRESSO_M7_KEP` assembles the inviscid RHS by **flux differencing** from
+symmetric two-point volume fluxes (`_expansion_inviscid_KEP!`) instead of the
+pointwise flux — `ranocha()` (entropy conservative), `kennedy_gruber()`, or
+`central_euler()` as the control. This removes the aliasing-driven transfer by
+construction, which is exactly the term the argument above is made of. The
+`user_fluxaux!` methods it needs are in `user_flux.jl`, copied from
+`CompEuler/kelvinHelmholtzChan2022` where this path is exercised for the same
+2D total-energy system.
+
+```bash
+JEXPRESSO_M7_KEP=ranocha JEXPRESSO_M7_TEND=1.5e-3 $J
+JEXPRESSO_M7_MACH=5.0    JEXPRESSO_M7_TEND=1.5e-3 $J
+JEXPRESSO_M7_MACH=4.0    JEXPRESSO_M7_TEND=1.5e-3 $J
+```
+
+Caveat to check on the first KEP run: `:dsgs_sensor => "legacy"` reads the
+assembled RHS, which is filled on both paths. The `"residual"` sensor reads
+`params.rhs_el`, which the KEP branch may not fill — don't combine
+`JEXPRESSO_M7_KEP` with `JEXPRESSO_M7_SENSOR=residual` without checking.
 
 ### Why the DynSGS knobs each buy a factor and none of them fixes it
 

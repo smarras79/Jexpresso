@@ -166,6 +166,23 @@ point `JEXPRESSO_M7_CMIN` (a background viscosity floor, which acts in an
 expansion where the residual sensor by construction does not) is the remaining
 lever, and a positivity floor is the one after that.
 
+## Result
+
+**The fillet changed nothing.** `t = 7.5e-4`, the same as the sharp corner to
+the digit, with the same bead chain downstream and the same element-scale
+checkerboard over the whole field — including the undisturbed free stream.
+
+That is a clean negative, and it is worth what it cost: the corner singularity
+is exonerated, and so is the `user_bc.jl` double-projection at `(0.6, 0.2)`
+that disappeared with it. The bow shock now wraps the rounded corner smoothly,
+which says the geometry and the `:exact_geometry` snap are doing their job —
+the failure simply is not there.
+
+See `../ffs_step_M7/README.md` for what the evidence points at instead: the
+aliasing of the nonlinear flux, amplified into the pressure by
+`1 + γ(γ-1)M²/2` = 14.7 at Mach 7 against 3.5 at Mach 3. `JEXPRESSO_M7_KEP`
+and `JEXPRESSO_M7_MACH` test it, and both work on this deck too.
+
 ## Status
 
 **Not yet run.** The mesh is generated and verified — 4150 quads, no inverted
