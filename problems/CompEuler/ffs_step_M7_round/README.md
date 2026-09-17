@@ -10,7 +10,8 @@ else changed**. The two case directories differ in exactly two things:
 
 | | `ffs_step_M7` | here |
 |---|---|---|
-| mesh | `ffs_step_transfinite.msh` | `ffs_step_round.msh` |
+| mesh | `ffs_step_transfinite.msh` (structured) | `ffs_step_round.msh` (**unstructured quads**) |
+| deck | — | `:exact_geometry => Dict("fillet" => (:circle, 0.65, 0.15, 0.05))` |
 | `user_bc.jl` | skips the vertical-face projection at `(0.6, 0.2)` | no corner special case at all |
 
 Free stream, fluxes, primitives, source, `:Δt`, `:tend`, `:μ`, the DynSGS
@@ -45,8 +46,8 @@ this shows transfers to `rampCaoEtAl2021`.
 
 ## The mesh
 
-An arc of radius `r = 0.05 m` (two elements) centred at `(0.65, 0.15)`, tangent
-to the step face at `(0.6, 0.15)` and to the step top at `(0.65, 0.2)`.
+An arc of radius `r = 0.05 m` centred at `(0.65, 0.15)`, tangent to the step
+face at `(0.6, 0.15)` and to the step top at `(0.65, 0.2)`.
 
 ```
    ...........                        ...........
@@ -55,25 +56,74 @@ to the step face at `(0.6, 0.15)` and to the step top at `(0.65, 0.2)`.
    __________|     singularity          _________/
 ```
 
-The three transfinite blocks survive: the block corner moves from `(0.6, 0.2)`
-to `(0.6+r, 0.2)`, and block A's right-hand side becomes the step face *plus*
-the arc (five curves on four sides, so `Transfinite Surface` names its corners
-explicitly).
+Two things have to be right, and the first version of this mesh got both wrong.
+
+### 1. Unstructured, not a transfinite block
+
+Forcing a structured block around the fillet — the step face *and* the arc on
+one side, a straight line opposite — makes the transfinite map shear the cells
+at exactly the place the case is failing. Measured:
+
+| mesh | minSICN (1 = perfect) |
+|---|---|
+| sharp, rectangular | 1.000 |
+| **filleted, transfinite block (first attempt)** | **0.235** |
+| filleted, unstructured quads (this mesh) | **0.676** |
+
+A cell that distorted, right where the flow is failing, is worse than the sharp
+corner it was meant to cure. gmsh's quasi-structured quad algorithm
+(`Mesh.Algorithm = 11`) stays near-Cartesian away from the fillet and absorbs
+the geometry locally. The algorithm/recombination/subdivision combination was
+picked by measurement, not by taste — the `.geo` records why.
+
+### 2. The arc must be *curved*, not a polygon
+
+gmsh writes a **linear** grid: the `Circle` comes back as four straight
+segments whose endpoints happen to sit on the circle. Filling those elements
+with LGL nodes puts every high-order node on the **chord**, so however large
+`:nop` is, the wall the solver sees is a polygon — and a free-slip wall then
+generates spurious vorticity at every polygon corner. Rounding the corner and
+discretizing it as a polygon just trades one corner for several.
+
+That is what the separate `"fillet"` physical group is for:
+
+```julia
+:exact_geometry => Dict("fillet" => (:circle, 0.65, 0.15, 0.05)),
+```
+
+`src/kernel/mesh/exact_geometry.jl` snaps the high-order nodes of those edges
+onto the true circle and blends the element interiors (Kopriva, *J. Sci.
+Comput.* **26**(3):301–327, 2006, §3 — the linear-blending transfinite map,
+which stays in `P^N` and therefore preserves the discrete metric identities and
+the free stream exactly). Same mechanism `shock_circle` uses for its cylinder.
+
+The **explicit** `(:circle, xc, yc, r)` form, not the `:circle` shorthand: the
+shorthand fits centre and radius from the linear vertices, and a refined grid
+puts new vertices at chord midpoints, which makes the fit ambiguous and it is
+refused. Stating it keeps `JEXPRESSO_M7_REF` working.
+
+The arc carries only **four** linear segments, deliberately: after the snap
+those give 17 boundary nodes exactly on the circle at `:nop => 4`.
+Over-refining the arc to chase the geometry would only cut `Δt` for nothing.
+Fold margin (element thickness against the segment sagitta) is **17.5×**, so
+`_check_curved_elements` has plenty of room.
+
+### Numbers
 
 | | sharp | filleted |
 |---|---|---|
-| elements | 4032 | **4033** |
-| edge length | uniform 0.025 | 0.0189 – 0.0260 (max/min **1.38**) |
-| all quads, no inverted cells | yes | yes |
+| elements | 4032 | **4150** |
+| minSICN | 1.000 | 0.676 |
+| inverted cells | 0 | **0** |
+| edge length | uniform 0.025 | 0.0168 – 0.0380 |
 
-**This is not a stretched grid** — but `Δx_min` *is* 1.32× smaller, so at the
-same `:Δt` the printed advective CFL is ~1.3× and the viscous one up to ~1.75×
-the sharp case's. Both still have room at the default `Δt = 5.0e-8`. For a
-comparison at matched *CFL* rather than matched `Δt`, use
-`JEXPRESSO_M7_DT=3.8e-8`.
+`Δx_min` is **1.49× smaller**, so at the same `:Δt` the printed advective CFL
+runs ~1.5× and the viscous one up to ~2.2× the sharp case's — which printed
+0.036 and 0.12, so both still have room at `Δt = 5.0e-8`. For the comparison at
+matched *CFL* rather than matched `Δt`, use `JEXPRESSO_M7_DT=3.4e-8`.
 
-`n_arc = 3` was chosen over 4 deliberately: 4 gives max/min 1.70 instead of
-1.38. Regenerate, or change the radius through `rfac`, with
+The `Mesh.*` options live inside the `.geo`, so this reproduces the committed
+mesh exactly, and `rfac` changes the fillet radius:
 
 ```bash
 gmsh -2 ffs_step_round.geo -o ffs_step_round.msh
@@ -118,7 +168,11 @@ lever, and a positivity floor is the one after that.
 
 ## Status
 
-**Not yet run.** The mesh is generated and verified (4033 quads, no inverted
-cells, physical groups `inflow`/`outflow`/`wall` intact); no Julia was
+**Not yet run.** The mesh is generated and verified — 4150 quads, no inverted
+cells, minSICN 0.676, physical groups `inflow`/`outflow`/`wall`/`fillet`
+intact, four linear segments on the arc with a 17.5× fold margin. No Julia was
 available in the environment this was written in, so the deck itself has not
-been executed or parsed.
+been executed or parsed, and in particular the `:exact_geometry` snap has not
+been seen to run on this mesh. Watch for the
+`# SNAP HIGH-ORDER NODES ONTO EXACT GEOMETRY` banner and the reported wall
+distance on the first run.

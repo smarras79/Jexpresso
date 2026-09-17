@@ -1,156 +1,143 @@
 // ============================================================
 // ffs_step_round: the forward-facing-step wind tunnel of
-// ffs_step / ffs_step_M7, with the CONVEX STEP CORNER FILLETED.
+// ffs_step / ffs_step_M7, with the CONVEX STEP CORNER FILLETED,
+// meshed as UNSTRUCTURED QUADS and curved by :exact_geometry.
 //
-// Everything else is the geometry of
-// problems/CompEuler/ffs_step_M7/ffs_step_transfinite.geo:
+// Geometry, otherwise as ffs_step_M7:
 //   Tunnel:  [0, 3] x [0, 1]
 //   Step:    solid region [0.6, 3] x [0, 0.2]  (EXCLUDED)
+//   Fillet:  arc of radius r = 0.05 m centred at (0.65, 0.15),
+//            tangent to the step face at (0.6, 0.15) and to the
+//            step top at (0.65, 0.2).
 //
-// WHY. At (0.6, 0.2) the fluid's interior angle is 270 degrees —
-// a reentrant corner, i.e. a POINT SINGULARITY of the Euler
-// solution. The expansion there is a Prandtl-Meyer fan centred on
-// that single point, and what it sheds downstream is an entropy
-// layer. Woodward & Colella (1984) section IV say so outright
-// ("the corner of the step is a singular point of the flow") and
-// reset the state in the cells beside it for exactly this reason,
-// at Mach 3. At Mach 7 the fan is far stronger and expands into
-// far lower density, and a residual-based viscosity cannot help:
-// an expansion fan is a SMOOTH solution, so the sensor correctly
-// returns almost nothing in it.
+// WHY FILLET. At a sharp (0.6, 0.2) the fluid's interior angle is
+// 270 degrees — a POINT SINGULARITY of the Euler solution. The
+// expansion there is a Prandtl-Meyer fan centred on that one
+// point, and what it sheds downstream is an entropy layer, a
+// contact-type feature that convects and never self-heals. A
+// residual-based viscosity cannot help: an expansion fan is a
+// SMOOTH solution, so the sensor correctly returns almost nothing
+// in it. Woodward & Colella (1984) section IV call this corner "a
+// singular point of the flow" and patch the cells beside it, at
+// Mach 3.
 //
-// Filleting removes the singularity from the GEOMETRY instead of
-// trying to patch the solution. The 90-degree turn is spread over
-// an arc of radius r = rfac*h, so the fan is no longer centred on
-// a point and every boundary node has a well-defined normal.
+// WHY UNSTRUCTURED, AND WHY :exact_geometry.
 //
-//   ...........                        ...........
-//             |                                  \
-//             |  <- 270 deg point       r         )  <- turn spread
-//   __________|     singularity         __________/     over an arc
+// Two separate mistakes are easy to make here, and the first
+// version of this mesh made both.
+//
+//   1. FORCING A TRANSFINITE BLOCK AROUND THE FILLET. Putting the
+//      step face and the arc on one side of a structured block
+//      and a straight line on the opposite side makes the
+//      transfinite map shear the cells near the corner: measured
+//      minSICN 0.235, against 1.000 for the sharp rectangular
+//      mesh. A badly distorted element at the exact place the
+//      case is failing is worse than the sharp corner it was
+//      meant to cure. Unstructured quads (gmsh Algorithm 11,
+//      quasi-structured) give minSICN 0.711 here and stay
+//      near-Cartesian away from the fillet.
+//
+//   2. LEAVING THE ARC AS A POLYLINE. gmsh writes a LINEAR grid:
+//      the Circle below comes back as a few straight segments
+//      whose endpoints happen to sit on the circle. Filling those
+//      elements with LGL nodes puts every high-order node on the
+//      CHORD, so however large :nop is, the wall the solver sees
+//      is a polygon — and a slip wall spuriously generates
+//      vorticity at every polygon corner. Rounding the corner and
+//      then discretizing it as a polygon just trades one set of
+//      corners for several.
+//
+//      That is what "fillet" as its OWN physical group is for.
+//      The deck says
+//
+//        :exact_geometry => Dict("fillet" => (:circle, 0.65, 0.15, 0.05))
+//
+//      and src/kernel/mesh/exact_geometry.jl snaps the high-order
+//      boundary nodes onto the true circle and blends the element
+//      interiors (Kopriva, J. Sci. Comput. 26(3):301-327, 2006,
+//      section 3 — linear blending transfinite map, which stays in
+//      P^N and so preserves the discrete metric identities and the
+//      free stream). The wall then sits on the circle to machine
+//      precision, and the arc needs only a FEW linear segments:
+//      at :nop => 4 three segments already give 13 boundary nodes
+//      exactly on the circle. That is the whole benefit — do not
+//      over-refine the arc to chase the geometry.
 //
 // The ramp's sharp leading edge is the same kind of point, so
 // whatever this run shows transfers to rampCaoEtAl2021.
 //
-//   P8 -------------- P7 ------------------------- P6   y = 1.0  (top)
-//   |        B        |              C              |
-//   P9 -------------- P4 ------------------------- P5   y = 0.2
-//   |        A       /  <- solid step (excluded) ->
-//   |               P3   (0.6, 0.2-r), tangent point
-//   |               |
-//   P1 ------------ P2                                  y = 0.0  (floor)
-//   x = 0         x = 0.6                        x = 3.0
-//
-// The three transfinite blocks of the sharp-corner mesh survive:
-// the block corner simply moves from (0.6, 0.2) to (0.6+r, 0.2),
-// and block A's right-hand side becomes the step face plus the
-// arc. Element count 4033 against the sharp mesh's 4032, and
-// the edge lengths run 0.0189-0.0260 m against that mesh's
-// uniform 0.025, a max/min of 1.38 — this is NOT a stretched
-// grid, but Dx_min IS 1.32x smaller, so the printed CFLs will be
-// that much higher at the same :Dt. (n_arc = 3 was chosen over 4
-// for exactly this: 4 gives max/min 1.70.)
-//
 // Generate with:
 //   gmsh -2 ffs_step_round.geo -o ffs_step_round.msh
+// (the Mesh.* options below are part of the file, so this
+//  reproduces the committed mesh exactly).
 // ============================================================
 
-// -------- Domain / step extents --------
-xmin   = 0.0;
-xmax   = 3.0;
-ymin   = 0.0;
-ymax   = 1.0;
-xstep  = 0.6;   // streamwise location of the step face
-ystep  = 0.2;   // step height
-
 // -------- Resolution --------
-// ref = 1 : h = 0.025   (as the sharp-corner mesh at ref = 1)
-// ref = 2 : h = 0.0125
-ref  = 1;
-h    = 0.025 / ref;
+// Algorithm 11 (quasi-structured quad) subdivides, so lc = 0.05
+// lands on an effective h of about 0.025 — the spacing of the
+// sharp ffs_step_M7 mesh. ref = 2 halves it.
+ref = 1;
+lc  = 0.05 / ref;
+
+// -------- Domain / step extents --------
+xmin  = 0.0;
+xmax  = 3.0;
+ymin  = 0.0;
+ymax  = 1.0;
+xstep = 0.6;   // streamwise location of the step face
+ystep = 0.2;   // step height
 
 // -------- Fillet radius --------
-// rfac = how many elements the 90-degree turn is spread over.
-// 2 is the smallest radius that is still resolved; raise it to
-// separate "the corner is singular" from "the corner is sharp".
+// rfac = how many elements of the effective h = lc/2 the 90-degree
+// turn is spread over. The exact-geometry snap means the arc does
+// NOT need many segments; rfac controls the PHYSICAL radius, which
+// is what the flow sees. Raise it to separate "the corner is
+// singular" from "the corner is sharp".
 rfac = 2;
-r    = rfac * h;
-
-// -------- Divisions --------
-nx_in   = 25 * ref;   // floor and the A|B interface
-nx_out  = 94 * ref;   // step top and the top wall, right of x = 0.6+r
-n_face  =  6 * ref;   // step face, y in [0, 0.2-r]
-n_arc   =  3 * ref;   // the fillet arc itself
-ny_low  = n_face + n_arc;   // inflow, y in [0, 0.2]
-ny_high = 32 * ref;   // y in [0.2, 1.0]
+r    = rfac * lc / 2;
 
 // -------- Points --------
-Point(1)  = {xmin,       ymin,        0};   // floor, inflow corner
-Point(2)  = {xstep,      ymin,        0};   // floor, base of the step
-Point(3)  = {xstep,      ystep - r,   0};   // tangent point on the step face
-Point(4)  = {xstep + r,  ystep,       0};   // tangent point on the step top
-Point(5)  = {xmax,       ystep,       0};   // outflow, bottom
-Point(6)  = {xmax,       ymax,        0};   // outflow, top
-Point(7)  = {xstep + r,  ymax,        0};   // top wall, above the block corner
-Point(8)  = {xmin,       ymax,        0};   // top wall, inflow corner
-Point(9)  = {xmin,       ystep,       0};   // inflow wall, at step-top level
-Point(10) = {xstep + r,  ystep - r,   0};   // ARC CENTRE (not on the boundary)
+Point(1)  = {xmin,      ymin,      0, lc};   // floor, inflow corner
+Point(2)  = {xstep,     ymin,      0, lc};   // floor, base of the step
+Point(3)  = {xstep,     ystep - r, 0, lc};   // tangent point, step face
+Point(4)  = {xstep + r, ystep,     0, lc};   // tangent point, step top
+Point(5)  = {xmax,      ystep,     0, lc};   // outflow, bottom
+Point(6)  = {xmax,      ymax,      0, lc};   // outflow, top
+Point(7)  = {xmin,      ymax,      0, lc};   // top wall, inflow corner
+Point(10) = {xstep + r, ystep - r, 0, lc};   // ARC CENTRE (not on the boundary)
 
 // -------- Boundary curves --------
-Line(1)   = {1, 2};          // floor                    (wall)
-Line(2)   = {2, 3};          // step vertical face       (wall)
-Circle(3) = {3, 10, 4};      // THE FILLET               (wall)
-Line(4)   = {4, 5};          // step top                 (wall)
-Line(5)   = {5, 6};          // outflow
-Line(6)   = {6, 7};          // top wall, right          (wall)
-Line(7)   = {7, 8};          // top wall, left           (wall)
-Line(8)   = {8, 9};          // inflow, upper
-Line(9)   = {9, 1};          // inflow, lower
+Line(1)   = {1, 2};        // floor              (wall)
+Line(2)   = {2, 3};        // step vertical face (wall)
+Circle(3) = {3, 10, 4};    // THE FILLET         (its own group: see above)
+Line(4)   = {4, 5};        // step top           (wall)
+Line(5)   = {5, 6};        // outflow
+Line(6)   = {6, 7};        // top wall           (wall)
+Line(7)   = {7, 1};        // inflow
 
-// -------- Interior (block-interface) curves --------
-Line(10) = {9, 4};   // horizontal A | B interface  (y = 0.2, x in [0, 0.6+r])
-Line(11) = {4, 7};   // vertical   B | C interface  (x = 0.6+r, y in [0.2, 1])
-
-// -------- Curve loops (CCW) --------
-Curve Loop(1) = { 1,  2,  3, -10,  9};   // A : lower-left, carries the fillet
-Curve Loop(2) = {10, 11,  7,   8};       // B : upper-left
-Curve Loop(3) = { 4,  5,  6, -11};       // C : upper-right (above the step)
-
+Curve Loop(1)    = {1, 2, 3, 4, 5, 6, 7};
 Plane Surface(1) = {1};
-Plane Surface(2) = {2};
-Plane Surface(3) = {3};
+Recombine Surface{1};
 
-// -------- Transfinite curve distributions --------
-// streamwise (x)
-Transfinite Curve{1}  = nx_in  + 1;   // floor
-Transfinite Curve{10} = nx_in  + 1;   // A | B interface
-Transfinite Curve{7}  = nx_in  + 1;   // top wall, left
-Transfinite Curve{4}  = nx_out + 1;   // step top
-Transfinite Curve{6}  = nx_out + 1;   // top wall, right
-
-// vertical (y).  Block A's right-hand side is curve 2 PLUS curve 3,
-// so n_face + n_arc must equal ny_low on the opposite side (curve 9).
-Transfinite Curve{2}  = n_face  + 1;   // step face
-Transfinite Curve{3}  = n_arc   + 1;   // fillet arc
-Transfinite Curve{9}  = ny_low  + 1;   // inflow, lower
-Transfinite Curve{5}  = ny_high + 1;   // outflow
-Transfinite Curve{8}  = ny_high + 1;   // inflow, upper
-Transfinite Curve{11} = ny_high + 1;   // B | C interface
-
-// -------- Transfinite surfaces + recombine to quads --------
-// The corners are named explicitly because block A has five curves
-// on four sides (the step face and the arc share one side).
-Transfinite Surface{1} = {1, 2, 4, 9};
-Transfinite Surface{2} = {9, 4, 7, 8};
-Transfinite Surface{3} = {4, 5, 6, 7};
-Recombine Surface{1, 2, 3};
+// -------- Meshing options --------
+// Chosen by measurement over Algorithm 6/8/11 x RecombinationAlgorithm
+// 2/3 x SubdivisionAlgorithm 0/1, scoring minSICN and the edge-length
+// spread. This combination gives 4103 quads (the sharp mesh has 4032),
+// minSICN 0.711, edge lengths 0.0189-0.0371 m. Algorithm 8 scores a
+// slightly better minSICN (0.790) but its shortest edge is 0.0107,
+// which would cut the explicit time step for no gain.
+Mesh.Algorithm               = 11;   // quasi-structured quad
+Mesh.RecombineAll            = 1;
+Mesh.RecombinationAlgorithm  = 2;    // blossom
+Mesh.Smoothing               = 100;
+Mesh.ElementOrder            = 1;    // LINEAR: exact_geometry does the curving
 
 // -------- Physical groups --------
-// Same three names as the sharp-corner mesh, so user_bc.jl is unchanged
-// apart from the corner special case, which the fillet makes unnecessary.
-Physical Surface("domain")  = {1, 2, 3};
-Physical Curve("inflow")    = {8, 9};                  // left wall, x = 0
-Physical Curve("outflow")   = {5};                     // right wall, x = 3
-Physical Curve("wall")      = {1, 2, 3, 4, 6, 7};      // floor, face, FILLET, step top, roof
-
-Mesh.ElementOrder = 1;
+// "fillet" is SEPARATE from "wall" for one reason only: it is the tag
+// :exact_geometry names. user_bc.jl treats it as a free-slip wall like
+// any other, which is what its `else` branch already does.
+Physical Curve("inflow")   = {7};
+Physical Curve("outflow")  = {5};
+Physical Curve("wall")     = {1, 2, 4, 6};   // floor, step face, step top, roof
+Physical Curve("fillet")   = {3};            // the arc — snapped to the circle
+Physical Surface("domain") = {1};
