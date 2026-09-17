@@ -144,7 +144,12 @@ end
 # positivity_limit!(uaux, npoin, ien, γm1, ρmin, pmin, stats; coords, t)
 #
 # Repairs `uaux` in place. `ien` is the energy slot (nsd + 2); slots 2:ien-1 are
-# momentum. Returns nothing; all reporting goes through `stats`.
+# momentum.
+#
+# RETURNS THE NUMBER OF REPAIRS MADE IN THIS CALL, which matters: the caller
+# skips the write-back to the integrator state when it is zero, so enabling the
+# repair on a case that never needs it is BIT-IDENTICAL to leaving it off, not
+# merely equivalent. A healthy case pays one read sweep and nothing else.
 #---------------------------------------------------------------------------------
 function positivity_limit!(uaux::AbstractMatrix{T},
                            npoin::Integer, ien::Integer,
@@ -154,6 +159,7 @@ function positivity_limit!(uaux::AbstractMatrix{T},
                            t::Real = NaN) where {T<:AbstractFloat}
 
     s.ncalls += 1
+    nrep = 0
     emin = pmin/γm1
 
     @inbounds for ip = 1:npoin
@@ -168,6 +174,7 @@ function positivity_limit!(uaux::AbstractMatrix{T},
             _mark_first!(s, ip, coords, t)
             s.dmass += Float64(ρmin - ρ)
             s.nrho  += 1
+            nrep   += 1
             ρ = ρmin
             uaux[ip, 1] = ρ
         end
@@ -190,6 +197,7 @@ function positivity_limit!(uaux::AbstractMatrix{T},
                     uaux[ip, k] *= θ
                 end
                 s.nmom += 1
+                nrep   += 1
             else
                 # 2b. the total energy itself is too small. Inject, and say so.
                 _mark_first!(s, ip, coords, t)
@@ -199,11 +207,12 @@ function positivity_limit!(uaux::AbstractMatrix{T},
                 s.denergy += Float64(emin - ρE)
                 uaux[ip, ien] = emin
                 s.nenergy += 1
+                nrep      += 1
             end
         end
     end
 
-    return nothing
+    return nrep
 end
 
 #---------------------------------------------------------------------------------

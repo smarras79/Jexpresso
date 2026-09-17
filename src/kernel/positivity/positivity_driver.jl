@@ -99,12 +99,16 @@ function apply_positivity!(u, params, SD)
     ρmin = T(inputs[:positivity_rho_min])
     pmin = T(inputs[:positivity_p_min])
 
-    Positivity.positivity_limit!(@view(params.uaux[:, :]), npoin, ien,
-                                 γm1, ρmin, pmin, POSITIVITY_STATS;
-                                 coords = params.mesh.coords,   # [dim, ip]
-                                 t = NaN)
+    nrep = Positivity.positivity_limit!(@view(params.uaux[:, :]), npoin, ien,
+                                        γm1, ρmin, pmin, POSITIVITY_STATS;
+                                        coords = params.mesh.coords,   # [dim, ip]
+                                        t = NaN)
 
-    uaux2u!(u, @view(params.uaux[:, :]), neqs, npoin)
+    # Only write back when something was actually repaired. A case that never
+    # needs the repair is then BIT-IDENTICAL to running with :lpositivity off —
+    # it pays one read sweep per RHS call and nothing else. That is what makes
+    # it safe to leave on in a validated case.
+    nrep > 0 && uaux2u!(u, @view(params.uaux[:, :]), neqs, npoin)
 
     if get(inputs, :positivity_report, true) &&
        Positivity.positivity_should_report(POSITIVITY_STATS)
