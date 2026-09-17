@@ -82,6 +82,11 @@ redundant; that guard was this idea, done badly and in the wrong place.
 It edits a low-storage RK's own registers. `:lfilter` already does exactly that,
 so the pattern is the house one — but it is worth knowing.
 
+Coordinates come from **`mesh.coords[dim, ip]`** (the 3 × npoin array), not the
+deprecated per-axis fields, matching the rest of the kernel (`rhs.jl:1131`).
+They are used only to report *where* the first repair happened, and the lookup
+is size-guarded so a missing coordinate can never cost a repair.
+
 ## Scope
 
 2D/3D CompEuler, `TOTAL()`, `:energy_equation => "energy"`, CPU, and

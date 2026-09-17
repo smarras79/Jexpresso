@@ -101,7 +101,7 @@ function apply_positivity!(u, params, SD)
 
     Positivity.positivity_limit!(@view(params.uaux[:, :]), npoin, ien,
                                  γm1, ρmin, pmin, POSITIVITY_STATS;
-                                 x = params.mesh.x, y = params.mesh.y,
+                                 coords = params.mesh.coords,   # [dim, ip]
                                  t = NaN)
 
     uaux2u!(u, @view(params.uaux[:, :]), neqs, npoin)

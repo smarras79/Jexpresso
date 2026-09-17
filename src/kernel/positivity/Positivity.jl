@@ -124,22 +124,24 @@ end
 # Record where the first intervention of the run happened. Coordinates are
 # optional: pass empty vectors and it stores NaN.
 #---------------------------------------------------------------------------------
-# NOTE AbstractArray, not AbstractVector: mesh.x is a Vector on one mesh
-# construction path (mesh.jl:5480) and an (npx x 1) Matrix on another
-# (mesh.jl:5813). Linear indexing x[ip] and length(x) both work for either;
-# an ::AbstractVector annotation here would be a MethodError on half the cases.
+# COORDINATES ARE coords[dim, ip], the (3 x npoin) array, NOT the deprecated
+# per-axis fields. Indexing matches the rest of the kernel, e.g. rhs.jl:1131
+# `x=coords[1, ip], y=coords[2, ip]`. Size-guarded so the module still works
+# when handed nothing: coordinates only ever say WHERE the first repair
+# happened, and a missing coordinate must never cost a repair.
 @inline function _mark_first!(s::PositivityStats, ip::Integer,
-                              x::AbstractArray, y::AbstractArray, t::Real)
+                              coords::AbstractArray, t::Real)
     if positivity_touched(s) == 0
-        s.first_x = (length(x) >= ip) ? Float64(x[ip]) : NaN
-        s.first_y = (length(y) >= ip) ? Float64(y[ip]) : NaN
+        ok = (ndims(coords) == 2 && size(coords, 1) >= 2 && size(coords, 2) >= ip)
+        s.first_x = ok ? Float64(coords[1, ip]) : NaN
+        s.first_y = ok ? Float64(coords[2, ip]) : NaN
         s.first_t = Float64(t)
     end
     return nothing
 end
 
 #---------------------------------------------------------------------------------
-# positivity_limit!(uaux, npoin, ien, γm1, ρmin, pmin, stats; x, y, t)
+# positivity_limit!(uaux, npoin, ien, γm1, ρmin, pmin, stats; coords, t)
 #
 # Repairs `uaux` in place. `ien` is the energy slot (nsd + 2); slots 2:ien-1 are
 # momentum. Returns nothing; all reporting goes through `stats`.
@@ -148,8 +150,7 @@ function positivity_limit!(uaux::AbstractMatrix{T},
                            npoin::Integer, ien::Integer,
                            γm1::T, ρmin::T, pmin::T,
                            s::PositivityStats;
-                           x::AbstractArray = T[],
-                           y::AbstractArray = T[],
+                           coords::AbstractArray = zeros(T, 0, 0),
                            t::Real = NaN) where {T<:AbstractFloat}
 
     s.ncalls += 1
@@ -164,7 +165,7 @@ function positivity_limit!(uaux::AbstractMatrix{T},
 
         # ---- 1. density floor -------------------------------------------------
         if ρ < ρmin                       # false for NaN: left alone on purpose
-            _mark_first!(s, ip, x, y, t)
+            _mark_first!(s, ip, coords, t)
             s.dmass += Float64(ρmin - ρ)
             s.nrho  += 1
             ρ = ρmin
@@ -184,14 +185,14 @@ function positivity_limit!(uaux::AbstractMatrix{T},
             if ρE > emin && ke > zero(T)
                 # 2a. scale the momentum. ρE untouched -> total energy conserved.
                 θ = sqrt(max((ρE - emin)/ke, zero(T)))
-                _mark_first!(s, ip, x, y, t)
+                _mark_first!(s, ip, coords, t)
                 for k = 2:(ien - 1)
                     uaux[ip, k] *= θ
                 end
                 s.nmom += 1
             else
                 # 2b. the total energy itself is too small. Inject, and say so.
-                _mark_first!(s, ip, x, y, t)
+                _mark_first!(s, ip, coords, t)
                 for k = 2:(ien - 1)
                     uaux[ip, k] = zero(T)
                 end
