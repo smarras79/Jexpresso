@@ -172,9 +172,12 @@ function user_inputs()
         # field: measured max/ideal load is 5.68x on 16 ranks, 6.66x on 32 and
         # 7.55x on 64, where one rank would own 1687 cells against an ideal
         # 223 and every other rank waits for it. (The same measurement on the
-        # uniform ffs_step_M7 mesh gives 1.19-1.27x, which is why it never
-        # showed up there.) This is now the default too — stated here because
-        # a wall-clustered grid is exactly the case that cannot tolerate it.
+        # uniform ffs_step_M7 mesh gives 1.19-1.27x, and the unstructured
+        # ffs_step_M7_round one 1.27-1.36x, which is why it never showed up
+        # there.) The GLOBAL DEFAULT IS STILL true, because the same flag also
+        # selects the mesh-READ strategy — see the note on :lxy_partition in
+        # mod_inputs.jl — so a deck on a graded mesh has to say so itself, as
+        # rampCaoEtAl2021 does.
         :lxy_partition        => false,
         #---------------------------------------------------------------------------
         # CURVE THE CYLINDER. This is not optional on a curved wall.
