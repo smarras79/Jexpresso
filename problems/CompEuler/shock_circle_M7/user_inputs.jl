@@ -170,38 +170,35 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :visc_model           => DSGS(),
         #---------------------------------------------------------------------------
-        # NODAL DynSGS. The one change in this run, and the mu_dsgs field is
-        # what asks for it.
+        # :ldsgs_nodal IS OFF, AND MUST STAY OFF WHILE :dsgs_sensor IS
+        # "residual". Tried as run 4 and it was a 17x regression — 231 steps
+        # against 3969, and the failure went GLOBAL (reported nodes scattered
+        # to the domain corner at (0,-1)) instead of staying on the stagnation
+        # streamline. The reason is in the kernel's own header (SGS.jl:2156):
         #
-        # By default the coefficient is ELEMENT-WISE CONSTANT: compute_dsgs_-
-        # viscosity! fills μ_dsgs[ie, ieq], and broadcast_dsgs_to_nodes!
-        # (SGS.jl:3017) then spreads it to nodes with
+        #   "the residual is the assembled (lumped-mass) nodal residual
+        #    R_i = |BDF2(q)_i - M^-1_i rhs_i|"
         #
-        #     μ_pnode[ip] = max(μ_pnode[ip], μ_dsgs[ie])
+        # and DSGS.md §1.2 says what that quantity is worth: with a lumped LGL
+        # mass matrix the assembled rate M^-1 RHS IS what the integrator
+        # advances, so the difference is the time-integration error and
+        # nothing else — "it vanishes on an under-resolved solution exactly as
+        # on a resolved one". The element form uses the ELEMENT RHS precisely
+        # to avoid that. So nodal + "residual" is a BLIND sensor: nu ~ 0
+        # everywhere, no shock capturing at all, and a Mach-7 bow shock has
+        # nothing holding it. 231 steps is what that looks like.
         #
-        # a MAX over the elements sharing the node — a morphological dilation,
-        # not a smoothing. Two consequences, both visible in the plotted
-        # mu_dsgs: the field is blocky at element scale, and a hot element
-        # bleeds its value onto every neighbour it touches while the value
-        # itself still jumps from ~0.8 to ~0 between adjacent elements.
-        #
-        # A CG discretization cannot absorb that. ∇·(μ∇q) with μ jumping
-        # across an element interface produces a spurious forcing there
-        # proportional to the jump, the forcing makes element-scale
-        # oscillation, the sensor reads that oscillation as under-resolution,
-        # and μ gets more speckled still. That loop is a much better
-        # explanation of a salt-and-pepper μ sitting on top of a
-        # salt-and-pepper velocity field than anything about the shock.
-        #
-        # :ldsgs_nodal => true takes the nodal (Dao & Nazarov) form instead
-        # (compute_dsgs_viscosity_nodal!, reached for DSGS() 2D at
-        # rhs.jl:1681): ν is built AT EVERY NODE from the mass-weighted
-        # average of the residual over the elements containing it
-        # (DSGS.md §1.2), and the element loop interpolates it. There is no
-        # element-wise constant, no jump at the interfaces, and no broadcast.
-        # It is the same model, evaluated in a form a continuous Galerkin
-        # method can actually carry.
-        :ldsgs_nodal          => true,
+        # This does NOT condemn the nodal form. It is the right cure for what
+        # the mu_dsgs field shows — the element kernel's staircase, which its
+        # header records as "one wiggle per element in the smooth plateau" on
+        # the Brio-Wu tube, measured — and it gives a C0 nu with no jump in
+        # the diffusive flux at element interfaces. It just needs a sensor
+        # that is not the assembled residual. The combination to try is
+        # :ldsgs_nodal => true WITH :dsgs_sensor => "legacy", which is what
+        # the MHD decks that exercise this path actually run: legacy makes
+        # R ~ |dq/dt|, imperfect but not identically zero.
+        #---------------------------------------------------------------------------
+        :ldsgs_nodal          => false,
         :dsgs_sensor          => "residual",
         #
         # STARTUP HOLD OFF, as ffs_step has it. I turned it on for one run on
