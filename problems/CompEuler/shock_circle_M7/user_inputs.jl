@@ -73,8 +73,21 @@ function user_inputs()
         # in the wall cells, 2.4e-4 in the far field, and 0.032 from the
         # MOLECULAR viscosity at the wall, where the low density and the
         # 300 K wall give ν = μ/ρ = 0.32 m²/s. All comfortable.
-        :Δt                   => 1.5e-8,
-        :diagnostics_at_times => (0:1.0e-5:1.0e-3),
+        # 7.5e-9, HALVED from the 1.5e-8 of the first runs, and the only new
+        # variable in this configuration — everything else is back to what got
+        # furthest. Advective CFL becomes ~0.04.
+        #
+        # Why Δt and not more dissipation: the two runs so far differ only in
+        # how much dissipation they had, and the one with LESS died sooner
+        # (398 steps against 887). So the failure responds to the numerics
+        # rather than sitting at a fixed physical time, and Δt is the lever
+        # that buys margin through a violent transient without touching the
+        # boundary layer this case exists to resolve. Both runs died with the
+        # shock layer only half formed — 9.4 mm and 20.9 mm of flow travel
+        # against a 42 mm standoff — so the whole difficulty is the FORMATION
+        # of the normal shock, not any developed state.
+        :Δt                   => 7.5e-9,
+        :diagnostics_at_times => (0:2.0e-6:1.0e-3),   # dense: the first µs is the hard part
         :lsource              => false,
         :SOL_VARS_TYPE        => TOTAL(),
         #---------------------------------------------------------------------------
@@ -158,25 +171,23 @@ function user_inputs()
         :visc_model           => DSGS(),
         :dsgs_sensor          => "residual",
         #
-        # STARTUP HOLD: LEFT AT THE DEFAULT (2), which is the OPPOSITE of
-        # ffs_step, and deliberately so. The hold exists because the sensor
-        # reads a SMOOTH initial condition as unresolved and pins ν at its cap
-        # on step one (7dd6f0c). ffs_step sets it to 0 because its initial
-        # condition is NOT smooth — a Mach-3 stream started impulsively
-        # against a step, with the whole transient at the step face from the
-        # first instant, so holding ν at zero there integrates the most
-        # violent steps with no dissipation at all.
+        # STARTUP HOLD OFF, as ffs_step has it. I turned it on for one run on
+        # the argument that this case's initial field is smooth BY
+        # CONSTRUCTION (the 5 mm blend of initialize.jl) and is therefore the
+        # very condition the hold was written for. The run died SOONER — 398
+        # steps against 887 — so the argument was wrong, and it is worth
+        # writing down why.
         #
-        # This case is the inverse. Its starting field is smooth BY
-        # CONSTRUCTION: a uniform free stream with the velocity and
-        # temperature blended into the wall condition over 5 mm (see
-        # initialize.jl), precisely so there is no jump for the BC to fight.
-        # It is therefore exactly the initial condition the hold was written
-        # for. Copying ffs_step's 0 over was a mistake, and it showed: the
-        # first CFL lines reported max ν = 3.07 m²/s, which is the cap in the
-        # 77 mm far-field cells (0.1·(0.077/5)·ρ∞·(|u|+c) = 2.76), i.e. the
-        # coefficient pinned at its ceiling in an undisturbed free stream —
-        # the documented symptom, verbatim.
+        # What the hold protects against is a sensor misreading a smooth
+        # FIELD. What kills this case is a violent first few STEPS, and those
+        # are violent no matter how smooth the field is: a 1568 m/s stream is
+        # standing on a no-slip wall at t = 0 and a normal shock has to form
+        # in front of it. That is ffs_step's own argument — "holding ν at zero
+        # there integrates the most violent steps of the run with no
+        # dissipation at all" — and it applies here for the same reason, which
+        # I missed because I was looking at the initial condition instead of
+        # at the first steps.
+        :dsgs_hold_steps      => 0,
         :μ                    => [1.0, 1.0, 1.0, 1.0],
         #
         # :dsgs_Cmax => 0.03, not the ramp's 0.1, because μ_cap ∝ Δ and THIS
@@ -187,14 +198,16 @@ function user_inputs()
         #     h = 20  mm  ->  ν_cap = 0.72            (0.22)
         #     h = 77  mm  ->  ν_cap = 2.76            (0.83)
         #
-        # against a molecular ν of 0.062 in the free stream. At 0.1 the coarse
-        # cells are allowed 44x the physical viscosity; 0.03 keeps that to
-        # 13x, still ample for shock capturing where Δ is small and the
-        # residual is real. The proper fix is less grading in the mesh — the
-        # cap's Δ-proportionality cannot be undone from the deck — so if this
-        # is still the binding problem, drop lc_far in cylinder_M7.geo from
-        # 0.06 to ~0.03 and pay the extra elements.
-        :dsgs_Cmax            => 0.03,
+        # against a molecular ν of 0.062 in the free stream. 0.03 was tried
+        # and REVERTED: it went in the same run as the startup hold, both
+        # changes cut dissipation, and the run died sooner. Back at the ramp's
+        # 0.1. The coarse cells are then allowed 44x the molecular viscosity,
+        # which is ugly but is not what is killing this case — the failure is
+        # a tight cluster on the stagnation streamline, nowhere near the
+        # coarse far field. If the far-field cap does become the problem, the
+        # answer is less grading in the mesh (lc_far 0.06 -> 0.03 in
+        # cylinder_M7.geo): μ_cap ∝ Δ cannot be undone from a deck.
+        :dsgs_Cmax            => 0.1,
         :Pr                   => 0.1,
         :dsgs_norms           => "domain",
         #---------------------------------------------------------------------------
