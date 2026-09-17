@@ -58,11 +58,21 @@ function user_inputs()
         # ~1792 m/s in the free stream and cannot exceed √(2h₀) + c₀ ≈ 2380
         # anywhere, Δt = 1.5e-8 s is an advective CFL of about 0.08.
         #
-        # The VISCOUS limit is comfortable here and worth writing down, since
-        # it is the one that bound ffs_step: the free-stream kinematic
-        # viscosity is large at this density, ν = μ/ρ = 0.062 m²/s, but
-        # νΔt/Δx² is only 0.006. The DynSGS coefficient, capped at
-        # C_max = 0.1 below, adds about as much again.
+        # DO NOT TRUST THE PRINTED "Viscous CFL" ON THIS MESH. computeCFL
+        # forms it as max(ν) over the whole mesh times Δt over min(Δx)² over
+        # the whole mesh (soundSpeed.jl), and on a graded grid those two are
+        # at OPPOSITE ENDS: max ν is in the 77 mm far-field cells, where
+        # μ_cap ∝ Δ is largest, and min Δx is in the 2.2 mm wall cells. The
+        # first run printed 0.312 that way, while the true per-cell parabolic
+        # number ν_i Δt/Δx_i² is at most 8.1e-3 anywhere in the domain —
+        # a factor of 38 of pure diagnostic artifact. The number is correct
+        # on the near-uniform meshes it was written against (ffs_step) and
+        # meaningless here.
+        #
+        # The real viscous margins, per cell, at this Δt: 8.1e-3 from DynSGS
+        # in the wall cells, 2.4e-4 in the far field, and 0.032 from the
+        # MOLECULAR viscosity at the wall, where the low density and the
+        # 300 K wall give ν = μ/ρ = 0.32 m²/s. All comfortable.
         :Δt                   => 1.5e-8,
         :diagnostics_at_times => (0:1.0e-5:1.0e-3),
         :lsource              => false,
@@ -147,9 +157,44 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :visc_model           => DSGS(),
         :dsgs_sensor          => "residual",
-        :dsgs_hold_steps      => 0,               # impulsive start: see ffs_step
+        #
+        # STARTUP HOLD: LEFT AT THE DEFAULT (2), which is the OPPOSITE of
+        # ffs_step, and deliberately so. The hold exists because the sensor
+        # reads a SMOOTH initial condition as unresolved and pins ν at its cap
+        # on step one (7dd6f0c). ffs_step sets it to 0 because its initial
+        # condition is NOT smooth — a Mach-3 stream started impulsively
+        # against a step, with the whole transient at the step face from the
+        # first instant, so holding ν at zero there integrates the most
+        # violent steps with no dissipation at all.
+        #
+        # This case is the inverse. Its starting field is smooth BY
+        # CONSTRUCTION: a uniform free stream with the velocity and
+        # temperature blended into the wall condition over 5 mm (see
+        # initialize.jl), precisely so there is no jump for the BC to fight.
+        # It is therefore exactly the initial condition the hold was written
+        # for. Copying ffs_step's 0 over was a mistake, and it showed: the
+        # first CFL lines reported max ν = 3.07 m²/s, which is the cap in the
+        # 77 mm far-field cells (0.1·(0.077/5)·ρ∞·(|u|+c) = 2.76), i.e. the
+        # coefficient pinned at its ceiling in an undisturbed free stream —
+        # the documented symptom, verbatim.
         :μ                    => [1.0, 1.0, 1.0, 1.0],
-        :dsgs_Cmax            => 0.1,
+        #
+        # :dsgs_Cmax => 0.03, not the ramp's 0.1, because μ_cap ∝ Δ and THIS
+        # mesh is graded 34x (2.2 mm at the wall, 77 mm far field). The cap is
+        # meant to be a ceiling reached at a shock, and per-cell it comes out
+        #
+        #     h = 2.2 mm  ->  ν_cap = 0.080 m²/s      (0.024 at Cmax = 0.03)
+        #     h = 20  mm  ->  ν_cap = 0.72            (0.22)
+        #     h = 77  mm  ->  ν_cap = 2.76            (0.83)
+        #
+        # against a molecular ν of 0.062 in the free stream. At 0.1 the coarse
+        # cells are allowed 44x the physical viscosity; 0.03 keeps that to
+        # 13x, still ample for shock capturing where Δ is small and the
+        # residual is real. The proper fix is less grading in the mesh — the
+        # cap's Δ-proportionality cannot be undone from the deck — so if this
+        # is still the binding problem, drop lc_far in cylinder_M7.geo from
+        # 0.06 to ~0.03 and pay the extra elements.
+        :dsgs_Cmax            => 0.03,
         :Pr                   => 0.1,
         :dsgs_norms           => "domain",
         #---------------------------------------------------------------------------

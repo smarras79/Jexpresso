@@ -179,6 +179,41 @@ degrading the answer, it was throwing `DomainError` out of `log` and killing the
 run from inside the RHS. **If that floor engages anywhere but the first few
 steps the run is wrong** — it is a guard, not a fix.
 
+## Run 1: died at t = 1.33e-5 (887 steps) — two findings
+
+**The printed `Viscous CFL` is a diagnostic artifact on this mesh.** `computeCFL`
+forms it as `max(ν)` over the whole mesh × `Δt` / `min(Δx)²` over the whole
+mesh, and on a graded grid those are at opposite ends:
+
+| cell `h` | `ν_cap = Cmax·(h/5)·ρ∞·(|u|+c)` | local `ν Δt/Δx²` |
+|---|---|---|
+| 2.2 mm (wall) | 0.080 | **8.1e-3** |
+| 20 mm | 0.72 | 9.0e-4 |
+| 77 mm (far field) | **2.76** | 2.4e-4 |
+
+`max ν = 3.07` reported by the run is the far-field cap; `min Δx = 3.85e-4` is
+the wall cell. `3.0749 × 1.5e-8 / (3.85e-4)² = 0.312`, exactly what was printed
+— against a true per-cell maximum of 8.1e-3. **A factor of 38 of artifact.**
+The number is right on the near-uniform meshes it was written against
+(`ffs_step`) and meaningless here.
+
+**And `:dsgs_hold_steps => 0` was wrong for this case** — I copied it from
+`ffs_step` without checking that its justification applies. It does not. The
+hold exists because the sensor reads a *smooth* initial condition as
+unresolved and pins ν at its cap on step one (`7dd6f0c`); `ffs_step` disables
+it because its IC is *not* smooth — a Mach-3 stream started impulsively
+against a step. This case's starting field is smooth **by construction**,
+since the previous fix blended the velocity and temperature into the wall
+condition over 5 mm precisely so there would be no jump. So it is exactly the
+IC the hold was written for, and `max ν = 3.07` — the coefficient at its
+ceiling in an undisturbed free stream — is the documented symptom, verbatim.
+
+Now at the default (2), with `:dsgs_Cmax` lowered 0.1 → 0.03 because
+`μ_cap ∝ Δ` and this mesh is graded 34×: at 0.1 the coarse cells are allowed
+44× the molecular viscosity, at 0.03 that is 13×. If grading is still the
+binding problem, drop `lc_far` in the `.geo` from 0.06 to ~0.03 and pay the
+elements — the Δ-proportionality of the cap cannot be undone from the deck.
+
 ## Status
 
 **Not yet run.** The mesh is generated and verified; no Julia was available in
