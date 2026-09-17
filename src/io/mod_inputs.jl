@@ -469,6 +469,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :positivity_report))
         inputs[:positivity_report] = true
     end
+    # How often (in RHS calls) the ranks meet to reduce the audit counters.
+    # The trigger must be identical on every rank — it is a collective — so it
+    # is a call count, not an engagement count.
+    if(!haskey(inputs, :positivity_report_every))
+        inputs[:positivity_report_every] = 1000
+    end
 
     if(!haskey(inputs,:lfilter))
         inputs[:lfilter] = false

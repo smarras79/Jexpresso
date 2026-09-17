@@ -230,6 +230,25 @@ function positivity_should_report(s::PositivityStats)
     return false
 end
 
+#---------------------------------------------------------------------------------
+# Format from EXPLICIT numbers, so the caller can hand in MPI-reduced totals.
+# The struct-taking method below is rank-local and is only good for a serial
+# run — on many ranks it describes 1/nranks of the domain, which is how the
+# first report of this feature came back saying "1 node-visit" when nobody had
+# yet asked the other 255 ranks.
+#---------------------------------------------------------------------------------
+function positivity_summary(nrho::Real, nmom::Real, nen::Real,
+                            dmass::Real, den::Real,
+                            rmin::Real, pmin::Real, ncalls::Real)
+    return string("repaired ", Int(nrho + nmom + nen), " node-visits in ",
+                  Int(ncalls), " RHS calls",
+                  "  [ρ-floor ", Int(nrho),
+                  ", momentum-scaled ", Int(nmom),
+                  ", energy-RAISED ", Int(nen), "]",
+                  "  injected: mass ", dmass, ", energy ", den,
+                  "  |  GLOBAL min ρ ", rmin, ", GLOBAL min p ", pmin)
+end
+
 function positivity_summary(s::PositivityStats)
     return string("repaired ", positivity_touched(s), " node-visits in ",
                   s.ncalls, " RHS calls",

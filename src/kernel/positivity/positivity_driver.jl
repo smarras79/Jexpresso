@@ -114,16 +114,49 @@ function apply_positivity!(u, params, SD)
     # it safe to leave on in a validated case.
     nrep > 0 && uaux2u!(u, @view(params.uaux[:, :]), neqs, npoin)
 
-    if get(inputs, :positivity_report, true) &&
-       Positivity.positivity_should_report(POSITIVITY_STATS)
-        if MPI.Comm_rank(get_mpi_comm()) == 0
+    # ---- REPORT. COLLECTIVE, and it has to be. --------------------------------
+    #
+    # POSITIVITY_STATS is rank-local. On 256 ranks, printing rank 0's copy
+    # describes 1/256 of the domain — which is how the first Mach-7 report of
+    # this feature came back saying "1 node-visit" before anyone had asked the
+    # other 255 ranks. Counts are SUM-reduced and minima MIN-reduced before
+    # anything is said.
+    #
+    # The trigger is `ncalls % every == 0`, identical on every rank because
+    # every rank makes the same number of RHS calls, so the reduction is
+    # entered in lockstep and cannot deadlock. Triggering on rank 0's own
+    # engagement count would hang the run the moment the ranks disagreed.
+    every = Int(get(inputs, :positivity_report_every, 1000))
+    if get(inputs, :positivity_report, true) && every > 0 &&
+       POSITIVITY_STATS.ncalls % every == 0
+
+        comm = get_mpi_comm()
+        sums = MPI.Allreduce([Float64(POSITIVITY_STATS.nrho),
+                              Float64(POSITIVITY_STATS.nmom),
+                              Float64(POSITIVITY_STATS.nenergy),
+                              POSITIVITY_STATS.dmass,
+                              POSITIVITY_STATS.denergy], MPI.SUM, comm)
+        mins = MPI.Allreduce([POSITIVITY_STATS.rho_min,
+                              POSITIVITY_STATS.p_min], MPI.MIN, comm)
+
+        total  = sums[1] + sums[2] + sums[3]
+        decade = total > 0.0 ? floor(Int, log10(total)) + 1 : 0
+        if decade > POSITIVITY_STATS.nreported
+            POSITIVITY_STATS.nreported = decade     # global, so identical everywhere
             println_rank(string(" # POSITIVITY REPAIR ENGAGED — ",
-                         Positivity.positivity_summary(POSITIVITY_STATS), "\n",
-                         " #   A few node-visits near a shock is the repair doing its job.\n",
-                         " #   Engagement growing without bound, or anywhere inside the\n",
-                         " #   boundary layer, means the ANSWER is wrong and the repair is\n",
-                         " #   only hiding it — check the first-engagement coordinates above\n",
-                         " #   against the wall before trusting any heat flux from this run."))
+                                Positivity.positivity_summary(sums[1], sums[2], sums[3],
+                                                              sums[4], sums[5],
+                                                              mins[1], mins[2],
+                                                              POSITIVITY_STATS.ncalls), "\n",
+                                " #   first on THIS rank at (x, y) = (",
+                                POSITIVITY_STATS.first_x, ", ",
+                                POSITIVITY_STATS.first_y, ")\n",
+                                " #   A few node-visits near a shock is the repair doing its job.\n",
+                                " #   Engagement growing without bound, or anywhere inside the\n",
+                                " #   boundary layer, means the ANSWER is wrong and the repair is\n",
+                                " #   only hiding it — check that coordinate against the wall\n",
+                                " #   before trusting any heat flux from this run.");
+                         msg_rank = MPI.Comm_rank(comm))
         end
     end
 
