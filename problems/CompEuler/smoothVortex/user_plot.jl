@@ -78,7 +78,12 @@ _ev_style(nop) = get(EV_STYLE, nop, (:gray, :cross))
 # other's record.
 function _ev_tag(inputs)
     get(inputs, :lvisc, true) || return "galerkin"
-    return Float64(get(inputs, :dsgs_cutoff, 0.0)) > 0 ? "dsgs_cut" : "dsgs"
+    Float64(get(inputs, :dsgs_cutoff, 0.0)) > 0 && return "dsgs_cut"
+    # A longer startup hold is a different experiment for the same reason: it
+    # changes the viscosity over the whole initial transient, and the two runs
+    # must not overwrite each other's record.
+    Int(get(inputs, :dsgs_hold_steps, 2)) == 2 || return "dsgs_hold"
+    return "dsgs"
 end
 
 #---------------------------------------------------------------------------------
@@ -214,6 +219,7 @@ function _ev_save_error(e, inputs, t, tnum = t)
                         " CR=", Float64(get(inputs, :dsgs_CR, 1.0)),
                         " Cmax=", Float64(get(inputs, :dsgs_Cmax, 0.0)),
                         " rel=", Float64(get(inputs, :dsgs_rel, 1.0)),
+                        " hold=", Int(get(inputs, :dsgs_hold_steps, 2)),
                         " dt=", Float64(get(inputs, :Δt, 0.0)))
             println(io, "# relative, for reference: L1=", e.r1, " L2=", e.r2, " Linf=", e.rinf)
             println(io, "# L1 L2 Linf")
@@ -292,8 +298,8 @@ const EV_FS_TITLE  = 22
 const EV_FS_GUIDE  = 20
 const EV_FS_TICK   = 17
 const EV_FS_LEGEND = 15
-const EV_LW        = 2.8
-const EV_MS        = 9
+const EV_LW        = 1.4
+const EV_MS        = 7
 
 # The measured order of accuracy from the last two points. The abscissa is
 # the DOF COUNT, and in two dimensions h ∝ #DOFs^(-1/2), so an error ∝ h^p
@@ -301,10 +307,15 @@ const EV_MS        = 9
 _ev_rate(xs, ys) = (length(xs) < 2 || ys[end-1] <= 0 || ys[end] <= 0) ? NaN :
                    -2.0*log(ys[end-1]/ys[end])/log(xs[end-1]/xs[end])
 
-_ev_visc_label(tag) = tag == "dsgs"     ? "DSGS" :
-                        tag == "dsgs_cut" ? "DSGS + cutoff" : "Galerkin"
-# solid = DSGS, dash-dot = DSGS with the cutoff, dashed = plain Galerkin
-_ev_visc_style(tag) = tag == "dsgs" ? :solid : tag == "dsgs_cut" ? :dashdot : :dash
+_ev_visc_label(tag) = tag == "dsgs"      ? "DSGS" :
+                        tag == "dsgs_cut"  ? "DSGS + cutoff" :
+                        tag == "dsgs_hold" ? "DSGS + hold"   : "Galerkin"
+# solid = DSGS, dash-dot = DSGS with the cutoff, dash-dot-dot = DSGS with a
+# longer startup hold, dashed = plain Galerkin. The reference slopes are the
+# only DOTTED lines on the figure, so no guide can be mistaken for a curve.
+_ev_visc_style(tag) = tag == "dsgs"      ? :solid :
+                        tag == "dsgs_cut"  ? :dashdot :
+                        tag == "dsgs_hold" ? :dashdotdot : :dash
 
 function _ev_panel(sub, nops, fld, nm)
     # The final time the errors were measured at, and the step they were taken
@@ -321,6 +332,8 @@ function _ev_panel(sub, nops, fld, nm)
                     ylabel = LaTeXStrings.latexstring(string(
                         "\\|\\mathbf{u}_h-\\mathbf{u}_{exact}\\|_{", nm, "}")),
                     framestyle = :box, grid = true, gridalpha = 0.25,
+                    background_color_legend = Plots.RGBA(1, 1, 1, 0.72),
+                    foreground_color_legend = :gray60,
                     legend = :bottomleft, legendfontsize = EV_FS_LEGEND,
                     titlefontsize = EV_FS_TITLE, guidefontsize = EV_FS_GUIDE,
                     tickfontsize = EV_FS_TICK,
@@ -329,11 +342,11 @@ function _ev_panel(sub, nops, fld, nm)
                     title = LaTeXStrings.latexstring(string(nm, "\\mathrm{-error}", stamp)),
                     show = false)
 
-    # One colour per order, the stabilization in the line style: RV solid with
+    # One colour per order, the stabilization in the line style: DSGS solid with
     # a filled marker, plain Galerkin dashed with a hollow one — the two are
     # compared ON THE SAME AXES, as in the paper's convergence figure, because
     # the question the figure answers is whether the viscosity costs accuracy.
-    for nop in nops, tag in ("dsgs", "dsgs_cut", "galerkin")
+    for nop in nops, tag in ("dsgs", "dsgs_cut", "dsgs_hold", "galerkin")
         g = sort(filter(r -> r.nop == nop && r.visc == tag, sub), by = r -> r.ndofs)
         isempty(g) && continue
         xs = [Float64(r.ndofs) for r in g]
@@ -348,7 +361,7 @@ function _ev_panel(sub, nops, fld, nm)
                   _ev_visc_label(tag), "}", isfinite(p) ? string("\\ (p=", round(p; digits = 2), ")") : ""))
         Plots.plot!(pl, xs, ys;
                     line = (col, EV_LW, _ev_visc_style(tag)),
-                    marker = (mk, EV_MS), markerstrokecolor = col, markerstrokewidth = 1.6,
+                    marker = (mk, EV_MS), markerstrokecolor = col, markerstrokewidth = 1.0,
                     markercolor = tag == "dsgs" ? col : :white,
                     color = col, label = lab)
     end
@@ -374,7 +387,7 @@ function _ev_panel(sub, nops, fld, nm)
             r  = [ally[i]*allx[i]^(-sl) for i in eachindex(allx)]
             A  = above ? 2.0*maximum(r) : 0.5*minimum(r)
             Plots.plot!(pl, [x1, x2], [A*xi^sl for xi in (x1, x2)];
-                        line = (col, 2.0, :dashdot),
+                        line = (col, 1.2, :dot),
                         label = LaTeXStrings.latexstring(string("\\mathcal{O}(h^{", nop + 1, "})")))
         end
 
@@ -410,7 +423,7 @@ function _ev_plot(rows, OUTPUT_DIR, iout; only::Vector{Int} = Int[], suffix::Str
     nops = sort(unique(r.nop for r in sub))
     # At least one (order, stabilization) pair with two points to join.
     any(count(r -> r.nop == n && r.visc == v, sub) >= 2
-        for n in nops, v in ("dsgs", "dsgs_cut", "galerkin")) || return nothing
+        for n in nops, v in ("dsgs", "dsgs_cut", "dsgs_hold", "galerkin")) || return nothing
 
     panels = Plots.Plot[]
     for (fld, nm, fname) in ((:l1, "L^1", "L1"), (:l2, "L^2", "L2"), (:linf, "L^\\infty", "Linf"))
