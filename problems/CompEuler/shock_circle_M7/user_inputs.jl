@@ -186,6 +186,32 @@ function user_inputs()
         # unnecessary. If the free stream still quilts, :dsgs_Cmin => 0.01 is
         # the first thing to try, and the heat flux must then be re-checked.
         #---------------------------------------------------------------------------
+        #---------------------------------------------------------------------------
+        # REALIZABILITY REPAIR (src/kernel/positivity/). Floors are ABSOLUTE and
+        # set from this case's own scales: 1e-6 of the free stream, i.e.
+        # ρ∞ = 1.394e-4 -> 1.4e-10 and p∞ = 5 Pa -> 5e-6 Pa. Six orders below
+        # anything physical here, so the repair engages only outside the
+        # realizable set and never inside the solution.
+        #
+        # It is a REPAIR, not a preserving scheme, and the reason it is on is
+        # the audit rather than the rescue. Every run so far has ended with the
+        # state leaving the realizable set (p < 0, total enthalpy exceeded by
+        # 1.5-1.8x) and then NaN spreading globally through the domain-norm
+        # Allreduce, which destroys the evidence. With the repair on, a local
+        # defect stays local and gets COUNTED, so the next run answers the
+        # question the last five could not: is this a handful of nodes at the
+        # bow shock, or a field that is globally wrong?
+        #
+        # READ THE REPORT, do not just note that the run survived. A few
+        # node-visits near the shock is the repair working. Engagement growing
+        # without bound, or first-engagement coordinates ON THE CYLINDER rather
+        # than out at the shock, means the answer is wrong and the repair is
+        # hiding it — and this case exists to produce a wall heat flux, which is
+        # exactly the quantity a limiter firing in the boundary layer ruins.
+        :lpositivity          => true,
+        :positivity_rho_min   => 1.4e-10,         # 1e-6 * ρ∞
+        :positivity_p_min     => 5.0e-6,          # 1e-6 * p∞
+        #---------------------------------------------------------------------------
         :visc_model           => DSGS(),
         #---------------------------------------------------------------------------
         # :ldsgs_nodal IS OFF, AND MUST STAY OFF WHILE :dsgs_sensor IS
