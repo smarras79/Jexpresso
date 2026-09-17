@@ -164,6 +164,18 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh           => true,
         :gmsh_filename        => "./problems/CompEuler/shock_circle_M7/cylinder_M7.msh",
+        # NOT a columnar partition. :lxy_partition bins cells into a uniform
+        # nx x ny grid by centroid (_compute_xy_partition, mesh.jl), which is
+        # what a 1D-implicit column solver — IMEX, HEVI — needs and nothing
+        # else does. A uniform geometric bin only balances a uniform mesh, and
+        # this one is graded 30x from the 2.2 mm wall cells to the 77 mm far
+        # field: measured max/ideal load is 5.68x on 16 ranks, 6.66x on 32 and
+        # 7.55x on 64, where one rank would own 1687 cells against an ideal
+        # 223 and every other rank waits for it. (The same measurement on the
+        # uniform ffs_step_M7 mesh gives 1.19-1.27x, which is why it never
+        # showed up there.) This is now the default too — stated here because
+        # a wall-clustered grid is exactly the case that cannot tolerate it.
+        :lxy_partition        => false,
         #---------------------------------------------------------------------------
         # CURVE THE CYLINDER. This is not optional on a curved wall.
         #

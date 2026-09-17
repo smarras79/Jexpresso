@@ -185,23 +185,44 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
        inputs[:lwall_model] = false
     end
 
-    # Default to the rank-0-read + MPI.bcast mesh path on every platform.
-    # The alternative — `GmshDiscreteModel(parts, file)` in the
-    # `lxy_partition=false` branch of `mod_mesh_read_gmsh!` — goes
-    # through GridapGmsh's "distributed" constructor, which (depending
-    # on the release) parses the .msh file on every rank: nparts × file
-    # I/O, nparts × gmsh parses, nparts × peak GMSH memory. On a laptop
-    # with a non-trivial mesh that adds minutes to pre-processing
-    # before the time-loop even starts.
+    # :lxy_partition imposes a COLUMNAR x-y CELL PARTITION: _compute_xy_partition
+    # (mesh.jl) bins cells into a uniform nx x ny grid by centroid, so each rank
+    # owns a rectangular block of the bounding box. That is the right partition
+    # for a 1D-implicit scheme — IMEX, HEVI — where a vertical column has to
+    # live on a single rank, and it is the only thing it is for.
     #
-    # Originally this was macOS-only because the parallel constructor
-    # SIGBUSes on Apple Silicon + Open MPI. The serial-read + bcast
-    # path has since been the macOS default with no issues, so make it
-    # the default on Linux too. Users who need a different partition
-    # strategy can still opt out by setting `:lxy_partition => false`
-    # in their user_inputs.jl.
+    # It is the WRONG default for everything else, because a uniform geometric
+    # bin only balances a uniform mesh. Measured over the same algorithm:
+    #
+    #   CompEuler/ffs_step_M7   uniform h = 0.025      max/ideal 1.19-1.27x
+    #   CompEuler/shock_circle_M7  2.2 mm at the wall, 77 mm far field
+    #                                                  max/ideal 5.68-7.55x
+    #
+    # i.e. on a wall-clustered grid at 64 ranks one rank owns 1687 cells against
+    # an ideal 223 and every other rank waits for it. Any graded mesh — a
+    # boundary layer, a refined shock region, AMR — has that problem, and the
+    # more the grid is graded the worse it gets. So: false by default, and a
+    # deck that wants columns asks for them.
+    #
+    # WHAT FLIPPING THIS COSTS, because the old `true` default was buying
+    # something real and unrelated. The two branches of mod_mesh_read_gmsh!
+    # differ in HOW THE MESH IS READ as well as how it is partitioned: `true`
+    # reads on rank 0 and MPI.bcasts the model, `false` calls GridapGmsh's
+    # distributed constructor GmshDiscreteModel(parts, file), which depending
+    # on the release parses the .msh on EVERY rank — nparts x file I/O,
+    # nparts x gmsh parses, nparts x peak GMSH memory — and which SIGBUSes on
+    # Apple Silicon + Open MPI, which is why the rank-0 path was made the
+    # default in the first place.
+    #
+    # Those are two independent choices wearing one flag. The proper fix is to
+    # keep the rank-0 read + bcast on BOTH branches and let :lxy_partition
+    # decide only the cell_to_part map — see the CAVEAT already standing in the
+    # `false` branch of mod_mesh_read_gmsh!, which says the same thing. Until
+    # that is done, a deck on Apple Silicon, or one whose mesh is large enough
+    # that nparts gmsh parses hurt, should set :lxy_partition => true and
+    # accept the imbalance.
     if(!haskey(inputs, :lxy_partition))
-        inputs[:lxy_partition] = true
+        inputs[:lxy_partition] = false
     end
 
     if(!haskey(inputs, :ifirst_wall_node_index))
